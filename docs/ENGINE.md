@@ -39,7 +39,6 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 - **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
 - **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the review seat. The review text is parsed into a structured verdict, per-criterion marks and categorised findings by `parseFinalReview()` in `src/engine/parsers/final-review.ts`; an unrecognised review degrades to an unknown verdict. The verdict, criteria counts and finding counts land in the packet's final-review section and are rolled up into `summary.json` (`reviewPacket.finalReviewVerdict`, `reviewPacket.finalReviewFindingCounts`).
 - **`user-edit/`** — Detects when the user edits files outside of SPLITBRIEF during a running workflow. `conflicts.ts` handles merge conflicts between user edits and implementer output. The pre-task gate no longer stops the run on an inspection failure: a failed changed-file scan degrades to a warning and the task proceeds, and a conflict is raised only from a scan that produced a file list.
-- **`explain/`** — Post-hoc explanation of workflow decisions. Formats artifacts, routing choices, and section breakdowns for the `splitbrief explain` CLI command.
 
 ---
 
@@ -83,7 +82,7 @@ function createEventBus(): EventBus {
 
 **Crash isolation.** Each sink call is wrapped in try/catch. If one sink throws (disk full, render error, hostile hook), the other sinks still run. The error is swallowed intentionally — sinks that care about their own failures can publish a warning event before throwing.
 
-**External ownership.** The bus is usually created inside `initializeWorkflow()`, but can be passed in as `opts.eventBus` for the detached IPC server/client path, where a single bus is shared across process boundaries.
+**External ownership.** The bus is usually created inside `initializeWorkflow()`, but can be passed in as `opts.eventBus` by a caller that owns the bus itself.
 
 ### EngineEvent
 
@@ -112,7 +111,7 @@ Backend calls are normalized through `src/engine/calls/*`. CLI tools, shell comm
 
 Runner-call usage preserves optional `reasoningTokens`. Legacy `TokenDelta` projections use the named `preserve_reasoning_metadata` policy: they carry reasoning tokens as metadata rather than folding them into `outputTokens`, because some providers already include reasoning in completion totals. `InvokeResult` is now a compatibility projection only. `toInvokeResult()` accepts completed calls; non-completed calls stay typed so planner/implementer policy can preserve partial output or fail closed. Public consumers receive bounded/redacted projections, not raw backend payloads.
 
-Planner and implementer paths publish those call events through `publishRunnerCallEvent()` in `src/engine/orchestrator/events.ts`. The helper attaches workflow phase, optional task id, and a monotonic sequence before publishing projected `runner_call_*` `EngineEvent` values on the EventBus. Raw tool/text/artifact projections preserve internal detail when transcript persistence allows it. Safe `runner_call_activity` projections carry bounded redacted labels keyed by stable activity ids, so UI and attached clients do not inspect raw tool payloads to render activity. The engine does not import UI code or stores; the TUI sink projects these events into workflow stores.
+Planner and implementer paths publish those call events through `publishRunnerCallEvent()` in `src/engine/orchestrator/events.ts`. The helper attaches workflow phase, optional task id, and a monotonic sequence before publishing projected `runner_call_*` `EngineEvent` values on the EventBus. Safe `runner_call_activity` projections carry bounded redacted labels keyed by stable activity ids, so the UI does not inspect raw tool payloads to render activity. The engine does not import UI code or stores; the TUI sink projects these events into workflow stores.
 
 Terminal runner events always carry frozen timing and outcome fields: `startedAt`, `endedAt`, `durationMs`, `partial`, `error`, `usage`, `nativeSessionId`, runner name/model/attempt, role, backend kind, phase, and optional task id. `runner_call_completed` can only have `status: 'completed'` with `error: null`; `runner_call_error` can only use failure statuses.
 
@@ -124,28 +123,27 @@ Warnings are explicit, not a side effect of benign stderr. `call_stderr_delta` i
 
 ## Sinks
 
-Several sinks can subscribe to the bus. Two are unconditional (JSONL, tree recorder); the rest are gated by config or runtime mode. All are registered in `initializeWorkflow()` (`run/init.ts`):
+Several sinks can subscribe to the bus. The JSONL and logger sinks are unconditional; the rest are gated by config or runtime mode. All are registered by `attachRunSinks()` (`run/init-sinks.ts`), which `initializeWorkflow()` (`run/init.ts`) calls — a bus reused by a second run has the first run's sinks unsubscribed before the new ones attach:
 
 **TUI sink** (`src/features/workflow/tui-sink.ts`) — calls `addEvent()` from `src/stores/workflow/actions/event.ts`. This is the bridge between engine and UI. It lives in `src/features/`, not `src/engine/`, because the engine layer must not import from React or stores. The sink is passed in as `opts.tuiSink` — the engine never constructs it.
 
-**JSONL sink** (`src/engine/events/sinks/jsonl.ts`) — appends protected events to `.splitbrief/sessions/<id>/session.jsonl`. When transcript persistence is disabled, transcript-like events are dropped or stripped before write. This is the audit log and the source for session replay.
+**JSONL sink** (`src/engine/events/sinks/jsonl.ts`) — appends byte-bounded, redacted events to `.splitbrief/sessions/<id>/session.jsonl`. This is the audit log and the source for session replay.
 
-**Tree recorder sink** (`src/engine/events/sinks/tree-recorder.ts`) — maintains a branching session tree on disk. Records plan steps, agent invocations, recovery decisions, and cost checkpoints. Recovery actions that change the execution path (retry, route to bigger worker, planner split) create branches instead of appending linearly. Every raw event first passes `protectEngineEventForConsumer(context: 'tree')`; tree payloads and entry envelopes then pass consumer payload protection and schema validation before disk write. Runner invocations store control fields such as call id, role, backend kind, runner/model, phase, status, timing, usage, partial, error code, and warning counts/codes, not raw runner text/tool/artifact output.
+**Stdout JSON sink** (`src/engine/events/sinks/stdout-json.ts`) — writes public NDJSON records to stdout. Live events pass the same payload bounds as every other external consumer before they are wrapped as `{ "type": "event", "data": <EngineEvent> }`; readiness, recovery, final-review, warning, and error records use their own top-level `type`. Only subscribed in `--json` headless mode.
 
-**Stdout JSON sink** (`src/engine/events/sinks/stdout-json.ts`) — writes public NDJSON records to stdout. Live events are protected with the same transcript policy as external consumers before they are wrapped as `{ "type": "event", "data": <EngineEvent> }`; readiness, recovery, final-review, warning, and error records use their own top-level `type`. Only subscribed in `--json` headless mode.
+**Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`.
 
 **Hook sink** (`src/engine/hooks/sink.ts`) — maps events to workflow hook triggers and dispatches matching hooks fire-and-forget. Only five event types trigger hooks: `task_completed` maps to `post_task`, `validate` (when done) maps to `post_validation`, `git_commit` maps to `post_commit`, `workflow_complete` maps to `on_complete`, `error` maps to `on_error`. All other events are ignored.
 
-**OTel sink** (`src/engine/events/sinks/otel.ts`) — maps events to OpenTelemetry spans. Creates nested spans for workflow, phases, and tasks. Point events (cost, validation, warnings) become span attributes or events. Opt-in via `config.otel.enabled`.
+**Logger sink** (`src/engine/events/sinks/logger.ts`) — mirrors bounded events into the debug log at a level per event type. Writes nothing when the logger is disabled.
 
 ```mermaid
 flowchart LR
   E[Engine: bus.publish] --> T[TUI sink → stores → React]
   E --> J[JSONL sink → session.jsonl]
-  E --> TR[Tree recorder → session tree]
-  E --> S[Stdout JSON → NDJSON]
+  E --> S["Stdout sink → NDJSON (--json) or plain lines (--plain)"]
   E --> H[Hook sink → post_task, on_error, ...]
-  E --> O[OTel sink → spans]
+  E --> L[Logger sink → debug.log]
 ```
 
 ---
@@ -169,19 +167,17 @@ Two separate communication mechanisms serve different purposes.
 
 Budget pressure is **not** a gating callback. The engine never calls a budget callback; spend thresholds and unknown paid-pricing cases publish `budget_warning` / `budget_paused` / `budget_exceeded` events on the bus, and the actual pause/stop is driven through the recovery channel (`recovery_needed`), not a dedicated budget prompt.
 
-In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, workflow review gates are auto-approved, questions answer empty, recovery exits non-zero, and file-write tiered approvals fail closed unless approval config already allows the write. In **IPC mode** (detached server/client), the server publishes a status event and blocks until the client sends a command back.
+In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, workflow review gates are auto-approved, questions answer empty, recovery exits non-zero, and file-write tiered approvals fail closed unless approval config already allows the write.
 
 The split exists because events and callbacks solve different problems. Events push state outward (anyone can listen). Callbacks pull decisions inward (the workflow needs an answer before it can proceed). Merging them would mean either every event blocks until consumed, or every callback becomes lossy.
 
 ---
 
-## Transcript protection
+## Payload bounds
 
-`protectEngineEventForConsumer()` is applied before events leave the engine through the session log, tree recorder, IPC/TUI, stdout JSON, or RPC. With `persistTranscript: true`, events still pass through public payload size/shape protection. With `persistTranscript: false`, full transcript-like event types are omitted: `planner_text`, `user_message`, clarification text events, `implementer_generate_done`, and runner text/tool/artifact payload events. Safe `runner_call_activity`, usage, lifecycle, and terminal status remain visible after redaction. Runner activity raw expansion is disabled by forcing `rawAvailable:false` and omitting `expandId`; raw markers are only affordances, never inline raw text. `workflow_started.feature`, IPC `session_meta.feature`, queued-message text, RPC status state, task titles/reasons, task-review prose, approval/revision comments, retry errors, cost-prediction task prose, native session ids, and other prompt-bearing metadata are stripped or replaced so lifecycle remains observable without exposing user text.
+`boundEngineEventForConsumer()` (`src/engine/events/bound.ts`) is applied before events leave the engine through the session log, the TUI store, or stdout JSON. It never drops an event: it bounds and revalidates one. An event that cannot survive bounding is replaced by a `payload-bounds` / `payload_omitted` warning carrying the original timestamp and phase, so the consumer sees why the payload is missing.
 
-Runner-call warning and error events remain structurally visible, but their message text is replaced with `[transcript omitted]` because backend diagnostics can contain prompt or transcript fragments. Ordinary operational `warning` and `error` events keep their bounded message text, so queue-full, queue-not-ready, IPC, replay, and protection diagnostics remain actionable in transcript-off mode.
-
-All protected consumers share `src/core/consumer-policy.ts`: terminal controls are stripped from strings, secrets are redacted with the shared redaction rules, strings and full payloads are byte-bounded per consumer, unsupported/circular values are replaced, and the normalized payload is validated again. If protection makes an event invalid or too large, the consumer receives a bounded protection warning or drops the payload rather than writing unsafe data. Hooks and OpenTelemetry have separate boundaries: hook command stdin and interpolated fields use consumer-payload protection, while builtin and module hooks receive engine events; OTel applies transcript projection before span handling and per-string protection before exporting attributes. When transcript persistence is disabled, `splitbrief.feature` is omitted or replaced with a placeholder rather than exporting the feature prompt. Summary JSON, summary UI, HTML export, `ps`, active-session metadata, and generated branch/session names use the same transcript policy for feature text.
+The bounding itself lives in `src/core/payload-bounds.ts` and is shared by every consumer: terminal controls are stripped from strings, secrets are redacted with the shared redaction rules, strings and full payloads are byte-bounded per consumer context (`tui`, `stdout-json`, `stdout-text`, `hooks`, `session-log`), unsupported and circular values are replaced with placeholders, and the normalized payload is validated against its schema again. Hook command stdin and interpolated hook fields go through the same bounding at the `hooks` limits.
 
 ---
 
@@ -217,17 +213,17 @@ A persisted changed-files baseline has two provenance states: `head: null` recor
 
 `runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones. An entry SPLITBRIEF refuses to read — a symlink, a directory, an unreadable file — is recorded as `"unreadable"` rather than thrown. Right after baseline capture and before validation priming, the task loop publishes one warning naming those project-relative paths (code `unreadable_changed_files`); the entries are excluded from user-edit detection and never opened.
 
-**`jsonlSink`** — appends protected events to `session.jsonl` via `src/core/sessions/log-writer.ts`. This is the audit log and transcript source when transcript persistence is enabled. Stateless backends (those that don't support session resume natively) rebuild planner context from the JSONL log on resume.
+**`jsonlSink`** — appends bounded events to `session.jsonl` via `src/core/sessions/log-writer.ts`. This is the audit log and transcript source. Stateless backends (those that don't support session resume natively) rebuild planner context from the JSONL log on resume.
 
-Transcript-off projection for MCP and CLI status (`consoleWorkflowFeature`, `projectWorkflowStateForTranscriptPolicy`) lives in `src/core/transcript-policy.ts`. Session directory confinement for state and log writes is shared via `assertSessionDirConfined` in `src/core/sessions/confinement.ts`.
+Session directory confinement for state and log writes is shared via `assertSessionDirConfined` in `src/core/sessions/confinement.ts`.
 
-The two serve different consumers: `state.json` is for the state machine (small, structured, overwritten), `session.jsonl` is for history (append-only, protected events, including streaming planner text only when transcript persistence is enabled).
+The two serve different consumers: `state.json` is for the state machine (small, structured, overwritten), `session.jsonl` is for history (append-only, bounded events, including streaming planner text).
 
 ### Session JSONL format
 
 `session.jsonl` contains three record types interleaved chronologically. Every record is a JSON object with a `kind` discriminant and a `ts` timestamp.
 
-**Event records** (`kind: 'event'`). Written by `jsonlSink` after event protection. Fields: `kind`, `ts`, `type` (the `EngineEvent` type name), optional `phase`, optional `taskId`, and a `data` object with event-specific fields. Known event payloads are validated before replay. The replay system (`src/engine/ipc/replay.ts`) reads only these records when an IPC client attaches mid-session and reports skipped blank, non-event, malformed, unknown, and oversized records in replay diagnostics.
+**Event records** (`kind: 'event'`). Written by `jsonlSink` after payload bounding. Fields: `kind`, `ts`, `type` (the `EngineEvent` type name), optional `phase`, optional `taskId`, and a `data` object with event-specific fields. Known event payloads are validated before replay.
 
 **Message records** (`kind: 'message'`). Written by the transcript buffer (`src/engine/streaming/transcript-buffer.ts`) during planner and implementer streaming output. Fields: `kind`, `ts`, `role` (`'user'` or `'assistant'`), `text`, optional `phase`, and optional `interrupted`. The buffer accumulates streaming chunks and flushes at 16 KB or when the phase ends. If the call is aborted (Ctrl-C during a planner call), `flushInterrupted()` writes the partial text with `interrupted: true`. Context rebuild on resume reads these records to reconstruct the conversation history for stateless backends.
 
@@ -257,9 +253,9 @@ This means a single Ctrl-C during a planner call doesn't kill the workflow — i
 
 `src/engine/orchestrator/queue/submit.ts` (live-queue entry), with drain/clear/prompt in sibling `queue/` modules. While the planner is running, the user can type messages. These are queued, not dropped.
 
-`enqueueUserMessage()` adds a `QueuedMessage` to `state.messageQueue` (capped at 50 messages). Each message is persisted as a message record only when transcript persistence is enabled; a `message_queued` event is always published. The event carries a sanitized bounded preview for local UI/replay consumers, and protection strips that preview for transcript-off session logs and IPC consumers.
+`enqueueUserMessage()` adds a `QueuedMessage` to `state.messageQueue` (capped at 50 messages). Each message is persisted as a message record and a `message_queued` event is published. The event carries a sanitized bounded preview for local UI and replay consumers.
 
-Queue submission is planner-only. The shared enqueue boundary rejects messages outside live planner phases and rejects when the cap is full; callers receive an explicit rejection result and the engine publishes a bounded warning. Local TUI shows anchored feedback instead of pretending success, and RPC returns an error rather than an ACK.
+Queue submission is planner-only. The shared enqueue boundary rejects messages outside live planner phases and rejects when the cap is full; callers receive an explicit rejection result and the engine publishes a bounded warning. The TUI shows anchored feedback instead of pretending success.
 
 At safe points — end of the current planner call — the orchestrator calls `drainQueue()`, which marks pending-undelivered messages as drained and publishes `queue_drained`. The drained messages get formatted into the next planner prompt as `[user also says during <phase>]` blocks.
 
@@ -379,4 +375,4 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
   implementerTool: string; implementerModel?: string }
 ```
 
-`routingReason` on `task_started` is intended for user-facing task-start rows. Fuller context-fit and per-task routing metadata is also retained for cost drilldown and `splitbrief explain`; the engine emits it as plain event data and does not import UI code.
+`routingReason` on `task_started` is intended for user-facing task-start rows. Fuller context-fit and per-task routing metadata is also retained for the cost drilldown; the engine emits it as plain event data and does not import UI code.

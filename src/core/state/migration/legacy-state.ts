@@ -11,8 +11,6 @@ import {
 import { topoSort } from '../topo-sort.js';
 
 export const LEGACY_STATE_VERSION = 3;
-export const LEGACY_DEFAULT_RULE_VERSION = 'brief-quality-v1';
-export const LEGACY_DEFAULT_TIMESTAMP = '1970-01-01T00:00:00.000Z';
 
 export const legacyWorkflowStateSchema = z
   .object({
@@ -83,28 +81,3 @@ export function parseLegacyWorkflowState(value: unknown): LegacyWorkflowState | 
   const parsed = legacyWorkflowStateSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
-
-const legacyQualityIssueSchema = z
-  .object({
-    taskId: z.string().nullable(),
-    severity: z.enum(['error', 'warning']),
-    code: z.string().min(1),
-    message: z.string().min(1),
-  })
-  .strict();
-
-export const legacyQualityReportSchema = z
-  .object({
-    version: z.literal(1),
-    passed: z.boolean(),
-    score: z.number().finite().min(0).max(1),
-    issues: z.array(legacyQualityIssueSchema),
-    // A future writer may include this identity. It is not part of the v3
-    // report, but accepting it lets migration detect a mismatched artifact
-    // rather than silently treating it as a new Brief.
-    briefHash: z.string().min(1).optional(),
-    ruleVersion: z.string().min(1).optional(),
-  })
-  .strict();
-
-export type LegacyQualityReport = z.infer<typeof legacyQualityReportSchema>;

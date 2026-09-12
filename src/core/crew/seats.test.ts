@@ -35,7 +35,7 @@ describe('deriveCrewSeats', () => {
     expect(review.source).toBe('configured');
     expect(review.runner).toEqual(config.reviewer);
     expect(review.model).toContain('OpenAI Codex CLI');
-    expect(review.model).toContain('GPT-5 Codex');
+    expect(review.model).toContain('gpt-5-codex');
     expect(review.posture).toBe('subscription-included');
   });
 
@@ -44,7 +44,7 @@ describe('deriveCrewSeats', () => {
 
     expect(build.runner.kind).toBe('api');
     expect(build.model).toContain('Ollama');
-    expect(build.model).toContain('Qwen 2.5 Coder 7B');
+    expect(build.model).toContain('qwen2.5-coder:7b');
     expect(build.posture).toBe('local');
   });
 

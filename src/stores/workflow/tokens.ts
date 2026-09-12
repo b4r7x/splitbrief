@@ -297,22 +297,6 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'artifact_written':
     case 'spec_rejected':
     case 'spec_regenerated':
-    case 'brief_recovery_quality_reported':
-    case 'brief_recovery_auto_repair_exhausted':
-    case 'brief_recovery_attempt_accepted':
-    case 'brief_recovery_attempt_started':
-    case 'brief_recovery_attempt_settled':
-    case 'brief_recovery_attempt_unresolved':
-    case 'brief_recovery_provider_failed':
-    case 'brief_recovery_input_queued':
-    case 'brief_recovery_input_applied':
-    case 'brief_recovery_stale_ignored':
-    case 'brief_recovery_rejected':
-    case 'brief_recovery_refused':
-    case 'brief_recovery_transition':
-    case 'brief_recovery_accepted':
-    case 'brief_generation_published':
-    case 'brief_execution_permit_issued':
     case 'plan_approved':
     case 'plan_rejected':
     case 'plan_regenerated':
@@ -362,11 +346,6 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'approval_rejected':
     case 'approval_sticky_recorded':
     case 'approval_mode_changed':
-    case 'ipc_server_started':
-    case 'ipc_client_attached':
-    case 'ipc_client_detached':
-    case 'ipc_reconnect_attempt':
-    case 'ipc_reconnect_failed':
     case 'replay_started':
     case 'replay_complete':
     case 'warning':

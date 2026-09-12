@@ -24,8 +24,17 @@ export function buildPrompt(spec: PromptSpec): string {
   return parts.join('\n');
 }
 
+/**
+ * A diff or a captured log carries its own backtick runs — a markdown file in a
+ * unified diff contributes ` ``` ` as a context line — so the fence is one
+ * backtick longer than the longest run in the body and no content line can
+ * close the data block.
+ */
 export function fenced(body: string, lang = ''): string {
-  return '```' + lang + '\n' + body + '\n```';
+  let longest = 0;
+  for (const run of body.matchAll(/`+/g)) longest = Math.max(longest, run[0].length);
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return fence + lang + '\n' + body + '\n' + fence;
 }
 
 export function instructionsSection(body: string): PromptSection {

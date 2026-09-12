@@ -3,7 +3,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { promptBodyRows, type PromptBodyLine } from '../prompt-body-rows.js';
+import { clipPromptBodyRows, promptBodyRows, type PromptBodyLine } from '../prompt-body-rows.js';
 import { passHeadlinePrefix } from '../recovery-prompt.js';
 
 type Theme = ReturnType<typeof useTheme>;
@@ -134,8 +134,8 @@ export function PromptBody({
   if (height <= 0) return null;
 
   const promptWidth = Math.max(MIN_PROMPT_WIDTH, width);
-  const rows = promptBodyRows(prompt, promptWidth);
-  const nodes = renderPromptRows(rows, promptWidth, t).slice(0, height);
+  const rows = clipPromptBodyRows(promptBodyRows(prompt, promptWidth), height);
+  const nodes = renderPromptRows(rows, promptWidth, t);
 
   return (
     <Box flexDirection="column" height={height} width={width} overflow="hidden">

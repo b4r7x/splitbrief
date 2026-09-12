@@ -2,7 +2,7 @@
 
 A task-oriented reference for "how do I do X?". Every recipe is copy-paste ready against the current CLI surface and slash-command catalog. Where a recipe references a config field, the field name matches the zod schema in `src/core/schemas/config.ts`.
 
-If you're new to SPLITBRIEF, read this in order: recipes 1–5 cover the basic workflow, 6–9 cover cost, 10–15 cover safety, then jump to whatever you need.
+If you're new to SPLITBRIEF, read this in order: recipes 1–5 cover the basic workflow, 6–9 cover cost, 10–11 cover safety, then jump to whatever you need.
 
 > **Conventions.** Commands assume you're in the project root. Long YAML examples elide unrelated config; the loader fills in defaults. The TUI snippets below ("You'll see") use the same line shapes the workflow renders today; exact spacing and color may vary by terminal.
 
@@ -134,9 +134,9 @@ phase: final-review    → review.md
 workflow_complete
 ```
 
-`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). While the composer is empty, one key settles the gate: `y` approves, `q` rejects, `e` opens the review file in the external editor, and `c` starts a comment. The typed commands still work and are what RPC and attached clients send — `approve`, `comment <text>`, `reject` / `quit`, `edit` / `edit-file`. Typing anything turns the letters back into text, so a draft is never eaten by a shortcut. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims.
+`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). While the composer is empty, one key settles the gate: `y` approves, `q` rejects, `e` opens the review file in the external editor, and `c` starts a comment. The typed commands still work — `approve`, `comment <text>`, `reject` / `quit`, `edit` / `edit-file`. Typing anything turns the letters back into text, so a draft is never eaten by a shortcut. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims.
 
-**Variations:** `--approve none` skips the spec and plan approval gates only. Standard and speckit modes still run the brief-review gate before implementation. `--approve all` blocks on spec and plan (the speckit default). During a gate, approve or reject through the TUI prompt or the matching RPC response.
+**Variations:** `--approve none` skips the spec and plan approval gates only. Standard and speckit modes still run the brief-review gate before implementation. `--approve all` blocks on spec and plan (the speckit default). During a gate, approve or reject through the TUI prompt.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.3, recipe 5.
 
@@ -289,7 +289,6 @@ In the TUI, press `Ctrl+G` to open the cost drilldown. Or post-hoc:
 
 ```bash
 jq 'select(.type == "cost_update")' .splitbrief/sessions/<id>/session.jsonl | tail -20
-splitbrief status --history
 ```
 
 **You'll see:**
@@ -308,24 +307,11 @@ Cost breakdown
   total                      $0.90
 ```
 
-CLI `splitbrief status --history`:
-
-```
-Cost History (3 sessions)
-  Total spent:    $0.90
-  Total saved:    ~$4.20
-  Avg savings:    82%
-  Avg local rate: 73%
-
-  By Provider:
-    Claude Code:  $0.90 (3 sessions)
-```
-
 The drilldown reads from `summary.json` (final spend) plus per-event `cost_update` records in `session.jsonl`. Bars at the top of each row scale to the largest line item.
 
-**Variations:** `splitbrief status` prints the active workflow phase, task, and provider status. `splitbrief status --history` walks every `summary.json` under `.splitbrief/sessions/`.
+**Variations:** `splitbrief status` prints the active workflow phase, task, and provider status.
 
-**See also:** [docs/DEBUGGING.md](./DEBUGGING.md) §Event log, recipe 36.
+**See also:** [docs/DEBUGGING.md](./DEBUGGING.md) §Event log.
 
 ---
 
@@ -379,130 +365,7 @@ validate · tsc ✓ lint ✓ test ✓
 
 ## Safety
 
-### 10. Create a snapshot before risky work
-
-**When:** you're about to start a refactor and want a known-good restore point.
-
-**Run:**
-
-```bash
-splitbrief snapshot create --name "before-refactor"
-```
-
-**You'll see:**
-
-```
-Snapshot created: 2026-04-26T14-30-00-000Z
-  Name: before-refactor
-  Files: 412
-  Location: .splitbrief/sessions/<id>/snapshots/2026-04-26T14-30-00-000Z
-```
-
-Snapshots use a baseline + delta layout under `.splitbrief/sessions/<id>/snapshots/`. The first snapshot copies every tracked file (honouring `.gitignore` plus the always-excluded set `.git`, `.splitbrief`, `node_modules`, `.trees`); later snapshots only store changed files.
-
-**Variations:** Omit `--name` to get an unnamed snapshot keyed only by ISO timestamp. `--session <id>` snapshots a specific session (default: active).
-
-**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §6 Persistence layout, recipes 11–13.
-
----
-
-### 11. Restore after a bad run
-
-**When:** the implementer rewrote a file you wanted to keep and you snapshotted before.
-
-**Run:**
-
-```bash
-splitbrief snapshot list
-splitbrief snapshot restore before-refactor
-```
-
-**You'll see:**
-
-```
-Restored 17 file(s) from snapshot 2026-04-26T14-30-00-000Z.
-```
-
-If a file was modified after the snapshot, restore reports it as a conflict and skips it:
-
-```
-Conflicts (not restored — modified since snapshot):
-  src/auth/middleware.ts
-Run with --force to overwrite.
-```
-
-**Variations:** `--force` overrides conflicts. Pass an ISO id (`2026-04-26T14-30-00-000Z`) instead of a name. Restore exits non-zero on conflicts so CI can detect them.
-
-**See also:** recipe 12.
-
----
-
-### 12. Diff current state vs snapshot
-
-**When:** you want to see what changed since a snapshot without restoring anything.
-
-**Run:**
-
-```bash
-splitbrief snapshot diff before-refactor
-```
-
-**You'll see:**
-
-```
-modified  src/billing/tax.ts        (+12 / -3)
-added     src/billing/tax.test.ts
-removed   src/billing/legacy.ts
-unchanged 410 files
-```
-
-Exit code is non-zero when there are changes — useful in scripts that want to gate on "did anything change?".
-
-**Variations:** `--no-color` for plain text output. Pass an ISO id directly when you don't have a name.
-
-**See also:** recipes 10–11.
-
----
-
-### 13. Auto-snapshot every task
-
-**When:** you want a per-task safety net so a single bad implementation can't lose work.
-
-**Setup (`.splitbrief/config.yaml`):**
-
-```yaml
-snapshots:
-  auto:
-    preTask: true
-    postTask: true
-    preFinalReview: true
-```
-
-**Run:**
-
-```bash
-splitbrief start "rewrite the auth flow"
-```
-
-**You'll see:**
-
-```
-snapshot_created · phase=implementing taskIndex=0  (auto preTask)
-T001 ✓
-snapshot_created · phase=implementing taskIndex=0  (auto postTask)
-snapshot_created · phase=implementing taskIndex=1  (auto preTask)
-…
-```
-
-`postTask` only fires when the task reached `done` (failed tasks don't take a postTask snapshot). `preFinalReview` snapshots once before the review seat reviews the cumulative diff.
-
-**Variations:** Set just `preTask: true` for the cheapest safety net. All triggers are off by default. Failures emit a `warning` event and don't abort the run.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §snapshots, [docs/WORKFLOW.md](./WORKFLOW.md) §Auto-snapshots.
-
----
-
-### 14. Approve risky declared file writes explicitly
+### 10. Approve risky declared file writes explicitly
 
 **When:** you want SPLITBRIEF to confirm before the implementer writes control-plane paths, package manifests/lockfiles, or files outside the task's declared scope.
 
@@ -540,13 +403,13 @@ approval_sticky_recorded
 
 Sticky grants persist to `.splitbrief/approvals.json`; revoke with `splitbrief approval clear`.
 
-**Variations:** Set every produced file-write class to `auto` for legacy YOLO behavior, or to `confirm` for paranoid mode. `approval.headless: true` fails closed in CI when a `confirm` would have prompted.
+**Variations:** Set every produced file-write class to `auto` for legacy YOLO behavior, or to `confirm` for paranoid mode. A `--json` run has no reply channel, so any class left at `sticky` or `confirm` fails closed there with `APPROVAL_REQUIRED`.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, recipes 15, 25.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, recipe 11.
 
 ---
 
-### 15. Catch agent drift early
+### 11. Catch agent drift early
 
 **When:** you suspect the implementer is editing files outside the brief's scope across multiple tasks.
 
@@ -584,7 +447,7 @@ The drift chain detector tracks out-of-bounds files across tasks. A high score i
 
 ## Mid-workflow control
 
-### 16. Pause and edit the brief
+### 12. Pause and edit the brief
 
 **When:** the planner produced a brief that's mostly right but needs a tweak before implementation starts.
 
@@ -615,11 +478,11 @@ phase: implementing
 
 **Variations:** `comment <text>` triggers planner regeneration with the comment as feedback. The comment goes through `planner.regenerate(...)` exactly the same way `/revise-spec <text>` does.
 
-**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/revise-spec`, recipe 17.
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/revise-spec`, recipe 13.
 
 ---
 
-### 17. Reject the brief and regenerate
+### 13. Reject the brief and regenerate
 
 **When:** the brief got the architecture wrong and you want a do-over.
 
@@ -649,15 +512,15 @@ A non-empty `comment <text>` regenerates. `reject` ends the workflow.
 
 ---
 
-### 18. Migrate away from rich brief review
+### 14. Migrate away from rich brief review
 
-**When:** an older project config still sets `workflow.briefReview: rich`.
+**When:** an older project config still sets `workflow.briefReview: rich`, and config load now refuses it.
 
 **Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 workflow:
-  briefReview: simple    # 'rich' is deprecated and maps to simple review
+  briefReview: simple    # the only accepted value; 'rich' fails the load
 ```
 
 **Run:**
@@ -680,38 +543,36 @@ phase: reviewing-briefs
 
 `e` on an empty composer, plus `Ctrl+E`, `edit`, `E`, and `edit-file`, open `.splitbrief/sessions/<id>/tasks.md` in the external editor. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; SPLITBRIEF re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
-**Variations:** Leaving `briefReview: rich` in a legacy config is safe, but it no longer opens an inline plan editor. Prefer changing it to `simple` so the config matches the runtime behavior.
+**Variations:** Dropping the key entirely works too — `briefReview` falls back to `simple` in every mode when it is not set.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) `workflow.briefReview`.
 
 ---
 
-### 19. Skip a task
+### 15. Skip a task
 
 **When:** one task in the brief is wrong and you want to move on without running it.
 
 **Run:**
 
-The cleanest way is a `pre_task` hook that returns `decision: deny`. Add to `.splitbrief/config.yaml`:
+The cleanest way is a `pre_task` hook that exits non-zero for that task id. Add to `.splitbrief/config.yaml`:
 
 ```yaml
 hooks:
   pre_task:
-    - kind: module
-      path: ./.splitbrief/hooks/skip-by-id.js
+    - command: ".splitbrief/hooks/skip-by-id.sh"
+      args: ["${event.taskId}"]
       on_failure: block
 ```
 
-`./.splitbrief/hooks/skip-by-id.js`:
+`./.splitbrief/hooks/skip-by-id.sh`:
 
-```js
-export default async function (event, ctx) {
-  const SKIP = new Set(['T002']);
-  if (event.taskId && SKIP.has(event.taskId)) {
-    return { kind: 'deny', message: 'skipped per local override' };
-  }
-  return { kind: 'allow' };
-}
+```bash
+#!/usr/bin/env bash
+case "$1" in
+  T002) echo "skipped per local override" >&2; exit 1 ;;
+  *) exit 0 ;;
+esac
 ```
 
 **You'll see:**
@@ -724,13 +585,13 @@ T003 ✓
 
 Denied tasks land in the evidence ledger as `skipped: <reason>`. There is no `/skip-task` slash command today — denying via hook is the supported path.
 
-**Variations:** A non-module shell hook can do the same — exit non-zero with `on_failure: block`. To re-run a skipped task later, see recipe 20.
+**Variations:** To re-run a skipped task later, see recipe 16.
 
-**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md) §`kind: module`, recipe 39.
+**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 23.
 
 ---
 
-### 20. Redo a completed task
+### 16. Redo a completed task
 
 **When:** a task succeeded but the result wasn't what you wanted, and you've now updated the spec via `/revise-spec`.
 
@@ -758,7 +619,7 @@ task_completed T003
 
 ---
 
-### 21. Switch mode mid-workflow
+### 17. Switch mode mid-workflow
 
 **When:** the run is taking longer than expected, or the planner classified the task wrong.
 
@@ -782,7 +643,7 @@ Mode set to 'quick'. Saved to .splitbrief/config.yaml.
 
 ---
 
-### 22. Abort cleanly
+### 18. Abort cleanly
 
 **When:** something is wrong and you want to stop without losing the partial transcript.
 
@@ -808,401 +669,9 @@ phase: planning  ← resumes with the message folded in
 
 ---
 
-## Handoff to external agent
-
-Built-in handoff targets `claude-code` and `copilot-issue` correspond to admitted PASS CLI runners (`subscription-included` billing; see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). Tool-neutral targets (`spec-kit`, `agents-md`) export markdown packs without spawning a runner. Billing and API posture for mixed planner/implementer workflows: [CONFIGURATION.md](./CONFIGURATION.md).
-
-### 23. Export brief to Claude Code
-
-**When:** you used SPLITBRIEF to compile the brief but want Claude Code to do the actual coding.
-
-**Run:**
-
-```bash
-splitbrief spec "add JWT auth"            # plan only, no implementation
-splitbrief handoff claude-code
-cd .splitbrief/handoffs/claude-code
-claude                                  # opens Claude Code in a primed dir
-```
-
-**You'll see:**
-
-```
-Handoff written to: .splitbrief/handoffs/claude-code
-  manifest.json
-  README.md
-  spec.md
-  plan.md
-  tasks/T001.md
-  tasks/T002.md
-  tasks/T003.md
-```
-
-The Claude Code renderer drops a `CLAUDE.md` and per-task `.md` files structured to be picked up by Claude's auto-context. The target name matches the admitted `claude-code` CLI id in the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
-
-**Variations:** `--out path/to/dir` redirects the output. `--mode overwrite` clobbers an existing pack; `--mode append` adds task files alongside.
-
-**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §1 Handoff packs, [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), recipes 24–27.
-
----
-
-### 24. Export to GitHub issue body
-
-**When:** you want a bug-tracker-shaped issue body that Copilot or a human contributor can pick up.
-
-**Run:**
-
-```bash
-splitbrief handoff copilot-issue --out .splitbrief/handoffs/issue
-gh issue create \
-  --title "Add JWT auth" \
-  --body-file .splitbrief/handoffs/issue/issue.md
-```
-
-**You'll see:**
-
-```
-Handoff written to: .splitbrief/handoffs/issue
-  manifest.json
-  issue.md
-```
-
-The `copilot-issue` renderer writes one Markdown issue body. It embeds selected task IDs, titles, files, acceptance criteria, constraints, and validation commands in `issue.md`; it does not emit `tasks/<id>.md` files. GitHub Copilot CLI (`copilot`) is an admitted runner in the [canonical CLI matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
-
-**Variations:** `--task T001,T003` only includes a subset of tasks. Pair with `gh issue edit` to update an existing issue.
-
-**See also:** recipes 23, 25.
-
----
-
-### 25. Export universal Spec Kit folder
-
-**When:** you want a tool-neutral handoff matching the [Spec Kit](https://github.com/github/spec-kit) layout (`spec.md`, `plan.md`, `tasks/`).
-
-**Run:**
-
-```bash
-splitbrief handoff spec-kit
-```
-
-**You'll see:**
-
-```
-Handoff written to: handoff/spec-kit
-  manifest.json
-  README.md
-  spec.md
-  plan.md
-  tasks/T001.md
-  tasks/T002.md
-```
-
-`spec-kit` is the default target (`splitbrief handoff` with no argument). The manifest carries `briefHash` so downstream tools can detect drift.
-When `.specify/memory/constitution.md` exists, the pack also includes it as `constitution.md`, matching the constitution Speckit enforces during planning.
-
-**Variations:** `agents-md` produces an `AGENTS.md` instead — the emerging cross-tool agent context standard.
-
-**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §8 `engine/handoff/`.
-
----
-
-### 26. Handoff a single task
-
-**When:** you want to delegate just one task to an external agent without exporting the full brief.
-
-**Run:**
-
-```bash
-splitbrief handoff claude-code --task T003 --out handoff/T003
-```
-
-Or inline during a session:
-
-```
-> /handoff claude-code T003
-```
-
-**You'll see:**
-
-```
-Handoff written to: handoff/T003
-  manifest.json
-  README.md
-  tasks/T003.md
-```
-
-The pack contains only the requested task, but the supporting spec / plan are still included so the receiving agent has context.
-
-**Variations:** `--task T001,T003,T005` for a subset. Without `--task`, every task is included.
-
-**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/handoff`.
-
----
-
-### 27. Define a custom renderer
-
-**When:** none of the four built-in targets fit and you want a Linear ticket / Jira issue / Slack post format.
-
-**Setup:** create `.splitbrief/handoff-renderers/linear-ticket.js`:
-
-```js
-export default function render(input) {
-  const body =
-    `## Tasks\n\n` +
-    input.tasks
-      .map(t => `- [ ] **${t.id}** — ${t.title} (\`${(t.scope?.inBounds ?? [t.file]).join(', ')}\`)`)
-      .join('\n');
-  return {
-    files: [
-      { path: 'ticket.md', content: `# ${input.feature}\n\n${body}\n` },
-    ],
-  };
-}
-```
-
-**Run:**
-
-```bash
-splitbrief handoff --list                  # confirm the custom target appears
-splitbrief handoff linear-ticket --allow-custom-renderer --out handoff/linear
-```
-
-**You'll see:**
-
-```
-Built-in targets:
-  spec-kit
-  agents-md
-  claude-code
-  copilot-issue
-Custom renderers:
-  linear-ticket
-Handoff written to: handoff/linear
-  manifest.json
-  ticket.md
-```
-
-Custom renderers are dynamically imported from `.splitbrief/handoff-renderers/` only after trust is enabled for that command or through `trust.customRenderers: true`. They can be sync or async; TypeScript renderers must be loadable by the current Node runtime or an already-registered loader. Built-in CLI-backed targets (`claude-code`, `copilot-issue`) align with admitted tool ids in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix); run `splitbrief doctor` before handoff if auth readiness matters.
-
-**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §8 `engine/handoff/load-renderer.ts`, [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
-
----
-
-## Live MCP
-
-### 28. Expose session over MCP
-
-**When:** you want Claude Code, Cursor, or another MCP-aware client to read the active session's spec / plan / evidence as resources.
-
-**Run:**
-
-```bash
-splitbrief mcp serve --port 4321
-```
-
-**You'll see:**
-
-```
-splitbrief MCP server ready
-
-  URL:    http://127.0.0.1:4321/mcp
-  Token:  3b9a8c…
-  Sessions: 2026-04-26-add-jwt-auth
-
-To configure in Claude Code (.claude/settings.json):
-  {
-    "mcpServers": {
-      "splitbrief": {
-        "type": "http",
-        "url": "http://127.0.0.1:4321/mcp",
-        "headers": { "Authorization": "Bearer 3b9a8c…" }
-      }
-    }
-  }
-
-Press Ctrl+C to stop.
-```
-
-The bearer token is generated per invocation and only printed once. Restart the server to rotate.
-
-This endpoint exposes read-only session resources plus constrained evidence tools (`report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, `report_error`). The tools only update `.splitbrief/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shell commands, write project files, or execute tasks.
-
-**Variations:** `--session <id>` serves a specific session (otherwise the active session). Default port is 4321; choose a concrete port with `--port <number>` when 4321 is unavailable.
-
-**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §1 MCP server.
-
----
-
-### 29. Multi-session MCP discovery
-
-**When:** you want one MCP endpoint to expose every session under a project (handy when running parallel worktrees).
-
-**Run:**
-
-```bash
-splitbrief mcp serve --all-sessions --port 4321
-```
-
-**You'll see:**
-
-```
-splitbrief MCP server ready
-  Sessions: all
-```
-
-The MCP resource list now includes `state.json`, `summary.json`, `tasks`, individual `tasks/<id>`, `evidence.json`, `drift-report.json`, and available spec/plan resources. With `workflow.persistTranscript: false`, the sessions index and `state.json` read resource use transcript-protected text for feature, task, queued-message, and queued-question fields. Multi-session mode is still not an execution surface; the only mutation surface is the constrained evidence-tool set for existing sessions and tasks.
-
-**Variations:** `--session` and `--all-sessions` are mutually exclusive.
-
-**See also:** recipe 28.
-
----
-
-## Worktrees & parallel
-
-### 30. Try a feature in isolation
-
-**When:** you want to start a workflow on a branch in its own directory without touching the main checkout.
-
-**Run:**
-
-```bash
-splitbrief start --worktree my-feature "experiment with a streaming parser"
-```
-
-**You'll see:**
-
-```
-Starting session in worktree .trees/my-feature (branch splitbrief/my-feature)
-mode resolved: standard
-phase: researching
-…
-```
-
-The worktree lives at `.trees/my-feature/`, on branch `splitbrief/my-feature`. Each worktree has its own `.splitbrief/` directory and own session lockfile, so two parallel runs cannot collide.
-
-**Variations:** `--worktree` (no value) auto-slugifies the feature description. Worktrees do not isolate dev-server ports or `node_modules` — see [docs/WORKTREES.md](./WORKTREES.md) for mitigations.
-
-**See also:** recipe 31.
-
----
-
-### 31. List and clean up worktrees
-
-**Run:**
-
-```bash
-splitbrief worktree list
-splitbrief worktree remove my-feature --delete-branch
-```
-
-**You'll see:**
-
-```
-NAME              BRANCH                       STATUS
-my-feature        splitbrief/my-feature           idle
-old-experiment    splitbrief/old-experiment       running  (2026-04-25-…)
-
-Removed worktree ".trees/my-feature".
-Deleted branch splitbrief/my-feature.
-```
-
-Remove refuses to delete a worktree with a live session or uncommitted changes; `--force` overrides both guards.
-
-**Variations:** `splitbrief worktree switch <name>` prints the `cd` command (worktree switching can't actually change the parent shell's CWD).
-
-**See also:** [docs/WORKTREES.md](./WORKTREES.md).
-
----
-
-## Server-client / detach
-
-### 32. Run a long planner job in the background
-
-**When:** the planner phase will take a while and you want to keep your terminal free.
-
-**Run:**
-
-```bash
-splitbrief start --detach "rewrite the billing pipeline"
-```
-
-**You'll see:**
-
-```
-Session 2026-04-26-rewrite-billing started (pid 38291).
-Run: splitbrief attach 2026-04-26-rewrite-billing
-```
-
-`--detach` spawns the workflow as a background server with its own IPC socket at `.splitbrief/sessions/<id>/ipc.sock`. Logs go to `.splitbrief/sessions/<id>/server.log`. The lockfile records pid + heartbeat for `splitbrief ps`. Planner runner billing follows the configured backend — subscription CLIs vs metered APIs: [CONFIGURATION.md](./CONFIGURATION.md), [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
-
-**Variations:** `splitbrief ps` lists every running, exited, and crashed session in the project. `--detach` cannot be combined with `--json` or `--rpc`.
-
-**See also:** recipe 33, [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §1 IPC server, [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
-
----
-
-### 33. List background sessions and check status
-
-**When:** you forgot which sessions are still running.
-
-**Run:**
-
-```bash
-splitbrief ps
-```
-
-**You'll see:**
-
-```
-SESSION-ID                              STATUS    PID    MODE       ELAPSED   FEATURE
-2026-04-26-rewrite-billing              running   38291  speckit    01:14:22  rewrite the billing pipeline
-2026-04-26-add-jwt-auth                 exited    -      standard   00:42:11  add JWT auth
-2026-04-25-flaky-experiment             crashed   -      standard   00:08:05  try a streaming parser
-```
-
-A `crashed` row means the server died without writing a clean exit. `splitbrief attach <id>` on a crashed session prints a post-mortem from `server.log`.
-
-**Variations:** `splitbrief ps` is read-only and does not acquire the active-session lock.
-
-**See also:** recipe 34, [docs/DEBUGGING.md](./DEBUGGING.md).
-
----
-
-### 34. Recover from a crashed session
-
-**When:** `splitbrief ps` shows `crashed` and you want to know what happened.
-
-**Run:**
-
-```bash
-splitbrief attach 2026-04-25-flaky-experiment
-```
-
-**You'll see:**
-
-```
-session 2026-04-25-flaky-experiment is not running
-
-Crash diagnostic
-  Last heartbeat: 2026-04-25T18:42:11Z (12 hours ago)
-  Exit code:      137 (SIGKILL — likely OOM)
-  Tail of server.log:
-    [planner] context length 200000 exceeded
-    [orchestrator] uncaught error: …
-```
-
-Once you've inspected the diagnostic, re-run with `splitbrief resume` (if the phase is resumable) or start fresh.
-
-**Variations:** `cat .splitbrief/sessions/<id>/server.log` for the full server log; `cat .splitbrief/sessions/<id>/session.jsonl | jq '.type'` for the event stream up to the crash.
-
-**See also:** [docs/DEBUGGING.md](./DEBUGGING.md), recipe 36.
-
----
-
 ## Headless / CI
 
-### 35. Run in CI without TUI
+### 19. Run in CI without TUI
 
 **When:** you want SPLITBRIEF to run unattended in GitHub Actions or another CI runner.
 
@@ -1228,132 +697,11 @@ splitbrief start --json --allow-hooks "regenerate API client from openapi.yaml" 
 
 **Variations:** `CI=1` env var auto-disables fullscreen mode even without `--json`.
 
-**See also:** recipes 37–38.
+**See also:** recipes 20–22.
 
 ---
 
-### 36. Drive a run over RPC
-
-**When:** you are building an editor extension, service wrapper, or test harness that needs to answer gates programmatically.
-
-**Run:**
-
-```bash
-splitbrief start --rpc --allow-hooks "add auth audit logging"
-```
-
-**Send commands on stdin (NDJSON):**
-
-```json
-{"type":"status"}
-{"type":"approve"}
-{"type":"brief_review","id":"cmd-1","command":{"action":"status"}}
-{"type":"brief_review","id":"cmd-2","promptId":"approval-2","command":{"action":"external_edit_applied"}}
-{"type":"message","text":"Use the existing audit logger."}
-{"type":"recovery","action":"retry-same-worker"}
-```
-
-**You'll see responses on stdout:**
-
-```json
-{"type":"status","data":{"type":"readiness_report","report":{"status":"ready"}}}
-{"type":"event","data":{"type":"workflow_started","ts":1745692800000,"phase":"researching","feature":"add auth audit logging"}}
-{"type":"status","data":{"pending":"approval","approvalType":"spec","filePath":"/repo/.splitbrief/sessions/.../spec.md"}}
-{"type":"ack","command":"approve"}
-```
-
-`brief_review` commands are scoped to a pending Task Brief prompt. `save_draft` re-reads `tasks.md`, parses the Task Briefs, runs brief quality checks, persists the updated `BRIEFS_READY` and brief quality state, and returns `ack` / `status` responses marked `saved` with the original correlation ids. It does not approve, reject, or resolve the prompt. `--rpc` is mutually exclusive with `--json`. Workflow events are wrapped in `event` responses; command failures use `error` responses and do not crash the stream.
-
-### 36a. Recover a blocked Brief from JSON/RPC
-
-**When:** a headless run reports a Brief contract problem and you need to inspect or resolve it
-without inventing a planner comment.
-
-For an owner-facing RPC resume, use `splitbrief resume --rpc`.
-
-**Inspect first:**
-
-```json
-{
-  "version": 1,
-  "sessionId": "session-1",
-  "epochId": "epoch-1",
-  "action": "status"
-}
-```
-
-Status is observational: it reads the owner's current projection and makes no recovery/provider
-call. A public result is versioned and machine-readable, for example:
-
-```json
-{ "type": "status", "data": { "status": "UNRESOLVED", "operationId": "operation-1" } }
-{ "type": "error", "code": "brief_contract_blocked", "status": "blocked", "operationId": null }
-```
-
-**Retry once, deliberately:**
-
-Forward this owner-facing command only when the projection advertises `retry`:
-
-```json
-{
-  "version": 1,
-  "sessionId": "session-1",
-  "epochId": "epoch-1",
-  "operationId": "operation-1",
-  "base": { "revision": 1, "hash": "brief-hash", "path": "tasks.md" },
-  "intentHash": "retry-intent-hash",
-  "action": "retry",
-  "diagnosticFingerprint": "diagnostic-hash",
-  "frozenInputIds": []
-}
-```
-
-The retry payload has no fabricated comment or revision request. The owner revalidates the epoch,
-base evidence, allowed action, and operation identity; a duplicate operation ID is replayed or
-refused rather than dispatched a second time. A `brief_recovery_result` record reports whether the
-attempt was accepted, is in flight, became ready, or was blocked. A blocked headless outcome exits
-non-zero with its typed code (`brief_contract_blocked`, `brief_provider_error`, or
-`brief_budget_exhausted`).
-
-**Resolve terminal outcomes:**
-
-| Projection | Meaning | Next action |
-| --- | --- | --- |
-| `blocked` | quality, provider, budget, or storage evidence prevents approval | `retry` when advertised, edit, or `reject` |
-| `UNRESOLVED` | a provider dispatch may have happened; replay is unsafe | explicit `resolve-unresolved` with `rebind` or `abandon`, then edit/reject |
-| `rejected` | the Brief epoch is closed by user intent | start a new epoch; do not approve or retry the old one |
-| `ready` | the current Brief/report pair passed the contract gate | approve or edit |
-
-**Attach or reconnect:**
-
-```bash
-splitbrief start --detach "rewrite the billing pipeline"
-splitbrief attach <session-id> --project .
-splitbrief status --project .
-```
-
-`attach` and reconnect replay the live owner's projection. `status`, attach, and reconnect are
-observational and perform zero recovery/provider calls and zero local recovery-state writes. Retry,
-edit, reject, approve, and unresolved resolution are forwarded to the live owner; if that owner is
-gone, the normal fenced takeover path must complete before state is hydrated.
-The UI keeps this projection in `src/stores/workflow/review.ts`; that store owns display state only,
-not recovery authority, receipts, persistence, budget, or provider calls.
-
-**Layout check:**
-
-The composer/input is always full width (`x = 0`, `width = cols`) and remains outside the scrollable
-body. The sidebar renders only when `cols > 120`; at `121` the body and the sidebar end on the same
-bottom row, and at `120`, `119`, `80`, `50`, and `40` the sidebar and gap disappear and the body
-reaches the content bottom on its own. The body height is passed once to the conversation
-or review viewport, so status/help rows cannot be clipped into the scroll range or subtract a
-second row.
-
-**See also:** [docs/STORES-AND-UI.md](./STORES-AND-UI.md) §Brief recovery and whole-screen geometry,
-[docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), recipe 32.
-
----
-
-### 37. Parse cost in CI
+### 20. Parse cost in CI
 
 **When:** you want to extract the final cost from a CI run and post it as a build comment.
 
@@ -1386,7 +734,7 @@ The same data lives in `.splitbrief/sessions/<id>/summary.json` once the run fin
 
 ---
 
-### 38. Fail CI on budget exceeded
+### 21. Fail CI on budget exceeded
 
 **When:** you want CI to bail when spend exceeds the configured ceiling.
 
@@ -1423,13 +771,65 @@ exit $status
 
 **Variations:** Combine with `--approve none` for unattended runs that should skip spec and plan prompts. Standard and speckit still stop at briefs review; use quick mode if you need no brief-review prompt.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) `workflow.maxBudget`, recipes 6, 35.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) `workflow.maxBudget`, recipes 6, 19.
+
+---
+
+### 22. Read a headless run without a JSON parser
+
+**When:** CI or a shell script needs the shape of a run — which phase, which task, what the review said — and piping NDJSON through `jq` is more machinery than the job deserves.
+
+**Run:**
+
+```bash
+splitbrief start --plain --approve none --allow-hooks "regenerate API client from openapi.yaml"
+```
+
+**You'll see:**
+
+```
+phase: researching
+phase: planning
+phase: implementing
+task T001: done (typecheck lint test)
+task T002: done (typecheck lint test)
+task T003: done (typecheck lint test)
+phase: final-review
+phase: complete
+review: passed
+done: 3 tasks, 128.4k tokens
+```
+
+The count in the closing line is the number of tasks this run completed, so a resumed run reports only the tasks it ran itself.
+
+A task that exhausts its retries stops the run: headless has nobody to answer the recovery, so the stream ends on the `failed` line and the command exits `1` with no `review:` or `done:` line.
+
+```
+phase: implementing
+task T001: done (typecheck lint test)
+task T002: failed (no gates)
+```
+
+Four line shapes and nothing else, so `grep` is enough:
+
+```bash
+splitbrief start --plain "..." | grep -c '^task .*: failed' # tasks that did not pass their gates
+splitbrief start --plain "..." | tail -1                    # the closing line
+```
+
+Cost is reported in tokens, not dollars: the event stream carries token counts, and the price catalog lives outside the run. For dollars, use `--json` (recipe 20) or read `summary.json` after the run.
+
+`--plain` and `--json` are two renderings of one stream and cannot share stdout — passing both exits `2` with `--plain and --json cannot be combined; choose one output mode.`
+
+**Variations:** `splitbrief resume --plain` and `splitbrief continue --plain` render a resumed run the same way. A resume that lands on a different crew than the one that started the run prints `PLAN seat changed <old> → <new>; context will be rebuilt` to stderr first, so redirect stderr if you want stdout alone.
+
+**See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md) §Plain output stream, recipes 20–21.
 
 ---
 
 ## Power user
 
-### 39. Define project-level coding rules
+### 23. Define project-level coding rules
 
 **When:** you want speckit's constitution-check to enforce project conventions (no React Context, ESM `.js` suffix, etc.).
 
@@ -1471,7 +871,7 @@ A hard violation (`severity: hard`) aborts the run with a `warning` event explai
 
 ---
 
-### 40. Run pre/post task shell hooks
+### 24. Run pre/post task shell hooks
 
 **When:** you want to format with Prettier and run Biome after every task without modifying the validation pipeline.
 
@@ -1479,9 +879,6 @@ A hard violation (`severity: hard`) aborts the run with a `warning` event explai
 
 ```yaml
 hooks:
-  builtin:
-    prettier-on-change: true       # built-in: prettier --write ${event.file}
-    block-secrets: true            # built-in: scan ${event.file} for AWS / GH / OpenAI / Anthropic keys
   post_task:
     - command: "npx"
       args: ["biome", "check", "--write", "${event.file}"]
@@ -1518,84 +915,17 @@ SPLITBRIEF config declares hooks this machine has not trusted:
 Trust these hooks for this project? [y/N] y
 ```
 
-The receipt goes to `~/.splitbrief/trust/hooks.json`, keyed by this checkout — not into the repository, so it does not travel with a clone or a copy. `--allow-hooks` skips the prompt in non-TTY (CI) and prints the same disclosure to stderr. Editing the hooks block or a module hook file invalidates trust and re-prompts on the next run.
+The receipt goes to `~/.splitbrief/trust/hooks.json`, keyed by this checkout — not into the repository, so it does not travel with a clone or a copy. `--allow-hooks` skips the prompt in non-TTY (CI) and prints the same disclosure to stderr. Editing the hooks block invalidates trust and re-prompts on the next run.
 
-**Variations:** `kind: module` for in-process JS / TS hooks. `on_failure: block` aborts; `warn` (default) logs; `ignore` is silent. Mandatory `timeout_ms` ceiling: 300_000 ms.
+**Variations:** `on_failure: block` aborts; `warn` (default) logs; `ignore` is silent. Mandatory `timeout_ms` ceiling: 300_000 ms.
 
-**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 19.
-
----
-
-### 41. Use OpenTelemetry for tracing
-
-**When:** you want span-level visibility (workflow → phase → task → validation) in Honeycomb, Tempo, or any OTLP-compatible backend.
-
-**Setup (`.splitbrief/config.yaml`):**
-
-```yaml
-otel:
-  enabled: true
-  serviceName: splitbrief
-```
-
-**Quick local check (console exporter):**
-
-```bash
-OTEL_TRACES_EXPORTER=console splitbrief start --json --mode quick "smoke test"
-```
-
-**Real OTLP setup:** SPLITBRIEF uses the global TracerProvider, so register one in a wrapper script before invoking SPLITBRIEF:
-
-```ts
-// otel-bootstrap.mjs
-import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
-import { trace } from '@opentelemetry/api';
-
-const provider = new NodeTracerProvider({
-  spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter({
-    url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
-  }))],
-});
-trace.setGlobalTracerProvider(provider);
-```
-
-Node's `--import` flag ensures the bootstrap runs before the main script, so the TracerProvider is registered before SPLITBRIEF starts.
-
-**Run:**
-
-```bash
-OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io \
-OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=$HONEYCOMB_KEY" \
-node --import ./otel-bootstrap.mjs ./node_modules/.bin/splitbrief start "..."
-```
-
-**You'll see (in your OTLP backend):**
-
-```
-splitbrief.workflow                6m12s   splitbrief.mode=standard
-├─ splitbrief.phase.researching    0m38s
-├─ splitbrief.phase.specifying     1m02s
-├─ splitbrief.phase.planning       0m51s
-├─ splitbrief.phase.implementing   3m14s
-│  ├─ splitbrief.task              0m58s   splitbrief.task.id=T001  splitbrief.task.method=local
-│  ├─ splitbrief.task              1m21s   splitbrief.task.id=T002  splitbrief.task.method=escalation
-│  └─ splitbrief.task              0m55s   splitbrief.task.id=T003  splitbrief.task.method=local
-└─ splitbrief.phase.final-review   0m27s
-```
-
-The sink (`src/engine/events/sinks/otel.ts`) maps engine events to spans; registration is gated by `otel.enabled: true`.
-
-**Variations:** `--otel-exporter console` is the easiest way to confirm the sink is wired before configuring OTLP. `serviceName` sets the tracer/instrumentation scope name.
-
-**See also:** [docs/OTEL.md](./OTEL.md), [docs/DEBUGGING.md](./DEBUGGING.md) §OpenTelemetry.
+**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 15.
 
 ---
 
 ## TUI quick reference
 
-### 42. Open the command palette
+### 25. Open the command palette
 
 **When:** you want to discover or quickly invoke any of the slash commands from anywhere in the TUI.
 
@@ -1614,17 +944,13 @@ Press `Ctrl+K` from any screen.
 │  ▌ /help               Show help overlay                         ctrl+/  │
 │    /sessions           Browse past sessions                              │
 │    /settings           Crew, validation, workflow                ctrl+,  │
-│    /config             Alias for /settings                               │
 │    /home               Return to home screen                             │
 │    /quit               Exit application                          ctrl+q  │
 │  Crew                                                                    │
 │    /crew               Who fills each seat          [plan|build|review]  │
-│    /planner            Alias for /crew plan                              │
-│    /implementer        Alias for /crew build                             │
-│    /reviewer           Alias for /crew review                            │
 │    /mode               Workflow mode           [quick|standard|speckit]  │
 │    /refresh            Re-detect available tools                         │
-│   ↓ 21 more                                                              │
+│   ↓ 15 more                                                              │
 │                                                                          │
 │  ↑↓ navigate · ⏎ run or fill in · esc close                              │
 │                                                                          │
@@ -1637,7 +963,7 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 - The palette is disabled while another overlay (help, settings, skills) is active.
 - Commands whose `validScreens` excludes your current screen are hidden from the list.
 - With an empty query the rows are grouped under the five command categories — `Navigate`, `Crew`, `Workflow`, `View`, `Input & output`. The headers collapse when the panel has fewer than 12 list slots (60x18), and the panel itself grows with the terminal instead of sitting at a fixed width.
-- `/crew` opens Settings on the Crew section with `plan` focused; `/crew plan`, `/crew build` and `/crew review` skip Settings and open that seat's picker; the seat's tool and model are changed from there, and its effort travels with the model. The old per-seat names survive one release as alias rows: `/planner` → `/crew plan`, `/implementer` → `/crew build`, `/reviewer` → `/crew review`.
+- `/crew` opens Settings on the Crew section with `plan` focused; `/crew plan`, `/crew build` and `/crew review` skip Settings and open that seat's picker; the seat's tool and model are changed from there, and its effort travels with the model.
 - Effort is no longer its own command — it is chosen with the model in the seat picker, and the crew row mirrors it read-only. Which backends can spend a level: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
 - `Ctrl+K` is handled by `src/app/keys.ts`.
 
@@ -1645,7 +971,7 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 
 ---
 
-### 43. Confirm a destructive file write (confirm tier)
+### 26. Confirm a destructive file write (confirm tier)
 
 **When:** a declared file write is classified as `destructive` (for example, a control-plane path under `.splitbrief/**`) and `approval.tiers.destructive` is set to `confirm`.
 
@@ -1681,11 +1007,11 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 - Confirm-tier approvals are one-shot and are NOT persisted to `.splitbrief/approvals.json`.
 - Only `sticky`-tier grants are saved to `approvals.json`.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval.tiers, recipe 14.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval.tiers, recipe 10.
 
 ---
 
-### 44. Adapt the plan from a rejection
+### 27. Adapt the plan from a rejection
 
 **When:** the implementer proposed an action you rejected, and you want the planner to take that rejection into account on the next run. Planner and implementer roles: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
@@ -1725,6 +1051,44 @@ plan_regenerated · 3 tasks  ← T002 now avoids the rejected path
 
 ---
 
+## One-shot review
+
+### 28. Review a diff without starting a run
+
+**When:** the code is already written — by you, a teammate, or another agent — and you want SPLITBRIEF's review seat on it without a plan, a session, or a state machine.
+
+**Run:**
+
+```bash
+splitbrief review                                   # everything uncommitted
+splitbrief review --base main                       # the branch against main
+splitbrief review --base main --reviewer codex@high # a second-opinion seat, high effort
+```
+
+**You'll see:**
+
+```
+Reviewing changes since main (reviewer: OpenAI Codex CLI)
+
+### Verdict
+pass_with_notes
+...
+
+Verdict: pass_with_notes
+  warning: the new branch in resolve() has no test
+.splitbrief/reviews/2026-09-11-174210/review.md
+```
+
+The diff is `git diff <base|HEAD>` plus untracked files, handed to the same review prompt a full run uses — with the specification line replaced by `none — review for correctness, scope creep, and test coverage of the diff`, because there is no spec to check against.
+
+Nothing is written under `.splitbrief/sessions/`, and `.splitbrief/active` is untouched: a run in progress elsewhere is unaffected. A clean tree prints `nothing to review` and exits `0` without spawning anything.
+
+**Variations:** `--reviewer` takes the seat grammar the skills use, `<tool>[:<model>][@<effort>]`. With no `--reviewer`, the seat is the configured `reviewer:` block, or the planner when there is none.
+
+**See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md) §splitbrief review.
+
+---
+
 ## See also
 
 - [docs/WORKFLOW.md](./WORKFLOW.md) — phase machine, modes, abort/queue/continue.
@@ -1732,7 +1096,5 @@ plan_regenerated · 3 tasks  ← T002 now avoids the rejected path
 - [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — full reference for the runtime slash commands.
 - [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — hook events, payloads, security model.
 - [docs/ARCHITECTURE.md](./ARCHITECTURE.md) — canonical inventory of CLI commands, runners, sinks, paths.
-- [docs/DEBUGGING.md](./DEBUGGING.md) — JSONL inspection, headless mode, OTel console exporter.
-- [docs/WORKTREES.md](./WORKTREES.md) — what worktrees do and don't isolate.
-- [docs/OTEL.md](./OTEL.md) — span hierarchy, exporter setup, dual-resolution caveat.
+- [docs/DEBUGGING.md](./DEBUGGING.md) — JSONL inspection, headless mode.
 - [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) — Task Brief schema, drift-report rules, evidence vocabulary.

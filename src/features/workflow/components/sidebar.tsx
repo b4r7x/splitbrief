@@ -247,7 +247,7 @@ export function Sidebar({ width, height }: SidebarProps) {
   const config = configStore.use((s) => s.config);
   const displayNames = useCrewDisplayNames(config);
   const mode = config?.workflow?.mode;
-  const seats = config ? deriveCrewSeats({ config, displayNames }) : [];
+  const seats: readonly CrewSeat[] = config ? deriveCrewSeats({ config, displayNames }) : [];
   const advisory = useAdvisory();
   const cost = useCostStats();
   const tasks = view.items;

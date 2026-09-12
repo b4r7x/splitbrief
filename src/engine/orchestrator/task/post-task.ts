@@ -11,7 +11,6 @@ import {
 } from '../changed-files-baseline.js';
 import { checkUserEditGate } from './user-edit-gate.js';
 import { checkBudgetAfterTask } from '../budget/enforce.js';
-import type { AutoSnapshotFn } from './auto-snapshot.js';
 
 export async function absorbAcceptedFiles(opts: {
   projectDir: string;
@@ -57,10 +56,8 @@ export async function reconcileAfterTask(opts: {
   taskBreakdowns: TaskTokenUsage[];
   routingDecision: RoutingDecision;
   implementerProfile: string;
-  completedTask: Task | undefined;
   budgetWarningEmitted: boolean;
   budgetPauseEmitted: boolean;
-  autoSnapshot: AutoSnapshotFn;
 }): Promise<{
   state: WorkflowState;
   baseline: ChangedFilesBaseline;
@@ -69,7 +66,7 @@ export async function reconcileAfterTask(opts: {
   budgetPauseEmitted: boolean;
 }> {
   const { wctx, taskWctx, task, taskIndex, totalTasks, taskBreakdowns, setTrackedState } = opts;
-  const { projectDir, sessionId, config } = wctx;
+  const { projectDir } = wctx;
   let state = opts.state;
   let baseline = opts.baseline;
 
@@ -104,19 +101,6 @@ export async function reconcileAfterTask(opts: {
     });
     opts.acknowledgedUserEditFiles.clear();
   }
-
-  const succeeded = opts.completedTask?.status === 'done';
-  await opts.autoSnapshot({
-    projectDir,
-    sessionId,
-    config,
-    bus: wctx.bus,
-    phase: state.phase,
-    enabled: succeeded && config.snapshots?.auto?.postTask === true,
-    taskIndex,
-    label: `post-task-${taskIndex}`,
-    recordInRunLedger: true,
-  });
 
   const budgetCheck = await checkBudgetAfterTask({
     wctx,

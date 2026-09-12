@@ -17,19 +17,11 @@ import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { registerStartCommand } from '../../src/cli/commands/start/register.js';
 import type { StartDeps } from '../../src/cli/commands/start/types.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, LOCKFILE, STATE_FILE } from '../../src/core/paths.js';
-import type { SpawnServerResult } from '../../src/engine/ipc/detached-handshake.js';
-import {
-  buildServerArgs,
-  type SpawnServerOptions,
-} from '../../src/engine/ipc/server-invocation.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
 import { prepareExecution } from '../../src/engine/runners/prepare-execution/prepare-execution.js';
 import type { probeRunnerAvailability } from '../../src/engine/runners/probe-availability.js';
-import { sessionDir } from '../../src/core/paths.js';
 
-export const spawnServerMock = vi.fn<(opts: SpawnServerOptions) => Promise<SpawnServerResult>>();
 export const runHeadlessMock = vi.fn<StartDeps['runHeadless']>();
-export const runRpcMock = vi.fn<StartDeps['runRpc']>();
 
 const initStoresMock: StartDeps['initStores'] = async () => {};
 export const renderCalls: Array<Parameters<StartDeps['renderApp']>[1]> = [];
@@ -68,9 +60,7 @@ export const prepareExecutionMock = vi.fn<typeof prepareExecution>(async (input)
 });
 
 export const fakeDeps: StartDeps = {
-  spawnServer: spawnServerMock,
   runHeadless: runHeadlessMock as unknown as StartDeps['runHeadless'],
-  runRpc: runRpcMock as unknown as StartDeps['runRpc'],
   initStores: initStoresMock,
   renderApp: renderAppFake,
   prepareExecution: prepareExecutionMock,
@@ -108,23 +98,11 @@ export function setupStartCommandIntegration(): void {
     routerStore.init({ screen: 'home' });
     process.stdin.isTTY = true;
     renderCalls.length = 0;
-    spawnServerMock.mockClear();
     runHeadlessMock.mockClear();
-    runRpcMock.mockClear();
     prepareExecutionMock.mockClear();
     probeRunnerAvailabilityMock.mockClear();
     probeRunnerAvailabilityMock.mockResolvedValue([]);
-    spawnServerMock.mockImplementation(async (opts: SpawnServerOptions) => {
-      const preparedSessionDir = sessionDir(opts.projectDir, opts.candidate.sessionId);
-      mkdirSync(preparedSessionDir, { recursive: true });
-      writeFileSync(
-        join(preparedSessionDir, 'server-args.json'),
-        JSON.stringify(buildServerArgs(opts), null, 2),
-      );
-      return { ok: true, pid: 1234, sessionId: opts.candidate.sessionId };
-    });
     runHeadlessMock.mockResolvedValue(undefined);
-    runRpcMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -201,7 +179,7 @@ export function writeConfigMarker(projectDir: string): void {
 
 export function writeReadyReadinessFixtures(
   projectDir: string,
-  options: { validation?: boolean; codebase?: boolean; persistTranscript?: boolean } = {},
+  options: { validation?: boolean; codebase?: boolean } = {},
 ): void {
   mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
   writeFileSync(join(projectDir, '.git', 'info', 'exclude'), '.splitbrief/\npackage.json\n');
@@ -233,13 +211,7 @@ export function writeReadyReadinessFixtures(
       '  testCommand: node -e ""',
     );
   }
-  lines.push(
-    'workflow:',
-    '  approve: default',
-    '  maxRetries: 3',
-    `  persistTranscript: ${options.persistTranscript ?? true}`,
-    '  mode: standard',
-  );
+  lines.push('workflow:', '  approve: default', '  maxRetries: 3', '  mode: standard');
   if (options.codebase === false) {
     lines.push('codebase:', '  enabled: false');
   }

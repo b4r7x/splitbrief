@@ -18,6 +18,8 @@ import {
   approvalSubjectText,
   getApprovalSeverityWord,
   getStickyOptionZones,
+  stickyLeadShed,
+  stickySpacersShed,
 } from '../../prompt-rows/approval.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { SOFT_SEP } from '../../../../components/separators.js';
@@ -61,6 +63,8 @@ export function StickyApprovalPrompt({
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);
+  const boxRows = Math.min(promptRows, clampedBoxRows ?? promptRows);
+  const spacersShed = stickySpacersShed(promptRows, boxRows);
 
   useInput(
     (input, key) => {
@@ -84,8 +88,9 @@ export function StickyApprovalPrompt({
     const zones = getStickyOptionZones({
       boxTop,
       cols,
-      promptRows: clampedBoxRows ?? promptRows,
+      promptRows: boxRows,
       actionDescription: request.actionDescription,
+      leadShed: stickyLeadShed(spacersShed),
     });
     const cleanups = zones.map((zone) =>
       registerMouseZone({
@@ -101,7 +106,7 @@ export function StickyApprovalPrompt({
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
-  }, [isActive, cols, rows, promptRows, clampedBoxRows, request]);
+  }, [isActive, cols, rows, promptRows, boxRows, spacersShed, request]);
 
   return (
     <Box
@@ -109,7 +114,7 @@ export function StickyApprovalPrompt({
       borderStyle={borderStyleFor('bold')}
       borderColor={t.border}
       paddingX={1}
-      height={promptRows}
+      height={boxRows}
       width="100%"
       overflow="hidden"
       flexShrink={0}
@@ -119,9 +124,9 @@ export function StickyApprovalPrompt({
         {SOFT_SEP}
         <Text color={t.warning}>{getApprovalSeverityWord(request.actionClass)}</Text>
       </Text>
-      <Text> </Text>
+      {spacersShed < 1 && <Text> </Text>}
       <Text>{approvalSubjectText(request.actionDescription, cols)}</Text>
-      <Text> </Text>
+      {spacersShed < 2 && <Text> </Text>}
       {STICKY_OPTIONS.map((option, index) => (
         <Text key={option.key}>
           {index === 0 ? <Text color={t.text}>{cursorGlyph()}</Text> : NO_CURSOR}
@@ -134,7 +139,7 @@ export function StickyApprovalPrompt({
           })}
         </Text>
       ))}
-      <Text> </Text>
+      {spacersShed < 3 && <Text> </Text>}
       <Text color={t.textDim}>{STICKY_PERSIST_NOTE}</Text>
       <Text color={t.textDim}>{STICKY_HINTS}</Text>
     </Box>

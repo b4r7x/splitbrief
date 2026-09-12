@@ -46,46 +46,6 @@ describe('trust', () => {
       expect(isHooksConfigTrusted(projectDir, { pre_task: [{ command: 'eslint' }] })).toBe(false);
     });
 
-    it('returns false after a trusted imported module dependency changes', () => {
-      mkdirSync(join(projectDir, 'hooks'), { recursive: true });
-      writeFileSync(
-        join(projectDir, 'hooks', 'policy.mjs'),
-        'export const policy = () => ({ kind: "allow" });',
-      );
-      writeFileSync(
-        join(projectDir, 'hooks', 'pre-task.mjs'),
-        "import { policy } from './policy.mjs';\nexport default policy;\n",
-      );
-      const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }] };
-      markHooksConfigTrusted(projectDir, cfg);
-      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
-
-      writeFileSync(
-        join(projectDir, 'hooks', 'policy.mjs'),
-        'export const policy = () => ({ kind: "deny" });',
-      );
-
-      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
-    });
-
-    it('returns false after a trusted module file changes', () => {
-      mkdirSync(join(projectDir, 'hooks'), { recursive: true });
-      writeFileSync(
-        join(projectDir, 'hooks', 'pre-task.mjs'),
-        'export default () => ({ kind: "allow" });',
-      );
-      const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }] };
-      markHooksConfigTrusted(projectDir, cfg);
-      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
-
-      writeFileSync(
-        join(projectDir, 'hooks', 'pre-task.mjs'),
-        'export default () => ({ kind: "deny" });',
-      );
-
-      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
-    });
-
     it('returns false after a trusted command hook script changes', () => {
       mkdirSync(join(projectDir, '.splitbrief', 'hooks'), { recursive: true });
       writeFileSync(join(projectDir, '.splitbrief/hooks/check.sh'), '#!/bin/sh\nexit 0\n');

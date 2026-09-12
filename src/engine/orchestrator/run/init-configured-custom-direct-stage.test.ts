@@ -89,7 +89,7 @@ function directConfig(runners: readonly ReturnType<typeof makeDirectRunner>[]): 
     ...makeConfig({
       implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', persistTranscript: false },
+      workflow: { mode: 'quick' },
       approval: { enabled: false, feedRejectionsToPlanner: true },
     }),
     implementerProfiles: {

@@ -673,11 +673,7 @@ describe('handleRetryAndEscalation', () => {
     const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };
     writeFileSync(
       join(projectDir, 'deny-escalation.mjs'),
-      [
-        'export default function () {',
-        "  return { kind: 'deny', message: 'policy: escalation not allowed' };",
-        '}',
-      ].join('\n'),
+      "console.log(JSON.stringify({ decision: 'deny', message: 'policy: escalation not allowed' }));\n",
     );
 
     const { callbacks } = makeCallbacks();
@@ -696,8 +692,9 @@ describe('handleRetryAndEscalation', () => {
     const hooks: HooksConfig = {
       pre_escalation: [
         {
-          kind: 'module',
-          path: 'deny-escalation.mjs',
+          kind: 'command',
+          command: 'node',
+          args: ['deny-escalation.mjs'],
           timeout_ms: 30_000,
           on_failure: 'warn',
         },

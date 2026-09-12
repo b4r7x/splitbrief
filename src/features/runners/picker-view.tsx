@@ -21,6 +21,7 @@ import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';
 import { formatModelName } from '../../core/model-display.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import { isOptionFamily, optionDraftOf, routeDraftOf } from './model-catalog/option-axis.js';
+import { sharedModelNamespace } from './model-catalog/provider-axis.js';
 import {
   rightRowKey,
   sectionOf,
@@ -158,8 +159,8 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
         lines: [
           'The review seat runs whatever the planner runs.',
           '',
-          catalog.plannerIdentity,
-          postureLine(item),
+          { whole: catalog.plannerIdentity },
+          { whole: postureLine(item) },
           '',
           'Pick a tool on the left to give the review seat its own setup.',
         ],
@@ -208,6 +209,9 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
   };
 
   const rightRows = keyRows(catalog.rightRows);
+  const modelNamespace = sharedModelNamespace(
+    catalog.rightRows.flatMap((row) => (row.kind === 'model' ? [row.model.id] : [])),
+  );
 
   const resolvePreview = (ctx: PreviewContext<PickerOption, KeyedRightRow>): string | undefined => {
     const tool = ctx.leftItem ?? catalog.currentItem;
@@ -393,6 +397,7 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
             currentModel: catalog.currentModel,
             sectioned: sectionOf(row) !== undefined,
             auth: authContext,
+            namespace: modelNamespace,
           }),
       }}
     />

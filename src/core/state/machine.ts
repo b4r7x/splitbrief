@@ -8,11 +8,6 @@ import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
 import { transitionError } from './errors.js';
-import {
-  assertCurrentExecutionPermit,
-  recordBriefReadiness,
-  rejectBriefAdmission,
-} from './brief-admission.js';
 
 export const CURRENT_STATE_VERSION = 4;
 
@@ -48,20 +43,15 @@ const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
 
 const phaseActions = {
   idle: ['START', 'RESEARCH_DONE', 'SPEC_CLARIFY_START'],
-  researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'BRIEF_ADMISSION_OPENED'],
-  specifying: ['SPEC_DONE', 'BRIEF_ADMISSION_OPENED'],
+  researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'PLAN_DONE'],
+  specifying: ['SPEC_DONE', 'RESEARCH_DONE', 'PLAN_DONE'],
   'reviewing-spec': ['APPROVE_SPEC', 'REJECT_SPEC', 'SPEC_CLARIFY_START'],
   clarifying: ['SPEC_CLARIFY_DONE'],
   'constitution-check': ['CONSTITUTION_CHECK_PASS', 'CONSTITUTION_CHECK_FAIL'],
   planning: ['RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START', 'BRIEF_ADMISSION_OPENED'],
   'reviewing-plan': ['REJECT_PLAN', 'PLAN_DONE', 'BRIEF_ADMISSION_OPENED', 'ANALYZE_START'],
-  'reviewing-briefs': [
-    'BRIEF_ADMISSION_OPENED',
-    'BEGIN_IMPLEMENTATION',
-    'RECORD_BRIEF_READINESS',
-    'REJECT_BRIEFS',
-  ],
-  analyzing: [],
+  'reviewing-briefs': ['BRIEF_ADMISSION_OPENED', 'BEGIN_IMPLEMENTATION', 'REJECT_BRIEFS'],
+  analyzing: ['PLAN_DONE'],
   implementing: [
     'START_TASK',
     'UPDATE_TASK_CODE',
@@ -71,7 +61,6 @@ const phaseActions = {
     'HINT_SUCCESS',
     'SKIP_TASK',
     'RESET_TASK',
-    'BRIEF_ADMISSION_OPENED',
     'ANALYZE_START',
     'ALL_DONE',
   ],
@@ -94,7 +83,6 @@ export function createInitialState(feature: string, now: Date = new Date()): Wor
   return {
     stateVersion: CURRENT_STATE_VERSION,
     stateRevision: 0,
-    stateFence: { token: 0, ownerId: 'initial' },
     phase: 'idle',
     feature,
     currentTaskIndex: 0,
@@ -105,7 +93,6 @@ export function createInitialState(feature: string, now: Date = new Date()): Wor
     tokenUsage: { ...ZERO_TOKEN_USAGE },
     awaitingContinue: false,
     messageQueue: [],
-    briefRecovery: null,
   };
 }
 
@@ -170,10 +157,6 @@ function rewindReset(
     changedFilesBaseline: undefined,
     discoveredValidation: undefined,
     pendingRecovery: undefined,
-    authorityRevision: undefined,
-    generation: null,
-    permit: null,
-    briefRecovery: null,
     rewindPending: { target, ...(comment ? { comment } : {}) },
   };
 }
@@ -182,9 +165,6 @@ function resetToIdle(
   state: WorkflowState,
   opts: { clearAwaitingContinue?: boolean } = {},
 ): WorkflowState {
-  const shouldClearBriefRecovery =
-    state.briefRecovery === undefined ||
-    (state.briefRecovery !== null && state.briefRecovery.status !== 'rejected');
   return {
     ...state,
     phase: 'idle',
@@ -192,10 +172,6 @@ function resetToIdle(
     tasks: [],
     currentTaskIndex: 0,
     attempt: 0,
-    authorityRevision: undefined,
-    generation: null,
-    permit: null,
-    ...(shouldClearBriefRecovery ? { briefRecovery: null } : {}),
   };
 }
 
@@ -212,14 +188,7 @@ export function transition(
 
   switch (action.type) {
     case 'START':
-      return {
-        ...state,
-        phase: 'researching',
-        authorityRevision: undefined,
-        generation: null,
-        permit: null,
-        briefRecovery: null,
-      };
+      return { ...state, phase: 'researching' };
 
     case 'RESEARCH_DONE':
       return { ...state, phase: 'specifying' };
@@ -240,43 +209,22 @@ export function transition(
       return resetToIdle(state);
 
     case 'BEGIN_IMPLEMENTATION':
-      assertCurrentExecutionPermit(state, action);
       return {
         ...state,
         phase: 'implementing',
         currentTaskIndex: 0,
         attempt: 0,
-        generation: action.generation,
-        permit: action.permit,
       };
 
-    case 'RECORD_BRIEF_READINESS':
-      return recordBriefReadiness(state, action.decision);
-
     case 'REJECT_BRIEFS':
-      return rejectBriefAdmission(state, resetToIdle(state));
+      return resetToIdle(state);
 
     case 'BRIEF_ADMISSION_OPENED':
-      if (action.briefRecovery.status === 'rejected') {
-        throw transitionError.briefContractBlocked('not-ready', action.briefRecovery.epochId);
-      }
-      if (
-        state.briefRecovery !== undefined &&
-        state.briefRecovery !== null &&
-        (state.briefRecovery.status === 'rejected' ||
-          state.briefRecovery.epochId !== action.briefRecovery.epochId)
-      ) {
-        throw transitionError.briefContractBlocked('stale-report', state.briefRecovery.epochId);
-      }
       return {
         ...state,
         phase: 'reviewing-briefs',
         currentTaskIndex: 0,
         attempt: 0,
-        authorityRevision: undefined,
-        generation: null,
-        permit: null,
-        briefRecovery: action.briefRecovery,
       };
 
     case 'SPEC_CLARIFY_START':
@@ -360,10 +308,6 @@ export function transition(
         ...state,
         phase: 'complete',
         completedAt: now.toISOString(),
-        authorityRevision: undefined,
-        generation: null,
-        permit: null,
-        briefRecovery: null,
       };
 
     case 'CANCEL':

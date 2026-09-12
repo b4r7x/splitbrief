@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInvariantGates } from './check-invariants.js';
 import { getInvariantGates, type Gate } from './invariants/gates.js';
-import { T065_RULES } from './invariants/t065-scan.js';
 
 function captureLog(): { lines: string[]; log: (line?: string) => void } {
   const lines: string[] = [];
@@ -324,38 +323,6 @@ describe('check-invariants', () => {
           '[47] Capability inference is imported from core, never from engine: 1 (expected 0) FAIL',
         ),
       ]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('registers the path-aware T-065 controller-boundary gates', () => {
-    expect(T065_RULES).toHaveLength(10);
-    for (const id of ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45']) {
-      expect(getInvariantGates(id)).toHaveLength(1);
-    }
-  });
-
-  it('fails a T-065 gate on a synthetic path instead of hiding its diagnostic', () => {
-    const root = mkdtempSync(join(tmpdir(), 'splitbrief-t065-gate-'));
-    try {
-      mkdirSync(join(root, 'consumer'), { recursive: true });
-      writeFileSync(
-        join(root, 'consumer', 'bad.ts'),
-        "import { runBriefQualityGate } from '../engine/orchestrator/planning/brief-quality-gate.js';\nrunBriefQualityGate({ tasks: [] });\n",
-      );
-      const [gate] = getInvariantGates('40');
-      if (gate === undefined) throw new Error('T-065 quality gate is not registered');
-      const { lines, log } = captureLog();
-
-      expect(
-        runInvariantGates(
-          [{ ...gate, command: gate.command.replace('src/', `${root}/`) }],
-          undefined,
-          log,
-        ),
-      ).toBe(1);
-      expect(lines[0]).toContain('[40]');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

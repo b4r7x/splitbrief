@@ -1,24 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { isCellRectOnGraphemeBoundaries, type CellGrid } from '../contracts/cells.js';
-import { isCellRectInViewport, viewport } from '../contracts/geometry.js';
-import {
-  getWorkflowSidebarWidth,
-  SIDEBAR_BREAKPOINT_COLS,
-} from '../../../src/features/workflow/layout/rect.js';
-import { listVisualScenarios } from '../catalog.js';
+import type { CheckpointDefinition, ScenarioDefinition } from '../contracts/catalog.js';
+import { isCellRectInViewport, viewport, type Viewport } from '../contracts/geometry.js';
+import { ArtifactProvenanceSchema } from '../contracts/selection.js';
+import { findVisualScenario, listVisualScenarios } from '../catalog.js';
 import { createCropCellGrid } from '../artifacts/crop.js';
 import { mountGalleryScenario } from '../gallery/mount.js';
-import {
-  createFrameGrid,
-  RECOVERY_BOUNDARY_VIEWPORTS,
-  RECOVERY_SCENARIO_IDS,
-  recoveryProfileForColumns,
-  recoveryRoleElements,
-  requireCheckpoint,
-  requireScenario,
-  resolveRole,
-  roleElement,
-} from '../recovery-locators.js';
+import { parseTerminalFrame } from '../terminal/parse.js';
+import { createFrameIdentity } from '../visual-contract-fixtures.js';
 import { LOCATOR_FAILURE_CODE } from './types.js';
 import { LOCATOR_REGISTRY } from './registry.js';
 import { resolveElementLocator, tryResolveElementLocator } from './resolve.js';
@@ -26,6 +15,38 @@ import { resolveElementLocator, tryResolveElementLocator } from './resolve.js';
 const ESC = '\u001b';
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
 const WIDE_VIEWPORT = viewport({ cols: 120, rows: 40 });
+
+function requireScenario(id: string): ScenarioDefinition {
+  const scenario = findVisualScenario(id);
+  if (scenario === undefined) throw new Error(`Missing visual scenario ${id}`);
+  return scenario;
+}
+
+function requireCheckpoint(scenario: ScenarioDefinition): CheckpointDefinition {
+  const checkpoint = scenario.checkpoints[0];
+  if (checkpoint === undefined) throw new Error(`Missing checkpoint for ${scenario.id}`);
+  return checkpoint;
+}
+
+async function createFrameGrid(
+  scenario: ScenarioDefinition,
+  frameViewport: Viewport,
+  ansi: string,
+): Promise<CellGrid> {
+  const checkpoint = requireCheckpoint(scenario);
+  const provenance = ArtifactProvenanceSchema.parse({
+    scenarioId: scenario.id,
+    scenarioTitle: scenario.title,
+    fixtureVersion: scenario.fixtureVersion,
+    checkpointId: checkpoint.id,
+    viewport: frameViewport,
+  });
+  return parseTerminalFrame({
+    ansi,
+    identity: createFrameIdentity(provenance),
+    projectRoot: process.cwd(),
+  });
+}
 
 describe('semantic visual locators', { timeout: 90_000 }, () => {
   it('resolves every catalog element at every viewport against production App frames', async () => {
@@ -219,92 +240,4 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
       }),
     ).toMatchObject({ ok: false, failure: { code: LOCATOR_FAILURE_CODE.crossFrame } });
   });
-
-  it('resolves every recovery spine element at the sidebar breakpoint', async () => {
-    let resolvedCases = 0;
-
-    for (const scenarioId of RECOVERY_SCENARIO_IDS) {
-      const scenario = requireScenario(scenarioId);
-      const checkpoint = requireCheckpoint(scenario);
-      const roles = recoveryRoleElements(scenario);
-
-      for (const frameViewport of RECOVERY_BOUNDARY_VIEWPORTS) {
-        const handle = await mountGalleryScenario({
-          scenario,
-          checkpoint,
-          viewport: frameViewport,
-          profile: recoveryProfileForColumns(frameViewport.cols),
-        });
-        try {
-          const frame = await handle.waitForCheckpoint();
-          const grid = await createFrameGrid(scenario, frameViewport, frame);
-
-          for (const element of scenario.elements) {
-            const label = `${scenario.id}/${frameViewport.cols}x${frameViewport.rows}/${element.id}`;
-            const result = tryResolveElementLocator({
-              scenario,
-              checkpoint,
-              grid,
-              elementId: element.id,
-            });
-            if (!result.ok) {
-              throw new Error(`${label}: ${result.failure.code}: ${result.failure.message}`);
-            }
-            expect(isCellRectInViewport(result.locator.rect, frameViewport), label).toBe(true);
-            expect(isCellRectOnGraphemeBoundaries(grid.cells, result.locator.rect), label).toBe(
-              true,
-            );
-            expect(result.locator.provenance.sourceFrameKey, label).toBe(grid.identity.key);
-          }
-
-          const input = resolveRole({
-            scenario,
-            checkpoint,
-            grid,
-            element: roleElement(roles, 'input'),
-          });
-          expect(input.rect.width, `${scenario.id} input width`).toBe(frameViewport.cols);
-
-          const sidebarWidth = getWorkflowSidebarWidth({
-            cols: frameViewport.cols,
-            sidebarVisible: true,
-          });
-          if (frameViewport.cols > SIDEBAR_BREAKPOINT_COLS) {
-            expect(sidebarWidth, `${frameViewport.cols} sidebar width`).toBeGreaterThan(0);
-          } else {
-            expect(sidebarWidth, `${frameViewport.cols} sidebar width`).toBe(0);
-          }
-
-          const body = resolveRole({
-            scenario,
-            checkpoint,
-            grid,
-            element: roleElement(roles, 'body'),
-          });
-          const sidebar = resolveRole({
-            scenario,
-            checkpoint,
-            grid,
-            element: roleElement(roles, 'sidebar'),
-          });
-          const bodyBottom = body.rect.y + body.rect.height - 1;
-          const sidebarBottom = sidebar.rect.y + sidebar.rect.height - 1;
-          if (frameViewport.cols > SIDEBAR_BREAKPOINT_COLS) {
-            expect(sidebar.rect.width, `${scenario.id} visible sidebar`).toBeLessThan(
-              frameViewport.cols,
-            );
-            expect(sidebarBottom, `${scenario.id} sidebar/body bottom`).toBe(bodyBottom);
-          } else {
-            expect(sidebar.rect.width, `${scenario.id} hidden sidebar`).toBe(frameViewport.cols);
-          }
-
-          resolvedCases += 1;
-        } finally {
-          await handle.unmount();
-        }
-      }
-    }
-
-    expect(resolvedCases).toBe(RECOVERY_SCENARIO_IDS.length * RECOVERY_BOUNDARY_VIEWPORTS.length);
-  }, 120_000);
 });

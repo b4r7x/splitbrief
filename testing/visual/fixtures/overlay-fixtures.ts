@@ -10,11 +10,14 @@ import type {
 import {
   nativeCliCatalogToDetectedModels,
   parseCopilotHelpConfigCatalog,
+  parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
 } from '../../../src/engine/providers/cli-model-catalog.js';
 import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js';
 import { seatAxisFocus } from '../../../src/core/navigation/types.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
+import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
+import { configStore } from '../../../src/stores/project/config.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { editorStore } from '../../../src/stores/ui/editor.js';
 import { pickerViewStore } from '../../../src/stores/ui/picker-view.js';
@@ -25,6 +28,7 @@ import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
+import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { cursorDetectedModels } from '../../helpers/factories/cursor-models.js';
 import { cliDetectionFor } from '../../helpers/factories/detection.js';
@@ -47,6 +51,17 @@ type VisualConfigOverrides = Parameters<typeof visualConfig>[0];
 
 const EMPTY_SEED: OverlaySeed = () => {};
 
+function overlayPrepared(): PreparedExecution {
+  const config = configStore.get().config;
+  if (config === null) throw new Error('Visual overlay fixture requires project config');
+  return prepareWorkflowExecution({
+    projectDir: VISUAL_FIXTURE_PROJECT_DIR,
+    feature: 'Inspect visual fixture',
+    config,
+    sessionId: 'visual-overlay-session',
+  });
+}
+
 /** The merged two-route row the provider-expansion frames open on. */
 const OPENCODE_ROUTED_MODEL = 'openai/gpt-5.6-luna';
 
@@ -66,6 +81,16 @@ function opencodeVerboseModels(): readonly DetectedModel[] {
   );
   const catalog = parseOpenCodeNativeModelCatalog(stdout);
   if (catalog === null) throw new Error('opencode/models-verbose.txt did not parse');
+  return nativeCliCatalogToDetectedModels(catalog);
+}
+
+function kiloVerboseModels(): readonly DetectedModel[] {
+  const stdout = readFileSync(
+    join(import.meta.dirname, '../../fixtures/kilo/models-verbose.txt'),
+    'utf8',
+  );
+  const catalog = parseKiloNativeModelCatalog(stdout);
+  if (catalog === null) throw new Error('kilo/models-verbose.txt did not parse');
   return nativeCliCatalogToDetectedModels(catalog);
 }
 
@@ -100,7 +125,7 @@ function catalogAttempt(input: {
   outcome: ScopedCliCatalogAttempt['outcome'];
 }): ScopedCliCatalogAttempt {
   return {
-    connection: { role: 'planner', tool: input.tool, contextKey: `planner-${input.tool}-visual` },
+    connection: { tool: input.tool, contextKey: `planner-${input.tool}-visual` },
     outcome: input.outcome,
   };
 }
@@ -386,6 +411,45 @@ function seedClaudeAliasRows(): void {
   });
 }
 
+function seedImplementerClaudeCheapest(): void {
+  seedConfig({
+    implementer: { kind: 'cli', tool: 'claude-code', model: 'auto:cheapest' },
+  })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'claude-code')],
+    modelsDev: { catalog: modelsDevSlice() },
+  });
+}
+
+/**
+ * The one arm where the browse escape widens anything: a local runner with no
+ * inventory of its own still has a models.dev lane, so the live lane hides the
+ * bundled fallback row and the escape is what restores it.
+ */
+function seedOllamaCatalogLane(): void {
+  seedConfig({
+    implementer: {
+      kind: 'api',
+      provider: 'ollama',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'gpt-oss:120b-cloud',
+    },
+  })();
+  const slice = modelsDevSlice();
+  const cloud = slice['ollama-cloud'];
+  if (cloud === undefined) throw new Error('models-dev-slice.json has no ollama-cloud provider');
+  detectionStore.setDetection({
+    cliTools: [],
+    providers: [{ provider: 'ollama', available: true, isLocal: true, hasKey: false, models: [] }],
+  });
+  modelCacheStore.setProviderModels('ollama', []);
+  modelCacheStore.hydrateModelsDevCatalog({
+    catalog: { ...slice, ollama: { ...cloud, id: 'ollama' } },
+    fetchedAt: VISUAL_PUBLISHED_AT,
+    validatedAt: VISUAL_PUBLISHED_AT,
+  });
+}
+
 function seedCopilotNativeListing(): void {
   const models = copilotHelpConfigModels();
   const persisted = models[0]?.id ?? 'gpt-5.6-luna';
@@ -409,6 +473,17 @@ function seedKiloConfirmed(): void {
         outcome: { kind: 'success', value: ids.map((id) => ({ id })) },
       }),
     ],
+  });
+}
+
+function seedKiloFreeRoutes(): void {
+  const models = kiloVerboseModels();
+  seedConfig({
+    planner: { kind: 'cli', tool: 'kilo-code', model: 'kilo/kilo-auto/free' },
+  })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'kilo-code')],
+    cliModels: [catalogAttempt({ tool: 'kilo-code', outcome: { kind: 'success', value: models } })],
   });
 }
 
@@ -458,15 +533,7 @@ function createOverlayFixture(options: {
       setupVisualFixture(context);
       routerStore.init(
         underlyingScreen === 'workflow'
-          ? {
-              screen: 'workflow',
-              execution: {
-                kind: 'attached',
-                feature: 'Inspect visual fixture',
-                sessionId: 'visual-overlay-session',
-                attach: { sockPath: '/tmp/visual-overlay.sock', authToken: 'visual-token' },
-              },
-            }
+          ? { screen: 'workflow', execution: { kind: 'local', prepared: overlayPrepared() } }
           : { screen: underlyingScreen },
       );
       seedRunnerCatalog();
@@ -485,8 +552,8 @@ function createOverlayFixture(options: {
   };
 }
 
-// The attached workflow screen resets the session-scoped stores in a mount
-// effect (`use-attachment.ts:54`), which runs after this fixture has seeded
+// The workflow screen resets the session-scoped stores in a mount
+// effect (`use-runner.ts:135`), which runs after this fixture has seeded
 // them — `resetWorkflow` clears the token totals a workflow overlay reads. The
 // first token reset after setup is that wipe, so re-apply the seed there.
 function reseedAfterWorkflowReset(seed: OverlaySeed): () => void {
@@ -585,6 +652,12 @@ const createSettingsCrewKiloCopilotFixture: FixtureFactory = () =>
     seed: seedConfig({ planner: PLANNER_KILO_SEAT, implementer: BUILD_COPILOT_SEAT }),
     focus: 'seat:plan',
   });
+const createSettingsBuildAutoCheapestFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedImplementerClaudeCheapest,
+    focus: 'seat:build',
+  });
 const createSettingsFloorFullFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
@@ -599,6 +672,11 @@ const createSettingsFilteredFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:temp' });
 const createSettingsFilterPlanFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:plan' });
+// The Workflow section scrolls off an unfiltered Settings below 120 columns, and its two
+// policy rows (`Spec/plan gates`, `Commit strategy`) are the ones that read as a value only
+// when they are unset — so one scenario holds that section on screen at every width.
+const createSettingsFilterWorkflowFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'settings', focus: 'filter:workflow' });
 const createModeSelectorFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'mode-selector' });
 const createPlannerPickerFixture: FixtureFactory = () =>
@@ -701,6 +779,12 @@ const createPlannerPickerKiloFixture: FixtureFactory = () =>
     seed: seedKiloConfirmed,
     focus: 'tool:kilo-code',
   });
+const createPlannerPickerKiloFreeFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedKiloFreeRoutes,
+    focus: 'tool:kilo-code',
+  });
 const createPlannerPickerMalformedFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -755,6 +839,18 @@ const createCustomModelFixture: FixtureFactory = () =>
   });
 const createImplementerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'implementer-picker' });
+const createPickerBrowseEscapeFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'implementer-picker',
+    seed: seedOllamaCatalogLane,
+    focus: 'tool:ollama',
+  });
+const createBuildPickerAutoCheapestFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'implementer-picker',
+    seed: seedImplementerClaudeCheapest,
+    focus: 'tool:claude-code',
+  });
 const createReviewerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'reviewer-picker' });
 const createReviewerPickerToolFixture: FixtureFactory = () =>
@@ -778,9 +874,11 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-crew-full'), createSettingsCrewFullFixture],
   [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
   [scenarioId('overlay-settings-crew-kilo-copilot'), createSettingsCrewKiloCopilotFixture],
+  [scenarioId('overlay-settings-build-auto-cheapest'), createSettingsBuildAutoCheapestFixture],
   [scenarioId('overlay-settings-floor-full'), createSettingsFloorFullFixture],
   [scenarioId('overlay-settings-filtered'), createSettingsFilteredFixture],
   [scenarioId('overlay-settings-filter-plan'), createSettingsFilterPlanFixture],
+  [scenarioId('overlay-settings-filter-workflow'), createSettingsFilterWorkflowFixture],
   [scenarioId('overlay-mode-selector'), createModeSelectorFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
   [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],
@@ -798,6 +896,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-cold'), createPlannerPickerColdFixture],
   [scenarioId('overlay-planner-picker-no-listing'), createPlannerPickerNoListingFixture],
   [scenarioId('overlay-planner-picker-kilo'), createPlannerPickerKiloFixture],
+  [scenarioId('overlay-planner-picker-kilo-free'), createPlannerPickerKiloFreeFixture],
   [scenarioId('overlay-planner-picker-malformed'), createPlannerPickerMalformedFixture],
   [scenarioId('overlay-planner-picker-claude'), createPlannerPickerClaudeFixture],
   [scenarioId('overlay-planner-picker-copilot'), createPlannerPickerCopilotFixture],
@@ -807,6 +906,8 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-custom-command'), createCustomCommandFixture],
   [scenarioId('overlay-picker-custom-model'), createCustomModelFixture],
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
+  [scenarioId('overlay-picker-browse-escape'), createPickerBrowseEscapeFixture],
+  [scenarioId('overlay-build-picker-auto-cheapest'), createBuildPickerAutoCheapestFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
   [scenarioId('overlay-sessions'), createSessionsFixture],

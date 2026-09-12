@@ -28,10 +28,6 @@ export type ModelMembership = Readonly<{
         nativeDefault?: boolean;
       }>
     | Readonly<{
-        kind: 'catalog-suggestion';
-        source: 'models-dev';
-      }>
-    | Readonly<{
         kind: 'bundled-suggestion';
         source: 'bundled';
       }>

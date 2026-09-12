@@ -168,7 +168,6 @@ describe('baseline-relative acceptance', { timeout: 90_000 }, () => {
         mode: 'standard',
         approve: 'none',
         maxRetries: 1,
-        persistTranscript: true,
       },
     });
     const summary = await runWorkflow({

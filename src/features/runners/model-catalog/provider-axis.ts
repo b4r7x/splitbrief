@@ -14,6 +14,35 @@ export function modelBareId(id: string): string {
   return slash > 0 ? id.slice(slash + 1) : id;
 }
 
+/**
+ * The leading segment every namespaced row of a listing shares — `kilo` on a Kilo listing. The
+ * Tools column beside the list already names the tool, so repeating it on every row costs cells the
+ * model's own name needs. Undefined unless at least two three-segment ids agree on one.
+ */
+export function sharedModelNamespace(ids: readonly string[]): string | undefined {
+  let shared: string | undefined;
+  let agreed = 0;
+  for (const id of ids) {
+    const segments = id.split('/');
+    if (segments.length < 3) continue;
+    const first = segments[0];
+    if (first === undefined || first === '') return undefined;
+    if (shared === undefined) shared = first;
+    else if (shared !== first) return undefined;
+    agreed += 1;
+  }
+  return agreed >= 2 ? shared : undefined;
+}
+
+/** Drops that shared segment, and only while what is left is still a namespaced id. */
+export function stripModelNamespace(id: string, namespace: string | undefined): string {
+  if (namespace === undefined) return id;
+  const prefix = `${namespace}/`;
+  if (!id.startsWith(prefix)) return id;
+  const rest = id.slice(prefix.length);
+  return rest.includes('/') ? rest : id;
+}
+
 /** The account that actually gates the call: the first path segment of the raw id. */
 export function modelProviderAuthKey(id: string): string | undefined {
   const slash = id.indexOf('/');

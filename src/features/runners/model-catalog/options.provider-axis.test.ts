@@ -8,6 +8,8 @@ import {
   modelProviderAuthKey,
   modelProviderPrefix,
   resolveProviderAuthState,
+  sharedModelNamespace,
+  stripModelNamespace,
 } from './provider-axis.js';
 
 const FACTS: readonly CliProviderAuthFact[] = [
@@ -62,6 +64,32 @@ describe('model id provider resolution', () => {
     expect(modelBareId('ollama-cloud/deepseek-v4-flash-free')).not.toBe(
       modelBareId('opencode-go/deepseek-v4-flash'),
     );
+  });
+});
+
+describe('shared model namespace', () => {
+  const KILO = ['kilo/anthropic/claude-opus-4.5', 'kilo/openai/gpt-5.6', 'kilo/stealth/ox-alpha'];
+
+  it('names the leading segment every three-segment id agrees on', () => {
+    expect(sharedModelNamespace(KILO)).toBe('kilo');
+    expect(sharedModelNamespace([...KILO, 'sonic-2'])).toBe('kilo');
+  });
+
+  it('names none when the ids disagree, or when only one is namespaced', () => {
+    expect(sharedModelNamespace([...KILO, 'other/anthropic/claude-opus-4.5'])).toBeUndefined();
+    expect(sharedModelNamespace(['kilo/anthropic/claude-opus-4.5'])).toBeUndefined();
+    expect(sharedModelNamespace(['anthropic/claude-opus-4.5', 'openai/gpt-5.6'])).toBeUndefined();
+    expect(sharedModelNamespace([])).toBeUndefined();
+  });
+
+  it('drops that segment only while what is left is still a namespaced id', () => {
+    expect(stripModelNamespace('kilo/anthropic/claude-opus-4.5', 'kilo')).toBe(
+      'anthropic/claude-opus-4.5',
+    );
+    expect(stripModelNamespace('kilo/kilo-auto/free', 'kilo')).toBe('kilo-auto/free');
+    expect(stripModelNamespace('kilo/free', 'kilo')).toBe('kilo/free');
+    expect(stripModelNamespace('openai/gpt-5.6', 'kilo')).toBe('openai/gpt-5.6');
+    expect(stripModelNamespace('kilo/anthropic/x', undefined)).toBe('kilo/anthropic/x');
   });
 });
 

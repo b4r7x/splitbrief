@@ -2,109 +2,24 @@ import { describe, it, expect } from 'vitest';
 import { formatModelName, formatToolModel } from './model-display.js';
 
 describe('formatModelName', () => {
-  describe('edge cases', () => {
-    it('returns empty string for empty input', () => {
-      expect(formatModelName('')).toBe('');
-    });
-
-    it('formats default as capitalized word (no longer special case)', () => {
-      expect(formatModelName('default')).toBe('Default');
-    });
-
-    it('returns already-pretty names unchanged', () => {
-      expect(formatModelName('MyModel')).toBe('MyModel');
-    });
-  });
-});
-
-describe('formatModelName (heuristic)', () => {
-  it.each([
-    ['claude-haiku-5-2', 'Claude Haiku 5.2'],
-    ['gpt-6-turbo', 'GPT-6 Turbo'],
-    ['gemini-4-flash', 'Gemini 4 Flash'],
-    ['deepseek-v4', 'DeepSeek V4'],
-    ['mistral-medium', 'Mistral Medium'],
-  ])('brand capitalization: %s → %s', (input, expected) => {
-    expect(formatModelName(input)).toBe(expected);
+  it('returns empty string for empty input', () => {
+    expect(formatModelName('')).toBe('');
   });
 
   it.each([
-    ['qwen3-coder', 'Qwen 3 Coder'],
-    ['llama4', 'Llama 4'],
-    ['gemma4', 'Gemma 4'],
-    ['phi4-mini', 'Phi 4 Mini'],
-  ])('compound tokens: %s → %s', (input, expected) => {
-    expect(formatModelName(input)).toBe(expected);
+    ['opencode-go/glm-5.2'],
+    ['kilo/kilo-auto/free'],
+    ['claude-opus-5-thinking-high'],
+    ['qwen2.5-coder:7b'],
+    ['gpt-4o'],
+  ])('returns the id unchanged: %s', (id) => {
+    expect(formatModelName(id)).toBe(id);
   });
 
-  it.each([
-    ['gemma4:31b-cloud', 'Gemma 4 31B Cloud'],
-    ['llama3:8b', 'Llama 3 8B'],
-    ['somemodel:latest', 'Somemodel'],
-    ['deepseek-coder:6.7b', 'DeepSeek Coder 6.7B'],
-  ])('Ollama tags: %s → %s', (input, expected) => {
-    expect(formatModelName(input)).toBe(expected);
-  });
-
-  it.each([
-    ['custom-model-7b', 'Custom Model 7B'],
-    ['custom-model-70b', 'Custom Model 70B'],
-  ])('size indicators: %s → %s', (input, expected) => {
-    expect(formatModelName(input)).toBe(expected);
-  });
-
-  it.each([
-    ['o5-turbo', 'o5 Turbo'],
-    ['o6-mini', 'o6 Mini'],
-  ])('o-series: %s → %s', (input, expected) => {
-    expect(formatModelName(input)).toBe(expected);
-  });
-
-  it.each([
-    ['deepseek-coder-v3', 'DeepSeek Coder V3'],
-    ['custom-v2-pro', 'Custom V2 Pro'],
-  ])('version prefixes: %s → %s', (input, expected) => {
-    expect(formatModelName(input)).toBe(expected);
-  });
-
-  it.each([['custom-org/some-model', 'Some Model']])(
-    'vendor prefix stripping: %s → %s',
-    (input, expected) => {
-      expect(formatModelName(input)).toBe(expected);
-    },
-  );
-
-  it.each([['gpt-7-nano', 'GPT-7 Nano']])('GPT hyphen format: %s → %s', (input, expected) => {
-    expect(formatModelName(input)).toBe(expected);
-  });
-
-  it.each([
-    ['someword', 'Someword'],
-    ['unknown-token', 'Unknown Token'],
-  ])('capitalizes plain tokens: %s → %s', (input, expected) => {
-    expect(formatModelName(input)).toBe(expected);
-  });
-
-  it.each([
-    ['mymodel:alpha', 'Mymodel Alpha'],
-    ['mymodel:beta-rc', 'Mymodel Beta Rc'],
-  ])('capitalizes tag parts: %s → %s', (input, expected) => {
-    expect(formatModelName(input)).toBe(expected);
-  });
-
-  it.each([
-    ['claude-opus-4-5-20251101', 'Claude Opus 4.5'],
-    ['claude-sonnet-4-6-20260115', 'Claude Sonnet 4.6'],
-    ['gpt-5-turbo-20250412', 'GPT-5 Turbo'],
-  ])('strips trailing standalone 8-digit datestamp: %s → %s', (input, expected) => {
-    expect(formatModelName(input)).toBe(expected);
-  });
-
-  it.each([
-    ['qwen-3.8-max', 'Qwen 3.8 Max'],
-    ['deepseek-v3.2-exp', 'DeepSeek V3.2 Exp'],
-  ])('preserves non-date numbers and suffixes: %s → %s', (input, expected) => {
-    expect(formatModelName(input)).toBe(expected);
+  it('redacts a credential-shaped id', () => {
+    const name = formatModelName('model sk-abcdefghijklmnopqrstuvwxyz');
+    expect(name).toContain('***REDACTED***');
+    expect(name.toLowerCase()).not.toContain('abcdefghijklmnopqrstuvwxyz');
   });
 });
 
@@ -118,11 +33,11 @@ describe('formatToolModel', () => {
   });
 
   it('returns display name + separator + model for known tool', () => {
-    expect(formatToolModel('ollama', 'qwen2.5-coder:7b')).toBe('Ollama \u00b7 Qwen 2.5 Coder 7B');
+    expect(formatToolModel('ollama', 'qwen2.5-coder:7b')).toBe('Ollama \u00b7 qwen2.5-coder:7b');
   });
 
   it('passes through raw tool name + model for unknown tool', () => {
-    expect(formatToolModel('my-provider', 'some-model')).toBe('my-provider \u00b7 Some Model');
+    expect(formatToolModel('my-provider', 'some-model')).toBe('my-provider \u00b7 some-model');
   });
 
   it('returns just the display name when only tool is provided', () => {
@@ -130,10 +45,10 @@ describe('formatToolModel', () => {
   });
 
   it('returns just the model when only model is provided', () => {
-    expect(formatToolModel(undefined, 'gpt-4o')).toBe('GPT-4o');
+    expect(formatToolModel(undefined, 'gpt-4o')).toBe('gpt-4o');
   });
 
-  it('redacts a credential-shaped model id before prettifying it', () => {
+  it('redacts a credential-shaped model id in the tool line', () => {
     const line = formatToolModel('ollama', 'model sk-abcdefghijklmnopqrstuvwxyz');
     expect(line).toContain('***REDACTED***');
     expect(line.toLowerCase()).not.toContain('abcdefghijklmnopqrstuvwxyz');

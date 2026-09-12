@@ -16,7 +16,6 @@ import type { Session } from '../../core/schemas/session.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { SessionsPicker } from './sessions.js';
 import { flushEffects, tick } from '#testing/helpers/ink.js';
-import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
 
 let tmp: string;
 
@@ -184,7 +183,7 @@ describe('SessionsPicker', () => {
     await vi.waitFor(() => {
       const current = instance.lastFrame() ?? '';
       expect(current).toContain('resume missing state');
-      expect(current).toContain('usable owner receipt');
+      expect(current).toContain('saved workflow state is missing or invalid');
     });
 
     const frame = instance.lastFrame() ?? '';
@@ -208,10 +207,10 @@ describe('SessionsPicker', () => {
     const instance = render(
       <SessionsPicker
         deps={{
-          ...makeResumeAuthorityDeps(() => ({
-            ...createInitialState(session.feature),
-            phase: 'implementing',
-          })),
+          loadResumeState: () => ({
+            kind: 'loaded',
+            state: { ...createInitialState(session.feature), phase: 'implementing' },
+          }),
           prepareResume: async () => {
             throw new Error('sessions overlay resume rejected');
           },

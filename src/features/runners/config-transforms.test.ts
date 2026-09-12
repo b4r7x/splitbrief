@@ -29,7 +29,6 @@ function makeBaseConfig(): Config {
       contextLength: 8192,
       temperature: 0.3,
     },
-    workflow: { persistTranscript: true },
   });
 }
 
@@ -39,23 +38,19 @@ function makeConfigWithOptionalSections(): Config {
     codebase: {
       enabled: true,
       tokenBudget: 1234,
-      cacheDir: '.splitbrief-cache',
       include: ['src/**'],
       exclude: ['dist/**'],
     },
     hooks: {
-      builtin: { snapshots: false },
-    },
-    otel: {
-      enabled: true,
-      serviceName: 'splitbrief-test',
-    },
-    snapshots: {
-      auto: {
-        preTask: true,
-        postTask: false,
-        preFinalReview: true,
-      },
+      pre_task: [
+        {
+          kind: 'command',
+          command: './scripts/pre-task.sh',
+          args: [],
+          timeout_ms: 30_000,
+          on_failure: 'warn',
+        },
+      ],
     },
     palette: {
       customActions: [
@@ -69,7 +64,6 @@ function makeConfigWithOptionalSections(): Config {
     },
     approval: {
       enabled: true,
-      headless: true,
       tiers: { read: 'auto', destructive: 'confirm' },
       feedRejectionsToPlanner: false,
     },
@@ -113,7 +107,6 @@ validation:
   test: true
 workflow:
   max_retries: 3
-  persist_transcript: true
   compaction_format: auto
 `),
     ),
@@ -429,8 +422,6 @@ describe('runner selection commits', () => {
 
     expect(updated.codebase).toEqual(config.codebase);
     expect(updated.hooks).toEqual(config.hooks);
-    expect(updated.otel).toEqual(config.otel);
-    expect(updated.snapshots).toEqual(config.snapshots);
     expect(updated.palette).toEqual(config.palette);
     expect(updated.approval).toEqual(config.approval);
   });

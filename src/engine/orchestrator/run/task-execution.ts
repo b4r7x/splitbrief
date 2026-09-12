@@ -10,19 +10,11 @@ import { decideCostGate } from '../cost-gate.js';
 import { predictCost } from '../budget/cost-prediction.js';
 import { estimateDeterministicCost } from '../budget/estimate.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import { reviewPlannerEstimate, runningPlannerEstimateReview } from '../estimate-review/run.js';
-import { autoSplitOverflowTasks } from '../auto-split-overflow.js';
 import { runTaskLoop } from '../task/loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
-import { formatSkippedSplitNotice, reviewAutoSplitOutput } from './auto-split-review.js';
+import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
 import { PLAN_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
-import type { PhaseRecoveryBinding } from './phases.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
-import {
-  matchesPersistedExecutionPermit,
-  revalidatePersistedExecutionPermit,
-} from '../planning/handoff.js';
-import { workflowAuthority } from './authority.js';
 
 export type RunTasksAndReviewOptions = {
   wctx: WorkflowContext;
@@ -32,7 +24,6 @@ export type RunTasksAndReviewOptions = {
   phaseTimings: Record<string, number>;
   setTrackedState: (s: WorkflowState) => void;
   setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
-  recovery?: PhaseRecoveryBinding | undefined;
 };
 
 export const APPROVAL_PARKED_ARTIFACT: Partial<Record<Phase, string>> = {
@@ -46,7 +37,6 @@ function predictTasksCost(opts: {
   summaryBase: SummaryBase;
   wctx: WorkflowContext;
   state: WorkflowState;
-  plannerEstimateReview?: CostPrediction['plannerEstimateReview'] | undefined;
 }): CostPrediction {
   return {
     ...predictCost({
@@ -72,9 +62,6 @@ function predictTasksCost(opts: {
         detectedContextLength: opts.wctx.detectedContextLength,
       }),
     }),
-    ...(opts.plannerEstimateReview !== undefined && {
-      plannerEstimateReview: opts.plannerEstimateReview,
-    }),
   };
 }
 
@@ -92,72 +79,24 @@ export async function runTasksAndReview(
     state,
   });
 
-  const planning = opts.planning;
-  if (
-    planning.disposition !== 'ready-for-tasks' ||
-    !matchesPersistedExecutionPermit(planning, state)
-  ) {
+  if (opts.planning.disposition !== 'ready-for-tasks') {
     return bail();
   }
-
-  const authority = workflowAuthority(wctx);
-  if (authority === undefined) {
-    return bail();
-  }
-
-  const revalidated = revalidatePersistedExecutionPermit({
-    ref: { projectDir: wctx.projectDir, sessionId: wctx.sessionId },
-    state,
-    planning,
-    authority,
-  });
-  if (revalidated === null) {
-    return bail();
-  }
-  state = revalidated.state;
-  let handoff = revalidated.planning;
-  setTrackedState(state);
 
   // On resume the task loop continues from currentTaskIndex, so the pre-task cost
-  // gauntlet must predict over the remaining tasks only and must not re-gate, re-run
-  // the paid estimate review, or auto-split work that is already in flight.
+  // gauntlet must predict over the remaining tasks only and must not re-gate work
+  // that is already in flight.
   const isResume = state.currentTaskIndex > 0;
   const gateTasks = isResume ? state.tasks.slice(state.currentTaskIndex) : state.tasks;
 
   if (gateTasks.length > 0) {
-    let prediction: CostPrediction = predictTasksCost({
+    const prediction: CostPrediction = predictTasksCost({
       tasks: gateTasks,
       summaryBase,
       wctx,
       state,
     });
-    if (wctx.config.plannerEstimateReview && !isResume) {
-      prediction.plannerEstimateReview = runningPlannerEstimateReview();
-    }
     publishCostPrediction({ bus: wctx.bus, phase: state.phase }, prediction);
-
-    // The estimate review is an extra paid planner call whose output recommends a user
-    // decision, so it must finish before the cost gate it informs: its classification and
-    // recommendedUserDecision ride along in the prediction handed to onCostApprovalNeeded.
-    if (!isResume && wctx.config.plannerEstimateReview && prediction.deterministic) {
-      const reviewed = await reviewPlannerEstimate({
-        planner: wctx.planner,
-        projectDir: wctx.projectDir,
-        sessionId: wctx.sessionId,
-        bus: wctx.bus,
-        state,
-        config: wctx.config,
-        estimate: prediction.deterministic,
-        metadata: wctx.metadata,
-        forcedProfileId: wctx.implementerProfile,
-        signal: wctx.signal,
-      });
-      state = reviewed.state;
-      setTrackedState(state);
-      handoff = { ...handoff, state };
-      prediction = { ...prediction, plannerEstimateReview: reviewed.review };
-      publishCostPrediction({ bus: wctx.bus, phase: state.phase }, prediction);
-    }
 
     if (!isResume) {
       const gateDecision = decideCostGate({
@@ -180,74 +119,15 @@ export async function runTasksAndReview(
       }
     }
 
-    if (!isResume && prediction.deterministic) {
-      const split = autoSplitOverflowTasks({
-        enabled: wctx.config.autoSplitOverflow,
-        tasks: state.tasks,
-        estimate: prediction.deterministic,
-        plannerReview: prediction.plannerEstimateReview,
-      });
-      if (split.skippedSplits.length > 0) {
-        publishWarning({
-          bus: wctx.bus,
-          phase: state.phase,
-          message: formatSkippedSplitNotice(split.skippedSplits),
-        });
-      }
-      if (split.changed) {
-        if (opts.recovery?.createAdmissionInput === undefined) {
-          publishWarning({
-            bus: wctx.bus,
-            phase: state.phase,
-            message: 'Auto-split output remains in review because Brief recovery is unavailable.',
-            safety: {
-              category: 'workflow',
-              code: 'brief_recovery_unavailable',
-              transcriptSafe: true,
-            },
-          });
-          return bail();
-        }
-        const reviewed = await reviewAutoSplitOutput({
-          wctx,
-          state,
-          tasks: split.tasks,
-          setTrackedState,
-          recovery: opts.recovery,
-        });
-        state = reviewed.state;
-        if (reviewed.disposition !== 'ready-for-tasks') {
-          return bail();
-        }
-        handoff = reviewed;
-        prediction = predictTasksCost({
-          tasks: state.tasks,
-          summaryBase,
-          wctx,
-          state,
-          plannerEstimateReview: prediction.plannerEstimateReview,
-        });
-        publishCostPrediction({ bus: wctx.bus, phase: state.phase }, prediction);
-      }
-    }
     summaryBase = { ...summaryBase, costPrediction: prediction };
   }
 
-  const finalAuthority = workflowAuthority(wctx);
-  if (finalAuthority === undefined) {
-    return bail();
-  }
-  const finalRevalidated = revalidatePersistedExecutionPermit({
-    ref: { projectDir: wctx.projectDir, sessionId: wctx.sessionId },
-    state,
-    planning: handoff,
-    authority: finalAuthority,
+  await ensureRunBaselineSnapshot({
+    projectDir: wctx.projectDir,
+    sessionId: wctx.sessionId,
+    bus: wctx.bus,
+    phase: state.phase,
   });
-  if (finalRevalidated === null) {
-    return bail();
-  }
-  state = finalRevalidated.state;
-  setTrackedState(state);
 
   const phaseStart = Date.now();
   const taskResult = await runTaskLoop({
@@ -291,6 +171,13 @@ export async function runTasksAndReview(
       state,
     };
   }
+
+  await recordRunSnapshotForRun({
+    projectDir: wctx.projectDir,
+    sessionId: wctx.sessionId,
+    bus: wctx.bus,
+    phase: state.phase,
+  });
 
   const finalReview = await runFinalReviewPhase({
     projectDir: wctx.projectDir,

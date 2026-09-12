@@ -25,6 +25,12 @@ export interface ModelOption {
   displayName?: string | undefined;
   /** One line the row's metadata column carries in place of the context size. */
   detail?: string | undefined;
+  /**
+   * The catalog id this documented alias resolves to — `fable` to
+   * `claude-fable-5-1`. Absent on rows whose own id already is one; dropped by
+   * both merge passes, which span more members than one id can name.
+   */
+  catalogModelId?: string | undefined;
   isDefault?: boolean | undefined;
   isDetected?: boolean | undefined;
   /** Membership remains visible after engine catalog projection. */
@@ -38,8 +44,6 @@ export interface ModelOption {
    * catalog and custom rows.
    */
   nativeOrder?: number | undefined;
-  /** The configured model the authoritative list does not contain. */
-  isRecovery?: boolean | undefined;
   /** The tool's own per-account option cache, never a documented alias. */
   isAccountOption?: boolean | undefined;
   contextLength?: number | undefined;

@@ -1,35 +1,20 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { loadState, saveState } from '../../../core/state/persistence.js';
-import type { StateAuthorityReceipt } from '../../../core/state/types.js';
+import { loadState } from '../../../core/state/persistence.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   makeCallbacks,
   makePlanner,
   makeBusRecorder,
-  makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
-import { makeBriefQualityFailureTask, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import {
-  ANALYZE_FILE,
-  BRIEF_QUALITY_FILE,
-  sessionDir,
-  SPEC_FILE,
-  PLAN_FILE,
-  TASKS_FILE,
-} from '../../../core/paths.js';
-import { runPlanningPhase } from './run.js';
-import { readWorkflowStateHead } from '../state-ops.js';
-import { runBriefQuality } from './brief-quality-run.js';
-import { publishProducerGeneration } from './producer-publication.js';
-import { createWorkflowRecoveryBinding } from '../run/recovery-binding.js';
-import { formatTasks } from '../../spec/formatter.js';
+import { ANALYZE_FILE, sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../../core/paths.js';
+import { runSpeckitPlanning } from './speckit.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
 import type { OrchestratorCallbacks } from '../types.js';
 
@@ -136,7 +121,7 @@ async function runSpeckit(opts: RunOpts = {}) {
     bus,
     sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
   };
-  const result = await runPlanningPhase({
+  const result = await runSpeckitPlanning({
     wctx,
     planner,
     state,
@@ -146,14 +131,11 @@ async function runSpeckit(opts: RunOpts = {}) {
 }
 
 describe('runSpeckitPlanning', () => {
-  it('publishes the compiled Brief and parks the committed authority', async () => {
+  it('returns tasks-ready after the analyze review', async () => {
     const { result, projectDir, sessionId, events } = await runSpeckit();
-    expect(result.disposition).toBe('parked');
-    if (result.disposition !== 'parked') return;
-    expect(result.state.phase).toBe('analyzing');
+    expect(result.disposition).toBe('tasks-ready');
+    expect(result.state.phase).toBe('reviewing-plan');
     expect(result.state.tasks).toHaveLength(1);
-    expect(result.state.generation ?? null).not.toBeNull();
-    expect(result.state.permit ?? null).toBeNull();
 
     const dir = sessionDir(projectDir, sessionId);
     expect(existsSync(join(dir, 'clarifications.md'))).toBe(true);
@@ -165,18 +147,6 @@ describe('runSpeckitPlanning', () => {
     expect(an.specTaskCoverage).toBe(1);
     expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(0);
     expect(events.find((event) => event.type === 'plan_approved')).toBeUndefined();
-
-    // The fixed projections are refreshed only after the generation commit.
-    const tasksText = readFileSync(join(dir, TASKS_FILE), 'utf8');
-    expect(tasksText).toContain('Create hello module');
-    const quality = JSON.parse(readFileSync(join(dir, BRIEF_QUALITY_FILE), 'utf8'));
-    expect(quality.passed).toBe(true);
-    expect(
-      events.some((event) => event.type === 'artifact_written' && event.filename === TASKS_FILE),
-    ).toBe(true);
-    const persisted = loadState({ projectDir, sessionId });
-    expect(persisted?.generation).toEqual(result.state.generation);
-    expect(persisted?.permit ?? null).toBeNull();
 
     const statusEvents = events.filter((e) => e.type === 'planner_status');
     const phasesInOrder = statusEvents.map((e) => e.phase);
@@ -195,38 +165,16 @@ describe('runSpeckitPlanning', () => {
     expect(specifyingRunning).toBeDefined();
   });
 
-  it('commits the speckit support artifacts with the published generation', async () => {
+  it('speckit planning exits in reviewing-plan after analysis', async () => {
     const { result, projectDir, sessionId } = await runSpeckit();
-    expect(result.disposition).toBe('parked');
-    if (result.disposition !== 'parked') return;
-    const generation = result.state.generation;
-    if (generation === null || generation === undefined) {
-      throw new Error('expected the committed generation');
-    }
 
-    const generationDir = join(
-      sessionDir(projectDir, sessionId),
-      'generations',
-      generation.generationId,
-    );
-    expect(readdirSync(generationDir).sort()).toEqual([
-      BRIEF_QUALITY_FILE,
-      'manifest.json',
-      PLAN_FILE,
-      SPEC_FILE,
-      TASKS_FILE,
-    ]);
-    expect(readFileSync(join(generationDir, SPEC_FILE), 'utf8')).toBe(SAMPLE_SPEC);
-    expect(readFileSync(join(generationDir, PLAN_FILE), 'utf8')).toBe(SAMPLE_PLAN);
-    const manifest = JSON.parse(readFileSync(join(generationDir, 'manifest.json'), 'utf8')) as {
-      artifacts: { name: string; sha256: string }[];
-    };
-    expect(manifest.artifacts.map((artifact) => artifact.name)).toEqual([
-      SPEC_FILE,
-      PLAN_FILE,
-      TASKS_FILE,
-      BRIEF_QUALITY_FILE,
-    ]);
+    expect(result.disposition).toBe('tasks-ready');
+    expect(result.state.phase).toBe('reviewing-plan');
+    expect(result.state.tasks).toHaveLength(1);
+
+    const persisted = loadState({ projectDir, sessionId });
+    expect(persisted?.phase).toBe('reviewing-plan');
+    expect(persisted?.tasks).toHaveLength(1);
   });
 
   it('aborts the workflow on a hard constitution violation', async () => {
@@ -256,7 +204,7 @@ describe('runSpeckitPlanning', () => {
     expect(warnings.some((w) => 'message' in w && /coverage below/.test(w.message))).toBe(true);
   });
 
-  it('parks a compiler failure without dispatching the analyze review', async () => {
+  it('fails planning terminally on a compiler failure without dispatching the analyze review', async () => {
     const { result, projectDir, sessionId, planner } = await runSpeckit({
       plannerOverrides: {
         plan: vi.fn().mockRejectedValue(
@@ -269,12 +217,7 @@ describe('runSpeckitPlanning', () => {
       },
     });
 
-    expect(result.disposition).toBe('parked');
-    if (result.disposition !== 'parked') return;
-    expect(result.projection.blocker).toMatchObject({
-      kind: 'provider',
-      code: 'task_compiler_provider_failed',
-    });
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
     expect(planner.review).not.toHaveBeenCalled();
     expect(existsSync(join(sessionDir(projectDir, sessionId), ANALYZE_FILE))).toBe(false);
   });
@@ -300,18 +243,10 @@ describe('runSpeckitPlanning', () => {
     ).toBe(3);
   });
 
-  it('does not perform a local zero-task repair before admission', async () => {
-    const repairedTask = makeTask({
-      title: 'Repaired Speckit brief',
-      file: 'src/repaired.ts',
-      scope: { inBounds: ['src/repaired.ts'], outOfBounds: ['unrelated files'] },
-      evidence: ['the repaired brief has complete evidence'],
-      typeDefs: 'type Repaired = { ok: true }',
-    });
+  it('does not perform a local zero-task repair before the phase runner', async () => {
     const review = vi
       .fn<Planner['review']>()
-      .mockResolvedValueOnce({ text: formatTasks([repairedTask]), usage: null })
-      .mockResolvedValueOnce({ text: ANALYZE_RESULT, usage: null });
+      .mockResolvedValue({ text: ANALYZE_RESULT, usage: null });
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockResolvedValue({ approved: true });
@@ -323,257 +258,35 @@ describe('runSpeckitPlanning', () => {
       callbacksOverride: { onApprovalNeeded },
     });
 
-    expect(result.disposition).toBe('parked');
-    if (result.disposition !== 'parked') return;
-    expect(result.state.phase).toBe('analyzing');
+    expect(result.disposition).toBe('tasks-ready');
+    expect(result.state.phase).toBe('reviewing-plan');
     expect(result.state.tasks).toEqual([]);
-    expect(result.state.generation ?? null).toBeNull();
     expect(onApprovalNeeded).not.toHaveBeenCalled();
     expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(0);
     expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(0);
-    const blocked = events.find(
-      (event) => event.type === 'warning' && event.code === 'brief_publication_blocked',
-    );
-    expect(blocked).toBeDefined();
     expect(existsSync(join(sessionDir(projectDir, sessionId), TASKS_FILE))).toBe(false);
-    expect(
-      events.some((event) => event.type === 'planner_status' && event.phase === 'analyzing'),
-    ).toBe(true);
     expect(planner.review).toHaveBeenCalledTimes(1);
   });
 
-  it('parks a quality-failing publication without any partial authority', async () => {
-    const invalidTasks = invalidPlanResult().tasks;
-    const review = vi.fn<Planner['review']>().mockResolvedValue({
-      text: formatTasks(invalidTasks),
-      usage: null,
-    });
+  it('leaves brief quality to the phase runner for a failing set', async () => {
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockResolvedValue({ approved: true });
     const { result, projectDir, sessionId, events, planner } = await runSpeckit({
       plannerOverrides: {
         plan: vi.fn().mockResolvedValue(invalidPlanResult()),
-        review,
       },
       callbacksOverride: { onApprovalNeeded },
     });
 
-    expect(result.disposition).toBe('parked');
-    if (result.disposition !== 'parked') return;
-    expect(result.state.phase).toBe('analyzing');
+    expect(result.disposition).toBe('tasks-ready');
+    expect(result.state.phase).toBe('reviewing-plan');
     expect(result.state.tasks).toHaveLength(1);
-    expect(result.state.generation ?? null).toBeNull();
-    expect(result.state.permit ?? null).toBeNull();
-    const persisted = loadState({ projectDir, sessionId });
-    expect(persisted?.generation ?? null).toBeNull();
-    expect(persisted?.permit ?? null).toBeNull();
-    expect(persisted?.briefRecovery ?? null).toBeNull();
     expect(onApprovalNeeded).not.toHaveBeenCalled();
     expect(planner.review).toHaveBeenCalledTimes(1);
-    expect(
-      events.some((event) => event.type === 'planner_status' && event.phase === 'analyzing'),
-    ).toBe(true);
     expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(0);
-    const blocked = events.find(
-      (event) => event.type === 'warning' && event.code === 'brief_publication_blocked',
-    );
-    expect(blocked).toBeDefined();
     const dir = sessionDir(projectDir, sessionId);
     expect(existsSync(join(dir, ANALYZE_FILE))).toBe(true);
     expect(existsSync(join(dir, TASKS_FILE))).toBe(false);
-    expect(existsSync(join(dir, BRIEF_QUALITY_FILE))).toBe(false);
-    expect(
-      events.some((event) => event.type === 'artifact_written' && event.filename === TASKS_FILE),
-    ).toBe(false);
-  });
-
-  it('leaves the prior generation and projections untouched when publication fails', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const ref = { projectDir, sessionId };
-    const seeded = publishProducerGeneration({
-      ref,
-      state: { ...createInitialState('seed'), phase: 'idle' },
-      planResult: planResult(),
-      bus: makeBusRecorder().bus,
-      phase: 'idle',
-      metadata: TEST_METADATA,
-    });
-    expect(seeded.ok).toBe(true);
-    if (!seeded.ok) return;
-    const dir = sessionDir(projectDir, sessionId);
-    const tasksBefore = readFileSync(join(dir, TASKS_FILE), 'utf8');
-    const headBefore = readWorkflowStateHead(ref);
-    if (headBefore === null) throw new Error('expected the seeded workflow head');
-    expect(headBefore.state.generation?.generationId).toBe(seeded.identity.ref.generationId);
-
-    const { result } = await runSpeckit({
-      plannerOverrides: {
-        plan: vi.fn().mockResolvedValue(invalidPlanResult()),
-      },
-      state: headBefore.state,
-    });
-
-    expect(result.disposition).toBe('parked');
-    if (result.disposition !== 'parked') return;
-    const headAfter = readWorkflowStateHead(ref);
-    expect(headAfter?.state.generation?.generationId).toBe(seeded.identity.ref.generationId);
-    expect(headAfter?.state.permit ?? null).toBeNull();
-    expect(headAfter?.state.briefRecovery ?? null).toBeNull();
-    expect(readFileSync(join(dir, TASKS_FILE), 'utf8')).toBe(tasksBefore);
-  });
-
-  it('consumes the shared automatic repair allowance at most once across replay', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const ref = { projectDir, sessionId };
-    const config = makeConfig({
-      workflow: { mode: 'speckit', approve: 'none' },
-      planner: {
-        kind: 'api',
-        provider: 'custom-endpoint',
-        service: 'custom-endpoint',
-        offering: 'payg',
-        apiBase: 'https://api.example.com/v1',
-        apiKey: 'test-key',
-        model: 'gpt-5.4',
-      },
-    });
-    const state: WorkflowState = {
-      ...createInitialState('add login'),
-      phase: 'idle',
-      stateFence: { token: 1, ownerId: 'recovery-test-owner' },
-    };
-    saveState(ref, state);
-    const initialHead = readWorkflowStateHead(ref);
-    if (initialHead === null) throw new Error('expected the initial workflow head');
-
-    const review = vi
-      .fn<Planner['review']>()
-      .mockResolvedValueOnce({ text: ANALYZE_RESULT, usage: null })
-      .mockResolvedValue({ text: REAL_TASKS_MD, usage: null });
-    const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: SAMPLE_SPEC,
-        plan: SAMPLE_PLAN,
-        tasks: [makeBriefQualityFailureTask()],
-        usage: { inputTokens: 10, outputTokens: 5 },
-        phases: [],
-      }),
-      review,
-    });
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-    const wctx = makeWctx({
-      projectDir,
-      sessionId,
-      config,
-      callbacks,
-      planner,
-      metadata: TEST_METADATA,
-      bus,
-      modelCache: {
-        getModelsDevCatalog: () => ({
-          openai: {
-            id: 'openai',
-            models: {
-              'gpt-5.4': {
-                id: 'gpt-5.4',
-                cost: { input: 2.5, output: 15 },
-                limit: { context: 400_000 },
-              },
-            },
-          },
-        }),
-        getProviderModels: () => null,
-      },
-    });
-    let trackedState: WorkflowState = state;
-    const authorityBase: Omit<StateAuthorityReceipt, 'stateRevision' | 'stateDigest'> = {
-      kind: 'usable',
-      sessionId,
-      ownerId: 'recovery-test-owner',
-      pid: process.pid,
-      processStart: 'speckit-recovery-test-process',
-      runId: 'speckit-recovery-test-run',
-      acquisitionId: 'speckit-recovery-test-acquisition',
-      fence: 1,
-    };
-    const binding = createWorkflowRecoveryBinding({
-      wctx,
-      getState: () => trackedState,
-      setState: (next) => {
-        trackedState = next;
-      },
-      getAuthority: () => {
-        const head = readWorkflowStateHead(ref);
-        if (head === null) {
-          return {
-            ...authorityBase,
-            stateRevision: initialHead.state.stateRevision ?? 0,
-            stateDigest: initialHead.digest,
-          };
-        }
-        return {
-          ...authorityBase,
-          stateRevision: head.state.stateRevision ?? 0,
-          stateDigest: head.digest,
-        };
-      },
-    });
-
-    const planning = await runPlanningPhase({
-      wctx,
-      planner,
-      state,
-      feature: 'add login',
-      recovery: binding,
-    });
-    expect(planning.disposition).toBe('parked');
-    if (planning.disposition !== 'parked') return;
-
-    const quality = await runBriefQuality({
-      tasks: [...planning.state.tasks],
-      state: planning.state,
-      planner,
-      wctx,
-      recovery: binding,
-    });
-    expect(quality.ok).toBe(true);
-    if (!quality.ok) return;
-    expect(quality.projection.status).toBe('ready');
-
-    const head = readWorkflowStateHead(ref);
-    const recovery = head?.state.briefRecovery;
-    expect(recovery?.status).toBe('ready');
-    if (recovery === null || recovery === undefined || recovery.status !== 'ready') {
-      throw new Error('expected a ready normal recovery record');
-    }
-    expect(recovery.automaticRepair.consumed).toBe(true);
-    const attempts = Object.values(recovery.attempts ?? {});
-    expect(attempts.filter((attempt) => attempt.kind === 'automatic')).toHaveLength(1);
-    expect(review).toHaveBeenCalledTimes(2);
-
-    const replayed = await binding.controller.enterBriefAdmission(
-      binding.createAdmissionInput({
-        state: planning.state,
-        tasks: [...planning.state.tasks],
-        projectDir,
-        sessionId,
-      }),
-      binding.authority,
-    );
-    expect(replayed.kind).toBe('ready');
-    expect(review).toHaveBeenCalledTimes(2);
-    const headAfterReplay = readWorkflowStateHead(ref);
-    const replayRecovery = headAfterReplay?.state.briefRecovery;
-    if (
-      replayRecovery === null ||
-      replayRecovery === undefined ||
-      replayRecovery.status !== 'ready'
-    ) {
-      throw new Error('expected a ready normal recovery record after replay');
-    }
-    const attemptsAfterReplay = Object.values(replayRecovery.attempts ?? {});
-    expect(attemptsAfterReplay.filter((attempt) => attempt.kind === 'automatic')).toHaveLength(1);
   });
 });

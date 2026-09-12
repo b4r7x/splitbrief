@@ -168,7 +168,7 @@ describe('CostApprovalPromptConnected', () => {
     costApprovalStore.__testReset();
   });
 
-  it('renders store-driven prediction and settles the open promise on close (attached IPC path)', async () => {
+  it('renders the store-driven prediction and settles the open promise on close', async () => {
     const pending = openCostApprovalPrompt(makeCostPrediction());
     const ui = renderFeature(<CostApprovalPromptConnected />);
 

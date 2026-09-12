@@ -233,7 +233,7 @@ describe('sticky option click zones', () => {
   });
 });
 
-describe('short-viewport clamp clips registered sticky zones', () => {
+describe('short-viewport clamp sheds the blank rows, and the zones follow', () => {
   beforeEach(() => {
     _resetMouseZones();
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
@@ -245,7 +245,7 @@ describe('short-viewport clamp clips registered sticky zones', () => {
     terminalSizeStore.reset();
   });
 
-  it('does not activate the deny zone below the shell-clamped prompt box', async () => {
+  it('moves the option zones up with the shed blanks, and registers none below', async () => {
     const decision = openApprovalPrompt(makeStickyRequest('write src/x.ts'));
     const ui = render(<ApprovalPrompt clampedBoxRows={8} />);
     await tick(PAST_GRACE);
@@ -254,8 +254,15 @@ describe('short-viewport clamp clips registered sticky zones', () => {
     const boxTop = contentRect.top + contentRect.height;
     const centerX = 40;
 
-    expect(hitTopmostZone(centerX, boxTop + 5)?.id).toBe('approval-option-a');
+    // Border, title, subject, then the four options: the two blanks above them paid for the
+    // bottom border and the legend, so every option is inside the clamped box and clickable.
+    expect(hitTopmostZone(centerX, boxTop + 3)?.id).toBe('approval-option-a');
+    expect(hitTopmostZone(centerX, boxTop + 6)?.id).toBe('approval-option-x');
     expect(hitTopmostZone(centerX, boxTop + 8)).toBeUndefined();
+
+    const lines = stripColor(ui.lastFrame()).split('\n');
+    expect(lines.some((line) => line.includes(STICKY_PERSIST_NOTE))).toBe(true);
+    expect(lines.some((line) => line.includes(STICKY_HINTS))).toBe(true);
 
     await flushEffects();
     ui.stdin.write(ESC);

@@ -57,7 +57,6 @@ describe('resume migration boundary', () => {
             initStores: async () => {},
             renderApp: async () => {},
             runHeadless: async () => {},
-            runRpc: async () => {},
             setupWorkflow: async () => ({
               projectDir,
               useFullscreen: false,
@@ -88,7 +87,6 @@ describe('resume migration boundary', () => {
           initStores: async () => {},
           renderApp: async () => {},
           runHeadless: async () => {},
-          runRpc: async () => {},
           setupWorkflow: async () => ({
             projectDir: '/tmp/resume-migration-boundary',
             useFullscreen: false,

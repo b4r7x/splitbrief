@@ -17,16 +17,28 @@ import { routerStore } from '../../../src/stores/navigation/router.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { COMMANDS, renderDockedComposer } from '#testing/helpers/composer.js';
+import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+
+// A unique directory per run: session preparation allocates the session directory and refuses to
+// reallocate one, so a fixed path would fail every run after the first.
+const PROJECT_DIR = createTempDir('composer-hints-project');
 
 const WORKFLOW_ROUTE = {
   screen: 'workflow',
   execution: {
-    kind: 'attached',
-    feature: 'demo',
-    sessionId: 'composer-hints-session',
-    attach: { sockPath: '/tmp/composer-hints.sock', authToken: 'test-token' },
+    kind: 'local',
+    prepared: prepareWorkflowExecution({
+      projectDir: PROJECT_DIR,
+      feature: 'demo',
+      sessionId: 'composer-hints-session',
+    }),
   },
 } as const;
+
+afterAll(() => {
+  cleanupTempDir(PROJECT_DIR);
+});
 
 const originalForceColor = vi.hoisted(() => {
   const saved = process.env['FORCE_COLOR'];
@@ -73,14 +85,14 @@ describe('composer in-box footer hints', () => {
       currentScreen: 'workflow',
       mode: 'normal',
       hint: '',
-      boxHints: { keys: 'Ctrl+D detach', cost: '$0.03', costTone: 'text' },
+      boxHints: { keys: 'Ctrl+D diff', cost: '$0.03', costTone: 'text' },
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Ctrl+D detach');
+    expect(frame).toContain('Ctrl+D diff');
     expect(frame).not.toContain('tab');
     expect(frame).toContain('$0.03');
     ui.unmount();
@@ -93,7 +105,7 @@ describe('composer in-box footer hints', () => {
       currentScreen: 'workflow',
       mode: 'question',
       hint: '',
-      boxHints: { keys: 'Ctrl+D detach', cost, costTone: 'warning' },
+      boxHints: { keys: 'Ctrl+D diff', cost, costTone: 'warning' },
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });

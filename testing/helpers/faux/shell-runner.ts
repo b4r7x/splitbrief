@@ -64,7 +64,6 @@ export function makeShellRunnerConfig(overrides?: Parameters<typeof makeConfig>[
     },
     workflow: {
       mode: 'quick',
-      persistTranscript: false,
       maxRetries: 1,
       ...overrides?.workflow,
     },

@@ -135,10 +135,9 @@ export function useAppKeys({
 
   useInput((input, key) => {
     if (!(key.ctrl && input === 'c')) return;
-    // Off the workflow screen there is no local turn to interrupt, and an attach client is a
-    // thin remote viewer that mirrors a workflow running elsewhere — neither has anything to
-    // arm against, so Ctrl+C exits immediately rather than starting a hidden two-press ladder.
-    if (route.screen !== 'workflow' || route.execution.kind === 'attached') {
+    // Off the workflow screen there is no local turn to interrupt, so Ctrl+C exits immediately
+    // rather than starting a hidden two-press ladder.
+    if (route.screen !== 'workflow') {
       exit();
       return;
     }
@@ -200,8 +199,7 @@ export function useAppKeys({
         !promptPending &&
         !completionOpen &&
         !sessionPreparationActive &&
-        !fieldSessionOwned &&
-        route.execution.kind === 'local',
+        !fieldSessionOwned,
     },
   );
 
@@ -264,10 +262,7 @@ function handleShortcutKeys(
     return { type: 'open-overlay', overlay: 'skills' };
   if (input === '\x1f' || (key.ctrl && input === '/'))
     return { type: 'open-overlay', overlay: 'help' };
-  if (key.ctrl && input === ',') {
-    if (route.screen === 'workflow' && route.execution.kind === 'attached') return NONE;
-    return { type: 'open-overlay', overlay: 'settings' };
-  }
+  if (key.ctrl && input === ',') return { type: 'open-overlay', overlay: 'settings' };
   if (key.ctrl && input === 'q') return { type: 'exit' };
   return NONE;
 }

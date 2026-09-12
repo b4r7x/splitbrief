@@ -115,8 +115,6 @@ describe('declared planner artifact provenance', () => {
     const batchId = createTaskCompilationBatchId(programId, 0, [0]);
     const review = await beginDeclaredArtifactReview({
       stagedProjectDir: root,
-      projectDir: root,
-      sessionId: 'provenance-review',
       callId: attemptId,
       provenance: {
         semanticId: TaskCompilationSemanticIdSchema.parse('semantic-review'),

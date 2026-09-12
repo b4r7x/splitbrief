@@ -5,7 +5,6 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { abortStore } from '../../../stores/workflow/abort.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
-import { resolveAttachFeedbackHint } from '../input-hints.js';
 import { REVIEW_HINT } from '../review-commands.js';
 import { FeedbackRow } from './feedback-row.js';
 
@@ -52,8 +51,8 @@ describe('FeedbackRow', () => {
     ui.unmount();
   });
 
-  it('renders blank when the attached client is connected so the placeholder owns the hint', () => {
-    const ui = renderFeature(<FeedbackRow inputHint={resolveAttachFeedbackHint('connected')} />);
+  it('renders blank when the input hint is empty so the placeholder owns the hint', () => {
+    const ui = renderFeature(<FeedbackRow inputHint="" />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame.trim()).toBe('');

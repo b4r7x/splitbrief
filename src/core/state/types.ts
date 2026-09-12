@@ -2,76 +2,17 @@ import type { Task, TaskId } from '../schemas/task.js';
 import type { QueuedMessage, WorkflowState } from '../schemas/workflow.js';
 import type { RecoveryAction } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
-import type { BriefReadinessDecision } from '../schemas/brief-recovery/attempt.js';
-import type { BriefRecoveryV1 } from '../schemas/brief-recovery/document.js';
-import type { BriefGenerationRef, TaskExecutionPermit } from '../schemas/brief-owner.js';
-import type { SessionRef } from '../types/session-ref.js';
 
-export type BriefAdmissionStateAction = {
-  type: 'BRIEF_ADMISSION_OPENED';
-  briefRecovery: BriefRecoveryV1;
-};
-
-export type MachineAction = StateAction | BriefAdmissionStateAction;
-
-export type StateAuthorityCandidate = {
-  readonly kind: 'candidate';
-  readonly sessionId: string;
-  readonly ownerId: string;
-  readonly pid: number;
-  readonly processStart: string;
-  readonly runId: string;
-  readonly acquisitionId: string;
-  readonly fence: number;
-  readonly stateRevision: number;
-  readonly stateDigest: null;
-};
-
-export type ResumeReadPermit = {
-  readonly kind: 'read-only-permit';
-  readonly sessionId: string;
-  readonly acquisitionId: string;
-  readonly rawStateDigest: string | null;
-};
-
-export type StateAuthorityReceipt = {
-  readonly kind: 'usable';
-  readonly sessionId: string;
-  readonly ownerId: string;
-  readonly pid: number;
-  readonly processStart: string;
-  readonly runId: string;
-  readonly acquisitionId: string;
-  readonly fence: number;
-  readonly stateRevision: number;
-  readonly stateDigest: string;
-};
-
-export type ResumeLoadAuthority =
-  | {
-      readonly kind: 'fenced';
-      readonly receipt: StateAuthorityReceipt;
-      readonly promotedFromVersion: 3 | null;
-    }
-  | { readonly kind: 'read-only'; readonly permit: ResumeReadPermit };
-
-export type ResumeLoadInput = {
-  readonly ref: SessionRef;
-  readonly authority: ResumeLoadAuthority;
-};
+export type MachineAction = StateAction;
 
 export type ResumeLoadResult =
   | { readonly kind: 'missing' }
-  | { readonly kind: 'loaded'; readonly state: WorkflowState; readonly migrated: boolean }
+  | { readonly kind: 'loaded'; readonly state: WorkflowState }
   | {
       readonly kind: 'invalid';
       readonly code: 'malformed' | 'future-version';
       readonly message: string;
     };
-
-export type StateAuthorityAcquisitionResult =
-  | ResumeLoadAuthority
-  | { readonly kind: 'new-workflow'; readonly candidate: StateAuthorityCandidate };
 
 export type StateAction =
   | { type: 'START' }
@@ -81,12 +22,8 @@ export type StateAction =
   | { type: 'REJECT_SPEC' }
   | { type: 'PLAN_DONE'; tasks: Task[] }
   | { type: 'REJECT_PLAN' }
-  | {
-      type: 'BEGIN_IMPLEMENTATION';
-      generation: BriefGenerationRef;
-      permit: TaskExecutionPermit;
-    }
-  | { type: 'RECORD_BRIEF_READINESS'; decision: BriefReadinessDecision }
+  | { type: 'BRIEF_ADMISSION_OPENED' }
+  | { type: 'BEGIN_IMPLEMENTATION' }
   | { type: 'REJECT_BRIEFS' }
   | { type: 'SPEC_CLARIFY_START' }
   | { type: 'SPEC_CLARIFY_DONE' }

@@ -6,14 +6,7 @@ export function eventPhase(event: object): Phase | undefined {
   return result.success ? result.data : undefined;
 }
 
-export const INFRASTRUCTURE_PHASE_EVENT_TYPES = [
-  'ipc_client_attached',
-  'ipc_client_detached',
-  'ipc_reconnect_attempt',
-  'ipc_reconnect_failed',
-  'replay_started',
-  'replay_complete',
-] as const;
+export const INFRASTRUCTURE_PHASE_EVENT_TYPES = ['replay_started', 'replay_complete'] as const;
 
 export type EventTypeCarrier = { readonly type: string };
 

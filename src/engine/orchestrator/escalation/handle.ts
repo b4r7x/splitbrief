@@ -16,6 +16,7 @@ import {
   routeBiggerProfileFromDecision,
 } from '../recovery/builders/task.js';
 import { raisePendingRecovery } from '../state-ops.js';
+import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { nowIso } from '../../../utils/format-time.js';
 
 type HandleRetryOptions = {
@@ -68,15 +69,20 @@ function unauthenticatedHalt(
  * prices. The recovery names the reset time when the tool reported one and
  * offers the profile switch instead of a pointless re-login.
  */
-function usageLimitHalt(
+async function usageLimitHalt(
   ctx: EscalationContext,
   task: Task,
   stepOutcome: RetryStepOutcome,
-): { state: WorkflowState; result: RetryResult } | null {
+): Promise<{ state: WorkflowState; result: RetryResult } | null> {
   const failure = stepOutcome.lastFailure;
   if (failure?.outcome !== 'usage-limit') return null;
   const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
   const routeBiggerProfile = routeBiggerProfileFromDecision(ctx.routingDecision);
+  const seatSwap = await loadSeatSwapContext({
+    projectDir: ctx.projectDir,
+    seat: 'build',
+    runner: failure.runner,
+  });
   const issue = buildRunnerUsageLimitRecoveryIssue({
     task,
     phase: stepOutcome.state.phase,
@@ -86,6 +92,7 @@ function usageLimitHalt(
     maxAttempts: ctx.config.workflow.maxRetries,
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
     ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
+    ...(seatSwap !== undefined && { seatSwap }),
     createdAt: nowIso(),
   });
   publishError({
@@ -97,12 +104,14 @@ function usageLimitHalt(
   return { state: nextState, result: failedRetry(stepOutcome.attempts) };
 }
 
-function runnerHalt(
+async function runnerHalt(
   ctx: EscalationContext,
   task: Task,
   stepOutcome: RetryStepOutcome,
-): { state: WorkflowState; result: RetryResult } | null {
-  return unauthenticatedHalt(ctx, task, stepOutcome) ?? usageLimitHalt(ctx, task, stepOutcome);
+): Promise<{ state: WorkflowState; result: RetryResult } | null> {
+  const unauthenticated = unauthenticatedHalt(ctx, task, stepOutcome);
+  if (unauthenticated) return unauthenticated;
+  return usageLimitHalt(ctx, task, stepOutcome);
 }
 
 export async function handleRetryAndEscalation(
@@ -147,7 +156,7 @@ export async function handleRetryAndEscalation(
       result: failedRetry(retries.attempts),
     };
 
-  const retriesHalt = runnerHalt(ctx, retries.task, retries);
+  const retriesHalt = await runnerHalt(ctx, retries.task, retries);
   if (retriesHalt) return retriesHalt;
 
   if (ctx.config.hooks) {
@@ -203,7 +212,7 @@ export async function handleRetryAndEscalation(
       result: failedRetry(tier0.attempts),
     };
 
-  const tier0Halt = runnerHalt(ctx, tier0.task, tier0);
+  const tier0Halt = await runnerHalt(ctx, tier0.task, tier0);
   if (tier0Halt) return tier0Halt;
 
   const tier1 = await runEscalationTier(HINT_TIER, {
@@ -221,7 +230,7 @@ export async function handleRetryAndEscalation(
       result: failedRetry(tier1.attempts),
     };
 
-  const tier1Halt = runnerHalt(ctx, tier1.task, tier1);
+  const tier1Halt = await runnerHalt(ctx, tier1.task, tier1);
   if (tier1Halt) return tier1Halt;
 
   const tier2 = await runEscalationTier(FULL_TIER, {

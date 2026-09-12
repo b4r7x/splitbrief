@@ -20,7 +20,6 @@ export interface RepoMapOptions {
   focusFiles?: string[];
   featureText?: string;
   tokenBudget?: number;
-  cacheDir?: string;
   include?: string[];
   exclude?: string[];
   onWarn?: (message: string) => void;
@@ -32,15 +31,14 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
     await initParser();
 
     const tokenBudget = opts.tokenBudget ?? 4000;
-    const cacheDir = resolveCodebaseCacheDir(projectDir, opts.cacheDir);
+    const cacheDir = resolveCodebaseCacheDir(projectDir);
     await mkdir(cacheDir, { recursive: true });
-    cache = await createParseCache(resolveRepoMapDbPath(projectDir, opts.cacheDir), {
+    cache = await createParseCache(resolveRepoMapDbPath(projectDir), {
       ...(opts.onWarn && { onWarn: opts.onWarn }),
     });
     const c = cache;
 
     const absFiles = await discoverFiles(projectDir, {
-      cacheDir,
       ...(opts.exclude ? { excludePatterns: opts.exclude } : {}),
       ...(opts.include ? { includePatterns: opts.include } : {}),
     });

@@ -15,6 +15,7 @@ import { isExtractedCodeApprovalRaceError } from '../../implementers/pipeline/ex
 import { handleApprovalTimeUserEditConflict } from '../escalation/approval-conflict.js';
 import { retryAndRecord } from './retry.js';
 import { runChainAnalysisSafe } from './analyze-drift.js';
+import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 
 export async function handleFailedImplementation(opts: {
   wctx: WorkflowContext;
@@ -73,6 +74,11 @@ export async function handleFailedImplementation(opts: {
   if (implState.implResult.outcome === 'usage-limit') {
     const toolMessage = implState.implResult.error ?? 'The runner reported a usage limit';
     const routeBiggerProfile = routeBiggerProfileFromDecision(wctx.routingDecision);
+    const seatSwap = await loadSeatSwapContext({
+      projectDir: wctx.projectDir,
+      seat: 'build',
+      runner: wctx.config.implementer,
+    });
     const issue = buildRunnerUsageLimitRecoveryIssue({
       task,
       phase: state.phase,
@@ -84,6 +90,7 @@ export async function handleFailedImplementation(opts: {
         selectedImplementerProfile: wctx.implementerProfile,
       }),
       ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
+      ...(seatSwap !== undefined && { seatSwap }),
       createdAt: nowIso(),
     });
     publishError({

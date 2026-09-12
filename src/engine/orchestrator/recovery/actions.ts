@@ -1,7 +1,9 @@
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { allowedActionsForReason } from '../../../core/schemas/recovery/policy.js';
-import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
+import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
+import type { CrewSeatId } from '../../../core/crew/identity.js';
+import { configWithSwitchedSeat } from './switch-seat.js';
 import {
   recoveryFactBoolean,
   recoveryFactNumber,
@@ -27,9 +29,6 @@ import {
   publishTaskSkipped,
 } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
-import { readStateAuthority } from '../../../core/state/authority.js';
-import type { StateAuthorityReceipt } from '../../../core/state/types.js';
-import { error } from '../../../utils/error.js';
 
 export type RecoveryActionBlockedCode =
   | 'no-pending-recovery'
@@ -39,6 +38,8 @@ export type RecoveryActionBlockedCode =
   | 'skip-evidence-failed'
   | 'missing-profile'
   | 'profile-not-found'
+  | 'seat-swap-unavailable'
+  | 'candidate-not-offered'
   | 'planner-proposal-required';
 
 export type RecoveryActionAppliedStatus =
@@ -56,6 +57,8 @@ export type ApplyRecoveryActionResult =
       state: WorkflowState;
       status: RecoveryActionAppliedStatus;
       implementerProfile?: string | undefined;
+      switchedSeat?: Readonly<{ seat: CrewSeatId; candidate: SeatSwapCandidate }> | undefined;
+      switchedConfig?: Config | undefined;
     }
   | {
       ok: false;
@@ -68,6 +71,22 @@ export type ApplyRecoveryActionResult =
       implementerProfile?: string | undefined;
     };
 
+export type ApplyRecoveryActionBlocked = Extract<ApplyRecoveryActionResult, { ok: false }>;
+
+/**
+ * What `switch-seat` resolves to. The shared result declares the swap fields
+ * optional because no other action sets them; the one action that always does
+ * narrows them back to required, so its caller reads the switched config
+ * without a check for a state the producer cannot emit.
+ */
+export type ApplySwitchSeatResult =
+  | (Extract<ApplyRecoveryActionResult, { ok: true }> &
+      Readonly<{
+        switchedSeat: Readonly<{ seat: CrewSeatId; candidate: SeatSwapCandidate }>;
+        switchedConfig: Config;
+      }>)
+  | ApplyRecoveryActionBlocked;
+
 export interface ApplyRecoveryActionOptions {
   projectDir: string;
   sessionId: string;
@@ -76,20 +95,8 @@ export interface ApplyRecoveryActionOptions {
   bus: EventBus;
   config?: Config | undefined;
   mode?: WorkflowMode | undefined;
-  authority?: StateAuthorityReceipt | undefined;
-}
-
-function recoveryMutationOptions(
-  opts: ApplyRecoveryActionOptions,
-  state: WorkflowState,
-): { expectedRevision: number; authority?: StateAuthorityReceipt } {
-  const expectedRevision = state.stateRevision ?? 0;
-  if (opts.authority === undefined) return { expectedRevision };
-  const current = readStateAuthority({ projectDir: opts.projectDir, sessionId: opts.sessionId });
-  if (current === null) {
-    throw error('state-authority-invalid', 'The recovery state authority is unavailable.');
-  }
-  return { expectedRevision, authority: current };
+  /** `switch-seat` only: which offered tool the seat moves to. Defaults to the first offer. */
+  candidate?: SeatSwapCandidate | undefined;
 }
 
 export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyRecoveryActionResult {
@@ -150,6 +157,8 @@ export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyReco
       return applyRetrySameWorkerRecoveryAction(opts, issue);
     case 'route-bigger-worker':
       return applyRouteBiggerWorkerRecoveryAction(opts, issue);
+    case 'switch-seat':
+      return applySwitchSeatRecoveryAction(opts);
     default:
       return assertNever(opts.action);
   }
@@ -184,7 +193,7 @@ function applyContinueRecoveryAction(
           type: 'ACKNOWLEDGE_BUDGET_PAUSE',
           cost: acknowledgedAtCost,
         },
-        recoveryMutationOptions(opts, state),
+        { expectedRevision: state.stateRevision ?? 0 },
       );
     }
   }
@@ -194,7 +203,7 @@ function applyContinueRecoveryAction(
     {
       type: 'RESOLVE_PENDING_RECOVERY',
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
 
@@ -212,7 +221,7 @@ function applyPauseRecoveryAction(
     {
       type: 'PAUSE_PENDING_RECOVERY',
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   return { ok: true, action: opts.action, issue, state, status: 'paused' };
 }
@@ -226,7 +235,7 @@ function applyAbortRecoveryAction(
     opts,
     state,
     { type: 'ABORT_PENDING_RECOVERY' },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'aborted' });
   return { ok: true, action: opts.action, issue, state, status: 'aborted' };
@@ -276,7 +285,7 @@ function applySkipCurrentTaskRecoveryAction(
       type: 'SKIP_TASK',
       taskId: target.id,
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   state = transitionAndSave(
     opts,
@@ -284,7 +293,7 @@ function applySkipCurrentTaskRecoveryAction(
     {
       type: 'RESOLVE_PENDING_RECOVERY',
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   publishTaskSkipped(
     { bus: opts.bus, phase: issue.phase },
@@ -349,6 +358,96 @@ function applyRouteBiggerWorkerRecoveryAction(
   );
 }
 
+/**
+ * Move a quota-blocked seat onto one of the tools the issue offered, then take
+ * the same retry path `route-bigger-worker` takes: the current task is reset
+ * and replayed, this time on the chosen seat.
+ *
+ * The swap itself travels on the result: `switchedConfig` is the run config
+ * with that seat repointed, which the caller hands to `createPlanner` /
+ * `createImplementer` / `createReviewer` — recovery is a synchronous
+ * transition and never holds the preparation authority those factories
+ * require. Omitting `candidate` takes the first tool the offer named.
+ */
+export function applySwitchSeatRecoveryAction(
+  opts: Omit<ApplyRecoveryActionOptions, 'action'>,
+): ApplySwitchSeatResult {
+  const action: RecoveryAction = 'switch-seat';
+  const issue = opts.state.pendingRecovery;
+  if (!issue) {
+    return {
+      ok: false,
+      action,
+      state: opts.state,
+      status: 'blocked',
+      code: 'no-pending-recovery',
+      message: 'No pending recovery issue is available.',
+    };
+  }
+
+  const offer = issue.switchSeat;
+  const first = offer?.candidates[0];
+  if (!offer || first === undefined || !issue.availableActions.includes(action)) {
+    return blockRecoveryAction({
+      ...opts,
+      action,
+      issue,
+      code: 'seat-swap-unavailable',
+      message: `Recovery issue ${issue.reason} offers no seat to switch to.`,
+    });
+  }
+
+  const chosen = opts.candidate ?? first;
+  const offered = offer.candidates.some(
+    (candidate) => candidate.tool === chosen.tool && candidate.model === chosen.model,
+  );
+  if (!offered) {
+    return blockRecoveryAction({
+      ...opts,
+      action,
+      issue,
+      code: 'candidate-not-offered',
+      message: `'${chosen.tool}' is not one of the tools offered for the ${offer.seat} seat.`,
+      publishSelected: true,
+    });
+  }
+
+  if (!opts.config) {
+    return blockRecoveryAction({
+      ...opts,
+      action,
+      issue,
+      code: 'seat-swap-unavailable',
+      message: 'Switching a seat requires the run config.',
+      publishSelected: true,
+    });
+  }
+
+  const switchedConfig = configWithSwitchedSeat(opts.config, offer.seat, chosen);
+  if (switchedConfig === null) {
+    return blockRecoveryAction({
+      ...opts,
+      action,
+      issue,
+      code: 'candidate-not-offered',
+      message: `'${chosen.tool}' cannot host the ${offer.seat} seat.`,
+      publishSelected: true,
+    });
+  }
+
+  const applied = applyRetryCurrentTaskRecoveryAction(
+    { ...opts, action },
+    issue,
+    'Switching a seat requires the pending recovery task to match the current task index.',
+  );
+  if (!applied.ok) return applied;
+  return {
+    ...applied,
+    switchedSeat: { seat: offer.seat, candidate: chosen },
+    switchedConfig,
+  };
+}
+
 function applyRetryCurrentTaskRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
@@ -376,7 +475,7 @@ function applyRetryCurrentTaskRecoveryAction(
       type: 'RESET_TASK',
       taskId: target.id,
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   opts.bus.publish({
     type: 'task_reset',
@@ -390,7 +489,7 @@ function applyRetryCurrentTaskRecoveryAction(
     {
       type: 'RESOLVE_PENDING_RECOVERY',
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   publishRecoveryResolved({
     bus: opts.bus,
@@ -428,7 +527,7 @@ function markRecoveryApplying(
       type: 'MARK_RECOVERY_APPLYING',
       action: opts.action,
     },
-    recoveryMutationOptions(opts, opts.state),
+    { expectedRevision: opts.state.stateRevision ?? 0 },
   );
 }
 
@@ -439,7 +538,7 @@ function blockRecoveryAction(
     implementerProfile?: string | undefined;
     publishSelected?: boolean | undefined;
   },
-): ApplyRecoveryActionResult {
+): ApplyRecoveryActionBlocked {
   if (opts.publishSelected) {
     publishRecoveryActionSelected({ bus: opts.bus, issue: opts.issue, action: opts.action });
   }

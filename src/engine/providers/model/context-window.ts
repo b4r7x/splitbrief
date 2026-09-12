@@ -4,10 +4,12 @@ import {
   findKnownModel,
   getBundledModels,
   getEffectiveModelId,
+  lookupCatalogModelByModelId,
   lookupModelsDevModel,
   lookupRuntimeModel,
   type ModelCacheAccessor,
 } from './resolution.js';
+import { isCliToolId } from '../../../core/runners/cli-tool-catalog.js';
 
 export type ContextWindowSource = 'models-dev' | 'runtime' | 'known-catalog' | 'automatic-catalog';
 
@@ -50,20 +52,18 @@ export function resolveRunnerContextWindow(
     if (runtime?.contextLength !== undefined) {
       return { contextLength: runtime.contextLength, source: 'runtime' };
     }
+
+    // A CLI tool owns no catalog vendor, so its pinned model is only found by
+    // identity — the same lane pricing uses for a vendorless runner.
+    if (isCliToolId(input.providerId)) {
+      const byIdentity = lookupCatalogModelByModelId(modelId, input.cache);
+      if (byIdentity?.contextLength !== undefined) {
+        return { contextLength: byIdentity.contextLength, source: 'models-dev' };
+      }
+    }
   }
 
   const known = findKnownModel(input.providerId, modelId);
-
-  // An alias is not a catalog id, so the lookups above cannot find it: `opus` is `claude-opus-5`
-  // in every catalog that publishes a window for it. A row that names the id it resolves to reads
-  // that row's window ahead of the one it declares, so a pinned seat and the picker row it was
-  // picked from can never print two windows for one model.
-  if (input.cache !== undefined && known?.catalogModelId !== undefined) {
-    const catalogRow = lookupModelsDevModel(input.providerId, known.catalogModelId, input.cache);
-    if (catalogRow?.contextLength !== undefined) {
-      return { contextLength: catalogRow.contextLength, source: 'models-dev' };
-    }
-  }
 
   if (known?.contextLength !== undefined) {
     return { contextLength: known.contextLength, source: 'known-catalog' };

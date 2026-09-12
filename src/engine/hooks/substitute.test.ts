@@ -5,7 +5,7 @@ import { taskId } from '../../core/schemas/task.js';
 import {
   CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER,
   CALL_HOOKS_MAX_PUBLIC_STRING_BYTES,
-} from '../../core/consumer-policy.js';
+} from '../../core/payload-bounds.js';
 
 const S = (s: string) => '$' + `{${s}}`;
 

@@ -38,7 +38,7 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
     case 'unauthenticated':
       return 'Authenticate the CLI, then retry.';
     case 'usage-limit':
-      return 'Wait for the usage limit to reset, switch to a different runner profile, or abort.';
+      return 'Wait for the usage limit to reset, switch the seat to another tool, or abort.';
     case 'timeout':
       return 'Retry the command or increase its configured timeout.';
     case 'user-abort':

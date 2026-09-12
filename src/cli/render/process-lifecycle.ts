@@ -1,5 +1,4 @@
 import { awaitActiveWorkflowShutdown } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
-import { flushOtel } from '../../lib/otel.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
 import { restoreTerminalControl } from '../../lib/terminal/control.js';
 import { teardownStores } from '../init-stores.js';
@@ -40,14 +39,12 @@ async function runCleanupStep(step: CleanupStep): Promise<void> {
 }
 
 // A process group that survives reaping is reported to the caller, but it must not cost the user
-// the remaining owners: the terminal is restored and telemetry flushed first, then the failure is
-// surfaced.
+// the remaining owners: the terminal is restored first, then the failure is surfaced.
 async function cleanupTuiProcess(restore: CleanupStep): Promise<void> {
   await runCleanupStep(teardownStores);
   const reaping = await settleCleanupStep(killAllProcesses);
   await runCleanupStep(awaitActiveWorkflowShutdown);
   await runCleanupStep(restore);
-  await runCleanupStep(flushOtel);
   if (reaping !== undefined) throw reaping.error;
 }
 

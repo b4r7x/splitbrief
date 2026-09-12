@@ -56,12 +56,8 @@ type ValidateCommitOptions = {
 function buildTaskCommitMessage(opts: {
   task: Pick<Task, 'id' | 'title'>;
   commitSuffix?: string | undefined;
-  persistTranscript: boolean;
 }): string {
   const suffix = opts.commitSuffix ? ` (${opts.commitSuffix})` : '';
-  if (!opts.persistTranscript) {
-    return `${RUN_COMMIT_MESSAGE_PREFIX} ${opts.task.id}${suffix}`;
-  }
   return `${RUN_COMMIT_MESSAGE_PREFIX} ${opts.task.id} - ${opts.task.title}${suffix}`;
 }
 
@@ -116,7 +112,6 @@ export async function validateCommitAndAdvance(
       safety: {
         category: 'workflow',
         code: 'validation_baseline_exempt',
-        transcriptSafe: true,
       },
     });
   }
@@ -161,11 +156,7 @@ export async function validateCommitAndAdvance(
       });
     }
 
-    const commitMsg = buildTaskCommitMessage({
-      task,
-      commitSuffix,
-      persistTranscript: config.workflow.persistTranscript,
-    });
+    const commitMsg = buildTaskCommitMessage({ task, commitSuffix });
 
     const stagedBefore = await gitOps.getStagedFiles(projectDir);
     try {

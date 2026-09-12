@@ -68,8 +68,6 @@ type ConfigInput = {
   codebase?: Config['codebase'];
   hooks?: Config['hooks'];
   approval?: Config['approval'];
-  plannerEstimateReview?: Config['plannerEstimateReview'];
-  autoSplitOverflow?: Config['autoSplitOverflow'];
   implementerProfiles?: ImplementerProfilesFixture;
 };
 
@@ -126,7 +124,6 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
     },
     workflow: {
       maxRetries: 3,
-      persistTranscript: true,
       mode: 'standard',
       taskReview: 'none',
       ...overrides?.workflow,
@@ -139,10 +136,6 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
   if (overrides?.codebase !== undefined) base.codebase = overrides.codebase;
   if (overrides?.hooks !== undefined) base.hooks = overrides.hooks;
   if (overrides?.approval !== undefined) base.approval = overrides.approval;
-  if (overrides?.plannerEstimateReview !== undefined)
-    base.plannerEstimateReview = overrides.plannerEstimateReview;
-  if (overrides?.autoSplitOverflow !== undefined)
-    base.autoSplitOverflow = overrides.autoSplitOverflow;
   if (overrides?.implementerProfiles !== undefined)
     base.implementerProfiles = makeImplementerProfiles(overrides.implementerProfiles);
   return ConfigSchema.parse(base);
@@ -168,7 +161,6 @@ export function makeApprovalConfig(
     approval: {
       enabled: approval.enabled ?? true,
       feedRejectionsToPlanner: approval.feedRejectionsToPlanner ?? true,
-      ...(approval.headless !== undefined && { headless: approval.headless }),
       ...(approval.tiers !== undefined && { tiers: approval.tiers }),
       ...(approval.allowedPaths !== undefined && { allowedPaths: approval.allowedPaths }),
     },

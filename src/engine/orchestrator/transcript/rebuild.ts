@@ -1,17 +1,16 @@
 import { readCompactedMessages, readMessages } from '../../../core/sessions/log-reader.js';
 import type { SessionLogMessageEntry } from '../../../core/schemas/session-log.js';
 import { sessionDir } from '../../../core/paths.js';
-import { loadStateForResume } from '../../../core/state/resume-authority.js';
+import { loadState } from '../../../core/state/persistence.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 
 export type ResumeMessage = { role: 'user' | 'assistant'; content: string };
 
 export type ResumeContext = {
   messages: ResumeMessage[];
-  warning?: 'transcript-unavailable' | 'state-unavailable' | undefined;
+  warning?: 'state-unavailable' | undefined;
 };
 
 function toResumeMessage(message: SessionLogMessageEntry): ResumeMessage {
@@ -19,24 +18,15 @@ function toResumeMessage(message: SessionLogMessageEntry): ResumeMessage {
   return { role: message.role, content };
 }
 
-function pendingQueueEntries(
-  ref: SessionRef,
-  authority: StateAuthorityReceipt | undefined,
-): { queue: WorkflowState['messageQueue']; unavailable: boolean } {
-  // Callers that only need transcript bytes may omit state hydration. Owner paths pass
-  // their receipt so queue filtering is based on the same current v4 projection.
-  if (authority === undefined) return { queue: [], unavailable: false };
-  const resumeAuthority: ResumeLoadAuthority = {
-    kind: 'fenced',
-    receipt: authority,
-    promotedFromVersion: null,
-  };
+function pendingQueueEntries(ref: SessionRef): {
+  queue: WorkflowState['messageQueue'];
+  unavailable: boolean;
+} {
   try {
-    const result = loadStateForResume({ ref, authority: resumeAuthority });
-    if (result.kind === 'missing') return { queue: [], unavailable: false };
-    if (result.kind === 'invalid') return { queue: [], unavailable: true };
+    const state = loadState(ref);
+    if (state === null) return { queue: [], unavailable: false };
     return {
-      queue: result.state.messageQueue.filter(isQueuedMessagePendingDelivery),
+      queue: state.messageQueue.filter(isQueuedMessagePendingDelivery),
       unavailable: false,
     };
   } catch {
@@ -65,16 +55,9 @@ async function readCompactedResumeEntries(ref: SessionRef): Promise<SessionLogMe
   return readCompactedMessages(sessionDir(ref.projectDir, ref.sessionId));
 }
 
-export async function buildResumeContext(opts: {
-  ref: SessionRef;
-  persistTranscript: boolean;
-  authority?: StateAuthorityReceipt | undefined;
-}): Promise<ResumeContext> {
-  const { ref, persistTranscript, authority } = opts;
-  if (!persistTranscript) {
-    return { messages: [], warning: 'transcript-unavailable' };
-  }
-  const pending = pendingQueueEntries(ref, authority);
+export async function buildResumeContext(opts: { ref: SessionRef }): Promise<ResumeContext> {
+  const { ref } = opts;
+  const pending = pendingQueueEntries(ref);
   if (pending.unavailable) return { messages: [], warning: 'state-unavailable' };
   const pendingQueue = pending.queue;
   try {
@@ -85,6 +68,10 @@ export async function buildResumeContext(opts: {
         .map(toResumeMessage),
     };
   } catch {
+    // A compacted read that fails degrades to replaying the raw message log.
+    // That replay is deliberately unguarded: if the same session directory is
+    // unreadable twice the resume fails loudly, because resuming with a
+    // silently empty history is worse than not resuming.
     const messages: ResumeMessage[] = [];
     for await (const m of readMessages(ref)) {
       if (isStillPendingQueuedTranscriptMessage(m, pendingQueue)) continue;

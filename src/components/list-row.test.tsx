@@ -69,6 +69,20 @@ describe('ListRow', () => {
     expect(listRowLead('default')).toBe('  ');
   });
 
+  it('elides a path label at a separator, so what is left is still a whole path', () => {
+    const label = 'kilo/anthropic/claude-opus-4.5';
+    const wide = stripAnsiStyles(
+      frameOf(<ListRow label={label} labelTruncate="path" width={40} />),
+    );
+    const narrow = stripAnsiStyles(
+      frameOf(<ListRow label={label} labelTruncate="path" width={24} />),
+    );
+
+    expect(wide).toContain(label);
+    expect(narrow).toContain('…/claude-opus-4.5');
+    expect(narrow).not.toContain('anthropic');
+  });
+
   it('renders a default row with no focus or active glyph', () => {
     const frame = frameOf(<ListRow label="claude code" />);
     expect(frame).toContain('claude code');

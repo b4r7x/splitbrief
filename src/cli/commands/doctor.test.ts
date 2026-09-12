@@ -122,7 +122,6 @@ function validConfigYaml(): string {
     'workflow:',
     '  approve: default',
     '  maxRetries: 3',
-    '  persistTranscript: true',
     '  mode: quick',
   ].join('\n');
 }

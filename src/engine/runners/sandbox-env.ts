@@ -98,6 +98,28 @@ export function resolveCliRunnerAuth(runner: Extract<RunnerLike, { kind: 'cli' }
   return channel;
 }
 
+const PROVIDER_API_KEY_ENV_RE = /_API_KEY$/;
+
+/**
+ * The host environment variables a staged child keeps for an auth channel —
+ * one rule for the catalog probe, for readiness, and for dispatch, so a model
+ * the picker lists is a model the runner can actually run. A provider-dependent
+ * tool holds no credential of its own: opencode and kilo use whichever
+ * providers the user's own shell has keys for, so preserving only the channel's
+ * declared keys strands the credential the listing was built from. Those
+ * channels keep every `*_API_KEY` the process carries; every other channel
+ * keeps exactly the keys it declares.
+ */
+export function cliAuthChannelEnvKeys(
+  channel: CliAuthChannel | undefined,
+  processEnv: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const declared = [...(channel?.env ?? [])];
+  if (channel?.billing !== 'provider-dependent') return declared;
+  const passthrough = Object.keys(processEnv).filter((key) => PROVIDER_API_KEY_ENV_RE.test(key));
+  return [...new Set([...declared, ...passthrough])];
+}
+
 export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
   const keys = new Set<string>();
   if ('apiKey' in runner) {
@@ -111,8 +133,7 @@ export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
       break;
     }
     case 'cli': {
-      const channel = resolveCliRunnerAuth(runner);
-      for (const envVar of channel.env) keys.add(envVar);
+      for (const envVar of cliAuthChannelEnvKeys(resolveCliRunnerAuth(runner))) keys.add(envVar);
       break;
     }
   }
@@ -140,7 +161,7 @@ export function runnerSandboxIdentity(runner: RunnerLike): string {
  * `HOME` but not `USER` still reports `"loggedIn": false`. Nothing else the
  * sandbox redirects is handed back, so temp, cache and XDG state stay isolated
  * — but this child does read and write the real home directory. See
- * docs/WORKTREES.md.
+ * docs/PLANNERS-AND-IMPLEMENTERS.md, "Credential channels".
  */
 function hostAccountState(): Readonly<Record<string, string>> {
   const home = homedir();

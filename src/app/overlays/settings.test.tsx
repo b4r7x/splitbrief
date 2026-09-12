@@ -7,6 +7,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { REMOVED_COMMANDS } from '../../core/runtime/commands/types.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
 import { buildSettingsItems, settingsItemDescription } from '../../features/settings/items.js';
 import { SettingsOverlay } from './settings.js';
@@ -282,7 +283,10 @@ describe('SettingsOverlay', () => {
   it('never points a description at a command the merge deleted', () => {
     const config = makeConfig();
     for (const item of buildSettingsItems({ config, defs: SETTINGS_DEFS })) {
-      expect(settingsItemDescription({ item, config })).not.toContain('/planner');
+      const description = settingsItemDescription({ item, config });
+      for (const removed of Object.keys(REMOVED_COMMANDS)) {
+        expect(description).not.toContain(removed);
+      }
     }
   });
 

@@ -12,7 +12,7 @@ import { error } from '../../utils/error.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { isAbortError } from '../../utils/abort.js';
-import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
+import { buildFinalReviewPrompt, truncateDiffForPrompt } from '../spec/prompts/review.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
 import { formatValidationEvidenceForPrompt } from './evidence/format-validation.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
@@ -26,8 +26,6 @@ import { buildSummary, type SummaryBase } from './summary/build.js';
 import { publishError, publishPlannerStatus, publishWarningFromError } from './events.js';
 import { transitionAndSave } from './state-ops.js';
 import { runReviewerCall } from './review-call.js';
-import { createSnapshot } from '../snapshots/create.js';
-import { recordRunSnapshot } from '../snapshots/run/ledger.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/write.js';
 import { formatTasks } from '../spec/formatter.js';
@@ -82,26 +80,6 @@ export async function runFinalReviewPhase(opts: {
     state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ALL_DONE' });
   }
 
-  if (config.snapshots?.auto?.preFinalReview) {
-    try {
-      const result = await createSnapshot({
-        projectDir,
-        sessionId,
-        phase: 'manual',
-        name: 'pre-final-review',
-        bus,
-        eventPhase: state.phase,
-      });
-      await recordRunSnapshot(projectDir, sessionId, result.manifest, 'pre-final-review');
-    } catch (err) {
-      publishWarningFromError(
-        { bus: bus, phase: state.phase },
-        'auto-snapshot (pre-final-review) failed',
-        err,
-      );
-    }
-  }
-
   const finalReviewStart = Date.now();
   const interruptedSummary = (): FinalReviewResult => {
     if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
@@ -125,21 +103,13 @@ export async function runFinalReviewPhase(opts: {
   publishPlannerStatus(bus, state, 'running');
   bus.publish({ type: 'all_tasks_done', ts: Date.now(), phase: state.phase });
 
-  const MAX_DIFF_CHARS = 100_000;
-
   let reviewStatus: 'written' | 'failed' = 'written';
   try {
     const baseline = state.changedFilesBaseline;
     if (baseline?.runStartChangedFiles === undefined) throw finalReviewError.missingRunBaseline();
     const universe = await resolveRunUniverse(projectDir, baseline);
     const fullDiff = universe.fullDiff;
-    let promptDiff = fullDiff;
-    if (promptDiff.length > MAX_DIFF_CHARS) {
-      const omitted = promptDiff.length - MAX_DIFF_CHARS;
-      promptDiff =
-        promptDiff.slice(0, MAX_DIFF_CHARS) +
-        `\n\n[... diff truncated, ${omitted} characters omitted ...]`;
-    }
+    const promptDiff = truncateDiffForPrompt(fullDiff);
     const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
     const taskBriefs =
       readSpecFileOrEmpty({ projectDir, sessionId }, TASKS_FILE) || formatTasks(state.tasks);

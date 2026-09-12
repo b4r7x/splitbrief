@@ -18,13 +18,11 @@ export function buildModeChecks(config: Config): ReadinessCheck[] {
       details: [
         `Retries: ${config.workflow.maxRetries}`,
         `Planner effort: ${effort ?? 'provider default'}`,
-        `Transcript persistence: ${config.workflow.persistTranscript ? 'on' : 'off'}`,
       ],
       metadata: {
         mode,
         approve,
         maxRetries: config.workflow.maxRetries,
-        persistTranscript: config.workflow.persistTranscript,
         effort: effort ?? null,
       },
     },

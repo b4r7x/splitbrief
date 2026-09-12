@@ -171,8 +171,6 @@ describe('config roundtrip', () => {
       ) as Record<string, unknown>;
       expect(written.codebase).toBeDefined();
       expect(written.hooks).toBeDefined();
-      expect(written.otel).toBeDefined();
-      expect(written.snapshots).toBeDefined();
       expect(written.palette).toBeDefined();
       expect(written.approval).toBeDefined();
       expect((written.palette as Record<string, unknown>).custom_actions).toBeDefined();
@@ -259,13 +257,11 @@ describe('config roundtrip', () => {
         validation: { typecheck: true, lint: true, test: true },
         workflow: {
           max_retries: 3,
-          persist_transcript: true,
           compaction_format: 'auto',
         },
         codebase: {
           enabled: true,
           token_budget: 4321,
-          cache_dir: '.splitbrief',
           include: ['src/**'],
           exclude: ['dist/**'],
         },
@@ -364,14 +360,11 @@ describe('config roundtrip', () => {
     it('converts snake_case keys to camelCase', () => {
       const dir = join(TMP, 'snake-case');
       writeConfigYaml(dir, {
-        planner_estimate_review: true,
-        auto_split_overflow: true,
-        workflow: { max_retries: 5, git: { commit_strategy: 'checkpoint' } },
+        workflow: { max_retries: 5, cost_gate: true, git: { commit_strategy: 'checkpoint' } },
       });
 
       const { config } = loadConfig(dir);
-      expect(config.plannerEstimateReview).toBe(true);
-      expect(config.autoSplitOverflow).toBe(true);
+      expect(config.workflow.costGate).toBe(true);
       expect(config.workflow.maxRetries).toBe(5);
       expect(config.workflow.git?.commitStrategy).toBe('checkpoint');
 
@@ -379,8 +372,10 @@ describe('config roundtrip', () => {
       const written = YAML.parse(
         readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
       ) as Record<string, unknown>;
-      expect(written.planner_estimate_review).toBe(true);
-      expect(written.auto_split_overflow).toBe(true);
+      const workflow = written.workflow as Record<string, unknown>;
+      expect(workflow.max_retries).toBe(5);
+      expect(workflow.cost_gate).toBe(true);
+      expect((workflow.git as Record<string, unknown>).commit_strategy).toBe('checkpoint');
     });
   });
 });

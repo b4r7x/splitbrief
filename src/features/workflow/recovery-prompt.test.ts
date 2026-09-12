@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createElement } from 'react';
-import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import type { RecoveryIssue, SwitchSeatOffer } from '../../core/schemas/recovery/schemas.js';
 import { taskId } from '../../core/schemas/task.js';
 import { glyph } from '../../lib/glyphs.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -14,6 +14,7 @@ import {
   parseRecoveryActionAnswer,
   passHeadlinePrefix,
   recommendedRowPrefix,
+  switchSeatCandidateForAnswer,
 } from './recovery-prompt.js';
 
 async function renderPromptBody(prompt: string): Promise<string> {
@@ -65,6 +66,90 @@ describe('recovery prompt', () => {
     process.env.TERM = 'xterm-256color';
     process.env.LANG = 'en_US.UTF-8';
     Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+  });
+
+  function usageLimitIssue(candidates: SwitchSeatOffer['candidates']): RecoveryIssue {
+    return {
+      ...baseIssue,
+      reason: 'runner-usage-limit',
+      message: 'Codex hit its usage limit',
+      details: ['Codex reported: 5-hour limit reached'],
+      facts: {},
+      switchSeat: { seat: 'build', candidates },
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'abort-workflow'],
+      recommendedAction: 'switch-seat',
+    };
+  }
+
+  it('states a quota halt once, in the clock the header uses', async () => {
+    const resetAt = new Date();
+    resetAt.setHours(17, 0, 0, 0);
+    const issue: RecoveryIssue = {
+      ...usageLimitIssue([{ tool: 'opencode' }]),
+      message:
+        'Ollama hit its usage limit. The limit resets at Jan 1, 2026, 5:00 PM; wait for it, switch the seat to another tool, or abort.',
+      facts: { tool: 'Ollama' },
+      resetAt: resetAt.toISOString(),
+    };
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('recovery needed · Ollama hit its limit · resets 17:00');
+    expect(visible).not.toContain('5:00 PM');
+    expect(visible.match(/resets 17:00/g)).toHaveLength(1);
+  });
+
+  it('gives each tool a quota-blocked seat can switch to its own row', async () => {
+    const issue = usageLimitIssue([{ tool: 'claude-code', model: 'sonnet' }, { tool: 'opencode' }]);
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('[w1]  switch BUILD to Claude Code CLI · sonnet');
+    expect(visible).toContain('[w2]  switch BUILD to OpenCode CLI');
+    expect(visible).toContain('[r]  retry same worker');
+    expect(visible).toContain('[a]  abort');
+    expect(visible).not.toContain('opencode,');
+  });
+
+  it('keeps the bare seat key when only one tool is offered', async () => {
+    const issue = usageLimitIssue([{ tool: 'opencode' }]);
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('[w]  switch BUILD to OpenCode CLI');
+    expect(visible).not.toContain('[w1]');
+    expect(parseRecoveryActionAnswer('w2', issue)).toBeNull();
+  });
+
+  it('counts the ready tools that did not fit the offer', async () => {
+    const issue = usageLimitIssue([
+      { tool: 'claude-code', model: 'sonnet' },
+      { tool: 'opencode' },
+      { tool: 'cursor' },
+      { tool: 'copilot' },
+      { tool: 'kilo-code' },
+    ]);
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('[w3]  switch BUILD to Cursor Agent CLI');
+    expect(visible).toContain('(2 more ready tools detected)');
+    expect(visible).not.toContain('[w4]');
+  });
+
+  it('reads a numbered seat key back as the candidate its row named', () => {
+    const issue = usageLimitIssue([{ tool: 'claude-code', model: 'sonnet' }, { tool: 'opencode' }]);
+
+    expect(parseRecoveryActionAnswer('w', issue)).toBe('switch-seat');
+    expect(parseRecoveryActionAnswer('w2', issue)).toBe('switch-seat');
+    expect(parseRecoveryActionAnswer('', issue)).toBe('switch-seat');
+    expect(parseRecoveryActionAnswer('w3', issue)).toBeNull();
+    expect(switchSeatCandidateForAnswer('w2', issue.switchSeat)).toEqual({ tool: 'opencode' });
+    expect(switchSeatCandidateForAnswer('w', issue.switchSeat)).toEqual({
+      tool: 'claude-code',
+      model: 'sonnet',
+    });
+    expect(switchSeatCandidateForAnswer('w9', issue.switchSeat)).toBeUndefined();
   });
 
   it('builds a compact validation recovery prompt with only available actions', async () => {

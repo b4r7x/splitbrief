@@ -138,7 +138,6 @@ function prepared(id: string): Extract<PreparationOutcome, { kind: 'prepared' }>
     candidate: createSessionPreparationCandidate({
       projectDir,
       feature: 'feature',
-      persistTranscript: config.workflow.persistTranscript,
       sessionId: id,
     }),
   });

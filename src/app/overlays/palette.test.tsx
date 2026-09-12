@@ -49,9 +49,8 @@ async function setWorkflowModeForTest(mode: WorkflowMode): Promise<RuntimeConfig
   return { kind: 'saved', ok: true };
 }
 
-function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommandDef[] {
+function createTestCommands(): RuntimeCommandDef[] {
   const ctx: RuntimeCommandContext = {
-    isAttached: opts.isAttached ?? false,
     openOverlay: overlayStore.open,
     navigate: (to) => routerStore.navigate({ to }),
     quit: () => {},
@@ -79,15 +78,10 @@ function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommand
     attachImage: () => ({ ok: false, reason: 'not-found' }),
     detachImage: () => false,
     listAttachments: () => [],
-    writeHandoff: async () => ({ outputDir: '' }),
     listApprovals: () => [],
     clearApprovals: () => 0,
-    getApprovalEnabled: () => true,
-    setApprovalEnabled: () => {},
     acceptRunSnapshot: async () => ({ snapshotId: 'test-snapshot', isFirstSnapshot: false }),
     rejectRunSnapshot: async () => ({ status: 'empty' }),
-    compactTranscript: async () => ({ status: 'unsupported', plannerName: 'test' }),
-    exportSession: async () => ({ status: 'ok', path: '/tmp/report.html' }),
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
     toggleLatestDiff: () => ({ status: 'toggled', expanded: true }),
@@ -106,34 +100,6 @@ function renderCommandPalette(): ReturnType<typeof render> {
         executeRuntimeCommand(commands, raw, {
           screen: routerStore.get().screen,
           phase: lifecycleStore.get().phase,
-          attached: false,
-          plannerSupportsImages: true,
-          onError: feedbackStore.setError,
-        })
-      }
-    />,
-  );
-}
-
-function renderAttachedCommandPalette(): ReturnType<typeof render> {
-  routerStore.navigate({
-    to: 'workflow',
-    execution: {
-      kind: 'attached',
-      feature: 'attached feature',
-      sessionId: 'attached-session',
-      attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'tok' },
-    },
-  });
-  const commands = createTestCommands({ isAttached: true });
-  return render(
-    <CommandPaletteOverlay
-      commands={commands}
-      onRuntimeCommand={(raw) =>
-        executeRuntimeCommand(commands, raw, {
-          screen: routerStore.get().screen,
-          phase: lifecycleStore.get().phase,
-          attached: false,
           plannerSupportsImages: true,
           onError: feedbackStore.setError,
         })
@@ -630,26 +596,6 @@ describe('CommandPaletteOverlay', () => {
     expect(settingsRow).toContain('ctrl+,');
     expect(frame).not.toContain('[ctrl+,]');
     expect(frame.split('\n').filter((line) => line.includes('ctrl+,'))).toHaveLength(1);
-
-    instance.unmount();
-  });
-
-  it('does not expose local config mutators for attached clients', async () => {
-    const instance = renderAttachedCommandPalette();
-    await tick(1);
-    await tick(1);
-
-    const frame = instance.lastFrame() ?? '';
-    expect(frame).not.toContain('Planner');
-    expect(frame).not.toContain('implementer');
-    expect(frame).not.toContain('settings');
-
-    await write(instance, 'mode');
-    await tick(1);
-    await tick(1);
-    expect(commandRows(instance.lastFrame() ?? '').some((row) => row.includes('/mode'))).toBe(
-      false,
-    );
 
     instance.unmount();
   });

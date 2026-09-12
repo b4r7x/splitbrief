@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
-import type { ScopedCliCatalogRuntime } from '../../detection/cli-catalog-outcomes.js';
 import {
   NULL_CACHE,
   findKnownModel,
@@ -40,8 +39,8 @@ describe('exact model resolution', () => {
 
   it('uses only runner-admitted source entries instead of crossing into another provider catalog', () => {
     const catalog: ModelsDevCatalog = {
-      anthropic: {
-        id: 'anthropic',
+      ollama: {
+        id: 'ollama',
         models: { 'claude-sonnet-5': { id: 'claude-sonnet-5' } },
       },
       openai: {
@@ -52,12 +51,27 @@ describe('exact model resolution', () => {
     const cache = makeModelCacheAccessor({ catalog });
 
     const exact = resolveExactModelsDevModel({
-      providerId: 'claude-code',
+      providerId: 'ollama',
       selectionId: 'claude-sonnet-5',
       cache,
     });
 
-    expect(exact).toMatchObject({ kind: 'found', model: { providerId: 'anthropic' } });
+    expect(exact).toMatchObject({ kind: 'found', model: { providerId: 'ollama' } });
+    expect(
+      resolveExactModelsDevModel({
+        providerId: 'ollama',
+        selectionId: 'claude-sonnet-5',
+        sourceProviderId: 'openai',
+        cache,
+      }),
+    ).toEqual({ kind: 'not-found' });
+    expect(
+      resolveExactModelsDevModel({
+        providerId: 'claude-code',
+        selectionId: 'claude-sonnet-5',
+        cache,
+      }),
+    ).toEqual({ kind: 'not-found' });
     expect(
       resolveExactModelsDevModel({
         providerId: 'claude-code',
@@ -68,7 +82,7 @@ describe('exact model resolution', () => {
     ).toEqual({ kind: 'not-found' });
   });
 
-  it('preserves models.dev source ownership while collecting runner-allowed suggestions', () => {
+  it('returns no models.dev entries for a CLI tool id', () => {
     const catalog: ModelsDevCatalog = {
       anthropic: {
         id: 'anthropic',
@@ -82,30 +96,27 @@ describe('exact model resolution', () => {
 
     const entries = getModelsDevEntries('claude-code', makeModelCacheAccessor({ catalog }));
 
-    expect(entries.map((entry) => [entry.providerId, entry.id])).toEqual([
-      ['anthropic', 'claude-sonnet-4-6'],
-    ]);
+    expect(entries).toEqual([]);
   });
 
-  it('exposes anthropic haiku and fable rows to claude-code for enrichment', () => {
+  it('returns models.dev entries for an api provider', () => {
     const catalog: ModelsDevCatalog = {
-      anthropic: {
-        id: 'anthropic',
+      ollama: {
+        id: 'ollama',
         models: {
-          'claude-haiku-4-5': { id: 'claude-haiku-4-5' },
-          'claude-fable-5': { id: 'claude-fable-5' },
-          'claude-sonnet-5': { id: 'claude-sonnet-5' },
-          'legacy-non-claude-row': { id: 'legacy-non-claude-row' },
+          'qwen3-coder:30b': { id: 'qwen3-coder:30b' },
+          'qwen3-coder:480b': { id: 'qwen3-coder:480b' },
+          'granite4:small': { id: 'granite4:small' },
         },
       },
     };
 
-    const entries = getModelsDevEntries('claude-code', makeModelCacheAccessor({ catalog }));
+    const entries = getModelsDevEntries('ollama', makeModelCacheAccessor({ catalog }));
 
-    expect(entries.map((entry) => entry.id)).toEqual([
-      'claude-haiku-4-5',
-      'claude-fable-5',
-      'claude-sonnet-5',
+    expect(entries.map((entry) => [entry.providerId, entry.id])).toEqual([
+      ['ollama', 'qwen3-coder:30b'],
+      ['ollama', 'qwen3-coder:480b'],
+      ['ollama', 'granite4:small'],
     ]);
   });
 
@@ -147,8 +158,8 @@ describe('exact model resolution', () => {
   it('resolves a window-suffixed selection onto the models.dev row it strips to', () => {
     const cache = makeModelCacheAccessor({
       catalog: {
-        anthropic: {
-          id: 'anthropic',
+        ollama: {
+          id: 'ollama',
           models: {
             'claude-fable-5-1': {
               id: 'claude-fable-5-1',
@@ -163,7 +174,7 @@ describe('exact model resolution', () => {
 
     expect(
       resolveExactModelsDevModel({
-        providerId: 'claude-code',
+        providerId: 'ollama',
         selectionId: 'claude-fable-5-1[1m]',
         cache,
       }),
@@ -173,8 +184,15 @@ describe('exact model resolution', () => {
     });
     expect(
       resolveExactModelsDevModel({
-        providerId: 'claude-code',
+        providerId: 'ollama',
         selectionId: 'claude-fable-5[1m]',
+        cache,
+      }),
+    ).toEqual({ kind: 'not-found' });
+    expect(
+      resolveExactModelsDevModel({
+        providerId: 'claude-code',
+        selectionId: 'claude-fable-5-1[1m]',
         cache,
       }),
     ).toEqual({ kind: 'not-found' });
@@ -186,8 +204,8 @@ describe('exact model resolution', () => {
   it('reports the matched models.dev window for a suffixed selection, never a synthesised one', () => {
     const cache = makeModelCacheAccessor({
       catalog: {
-        anthropic: {
-          id: 'anthropic',
+        ollama: {
+          id: 'ollama',
           models: {
             'claude-haiku-4-5': {
               id: 'claude-haiku-4-5',
@@ -202,7 +220,7 @@ describe('exact model resolution', () => {
 
     expect(
       resolveExactModelsDevModel({
-        providerId: 'claude-code',
+        providerId: 'ollama',
         selectionId: 'claude-haiku-4-5[1m]',
         cache,
       }),
@@ -212,11 +230,18 @@ describe('exact model resolution', () => {
     });
     expect(
       resolveExactModelsDevModel({
-        providerId: 'claude-code',
+        providerId: 'ollama',
         selectionId: 'claude-haiku-4-5',
         cache,
       }),
     ).toMatchObject({ kind: 'found', model: { contextLength: 200_000 } });
+    expect(
+      resolveExactModelsDevModel({
+        providerId: 'claude-code',
+        selectionId: 'claude-haiku-4-5[1m]',
+        cache,
+      }),
+    ).toEqual({ kind: 'not-found' });
   });
 
   it('reports owner-ambiguous exact runtime IDs instead of choosing or normalizing one', () => {
@@ -261,58 +286,77 @@ describe('exact model resolution', () => {
     ).toEqual({ kind: 'not-found' });
   });
 
-  it('resolves native CLI models only from the selected role context and never falls back through ambiguity', () => {
-    const runtime = (
-      role: 'planner' | 'implementer',
-      models: readonly string[],
-    ): ScopedCliCatalogRuntime => ({
-      connection: { role, tool: 'codex', contextKey: `${role}-exact-context` },
-      state: 'fresh',
-      models: models.map((id) => ({ id })),
-      fetchedAt: 1,
-      validatedAt: 1,
-    });
+  it('resolves native CLI models from the tool row for every seat and never falls back through it', () => {
     const cache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,
       getProviderModels: () => [{ id: 'generic-must-not-leak' }],
-      getScopedCliCatalogRuntime: ({ role }) =>
-        role === 'planner'
-          ? runtime('planner', ['planner-only-model'])
-          : runtime('implementer', []),
+      getCliCatalogRuntime: () => ({
+        connection: { tool: 'codex', contextKey: 'codex-exact-context' },
+        state: 'fresh',
+        models: [{ id: 'codex-listed-model' }],
+        fetchedAt: 1,
+        validatedAt: 1,
+      }),
+    };
+
+    for (const role of ['planner', 'implementer', 'reviewer'] as const) {
+      expect(
+        resolveExactRuntimeModel({
+          providerId: 'codex',
+          selectionId: 'codex-listed-model',
+          role,
+          cache,
+        }),
+      ).toMatchObject({ kind: 'found', model: { id: 'codex-listed-model' } });
+      expect(
+        resolveExactRuntimeModel({
+          providerId: 'codex',
+          selectionId: 'generic-must-not-leak',
+          role,
+          cache,
+        }),
+      ).toEqual({ kind: 'not-found' });
+    }
+  });
+
+  it('treats an authoritative empty CLI catalog as absence rather than borrowing provider memory', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => [{ id: 'generic-must-not-leak' }],
+      getCliCatalogRuntime: () => null,
     };
 
     expect(
       resolveExactRuntimeModel({
         providerId: 'codex',
-        selectionId: 'planner-only-model',
+        selectionId: 'generic-must-not-leak',
         role: 'planner',
         cache,
       }),
-    ).toMatchObject({ kind: 'found', model: { id: 'planner-only-model' } });
-    expect(
-      resolveExactRuntimeModel({
-        providerId: 'codex',
-        selectionId: 'planner-only-model',
-        role: 'implementer',
-        cache,
-      }),
     ).toEqual({ kind: 'not-found' });
+
+    const legacyCache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => [{ id: 'generic-must-not-leak' }],
+      getCliCatalogRuntime: () => undefined,
+    };
+
     expect(
       resolveExactRuntimeModel({
         providerId: 'codex',
         selectionId: 'generic-must-not-leak',
-        role: 'implementer',
-        cache,
+        role: 'planner',
+        cache: legacyCache,
       }),
-    ).toEqual({ kind: 'not-found' });
+    ).toEqual({ kind: 'found', model: { id: 'generic-must-not-leak' } });
   });
 });
 
 describe('metadata overlay', () => {
   it('keeps runtime fields authoritative and fills only missing fields from an exact models.dev match', () => {
     const catalog: ModelsDevCatalog = {
-      anthropic: {
-        id: 'anthropic',
+      ollama: {
+        id: 'ollama',
         models: {
           'claude-sonnet-4-6': {
             id: 'claude-sonnet-4-6',
@@ -327,9 +371,10 @@ describe('metadata overlay', () => {
     const cache = makeModelCacheAccessor({
       catalog,
       providerModels: {
-        'claude-code': [
+        ollama: [
           {
             id: 'claude-sonnet-4-6',
+            providerId: 'ollama',
             displayName: 'Native Sonnet',
             contextLength: 32_768,
             pricingInput: 8,
@@ -338,13 +383,13 @@ describe('metadata overlay', () => {
       },
     });
 
-    expect(lookupRuntimeModel('claude-code', 'claude-sonnet-4-6', cache)).toMatchObject({
+    expect(lookupRuntimeModel('ollama', 'claude-sonnet-4-6', cache)).toMatchObject({
       id: 'claude-sonnet-4-6',
       displayName: 'Native Sonnet',
       contextLength: 32_768,
       pricingInput: 8,
     });
-    expect(lookupModelsDevModel('claude-code', 'claude-sonnet-4-6', cache)).toMatchObject({
+    expect(lookupModelsDevModel('ollama', 'claude-sonnet-4-6', cache)).toMatchObject({
       id: 'claude-sonnet-4-6',
       pricingOutput: 15,
       releaseDate: '2026-01-10',
@@ -388,8 +433,8 @@ describe('metadata overlay', () => {
 
   it('does not use a nearly matching public ID as metadata for a runtime row', () => {
     const catalog: ModelsDevCatalog = {
-      anthropic: {
-        id: 'anthropic',
+      ollama: {
+        id: 'ollama',
         models: {
           'claude-sonnet-4.6': {
             id: 'claude-sonnet-4.6',
@@ -400,16 +445,16 @@ describe('metadata overlay', () => {
     };
     const cache = makeModelCacheAccessor({
       catalog,
-      providerModels: { 'claude-code': [{ id: 'claude-sonnet-4-6', contextLength: 64_000 }] },
+      providerModels: { ollama: [{ id: 'claude-sonnet-4-6', contextLength: 64_000 }] },
     });
 
-    expect(lookupRuntimeModel('claude-code', 'claude-sonnet-4-6', cache)).toEqual({
+    expect(lookupRuntimeModel('ollama', 'claude-sonnet-4-6', cache)).toEqual({
       id: 'claude-sonnet-4-6',
       contextLength: 64_000,
     });
     expect(
       resolveExactModelsDevModel({
-        providerId: 'claude-code',
+        providerId: 'ollama',
         selectionId: 'claude-sonnet-4-6',
         cache,
       }),

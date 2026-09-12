@@ -61,7 +61,6 @@ export function prepareWorkflowExecution({
       candidate: createSessionPreparationCandidate({
         projectDir,
         feature,
-        persistTranscript: preparedConfig.workflow.persistTranscript,
         sessionId,
       }),
     });

@@ -1,5 +1,5 @@
 import type { EngineEvent } from '../events/types.js';
-import { protectConsumerPayload } from '../../core/consumer-policy.js';
+import { boundConsumerPayload } from '../../core/payload-bounds.js';
 
 const PLACEHOLDER_RE = /\$\{event\.([a-zA-Z_][\w.]*)\}/g;
 const LEADING_PLACEHOLDER_RE = /^\$\{event\.[a-zA-Z_][\w.]*\}/;
@@ -12,7 +12,7 @@ export function substituteEventFields(template: string, event: EngineEvent): str
   return template.replace(PLACEHOLDER_RE, (_match, path: string) => {
     const value = readPath(event as unknown as Record<string, unknown>, path.split('.'));
     if (value === undefined || value === null) return '';
-    const protectedValue = protectConsumerPayload({ context: 'hooks', payload: value }).payload;
+    const protectedValue = boundConsumerPayload({ context: 'hooks', payload: value }).payload;
     if (typeof protectedValue === 'string') return protectedValue;
     if (typeof protectedValue === 'number' || typeof protectedValue === 'boolean') {
       return String(protectedValue);

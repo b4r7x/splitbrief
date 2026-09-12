@@ -166,7 +166,7 @@ describe('formatModelCatalogGuidance', () => {
 
 describe('formatCatalogDiagnostic', () => {
   it.each([
-    [{ kind: 'not-probed' }, 'Select this tool to detect its models'],
+    [{ kind: 'not-probed' }, 'Model detection has not run yet. Press ctrl+r to refresh'],
     [{ kind: 'probe-failed', failure: 'unsupported' }, 'OpenCode does not support model listing'],
     [
       { kind: 'probe-failed', failure: 'missing-credential' },
@@ -407,6 +407,23 @@ describe('formatToolsByline', () => {
     ).toBeUndefined();
   });
 
+  it.each([
+    { kind: 'not-probed' },
+    { kind: 'probe-failed', failure: 'not-run' },
+  ] satisfies ModelCatalogDiagnostic[])(
+    'names the bundled list rather than denying it when rows are listed for %j',
+    (diagnostic) => {
+      const listed = bylineDiagnostic({ diagnostic, modelCount: 3, toolName: 'OpenCode' }) ?? '';
+
+      expect(listed).toContain('Bundled model list');
+      expect(listed).toContain('ctrl+r');
+      expect(listed).not.toContain('has not run');
+      expect(bylineDiagnostic({ diagnostic, modelCount: 0, toolName: 'OpenCode' })).toBe(
+        formatCatalogDiagnostic(diagnostic, 'OpenCode'),
+      );
+    },
+  );
+
   it('carries the source phrase and the row noun ahead of the capability words', () => {
     const parts = segments(byline());
     expect(parts).toContain('24 models');
@@ -590,15 +607,15 @@ describe('formatModelsByline', () => {
       formatModelsByline({
         label: 'GPT-5.6 Sol',
         id: 'gpt-5.6-sol-high-fast',
-        axes: ['effort high', 'fast'],
+        axes: ['high', 'fast'],
         contextLength: undefined,
       }),
-    ).toBe('GPT-5.6 Sol · gpt-5.6-sol-high-fast · effort high · fast');
+    ).toBe('GPT-5.6 Sol · gpt-5.6-sol-high-fast · high · fast');
     expect(
       formatModelsByline({
         label: 'GPT-5.6 Sol',
         id: 'gpt-5.6-sol-high-fast',
-        axes: ['effort high', 'fast'],
+        axes: ['high', 'fast'],
         contextLength: 1_000_000,
       }).endsWith(' · 1M'),
     ).toBe(true);
@@ -628,16 +645,14 @@ describe('modelBylineAxes', () => {
       ],
     };
     expect(modelBylineAxes({ model: sol, id: 'gpt-5.6-sol-high-fast', effortDraft: null })).toEqual(
-      ['effort high', 'fast'],
+      ['high', 'fast'],
     );
     expect(modelBylineAxes({ model: sol, id: 'gpt-5.6-sol', effortDraft: null })).toEqual([]);
   });
 
   it("prefers the tool's own ladder over the id's tokens", () => {
     const option: ModelOption = { id: 'opus', effortChoices: ['low', 'medium', 'high'] };
-    expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: 'high' })).toEqual([
-      'effort high',
-    ]);
+    expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: 'high' })).toEqual(['high']);
     expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: null })).toEqual([]);
     expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: 'ultra' })).toEqual([]);
   });

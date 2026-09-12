@@ -38,7 +38,7 @@ export interface ImplementerPublisher {
     phase: Phase;
     taskId: TaskId;
     message: string;
-    safety: { category: string; code: string; transcriptSafe: true };
+    safety: { category: string; code: string };
   }): void;
 }
 

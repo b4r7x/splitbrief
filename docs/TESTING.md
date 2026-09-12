@@ -79,7 +79,7 @@ SPLITBRIEF_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/
 
 `conversation-flow-hover.perf.test.tsx` covers hover-only re-renders on a large real-store transcript: repeated `hoverStore` updates must stay bounded and must not change transcript text apart from the focus glyph. Run it only with `SPLITBRIEF_PERF=1` as above.
 
-`runner-large-output.perf.test.ts` covers large runner stdout without a trailing newline and multi-megabyte stderr flood behavior through the real subprocess collector. `events-store-cap.perf.test.ts` covers capped workflow event ingestion and retained merged-text size after multi-megabyte planner text input. `event-sinks-throughput.perf.test.ts` covers protected JSONL, stdout JSON, and session-tree sink throughput. There is no automated fullscreen-vs-inline replay perf harness yet; use the manual TUI smoke checklist below for fullscreen replay behavior until a stable local harness exists.
+`runner-large-output.perf.test.ts` covers large runner stdout without a trailing newline and multi-megabyte stderr flood behavior through the real subprocess collector. `events-store-cap.perf.test.ts` covers capped workflow event ingestion and retained merged-text size after multi-megabyte planner text input. `event-sinks-throughput.perf.test.ts` covers JSONL and stdout-JSON sink throughput. There is no automated fullscreen-vs-inline replay perf harness yet; use the manual TUI smoke checklist below for fullscreen replay behavior until a stable local harness exists.
 
 **Fixtures vs factories.** Split by kind:
 - `testing/fixtures/<domain>/` = read-only **bytes on disk**. Consumers read via `fs.readFile`.
@@ -116,7 +116,7 @@ Cost-aware implementer routing, user-edit conflict handling, and the brief revie
 
 **Brief field editor CAS.** Rendered ownership, save gate, stdin suppression, multi-field save, and submit-in-flight behavior belong in `testing/integration/ui/brief-field-editor-ownership.test.ts` (`.test.ts` with `createElement`, not a colocated `.tsx` owner). Pure `editorStore` transitions (scroll, layout reflow, token capture) stay in `src/stores/ui/editor.test.ts`. `readSessionFileConfined` cases at the editor read boundary live in `src/core/sessions/confinement.test.ts`. The `useFieldSessionOwned` hook contract stays in `src/features/editor/use-field-session-owned.test.tsx`.
 
-**Input history persistence.** Debounced `~/.splitbrief/history` writes, teardown, and transcript-off prompt redaction at the composer persistence boundary stay in `src/stores/ui/persistence.test.ts`. Cross-artifact transcript-off privacy (`runWorkflow()` with `persistTranscript: false` — session ids, lockfile, summaries, HTML export, `ps`, branch names) belongs in `testing/integration/orchestrator/transcript-off-session-artifacts.test.ts`.
+**Input history persistence.** Debounced `~/.splitbrief/history` writes and teardown at the composer persistence boundary stay in `src/stores/ui/persistence.test.ts`.
 
 **Hooks and wrappers.** No new `renderHook` tests for trivial wrappers, selector hooks, or `useState` / `useEffect` plumbing. Extract behavior-bearing logic into a public pure helper and test that helper, or cover the hook through the feature/component that uses it. Thin wrappers that only call an already-tested helper should not receive dedicated tests.
 
@@ -127,7 +127,7 @@ npm test -- src/core/schemas/recovery.test.ts
 npm test -- src/core/schemas/workflow.test.ts
 npm test -- src/core/schemas/enums.test.ts
 npm test -- src/core/state/machine.test.ts
-npm test -- src/core/state/persistence.test.ts src/core/sessions/log-writer.test.ts src/core/transcript-policy.test.ts
+npm test -- src/core/state/persistence.test.ts src/core/sessions/log-writer.test.ts src/core/payload-bounds.test.ts
 npm test -- src/engine/orchestrator/recovery/actions.test.ts src/engine/orchestrator/recovery/actions-persistence.test.ts src/engine/orchestrator/recovery/builders/task.test.ts src/engine/orchestrator/recovery/builders/workflow.test.ts
 npm test -- src/engine/orchestrator/budget/check.test.ts
 npm test -- src/engine/orchestrator/budget/knownness.test.ts
@@ -157,7 +157,7 @@ Above that single smoke sits a paid tier that drives whole workflows through rea
 
 Two switches gate it. `SPLITBRIEF_REAL_CLI_E2E=1` is the master switch; nothing live runs without it. `SPLITBRIEF_REAL_CLI_TIER` selects `easy` (the default when unset), `heavy`, or `all`.
 
-The separation from replay e2e is physical, not conventional: the live scenarios and the real-CLI smoke are excluded from `testing/e2e/vitest.e2e.config.ts` and collected only by `testing/e2e/vitest.live.config.ts`. `npm run test:e2e` — the step `test-ci`, `release-check`, and the ci.yml `e2e-replay` job run — cannot collect a billable case even with `SPLITBRIEF_REAL_CLI_E2E=1` ambient in the environment. Reaching the tier takes the live config, which only `npm run test:e2e:live`, `npm run test:e2e:live:heavy`, and `npm run test:e2e:live:smoke` pass.
+The separation from replay e2e is physical, not conventional: the live scenarios and the real-CLI smoke are excluded from `testing/e2e/vitest.e2e.config.ts` and collected only by `testing/e2e/vitest.live.config.ts`. `npm run test:e2e` — the step `test-ci`, `release-check`, and the ci.yml `e2e-replay` job run — cannot collect a billable case even with `SPLITBRIEF_REAL_CLI_E2E=1` ambient in the environment. Reaching the tier takes the live config, which only `npm run test:e2e:live`, `npm run test:e2e:live:heavy`, `npm run test:e2e:live:smoke`, and `npm run test:e2e:release` pass.
 
 Skipping is two-layered. With the env unset every case reports skipped and the run exits `0`. With it set, a tool whose readiness detection is not `ready` — binary missing from `PATH`, not logged in — skips with a reason instead of failing, so a partial toolbox still runs what it can.
 
@@ -166,6 +166,14 @@ Model pins are cheap by default: `claude-code` → `haiku`, `codex` → `gpt-5.6
 Easy runs `quick` mode — one planner call plus one implementer call — under a `workflow.maxBudget` of $0.05, with a 300 s per-case timeout. Heavy runs `standard` mode with a compiled brief and a final review held by the planner, under a `workflow.maxBudget` of $0.50, with a 900 s per-case timeout. Both ceilings come from `MAX_BUDGET_USD` in the harness and are enforced by the orchestrator's budget guard, which stops a run that crosses one and pauses a run whose spend cannot be priced. The per-case vitest timeout is the only wall-clock bound.
 
 Like `real-cli-planner-implementer-smoke.test.ts`, the live tier is opt-in drift evidence, never the admission proof.
+
+### Release matrix
+
+Above the easy/heavy pairs sits the release matrix: `testing/e2e/scenarios/live/release-matrix.test.ts` runs one row per entry of `testing/e2e/live/matrix.ts` — `{ id, mode, plan, build, review?, task }` — covering every workflow mode (`quick`, `standard`, `speckit`), a same-tool canary for every CLI tool in the catalog, and cross-vendor pairs where the plan and build tools differ. Seats resolve their cheapest pin through the same `liveModelPin` ceiling as the tiers below.
+
+Its switch is `SPLITBRIEF_RELEASE_LIVE=1` (the npm script `test:e2e:release` sets `SPLITBRIEF_REAL_CLI_E2E=1` itself); unset, the file prints `skipped: SPLITBRIEF_RELEASE_LIVE not set` and every row exits skipped. Readiness is stricter here than in the tier below: a tool that is missing or not `ready` fails its row unless its id is listed in the comma-separated `SPLITBRIEF_LIVE_SKIP` allow-list, in which case the row skips with a reason.
+
+Every row — pass, fail, or skip — is appended to `.test-artifacts/live/manifest.json` with its resolved seats, outcome, reason, totals, and duration, and each row's `summary.json` and `session.jsonl` are copied to `.test-artifacts/live/<row-id>/`. [RELEASING.md](./RELEASING.md) defines when a release may be cut from that manifest.
 
 ## How to add an integration test
 
@@ -315,15 +323,14 @@ CLI command handlers accept an optional `deps` parameter for dependency injectio
 ```ts
 // src/cli/commands/start/types.ts
 export interface StartDeps {
-  spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;
   runHeadless: typeof runHeadless;
-  runRpc: typeof runRpc;
   initStores: typeof initStores;
   renderApp: typeof renderApp;
+  prepareExecution?: typeof prepareExecution | undefined;
 }
 
 // src/cli/commands/start/register.ts
-const defaultStartDeps: StartDeps = { spawnServer, runHeadless, runRpc, initStores, renderApp };
+export const defaultStartDeps: StartDeps = { runHeadless, initStores, renderApp, prepareExecution };
 
 export function registerStartCommand(program: Command, deps: StartDeps = defaultStartDeps): void { ... }
 ```
@@ -336,7 +343,7 @@ program.exitOverride();
 registerStartCommand(program, fakeDeps); // fakeDeps: StartDeps with stubbed renderApp/runHeadless/…
 ```
 
-**Commands using this pattern:** `start/register.ts` (`StartDeps` in `start/types.ts`) and `worktree.ts` (`WorktreeDeps`) expose `deps` on the `register*Command(program, deps = default)` signature itself. `attach.ts` (`AttachDeps`) and `last.ts` (`LastDeps`) keep `register*Command(program)` thin and inject `deps` one level down, on the internal helper (`attachCommand(…, deps = defaultDeps)`, `lastCommand(…, deps = defaultDeps)`).
+**Commands using this pattern:** `start/register.ts` (`StartDeps` in `start/types.ts`) exposes `deps` on the `registerStartCommand(program, deps = default)` signature itself. `continue/register.ts` takes the same shape — `registerContinueCommand(program, deps = defaultContinueDeps)` — and threads `ContinueDeps` down to the internal helper (`continueCommand(…, deps = defaultContinueDeps)`).
 
 **Rule:** `vi.mock` is now reserved for TRUE system boundaries only — `process.kill`, `execSync`, `node:net` sockets, and the sanctioned targets listed in [Test I/O and fixtures](#test-io-and-fixtures). All other test isolation uses the `Deps` interface pattern.
 
@@ -479,10 +486,10 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Real subprocess via `spawn(...)` against `/bin/echo`, `node -e '...'`, or a canned script. Do not mock `node:child_process`. The login-shell fallback in agent tests has a 30 s timeout for a reason; do not lower it.
 - Real git binary via `createTestGitRepo` (`testing/helpers/git.ts`). Do not stub `simple-git`.
 - Real HTTP via `http.createServer` for provider tests.
-- Data factories are TypeScript functions under `testing/helpers/factories/` — one file per domain (`factories/task.ts:makeTask`, `factories/config.ts:makeConfig`, `factories/session.ts:makeSession`, `factories/summary.ts:makeSummary`). On-disk artefacts live in `testing/fixtures/`; consumers reach them via a repo-root-relative path — either resolved from `import.meta.dirname` (`src/engine/hooks/dispatch.test.ts`) or from `process.cwd()` via `resolve('testing/fixtures/…')` (`src/engine/codebase/parse.test.ts`, `src/engine/codebase/repomap.test.ts`, `src/engine/hooks/load-module.test.ts`, and the `testing/fixtures/hooks/*.mjs` references in `dispatch.test.ts` / `run-pre.test.ts`).
+- Data factories are TypeScript functions under `testing/helpers/factories/` — one file per domain (`factories/task.ts:makeTask`, `factories/config.ts:makeConfig`, `factories/session.ts:makeSession`, `factories/summary.ts:makeSummary`). On-disk artefacts live in `testing/fixtures/`; consumers reach them via a repo-root-relative path resolved from `import.meta.dirname` (`src/engine/providers/cli-model-catalog.test.ts`, `src/engine/codebase/parse.test.ts`, `src/engine/codebase/repomap.test.ts`), not from `process.cwd()`.
 - Every config artefact this repository ships is loaded by the real `loadConfig` in `testing/ci/shipped-configs.test.ts`: the committed `evals/fixtures/*/.splitbrief/config.yaml` projects, the committed examples under `testing/fixtures/configs/`, and what `initConfig` / `writeConfig` themselves write. Add a new example by dropping a `.yaml` file into `testing/fixtures/configs/` — the glob picks it up.
 - Every ```` ```yaml ```` fence in `README.md` or any `docs/*.md` that names a top-level `ConfigSchema` key is loaded by the real `loadConfig` in `testing/docs/configuration.test.ts` — whole configs as written, section fragments under a `version: 3` header, which is how a reader pastes them. The doc tree is enumerated, so a new doc is covered the moment it exists. The same gate asserts every documented `kind: api` block spells out `service` and `offering`, because the loader's default merge would otherwise let an `ollama` example pass while omitting them. Pseudo-YAML opts out with `<!-- config-shape-sketch -->` and nothing else does.
-- Sanctioned `vi.mock` targets (whole repo): `node:fs/promises` (write-failure and `mkdtemp` interception — `engine/ipc/heartbeat.test.ts`, `engine/orchestrator/approval/staged-project-failure.test.ts`), `node:fs` (`statSync` ENOENT simulation — `core/state/persistence.test.ts`), `ink` + `fullscreen-ink` (CLI integration tests only — suppresses `waitUntilExit()` / `withFullScreen` so commander handlers run to completion without a TTY; all other exports preserved). Anything else is a bug.
+- Sanctioned `vi.mock` targets (whole repo): `node:fs/promises` (write-failure and `mkdtemp` interception — `engine/orchestrator/run/heartbeat.test.ts`, `engine/orchestrator/approval/staged-project-failure.test.ts`), `node:fs` (`statSync` ENOENT simulation — `core/state/persistence.test.ts`), `ink` + `fullscreen-ink` (CLI integration tests only — suppresses `waitUntilExit()` / `withFullScreen` so commander handlers run to completion without a TTY; all other exports preserved). Anything else is a bug.
 
 ## Pre-merge PR checklist
 
@@ -668,7 +675,7 @@ Ask Codex to read the manifest before comparing files. The manifest distinguishe
 
 ## Manual smoke checklist
 
-`npm run test-ci` covers the vast majority of the surface. `npm run release-check` is the fast pre-PR gate — `format:check → typecheck → lint → vitest (no coverage) → e2e replay → invariants` — and `npm run test-ci` is the exhaustive form that additionally runs `test:coverage`, whose thresholds now also run nightly in `.github/workflows/nightly-coverage.yml`. A handful of flows need a real TTY, a fresh checkout, or an external process and therefore live outside the automated suite. Run the checks below after a fresh install or any change that touches the CLI entry point, the TUI mount, hook dispatch, or the OTel sink.
+`npm run test-ci` covers the vast majority of the surface. `npm run release-check` is the fast pre-PR gate — `format:check → typecheck → lint → vitest (no coverage) → e2e replay → invariants → skills:check` — and `npm run test-ci` is the exhaustive form that additionally runs `test:coverage`, whose thresholds now also run nightly in `.github/workflows/nightly-coverage.yml`. A handful of flows need a real TTY, a fresh checkout, or an external process and therefore live outside the automated suite. Run the checks below after a fresh install or any change that touches the CLI entry point, the TUI mount, or hook dispatch.
 
 ### M1. TUI smoke (full interactive render)
 
@@ -702,29 +709,17 @@ node dist/cli.js start --json --mode quick "smoke feature"
 
 Verify: NDJSON on stdout, first line is `readiness_report`, the first model-backed workflow event is `workflow_started`, last workflow event is `workflow_complete`, and the process exits `0`. If `--json` is unrecognized, run `npm run build` — stale `dist/` is the most common cause.
 
-### M3. block-secrets hook
+### M3. Pre-commit hook denial
 
-Enable `commitStrategy: per-task` + `hooks.builtin.block-secrets: true` and have the implementer write `AKIAIOSFODNN7EXAMPLE` into the target file:
+Enable `commitStrategy: per-task` and declare a `pre_commit` command hook that exits non-zero when the staged diff contains `AKIAIOSFODNN7EXAMPLE`, then have the implementer write that string into the target file:
 
 ```bash
 node dist/cli.js start --json --mode quick "add secret file"
 ```
 
-Verify: a `warning` event with `pre_commit blocked ... AWS access key` fires, no `git_commit` event is emitted, HEAD is unchanged, and `task_completed` still advances (non-fatal skip).
+Verify: a `warning` event naming the denied `pre_commit` hook fires, no `git_commit` event is emitted, HEAD is unchanged, and `task_completed` still advances (non-fatal skip).
 
-### M4. OTel activation
-
-Any of the three paths below should emit `splitbrief.workflow`, `splitbrief.phase.*`, and `splitbrief.task` spans on stdout:
-
-```bash
-OTEL_TRACES_EXPORTER=console   node dist/cli.js start --json --mode quick "otel test"
-SPLITBRIEF_OTEL_EXPORTER=console  node dist/cli.js start --json --mode quick "otel test"
-node dist/cli.js start --otel-exporter=console --json --mode quick "otel test"
-```
-
-See [`OTEL.md` §Design decisions](./OTEL.md) for why the bootstrap has to run before commander parses.
-
-### M5. Fresh checkout + install
+### M4. Fresh checkout + install
 
 ```bash
 rsync -a --exclude=node_modules --exclude=dist --exclude=.git . /tmp/splitbrief-fresh/
@@ -732,7 +727,13 @@ cd /tmp/splitbrief-fresh
 npm ci && npm run test-ci
 ```
 
-Verify: install completes, `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants) is green.
+Verify: install completes, `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants → skills:check) is green.
+
+## Import-integrity audit
+
+`node scripts/dangling-imports.mjs` resolves every relative `import`/`export … from` and dynamic `import()` in `src/`, `testing/` and `scripts/` — tracked and untracked alike — against the filesystem, accounting for the ESM `.js`-for-`.ts` suffix. String and template-literal example imports (fixtures, prompt templates) are skipped. It prints `clean — <n> files scanned` and exits `0` when nothing dangles; otherwise it lists each `file:line -> specifier` and exits `1`.
+
+Run it after a move, rename or deletion pass: `tsc` reports the same breakage, but this audit is safe to run when the typecheck gate itself is unavailable, and it covers files no tsconfig includes.
 
 ## References
 

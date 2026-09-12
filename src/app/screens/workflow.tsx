@@ -14,12 +14,6 @@ import { Divider } from '../../features/workflow/components/divider.js';
 import { WorkflowBody } from '../../features/workflow/components/body.js';
 import { WorkflowFooter, WorkflowHeader } from '../../features/workflow/components/chrome.js';
 import {
-  DEFAULT_REVIEW_ACTION_ID,
-  getReviewActionCommand,
-  nextReviewActionId,
-  type SelectableReviewActionId,
-} from '../../features/workflow/components/brief-review/review-actions.js';
-import {
   useWorkflowScreen,
   type WorkflowScreenDeps,
 } from '../../features/workflow/hooks/workflow-screen/use-model.js';
@@ -37,6 +31,11 @@ import {
 } from '../../features/workflow/layout/rect.js';
 import { selectRailForm } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowPromptRows } from '../../features/workflow/prompt-rows/workflow.js';
+import {
+  DEFAULT_REVIEW_ACTION_ID,
+  nextReviewActionId,
+  type SelectableReviewActionId,
+} from '../../features/workflow/review-actions.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
@@ -96,7 +95,7 @@ export function WorkflowScreen({
 
   const handleFooterInput = (text: string): void => {
     if (documentReviewActive && reviewActionKeyboardEngagedRef.current && text.trim() === '') {
-      const command = getReviewActionCommand(activeReviewActionIdRef.current);
+      const command = activeReviewActionIdRef.current;
       resetReviewActionSelection();
       void model.handleInput(command);
       return;
@@ -169,11 +168,7 @@ export function WorkflowScreen({
               : {})}
             reviewYankActive={reviewYankActive}
             reviewEpoch={model.inputMode.mode === 'review' ? reviewOwnerToken : undefined}
-            disabled={
-              model.hasOverlay ||
-              model.promptPending ||
-              (model.isAttachedClient && !model.ipcConnected)
-            }
+            disabled={model.hasOverlay || model.promptPending}
           />
         </>
       }
@@ -183,8 +178,6 @@ export function WorkflowScreen({
         sidebarWidth={sidebarWidth}
         inputMode={model.inputMode}
         reviewFilePath={model.reviewFilePath}
-        recovery={model.recovery}
-        phase={model.phase}
         contentHeight={contentHeight}
         contentWidth={contentWidth}
         onScrollAbove={setScrollAboveLabel}

@@ -120,31 +120,17 @@ describe('installHistoryPersistence', () => {
     expect(readFileSync(historyFile, 'utf-8')).toBe('hello');
   });
 
-  it('does not write transcript-off workflow prompts to disk but still persists home and slash history', async () => {
+  it('persists submissions from every screen to disk', async () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     teardown = installHistoryPersistence();
 
-    inputHistoryStore.pushSubmission('unique workflow prompt never persisted', {
-      currentScreen: 'workflow',
-      persistTranscript: false,
-    });
+    inputHistoryStore.pushSubmission('home feature persists', { currentScreen: 'home' });
+    inputHistoryStore.pushSubmission('workflow prompt persists', { currentScreen: 'workflow' });
     vi.advanceTimersByTime(300);
 
-    expect(existsSync(historyFile)).toBe(false);
-
-    inputHistoryStore.pushSubmission('home feature persists', {
-      currentScreen: 'home',
-      persistTranscript: false,
-    });
-    inputHistoryStore.pushSubmission('/resume', {
-      currentScreen: 'workflow',
-      persistTranscript: false,
-    });
-    vi.advanceTimersByTime(300);
-
-    const saved = readFileSync(historyFile, 'utf-8');
-    expect(saved).toBe('/resume\nhome feature persists');
-    expect(saved).not.toContain('unique workflow prompt never persisted');
+    expect(readFileSync(historyFile, 'utf-8')).toBe(
+      'workflow prompt persists\nhome feature persists',
+    );
   });
 
   it('debounces: multiple pushes within 300ms produce a single disk write', async () => {

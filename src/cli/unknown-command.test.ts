@@ -10,27 +10,31 @@ const COMMANDS = [
   'spec',
   'init',
   'status',
-  'stats',
-  'export',
-  'explain',
   'resume',
-  'handoff',
-  'snapshot',
+  'review',
   'approval',
-  'mcp',
-  'worktree',
-  'attach',
-  'detach',
-  'ps',
   'continue',
-  'last',
 ];
+
+// A sample of the value-taking flags `valueTakingFlags(program)` reads off the
+// live registrations in src/cli/options.ts; the boolean flags are absent on
+// purpose, because that is the distinction the operand scan turns on.
+const VALUE_FLAGS: ReadonlySet<string> = new Set([
+  '--approve',
+  '--model',
+  '--mode',
+  '--project',
+  '--planner',
+  '--implementer',
+  '--reviewer',
+  '--budget',
+]);
 
 const ESCAPE = String.fromCharCode(27);
 
 function captureThrown(argv: string[]): unknown {
   try {
-    assertNotMistypedCommand(argv, COMMANDS);
+    assertNotMistypedCommand(argv, COMMANDS, VALUE_FLAGS);
     return null;
   } catch (err) {
     return err;
@@ -60,7 +64,6 @@ describe('assertNotMistypedCommand rejects a near-miss subcommand', () => {
   it.each([
     { argv: ['spce'], suggestion: 'spec' },
     { argv: ['docter'], suggestion: 'doctor' },
-    { argv: ['wroktree'], suggestion: 'worktree' },
     { argv: ['doctro', '--json'], suggestion: 'doctor' },
     { argv: ['spce', '--mode', 'quick'], suggestion: 'spec' },
   ])('rejects $argv suggesting $suggestion', ({ argv, suggestion }) => {
@@ -68,13 +71,6 @@ describe('assertNotMistypedCommand rejects a near-miss subcommand', () => {
 
     expect(isCliError(captured)).toBe(true);
     expect(messageOf(captured)).toContain(`did you mean '${suggestion}'?`);
-  });
-
-  it('breaks a tie by help order: statsu is one edit from both status and stats', () => {
-    const captured = captureThrown(['statsu']);
-
-    expect(isCliError(captured)).toBe(true);
-    expect(messageOf(captured)).toContain("did you mean 'status'?");
   });
 
   it('strips terminal control bytes out of the token it echoes back', () => {
@@ -86,11 +82,56 @@ describe('assertNotMistypedCommand rejects a near-miss subcommand', () => {
   });
 });
 
+describe('assertNotMistypedCommand rejects a retired command', () => {
+  it.each([
+    { argv: ['attach'], hint: 'splitbrief continue <id>' },
+    { argv: ['attach', '2026-09-11-ab'], hint: 'splitbrief continue <id>' },
+    { argv: ['detach'], hint: 'splitbrief continue <id>' },
+    { argv: ['ps'], hint: 'there is no session list' },
+    { argv: ['ps', '--json'], hint: 'there is no session list' },
+    { argv: ['last'], hint: 'there is no session list' },
+    { argv: ['mcp', 'serve'], hint: 'MCP server was removed' },
+    { argv: ['explain'], hint: '.splitbrief/sessions/<id>/' },
+    { argv: ['handoff'], hint: '.splitbrief/sessions/<id>/' },
+    { argv: ['export', 'html'], hint: '.splitbrief/sessions/<id>/' },
+    { argv: ['export', 'the', 'ledger'], hint: '.splitbrief/sessions/<id>/' },
+    { argv: ['stats'], hint: 'per-session cost is in the run summary' },
+    { argv: ['snapshot', 'list'], hint: '/run accept' },
+    { argv: ['worktree'], hint: 'there is no worktree command' },
+  ])('rejects $argv instead of starting a workflow', ({ argv, hint }) => {
+    const captured = captureThrown(argv);
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as { exitCode?: number }).exitCode).toBe(1);
+    expect(messageOf(captured)).toContain(`unknown command '${argv[0]}'`);
+    expect(messageOf(captured)).toContain(hint);
+  });
+
+  it.each([
+    { label: 'a boolean flag ahead of the retired name', argv: ['--json', 'attach', 'x'] },
+    { label: 'a value flag ahead of the retired name', argv: ['--project', 'foo', 'attach', 'x'] },
+    { label: 'a value flag spelled with =', argv: ['--project=foo', 'attach', 'x'] },
+    { label: 'a boolean flag between operands', argv: ['--yolo', 'ps'] },
+  ])('sees through $label', ({ argv }) => {
+    const captured = captureThrown(argv);
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as { exitCode?: number }).exitCode).toBe(1);
+    expect(messageOf(captured)).toContain("unknown command '");
+  });
+
+  it('offers the start escape hatch for an unquoted feature that opens with a retired name', () => {
+    const captured = captureThrown(['export', 'the', 'ledger']);
+
+    expect(messageOf(captured)).toContain('splitbrief start "export"');
+  });
+});
+
 describe('assertNotMistypedCommand leaves real invocations alone', () => {
   it.each([
     { label: 'no arguments', argv: [] },
     { label: 'a registered command', argv: ['doctor'] },
-    { label: 'a registered command with flags', argv: ['ps', '--prune'] },
+    { label: 'a registered command with flags', argv: ['status', '--json'] },
     { label: 'a leading flag', argv: ['--help'] },
     { label: 'a quoted multi-word feature', argv: ['fix the typo'] },
     { label: 'an unquoted multi-word feature', argv: ['fix', 'the', 'typo'] },
@@ -98,7 +139,13 @@ describe('assertNotMistypedCommand leaves real invocations alone', () => {
     { label: 'a one-word feature far from every command', argv: ['refactor'] },
     { label: 'a one-word feature two edits from a short command', argv: ['test'] },
     { label: 'the explicit start escape hatch', argv: ['start', 'doctro'] },
+    { label: 'a quoted feature that opens with a retired name', argv: ['attach the debugger'] },
+    { label: 'the explicit start escape hatch for a retired name', argv: ['start', 'attach'] },
+    { label: 'a quoted feature that opens with a newly retired name', argv: ['export the ledger'] },
+    { label: 'an inherited Object.prototype key', argv: ['toString'] },
+    { label: 'a retired name that is a value-flag argument', argv: ['--project', 'attach'] },
+    { label: 'a near-miss that is a value-flag argument', argv: ['--mode', 'doctro'] },
   ])('admits $label', ({ argv }) => {
-    expect(() => assertNotMistypedCommand(argv, COMMANDS)).not.toThrow();
+    expect(() => assertNotMistypedCommand(argv, COMMANDS, VALUE_FLAGS)).not.toThrow();
   });
 });

@@ -1,8 +1,6 @@
 .nav {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  column-gap: var(--s-6);
-  align-items: baseline;
+  position: relative;
+  container-type: inline-size;
   width: min(var(--content-max), 100% - 2 * var(--gutter));
   height: 96px;
   margin-inline: auto;
@@ -31,8 +29,39 @@
   }
 }
 
+.nav > * {
+  --nav-unit: clamp(1px, calc(100cqw / 1016), 1.64px);
+  position: absolute;
+}
+
+.nav .wordmark {
+  left: calc(100% * 49 / 1016);
+  top: calc(18 * var(--nav-unit));
+  font-size: calc(15 * var(--nav-unit));
+  min-height: 44px;
+  padding-block: calc((44px - 1lh) / 2);
+  margin-block: calc((1lh - 44px) / 2);
+}
+
 .tagline {
-  grid-column: 3 / 5;
+  left: calc(100% * 195 / 1016);
+  top: calc(19 * var(--nav-unit));
+  font-size: calc(9 * var(--nav-unit));
+  line-height: calc(12 * var(--nav-unit));
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.nav .links {
+  left: calc(100% * 764 / 1016);
+  top: calc(20 * var(--nav-unit));
+  gap: calc(18 * var(--nav-unit));
+  font-size: calc(8.5 * var(--nav-unit));
+  letter-spacing: 0.08em;
+
+  a {
+    min-width: 44px;
+  }
 }
 
 .links {
@@ -59,23 +88,44 @@
 }
 
 .nav .mark {
-  grid-column: 12 / 13;
-  justify-self: end;
-  width: 20px;
-  height: 20px;
-  translate: 0 6px;
-  background-image: radial-gradient(circle, var(--ink-2) 1.5px, transparent 2px);
-  background-size: 7px 7px;
+  left: calc(100% * 951 / 1016);
+  top: calc(24 * var(--nav-unit));
+  width: calc(12 * var(--nav-unit));
+  height: calc(13 * var(--nav-unit));
+  background-image: radial-gradient(
+    circle at var(--nav-unit) var(--nav-unit),
+    var(--ink-2) calc(0.75 * var(--nav-unit)),
+    transparent var(--nav-unit)
+  );
+  background-size: calc(5 * var(--nav-unit)) calc(5.5 * var(--nav-unit));
 }
 
-@media (max-width: 1099px) {
-  .tagline {
-    grid-column: 4 / 7;
-    white-space: nowrap;
+@media (min-width: 768px) and (max-width: 1099px) {
+  .nav .wordmark {
+    left: 0;
+    top: 32px;
+    font-size: 20px;
   }
 
-  .links {
-    grid-column: 7 / 12;
+  .tagline {
+    left: 24%;
+    top: 32px;
+    font-size: 10px;
+    line-height: 14px;
+  }
+
+  .nav .links {
+    left: auto;
+    right: 40px;
+    top: 36px;
+    font-size: 11px;
+    gap: var(--s-3);
+  }
+
+  .nav .mark {
+    left: auto;
+    right: 0;
+    top: 36px;
   }
 }
 
@@ -83,7 +133,16 @@
   .nav {
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
     column-gap: var(--s-4);
+  }
+
+  .nav > * {
+    position: static;
+  }
+
+  .nav .wordmark {
+    font-size: 20px;
   }
 
   .tagline,
@@ -93,6 +152,7 @@
 
   .nav .links {
     flex: none;
+    font-size: 11px;
     gap: var(--s-3);
     white-space: nowrap;
   }

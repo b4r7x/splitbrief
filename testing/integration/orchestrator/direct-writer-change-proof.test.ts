@@ -296,7 +296,7 @@ async function runDirectWriterImplementation(
     config: makeConfig({
       implementer: implementerConfig(),
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', maxRetries: 0, persistTranscript: false },
+      workflow: { mode: 'quick', maxRetries: 0 },
     }),
   });
   wctx.implementer = createCliImplementer(implementerConfig(), { trustedCli: fixture.trustedGate });
@@ -389,7 +389,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           config: makeConfig({
             implementer: implementerConfig(),
             validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-            workflow: { mode: 'quick', maxRetries: 0, persistTranscript: false },
+            workflow: { mode: 'quick', maxRetries: 0 },
             approval: { enabled: false, feedRejectionsToPlanner: false },
           }),
         }),
@@ -449,7 +449,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           config: makeConfig({
             implementer: implementerConfig(),
             validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-            workflow: { mode: 'quick', maxRetries: 0, persistTranscript: false },
+            workflow: { mode: 'quick', maxRetries: 0 },
             approval: { enabled: false, feedRejectionsToPlanner: false },
           }),
         }),
@@ -509,7 +509,6 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       workflow: {
         mode: 'quick',
         maxRetries: 0,
-        persistTranscript: false,
       },
       approval: { enabled: false, feedRejectionsToPlanner: false },
       escalation: { enabled: false },
@@ -535,7 +534,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       preparationId,
       active,
       resumeState,
-      purpose: 'new-workflow',
+      purpose: 'resume',
       gates: () => [
         {
           kind: 'shell',

@@ -17,11 +17,12 @@ type ModelsDevRawCostTier = NonNullable<NonNullable<ModelsDevModel['cost']>['tie
 /** A models.dev vendor: the runner id itself, or the lab a runner fronts. */
 export type ModelsDevProviderId = ProviderId | CatalogVendorId;
 
+/**
+ * The map exists for an api provider whose models.dev vendor key differs from its runner id;
+ * CLI runner ids never read models.dev (REQ-B08, enforced in src/engine/providers/model/resolution.ts).
+ */
 const PROVIDER_TO_MODELS_DEV_IDS: Partial<Record<ModelsDevProviderId, string[]>> = {
   'lm-studio': ['lmstudio'],
-  copilot: ['github-copilot'],
-  'kilo-code': ['kilo'],
-  opencode: ['opencode', 'opencode-go'],
 };
 
 function toModelsDevProviderIds(providerId: ModelsDevProviderId): string[] {

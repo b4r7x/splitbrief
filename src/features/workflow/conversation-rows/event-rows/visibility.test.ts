@@ -2,46 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import { isTranscriptRowlessEvent } from './visibility.js';
-import type { StreamingOutputState } from '../../../../stores/workflow/streaming-output.js';
-import { eventRows } from '#testing/helpers/event-rows.js';
-
-const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
-
-const briefRecoveryLifecycleEventTypes = [
-  'brief_recovery_quality_reported',
-  'brief_recovery_auto_repair_exhausted',
-  'brief_recovery_attempt_accepted',
-  'brief_recovery_attempt_started',
-  'brief_recovery_attempt_settled',
-  'brief_recovery_attempt_unresolved',
-  'brief_recovery_provider_failed',
-  'brief_recovery_input_queued',
-  'brief_recovery_input_applied',
-  'brief_recovery_stale_ignored',
-  'brief_recovery_rejected',
-  'brief_recovery_refused',
-] as const satisfies readonly EngineEvent['type'][];
-
-function briefRecoveryEvent(type: (typeof briefRecoveryLifecycleEventTypes)[number]): EngineEvent {
-  return { type, ts: 0, phase: 'reviewing-briefs' } as EngineEvent;
-}
 
 describe('isTranscriptRowlessEvent', () => {
-  it('keeps every canonical Brief recovery lifecycle event rowless', () => {
-    for (const type of briefRecoveryLifecycleEventTypes) {
-      const event = briefRecoveryEvent(type);
-      expect(isTranscriptRowlessEvent(event)).toBe(true);
-      expect(
-        eventRows({
-          event,
-          globalIndex: 0,
-          expanded: false,
-          ctx: { width: 80, viewportRows: 20, streaming },
-        }),
-      ).toEqual([]);
-    }
-  });
-
   it('is true for row-less event types and false for visible rows', () => {
     const heartbeat: EngineEvent = {
       type: 'planner_heartbeat',

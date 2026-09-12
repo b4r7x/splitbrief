@@ -4,22 +4,18 @@ import { COLD_START_STDERR_LINE } from '../../../core/discovery/copy.js';
 import { assertInteractiveTty, setupWorkflow } from '../../setup.js';
 import { initStoresForTuiMount } from '../../init-stores.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { detectWorktree } from '../../../engine/worktree/detect.js';
 import { hasRememberedDetection } from '../../../engine/detection/cache.js';
-import { createGitClient } from '../../../lib/git/client.js';
 import { releasePreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
 import { assertNoLiveSessionForCli, prepareStartExecution } from './readiness.js';
 import type { InteractiveDispatchArgs } from './types.js';
 
 export async function runInteractiveStart(args: InteractiveDispatchArgs): Promise<void> {
-  const { deps, projectDir, feature, enrichedFeature, plannerContext, opts, handOffWorktree } =
-    args;
-  assertInteractiveTty('use --json or --detach');
+  const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
+  assertInteractiveTty('use --json or --plain');
   // The line claims a first run, so it is only true while nothing is remembered.
   if (!hasRememberedDetection(projectDir)) process.stderr.write(COLD_START_STDERR_LINE);
   const { useFullscreen, useMouse, useHover, needsSetup } = await setupWorkflow(opts);
   const { awaitDiscovery } = await initStoresForTuiMount(projectDir, opts);
-  const worktreePromise = detectWorktree(projectDir, createGitClient(projectDir)).catch(() => null);
 
   const unmountInk = new AbortController();
   const renderOptions = {
@@ -42,7 +38,6 @@ export async function runInteractiveStart(args: InteractiveDispatchArgs): Promis
       plannerContext,
       allowRepoRunners: opts.allowRepoRunners ?? false,
     });
-    handOffWorktree();
     await Promise.all([mountInk(), finishBootstrap()]);
     return;
   }
@@ -59,26 +54,18 @@ export async function runInteractiveStart(args: InteractiveDispatchArgs): Promis
       unmountInk.abort();
       await Promise.allSettled([inkPromise]);
     };
-    const launchPromise = worktreePromise
-      .then((worktreeName) =>
-        prepareStartExecution({
-          projectDir,
-          feature: enrichedFeature ?? feature,
-          plannerContext,
-          worktreeName: worktreeName ?? undefined,
-          opts,
-          transport: 'interactive',
-          emitReadiness: () => {},
-          releaseTerminal,
-          ...(deps.prepareExecution !== undefined && { prepare: deps.prepareExecution }),
-        }),
-      )
+    const launchPromise = prepareStartExecution({
+      projectDir,
+      feature: enrichedFeature ?? feature,
+      plannerContext,
+      opts,
+      transport: 'interactive',
+      emitReadiness: () => {},
+      releaseTerminal,
+      ...(deps.prepareExecution !== undefined && { prepare: deps.prepareExecution }),
+    })
       .then((execution) => {
         releasePreparedExecutionOwnership(execution);
-        // The mount above is not the run dispatch, so the startup rollback
-        // window for a created worktree closes here instead — a preparation
-        // failure must still be able to remove it.
-        handOffWorktree();
         routerStore.navigate({
           to: 'workflow',
           execution: { kind: 'local', prepared: execution },
@@ -93,6 +80,5 @@ export async function runInteractiveStart(args: InteractiveDispatchArgs): Promis
   }
 
   assertNoLiveSessionForCli(projectDir);
-  handOffWorktree();
   await Promise.all([mountInk(), finishBootstrap()]);
 }

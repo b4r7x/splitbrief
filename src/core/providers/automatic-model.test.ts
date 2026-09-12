@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isAutomaticModel, normalizeConfiguredModel, resolveCliModel } from './automatic-model.js';
+import {
+  isAutoCheapestModel,
+  isAutomaticModel,
+  normalizeConfiguredModel,
+  resolveCliModel,
+} from './automatic-model.js';
 
 describe('normalizeConfiguredModel', () => {
   it.each([
@@ -71,5 +76,30 @@ describe('resolveCliModel', () => {
   it('passes an explicit model id through', () => {
     expect(resolveCliModel('gpt-5.4')).toBe('gpt-5.4');
     expect(resolveCliModel('  gpt-5-codex ')).toBe('gpt-5-codex');
+  });
+});
+
+describe('auto:cheapest', () => {
+  it.each([
+    ['auto:cheapest', true],
+    [' Auto:Cheapest ', true],
+    ['auto', false],
+    ['auto:cheapestx', false],
+    [undefined, false],
+  ])('reports isAutoCheapestModel(%j) as %j', (input, expected) => {
+    expect(isAutoCheapestModel(input)).toBe(expected);
+  });
+
+  it('is not the delegating automatic selection', () => {
+    expect(isAutomaticModel('auto:cheapest', 'kilo-code')).toBe(false);
+  });
+
+  it('normalizes to itself as a literal', () => {
+    expect(normalizeConfiguredModel('auto:cheapest')).toBe('auto:cheapest');
+  });
+
+  it('is never sent to a CLI runner', () => {
+    expect(resolveCliModel('auto:cheapest', 'kilo-code')).toBeUndefined();
+    expect(resolveCliModel('auto:cheapest')).toBeUndefined();
   });
 });

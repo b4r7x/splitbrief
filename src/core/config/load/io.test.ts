@@ -53,15 +53,10 @@ describe('config loading', () => {
       expect(config.codebase).toMatchObject({
         enabled: true,
         tokenBudget: 1234,
-        cacheDir: '.splitbrief-cache',
         include: ['src/**'],
         exclude: ['dist/**'],
       });
-      expect(config.hooks).toEqual({ builtin: { snapshots: false } });
-      expect(config.otel).toEqual({ enabled: true, serviceName: 'splitbrief-test' });
-      expect(config.snapshots).toEqual({
-        auto: { preTask: true, postTask: false, preFinalReview: true },
-      });
+      expect(config.hooks?.pre_task?.[0]).toMatchObject({ command: './scripts/pre-task.sh' });
       expect(config.palette?.customActions?.[0]).toMatchObject({
         id: 'refresh-docs',
         label: 'Refresh docs',
@@ -69,7 +64,6 @@ describe('config loading', () => {
       });
       expect(config.approval).toEqual({
         enabled: true,
-        headless: true,
         tiers: {
           read: 'auto',
           write_in_scope: 'sticky',
@@ -79,17 +73,6 @@ describe('config loading', () => {
         },
         feedRejectionsToPlanner: false,
       });
-    });
-
-    it('preserves the trust block (trust.customRenderers) from YAML', () => {
-      const dir = join(TMP, 'trust-block');
-      writeConfigYaml(dir, {
-        implementer: { model: 'codellama:13b' },
-        trust: { custom_renderers: true },
-      });
-
-      const { config } = loadConfig(dir);
-      expect(config.trust?.customRenderers).toBe(true);
     });
 
     it('preserves hook event and option keys from YAML', () => {
@@ -173,6 +156,115 @@ describe('config loading', () => {
       expect(() => loadConfig(dir)).toThrow(`${path}: Unknown config key`);
     });
 
+    it('rejects the removed workflow.persist_transcript field', () => {
+      const dir = join(TMP, 'removed-workflow-persist-transcript');
+      writeConfigYaml(dir, { workflow: { max_retries: 3, persist_transcript: false } });
+
+      expect(() => loadConfig(dir)).toThrow('workflow.persistTranscript: Unknown config key');
+    });
+
+    it('rejects the removed workflow.briefReview rich variant', () => {
+      const dir = join(TMP, 'removed-brief-review-rich');
+      writeConfigYaml(dir, { workflow: { max_retries: 3, brief_review: 'rich' } });
+
+      expect(() => loadConfig(dir)).toThrow(/workflow\.briefReview/);
+    });
+
+    it('rejects the removed hooks.builtin block', () => {
+      const dir = join(TMP, 'removed-hooks-builtin');
+      writeConfigYaml(dir, { hooks: { builtin: { snapshots: false } } });
+
+      expect(() => loadConfig(dir)).toThrow('hooks.builtin: Unknown config key');
+    });
+
+    it('rejects the removed pre_compact hook event', () => {
+      const dir = join(TMP, 'removed-hook-pre-compact');
+      writeConfigYaml(dir, { hooks: { pre_compact: [{ command: './scripts/compact.sh' }] } });
+
+      expect(() => loadConfig(dir)).toThrow('hooks.pre_compact: Unknown config key');
+    });
+
+    it('rejects the removed approval.headless field', () => {
+      const dir = join(TMP, 'removed-approval-headless');
+      writeConfigYaml(dir, { approval: { enabled: true, headless: true } });
+
+      expect(() => loadConfig(dir)).toThrow('approval.headless: Unknown config key');
+    });
+
+    it('rejects the removed codebase.cacheDir field', () => {
+      const dir = join(TMP, 'removed-codebase-cache-dir');
+      writeConfigYaml(dir, { codebase: { enabled: true, cache_dir: '.custom-cache' } });
+
+      expect(() => loadConfig(dir)).toThrow('codebase.cacheDir: Unknown config key');
+    });
+
+    it.each([['network'], ['validation']])(
+      'rejects the removed approval tier %s',
+      (tier: string) => {
+        const dir = join(TMP, `removed-approval-tier-${tier}`);
+        writeConfigYaml(dir, { approval: { tiers: { [tier]: 'confirm' } } });
+
+        expect(() => loadConfig(dir)).toThrow(`approval.tiers.${tier}: Unknown config key`);
+      },
+    );
+
+    it('rejects the removed sessions.scope global value', () => {
+      const dir = join(TMP, 'removed-sessions-scope-global');
+      writeConfigYaml(dir, { sessions: { scope: 'global' } });
+
+      expect(() => loadConfig(dir)).toThrow(/sessions\.scope/);
+    });
+
+    it.each([
+      { slug: 'otel', path: 'otel', yaml: { otel: { enabled: true, service_name: 'sb-test' } } },
+      { slug: 'snapshots', path: 'snapshots', yaml: { snapshots: { auto: { pre_task: true } } } },
+      { slug: 'trust', path: 'trust', yaml: { trust: { custom_renderers: true } } },
+      {
+        slug: 'planner-estimate-review',
+        path: 'plannerEstimateReview',
+        yaml: { planner_estimate_review: true },
+      },
+      {
+        slug: 'auto-split-overflow',
+        path: 'autoSplitOverflow',
+        yaml: { auto_split_overflow: true },
+      },
+    ])('rejects the removed top-level $path key on its own', ({ slug, path, yaml }) => {
+      const dir = join(TMP, `removed-top-level-${slug}`);
+      writeConfigYaml(dir, yaml);
+
+      expect(() => loadConfig(dir)).toThrow(`${path}: Unknown config key`);
+    });
+
+    it('names every removed top-level key in one load error', () => {
+      const dir = join(TMP, 'removed-top-level-keys');
+      writeConfigYaml(dir, {
+        otel: { enabled: true, service_name: 'splitbrief-test' },
+        snapshots: { auto: { pre_task: true } },
+        trust: { custom_renderers: true },
+        planner_estimate_review: true,
+        auto_split_overflow: true,
+      });
+
+      let message = '';
+      try {
+        loadConfig(dir);
+      } catch (err) {
+        message = err instanceof Error ? err.message : String(err);
+      }
+      const removed = ['otel', 'snapshots', 'trust', 'plannerEstimateReview', 'autoSplitOverflow'];
+      for (const key of removed) {
+        expect(message).toContain(`${key}: Unknown config key`);
+      }
+    });
+
+    it('still tolerates a stale top-level key no release ever removed', () => {
+      const dir = join(TMP, 'stale-top-level-key');
+      writeConfigYaml(dir, { theme: 'terminal' });
+
+      expect(Object.keys(loadConfig(dir).config)).not.toContain('theme');
+    });
+
     it('names the nested path when workflow.git carries an unknown key', () => {
       const dir = join(TMP, 'unknown-workflow-git-key');
       writeConfigYaml(dir, {
@@ -191,13 +283,12 @@ describe('config loading', () => {
           git: { commit_strategy: 'per-task', create_branch: true },
           speckit: { min_coverage: 0.8 },
           mode: 'speckit',
-          brief_review: 'rich',
+          brief_review: 'simple',
           task_review: 'every',
           max_budget: 5,
           budget_pause_threshold: 0.5,
           drift_chain_threshold: 0.4,
           cost_gate: true,
-          persist_transcript: false,
           compaction_threshold: 50,
           compaction_format: 'structured',
         },
@@ -210,13 +301,12 @@ describe('config loading', () => {
         isolation: 'worktree',
         speckit: { minCoverage: 0.8 },
         mode: 'speckit',
-        briefReview: 'rich',
+        briefReview: 'simple',
         taskReview: 'every',
         maxBudget: 5,
         budgetPauseThreshold: 0.5,
         driftChainThreshold: 0.4,
         costGate: true,
-        persistTranscript: false,
         compactionThreshold: 50,
         compactionFormat: 'structured',
       });

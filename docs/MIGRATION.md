@@ -1,6 +1,6 @@
 # Migration guide — EventBus architecture (2026-04-20 release)
 
-For changes and amendments after the 2026-04-20 release, see [`docs/CHANGELOG.md`](./CHANGELOG.md).
+For changes and amendments after the 2026-04-20 release, see [`CHANGELOG.md`](../CHANGELOG.md) at the repository root.
 
 ## TL;DR
 
@@ -18,9 +18,6 @@ All optional. Add only if you want the feature.
 ### Hooks
 ```yaml
 hooks:
-  builtin:
-    prettier-on-change: true
-    block-secrets: true
   pre_task:
     - command: "npx"
       args: ["prettier", "--check", "${event.file}"]
@@ -37,19 +34,10 @@ codebase:
 
 To disable: set `enabled: false`. The cache rebuilds itself on each planning run when it is stale; there is no manual rebuild step.
 
-### OpenTelemetry
-```yaml
-otel:
-  enabled: true
-  serviceName: splitbrief
-```
-
-For the built-in console exporter, use `OTEL_TRACES_EXPORTER=console`, `SPLITBRIEF_OTEL_EXPORTER=console`, or `--otel-exporter console`. For OTLP or custom exporters, register a `TracerProvider` before invoking `splitbrief`. See [OTEL.md](./OTEL.md).
-
 ## CLI flag additions
 
-- `--json` (start, resume, continue, last) — headless NDJSON mode
-- `--allow-hooks` (start, resume, continue, last, spec) — trust hooks without prompting
+- `--json` (start, resume, continue) — headless NDJSON mode
+- `--allow-hooks` (start, resume, continue, spec) — trust hooks without prompting
 
 ## Breaking changes for integrators
 
@@ -57,7 +45,7 @@ If you wrap SPLITBRIEF programmatically (not as CLI):
 
 - **Event subscription replaced `callbacks.onEvent(event)`.** There are two supported paths:
   1. Pass `_eventSink: (event: EngineEvent) => void` in the `runWorkflow` config — the sink is subscribed to the internal bus at workflow init and receives every event.
-  2. Add a custom sink module under `src/engine/events/sinks/` alongside `jsonl.ts`, `stdout-json.ts`, `tree-recorder.ts`, and `otel.ts`, then wire it from `orchestrator/run/init.ts`. UI-facing sinks belong outside `engine/`; the shipped TUI sink is `src/features/workflow/tui-sink.ts`.
+  2. Add a custom sink module under `src/engine/events/sinks/` alongside `jsonl.ts`, `logger.ts`, and `stdout-json.ts`, then wire it from `orchestrator/run/init-sinks.ts`. UI-facing sinks belong outside `engine/`; the shipped TUI sink is `src/features/workflow/tui-sink.ts`.
   The existing on-disk append remains available via `sinks/jsonl.ts` and `core/sessions/log-writer.ts` (`appendEngineEvent(ref, event)`). The JSONL sink is unchanged by the 2026-04-20 release.
 - **`TuiEvent` and `OrchestratorEvent` are removed.** Import the `EngineEvent` alias from `src/engine/events/types.ts`; its discriminated-union schema (`EngineEventSchema`, the single source of truth) lives in `src/engine/events/schema.ts`. Workflow sub-stores consume `EngineEvent` directly; the workflow-TUI sink (`tuiSink`) is a pass-through, not a mapper.
 - Update `Planner` adapter signatures to accept the new `codebaseContext` parameter.
@@ -68,7 +56,7 @@ If you query session JSONL files programmatically:
 
 ## New CLI surface
 
-- `splitbrief start --json "..."` runs the workflow without the Ink TUI and streams `EngineEvent` as NDJSON on stdout. `resume`, `continue`, and `last` support the same headless mode for interrupted sessions. Driver: `src/cli/headless.ts`.
+- `splitbrief start --json "..."` runs the workflow without the Ink TUI and streams `EngineEvent` as NDJSON on stdout. `resume` and `continue` support the same headless mode for interrupted sessions. Driver: `src/cli/headless.ts`.
 - `--allow-hooks` bypasses the interactive hook-trust prompt — required in CI / non-TTY.
 
 ## Headless mode (--json flag)

@@ -178,7 +178,6 @@ async function runCodexLoop(opts: {
         mode: 'standard',
         approve: 'none',
         maxRetries: 1,
-        persistTranscript: true,
       },
     }),
     preparationId,
@@ -316,7 +315,6 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
       taskId: 'T001',
       category: 'cost',
       code: 'implementer_usage_not_reported',
-      transcriptSafe: true,
     });
     expect(warning?.message).toContain('codex');
     expect(warning?.message).toContain('T001');

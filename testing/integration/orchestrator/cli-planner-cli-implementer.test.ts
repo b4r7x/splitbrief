@@ -194,7 +194,6 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
           mode: 'quick',
           approve: 'none',
           maxRetries: 1,
-          persistTranscript: true,
         },
       }),
     );

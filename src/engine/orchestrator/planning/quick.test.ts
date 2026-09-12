@@ -72,7 +72,7 @@ function phaseResult(logicalName: PlannerArtifactLogicalName, text: string) {
   };
 }
 
-async function runZeroTaskQuick(approve?: 'all') {
+async function runZeroTaskQuick() {
   const { projectDir, sessionId } = setupProject();
   const quickPlan = vi.fn().mockResolvedValue({
     spec: '',
@@ -83,13 +83,11 @@ async function runZeroTaskQuick(approve?: 'all') {
   });
   const { callbacks } = makeCallbacks();
   const { bus, events } = makeBusRecorder();
-  const result = await runPlanningPhase({
+  const result = await runQuickPlanning({
     wctx: {
       projectDir,
       sessionId,
-      config: makeConfig({
-        workflow: { mode: 'quick', ...(approve !== undefined && { approve }) },
-      }),
+      config: makeConfig({ workflow: { mode: 'quick', approve: 'none' } }),
       callbacks,
       metadata: TEST_METADATA,
       bus,
@@ -145,7 +143,7 @@ describe('runQuickPlanning', () => {
       rewindPending: { target: 'plan', comment: rawFeedback },
     });
 
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(quickPlan).toHaveBeenCalledWith(
       expect.objectContaining({
         feature: expect.stringContaining(rawFeedback),
@@ -155,15 +153,15 @@ describe('runQuickPlanning', () => {
     expect(result.state.rewindPending).toMatchObject({ target: 'plan' });
   });
 
-  it('parks zero tasks without an automatic repair or cancellation', async () => {
+  it('quick planning with zero tasks fails planning terminally', async () => {
     const { result, events, quickPlan } = await runZeroTaskQuick();
 
-    expect(result.disposition).toBe('parked');
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
     expect(result.state.phase).toBe('idle');
     expect(result.state.tasks).toHaveLength(0);
     expect(quickPlan).toHaveBeenCalledTimes(1);
     expect(events.find((event) => event.type === 'plan_approved')).toBeUndefined();
-    expect(events.find((event) => event.type === 'error')).toBeUndefined();
+    expect(events.some((event) => event.type === 'error')).toBe(true);
   });
 
   it('books only the initial planner call when it returns zero tasks', async () => {
@@ -176,7 +174,7 @@ describe('runQuickPlanning', () => {
   it('publishes the zero-task warning without promoting the failed attempt text', async () => {
     const { result, events, projectDir, sessionId } = await runZeroTaskQuick();
 
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('terminal');
     expect(existsSync(join(sessionDir(projectDir, sessionId), TASKS_FILE))).toBe(false);
     const warning = events.find(
       (event) => event.type === 'warning' && event.code === 'planner_returned_zero_tasks',
@@ -184,7 +182,6 @@ describe('runQuickPlanning', () => {
     expect(warning).toMatchObject({
       category: 'planner',
       code: 'planner_returned_zero_tasks',
-      transcriptSafe: true,
     });
     if (warning?.type === 'warning') {
       expect(warning.message).toContain('quick');
@@ -193,14 +190,37 @@ describe('runQuickPlanning', () => {
   });
 
   it('emits a warning when approve level overrides quick default', async () => {
-    const { events } = await runZeroTaskQuick('all');
+    const { projectDir, sessionId } = setupProject();
+    const quickPlan = vi.fn().mockResolvedValue({
+      spec: '',
+      plan: '',
+      tasks: [],
+      usage: { inputTokens: 30, outputTokens: 15 },
+      phases: [phaseResult(TASKS_FILE, '# empty')],
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    await runPlanningPhase({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ workflow: { mode: 'quick', approve: 'all' } }),
+        callbacks,
+        metadata: TEST_METADATA,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner: makePlanner({ quickPlan }),
+      state: createInitialState('feature'),
+      feature: 'feature',
+    });
 
     const warning = events.find((event) => event.type === 'warning');
     expect(warning).toMatchObject({
       type: 'warning',
       category: 'workflow',
       code: 'approve_ignored_for_mode',
-      transcriptSafe: true,
     });
     if (warning?.type === 'warning') expect(warning.message).toContain('quick');
   });
@@ -218,7 +238,12 @@ describe('runQuickPlanning', () => {
         phases: [phaseResult(TASKS_FILE, REAL_TASKS_MD)],
       };
     });
-    const planner = makePlanner({ quickPlan });
+    // The answer is queued, and the brief quality gate drains the queue into one
+    // regeneration through planner.review before it gates.
+    const planner = makePlanner({
+      quickPlan,
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
     const onQuestionAsked = vi.fn().mockResolvedValue('auth-module');
     const { callbacks } = makeCallbacks({ onQuestionAsked });
     const config = makeConfig({ workflow: { mode: 'quick' } });
@@ -235,14 +260,12 @@ describe('runQuickPlanning', () => {
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
-      state: createInitialState('feature'),
+      state: { ...createInitialState('feature'), phase: 'researching' },
       feature: 'feature',
     });
 
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
-    expect(result.state.generation).toBeDefined();
-    expect(result.state.permit ?? null).toBeNull();
     const tasksText = readFileSync(join(sessionDir(projectDir, sessionId), TASKS_FILE), 'utf8');
     expect(tasksText).toContain('Add auth');
     const specContent = readFileSync(join(sessionDir(projectDir, sessionId), SPEC_FILE), 'utf8');
@@ -251,7 +274,7 @@ describe('runQuickPlanning', () => {
     expect(events.find((event) => event.type === 'plan_approved')).toBeUndefined();
   });
 
-  it('all-skip remains behind the shared admission boundary', async () => {
+  it('all-skip still reaches ready-for-tasks', async () => {
     const { projectDir, sessionId } = setupProject();
     const question: ClarificationQuestion = { id: 'q1', type: 'input', text: 'Module name?' };
     const quickPlan = vi.fn().mockImplementation(async (opts: PlanOptions) => {
@@ -281,13 +304,48 @@ describe('runQuickPlanning', () => {
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
-      state: createInitialState('feature'),
+      state: { ...createInitialState('feature'), phase: 'researching' },
       feature: 'feature',
     });
 
     expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
-    expect(result.disposition).toBe('parked');
-    expect(result.state.phase).toBe('idle');
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(result.state.phase).toBe('implementing');
+  });
+
+  it('quick planning exits in reviewing-plan with its tasks', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makePassingTask();
+    const planner = makePlanner({
+      quickPlan: vi.fn().mockResolvedValue({
+        spec: '',
+        plan: '',
+        tasks: [task],
+        usage: { inputTokens: 30, outputTokens: 15 },
+        phases: [phaseResult(TASKS_FILE, '# tasks')],
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+
+    const result = await runQuickPlanning({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ workflow: { mode: 'quick', approve: 'none' } }),
+        callbacks,
+        metadata: TEST_METADATA,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...createInitialState('feature'), phase: 'researching' },
+      feature: 'feature',
+    });
+
+    expect(result.disposition).toBe('tasks-ready');
+    expect(result.state.phase).toBe('reviewing-plan');
+    expect(result.state.tasks).toHaveLength(1);
   });
 
   it('returns invalid briefs without hidden repair', async () => {
@@ -320,12 +378,12 @@ describe('runQuickPlanning', () => {
     const result = await runQuickPlanning({
       wctx,
       planner,
-      state: { ...initial, phase: 'idle' },
+      state: { ...initial, phase: 'researching' },
       feature: 'feature',
     });
 
-    expect(result.disposition).toBe('parked');
-    expect(result.state.phase).toBe('idle');
+    expect(result.disposition).toBe('tasks-ready');
+    expect(result.state.phase).toBe('reviewing-plan');
     expect(planner.quickPlan).toHaveBeenCalledTimes(1);
     expect(result.state.tasks).toHaveLength(1);
     expect(events.find((event) => event.type === 'plan_approved')).toBeUndefined();

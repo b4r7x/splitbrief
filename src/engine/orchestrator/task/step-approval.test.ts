@@ -51,7 +51,7 @@ describe('runSingleTask — approval gates', () => {
         implementer,
         bus,
         config: makeConfig({
-          approval: { enabled: true, headless: true, feedRejectionsToPlanner: true },
+          approval: { enabled: true, feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
         }),
@@ -112,7 +112,6 @@ describe('runSingleTask — approval gates', () => {
         config: makeConfig({
           approval: {
             enabled: true,
-            headless: true,
             feedRejectionsToPlanner: true,
             tiers: { write_in_scope: 'sticky' },
           },
@@ -239,7 +238,7 @@ describe('runSingleTask — approval gates', () => {
         implementer,
         bus,
         config: makeConfig({
-          approval: { enabled: true, headless: true, feedRejectionsToPlanner: true },
+          approval: { enabled: true, feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
         }),
@@ -301,7 +300,7 @@ describe('runSingleTask — approval gates', () => {
         implementer,
         bus,
         config: makeConfig({
-          approval: { enabled: true, headless: true, feedRejectionsToPlanner: false },
+          approval: { enabled: true, feedRejectionsToPlanner: false },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
         }),

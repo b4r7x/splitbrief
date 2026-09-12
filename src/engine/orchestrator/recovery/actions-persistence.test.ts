@@ -43,7 +43,7 @@ function makeBus(projectDir: string, sessionId: string): { bus: EventBus; events
   const bus = createEventBus();
   const events: EngineEvent[] = [];
   bus.subscribe((event) => events.push(event));
-  bus.subscribe(createJsonlSink({ projectDir, sessionId, persistTranscript: true }));
+  bus.subscribe(createJsonlSink({ projectDir, sessionId }));
   return { bus, events };
 }
 

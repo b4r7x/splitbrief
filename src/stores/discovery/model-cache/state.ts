@@ -31,8 +31,7 @@ import { demotedForContextChange, laneApplied, providerModels } from './apply-la
 import {
   cliCatalogValues,
   cloneScopedCliCatalogRuntime,
-  findGenericCliCatalogRuntime,
-  findScopedCliCatalogRuntime,
+  findCliCatalogRuntime,
   freezeCliCatalogs,
 } from './reconcile-cli-catalogs.js';
 import {
@@ -218,7 +217,6 @@ export const modelCacheStore = {
         : input.cliCatalogs.map(
             (entry): ScopedCliCatalogRuntime => ({
               connection: {
-                role: entry.role,
                 tool: entry.tool,
                 contextKey: 'remembered-detection-cache',
               },
@@ -315,15 +313,10 @@ export const modelCacheStore = {
   getProviderModels(provider: ProviderId): readonly DetectedModel[] | null {
     const current = store.get();
     if (includes(CLI_TOOL_IDS, provider)) {
-      // Remembered rows are role-scoped and answer only through the scoped
-      // lookup, so a role-blind lookup has no answer before a live lane runs.
+      // A remembered row is not an authoritative answer until a live lane has
+      // run, and a tool with two executables stays ambiguous.
       if (!current.cliCatalogsLoaded) return null;
-      // A generic tool lookup is deliberately denied when planner/implementer
-      // or two selected channels make the catalog ambiguous.
-      return (
-        findGenericCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), provider)?.models ??
-        null
-      );
+      return findCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), provider)?.models ?? null;
     }
     const roleScoped = configuredProviderValues(current.configuredProviders).filter(
       (entry) => entry.connection.provider === provider,
@@ -337,12 +330,10 @@ export const modelCacheStore = {
   isProviderModelCacheStale(provider: ProviderId): boolean {
     const current = store.get();
     if (includes(CLI_TOOL_IDS, provider)) {
-      // Mirrors getProviderModels: remembered rows never answer a role-blind
-      // lookup, so there is nothing whose staleness could be reported.
+      // Mirrors getProviderModels: nothing is authoritative before a live lane.
       if (!current.cliCatalogsLoaded) return false;
       return (
-        findGenericCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), provider)?.state ===
-        'stale'
+        findCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), provider)?.state === 'stale'
       );
     }
     const roleScoped = configuredProviderValues(current.configuredProviders).filter(
@@ -375,15 +366,9 @@ export const modelCacheStore = {
     return match ?? null;
   },
 
-  getScopedCliCatalogRuntime(input: {
-    role: ActiveRunnerRole;
-    tool: CliToolId;
-  }): ScopedCliCatalogRuntime | null | undefined {
+  getCliCatalogRuntime(input: { tool: CliToolId }): ScopedCliCatalogRuntime | null | undefined {
     const current = store.get();
-    const match = findScopedCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), {
-      role: runnerRoleForActiveRole(input.role),
-      tool: input.tool,
-    });
+    const match = findCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), input.tool);
     // Before a live catalog lane completes, a remembered row still answers but
     // absence stays "unknown", never authoritative.
     if (!current.cliCatalogsLoaded) return match ?? undefined;

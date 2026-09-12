@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { cursorModelOptions } from '#testing/helpers/factories/cursor-models.js';
 import { AUTOMATIC_MODEL } from '../../../core/providers/automatic-model.js';
 import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
 import type { ModelOption, ModelVariant } from './recency.js';
 import { routeDraftOf, stepOptionAxis } from './option-axis.js';
 import { mergeOptionFamilies } from './option-merge.js';
@@ -51,7 +52,7 @@ function alias(id: string): ModelOption {
 }
 
 function catalogModel(id: string, releaseDate?: string): ModelOption {
-  return { id, membership: 'catalog-suggestion', ...(releaseDate ? { releaseDate } : {}) };
+  return { id, membership: CATALOG_SUGGESTION_MEMBERSHIP, ...(releaseDate ? { releaseDate } : {}) };
 }
 
 const OPENAI_VARIANT_PRESETS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
@@ -734,13 +735,12 @@ describe('buildRightRows', () => {
     expect(modelRows(rows).map((row) => row.model.id)).toEqual(ids);
   });
 
-  it('offers a browse-catalog escape beside a recovery row', () => {
+  it('offers a browse-catalog escape when the live lane hid bundled rows', () => {
     const rows = buildRightRows({
       ...BASE,
-      persistedModel: 'openai/gone',
       models: [
         { id: 'openai/live', membership: 'confirmed' },
-        { id: 'openai/gone', membership: 'stale', isRecovery: true },
+        { id: 'openai/bundled', membership: 'bundled-suggestion' },
       ],
     });
 
@@ -754,10 +754,9 @@ describe('buildRightRows', () => {
     const rows = buildRightRows({
       ...BASE,
       browseCatalog: true,
-      persistedModel: 'openai/gone',
       models: [
         { id: 'openai/live', membership: 'confirmed' },
-        { id: 'openai/gone', membership: 'stale', isRecovery: true },
+        { id: 'openai/bundled', membership: 'bundled-suggestion' },
       ],
     });
 
@@ -774,23 +773,42 @@ describe('buildRightRows', () => {
     expect(rows.some((row) => row.kind === 'action')).toBe(false);
   });
 
+  it('offers no browse-catalog escape for a recovery row the escape cannot widen', () => {
+    const rows = buildRightRows({
+      ...BASE,
+      persistedModel: 'openai/gone',
+      models: [
+        { id: 'openai/live', membership: 'confirmed' },
+        { id: 'openai/gone', membership: 'custom' },
+      ],
+    });
+
+    expect(rows.some((row) => row.kind === 'action')).toBe(false);
+  });
+
   it('keys the browse-catalog row distinctly', () => {
     const rows = buildRightRows({
       ...BASE,
-      models: [{ id: 'openai/gone', membership: 'stale', isRecovery: true }],
+      models: [
+        { id: 'openai/live', membership: 'confirmed' },
+        { id: 'openai/bundled', membership: 'bundled-suggestion' },
+      ],
     });
     const action = rows.find((row) => row.kind === 'action');
     const model = rows.find((row) => row.kind === 'model');
 
     expect(action).toBeDefined();
     expect(action === undefined ? undefined : rightRowKey(action)).toBe('action:browse-catalog');
-    expect(model === undefined ? undefined : rightRowKey(model)).toBe('model:openai/gone');
+    expect(model === undefined ? undefined : rightRowKey(model)).toBe('model:openai/live');
   });
 
   it('words the browse-catalog escape with the launcher ellipsis', () => {
     const rows = buildRightRows({
       ...BASE,
-      models: [{ id: 'openai/gone', membership: 'stale', isRecovery: true }],
+      models: [
+        { id: 'openai/live', membership: 'confirmed' },
+        { id: 'openai/bundled', membership: 'bundled-suggestion' },
+      ],
     });
     const action = rows.find((row) => row.kind === 'action');
 

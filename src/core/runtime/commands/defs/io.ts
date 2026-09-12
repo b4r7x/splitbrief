@@ -7,8 +7,6 @@ import {
   type RuntimeCommandContext,
 } from '../types.js';
 import { includes } from '../../../../utils/type-guards.js';
-import { toErrorMessage } from '../../../../utils/format-errors.js';
-import { pluralize } from '../../../../utils/pluralize.js';
 
 function parseCopyTarget(args: string | undefined): CopyTarget | null {
   const target = args?.trim().toLowerCase();
@@ -35,47 +33,6 @@ export function ioCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
           return;
         }
         ctx.setFeedbackMessage(formatCopyResult(await ctx.copyTarget(target)));
-      },
-    },
-    {
-      kind: 'noarg',
-      name: '/export',
-      label: 'export',
-      description: 'Export session as HTML report',
-      category: 'io',
-      validScreens: ['workflow', 'summary'],
-      handler: async () => {
-        const result = await ctx.exportSession();
-        if (result.status === 'ok') {
-          ctx.setFeedbackMessage(`Report written to ${result.path}`);
-          return;
-        }
-        ctx.setFeedbackError(`Export failed: ${result.error}`);
-      },
-    },
-    {
-      kind: 'noarg',
-      name: '/compact-transcript',
-      label: 'compact transcript',
-      description: 'Summarize older transcript turns',
-      category: 'io',
-      validScreens: ['workflow', 'summary'],
-      handler: async () => {
-        try {
-          const result = await ctx.compactTranscript();
-          if (result.status === 'unsupported') {
-            ctx.setFeedbackMessage(
-              `Planner "${result.plannerName}" does not support transcript compaction.`,
-            );
-            return;
-          }
-          const count = result.entriesRemoved;
-          ctx.setFeedbackMessage(
-            `Transcript compacted: ${count} older ${pluralize(count, 'message')} summarized.`,
-          );
-        } catch (err) {
-          ctx.setFeedbackError(toErrorMessage(err));
-        }
       },
     },
     {

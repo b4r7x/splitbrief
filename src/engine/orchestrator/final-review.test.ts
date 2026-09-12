@@ -31,7 +31,6 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
-import { readRunSnapshotLedger } from '../snapshots/run/ledger.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 
@@ -906,36 +905,5 @@ describe('runFinalReviewPhase', () => {
       ?.split('\n## Deterministic Drift Report')[0];
     expect(promptDiff).not.toContain(prohibitedMarker);
     expect(promptDiff).toContain('diff truncated');
-  });
-
-  it('records the real pre-final-review auto snapshot in the run ledger', async () => {
-    const { projectDir, sessionId, runStartHead } = setupProject();
-    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
-    });
-
-    await runFinalReviewPhase({
-      projectDir,
-      sessionId,
-      config: { ...makeNoValidationConfig(), snapshots: { auto: { preFinalReview: true } } },
-      callbacks,
-      bus,
-      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-      reviewer,
-      summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
-    });
-
-    const snapshotEvent = events.find((e) => e.type === 'snapshot_created');
-    expect(snapshotEvent).toMatchObject({ type: 'snapshot_created', name: 'pre-final-review' });
-    const ledger = await readRunSnapshotLedger(projectDir, sessionId);
-    expect(ledger?.accepted).toBe(false);
-    expect(ledger?.rejected).toBe(false);
-    if (snapshotEvent?.type === 'snapshot_created') {
-      expect(ledger?.runSnapshotIds).toContain(snapshotEvent.snapshotId);
-    }
   });
 });

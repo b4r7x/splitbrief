@@ -16,6 +16,7 @@ import {
 import { throwIfAborted } from '../../../utils/abort.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../../constants.js';
 import {
+  cliAuthChannelEnvKeys,
   cliPackageCacheEnv,
   createSandboxEnv,
   prependCliExecutableDirectory,
@@ -69,9 +70,10 @@ async function credentialPresence(
   env: NodeJS.ProcessEnv,
   tool: CliToolId,
   channel: CliAuthChannel | undefined,
+  preserveEnvKeys: readonly string[],
 ): Promise<CredentialPresence> {
   if (channel === undefined) return 'absent';
-  if (channel.env.some((key) => (env[key] ?? '').trim().length > 0)) return 'present';
+  if (preserveEnvKeys.some((key) => (env[key] ?? '').trim().length > 0)) return 'present';
   switch (cliAuthChannelHostStateAccess(channel)) {
     case 'bridged-files':
       return (await bridgedCliStatePresent(env, tool)) ? 'present' : 'absent';
@@ -94,9 +96,10 @@ export async function probeEnvironment({
   channel: CliAuthChannel | undefined;
 }>): Promise<ProbeEnvironment> {
   const hostState = channel === undefined ? 'none' : cliAuthChannelHostStateAccess(channel);
+  const preserveEnvKeys = cliAuthChannelEnvKeys(channel);
   const env = await createSandboxEnv({
     projectDir: neutralDir,
-    preserveEnvKeys: [...(channel?.env ?? [])],
+    preserveEnvKeys,
     selectedCli: hostState === 'none' ? undefined : tool,
     hostState,
   });
@@ -112,7 +115,7 @@ export async function probeEnvironment({
         safeRuntimePath: probeRuntimePath(),
       }),
     },
-    credential: await credentialPresence(env, tool, channel),
+    credential: await credentialPresence(env, tool, channel, preserveEnvKeys),
   };
 }
 

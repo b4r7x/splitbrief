@@ -19,11 +19,6 @@ export function crewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
     {
       kind: 'arg',
       name: '/crew',
-      aliases: [
-        { name: '/planner', args: 'plan' },
-        { name: '/implementer', args: 'build' },
-        { name: '/reviewer', args: 'review' },
-      ],
       label: 'crew',
       description: 'Who fills each seat',
       category: 'crew',

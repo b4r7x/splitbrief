@@ -140,7 +140,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         mode: 'standard',
         approve: 'none',
         maxRetries: 1,
-        persistTranscript: true,
       },
     });
     const summary = await runWorkflow({
@@ -279,7 +278,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         mode: 'standard',
         approve: 'none',
         maxRetries: 1,
-        persistTranscript: true,
       },
     });
     const summary = await runWorkflow({

@@ -16,7 +16,7 @@ import { confinedAppendFileSync, confinedEnsureDir } from '../../lib/confined-fs
 import { warnStderr } from '../../lib/warn.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { nowIso } from '../../utils/format-time.js';
-import { protectConsumerPayload } from '../consumer-policy.js';
+import { boundConsumerPayload } from '../payload-bounds.js';
 import { assertSessionDirConfined } from './confinement.js';
 
 export type SessionLogAppender = (entry: SessionLogMessageEntry | SessionLogEventEntry) => void;
@@ -95,9 +95,7 @@ export function toEngineEventEntry<TEvent extends { type: string; ts: number }>(
 export function appendMessage(
   ref: SessionRef,
   message: Omit<SessionLogMessageEntry, 'ts' | 'kind'>,
-  opts: { persistTranscript: boolean },
 ): void {
-  if (!opts.persistTranscript) return;
   const entry: SessionLogMessageEntry = {
     kind: 'message',
     ts: nowIso(),
@@ -118,13 +116,13 @@ export function appendProtectedEngineEvent<TEvent extends { type: string; ts: nu
   event: TEvent,
   schema: z.ZodType<TEvent>,
 ): void {
-  const protectedEvent = protectConsumerPayload({ context: 'session-log', payload: event });
+  const protectedEvent = boundConsumerPayload({ context: 'session-log', payload: event });
   if (protectedEvent.oversized) return;
 
   const parsedEvent = schema.safeParse(protectedEvent.payload);
   if (!parsedEvent.success) return;
 
-  const protectedEntry = protectConsumerPayload({
+  const protectedEntry = boundConsumerPayload({
     context: 'session-log',
     payload: toEngineEventEntry(parsedEvent.data),
   });

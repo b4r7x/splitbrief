@@ -45,11 +45,7 @@ describe('runSingleTask — pre_validation hooks', () => {
 
     writeFileSync(
       join(projectDir, 'deny-validation.mjs'),
-      [
-        'export default function () {',
-        "  return { kind: 'deny', message: 'policy: validation gated' };",
-        '}',
-      ].join('\n'),
+      "console.log(JSON.stringify({ decision: 'deny', message: 'policy: validation gated' }));\n",
     );
 
     const implementer = makeImplementer({
@@ -65,8 +61,9 @@ describe('runSingleTask — pre_validation hooks', () => {
     const hooks: HooksConfig = {
       pre_validation: [
         {
-          kind: 'module',
-          path: 'deny-validation.mjs',
+          kind: 'command',
+          command: 'node',
+          args: ['deny-validation.mjs'],
           timeout_ms: 30_000,
           on_failure: 'warn',
         },

@@ -23,16 +23,9 @@ import {
   createTaskCompilationAttemptId,
   OwnedPlannerArtifactSchema,
 } from '../../../core/schemas/task-compilation.js';
-import {
-  type BriefRecoveryProjectionV1,
-  BriefRecoveryProjectionV1Schema,
-} from '../../../core/schemas/brief-recovery/document.js';
-import type { StateAuthorityReceipt } from '../../../core/schemas/brief-recovery.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import type { PlanOptions, Planner, PlannerArtifactLogicalName } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import type { PhaseRecoveryBinding } from '../run/phases.js';
-import { recoveryResultFromProjection } from './brief-review-gate.js';
 import { resolveValidationDisplayCommand } from '../validation/commands.js';
 import { runFullPlanning } from './full.js';
 
@@ -72,48 +65,6 @@ function phaseResult(logicalName: PlannerArtifactLogicalName, text: string) {
       },
       sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
     }),
-  };
-}
-
-function ownerRecoveryBinding(
-  sessionId: string,
-  projection: BriefRecoveryProjectionV1,
-): PhaseRecoveryBinding {
-  const result = recoveryResultFromProjection(projection);
-  const controller: PhaseRecoveryBinding['controller'] = {
-    inspectBriefRecovery: vi.fn(() => projection),
-    enterBriefAdmission: vi.fn(async () => result),
-    dispatchBriefAction: vi.fn(async () => result),
-    queueBriefInput: vi.fn(async () => {
-      throw new Error('queue not expected in compiler-failure parking');
-    }),
-    settlePlannerAttempt: vi.fn(async () => {
-      throw new Error('settlement not expected in compiler-failure parking');
-    }),
-  };
-  return {
-    controller,
-    authority: {
-      kind: 'usable',
-      sessionId,
-      ownerId: 'owner-1',
-      pid: 1,
-      processStart: 'start-1',
-      runId: 'run-1',
-      acquisitionId: 'acquisition-1',
-      fence: 1,
-      stateRevision: 0,
-      stateDigest: 'd'.repeat(64),
-    } satisfies StateAuthorityReceipt,
-    projection,
-    admission: result,
-    createAdmissionInput: () => {
-      throw new Error('admission not expected in compiler-failure parking');
-    },
-    readState: () => {
-      throw new Error('readState not expected in compiler-failure parking');
-    },
-    writeState: () => {},
   };
 }
 
@@ -336,8 +287,8 @@ Some architecture.`;
   });
 });
 
-describe('runFullPlanning — compiler failure and task-brief projections', () => {
-  it('parks a typed compiler failure with its code instead of terminating', async () => {
+describe('runFullPlanning — compiler failures and task-brief projections', () => {
+  it('fails planning terminally on a typed compiler failure', async () => {
     const projectDir = createTempDir('full-compiler-failure');
     dirs.push(projectDir);
     const sessionId = 'sess-compiler-failure';
@@ -368,71 +319,8 @@ describe('runFullPlanning — compiler failure and task-brief projections', () =
       approveLevel: 'none',
     });
 
-    expect(result.disposition).toBe('parked');
-    if (result.disposition !== 'parked') return;
-    expect(result.projection.blocker).toMatchObject({
-      kind: 'provider',
-      code: 'task_compiler_provider_failed',
-    });
-    expect(events.some((event) => event.type === 'warning')).toBe(true);
-  });
-
-  it('embeds the typed compiler code into the recovery projection blocker when parking', async () => {
-    const projectDir = createTempDir('full-compiler-recovery');
-    dirs.push(projectDir);
-    const sessionId = 'sess-compiler-recovery';
-    ensureSessionDir(projectDir, sessionId);
-    const planner = makePlanner({
-      plan: vi.fn().mockRejectedValue(
-        Object.assign(new Error('Batch 1 ended with terminal status failed'), {
-          kind: 'task_compiler_provider_failed',
-          data: { status: 'failed', batchOrdinal: 0 },
-        }),
-      ),
-    });
-    const ownerProjection = BriefRecoveryProjectionV1Schema.parse({
-      version: 1,
-      sessionId,
-      stateRevision: 1,
-      recoveryRevision: 3,
-      epochId: 'epoch-owner-1',
-      status: 'checking',
-      origin: { mode: 'speckit', entry: 'initial' },
-      continuation: { version: 1, kind: 'speckit-analysis', entry: 'initial' },
-      activeBrief: { revision: 2, hash: 'b'.repeat(64), path: 'tasks.md' },
-      matchingReport: null,
-      blocker: null,
-      allowedActions: ['status'],
-      activeOperation: null,
-      latestAttempt: null,
-      queuedInputs: { ids: [], count: 0, carriedCount: 0, heldCount: 0, releasedCount: 0 },
-    });
-
-    const result = await runFullPlanning({
-      wctx: {
-        projectDir,
-        sessionId,
-        config: makeConfig({ workflow: { approve: 'none' } }),
-        callbacks: makeCallbacks().callbacks,
-        bus: makeBusRecorder().bus,
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
-      },
-      planner,
-      state: transition(createInitialState('feat'), { type: 'START' }),
-      feature: 'feat',
-      approveLevel: 'none',
-      recovery: ownerRecoveryBinding(sessionId, ownerProjection),
-    });
-
-    expect(result.disposition).toBe('parked');
-    if (result.disposition !== 'parked') return;
-    expect(result.projection.blocker).toMatchObject({
-      kind: 'provider',
-      code: 'task_compiler_provider_failed',
-    });
-    expect(result.projection.epochId).toBe('epoch-owner-1');
-    expect(result.projection.recoveryRevision).toBe(3);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
+    expect(events.some((event) => event.type === 'error')).toBe(true);
   });
 
   it('keeps task-brief phases out of the pre-commit compatibility projection', async () => {
@@ -471,13 +359,13 @@ describe('runFullPlanning — compiler failure and task-brief projections', () =
       approveLevel: 'none',
     });
 
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('tasks-ready');
     expect(readSpecFile({ projectDir, sessionId }, RESEARCH_FILE)).toContain('# Research');
     expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBeNull();
   });
 });
 
-describe('runFullPlanning — brief quality preparation', () => {
+describe('runFullPlanning — brief quality stays with the phase runner', () => {
   it('does not regenerate a passing Task Brief set before brief review', async () => {
     const projectDir = createTempDir('full-quality-pass');
     dirs.push(projectDir);
@@ -514,7 +402,7 @@ describe('runFullPlanning — brief quality preparation', () => {
     expect(callbacks.callbacks.onApprovalNeeded).not.toHaveBeenCalled();
     expect(result.state.phase).toBe('reviewing-plan');
     expect(result.state.tasks).toHaveLength(1);
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('tasks-ready');
     expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(0);
   });
 
@@ -555,52 +443,12 @@ describe('runFullPlanning — brief quality preparation', () => {
     expect(callbacks.callbacks.onApprovalNeeded).not.toHaveBeenCalled();
     expect(result.state.phase).toBe('reviewing-plan');
     expect(result.state.tasks).toEqual([]);
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('tasks-ready');
     expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(0);
     expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(0);
   });
 
-  it('prepares deferred briefs once without opening review', async () => {
-    const projectDir = createTempDir('full-quality-deferred');
-    dirs.push(projectDir);
-    const sessionId = 'sess-quality-deferred';
-    ensureSessionDir(projectDir, sessionId);
-    const callbacks = makeCallbacks();
-    const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Spec',
-        plan: '# Plan',
-        tasks: [],
-        usage: { inputTokens: 1, outputTokens: 1 },
-      }),
-      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
-    });
-
-    const result = await runFullPlanning({
-      wctx: {
-        projectDir,
-        sessionId,
-        config: makeConfig({ workflow: { approve: 'none' } }),
-        callbacks: callbacks.callbacks,
-        bus: makeBusRecorder().bus,
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
-      },
-      planner,
-      state: transition(createInitialState('feat'), { type: 'START' }),
-      feature: 'feat',
-      approveLevel: 'none',
-    });
-
-    expect(planner.review).not.toHaveBeenCalled();
-    expect(callbacks.callbacks.onApprovalNeeded).not.toHaveBeenCalled();
-    expect(result.disposition).toBe('parked');
-    expect(result.state.phase).toBe('reviewing-plan');
-    expect(result.state.tasks).toEqual([]);
-    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBeNull();
-  });
-
-  it('parks an invalid brief in reviewing-plan without opening brief review or erroring', async () => {
+  it('returns an invalid brief from reviewing-plan without opening brief review or erroring', async () => {
     const projectDir = createTempDir('full-quality-failure');
     dirs.push(projectDir);
     const sessionId = 'sess-quality-failure';
@@ -635,11 +483,49 @@ describe('runFullPlanning — brief quality preparation', () => {
 
     expect(planner.review).not.toHaveBeenCalled();
     expect(callbacks.callbacks.onApprovalNeeded).not.toHaveBeenCalled();
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('tasks-ready');
     expect(result.state.phase).toBe('reviewing-plan');
     expect(result.state.tasks).toHaveLength(1);
     expect(loadState({ projectDir, sessionId })?.phase).toBe('reviewing-plan');
     expect(loadState({ projectDir, sessionId })?.tasks).toHaveLength(1);
     expect(events.some((event) => event.type === 'error')).toBe(false);
+  });
+});
+
+describe('runFullPlanning — producer disposition', () => {
+  it('full planning returns tasks-ready with parsed tasks', async () => {
+    const projectDir = createTempDir('full-tasks-ready');
+    dirs.push(projectDir);
+    const sessionId = 'sess-tasks-ready';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makePassingTask();
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [task],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      }),
+    });
+
+    const result = await runFullPlanning({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ workflow: { approve: 'none' } }),
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner,
+      state: transition(createInitialState('feat'), { type: 'START' }),
+      feature: 'feat',
+      approveLevel: 'none',
+    });
+
+    expect(result.disposition).toBe('tasks-ready');
+    if (result.disposition !== 'tasks-ready') return;
+    expect(result.tasks).toEqual([task]);
   });
 });

@@ -199,7 +199,7 @@ describe('ensureIsolationWorktree', () => {
     expect(filesRunnersWouldDiscover(repoDir)).toEqual(before);
   });
 
-  // A `--worktree` session's project directory is a linked worktree, where
+  // A session started inside a linked worktree has a project directory where
   // `.git` is a file rather than a directory: joining `.git` onto the project
   // path would name a file to create a directory in. The location is resolved
   // from the repository's common git directory instead, which every checkout of

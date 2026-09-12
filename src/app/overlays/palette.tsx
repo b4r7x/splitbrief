@@ -67,7 +67,6 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
 
   const route = routerStore.use((s) => s);
   const screen = route.screen;
-  const isAttached = route.screen === 'workflow' && route.execution.kind === 'attached';
   const config = configStore.useConfig();
   const phase = lifecycleStore.use((s) => s.phase);
   const mruIds = commandPaletteMruStore.use((s) => s.ids);
@@ -91,7 +90,6 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
     projectDir,
     onRuntimeCommand,
     onSessionSelect: (session, dir) => handleSessionSelect(session, dir, sessionSelectDeps),
-    isAttached,
   });
 
   const results = buildPaletteResults({
@@ -208,6 +206,7 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
                 state={ctx.isCursor ? 'active' : 'default'}
                 metadata={descriptionColumn({
                   description: result.description,
+                  hint: result.hint,
                   shortcut: result.shortcut,
                   innerWidth,
                   labelWidth: rowLabelWidth,

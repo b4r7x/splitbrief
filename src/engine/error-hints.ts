@@ -44,7 +44,7 @@ const ERROR_PATTERNS: Array<[RegExp | ((msg: string) => boolean), ErrorHint]> = 
     /\b429\b|[Tt]oo [Mm]any [Rr]equests|rate[._\s-]limit/i,
     {
       message: 'Rate limited by provider',
-      hint: 'Wait for the limit to reset or switch runner profiles, then retry.',
+      hint: 'Wait for the limit to reset, switch the seat to another tool, or abort.',
     },
   ],
   [/ENOTFOUND/, { message: 'Cannot reach host', hint: 'Check your network connection.' }],

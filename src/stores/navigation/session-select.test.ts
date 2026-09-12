@@ -3,10 +3,10 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { readActive, reactivateExistingSession } from '../../core/sessions/active-pointer.js';
-import { loadState, saveState } from '../../core/state/persistence.js';
+import { saveState } from '../../core/state/persistence.js';
+import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type {
   PreparationOutcome,
@@ -64,7 +64,7 @@ function preparedResumeExecution(
 
 function sessionSelectDeps(overrides: Partial<SessionSelectDeps> = {}): SessionSelectDeps {
   return {
-    ...makeResumeAuthorityDeps((ref) => loadState(ref)),
+    loadResumeState: loadOwnerWorkflowState,
     prepareResume: async () => {
       throw new Error('Resume preparation was not expected');
     },
@@ -103,7 +103,7 @@ describe('handleSessionSelect (Enter routing)', () => {
       resolvePreparation = resolve;
     });
     const deps = sessionSelectDeps({
-      ...makeResumeAuthorityDeps(() => savedState),
+      loadResumeState: () => ({ kind: 'loaded', state: savedState }),
       prepareResume: async ({ ref, state }) => {
         expect(ref).toEqual({ projectDir: tmp, sessionId: session.id });
         expect(state).toBe(savedState);
@@ -162,7 +162,10 @@ describe('handleSessionSelect (Enter routing)', () => {
     await handleSessionSelect(
       selected,
       tmp,
-      sessionSelectDeps({ ...makeResumeAuthorityDeps(() => selectedState), prepareResume }),
+      sessionSelectDeps({
+        loadResumeState: () => ({ kind: 'loaded', state: selectedState }),
+        prepareResume,
+      }),
     );
 
     expect(prepareResume).not.toHaveBeenCalled();
@@ -174,47 +177,6 @@ describe('handleSessionSelect (Enter routing)', () => {
     expect(overlayStore.get().active).toBe('sessions');
     expect(sessionSelectStore.get().preparation.kind).toBe('idle');
     expect(sessionSelectStore.get().error).toContain('current local workflow');
-  });
-
-  it('still permits an attached workflow to hand off to a prepared local resume', async () => {
-    routerStore.navigate({
-      to: 'workflow',
-      execution: {
-        kind: 'attached',
-        feature: 'attached workflow',
-        sessionId: 'attached-current',
-        attach: { sockPath: '/tmp/attached.sock', authToken: 'token' },
-      },
-    });
-    overlayStore.open('sessions');
-    const selected = makeSession({
-      id: 'resume-from-attached',
-      feature: 'resume from attached',
-      status: 'interrupted',
-      summary: null,
-    });
-    const selectedState = {
-      ...createInitialState(selected.feature),
-      phase: 'implementing' as const,
-    };
-    const prepared = preparedResumeExecution(tmp, selected.id, selectedState);
-    const prepareResume = vi.fn<SessionSelectDeps['prepareResume']>(async () => ({
-      kind: 'prepared',
-      execution: prepared,
-    }));
-
-    await handleSessionSelect(
-      selected,
-      tmp,
-      sessionSelectDeps({ ...makeResumeAuthorityDeps(() => selectedState), prepareResume }),
-    );
-
-    expect(prepareResume).toHaveBeenCalledOnce();
-    const route = routerStore.get();
-    expect(route.screen).toBe('workflow');
-    if (route.screen === 'workflow' && route.execution.kind === 'local') {
-      expect(route.execution.prepared).toBe(prepared);
-    }
   });
 
   it('single-flights duplicate resume selections', async () => {
@@ -231,7 +193,10 @@ describe('handleSessionSelect (Enter routing)', () => {
       signals.push(signal);
       return pending.promise;
     });
-    const deps = sessionSelectDeps({ ...makeResumeAuthorityDeps(() => savedState), prepareResume });
+    const deps = sessionSelectDeps({
+      loadResumeState: () => ({ kind: 'loaded', state: savedState }),
+      prepareResume,
+    });
 
     const first = handleSessionSelect(session, tmp, deps);
     const duplicate = handleSessionSelect(session, tmp, deps);
@@ -264,7 +229,7 @@ describe('handleSessionSelect (Enter routing)', () => {
       session,
       tmp,
       sessionSelectDeps({
-        ...makeResumeAuthorityDeps(() => savedState),
+        loadResumeState: () => ({ kind: 'loaded', state: savedState }),
         prepareResume: (_input, attemptSignal) => {
           signal = attemptSignal;
           return pending.promise;
@@ -322,7 +287,10 @@ describe('handleSessionSelect (Enter routing)', () => {
       return ref.sessionId === firstSession.id ? first.promise : second.promise;
     };
     const deps = sessionSelectDeps({
-      ...makeResumeAuthorityDeps(({ sessionId }) => states.get(sessionId) ?? null),
+      loadResumeState: ({ sessionId }) => {
+        const found = states.get(sessionId);
+        return found === undefined ? { kind: 'missing' } : { kind: 'loaded', state: found };
+      },
       prepareResume,
     });
 
@@ -377,7 +345,7 @@ describe('handleSessionSelect (Enter routing)', () => {
         session,
         tmp,
         sessionSelectDeps({
-          ...makeResumeAuthorityDeps(() => savedState),
+          loadResumeState: () => ({ kind: 'loaded', state: savedState }),
           prepareResume: async () => {
             throw new Error('resume boundary rejected');
           },
@@ -523,7 +491,7 @@ describe('handleSessionSelect (Enter routing)', () => {
     expect(error).not.toContain('[2J');
   });
 
-  it('surfaces an error and stays on home when loadState throws for an interrupted session with an unsafe id', async () => {
+  it('surfaces an error and stays on home when the loader throws for an unsafe session id', async () => {
     overlayStore.open('sessions');
     const session = makeSession({
       id: 'bad/id',

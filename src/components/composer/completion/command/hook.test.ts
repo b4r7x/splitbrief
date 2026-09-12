@@ -56,7 +56,6 @@ const COMMANDS: RuntimeCommandDef[] = [
     label: 'Mode',
     description: 'Workflow mode',
     category: 'crew',
-    aliases: [{ name: '/m' }],
     args: { kind: 'closed', options: ['instant', 'quick', 'standard', 'speckit'], optional: true },
     validScreens: ['home'],
     handler: () => {},
@@ -67,7 +66,6 @@ const COMMANDS: RuntimeCommandDef[] = [
     label: 'Crew',
     description: 'Who fills each seat',
     category: 'crew',
-    aliases: [{ name: '/planner', args: 'plan' }],
     args: { kind: 'closed', options: ['plan', 'build', 'review'], optional: true },
     validScreens: ['home'],
     handler: () => {},
@@ -113,7 +111,6 @@ const COMMANDS: RuntimeCommandDef[] = [
     label: 'Settings',
     description: 'Crew, validation, workflow',
     category: 'navigate',
-    aliases: [{ name: '/config' }],
     validScreens: ['home'],
     handler: () => {},
   },
@@ -346,13 +343,6 @@ describe('useCommandCompletion closed arguments', () => {
     ui.unmount();
   });
 
-  it('lists the closed option set for an alias of the command', async () => {
-    const shown = renderFeature(createElement(ShowSuggestionsHarness, { value: '/m ' }));
-    await tick(20);
-    expect(shown.lastFrame()).toContain('true');
-    shown.unmount();
-  });
-
   it('runs the highlighted option on Enter when the closed argument is required', async () => {
     const { ui, commandCalls } = renderComposer();
 
@@ -375,13 +365,6 @@ describe('useCommandCompletion closed arguments', () => {
       { timeout: 5000 },
     );
     ui.unmount();
-  });
-
-  it('shows no suggestions after the space of an alias that pre-fills the argument', async () => {
-    const hidden = renderFeature(createElement(ShowSuggestionsHarness, { value: '/planner ' }));
-    await tick(20);
-    expect(hidden.lastFrame()).toContain('false');
-    hidden.unmount();
   });
 
   it('shows no suggestions when no closed option matches the typed prefix', async () => {
@@ -431,30 +414,6 @@ describe('useCommandCompletion closed arguments', () => {
         const frame = ui.lastFrame();
         expect(frame).toContain('instant');
         expect(frame).not.toContain('Workflow mode');
-      },
-      { timeout: 5000 },
-    );
-    ui.unmount();
-  });
-
-  it('offers an alias under its own name', async () => {
-    const { ui, commandCalls } = renderComposer();
-
-    await flushEffects();
-    ui.stdin.write('/conf');
-    await tick(20);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame()).toContain('/config');
-      },
-      { timeout: 5000 },
-    );
-
-    await flushEffects();
-    ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => {
-        expect(commandCalls).toEqual(['/config']);
       },
       { timeout: 5000 },
     );

@@ -63,39 +63,14 @@ describe('inputHistoryStore', () => {
     expect(inputHistoryStore.get().entries).toEqual([]);
   });
 
-  it('keeps transcript-off workflow prompts in memory while persisting home and slash history', () => {
-    inputHistoryStore.pushSubmission('private workflow prompt', {
-      currentScreen: 'workflow',
-      persistTranscript: false,
-    });
-    inputHistoryStore.pushSubmission('home feature prompt', {
-      currentScreen: 'home',
-      persistTranscript: false,
-    });
-    inputHistoryStore.pushSubmission('/resume', {
-      currentScreen: 'workflow',
-      persistTranscript: false,
-    });
-
-    const state = inputHistoryStore.get();
-    expect(state.entries).toEqual(['/resume', 'home feature prompt']);
-    expect(state.workflowEntries).toEqual(['/resume', 'private workflow prompt']);
-    expect(
-      getInputHistoryEntries(state, { currentScreen: 'workflow', persistTranscript: false }),
-    ).toEqual(['/resume', 'private workflow prompt']);
-    expect(
-      getInputHistoryEntries(state, { currentScreen: 'home', persistTranscript: false }),
-    ).toEqual(['/resume', 'home feature prompt']);
-  });
-
-  it('preserves transcript-on workflow restart history by also writing workflow prompts to persisted entries', () => {
-    inputHistoryStore.pushSubmission('persisted workflow prompt', {
-      currentScreen: 'workflow',
-      persistTranscript: true,
-    });
+  it('writes workflow prompts to both the persisted entries and the workflow ring', () => {
+    inputHistoryStore.pushSubmission('persisted workflow prompt', { currentScreen: 'workflow' });
 
     const state = inputHistoryStore.get();
     expect(state.entries).toEqual(['persisted workflow prompt']);
     expect(state.workflowEntries).toEqual(['persisted workflow prompt']);
+    expect(getInputHistoryEntries(state, { currentScreen: 'workflow' })).toEqual([
+      'persisted workflow prompt',
+    ]);
   });
 });

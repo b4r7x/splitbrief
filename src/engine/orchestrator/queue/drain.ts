@@ -1,13 +1,8 @@
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
-import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { QueueStateMutationOptions } from './types.js';
-
-type QueueMutationOptions = QueueStateMutationOptions & {
-  authority?: StateAuthorityReceipt | undefined;
-};
 
 type LiveQueueOwner = 'native' | 'prompt';
 
@@ -42,7 +37,7 @@ export function readQueueForPrompt({
   projectDir,
   sessionId,
   state,
-}: Omit<QueueMutationOptions, 'bus'>): {
+}: Omit<QueueStateMutationOptions, 'bus'>): {
   state: WorkflowState;
   messages: QueuedMessage[];
 } {
@@ -69,8 +64,7 @@ export function commitQueueMessagesDrained({
   state,
   messages,
   bus,
-  authority,
-}: QueueMutationOptions & { messages: readonly QueuedMessage[] }): {
+}: QueueStateMutationOptions & { messages: readonly QueuedMessage[] }): {
   state: WorkflowState;
   count: number;
 } {
@@ -101,10 +95,7 @@ export function commitQueueMessagesDrained({
       ref,
       base,
       { type: 'DRAIN_QUEUE' },
-      {
-        ...(authority !== undefined ? { authority } : {}),
-        expectedRevision: base.stateRevision,
-      },
+      { expectedRevision: base.stateRevision },
     );
     bus.publish({
       type: 'queue_drained',
@@ -119,13 +110,7 @@ export function commitQueueMessagesDrained({
   }
 }
 
-export function drainQueue({
-  projectDir,
-  sessionId,
-  state,
-  bus,
-  authority,
-}: QueueMutationOptions): {
+export function drainQueue({ projectDir, sessionId, state, bus }: QueueStateMutationOptions): {
   state: WorkflowState;
   messages: QueuedMessage[];
 } {
@@ -138,7 +123,6 @@ export function drainQueue({
     state: read.state,
     messages: read.messages,
     bus,
-    ...(authority !== undefined ? { authority } : {}),
   });
 
   return { state: committed.state, messages: read.messages };

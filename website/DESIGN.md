@@ -1,6 +1,8 @@
 # SPLITBRIEF website — design sheet
 
-The single source of truth for `website/`. Every implementer reads this whole file before touching a line. The visual target is `.nuke/2026-09-06-225118-spec-website/reference.png` (an "orch" comp, 1024×1536); this sheet translates it to SPLITBRIEF and to a 1440-wide frame. Where the sheet and the reference disagree, the sheet wins (copy is product-true; geometry follows the reference).
+The design record for `website/`. The current visual target is `.nuke/2026-09-09-114149-creative-website-v2/reference-v2.png`. The owner's v3 direction and section-by-section parity checklist live in `.nuke/2026-09-10-191001-spec-website-reference-v3/`. The original v1/v2 measurements below are historical where a v3 note supersedes them; product copy must remain true even when the generated reference differs.
+
+**V3, stage 01:** At ≥1600px the shared content cap is 1664px across nav, hero, sections 02–04 and footer, not the former 1392px. FHD gutters are 128px; the hero display scales to 100px at 1920px. Document panels scale from 520px at 1600 to 624px at 1920; heading columns remain 330px. The existing 760×860 diagram stage still renders at scale 1, so its FHD wrapper reserves 860px of height instead of growing empty height with the wider column. Section 03 clips horizontal decorative overflow while retaining the skyline's 44px vertical seam overlap. Subsequent stages handle diagram geometry, artwork, atmosphere and section-specific craft.
 
 ## 0. Brief (nuke-creative)
 
@@ -129,6 +131,8 @@ Height 96px (padding-block `--s-8`). Four items on one row, baseline-aligned:
 **v2 build, 2026-09-09: the steps anchors take a 24 px hit box, not 44** (D-21). `padding-block: calc((24px - 1lh) / 2); margin-block: calc((1lh - 24px) / 2)` on the anchor, so the 18 px pitch §4's geometry and ruling 2 protect is unchanged and the target still clears WCAG 2.5.8's 24 px minimum. 44 px would have moved every row. The e2e assertion reads `offsetHeight >= 24` AND the rect `>= 23.99`: the rect alone reads `23.99999237060547` on roughly 1 load in 30, a float32 artefact of subtracting two independently rounded edge coordinates, not a short box (30-sample measurement, phase-p1b).
 
 ## 4. Hero (`section.hero`)
+
+**Reference refinement, part 01:** The owner's follow-up requests closer fidelity to `reference-v2.png`, superseding the earlier hero freeze. The headline now forms one uninterrupted four-line block, with a 48px top margin and `--ink-2` on `ARE GOOD.`. The grid uses four auto rows and one flexible final row, with items aligned to the start, so spare height cannot reopen gaps between the headline, lede and CTA. The old y-table and hero pixel-lock below describe the prior build, not acceptance criteria for this refinement. Diagram coordinates, copy and font families remain unchanged in this part. The shared FHD geometry is revised by the v3 note at the top of this file. Progress and subsequent parts live in `.nuke/2026-09-10-191001-spec-website-reference-v3/progress.md` at the repository root.
 
 Grid 12 columns; `min-height: calc(100vh - 96px)`; `padding-block: var(--s-6) var(--s-12)` (the bottom pad is the hero→routes seam, §1).
 

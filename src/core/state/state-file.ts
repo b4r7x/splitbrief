@@ -84,15 +84,6 @@ export function cacheRevision(
   });
 }
 
-export function cacheRawState(filePath: string, raw: RawStateRevision, state: WorkflowState): void {
-  const mtimeNs = raw.revision.fileIdentity.mtimeNs;
-  cacheState(filePath, {
-    mtimeMs: Number(mtimeNs / 1_000_000n),
-    size: Number(raw.revision.fileIdentity.size),
-    state,
-  });
-}
-
 function revisionFromBytes(bytes: Uint8Array, stat: BigIntStats): ConfigRevision {
   return {
     rawSha256: sha256Hex(bytes),
@@ -103,16 +94,6 @@ function revisionFromBytes(bytes: Uint8Array, stat: BigIntStats): ConfigRevision
       mtimeNs: stat.mtimeNs,
     },
   };
-}
-
-export function revisionsMatch(left: ConfigRevision, right: ConfigRevision): boolean {
-  return (
-    left.rawSha256 === right.rawSha256 &&
-    left.fileIdentity.dev === right.fileIdentity.dev &&
-    left.fileIdentity.ino === right.fileIdentity.ino &&
-    left.fileIdentity.size === right.fileIdentity.size &&
-    left.fileIdentity.mtimeNs === right.fileIdentity.mtimeNs
-  );
 }
 
 export function statePath(ref: SessionRef): string {
@@ -237,8 +218,4 @@ function containsFutureNestedVersion(value: unknown): boolean {
 
 export function serializedState(state: unknown): Buffer {
   return Buffer.from(`${JSON.stringify(state, null, 2)}\n`, 'utf8');
-}
-
-export function workflowStateDigest(state: WorkflowState): string {
-  return sha256Hex(serializedState(state));
 }

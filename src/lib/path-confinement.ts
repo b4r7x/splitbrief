@@ -31,6 +31,7 @@ export const pathConfinementError = {
     error('path-symlink-parent', `refusing symlinked parent directory: ${filePath}`, { filePath }),
   isSymlinkRead: matches('path-symlink-read'),
   isSymlinkParent: matches('path-symlink-parent'),
+  isEscapesRoot: matches('path-confined-escape'),
 } as const;
 
 export function isPathConfined(relativePath: string, rootDir: string): boolean {

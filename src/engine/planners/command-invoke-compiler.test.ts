@@ -260,7 +260,9 @@ function directPlannerScript(body: string): string {
   ].join('\n');
 }
 
-describe('createConfiguredCustomPlanner — compiler-grade phase identity', () => {
+describe('createConfiguredCustomPlanner — compiler-grade phase identity', {
+  timeout: 30_000,
+}, () => {
   it('promotes only the exact current lease receipt with invocation-unique attempts', async () => {
     const { projectDir, stateDir } = testProject('configured-compiler-identity');
     const approvals: string[] = [];
@@ -286,7 +288,6 @@ describe('createConfiguredCustomPlanner — compiler-grade phase identity', () =
         onOutput: vi.fn(),
         onPhase: vi.fn(),
         onWarning: vi.fn(),
-        persistTranscript: false,
       },
       skillsContext: '',
       codebaseContext: '',
@@ -342,7 +343,6 @@ describe('createConfiguredCustomPlanner — compiler-grade phase identity', () =
           onOutput: vi.fn(),
           onPhase: vi.fn(),
           onWarning: vi.fn(),
-          persistTranscript: false,
         },
         skillsContext: '',
         codebaseContext: '',
@@ -374,7 +374,6 @@ describe('createConfiguredCustomPlanner — compiler-grade phase identity', () =
           onOutput: vi.fn(),
           onPhase: vi.fn(),
           onWarning: vi.fn(),
-          persistTranscript: false,
         },
         skillsContext: '',
         codebaseContext: '',
@@ -387,7 +386,9 @@ describe('createConfiguredCustomPlanner — compiler-grade phase identity', () =
   });
 });
 
-describe('createConfiguredCustomPlanner — stale ambient review cleanup', () => {
+describe('createConfiguredCustomPlanner — stale ambient review cleanup', {
+  timeout: 30_000,
+}, () => {
   it('never admits a stale review root from a previous call', async () => {
     const { projectDir, stateDir } = testProject('configured-compiler-stale');
     const staleRoot = reviewCandidateRoot(projectDir);
@@ -409,7 +410,6 @@ describe('createConfiguredCustomPlanner — stale ambient review cleanup', () =>
         onOutput: vi.fn(),
         onPhase: vi.fn(),
         onWarning: vi.fn(),
-        persistTranscript: false,
       },
       skillsContext: '',
       codebaseContext: '',

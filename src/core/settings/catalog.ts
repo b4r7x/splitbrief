@@ -87,6 +87,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     description: 'Which spec/plan document gates block the workflow ("default" follows mode)',
     kind: 'enum',
     options: [...APPROVE_LEVELS],
+    unsetLabel: 'follows mode',
   },
   {
     id: 'workflow.maxRetries',
@@ -113,6 +114,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     description: 'none | checkpoint (tags) | per-task (commits)',
     kind: 'enum',
     options: [...COMMIT_STRATEGIES],
+    unsetLabel: 'none',
     readValue: (config) => config.workflow.git?.commitStrategy,
   },
   {

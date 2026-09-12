@@ -86,7 +86,7 @@ function suppressedRunnerCallEvent(type: (typeof suppressedRunnerCallTypes)[numb
           severity: 'warning',
           source: 'provider',
           surface: 'activity',
-          fingerprint: 'rw-safe:1',
+          fingerprint: 'rw:1',
           message: 'provider warning',
         },
       };

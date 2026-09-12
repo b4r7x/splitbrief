@@ -3,7 +3,6 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
 import type { ReadinessReport } from '../core/readiness/types.js';
 import {
   readActive,
@@ -121,7 +120,7 @@ describe('SessionPreparation', () => {
     const pending = Promise.withResolvers<PreparationOutcome>();
     let signal: AbortSignal | undefined;
     const deps: SessionSelectDeps = {
-      ...makeResumeAuthorityDeps(() => state),
+      loadResumeState: () => ({ kind: 'loaded', state }),
       prepareResume: (_input, attemptSignal) => {
         signal = attemptSignal;
         return pending.promise;
@@ -157,7 +156,7 @@ describe('SessionPreparation', () => {
     const state = { ...createInitialState(session.feature), phase: 'implementing' as const };
     let approvalSettled = false;
     const deps: SessionSelectDeps = {
-      ...makeResumeAuthorityDeps(() => state),
+      loadResumeState: () => ({ kind: 'loaded', state }),
       prepareResume: async () => {
         await openApprovalPrompt({
           tier: 'confirm',
@@ -200,7 +199,7 @@ describe('SessionPreparation', () => {
     let signal: AbortSignal | undefined;
     const ui = renderFeature(<SessionPreparation />);
     const selection = handleSessionSelect(session, projectDir, {
-      ...makeResumeAuthorityDeps(() => state),
+      loadResumeState: () => ({ kind: 'loaded', state }),
       prepareResume: (_input, attemptSignal) => {
         signal = attemptSignal;
         return pending.promise;
@@ -243,7 +242,7 @@ describe('SessionPreparation', () => {
     const ui = renderFeature(<SessionPreparation />);
 
     await handleSessionSelect(session, projectDir, {
-      ...makeResumeAuthorityDeps(() => state),
+      loadResumeState: () => ({ kind: 'loaded', state }),
       prepareResume,
     });
     await flushEffects();

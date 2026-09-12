@@ -34,9 +34,10 @@ function countMetadataRows(
   isSmall: boolean,
 ): number {
   let childRows = BASE_METADATA_ROWS;
-  if (isSmall && summary.plannerTool) childRows += 1;
-  if (isSmall && implementerSummary) childRows += 1;
-  if (isSmall && reviewerSummary) childRows += 1;
+  // The three seat rows render at every width, so they are counted at every width.
+  if (summary.plannerTool) childRows += 1;
+  if (implementerSummary) childRows += 1;
+  if (reviewerSummary) childRows += 1;
   if (summary.briefQuality) childRows += 1;
   if (summary.driftSummary) childRows += 1;
   if (summary.chainDriftSummary) childRows += 1;

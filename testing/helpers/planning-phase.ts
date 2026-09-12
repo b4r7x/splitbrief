@@ -1,7 +1,6 @@
 import { vi } from 'vitest';
 import type { WorkflowState } from '../../src/core/schemas/workflow.js';
 import { createInitialState, transition } from '../../src/core/state/machine.js';
-import { readWorkflowStateHead } from '../../src/engine/orchestrator/state-ops.js';
 import { makeConfig } from './factories/config.js';
 import { makeTask } from './factories/task.js';
 import {
@@ -16,13 +15,11 @@ import { ensureSessionDir } from '../../src/core/paths-io.js';
 import { saveState } from '../../src/core/state/persistence.js';
 import { runPlanningPhase } from '../../src/engine/orchestrator/planning/run.js';
 import { runPlanningPhases } from '../../src/engine/orchestrator/run/phases.js';
-import { createWorkflowRecoveryBinding } from '../../src/engine/orchestrator/run/recovery-binding.js';
 import { createEvidenceLedger } from '../../src/core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../src/core/evidence/ledger-storage.js';
 import { recordRejectionEvidence } from '../../src/engine/orchestrator/evidence/approval.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../../src/engine/orchestrator/types.js';
 import type { ApprovalReviewResult } from '../../src/core/approval/types.js';
-import type { StateAuthorityReceipt } from '../../src/core/state/types.js';
 import type { Planner } from '../../src/engine/planners/types.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import type { Attachment } from '../../src/core/schemas/attachment.js';
@@ -222,8 +219,7 @@ export type OwnedRunOpts = RunOpts & {
 /**
  * Runs planning through the workflow-owner seam used by the real orchestrator.
  * Direct producer tests should use runPhase; approval/materialization tests use
- * this helper so they exercise the typed recovery binding rather than a fake
- * legacy fallback inside the producer.
+ * this helper so they exercise runPlanningPhases rather than the bare producer.
  */
 export async function runOwnedPlanningPhase(dirs: string[], opts: OwnedRunOpts = {}) {
   const project = opts.project ?? setupProject(dirs);
@@ -232,12 +228,10 @@ export async function runOwnedPlanningPhase(dirs: string[], opts: OwnedRunOpts =
   const config = opts.config ?? makeConfig();
   const sinks = opts.sinks ?? createTestSinks();
   const recorder = makeBusRecorder();
-  const ownerId = 'planning-test-owner';
   const baseState = opts.state ?? prepareState();
   const state: WorkflowState = {
     ...baseState,
     ...(opts.feature !== undefined ? { feature: opts.feature } : {}),
-    stateFence: { token: 1, ownerId },
   };
   const ref = { projectDir: project.projectDir, sessionId: project.sessionId };
   ensureSessionDir(project.projectDir, project.sessionId);
@@ -254,33 +248,6 @@ export async function runOwnedPlanningPhase(dirs: string[], opts: OwnedRunOpts =
     bus: recorder.bus,
     sinks,
   });
-  const authorityBase: Omit<StateAuthorityReceipt, 'stateDigest' | 'stateRevision'> = {
-    kind: 'usable',
-    sessionId: project.sessionId,
-    ownerId,
-    pid: process.pid,
-    processStart: 'planning-test-process',
-    runId: 'planning-test-run',
-    acquisitionId: 'planning-test-acquisition',
-    fence: 1,
-  };
-  const getState = (): WorkflowState => readWorkflowStateHead(ref)?.state ?? trackedState;
-  const getAuthority = (): StateAuthorityReceipt => {
-    const head = readWorkflowStateHead(ref);
-    return {
-      ...authorityBase,
-      stateRevision: head?.state.stateRevision ?? trackedState.stateRevision ?? 0,
-      stateDigest: head?.digest ?? '',
-    };
-  };
-  const recovery = createWorkflowRecoveryBinding({
-    wctx,
-    getState,
-    setState: (next) => {
-      trackedState = next;
-    },
-    getAuthority,
-  });
   const planning = await runPlanningPhases({
     wctx,
     state,
@@ -291,7 +258,6 @@ export async function runOwnedPlanningPhase(dirs: string[], opts: OwnedRunOpts =
     setTrackedState: (next) => {
       trackedState = next;
     },
-    recovery,
   });
   return {
     result: { ...planning, tasks: trackedState.tasks },

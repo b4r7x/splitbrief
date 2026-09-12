@@ -322,8 +322,8 @@ describe('/crew command', () => {
 
     runCommandInTest({ commands: commands, raw: '/crew', screen: 'home', onError: noop });
     runCommandInTest({ commands: commands, raw: '/crew review', screen: 'home', onError: noop });
-    runCommandInTest({ commands: commands, raw: '/planner', screen: 'home', onError: noop });
-    runCommandInTest({ commands: commands, raw: '/implementer', screen: 'home', onError: noop });
+    runCommandInTest({ commands: commands, raw: '/crew plan', screen: 'home', onError: noop });
+    runCommandInTest({ commands: commands, raw: '/crew build', screen: 'home', onError: noop });
 
     expect(opened).toEqual([
       { type: 'settings', focus: 'seat:plan' },

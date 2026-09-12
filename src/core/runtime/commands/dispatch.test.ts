@@ -49,27 +49,26 @@ describe('executeRuntimeCommand', () => {
     expect(errorMsg).not.toContain('Unknown command');
   });
 
-  it('runs an alias with the arguments it carries, ahead of the typed ones', async () => {
-    const received: string[] = [];
+  it('passes the typed arguments to the handler and nothing when none were typed', async () => {
+    const received: (string | undefined)[] = [];
     const cmds: RuntimeCommandDef[] = [
       {
         kind: 'arg',
         name: '/run',
-        aliases: [{ name: '/accept-run', args: 'accept' }],
         description: 'run',
         category: 'workflow',
         args: { kind: 'closed', options: ['accept', 'reject'] },
         validScreens: ['home'],
         handler: (args) => {
-          received.push(args ?? '');
+          received.push(args);
         },
       },
     ];
 
-    await runCommandInTest({ commands: cmds, raw: '/accept-run', screen: 'home', onError: noop });
+    await runCommandInTest({ commands: cmds, raw: '/run', screen: 'home', onError: noop });
     await runCommandInTest({ commands: cmds, raw: '/run reject', screen: 'home', onError: noop });
 
-    expect(received).toEqual(['accept', 'reject']);
+    expect(received).toEqual([undefined, 'reject']);
   });
 
   it('does not execute a fuzzy command match and suggests the nearest command', async () => {
@@ -88,13 +87,13 @@ describe('executeRuntimeCommand', () => {
       },
       {
         kind: 'arg',
-        name: '/reject-run',
-        description: 'reject run',
+        name: '/revise-plan',
+        description: 'revise plan',
         category: 'workflow',
         args: { kind: 'free', hint: '<confirm>' },
         validScreens: ['home'],
         handler: (args) => {
-          calls.push(`reject:${args ?? ''}`);
+          calls.push(`revise:${args ?? ''}`);
         },
       },
     ];
@@ -112,14 +111,14 @@ describe('executeRuntimeCommand', () => {
 
     await runCommandInTest({
       commands: cmds,
-      raw: '/reject-rn confirm',
+      raw: '/revise-pln feedback',
       screen: 'home',
       onError: (msg) => {
         errorMsg = msg;
       },
     });
     expect(calls).toEqual([]);
-    expect(errorMsg).toBe('Unknown command: /reject-rn. Did you mean /reject-run?');
+    expect(errorMsg).toBe('Unknown command: /revise-pln. Did you mean /revise-plan?');
   });
 
   it('reports an error when the command is not valid on the current screen', () => {
@@ -202,7 +201,6 @@ describe('executeRuntimeCommand', () => {
     await dispatchRuntimeCommand(cmds, '/guarded', {
       screen: 'workflow',
       phase: 'planning',
-      attached: false,
       plannerSupportsImages: false,
       onError: (msg) => {
         errorMsg = msg;

@@ -8,8 +8,7 @@ import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js
 import { sessionDir } from '../../../core/paths.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../../core/schemas/session-log.js';
-import { CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER } from '../../../core/consumer-policy.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
+import { CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER } from '../../../core/payload-bounds.js';
 import type { EngineEvent } from '../types.js';
 
 describe('jsonlSink', () => {
@@ -34,7 +33,7 @@ describe('jsonlSink', () => {
   }
 
   it('writes event-kind entries with on-disk shape (kind, ts ISO, type, phase, data)', () => {
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: true });
+    const sink = createJsonlSink({ projectDir, sessionId });
     sink({ type: 'workflow_started', ts: 100, phase: 'idle', feature: 'add x' });
     sink({ type: 'instant_plan_received', ts: 200, phase: 'planning', taskCount: 3 });
 
@@ -56,67 +55,8 @@ describe('jsonlSink', () => {
     });
   });
 
-  it('protects session-log events before appending them', () => {
-    const secret = 'jsonl-sentinel-secret-81924';
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
-    sink({
-      type: 'runner_call_text_delta',
-      ts: 90,
-      phase: 'planning',
-      callId: 'call-1',
-      role: 'planner',
-      backendKind: 'cli',
-      sequence: 1,
-      channel: 'assistant',
-      text: secret,
-    });
-    sink({
-      type: 'workflow_started',
-      ts: 100,
-      phase: 'idle',
-      feature: `secret feature ${secret}`,
-    });
-    sink({
-      type: 'runner_call_usage',
-      ts: 110,
-      phase: 'planning',
-      callId: 'call-1',
-      role: 'planner',
-      backendKind: 'cli',
-      sequence: 2,
-      usage: { inputTokens: 1, outputTokens: 2 },
-      semantics: 'delta',
-    });
-    sink({
-      type: 'warning',
-      ts: 120,
-      phase: 'idle',
-      message: `api key sk-abcdefghijklmnopqrst ${secret} \u001b[31mred\u001b[0m`,
-    });
-
-    const lines = readLog();
-    expect(lines.map((line) => line['type'])).toEqual([
-      'workflow_started',
-      'runner_call_usage',
-      'warning',
-    ]);
-    expect(lines[0]).toMatchObject({
-      type: 'workflow_started',
-      data: { feature: TRANSCRIPT_OMITTED_MESSAGE },
-    });
-    expect(lines[1]).toMatchObject({
-      type: 'runner_call_usage',
-      data: { usage: { inputTokens: 1, outputTokens: 2 } },
-    });
-    expect(lines[2]).toMatchObject({
-      type: 'warning',
-      data: { message: TRANSCRIPT_OMITTED_MESSAGE },
-    });
-    expect(JSON.stringify(lines)).not.toContain(secret);
-  });
-
   it('serializes taskId outside data when present', () => {
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: true });
+    const sink = createJsonlSink({ projectDir, sessionId });
     sink({
       type: 'task_started',
       ts: 100,
@@ -136,7 +76,7 @@ describe('jsonlSink', () => {
   it('bounds oversized session-log strings before persisting', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: true });
+      const sink = createJsonlSink({ projectDir, sessionId });
       sink({
         type: 'warning',
         ts: 100,
@@ -168,7 +108,6 @@ describe('jsonlSink', () => {
       createJsonlSink({
         projectDir,
         sessionId,
-        persistTranscript: true,
         onDegraded: (warning) => bus.publish(warning),
       }),
     );
@@ -186,7 +125,6 @@ describe('jsonlSink', () => {
       type: 'warning',
       category: 'jsonl',
       code: 'session_log_degraded',
-      transcriptSafe: true,
     });
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(true);
   });

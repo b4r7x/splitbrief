@@ -23,12 +23,3 @@ export function formatCostPredictionUnknownReasons(reasons: string[]): string {
   if (reasons.length === 0) return '';
   return `Unknown: ${reasons.join(', ')}`;
 }
-
-export function plannerEstimateReviewLine(prediction: CostPrediction): string | null {
-  const review = prediction.plannerEstimateReview;
-  if (!review) return null;
-  if (review.status === 'running') return 'Planner estimate review: extra planner call running';
-  if (review.status === 'unavailable')
-    return 'Planner estimate review: unavailable; deterministic estimate remains usable';
-  return `Planner estimate review: extra planner call completed (${review.classification ?? 'unclassified'})`;
-}

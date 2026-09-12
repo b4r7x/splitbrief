@@ -18,6 +18,19 @@ const TASK_RECOVERY_ACTIONS = [
   'pause-run',
   'abort-workflow',
 ] as const satisfies readonly RecoveryAction[];
+/**
+ * A quota-blocked seat can also move to another detected tool. The action is
+ * legal for this reason alone: every other halt is about the task, not about
+ * the seat being unable to run at all.
+ */
+const USAGE_LIMIT_ACTIONS = [
+  'retry-same-worker',
+  'route-bigger-worker',
+  'switch-seat',
+  'skip-current-task',
+  'pause-run',
+  'abort-workflow',
+] as const satisfies readonly RecoveryAction[];
 const CONTEXT_OVERFLOW_ACTIONS = [
   'retry-same-worker',
   'route-bigger-worker',
@@ -56,8 +69,9 @@ export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[
     case 'validation-failed':
     case 'retry-exhausted':
     case 'runner-unauthenticated':
-    case 'runner-usage-limit':
       return copyActions(TASK_RECOVERY_ACTIONS);
+    case 'runner-usage-limit':
+      return copyActions(USAGE_LIMIT_ACTIONS);
     case 'context-overflow':
       return copyActions(CONTEXT_OVERFLOW_ACTIONS);
     case 'dependency-blocked':

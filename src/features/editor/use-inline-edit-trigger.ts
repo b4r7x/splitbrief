@@ -5,7 +5,6 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { focusStore } from '../../stores/ui/focus.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { useStores } from '../../stores/use-stores.js';
@@ -57,16 +56,9 @@ export function useInlineEditTrigger({ isActive, sessionDirPath }: UseInlineEdit
       const review = reviewStore.get();
       const ownerToken = review.ownerToken;
       const layout = editorLayout();
-      if (phase === 'reviewing-briefs') {
-        const focus = focusStore.get();
-        if (focus === null || focus.region !== 'brief') return;
-        // The field editor operates over the PARSED brief model, not a session file: open an
-        // empty field session here and let BriefFieldEditor seed the buffer from the focused
-        // Task via readField. task.file is a repo path, not a session artifact, so no confined
-        // read happens on this surface (CON-C).
-        editorStore.openField({ filePath: null, value: '', ownerToken, layout });
-        return;
-      }
+      // Every review gate — spec, plan, briefs — reviews one session artifact in the same framed
+      // document, so Ctrl+E opens that file in the raw editor at all three. There is no per-brief
+      // field surface to edit a parsed Task through.
       const filePath = review.filePath;
       if (filePath === null) return;
       void openRawInline(filePath, ownerToken, layout, sessionDirPath);

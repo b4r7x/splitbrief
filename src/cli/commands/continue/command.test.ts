@@ -6,20 +6,15 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { continueCommand } from './command.js';
 import type { ContinueDeps } from './command.js';
-import { checkServerStatus } from '../../../engine/ipc/lockfile.js';
-import type { ServerStatus } from '../../../engine/ipc/lockfile.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { StateAuthorityReceipt } from '../../../core/state/types.js';
-import type { SessionRef } from '../../../core/types/session-ref.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { activeFile, CONFIG_FILE, sessionsRoot, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
-type RpcRun = {
+type HeadlessRun = {
   feature: string;
   projectDir: string;
   state: WorkflowState | undefined;
@@ -33,7 +28,7 @@ type RenderRun = {
 
 let tmp: string;
 let deps: ContinueDeps;
-let rpcRuns: RpcRun[];
+let headlessRuns: HeadlessRun[];
 let renderRuns: RenderRun[];
 
 function makeTmpProject(): string {
@@ -56,7 +51,6 @@ function writeLockfile(sessDir: string, overrides: Record<string, unknown> = {})
     sessionId: 'test-session',
     mode: 'standard',
     feature: 'test-feature',
-    authToken: 'test-auth-token',
     ...overrides,
   };
   writeFileSync(join(sessDir, 'lockfile.json'), JSON.stringify(data));
@@ -97,50 +91,6 @@ function mockPlatform(value: NodeJS.Platform): () => void {
   const original = process.platform;
   Object.defineProperty(process, 'platform', { value, configurable: true });
   return () => Object.defineProperty(process, 'platform', { value: original, configurable: true });
-}
-
-function forceInteractiveTty(): () => void {
-  const stdout = process.stdout as { isTTY?: boolean };
-  const originalIsTty = stdout.isTTY;
-  const originalCi = process.env['CI'];
-  stdout.isTTY = true;
-  delete process.env['CI'];
-  return () => {
-    if (originalIsTty === undefined) delete stdout.isTTY;
-    else stdout.isTTY = originalIsTty;
-    if (originalCi !== undefined) process.env['CI'] = originalCi;
-  };
-}
-
-function liveStatus(sessionId: string, feature: string): ServerStatus {
-  return {
-    alive: true,
-    data: {
-      version: 1,
-      pid: process.pid,
-      startTimeMs: Date.now(),
-      lastAliveMs: Date.now(),
-      sessionId,
-      mode: 'standard',
-      feature,
-      authToken: 'test-auth-token',
-    },
-  };
-}
-
-function liveAuthority(ref: SessionRef): StateAuthorityReceipt {
-  return {
-    kind: 'usable',
-    sessionId: ref.sessionId,
-    ownerId: 'owner-1',
-    pid: process.pid,
-    processStart: String(Date.now()),
-    runId: 'run-1',
-    acquisitionId: 'acquisition-1',
-    fence: 1,
-    stateRevision: 1,
-    stateDigest: 'a'.repeat(64),
-  };
 }
 
 function readyReport(projectDir: string): ReadinessReport {
@@ -186,14 +136,12 @@ async function prepareResume(input: PrepareExecutionInput) {
 
 function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
   return {
-    checkServerStatus,
     initStores: async () => {},
     renderApp: async (_app, options) => {
       renderRuns.push({ route: routerStore.get(), options });
     },
-    runHeadless: async () => {},
-    runRpc: async ({ prepared }) => {
-      rpcRuns.push({
+    runHeadless: async ({ prepared }) => {
+      headlessRuns.push({
         feature: prepared.runtime.feature,
         projectDir: prepared.session.ref.projectDir,
         state: prepared.runtime.resumeState,
@@ -211,20 +159,6 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
       };
     },
     prepareExecution: prepareResume,
-    printCrashDiagnostic: async () => ({
-      sessionId: 'test',
-      status: 'crashed' as const,
-      pid: null,
-      startedAt: null,
-      lastAliveAt: null,
-      exitedAt: null,
-      signal: null,
-      exitCode: null,
-      cause: null,
-      logTail: null,
-    }),
-    readStateAuthority: liveAuthority,
-    assertStateAuthority: () => {},
     ...overrides,
   };
 }
@@ -232,7 +166,7 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
 describe('continueCommand', () => {
   beforeEach(() => {
     resetAllStores();
-    rpcRuns = [];
+    headlessRuns = [];
     renderRuns = [];
     deps = createDeps();
   });
@@ -279,34 +213,17 @@ describe('continueCommand', () => {
     );
   });
 
-  it('routes interrupted sessions to RPC mode when --rpc is passed', async () => {
-    const projectDir = makeTmpProject();
-    const sessDir = makeSessionDir(projectDir, '2025-04-01-rpc');
-    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-rpc' });
-    writeState(sessDir, 'implementing');
-
-    await continueCommand('2025-04-01-rpc', { projectDir, rpc: true }, deps);
-
-    expect(rpcRuns).toHaveLength(1);
-    expect(rpcRuns[0]).toMatchObject({
-      feature: 'test-feature',
-      projectDir,
-      state: { feature: 'test-feature', phase: 'implementing' },
-      sessionId: '2025-04-01-rpc',
-    });
-  });
-
-  it('resumes a reviewing-briefs session listed by ps and addressed by alias number', async () => {
+  it('resumes a reviewing-briefs session addressed by alias number', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-parked';
     const sessDir = makeSessionDir(projectDir, sessionId);
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
     writeState(sessDir, 'reviewing-briefs');
 
-    await continueCommand('1', { projectDir, rpc: true }, deps);
+    await continueCommand('1', { projectDir, json: true }, deps);
 
-    expect(rpcRuns).toHaveLength(1);
-    expect(rpcRuns[0]).toMatchObject({
+    expect(headlessRuns).toHaveLength(1);
+    expect(headlessRuns[0]).toMatchObject({
       feature: 'test-feature',
       projectDir,
       state: { phase: 'reviewing-briefs' },
@@ -323,7 +240,7 @@ describe('continueCommand', () => {
     const prepare = vi.fn(prepareResume);
     deps = createDeps({ prepareExecution: prepare });
 
-    await continueCommand(sessionId, { projectDir, rpc: true }, deps);
+    await continueCommand(sessionId, { projectDir, json: true }, deps);
 
     expect(prepare).toHaveBeenCalledOnce();
     expect(prepare.mock.calls[0]?.[0]).toMatchObject({
@@ -331,7 +248,7 @@ describe('continueCommand', () => {
       policy: { purpose: 'resume', interaction: 'headless' },
     });
     expect(readdirSync(join(projectDir, SPLITBRIEF_DIR, 'sessions'))).toEqual([sessionId]);
-    expect(rpcRuns[0]).toMatchObject({ sessionId, state: { phase: 'implementing' } });
+    expect(headlessRuns[0]).toMatchObject({ sessionId, state: { phase: 'implementing' } });
   });
 
   it('rejects JSON task review before publishing a new active generation', async () => {
@@ -367,128 +284,6 @@ describe('continueCommand', () => {
     expect(readdirSync(sessionsRoot(projectDir))).toEqual([sessionId]);
   });
 
-  it('attaches the workflow screen when the target session is still running', async () => {
-    const projectDir = makeTmpProject();
-    makeSessionDir(projectDir, '2025-04-01-live');
-    deps = createDeps({
-      checkServerStatus: async (): Promise<ServerStatus> => ({
-        alive: true,
-        data: {
-          version: 1,
-          pid: process.pid,
-          startTimeMs: Date.now(),
-          lastAliveMs: Date.now(),
-          sessionId: '2025-04-01-live',
-          mode: 'standard',
-          feature: 'live feature',
-          authToken: 'test-auth-token',
-        },
-      }),
-    });
-
-    await continueCommand('2025-04-01-live', { projectDir }, deps);
-
-    expect(renderRuns).toHaveLength(1);
-    expect(renderRuns[0]?.route).toMatchObject({
-      screen: 'workflow',
-      execution: {
-        kind: 'attached',
-        feature: 'live feature',
-        sessionId: '2025-04-01-live',
-        attach: {
-          sockPath: join(projectDir, '.splitbrief', 'sessions', '2025-04-01-live', 'ipc.sock'),
-          authToken: 'test-auth-token',
-        },
-      },
-    });
-  });
-
-  it('refuses to double-execute when a live interactive session record exists (no auth token)', async () => {
-    const projectDir = makeTmpProject();
-    const sessionId = '2025-04-01-interactive-live';
-    makeSessionDir(projectDir, sessionId);
-    // An interactive (TUI/headless) run writes a liveness record WITHOUT an authToken — there
-    // is no IPC socket to attach to. A `continue` from a second terminal must see it live and
-    // refuse, rather than silently double-executing the session.
-    deps = createDeps({
-      checkServerStatus: async (): Promise<ServerStatus> => ({
-        alive: true,
-        data: {
-          version: 1,
-          pid: process.pid,
-          startTimeMs: Date.now(),
-          lastAliveMs: Date.now(),
-          sessionId,
-          mode: 'standard',
-          feature: 'interactive feature',
-        },
-      }),
-    });
-
-    await expect(continueCommand(sessionId, { projectDir }, deps)).rejects.toThrow(
-      /server and owner authority identities do not match/,
-    );
-    expect(renderRuns).toHaveLength(0);
-    expect(rpcRuns).toHaveLength(0);
-  });
-
-  it('rejects a live continue when the server identity does not match the owner fence', async () => {
-    const projectDir = makeTmpProject();
-    const sessionId = '2025-04-01-live-mismatch';
-    makeSessionDir(projectDir, sessionId);
-    deps = createDeps({
-      checkServerStatus: async (): Promise<ServerStatus> => {
-        const status = liveStatus(sessionId, 'live feature');
-        if (status.data === null) throw new Error('expected live status data');
-        return { ...status, data: { ...status.data, pid: process.pid + 1 } };
-      },
-    });
-
-    await expect(continueCommand(sessionId, { projectDir }, deps)).rejects.toThrow(
-      `cannot attach to session ${sessionId}: server and owner authority identities do not match`,
-    );
-    expect(renderRuns).toHaveLength(0);
-  });
-
-  it('rejects a live continue when the server process start does not match the owner fence', async () => {
-    const projectDir = makeTmpProject();
-    const sessionId = '2025-04-01-live-start-mismatch';
-    makeSessionDir(projectDir, sessionId);
-    deps = createDeps({
-      checkServerStatus: async (): Promise<ServerStatus> => {
-        const status = liveStatus(sessionId, 'live feature');
-        if (status.data === null) throw new Error('expected live status data');
-        return { ...status, data: { ...status.data, startTimeMs: Date.now() - 10_000 } };
-      },
-    });
-
-    await expect(continueCommand(sessionId, { projectDir }, deps)).rejects.toThrow(
-      `cannot attach to session ${sessionId}: server and owner authority identities do not match`,
-    );
-    expect(renderRuns).toHaveLength(0);
-  });
-
-  it('rejects --json and --rpc together', async () => {
-    const projectDir = makeTmpProject();
-
-    await expect(
-      continueCommand(undefined, { projectDir, json: true, rpc: true }, deps),
-    ).rejects.toThrow(/--json and --rpc cannot be combined/);
-  });
-
-  it('rejects --worktree as a start-only flag instead of silently ignoring it', async () => {
-    const projectDir = makeTmpProject();
-    const sessDir = makeSessionDir(projectDir, '2025-04-01-wt');
-    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-wt' });
-    writeState(sessDir, 'implementing');
-
-    await expect(
-      continueCommand('2025-04-01-wt', { projectDir, worktree: 'feature-x' }, deps),
-    ).rejects.toThrow(/--worktree is only supported by `splitbrief start`/);
-    expect(renderRuns).toHaveLength(0);
-    expect(rpcRuns).toHaveLength(0);
-  });
-
   it('rejects a session with an older stateVersion via loadState filtering', async () => {
     const projectDir = makeTmpProject();
     const sessDir = makeSessionDir(projectDir, '2025-04-01-old');
@@ -500,102 +295,16 @@ describe('continueCommand', () => {
     );
   });
 
-  it('prints crash diagnostics for crashed sessions then resumes without exiting', async () => {
-    const projectDir = makeTmpProject();
-    const sessionId = '2025-04-01-crashed';
-    const sessDir = makeSessionDir(projectDir, sessionId);
-    writeLockfile(sessDir, { sessionId, signal: 'SIGKILL', cause: 'OOM' });
-    writeState(sessDir, 'implementing');
-
-    const diagnosticCalls: string[] = [];
-    deps = createDeps({
-      checkServerStatus: async (): Promise<ServerStatus> => ({
-        alive: false,
-        crashed: true,
-        processAlive: false,
-        data: null,
-      }),
-      printCrashDiagnostic: async (dir) => {
-        diagnosticCalls.push(dir);
-        return {
-          sessionId,
-          status: 'crashed',
-          pid: null,
-          startedAt: null,
-          lastAliveAt: null,
-          exitedAt: null,
-          signal: 'SIGKILL',
-          exitCode: null,
-          cause: 'OOM',
-          logTail: null,
-        };
-      },
-    });
-
-    await continueCommand(sessionId, { projectDir }, deps);
-
-    expect(diagnosticCalls).toHaveLength(1);
-    expect(renderRuns).toHaveLength(1);
-  });
-
-  it('refuses to resume when the server process is alive but unresponsive (stale heartbeat)', async () => {
-    const projectDir = makeTmpProject();
-    const sessionId = '2025-04-01-unresponsive';
-    const sessDir = makeSessionDir(projectDir, sessionId);
-    writeLockfile(sessDir, { sessionId });
-    writeState(sessDir, 'implementing');
-
-    const diagnosticCalls: string[] = [];
-    deps = createDeps({
-      checkServerStatus: async (): Promise<ServerStatus> => ({
-        alive: false,
-        crashed: true,
-        processAlive: true,
-        data: {
-          version: 1,
-          pid: 4242,
-          startTimeMs: Date.now(),
-          lastAliveMs: Date.now() - 999_999,
-          sessionId,
-          mode: 'standard',
-          feature: 'unresponsive feature',
-        },
-      }),
-      printCrashDiagnostic: async (dir) => {
-        diagnosticCalls.push(dir);
-        return {
-          sessionId,
-          status: 'crashed',
-          pid: 4242,
-          startedAt: null,
-          lastAliveAt: null,
-          exitedAt: null,
-          signal: null,
-          exitCode: null,
-          cause: null,
-          logTail: null,
-        };
-      },
-    });
-
-    await expect(continueCommand(sessionId, { projectDir }, deps)).rejects.toThrow(
-      /server process 4242 exists but is unresponsive — kill it first/,
-    );
-    expect(renderRuns).toHaveLength(0);
-    expect(rpcRuns).toHaveLength(0);
-    expect(diagnosticCalls).toHaveLength(0);
-  });
-
   it('preserves the saved workflow mode on resume when --mode is not passed', async () => {
     const projectDir = makeTmpProject();
     const sessDir = makeSessionDir(projectDir, '2025-04-01-saved-mode');
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-saved-mode' });
     writeState(sessDir, 'implementing', { mode: 'speckit', approve: 'all' });
 
-    await continueCommand('2025-04-01-saved-mode', { projectDir, rpc: true }, deps);
+    await continueCommand('2025-04-01-saved-mode', { projectDir, json: true }, deps);
 
-    expect(rpcRuns).toHaveLength(1);
-    expect(rpcRuns[0]?.state).toMatchObject({ mode: 'speckit', approve: 'all' });
+    expect(headlessRuns).toHaveLength(1);
+    expect(headlessRuns[0]?.state).toMatchObject({ mode: 'speckit', approve: 'all' });
   });
 
   it('rehydrates the skills selection from persisted state on resume', async () => {
@@ -618,12 +327,12 @@ describe('continueCommand', () => {
 
     await continueCommand(
       '2025-04-01-override-mode',
-      { projectDir, rpc: true, mode: 'quick' },
+      { projectDir, json: true, mode: 'quick' },
       deps,
     );
 
-    expect(rpcRuns).toHaveLength(1);
-    expect(rpcRuns[0]?.state).toMatchObject({ mode: 'quick' });
+    expect(headlessRuns).toHaveLength(1);
+    expect(headlessRuns[0]?.state).toMatchObject({ mode: 'quick' });
   });
 
   it('strips terminal control bytes from the pre-TUI resume status line', async () => {
@@ -648,133 +357,7 @@ describe('continueCommand', () => {
     expect(resumeLine).not.toContain('pwned');
   });
 
-  it('forwards --hover to the attach render so any-motion mouse mode is enabled', async () => {
-    const projectDir = makeTmpProject();
-    makeSessionDir(projectDir, '2025-04-01-hover-live');
-    deps = createDeps({
-      checkServerStatus: async (): Promise<ServerStatus> =>
-        liveStatus('2025-04-01-hover-live', 'live feature'),
-    });
-
-    const restoreTty = forceInteractiveTty();
-    try {
-      await continueCommand('2025-04-01-hover-live', { projectDir, hover: true }, deps);
-    } finally {
-      restoreTty();
-    }
-
-    expect(renderRuns).toHaveLength(1);
-    expect(renderRuns[0]?.route).toMatchObject({ screen: 'workflow' });
-    expect(renderRuns[0]?.options).toMatchObject({ fullscreen: true, mouse: true, hover: true });
-  });
-
-  it('forwards --no-fullscreen and --no-mouse to the attach render', async () => {
-    const projectDir = makeTmpProject();
-    makeSessionDir(projectDir, '2025-04-01-render-flags');
-    deps = createDeps({
-      checkServerStatus: async (): Promise<ServerStatus> =>
-        liveStatus('2025-04-01-render-flags', 'live feature'),
-    });
-
-    const restoreTty = forceInteractiveTty();
-    try {
-      await continueCommand(
-        '2025-04-01-render-flags',
-        { projectDir, fullscreen: false, mouse: false },
-        deps,
-      );
-    } finally {
-      restoreTty();
-    }
-
-    expect(renderRuns[0]?.options).toMatchObject({
-      fullscreen: false,
-      mouse: false,
-      hover: false,
-    });
-  });
-
-  it('omits the feature on the resume status line when persistTranscript is false', async () => {
-    const projectDir = makeTmpProject();
-    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
-    writeFileSync(
-      join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE),
-      [
-        'version: 3',
-        'planner:',
-        '  kind: cli',
-        '  tool: claude-code',
-        'implementer:',
-        '  kind: api',
-        '  provider: ollama',
-        '  apiBase: http://localhost:11434/v1',
-        '  model: qwen2.5-coder:7b',
-        '  contextLength: 32768',
-        'workflow:',
-        '  persistTranscript: false',
-        '  mode: standard',
-      ].join('\n'),
-    );
-    const sessDir = makeSessionDir(projectDir, '2025-04-01-private');
-    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-private' });
-    writeState(sessDir, 'implementing', { feature: 'secret oauth login' });
-
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    try {
-      await continueCommand('2025-04-01-private', { projectDir }, deps);
-    } finally {
-      const resumeLine = logSpy.mock.calls
-        .map((call) => call.join(' '))
-        .find((line) => line.includes('Resuming:'));
-      expect(resumeLine).toBeDefined();
-      expect(resumeLine).toContain(TRANSCRIPT_OMITTED_MESSAGE);
-      expect(resumeLine).not.toContain('secret');
-      logSpy.mockRestore();
-    }
-  });
-
-  it('omits the feature on the resume status line for a transcript-private session when current config allows transcripts', async () => {
-    const projectDir = makeTmpProject();
-    const sessionId = '2025-04-01-session-abcdef123456';
-    const sessDir = makeSessionDir(projectDir, sessionId);
-    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
-    writeState(sessDir, 'implementing', { feature: 'secret oauth login' });
-
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    try {
-      await continueCommand(sessionId, { projectDir }, deps);
-    } finally {
-      const resumeLine = logSpy.mock.calls
-        .map((call) => call.join(' '))
-        .find((line) => line.includes('Resuming:'));
-      expect(resumeLine).toBeDefined();
-      expect(resumeLine).toContain(TRANSCRIPT_OMITTED_MESSAGE);
-      expect(resumeLine).not.toContain('secret');
-      logSpy.mockRestore();
-    }
-  });
-
-  it('does not enable hover on the attach path when --hover is absent', async () => {
-    const projectDir = makeTmpProject();
-    makeSessionDir(projectDir, '2025-04-01-nohover-live');
-    deps = createDeps({
-      checkServerStatus: async (): Promise<ServerStatus> =>
-        liveStatus('2025-04-01-nohover-live', 'live feature'),
-    });
-
-    const restoreTty = forceInteractiveTty();
-    try {
-      await continueCommand('2025-04-01-nohover-live', { projectDir }, deps);
-    } finally {
-      restoreTty();
-    }
-
-    expect(renderRuns).toHaveLength(1);
-    expect(renderRuns[0]?.route).toMatchObject({ screen: 'workflow' });
-    expect(renderRuns[0]?.options?.hover).toBe(false);
-  });
-
-  it('resumes an interrupted session on Windows instead of rejecting with the attach guard', async () => {
+  it('resumes an interrupted session on Windows without a platform rejection', async () => {
     const projectDir = makeTmpProject();
     const sessDir = makeSessionDir(projectDir, '2025-04-01-win-resume');
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-win-resume' });
@@ -790,25 +373,5 @@ describe('continueCommand', () => {
     }
 
     expect(renderRuns).toHaveLength(1);
-  });
-
-  it('still rejects a live attach target on Windows', async () => {
-    const projectDir = makeTmpProject();
-    makeSessionDir(projectDir, '2025-04-01-win-live');
-    deps = createDeps({
-      checkServerStatus: async (): Promise<ServerStatus> =>
-        liveStatus('2025-04-01-win-live', 'live feature'),
-    });
-
-    const restorePlatform = mockPlatform('win32');
-    try {
-      await expect(continueCommand('2025-04-01-win-live', { projectDir }, deps)).rejects.toThrow(
-        /not supported on Windows/,
-      );
-    } finally {
-      restorePlatform();
-    }
-
-    expect(renderRuns).toHaveLength(0);
   });
 });

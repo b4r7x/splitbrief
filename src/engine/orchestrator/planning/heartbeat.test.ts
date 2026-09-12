@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HEARTBEAT_THRESHOLD_MS, startPlannerHeartbeat } from './heartbeat.js';
-import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
+import {
+  HEARTBEAT_THRESHOLD_MS,
+  PLANNER_KEEPALIVE_INTERVAL_MS,
+  startPlannerHeartbeat,
+} from './heartbeat.js';
 import type { EngineEvent } from '../../events/types.js';
 
 function createMockBus() {
@@ -41,9 +44,9 @@ describe('startPlannerHeartbeat', () => {
       expect(event.elapsedMs).toBeGreaterThanOrEqual(HEARTBEAT_THRESHOLD_MS);
     }
 
-    vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
+    vi.advanceTimersByTime(PLANNER_KEEPALIVE_INTERVAL_MS);
     expect(bus.published).toHaveLength(2);
-    vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
+    vi.advanceTimersByTime(PLANNER_KEEPALIVE_INTERVAL_MS);
     expect(bus.published).toHaveLength(3);
   });
 
@@ -65,7 +68,7 @@ describe('startPlannerHeartbeat', () => {
     }
 
     handle.updateTokens(1200);
-    vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
+    vi.advanceTimersByTime(PLANNER_KEEPALIVE_INTERVAL_MS);
 
     const second = bus.published[1]!;
     expect(second.type).toBe('planner_heartbeat');
@@ -99,13 +102,13 @@ describe('startPlannerHeartbeat', () => {
     expect(bus.published).toHaveLength(1);
 
     handle.stop();
-    vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS * 3);
+    vi.advanceTimersByTime(PLANNER_KEEPALIVE_INTERVAL_MS * 3);
     expect(bus.published).toHaveLength(1);
 
     const stoppedEarlyBus = createMockBus();
     const stoppedEarly = startPlannerHeartbeat(stoppedEarlyBus, 'planning', Date.now());
     stoppedEarly.stop();
-    vi.advanceTimersByTime(HEARTBEAT_THRESHOLD_MS + HEARTBEAT_INTERVAL_MS * 5);
+    vi.advanceTimersByTime(HEARTBEAT_THRESHOLD_MS + PLANNER_KEEPALIVE_INTERVAL_MS * 5);
     expect(stoppedEarlyBus.published).toHaveLength(0);
   });
 });

@@ -1,6 +1,7 @@
 /**
- * One authoritative lane per runner renders rows; models.dev is metadata-only
- * enrichment where a native lane exists (REQ-010/011).
+ * One authoritative lane per runner renders rows; models.dev rows exist for
+ * `api` providers only — a CLI tool's rows come from its own listing, its
+ * bundled table, and (claude-code) its account options (REQ-B08).
  */
 import { CLI_TOOL_CATALOG, isCliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
@@ -28,7 +29,7 @@ export function modelRowLanes(
 ): ModelRowLanes {
   if (input.browseCatalog === true) {
     return {
-      modelsDev: true,
+      modelsDev: !isCliToolId(input.providerId),
       bundled: !input.hasRuntimeList,
       claudeCodeOptions: input.providerId === 'claude-code',
     };
@@ -43,7 +44,7 @@ export function modelRowLanes(
   }
   if (discoveryMode !== undefined) {
     return {
-      modelsDev: !input.hasRuntimeList,
+      modelsDev: false,
       bundled: !input.hasRuntimeList,
       claudeCodeOptions: false,
     };

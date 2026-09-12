@@ -21,12 +21,7 @@ Examples:
     $ splitbrief "refactor models" --model qwen2.5-coder:32b
     $ splitbrief "complex migration" --planner-effort xhigh
 
-  Worktrees (isolated branches):
-    $ splitbrief "add payments" --worktree payments
-    $ splitbrief "experimental refactor" --worktree
-
-  Background / headless:
-    $ splitbrief "generate API docs" --detach
+  Headless:
     $ splitbrief "run migration" --json | jq .
 
   Explicit start (equivalent to shorthand):

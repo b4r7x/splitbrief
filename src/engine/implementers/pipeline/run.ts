@@ -136,13 +136,11 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       });
     }
 
-    const persistTranscript = config.workflow.persistTranscript;
     const implBuffer = sessionId
       ? createTranscriptBuffer({
           projectDir,
           sessionId,
           phase: 'implementing',
-          persistTranscript,
         })
       : null;
     const wrappedOnOutput = baseConfig.extractsCode
@@ -272,7 +270,6 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
               safety: {
                 category: 'implementer',
                 code: 'implementer_wrote_nothing',
-                transcriptSafe: true,
               },
             });
           }

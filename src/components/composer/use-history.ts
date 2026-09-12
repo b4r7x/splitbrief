@@ -9,7 +9,6 @@ interface UseHistoryParams {
   value: string;
   setValue: (value: string) => void;
   currentScreen: Screen;
-  persistTranscript: boolean;
 }
 
 interface ComposerHistory {
@@ -26,12 +25,11 @@ export function useHistory({
   value,
   setValue,
   currentScreen,
-  persistTranscript,
 }: UseHistoryParams): ComposerHistory {
   const [history] = useStores(inputHistoryStore);
   const [historyState, setHistoryState] = useState(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
   const [inputEpoch, setInputEpoch] = useState(0);
-  const entries = getInputHistoryEntries(history, { currentScreen, persistTranscript });
+  const entries = getInputHistoryEntries(history, { currentScreen });
 
   const onChange = (nextValue: string) => {
     setValue(nextValue);

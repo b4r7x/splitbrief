@@ -163,7 +163,6 @@ describe('runHeadless — budget pause behavior', () => {
       'workflow:',
       '  mode: quick',
       '  approve: none',
-      '  persist_transcript: false',
       '  max_budget: 20',
       '  budget_pause_threshold: 0.85',
       '  task_review: every',

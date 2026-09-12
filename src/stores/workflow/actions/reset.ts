@@ -22,6 +22,7 @@ import {
   type LifecycleState,
 } from '../lifecycle.js';
 import { operationsStore } from '../operations/state.js';
+import { recoveryNoticeStore } from '../recovery-notice.js';
 import { streamingOutputStore } from '../streaming-output.js';
 import { clearSectionsCache } from './sections.js';
 
@@ -34,6 +35,7 @@ export function resetWorkflow(resume?: WorkflowState): void {
   tokensStore.reset();
   lifecycleStore.reset();
   operationsStore.reset();
+  recoveryNoticeStore.reset();
   streamingOutputStore.reset();
   clearSectionsCache();
   if (resume) {

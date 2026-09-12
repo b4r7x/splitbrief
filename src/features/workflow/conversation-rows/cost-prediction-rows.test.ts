@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { CostPrediction, PlannerEstimateReview } from '../../../core/schemas/summary.js';
+import type { CostPrediction } from '../../../core/schemas/summary.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { costPredictionRows } from './cost-prediction-rows.js';
 import { rowText } from './row-format/rows.js';
 
-function makeEvent(
-  review: PlannerEstimateReview | undefined,
-): Extract<EngineEvent, { type: 'cost_prediction' }> {
+function makeEvent(): Extract<EngineEvent, { type: 'cost_prediction' }> {
   const prediction: CostPrediction = {
     estimatedTasks: 1,
     lowCost: 0.1,
@@ -15,7 +13,6 @@ function makeEvent(
     highCost: 0.4,
     plannerTool: 'claude-code',
     implementerTool: 'custom-endpoint',
-    ...(review !== undefined && { plannerEstimateReview: review }),
   };
   return { type: 'cost_prediction', ts: 0, phase: 'implementing', prediction };
 }
@@ -176,37 +173,11 @@ describe('costPredictionRows', () => {
     expect(text).not.toContain('0 profile');
   });
 
-  it('renders the planner estimate review recommendation so it informs the cost decision', () => {
-    const rows = costPredictionRows(
-      'k',
-      makeEvent({
-        extraPlannerCall: true,
-        status: 'completed',
-        classification: 'needs-user-decision',
-        affectedTaskIds: ['T001'],
-        reason: 'Estimate uncertain for the selected worker.',
-        recommendedUserDecision: 'Decline and pick a larger-context worker.',
-      }),
-      120,
-    );
-    const text = rows.map(rowText).join('\n');
-    expect(text).toContain('Recommended: Decline and pick a larger-context worker.');
-  });
+  it('spells the heuristic bands and both seats when no deterministic estimate exists', () => {
+    const text = costPredictionRows('k', makeEvent(), 120).map(rowText).join('\n');
 
-  it('omits the recommendation row when the review has no recommended decision', () => {
-    const rows = costPredictionRows(
-      'k',
-      makeEvent({
-        extraPlannerCall: true,
-        status: 'completed',
-        classification: 'ok',
-        affectedTaskIds: [],
-        reason: 'Estimate looks fine.',
-        recommendedUserDecision: null,
-      }),
-      120,
-    );
-    const text = rows.map(rowText).join('\n');
-    expect(text).not.toContain('Recommended:');
+    expect(text).toContain('Low: all local · Expected: ~15% escalation · High: ~40% escalation');
+    expect(text).toContain('Low: $0.10 (all local) Expected: $0.20 High: $0.40');
+    expect(text).toContain('(1 task)');
   });
 });

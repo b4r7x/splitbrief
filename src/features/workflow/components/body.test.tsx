@@ -12,6 +12,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
+import { REVIEW_MIN_ROWS } from '../layout/rect.js';
 import { WorkflowBody } from './body.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 
@@ -80,7 +81,6 @@ describe('WorkflowBody brief review rendering', () => {
           sidebarWidth={34}
           inputMode={normalInputMode()}
           reviewFilePath={null}
-          phase="implementing"
           contentHeight={height}
           contentWidth={80}
         />,
@@ -101,7 +101,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={34}
         inputMode={reviewInputMode()}
         reviewFilePath="review.md"
-        phase="reviewing-plan"
         contentHeight={height}
         contentWidth={80}
       />,
@@ -110,6 +109,43 @@ describe('WorkflowBody brief review rendering', () => {
     const frame = ui.lastFrame() ?? '';
     const lines = frame === '' ? [] : frame.split('\n');
     expect(lines.length, `review rows at height ${height}`).toBeLessThanOrEqual(height);
+    ui.unmount();
+  });
+
+  it('yields the region to the conversation when the frame cannot seat a document row', () => {
+    reviewStore.setReviewArtifact('# Review\n\nA review line.');
+    const ui = renderFeature(
+      <WorkflowBody
+        showSidebar={false}
+        sidebarWidth={0}
+        inputMode={reviewInputMode()}
+        reviewFilePath="review.md"
+        contentHeight={REVIEW_MIN_ROWS - 1}
+        contentWidth={80}
+      />,
+    );
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('no events yet');
+    expect(frame).not.toContain('Custom planner artifact');
+    ui.unmount();
+  });
+
+  it('renders the review frame with its title from the first height that seats a document row', () => {
+    reviewStore.setReviewArtifact('# Review\n\nA review line.');
+    const ui = renderFeature(
+      <WorkflowBody
+        showSidebar={false}
+        sidebarWidth={0}
+        inputMode={reviewInputMode()}
+        reviewFilePath="review.md"
+        contentHeight={REVIEW_MIN_ROWS}
+        contentWidth={80}
+      />,
+    );
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Custom planner artifact');
     ui.unmount();
   });
 
@@ -138,7 +174,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={sidebarWidth}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={contentHeight}
         contentWidth={80}
       />,
@@ -157,7 +192,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={sidebarWidth}
         inputMode={reviewInputMode()}
         reviewFilePath="review.md"
-        phase="reviewing-plan"
         contentHeight={contentHeight}
         contentWidth={80}
       />,
@@ -165,19 +199,19 @@ describe('WorkflowBody brief review rendering', () => {
     await flushEffects();
     const documentBottomRow = rightPaneBottomRow(ui.lastFrame() ?? '', contentStartColumn);
 
+    reviewStore.setReviewFile(briefPath);
     ui.rerender(
       <WorkflowBody
         showSidebar={true}
         sidebarWidth={sidebarWidth}
         inputMode={reviewInputMode()}
         reviewFilePath={briefPath}
-        phase="reviewing-briefs"
         contentHeight={contentHeight}
         contentWidth={80}
       />,
     );
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('task briefs');
+      expect(ui.lastFrame() ?? '').toContain('Review task');
     });
     const briefBottomRow = rightPaneBottomRow(ui.lastFrame() ?? '', contentStartColumn);
 
@@ -194,7 +228,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={0}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={4}
         contentWidth={40}
       />,
@@ -219,7 +252,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={0}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={1}
         contentWidth={40}
       />,
@@ -251,7 +283,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={34}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={contentHeight}
         contentWidth={80}
       />,
@@ -284,7 +315,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={0}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={contentHeight}
         contentWidth={80}
       />,
@@ -307,7 +337,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={0}
         inputMode={questionInputMode('Task interrupted. Enter instructions to continue:')}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={4}
         contentWidth={80}
       />,
@@ -329,8 +358,7 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={0}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
-        contentHeight={4}
+        contentHeight={REVIEW_MIN_ROWS}
         contentWidth={40}
         onScrollAbove={onScrollAbove}
         onScrollBelow={onScrollBelow}
@@ -344,9 +372,8 @@ describe('WorkflowBody brief review rendering', () => {
         showSidebar={false}
         sidebarWidth={0}
         inputMode={reviewInputMode()}
-        reviewFilePath={null}
-        phase="implementing"
-        contentHeight={4}
+        reviewFilePath="review.md"
+        contentHeight={REVIEW_MIN_ROWS}
         contentWidth={40}
         onScrollAbove={onScrollAbove}
         onScrollBelow={onScrollBelow}

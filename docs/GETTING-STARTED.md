@@ -209,7 +209,7 @@ After each implementer task, the orchestrator runs the resolved typecheck, lint,
 
 **4. Named implementer profiles.** Persist multiple implementer backends under `implementerProfiles` — profile names are stable identifiers saved in config and referenced by routing/recovery events. Example: keep `local-qwen` (Ollama, `costTier: local`) and `local-lmstudio` (the LM Studio row above, `costTier: local`); set `default` to the profile SPLITBRIEF should pick when no routing hint applies. Schema and persistence rules: [CONFIGURATION.md](./CONFIGURATION.md#optional-implementerprofiles).
 
-**5. Billing and privacy.** `subscription-included` CLIs bill through your vendor login; `api-metered` / `provider-dependent` APIs bill per request; `local` providers keep traffic on loopback. SPLITBRIEF does not persist API keys to session artifacts and redacts known secret patterns in protected output — see [API-KEYS.md](./API-KEYS.md). `workflow.persistTranscript: false` strips prompt/answer text from logs and machine-readable consumers while still writing review artifacts (`tasks.md`, `review.md`, validation output). Details: [CONFIGURATION.md](./CONFIGURATION.md#transcript-persistence-policy).
+**5. Billing and privacy.** `subscription-included` CLIs bill through your vendor login; `api-metered` / `provider-dependent` APIs bill per request; `local` providers keep traffic on loopback. SPLITBRIEF does not persist API keys to session artifacts and redacts known secret patterns in protected output — see [API-KEYS.md](./API-KEYS.md).
 
 **No recommended API models.** Evaluation currently produces zero runtime `recommended` rows, so every row in the **compatible-only** model table in [CONFIGURATION.md](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state) is selectable but carries no SPLITBRIEF quality claim. The LM Studio row above is a working starting point, not a recommendation; SPLITBRIEF publishes no default implementer recipe until a model passes evaluation.
 
@@ -243,25 +243,15 @@ Local and subscription runners that expose no pricing are reported as unpriced, 
 
 **Checkpoints protect your work; commits are optional.**
 
-The orchestrator records evidence and can create hash-guarded snapshots around risky boundaries. Git commits are available only when `workflow.git.commitStrategy` is explicitly configured; they are not required for safety, and the default leaves changes unstaged for you to review and commit manually. There is no `auto-push`, no `auto-merge`, no surprise branches.
+The orchestrator records evidence, and `/run accept` records the tree you accepted. Git commits are available only when `workflow.git.commitStrategy` is explicitly configured; they are not required for safety, and the default leaves changes unstaged for you to review and commit manually. There is no `auto-push`, no `auto-merge`, no surprise branches.
 
 Three additional safety nets:
 
-1. **Snapshots.** `splitbrief snapshot create` captures the full working tree (minus `.git/`, `.splitbrief/`, `node_modules/`) into `.splitbrief/sessions/<id>/snapshots/`. Restore with `splitbrief snapshot restore <id-or-name>` — and the restore is **hash-guarded**: it refuses to overwrite files you modified after the snapshot was taken (`--force` to override). Auto-snapshots can fire on `preTask`, `postTask`, and `preFinalReview` (off by default; enable in `snapshots.auto`).
+1. **Snapshots.** `/run accept` records a content-addressed snapshot of the working tree (minus `.git/`, `.splitbrief/`, `node_modules/`) into `.splitbrief/sessions/<id>/snapshots/` and marks the run accepted. It is a record of the tree you kept, not an undo: no phase takes a pre-run baseline, so `/run reject confirm` has nothing to restore — it answers `No run snapshot to reject.` before an accept and `Run already accepted at snapshot <id>.` after one. Git is the layer that undoes a run: the default leaves every change unstaged, so `git diff` and `git checkout` remain the way back.
 2. **Drift detection.** Before the final review, the orchestrator computes a deterministic drift report comparing the actual diff to the Task Brief. Out-of-scope file edits, missing target files, orphan diffs, and missing observed evidence all show up. The review seat sees this report alongside the diff so it cannot rubber-stamp a runaway agent.
-3. **Tiered approval.** Declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and pass through an `auto` / `sticky` / `confirm` gate: `auto` proceeds silently for reads and in-scope writes; `sticky` prompts once per session and persists the grant for out-of-scope writes; `confirm` always requires a typed phrase for destructive writes or package manifest/lockfile changes. `network` is accepted only for config compatibility; it is not shell/network sandboxing. Sticky grants persist in `.splitbrief/approvals.json` and are managed via `splitbrief approval list / clear`.
+3. **Tiered approval.** Declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and pass through an `auto` / `sticky` / `confirm` gate: `auto` proceeds silently for reads and in-scope writes; `sticky` prompts once per session and persists the grant for out-of-scope writes; `confirm` always requires a typed phrase for destructive writes or package manifest/lockfile changes. Sticky grants persist in `.splitbrief/approvals.json` and are managed via `splitbrief approval list / clear`.
 
-For isolated parallel work without stepping on yourself, use git worktrees:
-
-```bash
-splitbrief start --worktree feature-a "add user auth"
-splitbrief start --worktree feature-b "refactor billing"
-splitbrief worktree list
-```
-
-Each worktree gets its own `.splitbrief/` directory and is filesystem-isolated. See [docs/WORKTREES.md](./WORKTREES.md).
-
-Same-directory parallel writes are out of scope. A future implementer pool may choose the cheapest capable worker for each Task Brief, but it is still one implementer role running safely against one checkout unless worktree isolation is used.
+Same-directory parallel writes are out of scope. A future implementer pool may choose the cheapest capable worker for each Task Brief, but it is still one implementer role running safely against one checkout.
 
 ---
 
@@ -270,10 +260,10 @@ Same-directory parallel writes are out of scope. A future implementer pool may c
 Explicit non-goals, so you don't go looking:
 
 - **Not a swarm or generic multi-agent manager.** Two roles, one workflow. An implementer pool selects one capable worker per Task Brief; it does not fan out competing agents over the same checkout.
-- **Not Windows-supported.** macOS and Linux only. The IPC server (`splitbrief attach` / `splitbrief ps`) and the snapshot path encoding need POSIX semantics. Windows support is planned but not yet available.
+- **Not Windows-supported.** macOS and Linux only. Several path and sandbox semantics, including the snapshot path encoding, need POSIX. Windows support is planned but not yet available.
 - **No fixed validator language.** Validation is command-based and can be resolved for TypeScript, JavaScript, Python, Go, and Rust projects.
 - **No SPLITBRIEF-defined tool-call protocol for implementers.** SPLITBRIEF does not layer a second control protocol on top of the runner. An implementer either returns file contents that SPLITBRIEF writes (`extracted-code`), or writes into its working directory itself (`direct` — `cli` and `agent` runners) and SPLITBRIEF inspects the resulting diff. Whatever tools the runner exposes internally are the runner's business. See [docs/VISION.md §Strategic decisions](./VISION.md).
-- **No cloud-side state.** Everything lives under `.splitbrief/` in your project. No accounts, no SaaS, no telemetry-by-default (OpenTelemetry is opt-in via `otel.enabled: true`).
+- **No cloud-side state.** Everything lives under `.splitbrief/` in your project. No accounts, no SaaS, no telemetry.
 
 ---
 
@@ -282,13 +272,8 @@ Explicit non-goals, so you don't go looking:
 These features are active by default unless noted:
 
 - **Command palette (Ctrl+K)** — searchable overlay listing all slash commands with descriptions. See [FEATURES.md §Command palette overlay](./FEATURES.md#command-palette-overlay-ctrlk).
-- **External Task Brief editor** — during brief review, `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted Task Brief in an external editor. `VISUAL` is an explicit override; otherwise SPLITBRIEF prefers GUI editors before terminal fallbacks. Legacy `briefReview: rich` configs are accepted but map to simple review. See [FEATURES.md §Task Brief external editor handoff](./FEATURES.md#task-brief-external-editor-handoff).
+- **External Task Brief editor** — during brief review, `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted Task Brief in an external editor. `VISUAL` is an explicit override; otherwise SPLITBRIEF prefers GUI editors before terminal fallbacks. See [FEATURES.md §Task Brief external editor handoff](./FEATURES.md#task-brief-external-editor-handoff).
 - **Tiered approval gates** — `auto` / `sticky` / `confirm` per action class, composing with the document-level approval loop. See [FEATURES.md §Tiered approval gates](./FEATURES.md#tiered-approval-gates-auto--sticky--confirm).
-- **MCP resources and evidence tools server** — exposes session artifacts such as specs, plans, tasks, state, evidence, and drift reports to MCP-aware clients (Claude Code, Cursor), plus constrained evidence-recording tools. Start with `splitbrief mcp serve`. See [FEATURES.md §MCP resources and evidence tools server](./FEATURES.md#mcp-resources-and-evidence-tools-server-advanced).
-- **Parallel worktrees** — run multiple sessions in isolation with `splitbrief start --worktree <name>`. See [FEATURES.md §splitbrief start --worktree](./FEATURES.md#splitbrief-start---worktree-name) and [WORKTREES.md](./WORKTREES.md).
-- **Detached sessions** — background a long session with `splitbrief start --detach`, list with `splitbrief ps`, reattach with `splitbrief attach`. See [FEATURES.md §splitbrief start --detach](./FEATURES.md#splitbrief-start---detach).
-- **Event replay on attach** — reattaching reads `session.jsonl` to rebuild full TUI state; no LLM call needed. See [FEATURES.md §Event replay on attach](./FEATURES.md#event-replay-on-attach).
-- **Crash diagnostic on attach** — if you attach to a crashed session, the TUI shows last-alive time and signal/cause before offering resume. See [FEATURES.md §splitbrief attach](./FEATURES.md#splitbrief-attach-session-id).
 
 ---
 

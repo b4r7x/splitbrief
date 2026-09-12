@@ -174,6 +174,10 @@ const REVIEW_FOOTER_ROWS = 2;
 // consumer measuring the visible review height must subtract these, or keyboard
 // and wheel maxOffset drift from the rendered bottom by exactly this amount.
 export const REVIEW_FRAME_ROWS = 2;
+// The frame's two border rows, its title and divider, and one row of the document. A region
+// shorter than this seats no document row, so the frame would paint a box that names nothing and
+// shows nothing: below it the review body yields the region instead of rendering.
+export const REVIEW_MIN_ROWS = REVIEW_FRAME_ROWS + REVIEW_HEADER_ROWS + 1;
 
 function getWorkflowMiddleRows(rows: number, inputRows: number): number {
   return Math.max(0, rows - getChromeHeight(inputRows));
@@ -231,7 +235,9 @@ export function getReviewContentLayout(
   renderedLineCount: number,
 ): ReviewContentLayout {
   const availableRows = Math.max(0, containerHeight - REVIEW_HEADER_ROWS);
-  const showFooter = renderedLineCount > availableRows && availableRows >= REVIEW_FOOTER_ROWS;
+  // The footer counts the rows the document does not show, so it never takes the last of them:
+  // a frame reporting "N more" above nothing states the document twice and shows it never.
+  const showFooter = renderedLineCount > availableRows && availableRows > REVIEW_FOOTER_ROWS;
   return {
     contentHeight: Math.max(0, availableRows - (showFooter ? REVIEW_FOOTER_ROWS : 0)),
     showFooter,

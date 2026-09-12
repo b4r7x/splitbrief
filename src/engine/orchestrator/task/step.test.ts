@@ -22,7 +22,10 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 
 afterEach(cleanupTaskProjects);
 
-describe('runSingleTask — completion, abort and approval evidence', () => {
+// Every case here drives a real git fixture repo and real snapshot/drift git
+// subprocesses, so the body is a second of work in isolation and several under
+// a loaded suite. The window is explicit rather than left to the default.
+describe('runSingleTask — completion, abort and approval evidence', { timeout: 60_000 }, () => {
   it('emits task-start and task-complete, advances to done, and records token usage', async () => {
     const task = makeTask({ id: 'T001' });
     const state = implementingState([task]);

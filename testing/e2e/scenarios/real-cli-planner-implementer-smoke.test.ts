@@ -68,7 +68,6 @@ describe('real CLI smoke: planner to implementer', () => {
             mode: 'quick',
             approve: 'none',
             maxRetries: 1,
-            persistTranscript: true,
           },
         });
         mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });

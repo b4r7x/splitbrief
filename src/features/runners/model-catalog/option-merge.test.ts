@@ -142,7 +142,7 @@ describe('mergeOptionFamilies', () => {
 
     expect(merged).toHaveLength(1);
     expect(merged[0]?.id).toBe('composer-2.5');
-    expect(merged[0]?.displayName).toBe('Composer 2.5');
+    expect(merged[0]?.displayName).toBe('composer-2.5');
     expect(merged[0]?.variants?.map((variant) => variant.fullId)).toEqual([
       'composer-2.5',
       'composer-2.5-fast',
@@ -192,7 +192,7 @@ describe('mergeOptionFamilies', () => {
 
     expect(merged).toHaveLength(1);
     expect(peelOptionSuffix(merged[0]?.id ?? '').familyId).toBe('gpt-5.5');
-    expect(merged[0]?.displayName).toBe('GPT-5.5');
+    expect(merged[0]?.displayName).toBe('gpt-5.5');
     expect(merged[0]?.variants?.map((variant) => variant.fullId)).toEqual([
       'gpt-5.5-extra-high',
       'gpt-5.5-extra-high-fast',

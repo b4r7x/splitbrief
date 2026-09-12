@@ -29,7 +29,7 @@ export interface DetectionProjection {
   readonly configuredProviderOutcomes?: readonly ConfiguredProviderOutcome[] | undefined;
 }
 
-/** Memory-only, exact role/tool/context catalog probe outcomes. */
+/** Memory-only, exact tool/context catalog probe outcomes. */
 export type CliModelSnapshot = readonly ScopedCliCatalogAttempt[];
 
 export interface DetectionSourceSnapshot<Value extends object> {

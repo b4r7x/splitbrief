@@ -10,7 +10,6 @@ import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.j
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
 import {
   parsePreparedConfig,
   type PreparationOutcome,
@@ -316,30 +315,6 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     expect(abortStore.get().armed).toBe('none');
     ui.unmount();
   });
-
-  it('Ctrl+C in attach mode exits immediately on the first press', async () => {
-    routerStore.navigate({ to: 'home' });
-    routerStore.navigate({
-      to: 'workflow',
-      execution: {
-        kind: 'attached',
-        feature: 'test',
-        sessionId: 'attached-session',
-        attach: { sockPath: '/tmp/sock', authToken: 'tok' },
-      },
-    });
-    const exit = vi.fn();
-    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'none');
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
-    await tick();
-
-    await writeCtrlC(ui);
-    await tick();
-    expect(exit).toHaveBeenCalledTimes(1);
-    expect(interruptWorkflow).not.toHaveBeenCalled();
-    expect(abortStore.get().armed).toBe('none');
-    ui.unmount();
-  });
 });
 
 describe('useAppKeys: ESC interrupt/cancel ladder', () => {
@@ -577,7 +552,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     };
     const pending = Promise.withResolvers<PreparationOutcome>();
     const selection = handleSessionSelect(selected, '/tmp/session-preparation-keys', {
-      ...makeResumeAuthorityDeps(() => resumeState),
+      loadResumeState: () => ({ kind: 'loaded', state: resumeState }),
       prepareResume: () => pending.promise,
     });
     const exit = vi.fn();
@@ -781,27 +756,6 @@ describe('useAppKeys: keystroke binding', () => {
       expect(availableIds()).toEqual(['stale-skill']);
       ui.unmount();
     });
-  });
-
-  it('Ctrl+, does not open local settings in an attached client', async () => {
-    routerStore.navigate({
-      to: 'workflow',
-      execution: {
-        kind: 'attached',
-        feature: 'attached feature',
-        sessionId: 'attached-session',
-        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'tok' },
-      },
-    });
-    const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick(20);
-
-    await writeKey(ui, '\x1b[44;5u');
-    await tick(20);
-
-    expect(overlayStore.get().active).toBe('none');
-    ui.unmount();
   });
 
   it('Ctrl+K when an overlay is already open does not open command-palette', async () => {

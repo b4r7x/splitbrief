@@ -71,8 +71,8 @@ test('loads with zero console errors', async ({ page }) => {
   }
 });
 
-test('no horizontal scroll at 390 and 360', async ({ page }) => {
-  for (const width of [390, 360]) {
+test('no horizontal scroll from phone to wide desktop', async ({ page }) => {
+  for (const width of [360, 390, 768, 1024, 1440, 1600, 1920, 2560]) {
     await page.setViewportSize({ width, height: 844 });
     await open(page);
     const overflow = await page.evaluate(
@@ -123,6 +123,119 @@ test.describe('on a phone', () => {
   });
 });
 
+test('H01 navigation follows the reference landmarks inside the current frame', async ({
+  page,
+}) => {
+  // hero-header.png, x53..1069 outer frame; ink boxes measured before implementation.
+  const landmarks = [
+    { selector: '.nav .wordmark', x: 103 },
+    { selector: '.tagline', x: 248 },
+    { selector: '.nav .links a:first-child', x: 819 },
+    { selector: '.nav .links a:last-child', x: 881 },
+    { selector: '.nav .mark', x: 1004 },
+  ];
+  for (const width of [1440, 1920]) {
+    await page.setViewportSize({ width, height: 1080 });
+    await open(page);
+    const nav = await page.locator('.nav').boundingBox();
+    if (!nav) throw new Error('navigation has no frame');
+    const scale = nav.width / 1016;
+    for (const landmark of landmarks) {
+      const element = page.locator(landmark.selector);
+      const rect = await element.boundingBox();
+      if (!rect) throw new Error(`${landmark.selector} has no box`);
+      const targetX = nav.x + (landmark.x - 53) * scale;
+      expect(Math.abs(rect.x - targetX) / nav.width, landmark.selector).toBeLessThanOrEqual(0.02);
+    }
+    // Text target boxes include side bearings and 44px hit areas; ink sizes are checked in captures.
+    const mark = await box(page.locator('.nav .mark'));
+    expect(Math.abs(mark.width / (12 * scale) - 1)).toBeLessThanOrEqual(0.05);
+    expect(Math.abs(mark.height / (13 * scale) - 1)).toBeLessThanOrEqual(0.05);
+    const tagline = await page.locator('.tagline').evaluate((element) => ({
+      lines: element.innerHTML.split('<br>').length,
+      pitch: Number.parseFloat(getComputedStyle(element).lineHeight),
+    }));
+    expect(tagline.lines).toBe(3);
+    expect(Math.abs(tagline.pitch / (12 * scale) - 1)).toBeLessThanOrEqual(0.1);
+    const brand = page.locator('.nav .wordmark');
+    await brand.evaluate((element) => {
+      element.style.transform = 'translateX(40px)';
+    });
+    const shifted = await brand.boundingBox();
+    if (!shifted) throw new Error('perturbed brand has no box');
+    expect(Math.abs(shifted.x - (nav.x + 50 * scale)) / nav.width).toBeGreaterThan(0.02);
+    await brand.evaluate((element) => {
+      element.style.removeProperty('transform');
+    });
+  }
+});
+
+test('H01 navigation keeps real links, keyboard focus and non-overlapping targets', async ({
+  page,
+}) => {
+  for (const width of [360, 390, 768, 1024, 1440, 1600, 1920, 2560]) {
+    await page.setViewportSize({ width, height: 1080 });
+    await open(page);
+    await page.locator('.nav').evaluate(async (element) => {
+      await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    });
+    const targets = page.locator('.nav a');
+    const rects = await targets.evaluateAll((elements) =>
+      elements.map((element) => {
+        const r = element.getBoundingClientRect();
+        return {
+          left: r.left,
+          right: r.right,
+          top: r.top,
+          bottom: r.bottom,
+          width: r.width,
+          height: r.height,
+        };
+      }),
+    );
+    for (const [index, rect] of rects.entries()) {
+      expect(rect.width).toBeGreaterThanOrEqual(44);
+      expect(Math.round(rect.height * 100) / 100).toBeGreaterThanOrEqual(44);
+      expect(rect.left).toBeGreaterThanOrEqual(0);
+      expect(rect.right).toBeLessThanOrEqual(width);
+      expect(rect.top).toBeGreaterThanOrEqual(0);
+      expect(rect.bottom).toBeLessThanOrEqual(96);
+      const previous = rects[index - 1];
+      if (previous)
+        expect(rect.left - previous.right, `${width}px targets`).toBeGreaterThanOrEqual(0);
+      await page.keyboard.press('Tab');
+      await expect(targets.nth(index)).toBeFocused();
+      await expect(targets.nth(index)).toHaveCSS('outline-width', '2px');
+      await expect(targets.nth(index)).toHaveCSS('outline-style', 'solid');
+    }
+    if (width >= 768) {
+      const groups = await page.locator('.nav > *').evaluateAll((elements) =>
+        elements.map((element) => {
+          const rect = element.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, bottom: rect.bottom };
+        }),
+      );
+      for (const [index, group] of groups.entries()) {
+        const previous = groups[index - 1];
+        if (previous) expect(group.left - previous.right, `${width}px groups`).toBeGreaterThan(0);
+        expect(group.bottom).toBeLessThanOrEqual(96);
+      }
+    }
+    await expect(page.locator('.nav .links a').nth(0)).toHaveAttribute(
+      'href',
+      'https://github.com/b4r7x/splitbrief/tree/main/docs',
+    );
+    await expect(page.locator('.nav .links a').nth(1)).toHaveAttribute(
+      'href',
+      'https://github.com/b4r7x/splitbrief',
+    );
+    await expect(page.locator('.nav .mark')).toHaveAttribute('aria-hidden', 'true');
+    await expect(
+      page.locator('.nav button, .nav [role="button"], .nav .mark[tabindex]'),
+    ).toHaveCount(0);
+  }
+});
+
 test('label ink clears AA against the lightest vignette stop', async ({ page }) => {
   await open(page);
   const tokens = await page.evaluate(() => {
@@ -158,6 +271,140 @@ test('ships under 90 KB gzipped of JavaScript, 16 KB of it our own', async ({ pa
   const vendor = await gzipped(scripts.vendor);
   expect(own).toBeLessThanOrEqual(16_000);
   expect(own + vendor).toBeLessThanOrEqual(90_000);
+});
+
+test('H02 headline follows the crop with four unwrapped lines and a readable eyebrow', async ({
+  page,
+}) => {
+  // hero-copy.png: 400px copy frame, 381px title ink, 56px pitch, 212px ink height.
+  for (const width of [360, 390, 768, 1024, 1440, 1600, 1920]) {
+    await page.setViewportSize({ width, height: 1080 });
+    await open(page);
+    const heading = page.getByRole('heading', {
+      level: 1,
+      name: 'Two models are good. A system is better.',
+      exact: true,
+    });
+    await expect(heading).toBeVisible();
+    const eyebrow = page.getByText('A BETTER WAY TO BUILD', { exact: true });
+    await expect(eyebrow).toBeVisible();
+    await heading.evaluate(async (element) => {
+      await Promise.all(
+        element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+      );
+    });
+    await expect(heading.locator('.line')).toHaveText([
+      'TWO MODELS',
+      'ARE GOOD.',
+      'A SYSTEM',
+      'IS BETTER.',
+    ]);
+    const frame = await heading.boundingBox();
+    if (!frame) throw new Error('headline has no frame');
+    const scale = Math.min(frame.width, width <= 1099 ? 544 : frame.width) / 400;
+    const lines = await heading.locator('.line').evaluateAll((elements) =>
+      elements.map((element) => {
+        const rect = element.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const text = range.getBoundingClientRect();
+        return {
+          top: rect.top,
+          bottom: rect.bottom,
+          height: rect.height,
+          textWidth: text.width,
+          textRight: text.right,
+          fragments: range.getClientRects().length,
+        };
+      }),
+    );
+    expect(lines).toHaveLength(4);
+    for (const [index, line] of lines.entries()) {
+      expect(line.fragments, `${width}px line ${index + 1} wrapping`).toBe(1);
+      expect(line.textRight).toBeLessThanOrEqual(frame.x + frame.width);
+      expect(Math.abs(line.height / (56 * scale) - 1)).toBeLessThanOrEqual(0.1);
+      const previous = lines[index - 1];
+      if (previous) expect(Math.abs(line.top - previous.bottom)).toBeLessThanOrEqual(1);
+    }
+    expect(Math.abs((lines[0]?.textWidth ?? 0) / (381 * scale) - 1)).toBeLessThanOrEqual(0.05);
+    const label = await eyebrow.boundingBox();
+    if (!label) throw new Error('eyebrow has no box');
+    expect(label.y + label.height).toBeLessThan(lines[0]?.top ?? 0);
+    expect(label.y).toBeGreaterThanOrEqual(frame.y);
+    const inks = await page.locator('.hero-eyebrow, .hero .line').evaluateAll((elements) =>
+      elements.map((element) => {
+        const channels = getComputedStyle(element).color.match(/\d+/g) ?? [];
+        return `#${channels
+          .slice(0, 3)
+          .map((value) => Number(value).toString(16).padStart(2, '0'))
+          .join('')}`;
+      }),
+    );
+    for (const [index, ink] of inks.entries()) {
+      const ratio = (luminance(ink) + 0.05) / (luminance('#101216') + 0.05);
+      expect(ratio).toBeGreaterThanOrEqual(index === 0 ? 4.5 : 3);
+    }
+    if (width === 1920) {
+      await heading.evaluate((element) => {
+        element.style.lineHeight = '140px';
+      });
+      const perturbed = await heading.locator('.line').first().boundingBox();
+      if (!perturbed) throw new Error('perturbed line has no box');
+      expect(Math.abs(perturbed.height / (56 * scale) - 1)).toBeGreaterThan(0.1);
+      await heading.evaluate((element) => element.style.removeProperty('line-height'));
+    }
+  }
+});
+
+test('the whole page shares the wide FHD grid', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const width of [360, 390, 768, 1024, 1440, 1599, 1600, 1920, 2560]) {
+    await page.setViewportSize({ width, height: 1080 });
+    await open(page);
+    const containers = await page
+      .locator('.nav, .hero, .lower .grid, .foot')
+      .evaluateAll((elements) =>
+        elements.map((element) => {
+          const rect = element.getBoundingClientRect();
+          return { left: rect.left, width: rect.width };
+        }),
+      );
+    expect(containers).toHaveLength(6);
+    const first = containers[0];
+    if (!first) throw new Error('page has no container');
+    for (const container of containers) {
+      expect(container.left, `${width}px left edge`).toBeCloseTo(first.left, 0);
+      expect(container.width, `${width}px width`).toBeCloseTo(first.width, 0);
+    }
+    if (width === 1440 || width >= 1600) {
+      // G01 target-landmarks: reference-v2.png outer frame x53..1069 on 1122px.
+      const targetLeft = (53 / 1122) * width;
+      const targetWidth = (1016 / 1122) * width;
+      for (const container of containers) {
+        expect(
+          (Math.abs(container.left - targetLeft) / width) * 100,
+          `${width}px reference left edge (percentage points)`,
+        ).toBeLessThanOrEqual(2);
+        expect(
+          (Math.abs(container.left + container.width - (width - targetLeft)) / width) * 100,
+          `${width}px reference right edge (percentage points)`,
+        ).toBeLessThanOrEqual(2);
+        expect(
+          (Math.abs(container.width - targetWidth) / targetWidth) * 100,
+          `${width}px reference width (relative percent)`,
+        ).toBeLessThanOrEqual(5);
+      }
+    }
+    if (width === 1920) {
+      const cta = await page.locator('.cta').boundingBox();
+      if (!cta) throw new Error('CTA has no box');
+      expect(cta.y + cta.height).toBeLessThanOrEqual(1080);
+    }
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
+      `${width}px overflow`,
+    ).toBe(0);
+  }
 });
 
 test('the hero fold at 1920', async ({ page }) => {

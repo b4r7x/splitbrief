@@ -34,6 +34,7 @@ import { pickerViewStore } from '../../src/stores/ui/picker-view.js';
 import { projectFilesStore } from '../../src/stores/ui/project-files.js';
 import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js';
 import { operationsStore } from '../../src/stores/workflow/operations/state.js';
+import { recoveryNoticeStore } from '../../src/stores/workflow/recovery-notice.js';
 
 export function resetAllStores(): void {
   eventsStore.reset();
@@ -44,6 +45,7 @@ export function resetAllStores(): void {
   attachmentsStore.reset();
   conversationScrollStore.reset();
   reviewStore.reset();
+  recoveryNoticeStore.reset();
   controlsStore.reset();
   terminalSizeStore.reset();
   overlayStore.reset();

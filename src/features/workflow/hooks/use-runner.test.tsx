@@ -38,11 +38,9 @@ import {
   reactivateExistingSession,
   writeActive,
 } from '../../../core/sessions/active-pointer.js';
-import { acquireStateAuthority, releaseStateAuthority } from '../../../core/state/authority.js';
-import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState, loadState } from '../../../core/state/persistence.js';
-import { configForSessionTranscriptPolicy, saveSummary } from '../../../core/sessions/io.js';
+import { saveSummary } from '../../../core/sessions/io.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { sessionDir } from '../../../core/paths.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -60,17 +58,15 @@ interface RunnerHandle {
 
 interface HarnessProps {
   prepared: PreparedExecution;
-  authority?: StateAuthorityReceipt | undefined;
   onComplete: (completion: WorkflowCompletion) => void;
   captureRunner?: { current: RunnerHandle | null };
   runWorkflow?: RunWorkflowFn | undefined;
 }
 
-function Harness({ prepared, authority, onComplete, captureRunner, runWorkflow }: HarnessProps) {
+function Harness({ prepared, onComplete, captureRunner, runWorkflow }: HarnessProps) {
   const inputMode = useInputMode();
   const runner = useWorkflowRunner({
     prepared,
-    authority,
     onComplete,
     inputMode,
     runWorkflow,
@@ -100,16 +96,13 @@ function preparedExecution(input: {
     projectDir: input.projectDir,
     sessionId,
     feature: input.feature,
-    config: configForSessionTranscriptPolicy(
-      makeConfig({
-        planner: input.planner ?? {
-          kind: 'agent',
-          command: 'splitbrief-non-existent-planner-x7q9',
-        },
-        ...(input.workflow !== undefined && { workflow: input.workflow }),
-      }),
-      ref,
-    ),
+    config: makeConfig({
+      planner: input.planner ?? {
+        kind: 'agent',
+        command: 'splitbrief-non-existent-planner-x7q9',
+      },
+      ...(input.workflow !== undefined && { workflow: input.workflow }),
+    }),
     preparationId: `workflow-hook-${sessionId}`,
     active: reactivateExistingSession(ref),
     ...(input.resumeState !== undefined && { resumeState: input.resumeState }),
@@ -286,40 +279,6 @@ describe('useWorkflowRunner', () => {
     inst.unmount();
   });
 
-  it('keeps opaque resumed sessions transcript-private when current config allows transcripts', async () => {
-    const sessionId = '2026-06-18-session-abcdef123456';
-    ensureSessionDir(projectDir, sessionId);
-    const resume: WorkflowState = {
-      ...createInitialState('secret oauth login'),
-      phase: 'implementing',
-      tasks: [makeTask({ id: 'T001' })],
-    };
-    saveState({ projectDir, sessionId }, resume);
-    let seenPersistTranscript: boolean | undefined;
-    const runWorkflowStub: RunWorkflowFn = vi.fn(async (opts) => {
-      seenPersistTranscript = opts.prepared.config.workflow.persistTranscript;
-      return makeSummary();
-    });
-    const prepared = preparedExecution({
-      projectDir,
-      feature: 'secret oauth login',
-      sessionId,
-      resumeState: resume,
-      workflow: { mode: 'quick', persistTranscript: true },
-    });
-
-    const inst = render(
-      <Harness prepared={prepared} onComplete={() => {}} runWorkflow={runWorkflowStub} />,
-    );
-
-    await vi.waitFor(() => {
-      expect(runWorkflowStub).toHaveBeenCalled();
-    });
-    expect(seenPersistTranscript).toBe(false);
-
-    inst.unmount();
-  });
-
   it('a session record with failed status completes the workflow as failed', async () => {
     const sessionId = '2026-06-18-failed-session';
     ensureSessionDir(projectDir, sessionId);
@@ -466,7 +425,7 @@ describe('useWorkflowRunner', () => {
       feature: 'cancel reason',
       sessionId,
       planner: { kind: 'shell', command: 'sleep', args: ['10'] },
-      workflow: { mode: 'quick', persistTranscript: false },
+      workflow: { mode: 'quick' },
     });
     const inst = render(
       <Harness prepared={prepared} onComplete={() => {}} runWorkflow={runWorkflowWithCompletion} />,
@@ -546,166 +505,6 @@ describe('useWorkflowRunner', () => {
     expect(log).toContain('T001');
 
     inst.unmount();
-  });
-
-  it('commits a rewind through the live owner fence and revision', async () => {
-    const sessionId = '2026-08-13-live-rewind-owner';
-    const ref = { projectDir, sessionId };
-    ensureSessionDir(projectDir, sessionId);
-    const saved: WorkflowState = {
-      ...createInitialState('add auth'),
-      phase: 'reviewing-spec',
-    };
-    saveState(ref, saved);
-    const acquired = acquireStateAuthority({ ref, purpose: 'resume' });
-    if (acquired.kind !== 'fenced') throw new Error('expected a fenced authority');
-
-    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
-    const inst = render(
-      <Harness
-        prepared={prepared}
-        authority={acquired.receipt}
-        onComplete={() => {}}
-        runWorkflow={vi.fn(async () => makeSummary())}
-      />,
-    );
-    await flush();
-
-    expect(requestRewind({ target: 'spec', comment: 'owner fenced' })).toBe(true);
-    await flush();
-
-    const persisted = loadState(ref);
-    expect(persisted?.phase).toBe('specifying');
-    expect(persisted?.stateRevision).toBe(acquired.receipt.stateRevision + 1);
-    expect(persisted?.stateFence).toEqual(
-      expect.objectContaining({ token: acquired.receipt.fence, ownerId: acquired.receipt.ownerId }),
-    );
-
-    inst.unmount();
-    expect(releaseStateAuthority(ref, acquired.receipt)).toBe(false);
-  });
-
-  it('refreshes the live owner receipt across successive rewinds', async () => {
-    const sessionId = '2026-08-14-successive-rewinds';
-    const ref = { projectDir, sessionId };
-    ensureSessionDir(projectDir, sessionId);
-    const saved: WorkflowState = {
-      ...createInitialState('successive rewinds'),
-      phase: 'reviewing-spec',
-    };
-    saveState(ref, saved);
-    const acquired = acquireStateAuthority({ ref, purpose: 'resume' });
-    if (acquired.kind !== 'fenced') throw new Error('expected a fenced authority');
-
-    const attempts: Array<WorkflowState | undefined> = [];
-    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
-      attempts.push(options.savedState);
-      return makeSummary();
-    });
-    const prepared = preparedExecution({ projectDir, feature: 'successive rewinds', sessionId });
-    const inst = render(
-      <Harness
-        prepared={prepared}
-        authority={acquired.receipt}
-        onComplete={() => {}}
-        runWorkflow={runWorkflowStub}
-      />,
-    );
-
-    await vi.waitFor(() => expect(attempts).toHaveLength(1));
-    expect(requestRewind({ target: 'spec', comment: 'first rewind' })).toBe(true);
-    await vi.waitFor(() => expect(attempts).toHaveLength(2));
-    expect(requestRewind({ target: 'plan', comment: 'second rewind' })).toBe(true);
-    await vi.waitFor(() => {
-      expect(loadState(ref)?.phase).toBe('planning');
-    });
-
-    expect(loadState(ref)?.stateRevision).toBe(acquired.receipt.stateRevision + 2);
-    expect(feedbackStore.get().isError).toBe(false);
-    inst.unmount();
-    expect(releaseStateAuthority(ref, acquired.receipt)).toBe(false);
-  });
-
-  it('refuses a rewind when the live owner receipt has a stale revision', async () => {
-    const sessionId = '2026-08-13-stale-rewind-owner';
-    const ref = { projectDir, sessionId };
-    ensureSessionDir(projectDir, sessionId);
-    const saved: WorkflowState = {
-      ...createInitialState('add auth'),
-      phase: 'reviewing-spec',
-    };
-    saveState(ref, saved);
-    const acquired = acquireStateAuthority({ ref, purpose: 'resume' });
-    if (acquired.kind !== 'fenced') throw new Error('expected a fenced authority');
-    const current = loadState(ref);
-    if (current === null) throw new Error('expected the fenced state to remain readable');
-    saveState(ref, { ...current, stateRevision: acquired.receipt.stateRevision + 1 });
-
-    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
-    const inst = render(
-      <Harness
-        prepared={prepared}
-        authority={acquired.receipt}
-        onComplete={() => {}}
-        runWorkflow={vi.fn(async () => makeSummary())}
-      />,
-    );
-    await flush();
-
-    expect(requestRewind({ target: 'spec' })).toBe(true);
-    await flush();
-
-    expect(loadState(ref)?.phase).toBe('reviewing-spec');
-    expect(feedbackStore.get().isError).toBe(true);
-    inst.unmount();
-  });
-
-  it('cannot rewind after a successor takes over the owner fence', async () => {
-    const sessionId = '2026-08-13-takeover-rewind-owner';
-    const ref = { projectDir, sessionId };
-    ensureSessionDir(projectDir, sessionId);
-    const saved: WorkflowState = {
-      ...createInitialState('add auth'),
-      phase: 'reviewing-spec',
-    };
-    saveState(ref, saved);
-    const old = acquireStateAuthority({
-      ref,
-      purpose: 'resume',
-      ownerId: 'old-owner',
-      runId: 'old-run',
-      acquisitionId: 'old-acquisition',
-      pid: 2_147_483_646,
-      processStart: '1',
-    });
-    if (old.kind !== 'fenced') throw new Error('expected the old owner to be fenced');
-    const successor = acquireStateAuthority({
-      ref,
-      purpose: 'resume',
-      ownerId: 'successor-owner',
-      runId: 'successor-run',
-      acquisitionId: 'successor-acquisition',
-    });
-    if (successor.kind !== 'fenced') throw new Error('expected the successor to be fenced');
-
-    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
-    const inst = render(
-      <Harness
-        prepared={prepared}
-        authority={old.receipt}
-        onComplete={() => {}}
-        runWorkflow={vi.fn(async () => makeSummary())}
-      />,
-    );
-    await flush();
-
-    expect(requestRewind({ target: 'spec' })).toBe(true);
-    await flush();
-
-    expect(loadState(ref)?.phase).toBe('reviewing-spec');
-    expect(feedbackStore.get().isError).toBe(true);
-    inst.unmount();
-    expect(releaseStateAuthority(ref, successor.receipt)).toBe(true);
   });
 
   it('rewind retry reuses prepared runner authority after store changes', async () => {

@@ -13,9 +13,8 @@ import {
 import { randomUUID } from 'node:crypto';
 import { activeFile, sessionDir } from '../../../core/paths.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import type { Summary, CostBreakdown } from '../../../core/schemas/summary.js';
+import type { Summary } from '../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { readStats } from '../../../core/stats/persistence.js';
 import { saveFinalSession, shouldPreserveActiveState } from './finalize.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
@@ -50,97 +49,6 @@ function makeSummary(): Summary {
 function receipt(sessionId: string): ActiveSessionReceipt {
   return { version: 1, sessionId, generation: randomUUID() };
 }
-
-function makeCostBreakdown(): CostBreakdown {
-  return {
-    hypotheticalCost: 0.95,
-    actualPlannerCost: 0.05,
-    actualImplementerCost: 0.07,
-    totalActualCost: 0.12,
-    savingsAmount: 0.88,
-    savingsPercentage: 93,
-    localCompletionRate: 0.92,
-    hasPricedUsage: true,
-    hasUnpricedUsage: false,
-    hasSavingsEstimate: true,
-    isActualPlannerCostKnown: true,
-    isActualImplementerCostKnown: true,
-    isTotalActualCostKnown: true,
-    isAllPlannerBaselineKnown: true,
-  };
-}
-
-function makeCostBearingSummary(): Summary {
-  return {
-    ...makeSummary(),
-    completedByLocal: 1,
-    totalTasks: 1,
-    costBreakdown: makeCostBreakdown(),
-  };
-}
-
-describe('saveFinalSession — lifetime stats gate', () => {
-  it('does not book lifetime stats for a non-complete exit even with a cost-bearing breakdown', () => {
-    const projectDir = makeProjectDir();
-    saveFinalSession({
-      projectDir,
-      sessionId: 'sess-interrupted',
-      active: receipt('sess-interrupted'),
-      feature: 'f',
-      startTime: 1,
-      status: 'interrupted',
-      summary: makeCostBearingSummary(),
-    });
-
-    expect(readStats(projectDir).totalSessions).toBe(0);
-  });
-
-  it('books lifetime stats exactly once for a complete exit', () => {
-    const projectDir = makeProjectDir();
-    saveFinalSession({
-      projectDir,
-      sessionId: 'sess-complete',
-      active: receipt('sess-complete'),
-      feature: 'f',
-      startTime: 1,
-      status: 'complete',
-      summary: makeCostBearingSummary(),
-    });
-
-    const stats = readStats(projectDir);
-    expect(stats.totalSessions).toBe(1);
-    expect(stats.totalCost).toBeCloseTo(0.12);
-    expect(stats.totalHypotheticalCost).toBeCloseTo(0.95);
-  });
-
-  it('books an interrupted-then-resumed session exactly once across both exits', () => {
-    const projectDir = makeProjectDir();
-    const sessionId = 'sess-resumed';
-    saveFinalSession({
-      projectDir,
-      sessionId,
-      active: receipt(sessionId),
-      feature: 'f',
-      startTime: 1,
-      status: 'interrupted',
-      summary: makeCostBearingSummary(),
-    });
-    saveFinalSession({
-      projectDir,
-      sessionId,
-      active: receipt(sessionId),
-      feature: 'f',
-      startTime: 1,
-      status: 'complete',
-      summary: makeCostBearingSummary(),
-    });
-
-    const stats = readStats(projectDir);
-    expect(stats.totalSessions).toBe(1);
-    expect(stats.totalCost).toBeCloseTo(0.12);
-    expect(stats.totalHypotheticalCost).toBeCloseTo(0.95);
-  });
-});
 
 describe('saveFinalSession', () => {
   it('clears the active session by default', () => {
@@ -241,6 +149,7 @@ describe('saveFinalSession', () => {
 describe('shouldPreserveActiveState', () => {
   it('clears when there is no loaded state', () => {
     expect(shouldPreserveActiveState(null)).toBe(false);
+    expect(shouldPreserveActiveState(undefined)).toBe(false);
   });
 
   it('preserves a pending recovery even when the phase looks terminal', () => {

@@ -13,6 +13,8 @@ import type { ClaudeCodeModelOption } from '../../../src/core/providers/claude-c
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/models-dev-lane.js';
 import type { Config } from '../../../src/core/schemas/config.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import { saveState } from '../../../src/core/state/persistence.js';
 import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { makeConfig } from '../../helpers/factories/config.js';
@@ -76,7 +78,6 @@ const BASE_IMPLEMENTER = {
 
 const BASE_WORKFLOW = {
   mode: 'standard',
-  persistTranscript: false,
   maxRetries: 2,
 } as const;
 
@@ -164,17 +165,29 @@ export function createHomeFixture(options: HomeFixtureOptions = {}): FixtureLife
   };
 }
 
+/**
+ * A resume state turns the fixture into the run the screen would actually
+ * resume: the session is written to disk first, so the production resume path
+ * hydrates it and whatever it carries — a halt, say — is driven by the real
+ * code rather than staged by the fixture.
+ */
 export function createWorkflowBaseFixture(
   feature = 'Refine terminal navigation',
+  resumeState?: WorkflowState | undefined,
 ): FixtureLifecycle {
   return createRouteFixture(() => {
     const config = configStore.get().config;
     if (config === null) throw new Error('Visual workflow fixture requires project config');
+    const sessionId = 'visual-workflow';
+    if (resumeState !== undefined) {
+      saveState({ projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId }, resumeState);
+    }
     const prepared = prepareWorkflowExecution({
       projectDir: VISUAL_FIXTURE_PROJECT_DIR,
       feature,
       config,
-      sessionId: 'visual-workflow',
+      sessionId,
+      ...(resumeState !== undefined && { resumeState }),
     });
     return {
       screen: 'workflow',

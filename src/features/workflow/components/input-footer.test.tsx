@@ -46,10 +46,14 @@ describe('InputFooter', () => {
     routerStore.init({
       screen: 'workflow',
       execution: {
-        kind: 'attached',
-        feature: 'demo',
-        sessionId: 'attached-session',
-        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'test-token' },
+        kind: 'local',
+        prepared: makePreparedExecution({
+          projectDir: '/tmp/splitbrief-test',
+          sessionId: 'input-footer-session',
+          feature: 'demo',
+          config: makeConfig(),
+          gates: () => [],
+        }),
       },
     });
     conversationScrollStore.__testReset();
@@ -178,7 +182,7 @@ describe('InputFooter', () => {
 
   it('falls back to the ● stage lead when the workflow is not running', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'researching', cancelled: true });
+    lifecycleStore.__testReset({ phase: 'researching', status: 'complete' });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -192,7 +196,7 @@ describe('InputFooter', () => {
 
   it('renders the active rail stage and task fraction in the byline when not running', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', cancelled: true });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'complete' });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
 
     const ui = renderFeature(<InputFooter />);
@@ -204,7 +208,41 @@ describe('InputFooter', () => {
     ui.unmount();
   });
 
+  it('a user-cancelled run leads with the cancelled glyph, never the stage-done pip', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'implementing', cancelled: true });
+    tasksStore.__testReset({ currentTask: 1, totalTasks: 1 });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${glyph('statusCancelled')} Cancelled · Build 1/1`);
+    expect(frame).not.toContain(`${glyph('stageDone')} Build`);
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('a run that stopped for any other reason leads with the failed glyph and word', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({
+      phase: 'implementing',
+      status: 'cancelled',
+      reason: 'workflow_cancelled',
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${glyph('statusFailed')} Failed`);
+    expect(frame).not.toContain('Cancelled');
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
   it('renders downgrade advisory text when advisory state is set', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const advisory = adviseMode('fix typo in footer', 'standard');
     publishAdvisory(advisory);
 
@@ -215,6 +253,7 @@ describe('InputFooter', () => {
     expect(frame).toContain('quick');
 
     ui.unmount();
+    terminalSizeStore.reset();
   });
 
   it('omits advisory text when the advisor has no displayable warning', () => {
@@ -367,7 +406,7 @@ describe('InputFooter', () => {
   });
 
   it('queued count renders as an info byline segment that survives narrow widths', () => {
-    lifecycleStore.__testReset({ phase: 'implementing', cancelled: true, queueDepth: 2 });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'complete', queueDepth: 2 });
 
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const wide = renderFeature(<InputFooter />);
@@ -384,7 +423,7 @@ describe('InputFooter', () => {
 
   it('byline stage labels are Title Case', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'planning', cancelled: true });
+    lifecycleStore.__testReset({ phase: 'planning', status: 'complete' });
 
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';
@@ -399,7 +438,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const esc = String.fromCharCode(27);
     const bel = String.fromCharCode(7);
-    // OSC-52 clipboard write + CSI erase wrapped around the visible name. A resumed/attached
+    // OSC-52 clipboard write + CSI erase wrapped around the visible name. A resumed
     // workflow's worktree name is untrusted, so none of these bytes may reach the terminal.
     const dirty = `${esc}]52;c;YWJj${bel}clean-tree${esc}[2K`;
     routerStore.init({
@@ -433,10 +472,14 @@ describe('InputFooter', () => {
     routerStore.init({
       screen: 'workflow',
       execution: {
-        kind: 'attached',
-        feature: 'demo',
-        sessionId: 'attached-session',
-        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'test-token' },
+        kind: 'local',
+        prepared: makePreparedExecution({
+          projectDir: '/tmp/splitbrief-test',
+          sessionId: 'no-worktree-session',
+          feature: 'demo',
+          config: makeConfig(),
+          gates: () => [],
+        }),
       },
     });
 

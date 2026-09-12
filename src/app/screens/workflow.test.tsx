@@ -1,14 +1,12 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
-import { STATE_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
@@ -16,12 +14,8 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
-import { formatTasks } from '../../engine/spec/formatter.js';
-import { createBriefRecoveryState } from '../../engine/orchestrator/planning/brief-recovery.js';
-import { createInitialState } from '../../core/state/machine.js';
 import { getContentTopRow } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
-import { glyph } from '../../lib/glyphs.js';
 import { WorkflowScreen } from './workflow.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
@@ -32,13 +26,9 @@ const { terminalSizeStore } = await import('../../stores/ui/terminal-size.js');
 const { routerStore } = await import('../../stores/navigation/router.js');
 const { inputHeightStore } = await import('../../stores/ui/input-height.js');
 const { inputHistoryStore } = await import('../../stores/ui/input-history.js');
-const { focusStore } = await import('../../stores/ui/focus.js');
-const { lifecycleStore } = await import('../../stores/workflow/lifecycle.js');
-const { reviewStore } = await import('../../stores/workflow/review.js');
 
 const FIXED_TS = 1_783_958_400_000;
 const SHIFT_ENTER = '\x1b[13;2u';
-const SHIFT_DOWN = '\x1b[1;2B';
 
 function pendingWorkflow(): Promise<never> {
   return new Promise<never>(() => {});
@@ -133,65 +123,6 @@ describe('WorkflowScreen chrome calibration', () => {
     });
     expect(contentRect.top).toBe(getContentTopRow());
     expect(paintedBodyRow + 1).toBe(contentRect.top);
-
-    ui.unmount();
-  });
-
-  it('passes persisted Brief recovery through the production screen mount', async () => {
-    const sessionId = 'workflow-screen-session';
-    const sessionPath = sessionDir(projectDir, sessionId);
-    const tasksPath = join(sessionPath, TASKS_FILE);
-    mkdirSync(sessionPath, { recursive: true });
-    writeFileSync(
-      tasksPath,
-      formatTasks([makeTask({ id: 'T001', title: 'Persisted recovery task' })]),
-      'utf8',
-    );
-    const activeBrief = { revision: 1, hash: 'persisted-brief-hash', path: TASKS_FILE };
-    const report = {
-      briefHash: activeBrief.hash,
-      report: { revision: 1, hash: 'persisted-report-hash', path: 'brief-quality.json' },
-      ruleVersion: 'brief-quality-v1',
-      issues: [],
-      errorCount: 0,
-    };
-    const state = {
-      ...createInitialState('persisted recovery mount'),
-      stateRevision: 7,
-      stateFence: { token: 1, ownerId: 'workflow-screen-test' },
-      phase: 'reviewing-briefs' as const,
-      briefRecovery: createBriefRecoveryState(
-        {
-          sessionId,
-          origin: { mode: 'standard', entry: 'initial' },
-          continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
-          activeBrief,
-          report,
-          qualityPolicyVersion: 'brief-quality-v1',
-        },
-        { epochId: 'persisted-recovery-epoch', recoveryRevision: 3 },
-      ),
-    };
-    writeFileSync(join(sessionPath, STATE_FILE), JSON.stringify(state), 'utf8');
-    reviewStore.setReviewFile(tasksPath);
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running' });
-    runWorkflow.mockImplementation(async (opts) => {
-      lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running' });
-      await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
-      return pendingWorkflow();
-    });
-    configStore.__testReset({ config: makeConfig(), projectDir });
-    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
-    navigatePreparedWorkflow(projectDir, 'persisted recovery mount');
-
-    const ui = renderFeature(
-      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
-    );
-    await vi.waitFor(() => {
-      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame).toContain('CONTRACT READY');
-      expect(frame).toContain('Persisted recovery task');
-    });
 
     ui.unmount();
   });
@@ -353,87 +284,6 @@ describe('WorkflowScreen chrome calibration', () => {
     await vi.waitFor(() => {
       expect(outcome).toEqual({ approved: false });
     });
-    ui.unmount();
-  });
-
-  it('transfers brief focus without history and keeps yank and text ownership exclusive', async () => {
-    const tasksPath = join(projectDir, 'tasks.md');
-    writeFileSync(
-      tasksPath,
-      formatTasks(
-        ['First brief', 'Second brief', 'Third brief'].map((title, index) =>
-          makeTask({
-            id: `T00${index + 1}`,
-            title,
-            file: `src/task-${index + 1}.ts`,
-          }),
-        ),
-      ),
-      'utf8',
-    );
-    inputHistoryStore.hydrate(['HISTORY_SENTINEL']);
-    const copyTarget = vi.fn(async () => 'empty' as const);
-    configStore.__testReset({ config: makeConfig(), projectDir });
-    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
-    navigatePreparedWorkflow(projectDir, 'brief key ownership');
-    runWorkflow.mockImplementation(async (opts) => {
-      lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-      await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
-      return pendingWorkflow();
-    });
-
-    const ui = renderFeature(
-      <WorkflowScreen
-        commands={[]}
-        onRuntimeCommand={vi.fn()}
-        copyTarget={copyTarget}
-        canCopyFocused={(focus) => focus?.region === 'brief' && focus.index === 1}
-        deps={workflowDeps}
-      />,
-    );
-    await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('First brief');
-    });
-
-    await flushEffects();
-    ui.stdin.write('\x1b[B');
-    await tick();
-    expect(focusStore.get()).toEqual({ region: 'brief', index: 0 });
-    await flushEffects();
-    ui.stdin.write('\x1b[B');
-    await tick();
-    expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('HISTORY_SENTINEL');
-
-    await flushEffects();
-    ui.stdin.write('ab');
-    await tick();
-    expect(focusStore.get()).toBeNull();
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} ab`);
-
-    focusStore.set('brief', 1);
-    await flushEffects();
-    ui.stdin.write('y');
-    await tick();
-    await Promise.resolve();
-    await tick();
-    expect(copyTarget).toHaveBeenCalledWith('brief');
-    expect(copyTarget).toHaveBeenCalledTimes(1);
-    expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} ab`);
-
-    await flushEffects();
-    ui.stdin.write(SHIFT_DOWN);
-    await tick();
-    expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
-
-    focusStore.set('brief', 0);
-    await flushEffects();
-    ui.stdin.write('y');
-    await tick();
-    expect(copyTarget).toHaveBeenCalledTimes(1);
-    expect(focusStore.get()).toBeNull();
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} aby`);
     ui.unmount();
   });
 });

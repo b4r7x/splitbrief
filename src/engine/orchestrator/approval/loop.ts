@@ -29,7 +29,6 @@ type ApprovalLoopOptions = {
   bus: EventBus;
   state: WorkflowState;
   signal?: AbortSignal | undefined;
-  persistTranscript: boolean;
   specMetadata?: SpecMetadata | null | undefined;
   sinks?: WorkflowSinks | undefined;
 };
@@ -40,17 +39,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
   regenerated: boolean;
   aborted?: boolean | undefined;
 }> {
-  const {
-    type,
-    filePath,
-    planner,
-    projectDir,
-    sessionId,
-    callbacks,
-    bus,
-    signal,
-    persistTranscript,
-  } = opts;
+  const { type, filePath, planner, projectDir, sessionId, callbacks, bus, signal } = opts;
   let { state } = opts;
   let regenerated = false;
   const rejectType = type === 'spec' ? 'REJECT_SPEC' : 'REJECT_PLAN';
@@ -177,7 +166,6 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
         phase: type === 'spec' ? 'reviewing-spec' : 'reviewing-plan',
         text: comment,
       },
-      { persistTranscript },
     );
 
     const current = readSpecFileOrEmpty({ projectDir, sessionId }, filename);

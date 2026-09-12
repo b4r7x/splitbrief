@@ -78,7 +78,6 @@ describe('enforceBudget', () => {
       type: 'warning',
       category: 'budget',
       code: 'warning_threshold_reached',
-      transcriptSafe: true,
       message: expect.stringContaining('Budget 80% reached:'),
     });
   });
@@ -301,7 +300,6 @@ describe('enforceBudget', () => {
     expect(eHaiku.find((e) => e.type === 'warning')).toMatchObject({
       category: 'budget',
       code: 'tracking_paused',
-      transcriptSafe: true,
       message: expect.stringContaining('custom-planner-api/definitely-not-a-real-model-xyz'),
     });
   });

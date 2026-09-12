@@ -10,7 +10,6 @@ import {
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { reviewTaskIfNeeded } from './review-flow.js';
 
 let dirs: string[] = [];
@@ -144,56 +143,6 @@ describe('reviewTaskIfNeeded task-review actions', () => {
     expect(result.state.rewindPending).toEqual({ target: 'plan' });
     expect(loadState({ projectDir, sessionId })?.rewindPending).toEqual({ target: 'plan' });
     expect(setRewindFeedback).toHaveBeenCalledWith(undefined);
-  });
-
-  it('keeps transcript-off task review feedback transient while persisting protected state', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', title: 'Split task' });
-    let state = makeImplState([task]);
-    state = { ...state, currentTaskIndex: 1 };
-
-    const rawFeedback = 'split around private customer token';
-    const setTrackedState = vi.fn();
-    const setRewindFeedback = vi.fn();
-    const { callbacks } = makeCallbacks({
-      onTaskReviewNeeded: async () => ({
-        action: 'revise-plan',
-        notes: rawFeedback,
-      }),
-    });
-    const { bus } = makeBusRecorder();
-
-    const result = await reviewTaskIfNeeded({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({
-          workflow: { taskReview: 'every', persistTranscript: false },
-        }),
-        callbacks,
-        bus,
-        setRewindFeedback,
-      }),
-      state,
-      setTrackedState,
-      task,
-      taskIndex: 0,
-      filesTouched: ['src/a.ts'],
-      taskBreakdowns: [],
-    });
-
-    expect(result.decision).toBe('stop');
-    expect(setRewindFeedback).toHaveBeenCalledWith(rawFeedback);
-    expect(result.state.rewindPending).toEqual({
-      target: 'plan',
-      comment: TRANSCRIPT_OMITTED_MESSAGE,
-    });
-    const saved = loadState({ projectDir, sessionId });
-    expect(saved?.rewindPending).toEqual({
-      target: 'plan',
-      comment: TRANSCRIPT_OMITTED_MESSAGE,
-    });
-    expect(JSON.stringify(saved)).not.toContain(rawFeedback);
   });
 
   it('redo-task resets the current task in orchestrator state', async () => {

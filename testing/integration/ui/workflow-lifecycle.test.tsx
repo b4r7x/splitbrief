@@ -6,7 +6,6 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
-import type { IpcServer } from '../../../src/engine/ipc/server.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 
@@ -21,9 +20,6 @@ const { createInitialState, transition } = await import('../../../src/core/state
 const { saveState } = await import('../../../src/core/state/persistence.js');
 
 const ENTER = '\r';
-
-const ipcServers: IpcServer[] = [];
-const ipcTempDirs: string[] = [];
 
 function workflowStateInResearching(feature: string) {
   return transition(createInitialState(feature), { type: 'START' });
@@ -44,12 +40,8 @@ describe('WorkflowScreen lifecycle', () => {
     runWorkflow.mockReturnValue(new Promise<never>(() => {}));
   });
 
-  afterEach(async () => {
+  afterEach(() => {
     vi.unstubAllEnvs();
-    for (const server of ipcServers.splice(0)) {
-      await server.close().catch(() => undefined);
-    }
-    for (const dir of ipcTempDirs.splice(0)) cleanupTempDir(dir);
     resetAllStores();
     routerStore.init({ screen: 'home' });
   });

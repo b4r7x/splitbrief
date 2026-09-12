@@ -3,9 +3,7 @@ import type { Phase } from '../../schemas/enums.js';
 import type { WorkflowMode } from '../../schemas/enums.js';
 import { CREW_SEAT_IDS } from '../../crew/identity.js';
 import type { OverlayType, Screen } from '../../navigation/types.js';
-import type { HandoffTarget } from '../../handoff/targets.js';
 import type { ApprovalGrant } from '../../schemas/approval-store.js';
-import type { StructuredSummary } from '../../schemas/compaction.js';
 import type { CopyOutcome } from '../../../lib/clipboard/clipboard.js';
 import type { ResolveAttachmentReason } from '../../attachments/resolve.js';
 
@@ -43,19 +41,6 @@ export type RejectRunSnapshotResult =
       conflictedPaths: string[];
       missingSnapshotFiles: string[];
     };
-
-export type CompactTranscriptResult =
-  | { status: 'unsupported'; plannerName: string }
-  | {
-      status: 'compacted';
-      summary: string;
-      entriesRemoved: number;
-      structured?: StructuredSummary | null;
-    };
-
-export type ExportSessionResult =
-  | { status: 'ok'; path: string }
-  | { status: 'error'; error: string };
 
 export type QueueClearCommandResult =
   | { status: 'cleared'; count: number }
@@ -168,11 +153,21 @@ export const CREW_COMMAND_SEATS = CREW_SEAT_IDS;
 
 /** Deleted names keep pointing at their replacement for one release. */
 export const REMOVED_COMMANDS: Readonly<Record<string, string>> = {
+  '/accept-run': 'a run is accepted with /run accept',
   '/attach': 'images are attached with /image <path>',
+  '/compact-transcript': 'the transcript compacts itself as the context window fills',
+  '/config': 'the same settings open with /settings',
   '/detach': 'images are removed with /image remove <index|id>',
   '/effort': 'effort is chosen with the model: /crew plan, then ⏎',
+  '/export': 'a run leaves its artifacts in .splitbrief/sessions/<id>/',
+  '/handoff': 'a run leaves its artifacts in .splitbrief/sessions/<id>/',
+  '/implementer': 'the BUILD seat is chosen with /crew build',
+  '/planner': 'the PLAN seat is chosen with /crew plan',
+  '/reject-run': 'a run is rejected with /run reject confirm',
   '/repomap': 'the repo map rebuilds itself on each planning run, with no manual step',
   '/resume': 'a paused workflow resumes from its approval prompt',
+  '/reviewer': 'the REVIEW seat is chosen with /crew review',
+  '/yolo': 'approval prompts are turned off with approval.enabled: false in the config',
 };
 
 export type AttachImageResult =
@@ -193,7 +188,6 @@ export type SkillToggleResult =
 
 export interface CommandGuardContext {
   phase: Phase;
-  attached: boolean;
   plannerSupportsImages: boolean;
 }
 
@@ -210,7 +204,6 @@ type CommandArgSpec =
 
 interface RuntimeCommandBase {
   name: string;
-  aliases?: readonly { name: string; args?: string }[];
   label?: string;
   description: string;
   shortcut?: string | null;
@@ -230,7 +223,6 @@ export type RuntimeCommandDef =
     });
 
 export interface RuntimeCommandContext {
-  isAttached?: boolean;
   openOverlay: (type: OverlayType, focus?: string) => void;
   navigate: (to: 'home') => void;
   quit: () => void;
@@ -250,15 +242,10 @@ export interface RuntimeCommandContext {
   attachImage: (input: string) => AttachImageResult;
   detachImage: (idOrIndex: string) => boolean;
   listAttachments: () => Array<{ id: string; path: string }>;
-  writeHandoff: (target: HandoffTarget, taskId?: string) => Promise<{ outputDir: string }>;
   listApprovals: () => ApprovalGrant[];
   clearApprovals: () => number;
-  getApprovalEnabled: () => boolean;
-  setApprovalEnabled: (enabled: boolean) => void;
   acceptRunSnapshot: () => Promise<AcceptRunSnapshotResult>;
   rejectRunSnapshot: () => Promise<RejectRunSnapshotResult>;
-  compactTranscript: () => Promise<CompactTranscriptResult>;
-  exportSession: () => Promise<ExportSessionResult>;
   scrollConversation: (target: ScrollCommandTarget) => ScrollConversationResult;
   toggleLatestActivityBatch: () => ToggleLatestActivityBatchResult;
   toggleLatestDiff: () => ToggleLatestDiffResult;

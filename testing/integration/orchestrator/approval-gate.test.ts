@@ -63,7 +63,6 @@ describe('spec approval gate suspends until externally resolved', () => {
       callbacks,
       bus,
       state,
-      persistTranscript: false,
     });
 
     await expectStillPending(loopPromise);

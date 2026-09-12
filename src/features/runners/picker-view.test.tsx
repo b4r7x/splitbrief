@@ -16,6 +16,7 @@ import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../engine/providers/model/catalog.js';
 import { buildRightModels, countModelOptions } from './model-catalog/catalog.js';
 import { BROWSE_CATALOG_TEXT, type RightRow } from './model-catalog/rows.js';
 import { formatCatalogDiagnostic } from './picker-format.js';
@@ -148,7 +149,7 @@ describe('PickerView previews', () => {
       available: true,
       version: '1.0.0',
     });
-    const model: ModelOption = { id: 'gpt-4o', contextLength: 128_000 };
+    const model: ModelOption = { id: 'gpt-4o', displayName: 'GPT-4o', contextLength: 128_000 };
 
     const catalog: PickerCatalog = pickerCatalog({
       browseCatalog: false,
@@ -208,7 +209,7 @@ describe('PickerView previews', () => {
     );
     const suggestions: ModelOption[] = ['gpt-6.1', 'gpt-6.1-mini', 'gpt-6.1-nano'].map((id) => ({
       id,
-      membership: 'catalog-suggestion',
+      membership: CATALOG_SUGGESTION_MEMBERSHIP,
     }));
 
     const catalog: PickerCatalog = pickerCatalog({
@@ -586,7 +587,7 @@ describe('PickerView browse-catalog escape', () => {
     return [
       {
         kind: 'model',
-        model: { id: 'gpt-9-turbo', displayName: 'GPT-9 Turbo', isRecovery: true },
+        model: { id: 'gpt-9-turbo', displayName: 'GPT-9 Turbo' },
         provenance: 'Known',
         section: '',
         expanded,

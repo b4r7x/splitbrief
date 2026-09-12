@@ -11,10 +11,9 @@ import {
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { writeActive } from '../../../src/core/sessions/active-pointer.js';
-import { TRANSCRIPT_OMITTED_FEATURE } from '../../../src/core/sessions/session-id.js';
 import { sessionDir } from '../../../src/core/paths.js';
-import { readLockfile, checkServerStatus } from '../../../src/engine/ipc/lockfile.js';
-import type { LockfileData } from '../../../src/engine/ipc/lockfile.js';
+import { readLockfile, checkSessionLiveness } from '../../../src/core/sessions/lockfile.js';
+import type { LockfileData } from '../../../src/core/sessions/lockfile.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
 import { runHeadless } from '../../../src/cli/headless.js';
@@ -75,7 +74,7 @@ describe('runHeadless — liveness record (F-261)', () => {
     const before = Date.now();
     const midRunLocks: Array<LockfileData | null> = [];
     const implement = vi.fn().mockImplementation(async () => {
-      midRunLocks.push(await readLockfile(dir));
+      midRunLocks.push(readLockfile(dir));
       return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
     });
     const implementer = makeImplementer({ implement });
@@ -94,7 +93,6 @@ describe('runHeadless — liveness record (F-261)', () => {
         sessionId,
         feature: 'liveness feature',
         resumeState,
-        purpose: 'new-workflow',
       }),
       _planner: planner,
       _implementer: implementer,
@@ -104,17 +102,17 @@ describe('runHeadless — liveness record (F-261)', () => {
     expect(midRunLock).not.toBeNull();
     expect(midRunLock?.pid).toBe(process.pid);
     expect(midRunLock?.sessionId).toBe(sessionId);
-    expect(midRunLock?.feature).toBe(TRANSCRIPT_OMITTED_FEATURE);
+    expect(midRunLock?.feature).toBe('liveness feature');
     expect(midRunLock?.lastAliveMs).toBeGreaterThanOrEqual(before);
     expect(midRunLock?.exitedAt).toBeUndefined();
 
-    let status = await checkServerStatus(dir);
+    let status = checkSessionLiveness(dir);
     for (let i = 0; i < 50 && status.alive; i++) {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      status = await checkServerStatus(dir);
+      status = checkSessionLiveness(dir);
     }
     expect(status.alive).toBe(false);
-    const lock = await readLockfile(dir);
+    const lock = readLockfile(dir);
     expect(lock?.exitedAt).toBeDefined();
   }, 30_000);
 });

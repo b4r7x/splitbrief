@@ -1,12 +1,49 @@
 import { describe, expect, it } from 'vitest';
-import { viewport } from '../contracts/geometry.js';
-import { createFrameGrid, requireCheckpoint, requireScenario } from '../recovery-locators.js';
+import { findVisualScenario } from '../catalog.js';
+import type { CheckpointDefinition, ScenarioDefinition } from '../contracts/catalog.js';
+import type { CellGrid } from '../contracts/cells.js';
+import { viewport, type Viewport } from '../contracts/geometry.js';
+import { ArtifactProvenanceSchema } from '../contracts/selection.js';
+import { parseTerminalFrame } from '../terminal/parse.js';
+import { createFrameIdentity } from '../visual-contract-fixtures.js';
 import { clipCellRect, resolveMarkerRect } from './markers.js';
 import { LOCATOR_FAILURE_CODE } from './types.js';
 import { tryResolveElementLocator } from './resolve.js';
 
 const ESC = '\u001b';
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
+
+function requireScenario(id: string): ScenarioDefinition {
+  const scenario = findVisualScenario(id);
+  if (scenario === undefined) throw new Error(`Missing visual scenario ${id}`);
+  return scenario;
+}
+
+function requireCheckpoint(scenario: ScenarioDefinition): CheckpointDefinition {
+  const checkpoint = scenario.checkpoints[0];
+  if (checkpoint === undefined) throw new Error(`Missing checkpoint for ${scenario.id}`);
+  return checkpoint;
+}
+
+async function createFrameGrid(
+  scenario: ScenarioDefinition,
+  frameViewport: Viewport,
+  ansi: string,
+): Promise<CellGrid> {
+  const checkpoint = requireCheckpoint(scenario);
+  const provenance = ArtifactProvenanceSchema.parse({
+    scenarioId: scenario.id,
+    scenarioTitle: scenario.title,
+    fixtureVersion: scenario.fixtureVersion,
+    checkpointId: checkpoint.id,
+    viewport: frameViewport,
+  });
+  return parseTerminalFrame({
+    ansi,
+    identity: createFrameIdentity(provenance),
+    projectRoot: process.cwd(),
+  });
+}
 
 describe('visual locator markers and bounds', () => {
   it('reports ambiguity, absence, and clips explicit bounds', async () => {

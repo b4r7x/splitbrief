@@ -19,9 +19,9 @@ describe('resolveRunnerContextWindow', () => {
   });
 
   // A pinned alias is the ordinary claude-code seat, and no catalog publishes a row called
-  // `opus` — only `claude-opus-5`, which the alias names. Reading the alias verbatim and giving
-  // up drops a 1M seat to the 32 768-token conservative fallback.
-  it('resolves a pinned claude-code alias through the catalog row it names', () => {
+  // `opus` — only `claude-opus-5`, which the alias names. No lane maps the alias onto that row,
+  // so the bundled row's own window answers even with a catalog loaded.
+  it('answers a pinned claude-code alias from its bundled row even when a catalog is loaded', () => {
     const catalog: ModelsDevCatalog = {
       anthropic: {
         id: 'anthropic',
@@ -34,13 +34,12 @@ describe('resolveRunnerContextWindow', () => {
 
     const result = resolveRunnerContextWindow({ providerId: 'claude-code', model: 'opus', cache });
 
-    expect(result).toEqual({ contextLength: 1_000_000, source: 'models-dev' });
+    expect(result).toEqual({ contextLength: 1_000_000, source: 'known-catalog' });
   });
 
-  // Every alias declares the window Claude bakes for it, and models.dev re-publishes the same
-  // number. The catalog is the one that stays current, so it outranks the declaration — here it
-  // says 500 000 and the pinned seat must follow it rather than its own 200 000.
-  it('lets the catalog outrank the window an alias declares', () => {
+  // The catalog row publishes 500 000 for `claude-haiku-4-5`, but no lane maps the alias `haiku`
+  // onto it: the alias's own declared 200 000 answers even with a catalog loaded.
+  it('answers a pinned claude-code alias from its own declared window', () => {
     const catalog: ModelsDevCatalog = {
       anthropic: {
         id: 'anthropic',
@@ -51,7 +50,7 @@ describe('resolveRunnerContextWindow', () => {
 
     const result = resolveRunnerContextWindow({ providerId: 'claude-code', model: 'haiku', cache });
 
-    expect(result).toEqual({ contextLength: 500_000, source: 'models-dev' });
+    expect(result).toEqual({ contextLength: 200_000, source: 'known-catalog' });
   });
 
   // The first run of every session reaches here: no catalog has loaded yet. The alias's own
@@ -92,6 +91,29 @@ describe('resolveRunnerContextWindow', () => {
     const cache = makeModelCacheAccessor({ catalog });
 
     const result = resolveRunnerContextWindow({ providerId: 'ollama', model: 'auto', cache });
+
+    expect(result).toEqual({ contextLength: 400_000, source: 'models-dev' });
+  });
+
+  it('resolves a pinned api model through the models.dev cache', () => {
+    const catalog: ModelsDevCatalog = {
+      ollama: {
+        id: 'ollama',
+        models: {
+          'qwen3-coder:30b': {
+            id: 'qwen3-coder:30b',
+            limit: { context: 400_000 },
+          },
+        },
+      },
+    };
+    const cache = makeModelCacheAccessor({ catalog });
+
+    const result = resolveRunnerContextWindow({
+      providerId: 'ollama',
+      model: 'qwen3-coder:30b',
+      cache,
+    });
 
     expect(result).toEqual({ contextLength: 400_000, source: 'models-dev' });
   });

@@ -56,7 +56,6 @@ validation:
   test: true
 workflow:
   max_retries: 3
-  persist_transcript: true
   compaction_format: auto
 `),
     ),

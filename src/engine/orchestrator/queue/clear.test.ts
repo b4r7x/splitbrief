@@ -149,7 +149,6 @@ describe('clear', () => {
         state = next;
       },
       bus,
-      persistTranscript: false,
       planner,
       serialize,
     });

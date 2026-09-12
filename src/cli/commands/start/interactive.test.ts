@@ -38,9 +38,7 @@ afterEach(() => {
 
 function makeDispatch(overrides: Partial<InteractiveDispatchArgs> = {}): InteractiveDispatchArgs {
   const deps: StartDeps = {
-    spawnServer: vi.fn(),
     runHeadless: vi.fn(),
-    runRpc: vi.fn(),
     initStores: async () => {},
     renderApp: renderAppFake,
     prepareExecution: prepareExecutionMock,
@@ -53,7 +51,6 @@ function makeDispatch(overrides: Partial<InteractiveDispatchArgs> = {}): Interac
     enrichedFeature: undefined,
     plannerContext: undefined,
     opts: { project: tmp },
-    handOffWorktree: () => {},
     ...overrides,
   };
 }
@@ -124,6 +121,13 @@ describe('runInteractiveStart', () => {
       await discoveryGate.promise;
       return { contextLength: 32_768, origin: 'fallback' as const };
     });
+    vi.spyOn(setupModule, 'setupWorkflow').mockResolvedValue({
+      projectDir: tmp,
+      useFullscreen: false,
+      useMouse: false,
+      useHover: false,
+    });
+    vi.spyOn(readinessModule, 'assertNoLiveSessionForCli').mockImplementation(() => {});
 
     let renderStarted = false;
     const renderApp: StartDeps['renderApp'] = async () => {
@@ -133,9 +137,7 @@ describe('runInteractiveStart', () => {
     const run = runInteractiveStart(
       makeDispatch({
         deps: {
-          spawnServer: vi.fn(),
           runHeadless: vi.fn(),
-          runRpc: vi.fn(),
           initStores: async () => {},
           renderApp,
           prepareExecution: prepareExecutionMock,
@@ -143,11 +145,16 @@ describe('runInteractiveStart', () => {
       }),
     );
 
-    await vi.waitFor(() => expect(renderStarted).toBe(true));
+    // A failing gate would otherwise abandon `run` mid-flight, and its teardown
+    // git call reaches the removed temp dir as an unhandled rejection charged to
+    // whichever test runs next. `await run` below still observes a real failure.
+    run.catch(() => {});
+
+    await vi.waitFor(() => expect(renderStarted).toBe(true), { timeout: 10_000 });
 
     discoveryGate.resolve();
     await run;
-  });
+  }, 20_000);
 
   it('unmounts the TUI before a readiness blocker reaches the terminal (T-037)', async () => {
     const events: string[] = [];
@@ -171,9 +178,7 @@ describe('runInteractiveStart', () => {
       makeDispatch({
         feature: 'ship it',
         deps: {
-          spawnServer: vi.fn(),
           runHeadless: vi.fn(),
-          runRpc: vi.fn(),
           initStores: async () => {},
           renderApp,
           prepareExecution: async () => ({ kind: 'blocked', report: blockedReport(tmp) }),
@@ -183,29 +188,6 @@ describe('runInteractiveStart', () => {
 
     await expect(run).rejects.toThrow(/Run readiness blocked/u);
     expect(events).toEqual(['mounted', 'restored', 'blockers']);
-  });
-
-  it('keeps a created worktree rollback-eligible when preparation is blocked', async () => {
-    const handOffWorktree = vi.fn();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-
-    const run = runInteractiveStart(
-      makeDispatch({
-        feature: 'ship it',
-        handOffWorktree,
-        deps: {
-          spawnServer: vi.fn(),
-          runHeadless: vi.fn(),
-          runRpc: vi.fn(),
-          initStores: async () => {},
-          renderApp: renderAppFake,
-          prepareExecution: async () => ({ kind: 'blocked', report: blockedReport(tmp) }),
-        },
-      }),
-    );
-
-    await expect(run).rejects.toThrow(/Run readiness blocked/u);
-    expect(handOffWorktree).not.toHaveBeenCalled();
   });
 });
 

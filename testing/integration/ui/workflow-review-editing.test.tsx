@@ -14,6 +14,10 @@ import { formatTasks } from '../../../src/engine/spec/formatter.js';
 import { REVIEW_HINT } from '../../../src/features/workflow/review-commands.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { mountWorkflowScreen, prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
+import { sessionDir } from '../../../src/core/paths.js';
+
+/** The session `mountWorkflowScreen` prepares; a session artifact lives under its directory. */
+const WORKFLOW_SCREEN_SESSION_ID = 'workflow-screen-session';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -24,7 +28,6 @@ const { routerStore } = await import('../../../src/stores/navigation/router.js')
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
 const { editorStore } = await import('../../../src/stores/ui/editor.js');
 const { feedbackStore } = await import('../../../src/stores/ui/feedback.js');
-const { focusStore } = await import('../../../src/stores/ui/focus.js');
 const { reviewStore } = await import('../../../src/stores/workflow/review.js');
 const { externalEditRequestStore } = await import(
   '../../../src/stores/ui/external-edit-request.js'
@@ -95,8 +98,8 @@ describe('WorkflowScreen review editing', () => {
     routerStore.init({ screen: 'home' });
   });
 
-  it('configured rich brief review still uses the simple review surface and workflow footer', async () => {
-    const projectDir = createTempDir('workflow-screen-rich-footer');
+  it('brief review uses the simple review surface and workflow footer', async () => {
+    const projectDir = createTempDir('workflow-screen-review-footer');
     try {
       const tasksPath = join(projectDir, 'tasks.md');
       writeFileSync(
@@ -104,20 +107,20 @@ describe('WorkflowScreen review editing', () => {
         formatTasks([
           makeTask({
             id: 'T001',
-            title: 'Rich footer task',
-            file: 'src/rich-footer.ts',
+            title: 'Simple footer task',
+            file: 'src/review-footer.ts',
             evidence: ['reviewable proof'],
-            scope: { inBounds: ['src/rich-footer.ts'], outOfBounds: [] },
+            scope: { inBounds: ['src/review-footer.ts'], outOfBounds: [] },
           }),
         ]),
         'utf-8',
       );
-      const config = makeConfig({ workflow: { briefReview: 'rich' } });
+      const config = makeConfig({ workflow: { briefReview: 'simple' } });
       const prepared = prepareWorkflowExecution({
         projectDir,
-        feature: 'rich footer review',
+        feature: 'review footer review',
         config,
-        sessionId: 'rich-footer-review',
+        sessionId: 'review-footer-review',
       });
       configStore.__testReset({ config, projectDir });
       terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
@@ -128,7 +131,7 @@ describe('WorkflowScreen review editing', () => {
       runWorkflow.mockImplementationOnce(async (opts) => {
         lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
         await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
-        return makeSummary({ feature: 'rich footer review' });
+        return makeSummary({ feature: 'review footer review' });
       });
 
       const ui = renderFeature(
@@ -136,7 +139,7 @@ describe('WorkflowScreen review editing', () => {
       );
 
       await vi.waitFor(() => {
-        expect(ui.lastFrame() ?? '').toContain('Rich footer task');
+        expect(ui.lastFrame() ?? '').toContain('Simple footer task');
         expect(ui.lastFrame() ?? '').toContain(REVIEW_HINT);
       });
       const frame = ui.lastFrame() ?? '';
@@ -217,29 +220,32 @@ describe('WorkflowScreen review editing', () => {
     }
   });
 
-  it('Ctrl+E opens the inline field editor for brief review and does not spawn the external editor', async () => {
+  it('Ctrl+E opens the inline raw editor for brief review and does not spawn the external editor', async () => {
     const projectDir = createTempDir('workflow-screen-brief-inline');
     try {
-      const tasksPath = join(projectDir, 'tasks.md');
       const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
-      writeFileSync(
-        tasksPath,
-        formatTasks([
-          makeTask({
-            id: 'T001',
-            title: 'Inline shortcut task',
-            file: 'src/inline-shortcut.ts',
-            evidence: ['reviewable proof'],
-            scope: { inBounds: ['src/inline-shortcut.ts'], outOfBounds: [] },
-          }),
-        ]),
-        'utf-8',
-      );
+      // The brief file Ctrl+E edits is a session artifact: the inline editor reads it through the
+      // session confinement, so a repo-root path would be refused the way production refuses one.
+      // The run owns the session directory, so the file is written once the run has allocated it.
+      const tasksPath = join(sessionDir(projectDir, WORKFLOW_SCREEN_SESSION_ID), 'tasks.md');
       stubReviewEditor(editorPath);
       vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
       vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', 'inline-must-not-spawn');
 
       runWorkflow.mockImplementationOnce(async (opts) => {
+        writeFileSync(
+          tasksPath,
+          formatTasks([
+            makeTask({
+              id: 'T001',
+              title: 'Inline shortcut task',
+              file: 'src/inline-shortcut.ts',
+              evidence: ['reviewable proof'],
+              scope: { inBounds: ['src/inline-shortcut.ts'], outOfBounds: [] },
+            }),
+          ]),
+          'utf-8',
+        );
         lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
         void opts.callbacks.onApprovalNeeded('briefs', tasksPath);
         return makeSummary();
@@ -249,7 +255,6 @@ describe('WorkflowScreen review editing', () => {
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain('Inline shortcut task');
       });
-      focusStore.set('brief', 0);
       await flushEffects();
 
       ui.stdin.write(CTRL_E);
@@ -258,7 +263,8 @@ describe('WorkflowScreen review editing', () => {
         expect(editorStore.get().status).toBe('open');
       });
       const session = editorStore.get();
-      expect(session.status === 'open' ? session.surface : null).toBe('field');
+      expect(session.status === 'open' ? session.surface : null).toBe('raw');
+      expect(session.status === 'open' ? session.value : null).toContain('Inline shortcut task');
       // Single owner (REQ-049 / CON-D): Ctrl+E is the inline editor's alone; it must not also
       // fire the composer's external-editor path, so the fake $EDITOR is never spawned.
       expect(existsSync(logPath)).toBe(false);

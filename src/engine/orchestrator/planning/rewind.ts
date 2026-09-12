@@ -19,10 +19,7 @@ import {
 import { formatDrainedMessages } from '../queue/prompt.js';
 import { regenerateTasks, regenerateTasksIfNeeded, regeneratePlanAndTasks } from './regen.js';
 import { handlePlanningFailure } from './failure.js';
-import { runBriefQuality } from './brief-quality-run.js';
-import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
-import type { PhaseRecoveryBinding } from '../run/phases.js';
-import { parkedResult } from './brief-quality-preparation.js';
+import type { PlanningPhaseOptions, PlanningProducerResult } from './types.js';
 
 type RewindPending = NonNullable<PlanningPhaseOptions['rewindPending']>;
 
@@ -33,10 +30,9 @@ async function finishPlanAndBriefsApproval(args: {
   tasks: Task[];
   skipPlanApproval: boolean;
   metadata: SpecMetadata;
-  recovery: PhaseRecoveryBinding;
-}): Promise<PlanningPhaseResult> {
-  const { wctx, planner, tasks, skipPlanApproval, metadata, recovery } = args;
-  const { projectDir, sessionId, config, callbacks } = wctx;
+}): Promise<PlanningProducerResult> {
+  const { wctx, planner, tasks, skipPlanApproval, metadata } = args;
+  const { projectDir, sessionId, callbacks } = wctx;
   const signal = wctx.signal;
   let state = args.state;
 
@@ -56,7 +52,6 @@ async function finishPlanAndBriefsApproval(args: {
       bus: wctx.bus,
       state,
       signal,
-      persistTranscript: config.workflow.persistTranscript,
       specMetadata: metadata,
       sinks: wctx.sinks,
     });
@@ -81,20 +76,7 @@ async function finishPlanAndBriefsApproval(args: {
     finalTasks = regen.tasks;
   }
 
-  const briefQuality = await runBriefQuality({
-    tasks: finalTasks,
-    state,
-    planner,
-    wctx,
-    recovery,
-  });
-  if (!briefQuality.ok) return briefQuality.result;
-  state = briefQuality.state;
-  finalTasks = briefQuality.tasks;
-
-  // Brief approval belongs to the owner-level phase runner. The producer only
-  // prepares and admits the quality-checked Briefs, then returns to it.
-  return parkedResult({ recovery, sessionId, state: { ...state, tasks: finalTasks } });
+  return { disposition: 'tasks-ready', state: { ...state, tasks: finalTasks }, tasks: finalTasks };
 }
 
 async function regenerateRewoundArtifact(args: {
@@ -144,19 +126,10 @@ export async function handleRewindSpec(args: {
   metadata: SpecMetadata;
   skillsContext: string | undefined;
   state: WorkflowState;
-  recovery: PhaseRecoveryBinding;
-}): Promise<PlanningPhaseResult> {
-  const {
-    opts,
-    rewindPending,
-    skipSpecApproval,
-    skipPlanApproval,
-    metadata,
-    skillsContext,
-    recovery,
-  } = args;
+}): Promise<PlanningProducerResult> {
+  const { opts, rewindPending, skipSpecApproval, skipPlanApproval, metadata, skillsContext } = args;
   const { wctx, planner } = opts;
-  const { projectDir, sessionId, config, callbacks } = wctx;
+  const { projectDir, sessionId, callbacks } = wctx;
   const signal = wctx.signal;
   let state = args.state;
 
@@ -166,7 +139,6 @@ export async function handleRewindSpec(args: {
     appendMessage(
       { projectDir, sessionId },
       { role: 'user', phase: 'specifying', text: rewindPending.comment },
-      { persistTranscript: config.workflow.persistTranscript },
     );
     const current = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
     const queued = readQueueForPrompt({ projectDir, sessionId, state });
@@ -217,7 +189,6 @@ export async function handleRewindSpec(args: {
       bus: wctx.bus,
       state,
       signal,
-      persistTranscript: config.workflow.persistTranscript,
       specMetadata: metadata,
       sinks: wctx.sinks,
     });
@@ -251,7 +222,6 @@ export async function handleRewindSpec(args: {
     tasks,
     skipPlanApproval,
     metadata,
-    recovery,
   });
 }
 
@@ -261,11 +231,10 @@ export async function handleRewindPlan(args: {
   skipPlanApproval: boolean;
   metadata: SpecMetadata;
   state: WorkflowState;
-  recovery: PhaseRecoveryBinding;
-}): Promise<PlanningPhaseResult> {
-  const { opts, rewindPending, skipPlanApproval, metadata, recovery } = args;
+}): Promise<PlanningProducerResult> {
+  const { opts, rewindPending, skipPlanApproval, metadata } = args;
   const { wctx, planner } = opts;
-  const { projectDir, sessionId, config, callbacks } = wctx;
+  const { projectDir, sessionId, callbacks } = wctx;
   const signal = wctx.signal;
   let state = args.state;
 
@@ -273,7 +242,6 @@ export async function handleRewindPlan(args: {
     appendMessage(
       { projectDir, sessionId },
       { role: 'user', phase: 'planning', text: rewindPending.comment },
-      { persistTranscript: config.workflow.persistTranscript },
     );
     const current = readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
     const queued = readQueueForPrompt({ projectDir, sessionId, state });
@@ -330,6 +298,5 @@ export async function handleRewindPlan(args: {
     tasks: rewindTasks,
     skipPlanApproval,
     metadata,
-    recovery,
   });
 }

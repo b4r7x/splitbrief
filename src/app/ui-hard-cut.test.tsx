@@ -2,6 +2,7 @@ import { Box, Text } from 'ink';
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { Composer } from '../components/composer/composer.js';
@@ -10,13 +11,29 @@ import { getLogo } from '../features/home/logo.js';
 import { ConversationFlow } from '../features/workflow/components/conversation-flow/flow.js';
 import { InputFooter } from '../features/workflow/components/input-footer.js';
 import { configStore } from '../stores/project/config.js';
-import { routerStore } from '../stores/navigation/router.js';
+import { routerStore, type RouteData } from '../stores/navigation/router.js';
 import { eventsStore } from '../stores/workflow/events.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { Layout } from './layout.js';
 import { HomeScreen } from './screens/home.js';
+
+function localWorkflowRoute(feature: string): RouteData {
+  return {
+    screen: 'workflow',
+    execution: {
+      kind: 'local',
+      prepared: makePreparedExecution({
+        projectDir: '/tmp/splitbrief-ui',
+        sessionId: 'ui-hard-cut-session',
+        feature,
+        config: makeConfig(),
+        gates: () => [],
+      }),
+    },
+  };
+}
 
 function NavigationReturnHarness() {
   const route = routerStore.use((state) => state);
@@ -118,15 +135,7 @@ const cases: ReadonlyArray<{
     label: 'byline-not-row',
     verify: () => {
       configStore.__testReset({ projectDir: '/tmp/splitbrief-ui', config: makeConfig() });
-      routerStore.init({
-        screen: 'workflow',
-        execution: {
-          kind: 'attached',
-          feature: 'preserve status placement',
-          sessionId: 'attached-session',
-          attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'test-token' },
-        },
-      });
+      routerStore.init(localWorkflowRoute('preserve status placement'));
       terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: false });
       eventsStore.__testReset({
         events: [
@@ -163,15 +172,7 @@ const cases: ReadonlyArray<{
     verify: async () => {
       configStore.__testReset({ projectDir: '/tmp/splitbrief-ui', config: makeConfig() });
       terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
-      routerStore.init({
-        screen: 'workflow',
-        execution: {
-          kind: 'attached',
-          feature: 'preserve route state',
-          sessionId: 'preserve-session',
-          attach: { sockPath: '/tmp/preserve.sock', authToken: 'keep-this-token' },
-        },
-      });
+      routerStore.init(localWorkflowRoute('preserve route state'));
       const origin = routerStore.get();
       const ui = renderFeature(<NavigationReturnHarness />);
       await flushEffects();

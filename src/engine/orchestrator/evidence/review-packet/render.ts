@@ -60,7 +60,7 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
       ? ['- No checkpoints available.']
       : packet.checkpoints.items.map(
           (checkpoint) =>
-            `- ${checkpoint.id}${checkpoint.name ? ` (${checkpoint.name})` : ''}: ${formatCheckpointKind(checkpoint)}, ${checkpoint.trackedFileCount} files, diff \`${checkpoint.diffCommand}\`, restore \`${checkpoint.restoreCommand}\``,
+            `- ${checkpoint.id}${checkpoint.name ? ` (${checkpoint.name})` : ''}: ${formatCheckpointKind(checkpoint)}, ${checkpoint.trackedFileCount} files`,
         );
   const driftLines =
     packet.drift.findings.length === 0

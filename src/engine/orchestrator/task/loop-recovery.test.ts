@@ -355,7 +355,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           type: 'warning',
           code: 'recovery_pending_unresolved',
           category: 'recovery',
-          transcriptSafe: true,
           message: expect.stringContaining('context-overflow'),
         }),
       );

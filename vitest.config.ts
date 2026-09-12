@@ -56,10 +56,11 @@ export default defineConfig({
           setupFiles: [stateHomeSetup],
           environment: 'node',
           globals: false,
-          // Coverage instrumentation + fork contention regularly blows past the
-          // interactive 10s budget; keep local `npm test` snappy.
-          testTimeout: underCoverage ? 40_000 : 10_000,
-          hookTimeout: underCoverage ? 60_000 : 10_000,
+          // Coverage instrumentation + fork contention regularly blows past a
+          // 10s budget on the full 1,000-file run; 30s keeps a stuck test visible
+          // while letting real-timer and subprocess tests survive a loaded box.
+          testTimeout: underCoverage ? 40_000 : 30_000,
+          hookTimeout: underCoverage ? 60_000 : 30_000,
           pool: 'forks',
           maxWorkers: 4,
         },

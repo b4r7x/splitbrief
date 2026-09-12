@@ -76,7 +76,6 @@ describe('validateCommitAndAdvance', () => {
       type: 'warning',
       taskId: 'T001',
       code: 'validation_baseline_exempt',
-      transcriptSafe: true,
     });
     if (exemptWarnings[0] !== undefined && exemptWarnings[0].type === 'warning') {
       expect(exemptWarnings[0].message).toContain('T001');

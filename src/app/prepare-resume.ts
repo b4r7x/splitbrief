@@ -1,6 +1,4 @@
-import { configForSessionTranscriptPolicy } from '../core/sessions/io.js';
-import { acquireStateAuthority, releaseStateAuthority } from '../core/state/authority.js';
-import { loadStateForResume } from '../core/state/resume-authority.js';
+import { loadOwnerWorkflowState } from '../core/state/resume-hydration.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { SessionRef } from '../core/types/session-ref.js';
 import { prepareExecution } from '../engine/runners/prepare-execution/prepare-execution.js';
@@ -42,7 +40,7 @@ export async function prepareSessionResume(
   return prepareExecution({
     existingSession: input.ref,
     feature: input.state.feature,
-    effectiveConfig: configForSessionTranscriptPolicy(config, input.ref),
+    effectiveConfig: config,
     resumeState: input.state,
     signal,
     policy: {
@@ -54,9 +52,7 @@ export async function prepareSessionResume(
 }
 
 export const sessionSelectDeps: SessionSelectDeps = {
-  loadStateForResume,
-  acquireStateAuthority,
-  releaseStateAuthority,
+  loadResumeState: loadOwnerWorkflowState,
   prepareResume: prepareSessionResume,
   cancelPendingApproval: closeApprovalPrompt,
 };

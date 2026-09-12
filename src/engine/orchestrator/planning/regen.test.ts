@@ -15,7 +15,6 @@ import {
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTestSinks, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
 import { formatTasks } from '../../spec/formatter.js';
-import { createEventBus } from '../../events/bus.js';
 import { regeneratePlanAndTasks, regenerateTasks } from './regen.js';
 
 let dirs: string[] = [];
@@ -128,10 +127,6 @@ describe('regeneratePlanAndTasks', () => {
       events.filter((event) => event.type === 'artifact_written').map((event) => event.filename),
     ).toEqual([PLAN_FILE]);
     expect(events.filter((event) => event.type.startsWith('brief_quality'))).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'brief_generation_published')).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'brief_execution_permit_issued')).toHaveLength(
-      0,
-    );
   });
 
   it('commits queued feedback and projects the regenerated plan as an approval document after plan and task regeneration both succeed', async () => {
@@ -205,96 +200,10 @@ describe('regeneratePlanAndTasks', () => {
     expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
     expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
     expect(events.filter((event) => event.type.startsWith('brief_quality'))).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'brief_generation_published')).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'brief_execution_permit_issued')).toHaveLength(
-      0,
-    );
   });
 });
 
 describe('regenerateTasks', () => {
-  it('binds the recovery provider call to the supplied epoch, operation, and request identity', async () => {
-    const { projectDir, sessionId } = setupProjectDir();
-    const dispatch = vi.fn().mockResolvedValue({
-      kind: 'completed',
-      requestId: 'request-expected',
-      dispatchPossibility: 'possible',
-      remoteObservation: 'confirmed-final',
-      text: REAL_TASKS_MD,
-      providerCode: null,
-      usage: null,
-    });
-    const planner = makePlanner();
-
-    const result = await regenerateTasks({
-      projectDir,
-      sessionId,
-      planner,
-      callbacks: makeCallbacks().callbacks,
-      bus: createEventBus(),
-      state: createInitialState('feature'),
-      metadata: TEST_METADATA,
-      briefRecovery: {
-        epochId: 'epoch-expected',
-        operationId: 'operation-expected',
-        requestId: 'request-expected',
-        provider: { dispatch },
-      },
-    });
-
-    expect(result.tasks).toHaveLength(1);
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId,
-        epochId: 'epoch-expected',
-        operationId: 'operation-expected',
-        requestId: 'request-expected',
-      }),
-    );
-    expect(planner.review).not.toHaveBeenCalled();
-  });
-
-  it('preserves the paid operation identity when malformed regenerated output fails parsing', async () => {
-    const { projectDir, sessionId } = setupProjectDir();
-    const dispatch = vi.fn().mockResolvedValue({
-      kind: 'completed',
-      requestId: 'request-malformed',
-      dispatchPossibility: 'possible',
-      remoteObservation: 'confirmed-final',
-      text: '---\nid: T001\n---\n',
-      providerCode: null,
-      usage: { inputTokens: 11, outputTokens: 5 },
-    });
-    const planner = makePlanner();
-
-    await expect(
-      regenerateTasks({
-        projectDir,
-        sessionId,
-        planner,
-        callbacks: makeCallbacks().callbacks,
-        bus: createEventBus(),
-        state: createInitialState('feature'),
-        metadata: TEST_METADATA,
-        briefRecovery: {
-          epochId: 'epoch-malformed',
-          operationId: 'operation-malformed',
-          requestId: 'request-malformed',
-          provider: { dispatch },
-        },
-      }),
-    ).rejects.toThrow('Invalid task block');
-
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
-      epochId: 'epoch-malformed',
-      operationId: 'operation-malformed',
-      requestId: 'request-malformed',
-    });
-    expect(planner.review).not.toHaveBeenCalled();
-  });
-
   it('compiles the prompt from the tasks.md on disk, not the stale in-memory state.tasks', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus } = makeBusRecorder();
@@ -469,10 +378,6 @@ This replacement must fail strict parsing.
     expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
     expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
     expect(events.filter((event) => event.type.startsWith('brief_quality'))).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'brief_generation_published')).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'brief_execution_permit_issued')).toHaveLength(
-      0,
-    );
   });
 
   it('an abort during regeneration review parks the retry prompt instead of failing', async () => {

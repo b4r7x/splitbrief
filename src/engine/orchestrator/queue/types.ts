@@ -19,7 +19,6 @@ export interface EnqueueUserMessageOptions {
   text: string;
   phase: Phase;
   bus: EventBus;
-  persistTranscript: boolean;
   enforcePhasePolicy?: boolean | undefined;
 }
 

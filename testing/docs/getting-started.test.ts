@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { getShortcutKey } from '../../src/core/keybindings/registry.js';
-import { ATTACHED_AVAILABLE_COMMANDS } from '../../src/core/runtime/commands/registry.js';
+import { createRuntimeCommands } from '../../src/core/runtime/commands/registry.js';
 import { COPY_TARGETS } from '../../src/core/runtime/commands/types.js';
+import { makeCtx } from '#testing/helpers/runtime-commands.js';
 import {
   BUDGET_PAUSE_THRESHOLD,
   BUDGET_WARNING_THRESHOLD,
@@ -78,7 +79,8 @@ describe('cost transparency section', () => {
   });
 
   it('names the sidebar toggle and the width below which it paints nothing', () => {
-    expect(ATTACHED_AVAILABLE_COMMANDS.has('/sidebar')).toBe(true);
+    const commands = createRuntimeCommands(makeCtx());
+    expect(commands.some((command) => command.name === '/sidebar')).toBe(true);
     expect(getWorkflowSidebarWidth({ cols: 119, sidebarVisible: true })).toBe(0);
     expect(getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true })).toBe(0);
     expect(costSection).toContain('`/sidebar`');

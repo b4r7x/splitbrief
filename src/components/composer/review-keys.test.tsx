@@ -159,8 +159,8 @@ describe('Composer review action keys', () => {
     ui.unmount();
   });
 
-  // The attached/detached IPC client drives a review gate by sending the command as text, so the
-  // typed vocabulary has to keep settling the gate after the one-key shortcuts were added.
+  // A review gate can also be settled by sending the command as text, so the typed vocabulary has
+  // to keep working after the one-key shortcuts were added.
   it.each([
     ['approve', { kind: 'brief-review-command', command: { action: 'approve' } }],
     ['reject', { kind: 'brief-review-command', command: { action: 'reject' } }],

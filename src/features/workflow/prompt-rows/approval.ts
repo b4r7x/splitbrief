@@ -166,6 +166,26 @@ export function approvalOptionLabelText(input: {
 
 export const APPROVAL_OPTION_FIRST_ROW_OFFSET = 4;
 
+/** The blank rows a sticky panel paints: two above the options, one below them. */
+export const STICKY_SPACER_ROWS = 3;
+/** Of those, the ones that sit above the options, so shedding them moves the option rows up. */
+const STICKY_LEAD_SPACER_ROWS = 2;
+
+/**
+ * What a region shorter than the panel takes from it. The blank rows go first, top down: a clipped
+ * panel loses its bottom border, the note that `w` writes to disk, and the `esc deny` legend —
+ * three things the reader cannot answer the gate without. Whitespace is the only row that says
+ * nothing, so it is the only row that pays.
+ */
+export function stickySpacersShed(promptRows: number, boxRows: number): number {
+  return Math.min(Math.max(0, promptRows - boxRows), STICKY_SPACER_ROWS);
+}
+
+/** How far up shedding those blanks moves the option rows. */
+export function stickyLeadShed(spacersShed: number): number {
+  return Math.min(spacersShed, STICKY_LEAD_SPACER_ROWS);
+}
+
 export interface PromptOptionZone {
   key: string;
   left: number;
@@ -195,6 +215,7 @@ export function getApprovalOptionZones(input: {
   promptRows: number;
   subjectRows: number;
   options: ReadonlyArray<ApprovalOption>;
+  leadShed?: number;
 }): PromptOptionZone[] {
   const width = approvalTextWidth(input.cols);
   const keyWidth = approvalKeyColumnWidth(input.options);
@@ -202,7 +223,7 @@ export function getApprovalOptionZones(input: {
   const right = Math.max(1, input.cols);
   const boxBottom = input.boxTop + input.promptRows - 1;
   const zones: PromptOptionZone[] = [];
-  let offset = APPROVAL_OPTION_FIRST_ROW_OFFSET + input.subjectRows;
+  let offset = APPROVAL_OPTION_FIRST_ROW_OFFSET + input.subjectRows - (input.leadShed ?? 0);
   for (const option of input.options) {
     const optionRows = approvalOptionLabelLines({ option, keyWidth, width }).length;
     const top = input.boxTop + offset;
@@ -219,6 +240,7 @@ export function getStickyOptionZones(input: {
   cols: number;
   promptRows: number;
   actionDescription: string;
+  leadShed?: number;
 }): PromptOptionZone[] {
   return getApprovalOptionZones({
     boxTop: input.boxTop,
@@ -226,6 +248,7 @@ export function getStickyOptionZones(input: {
     promptRows: input.promptRows,
     subjectRows: stickyRequestRowCount(input.actionDescription, input.cols),
     options: STICKY_OPTIONS,
+    ...(input.leadShed === undefined ? {} : { leadShed: input.leadShed }),
   });
 }
 

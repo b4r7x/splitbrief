@@ -18,9 +18,9 @@ describe('getSummaryDetailViewportHeight', () => {
     expect(withoutReviewer - withReviewer).toBe(1);
   });
 
-  it('leaves the height unchanged when not small', () => {
+  it('charges the reviewer row its gap too when not small', () => {
     const base = {
-      terminalRows: 24,
+      terminalRows: 40,
       isSmall: false,
       summary: makeSummary({ plannerTool: 'claude-code' }),
       implementerSummary: 'Ollama',
@@ -29,7 +29,7 @@ describe('getSummaryDetailViewportHeight', () => {
     };
     const withReviewer = getSummaryDetailViewportHeight(base);
     const withoutReviewer = getSummaryDetailViewportHeight({ ...base, reviewerSummary: null });
-    expect(withReviewer).toBe(withoutReviewer);
+    expect(withoutReviewer - withReviewer).toBe(2);
   });
 
   it('never drops below the one-row floor', () => {

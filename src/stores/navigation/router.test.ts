@@ -173,7 +173,7 @@ describe('routerStore', () => {
     expect(feedbackStore.get().message).toBeNull();
   });
 
-  it('represents only prepared local or attached workflow routes', () => {
+  it('represents only prepared local workflow routes', () => {
     const prepared = preparedExecution('resume');
     routerStore.init({ screen: 'workflow', execution: { kind: 'local', prepared } });
 
@@ -181,23 +181,6 @@ describe('routerStore', () => {
     expect(local.screen).toBe('workflow');
     if (local.screen === 'workflow' && local.execution.kind === 'local') {
       expect(local.execution.prepared).toBe(prepared);
-    }
-
-    routerStore.init({
-      screen: 'workflow',
-      execution: {
-        kind: 'attached',
-        feature: 'remote workflow',
-        sessionId: 'attached-session',
-        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'token' },
-      },
-    });
-
-    const attached = routerStore.get();
-    expect(attached.screen).toBe('workflow');
-    if (attached.screen === 'workflow' && attached.execution.kind === 'attached') {
-      expect(attached.execution.feature).toBe('remote workflow');
-      expect(attached.execution.attach.sockPath).toBe('/tmp/splitbrief.sock');
     }
 
     // @ts-expect-error partial local workflow routes are forbidden

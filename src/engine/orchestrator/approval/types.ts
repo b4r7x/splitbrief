@@ -6,10 +6,6 @@ import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 
-export function isConfiguredHeadless(config: Config): boolean {
-  return config.approval?.headless === true;
-}
-
 export type GateActionInput = {
   actionDescription: string;
   task: Task;

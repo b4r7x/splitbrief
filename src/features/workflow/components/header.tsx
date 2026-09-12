@@ -7,12 +7,15 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { formatCollapsedSeatLine } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
+import type { CrewSeatId } from '../../../core/crew/identity.js';
+import { formatSeatResetNote } from '../seat-reset.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
 import { measureRailCells, Rail } from './rail.js';
 
@@ -79,6 +82,17 @@ function ElapsedClock({
   return <Text color={t.textDim}>{elapsed}</Text>;
 }
 
+/** An open halt annotates its own seat and only while it names both the seat and a reset. */
+function seatResetNotes(
+  seat: CrewSeatId | null,
+  resetAt: number | null,
+): Partial<Record<CrewSeatId, string>> | undefined {
+  if (seat === null || resetAt === null) return undefined;
+  const notes: Partial<Record<CrewSeatId, string>> = {};
+  notes[seat] = formatSeatResetNote(resetAt);
+  return notes;
+}
+
 export function getHeaderLayout(input: {
   cols: number;
   railCells: number;
@@ -98,12 +112,13 @@ export function getHeaderLayout(input: {
 }
 
 export function Header({ startedAt, railForm }: HeaderProps) {
-  const [{ cols }, lifecycle, tasks, tokens, eventsState] = useStores(
+  const [{ cols }, lifecycle, tasks, tokens, eventsState, recoveryNotice] = useStores(
     terminalSizeStore,
     lifecycleStore,
     tasksStore,
     tokensStore,
     eventsStore,
+    recoveryNoticeStore,
   );
   const { startedAt: lifecycleStartedAt, endedAt, durationMs, phase, cancelled } = lifecycle;
   const t = useTheme();
@@ -122,6 +137,7 @@ export function Header({ startedAt, railForm }: HeaderProps) {
   // The room does not depend on the line, so the first pass measures it, the
   // line is cut to it, and the second pass lays the bar out around what fits.
   const { seatRoom } = getHeaderLayout({ cols, railCells });
+  const seatNotes = seatResetNotes(recoveryNotice.seat, recoveryNotice.resetAt);
   const seatLine = config
     ? formatCollapsedSeatLine({
         planner: config.planner,
@@ -129,6 +145,7 @@ export function Header({ startedAt, railForm }: HeaderProps) {
         reviewer: configuredReviewerRunner(config),
         budget: seatRoom,
         displayNames,
+        ...(seatNotes !== undefined && { notes: seatNotes }),
       })
     : '';
   const layout = getHeaderLayout({

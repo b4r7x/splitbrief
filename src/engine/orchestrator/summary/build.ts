@@ -5,19 +5,22 @@ import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { formatCost } from '../../../core/formatting.js';
 import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';
-import { projectCostPredictionForTranscriptPolicy } from '../../events/protection/protect.js';
-import { featureForTranscriptPolicy } from '../../../core/sessions/session-id.js';
 import { loadSessionArtifactRollups } from './artifact-rollups.js';
 import { reconcileTokenUsageWithSessionLog } from './usage-reconcile.js';
 import {
   applyTaskBreakdownCosts,
   countLocalAndEscalatedTasks,
-  projectTaskBreakdownForTranscriptPolicy,
   type BuildSummaryState,
 } from './task-metrics.js';
 
 export type { BuildSummaryState };
 
+/**
+ * The seat names here are the run's **display identity** — the seat it is on
+ * now. A seat swap moves them; it does not move the spend already booked
+ * against the seat that produced it, which `buildSummary` reads from the saved
+ * state instead.
+ */
 export type SummaryBase = {
   feature: string;
   startTime: number;
@@ -32,7 +35,6 @@ export type SummaryBase = {
   sessionId?: string;
   costPrediction?: CostPrediction | undefined;
   pricingCache?: ModelCacheAccessor | undefined;
-  persistTranscript?: boolean | undefined;
 };
 
 type BuildSummaryOptions = SummaryBase & {
@@ -59,7 +61,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     sessionId,
     costPrediction,
     pricingCache,
-    persistTranscript = true,
   } = opts;
   const totalTasks = state.tasks.length;
   const completionCounts = countLocalAndEscalatedTasks(state, taskBreakdowns);
@@ -77,18 +78,30 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
         })
       : state.tokenUsage;
 
+  // Spend is attributed to the seat that spent it. The saved state records that
+  // seat at the run's start and a seat swap never rewrites it, so a run that
+  // changed tools mid-flight is still costed against the tool it was on when
+  // the tokens were booked, while the summary it returns names the seat in use.
+  const plannerSpentTool = state.plannerTool ?? plannerTool;
+  const plannerSpentModel = state.plannerTool === undefined ? plannerModel : state.plannerModel;
+  const implementerSpentTool = state.implementerTool ?? implementerTool;
+  const implementerSpentModel =
+    state.implementerTool === undefined ? implementerModel : state.implementerModel;
+  const reviewerSpentTool = state.reviewerTool ?? reviewerTool;
+  const reviewerSpentModel = state.reviewerTool === undefined ? reviewerModel : state.reviewerModel;
+
   const costBreakdown = calculateCostBreakdown(
     {
       tokenUsage,
       totalTasks,
       escalatedCount: escalatedToPlanner,
       completedLocalTasks: completedByLocal,
-      plannerTool,
-      implementerTool,
-      plannerModel,
-      implementerModel,
-      ...(reviewerTool !== undefined && { reviewerTool }),
-      ...(reviewerModel !== undefined && { reviewerModel }),
+      plannerTool: plannerSpentTool,
+      implementerTool: implementerSpentTool,
+      plannerModel: plannerSpentModel,
+      implementerModel: implementerSpentModel,
+      ...(reviewerSpentTool !== undefined && { reviewerTool: reviewerSpentTool }),
+      ...(reviewerSpentModel !== undefined && { reviewerModel: reviewerSpentModel }),
       taskBreakdowns,
     },
     pricingCache,
@@ -100,17 +113,13 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   const costedBreakdowns = applyTaskBreakdownCosts({
     state,
     taskBreakdowns,
-    plannerTool,
-    implementerTool,
-    ...(plannerModel !== undefined && { plannerModel }),
-    ...(implementerModel !== undefined && { implementerModel }),
-    ...(reviewerTool !== undefined && { reviewerTool }),
+    plannerTool: plannerSpentTool,
+    implementerTool: implementerSpentTool,
+    ...(plannerSpentModel !== undefined && { plannerModel: plannerSpentModel }),
+    ...(implementerSpentModel !== undefined && { implementerModel: implementerSpentModel }),
+    ...(reviewerSpentTool !== undefined && { reviewerTool: reviewerSpentTool }),
     pricingCache,
   });
-
-  const taskBreakdown = persistTranscript
-    ? costedBreakdowns
-    : costedBreakdowns?.map(projectTaskBreakdownForTranscriptPolicy);
 
   let evidenceSummary: Summary['evidenceSummary'];
   let briefQuality: Summary['briefQuality'];
@@ -129,7 +138,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   }
 
   return {
-    feature: featureForTranscriptPolicy(feature, persistTranscript),
+    feature,
     totalTasks,
     completedByLocal,
     escalatedToPlanner,
@@ -139,7 +148,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     tokenUsage,
     estimatedCostSavings,
     escalationRate,
-    taskBreakdown,
+    taskBreakdown: costedBreakdowns,
     costBreakdown,
     plannerTool,
     plannerModel,
@@ -153,9 +162,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     ...(briefQuality && { briefQuality }),
     ...(driftSummary && { driftSummary }),
     ...(chainDriftSummary && { chainDriftSummary }),
-    ...(costPrediction !== undefined && {
-      costPrediction: projectCostPredictionForTranscriptPolicy(costPrediction, persistTranscript),
-    }),
+    ...(costPrediction !== undefined && { costPrediction }),
     ...(checkpointSummary && { checkpointSummary }),
     ...(reviewPacket && { reviewPacket }),
   };

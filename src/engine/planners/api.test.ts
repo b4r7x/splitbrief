@@ -92,7 +92,6 @@ function makeApiPlannerConfig(provider: string): Config {
     validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
     workflow: {
       maxRetries: 3,
-      persistTranscript: true,
       compactionFormat: 'auto',
     },
   };

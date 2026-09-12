@@ -8,10 +8,12 @@ import { modelCacheStore } from './model-cache/state.js';
 import { detectionStore } from '../project/detection.js';
 import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev-cache.js';
 
+// Persisted context keys are `<source>|<percent-encoded context>`; ':' is not
+// in the accepted alphabet, so a fixture must use the same shape as a real key.
 const contexts = {
-  readiness: 'adapter-hydration:readiness',
-  modelsDev: 'adapter-hydration:models-dev',
-  cliModels: 'adapter-hydration:cli-models',
+  readiness: 'readiness|adapter-hydration',
+  modelsDev: 'modelsDev|adapter-hydration',
+  cliModels: 'cliModels|adapter-hydration',
 };
 
 const catalogSnapshot: ModelsDevCatalogSnapshot = {
@@ -112,13 +114,13 @@ describe('hydrateDetectionIntoStores', () => {
     hydrateDetectionIntoStores({
       detection: detectionStore,
       contexts: {
-        readiness: 'foreign:readiness',
-        modelsDev: 'foreign:models-dev',
-        cliModels: 'foreign:cli-models',
+        readiness: 'readiness|foreign',
+        modelsDev: 'modelsDev|foreign',
+        cliModels: 'cliModels|foreign',
       },
       foreignContext: true,
       snapshot: {
-        contextKey: 'foreign:readiness',
+        contextKey: 'readiness|foreign',
         fetchedAt: 100,
         validatedAt: 200,
         generation: 3,
@@ -139,7 +141,7 @@ describe('hydrateDetectionIntoStores', () => {
       contexts,
       foreignContext: true,
       snapshot: {
-        contextKey: 'someone-elses-context',
+        contextKey: 'readiness|someone-elses-context',
         fetchedAt: 100,
         validatedAt: 200,
         generation: 3,

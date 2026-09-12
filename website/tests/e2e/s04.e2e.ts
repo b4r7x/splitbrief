@@ -39,19 +39,19 @@ test('the colophon at 1440 and 1920', async ({ page }) => {
     const creed = await box(page.locator('.s04 .creed'));
     const tree = await box(page.locator('.tree'));
     const pairs: [number, number][] = [
-      [breath.x, wide ? 854 : 621],
+      [breath.x, wide ? 831.33 : 621],
       [breath.y, s04.y + 128],
-      [breath.w, wide ? 802 : 755],
+      [breath.w, wide ? 960.67 : 755],
       [breath.h, wide ? 259 : 226],
-      [lead.x, wide ? 264 : 64],
+      [lead.x, wide ? 128 : 64],
       [lead.y, s04.y + (wide ? 435 : 402)],
-      [callouts.x, wide ? 854 : 621],
+      [callouts.x, wide ? 831.33 : 621],
       [callouts.y, lead.y],
       [creed.y, s04.y + (wide ? 710 : 670)],
       [creed.y + creed.h, tree.y + tree.h],
-      [tree.x, wide ? 854 : 621],
+      [tree.x, wide ? 831.33 : 621],
       [tree.y, s04.y + (wide ? 618 : 578)],
-      [tree.w, wide ? 566 : 533],
+      [tree.w, wide ? 679.33 : 533],
       [tree.h, 144],
     ];
     for (const [got, want] of pairs) expect(Math.abs(got - want)).toBeLessThanOrEqual(1);
@@ -98,11 +98,11 @@ test('marginalia (grid-relative)', async ({ page }) => {
     const stop = await box(page.locator('.s04 .stop'));
     const pairs: [number, number][] = [
       [a.y, grid.y + (wide ? 124 : 107)],
-      [a.x + a.w, wide ? 1656 : 1376],
+      [a.x + a.w, wide ? 1792 : 1376],
       [list.y, grid.y + (wide ? 158 : 141)],
-      [list.x, wide ? 1584 : 1304],
+      [list.x, wide ? 1720 : 1304],
       [b.y + b.h, grid.y + grid.h - 32],
-      [b.x + b.w, wide ? 1632 : 1352],
+      [b.x + b.w, wide ? 1768 : 1352],
       [stop.y, s04.y + (wide ? 610 : 571)],
     ];
     for (const [got, want] of pairs) expect(Math.abs(got - want)).toBeLessThanOrEqual(1);
@@ -149,14 +149,14 @@ test('the footer row', async ({ page }) => {
     const a1 = await box(page.locator('.foot .links a:nth-child(1)'));
     const a2 = await box(page.locator('.foot .links a:nth-child(2)'));
     const seats = await box(page.locator('.foot .seats'));
-    const xs = wide ? [264, 436, 1241, 1330, 1444] : [64, 236, 961, 1050, 1164];
+    const xs = wide ? [128, 300, 1377, 1466, 1580] : [64, 236, 961, 1050, 1164];
     const got = [wordmark.x, claim.x, a1.x, a2.x, seats.x];
     for (const [i, want] of xs.entries()) {
       const x = got[i];
       if (x === undefined) throw new Error('foot x');
       expect(Math.abs(x - want)).toBeLessThanOrEqual(1);
     }
-    expect(Math.abs(seats.x + seats.w - (wide ? 1656 : 1376))).toBeLessThanOrEqual(1);
+    expect(Math.abs(seats.x + seats.w - (wide ? 1792 : 1376))).toBeLessThanOrEqual(1);
     const ruleW = await page
       .locator('hr.rule--bleed')
       .evaluate((el) => el.getBoundingClientRect().width);

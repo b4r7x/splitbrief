@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRepoChecks, type RepoReadinessInput } from './repo.js';
+import { buildRepoChecks, exemptLiveSessionBlocker, type RepoReadinessInput } from './repo.js';
 
 const cleanRepo: RepoReadinessInput = {
   isGitRepo: true,
@@ -116,5 +116,33 @@ describe('buildRepoChecks dirty worktree', () => {
   it('emits no dirty-worktree check on a clean worktree', () => {
     const checks = buildRepoChecks(cleanRepo);
     expect(checks.find((check) => check.id === 'repo.dirty-worktree')).toBeUndefined();
+  });
+});
+
+describe('exemptLiveSessionBlocker', () => {
+  const liveSessionCheck = (): ReturnType<typeof buildRepoChecks>[number] => {
+    const check = buildRepoChecks({
+      ...cleanRepo,
+      activeSession: 'session-abc',
+      activeSessionLive: true,
+    }).find((candidate) => candidate.id === 'repo.active-session-live');
+    if (check === undefined) throw new Error('expected a live-session blocker');
+    return check;
+  };
+
+  it('downgrades the live-session blocker to information a read-only purpose can pass', () => {
+    const exempted = exemptLiveSessionBlocker(liveSessionCheck());
+
+    expect(exempted.severity).toBe('info');
+    expect(exempted.summary).toContain('session-abc');
+    expect(exempted.fix).toBeUndefined();
+    expect(exempted.nextAction).toBeUndefined();
+    expect(exempted.metadata).toEqual({ sessionId: 'session-abc', live: true });
+  });
+
+  it('leaves every other check exactly as it was', () => {
+    for (const check of buildRepoChecks({ ...cleanRepo, dirtyFiles: ['src/a.ts'] })) {
+      expect(exemptLiveSessionBlocker(check)).toBe(check);
+    }
   });
 });

@@ -266,3 +266,118 @@ describe('applyRecoveryAction: planner-split-rebase blocked', () => {
     );
   });
 });
+
+function usageLimitIssue(task: Task): RecoveryIssue {
+  return {
+    id: `rec_${task.id}_usage_limit`,
+    reason: 'runner-usage-limit',
+    phase: 'implementing',
+    status: 'awaiting-user',
+    taskId: task.id,
+    taskTitle: task.title,
+    files: [task.file],
+    affectedTaskIds: [task.id],
+    message: 'Codex hit its usage limit.',
+    details: [],
+    switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }, { tool: 'opencode' }] },
+    availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'abort-workflow'],
+    recommendedAction: 'switch-seat',
+    createdAt,
+  };
+}
+
+describe('applyRecoveryAction: switch-seat', () => {
+  it('resets the task onto the chosen tool and returns the switched config', () => {
+    const { projectDir, sessionId } = setupSession('switch-seat-apply');
+    const task = makeTask({ id: 'T400', status: 'in_progress' });
+    const issue = usageLimitIssue(task);
+    const base = makeImplState([task]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const state = { ...base, pendingRecovery: issue };
+    const { bus, events } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'switch-seat',
+      bus,
+      config: makeConfig(),
+      candidate: { tool: 'opencode' },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.status).toBe('retry-current-task');
+    expect(result.action).toBe('switch-seat');
+    expect(result.switchedSeat).toEqual({ seat: 'build', candidate: { tool: 'opencode' } });
+    expect(result.switchedConfig?.implementer).toMatchObject({ kind: 'cli', tool: 'opencode' });
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'task_reset', 'recovery_resolved']),
+    );
+  });
+
+  it('takes the first offered tool when no candidate is named', () => {
+    const { projectDir, sessionId } = setupSession('switch-seat-default');
+    const task = makeTask({ id: 'T401', status: 'in_progress' });
+    const issue = usageLimitIssue(task);
+    const base = makeImplState([task]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'switch-seat',
+      bus,
+      config: makeConfig(),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.switchedSeat?.candidate).toEqual({ tool: 'claude-code' });
+  });
+
+  it('blocks a tool the issue never offered', () => {
+    const { projectDir, sessionId } = setupSession('switch-seat-not-offered');
+    const task = makeTask({ id: 'T402', status: 'in_progress' });
+    const issue = usageLimitIssue(task);
+    const base = makeImplState([task]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'switch-seat',
+      bus,
+      config: makeConfig(),
+      candidate: { tool: 'cursor' },
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'candidate-not-offered' });
+  });
+
+  it('blocks when the halt carried no seat-swap offer', () => {
+    const { projectDir, sessionId } = setupSession('switch-seat-no-offer');
+    const task = makeTask({ id: 'T403', status: 'in_progress' });
+    const { switchSeat: _offer, ...withoutOffer } = usageLimitIssue(task);
+    const base = makeImplState([task]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: withoutOffer });
+    const { bus } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: withoutOffer },
+      action: 'switch-seat',
+      bus,
+      config: makeConfig(),
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'seat-swap-unavailable' });
+  });
+});

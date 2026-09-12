@@ -8,6 +8,7 @@ import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import { glyph } from '../../lib/glyphs.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { getTheme } from '../../components/theme.js';
 import { ELLIPSIS } from '../../utils/display-text.js';
 import type { ProvenanceWord } from '../../core/providers/provenance.js';
@@ -302,7 +303,7 @@ describe('runner row grammar', () => {
     );
     await tick(20);
     const defaultFrame = defaultUi.lastFrame() ?? '';
-    expect(defaultFrame).toContain('GPT-5.4');
+    expect(defaultFrame).toContain('gpt-5.4');
     expect(defaultFrame).not.toContain('Known');
     expect(defaultFrame).not.toContain('Catalog');
     expect(defaultFrame).not.toContain('Detected');
@@ -395,11 +396,58 @@ describe('runner row grammar', () => {
       );
       await tick(20);
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Auto');
+      expect(frame).toContain('auto');
       expect(frame).toContain(AUTO_ROW_METADATA);
       expect(frame).not.toContain('Default');
       ui.unmount();
     }
+  });
+
+  it('cuts a namespaced model id at the head so the tail still names the model', async () => {
+    const namespaced: ModelOption = { id: 'kilo/anthropic/claude-opus-4.5' };
+    const line = await rowLine(modelRow(namespaced, 'Known'), 34);
+
+    expect(line).toContain('claude-opus-4.5');
+    expect(line).toContain(ELLIPSIS);
+    expect(line).not.toContain('kilo/anthropic');
+  });
+
+  it('alias row shows its catalog id', async () => {
+    const alias: ModelOption = {
+      id: 'fable',
+      displayName: 'Fable 5.1',
+      contextLength: 1_000_000,
+      catalogModelId: 'claude-fable-5-1',
+    };
+    const wide = await rowLine(modelRow(alias, 'Known'), 60);
+    expect(wide).toContain('Fable 5.1');
+    expect(wide).toContain(`1M${SOFT_SEP}claude-fable-5-1`);
+
+    // The id gives way whole before the name loses a cell, and a truncated id —
+    // which would name a model that does not exist — never paints at all.
+    const squeezed = renderModelRow({
+      row: modelRow(alias, 'Known'),
+      isCursor: false,
+      maxWidth: 34,
+      currentModel: undefined,
+      sectioned: false,
+      auth: AUTH,
+    }).props;
+    expect(squeezed.label).toBe('Fable 5.1');
+    expect(squeezed.metadata).toBe('1M');
+    expect(squeezed.metadata).not.toContain('claude-fable');
+
+    // A row with no size or detail carries the id alone.
+    const bare = renderModelRow({
+      row: modelRow({ id: 'best', displayName: 'Best', catalogModelId: 'claude-opus-5' }, 'Known'),
+      isCursor: false,
+      maxWidth: 60,
+      currentModel: undefined,
+      sectioned: false,
+      auth: AUTH,
+    }).props;
+    expect(bare.label).toBe('Best');
+    expect(bare.metadata).toBe('claude-opus-5');
   });
 
   it('puts a detail string in the metadata cell, not the label', async () => {
@@ -619,9 +667,9 @@ describe('runner row grammar', () => {
       );
       await tick(20);
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('GPT-5.6');
+      expect(frame).toContain('github-copilot/gpt-5.6');
       expect(frame).toContain('2 providers');
-      expect(frame).not.toContain('copilot');
+      expect(frame).not.toContain('openrouter');
       expect(frame).not.toContain('●');
       expect(frame).not.toContain('○');
       ui.unmount();
@@ -1103,8 +1151,9 @@ describe('runner row grammar', () => {
       );
       await tick(20);
       const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('openrouter/gemini-3-flash');
       expect(frame).not.toContain('providers');
-      expect(frame).not.toContain('openrouter');
+      expect(frame).not.toContain('1 provider');
       ui.unmount();
     });
 
@@ -1185,7 +1234,7 @@ describe('runner row grammar', () => {
       }),
     );
     await tick(20);
-    expect(withoutName.lastFrame() ?? '').toContain('Custom Coder V1');
+    expect(withoutName.lastFrame() ?? '').toContain('custom-coder-v1');
     withoutName.unmount();
   });
 

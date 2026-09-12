@@ -216,6 +216,38 @@ async function probeOpencode(
   });
 }
 
+/**
+ * The provider-dependent case with no credential file on disk: whatever
+ * readiness concludes, it concluded from the environment alone.
+ */
+async function probeOpencodeWithoutBridgedState(
+  providerKey: string | undefined,
+): Promise<CliReadinessResult> {
+  return withTempDir('readiness-env-passthrough', async (dir) => {
+    const home = join(dir, 'home');
+    await mkdir(home, { recursive: true });
+    vi.stubEnv('HOME', home);
+    // opencode's bridged auth.json is sourced from all three roots, so leaving
+    // the XDG pair on the host's values would let a real login reach the child.
+    vi.stubEnv('XDG_CONFIG_HOME', join(home, 'xdg-config'));
+    vi.stubEnv('XDG_DATA_HOME', join(home, 'xdg-data'));
+    for (const key of Object.keys(process.env)) {
+      if (key.endsWith('_API_KEY')) vi.stubEnv(key, '');
+    }
+    vi.stubEnv('FOO_API_KEY', providerKey ?? '');
+    const executable = await fakeOpencode(
+      dir,
+      `process.stdout.write(${JSON.stringify(ORACLE_READ_OUTPUT)}); process.exit(0);`,
+    );
+    return probeCliReadiness({
+      tool: 'opencode',
+      executable,
+      authChannel: 'provider-dependent',
+      probe: opencodeProbe(),
+    });
+  });
+}
+
 describe('CLI readiness probe', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -804,6 +836,34 @@ describe('CLI readiness probe', () => {
 
       expect(compatible.auth).toBe('authenticated');
       expect(incompatible.auth).toBe('not-checked');
+    });
+  });
+
+  describe('provider key from the shell environment', () => {
+    itUnix('verifies a provider key that lives only in the shell environment', async () => {
+      const result = await probeOpencodeWithoutBridgedState('shell-only');
+
+      expect(result.auth).toBe('authenticated');
+      expect(result.status).toBe('ready');
+      expect(result.providerAuth).toEqual({
+        kind: 'read',
+        facts: [{ provider: 'anthropic', source: 'oauth' }],
+      });
+    });
+
+    itUnix('reports unauthenticated when the key is absent everywhere', async () => {
+      const result = await probeOpencodeWithoutBridgedState(undefined);
+
+      expect(result.auth).toBe('unauthenticated');
+      expect(result.status).toBe('unauthenticated');
+    });
+
+    itUnix('still reports a bridged credential file as authenticated', async () => {
+      const result = await probeOpencode({
+        oracleBody: `process.stdout.write(${JSON.stringify(ORACLE_READ_OUTPUT)}); process.exit(0);`,
+      });
+
+      expect(result.auth).toBe('authenticated');
     });
   });
 });

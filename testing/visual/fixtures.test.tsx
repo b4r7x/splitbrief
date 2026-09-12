@@ -171,8 +171,8 @@ describe('visual fixture seeds', () => {
         expect(pinned, fixtureCase.scenarioId).toHaveLength(1);
         expect(pinned[0]?.id, fixtureCase.scenarioId).toBe('claude-fable-5-1[1m]');
         expect(pinned[0]?.displayName, fixtureCase.scenarioId).toBe('Fable');
-        // The sentence Claude stores beside the label: it is what the alias row this entry
-        // folds into carries as its detail, so a dropped description is invisible without it.
+        // The sentence Claude stores beside the label — it opens by repeating the display name,
+        // which is exactly the shape the catalog peels before a row spends its name column on it.
         expect(pinned[0]?.description, fixtureCase.scenarioId).toContain(
           'Fable 5.1 · Most capable',
         );
@@ -202,8 +202,10 @@ describe('visual fixture seeds', () => {
 
       expect(entries.filter((entry) => entry.id === 'claude-fable-5-1[1m]')).toEqual([]);
       expect(rows).toHaveLength(1);
-      expect(rows[0]?.displayName).toBe('Fable 5.1 (1M context)');
-      expect(rows[0]?.detail).toBe(CLAUDE_CODE_OPTION_CACHE[0]?.description);
+      expect(rows[0]?.displayName).toBe('Fable 5.1 (1M)');
+      // The alias wrote the one fact that tells it from plain `fable`, so the account's sentence
+      // does not evict it — the row reads like its two `[1m]` siblings.
+      expect(rows[0]?.detail).toBe('forces the 1M window');
       expect(rows[0]?.contextLength).toBe(1_000_000);
     } finally {
       await lifecycle.teardown();
@@ -281,12 +283,14 @@ describe('visual fixture seeds', () => {
     );
     if (listing === null) throw new Error('copilot help-config fixture listed no models');
     const served = listing.models.map((model) => model.selectionId);
-    // Read the block the way production does. `getModelsForProvider` iterates
-    // `Object.values(provider.models)` and keys identity on `model.id`, never on the JSON map key,
-    // so asserting over `Object.keys` would pass a row whose own `id` is a typo. `byId` is what
-    // ships; the map key is only a lookup convenience for the field assertions below.
+    // Read the block the way production does. A CLI runner id no longer reaches models.dev
+    // (REQ-B08), so the block is read by the catalog vendor key the bundled Copilot rows name in
+    // their own `catalogProvider`. `getModelsForProvider` iterates `Object.values(provider.models)`
+    // and keys identity on `model.id`, never on the JSON map key, so asserting over `Object.keys`
+    // would pass a row whose own `id` is a typo. `byId` is what ships; the map key is only a lookup
+    // convenience for the field assertions below.
     const byId = new Map(
-      getModelsForProvider(MODELS_DEV_SLICE, 'copilot').map((model) => [model.id, model]),
+      getModelsForProvider(MODELS_DEV_SLICE, 'github-copilot').map((model) => [model.id, model]),
     );
     const copilot = MODELS_DEV_SLICE['github-copilot']?.models ?? {};
     expect(Object.keys(copilot).sort()).toEqual([...byId.keys()].sort());
@@ -334,7 +338,7 @@ describe('visual fixture seeds', () => {
 
       expect(entries.filter((entry) => entry.id === 'claude-fable-5-1[1m]')).toEqual([]);
       const pinned = entries.find((entry) => entry.selectionId === 'fable[1m]');
-      expect(pinned?.detail).toBe(CLAUDE_CODE_OPTION_CACHE[0]?.description);
+      expect(pinned?.detail).toBe('forces the 1M window');
       expect(pinned?.contextLength).toBe(1_000_000);
     } finally {
       await lifecycle.teardown();
@@ -360,7 +364,6 @@ const CONFIG_BEFORE_THE_OVERRIDE_PARAMETER = makeConfig({
   },
   workflow: {
     mode: 'standard',
-    persistTranscript: false,
     maxRetries: 2,
   },
 });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { wireAppMouse } from '../../../src/app/mouse.js';
 import type { FilteredStdin, MouseEvent } from '../../../src/lib/terminal/filtered-stdin/types.js';
 import { _resetMouseZones, registerMouseZone } from '../../../src/lib/terminal/mouse-zones.js';
@@ -23,16 +23,28 @@ import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import type { TieredApprovalRequest } from '../../../src/core/approval/types.js';
 import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
+import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+
+// A unique directory per run: session preparation allocates the session directory and refuses to
+// reallocate one, so a fixed path would fail every run after the first.
+const PROJECT_DIR = createTempDir('app-mouse-project');
 
 const WORKFLOW_ROUTE = {
   screen: 'workflow',
   execution: {
-    kind: 'attached',
-    feature: 'feat',
-    sessionId: 'app-mouse-session',
-    attach: { sockPath: '/tmp/app-mouse.sock', authToken: 'test-token' },
+    kind: 'local',
+    prepared: prepareWorkflowExecution({
+      projectDir: PROJECT_DIR,
+      feature: 'feat',
+      sessionId: 'app-mouse-session',
+    }),
   },
 } as const;
+
+afterAll(() => {
+  cleanupTempDir(PROJECT_DIR);
+});
 
 function createMockFilteredStdin() {
   let listener: ((event: MouseEvent) => void) | undefined;

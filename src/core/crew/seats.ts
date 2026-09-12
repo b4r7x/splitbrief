@@ -24,6 +24,13 @@ export type CrewSeat =
   | (CrewSeatRunner & Readonly<{ id: 'build'; label: string }>)
   | (CrewSeatRunner & Readonly<{ id: 'review'; label: string; source: 'configured' | 'planner' }>);
 
+/** One seat per `CrewSeatId`, in seat order, so a lookup by id is total. */
+export type CrewSeats = readonly [
+  Extract<CrewSeat, { id: 'plan' }>,
+  Extract<CrewSeat, { id: 'build' }>,
+  Extract<CrewSeat, { id: 'review' }>,
+];
+
 function seatRunner(runner: RunnerConfig, displayName?: string | undefined): CrewSeatRunner {
   return {
     runner,
@@ -37,7 +44,7 @@ export function deriveCrewSeats(
     config: Config;
     displayNames?: Partial<Record<CrewSeatId, string>> | undefined;
   }>,
-): readonly CrewSeat[] {
+): CrewSeats {
   const config = input.config;
   const implementer = resolveImplementerProfiles(config).defaultProfile.config;
   const reviewer = resolveReviewerRunner(config);

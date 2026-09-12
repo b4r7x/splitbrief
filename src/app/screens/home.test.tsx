@@ -16,11 +16,10 @@ import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
 import { saveSummary } from '../../core/sessions/io.js';
 import { prepareNewSession } from '../../core/sessions/prepare.js';
 import { saveState } from '../../core/state/persistence.js';
-import { loadState } from '../../core/state/persistence.js';
+import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { configStore } from '../../stores/project/config.js';
@@ -185,7 +184,7 @@ function preparedResumeExecution(
 const HOME_DEPS: HomeScreenDeps = {
   prepareExecution: prepareExecutionMock,
   sessionSelect: {
-    ...makeResumeAuthorityDeps((ref) => loadState(ref)),
+    loadResumeState: loadOwnerWorkflowState,
     prepareResume: async (input) => ({
       kind: 'prepared',
       execution: preparedResumeExecution(input),

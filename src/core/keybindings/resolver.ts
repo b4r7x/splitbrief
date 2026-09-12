@@ -3,8 +3,6 @@ import { resolveScrollKey } from './scroll.js';
 import type { NormalizedKeySignature } from './normalize.js';
 import { resolveTextEditingKeyAction, type TextEditingKeyAction } from './text.js';
 
-export type KeyAttachState = 'local' | 'attached';
-
 export type FocusedKeySurface = 'none' | 'composer' | 'workflow' | 'review';
 
 export interface KeyResolverContext {
@@ -12,7 +10,6 @@ export interface KeyResolverContext {
   inputMode: InputMode;
   focus: FocusedKeySurface;
   overlay: OverlayType;
-  attachState: KeyAttachState;
   composerFocus: boolean;
   key: NormalizedKeySignature;
 }
@@ -22,18 +19,13 @@ export type KeyOwner =
   | { owner: 'workflow'; action: 'toggle-diff' | 'toggle-activity' | 'cost' }
   | { owner: 'conversation-scroll'; action: 'scroll' }
   | { owner: 'review'; action: 'scroll' }
-  | { owner: 'overlay'; action: 'close' }
-  | { owner: 'attached-client'; action: 'detach' };
+  | { owner: 'overlay'; action: 'close' };
 
 export function resolveKeyOwner(context: KeyResolverContext): KeyOwner | null {
   const overlayOwner = resolveOverlayOwner(context);
   if (overlayOwner !== null) return overlayOwner;
 
   if (context.screen !== 'workflow') return null;
-
-  if (context.attachState === 'attached' && isCtrlKey(context.key, 'd')) {
-    return { owner: 'attached-client', action: 'detach' };
-  }
 
   if (
     context.inputMode === 'normal' &&

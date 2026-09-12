@@ -1,8 +1,9 @@
 import type { EventBus } from '../../events/types.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
 
 export const HEARTBEAT_THRESHOLD_MS = 5000;
+
+export const PLANNER_KEEPALIVE_INTERVAL_MS = 2000;
 
 interface HeartbeatState {
   accumulatedTokens: number;
@@ -46,7 +47,7 @@ export function startPlannerHeartbeat(
   const threshold = setTimeout(() => {
     thresholdPassed = true;
     publish();
-    timer = setInterval(publish, HEARTBEAT_INTERVAL_MS);
+    timer = setInterval(publish, PLANNER_KEEPALIVE_INTERVAL_MS);
   }, HEARTBEAT_THRESHOLD_MS);
 
   return {

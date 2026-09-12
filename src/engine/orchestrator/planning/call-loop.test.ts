@@ -16,8 +16,7 @@ import { SANDBOX_DIR } from '../../../core/paths.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import type { PlannerCallbacks } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import { HEARTBEAT_THRESHOLD_MS } from './heartbeat.js';
-import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
+import { HEARTBEAT_THRESHOLD_MS, PLANNER_KEEPALIVE_INTERVAL_MS } from './heartbeat.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -77,7 +76,7 @@ function makeWctx(
 ): PlannerCallbacksContext {
   const { bus } = makeBusRecorder();
   const config = makeConfig({
-    workflow: { mode: 'quick', persistTranscript: false },
+    workflow: { mode: 'quick' },
   });
   return {
     projectDir,
@@ -138,7 +137,7 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
 
     const heartbeatsAfterError = events.filter((e) => e.type === 'planner_heartbeat').length;
 
-    vi.advanceTimersByTime(HEARTBEAT_THRESHOLD_MS + HEARTBEAT_INTERVAL_MS * 3);
+    vi.advanceTimersByTime(HEARTBEAT_THRESHOLD_MS + PLANNER_KEEPALIVE_INTERVAL_MS * 3);
 
     const heartbeatsAfterDelay = events.filter((e) => e.type === 'planner_heartbeat').length;
     expect(heartbeatsAfterDelay).toBe(heartbeatsAfterError);

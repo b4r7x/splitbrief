@@ -23,7 +23,7 @@ Read these to learn how SPLITBRIEF works. Each doc builds on the previous one.
 | [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) | Four runner kinds, planner/implementer interfaces, Task Brief structure, token accounting. |
 | [STORES-AND-UI.md](./STORES-AND-UI.md) | Store factory, store groups, how events reach React, screens, overlays. |
 | [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) | Approval gates, tiered approval, escalation tiers, recovery system, drift detection. |
-| [SUBSYSTEMS.md](./SUBSYSTEMS.md) | Hooks, snapshots, IPC/attach, repo-map, handoff, MCP, worktrees, slash commands. |
+| [SUBSYSTEMS.md](./SUBSYSTEMS.md) | Hooks, snapshots, repo-map, runtime commands, detection, compaction, evidence ledger, session lifecycle. |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | How the code is organized: design rationale plus a verified inventory of events, commands, paths, and public API surface. |
 
 ## Doing things
@@ -38,6 +38,7 @@ Read these to learn how SPLITBRIEF works. Each doc builds on the previous one.
 | Fix something | [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
 | See recipes and examples | [USAGE-EXAMPLES.md](./USAGE-EXAMPLES.md) |
 | Write or run tests | [TESTING.md](./TESTING.md) |
+| Cut a release | [RELEASING.md](./RELEASING.md) |
 
 ## Rules and conventions
 
@@ -62,12 +63,10 @@ Specialized subsystem docs linked from the main chapters above.
 
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — Workflow hook schema, dispatch, substitution, trust model
 - [REPOMAP.md](./REPOMAP.md) — Repo-map: PageRank, token budgeting, SQLite cache
-- [OTEL.md](./OTEL.md) — OpenTelemetry spans from EngineEvents
 - [TASK-CONTRACT.md](./TASK-CONTRACT.md) — Task Brief schema, quality gate, evidence
 - [BOOTSTRAP.md](./BOOTSTRAP.md) — Startup steps and ordering
 - [API-KEYS.md](./API-KEYS.md) — Provider keys and secret hygiene
 - [DEBUGGING.md](./DEBUGGING.md) — Diagnosing failures, log locations
-- [WORKTREES.md](./WORKTREES.md) — Git worktree isolation for parallel sessions
 - [WORKFLOW-CONVERSATION-SCROLL.md](./WORKFLOW-CONVERSATION-SCROLL.md) — Row-based scroll model for the workflow conversation
 
 ## Direction and history

@@ -30,7 +30,6 @@ Only signatures (declarations) appear. Bodies elided. Files outside the budget a
 codebase:
   enabled: true              # set to false to disable
   tokenBudget: 4000          # tokens reserved in the planner prompt
-  cacheDir: ".splitbrief"       # where the SQLite cache lives
   include: ["src/**/*"]     # globs (default: discovery walks all known language extensions)
   exclude:                   # regex strings; default excludes test files + node_modules + dist
     - "\\.test\\.tsx?$"

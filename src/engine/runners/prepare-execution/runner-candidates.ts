@@ -82,6 +82,19 @@ export function runnerCandidates(
   config: Config,
   purpose: PreparationPolicy['purpose'],
 ): CandidateEnumeration {
+  // A one-shot review calls the review seat and nothing else, so a missing
+  // implementer or an unresolvable escalation provider cannot gate it. The seat
+  // itself is whatever `resolveReviewerRunner` decides — the configured block,
+  // or the planner holding the seat.
+  if (purpose === 'review') {
+    const runner = resolveReviewerRunner(config).runner;
+    const context = resolveRunnerConfigContext({ role: 'reviewer', runner });
+    return {
+      candidates: [{ slot: context.slot, runner, trustLabel: 'reviewer' }],
+      checks: [],
+    };
+  }
+
   const plannerContext = resolveRunnerConfigContext({ role: 'planner', runner: config.planner });
   const candidates: RunnerCandidate[] = [
     { slot: plannerContext.slot, runner: config.planner, trustLabel: 'planner' },

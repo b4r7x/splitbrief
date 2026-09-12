@@ -39,11 +39,8 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     attachImage: () => ({ ok: false, reason: 'not-image' }),
     detachImage: () => false,
     listAttachments: () => [],
-    writeHandoff: async () => ({ outputDir: '/fake' }),
     listApprovals: () => [],
     clearApprovals: () => 0,
-    getApprovalEnabled: () => true,
-    setApprovalEnabled: noop,
     acceptRunSnapshot: async () => ({ snapshotId: 'snap-accepted', isFirstSnapshot: false }),
     rejectRunSnapshot: async () => ({
       status: 'rejected',
@@ -53,8 +50,6 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
       conflictedPaths: [],
       missingSnapshotFiles: [],
     }),
-    compactTranscript: async () => ({ status: 'compacted', summary: 'summary', entriesRemoved: 3 }),
-    exportSession: async () => ({ status: 'ok', path: '/fake/report.html' }),
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
     toggleLatestDiff: () => ({ status: 'toggled', expanded: true }),
@@ -74,7 +69,6 @@ export function runCommandInTest(args: {
   return executeRuntimeCommand(args.commands, args.raw, {
     screen: args.screen,
     phase: args.phase ?? 'idle',
-    attached: false,
     plannerSupportsImages: true,
     onError: args.onError,
   });

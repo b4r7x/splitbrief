@@ -433,8 +433,8 @@ describe('conversation rows projection cache', () => {
     expect(implementer.rows.map(rowText).join('\n')).toContain(
       `${CREW_SEAT_LABELS.build} activity`,
     );
-    expect(implementer.rows.map(rowText).join('\n')).toContain('[OpenAI Codex CLI · Xhigh]');
+    expect(implementer.rows.map(rowText).join('\n')).toContain('[OpenAI Codex CLI · xhigh]');
     expect(planner.rows.map(rowText).join('\n')).toContain(`${CREW_SEAT_LABELS.plan} activity`);
-    expect(planner.rows.map(rowText).join('\n')).toContain('[Claude Code CLI · Sonnet]');
+    expect(planner.rows.map(rowText).join('\n')).toContain('[Claude Code CLI · sonnet]');
   });
 });

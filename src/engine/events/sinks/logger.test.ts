@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { configureLogger, resetLoggerForTests } from '../../../lib/logger.js';
 import { createLoggerSink } from './logger.js';
 
@@ -22,7 +21,7 @@ describe('createLoggerSink', () => {
 
   it('mirrors engine events to the log with levels per event type', () => {
     configureLogger({ projectDir: tmp, relativePath: 'debug.log', enabled: true });
-    const sink = createLoggerSink({ persistTranscript: true });
+    const sink = createLoggerSink();
 
     sink({ type: 'workflow_started', ts: 100, phase: 'idle', feature: 'x' });
     sink({ type: 'warning', ts: 110, phase: 'planning', message: 'slow provider' });
@@ -40,7 +39,7 @@ describe('createLoggerSink', () => {
 
   it('redacts secrets carried in event payloads', () => {
     configureLogger({ projectDir: tmp, relativePath: 'debug.log', enabled: true });
-    const sink = createLoggerSink({ persistTranscript: true });
+    const sink = createLoggerSink();
 
     sink({
       type: 'error',
@@ -56,7 +55,7 @@ describe('createLoggerSink', () => {
 
   it('omits oversized event payloads before the diagnostic sink writes', () => {
     configureLogger({ projectDir: tmp, relativePath: 'debug.log', enabled: true });
-    const sink = createLoggerSink({ persistTranscript: true });
+    const sink = createLoggerSink();
     const oversizedExcerpt = `oversized-payload-canary-${'x'.repeat(70_000)}`;
 
     sink({
@@ -80,7 +79,7 @@ describe('createLoggerSink', () => {
 
   it('strips terminal controls before the diagnostic sink writes', () => {
     configureLogger({ projectDir: tmp, relativePath: 'debug.log', enabled: true });
-    const sink = createLoggerSink({ persistTranscript: true });
+    const sink = createLoggerSink();
 
     sink({
       type: 'error',
@@ -94,27 +93,9 @@ describe('createLoggerSink', () => {
     expect(content).toContain('terminal secret');
   });
 
-  it('drops and strips transcript content when persistTranscript is false', () => {
-    configureLogger({ projectDir: tmp, relativePath: 'debug.log', enabled: true });
-    const sink = createLoggerSink({ persistTranscript: false });
-
-    sink({ type: 'planner_text', ts: 200, phase: 'planning', text: 'secret transcript' });
-    sink({ type: 'workflow_started', ts: 210, phase: 'idle', feature: 'secret feature prompt' });
-    sink({ type: 'error', ts: 220, phase: 'planning', message: 'secret error detail' });
-
-    const lines = readFileSync(logPath, 'utf-8').trimEnd().split('\n');
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toContain('workflow_started');
-    expect(lines[0]).not.toContain('secret feature prompt');
-    expect(lines[0]).toContain(TRANSCRIPT_OMITTED_MESSAGE);
-    expect(lines[1]).toContain('ERROR');
-    expect(lines[1]).not.toContain('secret error detail');
-    expect(lines[1]).toContain(TRANSCRIPT_OMITTED_MESSAGE);
-  });
-
   it('writes nothing when the logger is disabled', () => {
     configureLogger({ projectDir: tmp, relativePath: 'debug.log', enabled: false });
-    const sink = createLoggerSink({ persistTranscript: true });
+    const sink = createLoggerSink();
 
     sink({ type: 'error', ts: 140, phase: 'planning', message: 'boom' });
 

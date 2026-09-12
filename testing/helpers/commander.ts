@@ -4,11 +4,9 @@ import type { StartDeps } from '../../src/cli/commands/start/types.js';
 import { registerSpecCommand } from '../../src/cli/commands/spec.js';
 import { registerInitCommand } from '../../src/cli/commands/init.js';
 import { registerStatusCommand } from '../../src/cli/commands/status.js';
-import { registerExplainCommand } from '../../src/cli/commands/explain.js';
 import { registerResumeCommand } from '../../src/cli/commands/resume.js';
+import { registerReviewCommand } from '../../src/cli/commands/review.js';
 import { registerContinueCommand } from '../../src/cli/commands/continue/register.js';
-import { registerLastCommand } from '../../src/cli/commands/last.js';
-import { registerStatsCommand } from '../../src/cli/commands/stats.js';
 
 export interface RunCommandResult {
   stdout: string;
@@ -27,11 +25,9 @@ export async function runCommand(
   registerSpecCommand(program);
   registerInitCommand(program);
   registerStatusCommand(program);
-  registerExplainCommand(program);
   registerResumeCommand(program);
+  registerReviewCommand(program);
   registerContinueCommand(program);
-  registerLastCommand(program);
-  registerStatsCommand(program);
 
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];

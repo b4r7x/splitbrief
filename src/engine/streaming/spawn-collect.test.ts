@@ -6,7 +6,7 @@ import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycl
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import { runnerCallEventToSessionLogEntry } from '../calls/session-log.js';
 import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../calls/output-limit.js';
-import { protectEngineEventForConsumer } from '../events/protection/protect.js';
+import { boundEngineEventForConsumer } from '../events/bound.js';
 import { spawnAndCollect, spawnCollectError } from './spawn-collect.js';
 import { parseJsonlLine } from './parse-jsonl.js';
 import {
@@ -208,9 +208,7 @@ describe('spawnAndCollect', () => {
     const projected = callbackEvents.flatMap((event, index) =>
       projectRunnerCallEvents(event, { phase: 'planning', sequence: index + 1 }),
     );
-    const protectedEvents = projected.map((event) =>
-      protectEngineEventForConsumer(event, { context: 'ipc', persistTranscript: true }),
-    );
+    const protectedEvents = projected.map((event) => boundEngineEventForConsumer(event, 'tui'));
     const sessionEntries = callbackEvents.map((event, index) =>
       runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index + 1 }),
     );
@@ -300,9 +298,7 @@ describe('spawnAndCollect', () => {
     const projected = callbackEvents.flatMap((event, index) =>
       projectRunnerCallEvents(event, { phase: 'planning', sequence: index + 1 }),
     );
-    const protectedEvents = projected.map((event) =>
-      protectEngineEventForConsumer(event, { context: 'ipc', persistTranscript: true }),
-    );
+    const protectedEvents = projected.map((event) => boundEngineEventForConsumer(event, 'tui'));
     const sessionEntries = callbackEvents.map((event, index) =>
       runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index + 1 }),
     );
@@ -393,9 +389,7 @@ describe('spawnAndCollect', () => {
       const projected = callbackEvents.flatMap((event, index) =>
         projectRunnerCallEvents(event, { phase: 'planning', sequence: index + 1 }),
       );
-      const protectedEvents = projected.map((event) =>
-        protectEngineEventForConsumer(event, { context: 'ipc', persistTranscript: true }),
-      );
+      const protectedEvents = projected.map((event) => boundEngineEventForConsumer(event, 'tui'));
       const sessionEntries = callbackEvents.map((event, index) =>
         runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index + 1 }),
       );

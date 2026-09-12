@@ -21,6 +21,7 @@ import type { PickerOption } from './model-catalog/options.js';
 import type { RightRow } from './model-catalog/rows.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-outcomes.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../engine/providers/model/catalog.js';
 
 /** The models behind the rows the picker actually renders. */
 function rowModels(rows: readonly RightRow[]) {
@@ -81,7 +82,7 @@ function publishConfirmedCodexList() {
       catalog: CODEX_MODELS_DEV,
       cliModels: [
         {
-          connection: { role: 'planner', tool: 'codex', contextKey: 'c' },
+          connection: { tool: 'codex', contextKey: 'c' },
           outcome: { kind: 'success', value: [{ id: 'gpt-5-codex' }] },
         },
       ],
@@ -94,6 +95,11 @@ let capturedRightRows: RightRow[] = [];
 
 function RowsProbe() {
   capturedRightRows = usePickerCatalog('planner', 0, 'codex').rightRows;
+  return <Text>rows</Text>;
+}
+
+function OllamaRowsProbe() {
+  capturedRightRows = usePickerCatalog('implementer', 0, 'ollama').rightRows;
   return <Text>rows</Text>;
 }
 
@@ -396,7 +402,7 @@ describe('usePickerCatalog', () => {
     // An empty catalog drops the model from every lane, so the only row left
     // naming it is the recovery row the configured selection earns.
     expect(projection).toEqual({
-      model: expect.objectContaining({ membership: 'custom', isRecovery: true }),
+      model: expect.objectContaining({ membership: 'custom' }),
       detected: 0,
       counts: expect.objectContaining({ confirmed: 0, stale: 0 }),
     });
@@ -637,7 +643,7 @@ describe('usePickerCatalog', () => {
         catalog: {},
         cliModels: [
           {
-            connection: { role: 'planner', tool: 'opencode', contextKey: 'c' },
+            connection: { tool: 'opencode', contextKey: 'c' },
             outcome: {
               kind: 'success',
               value: [{ id: 'anthropic/claude-sonnet-4', nativeReasoningEfforts: ['high', 'max'] }],
@@ -690,7 +696,7 @@ describe('usePickerCatalog', () => {
     ui.unmount();
   });
 
-  it('drops models.dev suggestions once the native cli-models probe confirms a list', async () => {
+  it('replaces the bundled fallback with the native list and never shows models.dev rows', async () => {
     modelCacheStore.hydrateModelsDevCatalog({
       catalog: CODEX_MODELS_DEV,
       fetchedAt: 100,
@@ -716,13 +722,18 @@ describe('usePickerCatalog', () => {
     const ui = renderFeature(<CodexCatalogProbe />);
     await tick(20);
 
+    // Before the probe the column falls back to the bundled table. A CLI tool never renders
+    // models.dev rows (REQ-B08), so the hydrated catalog contributes none of its ids.
     const preProbeRows = rowModels(catalogSnapshot?.rightRows ?? []);
     const preProbeIds = preProbeRows.map((model) => model.id);
-    expect(preProbeIds).toContain('gpt-5-codex');
-    expect(preProbeIds).toContain('gpt-4o');
-    expect(preProbeIds).toContain('gpt-4.5-preview');
-    expect(preProbeIds).toContain('o3-mini');
+    expect(preProbeRows.some((model) => model.membership === 'bundled-suggestion')).toBe(true);
+    for (const catalogOnlyId of ['gpt-4o', 'gpt-4.5-preview', 'o3-mini']) {
+      expect(preProbeIds, catalogOnlyId).not.toContain(catalogOnlyId);
+    }
     expect(preProbeRows.filter((m) => m.membership === 'confirmed')).toHaveLength(0);
+    expect(preProbeRows.filter((m) => m.membership === CATALOG_SUGGESTION_MEMBERSHIP)).toHaveLength(
+      0,
+    );
 
     const request = detectionStore.beginRefresh({
       contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
@@ -735,7 +746,7 @@ describe('usePickerCatalog', () => {
         catalog: null,
         cliModels: [
           {
-            connection: { role: 'planner', tool: 'codex', contextKey: 'c' },
+            connection: { tool: 'codex', contextKey: 'c' },
             outcome: { kind: 'success', value: [{ id: 'gpt-5-codex' }] },
           },
         ],
@@ -756,12 +767,14 @@ describe('usePickerCatalog', () => {
     expect(confirmedRows).toHaveLength(1);
     expect(confirmedRows[0]?.id).toBe('gpt-5-codex');
     expect(confirmedRows[0]?.isDetected).toBe(true);
-    expect(postProbeRows.filter((row) => row.membership === 'catalog-suggestion')).toHaveLength(0);
+    expect(
+      postProbeRows.filter((row) => row.membership === CATALOG_SUGGESTION_MEMBERSHIP),
+    ).toHaveLength(0);
 
     ui.unmount();
   });
 
-  it('offers a browse-catalog row when the configured model is missing from the list', async () => {
+  it('offers no browse-catalog row when the configured model is merely missing from the list', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
@@ -773,11 +786,48 @@ describe('usePickerCatalog', () => {
     const ui = renderFeature(<RowsProbe />);
     await tick(20);
 
-    expect(capturedRightRows.at(-1)).toMatchObject({ kind: 'action', action: 'browse-catalog' });
+    expect(capturedRightRows.some((row) => row.kind === 'action')).toBe(false);
     ui.unmount();
   });
 
-  it('widens the rows once the store says the catalog is being browsed', async () => {
+  it('offers the browse-catalog row where browsing widens: an api runner whose bundled row the live lane hides', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+        },
+      }),
+    });
+    detectionStore.setDetection({
+      cliTools: [],
+      providers: [{ provider: 'ollama', available: true, isLocal: true, models: [] }],
+    });
+    modelCacheStore.hydrateModelsDevCatalog({
+      catalog: {
+        ollama: { id: 'ollama', models: { 'llama-9': { id: 'llama-9', name: 'Llama 9' } } },
+      },
+      fetchedAt: 1,
+      validatedAt: 1,
+    });
+
+    const ui = renderFeature(<OllamaRowsProbe />);
+    await tick(20);
+
+    expect(rowModels(capturedRightRows).map((model) => model.id)).not.toContain('qwen3-coder:30b');
+    expect(capturedRightRows.at(-1)).toMatchObject({ kind: 'action', action: 'browse-catalog' });
+
+    pickerViewStore.setBrowseCatalog(true);
+    await tick(20);
+
+    expect(rowModels(capturedRightRows).map((model) => model.id)).toContain('qwen3-coder:30b');
+    expect(capturedRightRows.some((row) => row.kind === 'action')).toBe(false);
+    ui.unmount();
+  });
+
+  it('keeps a cli tool on its native rows once the catalog is being browsed', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
@@ -793,8 +843,10 @@ describe('usePickerCatalog', () => {
     pickerViewStore.setBrowseCatalog(true);
     await tick(20);
 
+    // Browsing retires the escape row. It reopens no lane for a CLI tool: its rows are its own
+    // listing plus the bundled table, and models.dev is not a lane it ever reads (REQ-B08).
     expect(capturedRightRows.some((row) => row.kind === 'action')).toBe(false);
-    expect(rowModels(capturedRightRows).length).toBeGreaterThan(narrowModelCount);
+    expect(rowModels(capturedRightRows).length).toBe(narrowModelCount);
     ui.unmount();
   });
 });
@@ -896,7 +948,7 @@ describe('usePickerCatalog right-column entry point', () => {
         catalog: {},
         cliModels: [
           {
-            connection: { role: 'planner', tool: 'kilo-code', contextKey: 'c' },
+            connection: { tool: 'kilo-code', contextKey: 'c' },
             outcome: { kind: 'success', value: KILO_MODELS.map((id) => ({ id })) },
           },
         ],

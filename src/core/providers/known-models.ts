@@ -81,20 +81,21 @@ function compatibleModel(model: Omit<KnownModel, 'recommendation'>): KnownModel 
 /**
  * The nine labels below come from three sources, read off the newest installed build: the
  * `/model` menu's own `label` where the binary carries one, the baked catalog's `display_name`
- * otherwise (`fable[1m]` derived the way the binary derives it, `display_name + " (1M context)"`),
+ * otherwise (`fable[1m]` derived the way the binary derives it, `display_name + " (1M context)"`,
+ * shortened to ` (1M)` here because the row's own detail already reads `forces the 1M window`),
  * and SPLITBRIEF's own title-cased alias for `best`, which has no label record in the binary.
  * The row order is ours — plain aliases, then behavioural, then window variants; the binary ships
  * no ordered menu record, and its alias validity array orders them differently.
  *
  * Each window is that same baked record's `context.window` — `1e6` for `claude-sonnet-5`,
  * `claude-opus-5` and `claude-fable-5-1`, `200000` for `claude-haiku-4-5` — so it is Claude's
- * own number beside Claude's own label, not one we typed. models.dev outranks it wherever it
- * answers (`declaredWindow` in `engine/providers/model/catalog.ts`, the `catalogModelId` lookup
- * in `context-window.ts`), which leaves these values doing exactly two jobs: what a row shows
- * before a catalog loads, and what an `auto` seat floors to (REQ-D26).
+ * own number beside Claude's own label, not one we typed. For a CLI tool's rows the declared
+ * window is the answer everywhere — what the picker row shows, and what an `auto` seat floors
+ * to (REQ-D26, REQ-B08); `catalogProvider`/`catalogModelId` document the full catalog id each
+ * alias resolves to and are never read for lookups (models.dev serves `api` runners only).
  */
 const CLAUDE_ALIAS_PROVENANCE =
-  'Claude Code 2.1.263 /model menu + baked catalog display_name & context.window + alias table (2026-09-08); code.claude.com/docs/en/model-config';
+  'Claude Code 2.1.267 /model menu + baked catalog display_name & context.window + alias table (2026-09-10); code.claude.com/docs/en/model-config';
 
 export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
   'claude-code': [
@@ -132,8 +133,8 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     }),
     compatibleModel({
       name: 'opusplan',
-      displayName: 'Opus Plan Mode',
-      detail: 'Opus 5 to plan, Sonnet 5 to build',
+      displayName: 'Opus 5 Plan Mode',
+      detail: 'Opus plans, Sonnet builds',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
       catalogModelId: 'claude-opus-5',
@@ -150,7 +151,7 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     }),
     compatibleModel({
       name: 'sonnet[1m]',
-      displayName: 'Sonnet 5 (1M context)',
+      displayName: 'Sonnet 5 (1M)',
       detail: 'forces the 1M window',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
@@ -159,7 +160,7 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     }),
     compatibleModel({
       name: 'opus[1m]',
-      displayName: 'Opus (1M context)',
+      displayName: 'Opus 5 (1M)',
       detail: 'forces the 1M window',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
@@ -168,7 +169,7 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     }),
     compatibleModel({
       name: 'fable[1m]',
-      displayName: 'Fable 5.1 (1M context)',
+      displayName: 'Fable 5.1 (1M)',
       detail: 'forces the 1M window',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',

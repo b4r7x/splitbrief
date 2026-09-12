@@ -136,26 +136,12 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
             </Text>
           </Text>
         </Box>
-        {!isSmall && (routeSummary !== null || bylineMetaText !== '') && (
+        {/* The crew is three labelled rows below, at every width: an arrow chain here would say it
+            a second way, and the chain has no row for a reviewer that inherits. */}
+        {!isSmall && bylineMetaText !== '' && (
           <Box justifyContent="center" width="100%">
-            <Text wrap="truncate-end">
-              {plannerSummary !== null && <Text color={theme.planner}>{plannerSummary}</Text>}
-              {plannerSummary !== null && implementerSummary !== null && (
-                <Text color={theme.textDim}>{arrowSep()}</Text>
-              )}
-              {implementerSummary !== null && (
-                <Text color={theme.implementer}>{implementerSummary}</Text>
-              )}
-              {reviewerSummary !== null && summary.reviewerTool !== undefined && (
-                <Text color={theme.textDim}>{arrowSep()}</Text>
-              )}
-              {reviewerSummary !== null && summary.reviewerTool !== undefined && (
-                <Text color={theme.reviewer}>{reviewerSummary}</Text>
-              )}
-              {routeSummary !== null && bylineMetaText !== '' && (
-                <Text color={theme.textDim}>{SOFT_SEP}</Text>
-              )}
-              {bylineMetaText !== '' && <Text color={theme.textDim}>{bylineMetaText}</Text>}
+            <Text wrap="truncate-end" color={theme.textDim}>
+              {bylineMetaText}
             </Text>
           </Box>
         )}
@@ -171,25 +157,31 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
                 {stripTerminalControls(summary.feature)}
               </Text>
             </LabeledRow>
-            {isSmall && plannerSummary && (
-              <LabeledRow label={CREW_SEAT_LABELS.plan} labelWidth={labelWidth}>
-                <Text color={theme.planner} wrap="truncate-end">
-                  {plannerSummary}
-                </Text>
+            {plannerSummary && (
+              <LabeledRow
+                label={CREW_SEAT_LABELS.plan}
+                labelWidth={labelWidth}
+                labelColor={theme.planner}
+              >
+                <Text wrap="truncate-end">{plannerSummary}</Text>
               </LabeledRow>
             )}
-            {isSmall && implementerSummary && (
-              <LabeledRow label={CREW_SEAT_LABELS.build} labelWidth={labelWidth}>
-                <Text color={theme.implementer} wrap="truncate-end">
-                  {implementerSummary}
-                </Text>
+            {implementerSummary && (
+              <LabeledRow
+                label={CREW_SEAT_LABELS.build}
+                labelWidth={labelWidth}
+                labelColor={theme.implementer}
+              >
+                <Text wrap="truncate-end">{implementerSummary}</Text>
               </LabeledRow>
             )}
-            {isSmall && reviewerSummary && (
-              <LabeledRow label={CREW_SEAT_LABELS.review} labelWidth={labelWidth}>
-                <Text color={theme.reviewer} wrap="truncate-end">
-                  {reviewerSummary}
-                </Text>
+            {reviewerSummary && (
+              <LabeledRow
+                label={CREW_SEAT_LABELS.review}
+                labelWidth={labelWidth}
+                labelColor={theme.reviewer}
+              >
+                <Text wrap="truncate-end">{reviewerSummary}</Text>
               </LabeledRow>
             )}
             {briefQualityText && (

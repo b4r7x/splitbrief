@@ -27,6 +27,9 @@ import {
   PLANNER_API_PROVIDER_IDS,
 } from '../../../src/core/providers/api-provider-catalog.js';
 import { getProviderDisplayName } from '../../../src/core/providers/catalog.js';
+import { AUTO_CHEAPEST_MODEL } from '../../../src/core/providers/automatic-model.js';
+import { AUTO_CHEAPEST_MODEL_WORD } from '../../../src/core/crew/identity.js';
+import { AUTO_CHEAPEST_ROW_DETAIL } from '../../../src/features/runners/model-catalog/rows.js';
 import { CLI_TOOL_IDS, PLANNER_CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool-catalog.js';
 import {
   buildRightModels,
@@ -442,7 +445,7 @@ describe('runner picker semantics integration', () => {
       }
     });
 
-    it('offers exactly one Auto row alongside the tool-chooses-the-model guidance', async () => {
+    it('leads a cli BUILD column with the price-routing row above the Auto row', async () => {
       const item = pickerItem(
         {
           id: 'codex',
@@ -468,7 +471,16 @@ describe('runner picker semantics integration', () => {
         customModels: [],
         currentItem: item,
       });
-      expect(rightModels).toEqual([{ id: 'auto' }]);
+      // The BUILD seat's two policies, in the order the column offers them: price routing ranks
+      // priced candidates per brief, `auto` hands the choice to the tool itself (F-001).
+      expect(rightModels).toEqual([
+        {
+          id: AUTO_CHEAPEST_MODEL,
+          displayName: AUTO_CHEAPEST_MODEL_WORD,
+          detail: AUTO_CHEAPEST_ROW_DETAIL,
+        },
+        { id: 'auto' },
+      ]);
 
       const ui = renderFeature(
         <PickerView
@@ -479,8 +491,9 @@ describe('runner picker semantics integration', () => {
       );
       await flushEffects();
       const frame = frameText(ui);
-      // One row in the Models column plus the preview line that describes it.
-      expect(frame).toContain('Auto');
+      // Both policy rows in the Models column, each named as what it does.
+      expect(frame).toContain('auto');
+      expect(frame).toContain(AUTO_CHEAPEST_MODEL_WORD);
       expect(frame).not.toContain('Add custom model');
       ui.unmount();
 
@@ -494,7 +507,7 @@ describe('runner picker semantics integration', () => {
       );
       await flushEffects();
       const guidanceFrame = frameText(guidanceUi);
-      expect(guidanceFrame).toContain('Auto');
+      expect(guidanceFrame).toContain('auto');
       expect(guidanceFrame).not.toContain('Default');
       guidanceUi.unmount();
     });
@@ -549,7 +562,7 @@ describe('runner picker semantics integration', () => {
       await flushEffects();
       const discoveredFrame = frameText(discoveredUi);
       expect(discoveredFrame).toContain('1 model');
-      expect(discoveredFrame).toContain('GPT-4o');
+      expect(discoveredFrame).toContain('gpt-4o');
       discoveredUi.unmount();
     });
   });
@@ -601,7 +614,6 @@ describe('runner picker semantics integration', () => {
           },
           cliCatalogs: [
             {
-              role: 'planner',
               tool: 'codex',
               models: [{ id: 'gpt-5.4' }, { id: 'runtime-only-model' }],
               probedAt: 40,

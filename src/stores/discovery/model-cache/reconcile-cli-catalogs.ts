@@ -12,12 +12,8 @@ import type {
 } from '../../../engine/detection/cli-catalog-outcomes.js';
 import { deepFreeze } from './freeze.js';
 
-function cliCatalogRoleKey(connection: Pick<ScopedCliCatalogConnection, 'role' | 'tool'>): string {
-  return `${connection.role}\u0000${connection.tool}`;
-}
-
 function cliCatalogConnectionKey(connection: ScopedCliCatalogConnection): string {
-  return `${cliCatalogRoleKey(connection)}\u0000${connection.contextKey}`;
+  return `${connection.tool}\u0000${connection.contextKey}`;
 }
 
 export function cloneScopedCliCatalogRuntime(
@@ -77,9 +73,7 @@ function reconcileCliCatalogAttempts(
     observedAt: number;
   }>,
 ): ScopedCliCatalogRuntime[] {
-  const observedRoleKeys = new Set(
-    input.attempts.map((attempt) => cliCatalogRoleKey(attempt.connection)),
-  );
+  const observedToolKeys = new Set(input.attempts.map((attempt) => attempt.connection.tool));
   const observedConnectionKeys = new Set(
     input.attempts.map((attempt) => cliCatalogConnectionKey(attempt.connection)),
   );
@@ -89,10 +83,7 @@ function reconcileCliCatalogAttempts(
   for (const runtime of input.previous) {
     const key = cliCatalogConnectionKey(runtime.connection);
     previousByConnection.set(key, runtime);
-    if (
-      !observedRoleKeys.has(cliCatalogRoleKey(runtime.connection)) ||
-      observedConnectionKeys.has(key)
-    ) {
+    if (!observedToolKeys.has(runtime.connection.tool) || observedConnectionKeys.has(key)) {
       next.set(key, cloneScopedCliCatalogRuntime(runtime));
     }
   }
@@ -110,18 +101,7 @@ function reconcileCliCatalogAttempts(
   return [...next.values()].map(cloneScopedCliCatalogRuntime);
 }
 
-export function findScopedCliCatalogRuntime(
-  runtimes: readonly ScopedCliCatalogRuntime[],
-  connection: Pick<ScopedCliCatalogConnection, 'role' | 'tool'>,
-): ScopedCliCatalogRuntime | null {
-  const roleKey = cliCatalogRoleKey(connection);
-  const matches = runtimes.filter((runtime) => cliCatalogRoleKey(runtime.connection) === roleKey);
-  return matches.length === 1 && matches[0] !== undefined
-    ? cloneScopedCliCatalogRuntime(matches[0])
-    : null;
-}
-
-export function findGenericCliCatalogRuntime(
+export function findCliCatalogRuntime(
   runtimes: readonly ScopedCliCatalogRuntime[],
   tool: CliToolId,
 ): ScopedCliCatalogRuntime | null {

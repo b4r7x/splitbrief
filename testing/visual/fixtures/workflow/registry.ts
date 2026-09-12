@@ -1,14 +1,14 @@
 import type { CheckpointId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
 import type { CheckpointPredicate, FixtureRegistry } from '../common.js';
-import { briefRecoveryFixtureProjections } from './brief-recovery-projections.js';
 import { WORKFLOW_FIXTURE_TEXT, workflowFixtureProjections } from './projections.js';
 import { createWorkflowFixtureFactory } from './setup.js';
 
 export const workflowFixtureRegistry: FixtureRegistry = new Map(
-  [...workflowFixtureProjections.values(), ...briefRecoveryFixtureProjections.values()].map(
-    (projection) => [projection.scenarioId, createWorkflowFixtureFactory(projection)],
-  ),
+  [...workflowFixtureProjections.values()].map((projection) => [
+    projection.scenarioId,
+    createWorkflowFixtureFactory(projection),
+  ]),
 );
 
 function includesAll(...markers: readonly string[]): CheckpointPredicate {
@@ -27,6 +27,7 @@ const checkpointPredicates = [
   [checkpointId('question'), includesAll(WORKFLOW_FIXTURE_TEXT.question)],
   [checkpointId('success'), includesAll('complete', WORKFLOW_FIXTURE_TEXT.success)],
   [checkpointId('failure'), includesAll(WORKFLOW_FIXTURE_TEXT.failure, 'Workflow cancelled')],
+  [checkpointId('recovery'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 
 export const workflowCheckpointPredicates: ReadonlyMap<CheckpointId, CheckpointPredicate> = new Map(

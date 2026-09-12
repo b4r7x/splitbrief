@@ -65,6 +65,7 @@ src/stores/
 │   ├── attachments.ts        # Pending prompt attachments
 │   ├── conversation-scroll.ts # Scroll position + expanded diffs
 │   ├── streaming-output.ts   # Live streamed runner output
+│   ├── recovery-notice.ts    # Halted seat + its quota reset, for the header
 │   └── review.ts             # Review file path + scroll
 ├── approval-prompt/          # Tiered approval request/response prompt
 │   └── prompt.ts             # approvalPromptStore (via channels/prompt)
@@ -210,6 +211,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, renderedLineCount }` | `setReviewFile()`, `setScrollOffset()`, `setRenderedLineCount()`, `clearReview()` |
 | `attachmentsStore` | `workflow/attachments.ts` | `{ pending: Attachment[] }` | `add()`, `remove()`, `drain()`, `peek()` — `attachImage()` / `detachImage()` / `listAttachments()` helpers |
 | `streamingOutputStore` | `workflow/streaming-output.ts` | `{ taskId, lines, active }` | `startStreaming()`, `replaceLines()`, `stopStreaming()` |
+| `recoveryNoticeStore` | `workflow/recovery-notice.ts` | `{ seat, resetAt }` — the seat an open halt stopped on and the clock its quota returns on | `open({ seat, resetAt })`, `clear()` — written by the TUI recovery driver |
 | `approvalPromptStore` | `approval-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` | `openApprovalPrompt()`, `closeApprovalPrompt()` (via `channels/prompt`) |
 | `costApprovalStore` | `cost-approval/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', prediction, resolve }` | `openCostApprovalPrompt()`, `closeCostApprovalPrompt()` (via `channels/prompt`) |
 | `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |

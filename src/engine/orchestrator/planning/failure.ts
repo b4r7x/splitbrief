@@ -3,8 +3,6 @@ import type { PlanningPhaseResult } from './types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { publishError } from '../events.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
-import { loadStateForResume } from '../../../core/state/resume-authority.js';
-import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';
 import { typedRunnerCallErrorMessage } from '../../implementers/pipeline/call-result.js';
 import {
   isAuthFailureDiagnostic,
@@ -20,25 +18,6 @@ import {
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { workflowAuthority } from '../run/authority.js';
-
-function loadPersistedRewindState(opts: {
-  projectDir: string;
-  sessionId: string;
-  authority: StateAuthorityReceipt | undefined;
-}): WorkflowState | null {
-  if (opts.authority === undefined) return null;
-  const authority: ResumeLoadAuthority = {
-    kind: 'fenced',
-    receipt: opts.authority,
-    promotedFromVersion: null,
-  };
-  const result = loadStateForResume({
-    ref: { projectDir: opts.projectDir, sessionId: opts.sessionId },
-    authority,
-  });
-  return result.kind === 'loaded' && result.state.rewindPending !== undefined ? result.state : null;
-}
 
 export function handlePlanningFailure(opts: {
   err: unknown;
@@ -46,7 +25,7 @@ export function handlePlanningFailure(opts: {
   sessionId: string;
   state: WorkflowState;
   wctx: PlannerCallbacksContext;
-}): PlanningPhaseResult {
+}): Extract<PlanningPhaseResult, { disposition: 'terminal' }> {
   const { err, projectDir, sessionId, state, wctx } = opts;
   // A failed planner call keeps the tool's own diagnosis in typed error data;
   // "Planner planner call failed" alone hides an expired login entirely.
@@ -69,20 +48,6 @@ export function handlePlanningFailure(opts: {
   }
   if (!isAbortError(err)) {
     publishError({ bus: wctx.bus, phase: state.phase, message });
-  }
-  if (isAbortError(err)) {
-    const persisted = loadPersistedRewindState({
-      projectDir,
-      sessionId,
-      authority: workflowAuthority(wctx),
-    });
-    if (persisted !== null) {
-      return {
-        disposition: 'terminal',
-        state: persisted,
-        outcome: 'cancelled',
-      };
-    }
   }
   const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
   return {

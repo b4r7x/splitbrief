@@ -14,7 +14,7 @@ Stable `stateId` and runner `state` values with copyable remediations are indexe
 
 The two commands share the strings but not the verdict: `doctor` diagnoses and exits `0` on warnings, while `start` fails closed on a configured `kind: cli` runner that is denied admission — no trusted executable identity, a version not proven compatible, or a definitively negative authentication fact (no credential, or the tool answering signed-out). Those refusals land in both transports: start exits `1` with the remediation quoted, before creating a session, instead of aborting mid-run.
 
-Unverified authentication is the one state where the verdict also splits by transport. A credential that exists but no call has proven reports readiness status `unverified` (stateId `auth-unknown`, severity warning), and a headless start (`--json`, `--rpc`, `--detach`) refuses it unless `--allow-unverified-auth` is passed, while an interactive start discloses the unverified state and proceeds. `doctor` on a TTY reports it as a warning and exits `0`; its human output says so in one line — `No trusted readiness identity for <tool>: headless start would be refused; use --allow-unverified-auth or complete verification — interactive start proceeds.` — and `doctor --json` or a non-TTY stdin replays the headless blocker instead. See [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-doctor).
+Unverified authentication is the one state where the verdict also splits by transport. A credential that exists but no call has proven reports readiness status `unverified` (stateId `auth-unknown`, severity warning), and a headless start (`--json` or `--plain`) refuses it unless `--allow-unverified-auth` is passed, while an interactive start discloses the unverified state and proceeds. `doctor` on a TTY reports it as a warning and exits `0`; its human output says so in one line — `No trusted readiness identity for <tool>: headless start would be refused; use --allow-unverified-auth or complete verification — interactive start proceeds.` — and `doctor --json` or a non-TTY stdin replays the headless blocker instead. See [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-doctor).
 
 ### `splitbrief doctor --json`
 
@@ -24,7 +24,7 @@ Unverified authentication is the one state where the verdict also splits by tran
 { "type": "readiness_report", "report": { "status": "ready|blocked|warning", "nextAction": { ... }, "checks": [ ... ] } }
 ```
 
-Each `report.checks[]` entry includes `id`, `severity`, `summary`, `stateId` (or `null`), and `remediation` (or `null`). Section titles from human output are omitted — parsers should use `stateId` and `remediation`, not decorative banners. `start --json` emits the same `readiness_report` shape as its first stdout line, and `start --rpc` emits it inside the first `status` envelope. `resume` re-probes CLI readiness for start gates but emits no `readiness_report`.
+Each `report.checks[]` entry includes `id`, `severity`, `summary`, `stateId` (or `null`), and `remediation` (or `null`). Section titles from human output are omitted — parsers should use `stateId` and `remediation`, not decorative banners. `start --json` emits the same `readiness_report` shape as its first stdout line. `resume` re-probes CLI readiness for start gates but emits no `readiness_report`.
 
 ```bash
 splitbrief doctor --json
@@ -130,7 +130,7 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 1. Read the `Next action` line. It points to `splitbrief init`, config repair, or cleaning/isolating the repo.
 2. For doctor-only missing config warnings, run `splitbrief init` or `splitbrief init --reconfigure`.
 3. For invalid config, fix `.splitbrief/config.yaml` and re-run `splitbrief doctor --json` to verify (`stateId` / `remediation` per check).
-4. For active-session blockers, run `splitbrief status`, then `splitbrief resume` or `splitbrief attach <session-id>` if the run is still live.
+4. For active-session blockers, run `splitbrief status`, then `splitbrief resume` or `splitbrief continue <session-id>`.
 
 **Prevention:** Run `splitbrief doctor` after changing runner config or before CI starts a headless run.
 
@@ -145,7 +145,7 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 **Fix:**
 1. Read the command first. `splitbrief doctor` prints it under `runners.planner.trust-boundary` / `runners.implementer.trust-boundary` as `Command:` and `Arguments:`.
 2. If you want it, run SPLITBRIEF in a terminal. It shows the resolved executable path, the argv, the working directory, and the fact that the child inherits your environment, then asks for the confirmation phrase and a reason. Confirming stores an owner-only receipt in `~/.splitbrief/trust/custom-runners.json`.
-3. In CI or any headless run (`--json`, `--rpc`, `--detach`), pass `--allow-repo-runners`. It grants that run only and persists nothing.
+3. In CI or any headless run (`--json`), pass `--allow-repo-runners`. It grants that run only and persists nothing.
 4. If the command should not run, replace the runner in `.splitbrief/config.yaml`.
 
 Related refusals name their own cause: `does not exist on this machine`, `is not executable`, and `executable changed since this machine trusted it` (the receipt binds the executable's content digest). `Configured command is outside the current trust policy` is the separate, stricter rule for repo-local commands, which need `--allow-repo-runners` even interactively.
@@ -178,11 +178,11 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 **Fix:**
 1. Run `git status` and decide whether the local edits should be part of this run.
 2. Continue if the edits are intentional and unlikely to overlap.
-3. Use `splitbrief start --worktree <name> "..."` from a clean source checkout when you want isolation.
+3. Commit or stash the edits you do not want this run to touch.
 
-**Prevention:** Start substantial runs from a clean checkout or a dedicated worktree.
+**Prevention:** Start substantial runs from a clean checkout.
 
-**See also:** [FEATURES.md](./FEATURES.md#splitbrief-start---worktree-name), [WORKFLOW.md](./WORKFLOW.md).
+**See also:** [WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
@@ -232,7 +232,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 **Prevention:** Choose `api` runners when cache observability matters for cost analysis.
 
-**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md), [docs/OTEL.md](./OTEL.md).
+**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ---
 
@@ -311,16 +311,15 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Planner times out before producing a brief
 
-**Likely cause:** There is no default total-call timeout. What you are hitting is the fixed 60-second **stream-idle** guard: an `api`-kind planner aborts when no token (including the first one) arrives for 60s. A cold-loading local model (Ollama/LM Studio pulling a model into memory) easily exceeds that time-to-first-token window. Non-`api` planners (`cli`, `shell`, `agent`) are covered by the **inactivity watchdog** instead: after 5 minutes of output silence the byline shows a "still working" warning, and at 30 minutes of silence the runner process group is auto-interrupted and a retry prompt appears (type instructions to steer, or press Enter to retry) — except the optional estimate-review extra planner call, which degrades gracefully to an unavailable review instead of parking a retry prompt. Both thresholds are tunable per runner via `idleWarnMs` / `idleKillMs`; `planner.timeout` remains the optional wall-clock cap on the whole call.
+**Likely cause:** There is no default total-call timeout. What you are hitting is the fixed 60-second **stream-idle** guard: an `api`-kind planner aborts when no token (including the first one) arrives for 60s. A cold-loading local model (Ollama/LM Studio pulling a model into memory) easily exceeds that time-to-first-token window. Non-`api` planners (`cli`, `shell`, `agent`) are covered by the **inactivity watchdog** instead: after 5 minutes of output silence the byline shows a "still working" warning, and at 30 minutes of silence the runner process group is auto-interrupted and a retry prompt appears (type instructions to steer, or press Enter to retry). Both thresholds are tunable per runner via `idleWarnMs` / `idleKillMs`; `planner.timeout` remains the optional wall-clock cap on the whole call.
 
 **Fix:**
 1. Warm the model before the run so the first token arrives within 60s — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
 2. Set `planner.timeout` (milliseconds) in `.splitbrief/config.yaml` to put a total wall-clock budget on each planner call (Opus planning passes can take several minutes). This caps the whole call; it does not extend the 60s idle guard.
-3. Use `--detach` so the planner runs in the background and the TUI re-attaches when it completes — useful for long invocations.
 4. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run.
 5. Reduce `codebase.tokenBudget` so the prompt is smaller and the call returns sooner.
 
-**Prevention:** Keep local models warm so time-to-first-token stays under the 60s idle guard, set `planner.timeout` as a total-call ceiling for high-latency planners, and prefer `--detach` for long jobs so terminal disconnects do not interrupt them.
+**Prevention:** Keep local models warm so time-to-first-token stays under the 60s idle guard, and set `planner.timeout` as a total-call ceiling for high-latency planners.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -419,7 +418,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 **Fix:**
 1. Inspect `.splitbrief/sessions/<id>/drift-report.json` for in-bounds and out-of-bounds touched paths.
 2. If the changes are legitimate (the brief was incomplete), add the paths to `scope.approvedOutOfBounds` in the brief and re-run the final review.
-3. If the changes are wrong, revert via the snapshot system: `splitbrief snapshot restore <snapshot-id>`.
+3. If the changes are wrong, revert them with git — the run leaves them unstaged, and no pre-run snapshot exists for `/run reject confirm` to restore.
 4. For repeat offenders, raise the implementer model or tighten the brief's scope language.
 
 **Prevention:** Always check the drift report before accepting a task or making any manual commit. Treat unexpected out-of-bounds files as a planning bug, not implementation noise.
@@ -430,7 +429,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: The implementer says it finished but nothing changed
 
-**Likely cause:** The runner completed its call without writing any file. Change detection (`detectChanges()`, `src/engine/change-detection.ts`) reports the distinct `no-files-changed` reason, the task fails with the `no-staged-change` outcome, and SPLITBRIEF publishes one coded warning — `category: implementer`, `code: implementer_wrote_nothing`, `transcriptSafe: true` — naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list (`review-packet.json` → `escalations.warnings`).
+**Likely cause:** The runner completed its call without writing any file. Change detection (`detectChanges()`, `src/engine/change-detection.ts`) reports the distinct `no-files-changed` reason, the task fails with the `no-staged-change` outcome, and SPLITBRIEF publishes one coded warning — `category: implementer`, `code: implementer_wrote_nothing` — naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list (`review-packet.json` → `escalations.warnings`).
 
 **Fix:**
 1. Read the warning in the transcript or `review-packet.json`. A "finished but wrote nothing" response is a model behaviour problem, not a SPLITBRIEF failure — the retry ladder runs exactly as it would for any other failure.
@@ -606,12 +605,12 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 **Likely cause:** Each session writes a per-session lockfile at `.splitbrief/sessions/<id>/lockfile.json` that records the PID, heartbeat, and exit marker. If `.splitbrief/active` still points at a non-terminal `state.json`, older versions could treat that pointer as live even when the lockfile already had `exitedAt`.
 
 **Fix:**
-1. Run `splitbrief ps` to list known sessions; it reads each lockfile, checks whether the PID is alive, and marks stale entries as `crashed` or exited.
+1. Run `splitbrief status` to see what the project believes is running.
 2. Run `splitbrief start ...` again. Current versions clear `.splitbrief/active` automatically when the active lockfile has exited or the PID is gone.
 3. If you want to resume that interrupted session instead of starting fresh, run `splitbrief continue <session-id>`.
-4. If the lock is fresh and a real process is alive, you have a genuine concurrent session. Attach to that one rather than starting another.
+4. If the lock is fresh and a real process is alive, you have a genuine concurrent session. Finish that one rather than starting another.
 
-**Prevention:** Prefer clean TUI cancellation or `splitbrief continue` for interrupted work. For long-running jobs, use `--detach` so the server survives terminal closure and exits cleanly.
+**Prevention:** Prefer clean TUI cancellation or `splitbrief continue` for interrupted work.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/DEBUGGING.md](./DEBUGGING.md).
 
@@ -619,15 +618,14 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: `.splitbrief/sessions/` accumulates directories that never became sessions
 
-**Likely cause:** An abort or crash after `readiness.json` was written — before the run acquired its lockfile — leaves a session directory holding nothing but `readiness.json` (or nothing at all). Historically nothing could act on those directories, so long-lived projects accumulated hundreds of them; `splitbrief ps` printed a row for each, and the stale slug suffixes kept `splitbrief ps` alias numbers and session-id slugs occupied.
+**Likely cause:** An abort or crash after `readiness.json` was written — before the run acquired its lockfile — leaves a session directory holding nothing but `readiness.json` (or nothing at all). Historically nothing could act on those directories, so long-lived projects accumulated hundreds of them and the stale slug suffixes kept session-id slugs occupied.
 
 **Fix:**
-1. A directory holding only `readiness.json` (or empty) and older than 24 hours is collectable. `splitbrief ps --prune` removes the collectable directories and lists what it collected; the sweep also runs automatically at workflow start.
-2. `splitbrief ps` no longer lists non-session directories, so the table matches what `splitbrief continue <n>` can address.
+1. A directory holding only `readiness.json` (or empty) and older than 24 hours is collectable; the sweep runs automatically at workflow start.
 
 **Prevention:** None needed beyond the automatic sweep. A directory holding any other artifact — a lockfile, `state.json`, an ownership marker, or anything else — is never collected.
 
-**See also:** [docs/HOW-IT-WORKS.md](./HOW-IT-WORKS.md), [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-ps).
+**See also:** [docs/HOW-IT-WORKS.md](./HOW-IT-WORKS.md).
 
 ---
 
@@ -637,10 +635,10 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 **Fix:**
 1. In the TUI, focus the composer (Tab if focus is elsewhere) and press `y` / `c` / `q`, or submit `approve` / `comment ...` / `reject`.
-2. If you ran with `--json`, the NDJSON stream cannot accept replies. Workflow review gates are auto-approved in headless JSON mode; file-write tiered approvals fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Use `--rpc` from the start when a client needs to answer approvals programmatically, or resume with `splitbrief continue --rpc <session-id>` when the session is resumable. For unattended runs, use `--mode quick` or configure approval tiers so file writes do not prompt.
+2. If you ran with `--json`, the NDJSON stream cannot accept replies. Workflow review gates are auto-approved in headless JSON mode; file-write tiered approvals fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Resume the session interactively with `splitbrief continue <session-id>` to answer the gate, or for unattended runs use `--mode quick` or configure approval tiers so file writes do not prompt.
 3. Check `workflow.approve` in config; `workflow.approve: none` skips the spec and plan approval gates but not the standard/speckit brief-review gate, `workflow.approve: spec` (default) blocks only on the spec, `workflow.approve: all` blocks on both spec and plan. For file-write tiered approval, see the `approval.tiers` config block.
 
-**Prevention:** Decide up front whether a run is interactive, `--json`, or `--rpc`; configure approval policy to match.
+**Prevention:** Decide up front whether a run is interactive or `--json`; configure approval policy to match.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
@@ -677,96 +675,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ---
 
-## Brief contract and recovery
-
-### Symptom: the brief review shows `CONTRACT BLOCKED` and approval does not advance the run
-
-**Likely cause:** The binary Brief contract failed and the one bounded automatic repair is exhausted. The diagnostic score and warnings explain the result; they cannot pass it. A repeated approval does not grant a quality override — the readiness override in `brief-readiness.json` is the only confirm-by-repeat affordance, and it never bypasses the contract. Repeated identical quality failures also stop at the no-progress threshold of 20 rather than churning forever.
-
-**Fix:**
-1. Read the durable cause and the allowed actions on the projection: `retry` (a new operation with a fresh base), `edit` (rewrite `tasks.md`; the edit is re-gated), or `reject`.
-2. Change the input instead of retrying identical content — the same intent replays, it does not repair.
-3. If the score looks contradictory, remember that the score is diagnostic; the run presents `CONTRACT READY` only when the current report has zero errors.
-
-**Prevention:** Treat the quality score as telemetry, not as a second approval channel.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (contract fence), [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) (generation and execution permit).
-
----
-
-### Symptom: a recovery operation is refused with `brief_budget_unknown` or `brief_budget_exhausted`
-
-**Likely cause:** With `workflow.maxBudget` configured, recovery refuses before provider dispatch unless the operation reservation and the relevant current paid spend are finite frozen USD. Unknown price or spend is `brief_budget_unknown`; a known finite amount beyond the cap is `brief_budget_exhausted`. Without `maxBudget`, missing provider pricing does not refuse an otherwise eligible bounded operation — it records a provider-dependent reservation — and unknown cost is never `$0`.
-
-**Fix:**
-1. Read the refusal receipt's code, category, and diagnostic for the concrete reason.
-2. Configure pricing for the paid runner, or raise `maxBudget` when the cap is too tight.
-3. A `tracking_paused` warning means the run stopped over unknown paid usage: continue only after acknowledging unknown spend or configuring pricing.
-
-**Prevention:** Set `workflow.maxBudget` for paid runners and keep their pricing known.
-
-**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (provider-dependent cost), [docs/CONFIGURATION.md](./CONFIGURATION.md) (§5 `workflow`).
-
----
-
-### Symptom: retrying a refused operation replays the same refusal or reports a conflict
-
-**Likely cause:** Refusals are durable and bounded. The same operation and intent identity replays exactly, without a second state or evidence advance; an operation ID already bound to different bytes is a conflict. Retention is versioned with hard bounds (64 refusal records and 64 KiB of receipts per current epoch, a 1 KiB receipt bound, a 4 KiB diagnostic bound, 256 KiB of refusal evidence, and 16 closed-epoch summaries). If safe retention is impossible, the operation fails storage-safe before dispatch.
-
-**Fix:**
-1. Read the refusal receipt — it carries the code, category, cap context, price and spend knownness, and a bounded diagnostic.
-2. Start a new operation with a new intent, or resolve the conflict; replaying the same intent returns the same refusal by design.
-3. A refusal preserves the automatic repair allowance, so the blocked contract never consumes it.
-
-**Prevention:** Treat refusals as idempotent; change the input before expecting a different verdict.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (refusal bounds).
-
----
-
-### Symptom: status or attach shows the contract blocked but nothing changes
-
-**Likely cause:** Observation is side-effect free. Status, attach, reconnect, projection load, and resume hydration make zero provider calls, zero compiler dispatches, zero recovery mutations, and no state migration. A projection from an older epoch or revision is refused, not applied.
-
-**Fix:**
-1. Observation never retries or repairs. Send an explicit mutating command — `retry`, `edit`, `reject`, `approve`, or `resolve-unresolved` — carrying the current epoch, revision, and operation identity; stale identity is refused.
-2. If the state is `UNRESOLVED`, resolve it explicitly by rebinding while acknowledging duplication risk, or abandon; the system never silently retries an ambiguous dispatch.
-
-**Prevention:** Treat projections as read-only displays; route every mutation through the owner.
-
-**See also:** [docs/STORES-AND-UI.md](./STORES-AND-UI.md) (projection and ownership).
-
----
-
-### Symptom: the run parks instead of implementing, or resume shows a parked projection
-
-**Likely cause:** Planning ended in the `parked` disposition: a blocked contract, a refused recovery operation, or a published generation with no issued permit. Parked retains the recovery epoch, evidence head, allowance state, durable cause, and valid actions; it never masquerades as completed or failed work.
-
-**Fix:**
-1. Read the durable cause and the allowed actions on the projection.
-2. Choose `retry`, `edit`, or `reject` as permitted; resume rehydrates the same projection through the owner fence.
-3. If the cause is a missing permit, the generation is non-executable by design until approval issues one — re-approve through the brief review, not by starting a new run.
-
-**Prevention:** A parked run is waiting for a decision, not for time; observing it again changes nothing.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (three-way disposition), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (permit-gated execution).
-
----
-
-### Symptom: `brief_storage_invalid` or a `storage-blocked` projection
-
-**Likely cause:** The brief recovery storage or evidence is unavailable or invalid, so the controller exposes a read-only `storage-blocked` projection with only `status` allowed. This is refusal state, not permission to retry.
-
-**Fix:**
-1. Check disk space and permissions under `.splitbrief/sessions/<id>/`.
-2. Inspect `state.json` and the recovery evidence files for corruption.
-3. Resume or continue shows the same projection until the storage problem is fixed; no mutating command succeeds against a storage-blocked head.
-
-**Prevention:** Keep the session directory on a writable, healthy volume.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (recovery on resume).
-
----
+## Planner admission
 
 ### Symptom: the planner refuses before any dispatch with `task_compiler_capability_unsupported`
 
@@ -810,14 +719,14 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: `APPROVAL_REQUIRED` (headless run paused, or stuck on a sticky/confirm tier)
 
-**Likely cause:** A `--json` run hit a file-write tiered approval that has no reply channel; an RPC client did not answer the prompt; or an interactive run has `approval.headless: true` set, which forces fail-closed on any tier that would ordinarily prompt.
+**Likely cause:** A file-write tiered approval reached a run with no reply channel. The gate prompts whenever there is somebody to prompt and denies with `APPROVAL_REQUIRED` when there is not, so this is a `--json` run hitting a `sticky` or `confirm` tier.
 
 **Fix:**
-1. If the session is resumable, continue it with an interactive TUI (`splitbrief continue <session-id>`) or RPC (`splitbrief continue --rpc <session-id>`).
+1. If the session is resumable, continue it with an interactive TUI: `splitbrief continue <session-id>`.
 2. Or set the offending file-write tier to `auto` in `.splitbrief/config.yaml` under `approval.tiers.<class>: auto`.
-3. For CI runs that should never prompt, make sure every tier is set to `auto` (or remove the `approval` block entirely for fully non-interactive runs). Set `approval.headless: true` only when you want fail-closed behaviour on unexpected prompts.
+3. For CI runs that should never prompt, make sure every tier that the run can reach is set to `auto`. Leaving a tier at `sticky` or `confirm` is what makes a `--json` run fail closed on it — which is the right default when an unexpected write should stop the run rather than land unreviewed.
 
-**Prevention:** Audit `approval.tiers` before running `--json` or unattended RPC. Any tier left at `sticky` or `confirm` can require an approval response.
+**Prevention:** Audit `approval.tiers` before running `--json` or unattended. Any tier left at `sticky` or `confirm` can require an approval response.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -825,12 +734,11 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: `invalid_confirm_phrase` — confirm tier rejected my input
 
-**Likely cause:** The engine requires every confirm-tier response to carry the literal phrase `I confirm` (capital I, space, lowercase confirm) and a non-empty reason. The TUI supplies both for you once you make the keyed gesture, so this error means the response came from somewhere else: an RPC client (`splitbrief spec --rpc`), the configured-runner trust prompt, or a custom `onTieredApproval` callback that sent a different phrase or an empty reason.
+**Likely cause:** The engine requires every confirm-tier response to carry the literal phrase `I confirm` (capital I, space, lowercase confirm) and a non-empty reason. The TUI supplies both for you once you make the keyed gesture, so this error means the response came from somewhere else: the configured-runner trust prompt, or a custom `onTieredApproval` callback that sent a different phrase or an empty reason.
 
 **Fix:**
 1. In the TUI, press Enter (destructive class) or `y` (every other confirm-tier class). Press `r` first if you want to record a reason. Escape denies.
-2. Over RPC, send `confirmationPhrase: "I confirm"` plus a non-empty `reason` — see `src/cli/rpc/gates.ts`.
-3. In a custom callback, return `{ decision: 'confirm', phrase: CONFIRM_PHRASE, reason }` with `reason` non-empty.
+2. In a custom callback, return `{ decision: 'confirm', phrase: CONFIRM_PHRASE, reason }` with `reason` non-empty.
 
 **Prevention:** Import `CONFIRM_PHRASE` from `src/core/approval/types.ts` rather than retyping the literal.
 
@@ -840,33 +748,31 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ## Snapshots
 
-### Symptom: `snapshot create` fails with "lock held"
+### Symptom: a snapshot fails with "lock held"
 
 **Likely cause:** Another SPLITBRIEF process — or a previous run that crashed — is holding the snapshot lock. The lock is considered stale after 60 seconds.
 
 **Fix:**
 1. Wait 60 seconds and retry; stale locks expire automatically.
-2. If a real concurrent operation is running, finish it first (or attach with `splitbrief attach` to see what it is doing).
+2. If a real concurrent operation is running, finish it first.
 3. If no other process exists and the lock is older than 60s, remove it manually: `rm .splitbrief/sessions/<session-id>/snapshots/.lock`.
-4. Re-run the snapshot operation.
+4. Re-run the operation that needed the snapshot.
 
-**Prevention:** Avoid running multiple `splitbrief start` invocations against the same workspace simultaneously — use worktrees instead.
+**Prevention:** Avoid running multiple `splitbrief start` invocations against the same workspace simultaneously.
 
-**See also:** [docs/WORKTREES.md](./WORKTREES.md), `src/engine/snapshots/` (lock implementation).
+**See also:** `src/engine/snapshots/` (lock implementation).
 
 ---
 
-### Symptom: `snapshot restore` reports conflicts on every file
+### Symptom: `/run reject confirm` has nothing to reject
 
-**Likely cause:** You modified the working tree after the snapshot was taken; restore refuses to overwrite divergent changes by default.
+**Likely cause:** No pre-run baseline exists. `/run accept` is the only command that records a run snapshot, so the rejection finds either no ledger (`No run snapshot to reject.`) or the accepted snapshot (`Run already accepted at snapshot <id>.`).
 
 **Fix:**
-1. Stash or commit your local changes first if you want to keep them: `git stash`.
-2. Re-run restore; it should now apply cleanly.
-3. If you want to discard local changes outright, restore with `--force`.
-4. If only some files conflict, restore with `--force` only when you intend to overwrite all conflicted files. Selective restore is not currently exposed by the CLI.
+1. Undo the run with git: the default leaves every change unstaged, so `git diff` shows what the run did and `git checkout -- <paths>` reverts it.
+2. To keep part of the run, stage the files you want before reverting the rest.
 
-**Prevention:** Snapshot before risky implementer runs, restore promptly, and avoid manual edits in the meantime.
+**Prevention:** Commit or stash your own edits before starting a run, so the run's changes are the only unstaged ones in the tree.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -935,199 +841,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ---
 
-## Handoff
-
-### Symptom: Handoff pack missing `manifest.json`
-
-**Likely cause:** `writeHandoffPack()` generates `manifest.json` after rendering. If the manifest is missing, handoff failed before `writeManifest()` completed.
-
-**Fix:**
-1. Inspect the command error output, selected output path, renderer path safety checks, and renderer load result.
-2. Re-run the planner pass that produces brief 04.
-3. If you wrote a custom renderer, verify it reads from the brief-hash-versioning output rather than older artifacts.
-4. Re-run handoff: `splitbrief handoff <target>`.
-
-**Prevention:** Treat handoff renderers as downstream consumers — never run handoff before all prerequisite briefs have completed.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md).
-
----
-
-### Symptom: Custom handoff renderer is not picked up
-
-**Likely cause:** The renderer file does not export a default function, has the wrong file extension, or cannot be loaded by the current runtime. Handoff loads only runtime-loadable `.ts` and `.js` files exporting a default function.
-
-**Fix:**
-1. For `.js`, ensure the file exports `export default function render(input) { ... }` (or async).
-2. For `.ts`, type the function with `RendererFunction` or annotate `input` and return; `.ts` also needs runtime loader support.
-3. Place the file at `.splitbrief/handoff-renderers/<target>.ts` (or `.js`). The loader scans that directory automatically — there is no `handoff.renderersDir` config field.
-4. Re-run `splitbrief handoff <target> --allow-custom-renderer`, or set `trust.customRenderers: true` in `.splitbrief/config.yaml`. Loader errors report the import or default-export failure reason. Unknown-target errors include the target name.
-
-**Prevention:** Copy from a known-good renderer template when starting a new one rather than writing from scratch.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/WORKFLOW.md](./WORKFLOW.md).
-
----
-
-### Symptom: `Handoff target not recognized: <name>`
-
-**Likely cause:** The target is neither in the built-in `HANDOFF_TARGETS` list nor mapped to a custom renderer.
-
-**Fix:**
-1. Run `splitbrief handoff --list` to enumerate known targets.
-2. If the name is a typo, correct it.
-3. If you want a new target, add a runtime-loadable custom renderer at `.splitbrief/handoff-renderers/<target>.ts` or `.js` — `splitbrief handoff --list` can discover it without trusting it.
-4. Execute it with `splitbrief handoff <target> --allow-custom-renderer`, or set `trust.customRenderers: true` in config.
-
-**Prevention:** Define custom renderers as soon as you adopt a new downstream consumer, and document the available targets in your team handbook.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), `src/engine/handoff/`.
-
----
-
-## MCP server
-
-SPLITBRIEF MCP exposes read-only session resources and five constrained evidence tools. The tools only update `.splitbrief/sessions/<id>/evidence.json` for existing sessions/tasks; they do not write project files, run shells, or dispatch implementers. General tool calls remain inside the configured planner or implementer runner.
-
-### Symptom: `splitbrief mcp serve` exits immediately or refuses to bind
-
-**Likely cause:** The default port is in use, or there is no active session for the server to attach to.
-
-**Fix:**
-1. Pass `--port <n>` with a free port (default may be occupied by another SPLITBRIEF or unrelated service).
-2. Pass `--session <id>` explicitly — `splitbrief mcp serve` attaches to a specific session, not "the current workspace".
-3. Confirm the session exists with `splitbrief ps`.
-4. Check that no other `splitbrief mcp serve` is running for the same session: `pgrep -fa 'splitbrief mcp serve'`.
-
-**Prevention:** Always pass `--port` and `--session` explicitly in scripts; never rely on defaults for production usage.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
-
----
-
-### Symptom: MCP client reports "auth token rejected"
-
-**Likely cause:** The token is mistyped or stale. `splitbrief mcp serve` prints a fresh token on startup; clients must use that exact value.
-
-**Fix:**
-1. Re-read the startup banner — the token is printed once at server start.
-2. Copy it verbatim (no surrounding whitespace, no quotes) into your client config.
-3. If you lost the banner, restart the server: `splitbrief mcp serve --port <p> --session <s>` and capture the new token.
-4. Update the client config with the new bearer token.
-
-**Prevention:** Start MCP from a wrapper script that captures the startup banner and writes the generated token into your client config. The token is generated in memory for each server run and is not pinned by environment variable.
-
-**See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
-
----
-
-### Symptom: Expected MCP resources are missing or empty
-
-**Likely cause:** Resources are synthesized from the served session artifacts. `resources/list` omits missing concrete artifacts; reading a missing concrete resource returns resource-not-found. The virtual `tasks` resource returns an empty JSON array when `tasks.md` is absent. MCP evidence tools can update the evidence ledger, but no MCP tool can create missing planning artifacts.
-
-**Fix:**
-1. Confirm session status with `splitbrief ps`.
-2. If the session is still planning, wait for the artifacts to materialize.
-3. Use `splitbrief explain --session <id>` or inspect `.splitbrief/sessions/<id>/` directly to confirm what exists.
-4. If artifacts exist but the MCP server does not expose them, restart `splitbrief mcp serve` to re-scan.
-
-**Prevention:** Start MCP after the session has produced at least its first brief.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
-
----
-
-### Symptom: MCP `Resource not found` (error `-32002`)
-
-**Likely cause:** The resource URI references a session ID or artifact that the running MCP server is not serving. This happens when the session was started after the server, or you referenced the wrong session ID.
-
-**Fix:**
-1. Confirm the session ID exists: `splitbrief ps`.
-2. If the session was created after the server started, restart `splitbrief mcp serve` — the server does not hot-reload new sessions.
-3. To serve all sessions known at server startup, use `splitbrief mcp serve --all-sessions --port 4321`; restart the server to include sessions created later.
-
-**Prevention:** Start or restart the MCP server after all relevant sessions exist.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
-
----
-
-### Symptom: MCP HTTP 401 (Bearer token rejected)
-
-**Likely cause:** The token printed in the server startup banner is generated once per server invocation and kept in memory only. It rotates on every restart. A stale token from a previous run will always be rejected.
-
-**Fix:**
-1. Re-read the token from the server startup banner: `splitbrief mcp serve --port 4321` prints `Token: <value>` on start.
-2. Copy the token exactly — no surrounding quotes or whitespace.
-3. Update your MCP client config with the new token value.
-
-**Prevention:** Keep the terminal that started `splitbrief mcp serve` visible, or have a wrapper script tee the startup banner to a file before handing the token to your client config.
-
-**See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
-
----
-
-### Symptom: `Port 4321 already in use` (starting `splitbrief mcp serve`)
-
-**Likely cause:** Another process (a previous `splitbrief mcp serve`, or an unrelated service) is already bound to port 4321, which is the MCP server's default port.
-
-**Fix:**
-1. Pass a different port: `splitbrief mcp serve --port 4444`.
-2. Or find and stop the conflicting process: `lsof -ti:4321 | xargs kill` (macOS/Linux).
-
-**Prevention:** Always pass `--port` explicitly in scripts; do not rely on the default when running multiple MCP servers.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
-
----
-
-## Worktrees
-
-### Symptom: Two worktrees collide on a dev server port
-
-**Likely cause:** Worktree isolation is filesystem-only; runtime port allocation is not per-worktree. Both worktrees launch their dev server on the same port and the second one fails to bind.
-
-**Fix:**
-1. Override the port per-worktree via env (`PORT=3001 npm run dev`) or per-worktree config file.
-2. For full runtime isolation, run each worktree inside its own devcontainer (each container has its own loopback).
-3. As a stopgap, only run the dev server in one worktree at a time.
-
-**Prevention:** Set `PORT` from a worktree-local `.env.local` so each worktree picks a distinct port automatically.
-
-**See also:** [docs/WORKTREES.md](./WORKTREES.md).
-
----
-
-### Symptom: `git worktree remove` refuses with "contains modified or untracked files"
-
-**Likely cause:** The worktree has uncommitted work; git refuses to delete it to avoid data loss.
-
-**Fix:**
-1. Run `git status` inside the worktree and decide whether to keep the work.
-2. If the changes matter, commit (manually — SPLITBRIEF does not commit for you) or `git stash` them.
-3. If the changes are scratch and safe to drop, remove with `--force`: `git worktree remove --force <path>`.
-4. Run `git worktree prune` to clean dangling metadata.
-
-**Prevention:** Before removing a worktree, always run `git status` inside it as a sanity check.
-
-**See also:** [docs/WORKTREES.md](./WORKTREES.md).
-
----
-
-### Symptom: `node_modules` clashes between worktrees (wrong versions, missing bindings)
-
-**Likely cause:** A shared `node_modules/` (via symlink or hoisted install) is reused across worktrees that have diverging `package.json` files.
-
-**Fix:**
-1. Run `npm install` inside each worktree so it gets its own `node_modules/`.
-2. If disk space is a concern, use a per-worktree install but enable the npm cache (`npm config set cache ~/.npm`) so artifacts are deduplicated at the cache layer.
-3. For pnpm users, the content-addressable store gives the same benefit automatically.
-
-**Prevention:** Treat each worktree you create yourself as a fully independent checkout. Never symlink `node_modules/` across those worktrees. (Run isolation is the deliberate exception: it links the project's `node_modules` into its worktree — see the entry below.)
-
-**See also:** [docs/WORKTREES.md](./WORKTREES.md).
-
----
+## Run isolation
 
 ### Symptom: The implementer cannot run the project's own checks inside a worktree-isolated run
 
@@ -1145,43 +859,13 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 ### Symptom: `Branch splitbrief/<slug> already exists.`
 
-**Likely cause:** A previous SPLITBRIEF run created that branch and it was never deleted. SPLITBRIEF refuses to overwrite an existing branch when creating a worktree.
+**Likely cause:** A previous run's isolation worktree left the branch behind and it was never deleted. SPLITBRIEF refuses to overwrite an existing branch when creating a worktree.
 
 **Fix:**
-1. If the branch contains work you still want: `git branch -D splitbrief/<slug>` (or rename it first).
-2. Alternatively, pass a different slug: `splitbrief start --worktree <other-name> "..."`.
+1. If the branch contains work you still want, inspect it first, then rename it.
+2. Otherwise clear the stale registration: `git worktree prune`, then `git branch -D splitbrief/<slug>`.
 
-**Prevention:** Run `splitbrief worktree list` and clean up idle branches with `splitbrief worktree remove <slug> --delete-branch` after merging or abandoning work.
-
-**See also:** [docs/WORKTREES.md](./WORKTREES.md).
-
----
-
-### Symptom: `Worktree ".trees/<slug>" has a live session <id>.`
-
-**Likely cause:** You tried to remove a worktree that still has an active SPLITBRIEF session.
-
-**Fix:**
-1. Attach to the running session and stop it: `splitbrief attach <id>` then Ctrl-C.
-2. Or force-remove once you're certain the session can be discarded: `splitbrief worktree remove <slug> --force`.
-
-**Prevention:** Always run `splitbrief ps` before removing a worktree to confirm no session is active inside it.
-
-**See also:** [docs/WORKTREES.md](./WORKTREES.md).
-
----
-
-### Symptom: `Worktree ".trees/<slug>" has uncommitted changes.`
-
-**Likely cause:** The worktree has local modifications; `splitbrief worktree remove` refuses by default to avoid accidental data loss.
-
-**Fix:**
-1. `cd .trees/<slug>` and either commit or `git stash` your changes.
-2. If the changes are disposable: `splitbrief worktree remove <slug> --force`.
-
-**Prevention:** Treat worktrees as ephemeral; merge or discard changes before removal.
-
-**See also:** [docs/WORKTREES.md](./WORKTREES.md).
+**Prevention:** Let runs finish so isolation removes its own worktree and branch; `git worktree list` shows the ones that outlived a run.
 
 ---
 
@@ -1190,91 +874,11 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 **Likely cause:** Run isolation retained the worktree on purpose. When a run ends with work that was never promoted — an interrupted task, an escalation that never landed — SPLITBRIEF keeps the worktree and its `splitbrief/<session-id>` branch so that work can be recovered. It also keeps the worktree when the worktree strategy could not prove the worktree clean, so a retained directory does not always mean a failed run. The checkout lives under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<session-id>/` (default `~/.local/state/splitbrief/trees/...`), outside both `.git/` and the project root.
 
 **Fix:**
-1. Find the path: `git worktree list` (look for `splitbrief/<session-id>`) or read the trailing line from `splitbrief ps` when the session directory is gone.
+1. Find the path: `git worktree list` (look for `splitbrief/<session-id>`).
 2. Inspect what it holds: `cd` to that path and run `git status` (and compare against the project directory).
-3. If the work is wanted, promote it manually or resume the session; if it is disposable, remove both the worktree and its branch with the commands `splitbrief ps` prints — `git worktree remove <path> --force` then `git branch -D splitbrief/<session-id>`. Do not use `splitbrief worktree remove` for these paths; it manages `.trees/` lanes only.
+3. If the work is wanted, promote it manually or resume the session; if it is disposable, remove both the worktree and its branch: `git worktree remove <path> --force` then `git branch -D splitbrief/<session-id>`.
 
-**Prevention:** A fully accepted run removes its worktree and branch itself; retained directories are the signal that something did not reach the project. `git worktree list` shows them. `splitbrief ps` names isolation worktrees whose session directory is gone and prints the `git worktree remove` cleanup — it does not treat a live session running inside a `--worktree` lane as orphaned just because you invoked `ps` from the repository root.
-
-**See also:** [docs/WORKTREES.md](./WORKTREES.md).
-
----
-
-## Server-client and detach
-
-### Symptom: `splitbrief attach` exits with "connection refused" or "no such session"
-
-**Likely cause:** The server process died (OOM, terminal closed without `--detach`, host reboot) and the session metadata is now stale.
-
-**Fix:**
-1. Run `splitbrief ps` and confirm the session's PID is alive.
-2. If the PID is dead, the run is over; archive the session and start fresh.
-3. If the PID is alive but the socket is gone, the IPC layer crashed — continue from saved state with `splitbrief continue <session>`.
-4. Check OS logs for OOM kills if this happens repeatedly.
-
-**Prevention:** Use `--detach` for any long-running session so the server lives independently of the terminal.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md).
-
----
-
-### Symptom: TUI input is dropped or duplicated when multiple clients are attached
-
-**Likely cause:** Single-writer constraint. Only one attached client should send input to a session at a time.
-
-**Fix:**
-1. Detach all but one client.
-2. For multi-viewer setups, use `splitbrief status`, `splitbrief ps`, and the session artifacts instead of extra interactive attach clients.
-3. If you need to hand off control between people, the current writer must `detach` before the next one attaches as writer.
-
-**Prevention:** Establish a convention: only one teammate is the active writer per session at any time.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md).
-
----
-
-### Symptom: `attach` is slow because the entire event log replays
-
-**Likely cause:** The session's `session.jsonl` has grown large; the client replays from the start to reconstruct UI state.
-
-**Fix:**
-1. Use `splitbrief status` or `splitbrief ps` to confirm you are attaching to the intended session.
-2. For very long sessions, detach and resume from a checkpoint when the workflow reaches a stable boundary.
-3. Keep the existing session directory intact; `attach` only accepts `--project` plus the optional session id.
-
-**Prevention:** Keep sessions short — split long-running multi-feature work across multiple sessions rather than one mega-session.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
-
----
-
-### Symptom: `timeout waiting for server to start` (when using `--detach`)
-
-**Likely cause:** The background server process failed to write its lockfile within the expected window (3 seconds). This can happen if the process itself crashed immediately, if the disk is full, or if there is a port conflict on the IPC socket.
-
-**Fix:**
-1. Check `.splitbrief/sessions/<id>/server.log` for the crash reason.
-2. Confirm no port or socket conflict: another `splitbrief` process may already be using the same IPC socket.
-3. Retry `splitbrief start --detach "..."` — transient startup failures are rare.
-
-**Prevention:** Use `--detach` for long jobs on reliable infrastructure; avoid running multiple SPLITBRIEF instances against the same session directory simultaneously.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/DEBUGGING.md](./DEBUGGING.md).
-
----
-
-### Symptom: TUI shows `ipc_reconnect_attempt` / `ipc_reconnect_failed` events
-
-**Likely cause:** The IPC client lost its connection to the server and is retrying with exponential backoff (up to 5 attempts). If all attempts fail, an `ipc_reconnect_failed` event fires and the TUI shows the session as disconnected.
-
-**Fix:**
-1. If `ipc_reconnect_failed` fires, the server process has most likely crashed — run `splitbrief attach <id>` to see the post-mortem from `server.log`.
-2. If you see reconnect attempts but eventual success, the server hiccuped (GC pause, brief overload) — no action needed.
-3. Check OS-level OOM logs if crashes repeat: `dmesg | grep -i kill` (Linux) or Console.app (macOS).
-
-**Prevention:** Run on a machine with enough RAM for your planner model's context window. Prefer `--detach` for long sessions so the server survives terminal disconnects.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/DEBUGGING.md](./DEBUGGING.md).
+**Prevention:** A fully accepted run removes its worktree and branch itself; retained directories are the signal that something did not reach the project. `git worktree list` shows them.
 
 ---
 
@@ -1286,10 +890,10 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 **Fix:**
 1. Resize the terminal to at least 80 columns (120 recommended).
-2. If you are on a tiny window, run without the TUI instead: `splitbrief start --json "..."` for NDJSON output, or `splitbrief start --rpc "..."` for an interactive NDJSON protocol.
+2. If you are on a tiny window, run without the TUI instead: `splitbrief start --json "..."` for NDJSON output.
 3. For tmux/screen users, increase the pane width or detach from the multiplexer.
 
-**Prevention:** Default to a wide terminal for SPLITBRIEF sessions, or use `--json`/`--rpc` when working in narrow contexts.
+**Prevention:** Default to a wide terminal for SPLITBRIEF sessions, or use `--json` when working in narrow contexts.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -1357,7 +961,7 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 **Prevention:** Use `api` runners when live USD cost feedback matters.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/OTEL.md](./OTEL.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -1450,7 +1054,7 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 **Fix:**
 1. Inspect the `recovery_required` record in the NDJSON stream — it now carries `status` (`awaiting-user` | `paused` | `applying`).
-2. Resolve the recovery with `splitbrief continue --rpc <session-id>` and the matching `recovery` command, or `splitbrief resume` in the TUI and pick an action.
+2. Resolve it with `splitbrief resume` in the TUI and pick an action.
 3. If the run truly did nothing, check `state.json` for `pendingRecovery` before assuming CI passed.
 
 **Prevention:** Treat any `recovery_required` record as a hard failure in CI.
@@ -1461,12 +1065,11 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 ### Symptom: `splitbrief start --json` output is interleaved with logs
 
-**Likely cause:** Logs go to stderr, JSON goes to stdout. If you captured both streams together, they interleave. Console OTel (`OTEL_TRACES_EXPORTER=console`, `SPLITBRIEF_OTEL_EXPORTER=console`, or `--otel-exporter console`) also writes spans to stdout and can interleave with `--json`.
+**Likely cause:** Logs go to stderr, JSON goes to stdout. If you captured both streams together, they interleave.
 
 **Fix:**
 1. Redirect stderr separately: `splitbrief start --json "feature" 2>splitbrief.log >splitbrief.json`.
 2. Or, parse line-by-line and reject any line that does not begin with `{`.
-3. Do not combine console OTel with NDJSON output; use a non-console provider bootstrap or disable OTel for JSON automation.
 
 **Prevention:** In CI, redirect stdout and stderr to distinct files.
 
@@ -1525,7 +1128,7 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 ### Symptom: A config override (CLI flag, env var) does not take effect
 
-**Likely cause:** Only specific startup options are overrideable. SPLITBRIEF loads project `.splitbrief/config.yaml`, applies explicit CLI runner/workflow flags for that invocation, and reads documented environment variables for provider keys, context length, OTel, terminal behavior, and editor selection. It does not load a global config file.
+**Likely cause:** Only specific startup options are overrideable. SPLITBRIEF loads project `.splitbrief/config.yaml`, applies explicit CLI runner/workflow flags for that invocation, and reads documented environment variables for provider keys, context length, terminal behavior, and editor selection. It does not load a global config file.
 
 **Fix:**
 1. Inspect `.splitbrief/config.yaml` for persistent values.

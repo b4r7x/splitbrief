@@ -29,6 +29,18 @@ List any issues found, categorized as:
 ### Summary
 One-paragraph overall assessment.`;
 
+const MAX_DIFF_CHARS = 100_000;
+
+/**
+ * One prompt budget for the diff, shared by the workflow's final review and the
+ * one-shot `review` command so a reader comparing the two knows which applied.
+ */
+export function truncateDiffForPrompt(diff: string): string {
+  if (diff.length <= MAX_DIFF_CHARS) return diff;
+  const omitted = diff.length - MAX_DIFF_CHARS;
+  return `${diff.slice(0, MAX_DIFF_CHARS)}\n\n[... diff truncated, ${omitted} characters omitted ...]`;
+}
+
 const VALIDATION_EVIDENCE_PREAMBLE = `The orchestrator ran these validation commands and recorded their output. This section is the authoritative record of validation results for this run.`;
 
 export function buildFinalReviewPrompt(opts: {

@@ -24,7 +24,9 @@ async function loadRuntime() {
   const { Composer: ComposerComponent } = await import(
     '../../../src/components/composer/composer.js'
   );
-  const { initStores, teardownStores } = await import('../../../src/cli/init-stores.js');
+  const { awaitBackgroundDiscovery, initStores, teardownStores } = await import(
+    '../../../src/cli/init-stores.js'
+  );
   const { resetAllStores } = await import('#testing/helpers/stores.js');
 
   const renderComposer = (
@@ -38,7 +40,7 @@ async function loadRuntime() {
       ),
     );
 
-  return { initStores, teardownStores, renderComposer, resetAllStores };
+  return { awaitBackgroundDiscovery, initStores, teardownStores, renderComposer, resetAllStores };
 }
 
 function seedProject(projectDir: string): void {
@@ -61,8 +63,13 @@ describe('composer input history restart flow', () => {
     vi.resetModules();
     vi.mocked(globalThis.fetch).mockImplementation(async () => new Response('{}', { status: 200 }));
 
+    // Each boot leaves the models.dev seed and the detection refresh writing
+    // caches under HOME; every loaded module instance keeps its own set, so all
+    // of them must settle before the fake home is removed.
+    const settleDiscovery: Array<() => Promise<void>> = [];
     try {
       let runtime = await loadRuntime();
+      settleDiscovery.push(runtime.awaitBackgroundDiscovery);
       runtime.resetAllStores();
       await runtime.initStores(projectDir, { allowHooks: true });
       const firstSubmissions: string[] = [];
@@ -97,6 +104,7 @@ describe('composer input history restart flow', () => {
 
       vi.resetModules();
       runtime = await loadRuntime();
+      settleDiscovery.push(runtime.awaitBackgroundDiscovery);
       runtime.resetAllStores();
       await runtime.initStores(projectDir, { allowHooks: true });
 
@@ -119,6 +127,7 @@ describe('composer input history restart flow', () => {
       runtime.teardownStores();
       secondUi.unmount();
     } finally {
+      for (const settle of settleDiscovery) await settle();
       if (originalHome === undefined) delete process.env['HOME'];
       else process.env['HOME'] = originalHome;
       if (originalPath === undefined) delete process.env['PATH'];
