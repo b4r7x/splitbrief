@@ -1,12 +1,13 @@
 @container hero (max-width: 700px) {
   .diagram {
     max-width: 350px;
-    aspect-ratio: 350 / 980;
+    aspect-ratio: 350 / 1130;
   }
 
   .stage {
+    top: 0;
     width: 350px;
-    height: 980px;
+    height: 1130px;
 
     .route-lines--wide {
       display: none;
@@ -19,52 +20,64 @@
     .ghost--planner,
     .ghost--planner + .ghost-fallback {
       left: 38%;
-      top: 15%;
+      top: 13.3%;
     }
 
     .ghost--implementer,
     .ghost--implementer + .ghost-fallback {
       left: 38%;
-      top: 61.5%;
+      top: 58.1%;
     }
 
     .ghost--reviewer,
     .ghost--reviewer + .ghost-fallback {
       left: 38%;
-      top: 89%;
+      top: 86%;
     }
 
     .tick,
     .label,
     .seat {
-      left: 71.4%;
+      left: 69%;
+    }
+
+    .label {
+      margin-left: var(--s-3);
+      font-size: var(--text-label);
+      line-height: 18px;
+      letter-spacing: 0.08em;
+    }
+
+    .seat {
+      font-size: var(--text-micro);
+      line-height: 18px;
     }
 
     .tick--planner,
     .label--planner {
-      top: 4%;
+      top: 3.5%;
     }
 
     .tick--implementer,
     .label--implementer {
-      top: 52.2%;
+      top: 48.5%;
     }
 
     .tick--reviewer,
     .label--reviewer {
-      top: 82%;
+      top: 76.3%;
     }
 
     .seat--planner {
-      top: 17.7%;
+      top: 13.3%;
     }
 
     .seat--implementer {
-      top: 62.5%;
+      top: 58.1%;
     }
 
     .seat--reviewer {
-      top: 87.8%;
+      top: 86%;
     }
 
     .cross {

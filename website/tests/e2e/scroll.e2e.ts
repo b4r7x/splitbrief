@@ -41,7 +41,6 @@ async function settle(page: Page): Promise<void> {
 type Layout = {
   height: number;
   grids: string[];
-  reveals: number;
   lines: string[];
 };
 
@@ -64,11 +63,197 @@ async function layout(page: Page): Promise<Layout> {
     return {
       height: document.documentElement.scrollHeight,
       grids: grids.map((el) => rect(el.getBoundingClientRect())),
-      reveals: document.querySelectorAll('.reveal').length,
       lines,
     };
   });
 }
+
+const GROUPS = '.lower .head, .lower .panel, .lower .tree, .lower .notes';
+
+// The smooth scroll passes the sections above; the one landed on may be waiting its 660 ms turn
+// behind the last of them, so the paused clock runs one choreography before the section is read.
+async function enter(page: Page, selector: string): Promise<void> {
+  const top = await page
+    .locator(selector)
+    .evaluate((el) => el.getBoundingClientRect().top + scrollY);
+  await page.evaluate((y) => scrollTo(0, y), top);
+  await page.waitForTimeout(100);
+  await page.clock.runFor(700);
+  await expect(page.locator(selector)).toHaveClass(/is-in/);
+}
+
+async function timing(
+  page: Page,
+  selector: string,
+): Promise<{ delay: number; duration: number; name: string }[]> {
+  return page.locator(selector).evaluateAll((els) =>
+    els.map((el) => {
+      const style = getComputedStyle(el);
+      return {
+        delay: Number.parseFloat(style.animationDelay) * 1000,
+        duration: Number.parseFloat(style.animationDuration) * 1000,
+        name: style.animationName,
+      };
+    }),
+  );
+}
+
+test('the hero enters as two groups within 700 ms, a few pixels at most; the nav is there from the first frame', async ({
+  page,
+}) => {
+  await open(page);
+  expect(await page.locator('.nav').evaluate((el) => el.getAnimations().length)).toBe(0);
+  const entrances = await page.locator('.hero > *').evaluateAll((els) =>
+    els.flatMap((el) =>
+      el.getAnimations().map((animation) => {
+        const timing = animation.effect?.getComputedTiming();
+        const keyframe =
+          animation.effect instanceof KeyframeEffect
+            ? animation.effect.getKeyframes()[0]
+            : undefined;
+        return {
+          delay: Number(timing?.delay),
+          end: Number(timing?.endTime),
+          easing: getComputedStyle(el).animationTimingFunction,
+          translate: String(keyframe?.translate ?? ''),
+        };
+      }),
+    ),
+  );
+  expect(entrances.length).toBeGreaterThanOrEqual(8);
+  expect(new Set(entrances.map((e) => e.delay)).size).toBeLessThanOrEqual(3);
+  for (const e of entrances) {
+    expect(e.end).toBeLessThanOrEqual(700);
+    expect(e.easing).toBe('ease-out');
+    const rise = Number.parseFloat(e.translate.split(' ')[1] ?? '0');
+    expect(Math.abs(rise)).toBeLessThanOrEqual(12);
+  }
+  expect(
+    await page
+      .locator('.hero h1 .line')
+      .evaluateAll((els) => els.flatMap((el) => el.getAnimations()).length),
+  ).toBe(0);
+});
+
+test('a lower section enters as three groups, 120 ms apart, marginalia with the notes', async ({
+  page,
+}) => {
+  await open(page);
+  for (const [section, groups] of [
+    ['.s02', ['.s02 .head', '.s02 .panel', '.s02 .notes']],
+    ['.s04', ['.s04 .head', '.s04 .tree', '.s04 .notes']],
+  ] as const) {
+    await enter(page, section);
+    const delays: number[] = [];
+    for (const group of groups) {
+      const members = await timing(page, group);
+      expect(members.length, group).toBeGreaterThan(0);
+      for (const m of members) {
+        expect(m.name, group).toBe('enter');
+        expect(m.duration, group).toBeGreaterThanOrEqual(360);
+        expect(m.duration, group).toBeLessThanOrEqual(480);
+        expect(m.delay, group).toBe(members[0]?.delay);
+      }
+      delays.push(members[0]?.delay ?? Number.NaN);
+    }
+    expect(delays[0]).toBe(0);
+    for (let i = 1; i < delays.length; i++) {
+      const gap = (delays[i] ?? 0) - (delays[i - 1] ?? 0);
+      expect(gap, `${section} group ${i}`).toBeGreaterThanOrEqual(90);
+      expect(gap, `${section} group ${i}`).toBeLessThanOrEqual(140);
+    }
+  }
+  for (const m of await timing(page, '.s02 .lines li, .s04 .tree .row'))
+    expect(m.name).toBe('none');
+});
+
+// X02: at 1440 (and 1920) BRIEFS and VALIDATION share the first lower fold; the second waits for
+// the first section's choreography (2 × 120 + 420 ms) instead of entering at the same instant.
+test('two sections sharing a fold enter one after the other', async ({ page }) => {
+  await open(page);
+  const top = await page.locator('.s02').evaluate((el) => el.getBoundingClientRect().top + scrollY);
+  await page.evaluate((y) => scrollTo(0, y), top);
+  await page.waitForTimeout(100);
+  await expect(page.locator('.s02')).toHaveClass(/is-in/);
+  await expect(page.locator('.s03')).not.toHaveClass(/is-in/);
+  await page.clock.runFor(600);
+  await expect(page.locator('.s03')).not.toHaveClass(/is-in/);
+  await page.clock.runFor(100);
+  await expect(page.locator('.s03')).toHaveClass(/is-in/);
+});
+
+test('the terminal keeps its two beats and the editor appears whole', async ({ page }) => {
+  await open(page);
+  await enter(page, '.s03');
+  const at = async (ms: number): Promise<string[]> => {
+    await page.evaluate((t) => {
+      const section = document.querySelector('.s03');
+      if (section === null) return;
+      for (const animation of section.getAnimations({ subtree: true })) {
+        if (animation.timeline !== document.timeline) continue;
+        animation.pause();
+        animation.currentTime = t;
+      }
+    }, ms);
+    return page
+      .locator('.s03 .lines li')
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el).opacity));
+  };
+  const early = await at(700);
+  expect(early.slice(0, 12).every((o) => o === '1')).toBe(true);
+  expect(early.slice(12).every((o) => o === '0')).toBe(true);
+  expect(await page.locator('.s03 .panel').evaluate((el) => getComputedStyle(el).opacity)).toBe(
+    '1',
+  );
+  const late = await at(2500);
+  expect(late.every((o) => o === '1')).toBe(true);
+});
+
+test('anchors land on their section and scrolling back leaves it in place', async ({ page }) => {
+  await open(page);
+  await page.addStyleTag({ content: 'html { scroll-behavior: auto !important; }' });
+  await page.locator('.hero .steps a[href="#validation"]').click();
+  await page.waitForTimeout(150);
+  // The page ends 04 + footer after VALIDATION; when that is shorter than the viewport the anchor
+  // lands as far down as the page scrolls.
+  const { top, reach } = await page.locator('.s03').evaluate((el) => ({
+    top: el.getBoundingClientRect().top,
+    reach: Math.max(
+      0,
+      el.getBoundingClientRect().top +
+        scrollY -
+        (document.documentElement.scrollHeight - innerHeight),
+    ),
+  }));
+  expect(Math.abs(top - reach)).toBeLessThanOrEqual(2);
+  await expect(page.locator('.s03')).toHaveClass(/is-in/);
+  await page.clock.runFor(2500);
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.waitForTimeout(100);
+  await expect(page.locator('.s03')).toHaveClass(/is-in/);
+  expect(await page.locator('.s03 .notes').evaluate((el) => getComputedStyle(el).opacity)).toBe(
+    '1',
+  );
+});
+
+test.describe('without JavaScript', () => {
+  test.use({ javaScriptEnabled: false });
+
+  test('every group is visible at once', async ({ page }) => {
+    await page.goto('/');
+    expect(
+      await page
+        .locator(GROUPS)
+        .evaluateAll((els) => els.every((el) => getComputedStyle(el).opacity === '1')),
+    ).toBe(true);
+    expect(
+      await page
+        .locator('.s03 .lines li')
+        .evaluateAll((els) => els.every((el) => getComputedStyle(el).opacity === '1')),
+    ).toBe(true);
+    await expect(page.locator('.backdrop')).toHaveCount(0);
+  });
+});
 
 test('sections reveal once', async ({ page }) => {
   await open(page);
@@ -103,47 +288,6 @@ test('sections reveal once', async ({ page }) => {
   ).toBe(true);
 });
 
-test('the spark rides the rail', async ({ page }) => {
-  let armed = false;
-  for (const [width, height] of [
-    [1440, 900],
-    [1920, 1080],
-  ] as const) {
-    await page.setViewportSize({ width, height });
-    if (armed) {
-      await page.goto('/');
-      await page.evaluate(async () => {
-        await document.fonts.ready;
-      });
-    } else {
-      await open(page);
-      armed = true;
-    }
-    const supported = await page.evaluate(() => CSS.supports('animation-timeline: view()'));
-    expect(await page.locator('.spark').evaluate((el) => getComputedStyle(el).display)).toBe(
-      supported ? 'block' : 'none',
-    );
-    const rail = await page.locator('.rail').evaluate((el) => {
-      const rect = el.getBoundingClientRect();
-      document.documentElement.style.scrollBehavior = 'auto';
-      return { top: rect.top + scrollY, height: rect.height };
-    });
-    for (const progress of [0, 0.25, 0.5, 0.75, 1]) {
-      const scroll = rail.top + progress * (rail.height - height);
-      await page.evaluate((y) => scrollTo(0, y), scroll);
-      await page.waitForTimeout(100);
-      const spark = await page.locator('.spark').boundingBox();
-      if (!spark) throw new Error('spark has no box');
-      const actualScroll = await page.evaluate(() => scrollY);
-      const want = rail.top - actualScroll + progress * (rail.height - spark.height);
-      expect(Math.abs(spark.y - want)).toBeLessThanOrEqual(2);
-      const line = await page.locator('.rail').boundingBox();
-      if (!line) throw new Error('rail has no box');
-      expect(Math.abs(spark.x + spark.width / 2 - line.x - line.width / 2)).toBeLessThanOrEqual(1);
-    }
-  }
-});
-
 test.describe('reduced motion', () => {
   test.use({ reducedMotion: 'reduce' });
 
@@ -162,10 +306,9 @@ test.describe('reduced motion', () => {
     const first = await page.screenshot({ fullPage: true, clip });
     await page.clock.runFor(4000);
     expect((await page.screenshot({ fullPage: true, clip })).equals(first)).toBe(true);
-    await expect(page.locator('.spark')).toBeHidden();
     expect(
       await page
-        .locator('.reveal')
+        .locator(GROUPS)
         .evaluateAll((els) => els.every((el) => getComputedStyle(el).opacity === '1')),
     ).toBe(true);
     await expect(page.locator('.is-in')).toHaveCount(0);

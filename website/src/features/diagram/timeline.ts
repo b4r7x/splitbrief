@@ -27,7 +27,9 @@ export type Timeline = {
 const SPEED = 55;
 const DWELL = 0.6;
 const REST = 1.3;
-const HANDOFF: Readonly<Record<Tier, number>> = { wide: 0, compact: DWELL };
+// The review leg waits for the implementer's answer (a dwell covers its 0.55 s response); on the wide
+// stage it leaves from the card, 200 px away from where the brief landed, so the eye gets a second dwell.
+const HANDOFF: Readonly<Record<Tier, number>> = { wide: 2 * DWELL, compact: DWELL };
 
 export function schedule(distances: Distances, tier: Tier): Timeline {
   const from = distances.entry / SPEED;

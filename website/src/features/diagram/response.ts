@@ -11,6 +11,7 @@ export type Reaction = {
 const RISE = 0.05;
 const HOLD = 0.4;
 const FALL = 0.1;
+const LAG = 0.15;
 const LANDINGS: readonly SeatName[] = ['implementer', 'reviewer'];
 
 export function reactions(stage: HTMLElement, timeline: Timeline): Reaction[] {
@@ -49,7 +50,11 @@ export function reactions(stage: HTMLElement, timeline: Timeline): Reaction[] {
           delay,
           frames: flash('backgroundColor', ink3, spark),
         },
-        { element: find(stage, `.seat--${name}`), delay, frames: flash('color', ink3, ink2) },
+        {
+          element: find(stage, `.seat--${name}`),
+          delay: delay + LAG * 1000,
+          frames: flash('color', ink3, ink2),
+        },
       ];
     }),
   ];

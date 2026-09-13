@@ -6,12 +6,12 @@ const compact = { entry: 53.7, exit: 157.7, implementer: 213.2, reviewer: 65.5 }
 
 test('every visible leg runs at 55 px/s, the card holds the packet 0.6 s, and the loop rests 1.3 s', () => {
   const { card, cues, handoff, period, loop, frame } = schedule(wide, 'wide');
-  expect(handoff).toBe(0);
+  expect(handoff).toBe(1.2);
   expect(card.from).toBeCloseTo(0.709);
   expect(card.to).toBeCloseTo(1.309);
   expect(cues.implementer.at).toBeCloseTo(2.687);
-  expect(cues.reviewer.at).toBeCloseTo(8.705);
-  expect(period).toBeCloseTo(10.005);
+  expect(cues.reviewer.at).toBeCloseTo(9.905);
+  expect(period).toBeCloseTo(11.205);
   expect(loop).toEqual({
     duration: period * 1000,
     iterations: Number.POSITIVE_INFINITY,
@@ -23,7 +23,21 @@ test('every visible leg runs at 55 px/s, the card holds the packet 0.6 s, and th
   expect(cues.reviewer.gain).toBe(true);
 });
 
-test('the compact stage holds the brief in the implementer for a dwell before the reviewer leg', () => {
+test('the review leg leaves only after the implementer has answered, on either stage', () => {
+  for (const [distances, tier] of [
+    [wide, 'wide'],
+    [compact, 'compact'],
+  ] as const) {
+    const { cues, handoff } = schedule(distances, tier);
+    // response.ts lights the tick and lifts the seat over 0.15 + 0.05 + 0.4 s after the landing
+    expect(handoff, tier).toBeGreaterThanOrEqual(0.6);
+    expect(cues.reviewer.at - cues.implementer.at, tier).toBeGreaterThanOrEqual(
+      handoff + distances.reviewer / 55,
+    );
+  }
+});
+
+test('the compact stage holds the brief in the implementer for one dwell before the reviewer leg', () => {
   const { cues, handoff, period } = schedule(compact, 'compact');
   expect(handoff).toBe(0.6);
   expect(cues.implementer.at).toBeCloseTo(2.585);

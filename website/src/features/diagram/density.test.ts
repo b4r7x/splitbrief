@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { glyphIndex } from './atlas';
 import { density, glitchRow } from './density';
 import { SEATS, type Seat, type SeatName } from './seats';
-import { eye, inside, pupilCell } from './silhouette';
+import { CROWN, eye, inside, pupilCell, SKIRT } from './silhouette';
 
 const seats = Object.entries(SEATS);
 
@@ -45,7 +45,7 @@ test.each(seats)('the %s body never reaches the pupil glyph and weaves within a 
   const isBody = (c: number, r: number): boolean => {
     const u = (c + 0.5) / seat.cols;
     const v = (r + 0.5) / seat.rows;
-    return v >= 0.42 && v < 0.86 && inside(u, v) && !eye(u, v);
+    return v >= CROWN && v < SKIRT && inside(u, v) && !eye(u, v);
   };
   let pairs = 0;
   let differing = 0;
@@ -62,6 +62,65 @@ test.each(seats)('the %s body never reaches the pupil glyph and weaves within a 
   expect(differing / pairs).toBeGreaterThanOrEqual(0.4);
 });
 
+// hero-diagram.png: no row or column stripes; the crown and the skirt are lighter than the
+// middle, and the strands thin to dots at the bottom.
+test.each(seats)(
+  'the %s body has no stripes and fades toward the crown and the skirt',
+  (_, seat) => {
+    const cells = grid(seat, 0);
+    const mean = (values: number[]): number =>
+      values.reduce((sum, value) => sum + value, 0) / values.length;
+    const body = (rows: number[]): number[] =>
+      rows.flatMap(
+        (r) =>
+          cells[r]?.filter((_, c) => inside((c + 0.5) / seat.cols, (r + 0.5) / seat.rows)) ?? [],
+      );
+    const rowsOf = (from: number, to: number): number[] =>
+      Array.from({ length: to - from }, (_, i) => from + i);
+    const crownRows = rowsOf(0, Math.floor(CROWN * seat.rows));
+    const middleRows = rowsOf(Math.ceil(0.5 * seat.rows), Math.floor(SKIRT * seat.rows));
+    const skirtRows = rowsOf(Math.ceil(SKIRT * seat.rows), seat.rows);
+    const middle = mean(body(middleRows));
+    expect(mean(body(crownRows))).toBeLessThan(0.9 * middle);
+    expect(mean(body(skirtRows))).toBeLessThan(0.7 * middle);
+    expect(mean(body([seat.rows - 1]))).toBeLessThan(0.35 * middle);
+    const even = mean(body(middleRows.filter((r) => r % 2 === 0)));
+    const odd = mean(body(middleRows.filter((r) => r % 2 === 1)));
+    expect(Math.abs(even - odd) / middle).toBeLessThan(0.1);
+    const evenCols = mean(middleRows.flatMap((r) => cells[r]?.filter((_, c) => c % 2 === 0) ?? []));
+    const oddCols = mean(middleRows.flatMap((r) => cells[r]?.filter((_, c) => c % 2 === 1) ?? []));
+    expect(Math.abs(evenCols - oddCols) / middle).toBeLessThan(0.1);
+  },
+);
+
+// Q01: the settled frame must not be a trough, and the trio must breathe as one. Rest is the
+// bright state; the exhale is one dip of at most 8 % per 5 s, the same instant for every figure.
+test('the three figures breathe together, and rest bright', () => {
+  const body = (seat: Seat, t: number): number => {
+    let sum = 0;
+    let n = 0;
+    for (let r = 0; r < seat.rows; r++) {
+      for (let c = 0; c < seat.cols; c++) {
+        const u = (c + 0.5) / seat.cols;
+        const v = (r + 0.5) / seat.rows;
+        if (v < CROWN || v >= SKIRT || !inside(u, v) || eye(u, v)) continue;
+        sum += density(seat, c, r, t);
+        n++;
+      }
+    }
+    return sum / n;
+  };
+  const dips = seats.map(([name, seat]) => {
+    const rest = body(seat, 0);
+    for (const t of [4, 5]) expect(body(seat, t) / rest, `${name} at ${t}s`).toBeGreaterThan(0.97);
+    const dip = body(seat, 2.5) / rest;
+    expect(dip, `${name} at 2.5s`).toBeLessThan(0.95);
+    expect(dip, `${name} at 2.5s`).toBeGreaterThan(1 / 1.3);
+    return dip;
+  });
+  expect(Math.max(...dips) - Math.min(...dips)).toBeLessThan(0.05);
+});
+
 test('the core is denser than the rim and the rim fades into a faint halo', () => {
   const seat = SEATS.planner;
   const cells = grid(seat, 0);
@@ -74,7 +133,7 @@ test('the core is denser than the rim and the rim fades into a faint halo', () =
   const halo = density(seat, 9, 0, 0);
   expect(halo).toBeGreaterThanOrEqual(0.05);
   expect(halo).toBeLessThanOrEqual(0.15);
-  expect(density(seat, 5, 0, 0)).toBe(0);
+  expect(density(seat, 2, 0, 0)).toBe(0);
 });
 
 function glitches(seat: Seat): { start: number; end: number; row: number }[] {
@@ -104,8 +163,8 @@ test.each(glitchRows)('the %s shifts one body row every 3–7 s for %s s', (name
   events.forEach((event, i) => {
     expect(event.end - event.start).toBeCloseTo(duration, 1);
     const v = (event.row + 0.5) / seat.rows;
-    expect(v).toBeGreaterThanOrEqual(0.42);
-    expect(v).toBeLessThan(0.86);
+    expect(v).toBeGreaterThanOrEqual(CROWN);
+    expect(v).toBeLessThan(SKIRT);
     const previous = events[i - 1];
     if (previous) {
       expect(event.start - previous.start).toBeGreaterThanOrEqual(3);

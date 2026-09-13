@@ -1,124 +1,40 @@
-.aura {
+.backdrop {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: -1;
   overflow: hidden;
   pointer-events: none;
-  z-index: 0;
-}
-.dots {
-  position: absolute;
-  display: block;
-}
-.dots--skyline {
-  left: calc((100% - min(var(--content-max), 100% - 2 * var(--gutter))) / 2);
-}
-.dots--desk {
-  left: calc(
-    (100% + min(var(--content-max), 100% - 2 * var(--gutter))) /
-    2 -
-    var(--rail) +
-    var(--s-2)
-  );
-}
-.dots--gutter {
-  display: none;
-  left: calc((100% + min(var(--content-max), 100% - 2 * var(--gutter))) / 2 + var(--s-6));
-}
-.aura .fragment {
-  position: absolute;
-  font-size: var(--text-micro);
-  line-height: 16px;
+  /* The placer's GLYPH (fragments/place.ts) is this face: a 9px advance on a 22px line. */
+  font-size: 15px;
+  line-height: 22px;
   color: var(--ink-4);
+}
+.backdrop .field,
+.backdrop .field span,
+.backdrop .fragment {
+  position: absolute;
+}
+.backdrop .fragment {
   white-space: pre;
 }
-.stop {
-  position: absolute;
-  left: calc(
-    (100% + min(var(--content-max), 100% - 2 * var(--gutter))) /
-    2 -
-    var(--rail) +
-    var(--s-2)
-  );
-  font-size: var(--text-micro);
-  line-height: 16px;
-  letter-spacing: 0;
-  color: var(--ink-4);
-  white-space: nowrap;
+.backdrop .field {
+  color: var(--ink-3);
 }
-.stop::before {
-  content: "";
-  position: absolute;
-  right: calc(100% + 5px);
-  top: 8px;
-  width: 6px;
-  height: 1px;
-  background: var(--ink-3);
+.backdrop .field span {
+  width: 3px;
+  height: 3px;
+  background: currentColor;
 }
-.rail {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 0;
-  width: 1px;
-  right: calc((100% - min(var(--content-max), 100% - 2 * var(--gutter))) / 2 + var(--rail));
-  pointer-events: none;
-  background: repeating-linear-gradient(to bottom, var(--ink-4) 0 4px, transparent 4px 8px);
-  container-type: size;
-  view-timeline: --rail block;
+.backdrop .stack {
+  box-shadow: 0 5px 0 currentColor;
 }
-.rail .spark {
-  display: none;
-  position: absolute;
-  left: -2px;
-  top: 0;
-  width: 5px;
-  height: 5px;
-  background: var(--white-spark);
-  opacity: 0.85;
-}
-.rail .spark::before {
-  content: "";
-  position: absolute;
-  left: 2px;
-  bottom: 100%;
-  width: 1px;
-  height: 20px;
-  background: linear-gradient(to top, var(--ink-3), transparent);
-}
-@supports (animation-timeline: view()) {
-  .rail .spark {
-    display: block;
-    animation: ride linear both;
-    animation-timeline: --rail;
-    animation-range: contain 0% contain 100%;
-  }
-}
-@keyframes ride {
-  to {
-    translate: 0 calc(100cqh - 5px);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .rail .spark {
-    animation: none;
-    display: none;
-  }
-}
-@media (min-width: 1600px) {
-  .dots--gutter {
-    display: block;
-  }
-}
-@media (max-width: 1359px) {
-  .rail,
-  .stop,
-  .dots--desk {
-    display: none;
-  }
+.backdrop .bright {
+  color: var(--ink-2);
 }
 @media (max-width: 767px) {
-  canvas.dots,
-  .aura .fragment {
+  .backdrop {
     display: none;
   }
 }

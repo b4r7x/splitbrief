@@ -48,20 +48,15 @@ const STRINGS: Record<string, string[]> = {
   '.s04': [
     'FOR THE WHOLE RUN',
     'WHAT YOU SET.',
-    'YOU DESCRIBE',
-    'THE GOAL.',
-    'SPLITBRIEF HOLDS',
-    'THE REST.',
     'on disk when it stops.',
+    'WORKS WITH',
+    'CLAUDE CODE',
+    'KILO CODE',
+    'LM STUDIO',
+    '[ configuration ]',
+    '[ features ]',
     'CONTRACTS OVER CONTEXT.',
     'SMALLER LOOPS. BETTER OUTPUT.',
-    'claude‑code',
-    'codex°',
-    'gpt-5.6 · qwen3',
-    'swap one mid-run',
-    'max_retries',
-    '5.00 usd',
-    'pre_task · post_task',
     'evidence.json',
     'snapshots/',
     'LIMITS',
@@ -70,11 +65,10 @@ const STRINGS: Record<string, string[]> = {
   '.foot': ['BUILDS BETTER SOFTWARE.', '[ docs ]', '[ github ]', 'PLANS / EXECUTES / REVIEWS'],
 };
 
-test('the page is nav, hero, three sections, rule, footer', async ({ page }) => {
+test('the page is nav, hero, three sections, footer', async ({ page }) => {
   await open(page);
-  const sel =
-    'main > section.hero#top, main > .lower > section, main > hr.rule--bleed, footer.foot';
-  const ids = ['top', 'briefs', 'validation', 'control', 'rule rule--bleed', 'foot'];
+  const sel = 'main > section.hero#top, main > .lower > section, footer.foot';
+  const ids = ['top', 'briefs', 'validation', 'control', 'foot'];
   expect(await page.locator(sel).evaluateAll((els) => els.map((e) => e.id || e.className))).toEqual(
     ids,
   );
@@ -120,7 +114,7 @@ test('every §16.10 string is on the page', async ({ page }) => {
   }
 });
 
-test('whispers and stops are decorative DOM', async ({ page }) => {
+test('whispers are decorative DOM', async ({ page }) => {
   await open(page);
   await expect(page.locator('.s02 .marg-a')).toHaveText('// contracts over context');
   await expect(page.locator('.s02 .marg-b')).toContainText('less context');
@@ -133,9 +127,6 @@ test('whispers and stops are decorative DOM', async ({ page }) => {
   await expect(page.locator('.s04 .marg-b')).toContainText('smaller loops');
   await expect(page.locator('.s04 .marg-b')).toContainText('higher confidence.');
   await expect(page.locator('.marg:not([aria-hidden="true"])')).toHaveCount(0);
-  await expect(page.locator('.s02 .aura[aria-hidden="true"] .stop')).toHaveText('§02');
-  await expect(page.locator('.s03 .aura[aria-hidden="true"] .stop')).toHaveText('T002');
-  await expect(page.locator('.s04 .aura[aria-hidden="true"] .stop')).toHaveText('auth-guard');
 });
 
 test('the h2 names are the titles', async ({ page }) => {
@@ -174,7 +165,7 @@ test('counts', async ({ page }) => {
     }),
   ).toBe(true);
   await expect(page.locator('.s03 ol.steps li')).toHaveCount(5);
-  await expect(page.locator('.s04 .callout')).toHaveCount(3);
+  await expect(page.locator('.s04 .links a')).toHaveCount(2);
   await expect(page.locator('pre.tree .row')).toHaveCount(9);
   await expect(page.locator('pre.tree .note')).toHaveCount(5);
   const lists = page.locator('.marg-list');
@@ -183,18 +174,4 @@ test('counts', async ({ page }) => {
     await lists.evaluateAll((els) => els.every((el) => el.innerHTML.split('<br>').length === 5)),
   ).toBe(true);
   await expect(page.locator('.marg')).toHaveCount(6);
-  await expect(page.locator('.stop')).toHaveCount(3);
-});
-
-test('dot canvases per tier', async ({ page }) => {
-  const tiers: [number, number, number][] = [
-    [1440, 900, 5],
-    [1920, 1080, 6],
-    [390, 844, 0],
-  ];
-  for (const [width, height, count] of tiers) {
-    await page.setViewportSize({ width, height });
-    await open(page);
-    await expect(page.locator('canvas.dots:visible')).toHaveCount(count);
-  }
 });

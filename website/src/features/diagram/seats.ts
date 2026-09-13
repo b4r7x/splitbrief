@@ -9,8 +9,6 @@ export type Seat = {
   readonly cols: number;
   readonly rows: number;
   readonly palette: Palette;
-  readonly period: number;
-  readonly phase: number;
   readonly frequency: number;
   readonly tickRate: number;
   readonly glitchMs: number;
@@ -23,8 +21,6 @@ export const SEATS: Readonly<Record<SeatName, Seat>> = {
     cols: 30,
     rows: 25,
     palette: 'blue',
-    period: 6.5,
-    phase: 0,
     frequency: 6,
     tickRate: 12,
     glitchMs: 160,
@@ -32,11 +28,9 @@ export const SEATS: Readonly<Record<SeatName, Seat>> = {
     seed: 1,
   },
   implementer: {
-    cols: 26,
-    rows: 22,
+    cols: 30,
+    rows: 25,
     palette: 'green',
-    period: 2.8,
-    phase: 2.1,
     frequency: 12,
     tickRate: 12,
     glitchMs: 90,
@@ -44,11 +38,9 @@ export const SEATS: Readonly<Record<SeatName, Seat>> = {
     seed: 2,
   },
   reviewer: {
-    cols: 22,
-    rows: 18,
+    cols: 30,
+    rows: 25,
     palette: 'mixed',
-    period: 9,
-    phase: 1,
     frequency: 4,
     tickRate: 8,
     glitchMs: 0,

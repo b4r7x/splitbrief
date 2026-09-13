@@ -128,7 +128,6 @@ test('hero boxes', async ({ page }) => {
     '.nav .mark',
     '.hero',
     '.hero .steps',
-    '.draft-mark',
     '.hero .claim',
     '.hero h1',
     '.hero h1 .line',

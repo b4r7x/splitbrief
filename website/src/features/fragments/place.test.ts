@@ -1,37 +1,38 @@
 import { expect, test } from 'vitest';
-import { isTrace, placeFragments, type Rect, travelBand } from './place';
-import { BRIEFS, GUTTER_GLYPHS, HERO, POOL, VALIDATION } from './pool';
+import { footprint, type Layer, placeFragments, type Rect } from './place';
+import { HERO, lower } from './pool';
 
-const viewport = { width: 1440, height: 900 };
+const POOL: readonly string[] = [
+  'brief -> implementer',
+  'typecheck · lint · test',
+  'retry(3) -> escalate',
+  'const brief = compile(spec)',
+  'while (red) retry()',
+  'promote(diff)',
+  'evidence.jsonl',
+  'real software',
+  'lower spend',
+  'fewer blind spots',
+  'one file per brief',
+  '0x2f 0x62 0x72',
+  '[ 3 / 7 ]',
+  '∴',
+  '//',
+  '→',
+  'T1 ✓',
+  'T2 ▸',
+  'hash ok',
+  'worktree',
+];
+const STRIP: Layer = { ...HERO.strip, pool: POOL };
+const zone: Rect = { left: 0, top: 0, right: 1440, bottom: 900 };
 const nav: Rect = { left: 0, top: 0, right: 1440, bottom: 96 };
 const headline = domRect({ left: 64, top: 285, right: 600, bottom: 700 });
 const lede: Rect = { left: 64, top: 716, right: 608, bottom: 790 };
 const cta: Rect = { left: 64, top: 820, right: 348, bottom: 866 };
 const planner: Rect = { left: 632, top: 320, right: 842, bottom: 596 };
-const keepClear = { text: [headline, lede, cta], marks: [nav, planner], panels: [] };
+const keepClear = { text: [headline, lede, cta], marks: [nav, planner] };
 const exclusions = [...keepClear.text, ...keepClear.marks];
-const PIN = [
-  ['brief -> implementer', 911, 222],
-  ['typecheck · lint · test', 897, 429],
-  ['retry(3) -> escalate', 911, 635],
-  ['const brief = compile(spec)', 879, 841],
-  ['while (red) retry()', 440, 177],
-  ['promote(diff)', 1207, 437],
-  ['evidence.jsonl', 1201, 643],
-  ['real software', 1207, 849],
-  ['lower spend', 1219, 231],
-  ['fewer blind spots', 1018, 311],
-  ['one file per brief', 1013, 517],
-  ['0x2f 0x62 0x72', 1034, 723],
-  ['[ 3 / 7 ]', 1334, 167],
-  ['∴', 1386, 373],
-  ['//', 1379, 579],
-  ['→', 1386, 786],
-  ['T1 ✓', 79, 181],
-  ['T2 ▸', 883, 311],
-  ['hash ok', 871, 517],
-  ['worktree', 867, 724],
-];
 
 function domRect({ left, top, right, bottom }: Rect): Rect {
   return Object.create(
@@ -51,15 +52,22 @@ function intersects(a: Rect, b: Rect): boolean {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
-test('all 20 fragments hover on screen, clear of the header band, the type (a DOMRect, read through its getters), the ghosts and each other', () => {
-  const placed = placeFragments(viewport, keepClear, HERO);
+test('all 20 fragments sit inside the zone, clear of the header band, the type (a DOMRect, read through its getters), the ghosts and each other', () => {
+  const placed = placeFragments(zone, keepClear, STRIP);
   expect(placed).toHaveLength(POOL.length);
   expect(new Set(placed.map(({ text }) => text)).size).toBe(POOL.length);
-  const bands = placed.map(({ text, x, y }) => travelBand(text, x, y));
+  const bands = placed.map(({ text, x, y }) => footprint(text, x, y));
+
   bands.forEach((band, i) => {
     for (const rect of exclusions) expect(intersects(band, rect), `${placed[i]?.text}`).toBe(false);
     for (const rect of keepClear.text) {
-      const beside = { ...rect, left: rect.left - 24, right: rect.right + 24 };
+      const beside = {
+        left: rect.left - 24,
+        top: rect.top,
+        right: rect.right + 24,
+        bottom: rect.bottom,
+      };
+
       const ink = { ...band, left: band.left + 6, right: band.right - 6 };
       expect(intersects(ink, beside), `${placed[i]?.text} sits on a text line`).toBe(false);
     }
@@ -67,96 +75,71 @@ test('all 20 fragments hover on screen, clear of the header band, the type (a DO
   });
   for (const { x, y, duration, opacity, phase } of placed) {
     expect(x).toBeGreaterThanOrEqual(0);
-    expect(y).toBeGreaterThanOrEqual(96);
-    expect(y).toBeLessThanOrEqual(viewport.height - 11);
+    expect(y).toBeLessThanOrEqual(zone.bottom - 22);
     expect(duration).toBeGreaterThanOrEqual(14);
     expect(duration).toBeLessThanOrEqual(28);
-    expect(opacity).toBeGreaterThanOrEqual(0.18);
-    expect(opacity).toBeLessThanOrEqual(0.35);
+    expect(opacity).toBeGreaterThanOrEqual(0.9);
+    expect(opacity).toBeLessThanOrEqual(1);
     expect(phase).toBeGreaterThanOrEqual(0);
     expect(phase).toBeLessThan(1);
   }
 });
 
-test('the same viewport and exclusions place the same fragments every time', () => {
-  const none = { text: [], marks: [], panels: [] };
-  expect(placeFragments(viewport, keepClear, HERO)).toEqual(
-    placeFragments(viewport, keepClear, HERO),
+test('the same zone and exclusions place the same fragments every time', () => {
+  const none = { text: [], marks: [] };
+  expect(placeFragments(zone, keepClear, STRIP)).toEqual(placeFragments(zone, keepClear, STRIP));
+  expect(placeFragments(zone, { text: [headline], marks: [] }, STRIP)).not.toEqual(
+    placeFragments(zone, keepClear, STRIP),
   );
-  expect(placeFragments(viewport, { text: [headline], marks: [], panels: [] }, HERO)).not.toEqual(
-    placeFragments(viewport, keepClear, HERO),
-  );
-  expect(placeFragments({ width: 390, height: 844 }, none, HERO)).not.toEqual(
-    placeFragments(viewport, none, HERO),
+  expect(placeFragments({ left: 0, top: 0, right: 390, bottom: 844 }, none, STRIP)).not.toEqual(
+    placeFragments(zone, none, STRIP),
   );
 });
 
-test('the hero layer places the recorded origins', () => {
-  expect(
-    placeFragments(viewport, keepClear, HERO).map(({ text, x, y }) => [
-      text,
-      Math.round(x),
-      Math.round(y),
-    ]),
-  ).toEqual(PIN);
-});
-
-test('a string never reads as a tail of a text line', () => {
-  const layer = {
-    pool: ['attempt 2/3', '· · · · · · · · 47s', '∴'],
-    seed: 8091,
-    opacity: { min: 0.16, max: 0.28 },
-    lineGap: 96,
-    gutterGlyphs: [],
-    glyphHeight: 16,
-    textGap: { x: 24, y: 24 },
-  };
-  const line = { left: 400, top: 300, right: 700, bottom: 320 };
-  const placed = placeFragments(viewport, { text: [line], marks: [], panels: [] }, layer);
-  for (const { text, x, y } of placed) {
-    if (text.length <= 1) continue;
-    const band = travelBand(text, x, y);
-    if (!(band.top < 328 && band.bottom > 292)) continue;
-    const width = text.length * 6.6;
-    if (isTrace(text)) expect(x >= 892 || x + width <= 208).toBe(true);
-    else expect(x >= 796 || x + width <= 304).toBe(true);
-  }
-});
-
-test('gutter glyphs', () => {
-  const layer = {
-    pool: ['first failure'],
-    seed: 8091,
-    opacity: { min: 0.16, max: 0.28 },
-    lineGap: 96,
-    gutterGlyphs: GUTTER_GLYPHS,
-    glyphHeight: 16,
-    textGap: { x: 24, y: 24 },
-  };
-  const none = { text: [], marks: [], panels: [] };
-  const placed = placeFragments(viewport, none, layer);
-  const gutters = placed.slice(1);
-  expect(gutters.length).toBeLessThanOrEqual(4);
-  for (const { text, x, y } of gutters) {
-    expect(GUTTER_GLYPHS).toContain(text);
-    expect(Math.abs(x - 24) < 0.01 || Math.abs(x - (1440 - 24 - 6.6)) < 0.01).toBe(true);
-    expect(y).toBeGreaterThanOrEqual(88);
-    expect(y).toBeLessThanOrEqual(900 - 24 - 11);
-  }
-  placed.forEach((a, i) => {
-    for (const b of placed.slice(i + 1)) {
-      expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(60);
-    }
+test('a two-line whisper is placed by its widest line and both lines, and skips a zone too shallow for them', () => {
+  const twoLine = 'validates\nkeeps the bar high';
+  expect(footprint(twoLine, 100, 200)).toEqual({
+    left: 94,
+    top: 194,
+    right: 100 + 18 * 9 + 6,
+    bottom: 200 + 44 + 6,
   });
-  expect(placeFragments(viewport, none, { ...layer, gutterGlyphs: [] })).toHaveLength(1);
+  const layer: Layer = { ...HERO.reviewer, pool: [twoLine, '+'] };
+  const shallow = { left: 0, top: 0, right: 400, bottom: 44 };
+  expect(placeFragments(shallow, { text: [], marks: [] }, layer).map(({ text }) => text)).toEqual([
+    '+',
+  ]);
+  const deep = { ...shallow, bottom: 120 };
+  const placed = placeFragments(deep, { text: [], marks: [] }, layer);
+  expect(placed.map(({ text }) => text)).toEqual([twoLine, '+']);
+  for (const { text, x, y } of placed) {
+    const band = footprint(text, x, y);
+    expect(band.right).toBeLessThanOrEqual(deep.right + 6);
+    expect(band.bottom).toBeLessThanOrEqual(deep.bottom + 6);
+  }
+});
+
+test('a zone far down the page keeps every fragment inside the zone', () => {
+  const below: Rect = { left: 100, top: 2000, right: 800, bottom: 2600 };
+  const placed = placeFragments(below, { text: [], marks: [] }, lower(8152));
+  expect(placed.length).toBe(2);
+  for (const { text, x, y } of placed) {
+    const band = footprint(text, x, y);
+    expect(band.top).toBeGreaterThanOrEqual(below.top - 6);
+    expect(band.bottom).toBeLessThanOrEqual(below.bottom + 6);
+    expect(x).toBeGreaterThanOrEqual(below.left);
+    expect(band.right).toBeLessThanOrEqual(below.right + 6);
+  }
+  const shallow = { ...below, bottom: below.top + 20 };
+  expect(placeFragments(shallow, { text: [], marks: [] }, STRIP)).toEqual([]);
 });
 
 test('opacity within the layer range and seeds differ', () => {
-  for (const { opacity } of placeFragments(viewport, keepClear, BRIEFS)) {
+  for (const { opacity } of placeFragments(zone, keepClear, lower(8152))) {
     expect(opacity).toBeGreaterThanOrEqual(0.16);
     expect(opacity).toBeLessThanOrEqual(0.28);
   }
-  expect(placeFragments(viewport, keepClear, BRIEFS)).not.toEqual(
-    placeFragments(viewport, keepClear, VALIDATION),
+  expect(placeFragments(zone, keepClear, lower(8152))).not.toEqual(
+    placeFragments(zone, keepClear, lower(9400)),
   );
 });

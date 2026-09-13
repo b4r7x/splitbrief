@@ -9,27 +9,6 @@ function target(name: string): string {
   return `${shot.dir}/${shot.tag}-${name}.png`;
 }
 
-test('spark frames', async ({ page }) => {
-  for (const viewport of [
-    { width: 1440, height: 900 },
-    { width: 1920, height: 1080 },
-  ]) {
-    await page.setViewportSize(viewport);
-    await page.goto('/');
-    await page.evaluate(async () => {
-      await document.fonts.ready;
-    });
-    for (const p of [25, 50, 75, 100]) {
-      await page.evaluate((pct) => {
-        const max = document.documentElement.scrollHeight - innerHeight;
-        scrollTo(0, (pct / 100) * max);
-      }, p);
-      await page.waitForTimeout(150);
-      await page.screenshot({ path: target(`spark-${p}-${viewport.width}`) });
-    }
-  }
-});
-
 test('transcript frames', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.clock.install({ time: clockStart });

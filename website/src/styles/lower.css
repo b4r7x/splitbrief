@@ -19,7 +19,8 @@
 }
 
 .s02 .grid,
-.s03 .grid {
+.s03 .grid,
+.s04 .grid {
   grid-template-columns: var(--head-w) var(--panel-w) minmax(0, 1fr);
 }
 

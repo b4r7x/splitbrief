@@ -1,127 +1,23 @@
 import type { Layer } from './place';
 
-export const POOL: readonly string[] = [
-  'brief -> implementer',
-  'typecheck · lint · test',
-  'retry(3) -> escalate',
-  'const brief = compile(spec)',
-  'while (red) retry()',
-  'promote(diff)',
-  'evidence.jsonl',
-  'real software',
-  'lower spend',
-  'fewer blind spots',
-  'one file per brief',
-  '0x2f 0x62 0x72',
-  '[ 3 / 7 ]',
-  '∴',
-  '//',
-  '→',
-  'T1 ✓',
-  'T2 ▸',
-  'hash ok',
-  'worktree',
-];
+type HeroZone = 'strip' | 'planner' | 'implementer' | 'results' | 'reviewer' | 'under';
 
-export const GUTTER_GLYPHS: readonly string[] = ['∴', '°', '×', '→'];
+const GLYPHS: readonly string[] = ['+', '∴'];
 
-export const POOL_BRIEFS: readonly string[] = [
-  'const brief = compile(spec)',
-  'one file per brief',
-  'brief -> implementer',
-  'depends_on: [T001]',
-  'fresh context',
-  'no memory of the last one',
-  'in bounds · out of bounds',
-  'stop and ask',
-  'contract blocked',
-  'T1 ✓',
-  'T2 ▸',
-  '( 39%, 46% )',
-  '//',
-  '∴',
-  '· · · · · · · · ln 36',
-  '· · · · · · · · · · · · col 1',
-  '· · · · · · · · · · T002',
-];
+function whisper(pool: readonly string[], seed: number): Layer {
+  return { pool, seed, opacity: { min: 0.9, max: 1 }, textGap: { x: 40, y: 0 } };
+}
 
-export const POOL_VALIDATION: readonly string[] = [
-  'validate(task)',
-  'typecheck · lint · test',
-  'while (red) retry()',
-  'retry(3) -> escalate',
-  'first failure',
-  'attempt 2/3',
-  '412ms',
-  'evidence saved',
-  'not its own judge',
-  'promote(diff)',
-  'hash ok',
-  '→',
-  '×',
-  '· · · · · · · · · · · · 14:28:16',
-  '· · · · · · · · 47s',
-  '· · · · · · · · · · 3/3',
-];
-
-export const POOL_CONTROL: readonly string[] = [
-  'max_budget: 5.00',
-  'pause at 85 %',
-  'snapshot: pre_task',
-  'state.json',
-  'session.jsonl',
-  'append-only',
-  'less context',
-  'more progress',
-  'lower spend',
-  'fewer blind spots',
-  'real software',
-  'smaller loops',
-  'higher confidence',
-  '0x2f 0x62 0x72 0x69 0x65 0x66',
-  'seed 8088',
-  '[ 3 / 7 ]',
-  '°',
-  '∴',
-  'worktree',
-  '· · · · · · · · · · · · 85 %',
-  '· · · · · · · · 5.00 usd',
-  '· · · · · · · · · · 3 seats',
-];
-
-export const HERO: Layer = {
-  pool: POOL,
-  seed: 8088,
-  opacity: { min: 0.18, max: 0.35 },
-  lineGap: 0,
-  gutterGlyphs: [],
-  glyphHeight: 11,
-  textGap: { x: 18, y: 0 },
+// The reference's hero whispers, each beside the object it annotates.
+export const HERO: Readonly<Record<HeroZone, Layer>> = {
+  strip: whisper(['// ideas → working software', 'const systemic = true'], 8088),
+  planner: whisper(['understands\nthe big picture'], 8091),
+  implementer: whisper(['executes\nwith focus'], 8092),
+  results: whisper(['same tools.\nbetter results.'], 8093),
+  reviewer: whisper(['validates\nkeeps the bar high'], 8094),
+  under: whisper(['0x2F 0x62 0x72 0x69 0x65 0x66'], 8089),
 };
-export const BRIEFS: Layer = {
-  pool: POOL_BRIEFS,
-  seed: 8152,
-  opacity: { min: 0.16, max: 0.28 },
-  lineGap: 96,
-  gutterGlyphs: GUTTER_GLYPHS,
-  glyphHeight: 16,
-  textGap: { x: 24, y: 24 },
-};
-export const VALIDATION: Layer = {
-  pool: POOL_VALIDATION,
-  seed: 9400,
-  opacity: { min: 0.16, max: 0.28 },
-  lineGap: 96,
-  gutterGlyphs: GUTTER_GLYPHS,
-  glyphHeight: 16,
-  textGap: { x: 24, y: 24 },
-};
-export const CONTROL: Layer = {
-  pool: POOL_CONTROL,
-  seed: 8490,
-  opacity: { min: 0.16, max: 0.28 },
-  lineGap: 96,
-  gutterGlyphs: GUTTER_GLYPHS,
-  glyphHeight: 16,
-  textGap: { x: 24, y: 24 },
-};
+
+export function lower(seed: number): Layer {
+  return { pool: GLYPHS, seed, opacity: { min: 0.16, max: 0.28 }, textGap: { x: 24, y: 24 } };
+}
