@@ -632,10 +632,10 @@ task_completed T003
 **You'll see:**
 
 ```
-Mode set to 'quick'. Saved to .splitbrief/config.yaml.
+Workflow mode set to: quick
 ```
 
-`/mode <name>` accepts `quick`, `standard`, or `speckit` and persists the value to config. The retired `instant` is accepted too: it sets `quick` and reports that the modes were merged. `/mode` with no argument opens the mode-selector overlay.
+`/mode <name>` accepts `quick`, `standard`, or `speckit` and persists the value to config. The retired `instant` is accepted too: it sets `quick` and reports that the modes were merged. `/mode` with no argument refills the composer with `/mode `, so the three modes appear as completion rows carrying their planning-call and gate counts, with `current` on the one in force.
 
 **Variations:** `--mode <name>` on `start` / `resume` is the same setting at the CLI boundary. The mode advisor (`mode_advice` event) hints when the current mode looks wrong but never auto-switches.
 

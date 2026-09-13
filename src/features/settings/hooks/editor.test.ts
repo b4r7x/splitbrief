@@ -216,6 +216,18 @@ describe('hintFor', () => {
     expect(hintFor({ kind: 'setting', def: enumDef, key: enumDef.id })).not.toContain('⏎');
   });
 
+  it("cycles an enum and toggles a boolean, in each row's own word", () => {
+    const booleanDef: SettingDef = {
+      id: 'test.boolean',
+      label: 'Boolean',
+      section: 'Workflow',
+      description: '',
+      kind: 'boolean',
+    };
+    expect(hintFor({ kind: 'setting', def: enumDef, key: enumDef.id })).toBe('space cycle');
+    expect(hintFor({ kind: 'setting', def: booleanDef, key: booleanDef.id })).toBe('space toggle');
+  });
+
   it("advertises '⏎ edit' on a string or number setting row", () => {
     const stringDef: SettingDef = {
       id: 'test.string',

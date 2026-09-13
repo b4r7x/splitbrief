@@ -224,7 +224,7 @@ introduce a second breakpoint or hidden bottom row.
 
 `overlayStore` manages a stack. Opening an overlay pushes the current one onto the stack. `Esc` pops. When an overlay is active, `Layout` (`src/app/layout.tsx`) hides the screen and renders the overlay in its place.
 
-Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `stop-sheet`, `sessions`, `editor`, `cost-drilldown` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`, which spreads `SEAT_PICKER_OVERLAYS` (one picker overlay per seat picker role). There is no `crew` overlay: crew is the first section of `settings`.
+Overlay types: `help`, `command-palette`, `skills`, `settings`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `stop-sheet`, `sessions`, `editor`, `cost-drilldown` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`, which spreads `SEAT_PICKER_OVERLAYS` (one picker overlay per seat picker role). There is no `crew` overlay: crew is the first section of `settings`.
 
 The `stop-sheet` overlay (`src/app/overlays/stop.tsx`, panel in `src/features/workflow/stop/sheet.tsx`) is how a run is stopped: `esc` on an empty composer opens it while the run is still stoppable, its rows come from `stopSheetRows` (`stop/options.ts`), and choosing one writes the intent into `stopStore`. It carries no letter accelerators — `↑↓ · ⏎ · esc` — and its footer states the rule for every row: *No option reverts files. Your draft is preserved.*
 
@@ -250,9 +250,9 @@ The first-run setup screen (`src/app/screens/setup.tsx`) composes the same featu
 
 | density | share | min | max | who |
 |---|---|---|---|---|
-| `compact` | 0.60 | 56 | 72 | mode selector, start preparation, the picker's "initializing tools" panel |
-| `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, skills, the summary screen, the picker's sub-steps |
-| `wide` | 0.90 | 76 | 140 | the seat picker, setup, sessions, the cost drilldown, the home body and composer (capped locally at 108) |
+| `compact` | 0.60 | 56 | 72 | start preparation, the picker's "initializing tools" panel |
+| `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, skills, sessions, the summary screen, the picker's sub-steps |
+| `wide` | 0.90 | 76 | 140 | the seat picker, setup, the cost drilldown, the home body and composer (capped locally at 108) |
 
 `width = min(cols - 4, max(min, floor(cols * share)), max)`; the frame costs 6 columns and 4 rows, and `overlayGutterRows` gives back one row of vertical air per 6 rows above the 18-row floor, capped at 2 (the first at 24 rows, the second at 30). Every panel passes a `density` to `OverlayPanel`; `maxWidth` no longer exists, so nothing renders byte-identical at 80 and 120 columns.
 

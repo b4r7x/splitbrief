@@ -6,10 +6,10 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { REMOVED_COMMANDS } from '../../core/runtime/commands/types.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
-import { buildSettingsItems, settingsItemDescription } from '../../features/settings/items.js';
+import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { SettingsOverlay } from './settings.js';
 
 const ESC = String.fromCharCode(27);
@@ -55,6 +55,21 @@ function lineWith(lines: string[], needle: string): string | undefined {
 
 function indexOfLine(lines: string[], needle: string): number {
   return lines.findIndex((line) => line.includes(needle));
+}
+
+/** The rule above the help block carries the seat word too, and it is not a seat row. */
+const RULE_ROW = / [─-]{3,}/;
+
+/** The panel paints a border on both ends of every row; a row's own text is what lies between. */
+function panelText(line: string): string {
+  return line
+    .replace(/^[^|│]*[|│]/, '')
+    .replace(/[|│][^|│]*$/, '')
+    .trimEnd();
+}
+
+function seatRowLines(lines: string[]): string[] {
+  return lines.filter((line) => /\b(PLAN|BUILD|REVIEW)\b/.test(line) && !RULE_ROW.test(line));
 }
 
 describe('SettingsOverlay', () => {
@@ -148,9 +163,7 @@ describe('SettingsOverlay', () => {
     await flushEffects();
 
     const beforeLines = stripAnsiStyles(ui.lastFrame()).split('\n');
-    const crewLinesBefore = beforeLines.filter(
-      (line) => line.includes('PLAN') || line.includes('BUILD') || line.includes('REVIEW'),
-    );
+    const crewLinesBefore = seatRowLines(beforeLines);
     expect(crewLinesBefore).toHaveLength(3);
 
     ui.stdin.write(ENTER);
@@ -162,11 +175,7 @@ describe('SettingsOverlay', () => {
 
     const afterLines = stripAnsiStyles(ui.lastFrame()).split('\n');
     expect(afterLines).toHaveLength(beforeLines.length);
-
-    const crewLinesAfter = afterLines.filter(
-      (line) => line.includes('PLAN') || line.includes('BUILD') || line.includes('REVIEW'),
-    );
-    expect(crewLinesAfter).toEqual(crewLinesBefore);
+    expect(seatRowLines(afterLines)).toEqual(crewLinesBefore);
 
     ui.unmount();
   });
@@ -232,8 +241,8 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  // The description body is clamped to `height={2}` while the chrome budget reserves
-  // DESCRIPTION_ROWS = 4 for it, so a description that wraps must not grow the panel by a row.
+  // The help block is a fixed DESCRIPTION_ROWS = 5 tall and pays for a wrapped description out of
+  // the spacer above its rule, so a description that wraps must not grow the panel by a row.
   it('keeps the frame height identical between a 1-line and a 2-line description row', async () => {
     // Inner width at 100 cols / roomy density is 70 cells (76 - OVERLAY_FRAME_COLS).
     const shortDef = SETTINGS_DEFS.find((def) => def.id === 'validation.lint');
@@ -278,16 +287,6 @@ describe('SettingsOverlay', () => {
     expect(lines.at(-1)).toMatch(cornerLine);
 
     ui.unmount();
-  });
-
-  it('never points a description at a command the merge deleted', () => {
-    const config = makeConfig();
-    for (const item of buildSettingsItems({ config, defs: SETTINGS_DEFS })) {
-      const description = settingsItemDescription({ item, config });
-      for (const removed of Object.keys(REMOVED_COMMANDS)) {
-        expect(description).not.toContain(removed);
-      }
-    }
   });
 
   it('strips terminal controls from the edit-buffer view while preserving the saved value', async () => {
@@ -352,5 +351,142 @@ describe('SettingsOverlay', () => {
     expect(frame).toContain('esc close');
 
     ui.unmount();
+  });
+
+  it('runs the filter straight under the title, with no row between them', async () => {
+    const ui = renderAt(100, 40);
+    await tick(20);
+    const lines = stripAnsiStyles(ui.lastFrame()).split('\n');
+
+    expect(indexOfLine(lines, 'Type to filter…')).toBe(indexOfLine(lines, 'Settings') + 1);
+
+    ui.unmount();
+  });
+
+  it('heads the help block with a rule carrying the highlighted row label', async () => {
+    overlayStore.open('settings', 'workflow.mode');
+    const ui = renderAt(100, 40);
+    await tick(20);
+    const lines = frameLines(ui);
+    const rule = lines.find((line) => RULE_ROW.test(line));
+
+    expect(rule).toMatch(/Mode [─-]{3,}/);
+    expect(indexOfLine(lines, 'quick')).toBe(lines.indexOf(rule ?? '') + 1);
+
+    ui.unmount();
+  });
+
+  it('names the seat, not the row key, on the rule above a crew help block', async () => {
+    overlayStore.open('settings', 'seat:build');
+    const ui = renderAt(100, 40);
+    await tick(20);
+
+    expect(frameLines(ui).find((line) => RULE_ROW.test(line))).toMatch(/BUILD [─-]{3,}/);
+
+    ui.unmount();
+  });
+
+  it('prices every mode and marks the configured one on the right edge', async () => {
+    seed({ workflow: { mode: 'speckit' } });
+    overlayStore.open('settings', 'workflow.mode');
+    const ui = renderAt(100, 40);
+    await tick(20);
+    const lines = frameLines(ui);
+
+    const modeLine = (mode: string) => panelText(lineWith(lines, mode) ?? '');
+
+    expect(modeLine('quick     1 planning call · 0 gates')).not.toMatch(/current$/);
+    expect(modeLine('speckit   6-7 planning calls · 3 gates')).toMatch(/current$/);
+    expect(lines.filter((line) => panelText(line).endsWith('current'))).toHaveLength(1);
+
+    ui.unmount();
+  });
+
+  it.each([
+    ['workflow.mode', 'space cycle'],
+    ['validation.lint', 'space toggle'],
+    ['validation.testCommand', '⏎ edit'],
+  ])('advertises %s as %s in the legend', async (focus, hint) => {
+    overlayStore.open('settings', focus);
+    const ui = renderAt(100, 40);
+    await tick(20);
+
+    expect(stripAnsiStyles(ui.lastFrame())).toContain(`↑↓ navigate · ${hint} · esc close`);
+
+    ui.unmount();
+  });
+
+  it('reads an unset test command as auto', async () => {
+    seed({ validation: { testCommand: undefined } });
+    overlayStore.open('settings', 'validation.testCommand');
+    const ui = renderAt(100, 40);
+    await tick(20);
+
+    const row = frameLines(ui).find(
+      (line) => line.includes('Test command') && !RULE_ROW.test(line),
+    );
+
+    expect(panelText(row ?? '')).toMatch(/auto$/);
+
+    ui.unmount();
+  });
+
+  it('keeps the list rows clickable', async () => {
+    _resetMouseZones();
+    overlayStore.open('settings', 'validation.typecheck');
+    const ui = renderAt(120, 40);
+    await flushEffects();
+
+    expect([...collectClickableZones({ cols: 120, rows: 40 }).keys()]).toContain(
+      'list-row:validation.typecheck',
+    );
+
+    ui.unmount();
+  });
+
+  it.each([
+    ['seat:plan', 'a one-line help'],
+    ['workflow.mode', 'the mode table'],
+  ])('leaves a blank row above the rule for %s (%s)', async (focus) => {
+    overlayStore.open('settings', focus);
+    const ui = renderAt(100, 40);
+    await tick(20);
+    const lines = stripAnsiStyles(ui.lastFrame()).split('\n');
+    const rule = lines.findIndex((line) => RULE_ROW.test(line));
+
+    expect(rule).toBeGreaterThan(0);
+    expect(panelText(lines[rule - 1] ?? '')).toBe('');
+
+    ui.unmount();
+  });
+
+  it('closes the mode table one blank row above the legend', async () => {
+    overlayStore.open('settings', 'workflow.mode');
+    const ui = renderAt(100, 40);
+    await tick(20);
+    const lines = stripAnsiStyles(ui.lastFrame()).split('\n');
+    const speckit = indexOfLine(lines, 'speckit');
+
+    expect(speckit).toBeGreaterThan(indexOfLine(lines, 'quick'));
+    expect(panelText(lines[speckit + 1] ?? '')).toBe('');
+    expect(lines[speckit + 2]).toContain('↑↓ navigate');
+
+    ui.unmount();
+  });
+
+  it('spends a blank row between sections only where the list has rows to spare', async () => {
+    const roomy = renderAt(120, 40);
+    await tick(20);
+    const roomyLines = stripAnsiStyles(roomy.lastFrame()).split('\n');
+    const roomyHeader = indexOfLine(roomyLines, 'Tuning');
+    expect(panelText(roomyLines[roomyHeader - 1] ?? '')).toBe('');
+    roomy.unmount();
+
+    const tight = renderAt(80, 24);
+    await tick(20);
+    const tightLines = stripAnsiStyles(tight.lastFrame()).split('\n');
+    const tightHeader = indexOfLine(tightLines, 'Tuning');
+    expect(tightLines[tightHeader - 1]).toContain('REVIEW');
+    tight.unmount();
   });
 });

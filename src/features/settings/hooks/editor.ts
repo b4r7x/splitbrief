@@ -36,11 +36,13 @@ interface SettingsEditorState {
   activate: (index: number) => void;
 }
 
-/** Enter is advertised on every row: a crew row opens its seat's picker. */
+/** Each row advertises the one key it answers to, in the word for what that key does to it. */
 export function hintFor(item: SettingsItem): string {
   if (item.kind === 'crew') return '⏎ change seat';
   const kind = item.def.kind;
-  return kind === 'string' || kind === 'number' ? '⏎ edit' : 'space toggle';
+  if (kind === 'enum') return 'space cycle';
+  if (kind === 'boolean') return 'space toggle';
+  return '⏎ edit';
 }
 
 function getCurrentConfig(): Config {

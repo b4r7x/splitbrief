@@ -38,7 +38,6 @@ export const ACTIVE_OVERLAYS = [
   'command-palette',
   'skills',
   'settings',
-  'mode-selector',
   ...SEAT_PICKER_OVERLAYS,
   'stop-sheet',
   'sessions',

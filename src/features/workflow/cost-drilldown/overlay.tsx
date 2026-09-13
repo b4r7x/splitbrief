@@ -5,6 +5,7 @@ import {
   overlayInnerRowCapacity,
 } from '../../../components/overlays/overlay-panel.js';
 import { ListRow } from '../../../components/list-row.js';
+import { RuleHeader } from '../../../components/rule-header.js';
 import { SOFT_SEP } from '../../../components/separators.js';
 import { overlayRect } from '../../../core/navigation/overlay-rect.js';
 import { CREW_LABEL_WIDTH, CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
@@ -14,7 +15,6 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js'
 import { formatCacheHitPct } from '../layout/cost-chrome.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { resolvePricing } from '../../../engine/providers/pricing-resolver.js';
-import { glyph } from '../../../lib/glyphs.js';
 import {
   buildPhaseRows,
   calculatePhaseRowCost,
@@ -34,16 +34,6 @@ const SEAT_BAR_RESERVE = 25;
 const SEAT_BAR_MIN_INNER = 60;
 const PANEL_TITLE_ROWS = 2;
 const PANEL_HINT_ROWS = 2;
-
-function SectionHeader({ label, width }: { label: string; width: number }) {
-  const t = useTheme();
-  const dashes = Math.max(0, width - label.length - 1);
-  return (
-    <Box height={1} overflow="hidden" flexShrink={0} width={width}>
-      <Text color={t.textDim}>{`${label} ${glyph('divider').repeat(dashes)}`}</Text>
-    </Box>
-  );
-}
 
 export function CostDrilldownOverlay() {
   const t = useTheme();
@@ -115,7 +105,7 @@ export function CostDrilldownOverlay() {
       <Box flexDirection="column">
         {seatRows.length > 0 ? (
           <Box flexDirection="column">
-            <SectionHeader label="By seat" width={panelWidth} />
+            <RuleHeader label="By seat" width={panelWidth} />
             {seatRows.map((row) => (
               <Box key={row.seat} height={1} overflow="hidden">
                 <Text color={t.text}>
@@ -129,7 +119,7 @@ export function CostDrilldownOverlay() {
             <Box height={1} />
           </Box>
         ) : null}
-        <SectionHeader label="By phase" width={panelWidth} />
+        <RuleHeader label="By phase" width={panelWidth} />
         {phaseRows.map((row) => {
           const split = hasRoleSplit(row);
           const plannerActive = roleHasTokens({ row, role: 'planner', reviewerHasOwnSeat });
@@ -190,7 +180,7 @@ export function CostDrilldownOverlay() {
         {showTasks ? (
           <Box flexDirection="column">
             <Box height={1} />
-            <SectionHeader label="By task" width={panelWidth} />
+            <RuleHeader label="By task" width={panelWidth} />
             {taskRows.map((row) => (
               <Box key={row.taskId} flexDirection="column">
                 <ListRow

@@ -6,6 +6,7 @@ import { renderFeature, flushEffects, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { useCommandCompletion } from './hook.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.js';
 
 const ENTER = '\r';
@@ -134,7 +135,33 @@ function ShowSuggestionsHarness({ value, suppressed }: { value: string; suppress
   return createElement(Text, null, String(command.showSuggestions));
 }
 
-function renderComposer() {
+const HINTED_COMMANDS: RuntimeCommandDef[] = [
+  {
+    kind: 'arg',
+    name: '/mode',
+    label: 'Mode',
+    description: 'Workflow mode',
+    category: 'crew',
+    args: {
+      kind: 'closed',
+      options: ['quick', 'standard', 'speckit'],
+      optionHints: { standard: 'current' },
+      optional: true,
+    },
+    validScreens: ['home'],
+    handler: () => {},
+  },
+];
+
+function rowContaining(frame: string, text: string): string {
+  const row = stripAnsiStyles(frame)
+    .split('\n')
+    .find((line) => line.includes(text));
+  if (row === undefined) throw new Error(`Missing completion row: ${text}`);
+  return row;
+}
+
+function renderComposer(commands: RuntimeCommandDef[] = COMMANDS) {
   const commandCalls: string[] = [];
   const submits: string[] = [];
   const ui = renderFeature(
@@ -142,7 +169,7 @@ function renderComposer() {
       Box,
       { flexDirection: 'column', height: 12, justifyContent: 'flex-end' },
       createElement(Composer, {
-        commands: COMMANDS,
+        commands,
         currentScreen: 'home',
         mode: 'normal',
         hint: '',
@@ -403,6 +430,23 @@ describe('useCommandCompletion closed arguments', () => {
         const frame = ui.lastFrame();
         expect(frame).toContain('Reviews alpha conventions');
         expect(frame).toContain('Drafts bravo notes');
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
+  it('marks the closed option an option hint names, and leaves the others bare', async () => {
+    const { ui } = renderComposer(HINTED_COMMANDS);
+
+    await flushEffects();
+    ui.stdin.write('/mode ');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame() ?? '';
+        expect(rowContaining(frame, 'standard')).toContain('current');
+        expect(rowContaining(frame, 'quick')).not.toContain('current');
       },
       { timeout: 5000 },
     );

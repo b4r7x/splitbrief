@@ -53,6 +53,7 @@ function seatContent(seat: CrewSeat): string {
     : seat.model;
 }
 
+/** What a crew row shows beside its label, before the row's own width cuts it. */
 function rowContent(row: CrewRow): string {
   return seatContent(row.seat);
 }

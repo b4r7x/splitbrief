@@ -17,12 +17,6 @@ export type SettingsItem =
   | Readonly<{ kind: 'crew'; row: CrewRow; key: CrewRowKey }>
   | Readonly<{ kind: 'setting'; def: SettingDef; key: string }>;
 
-const SEAT_DESCRIPTIONS: Readonly<Record<CrewSeatId, string>> = {
-  plan: 'Plans the work and writes every Task Brief; the review seat inherits this setup when it has none of its own.',
-  build: 'Executes the briefs the planner writes; this is the seat that changes the code.',
-  review: "Reads the diff after every task; with no tool of its own it runs the planner's setup.",
-};
-
 export function buildSettingsItems(
   input: Readonly<{
     config: Config;
@@ -52,11 +46,4 @@ export function settingsItemSection(item: SettingsItem): SettingsSection {
 export function settingsItemFilterText(item: SettingsItem): string {
   if (item.kind === 'crew') return `${item.key} ${crewRowFilterText(item.row)}`.toLowerCase();
   return `${item.def.label} ${item.def.section}`.toLowerCase();
-}
-
-export function settingsItemDescription(
-  input: Readonly<{ item: SettingsItem; config: Config }>,
-): string {
-  const { item } = input;
-  return item.kind === 'crew' ? SEAT_DESCRIPTIONS[item.row.id] : item.def.description;
 }

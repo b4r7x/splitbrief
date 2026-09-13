@@ -43,7 +43,7 @@ export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSel
       hint={hint}
       chromeRows={12}
       listFloor={0}
-      density="wide"
+      density="roomy"
       placeholder={
         <Text color={t.textDim}>
           {sessions.length === 0

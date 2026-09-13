@@ -113,7 +113,7 @@ src/
 │   ├── home/                 components + recent-sessions hook + logo
 │   ├── palette/              command-palette sources + result ranking
 │   ├── summary/              components + detail rows + hooks
-│   ├── settings/             mode-selector + hooks
+│   ├── settings/             items + presentation + hooks
 │   └── runners/              picker view + catalog adapter + hooks (planner / implementer runner selection)
 ├── components/               Shared UI (cross-feature): primitives + shared overlays + pickers + input
 ├── hooks/                    Shared React hooks (cross-feature primitives, flat)
@@ -705,8 +705,7 @@ src/
 │   │                              virtual-items}
 │   │                              (planner / implementer runner selection)
 │   ├── settings/                  items (section + row model, Crew first) +
-│   │                              mode-selector + presentation +
-│   │                              hooks/{buffer, editor}
+│   │                              presentation + hooks/{buffer, editor}
 │   ├── summary/                   components (cost-breakdown, hero-savings,
 │   │                              phase-timing, progress, checkpoints,
 │   │                              review-packet, compact-*) + detail-rows +
@@ -1240,7 +1239,7 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 11. **One foreground active session per project directory.** `.splitbrief/active` is the foreground lock; each session's `lockfile.json` carries the pid and heartbeat that detect a stale pointer.
 12. **Snapshot path encoding.** Blob filenames always go through `encodeSnapshotPath` (a one-way `sha256` hash) — never bare-join slashes. Encoding is not reversible; the original path is recovered from the manifest's `fileEntries[].path`, never decoded.
 13. **Sanctioned `as` / `!` only.** Production code may not use unsafe assertions outside the named modules listed in `CLAUDE.md`.
-14. **No pinned overlay widths.** Every overlay, picker and panel sizes itself through `src/core/navigation/overlay-rect.ts`; the density table is the only place a width number lives. Enforced by `scripts/check-invariants.ts` gate 46 (`docs/INVARIANTS.md` row 46): `maxWidth=` under `src/app src/features src/components/overlays`, the retired width constants (`getResponsivePanelWidth`, `getClampedTerminalWidth`, `PICKER_WIDTHS`, `SUB_PANEL_MAX_WIDTH`, `MAX_PANEL_WIDTH`, `SETUP_PANEL_WIDTH`, `PALETTE_MAX_WIDTH`) anywhere under `src`, and `isSmall` in the width-choice path list must each stay at 0. Content-density branches that survive (`features/settings/mode-selector.tsx`, `features/summary/*`, `workflow/components/header.tsx`) are deliberately outside that path list.
+14. **No pinned overlay widths.** Every overlay, picker and panel sizes itself through `src/core/navigation/overlay-rect.ts`; the density table is the only place a width number lives. Enforced by `scripts/check-invariants.ts` gate 46 (`docs/INVARIANTS.md` row 46): `maxWidth=` under `src/app src/features src/components/overlays`, the retired width constants (`getResponsivePanelWidth`, `getClampedTerminalWidth`, `PICKER_WIDTHS`, `SUB_PANEL_MAX_WIDTH`, `MAX_PANEL_WIDTH`, `SETUP_PANEL_WIDTH`, `PALETTE_MAX_WIDTH`) anywhere under `src`, and `isSmall` in the width-choice path list must each stay at 0. Content-density branches that survive (`features/summary/*`, `workflow/components/header.tsx`) are deliberately outside that path list.
 15. **Capability inference lives in `core/`, not `engine/`.** The UI must never import `engine/providers/capability-inference`; what a runner can be told to run is decided in `src/core/runners/capabilities.ts`. Enforced by `scripts/check-invariants.ts` gate 47 (`docs/INVARIANTS.md` row 47): `from '.*engine/providers/capability-inference` under `src/features src/app src/components src/core` must stay at 0.
 
 ---

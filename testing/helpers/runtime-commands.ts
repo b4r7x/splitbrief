@@ -16,6 +16,8 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     navigate: noop,
     quit: noop,
     setWorkflowMode: noopSaved,
+    getWorkflowMode: () => 'standard',
+    prefillComposer: noop,
     setFeedbackMessage: noop,
     setFeedbackError: noop,
     refreshDetection: async () => ({

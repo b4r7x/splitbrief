@@ -42,7 +42,9 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'implementer.temperature',
     label: 'Temperature',
     section: 'Tuning',
-    description: '0=precise  0.3=balanced  1+=creative (dropped on non-api backends)',
+    // The row only exists for an api implementer, so it says nothing about the backends it never
+    // appears for: the help line has to fit beside its bounds without stranding them on a row.
+    description: '0 = precise, 0.3 = balanced, 1+ = creative',
     kind: 'number',
     min: 0,
     max: 2,
@@ -75,8 +77,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'workflow.mode',
     label: 'Mode',
     section: 'Workflow',
-    description:
-      'quick (1 call, 0 gates) | standard (4 calls, 1 gate) | speckit (6-7 calls, 2 gates)',
+    description: 'How many planner calls run before building, and how many gates stop for you',
     kind: 'enum',
     options: [...WORKFLOW_MODES],
   },
@@ -111,7 +112,8 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'workflow.git.commitStrategy',
     label: 'Commit strategy',
     section: 'Workflow',
-    description: 'none | checkpoint (tags) | per-task (commits)',
+    description:
+      'How a run records its progress in git: a tag per checkpoint, or one commit per task',
     kind: 'enum',
     options: [...COMMIT_STRATEGIES],
     unsetLabel: 'none',
@@ -150,7 +152,8 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'validation.testCommand',
     label: 'Test command',
     section: 'Validation',
-    description: 'Argv-style test runner command',
+    description: "Argv-style test runner command (auto = the stack's own)",
     kind: 'string',
+    unsetLabel: 'auto',
   },
 ];

@@ -1,4 +1,5 @@
-import type { Config } from '../../schemas/config.js';
+import { type Config, DEFAULT_WORKFLOW_MODE } from '../../schemas/config.js';
+import { getWorkflowMode } from '../../config/accessors/values.js';
 import type { Phase } from '../../schemas/enums.js';
 import type { RewindTarget } from '../../state/build-rewind-action.js';
 import type { OverlayType } from '../../navigation/types.js';
@@ -21,6 +22,7 @@ interface CommandContextFactoryOptions {
   openOverlay: (type: OverlayType, focus?: string) => void;
   navigateHome: () => void;
   quit: () => void;
+  prefillComposer: RuntimeCommandContext['prefillComposer'];
   setFeedbackMessage: (message: string) => void;
   setFeedbackError: (message: string) => void;
   refreshDetection: () => Promise<DiscoveryRefreshSummary>;
@@ -85,6 +87,11 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     quit: opts.quit,
     setWorkflowMode: (mode) =>
       updateConfig((current) => ({ ...current, workflow: { ...current.workflow, mode } })),
+    getWorkflowMode: () => {
+      const config = opts.getConfig();
+      return config === null ? DEFAULT_WORKFLOW_MODE : getWorkflowMode(config);
+    },
+    prefillComposer: opts.prefillComposer,
     setFeedbackMessage: opts.setFeedbackMessage,
     setFeedbackError: opts.setFeedbackError,
     refreshDetection: opts.refreshDetection,

@@ -228,10 +228,17 @@ function computeContentWindow(opts: {
   return { contentRows, scrollOffset, showScrollUp, showScrollDown };
 }
 
+// A window edge never shows a slot whose row is somewhere else: an `after` or a gap with no row
+// above it, a `before`, a gap or a section header with no row under it.
+const ORPHAN_LEAD = new Set<ListDisplaySlot<unknown>['kind']>(['after', 'gap']);
+const ORPHAN_TAIL = new Set<ListDisplaySlot<unknown>['kind']>(['before', 'gap', 'header']);
+
 function trimEdgeDecorations<T>(content: ListDisplaySlot<T>[]): ListDisplaySlot<T>[] {
-  const start = content[0]?.kind === 'after' ? 1 : 0;
-  const end = content.at(-1)?.kind === 'before' ? content.length - 1 : content.length;
-  return content.slice(start, Math.max(start, end));
+  let start = 0;
+  let end = content.length;
+  while (start < end && ORPHAN_LEAD.has(content[start]?.kind ?? 'item')) start += 1;
+  while (end > start && ORPHAN_TAIL.has(content[end - 1]?.kind ?? 'item')) end -= 1;
+  return content.slice(start, end);
 }
 
 export function isItemIndexVisible<T>(opts: {

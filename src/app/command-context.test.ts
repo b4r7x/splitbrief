@@ -306,7 +306,7 @@ describe('buildCommandContext skills ports', () => {
     ]);
   });
 
-  it('lists each skill as an id, name and description', () => {
+  it('lists each skill as an id, name, description and whether it is attached', () => {
     skillsStore.setAvailable([skill('project-a', 'project'), skill('global-a', 'global')]);
     skillsStore.setSelected(new Set(['project-a']));
 
@@ -315,11 +315,13 @@ describe('buildCommandContext skills ports', () => {
         id: 'project-a',
         name: 'project-a name',
         description: 'project-a description',
+        attached: true,
       },
       {
         id: 'global-a',
         name: 'global-a name',
         description: 'global-a description',
+        attached: false,
       },
     ]);
   });

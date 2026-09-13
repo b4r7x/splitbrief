@@ -57,17 +57,22 @@ function failedRefreshSummary(
 }
 
 describe('/mode command', () => {
-  it('opens mode-selector overlay when called without args', async () => {
+  it('refills the composer with the option grammar when called without args', async () => {
+    let prefilled: string | undefined;
     let openedOverlay: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
+        prefillComposer: (text) => {
+          prefilled = text;
+        },
         openOverlay: (type) => {
           openedOverlay = type;
         },
       }),
     );
     await runCommandInTest({ commands: commands, raw: '/mode', screen: 'home', onError: noop });
-    expect(openedOverlay).toBe('mode-selector');
+    expect(prefilled).toBe('/mode ');
+    expect(openedOverlay).toBeUndefined();
   });
 
   it('shows success only after a saved mode result resolves', async () => {

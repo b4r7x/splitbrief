@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createRuntimeCommands } from './registry.js';
 import { ALL_SCREENS } from '../../navigation/types.js';
+import { WORKFLOW_MODES, type WorkflowMode } from '../../schemas/enums.js';
+import { describeModeCost } from '../../pipeline-spec/mode-cost.js';
 import {
   COMMAND_CATEGORIES,
   REMOVED_COMMANDS,
@@ -51,7 +53,7 @@ describe('createRuntimeCommands registry shape', () => {
         expect(cmd.args.hint.trim(), `${cmd.name} free-arg hint`).not.toBe('');
         continue;
       }
-      const { options, optionDescriptions } = cmd.args;
+      const { options, optionDescriptions, optionHints } = cmd.args;
       expect(
         options.filter((option) => option.trim() === ''),
         `${cmd.name} options`,
@@ -60,6 +62,10 @@ describe('createRuntimeCommands registry shape', () => {
       expect(
         Object.keys(optionDescriptions ?? {}).filter((id) => !options.includes(id)),
         `${cmd.name} described options that are not offered`,
+      ).toEqual([]);
+      expect(
+        Object.keys(optionHints ?? {}).filter((id) => !options.includes(id)),
+        `${cmd.name} hinted options that are not offered`,
       ).toEqual([]);
     }
   });
@@ -84,9 +90,37 @@ describe('createRuntimeCommands registry shape', () => {
   });
 });
 
+describe('/mode options', () => {
+  function modeArgs(current: WorkflowMode) {
+    const command = createRuntimeCommands(makeCtx({ getWorkflowMode: () => current })).find(
+      (cmd) => cmd.name === '/mode',
+    );
+    if (command?.kind !== 'arg' || command.args.kind !== 'closed') {
+      throw new Error('/mode is not a closed-argument command');
+    }
+    return command.args;
+  }
+
+  it('prices every mode from the pipeline spec, gate names spelled out', () => {
+    const args = modeArgs('speckit');
+
+    expect(args.options).toEqual([...WORKFLOW_MODES]);
+    expect(args.optionDescriptions).toEqual(
+      Object.fromEntries(
+        WORKFLOW_MODES.map((mode) => [mode, describeModeCost(mode, { gateNames: true })]),
+      ),
+    );
+  });
+
+  it('marks the mode the config is on, and only that one', () => {
+    expect(modeArgs('speckit').optionHints).toEqual({ speckit: 'current' });
+    expect(modeArgs('quick').optionHints).toEqual({ quick: 'current' });
+  });
+});
+
 const SKILL_OPTIONS = [
-  { id: 'alpha', name: 'Alpha', description: 'Reviews alpha conventions' },
-  { id: 'bravo', name: 'Bravo', description: '' },
+  { id: 'alpha', name: 'Alpha', description: 'Reviews alpha conventions', attached: false },
+  { id: 'bravo', name: 'Bravo', description: '', attached: false },
 ] as const;
 
 function skillsCommand(overrides: Parameters<typeof makeCtx>[0]) {
@@ -129,9 +163,19 @@ describe('/skills command', () => {
   it('spells the name only when it differs from the id', () => {
     const { args } = skillsCommand({
       listSkills: () => [
-        { id: 'agents-root', name: 'AGENTS.md', description: 'Root agent instructions' },
-        { id: 'charlie', name: 'charlie', description: 'Reviews charlie conventions' },
-        { id: 'delta', name: 'delta', description: '' },
+        {
+          id: 'agents-root',
+          name: 'AGENTS.md',
+          description: 'Root agent instructions',
+          attached: false,
+        },
+        {
+          id: 'charlie',
+          name: 'charlie',
+          description: 'Reviews charlie conventions',
+          attached: false,
+        },
+        { id: 'delta', name: 'delta', description: '', attached: false },
       ],
     });
 
@@ -140,6 +184,17 @@ describe('/skills command', () => {
       charlie: 'Reviews charlie conventions',
       delta: '',
     });
+  });
+
+  it('marks only the skills already attached', () => {
+    const { args } = skillsCommand({
+      listSkills: () => [
+        { id: 'alpha', name: 'Alpha', description: 'Reviews alpha conventions', attached: false },
+        { id: 'bravo', name: 'Bravo', description: 'Drafts bravo notes', attached: true },
+      ],
+    });
+
+    expect(args.optionHints).toEqual({ bravo: 'attached' });
   });
 
   it('opens the skills overlay after a rescan when invoked bare', async () => {
@@ -245,5 +300,27 @@ describe('/skills command', () => {
 
     expect(errors).toEqual([]);
     expect(steps).toEqual(['rescan', 'open:skills']);
+  });
+});
+
+describe('/settings command', () => {
+  function openedBy(raw: string): Array<{ type: string; focus: string | undefined }> {
+    const opened: Array<{ type: string; focus: string | undefined }> = [];
+    const commands = createRuntimeCommands(
+      makeCtx({
+        openOverlay: (type, focus) => {
+          opened.push({ type, focus });
+        },
+      }),
+    );
+    runCommandInTest({ commands, raw, screen: 'home', onError: () => {} });
+    return opened;
+  }
+
+  it('opens the overlay with no focus and takes no argument', () => {
+    const settings = createRuntimeCommands(makeCtx({})).find((cmd) => cmd.name === '/settings');
+
+    expect(settings?.kind).toBe('noarg');
+    expect(openedBy('/settings')).toEqual([{ type: 'settings', focus: undefined }]);
   });
 });

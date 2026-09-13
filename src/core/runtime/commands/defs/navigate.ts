@@ -43,6 +43,9 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
               .join(' — '),
           ]),
         ),
+        optionHints: Object.fromEntries(
+          skills.filter((skill) => skill.attached).map((skill) => [skill.id, 'attached']),
+        ),
         // A machine can hold hundreds of skills; spelling every id into a row would swamp the
         // palette description, which is also its fuzzy-match target.
         hint: '<skill-id …>',

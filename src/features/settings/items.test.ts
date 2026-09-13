@@ -3,7 +3,6 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { SETTINGS_DEFS, type SettingDef } from '../../core/settings/catalog.js';
 import {
   buildSettingsItems,
-  settingsItemDescription,
   settingsItemFilterText,
   settingsItemSection,
   type SettingsItem,
@@ -58,26 +57,5 @@ describe('settingsItemFilterText', () => {
     expect(seatText.startsWith('seat:plan ')).toBe(true);
     expect(seatText).toBe(seatText.toLowerCase());
     expect(settingsItemFilterText(itemAt(items, 'workflow.mode'))).toBe('mode workflow');
-  });
-});
-
-describe('settingsItemDescription', () => {
-  it('explains the plan seat', () => {
-    const config = makeConfig();
-    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
-
-    expect(settingsItemDescription({ item: itemAt(items, 'seat:plan'), config })).toContain(
-      'writes every Task Brief',
-    );
-  });
-
-  it('reads a setting row straight off its definition', () => {
-    const config = makeConfig();
-    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
-    const mode = SETTINGS_DEFS.find((def) => def.id === 'workflow.mode');
-
-    expect(settingsItemDescription({ item: itemAt(items, 'workflow.mode'), config })).toBe(
-      mode?.description,
-    );
   });
 });

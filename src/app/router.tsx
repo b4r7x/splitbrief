@@ -12,7 +12,6 @@ import { StopSheetOverlay } from './overlays/stop.js';
 import { EditorOverlay } from './overlays/editor.js';
 import { SettingsOverlay } from './overlays/settings.js';
 import { ToolModelPicker } from './overlays/runners.js';
-import { ModeSelector } from '../features/settings/mode-selector.js';
 import { CostDrilldownOverlay } from '../features/workflow/cost-drilldown/overlay.js';
 import { focusHasResolvableCopy } from '../features/workflow/copy/resolve.js';
 import type { RuntimeCommandDef, CopyResult, CopyTarget } from '../core/runtime/commands/types.js';
@@ -117,8 +116,6 @@ function renderOverlay({
       return <SkillsPicker />;
     case 'settings':
       return <SettingsOverlay />;
-    case 'mode-selector':
-      return <ModeSelector />;
     case 'planner-picker':
       return <ToolModelPicker role="planner" />;
     case 'implementer-picker':

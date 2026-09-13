@@ -18,6 +18,7 @@ import type { Config } from '../core/schemas/config.js';
 import type { Screen } from '../core/navigation/types.js';
 import { configStore } from '../stores/project/config.js';
 import { overlayStore } from '../stores/ui/overlay.js';
+import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
@@ -182,6 +183,7 @@ function listSkills(): readonly SkillCommandOption[] {
     id: skill.id,
     name: skill.name,
     description: skill.description,
+    attached: selected.has(skill.id),
   }));
 }
 
@@ -246,6 +248,7 @@ export function buildCommandContext({
     openOverlay: overlayStore.open,
     navigateHome: () => routerStore.navigate({ to: 'home' }),
     quit: () => requestQuit(exit),
+    prefillComposer: composerDraftStore.request,
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => {
@@ -322,9 +325,10 @@ export function useRuntimeCommands({ exit, phase }: { exit: () => void; phase: P
       resolveCopyValue,
     },
   });
-  // The command list embeds the skill id set as `/skills`'s closed options, so it has to be
-  // rebuilt whenever a rescan or a toggle changes the store.
+  // The command list embeds the skill id set as `/skills`'s closed options and the current mode as
+  // `/mode`'s `current` hint, so it has to be rebuilt whenever either store changes.
   skillsStore.use((s) => s);
+  configStore.use((s) => s.config?.workflow.mode);
   const commands = createRuntimeCommands(ctx);
   const runtimeChainRef = useRef(Promise.resolve());
   const handleRuntimeCommand = (raw: string, from: Screen) => {

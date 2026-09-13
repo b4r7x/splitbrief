@@ -157,6 +157,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'completion', title: 'Skills completion menu' },
       ],
     }),
+    defineScenario({
+      id: 'home-mode-completion',
+      title: 'Home · /mode completion menu',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Mode completion open',
+        kind: 'ready',
+        marker: '0 gates',
+      },
+      elements: [
+        { id: 'composer', title: 'Feature composer' },
+        { id: 'completion', title: 'Mode completion menu' },
+      ],
+    }),
   ],
   workflow: [
     defineScenario({
@@ -624,15 +639,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · settings · filtered to the workflow section',
         marker: 'Settings',
       },
-    ],
-  }),
-  'mode-selector': overlayGroup({
-    overlay: 'mode-selector',
-    underlyingScreen: 'home',
-    panelTitle: 'Workflow mode panel',
-    checkpointTitle: 'Workflow mode ready',
-    scenarios: [
-      { id: 'overlay-mode-selector', title: 'Overlay · workflow mode', marker: 'Workflow mode' },
     ],
   }),
   'planner-picker': overlayGroup({

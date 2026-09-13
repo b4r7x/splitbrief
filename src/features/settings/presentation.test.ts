@@ -24,7 +24,7 @@ describe('displayValue', () => {
   });
 
   it('— stays the default for unset fields without an unsetLabel', () => {
-    const def = getDef('validation.testCommand');
+    const def = getDef('implementer.temperature');
     expect(displayValue(def, undefined)).toBe('—');
     expect(displayValue(def, null)).toBe('—');
   });
@@ -43,9 +43,10 @@ describe('displayValue', () => {
     expect(displayValue(def, 262_144, { detectedContextLength: 262_144 })).toBe('auto (262K)');
   });
 
-  it('unsetLabel fallbacks for timeout and contextLength', () => {
+  it('unsetLabel fallbacks for timeout, contextLength and testCommand', () => {
     expect(displayValue(getDef('implementer.timeout'), null)).toBe('auto (idle kill 30m)');
     expect(displayValue(getDef('implementer.contextLength'), undefined)).toBe('auto');
+    expect(displayValue(getDef('validation.testCommand'), undefined)).toBe('auto');
   });
 
   it('reads the policy meaning of an unset gate level and commit strategy off the def', () => {

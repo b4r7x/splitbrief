@@ -7,90 +7,32 @@ import { CommandCompletionMenu, type CommandCompletionRow } from './menu.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 
-const COMMANDS: RuntimeCommandDef[] = [
-  {
-    kind: 'noarg',
-    name: '/help',
-    label: 'Help',
-    description: 'Show help overlay',
-    shortcut: 'Ctrl+/',
-    category: 'navigate',
-    validScreens: ['home'],
-    handler: () => {},
-  },
-  {
-    kind: 'noarg',
-    name: '/palette',
-    label: 'Palette',
-    description: 'Open command palette',
-    category: 'navigate',
-    validScreens: ['home'],
-    handler: () => {},
-  },
-  {
-    kind: 'noarg',
-    name: '/skills',
-    label: 'Skills',
-    description: 'Select planner skills [Ctrl+S]',
-    category: 'navigate',
-    validScreens: ['home'],
-    handler: () => {},
-  },
+const COMMANDS: CommandCompletionRow[] = [
+  { name: '/help', description: 'Show help overlay', trailing: 'Ctrl+/' },
+  { name: '/palette', description: 'Open command palette' },
+  { name: '/skills', description: 'Select planner skills [Ctrl+S]' },
 ];
 
-const LONG_HINT_COMMANDS: RuntimeCommandDef[] = [
+const LONG_HINT_COMMANDS: CommandCompletionRow[] = [
   {
-    kind: 'noarg',
     name: '/help',
-    label: 'Help',
     description: 'Show help overlay with enough detail to pressure the hint column',
-    shortcut: 'Ctrl+/',
-    category: 'navigate',
-    validScreens: ['home'],
-    handler: () => {},
+    trailing: 'Ctrl+/',
   },
 ];
 
-const SCROLLED_COMMANDS: RuntimeCommandDef[] = [
+const SCROLLED_COMMANDS: CommandCompletionRow[] = [
   {
-    kind: 'noarg',
     name: '/hidden-command-with-a-very-long-name',
-    label: 'Hidden Long Command',
     description: 'The whole list sizes the name column, capped, not the visible slice',
-    category: 'navigate',
-    validScreens: ['home'],
-    handler: () => {},
   },
+  { name: '/run', description: 'Run focused task', trailing: 'Ctrl+R' },
   {
-    kind: 'noarg',
-    name: '/run',
-    label: 'Run',
-    description: 'Run focused task',
-    shortcut: 'Ctrl+R',
-    category: 'navigate',
-    validScreens: ['home'],
-    handler: () => {},
-  },
-  {
-    kind: 'noarg',
     name: '/test',
-    label: 'Test',
     description: 'Run target tests with enough detail to pressure the row',
-    shortcut: 'Ctrl+T',
-    category: 'navigate',
-    validScreens: ['home'],
-    handler: () => {},
+    trailing: 'Ctrl+T',
   },
-  {
-    kind: 'noarg',
-    name: '/ship',
-    label: 'Ship',
-    description: 'Prepare review handoff',
-    shortcut: 'Ctrl+S',
-    category: 'navigate',
-    validScreens: ['home'],
-    handler: () => {},
-  },
+  { name: '/ship', description: 'Prepare review handoff', trailing: 'Ctrl+S' },
 ];
 
 // The shape `/skills <id>` really produces: ids longer than the 18-cell cap, descriptions that

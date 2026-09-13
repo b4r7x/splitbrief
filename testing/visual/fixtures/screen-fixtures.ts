@@ -494,6 +494,17 @@ function createSkillsCompletionFixture(): FixtureLifecycle {
   };
 }
 
+function createModeCompletionFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      composerDraftStore.request('/mode ');
+    },
+    teardown: home.teardown,
+  };
+}
+
 const HOME_REVIEWER_API_SEAT = {
   kind: 'api',
   provider: 'custom-endpoint',
@@ -517,6 +528,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-cold'), () => createHomeFixture({ cold: true })],
   [scenarioId('home-cold-detecting'), () => createHomeFixture({ cold: true, detecting: true })],
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
+  [scenarioId('home-mode-completion'), createModeCompletionFixture],
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
   [scenarioId('setup-initial'), createSetupFixture],
 ]);

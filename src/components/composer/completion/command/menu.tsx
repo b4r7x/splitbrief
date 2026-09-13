@@ -17,7 +17,7 @@ const NARROW_FOOTER_COLS = 50;
 export interface CommandCompletionRow {
   name: string;
   description: string;
-  shortcut?: string | null;
+  trailing?: string | null;
 }
 
 interface CommandCompletionMenuProps {
@@ -106,9 +106,9 @@ function CommandRow({
           {cmd.description}
         </Text>
       </Box>
-      {cmd.shortcut ? (
+      {cmd.trailing ? (
         <Box flexShrink={0} marginLeft={1} backgroundColor={rowBg}>
-          <Text color={t.textDim}>{cmd.shortcut}</Text>
+          <Text color={t.textDim}>{cmd.trailing}</Text>
         </Box>
       ) : null}
     </Box>

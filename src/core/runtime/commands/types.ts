@@ -184,6 +184,7 @@ export interface SkillCommandOption {
   id: string;
   name: string;
   description: string;
+  attached: boolean;
 }
 
 export type SkillToggleResult =
@@ -202,6 +203,8 @@ type CommandArgSpec =
       kind: 'closed';
       options: readonly string[];
       optionDescriptions?: Readonly<Record<string, string>>;
+      /** A trailing word per option — `current`, `attached` — shown right-aligned in the completion row. */
+      optionHints?: Readonly<Record<string, string>>;
       /** Display grammar for option sets too large to spell out in a palette or help row. */
       hint?: string;
       optional?: true;
@@ -235,6 +238,8 @@ export interface RuntimeCommandContext {
   navigate: (to: 'home') => void;
   quit: () => void;
   setWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>;
+  getWorkflowMode: () => WorkflowMode;
+  prefillComposer: (text: string) => void;
   setFeedbackMessage: (msg: string) => void;
   setFeedbackError: (msg: string) => void;
   refreshDetection: () => Promise<DiscoveryRefreshSummary>;

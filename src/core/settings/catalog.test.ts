@@ -77,14 +77,24 @@ describe('SETTINGS_DEFS workflow compaction', () => {
 });
 
 describe('SETTINGS_DEFS workflow.mode description', () => {
-  it("states each mode's real planner-call and gate cost", () => {
+  // The per-mode cost table is the help block's (`settingsHelpLines`), so the row itself says
+  // what the setting decides in one sentence instead of carrying three lines of table.
+  it('says in one line what the mode decides', () => {
     const def = SETTINGS_DEFS.find((d) => d.id === 'workflow.mode');
-    expect(def).toBeDefined();
-    expect(def?.description).toMatch(/quick \(1 call/);
-    expect(def?.description).toContain('standard');
-    expect(def?.description).toContain('speckit');
-    expect(def?.description).not.toContain('instant');
-    expect(def?.description).not.toContain('0 calls');
+
+    expect(def?.description).toBe(
+      'How many planner calls run before building, and how many gates stop for you',
+    );
+    expect(def?.description).not.toContain('\n');
+  });
+});
+
+describe('SETTINGS_DEFS unset labels', () => {
+  it('reads an unset test command as the stack default rather than a dash', () => {
+    const def = SETTINGS_DEFS.find((d) => d.id === 'validation.testCommand');
+
+    expect(def?.unsetLabel).toBe('auto');
+    expect(def?.description).toContain('auto');
   });
 });
 

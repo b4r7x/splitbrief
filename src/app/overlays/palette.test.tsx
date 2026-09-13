@@ -58,6 +58,8 @@ function createTestCommands(): RuntimeCommandDef[] {
     resumeRun: () => true,
     endRun: () => true,
     setWorkflowMode: setWorkflowModeForTest,
+    getWorkflowMode: () => configStore.get().config?.workflow.mode ?? 'standard',
+    prefillComposer: composerDraftStore.request,
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => ({

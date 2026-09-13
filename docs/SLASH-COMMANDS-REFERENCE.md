@@ -48,7 +48,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Args**: none.
 - **Shortcut**: `Ctrl+K` (`src/core/keybindings/registry.ts`).
 - **Example**: `/palette`
-- **Behavior**: Opens the `command-palette` overlay. `/palette` itself is `hidden`, so it is typeable but never listed inside the palette. Palette sources are assembled in `src/features/palette/sources.ts` from labeled runtime commands, workflow modes, live tasks, recent sessions, and `palette.customActions` from config. With an empty query the rows are grouped by `category`. `Enter` on a command that takes an argument prefills `/name ` in the composer instead of running it bare.
+- **Behavior**: Opens the `command-palette` overlay. `/palette` itself is `hidden`, so it is typeable but never listed inside the palette. Palette sources are assembled in `src/features/palette/sources.ts` from labeled runtime commands, live tasks, recent sessions, and `palette.customActions` from config. With an empty query the rows are grouped by `category`. `Enter` on a command that takes an argument prefills `/name ` in the composer instead of running it bare.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens overlay via `overlayStore.open`.
 - **See also**: `/help`.
 
@@ -81,7 +81,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Shortcut**: `Ctrl+,` (`src/core/keybindings/registry.ts`).
 - **Example**: `/settings`
 - **Behavior**: Opens the `settings` overlay. **Crew is the first section**: the three seats (`PLAN`, `BUILD`, `REVIEW`) live there as read-only rows, not in separate per-seat sections; `Enter` on a seat opens that seat's picker, which is where its tool, model and effort are chosen. Everything below it is the ordinary settings list. Mutations are persisted to project config on save.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens overlay via `overlayStore.open`.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens the overlay via `overlayStore.open`; a focus of `seat:<id>` or `filter:<text>` is parsed by `parseSettingsFocus` (`src/features/settings/focus.ts`).
 - **See also**: `/crew`, `/mode`, `/skills`.
 
 ### `/home`
@@ -113,7 +113,7 @@ Commands that decide who does the work and how: the three seats, the workflow mo
 
 ### `/mode [name]`
 
-- **Purpose**: Switch workflow mode at runtime. With no argument, opens the mode-selector overlay so you can pick interactively. With a valid mode name, persists the selection so subsequent runs inherit it.
+- **Purpose**: Switch workflow mode at runtime. With no argument, refills the composer with `/mode ` so the three modes appear as completion rows, each with its planning-call and gate count and `current` on the active one. With a valid mode name, persists the selection so subsequent runs inherit it.
 - **Screens**: all (`home`, `workflow`, `summary`, `setup`).
 - **Args**: optional. Valid values: `quick`, `standard`, `speckit` (the `WORKFLOW_MODES` tuple in `src/core/schemas/enums.ts`). The retired `instant` is still accepted and sets `quick`. Invalid values print `"Invalid mode: <x>. Valid modes: quick, standard, speckit"`.
 - **Example**: `/mode`, `/mode speckit`, `/mode quick`

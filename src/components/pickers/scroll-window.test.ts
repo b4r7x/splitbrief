@@ -104,7 +104,7 @@ describe('computeListDisplayWindow', () => {
     expect(window.visibleSlots.at(-1)).toMatchObject({ kind: 'indicator', direction: 'down' });
   });
 
-  it('counts section headers and gaps inside the row budget', () => {
+  it('counts section headers inside the row budget and drops a gap with no row under it', () => {
     const window = computeListDisplayWindow({
       items: [
         { id: 'p1', scope: 'project' },
@@ -123,7 +123,6 @@ describe('computeListDisplayWindow', () => {
       'header',
       'item',
       'item',
-      'gap',
       'indicator',
     ]);
     expect(window.visibleSlots[0]).toEqual({
@@ -131,7 +130,32 @@ describe('computeListDisplayWindow', () => {
       itemIndex: 0,
       section: 'project',
     });
-    expect(window.visibleSlots[3]).toEqual({ kind: 'gap', itemIndex: 2 });
+  });
+
+  it('never ends the window on a section header whose rows are below the fold', () => {
+    const window = computeListDisplayWindow({
+      items: [
+        { id: 'p1', scope: 'project' },
+        { id: 'p2', scope: 'project' },
+        { id: 'p3', scope: 'project' },
+        { id: 'g1', scope: 'global' },
+        { id: 'g2', scope: 'global' },
+      ],
+      selectedIndex: 0,
+      rowBudget: 7,
+      section: {
+        by: (item) => item.scope,
+        gapBetweenSections: true,
+      },
+    });
+
+    expect(window.visibleSlots.map((slot) => slot.kind)).toEqual([
+      'header',
+      'item',
+      'item',
+      'item',
+      'indicator',
+    ]);
   });
 });
 

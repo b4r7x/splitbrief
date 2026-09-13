@@ -121,6 +121,7 @@ export function useCommandCompletion({
           (option): CommandCompletionRow => ({
             name: option,
             description: closedArgs.optionDescriptions?.[option] ?? '',
+            trailing: closedArgs.optionHints?.[option] ?? null,
           }),
         )
       : null;
@@ -129,7 +130,14 @@ export function useCommandCompletion({
   const argPrefix = argRows === null ? null : `${commandToken} ${argHead}`;
   const matchQuery = argRows === null ? query : argToken.toLowerCase();
   const filtered = showSuggestions
-    ? (argRows ?? validCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(query)))
+    ? (argRows ??
+      validCommands
+        .filter((cmd) => cmd.name.toLowerCase().startsWith(query))
+        .map((cmd) => ({
+          name: cmd.name,
+          description: cmd.description,
+          trailing: cmd.shortcut ?? null,
+        })))
     : [];
 
   const fuzzyMatch =

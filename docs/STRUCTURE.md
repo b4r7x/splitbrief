@@ -43,7 +43,7 @@ src/
     ├── home/
     ├── palette/
     ├── summary/
-    ├── settings/                            # retains mode-selector.tsx + items.ts + presentation.ts + hooks/
+    ├── settings/                            # retains items.ts + presentation.ts + hooks/
     ├── crew/                                # seat rows + renderers (no page of its own)
     ├── runners/
     └── editor/                              # inline spec/plan/brief editor (overlay entry: app/overlays/editor.tsx)
@@ -265,7 +265,6 @@ The page `app/screens/workflow.tsx` holds the composition (layout math + `Screen
 
 ```
 features/settings/
-├── mode-selector.tsx         # router-imported feature component (NOT a page) — mounted by renderOverlay in app/router.tsx
 ├── items.ts                  # builds the one settings list: crew rows first, then the settings defs by section
 ├── presentation.ts           # pure formatters on SettingDef (value color, filter match, validate, display) — feature-local
 └── hooks/
@@ -273,7 +272,7 @@ features/settings/
     └── editor.ts             # useSettingsEditor — feature-local
 ```
 
-The `SettingsOverlay` entry is the page `app/overlays/settings.tsx`; it composes `items.ts`, `presentation.ts`, `hooks/editor.ts` and the `crew` feature's renderers. `mode-selector.tsx` is the exception that proves the rule — it stays in the feature and is imported **directly by `app/router.tsx`** (a router-imported feature component, not a page).
+The `SettingsOverlay` entry is the page `app/overlays/settings.tsx`; it composes `items.ts`, `presentation.ts`, `hooks/editor.ts` and the `crew` feature's renderers.
 
 `features/palette/` follows the same shape: its entry is the page `app/overlays/palette.tsx`, which composes the feature-local `sources.ts` and `results.ts` (`sources.ts` assembles commands/modes/picker actions/live tasks/sessions/custom actions; `results.ts` ranks/filter-matches them for rendering).
 
@@ -374,7 +373,7 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 
 - **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `filter-input.tsx`, `markdown.tsx`, `session-row.tsx`.
 - **Input subsystem** — `input/` (multiline input primitive), `composer/` (composite used on every screen).
-- **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/text-input-overlay.tsx`. Surface-specific overlay *entries* are FLAT pages in `src/app/overlays/` (e.g. `app/overlays/help.tsx`, `app/overlays/palette.tsx`); their feature-local internals (e.g. `features/palette/{sources,results}.ts`, `features/settings/mode-selector.tsx`) stay in the feature folder.
+- **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/text-input-overlay.tsx`. Surface-specific overlay *entries* are FLAT pages in `src/app/overlays/` (e.g. `app/overlays/help.tsx`, `app/overlays/palette.tsx`); their feature-local internals (e.g. `features/palette/{sources,results}.ts`, `features/settings/items.ts`) stay in the feature folder.
 - **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/single-column.tsx`, `pickers/scroll-window.ts`, `pickers/list-viewport.tsx`, plus the `src/hooks/use-static-selector.ts` selection hook. Sectioned picker display uses the display-window/ListViewport stack: `scroll-window.ts` computes header/gap/item slots, and `list-viewport.tsx` renders them. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
 
 There is **no separate `src/ui/` directory** for primitives. The distinction between "primitive" and "composed" is fuzzy in practice (stateful primitives exist; stateless composed widgets exist). Flat `src/components/` with natural subfolders (`input/`, `overlays/`, `pickers/`) is enough.
@@ -510,7 +509,7 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 | `summary` | Post-workflow report — cost, task table, phase timing | `app/screens/summary.tsx` | `features/summary/` |
 | `setup` | First-run crew setup — ready-made crews above the seat block | `app/screens/setup.tsx` | dissolved (page only) |
 | `palette` | Command palette overlay — source assembly, filtering, MRU ranking | `app/overlays/palette.tsx` | `features/palette/` |
-| `settings` | Settings overlay — the crew section plus the field editor for config | `app/overlays/settings.tsx` | `features/settings/` (mode-selector + items + presentation + hooks) |
+| `settings` | Settings overlay — the crew section plus the field editor for config | `app/overlays/settings.tsx` | `features/settings/` (items + presentation + hooks) |
 | `crew` | No page of its own — rows + renderers consumed by the settings and setup pages | — | `features/crew/` |
 | `runners` | Seat picker — tool + model selection for each seat picker role | `app/overlays/runners.tsx` | `features/runners/` |
 | `editor` | Inline spec / plan / Task Brief editor — headless editing kernel over raw + brief-field surfaces | `app/overlays/editor.tsx` | `features/editor/` |

@@ -775,8 +775,6 @@ const createSettingsFilterPlanFixture: FixtureFactory = () =>
 // when they are unset — so one scenario holds that section on screen at every width.
 const createSettingsFilterWorkflowFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:workflow' });
-const createModeSelectorFixture: FixtureFactory = () =>
-  createOverlayFixture({ overlay: 'mode-selector' });
 const createPlannerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'planner-picker' });
 const createPlannerPickerCatalogFixture: FixtureFactory = () =>
@@ -1051,7 +1049,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-filtered'), createSettingsFilteredFixture],
   [scenarioId('overlay-settings-filter-plan'), createSettingsFilterPlanFixture],
   [scenarioId('overlay-settings-filter-workflow'), createSettingsFilterWorkflowFixture],
-  [scenarioId('overlay-mode-selector'), createModeSelectorFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
   [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],
   [scenarioId('overlay-picker-provider-expanded-read'), createProviderExpandedReadFixture],
