@@ -38,7 +38,9 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
         optionDescriptions: Object.fromEntries(
           skills.map((skill) => [
             skill.id,
-            skill.description ? `${skill.name} — ${skill.description}` : skill.name,
+            [skill.name === skill.id ? '' : skill.name, skill.description]
+              .filter(Boolean)
+              .join(' — '),
           ]),
         ),
         // A machine can hold hundreds of skills; spelling every id into a row would swamp the

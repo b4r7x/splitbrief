@@ -120,25 +120,44 @@ const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
 ];
 
 const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
-  home: HOME_SCENARIOS.map((home) =>
+  home: [
+    ...HOME_SCENARIOS.map((home) =>
+      defineScenario({
+        id: home.id,
+        title: home.title,
+        surface: screenSurface('home'),
+        viewports: home.viewports,
+        checkpoint: {
+          id: 'ready',
+          title: 'Ready for a feature',
+          kind: 'ready',
+          marker: 'Describe your feature…',
+        },
+        elements: [
+          { id: 'header', title: 'Home header' },
+          { id: 'hero', title: 'Home hero' },
+          { id: 'composer', title: 'Feature composer' },
+        ],
+      }),
+    ),
+    // The draft replaces the shared home placeholder, so this scenario waits on the open menu's
+    // own footer instead of reusing the `Describe your feature…` marker.
     defineScenario({
-      id: home.id,
-      title: home.title,
+      id: 'home-skills-completion',
+      title: 'Home · /skills completion menu',
       surface: screenSurface('home'),
-      viewports: home.viewports,
       checkpoint: {
         id: 'ready',
-        title: 'Ready for a feature',
+        title: 'Skills completion open',
         kind: 'ready',
-        marker: 'Describe a change.',
+        marker: 'tab fill',
       },
       elements: [
-        { id: 'header', title: 'Home header' },
-        { id: 'hero', title: 'Home hero' },
         { id: 'composer', title: 'Feature composer' },
+        { id: 'completion', title: 'Skills completion menu' },
       ],
     }),
-  ),
+  ],
   workflow: [
     defineScenario({
       id: 'workflow-idle',

@@ -272,7 +272,9 @@ describe('RecentSessions', () => {
     expect(frame).toContain('Type to filter…');
     expect(frame).toContain('selection failed');
     expect(frame).toContain('newest-focused-small-home');
-    expect(frame).toContain('middle-focused-small-home');
+    expect(frame).toContain('↓ 2 more');
+    expect(frame).not.toContain('middle-focused-small-home');
+    expect(frame).not.toContain('oldest-focused-small-home');
     ui.unmount();
   });
 

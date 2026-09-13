@@ -182,10 +182,10 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
     });
 
     // At 80x24 the home body is 76 cols wide ('wide' overlay width) centred at x=2,
-    // and 6 rows tall: the one-row wordmark + trailing gap row (1) + seat block (4).
+    // and 11 rows tall: full-tier logo (6) + trailing gap row (1) + seat block (4).
     expect(header).toMatchObject({
       kind: 'layout',
-      rect: { x: 2, y: 0, width: 76, height: 6 },
+      rect: { x: 2, y: 0, width: 76, height: 11 },
     });
     expect(sidebar.kind).toBe('layout');
     expect(sidebar.rect.x).toBe(0);

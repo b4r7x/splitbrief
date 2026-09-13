@@ -39,6 +39,7 @@ export function CommandCompletionMenu({
     cols < NARROW_FOOTER_COLS
       ? ['↑↓', '⏎', 'esc'].join(SOFT_SEP)
       : ['↑↓ select', 'tab fill', '⏎ run', 'esc close'].join(SOFT_SEP);
+  const nameWidth = getCommandNameWidth(filtered.map((cmd) => cmd.name));
 
   return (
     <CompletionPanel
@@ -48,22 +49,21 @@ export function CommandCompletionMenu({
       footer={footer}
       isOpen
       itemKey={(cmd) => cmd.name}
-      renderRow={({ item: cmd, isSelected, rowBg, visibleItems }) => {
-        const nameWidth = getCommandNameWidth(visibleItems.map((item) => item.name));
-        return <CommandRow cmd={cmd} isSelected={isSelected} rowBg={rowBg} nameWidth={nameWidth} />;
-      }}
+      renderRow={({ item: cmd, isSelected, rowBg }) => (
+        <CommandRow cmd={cmd} isSelected={isSelected} rowBg={rowBg} nameWidth={nameWidth} />
+      )}
       renderEmpty={(panelBg) => {
         if (filtered.length > 0) return null;
         if (!fuzzyMatch) {
           return <Text color={t.textDim}>{`${NO_CURSOR}no matching commands`}</Text>;
         }
-        const nameWidth = getCommandNameWidth([fuzzyMatch.name]);
+        const labelWidth = getCommandNameWidth([fuzzyMatch.name]);
         return (
           <AlignedOptionRow
-            lead={<Text color={t.textDim}>{NO_CURSOR}</Text>}
-            leadGap={0}
+            lead={<CursorCell isCursor={false} dimWhenInactive />}
             label={fuzzyMatch.name}
-            labelWidth={nameWidth}
+            labelWidth={labelWidth}
+            labelGap={COMMAND_NAME_GAP}
             labelColor={t.textDim}
             detail={`${fuzzyMatch.description} (fuzzy)`}
             detailColor={t.textDim}
@@ -76,10 +76,7 @@ export function CommandCompletionMenu({
 }
 
 function getCommandNameWidth(names: string[]): number {
-  return getAlignedOptionLabelWidth(names, {
-    gap: COMMAND_NAME_GAP,
-    maxWidth: MAX_COMMAND_NAME_WIDTH,
-  });
+  return getAlignedOptionLabelWidth(names, { maxWidth: MAX_COMMAND_NAME_WIDTH });
 }
 
 function CommandRow({
@@ -103,6 +100,7 @@ function CommandRow({
           {cmd.name}
         </Text>
       </Box>
+      <Box width={COMMAND_NAME_GAP} flexShrink={0} backgroundColor={rowBg} />
       <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden" backgroundColor={rowBg}>
         <Text color={t.textDim} wrap="truncate-end">
           {cmd.description}

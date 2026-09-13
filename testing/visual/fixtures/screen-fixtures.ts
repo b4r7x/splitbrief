@@ -14,6 +14,7 @@ import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-
 import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/models-dev-lane.js';
 import type { Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { SkillMeta } from '../../../src/core/skills/types.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import { scenarioId } from '../contracts/identifiers.js';
@@ -348,6 +349,126 @@ export const createSetupFixture: FixtureFactory = () => ({
   teardown: teardownVisualFixture,
 });
 
+const SKILLS_COMPLETION_FIXTURE: SkillMeta[] = [
+  {
+    id: 'brief-discipline',
+    name: 'Brief discipline',
+    description:
+      'Keep every Task Brief to one slice: the files it may touch, the gates it must pass, the evidence it leaves',
+    path: 'fixtures/skills/brief-discipline/SKILL.md',
+    scope: 'project',
+    projectDir: VISUAL_FIXTURE_PROJECT_DIR,
+  },
+  {
+    id: 'repo-conventions',
+    name: 'Repo conventions',
+    description:
+      'House idiom for this repository: layering, file naming, import style and the rules a review will check',
+    path: 'fixtures/skills/repo-conventions/SKILL.md',
+    scope: 'project',
+    projectDir: VISUAL_FIXTURE_PROJECT_DIR,
+  },
+  {
+    id: 'splitbrief-add-feature',
+    name: 'splitbrief-add-feature',
+    description:
+      'Plan a feature as a chain of briefs, one slice per brief, with gates and acceptance criteria spelled out',
+    path: 'fixtures/skills/splitbrief-add-feature/SKILL.md',
+    scope: 'project',
+    projectDir: VISUAL_FIXTURE_PROJECT_DIR,
+  },
+  {
+    id: 'splitbrief-implement-spec',
+    name: 'splitbrief-implement-spec',
+    description:
+      'Execute an approved spec brief by brief, validating every slice against the project gates before hand-off',
+    path: 'fixtures/skills/splitbrief-implement-spec/SKILL.md',
+    scope: 'project',
+    projectDir: VISUAL_FIXTURE_PROJECT_DIR,
+  },
+  {
+    id: 'splitbrief-docs-sync',
+    name: 'splitbrief-docs-sync',
+    description:
+      'Keep the documentation map honest: every link resolves and every claim matches what the source really does',
+    path: 'fixtures/skills/splitbrief-docs-sync/SKILL.md',
+    scope: 'project',
+    projectDir: VISUAL_FIXTURE_PROJECT_DIR,
+  },
+  {
+    id: 'agents-root',
+    name: 'AGENTS.md',
+    description: 'Root agent instructions',
+    path: 'fixtures/skills/agents-root/SKILL.md',
+    scope: 'project',
+    projectDir: VISUAL_FIXTURE_PROJECT_DIR,
+  },
+  {
+    id: '2d-games',
+    name: '2d-games',
+    description:
+      '2D game development principles. Sprites, tilemaps, physics, camera, input and the game loop',
+    path: 'fixtures/skills/2d-games/SKILL.md',
+    scope: 'global',
+  },
+  {
+    id: '3d-games',
+    name: '3d-games',
+    description:
+      '3D game development principles. Scenes, meshes, materials, lighting, cameras and the render loop',
+    path: 'fixtures/skills/3d-games/SKILL.md',
+    scope: 'global',
+  },
+  {
+    id: '3d-web-experience',
+    name: '3d-web-experience',
+    description:
+      'Interactive 3D on the web: scene graphs, asset budgets, shaders and input that stays responsive',
+    path: 'fixtures/skills/3d-web-experience/SKILL.md',
+    scope: 'global',
+  },
+  {
+    id: '8-bit-pixel-art-patterns',
+    name: '8-bit-pixel-art-patterns',
+    description:
+      'Pixel art at 8-bit scale: palettes, dithering, sprite sheets, animation timing and readable silhouettes',
+    path: 'fixtures/skills/8-bit-pixel-art-patterns/SKILL.md',
+    scope: 'global',
+  },
+  {
+    id: 'ai-agents-architect',
+    name: 'ai-agents-architect',
+    description:
+      'Design agent systems: tool contracts, memory, delegation, evaluation harnesses and failure recovery',
+    path: 'fixtures/skills/ai-agents-architect/SKILL.md',
+    scope: 'global',
+  },
+  {
+    id: 'api-security-best-practices',
+    name: 'api-security-best-practices',
+    description:
+      'Secure an HTTP API: authentication, authorization, input validation, rate limits and audit trails',
+    path: 'fixtures/skills/api-security-best-practices/SKILL.md',
+    scope: 'global',
+  },
+  {
+    id: 'frontend-design',
+    name: 'frontend-design',
+    description:
+      'Distinctive, intentional visual design: typography, spacing, colour and motion that never read as defaults',
+    path: 'fixtures/skills/frontend-design/SKILL.md',
+    scope: 'global',
+  },
+  {
+    id: 'web-performance-optimization',
+    name: 'web-performance-optimization',
+    description:
+      'Make the web app fast: bundle budgets, rendering work, network waterfalls and measured regressions',
+    path: 'fixtures/skills/web-performance-optimization/SKILL.md',
+    scope: 'global',
+  },
+];
+
 function createCommandArgumentFixture(): FixtureLifecycle {
   const workflow = createWorkflowBaseFixture();
   return {
@@ -356,6 +477,20 @@ function createCommandArgumentFixture(): FixtureLifecycle {
       composerDraftStore.request('/copy ');
     },
     teardown: workflow.teardown,
+  };
+}
+
+// The home fixture already selects two project skills, so the seeded catalog keeps them; the rest
+// overflow the eight-row window the menu gets at these viewports.
+function createSkillsCompletionFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      skillsStore.setAvailable(SKILLS_COMPLETION_FIXTURE);
+      composerDraftStore.request('/skills ');
+    },
+    teardown: home.teardown,
   };
 }
 
@@ -381,6 +516,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('home-cold'), () => createHomeFixture({ cold: true })],
   [scenarioId('home-cold-detecting'), () => createHomeFixture({ cold: true, detecting: true })],
+  [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
   [scenarioId('setup-initial'), createSetupFixture],
 ]);

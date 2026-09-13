@@ -1,7 +1,7 @@
 import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/rect.js';
 import { getProgressRows } from '../../../src/features/workflow/layout/chrome-rows.js';
 import { getHomeLayout, homeConfigBlockRows } from '../../../src/features/home/layout.js';
-import { HOME_LOGO_ROWS } from '../../../src/features/home/logo.js';
+import { getLogoHeight } from '../../../src/features/home/logo.js';
 import { overlayWidth } from '../../../src/core/navigation/overlay-rect.js';
 import {
   workflowFixtureProjections,
@@ -32,6 +32,11 @@ const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
     description: 'Home feature composer bounds',
     resolve: resolveHomeComposer,
   },
+  'home:completion': {
+    kind: 'layout',
+    description: 'Completion menu opened above the home composer',
+    resolve: (context) => resolveCompletionMenuAbove(context, resolveHomeComposer(context)),
+  },
   'workflow:header': {
     kind: 'layout',
     description: 'Workflow header and phase rail bounds',
@@ -55,7 +60,7 @@ const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
   'workflow:completion': {
     kind: 'layout',
     description: 'Completion menu opened above the workflow composer',
-    resolve: resolveCompletionMenu,
+    resolve: (context) => resolveCompletionMenuAbove(context, resolveWorkflowComposer(context)),
   },
   'workflow:approval-panel': {
     kind: 'marker',
@@ -119,7 +124,7 @@ function resolveHomeHeader(context: LocatorContext): CellRect {
     x: Math.floor((cols - layout.width) / 2),
     y: 0,
     width: layout.width,
-    height: HOME_LOGO_ROWS + 1 + homeConfigBlockRows(rows),
+    height: getLogoHeight(layout.logoTier) + 1 + homeConfigBlockRows(rows),
   });
 }
 
@@ -202,24 +207,27 @@ function resolveWorkflowComposer(context: LocatorContext): CellRect {
 }
 
 // The completion menu opens upward out of the composer, so its height follows the suggestion count
-// and cannot be stated as a constant. It is a bordered card flush with the composer's top edge, and
-// the only thing painted there that carries a cell in both the frame's first and last column, so
-// walking that run upward measures the card the frame actually holds.
-function resolveCompletionMenu(context: LocatorContext): CellRect {
-  const { cols } = context.grid.identity.provenance.viewport;
-  const bottom = resolveWorkflowComposer(context).y;
+// and cannot be stated as a constant. It is a bordered card as wide as the composer and flush with
+// the composer's input box, and the only thing painted there that carries a cell in both of the
+// composer's edge columns, so walking that run upward measures the card the frame actually holds.
+// A composer rect taller than the input box reserves rows above it — home's hint line — and the
+// card paints over them, so the input box's top edge is where the card stops, not the rect's.
+function resolveCompletionMenuAbove(context: LocatorContext, composer: CellRect): CellRect {
+  const left = composer.x;
+  const right = composer.x + composer.width - 1;
+  const bottom = composer.y + composer.height - DEFAULT_INPUT_ROWS;
   let y = bottom;
-  while (y > context.grid.rect.y && isCardRow(context.grid, y - 1)) y -= 1;
+  while (y > context.grid.rect.y && isCardRow(context.grid, y - 1, left, right)) y -= 1;
   if (y === bottom) {
-    throw new Error('No completion menu is painted above the workflow composer');
+    throw new Error('No completion menu is painted above the composer');
   }
-  return CellRectSchema.parse({ x: 0, y, width: cols, height: bottom - y });
+  return CellRectSchema.parse({ x: composer.x, y, width: composer.width, height: bottom - y });
 }
 
-function isCardRow(grid: CellGrid, y: number): boolean {
+function isCardRow(grid: CellGrid, y: number, left: number, right: number): boolean {
   const row = grid.cells[y - grid.rect.y];
   if (row === undefined) return false;
-  return isPaintedCell(row[0]) && isPaintedCell(row[row.length - 1]);
+  return isPaintedCell(row[left - grid.rect.x]) && isPaintedCell(row[right - grid.rect.x]);
 }
 
 function isPaintedCell(cell: Cell | undefined): boolean {

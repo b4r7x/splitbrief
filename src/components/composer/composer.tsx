@@ -353,7 +353,7 @@ export function Composer({
   return (
     <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
       {reserveHomeHint && (
-        <Box height={1}>
+        <Box justifyContent="center" height={1}>
           {feedbackLine !== null ? (
             <Text color={feedbackIsError ? theme.error : theme.textDim} wrap="truncate-end">
               {feedbackLine}

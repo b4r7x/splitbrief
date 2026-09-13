@@ -31,7 +31,7 @@ import {
   sessionSelectStore,
 } from '../../stores/navigation/session-select.js';
 import { borderStyleFor } from '../../lib/glyphs.js';
-import { getHomeLayout, homeLead } from '../../features/home/layout.js';
+import { getHomeLayout } from '../../features/home/layout.js';
 import { getLogo } from '../../features/home/logo.js';
 import { RECENT_SESSIONS_HINT } from '../../features/home/components/recent-sessions-list.js';
 import { useRecentSessionsFocus } from '../../features/home/use-recent-sessions-focus.js';
@@ -46,7 +46,6 @@ import { observePreparationCleanup } from '../../features/start-preparation/obse
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 
-const HOME_LEAD_EXAMPLE = 'Example: Add email validation with tests.';
 const DEFAULT_HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+k commands`;
 const HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+r recent${SOFT_SEP}ctrl+k commands`;
 const HOME_SELECTION_ERROR_CLEAR_MS = 3000;
@@ -297,7 +296,7 @@ export function HomeScreen({
         <Box flexDirection="column" flexGrow={1} overflowY="hidden" alignItems="center">
           <Box flexDirection="column" width={layout.width} gap={1} flexShrink={0}>
             <Box flexDirection="column" alignItems="center" flexShrink={0}>
-              <Text color={theme.accent}>{getLogo()}</Text>
+              <Text color={theme.accent}>{getLogo(layout.logoTier)}</Text>
             </Box>
 
             <HomeSeatBlock rows={rows} width={layout.width} />
@@ -336,14 +335,6 @@ export function HomeScreen({
         </Box>
 
         <Box flexDirection="column" marginBottom={layout.inputBottomMargin} flexShrink={0}>
-          {/* The box below takes a sentence, and nothing on this screen said what happens to it.
-              The lead says the shape of the run; the example says the size of the ask. */}
-          <Text color={theme.textDim} wrap="truncate-end">
-            {homeLead(layout.width)}
-          </Text>
-          <Text color={theme.textDim} wrap="truncate-end">
-            {HOME_LEAD_EXAMPLE}
-          </Text>
           <Composer
             disabled={interactionBlocked || sessionsActive || isPreparing}
             submitKeepsDraft

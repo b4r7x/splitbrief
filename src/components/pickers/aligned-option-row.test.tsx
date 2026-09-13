@@ -4,17 +4,17 @@ import { describe, expect, it } from 'vitest';
 import { AlignedOptionRow, getAlignedOptionLabelWidth } from './aligned-option-row.js';
 
 describe('getAlignedOptionLabelWidth', () => {
-  it('sizes a label column from the longest visible label plus the configured gap', () => {
-    expect(getAlignedOptionLabelWidth(['Help', 'Settings', 'Mode'], { gap: 2 })).toBe(10);
+  it('sizes a label column from the longest label', () => {
+    expect(getAlignedOptionLabelWidth(['Help', 'Settings', 'Mode'], {})).toBe(8);
   });
 
   it('measures sanitized terminal cell width for labels', () => {
-    expect(getAlignedOptionLabelWidth(['\u001b[31mGo\u001b[0m', '界e\u0301'], { gap: 2 })).toBe(5);
+    expect(getAlignedOptionLabelWidth(['\u001b[31mGo\u001b[0m', '界e\u0301'], {})).toBe(3);
   });
 
   it('respects max and min width bounds', () => {
-    expect(getAlignedOptionLabelWidth(['VeryLongCommandName'], { gap: 2, maxWidth: 8 })).toBe(8);
-    expect(getAlignedOptionLabelWidth([], { gap: 2, minWidth: 4 })).toBe(4);
+    expect(getAlignedOptionLabelWidth(['VeryLongCommandName'], { maxWidth: 8 })).toBe(8);
+    expect(getAlignedOptionLabelWidth([], { minWidth: 4 })).toBe(4);
   });
 });
 
@@ -38,6 +38,17 @@ describe('AlignedOptionRow', () => {
     expect(frame).not.toContain('\u001b');
     expect(frame).not.toContain('\u0007');
     expect(frame.split('\n')).toHaveLength(1);
+    ui.unmount();
+  });
+
+  it('separates the label column from the detail with the label gap', () => {
+    const ui = render(
+      <Box width={40}>
+        <AlignedOptionRow label="ab" labelWidth={4} labelGap={2} detail="cd" />
+      </Box>,
+    );
+
+    expect(ui.lastFrame() ?? '').toContain('ab    cd');
     ui.unmount();
   });
 });

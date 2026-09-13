@@ -1,21 +1,5 @@
 import { overlayWidth } from '../../core/navigation/overlay-rect.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
-import { HOME_LOGO_ROWS } from './logo.js';
-
-/** The lead sentence and the example under it, above the composer box. */
-export const HOME_LEAD_ROWS = 2;
-
-// The lead is the only sentence that says what a run does, and half of it says less than nothing.
-// A box too narrow for the whole sentence takes a shorter one, never the first two thirds of this.
-const HOME_LEADS: readonly string[] = [
-  'Describe a change. SPLITBRIEF plans it, builds it in small briefs, and reviews the diff.',
-  'Describe a change. SPLITBRIEF plans it, builds it, reviews the diff.',
-];
-const HOME_LEAD_SHORTEST = 'Describe a change. SPLITBRIEF plans, builds, reviews.';
-
-export function homeLead(width: number): string {
-  return HOME_LEADS.find((lead) => getTerminalCellWidth(lead) <= width) ?? HOME_LEAD_SHORTEST;
-}
+import { getLogoTier, getLogoHeight, type LogoTier } from './logo.js';
 
 interface HomeLayoutInput {
   cols: number;
@@ -26,6 +10,7 @@ interface HomeLayoutInput {
 
 interface HomeLayout {
   width: number;
+  logoTier: LogoTier;
   inputBottomMargin: number;
   recentSessionLimit: number;
   showHiddenCount: boolean;
@@ -36,6 +21,7 @@ interface HomeLayout {
 interface SessionLimitInput {
   cols: number;
   rows: number;
+  logoTier: LogoTier;
   inputBottomMargin: number;
   sessionCount: number;
   sessionsFocused: boolean;
@@ -55,11 +41,10 @@ function getContentAwareSessionLimit(input: SessionLimitInput): {
   showHiddenCount: boolean;
   sessionCapacity: number;
 } {
-  const { cols, rows, inputBottomMargin, sessionCount, sessionsFocused } = input;
-  // The lead sentence and its example, the hint row, the three composer rows, and the dock margin.
-  const inputDock = HOME_LEAD_ROWS + 1 + 3 + inputBottomMargin;
+  const { cols, rows, logoTier, inputBottomMargin, sessionCount, sessionsFocused } = input;
+  const inputDock = 1 + 3 + inputBottomMargin;
   const bodyGaps = 2;
-  const logoBlock = HOME_LOGO_ROWS + 1;
+  const logoBlock = getLogoHeight(logoTier) + 1;
   const configBlock = homeConfigBlockRows(rows);
   const sessionsChrome = 1 + (cols >= 120 ? 1 : 0) + 1;
   const baseAvailable = rows - (inputDock + bodyGaps + logoBlock + configBlock + sessionsChrome);
@@ -101,10 +86,12 @@ export function getHomeLayout({
   sessionsFocused = false,
 }: HomeLayoutInput): HomeLayout {
   const width = Math.min(overlayWidth({ cols, density: 'wide' }), HOME_MAX_WIDTH);
+  const logoTier = getLogoTier(rows, cols);
   const inputBottomMargin = rows >= 38 ? 2 : rows >= 30 ? 1 : 0;
   const { recentSessionLimit, showHiddenCount, sessionCapacity } = getContentAwareSessionLimit({
     cols,
     rows,
+    logoTier,
     inputBottomMargin,
     sessionCount,
     sessionsFocused,
@@ -112,6 +99,7 @@ export function getHomeLayout({
 
   return {
     width,
+    logoTier,
     inputBottomMargin,
     recentSessionLimit,
     showHiddenCount,

@@ -126,6 +126,22 @@ describe('/skills command', () => {
     });
   });
 
+  it('spells the name only when it differs from the id', () => {
+    const { args } = skillsCommand({
+      listSkills: () => [
+        { id: 'agents-root', name: 'AGENTS.md', description: 'Root agent instructions' },
+        { id: 'charlie', name: 'charlie', description: 'Reviews charlie conventions' },
+        { id: 'delta', name: 'delta', description: '' },
+      ],
+    });
+
+    expect(args.optionDescriptions).toEqual({
+      'agents-root': 'AGENTS.md — Root agent instructions',
+      charlie: 'Reviews charlie conventions',
+      delta: '',
+    });
+  });
+
   it('opens the skills overlay after a rescan when invoked bare', async () => {
     const steps: string[] = [];
     const { command } = skillsCommand({

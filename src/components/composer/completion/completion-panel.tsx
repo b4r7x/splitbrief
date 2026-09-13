@@ -1,11 +1,10 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../theme.js';
 import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
-import { type ScrollbarThumb, scrollbarCell } from '../../scrollbar.js';
+import { getScrollbarThumb, scrollbarCell } from '../../scrollbar.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { clamp } from '../../../utils/math.js';
-import { windowSlice } from '../../pickers/scroll-window.js';
+import { keepInViewOffset } from '../../pickers/scroll-window.js';
 
 export function CompletionPanel<T>({
   items,
@@ -29,31 +28,37 @@ export function CompletionPanel<T>({
     isSelected: boolean;
     rowBg: string;
     panelBg: string;
-    visibleItems: T[];
   }) => ReactNode;
   renderEmpty?: ((panelBg: string) => ReactNode) | undefined;
 }) {
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
+  const offsetRef = useRef(0);
   if (!(isOpen ?? items.length > 0)) return null;
 
   const panelBg = t.suggestionPanelBg;
-  const { scrollOffset, visibleSlice, showScrollUp, showScrollDown } = windowSlice({
-    items,
-    selectedIndex,
+  const scrollOffset = keepInViewOffset({
+    previous: offsetRef.current,
+    index: selectedIndex,
     windowSize: maxVisible,
+    totalItems: items.length,
   });
+  offsetRef.current = scrollOffset;
+  const visibleSlice = items.slice(scrollOffset, scrollOffset + maxVisible);
+  const showScrollUp = scrollOffset > 0;
+  const showScrollDown = scrollOffset + visibleSlice.length < items.length;
   const overflow = showScrollUp || showScrollDown;
   const aboveCount = scrollOffset;
   const belowCount = items.length - (scrollOffset + visibleSlice.length);
   const upLabel = showScrollUp ? `↑${aboveCount}` : '';
   const downLabel = showScrollDown ? `↓${belowCount}` : '';
-  // A single constant-width gutter for every visible row: the count column is reserved (and blank on
-  // the middle rows) so the description never reflows row-to-row, and a fixed 1-cell pad keeps the
-  // bar off the text. Arrow glyphs and digits are all one cell wide, so string length is cell width.
-  const countWidth = Math.max(upLabel.length, downLabel.length);
-  const thumb = menuScrollThumb({
-    selectedIndex,
+  // A single constant-width gutter for every visible row: the count column is sized from the whole
+  // list (not the labels the current window happens to show) so neither the description nor the bar
+  // moves as the window scrolls, and it is padded on both sides so the counter never touches the
+  // description or the bar. Arrows and digits are one cell wide, so string length is cell width.
+  const countWidth = String(items.length).length + 1;
+  const thumb = getScrollbarThumb({
+    offset: scrollOffset,
     lineCount: items.length,
     visibleHeight: visibleSlice.length,
   });
@@ -72,11 +77,11 @@ export function CompletionPanel<T>({
     rows.push(
       <Box key={itemKey(item)} width="100%" height={1} overflow="hidden" backgroundColor={rowBg}>
         <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-          {renderRow({ item, globalIndex, isSelected, rowBg, panelBg, visibleItems: visibleSlice })}
+          {renderRow({ item, globalIndex, isSelected, rowBg, panelBg })}
         </Box>
         {overflow ? (
           <Box flexShrink={0} backgroundColor={rowBg}>
-            <Text color={t.scrollIndicator}>{`${countLabel.padStart(countWidth)} `}</Text>
+            <Text color={t.scrollIndicator}>{` ${countLabel.padStart(countWidth)} `}</Text>
             <Text color={onThumb ? t.accent : t.scrollIndicator}>
               {onThumb ? glyph('scrollThumb') : glyph('scrollTrack')}
             </Text>
@@ -134,22 +139,4 @@ function OcclusionBackplate({ rows, width }: { rows: number; width: number }) {
       <Text>{block}</Text>
     </Box>
   );
-}
-
-function menuScrollThumb(input: {
-  selectedIndex: number;
-  lineCount: number;
-  visibleHeight: number;
-}): ScrollbarThumb {
-  const { selectedIndex, lineCount, visibleHeight } = input;
-  if (lineCount <= visibleHeight || visibleHeight <= 0) {
-    return { thumbStart: 0, thumbSize: Math.max(0, visibleHeight) };
-  }
-  const thumbSize = Math.max(1, Math.round((visibleHeight * visibleHeight) / lineCount));
-  const maxThumbStart = visibleHeight - thumbSize;
-  const clampedIndex = clamp(selectedIndex, 0, lineCount - 1);
-  return {
-    thumbStart: Math.round((clampedIndex * maxThumbStart) / (lineCount - 1)),
-    thumbSize,
-  };
 }
