@@ -38,6 +38,10 @@ export function blocksPlanGate(level: ApproveLevel): boolean {
   return level === 'plan' || level === 'all';
 }
 
+export function blocksBriefsGate(mode: WorkflowMode, level: ApproveLevel): boolean {
+  return mode !== 'quick' && level !== 'none';
+}
+
 export function resolveEffortLevel(opts: {
   config: Config;
   cliOverride?: EffortLevel | undefined;

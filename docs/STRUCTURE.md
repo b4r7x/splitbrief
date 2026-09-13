@@ -29,7 +29,7 @@ src/
 │   ├── command-context.ts                   # runtime-command wiring (useRuntimeCommands)
 │   ├── refresh-skills.ts                    # helper: re-run skill discovery when the skills overlay opens
 │   ├── screens/                             # FLAT page entries: home, workflow, summary, setup
-│   └── overlays/                            # FLAT pages: help, palette, skills, sessions, settings, runners, editor
+│   └── overlays/                            # FLAT pages: help, palette, skills, sessions, settings, runners, editor, stop
 ├── cli/                                     # CLI subcommand handlers
 ├── core/                                    # domain logic (config, types, state, formatting)
 ├── engine/                                  # workflow orchestrator (zero React)
@@ -49,7 +49,7 @@ src/
     └── editor/                              # inline spec/plan/brief editor (overlay entry: app/overlays/editor.tsx)
 ```
 
-Outside `src/`, the repo root also carries `skills/` — the pipeline packaged as agent skills for skills.sh (`skills/splitbrief/` is canonical; its `references/` library carries `<!-- generated -->` blocks rendered from the CLI's prompt builders and adapters by `scripts/skill-blocks.ts`, and is mirrored into the `splitbrief-brief`, `splitbrief-run`, and `splitbrief-review` siblings by `scripts/sync-skills.ts`, both gated by `npm run skills:check`), and `.claude-plugin/marketplace.json`, which declares the four as one Claude Code plugin and gives the skills.sh picker its group row. See [`SKILLS.md`](./SKILLS.md).
+Outside `src/`, the repo root also carries `skills/` — the pipeline packaged as agent skills for skills.sh (`skills/splitbrief/` is canonical; its `references/` library and the four `SKILL.md` files carry `<!-- generated -->` blocks rendered from `src/core/pipeline-spec/`, the prompt builders and the CLI adapters by `scripts/skill-blocks.ts`, and are mirrored into the `splitbrief-brief`, `splitbrief-run`, and `splitbrief-review` siblings by `scripts/sync-skills.ts`, both gated by `npm run skills:check`), and `.claude-plugin/marketplace.json`, which declares the four as one Claude Code plugin and gives the skills.sh picker its group row. Executable helpers live in `skills/*/scripts/` (`wait-attempt.sh`, `splitbrief-gate.sh`), sourced from `skills/splitbrief-run/scripts/` and mirrored byte-identically by the same script; their tests are `testing/integration/skills/`. See [`SKILLS.md`](./SKILLS.md).
 
 The distinction between `lib/` (infrastructure wrappers around external systems) and `utils/` (pure primitives with zero domain and zero infra dependency) is the layering spine of the codebase. See [`LAYERS.md`](./LAYERS.md) for the full decision tree and anti-patterns.
 
@@ -65,7 +65,7 @@ Representative contents of the non-feature folders that have more than a handful
 
 ```
 src/cli/
-├── init-stores.ts     # single-file bootstrap; 3 internal helpers; see BOOTSTRAP.md
+├── init-stores.ts     # whole bootstrap in one file; 3 internal helpers; see BOOTSTRAP.md
 ├── options.ts         # commander option builder (addWorkflowOptions)
 ├── setup.ts           # bootstrap prep (resolveProjectDir, ensureGitAndConfig, setupWorkflow)
 ├── render/            # Ink / fullscreen render setup (app.ts is the production entry)
@@ -149,6 +149,19 @@ src/engine/codebase/
 ├── extract-mentioned-filenames.ts   # pulls filenames out of user feature prompt for seeding
 └── types.ts
 ```
+
+### `src/core/pipeline-spec/`, `scope/`, `validation/stacks/`, `recovery/` — the contract domains
+
+```
+src/core/pipeline-spec/      # the typed pipeline contract: ladder.ts, retries.ts, gates.ts, halts.ts,
+                             #   modes.ts, review.ts, brief.ts, scope.ts, baseline.ts, timeouts.ts,
+                             #   divergences.ts — pure data, no I/O
+src/core/scope/              # declared-set.ts — the one path ↔ Scope matcher every consumer calls
+src/core/validation/stacks/  # typescript · javascript · python · go · rust rows + registry.ts
+src/core/recovery/           # headline.ts, resume-command.ts, user-edit-actions.ts
+```
+
+`pipeline-spec/` is read by the orchestrator instead of literals, and `scripts/skill-blocks.ts` renders the skills' countable rules from the same modules — see [`SKILLS.md`](./SKILLS.md).
 
 ### `src/core/hooks/` — hook config domain
 
@@ -504,6 +517,7 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 | `help` | Global help overlay — keyboard and command reference | `app/overlays/help.tsx` | dissolved (page only) |
 | `sessions` | Sessions picker — select a past session to resume | `app/overlays/sessions.tsx` | dissolved (page only) |
 | `skills` | Skills picker — toggle available skills for a workflow | `app/overlays/skills.tsx` | dissolved (page only) |
+| `stop` | Stop sheet — the options `esc` offers on a running workflow | `app/overlays/stop.tsx` | `features/workflow/stop/` |
 
 Each surface's entry page is what `src/app/router.tsx` imports (and `app/layout.tsx` wraps). Internal structure is documented by inspection — there is no catalog per-feature.
 

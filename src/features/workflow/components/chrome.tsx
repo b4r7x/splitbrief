@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { RuntimeCommandDef } from '../../../core/runtime/commands/types.js';
 import type { InputMode } from '../../../core/navigation/types.js';
 import { Composer, type ComposerBoxHints } from '../../../components/composer/composer.js';
@@ -30,15 +31,19 @@ export function WorkflowHeader({
   startedAt,
   scrollAboveLabel = '',
   railForm,
+  children,
 }: {
   startedAt: string;
   scrollAboveLabel?: string;
   railForm?: RailForm | undefined;
+  /** Chrome rows that belong above the divider, so the body starts at one boundary. */
+  children?: ReactNode;
 }) {
   const cols = terminalSizeStore.use((s) => s.cols);
   return (
     <>
       <Header startedAt={startedAt} railForm={railForm} />
+      {children}
       <Divider width={cols} label={scrollAboveLabel} tone="textDim" />
     </>
   );

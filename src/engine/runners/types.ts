@@ -1,7 +1,7 @@
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ChangedFilesSnapshot } from '../../core/schemas/workflow.js';
-import { TASK_BRIEF_COMPILER_POLICY } from '../../core/schemas/task-compilation.js';
+import { MAX_DECLARED_ARTIFACT_BYTES } from '../../core/schemas/planner-artifact.js';
 import type {
   RunnerCallTextChannel,
   RUNNER_CALL_USAGE_SEMANTICS,
@@ -11,12 +11,11 @@ import type {
 import type { RunnerCallTextSemantics } from '../calls/types.js';
 import type {
   PlannerArtifactTransport,
-  TaskCompilationCallEnvelope,
-  TaskCompilationAttemptId,
-  TaskCompilationBatchId,
-  TaskCompilationProgramId,
-  TaskCompilationSemanticId,
-} from '../../core/schemas/task-compilation.js';
+  PlannerArtifactAttemptId,
+  PlannerArtifactBatchId,
+  PlannerArtifactProgramId,
+  PlannerArtifactSemanticId,
+} from '../../core/schemas/planner-artifact.js';
 
 export interface ToolUseInfo {
   id?: string | undefined;
@@ -122,7 +121,7 @@ export type CustomRunnerAdmissionPolicy = Readonly<{
 }>;
 
 export const DECLARED_PLANNER_ARTIFACT_PATH_ENV = 'SPLITBRIEF_DECLARED_ARTIFACT_PATH';
-export const PLANNER_ARTIFACT_MAX_BYTES = TASK_BRIEF_COMPILER_POLICY.maxDeclaredArtifactBytes;
+export const PLANNER_ARTIFACT_MAX_BYTES = MAX_DECLARED_ARTIFACT_BYTES;
 
 /**
  * Immutable canonical text for the direct-planner artifact approval surface.
@@ -142,20 +141,20 @@ export type ApprovalReviewInput = string | ArtifactApprovalReview;
  * fall back to an unscoped artifact path or receipt.
  */
 export type DeclaredArtifactProvenance = Readonly<{
-  semanticId: TaskCompilationSemanticId;
-  programId: TaskCompilationProgramId | null;
-  batchId: TaskCompilationBatchId | null;
-  attemptId: TaskCompilationAttemptId;
+  semanticId: PlannerArtifactSemanticId;
+  programId: PlannerArtifactProgramId | null;
+  batchId: PlannerArtifactBatchId | null;
+  attemptId: PlannerArtifactAttemptId;
   transport: Extract<PlannerArtifactTransport, { kind: 'declared-file' }>;
   maxBytes: number;
   relativePath: string;
 }>;
 
 export type DeclaredArtifactReceipt = Readonly<{
-  semanticId: TaskCompilationSemanticId;
-  programId: TaskCompilationProgramId | null;
-  batchId: TaskCompilationBatchId | null;
-  attemptId: TaskCompilationAttemptId;
+  semanticId: PlannerArtifactSemanticId;
+  programId: PlannerArtifactProgramId | null;
+  batchId: PlannerArtifactBatchId | null;
+  attemptId: PlannerArtifactAttemptId;
   leaseId: string;
   relativePath: string;
   inodeIdentity: string;
@@ -214,17 +213,15 @@ export type RuntimeExecutionReceipt = Readonly<{
 }>;
 
 /**
- * The prepared compiler call: exactly what the admitted capability receipt
- * certifies. Compiler preparation launches nothing, so the members a launch
- * would observe — argument vector, working directory, credential copy,
- * containment lease, environment fingerprint, session scope — are not part of
- * the record; the planner adapter prepares them per batch at dispatch.
+ * The prepared planner call: preparation launches nothing, so the members a
+ * launch would observe — argument vector, working directory, credential copy,
+ * environment fingerprint, session scope — are not part of the record; the
+ * planner adapter prepares them at dispatch.
  */
 export type PreparedPlannerInvocation = Readonly<{
   runtime: RuntimeExecutionReceipt;
   role: 'planner-read-only';
   transport: PlannerArtifactTransport;
   terminalContract: string;
-  envelope: TaskCompilationCallEnvelope;
   capabilityDigest: string;
 }>;

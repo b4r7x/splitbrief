@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
-import type { ImplementerResult } from '../../implementers/types.js';
+import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';
 import type { IsolatedWorkspace } from '../isolation/types.js';
 import type { GateDecision } from '../approval/types.js';
 import { createBusTextHandler } from '../events.js';
@@ -41,6 +41,10 @@ export async function runImplementation(opts: {
   );
   const streamingFeed = createStreamingFeed(task.id, opts.streamingSink ?? noopStreamingSink);
 
+  // A brief reopened by the final review already has code on disk; the fix
+  // attempt is framed as a retry carrying the reviewer's findings as the error.
+  const reviewFindings = state.reviewFixes?.findings[task.id];
+
   const usesIsolation = wctx.implementer.capabilities?.writesFiles === 'direct';
   let workspace: IsolatedWorkspace | undefined;
   let preApplyApprovalDenied = false;
@@ -63,8 +67,8 @@ export async function runImplementation(opts: {
       },
       state,
       onStateChange: setTrackedState,
-      body: ({ signal, continuationPrompt, steer, recordOutput }) =>
-        wctx.implementer.implement({
+      body: ({ signal, continuationPrompt, steer, recordOutput }) => {
+        const call: ImplementerOptions = {
           task,
           projectDir: workspace?.projectDir ?? projectDir,
           config,
@@ -114,7 +118,16 @@ export async function runImplementation(opts: {
             persistApprovalEvidence({ wctx, state, decision, taskId: task.id });
             return { allow: true };
           },
-        }),
+        };
+        return reviewFindings === undefined
+          ? wctx.implementer.implement(call)
+          : wctx.implementer.retry({
+              ...call,
+              error: reviewFindings.join('\n'),
+              attempt: 1,
+              kind: 'local',
+            });
+      },
     });
   } catch (err) {
     workspace?.cleanup();

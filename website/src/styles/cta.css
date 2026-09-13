@@ -4,18 +4,19 @@
   gap: var(--s-3);
   width: max-content;
   min-width: 264px;
-  height: 44px;
+  height: 56px;
   margin-top: var(--s-4);
-  padding-inline: var(--s-4) var(--s-3);
+  padding-inline: var(--s-6);
   white-space: nowrap;
-  border: 1px solid var(--hair-strong);
-  box-shadow: var(--highlight);
+  border: 1px solid var(--ink);
+  background: var(--ink);
   font-size: var(--text-cta);
-  color: var(--ink);
+  color: var(--bg);
   transition: border-color 200ms ease-out;
 
   &:hover {
-    border-color: var(--ink-3);
+    border-color: var(--white-spark);
+    background: var(--white-spark);
   }
 
   &:active,
@@ -38,7 +39,7 @@
 }
 
 .prompt {
-  color: var(--ink-3);
+  color: var(--ink-4);
 }
 
 .copy-glyph {
@@ -62,7 +63,7 @@
   span:last-child {
     bottom: 0;
     left: 0;
-    background: var(--bg);
+    background: var(--ink);
   }
 }
 
@@ -73,10 +74,10 @@
 @media (min-width: 1600px) {
   .cta {
     gap: 22px;
-    height: 58px;
+    height: 56px;
     margin-top: var(--s-6);
     padding-inline: var(--s-6) var(--s-4);
-    font-size: 1.15rem;
+    font-size: 1rem;
   }
 
   .copy-glyph {

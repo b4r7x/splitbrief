@@ -42,6 +42,15 @@ export interface ImplementerPublisher {
   }): void;
 }
 
+export interface UndeclaredWritesPolicy {
+  /**
+   * What a completed direct-write attempt does with files outside the brief's
+   * declared set: `reject` fails the attempt, `gate` leaves the verdict to the
+   * orchestrator's approval path. Defaults to `reject`.
+   */
+  undeclaredWrites?: 'reject' | 'gate' | undefined;
+}
+
 export interface ImplementerFactoryOptions {
   publisher?: ImplementerPublisher | undefined;
   allowRepoRunners?: boolean | undefined;
@@ -51,7 +60,7 @@ export interface ImplementerFactoryOptions {
   slot?: Extract<RunnerSlot, { role: 'implementer' | 'intermediate' }> | undefined;
 }
 
-export interface ImplementerOptions {
+export interface ImplementerOptions extends UndeclaredWritesPolicy {
   task: Task;
   projectDir: string;
   config: Config;
@@ -78,7 +87,7 @@ export interface RetryOptions extends ImplementerOptions {
   kind: 'local' | 'hint';
 }
 
-export interface InvokeOpts {
+export interface InvokeOpts extends UndeclaredWritesPolicy {
   callContext: RunnerCallContext;
   prompt: string;
   task: Task;

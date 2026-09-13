@@ -2,7 +2,7 @@ import type { Summary } from '../../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../../core/schemas/evidence.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
-import type { Task, TaskId } from '../../../../core/schemas/task.js';
+import { taskFiles, type Task, type TaskId } from '../../../../core/schemas/task.js';
 import {
   BRIEF_QUALITY_FILE,
   DRIFT_CHAINS_FILE,
@@ -46,22 +46,25 @@ export function buildChanges(opts: {
 }): ReviewPacket['changes'] {
   const { state, ledger, drift, changedFiles } = opts;
   const expectedFiles = uniqueSorted(
-    drift?.expectedFiles ?? state.tasks.map((task) => task.file).filter(Boolean),
+    drift?.expectedFiles ?? state.tasks.flatMap((task) => [...taskFiles(task)]).filter(Boolean),
   );
   const outOfScopeFiles = uniqueSorted(
     (drift?.findings ?? [])
       .filter((finding) => finding.code === 'out_of_scope_file' && finding.file)
       .map((finding) => finding.file ?? ''),
   );
-  const taskFiles = state.tasks.map((task) => {
+  const taskFileRows = state.tasks.map((task) => {
     const evidence = taskEvidence(task, ledger);
     const observedEvidence = evidence?.observedEvidence ?? [];
+    const declared = taskFiles(task);
     return {
       taskId: task.id,
       title: task.title,
       file: task.file,
+      files: [...declared],
       status: task.status,
-      changedFiles: evidence?.changedFiles ?? (changedFiles.includes(task.file) ? [task.file] : []),
+      changedFiles:
+        evidence?.changedFiles ?? changedFiles.filter((file) => declared.includes(file)),
       expectedEvidence: expectedEvidenceForTask(task, evidence),
       observedEvidence,
     };
@@ -71,7 +74,7 @@ export function buildChanges(opts: {
     changedFiles,
     expectedFiles,
     outOfScopeFiles,
-    taskFiles,
+    taskFiles: taskFileRows,
     diffReference:
       'Review the working tree with `git diff`; full diffs are intentionally not embedded.',
   };

@@ -69,7 +69,7 @@ function scrollToRailStage(stageIndex: number): void {
   const target = activeIndex >= RAIL_STAGES.length ? RAIL_STAGES.length - 1 : activeIndex;
   const snapshot = readConversationScrollSnapshot();
   conversationScrollStore.scrollToBottom(snapshot.renderableCount);
-  // The transcript runs oldest to newest while the rail runs Plan to Verify: stage 0 anchors to the top
+  // The transcript runs oldest to newest while the rail runs Plan to Review: stage 0 anchors to the top
   // (maxOffset), the current stage to the just-set bottom. An in-between stage lands proportionally
   // on its slice of the transcript instead of collapsing every click to top-or-bottom.
   if (stageIndex >= target) return;

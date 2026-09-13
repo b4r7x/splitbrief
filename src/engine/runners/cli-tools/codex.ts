@@ -69,8 +69,8 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
  * REQ-017 read-only planner vector for Codex 0.147.0. Sandbox and approval are
  * GLOBAL flags in v0.147 and must precede `exec`; `exec resume` does not accept
  * local `--sandbox`/`--ask-for-approval`. Ambient user config and AGENTS.md
- * rules are adapter-owned inputs the planner ignores; a fresh (compiler) exec
- * is ephemeral and never resumes. The escalated planner row keeps its tier-2
+ * rules are adapter-owned inputs the planner ignores; a fresh exec is ephemeral
+ * and never resumes. The escalated planner row keeps its tier-2
  * workspace-write within the staged project under the same never-approval
  * policy.
  */

@@ -90,6 +90,11 @@ export const VALIDATION_STAGES = ['typecheck', 'lint', 'test'] as const;
 export const ValidationStageSchema = z.enum(VALIDATION_STAGES);
 export type ValidationStage = z.infer<typeof ValidationStageSchema>;
 
+export const REVIEW_VERDICTS = ['pass', 'pass_with_notes', 'fail'] as const;
+
+export const REVIEW_STATUSES = ['passed', 'failed'] as const;
+export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
+
 export const RECOVERY_REASONS = [
   'implementation-error',
   'validation-failed',
@@ -102,6 +107,12 @@ export const RECOVERY_REASONS = [
   'budget-paused',
   'budget-exceeded',
   'dependency-blocked',
+  'scope-violation',
+  'implementer-recipe-invalid',
+  'implementer-timeout-repeated',
+  'review-failed',
+  'approval-denied',
+  'snapshot-failed',
 ] as const;
 export const RecoveryReasonSchema = z.enum(RECOVERY_REASONS);
 export type RecoveryReason = z.infer<typeof RecoveryReasonSchema>;

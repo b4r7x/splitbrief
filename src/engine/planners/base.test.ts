@@ -1,13 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  createPlannerBase,
-  installCompilerRefusal,
-  installCompilerSeam,
-  readPlannerCompilerDispatch,
-  readPlannerCompilerRefusal,
-  readPlannerCompilerSeam,
-  type CompilerSeam,
-} from './base.js';
+import { createPlannerBase } from './base.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -15,17 +7,6 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
-import {
-  createTaskCompilationAttemptId,
-  TASK_BRIEF_COMPILER_POLICY,
-  TaskCompilationBatchIdSchema,
-  TaskCompilationOperationIdSchema,
-  TaskCompilationProgramIdSchema,
-  type TaskCompilationCallEnvelope,
-  type PlannerSessionScope,
-} from '../../core/schemas/task-compilation.js';
-import { createTaskDispatchClaimPort, createTaskDispatchLedger } from '../calls/dispatch-ledger.js';
-import type { PreparedPlannerInvocation } from '../runners/types.js';
 import type { PlannerCapabilities } from './types.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 
@@ -138,6 +119,29 @@ A test task.
     expect(result.phases).toHaveLength(1);
     expect(result.phases![0]!.artifact.text).toContain('id: T001');
     expect(result.phases![0]!.rawOutput).toBeUndefined();
+  });
+
+  it('quickPlan forwards skillsContext into the quick plan prompt', async () => {
+    let captured = '';
+    const planner = createPlannerBase({
+      invokePlan: async ({ prompt }) => {
+        captured = prompt;
+        return completedRunnerCall(taskMarkdown);
+      },
+      invokeEscalate: async () => completedRunnerCall(''),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    await planner.quickPlan({
+      feature: 'feature',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+      skillsContext: '## Active Project Skills\n\n### AuthSkill\nSKILL-BODY',
+    });
+
+    expect(captured).toContain('## Active Project Skills');
+    expect(captured).toContain('SKILL-BODY');
   });
 
   it('standard planning uses research-discovered language for later prompts', async () => {
@@ -534,325 +538,5 @@ describe('createPlannerBase — priorMessages injection (FR-007)', () => {
 
     expect(captured[0]).not.toContain('<!-- prior conversation -->');
     expect(seenPriorMessages).toEqual([{ role: 'user', content: 'raw turn' }]);
-  });
-});
-
-function compilerEnvelopeFixture(): TaskCompilationCallEnvelope {
-  return {
-    version: 1,
-    promptBytes: TASK_BRIEF_COMPILER_POLICY.maxPromptBytes,
-    inputTokensUpperBound: TASK_BRIEF_COMPILER_POLICY.maxPromptBytes,
-    requestedOutputTokens: TASK_BRIEF_COMPILER_POLICY.requestedOutputTokens,
-    outputTokensUpperBound: TASK_BRIEF_COMPILER_POLICY.maxNormalizedOutputBytes,
-    maxNormalizedOutputBytes: TASK_BRIEF_COMPILER_POLICY.maxNormalizedOutputBytes,
-    maxDeclaredArtifactBytes: TASK_BRIEF_COMPILER_POLICY.maxDeclaredArtifactBytes,
-    maxRawProtocolBytes: TASK_BRIEF_COMPILER_POLICY.maxRawProtocolBytes,
-    maxStderrBytes: TASK_BRIEF_COMPILER_POLICY.maxStderrBytes,
-    deadlineMs: TASK_BRIEF_COMPILER_POLICY.deadlineMs,
-    idleTimeoutMs: TASK_BRIEF_COMPILER_POLICY.idleTimeoutMs,
-  };
-}
-
-function compilerInvocationFixture(): PreparedPlannerInvocation {
-  return {
-    runtime: {
-      executablePath: '/usr/bin/fake-compiler',
-      version: 'fixture-1.0.0',
-      runtimeDigest: 'runtime-fixture-digest',
-      protocolDigest: 'protocol-fixture-digest',
-    },
-    role: 'planner-read-only',
-    transport: { kind: 'stdout-final' },
-    terminalContract: 'fixture-terminal',
-    envelope: compilerEnvelopeFixture(),
-    capabilityDigest: 'capability-fixture-digest',
-  };
-}
-
-function compilerReceiptFixture(): NonNullable<CompilerSeam['receipt']> {
-  return {
-    backend: 'claude-code',
-    version: '2.1.232',
-    runtimeVersion: '2.1.232',
-    versionObservation: 'tested',
-    role: 'planner-read-only',
-    transport: 'stdout-final',
-    terminalContract: 'claude-terminal-result-v1',
-    containmentProfile: 'seatbelt',
-    credentialChannel: 'session-copy',
-    envelopeVersion: 1,
-    fixtureDate: '2026-08-15',
-    capabilityDigest: '0000000000000000000000000000000000000000000000000000000000000000',
-  };
-}
-
-function compilerLedgerFixture(operationId: string) {
-  return createTaskDispatchLedger({
-    operation: {
-      version: 1,
-      dispatchLimit: 64,
-      callCount: 0,
-      totalPromptBytes: 0,
-      totalInputTokensUpperBound: 0,
-      totalOutputTokensUpperBound: 0,
-      totalNormalizedOutputBytes: 0,
-      totalDeclaredArtifactBytes: 0,
-      callsDigest: 'digest',
-    },
-    operationId: TaskCompilationOperationIdSchema.parse(operationId),
-    claimPort: createTaskDispatchClaimPort(),
-  });
-}
-
-describe('createPlannerBase — compiler batch dispatch', () => {
-  it('registers a compiler batch dispatch that invokes plan with envelope constraints and call context', async () => {
-    let invokedWith: unknown = null;
-    const planner = createPlannerBase({
-      invokePlan: async (opts) => {
-        invokedWith = opts;
-        return completedRunnerCall(taskMarkdown);
-      },
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-      backendKind: 'cli',
-      runnerName: 'claude-code',
-      model: 'claude-3-7-sonnet',
-    });
-
-    const dispatch = readPlannerCompilerDispatch(planner);
-    expect(dispatch).toBeTypeOf('function');
-
-    const operationId = TaskCompilationOperationIdSchema.parse('op-test-dispatch');
-    const programId = TaskCompilationProgramIdSchema.parse('prog-1');
-    const batchId1 = TaskCompilationBatchIdSchema.parse('batch-1');
-    const envelope = compilerEnvelopeFixture();
-    const ledger = createTaskDispatchLedger({
-      operation: {
-        version: 1,
-        dispatchLimit: 1,
-        callCount: 0,
-        totalPromptBytes: 0,
-        totalInputTokensUpperBound: 0,
-        totalOutputTokensUpperBound: 0,
-        totalNormalizedOutputBytes: 0,
-        totalDeclaredArtifactBytes: 0,
-        callsDigest: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
-      },
-      operationId,
-      claimPort: createTaskDispatchClaimPort(),
-    });
-
-    installCompilerSeam(planner, {
-      invocation: compilerInvocationFixture(),
-      ledger,
-      dispatch: dispatch!,
-      receipt: compilerReceiptFixture(),
-    });
-
-    const attemptId1 = createTaskCompilationAttemptId();
-    const sessionScope: PlannerSessionScope = {
-      kind: 'detached-fresh',
-      operationId,
-      programId,
-      batchId: batchId1,
-      attemptId: attemptId1,
-    };
-
-    const result1 = await dispatch!({
-      attemptId: attemptId1,
-      batch: {
-        batchId: batchId1,
-        prompt: 'compile batch 1',
-        envelope,
-      },
-      sessionScope,
-      projectDir: '/custom/project/dir',
-    });
-
-    expect(result1.status).toBe('completed');
-    expect(result1.text).toBe(taskMarkdown);
-    expect(invokedWith).toMatchObject({
-      prompt: 'compile batch 1',
-      projectDir: '/custom/project/dir',
-      artifactFile: 'tasks.md',
-      callContext: {
-        callId: attemptId1,
-        attemptId: attemptId1,
-        role: 'planner',
-        backendKind: 'cli',
-        runnerName: 'claude-code',
-        model: 'claude-3-7-sonnet',
-        transport: { kind: 'stdout-final' },
-        sessionScope,
-        envelope,
-      },
-    });
-  });
-
-  it('recovery dispatch reaches the planner invoke path after a prior aggregate claim', async () => {
-    let invokeCallCount = 0;
-    const planner = createPlannerBase({
-      invokePlan: async () => {
-        invokeCallCount += 1;
-        return completedRunnerCall(taskMarkdown);
-      },
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-    });
-
-    const dispatch = readPlannerCompilerDispatch(planner);
-    const operationId = TaskCompilationOperationIdSchema.parse('op-recovery-dispatch');
-    const ledger = compilerLedgerFixture('op-recovery-dispatch');
-
-    installCompilerSeam(planner, {
-      invocation: compilerInvocationFixture(),
-      ledger,
-      dispatch: dispatch!,
-      receipt: compilerReceiptFixture(),
-    });
-
-    const attemptId = createTaskCompilationAttemptId();
-    const claim = ledger.claimDispatch(attemptId);
-    expect(claim.kind).toBe('claimed');
-
-    const result = await dispatch!({
-      attemptId,
-      batch: {
-        batchId: TaskCompilationBatchIdSchema.parse('batch-1'),
-        prompt: 'recovery prompt',
-        envelope: compilerEnvelopeFixture(),
-      },
-      sessionScope: {
-        kind: 'detached-fresh',
-        operationId,
-        programId: TaskCompilationProgramIdSchema.parse('prog-1'),
-        batchId: TaskCompilationBatchIdSchema.parse('batch-1'),
-        attemptId,
-      },
-      projectDir: '/test/project/dir',
-    });
-
-    expect(invokeCallCount).toBe(1);
-    expect(result.status).toBe('completed');
-    expect(result.text).toBe(taskMarkdown);
-  });
-
-  it('recovery dispatch invokes the planner with the project directory', async () => {
-    let capturedProjectDir: string | null = null;
-    const planner = createPlannerBase({
-      invokePlan: async (opts) => {
-        capturedProjectDir = opts.projectDir;
-        return completedRunnerCall(taskMarkdown);
-      },
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-    });
-
-    const dispatch = readPlannerCompilerDispatch(planner);
-    installCompilerSeam(planner, {
-      invocation: compilerInvocationFixture(),
-      ledger: compilerLedgerFixture('op-project-dir'),
-      dispatch: dispatch!,
-      receipt: compilerReceiptFixture(),
-    });
-
-    await dispatch!({
-      attemptId: createTaskCompilationAttemptId(),
-      batch: {
-        batchId: TaskCompilationBatchIdSchema.parse('batch-1'),
-        prompt: 'test prompt',
-        envelope: compilerEnvelopeFixture(),
-      },
-      sessionScope: {
-        kind: 'detached-fresh',
-        operationId: TaskCompilationOperationIdSchema.parse('op-project-dir'),
-        programId: TaskCompilationProgramIdSchema.parse('prog-1'),
-        batchId: TaskCompilationBatchIdSchema.parse('batch-1'),
-        attemptId: createTaskCompilationAttemptId(),
-      },
-      projectDir: '/actual/repo/path',
-    });
-
-    expect(capturedProjectDir).toBe('/actual/repo/path');
-  });
-
-  it('throws task_compiler_capability_unsupported if invoked without an installed seam', async () => {
-    const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-    });
-    const dispatch = readPlannerCompilerDispatch(planner);
-    expect(dispatch).toBeTypeOf('function');
-    const attemptId = createTaskCompilationAttemptId();
-    const operationId = TaskCompilationOperationIdSchema.parse('op-1');
-    const programId = TaskCompilationProgramIdSchema.parse('prog-1');
-    const batchId = TaskCompilationBatchIdSchema.parse('batch-1');
-    await expect(
-      dispatch!({
-        attemptId,
-        batch: {
-          batchId,
-          prompt: 'prompt',
-          envelope: compilerEnvelopeFixture(),
-        },
-        sessionScope: {
-          kind: 'detached-fresh',
-          operationId,
-          programId,
-          batchId,
-          attemptId,
-        },
-        projectDir: '/actual/repo/path',
-      }),
-    ).rejects.toMatchObject({
-      kind: 'task_compiler_capability_unsupported',
-    });
-  });
-});
-
-describe('createPlannerBase — compiler attachment', () => {
-  function seamFor(planner: ReturnType<typeof createPlannerBase>): CompilerSeam {
-    const dispatch = readPlannerCompilerDispatch(planner);
-    if (dispatch === null) throw new Error('planner carries no compiler dispatch');
-    return {
-      invocation: compilerInvocationFixture(),
-      ledger: compilerLedgerFixture('op-attachment'),
-      dispatch,
-      receipt: compilerReceiptFixture(),
-    };
-  }
-
-  it('seam and refusal are mutually exclusive', async () => {
-    const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall(taskMarkdown),
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-    });
-
-    installCompilerSeam(planner, seamFor(planner));
-    expect(readPlannerCompilerSeam(planner)).not.toBeNull();
-    expect(readPlannerCompilerRefusal(planner)).toBeNull();
-
-    installCompilerRefusal(planner, {
-      code: 'task_compiler_capability_unsupported',
-      message: 'no verified compiler conformance evidence',
-    });
-    expect(readPlannerCompilerSeam(planner)).toBeNull();
-    expect(readPlannerCompilerRefusal(planner)?.message).toBe(
-      'no verified compiler conformance evidence',
-    );
-    await expect(
-      planner.plan({ feature: 'feature', projectDir, callbacks: { onOutput: () => {} } }),
-    ).rejects.toMatchObject({ kind: 'task_compiler_capability_unsupported' });
-
-    installCompilerSeam(planner, seamFor(planner));
-    expect(readPlannerCompilerRefusal(planner)).toBeNull();
-    expect(readPlannerCompilerSeam(planner)).not.toBeNull();
   });
 });

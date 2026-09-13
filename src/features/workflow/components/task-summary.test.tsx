@@ -90,6 +90,20 @@ describe('TaskSummary', () => {
     unfocused.unmount();
   });
 
+  it('marks an escalated brief with the sidebar ▲, never the success check', () => {
+    for (const method of ['escalated-intermediate', 'escalated-hint', 'escalated-full'] as const) {
+      const ui = renderFeature(
+        <TaskSummary width={100} index={1} title="hash passwords" method={method} />,
+      );
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+      expect(frame).toContain(`${glyph('statusEscalated')} T1 hash passwords`);
+      expect(frame).not.toContain(glyph('check'));
+
+      ui.unmount();
+    }
+  });
+
   it('joins a completed summary file and meta with a soft separator', () => {
     const ui = renderFeature(
       <TaskSummary

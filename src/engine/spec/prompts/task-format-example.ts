@@ -13,7 +13,8 @@ export function buildTaskFormatExample(languageContext?: LanguageContext): strin
 - \`id\` — unique brief id: \`T001\`, \`T002\`, ... in emission order.
 - \`title\` — one short line.
 - \`action\` — exactly \`create\` or \`modify\`.
-- \`file\` — one project-relative path (no leading \`/\`, no \`..\`).
+- \`file\` — one project-relative path (no leading \`/\`, no \`..\`): the slice's anchor.
+- \`files\` — optional YAML list of every project-relative path the slice writes, \`file\` among them. Omit it when the slice writes only the anchor.
 - \`depends_on\` — YAML list of brief ids this one must follow: \`[]\` when independent, \`[T001, T002]\` when it must run after both.
 
 Copy this shape and substitute real values:
@@ -23,6 +24,7 @@ id: T001
 title: Short descriptive title
 action: create
 file: src/path/to/file${ctx.fileExtension}
+files: [src/path/to/file${ctx.fileExtension}, src/path/to/file.test${ctx.fileExtension}]
 depends_on: []
 ---
 

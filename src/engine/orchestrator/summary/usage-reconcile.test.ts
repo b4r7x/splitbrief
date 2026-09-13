@@ -236,7 +236,7 @@ describe('buildSummary token usage reconciliation', () => {
 
       const summary = buildSummary({
         feature: 'add a titleCase function',
-        state: { tasks: [], tokenUsage: makeUsage() },
+        state: { tasks: [], tokenUsage: makeUsage(), phase: 'complete', currentTaskIndex: 0 },
         startTime: Date.now(),
         plannerTool: 'claude-code',
         implementerTool: 'codex',
@@ -262,6 +262,8 @@ describe('buildSummary token usage reconciliation', () => {
         state: {
           tasks: [],
           tokenUsage: makeUsage({ plannerInput: 1100, plannerOutput: 2200 }),
+          phase: 'complete',
+          currentTaskIndex: 0,
         },
         startTime: Date.now(),
         plannerTool: 'claude-code',

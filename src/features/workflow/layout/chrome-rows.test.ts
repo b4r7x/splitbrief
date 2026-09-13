@@ -15,6 +15,7 @@ import {
   getChromeContentWidth,
   getChromeHeight,
   getContentTopRow,
+  getProgressRows,
   getRailActiveIndex,
   getRailDriftPassed,
   getRailStages,
@@ -74,6 +75,7 @@ describe('workflow chrome row contract', () => {
     expect(WORKFLOW_CHROME_ORDER).toEqual([
       'header',
       'header-divider',
+      'progress',
       'body',
       'footer-divider',
       'feedback',
@@ -146,7 +148,7 @@ describe('rail phase → stage map', () => {
     expect(stages.filter((s) => s.status === 'active')).toHaveLength(0);
     expect(stages.find((s) => s.stage === 'build')?.status).toBe('cancelled');
     expect(stages.find((s) => s.stage === 'briefs')?.status).toBe('done');
-    expect(stages.find((s) => s.stage === 'verify')?.status).toBe('pending');
+    expect(stages.find((s) => s.stage === 'review')?.status).toBe('pending');
   });
 });
 
@@ -160,19 +162,19 @@ describe('isRailCurrent', () => {
 });
 
 describe('railStageRole', () => {
-  it('binds spec/plan/briefs to planner, build to implementer, verify to validator', () => {
+  it('binds spec/plan/briefs to planner, build to implementer, review to validator', () => {
     expect(railStageRole('spec')).toBe('planner');
     expect(railStageRole('plan')).toBe('planner');
     expect(railStageRole('briefs')).toBe('planner');
     expect(railStageRole('build')).toBe('implementer');
-    expect(railStageRole('verify')).toBe('validator');
+    expect(railStageRole('review')).toBe('validator');
   });
 
-  it('marks the two role seams (briefs→build, build→verify) as handoffs', () => {
+  it('marks the two role seams (briefs→build, build→review) as handoffs', () => {
     expect(railIsHandoff('spec', 'plan')).toBe(false);
     expect(railIsHandoff('plan', 'briefs')).toBe(false);
     expect(railIsHandoff('briefs', 'build')).toBe(true);
-    expect(railIsHandoff('build', 'verify')).toBe(true);
+    expect(railIsHandoff('build', 'review')).toBe(true);
   });
 });
 
@@ -194,7 +196,7 @@ describe('rail Form-B width primitives', () => {
       plan: ['Plan', 'Pln'],
       briefs: ['Briefs', 'Brf'],
       build: ['Build', 'Bld'],
-      verify: ['Verify', 'Vfy'],
+      review: ['Review', 'Rvw'],
     };
     for (const stage of getRailStages('idle')) {
       const [full, short] = expected[stage.stage] ?? ['', ''];
@@ -294,5 +296,22 @@ describe('railStageCompletionTimesFromPhaseFirstSeen', () => {
       'reviewing-briefs': 200,
     });
     expect(times[0]).toBe(200);
+  });
+});
+
+describe('getProgressRows', () => {
+  it('budgets nothing outside the build and its review', () => {
+    expect(getProgressRows({ phase: 'planning', cols: 120 })).toBe(0);
+    expect(getProgressRows({ phase: 'idle', cols: 120 })).toBe(0);
+  });
+
+  it('collapses with the width while a brief is building', () => {
+    expect(getProgressRows({ phase: 'implementing', cols: 120 })).toBe(2);
+    expect(getProgressRows({ phase: 'validating-task', cols: 80 })).toBe(4);
+    expect(getProgressRows({ phase: 'final-review', cols: 60 })).toBe(5);
+  });
+
+  it('leaves its rows to the chrome, so the body is measured around it', () => {
+    expect(getChromeHeight(3, 2)).toBe(getChromeHeight(3) + 2);
   });
 });

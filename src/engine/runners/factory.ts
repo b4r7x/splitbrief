@@ -4,8 +4,7 @@ import type { Planner, PlannerFactoryOptions } from '../planners/types.js';
 import type { Reviewer } from '../reviewers/types.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { resolveConfiguredCustomRunner } from './configured-custom.js';
-import { runnerGateFor, type CliStartGate } from './start-gate.js';
-import { installRunCompiler } from './compiler-seam.js';
+import { runnerGateFor } from './start-gate.js';
 import {
   admitPlannerBackend,
   assertCliImplementerTool,
@@ -22,12 +21,6 @@ export type PlannerCreationOptions = PlannerFactoryOptions &
   RunnerFactoryAuthority &
   Readonly<{
     initialSessionId?: string | null | undefined;
-    /**
-     * The run's project root. The remembered detection evidence a compiler
-     * claim reuses is written per project, so a construction that omits it
-     * pays for a fresh runtime probe instead of reading another project's
-     * record.
-     */
     projectDir?: string | undefined;
   }>;
 type ReviewerCreationOptions = PlannerFactoryOptions & RunnerFactoryAuthority;
@@ -101,7 +94,6 @@ export async function createPlanner(
   const authority = requireFactoryAuthority(config, options, 'planner');
   const configured = resolveConfiguredCustomRunner(config, 'planner');
   let planner: Planner;
-  let trustedCli: CliStartGate | undefined;
 
   if (configured !== null) {
     const { runtime, invocation } = resolveConfiguredCustomGate({
@@ -114,14 +106,12 @@ export async function createPlanner(
     planner = mod.createConfiguredCustomPlanner(configured, runtime, invocation);
   } else {
     const admission = admitPlannerBackend({ config, authority, seat: 'planner' });
-    trustedCli = admission.trustedCli;
     planner = await loadPlanner(config, options.initialSessionId, {
       ...options,
       ...(admission.trustedCli !== undefined && { trustedCli: admission.trustedCli }),
     });
   }
 
-  await installRunCompiler({ planner, config, projectDir: options.projectDir, trustedCli });
   warnDroppedRunnerFields({
     runner: config.planner,
     seat: 'planner',
@@ -132,9 +122,7 @@ export async function createPlanner(
 
 /**
  * The review seat: one read-only call against the reviewer runner, which is the
- * planner when no `reviewer:` block is configured. It loads through the planner
- * backends but never carries the Task Brief compiler — a reviewer compiles
- * nothing.
+ * planner when no `reviewer:` block is configured.
  */
 export async function createReviewer(
   config: Config,

@@ -50,6 +50,8 @@ describe('isResumable', () => {
     'reviewing-plan',
     'reviewing-briefs',
     'implementing',
+    'validating-task',
+    'escalating',
     'final-review',
   ] as const)('returns true for resumable %s phase without awaitingContinue', (phase) => {
     const state: WorkflowState = {
@@ -79,6 +81,13 @@ describe('isResumable', () => {
       expect(isResumable(state)).toBe(true);
     },
   );
+
+  it('validating-task and escalating are resumable', () => {
+    for (const phase of ['validating-task', 'escalating'] as const) {
+      expect(isResumable({ ...createInitialState('feat'), phase })).toBe(true);
+      expect(shouldPreserveActiveState({ ...createInitialState('feat'), phase })).toBe(true);
+    }
+  });
 
   it('returns false on a terminal phase even when pendingRecovery is stale', () => {
     const state: WorkflowState = {

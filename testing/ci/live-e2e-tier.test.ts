@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MATRIX_TIERS,
@@ -33,6 +33,18 @@ vi.mock('../../src/engine/detection/detect.js', async (importOriginal) => ({
 
 const REPO_ROOT = join(import.meta.dirname, '../..');
 const LIVE_SCENARIO_DIR = join(REPO_ROOT, 'testing/e2e/scenarios/live');
+const LIVE_ROW_DIR = join(REPO_ROOT, 'testing/e2e/live');
+
+function scenarioCeilings(name: string): readonly string[] {
+  const source = readFileSync(join(LIVE_SCENARIO_DIR, name), 'utf-8');
+  const rowTables = readdirSync(LIVE_ROW_DIR)
+    .filter((table) => source.includes(`../../live/${basename(table, '.ts')}.js`))
+    .map((table) => readFileSync(join(LIVE_ROW_DIR, table), 'utf-8'));
+  const declared = [source, ...rowTables].flatMap((text) =>
+    [...text.matchAll(/\b\d[\d_]*_\d{3}\b/g)].map((match) => match[0]),
+  );
+  return [...new Set(declared)].sort();
+}
 
 function docSection(heading: string): string {
   const doc = readFileSync(join(REPO_ROOT, 'docs/TESTING.md'), 'utf-8');
@@ -73,6 +85,7 @@ const MATRIX_MODEL_PINS: Readonly<Record<string, string>> = {
   SPLITBRIEF_REAL_CLI_KILO_CODE_MODEL: 'kilo/kilo-auto/free',
   SPLITBRIEF_REAL_CLI_CURSOR_MODEL: 'gpt-5.3-codex-low-fast',
   SPLITBRIEF_REAL_CLI_COPILOT_MODEL: 'claude-haiku-4.5',
+  SPLITBRIEF_REAL_CLI_ANTIGRAVITY_MODEL: 'gemini-3-pro',
 };
 
 describe('live e2e tier gating', () => {
@@ -198,8 +211,12 @@ describe('live e2e tier documentation', () => {
     const scenarios = readdirSync(LIVE_SCENARIO_DIR).filter((name) => name.endsWith('.test.ts'));
     expect(scenarios.length).toBeGreaterThan(0);
     for (const name of scenarios) {
-      const source = readFileSync(join(LIVE_SCENARIO_DIR, name), 'utf-8');
-      expect(source, name).toContain(name.startsWith('easy-') ? '300_000,' : '900_000,');
+      const expected = name.startsWith('easy-')
+        ? ['300_000']
+        : name.startsWith('heavy-')
+          ? ['900_000']
+          : ['300_000', '900_000'];
+      expect(scenarioCeilings(name), name).toEqual(expected);
     }
     expect(tierDoc).toContain('300 s');
     expect(tierDoc).toContain('900 s');

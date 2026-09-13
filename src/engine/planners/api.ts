@@ -11,18 +11,10 @@ import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { providerError } from '../providers/errors.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import { clampToMaxOutput } from '../providers/capability-inference.js';
-import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
 import { toStreamClient } from '../providers/openai-stream/client.js';
 import type { StreamClient } from '../providers/openai-stream/request.js';
 import { composeAbortSignal } from '../../utils/abort.js';
-import { createRunnerCallRecorder } from '../calls/recorder.js';
-import type { TaskDispatchLedger } from '../calls/dispatch-ledger.js';
-import {
-  createTaskCompilationAttemptId,
-  type TaskCompilationCallEnvelope,
-  type TaskCompilationFailureCode,
-} from '../../core/schemas/task-compilation.js';
 
 const DEFAULT_CONTEXT_LENGTH = 8192;
 
@@ -53,98 +45,25 @@ export async function invokeApiTransport(opts: {
   signal?: AbortSignal | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   callContext: RunnerCallContext;
-  envelope?: TaskCompilationCallEnvelope | undefined;
-  ledger?: TaskDispatchLedger | undefined;
 }): Promise<RunnerCallResult> {
-  if (
-    opts.envelope !== undefined &&
-    getApiProviderDescriptor(opts.planner.provider) === undefined
-  ) {
-    return refusedApiPlannerResult(
-      opts.callContext,
-      'task_compiler_capability_unsupported',
-      `provider '${opts.planner.provider}' is not admitted for compiler API dispatch`,
-    );
-  }
-  let attemptId = opts.callContext.attemptId;
-  if (attemptId === undefined && (opts.envelope !== undefined || opts.ledger !== undefined)) {
-    attemptId = createTaskCompilationAttemptId();
-  }
-  const callContext = {
-    ...opts.callContext,
-    ...(attemptId !== undefined && { attemptId }),
-    ...(opts.envelope !== undefined && { envelope: opts.envelope }),
-  };
-  if (opts.ledger !== undefined && attemptId !== undefined) {
-    const claim = opts.ledger.claimDispatch(attemptId);
-    if (claim.kind === 'refused') {
-      return refusedApiPlannerResult(
-        callContext,
-        'task_compiler_dispatch_limit',
-        `operation dispatch limit reached (${claim.dispatchCount}/${claim.dispatchLimit})`,
-      );
-    }
-  }
-
-  const deadlineAbort =
-    opts.envelope === undefined ? null : createDeadlineAbort(opts.envelope.deadlineMs);
-  const signal =
-    deadlineAbort === null
-      ? opts.signal
-      : opts.signal === undefined
-        ? deadlineAbort.signal
-        : AbortSignal.any([opts.signal, deadlineAbort.signal]);
-  try {
-    const messages = buildMessages(opts.prompt, opts.priorMessages);
-    const promptTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
-    const availableTokens = opts.contextLength - promptTokens;
-    if (availableTokens <= 0)
-      throw providerError.promptExceedsContext(promptTokens, opts.contextLength, 'planner');
-    const maxTokens =
-      opts.envelope !== undefined
-        ? opts.envelope.requestedOutputTokens
-        : clampToMaxOutput(availableTokens);
-    return await dispatchStreamCompletion({
-      provider: opts.planner.provider,
-      client: opts.client,
-      apiKey: opts.planner.apiKey,
-      apiBase: opts.planner.apiBase ?? '',
-      model: opts.model,
-      messages,
-      temperature: opts.planner.temperature ?? 0.3,
-      onProgress: opts.onOutput,
-      maxTokens,
-      signal,
-      onCallEvent: opts.onCallEvent,
-      callContext,
-    });
-  } finally {
-    deadlineAbort?.dispose();
-  }
-}
-
-function createDeadlineAbort(deadlineMs: number): { signal: AbortSignal; dispose: () => void } {
-  const controller = new AbortController();
-  const timer = setTimeout(() => {
-    controller.abort(
-      new DOMException('Compiler call exceeded the envelope deadline', 'TimeoutError'),
-    );
-  }, deadlineMs);
-  timer.unref?.();
-  return {
-    signal: controller.signal,
-    dispose: () => clearTimeout(timer),
-  };
-}
-
-function refusedApiPlannerResult(
-  callContext: RunnerCallContext,
-  code: TaskCompilationFailureCode,
-  message: string,
-): RunnerCallResult {
-  return createRunnerCallRecorder({ context: callContext }).finishFailed({
-    status: 'refused',
-    error: { code, message },
+  const messages = buildMessages(opts.prompt, opts.priorMessages);
+  const promptTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+  const availableTokens = opts.contextLength - promptTokens;
+  if (availableTokens <= 0)
+    throw providerError.promptExceedsContext(promptTokens, opts.contextLength, 'planner');
+  return dispatchStreamCompletion({
+    provider: opts.planner.provider,
+    client: opts.client,
+    apiKey: opts.planner.apiKey,
+    apiBase: opts.planner.apiBase ?? '',
+    model: opts.model,
+    messages,
+    temperature: opts.planner.temperature ?? 0.3,
+    onProgress: opts.onOutput,
+    maxTokens: clampToMaxOutput(availableTokens),
+    signal: opts.signal,
+    onCallEvent: opts.onCallEvent,
+    callContext: opts.callContext,
   });
 }
 

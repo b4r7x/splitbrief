@@ -1,10 +1,12 @@
 import {
   SCROLL_COMMAND_TARGETS,
+  type BriefListEntry,
   type RuntimeCommandDef,
   type RuntimeCommandContext,
   type ScrollCommandTarget,
 } from '../types.js';
 import { getShortcutKey } from '../../../keybindings/registry.js';
+import type { TaskStatus } from '../../../schemas/enums.js';
 import { includes } from '../../../../utils/type-guards.js';
 
 const SCROLL_COMMAND_USAGE = `/scroll <${SCROLL_COMMAND_TARGETS.join('|')}>`;
@@ -14,6 +16,22 @@ const SCROLL_FEEDBACK = {
   'page-up': 'up one page',
   'page-down': 'down one page',
 } satisfies Record<ScrollCommandTarget, string>;
+
+// The words the sidebar, the progress block and the summary already use for the same states, so a
+// brief reads the same whether it is listed in a column or on the feedback line.
+const BRIEF_STATUS_WORD = {
+  pending: 'queued',
+  in_progress: 'running',
+  done: 'passed',
+  failed: 'failed',
+  escalated: 'escalated',
+  skipped: 'skipped',
+} satisfies Record<TaskStatus, string>;
+
+function briefListText(briefs: readonly BriefListEntry[]): string {
+  if (briefs.length === 0) return 'No briefs planned yet';
+  return `Briefs: ${briefs.map((brief) => `${brief.id} ${BRIEF_STATUS_WORD[brief.status]}`).join(', ')}`;
+}
 
 function parseScrollCommandTarget(args: string | undefined): ScrollCommandTarget | null {
   const target = args?.trim().toLowerCase();
@@ -80,6 +98,27 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
           return;
         }
         ctx.setFeedbackMessage(result.visible ? 'Sidebar shown' : 'Sidebar hidden');
+      },
+    },
+    {
+      kind: 'noarg',
+      name: '/tasks',
+      label: 'tasks',
+      description: 'Show the brief list',
+      category: 'view',
+      validScreens: ['workflow'],
+      handler: () => {
+        const result = ctx.toggleSidebar();
+        // Below the sidebar's column breakpoint there is no column to open, so the command answers
+        // with the list itself rather than with the reason a panel could not fit.
+        if (result.status === 'unavailable') {
+          ctx.setFeedbackMessage(briefListText(ctx.listBriefs()));
+          return;
+        }
+        // `/tasks` names a destination, not a switch: a second call must leave the list on screen.
+        // The only sidebar primitive is a toggle, so a toggle that hid it is undone.
+        if (!result.visible) ctx.toggleSidebar();
+        ctx.setFeedbackMessage('Brief list shown');
       },
     },
     {

@@ -1,7 +1,6 @@
 import type { Command } from 'commander';
 import ansis from 'ansis';
 import { createPlanner } from '../../engine/runners/factory.js';
-import { compilerDriftWarning } from '../../engine/runners/compiler-drift-warning.js';
 import type { Planner, PlanOptions, PlanResult } from '../../engine/planners/types.js';
 import type { Phase, WorkflowMode } from '../../core/schemas/enums.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
@@ -11,7 +10,6 @@ import { withCliErrors } from '../errors.js';
 import { TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { ensureHooksTrusted } from '../hook-trust-prompt.js';
-import { warnStderr } from '../../lib/warn.js';
 import { sanitizeTerminalDisplayText, stripTerminalControls } from '../../utils/display-text.js';
 import {
   emitEffectiveConfigWarnings,
@@ -143,9 +141,6 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         rollbackPreparedExecutionOwnership(execution);
         throw cause;
       }
-      const driftWarning = compilerDriftWarning({ planner, projectDir });
-      if (driftWarning !== null) warnStderr(driftWarning);
-
       console.log(
         `Planning feature: ${stripTerminalControls(feature)} (planner: ${getRunnerDisplayName(config.planner)}, mode: ${mode})\n`,
       );

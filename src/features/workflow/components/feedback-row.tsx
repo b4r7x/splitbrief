@@ -1,20 +1,20 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import { abortStore, type ArmedKind } from '../../../stores/workflow/abort.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
-import { reviewKeysStore } from '../../../stores/ui/review-keys.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { hintStateSeverity, resolveReviewKeyLegend } from '../input-hints.js';
+import { fitKeyLegend, hintStateSeverity } from '../input-hints.js';
+import { useStopByline } from '../stop/use-stop-byline.js';
 
-const ARMED_MESSAGES: Record<Exclude<ArmedKind, 'none'>, string> = {
-  exit: 'ctrl+c again to exit',
-  interrupt: 'esc again to interrupt',
-  cancel: 'esc again to cancel workflow',
-};
+// The keys a run answers to while it is working. `esc` opens the stop sheet rather than stopping,
+// so the word on the row is the sheet, not the stop.
+export const RUNNING_LEGEND = `esc stop options${SOFT_SEP}ctrl+c stop now${SOFT_SEP}ctrl+k commands${SOFT_SEP}/help`;
 
 function summarizeDisplayLine(text: string): string {
   const safeText = sanitizeTerminalDisplayText(text, { preserveLineBreaks: true });
@@ -28,28 +28,26 @@ function summarizeDisplayLine(text: string): string {
 
 export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined }) {
   const [{ message, isError }] = useStores(feedbackStore);
-  const armed = abortStore.use((s) => s.armed);
-  const inReviewMode = controlsStore.use((s) => s.inputMode === 'review');
-  const reviewKeysArmed = reviewKeysStore.use((s) => s.armed);
+  const inputMode = controlsStore.use((s) => s.inputMode);
+  const approvalPending = approvalPromptStore.use((s) => s.status === 'pending');
+  const running = lifecycleStore.use((s) => s.status === 'running');
+  const stopped = useStopByline();
   const cols = terminalSizeStore.use((s) => s.cols) - WORKFLOW_CONTENT_PADDING_X * 2;
   const t = useTheme();
 
-  const safeInputHint = summarizeDisplayLine(
-    resolveReviewKeyLegend({ inputHint, inReviewMode, reviewKeysArmed, width: cols }),
-  );
+  // A panel that is on screen owns the legend. Anything this row could add beside it would either
+  // repeat a key the panel already names or advertise one the panel has taken away.
+  const owned = approvalPending || inputMode !== 'normal';
   const safeMessage = message === null ? null : summarizeDisplayLine(message);
-  // Feedback owns the row while it is live and the key legend returns when it clears;
-  // appending the legend produced run-on lines like
-  // "Failed to open editor: … y approve · c comment · q reject · e edit".
-  const displayMessage = armed !== 'none' ? ARMED_MESSAGES[armed] : safeMessage || safeInputHint;
-  const showArmed = armed !== 'none';
-  const severity = showArmed
-    ? null
-    : isError
-      ? 'error'
-      : displayMessage
-        ? hintStateSeverity(displayMessage)
-        : null;
+  // One cell short of the edge: a legend that ends in the last column reads as cut off even when
+  // every token it names is whole.
+  const runningHint = running ? fitKeyLegend(RUNNING_LEGEND, cols - 1) : '';
+  const stopHint =
+    stopped === null || stopped.hint === '' ? '' : fitKeyLegend(stopped.hint, cols - 1);
+  const displayMessage = owned
+    ? ''
+    : safeMessage || summarizeDisplayLine(inputHint) || stopHint || runningHint;
+  const severity = isError ? 'error' : displayMessage ? hintStateSeverity(displayMessage) : null;
   const wordColor = severity === 'error' ? t.error : severity === 'warning' ? t.warning : null;
 
   return (
@@ -58,7 +56,7 @@ export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined
         (wordColor !== null ? (
           <StateWordVoice text={displayMessage} color={wordColor} />
         ) : (
-          <Text color={showArmed ? t.warning : t.textDim} wrap="truncate-end">
+          <Text color={t.textDim} wrap="truncate-end">
             {displayMessage}
           </Text>
         ))}

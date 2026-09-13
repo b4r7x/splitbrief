@@ -8,6 +8,23 @@ const SENTINELS: Record<string, string> = {
   'implementer-preamble': 'directly in the working directory.',
   'closing-constraints': 'Do NOT import packages not listed in the project dependencies',
   'retry-framings': 'Try a completely different approach:',
+  'ladder-table': '| `takeover` | planner |',
+  'halt-signatures': '`credit balance is too low`',
+  'halt-signatures-sh': "*'unrecognized argument'*) halt=spawn ;;",
+  'gate-rules': 'typecheck → lint → test',
+  gates: 'uv run pytest',
+  'modes-table': '| `speckit` | 6-7 | 12 | spec, plan, briefs |',
+  caps: 'at most 5 files',
+  'body-order': '5. `### Current Code`',
+  'closing-line': 'Edit <file>, <second file> directly in the working directory.',
+  'scope-rule': 'Revert your changes to',
+  'baseline-rule': '`baseline-sha.txt`',
+  timeouts: '--deadline 1200',
+  'plain-shapes': 'task T001: done (',
+  'wait-protocol': 'never in the same tool call as the spawn',
+  'hint-placement': '## Hints from senior reviewer:',
+  'verdict-rules': 'exactly one verdict word under ### Verdict',
+  'fix-cycle': 'At most 2 review cycles',
   'hint-prompt': '# Diagnose Implementation Failure',
   'takeover-prompt': '# Escalation: Implement Fix',
   'review-packet': '`pass` | `pass_with_notes` | `fail`',
@@ -18,6 +35,7 @@ const SENTINELS: Record<string, string> = {
   'recipe:kilo-code': '--agent code --auto',
   'recipe:cursor': '--mode plan --trust',
   'recipe:command-code': '--yolo -m $M --effort $E',
+  'recipe:antigravity': '--dangerously-skip-permissions --print-timeout 20m',
 };
 
 describe('skill-blocks', () => {
@@ -33,6 +51,18 @@ describe('skill-blocks', () => {
     expect(preamble).not.toContain('isolation directory');
     expect(preamble).not.toContain('promoted');
     expect(preamble).toContain('the orchestrator runs them again afterwards');
+  });
+
+  it('every recipe writes its exit code and none invokes coreutils timeout', () => {
+    const recipes = GENERATED_BLOCK_IDS.filter((id) => id.startsWith('recipe:'));
+    expect(recipes.length).toBeGreaterThan(0);
+    for (const id of recipes) {
+      const rendered = renderBlock(id) ?? '';
+      for (const line of rendered.split('\n')) {
+        expect(line, id).toContain('echo "exit=$?" > $DONE');
+        expect(line, id).not.toMatch(/(^|[;&| ])timeout [0-9]/u);
+      }
+    }
   });
 
   it('returns null for an unknown block id', () => {

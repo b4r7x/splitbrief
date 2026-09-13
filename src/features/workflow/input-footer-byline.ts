@@ -3,6 +3,12 @@ import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
 
+// The rail's fraction counts briefs that passed their checks, never the index of the one running:
+// a run on its last brief must not read as finished.
+export function stageFractionText(view: { passed: number; total: number }): string {
+  return view.total > 0 ? `${view.passed}/${view.total}` : '';
+}
+
 export interface InputFooterBylineInput {
   cols: number;
   lead: string;
@@ -15,7 +21,7 @@ export interface InputFooterBylineInput {
   worktreeLabel?: string | null;
 }
 
-function joinBylineParts(parts: readonly (string | null | undefined)[]): string {
+export function joinBylineParts(parts: readonly (string | null | undefined)[]): string {
   return parts
     .filter((part): part is string => part !== null && part !== undefined && part.length > 0)
     .join(SOFT_SEP);

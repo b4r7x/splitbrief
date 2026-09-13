@@ -217,7 +217,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |
 | `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `save()`, `useConfig()` |
 | `sessionsStore` | `project/sessions.ts` | `{ sessions, allSessions }` | `load()`, `loadAll()` |
-| `skillsStore` | `project/skills.ts` | `{ available: SkillMeta[], selected: Set<string> }` | `setAvailable()`, `setSelected()` |
+| `skillsStore` | `project/skills.ts` | `{ available: SkillMeta[], selected: Set<string> }` | `setAvailable()`, `setSelected()`, `toggleSelected()` |
 | `detectionStore` | `project/detection.ts` | `{ cliTools, implementers }` | `setDetection()` |
 | `modelCacheStore` | `discovery/model-cache/state.ts` | `{ providers: Map, modelsDevCatalog, ... }` | `setProviderModels()`, `invalidateAll()` |
 

@@ -1,0 +1,201 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { expect } from 'vitest';
+import { addEndpointScenario } from '../../../evals/scenarios/add-endpoint.js';
+import {
+  BRIEF_QUALITY_FILE,
+  DRIFT_REPORT_FILE,
+  EVIDENCE_FILE,
+  PLAN_FILE,
+  REVIEW_FILE,
+  SESSION_LOG_FILE,
+  SPEC_FILE,
+  SPLITBRIEF_DIR,
+  SUMMARY_FILE,
+  TASKS_FILE,
+} from '../../../src/core/paths.js';
+import { phaseCostRole } from '../../../src/core/phases.js';
+import { MODES } from '../../../src/core/pipeline-spec/modes.js';
+import { DriftReportSchema } from '../../../src/core/schemas/drift.js';
+import { EvidenceLedgerSchema } from '../../../src/core/schemas/evidence.js';
+import { SessionSchema } from '../../../src/core/schemas/session.js';
+import {
+  type SessionLogEventEntry,
+  SessionLogEventEntrySchema,
+} from '../../../src/core/schemas/session-log.js';
+import { type Task, taskFiles } from '../../../src/core/schemas/task.js';
+import { parseFinalReview } from '../../../src/engine/parsers/final-review.js';
+import { parseTasksStrict } from '../../../src/engine/spec/tasks/parse.js';
+import { isRecord } from '../../../src/utils/type-guards.js';
+import type { FixtureMode } from '../live/fixture-rows.js';
+
+const PLAIN_LINE =
+  /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (passed|failed)( \(\d+ blocking\))?|done: \d+ tasks, .+ tokens|gates: NONE — review-only)$/;
+
+const DONE_LINE = /^done: (\d+) tasks, /;
+
+export type BriefTiming = Readonly<{ id: string; durationMs: number }>;
+
+export type RunnerCallCounts = Readonly<{ planner: number; implementer: number; review: number }>;
+
+export type SessionDirFacts = Readonly<{
+  calls: RunnerCallCounts;
+  perBrief: readonly BriefTiming[];
+  tasks: readonly Task[];
+}>;
+
+export function assertPlainStdout(stdout: string, opts: { mode: FixtureMode }): void {
+  const lines = stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+  for (const line of lines) {
+    expect(line, 'line is outside the --plain grammar').toMatch(PLAIN_LINE);
+    expect(() => JSON.parse(line), `line parses as JSON: ${line}`).toThrow();
+  }
+  expect(lines).toContain('phase: implementing');
+  expect(lines).toContain('review: passed');
+  const done = lines.find((line) => DONE_LINE.test(line));
+  if (done === undefined) throw new Error('stdout carries no `done:` line');
+  const completed = Number(DONE_LINE.exec(done)?.[1]);
+  expect(completed).toBeGreaterThan(0);
+  expect(completed).toBeLessThanOrEqual(MODES[opts.mode].briefCap);
+}
+
+export function assertSessionDir(
+  sessionDir: string,
+  opts: { mode: FixtureMode; expectedBriefs: Readonly<{ min: number; max: number }> },
+): SessionDirFacts {
+  const tasks = parseTasksStrict(readText(sessionDir, TASKS_FILE));
+  expect(tasks.length).toBeGreaterThanOrEqual(opts.expectedBriefs.min);
+  expect(tasks.length).toBeLessThanOrEqual(opts.expectedBriefs.max);
+  expect(tasks.filter((task) => task.action === 'modify').length).toBeGreaterThanOrEqual(1);
+
+  if (opts.mode === 'standard') {
+    expect(readText(sessionDir, SPEC_FILE).trim()).not.toBe('');
+    expect(readText(sessionDir, PLAN_FILE).trim()).not.toBe('');
+  }
+
+  expect(readJson(sessionDir, BRIEF_QUALITY_FILE)).toMatchObject({ passed: true });
+  EvidenceLedgerSchema.parse(readJson(sessionDir, EVIDENCE_FILE));
+  expect(DriftReportSchema.parse(readJson(sessionDir, DRIFT_REPORT_FILE)).passed).toBe(true);
+  expect(['pass', 'pass_with_notes']).toContain(
+    parseFinalReview(readText(sessionDir, REVIEW_FILE)).verdict,
+  );
+
+  const session = SessionSchema.parse(readJson(sessionDir, SUMMARY_FILE));
+  if (session.status !== 'complete') {
+    throw new Error(`${SUMMARY_FILE} status is '${session.status}', expected 'complete'`);
+  }
+  const summary = session.summary;
+  expect(summary.failed).toBe(0);
+  expect(summary.completedByLocal).toBe(summary.totalTasks);
+  expect(summary.escalatedToPlanner).toBe(0);
+  const breakdown = summary.taskBreakdown ?? [];
+  expect(breakdown.length).toBe(summary.totalTasks);
+  for (const task of breakdown) {
+    expect(task.method).toBe('local');
+    expect(task.implementerTokens).toBeGreaterThan(0);
+  }
+  expect(summary.tokenUsage.reviewerInput).toBeGreaterThan(0);
+
+  const events = readEventEntries(sessionDir);
+  const calls = countRunnerCalls(events);
+  expect(calls.planner).toBe(MODES[opts.mode].plannerCalls);
+  expect(calls.implementer).toBe(tasks.length);
+  expect(calls.review).toBe(1);
+  expect(events.filter(wroteNothing)).toHaveLength(0);
+  expect(events.filter((entry) => entry.type === 'runner_call_error')).toHaveLength(0);
+
+  return { calls, perBrief: briefTimings(events), tasks };
+}
+
+export function assertFixtureQuality(projectDir: string): Promise<void> {
+  return Promise.all(
+    addEndpointScenario.qualityChecks.map(async (check) => {
+      const result = await check.check(projectDir);
+      expect(result.passed, `${check.name}: ${result.detail}`).toBe(true);
+    }),
+  ).then(() => undefined);
+}
+
+export function assertWorkingTree(projectDir: string, tasks: readonly Task[]): void {
+  const declared = new Set(tasks.flatMap((task) => [...taskFiles(task)]));
+  // `-uall` so a brief that created the first file of a new directory is
+  // reported as that file rather than as the collapsed `dir/` entry.
+  const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {
+    cwd: projectDir,
+    encoding: 'utf-8',
+  });
+  for (const line of status.split('\n').filter((entry) => entry.trim() !== '')) {
+    const file = porcelainPath(line);
+    const allowed = declared.has(file) || file.startsWith(`${SPLITBRIEF_DIR}/`);
+    expect(allowed, `working-tree change outside the declared set: ${file}`).toBe(true);
+  }
+}
+
+function readText(sessionDir: string, file: string): string {
+  return readFileSync(join(sessionDir, file), 'utf-8');
+}
+
+function readJson(sessionDir: string, file: string): unknown {
+  return JSON.parse(readText(sessionDir, file));
+}
+
+function readEventEntries(sessionDir: string): readonly SessionLogEventEntry[] {
+  const entries: SessionLogEventEntry[] = [];
+  for (const line of readText(sessionDir, SESSION_LOG_FILE).split('\n')) {
+    if (line.trim() === '') continue;
+    const parsed = SessionLogEventEntrySchema.safeParse(JSON.parse(line));
+    if (parsed.success) entries.push(parsed.data);
+  }
+  return entries;
+}
+
+function eventField(data: unknown, key: string): unknown {
+  return isRecord(data) ? data[key] : undefined;
+}
+
+function countRunnerCalls(events: readonly SessionLogEventEntry[]): RunnerCallCounts {
+  let planner = 0;
+  let implementer = 0;
+  let review = 0;
+  for (const entry of events) {
+    if (entry.type !== 'runner_call_started') continue;
+    const role = eventField(entry.data, 'role');
+    // A planner-seat call outside the planning phases is an escalation or a
+    // summary, and carries its own role; the mode's planner-call budget counts
+    // only the phases `phaseCostRole` attributes to the planner.
+    if (
+      role === 'planner' &&
+      entry.phase !== undefined &&
+      phaseCostRole(entry.phase) === 'planner'
+    ) {
+      planner += 1;
+    }
+    if (role === 'implementer') implementer += 1;
+    if (role === 'review') review += 1;
+  }
+  return { planner, implementer, review };
+}
+
+function wroteNothing(entry: SessionLogEventEntry): boolean {
+  return entry.type === 'warning' && eventField(entry.data, 'code') === 'implementer_wrote_nothing';
+}
+
+function briefTimings(events: readonly SessionLogEventEntry[]): readonly BriefTiming[] {
+  const timings: BriefTiming[] = [];
+  for (const entry of events) {
+    if (entry.type !== 'task_completed' || entry.taskId === undefined) continue;
+    const duration = eventField(entry.data, 'duration');
+    if (typeof duration === 'number') timings.push({ id: entry.taskId, durationMs: duration });
+  }
+  return timings;
+}
+
+function porcelainPath(line: string): string {
+  const entry = line.slice(3).trim();
+  const renamed = entry.split(' -> ')[1];
+  return (renamed ?? entry).replace(/^"|"$/g, '');
+}

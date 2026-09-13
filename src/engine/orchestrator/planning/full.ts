@@ -1,12 +1,10 @@
 import { join } from 'node:path';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { PlanResult } from '../../planners/types.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { SkillMeta } from '../../../core/skills/types.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { parseDiscoveredValidation } from './parse-validation.js';
 import { sanitizeDiscoveredValidation } from './sanitize-discovered-validation.js';
-import { buildSkillsSection, discoverSkills } from '../../skill-discovery.js';
+import { buildPlanningSkillsContext } from './skills-context.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { publishPlannerStatus } from '../events.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
@@ -25,19 +23,6 @@ import { persistPhases } from './io.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import { regenerateTasks, regeneratePlanAndTasks } from './regen.js';
 import type { PlanningPhaseOptions, PlanningProducerResult, PlanningRunContext } from './types.js';
-
-async function resolvePlanningSkills(
-  selectedSkills: SkillMeta[] | undefined,
-  state: WorkflowState,
-  projectDir: string,
-): Promise<SkillMeta[]> {
-  if (selectedSkills && selectedSkills.length > 0) return selectedSkills;
-  const persisted = state.selectedSkills;
-  if (!persisted || persisted.length === 0) return [];
-  const ids = new Set(persisted);
-  const available = await discoverSkills(projectDir);
-  return available.filter((s) => ids.has(s.id));
-}
 
 async function runNewPlanning(
   opts: PlanningPhaseOptions,
@@ -109,6 +94,7 @@ async function runNewPlanning(
   publishPlannerStatus(wctx.bus, state, 'running');
 
   if (collectedQuestions.length > 0 && callbacks.onQuestionAsked) {
+    const queuedBefore = state.messageQueue.length;
     state = await collectAndPersistClarifications({
       questions: collectedQuestions,
       projectDir,
@@ -119,18 +105,22 @@ async function runNewPlanning(
       metadata,
       planner,
     });
-    ({ state, tasks } = await regeneratePlanAndTasks({
-      projectDir,
-      sessionId,
-      planner,
-      callbacks,
-      bus: wctx.bus,
-      state,
-      metadata,
-      skillsContext,
-      signal,
-      sinks: wctx.sinks,
-    }));
+    // Every answer was empty, skipped or declined: there is nothing for a plan
+    // and tasks regeneration to apply.
+    if (state.messageQueue.length > queuedBefore) {
+      ({ state, tasks } = await regeneratePlanAndTasks({
+        projectDir,
+        sessionId,
+        planner,
+        callbacks,
+        bus: wctx.bus,
+        state,
+        metadata,
+        skillsContext,
+        signal,
+        sinks: wctx.sinks,
+      }));
+    }
   }
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'SPEC_DONE' });
@@ -212,6 +202,7 @@ async function runNewPlanning(
         bus: wctx.bus,
         state,
         metadata,
+        skillsContext,
         signal,
         sinks: wctx.sinks,
       });
@@ -224,11 +215,10 @@ async function runNewPlanning(
 }
 
 export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<PlanningProducerResult> {
-  const { wctx, selectedSkills } = opts;
+  const { wctx } = opts;
   const { projectDir, sessionId, metadata, config } = wctx;
   let { state } = opts;
-  const skills = await resolvePlanningSkills(selectedSkills, state, projectDir);
-  const skillsContext = skills.length > 0 ? await buildSkillsSection(skills) : undefined;
+  const skillsContext = await buildPlanningSkillsContext(opts, state);
 
   const approveLevel =
     opts.approveLevel ??

@@ -2,30 +2,67 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { abortStore } from '../../../stores/workflow/abort.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
 import { REVIEW_HINT } from '../review-commands.js';
-import { FeedbackRow } from './feedback-row.js';
+import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
 
 describe('FeedbackRow', () => {
   beforeEach(() => {
-    abortStore.clear();
     resetAllStores();
   });
 
   afterEach(() => {
-    abortStore.clear();
     resetAllStores();
   });
 
-  it('aligns armed interrupt feedback with the workflow content inset', () => {
-    abortStore.arm('interrupt');
+  it('aligns feedback with the workflow content inset', () => {
+    feedbackStore.setMessage('Message queued for the next planner turn.');
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame.indexOf('esc again to interrupt')).toBe(WORKFLOW_CONTENT_PADDING_X);
+    expect(frame.indexOf('Message queued')).toBe(WORKFLOW_CONTENT_PADDING_X);
+
+    ui.unmount();
+  });
+
+  it('says nothing while a gate panel owns the legend', () => {
+    controlsStore.setInputMode('review');
+
+    const ui = renderFeature(<FeedbackRow inputHint={REVIEW_HINT} />);
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').trim()).toBe('');
+
+    ui.unmount();
+  });
+
+  it('says nothing while a tiered approval is pending', () => {
+    void openApprovalPrompt({
+      tier: 'sticky',
+      actionClass: 'write_out_of_scope',
+      actionDescription: 'write src/x.ts',
+      phase: 'implementing',
+    });
+
+    const ui = renderFeature(<FeedbackRow inputHint="approve · ctrl+e/e edit" />);
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').trim()).toBe('');
+
+    ui.unmount();
+  });
+
+  it('names the keys a running build answers to when nothing else owns the row', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+
+    const ui = renderFeature(<FeedbackRow />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('esc stop options');
+    expect(frame).toContain(RUNNING_LEGEND);
 
     ui.unmount();
   });

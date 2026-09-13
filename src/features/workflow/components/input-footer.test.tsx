@@ -11,8 +11,12 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
-import { markInterruptParked } from '../../../stores/workflow/actions/interrupt.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
+import {
+  operationsStore,
+  type RunningOperation,
+} from '../../../stores/workflow/operations/state.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -39,6 +43,24 @@ function publishAdvisory(advisory: AdvisorResult): void {
   });
 }
 
+function runningOn(runnerName: string): RunningOperation {
+  return {
+    callId: `call-${runnerName}`,
+    role: 'implementer',
+    phase: 'implementing',
+    label: runnerName,
+    runnerName,
+    startedAt: 0,
+    status: 'running',
+    endedAt: null,
+    durationMs: null,
+    partial: false,
+    reason: null,
+    usage: null,
+    warnings: [],
+  };
+}
+
 describe('InputFooter', () => {
   beforeEach(() => {
     eventsStore.__testReset();
@@ -60,6 +82,7 @@ describe('InputFooter', () => {
     lifecycleStore.__testReset();
     tasksStore.__testReset();
     tokensStore.__testReset();
+    operationsStore.__testReset();
   });
 
   afterEach(() => {
@@ -70,6 +93,7 @@ describe('InputFooter', () => {
     lifecycleStore.__testReset();
     tasksStore.__testReset();
     tokensStore.__testReset();
+    operationsStore.__testReset();
   });
 
   it('renders the y copy affordance only while a focused row resolves a copy value', () => {
@@ -197,7 +221,15 @@ describe('InputFooter', () => {
   it('renders the active rail stage and task fraction in the byline when not running', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'complete' });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+    tasksStore.__testReset({
+      currentTask: 3,
+      totalTasks: 7,
+      tasks: [
+        { id: 'T001', title: 'T1', status: 'done' as const },
+        { id: 'T002', title: 'T2', status: 'done' as const },
+        { id: 'T003', title: 'T3', status: 'done' as const },
+      ],
+    });
 
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';
@@ -208,15 +240,54 @@ describe('InputFooter', () => {
     ui.unmount();
   });
 
+  it('quotes the build block estimate and drops it when a seat swap retires it', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    tasksStore.__testReset({
+      currentTask: 3,
+      totalTasks: 4,
+      taskCompletionTimes: [120_000, 120_000],
+      tasks: [
+        { id: 'T001', title: 'T1', status: 'done' as const },
+        { id: 'T002', title: 'T2', status: 'done' as const },
+        { id: 'T003', title: 'T3', status: 'in_progress' as const },
+        { id: 'T004', title: 'T4', status: 'pending' as const },
+      ],
+    });
+
+    const quoted = renderFeature(<InputFooter />);
+    const quotedFrame = stripAnsiStyles(quoted.lastFrame() ?? '');
+
+    // Two briefs left at two minutes each, worded the way the block above words it — one
+    // estimate on the screen, not two dialects of it.
+    expect(quotedFrame).toContain('ETA ~4m');
+    expect(quotedFrame).not.toContain('remaining');
+    quoted.unmount();
+
+    operationsStore.__testReset({ active: runningOn('codex'), last: runningOn('claude-code') });
+
+    const retired = renderFeature(<InputFooter />);
+
+    // The block retires an estimate the new seat never earned; the byline stops quoting it too.
+    expect(stripAnsiStyles(retired.lastFrame() ?? '')).not.toContain('ETA');
+    retired.unmount();
+
+    terminalSizeStore.reset();
+  });
+
   it('a user-cancelled run leads with the cancelled glyph, never the stage-done pip', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', cancelled: true });
-    tasksStore.__testReset({ currentTask: 1, totalTasks: 1 });
+    tasksStore.__testReset({
+      currentTask: 1,
+      totalTasks: 1,
+      tasks: [{ id: 'T001', title: 'T1', status: 'done' as const }],
+    });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain(`${glyph('statusCancelled')} Cancelled · Build 1/1`);
+    expect(frame).toContain(`${glyph('statusCancelled')} Stopped by you · Build 1/1`);
     expect(frame).not.toContain(`${glyph('stageDone')} Build`);
 
     ui.unmount();
@@ -234,7 +305,7 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain(`${glyph('statusFailed')} Failed`);
+    expect(frame).toContain(`${glyph('statusFailed')} Build failed`);
     expect(frame).not.toContain('Cancelled');
 
     ui.unmount();
@@ -256,6 +327,28 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
+  it('renders the plan-size stop advice with its split instruction', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    publishAdvisory({
+      kind: 'stop',
+      risk: 'normal',
+      currentMode: 'standard',
+      suggestedMode: 'standard',
+      confidence: 1,
+      factors: ['13 briefs over the 12 cap'],
+      missing: [],
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('advisor: 13 briefs over the 12 cap');
+    expect(frame).toContain('split the work');
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
   it('omits advisory text when the advisor has no displayable warning', () => {
     const advisory = adviseMode('add auth with JWT refresh tokens', 'speckit');
     publishAdvisory(advisory);
@@ -271,7 +364,11 @@ describe('InputFooter', () => {
   it('does not duplicate cost information already shown in the cost status line', () => {
     terminalSizeStore.__testReset({ cols: 48, rows: 24, isSmall: true });
     lifecycleStore.__testReset({ phase: 'implementing', cancelled: true });
-    tasksStore.__testReset({ currentTask: 1, totalTasks: 4 });
+    tasksStore.__testReset({
+      currentTask: 1,
+      totalTasks: 4,
+      tasks: [{ id: 'T001', title: 'T1', status: 'done' as const }],
+    });
     tokensStore.__testReset({
       localCount: 1,
       escalatedCount: 0,
@@ -294,38 +391,43 @@ describe('InputFooter', () => {
     ui.unmount();
   });
 
-  it('interrupted byline replaces the spinner with a static interrupted lead', () => {
+  it('a parked brief replaces the spinner with the resume keys', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ status: 'interrupted', phase: 'implementing' });
-    markInterruptParked();
+    lifecycleStore.__testReset({ status: 'paused', phase: 'implementing' });
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', 'T002', null);
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Interrupted — ⏎ retry · type to steer');
+    expect(frame).toContain('Paused at T002 · Partial changes kept');
+    // The keys live on the legend row above, so the byline carries the state alone.
+    expect(frame).not.toContain('/resume');
     expect(BRAILLE_SPINNER_FRAMES.some((spinnerFrame) => frame.includes(spinnerFrame))).toBe(false);
 
     ui.unmount();
+    stopStore.__testReset();
     terminalSizeStore.reset();
   });
 
-  it('the interrupted lead shows the interim text until the continuation prompt parks', () => {
+  it('the stopping lead reports the wait until the brief parks', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ status: 'interrupted', phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    stopStore.request('stop-now');
+    stopStore.markTerminating();
 
     const pending = renderFeature(<InputFooter />);
     const pendingFrame = stripAnsiStyles(pending.lastFrame() ?? '');
-    expect(pendingFrame).toContain('Interrupted — finishing current step…');
-    expect(pendingFrame).not.toContain('⏎ retry');
+    expect(pendingFrame).toContain('Waiting for processes to exit');
+    expect(pendingFrame).not.toContain('Paused at');
     pending.unmount();
 
-    markInterruptParked();
+    stopStore.park('mid-brief', 'T002', null);
 
     const parked = renderFeature(<InputFooter />);
-    expect(stripAnsiStyles(parked.lastFrame() ?? '')).toContain(
-      'Interrupted — ⏎ retry · type to steer',
-    );
+    expect(stripAnsiStyles(parked.lastFrame() ?? '')).toContain('Paused at T002');
     parked.unmount();
+    stopStore.__testReset();
     terminalSizeStore.reset();
   });
 

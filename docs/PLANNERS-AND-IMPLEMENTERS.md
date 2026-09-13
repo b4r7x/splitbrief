@@ -270,7 +270,7 @@ type ImplementerCapabilities = {
 
 It records **who holds the pen**, not which path is preferred.
 
-A brief **requires** a direct-write implementer only when its `scope.inBounds` / `scope.approvedOutOfBounds` bullets name a concrete path token beyond the task's own `file` — a token carrying a directory separator or a glob, extracted by `scopePathPatterns` in `src/utils/path-patterns.ts` (`requiredWriteModeForTask`, `src/engine/orchestrator/context-routing/decision.ts`). Scope bullets are prose: a bullet that only re-names the task file, or names no path token at all, does not widen the write scope, and the brief routes to an `extracted-code` implementer. The same module ranks profile routes: when the implementer seat carries `model: auto:cheapest`, `compareProfileRouteRank` orders priced profiles by blended price ahead of cost tier (derivation under [Token accounting](#token-accounting)).
+A brief **requires** a direct-write implementer when it declares more than one file (`files.length > 1`), and otherwise only when its `scope.inBounds` / `scope.approvedOutOfBounds` bullets name a concrete path token beyond the task's own `file` — a token carrying a directory separator or a glob, extracted by `scopePathPatterns` in `src/utils/path-patterns.ts` (`requiredWriteModeForTask`, `src/engine/orchestrator/context-routing/decision.ts`). Scope bullets are prose: a bullet that only re-names the task file, or names no path token at all, does not widen the write scope, and the brief routes to an `extracted-code` implementer. The same module ranks profile routes: when the implementer seat carries `model: auto:cheapest`, `compareProfileRouteRank` orders priced profiles by blended price ahead of cost tier (derivation under [Token accounting](#token-accounting)).
 
 | | `extracted-code` | `direct` |
 |---|---|---|
@@ -278,7 +278,7 @@ A brief **requires** a direct-write implementer only when its `scope.inBounds` /
 | Kinds | `api`, `shell` | `cli`, `agent` |
 | Model answers with | the complete file contents as text | edits already made on disk |
 | Change detection | the extracted text is compared against the file it replaces | `detectChanges()` against a baseline captured before the call |
-| Works in | the project directory, one file per task | the run's isolation directory (see below) |
+| Works in | the project directory, the brief's one declared file | the run's isolation directory, the brief's `files` (see below) |
 | Approval applies | per write, before it lands (`approveWrite`) | at promotion, over the whole changed set |
 | Empty result | extraction error | `no-staged-change` outcome + `implementer_wrote_nothing` warning |
 
@@ -307,7 +307,7 @@ Whichever mode ran, validation happens in the real project directory after promo
 | Language and import conventions | yes | yes |
 | Output rules (whole file, no fences, no prose) | yes | n/a -- the model edits files |
 | Worked example in the target language | yes | n/a |
-| File scope -- which files it may touch and which it may not | n/a -- one file is written for it | yes |
+| File scope -- which files it may touch and which it may not | n/a -- the single declared file is written for it | yes -- every path under Files, plus the Scope bullets |
 | Stop conditions -- when to finish and when to escalate instead of improvising | via the brief's Escalation section | yes, restated as a hard rule for an agent that can keep going |
 | Validation expectations -- which commands to run before declaring the task finished | n/a | yes |
 | Reporting format -- what to say about what it changed | n/a -- the file *is* the answer | yes |
@@ -333,6 +333,8 @@ Wraps a backend-specific `invoke()` with:
 For retries, `buildRetryPrompt()` prepends the error message with escalating framing -- attempt 1 says "fix it", attempt 2 says "rephrase", attempt 3 says "try a completely different approach". Temperature increases by `retryTemperatureStep` per attempt.
 
 The implementer base normalizes backend output into `RunnerCallResult` before processing files. A non-completed status returns a failed `ImplementerResult` with partial output and usage preserved; user aborts, timeouts, truncation, refusals, unsupported tools, and incomplete streams are not collapsed into generic success/failure strings.
+
+**Call deadlines.** A CLI implementer call runs under a deadline of `config.timeout ?? TIMEOUTS.implementerMs` — 20 minutes (`src/engine/implementers/cli.ts`, `src/core/pipeline-spec/timeouts.ts`), which is also the cap the `timeout` config field accepts. The reviewer's one call runs under `TIMEOUTS.reviewerMs`, 10 minutes (`src/engine/planners/cli.ts`, the `review` role); every other planner call has no deadline of its own, because a planning turn's length is the operator's to judge. A deadline that fires is a `timeout` outcome, not a crash, and two of them in a row on the same brief stop the run with an `implementer-timeout-repeated` recovery rather than escalating an oversized slice at planner prices (`TIMEOUTS.consecutiveTimeoutsHalt`).
 
 ---
 
@@ -406,7 +408,7 @@ Pricing lookup keeps its ladder — cached models.dev first, then runtime metada
 
 Spawns a CLI tool as a subprocess. Supported tools: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`.
 
-Every planner call declares its transport before dispatch: the current call's final response (`stdout-final`) or an exact declared-file lease. The candidate is that call's authoritative final output; session files, project-root artifacts, markdown-linked paths, prose mentions, stderr, and earlier attempts are evidence at most, never content (see [Compiler capability and planner conformance](#compiler-capability-and-planner-conformance)). The compiler path never resumes the workflow session. Claude Code continues a session it already minted with `--resume`. Output is parsed line by line via each tool's protocol parser; a configured `outputFormat` cannot replace a structured terminal contract.
+Every planner call declares its transport before dispatch: the current call's final response (`stdout-final`) or an exact declared-file lease. The candidate is that call's authoritative final output; session files, project-root artifacts, markdown-linked paths, prose mentions, stderr, and earlier attempts are evidence at most, never content. Claude Code continues a session it already minted with `--resume`. Output is parsed line by line via each tool's protocol parser; a configured `outputFormat` cannot replace a structured terminal contract.
 
 The implementer writes files directly (`writesFiles: 'direct'`) inside the run's isolation directory, and change detection runs there. Claude Code gets a special path through `runClaudeOneShot()`. A CLI configured with a cheaper model than the planner's is one of the two canonical implementer setups -- see [Write modes](#write-modes).
 
@@ -429,10 +431,11 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 | `kilo-code` | `kilo` | planner, implementer | 0.1.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent |
 | `cursor` | `cursor-agent` | planner, implementer | 2026.08.25-3e8eec8 | `calver` | 2026-08-27 | optional / optional | `native-cli` (`--list-models`) | subscription-included |
 | `command-code` | `cmd` | planner, implementer | 1.39.2 | `semver` | 2026-09-01 | optional / optional | `native-cli` (`--list-models`) | subscription-included |
+| `antigravity` | `agy` | planner, implementer | 1.2.2 | `semver` | 2026-09-14 | optional / optional | `native-cli` (`agy models`) | subscription-included |
 
 **Command Code's row was captured from the real binary on 2026-09-01 against `cmd` 1.39.2**, replacing the hand-authored fixtures that stood in for it. The raw `cli-conformance` leg passes; the production leg records `OMIT` because the conformance sandbox gives the child a fresh `HOME` and never bridges host CLI session state, so a `session`-auth tool reaches the CLI unauthenticated. That gap is the harness's, not the adapter's — the adapter's own argv was replayed against the authenticated binary and its terminal `result` frame parses. See `testing/fixtures/command-code/README.md` for the recorded evidence and the remaining gap.
 
-`cursor` executable aliases are `cursor-agent` / `agent`. Command Code's binary is `cmd` with no alternate alias, and its credentials come from `cmd login`; there is no API-key environment channel. The reviewer seat uses planner backends (the same admission set).
+`cursor` executable aliases are `cursor-agent` / `agent`. Command Code's binary is `cmd` with no alternate alias, and its credentials come from `cmd login`; there is no API-key environment channel. Antigravity's binary is `agy`, `agy --version` prints a bare semver (`1.2.2`, captured 2026-09-14 — `agy --help` prints no version at all), and `agy models` is both its auth probe and its model listing: one `<id>\t<display name>` row per effort variant (`gemini-3.8-flash-high`), merged into one picker row per model. The seat spends its effort on `--effort` (`effortChannel: 'effort-flag'`), not through the id suffix. The reviewer seat uses planner backends (the same admission set).
 
 ##### Posture, trust, and auth
 
@@ -445,6 +448,7 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 | `kilo-code` | no / yes | yes / yes | yes / yes | `--auto` | none / none | provider-dependent | inherited from provider config |
 | `cursor` | no / yes | yes / yes | yes / yes | `--force` | none / none | `api-key-or-session`: session (host-cli-state), api-key | `CURSOR_API_KEY` (api-key channel) |
 | `command-code` | no / yes | yes / yes | yes / yes | `--yolo` | none / none | session | — |
+| `antigravity` | no / yes | yes / yes | yes / yes | `--dangerously-skip-permissions` | none / none | session | — |
 
 Session channels use `host-cli-state` bridging where noted in the catalog. SPLITBRIEF never copies credentials into argv. Subscription-included tools bill through the vendor login; provider-dependent tools inherit the upstream model provider's billing posture.
 
@@ -494,9 +498,9 @@ These researched CLIs have **blocked verdicts** — they do not appear in the ad
 
 | candidate | verdict | as-of | evidence | route when gate passes |
 |---|---|---|---|---|
-| `antigravity` | OMIT | 2026-07-31 | `.nuke/release-evidence/antigravity.json` | implementer-only `agy`; conditional consumer route replacing legacy Gemini CLI |
+| — | — | — | — | — |
 
-`CURSOR_CLI_ADMISSION_VERDICT` and `COMMAND_CODE_CLI_ADMISSION_VERDICT` are both `PASS` in `cli-tool-catalog.ts`. `ANTIGRAVITY_CLI_ADMISSION_VERDICT` remains `OMIT`. Candidate runtime adapter sources must remain absent while a verdict is OMIT. No unverified-auth override can promote an omitted candidate.
+No CLI candidate currently sits on an OMIT verdict. `CURSOR_CLI_ADMISSION_VERDICT`, `COMMAND_CODE_CLI_ADMISSION_VERDICT` and `ANTIGRAVITY_CLI_ADMISSION_VERDICT` are all `PASS` in `cli-tool-catalog.ts`. Candidate runtime adapter sources must remain absent while a verdict is OMIT. No unverified-auth override can promote an omitted candidate.
 
 ##### Excluded researched candidates
 
@@ -543,47 +547,15 @@ The implementer uses `writesFiles: 'direct'` with git-based change detection.
 
 ---
 
-## Compiler capability and planner conformance
+## Planner artifact ownership
 
-The Task Brief compiler (`src/engine/spec/tasks/compiler.ts`) compiles the manifest in deterministic four-item batches, at most 64 real dispatches per operation, each batch in a fresh detached session scope that cannot read, replace, expire, resume, or report into the workflow planner session. Every planner mode crosses the same admission boundary: standard and speckit run the compiler's detached batches, and quick stays single-call while accepting only a current-call result.
+A planner call produces a candidate, not a canonical artifact. Every call declares its transport before dispatch. `stdout-final` derives the candidate from the current call's authoritative final response only. Earlier messages, partials, tool-call text, stderr, and prior attempts are evidence at most. `declared-file` hands the child one host-prepared, invocation-unique lease; acceptance requires that exact regular file, a bounded no-follow read, unchanged ancestry and identity, and a matching receipt. Missing, pre-existing, sibling, same-basename, traversal, absolute, symlinked, path-swapped, non-UTF-8, or oversized files fail. There is no `auto` source, source priority, prose sniffing, or filesystem search.
 
-`admitCompilerCapability` (`src/engine/runners/compiler-capability.ts`) admits a backend only on the exact tuple: runtime identity, effective role vector, declared transport, terminal contract, containment profile, credential channel, envelope version, and a verified conformance proof. Admission fails closed (REQ-016): a missing or unverified property returns the typed zero-dispatch refusal `task_compiler_capability_unsupported`, and no combination is downgraded to a weaker mode. Tiered capability admission applies: the tested version yields a full capability receipt; other detected versions of a supported backend are admitted with runtime-drift evidence and a run warning; unsupported candidates (`copilot`, `cursor`, `command-code`, `shell`, `agent`) receive a typed fail-closed refusal. Versionless rows (`api`, `custom-command`) admit only an empty version claim, and the verified conformance proof carries the identity evidence. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
-
-Planner mode does not grant artifact authority. A `--agent plan`, `--permission-mode plan`, or `--sandbox read-only` flag bounds what the tool may do; it does not prove what the process could reach, what its output means, or that an artifact is fresh. The production-factory conformance harness (`src/engine/runners/cli-tools/contract-harness.ts`, driven by `scripts/cli-conformance.ts`) is what can prove the effective role, containment, and final-response contract, but its verdicts do not reach admission on their own: they are recorded by hand into `COMPILER_SUPPORT_TABLE`, and nothing reads a harness record when a claim is admitted. A run's claim carries that row's recorded vector plus two live host observations — the detected runtime version and containment-launcher availability — and those two are what a running host can still refuse on.
-
-### V1 support table
-
-Source: `COMPILER_SUPPORT_TABLE` in `src/engine/runners/compiler-capability.ts`, mirrored for CLIs by `CLI_COMPILER_EVIDENCE` in `src/core/runners/cli-tool-catalog.ts` (registry parity tests fail on divergence). Every admitted row accepts both containment profiles: `seatbelt` (macOS `sandbox-exec`) and `bubblewrap` (Linux `bwrap`). Envelope version is 1 for every row.
-
-| Backend | Tested runtime | V1 state | Transport | Terminal contract | Credential channels |
-|---|---|---|---|---|---|
-| `opencode` | 1.18.15 | required-baseline | `stdout-final` | `opencode-final-message-v1` | `session-copy` |
-| `claude-code` | 2.1.232 | conformance-gated | `stdout-final` | `claude-terminal-result-v1` | `api-key`, `session-copy` |
-| `codex` | 0.147.0 | conformance-gated | `declared-file` | `codex-output-last-message-v1` | `api-key`, `session-copy` |
-| `kilo-code` | 7.0.49 | conformance-gated | `stdout-final` | `kilo-final-message-v1` | `session-copy` |
-| `api` | (versionless) | conformance-gated | `stdout-final` | `provider-final-assistant-response-v1` | `api-key` |
-| `custom-command` | (versionless) | conformance-gated | `stdout-final`, `declared-file` | `custom-command-final-response-v1` | `api-key` |
-| `copilot` | — | unsupported | — | — | — |
-| `cursor` | — | unsupported | — | — | — |
-| `command-code` | — | unsupported | — | — | — |
-| `shell` | — | unsupported | — | — | — |
-| `agent` | — | unsupported | — | — | — |
-
-`required-baseline` means OpenCode 1.18.15 is the production planner once its full factory-path conformance passes. `conformance-gated` means the row admits only when the complete conformance row passes and fails closed otherwise: Kilo, the OpenAI-compatible API, and configured custom commands stay inactive until that happens. `unsupported` means a typed zero-dispatch refusal no matter what a candidate claims: Copilot has no proven non-writing programmatic planner posture in V1, Cursor has no proven compiler planner contract in V1, Command Code has no proven compiler planner contract in V1, the legacy shell planner lacks compiler containment and final-response conformance, and the legacy agent planner's ambient session-file behavior violates exact lease ownership.
-
-### Transports and containment
-
-`stdout-final` derives the candidate from the current call's authoritative final response only. Earlier messages, partials, tool-call text, stderr, and prior attempts are evidence at most (REQ-010, REQ-020). `declared-file` hands the child one host-prepared, invocation-unique lease; acceptance requires that exact regular file, a bounded no-follow read, unchanged ancestry and identity, and a matching receipt. Missing, pre-existing, sibling, same-basename, traversal, absolute, symlinked, path-swapped, non-UTF-8, or oversized files fail. There is no `auto` source, source priority, prose sniffing, or filesystem search.
-
-The containment profile in a capability tuple records which OS-level write-denial launcher the host offers -- `seatbelt` (macOS `sandbox-exec`) or `bubblewrap` (Linux `bwrap`) -- as observed by `platformContainmentProfile` (`src/engine/runners/planner-containment.ts`). Availability is all that observation reports: nothing in the compiler path launches that binary or stages a snapshot, and the planner child runs against the project checkout. On `unavailable` the tuple matches no row's containment profiles, so the backend lacks compiler capability and refuses before dispatch. Writes are observed after the fact by post-run mutation detection (`src/engine/orchestrator/planning/mutation-guard.ts`), which fails the planning call on unexpected filesystem mutations.
-
-### Credential channels
-
-`api-key` passes the provider's environment variable into the sanitized child environment. `session-copy` bridges exactly the tool's allowlisted credential files into the disposable HOME/XDG roots, with one exception on the shipping dispatch path: a channel whose credential is an OS keychain item — the Claude Code and Cursor Agent CLI `session` channels on macOS — has no file to copy, so its child is handed the host `HOME` and `USER` the login keychain resolves through and does read and write the real home directory. Compiler calls take the same `createRunnerSandboxEnv` (`src/engine/runners/sandbox-env.ts`) as every other planner call; there is no stricter compiler-only credential isolation, so a keychain channel is as wide for a compiler batch as it is for a workflow planner call. Bridged values are redacted from diagnostics, and the capability receipt records no secret value.
+Planner mode does not grant artifact authority. A `--agent plan`, `--permission-mode plan`, or `--sandbox read-only` flag bounds what the tool may do; it does not prove what the process could reach, what its output means, or that an artifact is fresh. The production-factory conformance harness (`src/engine/runners/cli-tools/contract-harness.ts`, driven by `scripts/cli-conformance.ts`) is what can prove the effective role, containment, and final-response contract. Writes are observed after the fact by post-run mutation detection (`src/engine/orchestrator/planning/mutation-guard.ts`), which fails the planning call on unexpected filesystem mutations.
 
 ### Effective roles by backend
 
-The role vector is pinned and effect-verified per backend (REQ-017). A role that is missing, overridden, falls back, prompts interactively, or cannot be verified makes the backend unsupported for that role.
+The role vector is pinned and effect-verified per backend. A role that is missing, overridden, falls back, prompts interactively, or cannot be verified makes the backend unsupported for that role.
 
 | Backend | Planner role | Implementer role |
 |---|---|---|
@@ -593,12 +565,9 @@ The role vector is pinned and effect-verified per backend (REQ-017). A role that
 | `codex` | `--sandbox read-only --ask-for-approval never` exec, ambient config and rules ignored, ephemeral detached | `--sandbox workspace-write --ask-for-approval never` in the staged checkout |
 | `cursor` | `--print --output-format stream-json --mode plan --trust` | `--print --output-format stream-json --force --trust` |
 | `command-code` | `-p --output-format json --trust --skip-onboarding --permission-mode plan` | `-p --output-format json --trust --skip-onboarding --yolo` |
+| `antigravity` | `-p --mode plan --print-timeout 10m` | `-p --dangerously-skip-permissions --print-timeout 20m` |
 
 A planner never gains canonical write authority. Candidates stay non-canonical until the authoritative generation commit; the fixed `tasks.md`, `brief-quality.json`, `spec.md`, and `plan.md` files are compatibility projections of that generation. See [WORKFLOW.md](./WORKFLOW.md) for the generation, permit, and disposition flow.
-
-### Deterministic conformance vs opt-in live checks
-
-Normal CI proves the conformance rows deterministically through the production factory. Subprocess shims speak each tool's real protocol terminal: `testing/integration/orchestrator/runner-capability-matrix.test.ts` (exact-version, protocol, and credential rows), `testing/integration/orchestrator/planner-effect-matrix.test.ts` (planner immutability, one nonce edit, zero unsupported spawn), and `src/engine/runners/cli-tools/contract-harness-effects.test.ts` (mutating planner, no-op or wrong implementer, fallback role). Unsupported rows are pinned by `src/engine/runners/compiler-unsupported-backends.test.ts`. Live authenticated checks (`testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts`, collected only by `testing/e2e/vitest.live.config.ts` and run with `npm run test:e2e:live:smoke`) are opt-in drift evidence, never the admission proof. See [TESTING.md](./TESTING.md).
 
 ---
 
@@ -642,7 +611,7 @@ type GenerationCommon = {
   customModels?: string[]
   contextLength?: number
   temperature?: number       // 0–2
-  timeout?: number           // ms, max 600000
+  timeout?: number           // ms, max 1200000 (TIMEOUTS.implementerMs)
   effort?: EffortLevel
   variant?: string           // named preset for the `variant` effort channel
 }

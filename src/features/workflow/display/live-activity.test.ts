@@ -66,7 +66,7 @@ describe('deriveLiveStatus', () => {
     expect(configured?.tone).toBe('validator');
 
     const unconfigured = deriveLiveStatus({ ...base, phase: 'final-review' });
-    expect(unconfigured?.verb).toBe('Reviewing…');
+    expect(unconfigured?.verb).toBe('Review…');
     expect(unconfigured?.tone).toBe('validator');
   });
 

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { briefErrorMessages, evaluateBriefQuality, isBriefQualityReport } from './brief-quality.js';
 import { parseTasks } from './tasks/parse.js';
+import { typescriptStack } from '../../core/validation/stacks/typescript.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 
 function makeFullTask() {
@@ -73,7 +74,7 @@ describe('evaluateBriefQuality — pure unit tests', () => {
       },
     ],
     [
-      'multi_file_task',
+      'write_outside_declared_files',
       {
         description: 'Update src/api.ts and also modify src/utils.ts for new helpers',
         tests: ['returns expected value'],
@@ -125,7 +126,7 @@ describe('evaluateBriefQuality — pure unit tests', () => {
 
   it.each([
     [
-      'same file path twice does not flag multi_file_task',
+      'a write target listed in scope is not outside the declared files',
       {
         description: 'Update src/api.ts and keep src/api.ts aligned with the new helper',
         tests: ['returns expected value'],
@@ -134,7 +135,7 @@ describe('evaluateBriefQuality — pure unit tests', () => {
         scope: { inBounds: ['src/api.ts'], outOfBounds: ['src/utils.ts'] },
         evidence: ['src/api.ts behavior remains covered'],
       },
-      'multi_file_task',
+      'write_outside_declared_files',
     ],
     [
       'risk words in title but not description do not trigger missing_escalation',
@@ -179,7 +180,7 @@ describe('evaluateBriefQuality — pure unit tests', () => {
   });
 });
 
-describe('multi_file_task write-target semantics', () => {
+describe('write-target semantics', () => {
   it('accepts the real quick-mode planner output for the titleCase feature', () => {
     const markdown = readFileSync(
       join(import.meta.dirname, '../../../testing/fixtures/briefs/quick-titlecase-tasks.md'),
@@ -188,7 +189,7 @@ describe('multi_file_task write-target semantics', () => {
     const tasks = parseTasks(markdown);
     expect(tasks).toHaveLength(2);
     const report = evaluateBriefQuality(tasks);
-    expect(report.issues.filter((i) => i.code === 'multi_file_task')).toHaveLength(0);
+    expect(report.issues.filter((i) => i.code === 'write_outside_declared_files')).toHaveLength(0);
     expect(report.passed).toBe(true);
     expect(report.score).toBe(1);
   });
@@ -231,10 +232,10 @@ describe('multi_file_task write-target semantics', () => {
       },
     ],
   ] as [string, Record<string, unknown>][])(
-    'does not flag %s as multi_file_task',
+    'does not flag %s as write_outside_declared_files',
     (_label, overrides) => {
       const report = evaluateBriefQuality([makeTask(overrides)]);
-      expect(report.issues.find((i) => i.code === 'multi_file_task')).toBeUndefined();
+      expect(report.issues.find((i) => i.code === 'write_outside_declared_files')).toBeUndefined();
     },
   );
 
@@ -249,6 +250,7 @@ describe('multi_file_task write-target semantics', () => {
           'Update the call site in `src/api.ts` to use the new helper.',
         ],
       },
+      'src/api.ts',
     ],
     [
       'two write targets joined by a conjunction',
@@ -257,12 +259,105 @@ describe('multi_file_task write-target semantics', () => {
         description: 'Update `src/api.ts` and `src/utils.ts` to share the new helper.',
         implementationSteps: ['Move the duplicated logic out of both call sites.'],
       },
+      'src/utils.ts',
     ],
-  ] as [string, Record<string, unknown>][])('flags %s as multi_file_task', (_label, overrides) => {
-    const report = evaluateBriefQuality([makeTask(overrides)]);
-    const issue = report.issues.find((i) => i.code === 'multi_file_task');
+  ] as [string, Record<string, unknown>, string][])(
+    'flags %s as write_outside_declared_files',
+    (_label, overrides, undeclared) => {
+      const report = evaluateBriefQuality([makeTask(overrides)]);
+      const issue = report.issues.find((i) => i.code === 'write_outside_declared_files');
+      expect(issue?.severity).toBe('error');
+      expect(issue?.message).toContain(undeclared);
+    },
+  );
+
+  it('a write to an undeclared path is write_outside_declared_files naming the path', () => {
+    const report = evaluateBriefQuality([
+      makeTask({
+        file: 'src/hello.ts',
+        description: 'Create `src/hello.ts` and update `src/registry.ts` to register it.',
+      }),
+    ]);
+    const issue = report.issues.find((i) => i.code === 'write_outside_declared_files');
     expect(issue?.severity).toBe('error');
-    expect(issue?.message).toContain('src/api.ts');
+    expect(issue?.message).toBe(
+      'Task T001 description/steps direct writes outside its declared files: src/registry.ts',
+    );
+  });
+
+  it('mention-not-write of an undeclared path is not an error', () => {
+    const report = evaluateBriefQuality([
+      makeTask({
+        file: 'src/hello.ts',
+        description: 'Create `src/hello.ts` following the style of `src/slug.ts`.',
+      }),
+    ]);
+    expect(report.issues.find((i) => i.code === 'write_outside_declared_files')).toBeUndefined();
+  });
+
+  it('three declared writes produce zero errors', () => {
+    const report = evaluateBriefQuality([
+      makeTask({
+        file: 'src/api.ts',
+        files: ['src/api.ts', 'src/api.test.ts', 'src/utils.ts'],
+        description: 'Update `src/api.ts` and `src/utils.ts` to share the new helper.',
+        implementationSteps: ['Create `src/api.test.ts` covering the helper.'],
+        typeDefs: 'function helper(): void',
+        scope: { inBounds: ['the shared helper'], outOfBounds: ['UI changes'] },
+        evidence: ['npm test passes'],
+      }),
+    ]);
+    expect(report.issues).toHaveLength(0);
+    expect(report.passed).toBe(true);
+  });
+
+  it('anchor missing from files is anchor_not_in_files', () => {
+    const report = evaluateBriefQuality([
+      makeTask({ file: 'src/api.ts', files: ['src/utils.ts'] }),
+    ]);
+    const issue = report.issues.find((i) => i.code === 'anchor_not_in_files');
+    expect(issue?.severity).toBe('error');
+    expect(issue?.message).toBe(
+      'Task T001 names src/api.ts as its anchor but files does not list it',
+    );
+  });
+});
+
+describe('test_without_code', () => {
+  it('sibling test brief warns test_without_code', () => {
+    const report = evaluateBriefQuality(
+      [
+        makeTask({ id: 'T001', file: 'src/health.ts', description: 'Create `src/health.ts`.' }),
+        makeTask({
+          id: 'T002',
+          file: 'src/health.test.ts',
+          dependsOn: ['T001'],
+          description: 'Create `src/health.test.ts` covering the module.',
+        }),
+      ],
+      typescriptStack,
+    );
+    const issue = report.issues.find((i) => i.code === 'test_without_code');
+    expect(issue?.severity).toBe('warning');
+    expect(issue?.taskId).toBe('T002');
+    expect(issue?.message).toBe(
+      "Task T002 only tests src/health.ts which T001 creates; fold it into T001's files",
+    );
+  });
+
+  it('a brief that declares the source alongside its test does not warn', () => {
+    const report = evaluateBriefQuality(
+      [
+        makeTask({
+          id: 'T001',
+          file: 'src/health.ts',
+          files: ['src/health.ts', 'src/health.test.ts'],
+          description: 'Create `src/health.ts` and `src/health.test.ts`.',
+        }),
+      ],
+      typescriptStack,
+    );
+    expect(report.issues.find((i) => i.code === 'test_without_code')).toBeUndefined();
   });
 });
 

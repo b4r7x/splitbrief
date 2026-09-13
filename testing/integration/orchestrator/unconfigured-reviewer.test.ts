@@ -33,7 +33,7 @@ afterEach(() => {
   while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
 });
 
-const REVIEW_TEXT = '# Final review\n\nThe planner reviewed the run diff.';
+const REVIEW_TEXT = '# Final review\n\nThe planner reviewed the run diff.\n\n### Verdict\npass\n';
 const REVIEW_USAGE = { inputTokens: 60, outputTokens: 30 };
 const PLAN_USAGE = { inputTokens: 140, outputTokens: 90 };
 const PLANNER_PROVIDER = 'planner-endpoint';

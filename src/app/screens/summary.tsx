@@ -24,6 +24,7 @@ import {
   formatReviewerSummary,
   formatRouteSummary,
   getSummaryHeading,
+  summarizeOutcome,
 } from '../../features/summary/presentation.js';
 import { useSummaryEvidenceLedger } from '../../features/summary/hooks/use-summary-evidence-ledger.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -57,6 +58,10 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
 
   const completed = summary.completedByLocal + summary.escalatedToPlanner;
   const contentWidth = overlayWidth({ cols, density: 'roomy' });
+  const outcome = summarizeOutcome(summary, status, {
+    compact: isSmall || rows <= 28,
+    width: contentWidth,
+  });
   const labelWidth = isSmall ? clamp(Math.floor(contentWidth / 3), 10, 13) : 20;
   const taskTitleWidth = clamp(contentWidth - 24, 8, isSmall ? 16 : 30);
   const truncateLength = Math.max(6, taskTitleWidth - 2);
@@ -71,7 +76,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
   const implementerSummary = formatImplementerSummary(summary);
   const routeSummary = formatRouteSummary(summary, implementerSummary);
   const reviewerSummary = formatReviewerSummary(summary);
-  const heading = getSummaryHeading(status, theme);
+  const heading = getSummaryHeading(status, theme, outcome.ready);
   const bylineMetaText = [mode, formatTime(summary.totalTime)]
     .filter((part): part is string => part !== null && part !== undefined && part !== '')
     .join(SOFT_SEP);
@@ -88,6 +93,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
   });
   const detailHeight = getSummaryDetailViewportHeight({
     terminalRows: rows,
+    outcomeRows: 1 + outcome.facts.length + (outcome.next === '' ? 0 : 1),
     isSmall,
     summary,
     implementerSummary,
@@ -136,6 +142,24 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
             </Text>
           </Text>
         </Box>
+        {/* What the run left behind, in the order a reader asks it. The heading says how it ended;
+            these say whether anything still needs doing about it. */}
+        <Box flexDirection="column" alignItems="center" width="100%" flexShrink={0}>
+          <Text wrap="truncate-end" bold color={outcome.ready ? theme.success : theme.warning}>
+            {outcome.headline}
+          </Text>
+          {outcome.facts.map((fact) => (
+            <Text key={fact} wrap="truncate-end" color={theme.textDim}>
+              {fact}
+            </Text>
+          ))}
+          {outcome.next === '' ? null : (
+            <Text wrap="truncate-end" color={theme.textDim}>
+              {outcome.next}
+            </Text>
+          )}
+        </Box>
+
         {/* The crew is three labelled rows below, at every width: an arrow chain here would say it
             a second way, and the chain has no row for a reviewer that inherits. */}
         {!isSmall && bylineMetaText !== '' && (
@@ -145,8 +169,6 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
             </Text>
           </Box>
         )}
-
-        <HeroSavings costBreakdown={summary.costBreakdown} />
 
         {isShortSmall ? (
           <SummaryCompactRunDetails summary={summary} routeSummary={routeSummary} />
@@ -192,7 +214,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
               </LabeledRow>
             )}
             {driftText && (
-              <LabeledRow label="Drift" labelWidth={labelWidth}>
+              <LabeledRow label="Scope" labelWidth={labelWidth}>
                 <Text
                   color={drift && !drift.passed ? theme.warning : theme.textDim}
                   wrap="truncate-end"
@@ -202,9 +224,9 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
               </LabeledRow>
             )}
             {summary.chainDriftSummary && (
-              <LabeledRow label="Drift chain" labelWidth={labelWidth}>
+              <LabeledRow label="Scope chain" labelWidth={labelWidth}>
                 <Text color={theme.textDim} wrap="truncate-end">
-                  {summary.chainDriftSummary.chainLength} tasks{arrowSep()}
+                  {summary.chainDriftSummary.chainLength} briefs{arrowSep()}
                   {stripTerminalControls(summary.chainDriftSummary.representativePath)}
                   {SOFT_SEP}
                   {summary.chainDriftSummary.score.toFixed(2)}
@@ -224,6 +246,8 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
           </Box>
         )}
 
+        <HeroSavings costBreakdown={summary.costBreakdown} />
+
         <SummaryProgress
           completed={completed}
           total={summary.totalTasks}
@@ -234,7 +258,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
 
         {isShortSmall ? (
           <SummaryCompactLowerSections summary={summary} ledger={evidenceLedger} />
-        ) : detailRows.length > 0 ? (
+        ) : detailRows.length > 0 && detailViewportHeight > 0 ? (
           <Box flexDirection="column" width={contentWidth} marginTop={1} overflow="hidden">
             <Box height={1} overflow="hidden" flexShrink={0}>
               <Text color={theme.border}>{ledgerRule}</Text>

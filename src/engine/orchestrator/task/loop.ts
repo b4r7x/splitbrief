@@ -1,4 +1,4 @@
-import type { Task } from '../../../core/schemas/task.js';
+import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
@@ -34,13 +34,13 @@ type RunTaskLoopOptions = {
   wctx: WorkflowContext;
   initialState: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
-  setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
+  setCurrentTask: (t: Pick<Task, 'file' | 'files' | 'action'> | undefined) => void;
 };
 
 export type TaskLoopResult = {
   state: WorkflowState;
   taskBreakdowns: TaskTokenUsage[];
-  status: 'complete' | 'stopped' | 'cancelled';
+  status: 'complete' | 'stopped' | 'cancelled' | 'paused';
 };
 
 export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopResult> {
@@ -123,20 +123,28 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   publishTasksPlanned({ bus: wctx.bus, phase: state.phase }, state.tasks);
   const firstTask = state.tasks[state.currentTaskIndex];
   if (firstTask) {
-    await wctx.validator.primeBaseline({
+    const primedBaseline = await wctx.validator.primeBaseline({
       bus: wctx.bus,
       phase: state.phase,
       task: firstTask,
       projectDir,
       config,
       discoveredValidation: state.discoveredValidation,
+      persistedBaseline: state.validationBaseline,
       signal: wctx.signal,
     });
+    if (primedBaseline !== undefined && state.validationBaseline === undefined) {
+      state = { ...state, validationBaseline: primedBaseline };
+      setTrackedState(state);
+    }
   }
   for (let i = state.currentTaskIndex; i < totalTasks; i++) {
     if (wctx.signal?.aborted) return { state, taskBreakdowns, status: 'stopped' };
     const task = state.tasks[i];
     if (!task) continue;
+    // A review-fix re-entry starts at the first brief it reopened; the briefs
+    // after it that already passed are not re-run.
+    if (isTaskCompleted(task.status)) continue;
 
     const depGate = await checkDependencyGate({
       wctx,
@@ -336,6 +344,11 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     }
 
     persistTaskBreakdowns();
+
+    if (wctx.sinks.consumeBoundaryPause?.()) {
+      setCurrentTask(undefined);
+      return { state, taskBreakdowns, status: 'paused' };
+    }
   }
   setCurrentTask(undefined);
   return { state, taskBreakdowns, status: 'complete' };

@@ -10,8 +10,7 @@ import { isENOENT } from '../../lib/process/errors.js';
 import { isProcessOutputSink } from '../../lib/process/stdio-sinks.js';
 import { assertExistingPathConfined, assertPathConfined } from '../../lib/path-confinement.js';
 import { sha256Hex } from '../../utils/sha256.js';
-import { matchesActionPattern } from './approval/action-classifier.js';
-import { taskAcceptedPatterns } from './task-scope.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared-set.js';
 import type { Task } from '../../core/schemas/task.js';
 import type {
   ChangedFilesSnapshot,
@@ -178,9 +177,7 @@ export async function inferTaskAcceptedChangedFiles(
   task: Task,
   head: string | null,
 ): Promise<string[]> {
-  const patterns = taskAcceptedPatterns(task);
+  const patterns = taskDeclaredPatterns(task);
   const changedFiles = await candidateChangedFiles(projectDir, head);
-  return changedFiles.filter((file) =>
-    patterns.some((pattern) => matchesActionPattern(file, pattern)),
-  );
+  return changedFiles.filter((file) => isInDeclaredSet(file, patterns));
 }

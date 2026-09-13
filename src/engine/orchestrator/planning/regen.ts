@@ -117,7 +117,13 @@ async function regenerateFromFeedback(
       (message) => publishWarning({ bus, phase: state.phase, message }),
     );
     const currentTasks = persisted.ok ? persisted.tasks : state.tasks;
-    const basePrompt = buildTasksPrompt({ spec, plan, languageContext, currentTasks });
+    const basePrompt = buildTasksPrompt({
+      spec,
+      plan,
+      languageContext,
+      currentTasks,
+      skillsContext,
+    });
     const result = await runRegenerationReview({
       kind,
       ctx,
@@ -236,6 +242,7 @@ type RegenerateBaseOptions = {
 type RegenerateTasksOptions = RegenerateBaseOptions & {
   planOverride?: string | undefined;
   feedback?: string | undefined;
+  skillsContext?: string | undefined;
 };
 
 type RegeneratePlanAndTasksOptions = RegenerateBaseOptions & {
@@ -268,6 +275,7 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     statusPhase,
     statusSummary,
     sinks,
+    skillsContext,
   } = opts;
   const result = await regenerateFromFeedback('tasks', {
     projectDir,
@@ -285,6 +293,7 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     statusPhase,
     statusSummary,
     sinks,
+    skillsContext,
   });
   return { state: result.state, tasks: result.tasks, queuedMessages: result.queuedMessages };
 }
@@ -319,6 +328,7 @@ export async function regeneratePlanAndTasks(
       state: planRegen.state,
       metadata,
       planOverride: planRegen.plan,
+      skillsContext,
       signal,
       queuedMessages: [],
       commitQueue: false,

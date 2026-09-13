@@ -166,6 +166,7 @@ export interface WorkflowContentRectInput {
   inputRows: number;
   sidebarVisible: boolean;
   promptRows?: number;
+  progressRows?: number;
 }
 
 const REVIEW_HEADER_ROWS = 2;
@@ -179,40 +180,42 @@ export const REVIEW_FRAME_ROWS = 2;
 // shows nothing: below it the review body yields the region instead of rendering.
 export const REVIEW_MIN_ROWS = REVIEW_FRAME_ROWS + REVIEW_HEADER_ROWS + 1;
 
-function getWorkflowMiddleRows(rows: number, inputRows: number): number {
-  return Math.max(0, rows - getChromeHeight(inputRows));
+function getWorkflowMiddleRows(rows: number, inputRows: number, progressRows: number): number {
+  return Math.max(0, rows - getChromeHeight(inputRows, progressRows));
 }
 
 export function clampWorkflowPromptRows(input: {
   rows: number;
   inputRows: number;
   promptRows: number;
+  progressRows?: number;
 }): number {
-  const { rows, inputRows, promptRows } = input;
-  return clamp(promptRows, 0, getWorkflowMiddleRows(rows, inputRows));
+  const { rows, inputRows, promptRows, progressRows = 0 } = input;
+  return clamp(promptRows, 0, getWorkflowMiddleRows(rows, inputRows, progressRows));
 }
 
 export function getWorkflowViewportHeight(input: {
   rows: number;
   inputRows: number;
   promptRows?: number;
+  progressRows?: number;
 }): number {
-  const { rows, inputRows, promptRows = 0 } = input;
+  const { rows, inputRows, promptRows = 0, progressRows = 0 } = input;
   return Math.max(
     0,
-    getWorkflowMiddleRows(rows, inputRows) -
-      clampWorkflowPromptRows({ rows, inputRows, promptRows }),
+    getWorkflowMiddleRows(rows, inputRows, progressRows) -
+      clampWorkflowPromptRows({ rows, inputRows, promptRows, progressRows }),
   );
 }
 
 export function getWorkflowContentRect(input: WorkflowContentRectInput): WorkflowContentRect {
-  const { cols, rows, inputRows, sidebarVisible, promptRows = 0 } = input;
+  const { cols, rows, inputRows, sidebarVisible, promptRows = 0, progressRows = 0 } = input;
   const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible });
   const width = getWorkflowContentWidth({ cols, sidebarVisible });
-  const height = getWorkflowViewportHeight({ rows, inputRows, promptRows });
+  const height = getWorkflowViewportHeight({ rows, inputRows, promptRows, progressRows });
   const left =
     sidebarWidth + getWorkflowSidebarGap({ cols, sidebarVisible }) + WORKFLOW_CONTENT_PADDING_X + 1;
-  const top = getContentTopRow();
+  const top = getContentTopRow() + progressRows;
   const right = width > 0 ? left + width - 1 : left;
   const bottom = getWorkflowBodyBottom({ contentTop: top, contentHeight: height });
   return {

@@ -67,6 +67,30 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       },
     },
     {
+      kind: 'noarg',
+      name: '/resume',
+      label: 'resume',
+      description: 'Continue a paused or stopped run',
+      category: 'workflow',
+      validScreens: ['workflow'],
+      guard: (c) => (isLivePhase(c.phase) ? undefined : 'No run to resume in this phase'),
+      handler: () => {
+        if (!ctx.resumeRun()) ctx.setFeedbackError('Nothing to resume.');
+      },
+    },
+    {
+      kind: 'noarg',
+      name: '/end',
+      label: 'end run',
+      description: 'Stop the run and mark it cancelled',
+      category: 'workflow',
+      validScreens: ['workflow'],
+      guard: (c) => (isLivePhase(c.phase) ? undefined : 'No run to end in this phase'),
+      handler: () => {
+        if (!ctx.endRun()) ctx.setFeedbackError('No active run to end.');
+      },
+    },
+    {
       kind: 'arg',
       name: '/queue',
       label: 'queue',

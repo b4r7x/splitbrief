@@ -1,4 +1,4 @@
-import type { Task } from '../../../core/schemas/task.js';
+import { taskFiles, type Task } from '../../../core/schemas/task.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
 import { sha256Hex } from '../../../utils/sha256.js';
@@ -12,7 +12,9 @@ export const READINESS_OVERRIDE_SENTENCE =
   'Approve again without editing tasks.md to proceed anyway.';
 
 export function briefReviewFingerprint(tasks: Task[], briefsBody: string, detail: string): string {
-  const taskSignature = tasks.map((task) => `${task.id}:${task.action}:${task.file}`).join('\n');
+  const taskSignature = tasks
+    .map((task) => `${task.id}:${task.action}:${taskFiles(task).join(',')}`)
+    .join('\n');
   return sha256Hex([taskSignature, briefsBody, detail].join('\n'));
 }
 

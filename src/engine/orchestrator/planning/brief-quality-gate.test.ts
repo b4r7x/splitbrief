@@ -14,6 +14,7 @@ describe('runBriefQualityGate', () => {
   it('passes a task whose only defect is a warning', () => {
     const result = runBriefQualityGate({
       tasks: [makeTask({ ...completeTask, typeDefs: '' })],
+      projectDir: process.cwd(),
     });
 
     expect(result.report.issues).toEqual([
@@ -23,7 +24,10 @@ describe('runBriefQualityGate', () => {
   });
 
   it('blocks on error issues and attributes every issue to its task', () => {
-    const result = runBriefQualityGate({ tasks: [makeTask({ id: 'T001' })] });
+    const result = runBriefQualityGate({
+      tasks: [makeTask({ id: 'T001' })],
+      projectDir: process.cwd(),
+    });
 
     expect(result.report.issues.map((issue) => issue.code)).toEqual([
       'missing_scope',

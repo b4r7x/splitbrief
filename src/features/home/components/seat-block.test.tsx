@@ -92,10 +92,9 @@ describe('HomeSeatBlock', () => {
     expect(getTerminalCellWidth(lines[0] ?? '')).toBeLessThanOrEqual(width);
     expect(lines[0]).toContain('PLAN');
     expect(lines[0]).toContain('BUILD');
-    expect(lines[0]).toContain('REVIEW');
-    // A cut name leaves the ellipsis welded to the word it ate; a dropped one
-    // stands alone after the seat label.
-    expect(lines[0]).not.toMatch(/\S…/);
+    // A seat that does not fit leaves the line rather than standing there unnamed, so no ellipsis
+    // reaches the row at all.
+    expect(lines[0]).not.toContain('…');
     unmount();
   });
 

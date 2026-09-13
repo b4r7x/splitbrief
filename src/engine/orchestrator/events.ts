@@ -25,6 +25,8 @@ import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 import type { UserEditConflict, TaskReviewRequest } from '../events/workflow-events.js';
+import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
+import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { labelError } from '../../utils/format-errors.js';
 import { redactSecrets } from '../../utils/redact.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
@@ -74,7 +76,12 @@ type ValidationPhase =
       activeStage?: ValidationResult['stage'] | undefined;
       commands?: ValidationStageCommands | undefined;
     }
-  | { phase: 'result'; results: ValidationResult[]; startTime: number };
+  | {
+      phase: 'result';
+      results: ValidationResult[];
+      startTime: number;
+      exempt?: boolean | undefined;
+    };
 
 export function createBusTextHandler(
   ctx: BusContext,
@@ -141,6 +148,7 @@ export function publishTaskStart(
     index: number;
     total: number;
     file: string;
+    files?: string[];
     action: 'create' | 'modify';
     tool?: string;
     model?: string;
@@ -214,6 +222,7 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
   const stages: ValidationStages = { ...EMPTY_STAGES };
   const attempted: ValidationStageAttempts = { ...EMPTY_STAGES };
   const skipped: ValidationStageSkips = {};
+  const skippedReason: Record<string, string> = {};
   let failedError: string | undefined;
   let passed = true;
   const commands: ValidationStageCommands = {};
@@ -222,6 +231,7 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
     if (r.command !== undefined) commands[r.stage] = r.command;
     if (r.skipped) {
       skipped[r.stage] = true;
+      if (r.skippedReason !== undefined) skippedReason[r.stage] = r.skippedReason;
       continue;
     }
     if (r.stage === 'typecheck') stages.typecheck = r.passed;
@@ -233,18 +243,24 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
     }
   }
   const hasSkips = Object.keys(skipped).length > 0;
+  // An exempt-accepted task failed only on stages the baseline already failed: the run passed on
+  // its own terms, so it publishes `passed` with the exemption named, never a failure the task
+  // did not cause.
+  const exempt = !passed && opts.exempt === true;
   ctx.bus.publish({
     type: 'validate',
     ts: Date.now(),
     phase: ctx.phase,
     taskId,
     status: 'done',
-    passed,
+    passed: passed || exempt,
+    ...(exempt && { exempt: true }),
     stages,
     attempted,
     ...(hasValidationCommands(commands) && { commands }),
     ...(hasSkips && { skipped }),
-    ...(failedError !== undefined && { error: failedError }),
+    ...(Object.keys(skippedReason).length > 0 && { skippedReason }),
+    ...(!exempt && failedError !== undefined && { error: failedError }),
     duration: Date.now() - opts.startTime,
   });
 }
@@ -309,6 +325,7 @@ export function publishGitCommit(
   taskId: TaskId,
   message: string,
   file?: string,
+  files?: readonly string[],
 ): void {
   ctx.bus.publish({
     type: 'git_commit',
@@ -317,6 +334,7 @@ export function publishGitCommit(
     taskId,
     message,
     ...(file !== undefined && { file }),
+    ...(files !== undefined && { files: [...files] }),
   });
 }
 
@@ -459,13 +477,19 @@ export function publishUserEditConflict(
   });
 }
 
-export function publishRecoveryPrompted(bus: EventBus, issue: RecoveryIssue): void {
+export function publishRecoveryPrompted(
+  bus: EventBus,
+  sessionId: string,
+  issue: RecoveryIssue,
+): void {
   bus.publish({
     type: 'recovery_prompted',
     ts: Date.now(),
     phase: issue.phase,
     issueId: issue.id,
     reason: issue.reason,
+    headline: formatRecoveryHeadline(issue),
+    resumeCommand: formatResumeCommand(sessionId, issue),
     ...(issue.taskId !== undefined && { taskId: issue.taskId }),
     files: issue.files,
     affectedTaskIds: issue.affectedTaskIds,

@@ -158,22 +158,18 @@ describe('canonical CLI runner matrix docs', () => {
     expect(readiness).toContain('deriveCliReadiness()');
   });
 
-  it('records Cursor as admitted and Antigravity as a blocked OMIT candidate', () => {
+  it('records Antigravity as an admitted CLI tool', () => {
     expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('PASS');
-    expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
+    expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('PASS');
 
     const support = admittedSupportSection();
     const omit = omitSection();
 
     expect(support).toMatch(/\| `cursor` \|/);
-    expect(omit).not.toContain('| `cursor` |');
-    expect(omit).toContain('| `antigravity` |');
-    expect(omit).toContain('OMIT');
-    expect(omit).toContain('2026-07-31');
+    expect(support).toMatch(/\| `antigravity` \| `agy` \|/);
+    expect(omit).not.toContain('| `antigravity` |');
+    expect(omit).toContain('No CLI candidate currently sits on an OMIT verdict');
     expect(omit).toContain('Candidate runtime adapter sources must remain absent');
-
-    expect(omit).toContain('.nuke/release-evidence/antigravity.json');
-    expect(omit).toContain('conditional consumer route replacing legacy Gemini CLI');
     expect(DOC).toContain('ANTIGRAVITY_CLI_ADMISSION_VERDICT');
     expect(DOC).toContain('CURSOR_CLI_ADMISSION_VERDICT');
   });
@@ -182,7 +178,7 @@ describe('canonical CLI runner matrix docs', () => {
     const support = admittedSupportSection();
     const excluded = excludedSection();
 
-    for (const id of EXCLUDED_CLI_TOOL_IDS.filter((id) => id !== 'antigravity')) {
+    for (const id of EXCLUDED_CLI_TOOL_IDS) {
       expect(support).not.toMatch(new RegExp(`\\| \`${id}\` \\|`));
       expect(excluded).toContain(`| \`${id}\` |`);
     }

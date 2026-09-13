@@ -41,6 +41,17 @@ describe('computePerTaskOutOfBounds', () => {
     },
   );
 
+  it('excludes every declared file and a prose in-bounds bullet', () => {
+    const task = makeTask({
+      file: 'src/a.ts',
+      files: ['src/a.ts', 'src/a.test.ts'],
+      scope: { inBounds: ['`src/x.ts` — the union collapse'] },
+    });
+    expect(outOfBounds([task], ['src/a.ts', 'src/a.test.ts', 'src/x.ts', 'src/leak.ts'])).toEqual(
+      new Set(['src/leak.ts']),
+    );
+  });
+
   it('excludes matched scope paths while still flagging their untargeted siblings', () => {
     const approved = makeTask({
       file: 'src/a.ts',

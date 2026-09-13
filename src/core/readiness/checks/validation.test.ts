@@ -3,6 +3,9 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { readManifestCommands } from '../../validation/manifest-commands.js';
+import { detectStack, STACKS } from '../../validation/stacks/registry.js';
+import { resolveStageCommand } from '../../validation/stage-command.js';
 import { buildValidationChecks, probeValidationBaseline } from './validation.js';
 
 describe('probeValidationBaseline', () => {
@@ -51,9 +54,9 @@ describe('probeValidationBaseline', () => {
     const checks = await probeValidationBaseline(config, tempDir);
 
     const failing = checks.find((c) => c.id === 'validation.already-failing');
-    expect(failing?.details?.[0]).toContain('typecheck: node -e "process.exit(1)"');
-    expect(failing?.details?.[0]).toContain('lint: node -e "process.exit(0)"');
-    expect(failing?.details?.[0]).toContain('test: node -e "process.exit(1)"');
+    expect(failing?.details?.[0]).toContain("typecheck: node -e 'process.exit(1)'");
+    expect(failing?.details?.[0]).toContain("lint: node -e 'process.exit(0)'");
+    expect(failing?.details?.[0]).toContain("test: node -e 'process.exit(1)'");
     expect(failing?.details?.[1]).toContain('pre-run commands');
     expect(failing?.details?.[1]).toContain('planner discovery');
   });
@@ -90,6 +93,7 @@ describe('probeValidationBaseline', () => {
   });
 
   it('treats a missing subcommand (exit 101, "no such command") as not-failing', async () => {
+    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
     const config = makeConfig({
       validation: {
         typecheck: false,
@@ -167,14 +171,85 @@ describe('buildValidationChecks lint posture', () => {
     expect(info?.details?.[0]).not.toContain('rust');
   });
 
-  it('tells non-JS projects that lint auto-discovery is JS-only and to set lintCommand', () => {
-    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+  it('names the stack when its linter config is missing', () => {
+    writeFileSync(join(tempDir, 'pyproject.toml'), '[project]\nname = "test"');
     const config = makeConfig({ validation: { typecheck: false, lint: true, test: false } });
 
     const checks = buildValidationChecks(config, packageScripts, tempDir);
 
     const info = checks.find((c) => c.id === 'validation.lint-unknown');
-    expect(info?.details?.[0]).toContain('rust');
+    expect(info?.details?.[0]).toContain('python');
     expect(info?.details?.[0]).toContain('validation.lintCommand');
+  });
+
+  it('reports the stack lint command for a non-JS project that has one', () => {
+    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+    const config = makeConfig({ validation: { typecheck: false, lint: true, test: false } });
+
+    const checks = buildValidationChecks(config, packageScripts, tempDir);
+
+    const configured = checks.find((c) => c.id === 'validation.configured');
+    expect(configured?.summary).toContain('lint on');
+    expect(configured?.metadata?.['lintCommand']).toBe('cargo clippy --no-deps');
+    expect(checks.some((c) => c.id === 'validation.lint-unknown')).toBe(false);
+  });
+
+  it('resolves no command for an unconfigured stage of an unrecognised stack', () => {
+    const config = makeConfig({
+      validation: { typecheck: true, lint: true, test: true, testCommand: undefined },
+    });
+
+    const checks = buildValidationChecks(config, packageScripts, tempDir);
+
+    const configured = checks.find((c) => c.id === 'validation.configured');
+    expect(configured?.summary).toContain('lint skipped (no lint command)');
+    expect(configured?.details?.[0]).toBe('Test command: none (unrecognised stack)');
+    expect(configured?.metadata?.['testCommand']).toBeNull();
+  });
+});
+
+// One file per stack row, so `detectStack` admits the row the loop is standing on.
+const STACK_MARKER_FILES: Readonly<Record<string, readonly (readonly [string, string])[]>> = {
+  rust: [['Cargo.toml', '[package]\nname = "x"\n']],
+  go: [['go.mod', 'module x\n']],
+  python: [['pyproject.toml', '[tool.pytest.ini_options]\n']],
+  typescript: [
+    ['tsconfig.json', '{}'],
+    ['package.json', '{"scripts":{"test":"vitest run"}}'],
+  ],
+  javascript: [['package.json', '{"scripts":{"test":"vitest run"}}']],
+};
+
+describe('buildValidationChecks', () => {
+  it('readiness and engine resolve the same command for every stack', () => {
+    for (const stack of STACKS) {
+      const dir = createTempDir(`readiness-${stack.id}`);
+      try {
+        for (const [name, content] of STACK_MARKER_FILES[stack.id] ?? []) {
+          writeFileSync(join(dir, name), content);
+        }
+        const config = makeConfig({ validation: { typecheck: true, lint: true, test: true } });
+        const engine = resolveStageCommand({
+          stage: 'test',
+          config,
+          manifest: readManifestCommands(dir),
+          discovered: undefined,
+          stack: detectStack(dir, config.validation.stack),
+          projectDir: dir,
+        });
+        const configured = buildValidationChecks(
+          config,
+          { packageJsonExists: false, scripts: {} },
+          dir,
+        ).find((check) => check.id === 'validation.configured');
+
+        expect(engine).not.toBeNull();
+        expect(configured?.metadata?.['testCommand']).toBe(
+          engine === null ? null : [engine.cmd, ...engine.args].join(' '),
+        );
+      } finally {
+        cleanupTempDir(dir);
+      }
+    }
   });
 });

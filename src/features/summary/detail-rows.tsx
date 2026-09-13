@@ -60,7 +60,7 @@ export function buildSummaryDetailRows(
 
   if (summary.taskBreakdown && summary.taskBreakdown.length > 0) {
     if (rows.length > 0) rows.push(spacerRow('tasks-spacer'));
-    rows.push(sectionHeaderRow('tasks-heading', 'Tasks', theme));
+    rows.push(sectionHeaderRow('tasks-heading', 'Briefs', theme));
     for (const task of summary.taskBreakdown) {
       const method = getMethodDisplay(task.method, theme);
       rows.push({

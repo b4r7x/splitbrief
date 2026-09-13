@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import {
   cleanupCommitTestProjects,
@@ -195,6 +196,63 @@ describe('validateCommitAndAdvance', () => {
 
     expect(result.state.tasks[0]?.status).toBe('escalated');
     expect(result.state.currentTaskIndex).toBe(1);
+  });
+
+  it('stages every declared file when no attributed set is supplied', async () => {
+    const { projectDir, sessionId } = setupCommitProject();
+    const task = makeTask({ file: 'src/a.ts', files: ['src/a.ts', 'src/a.test.ts'] });
+    const state = makeCommitState({ tasks: [task] });
+    const { bus, events } = makeBusRecorder();
+    const staged: string[][] = [];
+
+    await validateCommitAndAdvance({
+      task,
+      acceptance: acceptedAcceptance,
+      projectDir,
+      sessionId,
+      config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      gitOps: makeGitOps({
+        stageFiles: async (_dir: string, files: string[]) => {
+          staged.push(files);
+        },
+      }),
+    });
+
+    expect(staged).toEqual([['src/a.ts', 'src/a.test.ts']]);
+    const warning = events.find(
+      (e) => e.type === 'warning' && e.message.includes('No attributed file set'),
+    );
+    expect(warning?.type === 'warning' && warning.message).toContain('src/a.ts, src/a.test.ts');
+  });
+
+  it('git_commit event carries files', async () => {
+    const { projectDir, sessionId } = setupCommitProject();
+    const task = makeTask({ file: 'src/a.ts', files: ['src/a.ts', 'src/a.test.ts'] });
+    const state = makeCommitState({ tasks: [task] });
+    const { bus, events } = makeBusRecorder();
+
+    await validateCommitAndAdvance({
+      task,
+      acceptance: acceptedAcceptance,
+      projectDir,
+      sessionId,
+      config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      gitOps: makeGitOps(),
+    });
+
+    expect(events.find((e) => e.type === 'git_commit')).toMatchObject({
+      type: 'git_commit',
+      file: 'src/a.ts',
+      files: ['src/a.ts', 'src/a.test.ts'],
+    });
   });
 
   it('falls back to state.attempt when retryCount is not provided', async () => {

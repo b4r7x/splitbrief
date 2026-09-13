@@ -36,8 +36,8 @@ Phase 3 of the splitbrief pipeline (map: references/family-map.md). One stateles
 
 1. Resolve the reviewer (references/tool-recipes.md probes) when given.
 2. Resolve gates (references/gates.md); run them once over the whole project; capture verbatim — this is the Recorded Validation Output.
-3. Resolve the diff for `scope:` (`git diff`, `git diff --cached`, `git diff <base>...HEAD`, or `git diff -- <path>`; untracked files via `git diff --no-index /dev/null <file>`). Paths under `.splitbrief/` are always excluded from the diff and the drift set; when the intent run dir has a `baseline-tree.txt`, files listed there are excluded too — they were dirty before the run.
-4. Drift: when the intent is a run dir, compute changed files (minus `baseline-tree.txt`) vs the briefs' `file` + approved out-of-bounds paths (references/gates.md) and write `drift.md`; otherwise the packet says `Drift: not applicable (no briefs)`.
+3. Resolve the diff for `scope:` (`git diff`, `git diff --cached`, `git diff <base>...HEAD`, or `git diff -- <path>`; untracked files via `git diff --no-index /dev/null <file>`). Paths under `.splitbrief/` are always excluded from the diff and the drift set; when the intent run dir has a `baseline-sha.txt`, every path whose fingerprint still matches its baseline line is excluded too — it was not touched by the run.
+4. Drift: when the intent is a run dir, compute the changed files against `baseline-sha.txt` and compare them with the briefs' `files` + approved out-of-bounds paths (references/gates.md), then write `drift.md`; otherwise the packet says `Drift: not applicable (no briefs)`.
 5. Print the plan block:
 
     ## SPLITBRIEF preflight — <slug> (review only)
@@ -53,7 +53,7 @@ Phase 3 of the splitbrief pipeline (map: references/family-map.md). One stateles
 ## Phase 3 — Review
 
 1. Write `review-packet.md` per references/review-format.md.
-2. Spawn the reviewer recipe (read-only) with the packet as the prompt, 10-minute timeout, output → `review/attempt-1.log`; or answer the packet yourself in a fresh pass over the file. Write the reply to `review.md`.
+2. Spawn the reviewer recipe (read-only) with the packet as the prompt, the reviewer deadline from references/tool-recipes.md, output → `review/attempt-1.log`; or answer the packet yourself in a fresh pass over the file. Write the reply to `review.md`.
 3. Parse verdict, criteria, findings.
 
 ## Hand-back
@@ -72,6 +72,14 @@ Phase 3 of the splitbrief pipeline (map: references/family-map.md). One stateles
 
 ## Orchestration notes
 
-- **Any host:** foreground spawn with the host's timeout; detach with `nohup … & echo $! > <pid file>` and poll `kill -0` when the host caps below 10 minutes.
-- **Claude Code:** `run_in_background: true`; `--ask` via `AskUserQuestion`.
-- **Other hosts:** plain questions; resume from the run dir.
+<!-- generated: wait-protocol -->
+1. **Spawn.** One tool call, detached, writing `<run>/T00N/attempt-N.{pid,log,done}`: `nohup sh -c '<argv> > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`. The wait is never in the same tool call as the spawn — never `nohup … &` and the wait in one call, and never a command that begins with `sleep`.
+2. **Wait.** A separate tool call running `scripts/wait-attempt.sh <run> <T00N> <n>`: it blocks until `.done` exists or the pid is gone and prints one line, `T00N attempt N: exit=<code>|timeout|missing-pid[ halt=<kind>]`. On Claude Code run it with `run_in_background: true` — the completion notification names the outcome; elsewhere run it in the foreground. The waiter is its own deadline (`--deadline 1200`); no coreutils `timeout` wrapper.
+   Fallback, when the installer dropped `scripts/`: `n=0; until [ -f "$DONE" ] || [ "$n" -ge 1200 ]; do sleep 5; n=$((n+5)); done; cat "$DONE" 2>/dev/null || echo exit=timeout` — same deadline, no halt sniff, so read the halt phrases off the log yourself.
+3. **Re-read every turn.** Every turn — user message, completion notification, hook follow-up, cron fire — begins with `cat .splitbrief/current-run` → `progress.md` → `scripts/wait-attempt.sh --reconcile <run>`, and rewrites every `running` row to `done` / `retrying` / `halted` before deciding anything. A running row whose pid is alive is never re-spawned.
+4. **Monitor (Claude Code, optional).** A persistent `Monitor` on `tail -f <run>/events.log` filtering `done|failed|timeout|halted|run: complete` wakes the session on any terminal state. It is a whole-run wake, never the single-completion primitive — the waiter of point 2 stays.
+5. **Stop-hook safety net.** Install `scripts/splitbrief-gate.sh` for the host: Claude Code `settings.json` `hooks.Stop`, Codex `~/.codex/hooks.json` `Stop`, Command Code `.commandcode/settings.json` `Stop`, Copilot `.github/hooks/*.json` `agentStop`, Cursor `.cursor/hooks.json` `stop` with `SPLITBRIEF_HOST=cursor`, Antigravity `hooks.json` `Stop` with `SPLITBRIEF_HOST=antigravity`. It is a safety net — every host caps consecutive continuations.
+6. **`--plain` fast path.** When `command -v splitbrief` and `.splitbrief/config.yaml` both exist, `splitbrief start --plain "<feature>"` (or `splitbrief resume --plain`) is the whole loop in one command; read its lines from the `plain-shapes` block instead of running this protocol.
+<!-- /generated -->
+
+`--ask` uses the host's question facility (Claude Code: `AskUserQuestion`; other hosts: a plain question, resumed from the run dir on the next message).

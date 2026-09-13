@@ -11,9 +11,9 @@ import {
 } from '#testing/helpers/planning-phase.js';
 import { loadState } from '../../../core/state/persistence.js';
 import {
-  createTaskCompilationAttemptId,
+  createPlannerArtifactAttemptId,
   OwnedPlannerArtifactSchema,
-} from '../../../core/schemas/task-compilation.js';
+} from '../../../core/schemas/planner-artifact.js';
 import type { PhaseResult, PlannerArtifactLogicalName } from '../../planners/types.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 
@@ -38,7 +38,7 @@ function phaseResult(
       semanticId: `test-${logicalName}`,
       programId: null,
       batchId: null,
-      attemptId: createTaskCompilationAttemptId(),
+      attemptId: createPlannerArtifactAttemptId(),
       logicalName,
       transport: 'stdout-final',
       text,

@@ -231,7 +231,10 @@ export const taskReviewRequestFields = {
 const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('workflow_started').extend({ feature: z.string() }),
   phaseEvent('workflow_resumed'),
-  phaseEvent('workflow_complete'),
+  phaseEvent('workflow_complete').extend({
+    review: z.enum(['passed', 'failed']).optional(),
+    blocking: z.number().int().optional(),
+  }),
   phaseEvent('workflow_cancelled').extend({
     reason: WorkflowCancelReasonSchema.optional(),
   }),
@@ -259,6 +262,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     affectedTaskIds: taskIdArray,
     availableActions: z.array(RecoveryActionSchema),
     recommendedAction: RecoveryActionSchema,
+    headline: z.string(),
+    resumeCommand: z.string(),
   }),
   phaseEvent('recovery_action_selected').extend({
     issueId: z.string(),
@@ -412,7 +417,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     approve: ApproveLevelSchema,
   }),
   phaseEvent('mode_advice').extend({
-    kind: z.enum(['none', 'downgrade', 'upgrade', 'missing-context']),
+    kind: z.enum(['none', 'downgrade', 'upgrade', 'missing-context', 'stop']),
     risk: z.enum(['trivial', 'small', 'normal', 'high']),
     currentMode: WorkflowModeSchema,
     suggestedMode: WorkflowModeSchema,
@@ -439,6 +444,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     index: z.number().int().nonnegative(),
     total: z.number().int().nonnegative(),
     file: z.string(),
+    files: stringArray.optional(),
     action: FileActionSchema,
     tool: z.string().optional(),
     model: z.string().optional(),
@@ -474,7 +480,11 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     error: z.string(),
   }),
   phaseEvent('task_escalating').extend({ taskId: TaskIdSchema }),
-  phaseEvent('task_full_fail').extend({ taskId: TaskIdSchema }),
+  phaseEvent('task_full_fail').extend({ taskId: TaskIdSchema, reason: z.string().optional() }),
+  phaseEvent('review_fix_started').extend({
+    cycle: z.number().int(),
+    taskIds: taskIdArray,
+  }),
   phaseEvent('task_tokens').extend({
     taskId: TaskIdSchema,
     method: TaskCompletionMethodSchema,
@@ -519,11 +529,13 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     taskId: TaskIdSchema,
     status: z.enum(['running', 'done']),
     passed: z.boolean(),
+    exempt: z.boolean().optional(),
     stages: validationStagesSchema,
     attempted: validationStageAttemptsSchema.optional(),
     activeStage: z.enum(['typecheck', 'lint', 'test']).optional(),
     commands: validationStageCommandsSchema.optional(),
     skipped: validationStageSkipsSchema.optional(),
+    skippedReason: z.record(z.string(), z.string()).optional(),
     error: z.string().optional(),
     duration: z.number().optional(),
   }),
@@ -546,6 +558,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     taskId: TaskIdSchema,
     message: z.string(),
     file: z.string().optional(),
+    files: stringArray.optional(),
   }),
   phaseEvent('git_checkpoint').extend({
     taskId: TaskIdSchema,

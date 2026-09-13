@@ -187,4 +187,30 @@ describe('handlePlanningFailure', () => {
     expect(published?.type === 'error' && published.message).not.toContain('codex login');
     expect(published?.type === 'error' && published.message).not.toContain('codex logout');
   });
+
+  it('planning failure copy does not say resume when CANCEL is dispatched', () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = { ...createInitialState('feature'), phase: 'planning' as const };
+    const { bus, events } = makeBusRecorder();
+    const err = error('runner-call-failed', 'Planner planner call failed', {
+      status: 'failed',
+      error: {
+        code: 'codex-turn-failed',
+        message: "You've hit your usage limit. Try again at Aug 8th, 2026 3:27 PM.",
+      },
+    });
+
+    const result = handlePlanningFailure({
+      err,
+      projectDir,
+      sessionId,
+      state,
+      wctx: makeWctx({ projectDir, sessionId, bus }),
+    });
+
+    expect(result.state.phase).toBe('idle');
+    const published = events.find((event) => event.type === 'error');
+    expect(published?.type === 'error' && published.message).toContain('then start again');
+    expect(published?.type === 'error' && published.message).not.toContain('resume');
+  });
 });

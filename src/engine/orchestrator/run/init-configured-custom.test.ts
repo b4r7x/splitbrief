@@ -11,9 +11,9 @@ import { ConfigSchema } from '../../../core/schemas/config.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { SANDBOX_DIR } from '../../../core/paths.js';
 import {
-  createTaskCompilationAttemptId,
-  TaskCompilationSemanticIdSchema,
-} from '../../../core/schemas/task-compilation.js';
+  createPlannerArtifactAttemptId,
+  PlannerArtifactSemanticIdSchema,
+} from '../../../core/schemas/planner-artifact.js';
 import { composeWorkflowCustomRunnerRuntime, initializeWorkflow } from './init.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
@@ -442,14 +442,14 @@ describe('configured custom workflow runtime', () => {
       const stage = await runtime.createStage(projectDir, 'planner');
       let review: Awaited<ReturnType<typeof runtime.beginDeclaredArtifactReview>> | undefined;
       try {
-        const attemptId = createTaskCompilationAttemptId();
+        const attemptId = createPlannerArtifactAttemptId();
         const relativePath = `.splitbrief-runner/output/${attemptId}/result`;
         review = await runtime.beginDeclaredArtifactReview({
           stagedProjectDir: stage.projectDir,
           callId: 'call-1',
           declaredRedactionValues: [],
           provenance: {
-            semanticId: TaskCompilationSemanticIdSchema.parse('workflow-runtime-artifact'),
+            semanticId: PlannerArtifactSemanticIdSchema.parse('workflow-runtime-artifact'),
             programId: null,
             batchId: null,
             attemptId,

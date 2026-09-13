@@ -13,5 +13,6 @@ export const SessionSchema = z.discriminatedUnion('status', [
   SessionBaseSchema.extend({ status: z.literal('complete'), summary: SummarySchema }),
   SessionBaseSchema.extend({ status: z.literal('interrupted'), summary: SummarySchema.nullable() }),
   SessionBaseSchema.extend({ status: z.literal('failed'), summary: SummarySchema.nullable() }),
+  SessionBaseSchema.extend({ status: z.literal('cancelled'), summary: SummarySchema.nullable() }),
 ]);
 export type Session = z.infer<typeof SessionSchema>;

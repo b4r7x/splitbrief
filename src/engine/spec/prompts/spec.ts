@@ -6,6 +6,7 @@ export function buildSpecPrompt(
   feature: string,
   researchOutput: string,
   languageContext?: LanguageContext,
+  skillsContext?: string,
 ): string {
   return buildPrompt({
     title: 'Write Feature Specification',
@@ -13,7 +14,10 @@ export function buildSpecPrompt(
       'You are writing a detailed specification for a new feature. Use the research findings below to ground your spec in the actual codebase.',
     sections: [
       { heading: 'Specification', body: feature },
-      { heading: 'Research Findings', body: researchOutput },
+      {
+        heading: 'Research Findings',
+        body: `${researchOutput}${skillsContext ? `\n\n${skillsContext}` : ''}`,
+      },
       ...(languageContext ? buildLanguageContextSections(languageContext) : []),
       instructionsSection(
         'Write a complete `spec.md` document that defines **what** to build (not how). The spec should be detailed enough that a developer unfamiliar with the feature request could implement it correctly.',

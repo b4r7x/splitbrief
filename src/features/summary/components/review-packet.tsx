@@ -4,7 +4,6 @@ import type { ScrollableDocumentRow } from '../../../components/scrollable-docum
 import type { Theme } from '../../../components/theme.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { stripTerminalControls, truncateTerminalDisplayText } from '../../../utils/display-text.js';
-import { formatScoreSummary } from '../../../core/formatting.js';
 
 function sessionPath(path: string, sessionId: string | undefined): string {
   if (path.includes('/')) return path;
@@ -31,16 +30,9 @@ function formatFinalReviewStatus(packet: ReviewPacketSummary): string {
   return 'skipped';
 }
 
-function formatDriftStatus(packet: ReviewPacketSummary, summary: Summary): string {
-  if (packet.driftPassed === null) return 'n/a';
-
-  const status = packet.driftPassed ? 'passed' : 'failed';
-  if (!summary.driftSummary) return status;
-
-  return `${status} · ${formatScoreSummary(summary.driftSummary.score, summary.driftSummary)}`;
-}
-
-function formatCompactDriftStatus(packet: ReviewPacketSummary): string {
+// The score belongs to the `Scope` row above; the packet block reports only whether the packet's
+// own scope check cleared.
+function formatScopeStatus(packet: ReviewPacketSummary): string {
   if (packet.driftPassed === null) return 'n/a';
   return packet.driftPassed ? 'passed' : 'failed';
 }
@@ -68,8 +60,8 @@ export function buildReviewPacketDetailRows(
     pathMaxLength,
   );
   const finalReviewStatus = formatFinalReviewStatus(packet);
-  const driftStatus = formatDriftStatus(packet, summary);
-  const driftColor = packet.driftPassed === false ? theme.warning : theme.textDim;
+  const scopeStatus = formatScopeStatus(packet);
+  const scopeColor = packet.driftPassed === false ? theme.warning : theme.textDim;
   const artifactColor = packet.missingArtifactCount > 0 ? theme.warning : theme.textDim;
 
   if (isSmall) {
@@ -98,11 +90,11 @@ export function buildReviewPacketDetailRows(
         key: 'review-packet-status',
         node: (
           <Text
-            color={finalReviewColor(finalReviewStatus, theme.warning, driftColor)}
+            color={finalReviewColor(finalReviewStatus, theme.warning, scopeColor)}
             wrap="truncate-end"
           >
-            {'  '}final review: {finalReviewStatus} · drift: {formatCompactDriftStatus(packet)} ·
-            evidence: {packet.evidenceValidatedTasks}/{packet.evidenceTotalTasks}
+            {'  '}final review: {finalReviewStatus} · scope: {scopeStatus} · evidence:{' '}
+            {packet.evidenceValidatedTasks}/{packet.evidenceTotalTasks}
           </Text>
         ),
       },
@@ -142,10 +134,10 @@ export function buildReviewPacketDetailRows(
       key: 'review-packet-status',
       node: (
         <Text
-          color={finalReviewColor(finalReviewStatus, theme.warning, driftColor)}
+          color={finalReviewColor(finalReviewStatus, theme.warning, scopeColor)}
           wrap="truncate-end"
         >
-          {'  '}final review: {finalReviewStatus} · drift: {driftStatus} · evidence:{' '}
+          {'  '}final review: {finalReviewStatus} · scope: {scopeStatus} · evidence:{' '}
           {packet.evidenceValidatedTasks}/{packet.evidenceTotalTasks} validated
         </Text>
       ),

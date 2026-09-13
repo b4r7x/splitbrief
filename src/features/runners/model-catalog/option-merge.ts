@@ -21,6 +21,7 @@ interface OptionMergeContext {
 }
 
 const EFFORT_TOKENS = new Set<string>(EFFORT_AXIS_TOKENS);
+const OPTION_TOKENS = new Set<string>([...EFFORT_AXIS_TOKENS, 'fast', 'thinking']);
 
 function lastHyphenToken(id: string): { rest: string; token: string } | undefined {
   const idx = id.lastIndexOf('-');
@@ -86,7 +87,12 @@ const NO_PREFIX_RE = /^NO /;
 function vendorTagOf(displayName: string): string | undefined {
   const { parens } = splitTrailingParens(displayName.trim());
   const tag = parens.replace(PAREN_EDGES_RE, '').trim();
-  return tag === '' ? undefined : tag.replace(NO_PREFIX_RE, 'no ');
+  if (tag === '') return undefined;
+  // `agy models` names each effort variant `Gemini 3.8 Flash (High)`. That word
+  // is the family's axis, chosen on the expanded row — as a vendor tag it would
+  // pin one member's value to every row of the family.
+  if (OPTION_TOKENS.has(tag.toLowerCase())) return undefined;
+  return tag.replace(NO_PREFIX_RE, 'no ');
 }
 
 function familyDisplayName(rows: readonly ModelOption[], familyId: string): string {

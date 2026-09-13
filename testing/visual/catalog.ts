@@ -23,6 +23,13 @@ export const HOME_COLD_DETECTING_VIEWPORTS: readonly Viewport[] = Object.freeze(
   viewport({ cols: 80, rows: 40 }),
 ]);
 
+// The build-progress block collapses onto two rows above 120 columns, and the sidebar only paints
+// past that breakpoint. One wide capture is what proves the two share the row budget.
+export const WIDE_VIEWPORTS: readonly Viewport[] = Object.freeze([
+  ...REQUIRED_VIEWPORTS,
+  viewport({ cols: 160, rows: 45 }),
+]);
+
 export const REQUIRED_WORKFLOW_CHECKPOINT_IDS = [
   'idle',
   'planning',
@@ -123,7 +130,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'ready',
         title: 'Ready for a feature',
         kind: 'ready',
-        marker: 'No recent sessions',
+        marker: 'Describe a change.',
       },
       elements: [
         { id: 'header', title: 'Home header' },
@@ -170,6 +177,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-implementation',
       title: 'Workflow · implementation activity',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'implementation',
         title: 'Implementation activity',
@@ -180,6 +188,54 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Implementation transcript' },
         { id: 'activity', title: 'Implementation activity block' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-retry',
+      title: 'Workflow · brief on its second attempt',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-retry',
+        title: 'Retried brief',
+        kind: 'implementation',
+        marker: 'attempt 2 of 3',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-validation',
+      title: 'Workflow · gate verdicts',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'validation',
+        title: 'Validation verdicts',
+        kind: 'implementation',
+        marker: 'lint pre-existing failure',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Validation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-escalated',
+      title: 'Workflow · escalated brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-escalated',
+        title: 'Escalated brief',
+        kind: 'implementation',
+        marker: '1 escalated',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
         { id: 'sidebar', title: 'Workflow sidebar' },
       ],
     }),
@@ -201,6 +257,56 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-approval-document',
+      title: 'Workflow · plan review gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'approval-document',
+        title: 'Document review gate',
+        kind: 'review',
+        marker: 'Approve plan and compile briefs',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'approval-panel', title: 'Document review panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-approval-permission',
+      title: 'Workflow · out-of-scope write gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'approval-permission',
+        title: 'Permission gate',
+        kind: 'review',
+        marker: "Write outside the brief's declared files:",
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'approval-panel', title: 'Permission panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-reviewing-briefs',
+      title: 'Workflow · briefs review gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'reviewing-briefs',
+        title: 'Briefs review gate',
+        kind: 'review',
+        marker: 'start the build',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Briefs transcript' },
+        { id: 'approval-panel', title: 'Briefs review panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-question',
       title: 'Workflow · clarification question',
       surface: screenSurface('workflow'),
@@ -214,6 +320,70 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Question transcript' },
         { id: 'question-panel', title: 'Question panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-paused-mid-brief',
+      title: 'Workflow · parked mid-brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'paused-mid-brief',
+        title: 'Parked mid-brief',
+        kind: 'question',
+        marker: 'Paused at T',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-paused-boundary',
+      title: 'Workflow · parked at a brief boundary',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'paused-boundary',
+        title: 'Parked at a boundary',
+        kind: 'question',
+        marker: 'Paused after T',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-stopping',
+      title: 'Workflow · stopping',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'stopping',
+        title: 'Stopping the run',
+        kind: 'implementation',
+        marker: 'Waiting for processes to exit',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-stopped',
+      title: 'Workflow · cancelled by the user',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'stopped',
+        title: 'Cancelled run',
+        kind: 'failure',
+        marker: 'Cancelled by you at T',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Stopped transcript' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -275,6 +445,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Successful summary',
         kind: 'success',
         marker: 'Visual fixture workflow complete',
+      },
+      elements: [
+        { id: 'header', title: 'Summary header' },
+        { id: 'summary-hero', title: 'Summary outcome' },
+        { id: 'summary-details', title: 'Summary details' },
+      ],
+    }),
+    defineScenario({
+      id: 'summary-review-failed',
+      title: 'Summary · review failed',
+      surface: screenSurface('summary'),
+      checkpoint: {
+        id: 'review-failed',
+        title: 'Failed review summary',
+        kind: 'success',
+        marker: 'review failed',
       },
       elements: [
         { id: 'header', title: 'Summary header' },
@@ -363,7 +549,14 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     underlyingScreen: 'home',
     panelTitle: 'Skills panel',
     checkpointTitle: 'Skills ready',
-    scenarios: [{ id: 'overlay-skills', title: 'Overlay · skills', marker: 'Skills' }],
+    scenarios: [
+      {
+        id: 'overlay-skills',
+        title: 'Overlay · skills · no skills found',
+        marker: 'No skills found',
+      },
+      { id: 'overlay-skills-list', title: 'Overlay · skills', marker: 'Skills' },
+    ],
   }),
   settings: overlayGroup({
     overlay: 'settings',
@@ -510,6 +703,16 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-planner-picker-command-code',
+        title: 'Overlay · planner picker · Command Code native rows',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-antigravity',
+        title: 'Overlay · planner picker · Antigravity effort axis',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-planner-picker-cursor',
         title: 'Overlay · planner picker · Cursor Agent families',
         marker: PICKER_TITLE_MARKER,
@@ -582,6 +785,15 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       },
     ],
   }),
+  'stop-sheet': overlayGroup({
+    overlay: 'stop-sheet',
+    underlyingScreen: 'workflow',
+    panelTitle: 'Stop options panel',
+    checkpointTitle: 'Stop sheet ready',
+    scenarios: [
+      { id: 'workflow-stop-sheet', title: 'Workflow · stop options', marker: 'Stop options' },
+    ],
+  }),
   sessions: overlayGroup({
     overlay: 'sessions',
     underlyingScreen: 'home',
@@ -594,7 +806,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     underlyingScreen: 'workflow',
     panelTitle: 'Editor frame',
     checkpointTitle: 'Editor ready',
-    scenarios: [{ id: 'overlay-editor', title: 'Overlay · editor', marker: 'Visual fixture plan' }],
+    scenarios: [{ id: 'overlay-editor', title: 'Overlay · editor', marker: 'Add greeting helper' }],
   }),
   'cost-drilldown': overlayGroup({
     overlay: 'cost-drilldown',

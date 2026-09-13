@@ -132,7 +132,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   // actually on disk, not the one this run started with.
   let activeSession = session.active;
   let trackedState: WorkflowState | undefined;
-  let currentTask: Pick<Task, 'file' | 'action'> | undefined;
+  let currentTask: Pick<Task, 'file' | 'files' | 'action'> | undefined;
   let result: Summary | undefined;
   let sessionStatus: Session['status'] = 'interrupted';
   let wctx: WorkflowContext | undefined;
@@ -377,6 +377,12 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     const signalCancellationReason = workflowCancelledReasonFromSignal(opts.signal);
     if (cancelled || signalCancellationReason !== undefined) {
       publishWorkflowCancellation(signalCancellationReason ?? WORKFLOW_CANCEL_REASON_USER);
+    }
+    // Ending the run is a decision, not an interruption: only an abort carrying
+    // the user-cancelled reason becomes `cancelled`; a plain pause stays
+    // `interrupted` and stays resumable.
+    if (signalCancellationReason !== undefined && sessionStatus === 'interrupted') {
+      sessionStatus = 'cancelled';
     }
 
     if (!result) {

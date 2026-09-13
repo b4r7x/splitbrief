@@ -1,6 +1,7 @@
 import type { PlanResult, Planner } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { publishWarning } from '../events.js';
+import { buildPlanningSkillsContext } from './skills-context.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
 import { drainAndFormat } from './queue-drain.js';
@@ -34,6 +35,8 @@ export async function runQuickPlanning(
   }
   feature = withRewindFeedback(feature, opts.rewindPending);
 
+  const skillsContext = await buildPlanningSkillsContext(opts, state);
+
   const collectedQuestions: ClarificationQuestion[] = [];
   let planResult: PlanResult;
   try {
@@ -42,6 +45,7 @@ export async function runQuickPlanning(
       state,
       planner: plannerUsingQuickPlan(planner),
       feature,
+      skillsContext,
       collectedQuestions,
       ...(opts.codebaseContext !== undefined ? { codebaseContext: opts.codebaseContext } : {}),
       ...(resumeHolder && resumeHolder.messages.length > 0

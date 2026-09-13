@@ -9,6 +9,7 @@ import { resetWorkflow } from '../actions/reset.js';
 import { MAX_COMPLETED_OPERATIONS } from './retention.js';
 import { operationsStore } from './state.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
+import { makeValidate } from '#testing/helpers/events/task.js';
 
 type RunnerCallFailureStatus = EngineEventOf<'runner_call_error'>['status'];
 
@@ -480,5 +481,34 @@ describe('operationsStore', () => {
       reason: 'cancellednow token sk-***REDACTED***',
     });
     expect(JSON.stringify(operation)).not.toContain('abcdefghijklmnopqrst');
+  });
+
+  it('stamps a running gate stage with the time it started and keeps it across progress events', () => {
+    addEvent(
+      makeValidate({
+        ts: 5_000,
+        status: 'running',
+        activeStage: 'test',
+        commands: { test: 'npm test' },
+      }),
+    );
+    expect(operationsStore.get().validationStage).toEqual({
+      stage: 'test',
+      command: 'npm test',
+      stageStartedTs: 5_000,
+    });
+
+    addEvent(
+      makeValidate({
+        ts: 9_000,
+        status: 'running',
+        activeStage: 'test',
+        commands: { test: 'npm test' },
+      }),
+    );
+    expect(operationsStore.get().validationStage?.stageStartedTs).toBe(5_000);
+
+    addEvent(makeValidate({ ts: 12_000, status: 'done' }));
+    expect(operationsStore.get().validationStage).toBeNull();
   });
 });

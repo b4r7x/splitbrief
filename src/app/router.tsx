@@ -8,6 +8,7 @@ import { HelpOverlay } from './overlays/help.js';
 import { CommandPaletteOverlay } from './overlays/palette.js';
 import { SkillsPicker } from './overlays/skills.js';
 import { SessionsPicker } from './overlays/sessions.js';
+import { StopSheetOverlay } from './overlays/stop.js';
 import { EditorOverlay } from './overlays/editor.js';
 import { SettingsOverlay } from './overlays/settings.js';
 import { ToolModelPicker } from './overlays/runners.js';
@@ -124,6 +125,8 @@ function renderOverlay({
       return <ToolModelPicker role="implementer" />;
     case 'reviewer-picker':
       return <ToolModelPicker role="reviewer" />;
+    case 'stop-sheet':
+      return <StopSheetOverlay />;
     case 'sessions':
       return <SessionsPicker />;
     case 'editor':

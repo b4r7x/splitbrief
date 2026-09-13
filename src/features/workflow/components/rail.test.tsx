@@ -22,7 +22,7 @@ import {
 } from '../layout/hit-test.js';
 import { Rail, railFormCText } from './rail.js';
 
-const STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Verify'];
+const STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Review'];
 
 const ACTIVE = glyph('stageActive');
 const DONE = glyph('stageDone');
@@ -84,7 +84,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     expect(countActiveMarkers(frame)).toBe(1);
     expect(railLine).toContain(`${ACTIVE} Build`);
     expect(railLine).toContain(`${DONE} Spec`);
-    expect(railLine).toContain(`${PENDING} Verify`);
+    expect(railLine).toContain(`${PENDING} Review`);
     ui.unmount();
   });
 
@@ -279,7 +279,7 @@ describe('Rail — Form C (narrow floor)', () => {
     expect(frame).toContain(ACTIVE);
     expect(frame).toContain('task 3/7');
     expect(frame).not.toContain('implementing');
-    expect(frame).not.toContain('Verify');
+    expect(frame).not.toContain('Review');
     ui.unmount();
   });
 

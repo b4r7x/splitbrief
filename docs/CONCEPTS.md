@@ -15,6 +15,8 @@ The orchestrator in the middle owns the workflow: it runs the planner, persists 
 
 The goal is a change that holds up: the tool that wrote the code never signs it off, and a deterministic pipeline — not the implementer's own opinion — decides whether the task passed. Lower total cost follows from the split; it is a reported outcome, not the promise.
 
+The **pipeline spec** (`src/core/pipeline-spec/`) is where that pipeline's countable rules live — the modes and their brief caps, the retry count, the escalation ladder, the timeouts, the gate order, the halt signatures, the review cycle cap. The orchestrator imports them and the portable agent skills are rendered from them, so the two cannot drift; `npm run skills:check` fails when they do.
+
 ---
 
 ## Roles
@@ -104,9 +106,9 @@ idle
  └─► complete
 ```
 
-**Live phases** (single Ctrl-C aborts the active call): `researching`, `specifying`, `planning`, `implementing`, `escalating`, and `final-review`.
+**Live phases** (Stop now aborts the active call): `researching`, `specifying`, `planning`, `implementing`, `escalating`, and `final-review`.
 
-**Resumable phases** (saved state can continue from here): `planning`, `implementing`, `final-review` — the `RESUMABLE_PHASES` set in `src/core/phases.ts` — plus any phase with `awaitingContinue: true`. Every other phase (the review/gate phases, `analyzing`, `validating-task`, `escalating`, and the generative phases `researching`/`specifying`) is **not resumable** without `awaitingContinue` — if a cold crash wiped the process mid-stream, the stream is lost and the only safe behaviour is to restart the feature.
+**Resumable phases** (saved state can continue from here): `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `validating-task`, `escalating`, `final-review` — the `RESUMABLE_PHASES` set in `src/core/phases.ts` — plus any phase with `awaitingContinue: true`. The generative phases `researching` / `specifying`, `clarifying`, `constitution-check` and `analyzing` are **not resumable** without `awaitingContinue` — if a cold crash wiped the process mid-stream, the stream is lost and planning restarts from the last saved artifact.
 
 ---
 
@@ -114,10 +116,14 @@ idle
 
 A **Task Brief** is the atomic semantic unit of implementation. It is transported in `tasks.md` and parsed into structured objects by `src/engine/spec/tasks/parse.ts`.
 
+- **slice** — what one brief covers: one verifiable change, which may span more than one file. The planner budgets a slice at no more than five files and roughly 150–200 changed lines for a mid-tier implementer, and splits wherever a gate can pass independently. One file is the smallest slice, not the required one.
+- **declared set** — the paths a slice may write: its `files`, plus every path token its `scope.inBounds` and `scope.approvedOutOfBounds` bullets name. One module answers "may this brief write this path" for every consumer — `src/core/scope/declared-set.ts` — and a write outside the set is a scope violation, not a judgement call.
+
 Task fields (`src/core/schemas/task.ts`):
 
 - `id` — branded `TaskId`, unique inside a workflow
-- `file` — path to the file the task edits or creates
+- `file` — the slice's anchor path; the file the task creates or modifies
+- `files` — every path the slice writes, the anchor among them; absent means `[file]`
 - `action` — file operation: `create` or `modify`
 - `description` — longer task body
 - `signature` — language-appropriate function, interface, or type signature hint
@@ -136,6 +142,8 @@ Task briefs are topologically sorted on dependency. Each task is independently p
 
 Runs after every implementer response. Defined in `src/engine/orchestrator/validation/run.ts`.
 
+A **stack** is the language toolchain the project's gates come from — one of five registered rows (TypeScript, JavaScript, Python, Go, Rust) in `src/core/validation/stacks/`, each naming that language's typecheck, lint and test commands and the file patterns that detect it. A command resolves through `config → manifest → discovered → stack default → none`; a project that matches no stack runs review-only and says so (`gates: NONE — review-only`).
+
 1. **Type-check** — the configured, discovered, or heuristic command. The built-in `npx tsc --noEmit` default applies only on TypeScript projects (a `tsconfig.json` exists or `typescript` is a dependency); on other languages the stage is skipped when nothing else resolves.
 2. **Lint** — the configured, discovered, or heuristic command; the stage is skipped when no lint command resolves.
 3. **Tests** — the configured, discovered, or heuristic command, falling back to `npm test`.
@@ -152,8 +160,8 @@ Each step stops at the first failure *attributable to the task* and reports it b
 
 On validation failure:
 
-- **Attempts 1–3**: the implementer retries with the same entire context but a slightly higher temperature (+0.1 per attempt). No planner involvement.
-- **After 3rd failure**: escalate through the tiers in order.
+- **Local retries**: the implementer retries with the same entire context but a slightly higher temperature (+0.1 per attempt), up to `workflow.maxRetries` times (default 2). No planner involvement.
+- **After the last retry**: escalate through the tiers in order.
   - **Tier 0 — intermediate model** (only when `escalation.intermediateProvider` is configured and `escalation.enabled` is not `false`): a paid mid-tier API model retries the task before the planner is involved.
   - **Tier 1 — hint escalation** (if the planner supports it — see `supportsHintEscalation`): planner reads the error, returns a short hint, implementer retries once with the hint.
   - **Tier 2 — full escalation**: planner takes over and writes the code itself. The task is marked `escalated` (not `done`) in the summary so you can see cost impact.
@@ -220,13 +228,17 @@ Flow:
 3. For backends that expose a native session with mid-conversation inject (Claude Code via `--session-id`), each queued message is *also* dispatched as a parallel `user` turn into the live session. The planner sees it on its next model turn without waiting for our orchestrator to start a new phase.
 4. Queue drains at safe-points only, never mid-model-output.
 
-**Scope:** the queue is **planner-only**. Implementers (small local models) do not receive queued messages. Mid-task interjection is explicitly disallowed because small models lose coherence when their single-shot task prompt is perturbed. If the user needs to change something during implementation, they abort the current task (Ctrl-C) and use `/redo-task <id>` after updating the spec.
+**Scope:** the queue is **planner-only**. Implementers (small local models) do not receive queued messages. Mid-task interjection is explicitly disallowed because small models lose coherence when their single-shot task prompt is perturbed. If the user needs to change something during implementation, they stop the current task (`ctrl+c`) and use `/redo-task <id>` after updating the spec.
 
 **Message origin.** Each `QueuedMessage` carries an `origin` discriminator: `'user-input'` for text the user typed directly, and `'clarification'` for answers routed from the clarification Q&A flow. The drain block formats them differently: clarification answers use `[clarification answer during <phase>]\nQ: ...\nA: ...\n[/clarification answer]` while user-initiated interjections use the generic `[user also says during <phase>]` wrapper.
 
+## Stop sheet
+
+The **stop sheet** is the one place a run is stopped from: `esc` on an empty composer opens it, and it offers **Stop now** (keep partial changes), **Pause after this brief** (finish the current brief, start no other) and **End run** (mark the session `cancelled`). `ctrl+c` is Stop now without the sheet. No option reverts files, and the composer draft survives all of them. A stopped run parks rather than ending: `/resume` carries it on (typed text is sent as steering instructions) and `/end` closes it out.
+
 ## Awaiting-continue
 
-A **sub-state** entered after the user aborts a live model call (single Ctrl-C). Characteristics:
+A **sub-state** entered after the user stops a live model call (Stop now). Characteristics:
 
 - Workflow phase stays what it was (`researching` / `specifying` / `planning` / `implementing` / `escalating` / `final-review`). The abort does **not** reset the phase.
 - Partial planner output up to the abort point is preserved in `session.jsonl` with `interrupted: true`.

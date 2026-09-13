@@ -5,6 +5,11 @@ export const PROJECT_SKILL_SCAN_PATHS = [
   `${SPLITBRIEF_DIR}/${SKILLS_DIR}`,
   `.claude/${SKILLS_DIR}`,
   `.agents/${SKILLS_DIR}`,
+  `.github/${SKILLS_DIR}`,
+  `.commandcode/${SKILLS_DIR}`,
+  `.kilo/${SKILLS_DIR}`,
+  `.kilocode/${SKILLS_DIR}`,
+  `.cursor/${SKILLS_DIR}`,
 ] as const;
 
 /** Global skill roots, relative to the home directory, highest precedence first. */
@@ -14,6 +19,10 @@ export const GLOBAL_SKILL_SCAN_PATHS = [
   `.agents/${SKILLS_DIR}`,
   `${CODEX_DIR}/${SKILLS_DIR}`,
   `.config/opencode/${SKILLS_DIR}`,
+  `.commandcode/${SKILLS_DIR}`,
+  `.kilo/${SKILLS_DIR}`,
+  `.config/kilo/${SKILLS_DIR}`,
+  `.cursor/${SKILLS_DIR}`,
 ] as const;
 
 /** Display labels for the project roots a scan covers, in precedence order. */

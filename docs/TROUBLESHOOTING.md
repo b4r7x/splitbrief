@@ -409,6 +409,25 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ---
 
+### Symptom: the reviewer said `fail` — what now
+
+**Likely cause:** The reviewer read the whole diff and returned the verdict `fail` with Critical findings. This is a verdict, not a runner failure: the review happened, and it says the work is not done.
+
+SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped to the brief whose `files` its paths name, those briefs re-enter implementation with the finding text as the error block, gates and drift run again, and the review is re-run. At most **two** such cycles per run (`REVIEW_CYCLE_CAP`). What you are looking at is the state after those cycles.
+
+**Fix:**
+1. Read `.splitbrief/sessions/<id>/review.md` — the Critical findings are the blocking list, in the reviewer's own words. The summary hero says `Build finished · changes need attention` with `review failed · <n> blocking, <n> advisory`, and `⏎` opens the first blocking finding.
+2. Fix the findings yourself, or re-brief them: the working tree still holds every change the run made, so this is ordinary code review from here.
+3. A finding whose paths name no brief cannot be routed back, so it is never auto-fixed — those are the ones to read first.
+4. An unparseable verdict is re-asked once; a second unparseable reply is reported as `review: failed (unparseable verdict)`. That is a reviewer-output problem, not a code problem — check the reviewer's output format before re-running.
+5. Headless runs exit `1` on a failed review even when every task reached `done`, and `--plain` writes `review: failed (<n> blocking)` followed by the closing `done:` line. In CI, treat that exit as "the diff needs a human", not as an infrastructure failure.
+
+**Prevention:** Smaller slices. A brief that is one verifiable change gives the reviewer something it can accept or reject cleanly, and gives a re-entry cycle a chance of fixing it.
+
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (the `final-review → implementing` edge), [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#plain-output-stream---plain).
+
+---
+
 ## Implementer issues
 
 ### Symptom: Implementer modified files outside the brief's declared scope
@@ -504,18 +523,37 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ---
 
-### Symptom: The run retried three times in seven seconds after I pressed Ctrl-C
+### Symptom: I want to stop a run and I am not sure which key does what
 
-**Likely cause:** A cancelled implementer call was treated as an ordinary failure and fed into the retry ladder. Aborted calls are now recognised at the retry decision site: when the workflow signal is aborted or the implementer reports the runner's abort text (`Aborted`), the retry loop stops immediately instead of consuming `workflow.maxRetries` and escalating against a call the user already cancelled.
+**Likely cause:** Older builds spent `esc esc` on an interrupt ladder with a 2-second armed window and asked for `Ctrl-C` twice to exit. Both are gone. There is now one sheet and one immediate key.
 
 **Fix:**
-1. Confirm the run stopped: `splitbrief status` shows the session ending at the task boundary, not continuing through retries.
-2. Check `session.jsonl` for `task_retry` rows — a cancelled run should no longer append them.
-3. If you cancelled by accident, resume with `splitbrief continue <session-id>`.
+1. `esc` on an empty composer opens the **Stop options** sheet: `Stop now` (stop execution, keep partial changes), `Pause after this brief` (finish `T<id>` including its checks and review, start no next brief), `End run` (stop and mark the run cancelled, keep changes). `↑↓ · ⏎ · esc`, no letter keys, and `esc` closes it without touching the run. No option reverts files.
+2. `ctrl+c` is Stop now, immediately, one press. It aborts the in-flight call along with any retry, escalation or per-task review call, and parks the run as `Paused at T<id> · Partial changes kept`.
+3. `ctrl+q` or `/quit` stops safely, saves the session, then exits.
+4. With text in the composer, `esc` changes neither the run nor the draft — the feedback row says `clear the draft or ctrl+c to stop now`.
+5. Restart with `/resume` (type instructions first if you want to steer; a blank Enter never resumes) or from the shell with `splitbrief continue <session-id>`. `/end` marks a parked run cancelled.
 
-**Prevention:** None needed — this is fixed behaviour; a cancelled call no longer spends retries or escalation budget.
+**Prevention:** None needed — the legend row states the live keys (`esc stop options · ctrl+c stop now · ctrl+k commands · /help`), and a cancelled call still never spends retries or escalation budget: an aborted implementer call stops the retry loop instead of consuming `workflow.maxRetries`.
 
-**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (retry arithmetic), `src/engine/orchestrator/escalation/local-retries.ts`.
+**See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (retry arithmetic), `src/engine/orchestrator/escalation/local-retries.ts`.
+
+---
+
+### Symptom: two consecutive timeouts halted my run
+
+**Likely cause:** The implementer hit its wall clock twice in a row on the same brief. Each `cli` implementer attempt gets 20 minutes (`TIMEOUTS.implementerMs`, overridable per seat with `implementer.timeout`, capped at the same 20 minutes); a review call gets 10. A second consecutive `timeout` outcome on one brief raises the recovery issue `implementer-timeout-repeated` — `<tool> timed out twice in a row on T00N` — instead of retrying or escalating, because handing an unfinishable brief to the planner only spends planner money on the same defect.
+
+**Fix:**
+1. Read the issue's details: they carry the tool's own last message, the attempt count, and the implementer profile that was selected.
+2. The offered actions are retry, route to a bigger worker, switch seat, skip the brief, pause, or abort. Headless, the stderr block prints the exact line to paste — for example `splitbrief continue <session> --action retry`.
+3. If the brief is simply too large for this seat, the durable fix is a smaller slice: split it in the briefs editor (`Ctrl+E` at the briefs gate) so each brief is one verifiable change of at most five files.
+4. If the tool is genuinely slow rather than stuck, raise its seat's `timeout` toward the 1 200 000 ms cap, or move the seat to a faster model.
+5. Distinguish it from silence: `idleWarnMs` / `idleKillMs` watch for *no output*, while this halt is about total wall clock. A run producing output steadily for 20 minutes still times out.
+
+**Prevention:** Keep briefs to one slice, and give a slow local model a bigger `timeout` before the run rather than after the second halt.
+
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (`timeout`), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
 ---
 
@@ -565,6 +603,22 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 **Prevention:** Keep the tree green before starting a run (`npm run test-ci`); baseline-relative acceptance spares tasks from pre-existing failures, not from the failures they cause.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
+
+---
+
+### Symptom: the run printed `gates: NONE — review-only` and validated nothing
+
+**Likely cause:** No validation stage could resolve a command, so every enabled stage was recorded as `skipped` with the reason `no <stage> command for an unrecognised stack`. That happens when the project carries none of the five stack markers (`Cargo.toml`, `go.mod`, `pyproject.toml`/`setup.py`/`setup.cfg`/`requirements.txt`/`Pipfile`, `tsconfig.json` or a `typescript` dependency, `package.json`), and there is no `validation.*Command`, no matching `package.json` script / `Makefile` / `justfile` target, and nothing the planner discovered. SPLITBRIEF deliberately does not guess `npm test` or `npx tsc --noEmit` at that point — a fabricated gate that passes is worse than a stated absence. The run still implements and still reviews; nothing was verified by a gate.
+
+**Fix:**
+1. If the repo does have a stack SPLITBRIEF knows, pin it: `validation.stack: python` (or `go`, `rust`, `typescript`, `javascript`). Detection order is rust → go → python → typescript → javascript, so a pin is also the fix when the wrong marker wins in a polyglot repo.
+2. If the stack is one SPLITBRIEF does not model, name the commands yourself — `validation.typecheckCommand`, `validation.lintCommand`, `validation.testCommand`. They run as written, take the top rung of the ladder, and turn the gates back on.
+3. A named `typecheck` / `lint` / `test` script in `package.json`, or a target of that name in a `Makefile` or `justfile`, is picked up automatically — adding one is often the smallest fix.
+4. Check what actually ran: `evidence.json` records each stage as `<stage> skipped (<reason>)` rather than passed, and a skipped test stage shows up as missing evidence in `drift-report.json`.
+
+**Prevention:** Run `splitbrief doctor` before the first run in a new repo — the validation checks report the resolved command per stage, so an unrecognised stack is visible before a run spends tokens on it.
+
+**See also:** [docs/FEATURES.md](./FEATURES.md#validation-pipeline--checkpoints) (the per-stack table), [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`).
 
 ---
 
@@ -672,31 +726,6 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 **Prevention:** Configure `contextLength` on implementer profiles that run outside a known catalog, and keep briefs under roughly 28 000 estimated tokens when the window is unknown.
 
 **See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (`context-overflow` recovery), [docs/CONFIGURATION.md](./CONFIGURATION.md).
-
----
-
-## Planner admission
-
-### Symptom: the planner refuses before any dispatch with `task_compiler_capability_unsupported`
-
-**Likely cause:** The configured backend is unsupported for the planner role (such as Copilot, Cursor, shell, or agent), or its conformance row has not been verified. Under tiered admission, tested versions yield a full capability receipt and other detected versions of supported backends are admitted with runtime-drift evidence and a run warning; unsupported rows refuse with typed fail-closed zero dispatches. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
-
-**Fix:**
-1. Check the support table in [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) for the backend's V1 state and tested runtime.
-2. A `--agent plan`, `--permission-mode plan`, or `--sandbox read-only` flag cannot admit a dispatch — no CLI flag alone proves read-only behavior; only the production-factory conformance proof does.
-3. Use an admitted planner row, or accept the typed refusal and its remediation.
-
-**Prevention:** Match the configured runner to an admitted support-table row before starting a run.
-
-**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (compiler capability), [docs/CONFIGURATION.md](./CONFIGURATION.md) (compiler capability).
-
----
-
-### Symptom: warning "planner <backend> <detected> differs from the tested <tested>; compiled with runtime-drift evidence"
-
-**Meaning:** The installed planner CLI version differs from the version verified in the compiler support table. Under tiered admission, the runner is admitted with runtime-drift evidence rather than refused. This is a warning, not an error: execution proceeds normally because runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) protect the stage.
-
-**When to worry:** If planning produces syntax errors, protocol errors, or unexpected outputs, align the installed CLI version with the tested version listed in [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 ---
 

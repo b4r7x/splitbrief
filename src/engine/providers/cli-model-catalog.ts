@@ -8,7 +8,8 @@ export type NativeCliCatalogTool =
   | 'kilo-code'
   | 'cursor'
   | 'command-code'
-  | 'copilot';
+  | 'copilot'
+  | 'antigravity';
 
 export interface NativeCliModelCatalogEntry {
   readonly selectionId: string;
@@ -352,6 +353,23 @@ export function parseCopilotHelpConfigCatalog(stdout: string): NativeCliModelCat
     entries.push({ selectionId });
   }
   return entries.length === 0 ? null : catalogFromEntries({ tool: 'copilot', entries });
+}
+
+// `agy models` prints `<id>\t<display name>` per model, one row per effort
+// variant (`gemini-3.8-flash-high`), and sends its progress line to stderr. The
+// tab is the only separator and `stripTerminalControls` deletes it, so a row is
+// split before it is cleaned; a line without a tab carries no model.
+export function parseAntigravityModelCatalog(stdout: string): NativeCliModelCatalog | null {
+  const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
+  for (const line of stdout.split('\n')) {
+    const tab = line.indexOf('\t');
+    if (tab === -1) continue;
+    const selectionId = stripTerminalControls(line.slice(0, tab)).trim();
+    if (selectionId === '') continue;
+    const displayName = stripTerminalControls(line.slice(tab + 1)).trim();
+    entries.push({ selectionId, ...(displayName === '' ? {} : { displayName }) });
+  }
+  return entries.length === 0 ? null : catalogFromEntries({ tool: 'antigravity', entries });
 }
 
 export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog): DetectedModel[] {

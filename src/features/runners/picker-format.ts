@@ -345,6 +345,12 @@ const LISTING_SOURCES: Readonly<Record<CliToolId, ListingSource>> = {
     rowNounPlural: 'models',
     unverifiedForPlan: false,
   },
+  antigravity: {
+    source: 'from agy models',
+    rowNoun: 'model',
+    rowNounPlural: 'models',
+    unverifiedForPlan: false,
+  },
 };
 
 /** A provider that is not a CLI tool lists through the shared catalog, which knows no account. */

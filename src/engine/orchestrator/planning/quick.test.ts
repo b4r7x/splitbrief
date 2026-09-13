@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -13,9 +13,9 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { TASKS_FILE, SPEC_FILE, sessionDir } from '../../../core/paths.js';
 import {
-  createTaskCompilationAttemptId,
+  createPlannerArtifactAttemptId,
   OwnedPlannerArtifactSchema,
-} from '../../../core/schemas/task-compilation.js';
+} from '../../../core/schemas/planner-artifact.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { runPlanningPhase } from './run.js';
 import { runQuickPlanning } from './quick.js';
@@ -55,7 +55,7 @@ function phaseResult(logicalName: PlannerArtifactLogicalName, text: string) {
       semanticId: `quick-test-${logicalName}`,
       programId: null,
       batchId: null,
-      attemptId: createTaskCompilationAttemptId(),
+      attemptId: createPlannerArtifactAttemptId(),
       logicalName,
       transport: 'stdout-final',
       text,
@@ -99,6 +99,90 @@ async function runZeroTaskQuick() {
   });
   return { result, events, quickPlan, projectDir, sessionId };
 }
+
+function writeProjectSkill(projectDir: string, id: string, name: string, body: string) {
+  const dir = join(projectDir, '.claude', 'skills', id);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: a skill\n---\n${body}\n`);
+}
+
+describe('runQuickPlanning — selected skills', () => {
+  // Discovery also scans global roots under homedir(); a real HOME would pull the
+  // developer's own ~/.claude/skills into these assertions.
+  let fakeHome: string;
+  let savedHome: string | undefined;
+
+  beforeAll(() => {
+    fakeHome = createTempDir('quick-skill-home');
+    savedHome = process.env.HOME;
+    process.env.HOME = fakeHome;
+  });
+
+  afterAll(() => {
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    cleanupTempDir(fakeHome);
+  });
+
+  async function runWithSkills(bodies: Array<[string, string, string]>) {
+    const { projectDir, sessionId } = setupProject();
+    for (const [id, name, body] of bodies) writeProjectSkill(projectDir, id, name, body);
+    let captured: PlanOptions | undefined;
+    const quickPlan = vi.fn(async (opts: PlanOptions) => {
+      captured = opts;
+      return {
+        spec: '',
+        plan: '',
+        tasks: [makePassingTask()],
+        usage: { inputTokens: 30, outputTokens: 15 },
+        phases: [phaseResult(TASKS_FILE, REAL_TASKS_MD)],
+      };
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    await runQuickPlanning({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ workflow: { mode: 'quick', approve: 'none' } }),
+        callbacks,
+        metadata: TEST_METADATA,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner: makePlanner({ quickPlan }),
+      state: {
+        ...createInitialState('feature'),
+        phase: 'researching' as const,
+        selectedSkills: bodies.map(([id]) => id),
+      },
+      feature: 'feature',
+    });
+    return { captured, events };
+  }
+
+  it('skillsContext present', async () => {
+    const { captured } = await runWithSkills([['auth-skill', 'AuthSkill', 'QUICK-SKILL-BODY']]);
+
+    expect(captured?.skillsContext).toContain('## Active Project Skills');
+    expect(captured?.skillsContext).toContain('QUICK-SKILL-BODY');
+  });
+
+  it('warns with skills_truncated when the budget drops a skill', async () => {
+    const { events } = await runWithSkills([
+      ['big-skill', 'BigSkill', 'x'.repeat(17_000)],
+      ['dropped-skill', 'DroppedSkill', 'tiny'],
+    ]);
+
+    const warning = events.find(
+      (event) => event.type === 'warning' && event.code === 'skills_truncated',
+    );
+    expect(warning).toMatchObject({ category: 'skills', code: 'skills_truncated' });
+    if (warning?.type === 'warning') {
+      expect(warning.message).toBe('1 skills omitted (budget): DroppedSkill');
+    }
+  });
+});
 
 describe('runQuickPlanning', () => {
   it('passes transient rewind feedback without locally starting implementation', async () => {

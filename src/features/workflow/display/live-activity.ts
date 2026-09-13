@@ -1,5 +1,6 @@
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import { activeVerb } from './phase-verb.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
@@ -20,42 +21,6 @@ const RAIL_GATE_PHASES: ReadonlySet<Phase> = new Set([
   'reviewing-plan',
   'reviewing-briefs',
 ]);
-
-function activeVerb(phase: Phase, reviewerLabel: string | null): string {
-  switch (phase) {
-    case 'researching':
-      return 'Researching…';
-    case 'specifying':
-      return 'Specifying…';
-    case 'reviewing-spec':
-      return 'Reviewing spec…';
-    case 'clarifying':
-      return 'Clarifying…';
-    case 'constitution-check':
-      return 'Checking constitution…';
-    case 'planning':
-      return 'Compiling briefs from spec…';
-    case 'reviewing-plan':
-      return 'Reviewing plan…';
-    case 'reviewing-briefs':
-      return 'Reviewing briefs…';
-    case 'analyzing':
-      return 'Analyzing…';
-    case 'implementing':
-      return 'Implementing…';
-    case 'validating-task':
-      return 'Validating…';
-    case 'escalating':
-      return 'Escalating…';
-    case 'final-review':
-      return reviewerLabel === null ? 'Reviewing…' : `Reviewing… ${reviewerLabel}`;
-    case 'idle':
-    case 'complete':
-      return '';
-    default:
-      return assertNever(phase);
-  }
-}
 
 // OpenCode's `run --format json` reports a tool only once it finishes and never
 // forwards child-session events, so minutes of silence are routine there and the

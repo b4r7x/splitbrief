@@ -7,6 +7,23 @@ import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { runRetryStep } from './step.js';
 import { failedRetry, type EscalationContext, type RetryStepOutcome } from './types.js';
+import { TIMEOUTS } from '../../../core/pipeline-spec/timeouts.js';
+import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
+import { recoveryBuilderForRunnerOutcome } from '../recovery/builders/task.js';
+
+/**
+ * Outcomes every further local attempt reproduces: a signed-out or
+ * quota-exhausted runner, plus every runner defect the recovery builders
+ * already recognise. The retries stop so the caller halts the ladder instead of
+ * paying planner prices for a defect no retry can fix.
+ */
+function haltsLocalRetries(outcome: RunnerFailureOutcomeState): boolean {
+  return (
+    outcome === 'unauthenticated' ||
+    outcome === 'usage-limit' ||
+    recoveryBuilderForRunnerOutcome(outcome) !== undefined
+  );
+}
 
 function isAbortedOutcome(lastError: string, signal: AbortSignal | undefined): boolean {
   if (signal?.aborted) return true;
@@ -26,6 +43,7 @@ export async function runLocalRetries(
   let task = opts.task;
   let lastError = opts.lastError;
   let attempts = 0;
+  let consecutiveTimeouts = 0;
   const maxRetries = ctx.config.workflow.maxRetries;
 
   const textHandler = createBusTextHandler(
@@ -118,14 +136,20 @@ export async function runLocalRetries(
     if (outcome.result) {
       return outcome;
     }
-    // A signed-out or quota-exhausted runner fails every further attempt the
-    // same way; stop burning retries and let the caller halt instead of
-    // escalating.
-    if (
-      outcome.lastFailure?.outcome === 'unauthenticated' ||
-      outcome.lastFailure?.outcome === 'usage-limit'
-    ) {
+    const failure = outcome.lastFailure;
+    if (failure !== undefined && haltsLocalRetries(failure.outcome)) {
       return outcome;
+    }
+    if (failure?.outcome !== 'timeout') {
+      consecutiveTimeouts = 0;
+      continue;
+    }
+    consecutiveTimeouts += 1;
+    if (consecutiveTimeouts >= TIMEOUTS.consecutiveTimeoutsHalt) {
+      return {
+        ...outcome,
+        lastFailure: { ...failure, outcome: 'implementer-timeout-repeated' },
+      };
     }
   }
 

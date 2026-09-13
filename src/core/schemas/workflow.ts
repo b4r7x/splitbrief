@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { PhaseSchema, WorkflowModeSchema, ApproveLevelSchema, type Phase } from './enums.js';
+import {
+  PhaseSchema,
+  WorkflowModeSchema,
+  ApproveLevelSchema,
+  REVIEW_STATUSES,
+  ValidationStageSchema,
+  type Phase,
+} from './enums.js';
 import { TaskSchema } from './task.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema } from './recovery/schemas.js';
@@ -19,6 +26,14 @@ export const DiscoveredValidationSchema = z.object({
 });
 
 export type DiscoveredValidation = z.infer<typeof DiscoveredValidationSchema>;
+
+export const ValidationBaselineSchema = z.object({
+  failingStages: z.array(ValidationStageSchema),
+  commands: z.partialRecord(ValidationStageSchema, z.string()),
+  failures: z.partialRecord(ValidationStageSchema, z.array(z.string())),
+});
+
+export type PersistedValidationBaseline = z.infer<typeof ValidationBaselineSchema>;
 
 export const QueuedMessageSchema = z.object({
   id: z.string(),
@@ -86,6 +101,14 @@ const WorkflowStateFields = {
   changedFilesBaseline: ChangedFilesBaselineSchema.optional(),
   pendingRecovery: RecoveryIssueSchema.optional(),
   discoveredValidation: DiscoveredValidationSchema.optional(),
+  validationBaseline: ValidationBaselineSchema.optional(),
+  reviewFixes: z
+    .object({
+      cycle: z.number().int(),
+      findings: z.record(z.string(), z.array(z.string())),
+    })
+    .optional(),
+  reviewStatus: z.enum(REVIEW_STATUSES).optional(),
   external: z.record(z.string(), z.unknown()).optional(),
 };
 

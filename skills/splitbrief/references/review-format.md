@@ -63,14 +63,23 @@ The review seat is one stateless, read-only call. Lifted from the SPLITBRIEF CLI
 
 ## 2. Parsing the reply (`review.md`)
 
-- Verdict: the text under the `### Verdict` heading must contain exactly one of `pass`, `pass_with_notes`, `fail` (whole word, backticks optional). Zero or more than one → no verdict; ask the reviewer once more with `Your reply had no single verdict. Repeat the full review with exactly one verdict word under ### Verdict.`; still none → treat as `fail` with the finding `**Critical**: unparseable verdict`.
-- Criteria: every line matching `- **[PASS]** …` / `- **[FAIL]** …` anywhere in the reply.
-- Findings: every line matching `- **Critical**: …`, `- **Warning**: …`, `- **Note**: …` anywhere in the reply.
-- `fail` with zero Critical findings is still `fail`; `pass` with a Critical finding is treated as `fail` (the finding wins).
+<!-- generated: verdict-rules -->
+- Exactly one verdict word under `### Verdict`: `pass` | `pass_with_notes` | `fail`.
+- No single verdict word → 1 re-ask, verbatim: "Your reply had no single verdict. Repeat the full review with exactly one verdict word under ### Verdict." — a still-unparseable reply is `fail`.
+- Any Critical finding overrides a `pass`.
+- A finding belongs to the brief whose `files` names it (path substring); an unmatched finding goes to the last brief.
+<!-- /generated -->
+
+Criteria are every line matching `- **[PASS]** …` / `- **[FAIL]** …` anywhere in the reply; findings every line matching `- **Critical**: …`, `- **Warning**: …`, `- **Note**: …`.
 
 ## 3. Fix cycle mapping
 
-Each Critical finding is assigned to the brief whose `file` it names (path substring match); unmatched findings go to the last brief. Only the briefs that received a finding re-enter Phase 2: the error block is the findings verbatim (rendered per references/implementer-prompt.md §4 with the attempt-2 framing), attempt numbering continues from the brief's last attempt, and the local-retry budget resets. Warnings and Notes are reported, never fixed automatically. Cap: 2 review cycles per run. Standalone, the same cycle is `splitbrief-run impl=<seat> error: <run dir>/review.md <run dir>/briefs`.
+Each Critical finding is assigned to the brief whose `files` names it (path substring match); unmatched findings go to the last brief. Warnings and Notes are reported, never fixed automatically. Standalone, the same cycle is `splitbrief-run impl=<seat> error: <run dir>/review.md <run dir>/briefs`.
+
+<!-- generated: fix-cycle -->
+- A `fail` verdict re-enters implementation: each Critical finding becomes the error block of the next attempt on its owning brief.
+- At most 2 review cycles; the last `fail` ends the run as `STOPPED at review` with the findings listed.
+<!-- /generated -->
 
 ## 4. Review by the session
 

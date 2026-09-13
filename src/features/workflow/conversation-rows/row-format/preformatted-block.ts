@@ -16,7 +16,7 @@ import type {
 import { segmentedRow } from './rows.js';
 import { sanitizeRowDisplayText, wrappedRowTexts } from './text.js';
 
-// Formatter diffs, compiler tables and test frames carry meaning in their columns, so a source
+// Formatter diffs, planner tables and test frames carry meaning in their columns, so a source
 // line must stay a row: cut at the right edge rather than reflowed. 30 lines shows a full biome
 // format hunk (~24 lines) whole while staying under a normal transcript viewport, so the block
 // never evicts the run around it; the session log keeps the untruncated text.

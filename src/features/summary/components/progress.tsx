@@ -32,7 +32,7 @@ export function SummaryProgress({
     <Box marginTop={1} overflow="hidden">
       <Text color={t.textDim} wrap="truncate-end">
         {completed}/{total}
-        {isSmall ? '' : ' tasks'}
+        {isSmall ? '' : ' briefs'}
         {SOFT_SEP}
         {completedByLocal} local
         {failed > 0 ? (

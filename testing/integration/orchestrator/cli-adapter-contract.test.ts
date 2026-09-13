@@ -60,6 +60,7 @@ function canonicalVersionLine(toolId: ImplementerCliToolId, version: string): st
     case 'kilo-code':
     case 'cursor':
     case 'command-code':
+    case 'antigravity':
       return version;
     case 'copilot':
       return `GitHub Copilot CLI ${version}.`;
@@ -116,6 +117,12 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
     ],
     authArgv: ['status', '--json'],
   },
+  antigravity: {
+    transport: 'argv',
+    versionLine: canonicalVersionLine('antigravity', '1.2.2'),
+    successLines: ['ok'],
+    authArgv: ['models'],
+  },
 };
 
 const AUTH_CHANNELS: Record<ImplementerCliToolId, CliImplementerConfig['authChannel']> = {
@@ -126,6 +133,7 @@ const AUTH_CHANNELS: Record<ImplementerCliToolId, CliImplementerConfig['authChan
   'kilo-code': 'provider-dependent',
   cursor: 'session',
   'command-code': 'session',
+  antigravity: 'session',
 };
 
 // With session state seeded, every probe-bearing adapter runs its declared
@@ -147,7 +155,13 @@ const AUTH_FAILURE_FACTS_BY_PROBE_CONTRACT = {
   'kilo-code': 'authenticated',
   cursor: 'unknown',
   'command-code': 'unknown',
-} as const satisfies Record<ImplementerCliToolId, 'authenticated' | 'not-checked' | 'unknown'>;
+  // `agy` declares a session channel with no bridgeable credential file, so the
+  // seeded-state home cannot authenticate it however `agy models` exits.
+  antigravity: 'unauthenticated',
+} as const satisfies Record<
+  ImplementerCliToolId,
+  'authenticated' | 'not-checked' | 'unknown' | 'unauthenticated'
+>;
 
 const HOME_SESSION_STATE_PATHS: Partial<Record<ImplementerCliToolId, string>> = {
   'claude-code': '.claude/.credentials.json',
@@ -206,6 +220,7 @@ const CONFLICTING_ARGS: Record<ImplementerCliToolId, readonly string[]> = {
   'kilo-code': ['--output-format', 'text'],
   cursor: ['--force'],
   'command-code': ['--permission-mode', 'plan'],
+  antigravity: ['--output-format', 'text'],
 };
 
 const CREDENTIAL_ENV: Partial<Record<ImplementerCliToolId, Readonly<Record<string, string>>>> = {
@@ -435,13 +450,15 @@ afterEach(() => {
 });
 
 describe('Cursor and Antigravity admission', () => {
-  it('admits Cursor and keeps Antigravity outside implementer execution', () => {
+  it('admits Cursor and Antigravity on both seats', () => {
     expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('PASS');
-    expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
+    expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('PASS');
     expect(IMPLEMENTER_CLI_TOOL_IDS).toContain('cursor');
+    expect(IMPLEMENTER_CLI_TOOL_IDS).toContain('antigravity');
     expect(CLI_TOOL_CATALOG.cursor.admission.state).toBe('active');
-    expect('antigravity' in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
-    expect(() => lookupCliPlannerAdapter('antigravity')).toThrow(/planner configuration/);
+    expect(CLI_TOOL_CATALOG.antigravity.admission.state).toBe('active');
+    expect('antigravity' in CLI_IMPLEMENTER_ADAPTERS).toBe(true);
+    expect(lookupCliPlannerAdapter('antigravity').descriptor.id).toBe('antigravity');
   });
 });
 
@@ -835,6 +852,10 @@ describe('T-017 stable CLI outcome taxonomy', () => {
       'callback-failure',
       'no-staged-change',
       'platform-limitation',
+      'implementer-effect-invalid',
+      'implementer-recipe-invalid',
+      'implementer-timeout-repeated',
+      'missing-model',
     ]);
     expect([...RUNNER_OUTCOME_STATES].sort()).toEqual([...covered].sort());
   });

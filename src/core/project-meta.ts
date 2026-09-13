@@ -17,16 +17,11 @@ export function readPackageJson(
   }
 }
 
-export function detectProjectLanguage(projectDir: string): string | undefined {
-  if (existsSync(join(projectDir, 'Cargo.toml'))) return 'rust';
-  if (existsSync(join(projectDir, 'go.mod'))) return 'go';
-  if (existsSync(join(projectDir, 'pyproject.toml'))) return 'python';
-
+export function packageScript(projectDir: string, name: string): string | null {
   const pkg = readPackageJson(projectDir);
-  if (!pkg) return undefined;
-  const deps = {
-    ...(isRecord(pkg['dependencies']) ? pkg['dependencies'] : {}),
-    ...(isRecord(pkg['devDependencies']) ? pkg['devDependencies'] : {}),
-  };
-  return 'typescript' in deps ? 'typescript' : 'javascript';
+  if (pkg === null) return null;
+  const scripts = pkg['scripts'];
+  if (!isRecord(scripts)) return null;
+  const script = scripts[name];
+  return typeof script === 'string' && script.trim() !== '' ? script : null;
 }

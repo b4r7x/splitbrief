@@ -163,6 +163,31 @@ describe('check-invariants', () => {
     expect(readFileSync('docs/INVARIANTS.md', 'utf8')).toContain('utils/type-guards');
   });
 
+  it('gate 17c ignores ESM import and export aliases but still counts a broad cast', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-gate-17c-'));
+    try {
+      writeFileSync(
+        join(root, 'aliases.ts'),
+        "import { MODES as MODES_SPEC } from './modes.js';\nexport { MODES_SPEC as MODES_TABLE };\n",
+      );
+      const [gate] = getInvariantGates('17c');
+      if (gate === undefined) throw new Error('gate 17c is not registered');
+      const retargeted = { ...gate, command: gate.command.replaceAll('src/', `${root}/`) };
+
+      expect(runInvariantGates([retargeted], undefined, captureLog().log)).toBe(0);
+
+      writeFileSync(join(root, 'cast.ts'), 'const seat = row as SeatRow;\n');
+      const withCast = captureLog();
+
+      expect(runInvariantGates([retargeted], undefined, withCast.log)).toBe(1);
+      expect(withCast.lines).toEqual([
+        expect.stringContaining('[17c] No incidental broad as-casts'),
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('registers architecture and transport gates 28 through 35', () => {
     const ids = ['28', '29', '30', '31', '32', '33', '34', '35'] as const;
     for (const id of ids) {

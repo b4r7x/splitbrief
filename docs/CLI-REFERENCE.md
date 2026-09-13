@@ -63,7 +63,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
   [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
   [--budget <amount>] [--planner-effort <level>] [--reviewer-effort <level>] [--yolo] \
-  [--project <dir>] \
+  [--skills <ids>] [--project <dir>] \
   [--no-fullscreen] [--no-mouse] [--hover] \
   [--allow-hooks] [--allow-repo-runners] [--allow-unverified-auth] \
   [--json]
@@ -75,7 +75,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 |---|---|---|---|
 | `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `quick`, `standard`, `speckit`. The retired `instant` still parses and resolves to `quick` with a deprecation notice. See [WORKFLOW.md](./WORKFLOW.md). |
 | `--approve <level>` | enum | `default` | Spec/plan document gates: `none`, `spec`, `plan`, `all`, `default`. `default` follows the mode's built-in policy. |
-| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `shell`, `agent`. The flag's help text is derived from `PLANNER_TOOL_IDS` (`src/core/schemas/enums.ts`), so `splitbrief start --help` always prints the admitted set. |
+| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `shell`, `agent`. The flag's help text is derived from `PLANNER_TOOL_IDS` (`src/core/schemas/enums.ts`), so `splitbrief start --help` always prints the admitted set. |
 | `--planner-model <model>` | string | from config | Planner model identifier (for API planners). |
 | `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
 | `--planner-api-base <url>` | string | from config | Planner API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -84,7 +84,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. Consumed only by the `api` planner kind, where it sizes the request's `max_tokens` output budget; other kinds delegate the budget to their backend and ignore it. |
 | `--planner-effort <level>` | enum | — | Planner effort hint: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it. |
-| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `ollama`, `lm-studio`, `shell`, `agent`. The flag's help text is derived from the catalog's implementer role admission (`src/cli/options.ts`), so `splitbrief start --help` always prints the admitted set. |
+| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `shell`, `agent`. The flag's help text is derived from the catalog's implementer role admission (`src/cli/options.ts`), so `splitbrief start --help` always prints the admitted set. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
 | `--implementer-command <cmd>` | string | from config | Custom implementer command (when `--implementer=shell`). |
 | `--implementer-api-base <url>` | string | from config | Implementer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -104,6 +104,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
 | `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow warns/pauses before the cap, stops when exceeded, and pauses when paid usage has unknown pricing. |
+| `--skills <ids>` | string | — | Comma-separated planner-skill ids to attach for this run, the headless equivalent of the `/skills` picker. Resolved against the same scan roots before planning starts; an id no root carries fails with `Unknown skill: <id> (scanned: <roots>)` and exit `2`. On `start` it applies to headless runs (`--json` / `--plain`); on `resume` and `continue` it applies in both modes. |
 | `--yolo` | boolean | `false` | Disable file-write tiered approval prompts for the session. Spec/plan gates still follow `--approve` / mode policy, and briefs review remains separate. This is not a shell or network sandbox setting. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. Useful when piping or debugging. |
@@ -144,8 +145,8 @@ splitbrief start --plain --approve none "fix flaky test in user.test.ts"
 ### Exit codes
 
 - `0` — workflow completed (or TUI exited cleanly).
-- `1` — invalid or unwritable config, planner/implementer failure, budget exceeded, or any uncaught error.
-- `2` — an invalid flag combination, such as `--plain` together with `--json`.
+- `1` — invalid or unwritable config, planner/implementer failure, budget exceeded, a pending recovery nobody answered, a final review that ended `failed`, a session saved as `cancelled` or `interrupted`, or any uncaught error.
+- `2` — an invalid flag combination, such as `--plain` together with `--json`, or an unusable flag value such as an unknown `--skills` id or a `--action` that names no recovery action.
 
 ### Files affected
 
@@ -550,7 +551,7 @@ splitbrief status --project ../other-repo
 ### Behavior notes
 
 - If there is no active session, prints `No active workflow.`
-- The `(awaiting continue)` suffix on the phase line means the run is in the Ctrl-C abort/continue state and is waiting for user input.
+- The `(awaiting continue)` suffix on the phase line means the run parked at a call boundary and is waiting for user input — `/resume` in the TUI, `splitbrief resume` from the shell.
 - `Done`, `Escalated`, `Failed` lines only appear when the corresponding count is non-zero.
 
 ---
@@ -563,7 +564,7 @@ splitbrief status --project ../other-repo
 splitbrief resume [options]
 ```
 
-Resume the current active interrupted session. Validates the saved state version and current phase; refuses to resume from a non-resumable phase or stale schema. If the active pointer was cleared after a clean cancel or stale lockfile cleanup, use `splitbrief continue <session-id>` instead. Accepts the same workflow flags as `start`.
+Resume the current active interrupted session. Validates the saved state version and current phase; refuses to resume from a non-resumable phase or stale schema. If the active pointer was cleared after a run was ended (`/end`, status `cancelled`) or a stale lockfile was cleaned up, use `splitbrief continue <session-id>` instead. Accepts the same workflow flags as `start`.
 
 ### Usage
 
@@ -580,7 +581,7 @@ splitbrief resume [--mode <mode>] [--approve <level>] \
   [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
   [--budget <amount>] [--planner-effort <level>] [--reviewer-effort <level>] [--yolo] \
-  [--project <dir>] \
+  [--skills <ids>] [--project <dir>] \
   [--no-fullscreen] [--no-mouse] [--hover] \
   [--allow-hooks] [--allow-repo-runners] [--json] [--plain]
 ```
@@ -593,6 +594,7 @@ Resume accepts the same workflow override options as `start`. See [`splitbrief s
 |---|---|
 | `--json` | Resume the run in headless mode, streaming NDJSON to stdout. |
 | `--plain` | Resume the run in headless mode, writing plain lines to stdout. Mutually exclusive with `--json`. |
+| `--skills <ids>` | Comma-separated planner-skill ids for the rest of the run; they replace the selection saved with the session. Applies in headless and interactive mode alike. |
 | `--mode` / `--approve` / planner+implementer flags | Override the persisted values for this run only. The workflow mode resolved on the original run is saved in `state.json`; resume reuses it unless `--mode` is passed, which overrides it and prints a warning. |
 
 ### Examples
@@ -627,7 +629,8 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 ### Behavior notes
 
 - The version guard rejects resume with: `saved state is from an older version and cannot be resumed. Please start a new workflow with 'splitbrief start'.`
-- `isResumable(state)` rejects any non-resumable phase (anything outside `RESUMABLE_PHASES` — `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `final-review` — without `awaitingContinue`) with: `session '<id>' is in phase "<phase>" which cannot be resumed.`
+- A session with a pending recovery is not refused headlessly. `resume --plain` and `resume --json` print the issue, the recommended action and the `splitbrief continue … --action …` line to stderr and exit `1`; pass that action to `continue` to carry on.
+- `isResumable(state)` rejects any non-resumable phase (anything outside `RESUMABLE_PHASES` — `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `validating-task`, `escalating`, `final-review` — without `awaitingContinue`) with: `session '<id>' is in phase "<phase>" which cannot be resumed.` A run killed during validation or escalation re-enters at the start of the brief it was on, with that brief's files restored from its task-start snapshot.
 - A short `Resuming: <feature> (phase: <phase>, task N/M)` line prints before the TUI mounts.
 - The workflow mode is pinned in `state.json` alongside `plannerModel`; resume reuses the saved mode and approval level unless `--mode` is passed explicitly, in which case the override applies and a warning is printed.
 
@@ -638,10 +641,10 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 **Synopsis**
 
 ```
-splitbrief continue [session-id-or-number] [resume options]
+splitbrief continue [session-id-or-number] [--action <skip|retry|switch-seat:<tool>[:<model>]>] [resume options]
 ```
 
-Session continuity command: resolves the active session, a session id, or a numeric alias, then resumes it.
+Session continuity command: resolves the active session, a session id, or a numeric alias, then resumes it. With `--action` it first answers the session's pending recovery, so a halted headless run is resolved from the shell instead of a TUI.
 
 ### Options
 
@@ -652,6 +655,8 @@ Session continuity command: resolves the active session, a session id, or a nume
 | `--approve <level>` | approval | mode default | Spec/plan document approval mode. |
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--allow-repo-runners` | boolean | `false` | Trust repo-local shell/agent runner commands from project config for resumed workflow execution. |
+| `--action <skip\|retry\|switch-seat:<tool>[:<model>]>` | enum | — | Apply this action to the session's pending recovery, then continue — the headless equivalent of choosing it in the recovery panel. `skip` is `skip-current-task`, `retry` is `retry-same-worker`, and `switch-seat:<tool>[:<model>]` moves the blocked seat. |
+| `--skills <ids>` | string | — | Comma-separated planner-skill ids for the rest of the run, in headless and interactive mode alike. |
 | `--json` | boolean | `false` | Resume an interrupted session in headless NDJSON mode. |
 | `--plain` | boolean | `false` | Resume an interrupted session in headless plain-line mode. Mutually exclusive with `--json`. |
 | Other resume flags | — | — | Runner overrides, mode, budget, `--no-fullscreen`, `--no-mouse`, `--hover`, and approval controls. |
@@ -667,12 +672,19 @@ splitbrief continue 1
 
 # Continue a specific session
 splitbrief continue 2026-05-01-add-auth
+
+# Answer a pending recovery without a TUI: skip the blocked brief and carry on
+splitbrief continue 2026-05-01-add-auth --action skip --plain
+
+# Move a quota-blocked seat to another tool and carry on
+splitbrief continue --action switch-seat:claude-code:sonnet --json
 ```
 
 ### Exit codes
 
 - `0` — resumed successfully.
-- `1` — no session to continue, unusable saved state, or an underlying resume failure.
+- `1` — no session to continue, unusable saved state, an `--action` the pending recovery does not allow (the refusal names the issue's available actions), or an underlying resume failure.
+- `2` — `--action` did not name a recovery action: `'<value>' is not a recovery action. Use skip, retry, or switch-seat:<tool>[:<model>].`
 
 ### Files affected
 
@@ -686,6 +698,7 @@ splitbrief continue 2026-05-01-add-auth
 ### Behavior notes
 
 - `continue` delegates to `resume`, including `--json` or `--plain` when passed.
+- `--action` is applied before the run re-enters: the named `RecoveryAction` runs through the same `applyRecoveryAction` transition the panel uses, and the run continues from the state it produced. Without `--action`, a session with a pending recovery is not refused outright — headless prints the issue, the recommended action and the exact `continue --action …` line to stderr and exits `1`, and `resume --plain` behaves the same way.
 - Both commands compare the crew they are about to run against the crew the session last ran with (`.splitbrief/sessions/<id>/seats.json`). A seat that changed prints one stderr line per seat — `PLAN seat changed <old> → <new>; context will be rebuilt` for the plan seat, `…; the rest of the run uses the new seat` for the others. A moved plan seat also drops the saved planner session, because it cannot be replayed on a different tool, so the run rebuilds planner context from the transcript. The run itself re-records the crew once it starts, so a resume that never gets past preparation keeps the notice for the next attempt, and an in-app resume from the sessions overlay maintains the record the same way (it reports the change as a workflow warning). The identity is the same `<tool> · <model>` string the crew rows and the workflow header show.
 
 ---
@@ -810,7 +823,7 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 
 ### Headless event stream (`--json`)
 
-When `start`, `resume`, or an interrupted resumable `continue` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed`, `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse`/`--hover` are no-ops in this mode. Workflow review gates approve by default (a blocked brief-readiness report therefore proceeds after the second internal approval), questions resolve non-interactively, continuation retry prompts never park (a watchdog idle-kill fails the run instead), recovery pauses such as unknown paid pricing exit non-zero, failed sessions exit non-zero, and file-write tiered sticky/confirm approvals fail closed instead of waiting for input.
+When `start`, `resume`, or an interrupted resumable `continue` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed` (with the `blocking` finding count), `final_review_incomplete` (the review never finished), `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse`/`--hover` are no-ops in this mode. Workflow review gates approve by default (a blocked brief-readiness report therefore proceeds after the second internal approval), questions resolve non-interactively, continuation retry prompts never park (a watchdog idle-kill fails the run instead), recovery pauses such as unknown paid pricing exit non-zero, failed sessions exit non-zero, and file-write tiered sticky/confirm approvals fail closed instead of waiting for input.
 
 The `recovery_required` record carries `reason`, `status` (`awaiting-user` | `paused` | `applying`), message, task/files when known, `availableActions`, and `recommendedAction`; `status` was added after the initial release and older consumers must treat it as optional. The command fails with exit code 1 for **every** pending recovery status — `paused` and `applying` exit non-zero exactly like `awaiting-user` — and the error message names the available resolution actions.
 
@@ -831,13 +844,26 @@ done: 3 tasks, 128.4k tokens
 ```
 
 - `phase: <name>` — written once each time the run enters a new phase.
-- `task <id>: done|failed (<gates>)` — the gates are the validation stages that passed for that task, or `no gates` when validation was skipped and `skipped` for a task a recovery skipped.
-- `review: passed|failed` — the final review verdict.
-- `done: <n> tasks, <tokens>` — the closing line. `<n>` counts the tasks that completed, not the length of the task list. Cost is reported in tokens: the event stream carries token counts, not prices.
+- `task <id>: done|failed (<gates>)` — the gates are the validation stages that passed for that task, or `no gates` when validation was skipped and `skipped` for a task a recovery skipped. A task that wrote outside its declared files reads `task <id>: failed (effect-invalid: <paths>)`.
+- `gates: NONE — review-only` — written once, in place of per-task gate names, when the project's stack is unrecognised and no stage could resolve a command. The run still implements and still reviews; nothing was verified by a gate.
+- `review: passed|failed [(<n> blocking)]` — the final review verdict. `failed` means the reviewer still reported blocking findings after its fix cycles and carries their count; the command then exits `1` even though every task reached `done`.
+- `done: <n> tasks, <tokens>` — the closing line, written on completion whatever the review said. `<n>` counts the tasks that completed, not the length of the task list. Cost is reported in tokens: the event stream carries token counts, not prices.
 
-Everything else the run emits is dropped — including `recovery_required`, which is a `--json` record. A halt no one is there to answer ends the plain stream: the failing task's `failed` line is the last line written, there is no `review:` or `done:` line, and the command exits 1.
+Everything else the run emits is dropped — including `recovery_required`, which is a `--json` record. A halt no one is there to answer ends the plain stream: the failing task's `failed` line is the last line written, there is no `review:` or `done:` line, and the command exits 1. The halt itself is not silent — stderr carries the block below in both headless renderings.
 
 `--plain` cannot be combined with `--json`.
+
+### Pending recovery in a headless run
+
+Every headless run that stops on a recovery issue — `--json` and `--plain` alike — writes three lines to stderr and exits `1`:
+
+```
+Error: Recovery required (runner-usage-limit): Codex CLI hit its usage limit on T003
+Recommended: switch-seat
+Continue with: splitbrief continue 2026-09-13-add-auth --action switch-seat:claude-code [--plain|--json]
+```
+
+The last line is the command to paste. When the recommended action is one `continue` cannot take on its own, it reads `splitbrief resume (<action> is available in the TUI)` instead. With `--json` the same facts also arrive on stdout as a `recovery_required` record carrying `reason`, `status`, `message`, `taskId`, `files`, `availableActions`, `recommendedAction` and `resumeCommand`.
 
 ### Workflow modes (`--mode`)
 
@@ -853,7 +879,7 @@ Everything else the run emits is dropped — including `recovery_required`, whic
 
 | `kind` | What it is | Examples |
 |---|---|---|
-| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code` |
+| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity` (binary `agy`) |
 | `api` | OpenAI-compatible HTTP endpoint | `ollama`, `lm-studio` |
 | `shell` | Arbitrary command (stdin → stdout), no shell/network sandbox | Custom scripts via `--planner-command` / `--implementer-command` |
 | `agent` | Subprocess that writes files directly, no stdout extraction or shell/network sandbox | Custom file-writing tools |

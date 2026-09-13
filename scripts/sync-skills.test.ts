@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -41,6 +49,12 @@ function writeSkill(
   for (const [file, text] of Object.entries(refs)) {
     writeFileSync(join(dir, 'references', file), text);
   }
+}
+
+function writeScript(root: string, skill: string, name: string, body: string): void {
+  const dir = join(root, skill, 'scripts');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, name), body, { mode: 0o755 });
 }
 
 afterEach(() => {
@@ -214,6 +228,67 @@ describe('generated regions', () => {
     expect(runSyncCli(root, false, () => {}, GEN)).toBe(1);
     expect(readFileSync(join(root, 'splitbrief/references/gates.md'), 'utf8')).toBe(
       region('known', 'FRESH\n'),
+    );
+  });
+});
+
+describe('SKILL.md and script regions', () => {
+  it('SKILL.md generated regions are checked', () => {
+    const root = makeSkillsRoot();
+    writeSkill(root, 'splitbrief', `intro\n${region('known', 'FRESH\n')}\n`);
+    expect(planGenerated(root, GEN).stale).toEqual([]);
+    writeSkill(root, 'splitbrief', `intro\n${region('mystery', 'X\n')}\n`);
+    expect(planGenerated(root, GEN).issues).toEqual([
+      {
+        skill: 'splitbrief',
+        message: 'SKILL.md has no renderer for generated block "mystery"',
+      },
+    ]);
+  });
+
+  it('stale generated region in SKILL.md fails --check', () => {
+    const root = makeSkillsRoot();
+    writeSkill(root, 'splitbrief', `intro\n${region('known', 'OLD\n')}\n`);
+    const lines: string[] = [];
+    expect(runSyncCli(root, true, (l) => lines.push(l), GEN)).toBe(1);
+    expect(lines).toContain('  ✗ splitbrief/SKILL.md#known out of date');
+    expect(runSyncCli(root, false, () => {}, GEN)).toBe(0);
+    expect(readFileSync(join(root, 'splitbrief/SKILL.md'), 'utf8')).toContain(
+      region('known', 'FRESH\n'),
+    );
+  });
+
+  it('scripts mirror like references', () => {
+    const root = makeSkillsRoot();
+    writeSkill(root, 'splitbrief', 'runs scripts/wait.sh');
+    writeSkill(root, 'splitbrief-run', 'owns scripts/wait.sh');
+    writeScript(root, 'splitbrief-run', 'wait.sh', '#!/bin/sh\nexit 0\n');
+
+    expect(planSync(root).actions).toContainEqual({
+      skill: 'splitbrief',
+      file: 'scripts/wait.sh',
+      kind: 'copy',
+    });
+    expect(planSync(root).drift).toContain('splitbrief/scripts/wait.sh');
+
+    expect(runSyncCli(root, false, () => {})).toBe(0);
+    const mirror = join(root, 'splitbrief/scripts/wait.sh');
+    expect(readFileSync(mirror, 'utf8')).toBe('#!/bin/sh\nexit 0\n');
+    expect(statSync(mirror).mode & 0o111).toBe(0o111);
+    expect(runSyncCli(root, true, () => {})).toBe(0);
+  });
+
+  it('shell generated regions are checked', () => {
+    const root = makeSkillsRoot();
+    writeSkill(root, 'splitbrief-run', 'owns scripts/wait.sh');
+    writeScript(root, 'splitbrief-run', 'wait.sh', '# generated: known\nOLD\n# /generated\n');
+    writeSkill(root, 'splitbrief', 'no refs');
+    const lines: string[] = [];
+    expect(runSyncCli(root, true, (l) => lines.push(l), GEN)).toBe(1);
+    expect(lines).toContain('  ✗ splitbrief-run/scripts/wait.sh#known out of date');
+    applyGenerated(root, GEN);
+    expect(readFileSync(join(root, 'splitbrief-run/scripts/wait.sh'), 'utf8')).toBe(
+      '# generated: known\nFRESH\n# /generated\n',
     );
   });
 });

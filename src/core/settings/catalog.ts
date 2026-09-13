@@ -129,7 +129,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'validation.typecheck',
     label: 'Type check',
     section: 'Validation',
-    description: 'Run tsc type checking',
+    description: "Run the stack's type checker",
     kind: 'boolean',
   },
   {

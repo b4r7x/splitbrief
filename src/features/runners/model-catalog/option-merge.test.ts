@@ -272,6 +272,21 @@ describe('cursor family truth, built from testing/fixtures/cursor/list-models.tx
     expect(fixtureFamily('claude-opus-5')?.vendorTag).toBeUndefined();
   });
 
+  it('never promotes an option word to the vendor tag of the family it varies', () => {
+    // `agy models`: one row per effort variant, the effort spelled in the name.
+    const rows: ModelOption[] = [
+      { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)' },
+      { id: 'gemini-3.8-flash-medium', displayName: 'Gemini 3.8 Flash (Medium)' },
+      { id: 'gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash (Low)' },
+    ];
+    const family = mergeOptionFamilies(rows, { persistedModel: 'gemini-3.8-flash-medium' })[0];
+
+    expect(family?.displayName).toBe('Gemini 3.8 Flash');
+    expect(family?.vendorTag).toBeUndefined();
+    expect(family?.id).toBe('gemini-3.8-flash-medium');
+    expect(family?.variants?.map((variant) => variant.tag)).toEqual(['high', 'medium', 'low']);
+  });
+
   it('saves the bare family id unless a persisted or custom spelling names a member', () => {
     expect(fixtureFamily('gpt-5.3-codex')?.id).toBe('gpt-5.3-codex');
     expect(fixtureFamily('gpt-5.3-codex', { persistedModel: 'gpt-5.3-codex-xhigh' })?.id).toBe(

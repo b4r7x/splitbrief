@@ -29,9 +29,15 @@ export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
     affectedTaskIds: z.array(TaskIdSchema).optional(),
     availableActions: z.array(RecoveryActionSchema),
     recommendedAction: RecoveryActionSchema,
+    resumeCommand: z.string(),
   }),
   z.strictObject({
     type: z.literal('final_review_failed'),
+    sessionId: z.string(),
+    blocking: z.number().int().nonnegative(),
+  }),
+  z.strictObject({
+    type: z.literal('final_review_incomplete'),
     sessionId: z.string(),
   }),
   z.strictObject({

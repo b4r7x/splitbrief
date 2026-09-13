@@ -114,7 +114,7 @@ export function makePlanner(overrides?: Partial<Planner>): Planner {
       .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     isAvailable: vi.fn().mockResolvedValue(true),
     getVersion: vi.fn().mockResolvedValue('1.0'),
-    review: vi.fn().mockResolvedValue({ text: '', usage: null }),
+    review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
     summarize: vi.fn().mockResolvedValue({ text: '', usage: null }),
     capabilities: {
       supportsConversationalPlanning: false,

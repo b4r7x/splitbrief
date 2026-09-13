@@ -43,7 +43,7 @@ describe('buildReviewPacketDetailRows', () => {
     ui.unmount();
   });
 
-  it('renders packet paths, final review status, drift and evidence status, missing artifacts, and next step', () => {
+  it('renders packet paths, final review status, scope and evidence status, missing artifacts, and next step', () => {
     terminalSizeStore.__testReset({ cols: 160, isSmall: false });
 
     const ui = renderFeature(
@@ -76,9 +76,9 @@ describe('buildReviewPacketDetailRows', () => {
     expect(frame).toContain('.splitbrief/sessions/s1/review-packet.md');
     expect(frame).toContain('.splitbrief/sessions/s1/review-packet.json');
     expect(frame).toContain('final review: written');
-    expect(frame).toContain('drift: failed');
-    expect(frame).toContain('score 0.84');
-    expect(frame).toContain('2 warnings');
+    expect(frame).toContain('scope: failed');
+    // The score has one home: the `Scope` row above this block.
+    expect(frame).not.toContain('score');
     expect(frame).toContain('evidence: 2/3 validated');
     expect(frame).toContain('missing artifacts: 1');
     expect(frame).toContain('next: open');
@@ -141,7 +141,7 @@ describe('buildReviewPacketDetailRows', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('final review: missing');
-    expect(frame).toContain('drift: n/a');
+    expect(frame).toContain('scope: n/a');
     expect(frame).toContain('evidence: 0/2 validated');
     expect(frame).toContain('missing artifacts: 2');
 

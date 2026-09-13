@@ -13,6 +13,8 @@ const VIEWPORT_SAFETY_ROWS = 1;
 
 interface SummaryDetailLayoutInput {
   terminalRows: number;
+  /** Rows the outcome block above the details paints, so the ledger is budgeted around it. */
+  outcomeRows: number;
   isSmall: boolean;
   summary: Summary;
   implementerSummary: string | null;
@@ -63,6 +65,7 @@ function countBodyChromeRows(input: SummaryDetailLayoutInput): number {
     countMetadataRows(summary, implementerSummary, reviewerSummary, isSmall);
   chrome += countHeroSavingsRows(summary.costBreakdown, isSmall);
   chrome += LEDGER_DIVIDER_ROWS;
+  chrome += Math.max(0, input.outcomeRows);
   return chrome;
 }
 

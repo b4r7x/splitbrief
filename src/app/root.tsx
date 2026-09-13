@@ -9,7 +9,7 @@ import { routerStore } from '../stores/navigation/router.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { useStores } from '../stores/use-stores.js';
-import { interruptTurn, requestCancel } from '../features/workflow/handlers.js';
+
 import type { WorkflowScreenDeps } from '../features/workflow/hooks/workflow-screen/use-model.js';
 
 export interface AppProps {
@@ -27,7 +27,7 @@ export function App({ workflowDeps }: AppProps = {}) {
     exit,
     phase,
   });
-  useAppKeys({ exit, interruptWorkflow: interruptTurn, cancelWorkflow: requestCancel });
+  useAppKeys({ exit });
   useAppMouse();
   useInput((input, key) => logSplitbriefParsedKey(input, key), {
     isActive: isConfiguredKeyDebugEnabled(),

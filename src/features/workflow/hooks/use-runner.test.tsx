@@ -28,7 +28,7 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { configStore } from '../../../stores/project/config.js';
 import {
   abortTurn,
-  interruptTurn,
+  requestStopNow,
   requestCancel,
   requestRewind,
   clearAllHandlers,
@@ -305,14 +305,13 @@ describe('useWorkflowRunner', () => {
     inst.unmount();
   });
 
-  it('completes as interrupted when the run returns un-parked while the lifecycle is interrupted', async () => {
-    const sessionId = '2026-07-10-interrupted-regen';
+  it('completes as cancelled when the run returns un-parked after a stop', async () => {
+    const sessionId = '2026-07-10-stopped-regen';
     ensureSessionDir(projectDir, sessionId);
     const runWorkflowStub: RunWorkflowFn = vi.fn(async (opts) => {
-      // Esc-Esc during an approval-gate regeneration: an abort handler is live
-      // (runLiveRegenerate), interruptTurn marks the lifecycle interrupted and
-      // aborts the regen, and the engine run returns without parking a
-      // continuation prompt or publishing a cancellation event.
+      // Stop now during an approval-gate regeneration: an abort handler is live
+      // (runLiveRegenerate), the stop aborts the regen, and the engine run returns
+      // without parking a continuation prompt or publishing a cancellation event.
       addEvent({
         type: 'workflow_started',
         ts: Date.now(),
@@ -320,7 +319,7 @@ describe('useWorkflowRunner', () => {
         feature: 'add auth',
       });
       opts.sinks.setAbortHandler(() => {});
-      interruptTurn();
+      requestStopNow();
       opts.sinks.setAbortHandler(null);
       return makeSummary();
     });
@@ -337,12 +336,53 @@ describe('useWorkflowRunner', () => {
       />,
     );
 
-    // The workflow screen must reach a real terminal state instead of a dead
-    // "interrupted — Enter retry" byline with no parked prompt behind it.
+    // The workflow screen must reach a real terminal state instead of a dead byline
+    // with no parked prompt behind it, and a run the user stopped ended cancelled.
+    await vi.waitFor(() => {
+      expect(completion?.status).toBe('cancelled');
+    });
+    expect(completion?.sessionId).toBe(sessionId);
+
+    inst.unmount();
+  });
+
+  it('completes as interrupted when the run returns un-parked while the lifecycle is interrupted', async () => {
+    const sessionId = '2026-07-10-interrupted-regen';
+    ensureSessionDir(projectDir, sessionId);
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => {
+      // The watchdog aborted a stalled call and the engine returned without parking a
+      // continuation prompt. No stop was requested, so the run was not cancelled by the
+      // user and the summary keeps the interrupted word.
+      addEvent({
+        type: 'workflow_started',
+        ts: Date.now(),
+        phase: 'reviewing-spec',
+        feature: 'add auth',
+      });
+      addEvent({
+        type: 'turn_interrupted',
+        ts: Date.now(),
+        phase: 'reviewing-spec',
+        source: 'watchdog',
+      });
+      return makeSummary();
+    });
+    let completion: WorkflowCompletion | undefined;
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+
+    const inst = render(
+      <Harness
+        prepared={prepared}
+        onComplete={(c) => {
+          completion = c;
+        }}
+        runWorkflow={runWorkflowStub}
+      />,
+    );
+
     await vi.waitFor(() => {
       expect(completion?.status).toBe('interrupted');
     });
-    expect(completion?.sessionId).toBe(sessionId);
 
     inst.unmount();
   });

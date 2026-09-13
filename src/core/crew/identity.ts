@@ -45,7 +45,7 @@ export const AUTO_CHEAPEST_MODEL_WORD = 'Auto (cheapest capable)';
 
 export const PLANNER_INHERITANCE = Object.freeze({
   sentence: 'same as planner',
-  mark: '= planner',
+  mark: '= PLAN',
 });
 
 /** The one middle dot that joins the parts of every crew identity, on the row and in the fold marker. */
@@ -120,11 +120,12 @@ function collapsedSeatText(seat: CollapsedSeat): string {
   return `${seat.label} ${seat.identity} (${seat.note})`;
 }
 
+// An elided seat leaves the line entirely. `REVIEW …` names no seat and reads as "pending" beside
+// the workflow rail, so the seats that still fit are stated and the rest are silent.
 function collapsedSeatLine(seats: readonly CollapsedSeat[], elided: ReadonlySet<number>): string {
   return seats
-    .map((seat, index) =>
-      collapsedSeatText(elided.has(index) ? { ...seat, identity: ELLIPSIS } : seat),
-    )
+    .filter((_seat, index) => !elided.has(index))
+    .map(collapsedSeatText)
     .join(CREW_IDENTITY_SEPARATOR);
 }
 

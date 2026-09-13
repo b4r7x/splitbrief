@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { Box } from 'ink';
 import type {
   RuntimeCommandDef,
@@ -29,13 +29,17 @@ import {
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
 } from '../../features/workflow/layout/rect.js';
-import { selectRailForm } from '../../features/workflow/layout/chrome-rows.js';
+import { getProgressRows, selectRailForm } from '../../features/workflow/layout/chrome-rows.js';
+import { BuildProgressBlock } from '../../features/workflow/components/build-progress.js';
 import { getWorkflowPromptRows } from '../../features/workflow/prompt-rows/workflow.js';
 import {
-  DEFAULT_REVIEW_ACTION_ID,
-  nextReviewActionId,
-  type SelectableReviewActionId,
-} from '../../features/workflow/review-actions.js';
+  reviewArtifactForPhase,
+  reviewDocumentOptions,
+} from '../../features/workflow/prompt-rows/approval.js';
+import { reviewKeysStore } from '../../stores/ui/review-keys.js';
+import { composerDraftStore } from '../../stores/ui/composer-draft.js';
+import { REVIEW_COMMENT_DRAFT } from '../../core/keybindings/review.js';
+import { clamp } from '../../utils/math.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
@@ -58,49 +62,48 @@ export function WorkflowScreen({
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
   const [scrollAboveLabel, setScrollAboveLabel] = useState('');
   const [scrollBelowLabel, setScrollBelowLabel] = useState('');
-  const activeReviewActionIdRef = useRef<SelectableReviewActionId>(DEFAULT_REVIEW_ACTION_ID);
-  const reviewActionKeyboardEngagedRef = useRef(false);
+  const [reviewSelected, setReviewSelected] = useState(0);
+  const reviewKeysArmed = reviewKeysStore.use((state) => state.armed);
   const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
   const briefFocus = focusStore.use((focus) => focus);
 
   const model = useWorkflowScreen({ onRuntimeCommand, copyTarget, canCopyFocused, deps });
-  const documentReviewActive =
-    model.inputMode.mode === 'review' &&
-    (model.phase === 'reviewing-plan' || model.phase === 'reviewing-spec');
-  const reviewYankActive =
-    model.phase === 'reviewing-briefs' && (canCopyFocused?.(briefFocus) ?? false);
-
-  const resetReviewActionSelection = (): void => {
-    reviewActionKeyboardEngagedRef.current = false;
-    activeReviewActionIdRef.current = DEFAULT_REVIEW_ACTION_ID;
-  };
+  const briefListReview = model.phase === 'reviewing-briefs';
+  const reviewArtifact =
+    model.inputMode.mode === 'review' && !model.promptPending && !model.hasOverlay
+      ? reviewArtifactForPhase(model.phase)
+      : null;
+  // A draft in the composer is what turns the letters back into text, so the same flag decides
+  // whether the panel advertises them or the two keys a comment answers to.
+  const reviewCommenting = reviewArtifact !== null && !reviewKeysArmed;
+  const reviewYankActive = briefListReview && (canCopyFocused?.(briefFocus) ?? false);
 
   useLayoutEffect(() => {
-    resetReviewActionSelection();
-  }, [documentReviewActive, reviewOwnerToken]);
+    setReviewSelected(0);
+  }, [reviewArtifact, reviewOwnerToken]);
 
   const handleReviewBoundaryNavigate = (direction: 'up' | 'down'): boolean => {
-    if (model.phase === 'reviewing-briefs') {
-      return model.navigateBriefReview(direction);
-    }
-    if (!documentReviewActive || model.hasOverlay || model.promptPending) return false;
-    const next = nextReviewActionId(
-      activeReviewActionIdRef.current,
-      direction === 'down' ? 'next' : 'previous',
-    );
-    activeReviewActionIdRef.current = next;
-    reviewActionKeyboardEngagedRef.current = true;
+    // A focused brief answers the arrows first; with no list under the gate they move the cursor,
+    // which is the only thing every document gate has to move.
+    if (briefListReview && model.navigateBriefReview(direction)) return true;
+    if (reviewArtifact === null) return false;
+    const lastRow = reviewDocumentOptions(reviewArtifact).length - 1;
+    setReviewSelected((index) => clamp(index + (direction === 'down' ? 1 : -1), 0, lastRow));
     return true;
   };
 
   const handleFooterInput = (text: string): void => {
-    if (documentReviewActive && reviewActionKeyboardEngagedRef.current && text.trim() === '') {
-      const command = activeReviewActionIdRef.current;
-      resetReviewActionSelection();
-      void model.handleInput(command);
+    if (reviewArtifact !== null && text.trim() === '') {
+      const row = reviewDocumentOptions(reviewArtifact)[reviewSelected];
+      // The comment row hands the keyboard to the composer the same way the `c` accelerator does:
+      // one prefilled draft, so there is one spelling of a review comment and not two.
+      if (row === undefined || row.command === 'comment') {
+        composerDraftStore.request(REVIEW_COMMENT_DRAFT);
+        return;
+      }
+      void model.handleInput(row.command);
       return;
     }
-    if (text.length > 0) resetReviewActionSelection();
     void model.handleInput(text);
   };
 
@@ -111,20 +114,30 @@ export function WorkflowScreen({
   const showSidebar = sidebarWidth > 0;
   const questionHint = model.inputMode.mode === 'question' ? model.inputMode.hint : null;
   const railForm = selectRailForm({ phase: model.phase, cols });
+  const requestedPromptRows = getWorkflowPromptRows({
+    approvalState: model.approvalPromptState,
+    costApprovalState: model.costApprovalState,
+    questionHint,
+    reviewArtifact,
+    cols,
+  });
+  // A gate on screen is the only thing to act on, and it needs every row it can get. The build
+  // block stands down while one is open rather than clipping the panel that is waiting on an answer.
+  const progressRows =
+    requestedPromptRows > 0
+      ? 0
+      : getProgressRows({ phase: model.phase, cols, cancelled: model.cancelled });
   const promptRows = clampWorkflowPromptRows({
     rows,
     inputRows,
-    promptRows: getWorkflowPromptRows({
-      approvalState: model.approvalPromptState,
-      costApprovalState: model.costApprovalState,
-      questionHint,
-      cols,
-    }),
+    progressRows,
+    promptRows: requestedPromptRows,
   });
   const promptBoxRows = model.promptPending ? Math.max(1, promptRows) : promptRows;
   const contentHeight = getWorkflowViewportHeight({
     rows,
     inputRows,
+    progressRows,
     promptRows: promptBoxRows,
   });
   const contentWidth = getWorkflowContentWidth({
@@ -138,7 +151,9 @@ export function WorkflowScreen({
           startedAt={model.startedAt}
           scrollAboveLabel={scrollAboveLabel}
           railForm={railForm}
-        />
+        >
+          {progressRows > 0 && <BuildProgressBlock cols={cols} />}
+        </WorkflowHeader>
       }
       footer={
         <>
@@ -157,13 +172,11 @@ export function WorkflowScreen({
               model.inputMode.mode !== 'normal' || model.approvalPending || model.costPending
             }
             onReviewBoundaryNavigate={handleReviewBoundaryNavigate}
-            {...(documentReviewActive
+            {...(reviewArtifact !== null
               ? {
                   onEditShortcut: () => {
-                    resetReviewActionSelection();
                     void model.handleInput('edit-file');
                   },
-                  onReviewInteraction: resetReviewActionSelection,
                 }
               : {})}
             reviewYankActive={reviewYankActive}
@@ -184,7 +197,20 @@ export function WorkflowScreen({
         onScrollBelow={setScrollBelowLabel}
       />
       <Box height={promptBoxRows} overflow="hidden" flexDirection="column" flexShrink={0}>
-        {model.approvalPending && <ApprovalPrompt clampedBoxRows={promptBoxRows} />}
+        {(model.approvalPending || reviewArtifact !== null) && (
+          <ApprovalPrompt
+            clampedBoxRows={promptBoxRows}
+            {...(reviewArtifact === null
+              ? {}
+              : {
+                  review: {
+                    artifact: reviewArtifact,
+                    selectedIndex: reviewSelected,
+                    commenting: reviewCommenting,
+                  },
+                })}
+          />
+        )}
         {model.costPending && <CostApprovalPromptConnected clampedBoxRows={promptBoxRows} />}
         {model.inputMode.mode === 'question' && (
           <QuestionPrompt hint={model.inputMode.hint} width={cols} clampedBoxRows={promptBoxRows} />

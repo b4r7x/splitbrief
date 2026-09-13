@@ -2,7 +2,8 @@ import { fuzzyMatchExtended } from './fuzzy-match.js';
 import { COMMAND_CATEGORIES } from '../../core/runtime/commands/types.js';
 import type { CommandCategory } from '../../core/runtime/commands/types.js';
 
-export type PaletteSource = 'command' | 'task' | 'session' | 'custom';
+export type CategorizedPaletteSource = 'command' | 'skill';
+export type PaletteSource = CategorizedPaletteSource | 'task' | 'session' | 'custom';
 
 export type PaletteAction =
   | { kind: 'run'; run: () => void | Promise<void> }
@@ -18,6 +19,9 @@ export interface PaletteCommandItem {
   action: PaletteAction;
 }
 
+/** A discovered skill, ranked beside the command rows: `⏎` attaches or detaches it. */
+export type PaletteSkillItem = Omit<PaletteCommandItem, 'shortcut'> & { id: string };
+
 interface PaletteCandidateBase {
   id: string;
   label: string;
@@ -27,12 +31,14 @@ interface PaletteCandidateBase {
   action: PaletteAction;
 }
 
-// Only command rows carry a category; the discriminant lets a `category === null` check narrow a
-// row to the sources that need a source-name header.
+// Only command and skill rows carry a category; the discriminant lets a `category === null` check
+// narrow a row to the sources that need a source-name header. A skill row sections with the
+// commands but keeps a source of its own so its `Skill · <name>` label takes its own width instead
+// of the command column's.
 type PaletteCandidate = PaletteCandidateBase &
   (
-    | { source: 'command'; category: CommandCategory }
-    | { source: Exclude<PaletteSource, 'command'>; category: null }
+    | { source: CategorizedPaletteSource; category: CommandCategory }
+    | { source: Exclude<PaletteSource, CategorizedPaletteSource>; category: null }
   );
 
 export type PaletteResult = PaletteCandidate & { score: number; mruRank: number };
@@ -42,6 +48,7 @@ type PaletteItemAction = { action: () => void | Promise<void> };
 export type PaletteInputs = {
   query: string;
   commandItems: PaletteCommandItem[];
+  skillItems: PaletteSkillItem[];
   taskItems: Array<{ id: string; title: string } & PaletteItemAction>;
   sessionItems: Array<{ id: string; feature: string; status: string } & PaletteItemAction>;
   customItems: Array<{ id: string; label: string; description: string } & PaletteItemAction>;
@@ -65,6 +72,19 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       source: 'command',
       category: item.category,
       shortcut: item.shortcut,
+      action: item.action,
+    });
+  }
+
+  for (const item of inputs.skillItems) {
+    candidates.push({
+      id: 'skill:' + item.id,
+      label: item.label,
+      description: item.description,
+      hint: item.hint,
+      source: 'skill',
+      category: item.category,
+      shortcut: null,
       action: item.action,
     });
   }

@@ -259,10 +259,13 @@ const ORCHESTRATION_SKILL_IDS = new Set([
   'splitbrief-review',
 ]);
 
-export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
-  if (skills.length === 0) return '';
+export type SkillContent = { content: string; omitted: string[] };
+
+export async function loadSkillContent(skills: SkillMeta[]): Promise<SkillContent> {
+  if (skills.length === 0) return { content: '', omitted: [] };
 
   const sections: string[] = [];
+  const omitted: string[] = [];
   let totalChars = 0;
 
   for (let i = 0; i < skills.length; i++) {
@@ -297,9 +300,10 @@ export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
       }
       const dropped = skills.slice(partial ? i + 1 : i);
       if (dropped.length > 0) {
-        const names = dropped.map((s) => s.name).join(', ');
+        const names = dropped.map((s) => s.name);
+        omitted.push(...names);
         sections.push(
-          `[${dropped.length} more selected skills omitted: budget ${MAX_SKILL_CHARS} chars — ${names}]`,
+          `[${dropped.length} more selected skills omitted: budget ${MAX_SKILL_CHARS} chars — ${names.join(', ')}]`,
         );
       }
       break;
@@ -309,11 +313,13 @@ export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
     totalChars += body.length;
   }
 
-  return sections.join('\n\n');
+  return { content: sections.join('\n\n'), omitted };
 }
 
-export async function buildSkillsSection(skills: SkillMeta[]): Promise<string> {
-  const content = await loadSkillContent(skills);
-  if (!content) return '';
-  return `## Active Project Skills\n\n${content}`;
+export async function buildSkillsSection(
+  skills: SkillMeta[],
+): Promise<{ section: string; omitted: string[] }> {
+  const { content, omitted } = await loadSkillContent(skills);
+  if (content === '') return { section: '', omitted };
+  return { section: `## Active Project Skills\n\n${content}`, omitted };
 }

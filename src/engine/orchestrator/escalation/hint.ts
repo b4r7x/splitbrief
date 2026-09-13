@@ -1,9 +1,11 @@
 import type { Task } from '../../../core/schemas/task.js';
 import { truncateByChars } from '../../../utils/truncate.js';
+import { HINT_ERROR_TEMPLATE, MAX_HINT_ERROR_LENGTH } from '../../../core/pipeline-spec/ladder.js';
 import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import type { GateAndPromoteOutcome } from '../approval/gate-and-promote.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
+import { withPerCallAbort } from '../cancellable-call.js';
 import {
   createBusTextHandler,
   publishError,
@@ -16,7 +18,6 @@ import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js
 import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
 import { runRetryStep } from './step.js';
 import {
-  MAX_HINT_ERROR_LENGTH,
   failedRetry,
   type EscalationContext,
   type RetryStepOutcome,
@@ -61,18 +62,23 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
   });
   let tier1Result: Awaited<ReturnType<typeof ctx.planner.escalateHint>>;
   try {
-    tier1Result = await ctx.planner.escalateHint({
-      task: initialTask,
-      error: lastError,
-      projectDir: workspace.projectDir,
-      callbacks: {
-        onOutput: reviewerHandler,
-        signal: ctx.signal,
-      },
-      languageContext,
-      fileIgnoreProjectDir: ctx.projectDir,
-      sandboxEnv: workspace.sandboxEnv,
-      changeDetection: workspace.changeDetection,
+    tier1Result = await withPerCallAbort({
+      sinks: ctx.sinks,
+      signal: ctx.signal,
+      run: (signal) =>
+        ctx.planner.escalateHint({
+          task: initialTask,
+          error: lastError,
+          projectDir: workspace.projectDir,
+          callbacks: {
+            onOutput: reviewerHandler,
+            signal,
+          },
+          languageContext,
+          fileIgnoreProjectDir: ctx.projectDir,
+          sandboxEnv: workspace.sandboxEnv,
+          changeDetection: workspace.changeDetection,
+        }),
     });
   } catch (err) {
     workspace.cleanup();
@@ -115,7 +121,7 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
   }
 
   const hintError = truncateByChars(
-    `${lastError}\n\n## Hints from senior reviewer:\n${tier1Result.output}`,
+    HINT_ERROR_TEMPLATE(lastError, tier1Result.output),
     MAX_HINT_ERROR_LENGTH,
   );
 

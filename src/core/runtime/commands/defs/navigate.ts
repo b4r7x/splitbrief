@@ -45,12 +45,14 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
         // palette description, which is also its fuzzy-match target.
         hint: '<skill-id …>',
         optional: true,
+        multi: true,
+        match: 'fuzzy',
       },
       validScreens: ALL_SCREENS,
-      handler: (args) => {
+      handler: async (args) => {
+        await ctx.refreshSkills();
         const tokens = args?.trim().split(/\s+/).filter(Boolean) ?? [];
         if (tokens.length === 0) {
-          ctx.refreshSkills();
           ctx.openOverlay('skills');
           return;
         }

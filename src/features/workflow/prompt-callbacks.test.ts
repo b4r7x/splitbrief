@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ARTIFACT_REVIEW_HINT, buildPromptCallbacks } from './prompt-callbacks.js';
-import { REVIEW_HINT } from './review-commands.js';
+import { buildPromptCallbacks } from './prompt-callbacks.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import {
   TASK_REVIEW_COMMANDS,
@@ -9,8 +8,9 @@ import {
 } from '../../engine/events/workflow-events.js';
 import { taskId } from '../../core/schemas/task.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { markInterruptResumed } from '../../stores/workflow/actions/resume.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { stopStore } from '../../stores/workflow/stop.js';
+import { tasksStore } from '../../stores/workflow/tasks.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
@@ -83,7 +83,7 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
 
       await callbacks.onApprovalNeeded(type, '/tmp/review.md');
 
-      expect(setReviewMode).toHaveBeenCalledWith(REVIEW_HINT);
+      expect(setReviewMode).toHaveBeenCalledWith('');
     },
   );
 
@@ -95,7 +95,7 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
     const setReviewMode = vi
       .fn<UseInputModeResult['setReviewMode']>()
       .mockImplementation(async (hint) => {
-        expect(hint).toBe(ARTIFACT_REVIEW_HINT);
+        expect(hint).toBe('');
         expect(reviewStore.get()).toMatchObject({
           source: { kind: 'artifact', text: review.text },
           filePath: null,
@@ -111,7 +111,7 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
       approved: true,
     });
 
-    expect(setReviewMode).toHaveBeenCalledWith(ARTIFACT_REVIEW_HINT);
+    expect(setReviewMode).toHaveBeenCalledWith('');
     expect(reviewStore.get().source).toBeNull();
   });
 });
@@ -183,6 +183,16 @@ describe('buildPromptCallbacks onTaskReviewNeeded', () => {
 describe('buildPromptCallbacks onContinuationNeeded', () => {
   beforeEach(() => {
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    stopStore.__testReset();
+    tasksStore.__testReset({
+      tasks: [{ id: 'T002', title: 'slice', status: 'in_progress' }],
+      totalTasks: 1,
+    });
+  });
+
+  afterEach(() => {
+    stopStore.__testReset();
+    tasksStore.__testReset();
   });
 
   it('returns an empty answer without asking when the workflow is already unwinding', async () => {
@@ -200,41 +210,35 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
 
     expect(result).toBe('');
     expect(setQuestionMode).not.toHaveBeenCalled();
+    expect(stopStore.get().phase).toBe('idle');
   });
 
-  it('onContinuationNeeded marks the workflow interrupted and re-asks after a superseded empty resolution', async () => {
-    const statuses: string[] = [];
-    const setQuestionMode = vi
-      .fn<UseInputModeResult['setQuestionMode']>()
-      .mockImplementationOnce(async () => {
-        statuses.push(lifecycleStore.get().status);
-        return '';
-      })
-      .mockImplementationOnce(async () => {
-        statuses.push(lifecycleStore.get().status);
-        markInterruptResumed();
-        return 'focus on retries';
-      });
+  it('parks the brief instead of asking a question', async () => {
+    const setQuestionMode = vi.fn<UseInputModeResult['setQuestionMode']>();
     const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setQuestionMode });
 
-    const result = await callbacks.onContinuationNeeded?.('partial output');
+    const pending = callbacks.onContinuationNeeded?.('partial output');
+    await Promise.resolve();
 
-    expect(result).toBe('focus on retries');
-    expect(setQuestionMode).toHaveBeenCalledTimes(2);
-    expect(statuses).toEqual(['interrupted', 'interrupted']);
-  });
-
-  it('onContinuationNeeded returns the submission once the interrupt is cleared', async () => {
-    const setQuestionMode = vi.fn<UseInputModeResult['setQuestionMode']>(async () => {
-      markInterruptResumed();
-      return '';
+    expect(setQuestionMode).not.toHaveBeenCalled();
+    expect(lifecycleStore.get().status).toBe('paused');
+    expect(stopStore.get()).toMatchObject({
+      phase: 'parked',
+      parked: { kind: 'mid-brief', taskId: 'T002' },
     });
-    const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setQuestionMode });
 
-    const result = await callbacks.onContinuationNeeded?.('partial output');
+    stopStore.resume('focus on retries');
 
-    expect(result).toBe('');
-    expect(setQuestionMode).toHaveBeenCalledTimes(1);
-    expect(lifecycleStore.get().status).toBe('running');
+    await expect(pending).resolves.toBe('focus on retries');
+  });
+
+  it('resumes with an empty steer when /resume settles the park', async () => {
+    const callbacks = makeCallbacksWithInputMode(makeInputMode(''));
+
+    const pending = callbacks.onContinuationNeeded?.('partial output');
+    await Promise.resolve();
+    stopStore.resume('');
+
+    await expect(pending).resolves.toBe('');
   });
 });

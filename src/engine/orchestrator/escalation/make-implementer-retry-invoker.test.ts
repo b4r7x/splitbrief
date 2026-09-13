@@ -71,6 +71,30 @@ describe('makeImplementerRetryInvoker', () => {
     });
   });
 
+  it('forwards the undeclaredWrites policy to the implementer', async () => {
+    const { implementer, getReceived } = makeRecordingImplementer();
+
+    const invoker = makeImplementerRetryInvoker({
+      context: defaultContext,
+      kind: 'local',
+      languageContext: buildLanguageContext('typescript'),
+      phase: 'implementing',
+      onOutput: () => {},
+    });
+
+    await invoker({
+      task: makeTask(),
+      lastError: 'boom',
+      attempts: 1,
+      projectDir: '/staged',
+      config: makeConfig(),
+      implementer,
+      undeclaredWrites: 'gate',
+    });
+
+    expect(getReceived()?.undeclaredWrites).toBe('gate');
+  });
+
   it('routes to the override implementer and config when provided', async () => {
     const argImpl = makeRecordingImplementer();
     const override = makeRecordingImplementer();

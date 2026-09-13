@@ -118,7 +118,7 @@ A change to anything a user sees — a screen, an overlay, a row, a byline, a pi
 ## Current TUI architecture
 
 - **Composer** lives in `src/components/composer/`. Do not recreate `input-bar` modules or compatibility shims.
-- **Runtime commands** live in `src/core/runtime/commands/`. They use slash names, and the registry backs both composer `/` input and the command palette. 23 commands in five categories; `/crew <seat>` is the only seat command.
+- **Runtime commands** live in `src/core/runtime/commands/`. They use slash names, and the registry backs both composer `/` input and the command palette. 26 commands in five categories; `/crew <seat>` is the only seat command.
 - **App shell** lives in `src/app/`: composition root `root.tsx` (mounts `<AppProvider><Router/>`), `router.tsx` (`renderScreen` + `renderOverlay` switches → `<Layout>`), `provider.tsx` (`AppProvider`; today only `ThemeProvider`), `layout.tsx` (header + body + footer), plus app-wide keys in `keys.ts` and runtime-command context in `command-context.ts`. The shell lives entirely under `src/app/`; there is no monolithic root component or layout file at the `src/` root.
 - **Screens and overlays are FLAT pages** under `src/app/screens/` (`home`, `workflow`, `summary`, `setup`) and `src/app/overlays/` (`help`, `palette`, `skills`, `sessions`, `settings`, `runners`, `editor`). Each page composes its feature; feature components/hooks/helpers stay in `src/features/<x>/` and are imported via `../../features/<x>/…`. `help`, `sessions`, `setup`, and `skills` are dissolved (pure-entry) — the page is the whole surface, no `features/<x>/` folder. Pages must not import each other (they coordinate via stores) or the shell modules; see [docs/INVARIANTS.md](./docs/INVARIANTS.md) gate 9.
 - **Command palette** lives in `src/features/palette/`; source assembly is `sources.ts`, ranking is `results.ts`, and the overlay entry is the page `src/app/overlays/palette.tsx`.
@@ -128,6 +128,8 @@ A change to anything a user sees — a screen, an overlay, a row, a byline, a pi
 - **Sizing** — every overlay panel, the home body and the home/summary composer take their width from `overlayRect` (`src/core/navigation/overlay-rect.ts`, densities `compact`/`roomy`/`wide`); home applies a local 108-column cap. `OverlayPanel` has no `maxWidth`. The workflow composer, the transcript and the full-bleed `editor` overlay stay full-width (see the workflow bullet below).
 - **Seat identity** — one formatter (`src/core/crew/identity.ts`, `<tool> · <model>` plus one ` · <word>` per axis the seat's effort channel carries, in effort → thinking → fast order, sanitized before measurement) feeds home, Settings, Setup, the picker mirror and the workflow header/sidebar. The short/collapsed form carries no axis, and when the collapsed line overruns its width a seat loses its whole identity (`REVIEW …`) rather than half a model name.
 - **Workflow live status** renders in the composer byline (`InputFooter` + `deriveLiveStatus`), not as a transcript row — do not recreate `live-status-row`; status derives from `lifecycle.phaseFirstSeenTs`, not a scan of the events array. The transcript has no max-width cap; the sidebar (a clamped 25% share — floor 34, cap 48, only above the 120-column workflow breakpoint — plus a 2-col gap) is the only width constraint. Transcript and review overlay share the pure markdown core (`src/utils/markdown/`), which covers links, leading-pipe GFM tables, headings h1–h6, strikethrough, and lowlight-highlighted fenced code; markdown HTML comments — including planner `<!-- Q:… -->` clarification markers — never render. File-path links display project-relative and emit OSC 8 hyperlinks when the terminal supports them (in-house env sniff in `src/lib/terminal/hyperlinks.ts`, overridable via `FORCE_HYPERLINK`). Clarification questions fire in every workflow mode through the same bordered `QuestionPrompt` panel.
+- **Stop sheet** — on the workflow screen with an empty composer, `esc` opens the modal stop sheet (`src/app/overlays/stop.tsx`; rows and copy in `src/features/workflow/stop/`): `Stop now`, `Pause after this brief`, `End run`, chosen with `↑↓` and `⏎` — no letter keys — and `esc` closes it without touching the run. `ctrl+c` is Stop now, with no sheet and no double press; `esc` on a composer holding a draft leaves both the run and the draft alone. Stop state lives in `stopStore` (`src/stores/workflow/stop.ts`); there is no abort store and no `esc esc` ladder.
+- **Build progress block** — during `implementing` the workflow screen paints fixed chrome under the header rail from `deriveBuildProgress` (`src/features/workflow/display/build-progress.ts`): the running brief and its operation, `attempt <a> of <max>`, run and attempt elapsed, freshness, spend and ETA. The only fraction any surface shows is *passed* briefs — neither the byline nor the sidebar counts a started or escalated brief as settled.
 
 ## Runner kinds
 
@@ -135,7 +137,7 @@ Planner, reviewer, and implementer all accept four runner kinds. The reviewer is
 
 | `kind` | What it is | Example |
 |---|---|---|
-| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code` |
+| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity` |
 | `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, or any OpenAI-compatible custom endpoint |
 | `shell` | Arbitrary command (stdin → stdout; no shell/network sandbox) | Custom scripts |
 | `agent` | Subprocess that writes files directly (no stdout extraction; no shell/network sandbox) | Custom file-writing tools |
@@ -148,13 +150,13 @@ Full config schemas and YAML examples: [docs/CONFIGURATION.md](./docs/CONFIGURAT
 
 | Mode | Planner calls | Approval gates | Best for |
 |---|:---:|:---:|---|
-| `quick` | 1 | none | Trivial edits and small tasks that still need a brief |
-| `standard` (default) | 4 | supporting spec + briefs | Ordinary feature work |
-| `speckit` | 6–7 | supporting spec + plan + briefs | Large, risky, or externally visible work |
+| `quick` | 1 | 0 | Trivial edits and small tasks that still need a brief |
+| `standard` (default) | 4 | 2 (spec + briefs) | Ordinary feature work |
+| `speckit` | 6–7 | 3 (spec + plan + briefs) | Large, risky, or externally visible work |
 
 Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. The retired `instant` mode was merged into `quick`; the string still parses everywhere it was persisted — normalized to `quick` with a deprecation notice, except in a few back-compatibility-only wire formats that keep it literally. Detailed semantics: [docs/WORKFLOW.md](./docs/WORKFLOW.md).
 
 ## Known limitations
 
 - macOS and Linux only — several path and sandbox semantics need POSIX; Windows support is planned but not available yet.
-- Primary development stack is TypeScript / JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines.
+- Validation is generic over the five registry stacks (TypeScript, JavaScript, Python, Go, Rust); any other stack runs review-only (`gates: NONE`).

@@ -1,4 +1,5 @@
 import { existsSync, unlinkSync } from 'node:fs';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -392,9 +393,9 @@ describe('HomeScreen', () => {
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('|___/ .__/');
+    expect(frame).toContain(SPLITBRIEF_IDENTITY.displayName);
     expect(frame).toContain('standard');
-    expect(frame).toContain('No recent sessions');
+    expect(frame).toContain('Describe a change.');
     ui.unmount();
   });
 
@@ -500,39 +501,26 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('renders the full ASCII wordmark on large terminals', async () => {
+  it('renders the wordmark on its own row on large terminals', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
 
     const ui = renderHome();
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('|____/| .__/');
-    const renderedLogoLines = getLogo('full')
-      .split('\n')
-      .filter((line) => frame.includes(line.trim()));
-    expect(renderedLogoLines.length).toBeGreaterThanOrEqual(5);
+    expect(frame).toContain(SPLITBRIEF_IDENTITY.displayName);
+    expect(frame.split('\n').filter((line) => line.trim() === getLogo())).toHaveLength(1);
     ui.unmount();
   });
 
-  it('renders compact ASCII art on small terminals', async () => {
+  it('renders the same wordmark on small terminals', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 15, isSmall: true });
 
     const ui = renderHome();
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('|___/ .__/');
-    const compactLines = new Set(
-      getLogo('compact')
-        .split('\n')
-        .map((line) => line.trim()),
-    );
-    const fullOnlyLines = getLogo('full')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => !compactLines.has(line));
-    expect(fullOnlyLines.filter((line) => frame.includes(line))).toEqual([]);
+    expect(frame.split('\n').filter((line) => line.trim() === getLogo())).toHaveLength(1);
     ui.unmount();
   });
 
@@ -582,7 +570,7 @@ describe('HomeScreen', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(frame).toContain('|____/| .__/');
+    expect(frame).toContain(SPLITBRIEF_IDENTITY.displayName);
     expect(frame).toContain('gap test feature');
     expect(frame).toContain(HOME_HINT);
     ui.unmount();
@@ -762,7 +750,7 @@ describe('HomeScreen', () => {
 
     await tick(500);
     const settledFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(settledFrame).toContain('|____/| .__/');
+    expect(settledFrame).toContain(SPLITBRIEF_IDENTITY.displayName);
     expect(settledFrame).toContain('background preparation');
     expect(settledFrame).toContain(DEFAULT_HOME_HINT);
     expect(settledFrame).not.toContain('Waking your crew…');
@@ -1131,7 +1119,6 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).not.toContain(FOCUS_BAR);
     expect(frame).not.toContain('Type to filter…');
-    expect(frame).not.toContain('Recent sessions');
     ui.unmount();
   });
 

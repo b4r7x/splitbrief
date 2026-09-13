@@ -67,7 +67,7 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
-  it('reports a failed final review and a failed task', () => {
+  it('review: failed carries the blocking count the event already knows', () => {
     const lines = collect([
       { type: 'task_full_fail', ts, phase: 'implementing', taskId: taskId('T002') },
       {
@@ -77,14 +77,97 @@ describe('createStdoutTextSink', () => {
         status: 'done',
         summary: 'Final review failed',
       },
+      { type: 'workflow_complete', ts, phase: 'complete', review: 'failed', blocking: 2 },
     ]);
 
     expect(lines).toEqual([
       'phase: implementing',
       'task T002: failed (no gates)',
       'phase: final-review',
-      'review: failed',
+      'phase: complete',
+      'review: failed (2 blocking)',
+      'done: 0 tasks, 0 tokens',
     ]);
+  });
+
+  it('effect-invalid reason on task failed line', () => {
+    const lines = collect([
+      {
+        type: 'task_full_fail',
+        ts,
+        phase: 'implementing',
+        taskId: taskId('T002'),
+        reason: 'effect-invalid: src/unrelated.ts',
+      },
+    ]);
+
+    expect(lines).toEqual([
+      'phase: implementing',
+      'task T002: failed (effect-invalid: src/unrelated.ts)',
+    ]);
+  });
+
+  it('gates: NONE — review-only', () => {
+    const gateless = (id: string): EngineEvent[] => [
+      {
+        type: 'validate',
+        ts,
+        phase: 'implementing',
+        taskId: taskId(id),
+        status: 'done',
+        passed: true,
+        stages: { typecheck: false, lint: false, test: false },
+        skipped: { typecheck: true, lint: true, test: true },
+      },
+      {
+        type: 'warning',
+        ts,
+        phase: 'implementing',
+        message: `Task ${id} was not validated: no gates for an unrecognised stack (typecheck, lint, test).`,
+        category: 'validation',
+        code: 'no_gates_unknown_stack',
+      },
+    ];
+
+    expect(collect([...gateless('T001'), ...gateless('T002')])).toEqual([
+      'phase: implementing',
+      'gates: NONE — review-only',
+    ]);
+  });
+
+  it('a mixed skip set does not announce gates: NONE', () => {
+    const lines = collect([
+      {
+        type: 'validate',
+        ts,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        status: 'done',
+        passed: true,
+        stages: { typecheck: false, lint: false, test: false },
+        skipped: { typecheck: true, lint: true, test: true },
+        skippedReason: { test: 'no test command for an unrecognised stack' },
+      },
+      {
+        type: 'warning',
+        ts,
+        phase: 'implementing',
+        message:
+          'Task T001 was not validated: every enabled validation stage was skipped (typecheck, lint, test).',
+      },
+      {
+        type: 'task_completed',
+        ts,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        title: 'Add the widget',
+        method: 'local',
+        retries: 0,
+        duration: 12,
+      },
+    ]);
+
+    expect(lines).toEqual(['phase: implementing', 'task T001: done (no gates)']);
   });
 
   it('writes nothing for pre-start events that carry the idle phase', () => {

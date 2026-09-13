@@ -139,8 +139,8 @@ export const gates: readonly Gate[] = [
   {
     id: '17c',
     description:
-      'No incidental broad as-casts (type token must be followed by a terminator, excluding as const/as unknown/as Extract, comment lines, and sanctioned files)',
-    command: `{ rg -n -P "[)\\]}A-Za-z0-9_>'] as [A-Z][A-Za-z0-9_]*(?=\\s*[;),<\\].}>&|]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v -P "^[^:]+:\\d+:\\s*(?://|\\*|/\\*)" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|utils/error|utils/type-guards)\\.ts:" || true; } | wc -l`,
+      'No incidental broad as-casts (type token must be followed by a terminator, excluding as const/as unknown/as Extract, comment lines, ESM import/export alias clauses, and sanctioned files)',
+    command: `{ rg -n -P "[)\\]}A-Za-z0-9_>'] as [A-Z][A-Za-z0-9_]*(?=\\s*[;),<\\].}>&|]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v -P "^[^:]+:\\d+:\\s*(?://|\\*|/\\*|(?:import|export)\\s+(?:type\\s+)?\\{)" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|utils/error|utils/type-guards)\\.ts:" || true; } | wc -l`,
     expected: 0,
   },
   {
@@ -281,6 +281,12 @@ export const gates: readonly Gate[] = [
     description: 'Capability inference is imported from core, never from engine',
     command:
       "{ rg -n \"from '.*engine/providers/capability-inference\" src/features src/app src/components src/core --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
+    expected: 0,
+  },
+  {
+    id: '48',
+    description: 'Validation stack literals live only in src/core/validation/stacks',
+    command: `{ rg -n "npx tsc|npm test|\\.test\\.ts'" src --glob '!**/*.test.*' --glob '!src/core/validation/stacks/**' || true; } | wc -l`,
     expected: 0,
   },
 ];

@@ -1,4 +1,4 @@
-import { detectProjectLanguage } from '../../../core/project-meta.js';
+import { detectStack } from '../../../core/validation/stacks/registry.js';
 
 export type LanguageContext = {
   language: string;
@@ -96,7 +96,7 @@ export function codeFenceLanguage(ctx: LanguageContext): string {
 }
 
 export function detectPromptLanguage(projectDir: string): string | undefined {
-  return detectProjectLanguage(projectDir);
+  return detectStack(projectDir)?.language;
 }
 
 export function extractLanguageFromResearch(researchMarkdown: string): string | undefined {

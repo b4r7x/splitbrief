@@ -5,16 +5,19 @@ import { isPathConfined } from '../../../lib/path-confinement.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
+const confinedPath = z
+  .string()
+  .min(1)
+  .refine((p) => isPathConfined(p, '.'), {
+    message: 'task file path must be a confined relative path',
+  });
+
 export const TaskFrontmatterSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   action: FileActionSchema,
-  file: z
-    .string()
-    .min(1)
-    .refine((p) => isPathConfined(p, '.'), {
-      message: 'task file path must be a confined relative path',
-    }),
+  file: confinedPath,
+  files: z.union([z.array(confinedPath).min(1), confinedPath.transform((p) => [p])]).optional(),
   depends_on: z
     .union([z.array(z.string()), z.string().transform((s) => [s])])
     .optional()

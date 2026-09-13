@@ -15,9 +15,9 @@ import { createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  createTaskCompilationAttemptId,
-  TaskCompilationSemanticIdSchema,
-} from '../../../core/schemas/task-compilation.js';
+  createPlannerArtifactAttemptId,
+  PlannerArtifactSemanticIdSchema,
+} from '../../../core/schemas/planner-artifact.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   DECLARED_ARTIFACT_STAGE_MAX_BYTES,
@@ -70,13 +70,13 @@ async function createFixture(): Promise<Fixture> {
   const root = trackedTempDir('artifact-stage-manifest');
   mkdirSync(join(root, 'src'));
   writeFileSync(join(root, 'src', 'baseline.ts'), 'export const baseline = true;\n');
-  const attemptId = createTaskCompilationAttemptId();
+  const attemptId = createPlannerArtifactAttemptId();
   const leaseId = `fixture-${attemptId}`;
   const relativePath = `.splitbrief-runner/output/${leaseId}/result`;
   const lease = await prepareArtifactStageLease({
     stagedProjectDir: root,
     provenance: {
-      semanticId: TaskCompilationSemanticIdSchema.parse('artifact-stage-test'),
+      semanticId: PlannerArtifactSemanticIdSchema.parse('artifact-stage-test'),
       programId: null,
       batchId: null,
       attemptId,

@@ -65,7 +65,7 @@ describe('ModeSelector', () => {
     ui.unmount();
   });
 
-  it('states each mode planner call count and gate count', async () => {
+  it('counts derive from mode table', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
 
     const ui = renderFeature(<ModeSelector />);
@@ -73,9 +73,24 @@ describe('ModeSelector', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(`↑↓ navigate${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`);
-    expect(modeLine(frame, 'quick')).toContain(`1 call${SOFT_SEP}0 gates`);
-    expect(modeLine(frame, 'standard')).toContain(`4 calls${SOFT_SEP}1 gate`);
-    expect(modeLine(frame, 'speckit')).toContain(`6-7 calls${SOFT_SEP}2 gates`);
+    // The counts sit on the line under each row, so they are read from the panel, not the row.
+    expect(frame).toContain(`1 planning call${SOFT_SEP}0 gates`);
+    expect(frame).toContain(`4 planning calls${SOFT_SEP}2 gates (spec + briefs)`);
+    expect(frame).toContain(`6-7 planning calls${SOFT_SEP}3 gates (spec + plan + briefs)`);
+
+    ui.unmount();
+  });
+
+  it('the counts line starts in the metadata column of the row above it', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+
+    const ui = renderFeature(<ModeSelector />);
+    await tick(20);
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(modeLine(frame, 'plan and go').indexOf('plan and go')).toBe(
+      modeLine(frame, '1 planning call').indexOf('1 planning call'),
+    );
 
     ui.unmount();
   });
@@ -88,9 +103,9 @@ describe('ModeSelector', () => {
 
     const frame = ui.lastFrame() ?? '';
     const modeCases: ReadonlyArray<readonly [string, string]> = [
-      ['quick', '1 call'],
-      ['standard', '4 calls'],
-      ['speckit', '6-7 calls'],
+      ['quick', '1 planning'],
+      ['standard', '4 planning'],
+      ['speckit', '6-7 planning'],
     ];
     const metadataStarts = modeCases.map(([mode, metadata]) => {
       const line = modeLine(frame, mode);
@@ -102,8 +117,33 @@ describe('ModeSelector', () => {
     ui.unmount();
   });
 
+  it('a one-line row carries its counts whole and keeps a column before the check', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
+
+    const ui = renderFeature(<ModeSelector />);
+    await tick(20);
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const wholeCounts: ReadonlyArray<readonly [string, string]> = [
+      ['quick', '1 planning call · 0 gates'],
+      ['standard', '4 planning calls · 2 gates'],
+      ['speckit', '6-7 planning calls · 3 gates'],
+    ];
+    for (const [mode, counts] of wholeCounts) {
+      const line = modeLine(frame, mode);
+      expect(line).toContain(counts);
+      expect(line).not.toContain('…');
+      expect(line).not.toContain('(');
+    }
+    const currentLine = modeLine(frame, 'standard');
+    const checkAt = currentLine.indexOf(glyph('check'));
+    expect(currentLine.slice(checkAt - 2, checkAt)).toBe('  ');
+
+    ui.unmount();
+  });
+
   it('overflowing metadata truncates with …', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: true });
+    terminalSizeStore.__testReset({ cols: 50, rows: 30, isSmall: true });
 
     const ui = renderFeature(<ModeSelector />);
     await tick(20);
@@ -125,7 +165,7 @@ describe('ModeSelector', () => {
     expect(currentLine).toContain(`${glyph('check')} Current`);
     expect(currentLine.split('Current').length - 1).toBe(1);
     expect(otherLine).not.toContain('Current');
-    expect(currentLine.indexOf('4 calls')).toBe(otherLine.indexOf('1 call'));
+    expect(currentLine.indexOf('spec gate')).toBe(otherLine.indexOf('plan and go'));
     ui.unmount();
   });
 

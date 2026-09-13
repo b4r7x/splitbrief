@@ -1,4 +1,4 @@
-import type { Task } from '../../../core/schemas/task.js';
+import { taskFiles, type Task } from '../../../core/schemas/task.js';
 import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import type { ValidationResult } from '../validation/result.js';
 import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/schemas/evidence.js';
@@ -16,6 +16,16 @@ const VALIDATION_PRE_EXISTING_LABEL: Record<EvidenceValidationEntry['stage'], st
   lint: 'lint failed (pre-existing)',
   test: 'test failed (pre-existing)',
 };
+
+function validationSkippedLabel(result: ValidationResult): string {
+  const reason = result.skippedReason;
+  return reason === undefined ? `${result.stage} skipped` : `${result.stage} skipped (${reason})`;
+}
+
+function diffWrittenLabel(task: Task, changedCount: number): string {
+  const target = changedCount > 1 ? `${changedCount} files` : task.file;
+  return `diff written for ${target}`;
+}
 
 function isExemptStage(
   stage: EvidenceValidationEntry['stage'],
@@ -41,6 +51,10 @@ export function validationEntries(
     if (r.command !== undefined) entry.command = r.command;
     if (r.output !== undefined && r.output.trim() !== '') entry.output = r.output;
     if (r.error && !r.passed) entry.errorSummary = r.error.split('\n').slice(0, 5).join('\n');
+    if (r.skipped === true) {
+      entry.skipped = true;
+      if (r.skippedReason !== undefined) entry.skippedReason = r.skippedReason;
+    }
     if (!r.passed && isExemptStage(r.stage, metadata?.exemptStages)) entry.baselineExempt = true;
     if (metadata?.retryState) entry.retryState = metadata.retryState;
     if (metadata?.changedFiles && metadata.changedFiles.length > 0) {
@@ -83,24 +97,29 @@ export function recordLocalTaskEvidence(input: RecordLocalTaskEvidenceInput): Ev
   if (input.method) next.method = input.method;
   if (typeof input.retries === 'number') next.retries = input.retries;
   if (typeof input.durationMs === 'number') next.durationMs = input.durationMs;
-  for (const file of input.changedFiles ?? [input.task.file]) {
+  for (const file of input.changedFiles ?? taskFiles(input.task)) {
     if (file) uniquePush(next.changedFiles, file);
   }
-  next.validation = validationEntries(input.validation, {
-    retryState: input.validationRetryState,
-    changedFiles: input.changedFiles,
-    exemptStages: input.exemptStages,
-  });
+  appendValidationEntries(
+    next.validation,
+    validationEntries(input.validation, {
+      retryState: input.validationRetryState,
+      changedFiles: input.changedFiles,
+      exemptStages: input.exemptStages,
+    }),
+  );
   if (input.status === 'done') uniquePush(next.observedEvidence, 'task reached done');
   for (const r of input.validation) {
-    if (r.passed) {
+    if (r.skipped === true) {
+      uniquePush(next.observedEvidence, validationSkippedLabel(r));
+    } else if (r.passed) {
       uniquePush(next.observedEvidence, VALIDATION_PASSED_LABEL[r.stage]);
     } else if (isExemptStage(r.stage, input.exemptStages)) {
       uniquePush(next.observedEvidence, VALIDATION_PRE_EXISTING_LABEL[r.stage]);
     }
   }
   if (next.changedFiles.length > 0) {
-    uniquePush(next.observedEvidence, `diff written for ${input.task.file}`);
+    uniquePush(next.observedEvidence, diffWrittenLabel(input.task, next.changedFiles.length));
   }
   return withUpdatedTask(input.ledger, next.id, () => next);
 }
@@ -153,7 +172,9 @@ export function recordRetryOrEscalationEvidence(
   }
   if (input.validation) {
     for (const r of input.validation) {
-      if (r.passed) {
+      if (r.skipped === true) {
+        uniquePush(next.observedEvidence, validationSkippedLabel(r));
+      } else if (r.passed) {
         uniquePush(next.observedEvidence, VALIDATION_PASSED_LABEL[r.stage]);
       } else if (isExemptStage(r.stage, input.exemptStages)) {
         uniquePush(next.observedEvidence, VALIDATION_PRE_EXISTING_LABEL[r.stage]);
@@ -161,7 +182,7 @@ export function recordRetryOrEscalationEvidence(
     }
   }
   if (next.changedFiles.length > 0) {
-    uniquePush(next.observedEvidence, `diff written for ${input.task.file}`);
+    uniquePush(next.observedEvidence, diffWrittenLabel(input.task, next.changedFiles.length));
   }
   return withUpdatedTask(input.ledger, next.id, () => next);
 }

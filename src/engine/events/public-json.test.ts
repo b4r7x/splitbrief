@@ -50,6 +50,7 @@ describe('boundHeadlessJsonRecord', () => {
           message: 'overflow',
           availableActions: ['pause-run', 'abort-workflow'],
           recommendedAction: 'pause-run',
+          resumeCommand: 'splitbrief resume',
         }),
       ).toMatchObject({ type: 'recovery_required', status });
     }
@@ -64,6 +65,7 @@ describe('boundHeadlessJsonRecord', () => {
         message: 'overflow',
         availableActions: ['pause-run', 'abort-workflow'],
         recommendedAction: 'pause-run',
+        resumeCommand: 'splitbrief resume',
       }),
     ).toMatchObject({
       type: 'recovery_required',

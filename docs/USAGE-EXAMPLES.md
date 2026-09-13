@@ -439,7 +439,7 @@ drift_chain_detected
 
 The drift chain detector tracks out-of-bounds files across tasks. A high score indicates the implementer is repeatedly straying into the same off-scope area — usually a sign the brief was wrong about scope.
 
-**Variations:** Inspect the final deterministic report directly: `cat .splitbrief/sessions/<id>/drift-report.json | jq`. Inspect `drift-chains.json` for cross-task chain state. The summary screen shows a `Drift` row with the latest score.
+**Variations:** Inspect the final deterministic report directly: `cat .splitbrief/sessions/<id>/drift-report.json | jq`. Inspect `drift-chains.json` for cross-task chain state. The summary screen shows a `Scope` row with the latest score.
 
 **See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) §Drift detection rules.
 
@@ -587,7 +587,7 @@ Denied tasks land in the evidence ledger as `skipped: <reason>`. There is no `/s
 
 **Variations:** To re-run a skipped task later, see recipe 16.
 
-**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 23.
+**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 26.
 
 ---
 
@@ -643,29 +643,51 @@ Mode set to 'quick'. Saved to .splitbrief/config.yaml.
 
 ---
 
-### 18. Abort cleanly
+### 18. Stop a run cleanly
 
-**When:** something is wrong and you want to stop without losing the partial transcript.
+**When:** something is wrong and you want to stop without losing the partial transcript or the changes already written.
 
-**Run:**
-
-- **Ctrl-C once** during a live phase: aborts the current planner / implementer call. Partial output preserved with `interrupted: true` in `session.jsonl`. Workflow enters `awaitingContinue: true`. Press Enter to continue, or type a message and Enter to inject context on resume.
-- **Ctrl-C twice within 2 seconds:** exits the process after state is saved. Continue later with `splitbrief continue <session-id>` if the saved state is resumable.
-
-**You'll see:**
+**Run:** press `esc` on an empty composer and pick a row.
 
 ```
-^C  Aborting current turn… (press again within 2s to exit)
-phase: planning · awaitingContinue
-> what about edge case X?
-phase: planning  ← resumes with the message folded in
+╭──────────────────────────────────────────────────────────────────────╮
+│                                                                      │
+│  Stop options                                                        │
+│                                                                      │
+│  ▌ Stop now                                                          │
+│    stop execution; keep partial changes                              │
+│                                                                      │
+│    Pause after this brief                                            │
+│    finish T002 including checks and review; do not start T003        │
+│                                                                      │
+│    End run                                                           │
+│    stop execution; mark this run cancelled; keep changes             │
+│                                                                      │
+│  No option reverts files. Your draft is preserved.                   │
+│                                                                      │
+│  ↑↓ · ⏎ · esc                                                        │
+│                                                                      │
+╰──────────────────────────────────────────────────────────────────────╯
 ```
 
-`Esc` closes overlays first. On the workflow screen, it follows the same guarded interruption flow: press once to arm the interrupt/cancel action shown in the footer, then press again to fire it.
+**You'll see** the byline report the stop while it happens, then the park:
 
-**Variations:** `splitbrief resume` re-enters the active saved phase. Use `splitbrief continue <session-id>` when the active pointer is absent but you know the session id. Safe resume covers saved `planning`, `implementing`, and `final-review` phases; earlier phases (`researching`, `specifying`) refuse resume with a clear error.
+```
+⠙ Stopping T002 · Waiting for processes to exit · elapsed 2s   No new work will start
+◌ Paused at T002 · Partial changes kept
+  /resume · type instructions, enter to send and resume · /end · esc home
+```
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.5, §1.6.
+- **`Stop now`** (also `ctrl+c`, one press, no armed window) aborts the in-flight call and any retry, escalation or per-task review call, schedules nothing new, and parks with the partial changes kept.
+- **`Pause after this brief`** lets `T002` finish its checks and per-task review, then parks before `T003`: `Paused after T002 · 2 of 7 briefs complete`. While the pause is pending, the sheet's second row reads `Keep running` — that is how you take it back.
+- **`End run`** stops the same way as Stop now and persists the session with status `cancelled`: `Cancelled by you at T002 · Changes kept`.
+- **`ctrl+q` / `/quit`** stops safely, saves the session, and then exits.
+
+No option reverts files: git is the layer that reverses a run, which is why SPLITBRIEF leaves the changes unstaged. `esc` with text in the composer touches neither the run nor the draft — the feedback row says `clear the draft or ctrl+c to stop now`.
+
+**Variations:** `/resume` restarts a parked run — typed instructions steer it, a blank Enter never resumes; `/end` cancels a parked one. From the shell, `splitbrief resume` re-enters the active saved phase and `splitbrief continue <session-id>` works when the active pointer is gone. Resumable phases are `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `validating-task`, `escalating` and `final-review`; a run killed during validation or escalation re-enters at the start of the brief it was on. `researching` and `specifying` refuse resume with a clear error.
+
+**See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/WORKFLOW.md](./WORKFLOW.md) §1.5, §1.6.
 
 ---
 
@@ -827,9 +849,82 @@ Cost is reported in tokens, not dollars: the event stream carries token counts, 
 
 ---
 
+### 23. Answer a halted run without a TUI
+
+**When:** a `--json` or `--plain` run stopped on a recovery issue in CI, and you want to resolve it from the shell instead of opening the recovery panel.
+
+**Run:** the halt tells you the command. Every headless run that stops on a recovery writes three lines to stderr and exits `1`:
+
+```
+Recovery required (retry-exhausted): T002 failed after 3 attempts
+Recommended: skip-current-task
+Continue with: splitbrief continue 2026-09-13-rate-limiter --action skip [--plain|--json]
+```
+
+Paste the last line, choosing the rendering you want:
+
+```bash
+splitbrief continue 2026-09-13-rate-limiter --action skip --plain
+```
+
+**You'll see:** the action is applied to the pending recovery — the same transition the panel would make — and the run continues from the state it produced:
+
+```
+phase: implementing
+task T003: done (typecheck lint test)
+phase: final-review
+review: passed
+done: 2 tasks, 96.1k tokens
+```
+
+**The three actions `continue` can take:**
+
+| `--action` | What it does |
+|---|---|
+| `skip` | `skip-current-task` — marks the blocked brief skipped, records evidence, and moves on |
+| `retry` | `retry-same-worker` — resets the brief and reruns it in a fresh worker context |
+| `switch-seat:<tool>[:<model>]` | Moves the blocked seat to another detected tool, then reruns the brief there — the answer to a quota halt |
+
+**Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same three lines and exits `1`. An action the issue does not allow exits `1` and names the actions it does allow; a value that is not one of the three exits `2` with `'<value>' is not a recovery action. Use skip, retry, or switch-seat:<tool>[:<model>].` Recoveries whose recommended action needs the panel print `splitbrief resume (<action> is available in the TUI)` instead.
+
+**See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-continue), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
+
+---
+
+### 24. Prime the planner with project skills
+
+**When:** the repo carries planner skills — house conventions, a testing standard, a security checklist — and you want a scripted run to use them without opening the picker.
+
+**Run:**
+
+```bash
+# what is discoverable in this repo
+ls .claude/skills .splitbrief/skills 2>/dev/null
+
+splitbrief start --plain --approve none \
+  --skills testing-standards,api-conventions \
+  "add a POST /invoices endpoint"
+```
+
+**You'll see:** the ids are resolved against the same scan roots the `/skills` picker uses — project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `./.github/skills/`, `./.commandcode/skills/`, `./.kilo/skills/`, `./.kilocode/skills/`, `./.cursor/skills/`, then the global forms of the same — and their text reaches the planner in every planning phase under one `## Active Project Skills` section. Nothing prints for a successful attach; the run simply plans with them.
+
+An id no root carries fails before planning, so a typo costs no tokens:
+
+```
+Error: Unknown skill: testing-standard (scanned: ./.splitbrief/skills, ./.claude/skills, …)
+```
+
+with exit `2`.
+
+**Variations:** `--skills` also applies to `splitbrief resume` and `splitbrief continue`, in headless and interactive mode alike, where it replaces the selection saved with the session. Interactively, `/skills` opens the picker, `/skills <id> <id>` toggles by id (fuzzy, several at a time), and the command palette carries one `Skill · <name>` row per discovered skill. The section is budgeted at 16 000 characters; past that a `skills_truncated` warning names what was dropped rather than silently shortening the prompt.
+
+**See also:** [docs/FEATURES.md](./FEATURES.md#skills), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md#skills).
+
+---
+
 ## Power user
 
-### 23. Define project-level coding rules
+### 25. Define project-level coding rules
 
 **When:** you want speckit's constitution-check to enforce project conventions (no React Context, ESM `.js` suffix, etc.).
 
@@ -871,7 +966,7 @@ A hard violation (`severity: hard`) aborts the run with a `warning` event explai
 
 ---
 
-### 24. Run pre/post task shell hooks
+### 26. Run pre/post task shell hooks
 
 **When:** you want to format with Prettier and run Biome after every task without modifying the validation pipeline.
 
@@ -925,7 +1020,7 @@ The receipt goes to `~/.splitbrief/trust/hooks.json`, keyed by this checkout —
 
 ## TUI quick reference
 
-### 25. Open the command palette
+### 27. Open the command palette
 
 **When:** you want to discover or quickly invoke any of the slash commands from anywhere in the TUI.
 
@@ -971,7 +1066,7 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 
 ---
 
-### 26. Confirm a destructive file write (confirm tier)
+### 28. Confirm a destructive file write (confirm tier)
 
 **When:** a declared file write is classified as `destructive` (for example, a control-plane path under `.splitbrief/**`) and `approval.tiers.destructive` is set to `confirm`.
 
@@ -1011,7 +1106,7 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 
 ---
 
-### 27. Adapt the plan from a rejection
+### 29. Adapt the plan from a rejection
 
 **When:** the implementer proposed an action you rejected, and you want the planner to take that rejection into account on the next run. Planner and implementer roles: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
@@ -1053,7 +1148,7 @@ plan_regenerated · 3 tasks  ← T002 now avoids the rejected path
 
 ## One-shot review
 
-### 28. Review a diff without starting a run
+### 30. Review a diff without starting a run
 
 **When:** the code is already written — by you, a teammate, or another agent — and you want SPLITBRIEF's review seat on it without a plan, a session, or a state machine.
 

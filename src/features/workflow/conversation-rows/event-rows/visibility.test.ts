@@ -34,6 +34,13 @@ describe('isTranscriptRowlessEvent', () => {
       phase: 'planning',
       text: 'hello',
     };
+    const reviewFixStarted: EngineEventOf<'review_fix_started'> = {
+      type: 'review_fix_started',
+      ts: 0,
+      phase: 'implementing',
+      cycle: 1,
+      taskIds: [taskId('T001')],
+    };
     const stalled: EngineEvent = {
       type: 'runner_call_stalled',
       ts: 0,
@@ -59,6 +66,7 @@ describe('isTranscriptRowlessEvent', () => {
     expect(isTranscriptRowlessEvent(tokens)).toBe(true);
     expect(isTranscriptRowlessEvent(stalled)).toBe(true);
     expect(isTranscriptRowlessEvent(stallCleared)).toBe(true);
+    expect(isTranscriptRowlessEvent(reviewFixStarted)).toBe(true);
     expect(isTranscriptRowlessEvent(text)).toBe(false);
   });
 });

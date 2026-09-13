@@ -3,39 +3,18 @@ import {
   type DeepReadonly,
   type RunnerConfig,
 } from '../../core/config/accessors/runner-config.js';
+import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
 
 /**
- * Diagnostics a runner emits when its stored credentials no longer work.
- * Matched only against failure diagnostics (`RunnerCallResult.error.message`),
- * never against task output, so tool-specific prose is a safe discriminant.
- *
- * Codex phrases were captured verbatim from `codex exec --json`
- * (codex-cli 0.146.0, 2026-08-06): a burned refresh token reports
- * "Your access token could not be refreshed because your refresh token was
- * already used. Please log out and sign in again."; a signed-out install
- * reports "unexpected status 401 Unauthorized: Missing bearer or basic
- * authentication in header, ...". Claude Code reports its signed-out states
- * as `is_error` result text: "Invalid API key · Please run /login",
- * "OAuth token has expired ...", "OAuth token revoked ...", and surfaces
- * Anthropic's `authentication_error` body for a rejected api-key channel.
+ * Signed-out diagnostics are matched against the one halt phrase set
+ * (`HALT_SIGNATURES.auth`) the CLI and the skills share, and only against
+ * failure diagnostics (`RunnerCallResult.error.message`), never task output.
  */
-const AUTH_FAILURE_PHRASES: readonly string[] = [
-  'access token could not be refreshed',
-  'log out and sign in again',
-  '401 unauthorized',
-  'please run /login',
-  'invalid api key',
-  'oauth token has expired',
-  'oauth token revoked',
-  'authentication_error',
-  'not logged in',
-];
-
 export function isAuthFailureDiagnostic(message: string): boolean {
   const text = message.toLowerCase();
-  return AUTH_FAILURE_PHRASES.some((phrase) => text.includes(phrase));
+  return HALT_SIGNATURES.auth.some((phrase) => text.includes(phrase));
 }
 
 /** How the runner is named in signed-out messages: catalog names, not config ids. */

@@ -123,12 +123,19 @@ function mergeModelOptions(custom: ModelOption[], known: ModelOption[]): ModelOp
   return sortModelsByRecency([...byId.values()]);
 }
 
+/** A row no catalog knows anything about says so, rather than leaving its metadata column blank. */
+const NO_CATALOG_ENTRY_DETAIL = 'no catalog entry';
+
 function toModelOption(entry: ReturnType<typeof resolveModelCatalog>[number]): ModelOption {
   const displayName = resolveModelDisplayName(entry);
+  const isNamed = displayName !== entry.id;
+  const knowsNothing =
+    !isNamed && entry.contextLength === undefined && entry.releaseDate === undefined;
+  const detail = entry.detail ?? (knowsNothing ? NO_CATALOG_ENTRY_DETAIL : undefined);
   return {
     id: entry.id,
-    ...(displayName !== entry.id ? { displayName } : {}),
-    ...(entry.detail === undefined ? {} : { detail: entry.detail }),
+    ...(isNamed ? { displayName } : {}),
+    ...(detail === undefined ? {} : { detail }),
     ...(entry.catalogModelId === undefined ? {} : { catalogModelId: entry.catalogModelId }),
     isDefault: entry.isDefault,
     isDetected: entry.membership === 'confirmed',
@@ -207,7 +214,12 @@ export function resolveAndSort(
     configuredSelectionId: options.configuredSelectionId,
     browseCatalog: options.browseCatalog,
   });
-  return sortModelsByRecency(dedupeAgainstRuntime(entries).map(toModelOption));
+  // Two lanes may spell one id with different owners; the picker lists a selection once.
+  const byId = new Map<string, ModelOption>();
+  for (const row of dedupeAgainstRuntime(entries).map(toModelOption)) {
+    if (!byId.has(row.id)) byId.set(row.id, row);
+  }
+  return sortModelsByRecency([...byId.values()]);
 }
 
 /**

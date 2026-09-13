@@ -5,6 +5,7 @@ import {
 } from '../../../core/readiness/format.js';
 import { writeHeadlessJsonRecord } from '../../../engine/events/public-json.js';
 import { releasePreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
+import { resolveSelectedSkills } from '../../headless.js';
 import { prepareStartExecution } from './readiness.js';
 import type { RequiredFeatureDispatchArgs } from './types.js';
 
@@ -19,6 +20,7 @@ export async function runHeadlessStart(
 ): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, opts, mode } = args;
   await ensureGitAndConfig(projectDir);
+  const selectedSkills = await resolveSelectedSkills(projectDir, opts.skills);
   const execution = await prepareStartExecution({
     projectDir,
     feature: enrichedFeature ?? feature,
@@ -39,5 +41,9 @@ export async function runHeadlessStart(
     ...(deps.prepareExecution !== undefined && { prepare: deps.prepareExecution }),
   });
   releasePreparedExecutionOwnership(execution);
-  await deps.runHeadless({ prepared: execution, ...(mode === 'plain' && { plain: true }) });
+  await deps.runHeadless({
+    prepared: execution,
+    ...(mode === 'plain' && { plain: true }),
+    ...(selectedSkills !== undefined && { selectedSkills }),
+  });
 }

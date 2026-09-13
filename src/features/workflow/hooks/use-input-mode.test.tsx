@@ -5,6 +5,7 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
+import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 import { useInputMode, type UseInputModeResult } from './use-input-mode.js';
 
 function Harness({ capture }: { capture: { current: UseInputModeResult | null } }) {
@@ -241,22 +242,39 @@ describe('useInputMode — mode transitions', () => {
     ui.unmount();
   });
 
-  it('cancelling the workflow resolves a pending question promise with an empty answer', async () => {
+  it('end run does not answer a pending question with an empty string', async () => {
     const { ref, ui } = mount();
     await tick();
     const inputMode = requireRef(ref);
 
     let answer: string | undefined;
-    const pending = inputMode.setQuestionMode('Which DB?').then((v) => {
-      answer = v;
-    });
+    const pending = inputMode.setQuestionMode('Which DB?').then(
+      (v) => {
+        answer = v;
+      },
+      () => {},
+    );
     await waitForMode(ref, 'question');
 
     requireRef(ref).resetMode();
     await pending;
 
-    expect(answer).toBe('');
+    expect(answer).toBeUndefined();
     expect(questionPromptStore.get().hint).toBeNull();
+    ui.unmount();
+  });
+
+  it('rejects the unanswered question with the user-cancelled reason', async () => {
+    const { ref, ui } = mount();
+    await tick();
+    const inputMode = requireRef(ref);
+
+    const pending = inputMode.setQuestionMode('Which DB?');
+    await waitForMode(ref, 'question');
+
+    requireRef(ref).resetMode();
+
+    await expect(pending).rejects.toBe(WORKFLOW_USER_CANCELLED_ABORT_REASON);
     ui.unmount();
   });
 

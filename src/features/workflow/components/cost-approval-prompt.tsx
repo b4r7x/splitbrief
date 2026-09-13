@@ -16,7 +16,6 @@ import { registerMouseZone } from '../../../lib/terminal/mouse-zones.js';
 import { readConversationScrollSnapshot } from '../layout/snapshot.js';
 import {
   APPROVAL_OPTION_FIRST_ROW_OFFSET,
-  GATE_TITLE,
   approvalKeyColumnWidth,
   approvalOptionKeyCell,
   approvalOptionLabelText,
@@ -177,11 +176,13 @@ export function CostApprovalPrompt({
   );
 }
 
+const COST_GATE_LABEL = 'Approval';
+
 function CostGateTitle() {
   const t = useTheme();
   return (
     <Text color={t.textDim}>
-      {GATE_TITLE}
+      {COST_GATE_LABEL}
       {SOFT_SEP}
       <Text color={t.warning}>{COST_KIND}</Text>
     </Text>

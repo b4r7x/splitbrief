@@ -9,9 +9,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
 import {
-  createTaskCompilationAttemptId,
-  TaskCompilationSemanticIdSchema,
-} from '../../core/schemas/task-compilation.js';
+  createPlannerArtifactAttemptId,
+  PlannerArtifactSemanticIdSchema,
+} from '../../core/schemas/planner-artifact.js';
 
 const taskMarkdown = `---
 id: T001
@@ -246,7 +246,7 @@ describe('runSinglePhasePlanning — current-call ownership', () => {
   });
 
   it('rejects a declared-file receipt bound to a different attempt', async () => {
-    const staleAttemptId = createTaskCompilationAttemptId();
+    const staleAttemptId = createPlannerArtifactAttemptId();
     await expect(
       runSinglePhasePlanning(
         {
@@ -257,7 +257,7 @@ describe('runSinglePhasePlanning — current-call ownership', () => {
               lease: { leaseId: 'lease-1', relativePath: 'out/result' },
             },
             ownedArtifactReceipt: {
-              semanticId: TaskCompilationSemanticIdSchema.parse('tasks-program'),
+              semanticId: PlannerArtifactSemanticIdSchema.parse('tasks-program'),
               programId: null,
               batchId: null,
               attemptId: staleAttemptId,

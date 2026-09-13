@@ -1,4 +1,6 @@
 import { formatStageLabel } from '../../../core/phase-display.js';
+import { isImplementerPhase } from '../../../core/phases.js';
+import { buildProgressRowCount } from '../display/build-progress.js';
 import { PHASES, type Phase } from '../../../core/schemas/enums.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js';
@@ -11,6 +13,7 @@ import { assertNever } from '../../../utils/type-guards.js';
 export const WORKFLOW_CHROME_ROWS = {
   header: 1,
   headerDivider: 1,
+  progress: 0,
   footerDivider: 1,
   feedback: 1,
   inputFooter: 1,
@@ -19,6 +22,7 @@ export const WORKFLOW_CHROME_ROWS = {
 export const WORKFLOW_CHROME_ORDER = [
   'header',
   'header-divider',
+  'progress',
   'body',
   'footer-divider',
   'feedback',
@@ -29,6 +33,7 @@ export const WORKFLOW_CHROME_ORDER = [
 export interface WorkflowChromeRows {
   header: number;
   headerDivider: number;
+  progress: number;
   footerDivider: number;
   feedback: number;
   composer: number;
@@ -46,26 +51,40 @@ function normalizeInputRows(inputRows: number): number {
   return Number.isFinite(inputRows) ? Math.max(0, Math.floor(inputRows)) : 0;
 }
 
-export function getWorkflowChromeRows(inputRows: number): WorkflowChromeRows {
+export function getWorkflowChromeRows(inputRows: number, progressRows = 0): WorkflowChromeRows {
   return {
     ...WORKFLOW_CHROME_ROWS,
+    progress: normalizeInputRows(progressRows),
     composer: normalizeInputRows(inputRows),
   };
+}
+
+// The block rides above the transcript, so its rows leave the body rather than overlapping it. It
+// paints only while a brief is actually being built or reviewed: a stopped run has no attempt in
+// flight and no seat to hear from, and a live heartbeat over a dead run states neither.
+export function getProgressRows(input: {
+  phase: Phase;
+  cols: number;
+  cancelled?: boolean;
+}): number {
+  if (input.cancelled === true) return 0;
+  if (!isImplementerPhase(input.phase) && input.phase !== 'final-review') return 0;
+  return buildProgressRowCount(getChromeContentWidth(input.cols));
 }
 
 export function getChromeContentWidth(cols: number): number {
   return Number.isFinite(cols) ? Math.max(1, Math.floor(cols)) : 1;
 }
 
-export function getChromeHeight(inputRows: number): number {
-  return FIXED_CHROME_ROWS + normalizeInputRows(inputRows);
+export function getChromeHeight(inputRows: number, progressRows = 0): number {
+  return FIXED_CHROME_ROWS + normalizeInputRows(inputRows) + normalizeInputRows(progressRows);
 }
 
 export function getContentTopRow(): number {
   return TOP_FIXED_CHROME_ROWS + 1;
 }
 
-export const RAIL_STAGES = ['spec', 'plan', 'briefs', 'build', 'verify'] as const;
+export const RAIL_STAGES = ['spec', 'plan', 'briefs', 'build', 'review'] as const;
 export type RailStage = (typeof RAIL_STAGES)[number];
 
 export type RailStageStatus = 'done' | 'active' | 'cancelled' | 'pending';
@@ -76,13 +95,13 @@ export interface RailStageState {
 }
 
 // The pipeline is dual-encoded by hue and position: spec/plan/briefs are the planner's output,
-// build is the implementer's, verify is the validator's. The two seams between those roles are the
+// build is the implementer's, review is the validator's. The two seams between those roles are the
 // cost handoffs the rail makes visible.
 export type RailRole = 'planner' | 'implementer' | 'validator';
 
 export function railStageRole(stage: RailStage): RailRole {
   if (stage === 'build') return 'implementer';
-  if (stage === 'verify') return 'validator';
+  if (stage === 'review') return 'validator';
   return 'planner';
 }
 
@@ -164,7 +183,7 @@ export function railStageCompletionTimesFromPhaseFirstSeen(
   });
 }
 
-// The most recent drift verdict from the event log, used for the verify-stage done tail.
+// The most recent drift verdict from the event log, used for the review-stage done tail.
 // undefined means no drift report has landed yet.
 export function getRailDriftPassed(events: readonly EngineEvent[]): boolean | undefined {
   for (let index = events.length - 1; index >= 0; index--) {
@@ -185,7 +204,7 @@ export const RAIL_SHORT_LABEL: Record<RailStage, string> = {
   plan: 'Pln',
   briefs: 'Brf',
   build: 'Bld',
-  verify: 'Vfy',
+  review: 'Rvw',
 };
 
 export function railFormBLabel(state: RailStageState, options: { short: boolean }): string {

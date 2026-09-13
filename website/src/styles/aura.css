@@ -4,6 +4,7 @@
   left: 0;
   width: 100%;
   z-index: -1;
+  opacity: 0.45;
   overflow: hidden;
   pointer-events: none;
   /* The placer's GLYPH (fragments/place.ts) is this face: a 9px advance on a 22px line. */

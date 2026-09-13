@@ -370,25 +370,10 @@ export function throwForClaudeCallFailure(result: RunnerCallResult): never {
 
 export function finishClaudeStream(state: ClaudeStreamState): RunnerCallResult {
   if (!state.isError && state.sawResult) {
-    if (!state.sawResultText && state.recorder.context.envelope !== undefined) {
-      // A `result` record without text is a missing final response: it cannot
-      // complete the call or fall back to earlier partials (REQ-013).
-      state.recorder.finishFailed({
-        status: 'failed',
-        error: {
-          code: 'task_compiler_final_response_missing',
-          message: 'Claude result carried no final response text',
-        },
-        usage: state.usage,
-        nativeSessionId: state.sessionId,
-        partial: true,
-      });
-    } else {
-      state.recorder.finishCompleted({
-        usage: state.usage,
-        nativeSessionId: state.sessionId,
-      });
-    }
+    state.recorder.finishCompleted({
+      usage: state.usage,
+      nativeSessionId: state.sessionId,
+    });
   }
 
   const result = state.recorder.finalResult();

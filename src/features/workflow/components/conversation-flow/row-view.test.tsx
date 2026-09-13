@@ -28,6 +28,15 @@ const LIVE_MARK = glyph('statusInProgress');
 const FOCUS_MARK = glyph('liveBar');
 const TREE_BRANCH_MARK = glyph('treeBranch');
 
+function colorOpen(color: string): string {
+  const ui = renderFeature(<Text color={color}>x</Text>);
+  const frame = ui.lastFrame();
+  ui.unmount();
+  const prefix = frame.slice(0, frame.indexOf('x'));
+  if (!prefix) throw new Error(`no color prefix rendered for ${color}`);
+  return prefix;
+}
+
 function makeActivityRow(key: string): ConversationRow {
   return {
     key,
@@ -63,7 +72,10 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     steady.unmount();
   });
 
-  it('renders the live ◉ for an active task-header row and the done ✓ for a finished one', () => {
+  // A settled brief leaves the transcript for the completed list, so a task header on screen is one
+  // the run is still inside — it takes the sidebar's in-progress ◉ whether or not the pulse has
+  // moved on to the activity below it, and never the done mark that made it read as passed.
+  it('keeps the in-progress ◉ on a task-header row the pulse has moved past', () => {
     const row = makeTaskHeaderRow('task-header:T001');
 
     const active = renderFeature(<ConversationRowView row={row} lifecycle="live" />);
@@ -75,10 +87,31 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
 
     const steady = renderFeature(<ConversationRowView row={row} lifecycle="done" />);
     const steadyFrame = steady.lastFrame() ?? '';
-    expect(steadyFrame).toContain(DONE_MARK);
-    expect(steadyFrame).not.toContain(LIVE_MARK);
+    expect(steadyFrame).toContain(LIVE_MARK);
+    expect(steadyFrame).not.toContain(DONE_MARK);
     expect(steadyFrame).toContain('T001 No-op task');
     steady.unmount();
+  });
+
+  it('paints the task-header marker in the sidebar in-progress colour, not the success colour', () => {
+    const theme = getTheme();
+    // Dim segment text, so the only cell that can carry theme.text is the marker itself.
+    const row: ConversationRow = {
+      key: 'task-header:T001',
+      kind: 'task-header',
+      segments: [{ text: 'T001 No-op task', tone: 'textDim' }],
+    };
+
+    const ui = renderFeature(
+      <ThemeProvider theme={theme}>
+        <ConversationRowView row={row} lifecycle="done" />
+      </ThemeProvider>,
+    );
+    const frame = ui.lastFrame() ?? '';
+    ui.unmount();
+
+    expect(frame).toContain(colorOpen(theme.text));
+    expect(frame).not.toContain(colorOpen(theme.success));
   });
 
   it('wears the ▌ accent bar on a focused transcript row', () => {
@@ -138,7 +171,7 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     }
   });
 
-  it('overlays the ▌ focus bar onto the done glyph cell of a focused completed header', () => {
+  it('overlays the ▌ focus bar onto the marker cell of a focused task header', () => {
     const row = makeTaskHeaderRow('task-header:T001');
 
     const ui = renderFeature(<ConversationRowView row={row} focused={true} />);

@@ -1,11 +1,12 @@
 .hero {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   grid-template-rows: repeat(5, auto) 1fr;
   align-items: start;
   column-gap: var(--s-6);
   width: min(var(--content-max), 100% - 2 * var(--gutter));
-  min-height: calc(100vh - 96px);
+  min-height: 0;
   margin-inline: auto;
   padding-block: var(--s-6) var(--s-12);
   container: hero / inline-size;
@@ -21,8 +22,8 @@
 
 .benefits {
   display: flex;
-  font-size: 0.8125rem;
-  line-height: 22px;
+  font-size: var(--text-label);
+  line-height: 20px;
 }
 
 .benefits li {
@@ -30,13 +31,15 @@
 }
 
 .benefits li + li {
-  margin-left: 40px;
-  padding-left: 40px;
+  margin-left: var(--s-6);
+  padding-left: var(--s-6);
   border-left: 1px solid var(--hair);
 }
 
 .hero .steps {
-  font-size: 16px;
+  display: flex;
+  gap: var(--s-6);
+  font-size: var(--text-label);
   line-height: 24px;
   letter-spacing: 0.02em;
   color: var(--ink-2);
@@ -47,17 +50,17 @@
   }
 
   li > :first-child {
-    width: 38px;
+    width: 24px;
     color: var(--ink-3);
   }
 
   li > :last-child {
-    border-left: 1px solid var(--hair);
-    padding-left: 20px;
+    padding-left: var(--s-1);
   }
 
   a {
     display: inline-block;
+    min-height: 24px;
   }
 
   a:hover {
@@ -66,6 +69,9 @@
 }
 
 .hero .claim {
+  position: absolute;
+  top: var(--s-6);
+  right: 0;
   grid-area: 1 / 11 / 2 / 13;
   z-index: 1;
   color: var(--ink-2);
@@ -80,8 +86,8 @@
 .hero .hero-eyebrow {
   display: flex;
   align-items: center;
-  gap: calc(var(--copy-width) * 0.04);
-  margin-top: calc(var(--copy-width) * 0.06);
+  gap: var(--s-4);
+  margin-top: var(--s-12);
   font-size: max(10px, calc(var(--copy-width) * 0.02));
   line-height: 1.45;
   letter-spacing: 0.08em;
@@ -97,10 +103,11 @@
 }
 
 .hero h1 {
-  margin-top: calc(var(--copy-width) * 0.06);
-  padding-top: max(calc(var(--copy-width) * 0.07), calc(var(--copy-width) * 0.05 + 10px));
-  font-size: calc(var(--copy-width) * 0.1435);
-  line-height: calc(var(--copy-width) * 0.14);
+  margin-top: var(--s-12);
+  padding-top: var(--s-8);
+  font-size: min(calc(var(--copy-width) * 0.1435), 94px);
+  line-height: 0.98;
+  letter-spacing: -0.025em;
 }
 
 .hero .line {
@@ -115,13 +122,13 @@
 .lede {
   max-width: 60ch;
   margin-top: var(--s-6);
-  font-size: clamp(0.9375rem, 0.96vw, 1.15rem);
+  font-size: var(--text-body);
   line-height: 1.68;
 }
 
 .works {
-  margin-top: var(--s-16);
-  letter-spacing: 0.08em;
+  margin-top: var(--s-8);
+  letter-spacing: 0.04em;
   color: var(--ink-3);
 }
 
@@ -129,20 +136,18 @@
   grid-column: 1 / 6;
   align-self: end;
   width: max-content;
-  margin-top: 60px;
-  margin-left: 106px;
-  font-size: 0.8125rem;
+  margin-top: var(--s-6);
+  font-size: var(--text-micro);
   line-height: 19px;
-  letter-spacing: 0.08em;
-  text-align: center;
-  color: var(--ink-4);
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
 }
 
 .diagram {
   grid-area: 1 / 6 / 7 / 13;
   align-self: start;
   width: 100%;
-  aspect-ratio: 848 / 880;
+  aspect-ratio: 720 / 672;
   overflow: hidden;
 }
 
@@ -193,7 +198,16 @@
 
 @media (max-width: 767px) {
   .hero .claim {
-    grid-area: 1 / 7 / 2 / 13;
+    display: none;
+  }
+
+  .hero .steps {
+    grid-column: 1 / -1;
+  }
+
+  .hero h1,
+  .hero .hero-eyebrow {
+    margin-top: var(--s-8);
   }
 
   .benefits {
@@ -217,13 +231,13 @@
     font-size: 0.875rem;
 
     li + li {
-      margin-left: 52px;
-      padding-left: 52px;
+      margin-left: var(--s-6);
+      padding-left: var(--s-6);
     }
   }
 
   .diagram {
-    height: 880px;
+    height: 672px;
     aspect-ratio: auto;
   }
 }

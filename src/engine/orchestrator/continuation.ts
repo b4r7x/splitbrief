@@ -1,6 +1,7 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { EventBus } from '../events/types.js';
+import { withPerCallAbort } from './cancellable-call.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from './state-ops.js';
 import { processError } from '../../lib/process/errors.js';
 import { throwIfAborted } from '../../utils/abort.js';
@@ -75,28 +76,30 @@ export async function withContinuationLoop<T>(
       const userText = await continueAfterAbort(callbacks.onContinuationNeeded, 'user');
       steer = userText.trim() === '' ? undefined : userText;
     }
-    const callController = new AbortController();
-    sinks.setAbortHandler(() => callController.abort());
     partialOutput = '';
 
-    const bodySignal = ctx.signal
-      ? AbortSignal.any([ctx.signal, callController.signal])
-      : callController.signal;
+    let bodySignal: AbortSignal | undefined;
+    const interruptedThisCall = () => bodySignal?.aborted === true && ctx.signal?.aborted !== true;
 
     let attempt: T;
     try {
-      attempt = await body({ signal: bodySignal, continuationPrompt, steer, recordOutput });
+      attempt = await withPerCallAbort({
+        sinks,
+        signal: ctx.signal,
+        run: (signal) => {
+          bodySignal = signal;
+          return body({ signal, continuationPrompt, steer, recordOutput });
+        },
+      });
     } catch (err) {
-      sinks.setAbortHandler(null);
-
       if (
-        (callController.signal.aborted || processError.isIdleTimeout(err)) &&
+        (interruptedThisCall() || processError.isIdleTimeout(err)) &&
         !ctx.signal?.aborted &&
         callbacks.onContinuationNeeded
       ) {
         const userText = await continueAfterAbort(
           callbacks.onContinuationNeeded,
-          callController.signal.aborted ? 'user' : 'watchdog',
+          interruptedThisCall() ? 'user' : 'watchdog',
         );
         continuationPrompt = buildContinuationPrompt(partialOutput, userText);
         steer = undefined;
@@ -106,9 +109,7 @@ export async function withContinuationLoop<T>(
       throw err;
     }
 
-    sinks.setAbortHandler(null);
-
-    if (callController.signal.aborted && !ctx.signal?.aborted && callbacks.onContinuationNeeded) {
+    if (interruptedThisCall() && callbacks.onContinuationNeeded) {
       const userText = await continueAfterAbort(callbacks.onContinuationNeeded, 'user');
       continuationPrompt = buildContinuationPrompt(partialOutput, userText);
       steer = undefined;

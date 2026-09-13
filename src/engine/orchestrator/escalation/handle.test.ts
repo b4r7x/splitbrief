@@ -28,6 +28,8 @@ import type { CustomRunnerRuntimePort } from '../../runners/types.js';
 import { createConfiguredCustomPlanner } from '../../planners/command-invoke.js';
 import { cleanupStaleArtifactReviews } from '../approval/planner-artifact.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
+import { LADDER, type LadderRungId } from '../../../core/pipeline-spec/ladder.js';
+import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { handleRetryAndEscalation } from './handle.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
@@ -66,6 +68,13 @@ function makeValidatingState(): WorkflowState {
   state = transition(state, { type: 'TASK_SENT' });
   return state;
 }
+
+// The tier number each escalating LADDER rung publishes on its `escalate` event.
+const ESCALATION_TIERS: Partial<Record<LadderRungId, 0 | 1 | 2>> = {
+  intermediate: 0,
+  hint: 1,
+  takeover: 2,
+};
 
 // Validation disabled so runValidationWithEvents returns [] → treated as all-pass.
 // Commit strategy 'none' so we don't need a dirty repo for every happy-path test.
@@ -149,6 +158,47 @@ describe('handleRetryAndEscalation', () => {
     const escalateTier2 = busEvents.find((e) => e.type === 'escalate' && e.tier === 2);
     expect(escalateTier1).toBeDefined();
     expect(escalateTier2).toBeDefined();
+  });
+
+  it('stubbed ladder publishes task_retry × DEFAULT_LOCAL_RETRIES then task_escalating tiers in LADDER order', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { bus, events: busEvents } = makeBusRecorder();
+    const task = makeTask();
+
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
+    });
+    const planner = makePlanner({
+      escalateHint: vi
+        .fn()
+        .mockResolvedValue({ success: true, output: 'use x', code: null, usage: null }),
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+    });
+
+    await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: { maxRetries: DEFAULT_LOCAL_RETRIES } }),
+        planner,
+        implementer,
+        bus,
+      }),
+      task,
+      initialError: 'error',
+      currentState: makeValidatingState(),
+    });
+
+    expect(busEvents.filter((e) => e.type === 'task_retry')).toHaveLength(DEFAULT_LOCAL_RETRIES);
+    expect(busEvents.filter((e) => e.type === 'task_escalating')).toHaveLength(1);
+    // No intermediate profile is configured, so the optional rung is skipped.
+    const expected = LADDER.filter((rung) => rung.optional !== true).flatMap((rung) => {
+      const tier = ESCALATION_TIERS[rung.id];
+      return tier === undefined ? [] : [tier];
+    });
+    expect(busEvents.filter((e) => e.type === 'escalate').map((e) => e.tier)).toEqual(expected);
   });
 
   it('runs tier-1 hint escalation with a staged projectDir and sandbox env', async () => {
@@ -737,6 +787,50 @@ describe('handleRetryAndEscalation', () => {
     expect(busEvents.find((e) => e.type === 'recovery_prompted')).toMatchObject({
       type: 'recovery_prompted',
       reason: 'retry-exhausted',
+    });
+  });
+
+  it('a refused command line halts the ladder with a recipe-invalid recovery', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
+    const task = makeTask({ id: 'T007' });
+    const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };
+    const escalateHint = vi.fn();
+    const escalateFull = vi.fn();
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: "error: unknown option '--nope'",
+        outcome: 'implementer-recipe-invalid',
+      }),
+    });
+
+    const { result, state: finalState } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        planner: makePlanner({ escalateHint, escalateFull }),
+        callbacks,
+        implementer,
+        bus,
+      }),
+      task,
+      initialError: 'type error',
+      currentState: state,
+    });
+
+    expect(result.completed).toBe(false);
+    expect(escalateHint).not.toHaveBeenCalled();
+    expect(escalateFull).not.toHaveBeenCalled();
+    expect(finalState.pendingRecovery).toMatchObject({
+      reason: 'implementer-recipe-invalid',
+      taskId: 'T007',
+    });
+    expect(busEvents.find((e) => e.type === 'recovery_prompted')).toMatchObject({
+      reason: 'implementer-recipe-invalid',
     });
   });
 });

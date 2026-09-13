@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { decideValidationAcceptance } from './acceptance.js';
+import { extractFailureKeys } from './extract-failure-keys.js';
 import type { ValidationResult } from './result.js';
 import type { ValidationStage } from '../../../core/schemas/enums.js';
 
@@ -119,6 +120,78 @@ describe('decideValidationAcceptance', () => {
         changedFiles: ['src/bar.ts'],
       }),
     ).toEqual({ accepted: true, exemptStages: ['test'], blockingStages: [] });
+  });
+
+  it('new failure in untouched file is not exempt', () => {
+    const results: ValidationResult[] = [
+      {
+        passed: false,
+        stage: 'typecheck',
+        error: 'src/x.ts(12,5): error TS2322\nsrc/b.ts(3,1): error TS2554',
+        failureFiles: [],
+      },
+    ];
+    expect(
+      decideValidationAcceptance({
+        results,
+        baselineFailingStages: baseline(['typecheck']),
+        baselineFailureKeys: { typecheck: new Set(['src/x.ts(12,5)']) },
+        changedFiles: ['src/a.ts'],
+      }),
+    ).toEqual({ accepted: false, exemptStages: [], blockingStages: ['typecheck'] });
+  });
+
+  it('identical failure set stays exempt', () => {
+    const results: ValidationResult[] = [
+      {
+        passed: false,
+        stage: 'typecheck',
+        error: 'src/x.ts(12,5): error TS2322',
+        failureFiles: [],
+      },
+    ];
+    expect(
+      decideValidationAcceptance({
+        results,
+        baselineFailingStages: baseline(['typecheck']),
+        baselineFailureKeys: { typecheck: new Set(['src/x.ts(12,5)']) },
+        changedFiles: ['src/a.ts'],
+      }),
+    ).toEqual({ accepted: true, exemptStages: ['typecheck'], blockingStages: [] });
+  });
+
+  it('exempts a red suite whose tail differs only in timings, blocks it when a frame is added', () => {
+    const tail = (startAt: string, duration: string, extraFrame?: string) =>
+      [
+        ' FAIL  src/legacy.test.ts > legacy > still red',
+        'AssertionError: expected 1 to be 2',
+        ' ❯ src/legacy.test.ts:12:20',
+        ...(extraFrame === undefined ? [] : [` ❯ ${extraFrame}`]),
+        '',
+        ' Test Files  1 failed | 41 passed (42)',
+        `   Start at  ${startAt}`,
+        `   Duration  ${duration}`,
+      ].join('\n');
+    const baselineFailureKeys = {
+      test: new Set(extractFailureKeys(tail('02:34:50', '6.93s (transform 1.2s)'))),
+    };
+    const decide = (error: string) =>
+      decideValidationAcceptance({
+        results: [{ passed: false, stage: 'test', error, failureFiles: [] }],
+        baselineFailingStages: baseline(['test']),
+        baselineFailureKeys,
+        changedFiles: ['src/foo.ts'],
+      });
+    expect(decide(tail('02:41:07', '7.11s (transform 1.3s)'))).toEqual({
+      accepted: true,
+      exemptStages: ['test'],
+      blockingStages: [],
+    });
+    expect(decide(tail('02:41:07', '7.11s (transform 1.3s)', 'src/other.ts:9:1'))).toEqual({
+      accepted: false,
+      exemptStages: [],
+      blockingStages: ['test'],
+    });
   });
 
   it('does not exempt a failing stage whose failure evidence was not recorded', () => {

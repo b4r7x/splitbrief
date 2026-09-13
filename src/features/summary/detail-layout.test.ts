@@ -7,6 +7,7 @@ describe('getSummaryDetailViewportHeight', () => {
   it('budgets one fewer row when small and the reviewer row renders', () => {
     const base = {
       terminalRows: 24,
+      outcomeRows: 0,
       isSmall: true,
       summary: makeSummary({ plannerTool: 'claude-code' }),
       implementerSummary: 'Ollama',
@@ -21,6 +22,7 @@ describe('getSummaryDetailViewportHeight', () => {
   it('charges the reviewer row its gap too when not small', () => {
     const base = {
       terminalRows: 40,
+      outcomeRows: 0,
       isSmall: false,
       summary: makeSummary({ plannerTool: 'claude-code' }),
       implementerSummary: 'Ollama',
@@ -35,6 +37,7 @@ describe('getSummaryDetailViewportHeight', () => {
   it('never drops below the one-row floor', () => {
     const height = getSummaryDetailViewportHeight({
       terminalRows: 8,
+      outcomeRows: 0,
       isSmall: true,
       summary: makeSummary({
         plannerTool: 'claude-code',

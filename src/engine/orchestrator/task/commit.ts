@@ -1,4 +1,4 @@
-import type { Task } from '../../../core/schemas/task.js';
+import { taskFiles, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
@@ -97,7 +97,7 @@ export async function validateCommitAndAdvance(
     resetIndexPreservingStaged,
     ...opts.gitOps,
   };
-  const taskChangedFiles = opts.taskChangedFiles ?? [task.file];
+  const taskChangedFiles = opts.taskChangedFiles ?? [...taskFiles(task)];
   const usingFallbackFiles = opts.taskChangedFiles === undefined;
   const completionTransitionType = transitionTypeForCompletionMethod(method, transitionType);
   if (!acceptance.accepted) {
@@ -152,7 +152,7 @@ export async function validateCommitAndAdvance(
       publishWarning({
         bus: bus,
         phase: state.phase,
-        message: `No attributed file set for ${task.id}; staging and secret scan cover only ${task.file}.`,
+        message: `No attributed file set for ${task.id}; staging and secret scan cover only ${taskFiles(task).join(', ')}.`,
       });
     }
 
@@ -174,6 +174,7 @@ export async function validateCommitAndAdvance(
           taskId: task.id,
           message: commitMsg,
           file: task.file,
+          files: [...taskFiles(task)],
         };
         const pre = await runPreHooks(config.hooks, 'pre_commit', preCommitPayload, {
           projectDir,
@@ -200,7 +201,13 @@ export async function validateCommitAndAdvance(
       }
 
       await gitOps.commitChanges(projectDir, commitMsg);
-      publishGitCommit({ bus: bus, phase: state.phase }, task.id, commitMsg, task.file);
+      publishGitCommit(
+        { bus: bus, phase: state.phase },
+        task.id,
+        commitMsg,
+        task.file,
+        taskFiles(task),
+      );
     } catch (err) {
       try {
         await gitOps.resetIndexPreservingStaged(projectDir, stagedBefore);

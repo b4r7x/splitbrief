@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findRuntimeCommand, suggestRuntimeCommand } from './lookup.js';
+import { findRuntimeCommand, rankClosedOptions, suggestRuntimeCommand } from './lookup.js';
 import type { RuntimeCommandDef } from './types.js';
 
 const COMMANDS: RuntimeCommandDef[] = [
@@ -76,5 +76,26 @@ describe('suggestRuntimeCommand', () => {
 
   it('matches without a leading slash', () => {
     expect(suggestRuntimeCommand(COMMANDS, 'hlp')?.name).toBe('/help');
+  });
+});
+
+describe('rankClosedOptions', () => {
+  const options = ['quick', 'standard', 'audit'];
+  const descriptions = {
+    quick: 'one planner call, no gates',
+    standard: 'ordinary feature work',
+    audit: 'large, risky work that needs a security review',
+  };
+
+  it('returns every option in input order for the empty query', () => {
+    expect(rankClosedOptions(options, descriptions, '')).toEqual(options);
+  });
+
+  it('matches description text', () => {
+    expect(rankClosedOptions(options, descriptions, 'sec')).toEqual(['audit']);
+  });
+
+  it('drops options the query does not match', () => {
+    expect(rankClosedOptions(options, undefined, 'quic')).toEqual(['quick']);
   });
 });

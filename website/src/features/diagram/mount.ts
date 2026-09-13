@@ -11,7 +11,7 @@ import {
   scatterPoints,
   type Tier,
 } from './scatter';
-import { SEATS, type SeatName } from './seats';
+import { type Cell, SEATS, type SeatName } from './seats';
 
 export type Diagram = {
   start(): void;
@@ -121,13 +121,14 @@ export function mountDiagram(root: HTMLElement): Diagram {
   const stage = find<HTMLElement>(root, '.stage');
   const canvases = perSeat((name) => find<HTMLCanvasElement>(root, `.ghost--${name}`));
   let running = false;
+  let gaze: Record<SeatName, Cell> | undefined;
   let scene = buildScene(root, stage, canvases);
   const ghosts: Ghost[] = Object.values(
     perSeat((name) => {
       const ghost = createGhost({
         canvas: canvases[name],
         seat: SEATS[name],
-        pose: () => scene.packets.pose(name),
+        pose: () => ({ ...scene.packets.pose(name), ...(gaze && { gaze: gaze[name] }) }),
       });
       ghost.renderFrame(0);
       return ghost;
@@ -145,6 +146,19 @@ export function mountDiagram(root: HTMLElement): Diagram {
     if (running) scene.start();
   }).observe(root);
 
+  root.addEventListener('pointermove', (event) => {
+    if (!running || event.pointerType !== 'mouse') return;
+    gaze = perSeat((name) => {
+      const rect = canvases[name].getBoundingClientRect();
+      const x = (event.clientX - rect.left) / rect.width;
+      const y = (event.clientY - rect.top) / rect.height;
+      return { c: x < 0.4 ? -1 : x > 0.6 ? 1 : 0, r: y < 0.3 ? -1 : y > 0.5 ? 1 : 0 };
+    });
+  });
+  root.addEventListener('pointerleave', () => {
+    gaze = undefined;
+  });
+
   return {
     start(): void {
       running = true;
@@ -153,6 +167,7 @@ export function mountDiagram(root: HTMLElement): Diagram {
     },
     stop(): void {
       running = false;
+      gaze = undefined;
       scene.stop();
       for (const ghost of ghosts) {
         ghost.stop();

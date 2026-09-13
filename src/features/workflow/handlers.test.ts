@@ -1,16 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   abortTurn,
+  cancelBoundaryPause,
   clearAllHandlers,
   consumeBoundaryInterrupt,
+  consumeBoundaryPause,
   createAbortHandlerScope,
-  interruptTurn,
+  requestBoundaryPause,
+  requestEndRun,
+  requestQuit,
+  requestResume,
+  requestStopNow,
   requestClearQueue,
   setCancelHandler,
   setClearQueueHandler,
+  setResumeHandler,
 } from './handlers.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../stores/workflow/events.js';
+import { stopStore } from '../../stores/workflow/stop.js';
 
 describe('createAbortHandlerScope', () => {
   afterEach(() => {
@@ -57,9 +65,10 @@ describe('createAbortHandlerScope', () => {
   });
 });
 
-describe('interruptTurn', () => {
+describe('requestStopNow', () => {
   beforeEach(() => {
     clearAllHandlers();
+    stopStore.__testReset();
     lifecycleStore.reset();
     eventsStore.reset();
     lifecycleStore.__testReset({ phase: 'planning' });
@@ -67,51 +76,148 @@ describe('interruptTurn', () => {
 
   afterEach(() => {
     clearAllHandlers();
+    stopStore.__testReset();
   });
 
-  it('interruptTurn invokes the current abort owner and returns turn while a call is in flight', () => {
-    const abort = vi.fn();
-    createAbortHandlerScope()(abort);
+  it('stop now aborts an escalation call', () => {
+    const abortEscalation = vi.fn();
+    createAbortHandlerScope()(abortEscalation);
 
-    expect(interruptTurn()).toBe('turn');
-    expect(abort).toHaveBeenCalledTimes(1);
-    expect(lifecycleStore.get().status).toBe('interrupted');
+    expect(requestStopNow()).toBe(true);
+    expect(abortEscalation).toHaveBeenCalledTimes(1);
+    expect(stopStore.get()).toMatchObject({ intent: 'stop-now', phase: 'requested' });
     expect(lifecycleStore.get().cancelled).toBe(false);
   });
 
-  it('interruptTurn sets the boundary flag instead of cancelling during a dead zone', () => {
+  it('flags the next boundary when no call is in flight', () => {
     const cancel = vi.fn();
     setCancelHandler(cancel);
 
-    expect(interruptTurn()).toBe('turn');
+    expect(requestStopNow()).toBe(true);
     expect(cancel).not.toHaveBeenCalled();
-    expect(lifecycleStore.get().status).toBe('interrupted');
-    expect(lifecycleStore.get().cancelled).toBe(false);
     expect(consumeBoundaryInterrupt()).toBe(true);
   });
 
-  it('a second interrupt while already interrupted plants no boundary flag', () => {
-    setCancelHandler(vi.fn());
+  it('announces no stop when there is nothing to stop', () => {
+    expect(requestStopNow()).toBe(false);
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
+  });
+});
 
-    expect(interruptTurn()).toBe('turn');
-    expect(consumeBoundaryInterrupt()).toBe(true);
-
-    // Parked at the interrupted prompt: another interrupt press must not queue
-    // a stale boundary flag that would discard the next steering answer.
-    expect(interruptTurn()).toBe('none');
-    expect(consumeBoundaryInterrupt()).toBe(false);
-    expect(lifecycleStore.get().cancelled).toBe(false);
+describe('requestBoundaryPause', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
   });
 
-  it('falls back to cancel when no workflow handlers are registered', () => {
-    expect(interruptTurn()).toBe('workflow');
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  it('hands the engine one pause and clears it on the way out', () => {
+    requestBoundaryPause();
+
+    expect(stopStore.get().intent).toBe('pause-after-brief');
+    expect(consumeBoundaryPause()).toBe(true);
+    expect(consumeBoundaryPause()).toBe(false);
+  });
+
+  it('keeps running drops the pending pause', () => {
+    requestBoundaryPause();
+    cancelBoundaryPause();
+
+    expect(consumeBoundaryPause()).toBe(false);
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
+  });
+});
+
+describe('requestEndRun', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+    lifecycleStore.reset();
+    eventsStore.reset();
+    lifecycleStore.__testReset({ phase: 'planning' });
+  });
+
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  it('cancels the run and records the intent', () => {
+    const cancel = vi.fn();
+    setCancelHandler(cancel);
+
+    expect(requestEndRun()).toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(1);
     expect(lifecycleStore.get().cancelled).toBe(true);
+    expect(stopStore.get().intent).toBe('end-run');
+  });
+});
+
+describe('requestResume', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
   });
 
-  it("returns 'none' when nothing can be stopped (no abort handler, already cancelled)", () => {
-    lifecycleStore.__testReset({ phase: 'planning', cancelled: true });
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
 
-    expect(interruptTurn()).toBe('none');
+  it('settles a parked brief with the typed steer', () => {
+    const steer = vi.fn();
+    stopStore.park('mid-brief', 'T002', steer);
+
+    expect(requestResume('use the other adapter')).toBe(true);
+    expect(steer).toHaveBeenCalledWith('use the other adapter');
+    expect(stopStore.get().phase).toBe('idle');
+  });
+
+  it('restarts a saved run when nothing is parked', () => {
+    const resume = vi.fn();
+    setResumeHandler(resume);
+
+    expect(requestResume('')).toBe(true);
+    expect(resume).toHaveBeenCalledWith('');
+  });
+
+  it('reports nothing to resume with no park and no saved run', () => {
+    expect(requestResume('')).toBe(false);
+  });
+});
+
+describe('requestQuit', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  it('exits at once when there is no run to stop', () => {
+    const exit = vi.fn();
+
+    requestQuit(exit);
+
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for the run to park before leaving', () => {
+    const exit = vi.fn();
+    createAbortHandlerScope()(vi.fn());
+
+    requestQuit(exit);
+    expect(exit).not.toHaveBeenCalled();
+
+    stopStore.park('mid-brief', 'T002', null);
+    expect(exit).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -130,7 +236,7 @@ describe('consumeBoundaryInterrupt', () => {
     expect(consumeBoundaryInterrupt()).toBe(false);
 
     setCancelHandler(vi.fn());
-    interruptTurn();
+    requestStopNow();
 
     expect(consumeBoundaryInterrupt()).toBe(true);
     expect(consumeBoundaryInterrupt()).toBe(false);

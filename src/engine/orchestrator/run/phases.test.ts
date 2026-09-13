@@ -487,9 +487,14 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     expect(result.completed).toBe(false);
     expect(callbacks.onComplete).not.toHaveBeenCalled();
     expect(events.find((event) => event.type === 'all_tasks_done')).toBeDefined();
-    expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
-    expect(loadState({ projectDir, sessionId })?.phase).toBe('final-review');
-    expect(result.summary.reviewPacket?.finalReviewStatus).toBe('failed');
+    expect(events.find((event) => event.type === 'workflow_complete')).toMatchObject({
+      review: 'failed',
+      blocking: 0,
+    });
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('complete');
+    expect(
+      events.find((event) => event.type === 'error' && event.code === 'review_failed'),
+    ).toBeDefined();
   });
 
   it('skips the cost gate and predicts only remaining tasks when resuming past the first task', async () => {
@@ -669,7 +674,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     expect(savedState.phase).toBe('final-review');
     saveState({ projectDir, sessionId }, savedState);
 
-    const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }) });
+    const planner = makePlanner({
+      review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
+    });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 

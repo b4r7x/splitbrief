@@ -11,7 +11,7 @@ Testing in this repo means exercising observable behaviour — rendered output, 
 | Never `vi.mock()` a sibling module (`./`, `../`) | Couples the test to the file layout, not the contract | Import the real module |
 | No `vi.spyOn` on internal module functions | It re-asserts the call graph | Observe returned state / emitted event |
 | Fewer, longer tests beat many micro-tests | One flow = one user-visible behaviour | Cache lifecycle in one `it`, not four `describe`s |
-| Don't re-test the framework / compiler | `useState`, `assertNever`, Zod `.strict()`, V8's `Error.captureStackTrace` already have tests | Skip `toBeInstanceOf(Function)` on a typed interface; skip `expect(err.stack).toContain(file)` |
+| Don't re-test the framework / type checker | `useState`, `assertNever`, Zod `.strict()`, V8's `Error.captureStackTrace` already have tests | Skip `toBeInstanceOf(Function)` on a typed interface; skip `expect(err.stack).toContain(file)` |
 | Don't re-assert a literal you just set up | `tsc` already proves passthrough | Test the transformation, not the echo |
 | Don't copy production helpers into test files | Production can drift from the copy; tests re-implement instead of observe | Export the helper from source and import it |
 | Prefer observable-state assertions over DI call-count assertions | Call counts observe wiring; state observes behaviour | Assert on store contents / files on disk / emitted events, not `toHaveBeenCalledTimes` |
@@ -143,13 +143,13 @@ npm test -- src/features/workflow/user-edit-conflict-prompt.test.ts
 
 Full `npm test` is appropriate only when it is safe for the checkout and the validation owner accepts suites that may create git history in temporary repos.
 
-## Compiler conformance testing
+## Planner conformance testing
 
-Planner and compiler conformance is deterministic CI, not a live smoke. The production factory path must prove, per backend and exact version: the effective read-only role, filesystem containment, exact current-call output, final-response semantics, detached sessions, the hard call envelope, hostile configuration handling, credential isolation, and zero dispatch on failed preflight. "Planner mode does not grant artifact authority." A mode flag (`--agent plan`, `--permission-mode plan`, `--sandbox read-only`) is what the tool is told; the conformance harness proves what the tool did. Tests may not treat a flag or an argv snapshot as effect proof.
+Planner conformance is deterministic CI, not a live smoke. "Planner mode does not grant artifact authority." A mode flag (`--agent plan`, `--permission-mode plan`, `--sandbox read-only`) is what the tool is told; the conformance harness proves what the tool did. Tests may not treat a flag or an argv snapshot as effect proof.
 
-The black-box rows live in `testing/integration/orchestrator/runner-capability-matrix.test.ts` and `testing/integration/orchestrator/planner-effect-matrix.test.ts`, with the effect fixtures in `src/engine/runners/cli-tools/contract-harness-effects.test.ts` and the refusal matrix in `src/engine/runners/compiler-unsupported-backends.test.ts`. They drive the production factory against subprocess shims that speak each tool's real protocol terminal, with sentinel files and nonce edits as the observable effects, and the unsupported rows must prove zero spawns. The doc-parity gate in `testing/docs/planners-and-implementers.test.ts` pins the admitted matrix to the runtime catalog.
+The black-box rows live in `testing/integration/orchestrator/runner-capability-matrix.test.ts` and `testing/integration/orchestrator/planner-effect-matrix.test.ts`, with the effect fixtures in `src/engine/runners/cli-tools/contract-harness-effects.test.ts`. They drive the production factory against subprocess shims that speak each tool's real protocol terminal, with sentinel files and nonce edits as the observable effects. The doc-parity gate in `testing/docs/planners-and-implementers.test.ts` pins the admitted matrix to the runtime catalog.
 
-Live authenticated checks (`npm run test:e2e:live:smoke`, `testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts`) are opt-in drift evidence: they verify reality on a real machine with real credentials and never replace the deterministic matrix as the admission proof. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) for the support table and role vectors.
+Live authenticated checks (`npm run test:e2e:live:smoke`, `testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts`) are opt-in drift evidence: they verify reality on a real machine with real credentials and never replace the deterministic matrix as the admission proof. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#planner-artifact-ownership) for the transport and role contract.
 
 ## Live CLI e2e tier
 
@@ -166,6 +166,14 @@ Model pins are cheap by default: `claude-code` → `haiku`, `codex` → `gpt-5.6
 Easy runs `quick` mode — one planner call plus one implementer call — under a `workflow.maxBudget` of $0.05, with a 300 s per-case timeout. Heavy runs `standard` mode with a compiled brief and a final review held by the planner, under a `workflow.maxBudget` of $0.50, with a 900 s per-case timeout. Both ceilings come from `MAX_BUDGET_USD` in the harness and are enforced by the orchestrator's budget guard, which stops a run that crosses one and pauses a run whose spend cannot be priced. The per-case vitest timeout is the only wall-clock bound.
 
 Like `real-cli-planner-implementer-smoke.test.ts`, the live tier is opt-in drift evidence, never the admission proof.
+
+### Fixture loop row
+
+`testing/e2e/scenarios/live/fixture-loop.test.ts` runs the whole loop over the rows of `testing/e2e/live/fixture-rows.ts` — `fixture-quick-claude-cmd-codex` (`quick`, $0.05, 300 s) and `fixture-standard-claude-cmd-codex` (`standard`, $0.50, 900 s), both planning with `claude-code`, building with `command-code` and reviewing with `codex` — against a copy of the `add-endpoint` eval fixture, through the real binary in `--plain` mode. It needs two switches: `SPLITBRIEF_REAL_CLI_E2E=1` and `SPLITBRIEF_LIVE_FIXTURE=1`, both set by `npm run test:e2e:live:fixture`. With either unset every row is `it.skip`, the reason is printed, and the file exits `0`. Readiness gating goes through the same `gateLiveMatrixRow` as the release matrix, so `SPLITBRIEF_LIVE_SKIP` skips a row whose tool is missing instead of failing it. Every outcome — pass, fail, or skip — appends a row to the same manifest; a passing row also copies `tasks.md`, `evidence.json`, `drift-report.json` and `review.md` beside `summary.json` and `session.jsonl`.
+
+What a row proves lives in `testing/e2e/helpers/run-dir-assertions.ts`, four assertions over the finished run: `assertPlainStdout` (every stdout line matches the `--plain` grammar and none parses as JSON; `phase: implementing`, `review: passed` and a `done:` line within the mode's brief cap are all present), `assertSessionDir` (brief count inside the row's range with at least one `modify`, non-empty `spec.md`/`plan.md` in standard, `brief-quality.json` passed, evidence ledger and drift report parse with drift `passed`, a `pass`/`pass_with_notes` verdict, `summary.json` complete with every task done locally on non-zero implementer tokens, and the `runner_call_started` counts per role with no `implementer_wrote_nothing` and no `runner_call_error`), `assertFixtureQuality` (the scenario's own quality checks against the built project) and `assertWorkingTree` (nothing outside the declared `files` and `.splitbrief/` changed). The module carries a colocated test against a synthetic session dir (`run-dir-assertions.test.ts`), so `npm test` covers the assertions without spawning a CLI. The row itself is drift evidence like the tiers above — [RELEASING.md](./RELEASING.md) says when it may become a gate.
+
+The skills' shell scripts are proven the same deterministic way, not by the live tier: `testing/integration/skills/wait-attempt.test.ts` and `testing/integration/skills/splitbrief-gate.test.ts` drive `skills/splitbrief-run/scripts/*.sh` under `sh` in a temp run dir with real child processes — exit 0, exit 1, a `--deadline 2` timeout that kills the group, a pre-existing `.done`, a missing pid file, a halt phrase in the log tail, `--reconcile`, and one stop-gate case per host. They run under `npm test`.
 
 ### Release matrix
 
@@ -510,7 +518,7 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Re-exports (we have zero barrels anyway; see [`NO-BARRELS.md`](./NO-BARRELS.md)).
 - Thin wrappers that only delegate to an already-tested function.
 - Zod schema literal accept/reject — covered once in `src/core/schemas/runner-fields.test.ts`; do not duplicate.
-- Discriminated-union accessors enforced by `assertNever` — the compiler already enforces exhaustiveness.
+- Discriminated-union accessors enforced by `assertNever` — `tsc` already enforces exhaustiveness.
 - Styling-only components with no conditional logic.
 - Library internals (`Array.prototype.filter`, `fzf.find`, Zod `.strict()`).
 

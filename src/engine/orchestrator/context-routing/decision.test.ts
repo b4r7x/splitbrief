@@ -8,7 +8,7 @@ import { createDefaultConfig } from '../../../core/config/load/defaults.js';
 import type { ImplementerCostTier } from '../../../core/schemas/implementer-config.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { compareProfileRouteRank, costPosture } from './decision.js';
+import { compareProfileRouteRank, costPosture, requiredWriteModeForTask } from './decision.js';
 import type { ProfileFit } from './types.js';
 import { routeTaskToImplementerProfile } from './route.js';
 
@@ -133,6 +133,15 @@ describe('compareProfileRouteRank', () => {
 
     expect(compareProfileRouteRank(localSmall, localLarge)).toBeLessThan(0);
     expect(compareProfileRouteRank(localLarge, cheapLarge)).toBeLessThan(0);
+  });
+});
+
+describe('requiredWriteModeForTask', () => {
+  it('files.length > 1 forces direct', () => {
+    expect(
+      requiredWriteModeForTask(makeTask({ files: ['src/hello.ts', 'src/hello.test.ts'] })),
+    ).toBe('direct');
+    expect(requiredWriteModeForTask(makeTask())).toBe('extracted-code');
   });
 });
 

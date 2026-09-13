@@ -1,11 +1,11 @@
 import { useInput, type Key } from 'ink';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { routerStore } from '../stores/navigation/router.js';
-import { controlsStore } from '../stores/ui/controls.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
-import { abortStore } from '../stores/workflow/abort.js';
-import { approvalPromptStore, closeApprovalPrompt } from '../stores/approval-prompt/prompt.js';
-import { costApprovalStore, closeCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
+import { composerLiveStore } from '../stores/ui/composer-live.js';
+import { feedbackStore } from '../stores/ui/feedback.js';
+import { approvalPromptStore } from '../stores/approval-prompt/prompt.js';
+import { costApprovalStore } from '../stores/cost-approval/prompt.js';
 import { completionStore } from '../stores/ui/completion.js';
 import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin/active.js';
 import {
@@ -13,22 +13,24 @@ import {
   cancelEscapeAction,
   isEscapeActionPending,
 } from '../lib/terminal/escape-debounce.js';
-import { isLivePhase } from '../core/phases.js';
 import { useFieldSessionOwned } from '../features/editor/use-field-session-owned.js';
 import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
 import { SEAT_PICKER_OVERLAYS, type OverlayType } from '../core/navigation/types.js';
-import type { InterruptResult } from '../features/workflow/handlers.js';
+import { requestQuit, requestStopNow } from '../features/workflow/handlers.js';
 import { sessionSelectStore } from '../stores/navigation/session-select.js';
 import { refreshSkills } from './refresh-skills.js';
 
 type AppKeyAction =
   | { type: 'none' }
   | { type: 'exit' }
+  | { type: 'quit' }
   | { type: 'open-overlay'; overlay: OverlayType };
 
 const NONE: AppKeyAction = { type: 'none' };
-const noop = () => 'none' as const;
+
+/** What esc says when the composer holds text: the run is untouched and so is the draft. */
+export const DRAFT_ESCAPE_HINT = 'clear the draft or ctrl+c to stop now';
 
 // Help and the cost drilldown render no Escape handler of their own and rely on this global close.
 // Every other overlay closes itself on Escape, so the global handler must stand down once one of
@@ -43,8 +45,6 @@ const SELF_ESC_OVERLAYS = new Set<OverlayType>(SEAT_PICKER_OVERLAYS);
 
 interface UseAppKeysOptions {
   exit: () => void;
-  interruptWorkflow?: (() => InterruptResult) | undefined;
-  cancelWorkflow?: (() => void) | undefined;
 }
 
 function applyAction(action: AppKeyAction, exit: () => void) {
@@ -54,11 +54,14 @@ function applyAction(action: AppKeyAction, exit: () => void) {
     case 'exit':
       exit();
       return;
+    case 'quit':
+      requestQuit(exit);
+      return;
     case 'open-overlay':
       // Discovery otherwise runs only at startup, so a skill directory added mid-session would
       // stay invisible until a restart. Rescanning here rather than on the picker's mount keeps
       // the scan off the render path the visual fixtures drive.
-      if (action.overlay === 'skills') refreshSkills();
+      if (action.overlay === 'skills') void refreshSkills();
       overlayStore.open(action.overlay);
       return;
     default:
@@ -66,29 +69,20 @@ function applyAction(action: AppKeyAction, exit: () => void) {
   }
 }
 
-// What an ESC press would arm to, given the current workflow state.
-function escapeArmTarget(): 'interrupt' | 'cancel' | null {
-  if (controlsStore.get().inputMode === 'question') return 'cancel';
-  const { phase, cancelled, status } = lifecycleStore.get();
-  if (status === 'interrupted') return 'cancel';
-  if (!cancelled && isLivePhase(phase)) return 'interrupt';
-  return null;
+// A run that can still be stopped answers esc with the sheet. A question prompt, a review gate and
+// a validation stage are all part of that run, so none of them takes the press for itself.
+function stopSheetReachable(): boolean {
+  const { cancelled, status } = lifecycleStore.get();
+  if (cancelled) return false;
+  return status === 'running' || status === 'interrupted' || status === 'paused';
 }
 
-function fireInterrupt(interruptWorkflow: () => InterruptResult) {
-  cancelEscapeAction();
-  interruptWorkflow();
-  closeApprovalPrompt();
-  closeCostApprovalPrompt({ approved: false });
-  abortStore.clear();
+function openStopSheet(): void {
+  overlayStore.open('stop-sheet');
 }
 
-function fireCancel(cancelWorkflow: () => void) {
-  cancelEscapeAction();
-  cancelWorkflow();
-  closeApprovalPrompt();
-  closeCostApprovalPrompt({ approved: false });
-  abortStore.clear();
+function goHome(): void {
+  routerStore.navigate({ to: 'home' });
 }
 
 function isSecondEscapePress(input: string): boolean {
@@ -104,11 +98,7 @@ function runDeferredEscape(input: string, immediate: () => void, deferred: () =>
   scheduleEscapeAction(deferred);
 }
 
-export function useAppKeys({
-  exit,
-  interruptWorkflow = noop,
-  cancelWorkflow = noop,
-}: UseAppKeysOptions) {
+export function useAppKeys({ exit }: UseAppKeysOptions) {
   const [route, overlay, approval, cost, completion, sessionSelection] = useStores(
     routerStore,
     overlayStore,
@@ -135,24 +125,13 @@ export function useAppKeys({
 
   useInput((input, key) => {
     if (!(key.ctrl && input === 'c')) return;
-    // Off the workflow screen there is no local turn to interrupt, so Ctrl+C exits immediately
-    // rather than starting a hidden two-press ladder.
-    if (route.screen !== 'workflow') {
+    // Ctrl+C is Stop now on the workflow screen — one press, no armed window. Where there is no
+    // run left to stop it keeps its usual meaning and leaves.
+    if (route.screen !== 'workflow' || lifecycleStore.get().cancelled) {
       exit();
       return;
     }
-    if (abortStore.get().armed === 'exit') {
-      exit();
-      return;
-    }
-    // Same stand-down as the Esc ladder: while a question prompt or the
-    // interrupted continuation prompt owns the composer there is no turn to
-    // interrupt, and firing one would plant a stale boundary flag that discards
-    // the user's next submission.
-    if (escapeArmTarget() === 'interrupt') {
-      fireInterrupt(interruptWorkflow);
-    }
-    abortStore.arm('exit');
+    if (!requestStopNow()) exit();
   });
 
   useInput(
@@ -160,36 +139,17 @@ export function useAppKeys({
       if (!key.escape) return;
       // A pasted blob can carry a raw `\x1b`; ignore it while a bracketed paste is in flight.
       if (getActiveFilteredStdin()?.isPasteActive()) return;
-      const armed = abortStore.get().armed;
-      if (armed === 'interrupt') {
-        fireInterrupt(interruptWorkflow);
+      // Text in the composer is the user's, and so is the run behind it: the press spends neither.
+      if (!composerLiveStore.get().empty) {
+        feedbackStore.setMessage(DRAFT_ESCAPE_HINT);
         return;
       }
-      if (armed === 'cancel') {
-        fireCancel(cancelWorkflow);
+      if (stopSheetReachable()) {
+        runDeferredEscape(input, openStopSheet, openStopSheet);
         return;
       }
-      // A fresh ESC after the run was cancelled navigates home. This sits below the
-      // armed-fire returns above, so the press that fires the cancel can never also
-      // navigate — one physical keypress is at most one semantic action.
-      if (lifecycleStore.get().cancelled) {
-        runDeferredEscape(
-          input,
-          () => routerStore.navigate({ to: 'home' }),
-          () => routerStore.navigate({ to: 'home' }),
-        );
-        return;
-      }
-      const target = escapeArmTarget();
-      if (target === null) return;
-      runDeferredEscape(
-        input,
-        () => {
-          if (target === 'interrupt') fireInterrupt(interruptWorkflow);
-          else fireCancel(cancelWorkflow);
-        },
-        () => abortStore.arm(target),
-      );
+      if (!lifecycleStore.get().cancelled) return;
+      runDeferredEscape(input, goHome, goHome);
     },
     {
       isActive:
@@ -207,11 +167,7 @@ export function useAppKeys({
     (input, key) => {
       if (!key.escape) return;
       if (getActiveFilteredStdin()?.isPasteActive()) return;
-      runDeferredEscape(
-        input,
-        () => routerStore.navigate({ to: 'home' }),
-        () => routerStore.navigate({ to: 'home' }),
-      );
+      runDeferredEscape(input, goHome, goHome);
     },
     {
       isActive:
@@ -263,6 +219,6 @@ function handleShortcutKeys(
   if (input === '\x1f' || (key.ctrl && input === '/'))
     return { type: 'open-overlay', overlay: 'help' };
   if (key.ctrl && input === ',') return { type: 'open-overlay', overlay: 'settings' };
-  if (key.ctrl && input === 'q') return { type: 'exit' };
+  if (key.ctrl && input === 'q') return { type: 'quit' };
   return NONE;
 }

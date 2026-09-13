@@ -68,6 +68,7 @@ const ReviewPacketTaskFileSchema = z.object({
   taskId: TaskIdSchema,
   title: z.string(),
   file: z.string(),
+  files: z.array(z.string()).optional(),
   status: TaskStatusSchema,
   changedFiles: z.array(z.string()),
   expectedEvidence: z.array(z.string()),

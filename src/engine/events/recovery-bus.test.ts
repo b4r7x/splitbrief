@@ -19,6 +19,8 @@ function recoveryEvent(overrides: Record<string, unknown> = {}): EngineEvent {
     affectedTaskIds: [],
     availableActions: ['pause-run', 'abort-workflow'],
     recommendedAction: 'pause-run',
+    headline: 'Context overflowed',
+    resumeCommand: 'splitbrief resume',
     ...overrides,
   });
   if (parsed === null) {

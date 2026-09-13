@@ -94,7 +94,7 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('recovery needed · Ollama hit its limit · resets 17:00');
+    expect(visible).toContain('Usage limit on Ollama · resets 17:00');
     expect(visible).not.toContain('5:00 PM');
     expect(visible.match(/resets 17:00/g)).toHaveLength(1);
   });
@@ -326,5 +326,19 @@ describe('recovery prompt', () => {
     } finally {
       process.env.TERM = prev;
     }
+  });
+
+  it('quotes a tool diagnostic without repeating the reset the headline already carries', async () => {
+    const issue: RecoveryIssue = {
+      ...usageLimitIssue([{ tool: 'opencode' }]),
+      facts: { tool: 'Ollama' },
+      details: ['Ollama reported: quota exhausted · resets 5pm'],
+      resetAt: new Date(Date.parse('2026-01-01T17:00:00.000Z')).toISOString(),
+    };
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('Ollama reported: quota exhausted');
+    expect(visible.match(/resets/g)).toHaveLength(1);
   });
 });

@@ -367,3 +367,24 @@ describe('sidebar task list geometry', () => {
     });
   });
 });
+
+describe('progress rows', () => {
+  it('take their rows from the body and push its top down', () => {
+    const base = getWorkflowContentRect({
+      cols: 120,
+      rows: 40,
+      inputRows: 3,
+      sidebarVisible: false,
+    });
+    const withBlock = getWorkflowContentRect({
+      cols: 120,
+      rows: 40,
+      inputRows: 3,
+      sidebarVisible: false,
+      progressRows: 2,
+    });
+
+    expect(withBlock.top).toBe(base.top + 2);
+    expect(withBlock.height).toBe(base.height - 2);
+  });
+});

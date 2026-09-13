@@ -31,8 +31,8 @@ afterEach(() => {
   resetAllStores();
 });
 
-describe('Sidebar — completed count', () => {
-  it('counts escalated tasks as completed in the header numerator', async () => {
+describe('Sidebar — passed count', () => {
+  it('counts only briefs that passed their checks in the header numerator', async () => {
     tasksStore.__testReset({
       tasks: [
         task('1', 'done'),
@@ -47,13 +47,13 @@ describe('Sidebar — completed count', () => {
     await tick();
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('5/5');
-    expect(frame).not.toContain('3/5');
+    expect(frame).toContain('3/5');
+    expect(frame).not.toContain('5/5');
 
     ui.unmount();
   });
 
-  it('excludes pending and in-progress tasks from the completed numerator', async () => {
+  it('excludes pending and in-progress tasks from the passed numerator', async () => {
     tasksStore.__testReset({
       tasks: [
         task('1', 'done'),
@@ -67,7 +67,7 @@ describe('Sidebar — completed count', () => {
     await tick();
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('2/4');
+    expect(frame).toContain('1/4');
 
     ui.unmount();
   });
@@ -81,7 +81,7 @@ describe('Sidebar — completed count', () => {
     await tick();
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('3/3');
+    expect(frame).toContain('2/3');
     expect(frame).toContain('2 done');
     expect(frame).toContain('1 escalated');
 

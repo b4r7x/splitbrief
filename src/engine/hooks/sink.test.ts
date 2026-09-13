@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
@@ -75,6 +75,29 @@ async function waitForNoActivity(all: readonly unknown[], idleMs = 400): Promise
     if (all.length !== before) return;
   }
 }
+
+async function waitForFile(path: string, timeoutMs = 5000): Promise<void> {
+  const start = Date.now();
+  while (!existsSync(path)) {
+    if (Date.now() - start > timeoutMs) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
+const recoveryPromptedEvent: EngineEvent = {
+  type: 'recovery_prompted',
+  ts: 1,
+  phase: 'implementing',
+  issueId: 'issue-1',
+  reason: 'retry-exhausted',
+  taskId: taskId('T001'),
+  files: [],
+  affectedTaskIds: [],
+  availableActions: ['skip-current-task', 'abort-workflow'],
+  recommendedAction: 'skip-current-task',
+  headline: 'T001 exhausted its retries',
+  resumeCommand: 'splitbrief continue sess-1 --action skip',
+};
 
 const taskCompletedEvent: EngineEvent = {
   type: 'task_completed',
@@ -204,6 +227,32 @@ describe('createHookSink', () => {
     await waitForWarnings(warnings, 1);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('marker');
+  });
+
+  it('dispatches on_halt for recovery_prompted with the halt payload', async () => {
+    const marker = join(projectDir, 'halt-payload.json');
+    const script = `let s='';process.stdin.on('data',(c)=>{s+=c}).on('end',()=>{require('node:fs').writeFileSync(${JSON.stringify(marker)},s)})`;
+    const hooks = trust({
+      on_halt: [makeCommandHookEntry({ command: 'node', args: ['-e', script], name: 'halt' })],
+    });
+    const { bus } = makeBus();
+    const sink = createHookSink(hooks, ctx(), bus);
+
+    sink(recoveryPromptedEvent);
+    await waitForFile(marker);
+
+    const payload = JSON.parse(readFileSync(marker, 'utf-8')) as {
+      event: Record<string, unknown>;
+      context: Record<string, unknown>;
+    };
+    expect(payload.context).toMatchObject({ sessionId: 'sess-1' });
+    expect(payload.event).toMatchObject({
+      type: 'recovery_prompted',
+      reason: 'retry-exhausted',
+      taskId: 'T001',
+      recommendedAction: 'skip-current-task',
+      resumeCommand: 'splitbrief continue sess-1 --action skip',
+    });
   });
 
   it('dispatches on_error for error event', async () => {

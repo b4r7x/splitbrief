@@ -10,23 +10,6 @@ For terminology (planner, implementer, runner kinds, sessions, queue, awaiting-c
 
 ## Batching, admission, and disposition
 
-**Finite batching.** The Task Brief compiler compiles the manifest in
-deterministic four-item batches, at most 64 real dispatches per operation, and
-each batch runs in a fresh detached session scope that cannot read, replace,
-expire, resume, or report into the workflow planner session. Every planner mode
-crosses the same admission boundary: standard and speckit run the compiler's
-detached batches, and quick stays single-call while accepting only a
-current-call result.
-
-**Tiered admission.** The Task Brief compiler admits backends across tiers: the
-tested version yields a full capability receipt; other detected versions of
-supported backends are admitted with runtime-drift evidence and a run warning;
-unsupported candidates (`copilot`, `cursor`, `command-code`, `shell`, `agent`)
-receive a typed
-fail-closed refusal (`task_compiler_capability_unsupported`). Runtime guards
-(envelopes, terminal contract, dispatch ledger, post-run mutation detection)
-are the enforcement surface.
-
 **Two-way disposition.** Every new, retry, rewind, and resume planning path
 returns exactly one of `ready-for-tasks` or `terminal`. Readiness is never
 inferred from cancellation, failure, task count, score, artifact existence,
@@ -38,7 +21,7 @@ phase, or process exit. A terminal result never enters execution.
 
 Primary state is the `phase` field — one of 15 values from the `Phase` enum. Two boolean-like sub-states overlay any phase:
 
-- **`awaitingContinue`** — the current call was aborted mid-stream (single Ctrl-C). The workflow stays in its current phase, holding for the user to continue or cancel.
+- **`awaitingContinue`** — the current call was aborted mid-stream (Stop now). The workflow stays in its current phase, holding for the user to resume or end the run.
 - **`rewindPending`** — a `/revise-spec` or `/revise-plan` command was issued. Contains `{ target: 'spec' | 'plan', comment?: string }`. The planning runner reads it on restart and takes the rewind fast-path. Cleared via `CLEAR_REWIND_PENDING` before the approval gate.
 
 A third overlay, **`pendingRecovery`**, carries a `RecoveryIssue` when the task loop hits an unrecoverable error. The phase stays where the stop occurred; the recovery overlay gates further progress until the user picks an action.
@@ -86,6 +69,7 @@ stateDiagram-v2
     implementing --> implementing : HINT_SUCCESS (intermediate retry)
     escalating --> implementing : HINT_SUCCESS / FULL_SUCCESS
 
+    final_review --> implementing : REVIEW_FIX_START
     final_review --> complete : REVIEW_DONE
     complete --> [*]
 ```
@@ -128,9 +112,12 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `implementing` / `validating-task` / `escalating` | `SKIP_TASK` | *(same)* | Marks task `skipped`, advances `currentTaskIndex` |
 | `implementing` / `validating-task` / `escalating` | `RESET_TASK` | `implementing` | Sets task to `pending`, rewinds `currentTaskIndex` to that task's index, resets `attempt`. Tasks after it keep their status. |
 | `implementing` | `ALL_DONE` | `final-review` | — |
-| `final-review` | `REVIEW_DONE` | `complete` | — |
+| `final-review` | `REVIEW_FIX_START` | `implementing` | Records `reviewFixes: { cycle, findings }`, sets every named task back to `pending`, rewinds `currentTaskIndex` to the first of them, resets `attempt` |
+| `final-review` | `REVIEW_DONE` | `complete` | Records `reviewStatus: 'passed' \| 'failed'` |
 
-`maxRetries` defaults to 3 (configurable via `workflow.maxRetries`).
+`maxRetries` defaults to 2 (configurable via `workflow.maxRetries`).
+
+**Review fix cycles.** A final review that reports blocking findings does not end the run at `complete`: `REVIEW_FIX_START` carries the per-task findings back into `implementing` and the task loop re-runs only the named tasks (`review_fix_started` publishes the cycle and the task ids). `VALIDATION_PASS` drops a completed task from `reviewFixes.findings`. The cycle count is capped at `REVIEW_CYCLE_CAP` (2, `src/core/pipeline-spec/review.ts`); when the cap is spent the review is recorded as `REVIEW_DONE { reviewStatus: 'failed' }`, a `review-failed` recovery is raised, and the run fails rather than completing.
 
 **Cross-phase actions from `phaseActions` not shown above:** `RESEARCH_DONE` is also allowed from `idle`, `specifying` and `planning`. `SPEC_CLARIFY_START` is allowed from `idle`, `researching`, `reviewing-spec`, and `planning`. `PLAN_DONE` is also allowed from `researching`, `specifying` and `reviewing-plan`. `BRIEF_ADMISSION_OPENED` is allowed from `planning`, `reviewing-plan` and `reviewing-briefs`. `ANALYZE_START` is allowed from `reviewing-plan` and `implementing`. Every planning producer exits in `reviewing-plan`, and `BRIEF_ADMISSION_OPENED` is the single door into `reviewing-briefs` for all three modes. These permit the orchestrator to skip or re-enter phases depending on mode and backend capability without the reducer rejecting the action.
 
@@ -140,7 +127,7 @@ These fire from any phase. They modify sub-state without changing `phase`.
 
 | Action | Effect |
 |--------|--------|
-| `CANCEL` | Sets `phase: 'idle'`, clears `awaitingContinue`. Used by explicit cancellation paths, not by the TUI double Ctrl-C exit. |
+| `CANCEL` | Sets `phase: 'idle'`, clears `awaitingContinue`. Used by explicit cancellation paths — the stop sheet's **End run** and `/end` among them. |
 | `ABORT_TURN` | Sets `awaitingContinue: true`. Reducer accepts it in any phase; the TUI dispatches it only for `isLivePhase()` phases. |
 | `CONTINUE_TURN` | Sets `awaitingContinue: false`. User pressed Enter. |
 | `SET_PLANNER_SESSION_ID` | Stores backend session handle for resume. |
@@ -179,16 +166,16 @@ From `src/core/phases.ts`. Each phase has four properties derived from the sourc
 | `reviewing-briefs` | planner | no | yes | no |
 | `analyzing` | planner | no | no | no |
 | `implementing` | implementer | yes | yes | yes |
-| `validating-task` | implementer | no | no | no |
-| `escalating` | implementer | yes | no | yes |
+| `validating-task` | implementer | no | yes | no |
+| `escalating` | implementer | yes | yes | yes |
 | `final-review` | planner | yes | yes | yes |
 | `complete` | — | no | no | no |
 
 **Role** — `phaseRole()`: implementer for `implementing`, `validating-task`, `escalating`; planner for everything else (cost accounting adds `final-review` to the implementer bucket via `phaseCostRole()`).
 
-**Cancellable** — single Ctrl-C aborts the active model call. This matches `isLivePhase()` in `src/core/phases.ts`.
+**Cancellable** — Stop now (`ctrl+c`, or the stop sheet's first row) aborts the active model call. This matches `isLivePhase()` in `src/core/phases.ts`.
 
-**Resumable** — `splitbrief resume` can pick up here. `RESUMABLE_PHASES` in `src/core/phases.ts` is exactly `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `final-review`. Every other phase is resumable only through the `awaitingContinue` override below; terminal phases (`idle`, `complete`) never are.
+**Resumable** — `splitbrief resume` can pick up here. `RESUMABLE_PHASES` in `src/core/phases.ts` is exactly `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `validating-task`, `escalating`, `final-review`. Every other phase is resumable only through the `awaitingContinue` override below; terminal phases (`idle`, `complete`) never are.
 
 **Live** — streaming output is happening. Phases where the planner or implementer is actively generating: `researching`, `specifying`, `planning`, `implementing`, `escalating`, `final-review`.
 
@@ -279,9 +266,9 @@ Four user actions during a live phase:
 | Action | Trigger | Effect |
 |--------|---------|--------|
 | Queue message | Type + Enter | During live planner phases, appends to `messageQueue`. Current call continues. Planners with `injectUserTurn()` also receive the message immediately. Still-pending delivery entries drain at the next safe-point. |
-| Abort turn | Ctrl-C (single) | `AbortController.abort()`. Current call terminates. Partial response preserved in `session.jsonl` with `interrupted: true`. Dispatches `ABORT_TURN` → `awaitingContinue: true`. |
-| Exit workflow | Ctrl-C twice within 2s | Exits after state is saved. The TUI unmounts; the saved state may be resumable later with `splitbrief continue <session-id>`. |
-| Continue | Enter (from awaiting-continue) | Dispatches `CONTINUE_TURN` → `awaitingContinue: false`. Next planner call includes queued messages and partial context. |
+| Stop now | `ctrl+c`, or **Stop now** on the stop sheet | `AbortController.abort()`. Current call terminates. Partial response preserved in `session.jsonl` with `interrupted: true`. Dispatches `ABORT_TURN` → `awaitingContinue: true`, and the run parks mid-brief with its partial changes kept. |
+| Exit workflow | `ctrl+q` or `/quit` | Stop now, then exit once the run has parked or ended, so the session is on disk before the process goes. The saved state may be resumable later with `splitbrief continue <session-id>`. |
+| Continue | Enter (from a parked run), or `/resume` | Dispatches `CONTINUE_TURN` → `awaitingContinue: false`. Typed text resumes with that text as steering instructions; an empty submit retries the parked call. |
 
 **Queue scope.** Planner-only. Mid-task interjection at the implementer, validation, or escalation level is rejected instead of being queued or injected into the planner, because small local models lose coherence when their task prompt is perturbed mid-call.
 
@@ -291,7 +278,9 @@ Four user actions during a live phase:
 
 Queue submissions return accepted/rejected results. Rejections include planner-unavailable phases and the 50-message cap; both publish a bounded warning. The UI shows feedback near the composer. `/queue show` reports pending-undelivered messages. `/queue clear` clears pending or injecting undelivered messages from the live workflow queue when a live clear handler is available, and otherwise reports unavailable.
 
-**Esc Esc interrupts (two-press ladder).** On the workflow screen, the first Esc arms an intent — `interrupt` while a live phase runs, or `cancel` while a question prompt is open or the workflow is already interrupted (`abortStore.arm(...)` in `src/app/keys.ts`); a second Esc fires it. The armed intent auto-clears after 2 seconds. The first Esc Esc is a hard interrupt: the in-flight call aborts, the runner's process group is terminated (graceful signal first, force-kill after a grace window), and the workflow enters a visible `interrupted` state — spinners stop and the byline reads the interim `interrupted — finishing current step…` until the continuation prompt parks at the next call boundary (immediately, for a live in-flight call), then `interrupted — Enter retry · type to steer`. The composer stays active while interrupted: submitting typed text resumes the workflow with that text as steering instructions; submitting an empty message (plain Enter) retries the interrupted call. Esc Esc is ignored — it arms nothing and no byline changes — during the `validating-task`, `analyzing`, and `constitution-check` phases (per-task validation, the per-task git commit, speckit's analyze step, and speckit's constitution-check gate), since none of these is in the live-phase set (`isLivePhase` in `src/core/phases.ts`); the interim `finishing current step…` byline above already covers the one dead zone that is inside a live phase, the gap between runner calls, where the press still arms and parks at the next call boundary. A second Esc Esc while interrupted cancels the entire workflow. With an overlay open, Esc closes the topmost overlay instead. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys for the full key map.
+**Stopping a run (the stop sheet).** On the workflow screen `esc` on an empty composer opens the stop sheet (`src/app/overlays/stop.tsx`, rows from `stopSheetRows` in `src/features/workflow/stop/options.ts`); with text in the composer the press spends neither the draft nor the run and the feedback line reads `clear the draft or ctrl+c to stop now`. The sheet offers **Stop now** (stop execution; keep partial changes), **Pause after this brief** (finish the current brief including its checks and review; do not start the next one) — replaced by **Keep running** once a pause is already pending — and **End run** (stop execution; mark this run cancelled; keep changes). Its footer states the rule that covers all of them: *No option reverts files. Your draft is preserved.* `ctrl+c` is **Stop now** directly — one press, no armed window — and where there is no run left to stop it keeps its usual meaning and leaves. There is no letter accelerator and no two-press ladder.
+
+While the stop is in flight the composer byline reports what the processes are doing rather than guessing: `Stopping <id> · Waiting for processes to exit · elapsed 3s`, then `Forcing remaining processes to exit` past the grace window (`stopByline`, `src/features/workflow/stop/copy.ts`). The run then parks: `Paused at <id> · Partial changes kept` after Stop now, or `Paused after <id> · N of M briefs complete` after a boundary pause. From a parked run `/resume` continues it (typed text is sent as steering instructions), `/end` stops it and marks the session `cancelled`, and `esc` returns home. With an overlay open, `esc` closes the topmost overlay instead. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys for the full key map.
 
 ---
 
@@ -341,11 +330,11 @@ Dispatches `RESET_TASK`. Sets the target task to `pending`, rewinds `currentTask
 
 ### Resumable phases
 
-`reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `final-review` (the `RESUMABLE_PHASES` set in `src/core/phases.ts`). Plus any phase with `awaitingContinue: true`.
+`reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `validating-task`, `escalating`, `final-review` (the `RESUMABLE_PHASES` set in `src/core/phases.ts`). Plus any phase with `awaitingContinue: true`. A run saved inside `validating-task` or `escalating` resumes by resetting the current task (`RESET_TASK`) and restoring that task's files from the changed-files baseline snapshot, so the brief is re-attempted from a clean tree rather than half-validated.
 
 ### Non-resumable phases
 
-Every other phase — `researching`, `specifying`, `clarifying`, `constitution-check`, `analyzing`, `validating-task`, `escalating` — unless `awaitingContinue: true`. The terminal phases `idle` and `complete` are never resumable. If the process died mid-generation without `awaitingContinue`, the stream is lost and the feature must restart.
+Every other phase — `researching`, `specifying`, `clarifying`, `constitution-check`, `analyzing` — unless `awaitingContinue: true`. The terminal phases `idle` and `complete` are never resumable. If the process died mid-generation without `awaitingContinue`, the stream is lost and planning starts over from the last saved artifact.
 
 ### Recovery on resume
 
@@ -377,7 +366,7 @@ When a task fails validation `maxRetries` times:
 2. **Full escalation** — planner writes the code directly. Success → task `escalated`.
 3. **Recovery** — if all tiers fail, `pendingRecovery` is set. The phase stays where the stop occurred.
 
-Recovery reasons: `implementation-error`, `validation-failed`, `retry-exhausted`, `runner-unauthenticated`, `runner-usage-limit`, `context-overflow`, `user-edit-conflict`, `approval-promotion-conflict`, `budget-paused`, `budget-exceeded`, `dependency-blocked`.
+Recovery reasons: `implementation-error`, `validation-failed`, `retry-exhausted`, `runner-unauthenticated`, `runner-usage-limit`, `context-overflow`, `user-edit-conflict`, `approval-promotion-conflict`, `budget-paused`, `budget-exceeded`, `dependency-blocked`, `scope-violation`, `implementer-recipe-invalid`, `implementer-timeout-repeated`, `review-failed`, `approval-denied`, `snapshot-failed` (`RECOVERY_REASONS`, `src/core/schemas/enums.ts`; the table in [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) gives each one its actions).
 
 Budget-paused recovery can come from crossing `workflow.budgetPauseThreshold` or from paid/API usage whose model pricing is unknown. Unknown local-only usage does not dollar-pause by itself; it remains visible as local/unpriced.
 
@@ -479,9 +468,11 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 
 16. final-review → REVIEW_DONE → complete
     summary.json written. .splitbrief/active cleared. Session done.
+    A review with blocking findings takes REVIEW_FIX_START back to implementing
+    for the named tasks instead, up to the review cycle cap.
 ```
 
-During live model-call phases, single Ctrl-C enters `awaitingContinue`; double Ctrl-C exits. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. `/revise-spec` and `/revise-plan` rewind to the appropriate phase. `/redo-task` replays a single task.
+During live model-call phases, `ctrl+c` is Stop now and parks the run; `esc` on an empty composer opens the stop sheet. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. `/revise-spec` and `/revise-plan` rewind to the appropriate phase. `/redo-task` replays a single task.
 
 ---
 
@@ -501,12 +492,14 @@ type WorkflowState = {
   plannerSessionId: string | null
   startedAt: string                       // ISO 8601
   tokenUsage: TokenUsage
-  awaitingContinue: boolean               // true after single Ctrl-C
+  awaitingContinue: boolean               // true after Stop now
   messageQueue: QueuedMessage[]           // user messages typed during live phases
 
   // Optional overlays
   rewindPending?: { target: 'spec' | 'plan'; comment?: string }
   pendingRecovery?: RecoveryIssue
+  reviewFixes?: { cycle: number; findings: Record<TaskId, string[]> }
+  reviewStatus?: 'passed' | 'failed'
   discoveredValidation?: DiscoveredValidation
 
   // Runner identity (set once at workflow start)

@@ -1,4 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
+import { taskFiles } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { formatValidationError } from '../validation/format-error.js';
@@ -8,7 +9,9 @@ import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { publishError } from '../events.js';
-import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { refreshAndPersistCode } from './refresh-code.js';
 import { validateCommitAndAdvance } from './commit.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
@@ -69,7 +72,7 @@ type RunSingleTaskOptions = {
   state: WorkflowState;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
-  setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
+  setCurrentTask: (t: Pick<Task, 'file' | 'files' | 'action'> | undefined) => void;
   onTaskStartSnapshot?:
     | ((state: WorkflowState, snapshot: ChangedFilesSnapshot) => WorkflowState)
     | undefined;
@@ -99,7 +102,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   const taskStartTime = Date.now();
 
   const gateResult = await gateAction({
-    actionDescription: `${task.action} ${task.file}`,
+    actionDescription: `${task.action} ${taskFiles(task).join(', ')}`,
     task,
     dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
     projectDir,
@@ -131,8 +134,20 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
         phase: state.phase,
         reason: WORKFLOW_CANCEL_REASON_USER,
       });
+      return state;
     }
-    return state;
+    return raisePendingRecovery(
+      wctx,
+      state,
+      buildApprovalDeniedRecoveryIssue({
+        task,
+        phase: state.phase,
+        ...(gateResult.reason !== undefined && { denialReason: gateResult.reason }),
+        tool: getRunnerDisplayName(config.implementer),
+        createdAt: nowIso(),
+      }),
+      setTrackedState,
+    );
   }
   persistApprovalEvidence({ wctx, state, decision: gateResult, taskId: task.id });
 

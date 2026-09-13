@@ -19,7 +19,7 @@ import {
   placeFragments,
   type Rect,
 } from './place';
-import { HERO, lower } from './pool';
+import { lower } from './pool';
 
 export type Backdrop = {
   start(): void;
@@ -77,80 +77,6 @@ function hover(span: HTMLElement, placement: Placement): Animation {
   );
 }
 
-// Each hero whisper sits beside the object the reference annotates with it: the strip under the
-// nav, the planner's lower half beside the headline's short lines, the implementer's upper half
-// and the column under its note, the reviewer under its note, the band under the stage.
-function heroZones(content: Rect, top: number): Zone[] {
-  const at = (selector: string): Rect | undefined => box(document, selector);
-  const steps = at('.hero .steps');
-  const claim = at('.hero .claim');
-  const headline = at('.hero h1');
-  const stage = at('.stage');
-  const label = at('.label--planner');
-  const planner = at('.ghost--planner');
-  const implementer = at('.ghost--implementer');
-  const reviewer = at('.ghost--reviewer');
-  const implementerNote = at('.seat--implementer');
-  const reviewerNote = at('.seat--reviewer');
-  if (
-    !steps ||
-    !claim ||
-    !headline ||
-    !stage ||
-    !label ||
-    !planner ||
-    !implementer ||
-    !reviewer ||
-    !implementerNote ||
-    !reviewerNote
-  )
-    return [];
-  const rect = (zone: Rect, layer: Layer): Zone => ({ rect: zone, layer });
-  return [
-    rect(
-      { left: steps.right + QUIET, top, right: claim.left - QUIET, bottom: label.top - EDGE },
-      HERO.strip,
-    ),
-    rect(
-      {
-        left: headline.left,
-        top: (planner.top + planner.bottom) / 2,
-        right: planner.left,
-        bottom: planner.bottom + QUIET,
-      },
-      HERO.planner,
-    ),
-    rect(
-      {
-        left: implementer.right + EDGE,
-        top: implementer.top,
-        right: content.right,
-        bottom: implementerNote.top - EDGE,
-      },
-      HERO.implementer,
-    ),
-    rect(
-      {
-        left: implementer.right + EDGE,
-        top: implementerNote.bottom + QUIET,
-        right: content.right,
-        bottom: reviewerNote.top - QUIET,
-      },
-      HERO.results,
-    ),
-    rect(
-      {
-        left: reviewer.right + EDGE,
-        top: reviewerNote.bottom + EDGE,
-        right: reviewerNote.right,
-        bottom: stage.bottom + 2 * QUIET,
-      },
-      HERO.reviewer,
-    ),
-    rect({ ...content, left: stage.left, top: stage.bottom }, HERO.under),
-  ];
-}
-
 function scene(height: number): { zones: Zone[]; fields: FieldSpec[] } {
   const content = box(document, '.hero');
   const nav = box(document, '.nav');
@@ -159,7 +85,6 @@ function scene(height: number): { zones: Zone[]; fields: FieldSpec[] } {
   const sections = [...document.querySelectorAll<HTMLElement>('.lower section')];
   const stage = box(document, '.stage');
   const zones: Zone[] = [
-    ...heroZones(content, origin.y),
     ...sections.flatMap((section, i) => {
       const grid = box(section, '.grid');
       return grid ? [{ rect: grid, layer: lower(SEEDS.lower + i) }] : [];
@@ -167,7 +92,7 @@ function scene(height: number): { zones: Zone[]; fields: FieldSpec[] } {
   ];
   const wanted: [Field, Rect | undefined][] = [
     [
-      { seed: SEEDS.edgeLeft, profile: 'edge', flip: false, rim: true, level: 1 },
+      { seed: SEEDS.edgeLeft, profile: 'edge', flip: false, rim: false, level: 0.3 },
       { left: EDGE, top: origin.y, right: content.left - INSET, bottom: height - EDGE },
     ],
     [
@@ -200,7 +125,10 @@ function scene(height: number): { zones: Zone[]; fields: FieldSpec[] } {
         bottom: pageRect(root.getBoundingClientRect()).bottom - SEAM,
       };
       return [
-        [{ seed: SEEDS.skyline + i, profile: 'skyline', flip: false, rim: false, level: 1 }, rect],
+        [
+          { seed: SEEDS.skyline + i, profile: 'skyline', flip: false, rim: false, level: 0.2 },
+          rect,
+        ],
       ];
     }),
     ...[...document.querySelectorAll(DESK.anchors)].flatMap((anchor, i): [Field, Rect][] => {

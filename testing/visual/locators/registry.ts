@@ -1,8 +1,13 @@
 import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/rect.js';
+import { getProgressRows } from '../../../src/features/workflow/layout/chrome-rows.js';
 import { getHomeLayout, homeConfigBlockRows } from '../../../src/features/home/layout.js';
-import { getLogoHeight } from '../../../src/features/home/logo.js';
+import { HOME_LOGO_ROWS } from '../../../src/features/home/logo.js';
 import { overlayWidth } from '../../../src/core/navigation/overlay-rect.js';
-import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
+import {
+  workflowFixtureProjections,
+  type WorkflowFixtureProjection,
+} from '../fixtures/workflow/projections.js';
+import { PhaseSchema, type Phase } from '../../../src/core/schemas/enums.js';
 import type { Cell, CellGrid } from '../contracts/cells.js';
 import { CellRectSchema, type CellRect } from '../contracts/geometry.js';
 import type { LocatorContext, LocatorDefinition } from './types.js';
@@ -114,7 +119,7 @@ function resolveHomeHeader(context: LocatorContext): CellRect {
     x: Math.floor((cols - layout.width) / 2),
     y: 0,
     width: layout.width,
-    height: getLogoHeight(layout.logoTier) + 1 + homeConfigBlockRows(rows),
+    height: HOME_LOGO_ROWS + 1 + homeConfigBlockRows(rows),
   });
 }
 
@@ -130,25 +135,44 @@ function resolveHomeComposer(context: LocatorContext): CellRect {
   });
 }
 
-function sidebarWidthFor(context: LocatorContext): number {
-  const { cols } = context.grid.identity.provenance.viewport;
+function projectionFor(context: LocatorContext): WorkflowFixtureProjection {
   const projection = workflowFixtureProjections.get(context.scenario.id);
   if (projection === undefined) {
     throw new Error(`Missing workflow fixture projection ${context.scenario.id}`);
   }
-  return getWorkflowSidebarWidth({ cols, sidebarVisible: projection.sidebarVisible });
+  return projection;
+}
+
+function sidebarWidthFor(context: LocatorContext): number {
+  const { cols } = context.grid.identity.provenance.viewport;
+  return getWorkflowSidebarWidth({ cols, sidebarVisible: projectionFor(context).sidebarVisible });
+}
+
+// The phase the screen is in at the checkpoint: the last event that carries one.
+function checkpointPhase(projection: WorkflowFixtureProjection): Phase {
+  for (let index = projection.events.length - 1; index >= 0; index -= 1) {
+    const parsed = PhaseSchema.safeParse(projection.events[index]?.phase);
+    if (parsed.success) return parsed.data;
+  }
+  return 'idle';
+}
+
+// The build-progress block rides between the rail and the divider, so the body's first row moves
+// with the run's phase and width; a constant here would crop the block instead of the body.
+function bodyTopRow(context: LocatorContext): number {
+  const { cols } = context.grid.identity.provenance.viewport;
+  return (
+    PAINTED_WORKFLOW_HEADER_ROWS +
+    getProgressRows({ phase: checkpointPhase(projectionFor(context)), cols })
+  );
 }
 
 function resolveWorkflowSidebar(context: LocatorContext): CellRect {
   const { rows } = context.grid.identity.provenance.viewport;
   const width = sidebarWidthFor(context);
   if (width === 0) return resolveWorkflowHeader(context);
-  return CellRectSchema.parse({
-    x: 0,
-    y: PAINTED_WORKFLOW_HEADER_ROWS,
-    width,
-    height: rows - PAINTED_WORKFLOW_HEADER_ROWS - DEFAULT_INPUT_ROWS - 3,
-  });
+  const y = bodyTopRow(context);
+  return CellRectSchema.parse({ x: 0, y, width, height: rows - y - DEFAULT_INPUT_ROWS - 3 });
 }
 
 function resolveWorkflowHeader(context: LocatorContext): CellRect {
@@ -158,12 +182,12 @@ function resolveWorkflowHeader(context: LocatorContext): CellRect {
 
 function resolveWorkflowTranscript(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
-  const baseHeight = rows - PAINTED_WORKFLOW_HEADER_ROWS - DEFAULT_INPUT_ROWS - 3;
+  const y = bodyTopRow(context);
   return CellRectSchema.parse({
     x: 0,
-    y: PAINTED_WORKFLOW_HEADER_ROWS,
+    y,
     width: cols,
-    height: Math.max(0, baseHeight),
+    height: Math.max(0, rows - y - DEFAULT_INPUT_ROWS - 3),
   });
 }
 

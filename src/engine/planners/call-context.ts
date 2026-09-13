@@ -1,11 +1,9 @@
 import type { RunnerCallContext } from '../calls/types.js';
 import {
-  createTaskCompilationAttemptId,
+  createPlannerArtifactAttemptId,
   type PlannerArtifactTransport,
   type PlannerSessionScope,
-  type TaskCompilationCallEnvelope,
-  type TaskCompilationOperationEnvelope,
-} from '../../core/schemas/task-compilation.js';
+} from '../../core/schemas/planner-artifact.js';
 
 const DEFAULT_BACKEND_KIND: RunnerCallContext['backendKind'] = 'cli';
 
@@ -17,15 +15,13 @@ export interface PlannerCallContextConfig {
   model?: string | undefined;
   transport?: PlannerArtifactTransport | undefined;
   sessionScope?: PlannerSessionScope | undefined;
-  envelope?: TaskCompilationCallEnvelope | undefined;
-  operationEnvelope?: TaskCompilationOperationEnvelope | undefined;
 }
 
 export function createPlannerCallContext(
   config: PlannerCallContextConfig,
   role: RunnerCallContext['role'],
 ): RunnerCallContext {
-  const attemptId = createTaskCompilationAttemptId();
+  const attemptId = createPlannerArtifactAttemptId();
   return {
     callId: attemptId,
     attemptId,
@@ -36,9 +32,5 @@ export function createPlannerCallContext(
     attempt: ++plannerBaseCallSequence,
     transport: config.transport ?? { kind: 'stdout-final' },
     sessionScope: config.sessionScope ?? { kind: 'workflow', workflowSessionId: null },
-    ...(config.envelope !== undefined && { envelope: config.envelope }),
-    ...(config.operationEnvelope !== undefined && {
-      operationEnvelope: config.operationEnvelope,
-    }),
   };
 }

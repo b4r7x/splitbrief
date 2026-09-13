@@ -6,6 +6,7 @@ import { initConfig, loadConfig } from './io.js';
 import { createDefaultConfig, mergeWithDefaults } from './defaults.js';
 import { SPLITBRIEF_DIR } from '../../paths.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
+import { DEFAULT_LOCAL_RETRIES } from '../../pipeline-spec/retries.js';
 import { expectApi } from '#testing/helpers/config-narrowing.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 
@@ -21,6 +22,13 @@ afterAll(() => {
 });
 
 describe('config defaults', () => {
+  describe('createDefaultConfig', () => {
+    it('maxRetries defaults to 2', () => {
+      expect(createDefaultConfig().workflow.maxRetries).toBe(DEFAULT_LOCAL_RETRIES);
+      expect(DEFAULT_LOCAL_RETRIES).toBe(2);
+    });
+  });
+
   describe('mergeWithDefaults', () => {
     it('carries a __proto__ key through as data instead of re-pointing the merged object', () => {
       const merged = mergeWithDefaults({ ['__proto__']: { polluted: true } });

@@ -5,8 +5,8 @@ import { tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
-import { markInterruptRequested } from '../../../stores/workflow/actions/interrupt.js';
-import { markInterruptResumed } from '../../../stores/workflow/actions/resume.js';
+import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
+import { markWorkflowResumed } from '../../../stores/workflow/actions/resume.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
@@ -329,7 +329,7 @@ describe('Header — rail and elapsed', () => {
     instance.unmount();
   });
 
-  it('freezes the elapsed clock while interrupted and resumes on resume', () => {
+  it('freezes the elapsed clock while parked and resumes on resume', () => {
     vi.useFakeTimers();
     vi.setSystemTime(5_000);
     lifecycleStore.__testReset({
@@ -347,7 +347,7 @@ describe('Header — rail and elapsed', () => {
     expect(instance.lastFrame() ?? '').toContain('0:10');
 
     act(() => {
-      markInterruptRequested();
+      markWorkflowPaused();
     });
     expect(instance.lastFrame() ?? '').toContain('0:10');
 
@@ -357,7 +357,7 @@ describe('Header — rail and elapsed', () => {
     expect(instance.lastFrame() ?? '').toContain('0:10');
 
     act(() => {
-      markInterruptResumed();
+      markWorkflowResumed();
     });
     expect(instance.lastFrame() ?? '').toContain('0:30');
 

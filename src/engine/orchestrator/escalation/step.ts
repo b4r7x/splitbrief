@@ -1,9 +1,12 @@
 import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { formatValidationError } from '../validation/format-error.js';
-import { addUsageAndSave } from '../state-ops.js';
+import { addUsageAndSave, raisePendingRecovery } from '../state-ops.js';
+import { buildScopeViolationRecoveryIssue } from '../recovery/builders/task.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { withPerCallAbort } from '../cancellable-call.js';
 import { publishError } from '../events.js';
 import { createRetryRuntime, stateForRetryProfile } from './retry-runtime.js';
 import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
@@ -56,20 +59,26 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   });
   let retryResult: Awaited<ReturnType<typeof invokeRetry>>;
   try {
-    retryResult = await invokeRetry({
-      task,
-      lastError,
-      attempts,
-      projectDir: workspace.projectDir,
-      config: retryRuntime.config,
-      implementer: retryRuntime.implementer,
-      ...(retryRuntime.implementerProfile !== undefined && {
-        implementerProfile: retryRuntime.implementerProfile,
-      }),
+    retryResult = await withPerCallAbort({
+      sinks: ctx.sinks,
       signal: ctx.signal,
-      sandboxEnv: workspace.sandboxEnv,
-      fileIgnoreProjectDir: ctx.projectDir,
-      changeDetection: workspace.changeDetection,
+      run: (signal) =>
+        invokeRetry({
+          task,
+          lastError,
+          attempts,
+          projectDir: workspace.projectDir,
+          config: retryRuntime.config,
+          implementer: retryRuntime.implementer,
+          ...(retryRuntime.implementerProfile !== undefined && {
+            implementerProfile: retryRuntime.implementerProfile,
+          }),
+          signal,
+          sandboxEnv: workspace.sandboxEnv,
+          fileIgnoreProjectDir: ctx.projectDir,
+          changeDetection: workspace.changeDetection,
+          ...(ctx.undeclaredWrites !== undefined && { undeclaredWrites: ctx.undeclaredWrites }),
+        }),
     });
   } catch (err) {
     workspace.cleanup();
@@ -155,16 +164,31 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     };
   }
   if (gateResult.outcome === 'gate-denied') {
-    const files = gateResult.decision.changedFiles.join(', ');
+    const deniedFiles = gateResult.decision.changedFiles;
     const reason = gateResult.decision.reason ?? 'denied';
     publishError({
       bus: ctx.bus,
       phase: gateResult.state.phase,
-      message: `Retry changed files blocked by approval gate: ${reason} (${files})`,
+      message: `Retry changed files blocked by approval gate: ${reason} (${deniedFiles.join(', ')})`,
     });
     persistRetryRejectionEvidence(ctx, gateResult.state, task, gateResult.decision);
+    const deniedState =
+      gateResult.decision.actionClass === 'write_out_of_scope'
+        ? raisePendingRecovery(
+            ctx,
+            gateResult.state,
+            buildScopeViolationRecoveryIssue({
+              task,
+              phase: gateResult.state.phase,
+              undeclaredFiles: deniedFiles,
+              attempts,
+              maxAttempts: ctx.config.workflow.maxRetries,
+              createdAt: nowIso(),
+            }),
+          )
+        : gateResult.state;
     return {
-      state: gateResult.state,
+      state: deniedState,
       task,
       lastError: reason,
       attempts,

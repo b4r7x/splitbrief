@@ -13,6 +13,12 @@ import { activeFile, CONFIG_FILE, sessionsRoot, SPLITBRIEF_DIR } from '../../../
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { saveState } from '../../../core/state/persistence.js';
+import { parseRecoveryActionOption } from '../../options.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 
 type HeadlessRun = {
   feature: string;
@@ -282,6 +288,79 @@ describe('continueCommand', () => {
     expect(runHeadless).not.toHaveBeenCalled();
     expect(readFileSync(activeFile(projectDir), 'utf8')).toBe(existingActive);
     expect(readdirSync(sessionsRoot(projectDir))).toEqual([sessionId]);
+  });
+
+  it('applies skip/retry/switch-seat headlessly', async () => {
+    const projectDir = makeTmpProject();
+    const cases = [
+      { id: 'skip', action: 'skip', issue: {} as Partial<RecoveryIssue>, phase: 'implementing' },
+      { id: 'retry', action: 'retry', issue: {} as Partial<RecoveryIssue>, phase: 'implementing' },
+      {
+        id: 'switch',
+        action: 'switch-seat:codex',
+        issue: {
+          reason: 'runner-usage-limit',
+          availableActions: ['switch-seat', 'pause-run', 'abort-workflow'],
+          recommendedAction: 'switch-seat',
+          switchSeat: { seat: 'build', candidates: [{ tool: 'codex' }] },
+        } as Partial<RecoveryIssue>,
+        phase: 'implementing',
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const sessionId = `2025-04-01-action-${testCase.id}`;
+      const sessDir = makeSessionDir(projectDir, sessionId);
+      writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+      saveState(
+        { projectDir, sessionId },
+        {
+          ...createInitialState('test-feature'),
+          phase: testCase.phase,
+          tasks: [makeTask({ id: 'T001' })],
+          pendingRecovery: makeRecoveryIssue({ status: 'paused', ...testCase.issue }),
+        },
+      );
+
+      await continueCommand(
+        sessionId,
+        { projectDir, json: true, action: parseRecoveryActionOption(testCase.action) },
+        deps,
+      );
+
+      const resumed = headlessRuns.find((run) => run.sessionId === sessionId);
+      expect(resumed, testCase.id).toBeDefined();
+      expect(resumed?.state?.pendingRecovery, testCase.id).toBeUndefined();
+    }
+  });
+
+  it('exits 1 when the named action is not one the halt offers', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-action-blocked';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('test-feature'),
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001' })],
+        pendingRecovery: makeRecoveryIssue({
+          status: 'paused',
+          availableActions: ['pause-run', 'abort-workflow'],
+          recommendedAction: 'pause-run',
+        }),
+      },
+    );
+
+    await expect(
+      continueCommand(
+        sessionId,
+        { projectDir, json: true, action: parseRecoveryActionOption('skip') },
+        deps,
+      ),
+    ).rejects.toMatchObject({ exitCode: 1, message: expect.stringContaining('is not available') });
+    expect(headlessRuns).toHaveLength(0);
   });
 
   it('rejects a session with an older stateVersion via loadState filtering', async () => {

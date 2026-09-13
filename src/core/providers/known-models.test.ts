@@ -336,8 +336,9 @@ describe('automatic-selection sentinel coherence', () => {
 });
 
 describe('TOOL_EFFORT_LADDERS', () => {
-  it('carries a ladder for exactly the four tools that publish their own effort levels', () => {
+  it('carries a ladder for exactly the five tools that publish their own effort levels', () => {
     expect(Object.keys(TOOL_EFFORT_LADDERS).sort()).toEqual([
+      'antigravity',
       'claude-code',
       'codex',
       'command-code',
@@ -389,11 +390,13 @@ describe('TOOL_EFFORT_LADDERS', () => {
       .filter(([, ladder]) => ladder?.exhaustive === false)
       .map(([tool]) => tool);
 
-    // Both are per model: command-code says so in its own help text, and codex publishes a
-    // different set per model — one of which names a rung (`ultra`) EFFORT_LEVELS cannot hold,
-    // so this ladder may order an offer but must never reject a carried value.
-    expect(openLadders).toEqual(['codex', 'command-code']);
+    // All three are per model: command-code says so in its own help text, codex publishes a
+    // different set per model — one of which names a rung (`ultra`) EFFORT_LEVELS cannot hold —
+    // and antigravity publishes no per-model list at all, so these ladders may order an offer
+    // but must never reject a carried value.
+    expect(openLadders).toEqual(['codex', 'command-code', 'antigravity']);
     expect(TOOL_EFFORT_LADDERS['command-code']?.provenance).toContain('depends on the model');
     expect(TOOL_EFFORT_LADDERS.codex?.provenance).toContain('supported_reasoning_levels');
+    expect(TOOL_EFFORT_LADDERS.antigravity?.provenance).toContain('no per-model level list');
   });
 });

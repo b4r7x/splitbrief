@@ -13,6 +13,7 @@ import {
   buildRetryExhaustedRecoveryIssue,
   buildRunnerUnauthenticatedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
+  recoveryBuilderForRunnerOutcome,
   routeBiggerProfileFromDecision,
 } from '../recovery/builders/task.js';
 import { raisePendingRecovery } from '../state-ops.js';
@@ -29,6 +30,7 @@ type HandleRetryOptions = {
   dependsOnFiles?: string[];
   profileOverride?: string | undefined;
   profileOverrideTaskId?: TaskId | undefined;
+  undeclaredWrites?: 'reject' | 'gate' | undefined;
 };
 
 /**
@@ -104,6 +106,46 @@ async function usageLimitHalt(
   return { state: nextState, result: failedRetry(stepOutcome.attempts) };
 }
 
+/**
+ * An outcome the recovery builders recognise as a runner defect halts the
+ * ladder for the same reason the auth and quota halts do — the next tier would
+ * hand the same defect to the planner at planner prices.
+ */
+async function runnerDefectHalt(
+  ctx: EscalationContext,
+  task: Task,
+  stepOutcome: RetryStepOutcome,
+): Promise<{ state: WorkflowState; result: RetryResult } | null> {
+  const failure = stepOutcome.lastFailure;
+  if (failure === undefined) return null;
+  const build = recoveryBuilderForRunnerOutcome(failure.outcome);
+  if (build === undefined) return null;
+  const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
+  const routeBiggerProfile = routeBiggerProfileFromDecision(ctx.routingDecision);
+  const seatSwap = await loadSeatSwapContext({
+    projectDir: ctx.projectDir,
+    seat: 'build',
+    runner: failure.runner,
+  });
+  const issue = build({
+    task,
+    phase: stepOutcome.state.phase,
+    runner: failure.runner,
+    toolMessage: stepOutcome.lastError,
+    attempts: stepOutcome.attempts,
+    maxAttempts: ctx.config.workflow.maxRetries,
+    ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
+    ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
+    ...(seatSwap !== undefined && { seatSwap }),
+    createdAt: nowIso(),
+  });
+  publishError({ bus: ctx.bus, phase: stepOutcome.state.phase, message: issue.message });
+  return {
+    state: raisePendingRecovery(ctx, stepOutcome.state, issue),
+    result: failedRetry(stepOutcome.attempts),
+  };
+}
+
 async function runnerHalt(
   ctx: EscalationContext,
   task: Task,
@@ -111,6 +153,8 @@ async function runnerHalt(
 ): Promise<{ state: WorkflowState; result: RetryResult } | null> {
   const unauthenticated = unauthenticatedHalt(ctx, task, stepOutcome);
   if (unauthenticated) return unauthenticated;
+  const defect = await runnerDefectHalt(ctx, task, stepOutcome);
+  if (defect) return defect;
   return usageLimitHalt(ctx, task, stepOutcome);
 }
 
@@ -140,6 +184,7 @@ export async function handleRetryAndEscalation(
     ...(opts.profileOverrideTaskId !== undefined && {
       retryProfileOverrideTaskId: opts.profileOverrideTaskId,
     }),
+    ...(opts.undeclaredWrites !== undefined && { undeclaredWrites: opts.undeclaredWrites }),
   };
 
   const retries = await runLocalRetries({

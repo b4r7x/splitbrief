@@ -4,6 +4,7 @@ export interface ValidationResult {
   passed: boolean;
   stage: ValidationStage;
   skipped?: boolean | undefined;
+  skippedReason?: string | undefined;
   error?: string | undefined;
   output?: string | undefined;
   command?: string | undefined;

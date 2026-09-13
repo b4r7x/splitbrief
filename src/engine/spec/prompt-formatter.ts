@@ -1,5 +1,5 @@
 import type { ProjectContext, CodeContext } from '../../core/state/types.js';
-import type { Task } from '../../core/schemas/task.js';
+import { taskFiles, type Task } from '../../core/schemas/task.js';
 import type { ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
 import { extractFunctionContext } from '../parsers/scope-extractor.js';
 import { DECLARATION_NAME_RE } from '../parsers/code-patterns.js';
@@ -9,20 +9,10 @@ import { buildLanguageContext, type LanguageContext } from './prompts/language-c
 import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from './prompts/system.js';
 import { buildScopeLines } from './formatter.js';
 import { TASK_BRIEF_HEADINGS } from './headings.js';
+import { framingForAttempt } from '../../core/pipeline-spec/ladder.js';
+import { CLOSING_CONSTRAINTS } from '../../core/pipeline-spec/brief.js';
 
 export { formatImplementerSystemPreamble };
-
-export const CLOSING_CONSTRAINTS = [
-  'Do NOT invent new functions not described in the task',
-  'Do NOT add features not described in the task',
-  'Do NOT import packages not listed in the project dependencies',
-];
-
-export const RETRY_FRAMINGS: Record<number, string> = {
-  1: 'Your previous attempt had an error. Fix it:',
-  2: 'Previous attempts failed. Here is the task rephrased differently:',
-  3: 'Multiple attempts have failed. Try a completely different approach:',
-};
 
 function resolveCodeContext(
   fileContent: string,
@@ -68,10 +58,17 @@ function buildTaskSections(
     sections.push(`## Project: ${context.name}`, '');
   }
 
+  const files = taskFiles(task);
   sections.push(
     `## Task: ${task.title}`,
     `### Action: ${task.action}`,
-    `### File: ${task.file}`,
+    ...(files.length > 1
+      ? [
+          '### Files:',
+          `- ${task.file} (anchor)`,
+          ...files.filter((p) => p !== task.file).map((p) => `- ${p}`),
+        ]
+      : [`### File: ${task.file}`]),
     '',
     TASK_BRIEF_HEADINGS.description.heading,
     task.description,
@@ -120,7 +117,7 @@ function buildTaskSections(
   );
   const completionInstruction =
     writesFiles === 'direct'
-      ? `Edit ${task.file} directly in the isolation directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
+      ? `Edit ${files.join(', ')} directly in the isolation directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
       : `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`;
   sections.push('', completionInstruction);
 
@@ -154,10 +151,10 @@ function insertCodeContextSection(sections: string[], codeLines: string[]): void
   }
 }
 
-function insertCodeContext(sections: string[], task: Task, budget?: { remaining: number }): void {
+function insertAnchorCode(sections: string[], task: Task, availableTokens?: number): void {
   if (!task.currentCode) return;
 
-  if (!budget) {
+  if (availableTokens === undefined) {
     insertCodeContextSection(sections, [
       '',
       TASK_BRIEF_HEADINGS.currentCode.heading,
@@ -172,7 +169,7 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
     if (match) functionName = match[1];
   }
 
-  const codeCtx = resolveCodeContext(task.currentCode, functionName, budget.remaining);
+  const codeCtx = resolveCodeContext(task.currentCode, functionName, availableTokens);
 
   if (codeCtx.mode === 'function-level') {
     insertCodeContextSection(sections, [
@@ -195,6 +192,31 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
   }
 }
 
+function insertCodeContext(sections: string[], task: Task, budget?: { remaining: number }): void {
+  const byFile = task.currentCodeByFile;
+  const extras: [string, string][] = [];
+  if (byFile) {
+    for (const path of taskFiles(task)) {
+      const content = byFile[path];
+      if (content !== undefined) extras.push([path, content]);
+    }
+  }
+
+  const blocks = extras.length + (task.currentCode ? 1 : 0);
+  if (blocks === 0) return;
+  const perBlock = budget ? Math.max(0, Math.floor(budget.remaining / blocks)) : undefined;
+
+  insertAnchorCode(sections, task, perBlock);
+
+  for (const [path, content] of extras) {
+    insertCodeContextSection(sections, [
+      '',
+      `${TASK_BRIEF_HEADINGS.currentCode.heading} — ${path}`,
+      perBlock === undefined ? content : truncateMiddle(content, perBlock),
+    ]);
+  }
+}
+
 export function formatTaskPrompt(opts: {
   task: Task;
   context: ProjectContext;
@@ -206,17 +228,14 @@ export function formatTaskPrompt(opts: {
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const sections = buildTaskSections(task, context, writesFiles);
 
-  if (!contextLength) {
-    if (task.action === 'modify') insertCodeContext(sections, task);
-    return sections.join('\n');
-  }
-
-  if (task.action === 'modify') {
-    const budget = computeTokenBudget({
-      system: formatImplementerSystemPreamble(ctx, writesFiles),
-      taskBody: sections.join('\n'),
-      contextLength,
-    });
+  if (task.action === 'modify' || task.currentCodeByFile) {
+    const budget = contextLength
+      ? computeTokenBudget({
+          system: formatImplementerSystemPreamble(ctx, writesFiles),
+          taskBody: sections.join('\n'),
+          contextLength,
+        })
+      : undefined;
     insertCodeContext(sections, task, budget);
   }
 
@@ -242,12 +261,12 @@ export function formatRetryPrompt(opts: {
     writesFiles = 'extracted-code',
   } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
-  const framing = RETRY_FRAMINGS[attempt] ?? RETRY_FRAMINGS[3] ?? '';
+  const framing = framingForAttempt(attempt);
   const sections = buildTaskSections(task, context, writesFiles);
 
   sections.unshift(framing, '', 'Error from previous attempt:', error, '');
 
-  if (task.currentCode) {
+  if (task.currentCode || task.currentCodeByFile) {
     const budget = contextLength
       ? computeTokenBudget({
           system: formatImplementerSystemPreamble(ctx, writesFiles),

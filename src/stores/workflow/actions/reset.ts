@@ -2,7 +2,7 @@ import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { definedTaskUsageFields, TASK_USAGE_ATTEMPT_KEYS } from '../../../core/schemas/tokens.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
-import { abortStore } from '../abort.js';
+import { stopStore } from '../stop.js';
 import { closeApprovalPrompt } from '../../approval-prompt/prompt.js';
 import { closeCostApprovalPrompt } from '../../cost-approval/prompt.js';
 import { eventsStore } from '../events.js';
@@ -27,7 +27,7 @@ import { streamingOutputStore } from '../streaming-output.js';
 import { clearSectionsCache } from './sections.js';
 
 export function resetWorkflow(resume?: WorkflowState): void {
-  abortStore.clear();
+  stopStore.reset();
   closeApprovalPrompt();
   closeCostApprovalPrompt({ approved: false });
   eventsStore.reset();

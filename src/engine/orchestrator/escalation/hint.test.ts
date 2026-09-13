@@ -20,6 +20,7 @@ import {
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import type { OrchestratorCallbacks } from '../types.js';
+import { HINT_ERROR_TEMPLATE } from '../../../core/pipeline-spec/ladder.js';
 import { HINT_TIER, runEscalationTier } from './tier.js';
 import type { EscalationContext } from './types.js';
 
@@ -219,5 +220,67 @@ describe('runEscalationTier hint tier gate handling', () => {
     expect(escalateHint).toHaveBeenCalledWith(
       expect.objectContaining({ changeDetection: 'file-hashes' }),
     );
+  });
+  it('composes the retry error from the pipeline-spec hint template', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { ctx } = await makeCtx(projectDir, sessionId, { callbacks });
+    const task = makeTask();
+    const state = makeImplState([task]);
+    let retryError = '';
+
+    await runEscalationTier(HINT_TIER, {
+      ctx: {
+        ...ctx,
+        implementer: makeImplementer({
+          retry: vi.fn().mockImplementation(async ({ error }: { error: string }) => {
+            retryError = error;
+            return { success: true, output: 'fixed' };
+          }),
+        }),
+      },
+      task,
+      state,
+      lastError: 'validation failed',
+      priorAttempts: 0,
+    });
+
+    expect(retryError).toBe(HINT_ERROR_TEMPLATE('validation failed', 'try importing foo'));
+  });
+
+  it('aborts only the planner hint call through the registered handler', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { ctx } = await makeCtx(projectDir, sessionId, { callbacks });
+    const handlers: Array<(() => void) | null> = [];
+    let hintSignalAborted = false;
+    const escalateHint = vi.fn().mockImplementation(async ({ callbacks: hintCallbacks }) => {
+      handlers.at(-1)?.();
+      hintSignalAborted = hintCallbacks.signal.aborted;
+      return { success: true, output: 'try importing foo', code: null, usage: null };
+    });
+    const task = makeTask();
+    const state = makeImplState([task]);
+
+    await runEscalationTier(HINT_TIER, {
+      ctx: {
+        ...ctx,
+        planner: makePlanner({ escalateHint }),
+        sinks: {
+          ...TEST_SINKS,
+          setAbortHandler: (handler) => {
+            handlers.push(handler);
+          },
+        },
+      },
+      task,
+      state,
+      lastError: 'validation failed',
+      priorAttempts: 0,
+    });
+
+    expect(hintSignalAborted).toBe(true);
+    expect(handlers.at(-1)).toBeNull();
+    expect(ctx.signal).toBeUndefined();
   });
 });

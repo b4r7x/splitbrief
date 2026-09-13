@@ -143,9 +143,9 @@ describe('runner role enums', () => {
     for (const id of EXCLUDED_CLI_TOOL_IDS) {
       expect(admittedIds.has(id)).toBe(false);
     }
-    expect('antigravity' in CLI_TOOL_CATALOG).toBe(false);
+    expect('antigravity' in CLI_TOOL_CATALOG).toBe(true);
     expect(admittedIds.has('cursor')).toBe(true);
-    expect(admittedIds.has('antigravity')).toBe(false);
+    expect(admittedIds.has('antigravity')).toBe(true);
     expect(PlannerCliToolIdSchema.safeParse('cursor').success).toBe(true);
     expect(ImplementerCliToolIdSchema.safeParse('cursor').success).toBe(true);
   });

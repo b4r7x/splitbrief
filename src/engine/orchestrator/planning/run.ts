@@ -1,10 +1,14 @@
 import { buildRepoMap } from '../../codebase/repomap.js';
 import { formatTasks } from '../../spec/formatter.js';
-import { resolveMode, resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
+import {
+  resolveMode,
+  resolveApproveLevel,
+  blocksBriefsGate,
+} from '../../../core/config/runtime/resolve.js';
 import { runQuickPlanning } from './quick.js';
 import { runFullPlanning } from './full.js';
 import { runSpeckitPlanning } from './speckit.js';
-import { adviseMode } from './mode-advisor.js';
+import { adviseMode, advisePlanSize } from './mode-advisor.js';
 import { runBriefQualityWithRepair } from './brief-quality-gate.js';
 import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult, PlanningProducerResult } from './types.js';
@@ -15,6 +19,7 @@ import { firstBriefError } from '../../spec/brief-quality.js';
 import { handlePlanningFailure } from './failure.js';
 import { planningError } from './errors.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { taskFiles } from '../../../core/schemas/task.js';
 
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx } = opts;
@@ -125,6 +130,25 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
   state = quality.state;
   const tasks = quality.tasks;
 
+  const planAdvice = advisePlanSize(
+    { files: new Set(tasks.flatMap((task) => taskFiles(task))).size, briefs: tasks.length },
+    mode,
+  );
+  if (planAdvice.kind !== 'none') {
+    bus.publish({
+      type: 'mode_advice',
+      ts: Date.now(),
+      phase: state.phase,
+      kind: planAdvice.kind,
+      risk: advisory.risk,
+      currentMode: mode,
+      suggestedMode: planAdvice.suggestedMode,
+      confidence: 1,
+      factors: planAdvice.factors,
+      missing: [],
+    });
+  }
+
   writeAndPublishArtifacts({
     projectDir,
     sessionId,
@@ -134,7 +158,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     items: [{ kind: 'task-briefs', text: formatTasks(tasks) }],
   });
 
-  if (mode !== 'quick' && approveLevel !== 'none') {
+  if (blocksBriefsGate(mode, approveLevel)) {
     const loop = await runBriefsApprovalLoop({
       tasks,
       state,

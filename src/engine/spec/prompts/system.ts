@@ -9,7 +9,7 @@ export function buildImplementerSystemPreamble(
 
   return `SYSTEM: You are a coding agent for ${languageContext.language}. You write clean, working code directly in the isolation directory. Your changes are promoted into the user's project afterwards.
 Rules:
-- Edit ONLY the file the Task Brief names, plus anything its Scope section lists under approved out-of-bounds. Every other file is out of bounds.
+- Edit ONLY the files the Task Brief lists under Files, plus every path its Scope names under In bounds or Approved out of bounds. Every other file is out of bounds.
 - Do NOT add comments unless specified in the task
 - Use ${languageContext.importConvention}
 - Follow the exact function signatures provided

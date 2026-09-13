@@ -32,4 +32,33 @@ describe('refreshAndPersistCode', () => {
       cleanupTempDir(projectDir);
     }
   });
+
+  it('fills currentCodeByFile for non-anchor files', async () => {
+    const projectDir = createTempDir('refresh-code-files');
+    const sessionId = 'sess-refresh-files';
+    ensureSessionDir(projectDir, sessionId);
+    try {
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      writeFileSync(join(projectDir, 'src', 'x.ts'), 'anchor code');
+      writeFileSync(join(projectDir, 'src', 'x.test.ts'), 'sibling code');
+
+      const task = makeTask({
+        file: 'src/x.ts',
+        files: ['src/x.ts', 'src/x.test.ts', 'src/missing.ts'],
+      });
+      const state = {
+        ...createInitialState('feature'),
+        phase: 'implementing' as const,
+        tasks: [task],
+      };
+
+      const result = await refreshAndPersistCode(task, { projectDir, sessionId }, state);
+
+      expect(result.task.currentCode).toBe('anchor code');
+      expect(result.task.currentCodeByFile).toEqual({ 'src/x.test.ts': 'sibling code' });
+      expect(result.state.tasks[0]?.currentCodeByFile).toEqual({ 'src/x.test.ts': 'sibling code' });
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
 });

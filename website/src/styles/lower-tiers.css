@@ -1,24 +1,25 @@
-@media (max-width: 1359px) {
+@media (max-width: 1099px) {
   .s02 .grid,
-  .s03 .grid {
-    grid-template-columns: repeat(12, minmax(0, 1fr));
+  .s03 .grid,
+  .s04 .grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .grid > .head {
-    grid-column: 1 / 7;
-    grid-row: 1;
+    grid-column: 1;
+    grid-row: auto;
   }
 
   .grid > .panel {
-    grid-column: 1 / 8;
-    grid-row: 2;
-    margin-top: var(--s-8);
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 0;
   }
 
   .grid > .notes {
-    grid-column: 8 / 13;
-    grid-row: 2;
-    margin-top: var(--s-8);
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 0;
   }
 
   .marg,
@@ -37,15 +38,15 @@
   }
 
   .grid > .notes {
-    grid-column: 1 / 9;
-    grid-row: 3;
+    grid-column: 1;
+    grid-row: auto;
   }
 }
 
 @media (max-width: 767px) {
   .s02,
   .s03 {
-    padding-block: var(--s-6) var(--s-12);
+    padding-block: var(--s-16);
   }
 
   .grid > .head,
@@ -56,11 +57,11 @@
   }
 
   .grid > .panel {
-    margin-top: var(--s-6);
+    margin-top: 0;
   }
 
   .grid > .notes {
-    margin-top: var(--s-8);
+    margin-top: 0;
     padding-top: 0;
   }
 

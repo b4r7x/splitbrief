@@ -1,6 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
-import { isTaskCompleted } from '../../../core/schemas/task.js';
-import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
+import { isTaskCompleted, taskFiles } from '../../../core/schemas/task.js';
+import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';
 import type { DriftFinding, DriftReport } from '../../../core/schemas/drift.js';
 import {
   PLAN_FILE,
@@ -11,8 +11,11 @@ import {
 } from '../../../core/paths.js';
 import { uniqueInOrder } from '../../../utils/collections.js';
 import { clamp01 } from '../../../utils/math.js';
-import { matchesActionPattern } from '../approval/action-classifier.js';
-import { taskAcceptedPatterns } from '../task-scope.js';
+import {
+  isInDeclaredSet,
+  matchesScopeEntry,
+  taskDeclaredPatterns,
+} from '../../../core/scope/declared-set.js';
 
 export type AnalyzeBriefDriftInput = {
   tasks: Task[];
@@ -33,10 +36,17 @@ function isFailedOrSkipped(status: Task['status']): boolean {
 // never fire. Only validation outcomes and implementer-reported evidence
 // count as observed.
 const SELF_STAMPED_EVIDENCE =
-  /^(?:task reached done$|task reached escalated$|diff written for |final review written$|skipped: )/;
+  /^(?:task reached done$|task reached escalated$|diff written for |final review written$|skipped: |[a-z]+ skipped \()/;
 
 function isInformativeEvidence(evidence: string): boolean {
   return !SELF_STAMPED_EVIDENCE.test(evidence);
+}
+
+// A test stage the validator skipped proves nothing, so a task whose only test
+// record is a skipped one is missing evidence even when other stages spoke.
+function testEvidenceWasSkipped(entry: EvidenceTask): boolean {
+  const tests = entry.validation.filter((v) => v.stage === 'test');
+  return tests.length > 0 && tests.every((v) => v.skipped === true);
 }
 
 // Root-level planner phase outputs. The planner writes these into the project
@@ -83,17 +93,18 @@ function classifyOutOfBoundsPattern(pattern: string): OutOfBoundsPatternKind {
 
 function matchesOutOfBoundsPath(file: string, pattern: string): boolean {
   const token = pattern.trim().replace(/\/+$/, '');
-  if (matchesActionPattern(file, token)) return true;
+  if (matchesScopeEntry(file, token)) return true;
   return !token.includes('*') && file.startsWith(`${token}/`);
 }
 
 export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   const findings: DriftFinding[] = [];
-  const expectedFiles = uniqueInOrder(input.tasks.map((task) => task.file).filter(Boolean)).sort();
-  const acceptedPatterns = input.tasks.flatMap(taskAcceptedPatterns);
+  const expectedFiles = uniqueInOrder(
+    input.tasks.flatMap((task) => [...taskFiles(task)]).filter(Boolean),
+  ).sort();
+  const acceptedPatterns = input.tasks.flatMap((task) => [...taskDeclaredPatterns(task)]);
   const isSessionArtifact = (file: string): boolean =>
-    SESSION_ARTIFACT_FILES.has(file) &&
-    !acceptedPatterns.some((pattern) => matchesActionPattern(file, pattern));
+    SESSION_ARTIFACT_FILES.has(file) && !isInDeclaredSet(file, acceptedPatterns);
   const changedFiles = uniqueInOrder(input.changedFiles)
     .filter((file) => !isSessionArtifact(file))
     .sort();
@@ -119,12 +130,11 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
       if (p) outOfBoundsPatterns.push(p);
     }
   }
-  const hasExplicitOutOfBounds = outOfBoundsPatterns.length > 0;
 
-  // A file some Task Brief declares as its target is a brief-ordered change,
-  // never an out-of-bounds hit, even when another task's scope forbids it.
+  // A file some Task Brief declares is a brief-ordered change, never an
+  // out-of-bounds hit, even when another task's scope forbids it.
   const isTaskTarget = (file: string): boolean =>
-    input.tasks.some((task) => task.file && matchesActionPattern(file, task.file));
+    input.tasks.some((task) => isInDeclaredSet(file, taskFiles(task)));
   const contentDiff = stripSessionArtifactDiffSections(input.diff);
 
   for (const pattern of outOfBoundsPatterns) {
@@ -157,7 +167,7 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   }
 
   for (const file of changedFiles) {
-    if (acceptedPatterns.some((pattern) => matchesActionPattern(file, pattern))) continue;
+    if (isInDeclaredSet(file, acceptedPatterns)) continue;
     if (isPreExisting(file)) {
       findings.push({
         severity: 'info',
@@ -168,7 +178,7 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
       continue;
     }
     findings.push({
-      severity: hasExplicitOutOfBounds ? 'error' : 'warning',
+      severity: 'error',
       code: 'out_of_scope_file',
       file,
       message: `${file} was changed but no Task Brief targets it.`,
@@ -179,7 +189,7 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
     if (
       isTaskCompleted(task.status) &&
       task.file &&
-      !changedFiles.some((file) => matchesActionPattern(file, task.file))
+      !changedFiles.some((file) => isInDeclaredSet(file, taskFiles(task)))
     ) {
       findings.push({
         severity: 'warning',
@@ -195,7 +205,7 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
     if (
       task.status === 'failed' &&
       task.file &&
-      changedFiles.some((file) => matchesActionPattern(file, task.file))
+      changedFiles.some((file) => isInDeclaredSet(file, taskFiles(task)))
     ) {
       findings.push({
         severity: 'error',
@@ -226,7 +236,7 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
     for (const entry of input.ledger.tasks) {
       if (!isTaskCompleted(entry.status)) continue;
       if (entry.expectedEvidence.length === 0) continue;
-      if (!entry.observedEvidence.some(isInformativeEvidence)) {
+      if (!entry.observedEvidence.some(isInformativeEvidence) || testEvidenceWasSkipped(entry)) {
         findings.push({
           severity: 'warning',
           code: 'missing_evidence',

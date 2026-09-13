@@ -14,11 +14,6 @@ export function formatTime(ms: number): string {
   return `${secs}s`;
 }
 
-export function formatEta(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return '';
-  return `~${formatTime(ms)} remaining`;
-}
-
 export function nowIso(): string {
   return new Date().toISOString();
 }

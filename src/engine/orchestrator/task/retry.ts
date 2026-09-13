@@ -4,6 +4,7 @@ import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js
 import type { ValidationResult } from '../validation/result.js';
 import type { TaskStatus, ValidationStage } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
+import type { UndeclaredWritesPolicy } from '../../implementers/types.js';
 
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
@@ -36,13 +37,30 @@ export type RetryAndRecordOptions = {
   tokensBefore: TokenUsage;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
-};
+} & UndeclaredWritesPolicy;
 
 export async function retryAndRecord(
   opts: RetryAndRecordOptions,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
   const { wctx, task, initialError, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState } =
     opts;
+  const recordFailedTask = (failedState: WorkflowState, attempts: number): void => {
+    persistTaskEvidence({
+      wctx,
+      state: failedState,
+      task,
+      recordKind: 'retry',
+      details: {
+        status: 'failed',
+        method: 'failed',
+        retries: attempts,
+        durationMs: Date.now() - taskStartTime,
+        initialValidation: opts.initialValidation,
+        initialChangedFiles: opts.initialChangedFiles,
+        initialExemptStages: opts.initialExemptStages,
+      },
+    });
+  };
   let taskStartSnapshot = opts.taskStartSnapshot;
   if (!taskStartSnapshot) {
     try {
@@ -69,6 +87,7 @@ export async function retryAndRecord(
       taskStartSnapshot,
       dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
       profileOverride: retryProfileOverride,
+      ...(opts.undeclaredWrites !== undefined && { undeclaredWrites: opts.undeclaredWrites }),
       ...(retryProfileOverride !== undefined && { profileOverrideTaskId: task.id }),
     }));
   } catch (err) {
@@ -95,6 +114,7 @@ export async function retryAndRecord(
       createdAt: nowIso(),
     });
     const nextState = raisePendingRecovery(wctx, recoveryBaseState, issue, setTrackedState);
+    recordFailedTask(nextState, recoveryBaseState.attempt);
     return { state: nextState, completed: false };
   }
   let nextState = state;
@@ -117,8 +137,15 @@ export async function retryAndRecord(
         routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
         createdAt: nowIso(),
       });
+      publishError({
+        bus: wctx.bus,
+        phase: nextState.phase,
+        message: issue.message,
+        safety: { category: 'recovery', code: 'retry_exhausted' },
+      });
       nextState = raisePendingRecovery(wctx, nextState, issue, setTrackedState);
     }
+    recordFailedTask(nextState, result.attempts);
     return { state: nextState, completed: false };
   }
   const model = result.model ?? nextState.implementerModel ?? wctx.config.implementer.model;

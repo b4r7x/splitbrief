@@ -15,7 +15,7 @@ import { configuredReviewerRunner } from '../../../core/config/accessors/reviewe
 import { formatCollapsedSeatLine } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
-import { formatSeatResetNote } from '../seat-reset.js';
+import { formatResetNote } from '../../../core/recovery/reset-clock.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
 import { measureRailCells, Rail } from './rail.js';
 
@@ -89,7 +89,7 @@ function seatResetNotes(
 ): Partial<Record<CrewSeatId, string>> | undefined {
   if (seat === null || resetAt === null) return undefined;
   const notes: Partial<Record<CrewSeatId, string>> = {};
-  notes[seat] = formatSeatResetNote(resetAt);
+  notes[seat] = formatResetNote(resetAt);
   return notes;
 }
 

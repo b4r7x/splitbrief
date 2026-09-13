@@ -14,7 +14,7 @@ import {
 import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recovery/facts.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { glyph } from '../../lib/glyphs.js';
-import { formatSeatResetNote } from './seat-reset.js';
+import { formatResetNote } from '../../core/recovery/reset-clock.js';
 
 const ACTION_ORDER = PROMPTABLE_RECOVERY_ACTIONS;
 
@@ -109,9 +109,9 @@ function formatRecoveryActionText(
     case 'skip-current-task':
       return 'skip task';
     case 'pause-run':
-      return 'pause';
+      return 'pause · no new brief starts, changes kept';
     case 'abort-workflow':
-      return 'abort';
+      return 'abort · stops the run, changes kept';
   }
 }
 
@@ -131,7 +131,7 @@ function switchSeatRowKey(index: number, offered: number): string {
 }
 
 function switchSeatRowText(seat: CrewSeatId, candidate: SeatSwapCandidate): string {
-  return `switch ${CREW_SEAT_LABELS[seat]} to ${formatSeatCandidateIdentity(candidate)}`;
+  return `switch ${CREW_SEAT_LABELS[seat]} to ${formatSeatCandidateIdentity(candidate)} · restarts this brief there, edits kept`;
 }
 
 /**
@@ -359,7 +359,7 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
 function resetNote(issue: RecoveryIssue): string | undefined {
   if (issue.resetAt === undefined) return undefined;
   const resetAt = Date.parse(issue.resetAt);
-  return Number.isFinite(resetAt) ? formatSeatResetNote(resetAt) : undefined;
+  return Number.isFinite(resetAt) ? formatResetNote(resetAt) : undefined;
 }
 
 /**
@@ -374,7 +374,7 @@ function formatUsageLimitHeadline(issue: RecoveryIssue): string | undefined {
   const tool = recoveryFactString(issue.facts, 'tool');
   if (tool === undefined) return undefined;
   const reset = resetNote(issue);
-  return `recovery needed · ${tool} hit its limit${reset === undefined ? '' : ` · ${reset}`}`;
+  return `Usage limit on ${tool}${reset === undefined ? '' : ` · ${reset}`}`;
 }
 
 function formatSubjectLines(issue: RecoveryIssue): string[] {
@@ -386,11 +386,21 @@ function formatSubjectLines(issue: RecoveryIssue): string[] {
   return lines;
 }
 
+// One instant, one spelling: whichever surface carries the reset clock, the others drop the clause
+// rather than restating it in their own words.
+const RESET_CLAUSE = /\s*·\s*resets\b[^·]*$/iu;
+
+export function stripRecoveryResetClause(text: string): string {
+  return text.replace(RESET_CLAUSE, '');
+}
+
 function formatDetailLines(issue: RecoveryIssue): string[] {
+  const dropQuotedReset = resetNote(issue) !== undefined;
   return issue.details
     .filter((detail) => !detail.startsWith('Worker profile:'))
     .slice(0, 4)
-    .map(formatDetailLine);
+    .map(formatDetailLine)
+    .map((detail) => (dropQuotedReset ? stripRecoveryResetClause(detail) : detail));
 }
 
 function formatDetailLine(detail: string): string {

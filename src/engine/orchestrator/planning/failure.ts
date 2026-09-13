@@ -42,7 +42,7 @@ export function handlePlanningFailure(opts: {
     (isUsageLimitDiagnostic(typed ?? message) ? (typed ?? message) : null);
   if (limitDetail !== null) {
     const resetsAt = parseUsageLimitReset(limitDetail);
-    message = `${message}. ${runnerAuthDisplayName(wctx.config.planner)} hit its usage limit — logging in again will not fix this. ${usageLimitWaitClause(resetsAt)} or switch the planner, then resume.`;
+    message = `${message}. ${runnerAuthDisplayName(wctx.config.planner)} hit its usage limit — logging in again will not fix this. ${usageLimitWaitClause(resetsAt)} or switch the planner, then start again.`;
   } else if (isAuthFailureDiagnostic(typed ?? message)) {
     message = `${message}. ${runnerLoginInstruction(wctx.config.planner)}`;
   }

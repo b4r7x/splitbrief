@@ -2,7 +2,36 @@ import { describe, expect, it } from 'vitest';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { arrowSep } from '../../components/separators.js';
-import { formatReviewerSummary, formatRouteSummary } from './presentation.js';
+import { terminalTheme } from '../../components/theme.js';
+import {
+  formatReviewerSummary,
+  formatRouteSummary,
+  getSummaryHeading,
+  summarizeOutcome,
+} from './presentation.js';
+
+describe('getSummaryHeading', () => {
+  it('reads a cancelled session as cancelled, not failed', () => {
+    expect(getSummaryHeading('cancelled', terminalTheme, true)).toEqual({
+      word: 'cancelled',
+      color: terminalTheme.warning,
+      glyph: 'statusCancelled',
+    });
+  });
+
+  it('a completed run with findings open is not a green tick', () => {
+    expect(getSummaryHeading('complete', terminalTheme, false)).toEqual({
+      word: 'complete',
+      color: terminalTheme.warning,
+      glyph: 'statusWarning',
+    });
+    expect(getSummaryHeading('complete', terminalTheme, true)).toEqual({
+      word: 'complete',
+      color: terminalTheme.success,
+      glyph: 'check',
+    });
+  });
+});
 
 describe('formatReviewerSummary', () => {
   it('names the reviewer when the run had its own reviewer seat', () => {
@@ -56,5 +85,57 @@ describe('formatRouteSummary', () => {
 
   it('returns null when both leading segments are absent', () => {
     expect(formatRouteSummary(makeSummary({ reviewerTool: 'codex' }), null)).toBeNull();
+  });
+});
+
+describe('summarizeOutcome', () => {
+  const packet = {
+    jsonPath: 'evidence/review.json',
+    markdownPath: 'evidence/review.md',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    finalReviewStatus: 'written' as const,
+    finalReviewVerdict: 'pass' as const,
+    finalReviewFindingCounts: { critical: 0, warning: 1, note: 0 },
+    driftPassed: true,
+    evidenceValidatedTasks: 1,
+    evidenceTotalTasks: 1,
+    missingArtifactCount: 0,
+  };
+
+  it('counts one changed file as a file, not files', () => {
+    const outcome = summarizeOutcome(makeSummary({ changedFiles: ['src/one.ts'] }), 'complete');
+
+    expect(outcome.facts).toContain('1 file changed');
+  });
+
+  it('names the packet to read instead of a key the screen does not answer', () => {
+    const clean = summarizeOutcome(
+      makeSummary({ reviewPacket: packet, driftSummary: undefined }),
+      'complete',
+    );
+    expect(clean.next).toBe('');
+
+    const blocking = summarizeOutcome(
+      makeSummary({
+        reviewPacket: packet,
+        review: { verdict: 'fail', critical: 2, warnings: 1, notes: 0 },
+      }),
+      'complete',
+    );
+    expect(blocking.next).toBe('2 blocking findings in evidence/review.md');
+  });
+
+  it('breaks the short-terminal line in two only when it does not fit', () => {
+    const summary = makeSummary({ changedFiles: ['src/one.ts', 'src/two.ts'] });
+
+    const narrow = summarizeOutcome(summary, 'complete', { compact: true, width: 76 });
+    expect(narrow.facts).toHaveLength(2);
+    expect(narrow.facts[1]).toContain('Scope check');
+    expect(narrow.facts[1]).toContain('2 files changed');
+
+    const wide = summarizeOutcome(summary, 'complete', { compact: true, width: 156 });
+    expect(wide.facts).toHaveLength(1);
+    expect(wide.facts[0]).toContain('Scope check');
+    expect(wide.facts[0]).toContain('2 files changed');
   });
 });

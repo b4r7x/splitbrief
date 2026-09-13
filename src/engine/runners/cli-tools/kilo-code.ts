@@ -8,6 +8,7 @@ import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { finalGroupTerminal } from './final-group.js';
+import { textLineEvents } from './text-line-events.js';
 import { validateCliArgs } from './validate-args.js';
 
 const KILO_ID = 'kilo-code' as const;
@@ -117,30 +118,8 @@ export function kiloPlannerProtocolEvents(line: string): readonly CliProtocolEve
   return structuredErrorEnvelope(line) ?? structuredEvents(parseOpencodeLine(line));
 }
 
-function textEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
-  const events: CliProtocolEvent[] = [];
-  if (parsed.text !== undefined && parsed.text.length > 0) {
-    events.push({
-      type: 'text',
-      channel: parsed.channel ?? 'stdout',
-      text: parsed.text,
-    });
-  }
-  if (parsed.usage !== undefined) {
-    events.push({
-      type: 'usage',
-      usage: parsed.usage,
-      semantics: parsed.usageSemantics ?? 'final',
-    });
-  }
-  for (const warning of parsed.warning ?? []) {
-    events.push({ type: 'warning', code: warning.code, message: warning.message });
-  }
-  return events;
-}
-
 export function kiloImplementerProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  return textEvents(parseTextLine(line));
+  return textLineEvents(parseTextLine(line));
 }
 
 function plannerBaseArgs(input: KiloPlannerBuildInput): string[] {

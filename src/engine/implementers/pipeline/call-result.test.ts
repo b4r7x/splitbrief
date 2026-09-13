@@ -197,6 +197,24 @@ function failed(code: string, message: string) {
   });
 }
 
+describe('runnerCallOutcome — implementer-side failure codes', () => {
+  it('implementer-effect-invalid is its own outcome state', () => {
+    expect(
+      runnerCallOutcome(failed('implementer-effect-invalid', 'wrote src/other.ts')).state,
+    ).toBe('implementer-effect-invalid');
+  });
+
+  it('keeps the other implementer-side codes distinct', () => {
+    expect(runnerCallOutcome(failed('implementer-recipe-invalid', 'bad flag')).state).toBe(
+      'implementer-recipe-invalid',
+    );
+    expect(runnerCallOutcome(failed('implementer-timeout-repeated', 'twice')).state).toBe(
+      'implementer-timeout-repeated',
+    );
+    expect(runnerCallOutcome(failed('missing-model', 'no such model')).state).toBe('missing-model');
+  });
+});
+
 describe('runnerCallOutcome — auth-failure classification', () => {
   it('maps the real codex burned-refresh turn failure to unauthenticated', () => {
     expect(runnerCallOutcome(failed('codex-turn-failed', CODEX_BURNED_REFRESH)).state).toBe(

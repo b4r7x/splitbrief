@@ -28,3 +28,5 @@ The matrix makes real CLI calls and spends real tokens. The npm script sets `SPL
 A release is cut only from a run whose manifest is attached to the changelog entry.
 
 A failing or skipping row is a blocker unless its tool is explicitly allow-listed for that release and the reason is recorded in the entry. The matrix is re-run before any tag.
+
+The live fixture row (`npm run test:e2e:live:fixture`, [TESTING.md](./TESTING.md) § "Fixture loop row") is outside that rule for now: it writes into the same manifest, but it becomes a release gate only after two recorded manifests show it green on a real toolbox. Until then it is drift evidence — a red fixture row is investigated, not a blocker.

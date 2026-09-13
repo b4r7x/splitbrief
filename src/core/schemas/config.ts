@@ -12,6 +12,7 @@ import { CodebaseConfigSchema } from './codebase.js';
 import { HooksConfigSchema } from './hooks.js';
 import { CompactionFormatSchema } from './compaction.js';
 import { CustomCommandsConfigSchema } from '../config/custom-commands.js';
+import { STACK_IDS } from '../validation/stacks/types.js';
 
 const PaletteCustomActionSchema = z.object({
   id: z.string().min(1),
@@ -92,6 +93,7 @@ export const ConfigSchema = z.object({
     lintCommand: z.string().min(1).optional(),
     testPattern: z.string().min(1).optional(),
     timeoutMs: z.number().int().min(1000).optional(),
+    stack: z.enum(STACK_IDS).optional(),
   }),
   workflow: z.strictObject({
     approve: ApproveLevelSchema.optional(),

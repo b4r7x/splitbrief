@@ -1,6 +1,6 @@
 # Brief Format — Product Task Brief v1
 
-The brief is the contract between the planner (this session) and the implementer (a different tool with no access to this session). Lifted from the SPLITBRIEF CLI (`src/engine/spec/prompts/task-format-example.ts`, `src/engine/spec/prompts/tasks.ts`). One brief = one file = one implementer run.
+The brief is the contract between the planner (this session) and the implementer (a different tool with no access to this session). Lifted from the SPLITBRIEF CLI (`src/engine/spec/prompts/task-format-example.ts`, `src/engine/spec/prompts/tasks.ts`). One brief = one verifiable slice = one implementer run.
 
 ## Template
 
@@ -10,7 +10,8 @@ The brief is the contract between the planner (this session) and the implementer
     - `id` — unique brief id: `T001`, `T002`, ... in emission order.
     - `title` — one short line.
     - `action` — exactly `create` or `modify`.
-    - `file` — one project-relative path (no leading `/`, no `..`).
+    - `file` — one project-relative path (no leading `/`, no `..`): the slice's anchor.
+    - `files` — optional YAML list of every project-relative path the slice writes, `file` among them. Omit it when the slice writes only the anchor.
     - `depends_on` — YAML list of brief ids this one must follow: `[]` when independent, `[T001, T002]` when it must run after both.
 
     Copy this shape and substitute real values:
@@ -20,6 +21,7 @@ The brief is the contract between the planner (this session) and the implementer
     title: Short descriptive title
     action: create
     file: src/path/to/file.ts
+    files: [src/path/to/file.ts, src/path/to/file.test.ts]
     depends_on: []
     ---
 
@@ -78,7 +80,7 @@ The fenced examples are TypeScript. For Python, Go, Rust, or JavaScript use that
 <!-- generated: brief-contract -->
 Every brief must cover these nine semantic sections, even when one is brief:
 
-1. **Identity** — frontmatter `id`, `title`, `action`, `file`, `depends_on`.
+1. **Identity** — frontmatter `id`, `title`, `action`, `file`, optional `files`, `depends_on`.
 2. **Intent** — `### Description`: what the change is and why it matters.
 3. **Scope** — `### Scope` with `**In bounds:**`, `**Out of bounds:**`, and optional `**Approved out of bounds:**` bullet lists. REQUIRED in standard mode so the implementer cannot drift into adjacent files or features.
 4. **Code Context** — `### Signature`, `### Current Code`, `### Type Definitions`, and `### Pattern`: copied verbatim from the project when relevant. The implementer cannot look up other files.
@@ -94,7 +96,7 @@ Every brief must cover these nine semantic sections, even when one is brief:
 <!-- generated: critical-rules -->
 1. **Self-contained**: Each brief must inline ALL context needed. Include relevant current code for modify tasks, TypeScript type annotations, import paths, function signatures from dependencies, and expected patterns.
 
-2. **Atomic**: One brief = one file. Either create a new file or modify an existing one. Never split a single file across briefs or combine multiple files in one brief.
+2. **Atomic**: One brief = one verifiable slice — the code, its test and its wiring that one gate run can prove together. List every file it writes under `files`; one file is the smallest slice. Split when a gate can pass on one part without the other. Budget: at most 5 files and about 200 changed lines per brief for a mid-tier implementer; a frontier implementer may take 8. A brief whose only purpose is to test a sibling another brief creates is folded into that brief.
 
 3. **Dependency-ordered**: Briefs must be ordered so dependencies come first. Use `depends_on` to declare which briefs must complete first. Independent briefs can run in parallel.
 
@@ -125,11 +127,21 @@ The three blocks above are generated from the CLI with its TypeScript language c
   plus the skill's own: `Do NOT run git add, git commit, git stash, or create .bak files`
 - Rules found in the project's instruction files (CLAUDE.md, AGENTS.md, …) are copied into `### Constraints` verbatim; a never-commit rule goes into every brief.
 - `### Current Code` carries the whole file when it is ≤ 300 lines; otherwise only the enclosing functions the brief touches, with a line `(excerpt: lines 40–95 of 412)`.
-- Brief cap: `quick` 5, `standard` 12. Above 12 → stop after writing the briefs and recommend splitting the task.
+- Slice budget and brief caps; above the standard cap → stop after writing the briefs and recommend splitting the task:
+
+<!-- generated: caps -->
+| Mode | Brief cap |
+|---|---|
+| `quick` | 5 |
+| `standard` | 12 |
+| `speckit` | 12 |
+
+One brief = one verifiable slice — the code, its test and its wiring that one gate run can prove together. List every file it writes under `files`; one file is the smallest slice. Split when a gate can pass on one part without the other. Budget: at most 5 files and about 200 changed lines per brief for a mid-tier implementer; a frontier implementer may take 8. A brief whose only purpose is to test a sibling another brief creates is folded into that brief.
+<!-- /generated -->
 
 ## Files written
 
     <run dir>/briefs/index.md      | id | title | file | action | depends_on |
-    <run dir>/briefs/T001.md       one brief per file, dependency order
+    <run dir>/briefs/T001.md       one brief per slice, dependency order
 
 `index.md` is the table a human or `splitbrief-run` reads to know the order; it carries no other content.

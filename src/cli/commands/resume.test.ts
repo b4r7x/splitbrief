@@ -10,6 +10,7 @@ import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { parsePreparedConfig } from '../../engine/runners/prepared-execution.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 
 let tmp: string;
 
@@ -32,7 +33,11 @@ function writeStaleLiveLockfile(sessDir: string, sessionId: string): void {
   writeFileSync(join(sessDir, 'lockfile.json'), JSON.stringify(data));
 }
 
-function writeState(sessDir: string, feature = 'unresponsive feature'): void {
+function writeState(
+  sessDir: string,
+  feature = 'unresponsive feature',
+  extra: Record<string, unknown> = {},
+): void {
   const state = {
     stateVersion: 4,
     stateRevision: 0,
@@ -62,6 +67,7 @@ function writeState(sessDir: string, feature = 'unresponsive feature'): void {
     awaitingContinue: false,
     messageQueue: [],
     briefRecovery: null,
+    ...extra,
   };
   writeFileSync(join(sessDir, 'state.json'), JSON.stringify(state));
 }
@@ -90,6 +96,40 @@ describe('resume command', () => {
 
     await expect(resumeCommand({ projectDir: tmp }, deps)).rejects.toThrow(
       new RegExp(`session process ${process.pid} exists but is unresponsive — kill it first`),
+    );
+    expect(resumeRuns).toHaveLength(0);
+  });
+
+  it('resume --plain with a pending recovery prints the continue line instead of refusing', async () => {
+    tmp = createTempDir('resume-pending-recovery');
+    const sessionId = '2026-04-18-halted';
+    const sessDir = makeSessionDir(tmp, sessionId);
+    writeState(sessDir, 'halted feature', {
+      pendingRecovery: makeRecoveryIssue({
+        status: 'paused',
+        recommendedAction: 'skip-current-task',
+      }),
+    });
+    writeActive({ projectDir: tmp, sessionId });
+
+    const resumeRuns: WorkflowState[] = [];
+    const deps: ResumeDeps = {
+      checkSessionLiveness: () => ({ alive: false, processAlive: false, data: null }),
+      resumeSavedSession: async ({ state }) => {
+        resumeRuns.push(state);
+      },
+    };
+
+    const error = await resumeCommand({ projectDir: tmp, plain: true }, deps).then(
+      () => {
+        throw new Error('resumeCommand unexpectedly resolved');
+      },
+      (err: { exitCode?: number; message?: string }) => err,
+    );
+
+    expect(error.exitCode).toBe(1);
+    expect(error.message).toContain(
+      `Continue with: splitbrief continue ${sessionId} --action skip [--plain|--json]`,
     );
     expect(resumeRuns).toHaveLength(0);
   });

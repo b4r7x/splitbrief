@@ -1,11 +1,11 @@
-@media (max-width: 1359px) {
+@media (max-width: 1099px) {
   .s04 .grid {
-    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
   .s04 .tree {
-    grid-column: 1 / 8;
-    grid-row: 2;
-    margin-top: var(--s-8);
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 0;
   }
 }
 @media (max-width: 1023px) {
@@ -14,10 +14,13 @@
   }
 }
 @media (max-width: 767px) {
+  .s04 {
+    padding-block: var(--s-16);
+  }
   .s04 .tree {
     grid-row: auto;
-    margin-top: var(--s-6);
-    padding-top: 0;
+    margin-top: 0;
+    padding: var(--s-4);
     font-size: var(--text-micro);
     overflow-x: auto;
   }

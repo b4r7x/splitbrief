@@ -5,7 +5,11 @@ import { renderApp } from '../../render/app.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { skillsStore } from '../../../stores/project/skills.js';
-import { assertHeadlessTaskReviewDisabled, runHeadless } from '../../headless.js';
+import {
+  assertHeadlessTaskReviewDisabled,
+  resolveSelectedSkills,
+  runHeadless,
+} from '../../headless.js';
 import { assertResumableState } from '../../sessions/resolve.js';
 import { setupWorkflow } from '../../setup.js';
 import { resolveRunConfig } from '../../build-overrides.js';
@@ -70,6 +74,8 @@ export async function resumeSavedSession(args: {
   sessionId: string;
   state: WorkflowState;
   opts: WorkflowOpts & { plain?: boolean | undefined };
+  /** The run config a `switch-seat` recovery action produced; otherwise resolved from opts. */
+  config?: Config | undefined;
   deps?: ResumeTailDeps | undefined;
 }): Promise<void> {
   const { projectDir, sessionId, opts } = args;
@@ -81,9 +87,10 @@ export async function resumeSavedSession(args: {
   assertResumableState(args.state, sessionId);
   const state = reconcileResumeMode(args.state, opts.mode);
 
-  const config = resolveRunConfig({ projectDir, opts });
+  const config = args.config ?? resolveRunConfig({ projectDir, opts });
   const ref = { projectDir, sessionId };
   reportSeatChanges(ref, config);
+  const selectedSkills = await resolveSelectedSkills(projectDir, opts.skills);
   const headless = opts.json === true || opts.plain === true;
   const interaction = headless ? 'headless' : 'interactive';
   if (headless) assertHeadlessTaskReviewDisabled(config);
@@ -106,6 +113,7 @@ export async function resumeSavedSession(args: {
     await deps.runHeadless({
       prepared: execution,
       ...(opts.plain === true && { plain: true }),
+      ...(selectedSkills !== undefined && { selectedSkills }),
     });
     return;
   }
@@ -115,8 +123,9 @@ export async function resumeSavedSession(args: {
   );
   const renderOptions = await deps.setupWorkflow(opts);
   await deps.initStores(projectDir, opts);
-  if (state.selectedSkills && state.selectedSkills.length > 0) {
-    skillsStore.setSelected(new Set(state.selectedSkills));
+  const resumeSkillIds = selectedSkills?.map((skill) => skill.id) ?? state.selectedSkills;
+  if (resumeSkillIds && resumeSkillIds.length > 0) {
+    skillsStore.setSelected(new Set(resumeSkillIds));
   }
   const execution = await prepareResume(interaction);
   routerStore.init({ screen: 'workflow', execution: { kind: 'local', prepared: execution } });

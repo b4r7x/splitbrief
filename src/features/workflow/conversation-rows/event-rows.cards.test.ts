@@ -164,6 +164,8 @@ describe('eventRows colored left-rule callouts', () => {
       phase: 'implementing',
       issueId: 'issue-1',
       reason: 'validation-failed',
+      headline: 'Validation failed on T001',
+      resumeCommand: 'splitbrief continue s-1 --action retry',
       recommendedAction: 'retry-same-worker',
       taskId: taskId('T001'),
       files: [],
@@ -179,9 +181,10 @@ describe('eventRows colored left-rule callouts', () => {
     expect(rowText(topRow)).toContain('recovery');
     expect(topRow.segments[0]?.tone).toBe('textDim');
 
+    // The card says what happened in the words the prompt uses, not the enum names behind them.
     const bodyRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-body');
-    expect(rowText(bodyRow)).toContain('validation-failed');
-    expect(rowText(bodyRow)).toContain('retry-same-worker');
+    expect(rowText(bodyRow)).toContain('Validation failed on T001');
+    expect(rowText(bodyRow)).not.toContain('retry-same-worker');
   });
 
   it('does not append its own trailing blank row (build.ts owns inter-block spacing)', () => {

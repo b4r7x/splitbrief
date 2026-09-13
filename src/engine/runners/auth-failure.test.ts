@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import {
@@ -37,6 +38,12 @@ describe('isAuthFailureDiagnostic', () => {
 
   it('recognizes a bare not-logged-in status', () => {
     expect(isAuthFailureDiagnostic('Not logged in')).toBe(true);
+  });
+
+  it('every HALT_SIGNATURES.auth phrase classifies as an auth failure', () => {
+    for (const phrase of HALT_SIGNATURES.auth) {
+      expect(isAuthFailureDiagnostic(`CLI failed: ${phrase}`)).toBe(true);
+    }
   });
 
   it('does not classify billing, capacity, or ordinary failures as auth', () => {

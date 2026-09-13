@@ -264,12 +264,12 @@ describe('transition', () => {
     expect(started.tasks[0]?.status).toBe('in_progress');
 
     const sent = transition(started, { type: 'TASK_SENT' });
-    const failed = transition(sent, { type: 'VALIDATION_FAIL' });
+    const failed = transition(sent, { type: 'VALIDATION_FAIL' }, { maxRetries: 3 });
     expect(failed.phase).toBe('implementing');
     expect(failed.attempt).toBe(3);
 
     const sentAgain = transition(failed, { type: 'TASK_SENT' });
-    const exhausted = transition(sentAgain, { type: 'VALIDATION_FAIL' });
+    const exhausted = transition(sentAgain, { type: 'VALIDATION_FAIL' }, { maxRetries: 3 });
     expect(exhausted.phase).toBe('escalating');
   });
 
@@ -333,7 +333,7 @@ describe('transition', () => {
     s = transition(s, { type: 'ALL_DONE' });
     expect(s.phase).toBe('final-review');
 
-    s = transition(s, { type: 'REVIEW_DONE' });
+    s = transition(s, { type: 'REVIEW_DONE', reviewStatus: 'passed' });
     expect(s.phase).toBe('complete');
 
     expect(s.feature).toBe('full-flow');
@@ -689,5 +689,86 @@ describe('transition', () => {
     const next = transition(state, { type: 'FULL_SUCCESS' });
     expect(next.tasks[0]?.currentCode).toBeUndefined();
     expect(next.tasks[0]?.status).toBe('escalated');
+  });
+
+  it('UPDATE_TASK_CODE stores codeByFile and CLEAR_TASK_CODE clears both', () => {
+    const tasks = [makeTask({ id: 'T001' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+    };
+
+    const updated = transition(state, {
+      type: 'UPDATE_TASK_CODE',
+      taskId: tasks[0]!.id,
+      code: 'anchor code',
+      codeByFile: { 'src/a.ts': 'anchor code', 'src/b.ts': 'sibling code' },
+    });
+    expect(updated.tasks[0]?.currentCode).toBe('anchor code');
+    expect(updated.tasks[0]?.currentCodeByFile).toEqual({
+      'src/a.ts': 'anchor code',
+      'src/b.ts': 'sibling code',
+    });
+
+    const cleared = transition(updated, { type: 'CLEAR_TASK_CODE', taskId: tasks[0]!.id });
+    expect(cleared.tasks[0]?.currentCode).toBeUndefined();
+    expect(cleared.tasks[0]?.currentCodeByFile).toBeUndefined();
+  });
+
+  it('REVIEW_DONE records reviewStatus', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'final-review' };
+
+    expect(transition(state, { type: 'REVIEW_DONE', reviewStatus: 'passed' }).reviewStatus).toBe(
+      'passed',
+    );
+    expect(transition(state, { type: 'REVIEW_DONE', reviewStatus: 'failed' }).reviewStatus).toBe(
+      'failed',
+    );
+  });
+
+  it('REVIEW_FIX_START resets the named tasks to pending and returns to implementing', () => {
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done' }),
+      makeTask({ id: 'T002', status: 'done' }),
+      makeTask({ id: 'T003', status: 'done' }),
+    ];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'final-review',
+      tasks,
+      currentTaskIndex: 3,
+      attempt: 2,
+    };
+
+    const next = transition(state, {
+      type: 'REVIEW_FIX_START',
+      cycle: 1,
+      fixes: { T002: ['missing null guard'], T003: ['unhandled error'] },
+    });
+
+    expect(next.phase).toBe('implementing');
+    expect(next.tasks.map((t) => t.status)).toEqual(['done', 'pending', 'pending']);
+    expect(next.currentTaskIndex).toBe(1);
+    expect(next.attempt).toBe(0);
+    expect(next.reviewFixes).toEqual({
+      cycle: 1,
+      findings: { T002: ['missing null guard'], T003: ['unhandled error'] },
+    });
+  });
+
+  it('VALIDATION_PASS drops the completed task from reviewFixes findings', () => {
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      tasks,
+      currentTaskIndex: 0,
+      reviewFixes: { cycle: 1, findings: { T001: ['fix me'], T002: ['fix me too'] } },
+    };
+
+    const next = transition(state, { type: 'VALIDATION_PASS' });
+
+    expect(next.reviewFixes?.findings).toEqual({ T002: ['fix me too'] });
   });
 });

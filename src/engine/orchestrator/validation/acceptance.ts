@@ -1,6 +1,10 @@
 import type { ValidationStage } from '../../../core/schemas/enums.js';
 import type { ValidationStageCommands } from '../../events/types.js';
+import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
+import { extractFailureKeys } from './extract-failure-keys.js';
 import type { ValidationResult } from './result.js';
+
+type ValidationFailureKeys = Partial<Record<ValidationStage, ReadonlySet<string>>>;
 
 export type ValidationAcceptance = {
   accepted: boolean;
@@ -8,17 +12,15 @@ export type ValidationAcceptance = {
   blockingStages: readonly ValidationStage[];
 };
 
-function normalizePath(path: string): string {
-  return path.replaceAll('\\', '/').replace(/^\.\//, '');
-}
-
 function evidenceNamesChangedFile(
   result: ValidationResult,
   changedFiles: readonly string[],
 ): boolean {
   if (result.failureFiles === undefined) return true;
-  const normalizedChanged = new Set(changedFiles.map(normalizePath));
-  return result.failureFiles.some((file) => normalizedChanged.has(normalizePath(file)));
+  const normalizedChanged = new Set(changedFiles.map(normalizeProjectRelativePath));
+  return result.failureFiles.some((file) =>
+    normalizedChanged.has(normalizeProjectRelativePath(file)),
+  );
 }
 
 function matchesBaselineCommand(
@@ -29,10 +31,24 @@ function matchesBaselineCommand(
   return probed === undefined || probed === result.command;
 }
 
+function isSubset(after: readonly string[], baseline: ReadonlySet<string>): boolean {
+  return after.every((key) => baseline.has(key));
+}
+
+function failuresAreKnown(
+  result: ValidationResult,
+  baselineFailureKeys: ValidationFailureKeys | undefined,
+): boolean {
+  const baseline = baselineFailureKeys?.[result.stage];
+  if (baseline === undefined) return true;
+  return isSubset(extractFailureKeys(result.error ?? result.output ?? ''), baseline);
+}
+
 export function decideValidationAcceptance(opts: {
   results: readonly ValidationResult[];
   baselineFailingStages: ReadonlySet<ValidationStage>;
   baselineCommands?: ValidationStageCommands | undefined;
+  baselineFailureKeys?: ValidationFailureKeys | undefined;
   changedFiles: readonly string[];
 }): ValidationAcceptance {
   const exemptStages: ValidationStage[] = [];
@@ -42,6 +58,7 @@ export function decideValidationAcceptance(opts: {
     if (
       opts.baselineFailingStages.has(result.stage) &&
       matchesBaselineCommand(result, opts.baselineCommands) &&
+      failuresAreKnown(result, opts.baselineFailureKeys) &&
       !evidenceNamesChangedFile(result, opts.changedFiles)
     ) {
       exemptStages.push(result.stage);

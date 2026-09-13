@@ -6,17 +6,26 @@ import { getApprovalPromptRows } from '../prompt-rows/approval.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
 import type { TieredApprovalResponse } from '../../../core/approval/types.js';
 import { ConfirmApprovalPrompt } from './approval-prompt/confirm.js';
+import { DocumentReviewPrompt } from './approval-prompt/document.js';
+import type { ReviewArtifact } from '../prompt-rows/approval.js';
 import { PROMPT_ZONE_Z, StickyApprovalPrompt } from './approval-prompt/sticky.js';
 
 export { PROMPT_ZONE_Z };
 
+export interface ReviewPanelProps {
+  artifact: ReviewArtifact;
+  selectedIndex: number;
+  commenting: boolean;
+}
+
 interface ApprovalPromptProps {
   clampedBoxRows?: number;
+  review?: ReviewPanelProps | undefined;
 }
 
 type PromptIdentity = ((response: TieredApprovalResponse) => void) | null;
 
-export function ApprovalPrompt({ clampedBoxRows }: ApprovalPromptProps) {
+export function ApprovalPrompt({ clampedBoxRows, review }: ApprovalPromptProps) {
   const state = approvalPromptStore.use((s) => s);
   const graceUntilRef = useRef(0);
   const promptIdentityRef = useRef<PromptIdentity>(null);
@@ -32,7 +41,12 @@ export function ApprovalPrompt({ clampedBoxRows }: ApprovalPromptProps) {
     if (promptIdentity) graceUntilRef.current = Date.now() + PROMPT_TYPEAHEAD_GRACE_MS;
   }
 
-  if (state.status !== 'pending') return null;
+  if (state.status !== 'pending') {
+    // A tiered gate takes the zone from the review panel: only one of them can own the keyboard.
+    return review === undefined ? null : (
+      <DocumentReviewPrompt {...review} clampedBoxRows={clampedBoxRows} />
+    );
+  }
 
   const { request } = state;
 

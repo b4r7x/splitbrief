@@ -226,7 +226,7 @@ export function parseTaskBlock(block: string): TaskBlockResult {
   const frontmatter = readTaskFrontmatter(block);
   if (!frontmatter.ok) return frontmatter;
 
-  const { id, title, action, file } = frontmatter.data;
+  const { id, title, action, file, files } = frontmatter.data;
   const dependsOn: TaskId[] = frontmatter.data.depends_on.map(taskId);
   const sections = extractSections(block);
 
@@ -235,6 +235,7 @@ export function parseTaskBlock(block: string): TaskBlockResult {
     title,
     action,
     file,
+    ...(files !== undefined && { files }),
     dependsOn,
     description: sections.description,
     signature: sections.signature || undefined,

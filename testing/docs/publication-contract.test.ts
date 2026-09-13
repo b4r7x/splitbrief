@@ -59,11 +59,6 @@ const claims = [
     'the fixed `tasks.md`, `brief-quality.json`, `spec.md`, and `plan.md` files are compatibility projections of that generation',
   ],
   [
-    'transport-exact-tuple',
-    'planners',
-    'declared transport, terminal contract, containment profile, credential channel, envelope version, and a verified conformance proof',
-  ],
-  [
     'transport-stdout-final-current-call',
     'planners',
     "`stdout-final` derives the candidate from the current call's authoritative final response only.",
@@ -77,81 +72,6 @@ const claims = [
     'transport-no-auto-source',
     'planners',
     'There is no `auto` source, source priority, prose sniffing, or filesystem search.',
-  ],
-  [
-    'transport-configuration-exact-tuple',
-    'configuration',
-    'The Task Brief compiler admits a backend only on an exact tuple: runtime identity, effective role vector, declared transport, terminal contract, containment profile, credential channel, envelope version, and a verified conformance proof',
-  ],
-  [
-    'compiler-four-item-batches',
-    'planners',
-    'compiles the manifest in deterministic four-item batches, at most 64 real dispatches per operation, each batch in a fresh detached session scope that cannot read, replace, expire, resume, or report into the workflow planner session',
-  ],
-  [
-    'compiler-finite-batch-size',
-    'workflow',
-    'deterministic four-item batches, at most 64 real dispatches per operation',
-  ],
-  [
-    'compiler-mode-boundary',
-    'planners',
-    "standard and speckit run the compiler's detached batches, and quick stays single-call while accepting only a current-call result.",
-  ],
-  [
-    'compiler-fails-closed',
-    'planners',
-    'returns the typed zero-dispatch refusal `task_compiler_capability_unsupported`, and no combination is downgraded to a weaker mode.',
-  ],
-  [
-    'support-required-baseline',
-    'planners',
-    'means OpenCode 1.18.15 is the production planner once its full factory-path conformance passes',
-  ],
-  [
-    'support-unsupported-zero-dispatch',
-    'planners',
-    'means a typed zero-dispatch refusal no matter what a candidate claims',
-  ],
-  [
-    'support-exact-version-bound',
-    'configuration',
-    'For supported backends, the tested version yields a full capability receipt, while other detected versions are admitted with runtime-drift evidence and a run warning.',
-  ],
-  [
-    'support-conformance-gated-inactive',
-    'configuration',
-    'Conformance-gated rows stay inactive until their complete row passes; unsupported rows (Copilot, Cursor, Command Code, shell, agent) refuse with typed fail-closed zero dispatches regardless of what a candidate claims.',
-  ],
-  [
-    'support-copilot-cursor-command-code-refused',
-    'configuration',
-    'Copilot, Cursor, and Command Code stay implementer-side in V1: their planner rows are compiler-unsupported and refuse with a typed zero-dispatch error',
-  ],
-  [
-    'support-shell-planner-refused',
-    'configuration',
-    'a `shell` planner is compiler-unsupported in V1, because the legacy shell planner lacks compiler containment and final-response conformance',
-  ],
-  [
-    'support-agent-planner-refused',
-    'configuration',
-    'a `kind: agent` planner is compiler-unsupported in V1, because its ambient session-file behavior violates exact lease ownership',
-  ],
-  [
-    'support-adapter-owned-overrides',
-    'configuration',
-    'Authority-bearing options are adapter-owned and cannot be overridden.',
-  ],
-  [
-    'support-conformance-factory-proof',
-    'testing',
-    'The production factory path must prove, per backend and exact version: the effective read-only role, filesystem containment, exact current-call output, final-response semantics, detached sessions, the hard call envelope, hostile configuration handling, credential isolation, and zero dispatch on failed preflight.',
-  ],
-  [
-    'support-live-checks-not-admission',
-    'testing',
-    'are opt-in drift evidence: they verify reality on a real machine with real credentials and never replace the deterministic matrix as the admission proof',
   ],
   [
     'roles-pinned-and-effect-verified',
@@ -204,15 +124,7 @@ const claims = [
   ['prohibited-unknown-cost-not-zero', 'configuration', 'Unknown provider cost is not zero.'],
 ] as const;
 
-const REQ_050_DIMENSIONS = [
-  'publication',
-  'transport',
-  'compiler',
-  'support',
-  'roles',
-  'budget',
-  'prohibited',
-] as const;
+const REQ_050_DIMENSIONS = ['publication', 'transport', 'roles', 'budget', 'prohibited'] as const;
 
 const ALL_DOCS = Object.values(docs).join('\n');
 

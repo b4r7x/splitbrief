@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ReviewFindingSeveritySchema, ReviewVerdictSchema } from '../../core/schemas/summary.js';
+import { VERDICT_RULES } from '../../core/pipeline-spec/review.js';
 
 export const ParsedFinalReviewSchema = z.object({
   verdict: ReviewVerdictSchema.nullable(),
@@ -16,7 +17,11 @@ const HEADING_RE = /^#{1,6}\s+\S/;
 const VERDICT_HEADING_RE = /^#{1,6}\s+verdict\s*$/i;
 const CRITERION_BULLET_RE = /^-\s+\*{0,2}\[(pass|fail)\]\*{0,2}\s+(.*)$/i;
 const FINDING_BULLET_RE = /^-\s+\*\*(critical|warning|note)\*\*\s*:\s+(.*)$/i;
-const VERDICT_WORD_RE = /\b(pass_with_notes|fail|pass)\b/g;
+// Longest first, so `pass_with_notes` is never read as a bare `pass`.
+const VERDICT_WORD_RE = new RegExp(
+  `\\b(${[...VERDICT_RULES.words].sort((a, b) => b.length - a.length).join('|')})\\b`,
+  'g',
+);
 
 function extractSection(lines: string[], matchesHeading: (line: string) => boolean): string[] {
   const start = lines.findIndex((line) => matchesHeading(line.trim()));

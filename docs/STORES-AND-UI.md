@@ -74,7 +74,7 @@ Runtime state of the active workflow run.
 - **tokensStore** -- token usage, cost, pricing context, per-phase breakdowns.
 - **operationsStore** -- active/last normalized runner operation. Terminal states carry frozen `endedAt` / `durationMs`, and running states stay compact. Runner warnings are kept only while the call is running and only when their surface is `status`, `activity`, or `transcript`. They are grouped by fingerprint/code/source/surface with count, first/last timestamps, latest message, and max severity.
 - **conversationScrollStore** -- scroll offset for the conversation view.
-- **abortStore** -- armed-abort indicator (`armed`: `none` / `interrupt` / `cancel` / `exit`, 2s auto-clear).
+- **stopStore** -- the run's stop state: the `intent` the operator chose (`none` / `stop-now` / `pause-after-brief` / `end-run` / `quit`), the `phase` it has reached (`idle` → `requested` → `terminating` → `forcing` → `parked` / `ended`), when it was asked for, and the parked brief with the resolver that resumes it. There is no armed-intent ladder: one press opens the sheet, one row applies.
 - **streamingOutputStore** -- live implementer output lines.
 - **reviewStore** -- which file is under review, the scroll offset, and the rendered Markdown row height.
 - **attachmentsStore** -- files attached to the next user message.
@@ -90,6 +90,7 @@ Runtime state of the active workflow run.
 - **controlsStore** -- sidebar visibility, input mode echo.
 - **terminalSizeStore** -- reactive terminal cols/rows, subscribes to resize events.
 - **inputHeightStore** -- current composer height in rows.
+- **composerLiveStore** -- whether the composer is empty right now, so `src/app/keys.ts` can tell an `esc` that should open the stop sheet from one that would spend the user's draft.
 - **inputHistoryStore** -- command history with disk persistence.
 - **commandPaletteMruStore** -- most-recently-used entries for the command palette.
 - **projectFilesStore** -- refresh invalidation tick for project-file completion; the composer owns the async file read and local suggestion list.
@@ -148,9 +149,11 @@ The main screen during execution. Key hooks:
 
 - **`useWorkflowRunner()`** -- starts the engine via `runWorkflow()`, passing `tuiSink: addTuiEvent` and managing the run lifecycle via an `AbortController`. The EventBus is created inside the engine (`runWorkflow` init wires the `tuiSink` to it). Returns `startedAt` and `handleResume`.
 - **`useInputMode()`** -- manages three input modes: `normal` (typing), `review` (approve/reject), `question` (answering planner). `setReviewMode()` and `setQuestionMode()` return promises -- the engine blocks until the user acts, then the promise resolves.
-- **`useWorkflowKeys()`** -- workflow-local keyboard shortcuts: Ctrl-D toggles the latest diff locally, plus review/conversation arrow navigation. Ctrl-C abort/exit handling lives in `src/app/keys.ts`.
+- **`useWorkflowKeys()`** -- workflow-local keyboard shortcuts: Ctrl-D toggles the latest diff locally, plus review/conversation arrow navigation. Stop now (`ctrl+c`) and the `esc` that opens the stop sheet live in `src/app/keys.ts`.
 
 Key components: `Header` (phase rail), `ConversationFlow` (row-based event stream), `Sidebar`, `Composer`, `InputFooter` (byline), `ApprovalPrompt`, `CostApprovalPromptConnected`, `QuestionPrompt`.
+
+The **Build progress block** is fixed chrome under the header rail (`BuildProgressBlock`, `src/features/workflow/components/build-progress.tsx`, rendered by the workflow page inside `ScreenShell`'s header). `deriveBuildProgress` (`src/features/workflow/display/build-progress.ts`) reads the task, token, lifecycle and operations stores and returns five facts — counts (`3/7 briefs passed`, plus `escalated` / `failed` only when non-zero), `attempt N of M`, the ETA (`ETA ~4m`, or `ETA unavailable: no brief finished yet` — never invented before a brief has finished), the activity line (the seat and what it is doing, or the gate command it is inside, with output tokens), and freshness (`last event 3s ago`, or `No update from <tool> for 74s` past `UI_IDLE_WARN_MS`). The same five facts appear at every width, regrouped rather than dropped: two rows at 120 columns and wider, four at 80, five below. The only fraction in the block is passed briefs.
 
 `Sidebar` asks `layout/rect.ts` for its task-title budget (`getSidebarTaskTitleWidth`) instead of deriving one: the budget is the exact interior of the row it renders into — border, padding, and the bar/marker/space prefix accounted for — and shortens further when a status tail claims cells, so a long title always fits on one line.
 
@@ -221,7 +224,9 @@ introduce a second breakpoint or hidden bottom row.
 
 `overlayStore` manages a stack. Opening an overlay pushes the current one onto the stack. `Esc` pops. When an overlay is active, `Layout` (`src/app/layout.tsx`) hides the screen and renders the overlay in its place.
 
-Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `sessions`, `editor`, `cost-drilldown` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`, which spreads `SEAT_PICKER_OVERLAYS` (one picker overlay per seat picker role). There is no `crew` overlay: crew is the first section of `settings`.
+Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `stop-sheet`, `sessions`, `editor`, `cost-drilldown` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`, which spreads `SEAT_PICKER_OVERLAYS` (one picker overlay per seat picker role). There is no `crew` overlay: crew is the first section of `settings`.
+
+The `stop-sheet` overlay (`src/app/overlays/stop.tsx`, panel in `src/features/workflow/stop/sheet.tsx`) is how a run is stopped: `esc` on an empty composer opens it while the run is still stoppable, its rows come from `stopSheetRows` (`stop/options.ts`), and choosing one writes the intent into `stopStore`. It carries no letter accelerators — `↑↓ · ⏎ · esc` — and its footer states the rule for every row: *No option reverts files. Your draft is preserved.*
 
 Each type maps to a component in `renderOverlay()` in `src/app/router.tsx`. The three picker overlays all render the same component parameterised by role: `<ToolModelPicker role="planner" | "implementer" | "reviewer" />` (`src/app/overlays/runners.tsx`). `role` is `SeatPickerRole` — the three members of `SEAT_PICKER_ROLES` (`src/core/runners/seat-roles.ts`); confirming a `reviewer` selection writes the `reviewer` block in project config.
 

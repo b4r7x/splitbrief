@@ -1,8 +1,8 @@
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
 import { buildPrompt, instructionsSection, requiredSectionsSection } from './builder.js';
-import { TASK_BRIEF_COMPILER_POLICY } from '../../../core/schemas/task-compilation.js';
 import { error } from '../../../utils/error.js';
+import { PLAN_PROMPT_MAX_BYTES } from '../../../core/pipeline-spec/brief.js';
 
 export type PlanPromptSpec = {
   content: string;
@@ -26,7 +26,7 @@ export type RegeneratePromptInput = Readonly<{
 export const planPromptError = {
   tooLarge: (actualBytes: number, maxBytes: number) =>
     error(
-      'task_compiler_prompt_too_large',
+      'plan_prompt_too_large',
       `The plan prompt is ${actualBytes} bytes; the bound is ${maxBytes} bytes.`,
       { actualBytes, maxBytes },
     ),
@@ -66,10 +66,9 @@ Key technical decisions with brief justifications:
 - What tradeoffs were made
 
 ## File Structure
-Use this exact finite grammar. Include both subsections, even when one has no entries. Put every
-project-relative file exactly once in encounter order. Each path line must be followed by one or
-more indented non-empty purpose lines. Do not use a tree, glob, prose paragraph, inline comment,
-provider-chosen pagination, session file, or artifact path:
+List every project-relative file the change touches with one indented purpose line each;
+group the files of one slice together in the order a brief would write them.
+Include both subsections, even when one has no entries:
 ${fileStructureExample(ctx)}
 
 ## Dependencies
@@ -124,7 +123,7 @@ export function planPromptByteLength(prompt: string): number {
 
 export function assertPlanPromptBound(
   prompt: string,
-  maxPromptBytes: number = TASK_BRIEF_COMPILER_POLICY.maxPromptBytes,
+  maxPromptBytes: number = PLAN_PROMPT_MAX_BYTES,
 ): string {
   const actualBytes = planPromptByteLength(prompt);
   if (actualBytes > maxPromptBytes) throw planPromptError.tooLarge(actualBytes, maxPromptBytes);

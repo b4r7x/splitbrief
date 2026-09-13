@@ -22,9 +22,9 @@ import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { RETIRED_WORKFLOW_MODE_NOTICE } from '../../core/schemas/enums.js';
 import type { Config } from '../../core/schemas/config.js';
 import {
-  createTaskCompilationAttemptId,
+  createPlannerArtifactAttemptId,
   OwnedPlannerArtifactSchema,
-} from '../../core/schemas/task-compilation.js';
+} from '../../core/schemas/planner-artifact.js';
 import type {
   PhaseResult,
   Planner,
@@ -47,7 +47,7 @@ function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): Pha
       semanticId: `test-${logicalName}`,
       programId: null,
       batchId: null,
-      attemptId: createTaskCompilationAttemptId(),
+      attemptId: createPlannerArtifactAttemptId(),
       logicalName,
       transport: 'stdout-final',
       text,

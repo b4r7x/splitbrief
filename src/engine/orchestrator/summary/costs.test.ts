@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { buildSummary } from './build.js';
-import type { BuildSummaryState } from './build.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { SummarySchema, unmeteredRunCostLabel } from '../../../core/schemas/summary.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -14,7 +13,9 @@ function summaryOf(opts: Parameters<typeof buildSummary>[0]) {
   return buildSummary({ pricingCache, ...opts });
 }
 
-function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
+type SummaryState = Parameters<typeof buildSummary>[0]['state'];
+
+function makeState(overrides?: Partial<SummaryState>): SummaryState {
   return {
     tasks: [
       makeTask({ id: 'T001', status: 'done' }),
@@ -22,6 +23,8 @@ function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
       makeTask({ id: 'T003', status: 'done' }),
     ],
     tokenUsage: makeUsage(),
+    phase: 'complete',
+    currentTaskIndex: 0,
     ...overrides,
   };
 }

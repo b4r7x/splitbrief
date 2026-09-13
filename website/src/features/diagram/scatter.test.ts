@@ -22,7 +22,7 @@ const REACH = 30;
 function inGhost(box: GhostBox, x: number, y: number): boolean {
   const width = box.seat.cols * CELL_WIDTH;
   const height = box.seat.rows * CELL_HEIGHT;
-  return inside((x - box.left) / width, (y - box.top) / height);
+  return inside(box.seat, (x - box.left) / width, (y - box.top) / height);
 }
 
 function inRect(rect: Rect, x: number, y: number): boolean {

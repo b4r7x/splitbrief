@@ -1,4 +1,4 @@
-import { getRailActiveIndex, selectRailForm } from './chrome-rows.js';
+import { getProgressRows, getRailActiveIndex, selectRailForm } from './chrome-rows.js';
 import {
   briefListTopOffset,
   getRailStageZones,
@@ -31,6 +31,7 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
+import { reviewArtifactForPhase } from '../prompt-rows/approval.js';
 import { getWorkflowPromptRows } from '../prompt-rows/workflow.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../conversation-rows/viewport.js';
@@ -62,11 +63,32 @@ interface ConversationLayoutSnapshot {
 
 function readWorkflowPromptRows(): number {
   const controls = controlsStore.get();
+  const approvalState = approvalPromptStore.get();
+  const costApprovalState = costApprovalStore.get();
+  // A tiered gate takes the zone from the review panel, so the two are never budgeted together.
+  const documentReview =
+    controls.inputMode === 'review' &&
+    approvalState.status !== 'pending' &&
+    costApprovalState.status !== 'pending';
   return getWorkflowPromptRows({
-    approvalState: approvalPromptStore.get(),
-    costApprovalState: costApprovalStore.get(),
+    approvalState,
+    costApprovalState,
     questionHint: controls.inputMode === 'question' ? questionPromptStore.get().hint : null,
+    reviewArtifact: documentReview ? reviewArtifactForPhase(lifecycleStore.get().phase) : null,
     cols: terminalSizeStore.get().cols,
+  });
+}
+
+// The build block leaves its rows to the chrome and stands down while a gate is open, exactly as
+// the screen budgets them (`src/app/screens/workflow.tsx`). The input paths measure the same body
+// or they scroll and hit-test a viewport the renderer never painted.
+function readProgressRows(promptRows: number): number {
+  if (promptRows > 0) return 0;
+  const lifecycle = lifecycleStore.get();
+  return getProgressRows({
+    phase: lifecycle.phase,
+    cols: terminalSizeStore.get().cols,
+    cancelled: lifecycle.cancelled,
   });
 }
 
@@ -103,10 +125,12 @@ export function readRailSnapshot(): RailSnapshot {
 }
 
 export function readReviewContentHeight(): number {
+  const promptRows = readWorkflowPromptRows();
   const viewportHeight = getWorkflowViewportHeight({
     rows: terminalSizeStore.get().rows,
     inputRows: inputHeightStore.get().rows,
-    promptRows: readWorkflowPromptRows(),
+    promptRows,
+    progressRows: readProgressRows(promptRows),
   });
   if (lifecycleStore.get().phase === 'reviewing-briefs') {
     const rowBudget = getSimpleBriefTaskRowBudget({
@@ -142,6 +166,7 @@ export function readBriefListSnapshot(): BriefListSnapshot | null {
     inputRows: inputHeightStore.get().rows,
     sidebarVisible: controlsStore.get().sidebarVisible,
     promptRows,
+    progressRows: readProgressRows(promptRows),
   });
   // The brief column spans the full content pane (no width cap). Routing the width through
   // getReviewColumnWidth keeps a single source of truth for the rendered column geometry so the
@@ -185,6 +210,7 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
     inputRows: inputHeightStore.get().rows,
     sidebarVisible,
     promptRows,
+    progressRows: readProgressRows(promptRows),
   });
   // The queued block stands down while the sidebar lists the same pending work, so the keyboard
   // path has to read the same suppression the transcript renders under or it budgets rows for a

@@ -121,6 +121,19 @@ describe('executeRuntimeCommand', () => {
     expect(errorMsg).toBe('Unknown command: /revise-pln. Did you mean /revise-plan?');
   });
 
+  it('/skill:nuke suggests /skills nuke', async () => {
+    let errorMsg = '';
+    await runCommandInTest({
+      commands: [],
+      raw: '/skill:nuke',
+      screen: 'home',
+      onError: (msg) => {
+        errorMsg = msg;
+      },
+    });
+    expect(errorMsg).toBe('Unknown command: /skill:nuke. Did you mean /skills nuke?');
+  });
+
   it('reports an error when the command is not valid on the current screen', () => {
     let errorMsg = '';
     const cmds: RuntimeCommandDef[] = [

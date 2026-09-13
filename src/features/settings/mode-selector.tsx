@@ -12,22 +12,33 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-stores.js';
-import { truncateTerminalDisplayText } from '../../utils/display-text.js';
+import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { useStaticSelector } from '../../hooks/use-static-selector.js';
 import { WORKFLOW_MODES, type WorkflowMode } from '../../core/schemas/enums.js';
 import { getWorkflowMode } from '../../core/config/accessors/values.js';
+import { MODES } from '../../core/pipeline-spec/modes.js';
 
 interface ModeDef {
   mode: WorkflowMode;
   cost: string;
+  costShort: string;
   phases: string;
 }
 
-const MODE_METADATA: Record<WorkflowMode, { cost: string; phases: string }> = {
-  quick: { cost: `1 call${SOFT_SEP}0 gates`, phases: 'plan and go; no brief compiler' },
-  standard: { cost: `4 calls${SOFT_SEP}1 gate`, phases: 'spec gate, brief review, compiler' },
-  speckit: { cost: `6-7 calls${SOFT_SEP}2 gates`, phases: 'adds clarify + constitution phases' },
+// The counts are the pipeline spec's own, so the picker can never disagree with what a run does.
+const MODE_PHASES: Record<WorkflowMode, string> = {
+  quick: 'plan and go',
+  standard: 'spec gate, brief review',
+  speckit: 'adds clarify + constitution phases',
 };
+
+function modeCostText(mode: WorkflowMode, withGateNames: boolean): string {
+  const { plannerCalls, gates } = MODES[mode];
+  const calls = `${plannerCalls} planning ${plannerCalls === 1 ? 'call' : 'calls'}`;
+  const counts = `${gates.length} gates`;
+  const gateText = withGateNames && gates.length > 0 ? `${counts} (${gates.join(' + ')})` : counts;
+  return `${calls}${SOFT_SEP}${gateText}`;
+}
 
 const PANEL_DENSITY: OverlayDensity = 'compact';
 const MODE_SELECTOR_TITLE_ROWS = 2;
@@ -36,15 +47,24 @@ const MODE_LABEL_WIDTH = 12;
 const MODE_LEAD_WIDTH = 2;
 const MODE_CHECK_WIDTH = 2;
 const MODE_METADATA_PREFIX_WIDTH = 1;
+/** Where `ListRow` starts the metadata text, so the counts line under it shares that column. */
+const MODE_METADATA_COLUMN = MODE_LEAD_WIDTH + MODE_LABEL_WIDTH + MODE_METADATA_PREFIX_WIDTH;
 
-function smallModeMetadata(mode: ModeDef, panelInnerWidth: number): string {
-  const metadata = `${mode.cost}${SOFT_SEP}${mode.phases}`;
+function currentLabel(): string {
+  return `${glyph('check')} Current`;
+}
+
+// The current-row marker keeps its column on every row, so a longer count never pushes it off the
+// one row that carries it.
+function modeMetadataText(mode: ModeDef, panelInnerWidth: number, isSmall: boolean): string {
+  // Wide enough for two lines, the row names what the mode does and the line under it carries the
+  // counts; a single row has to choose, and the counts are what a reader compares — whole, since a
+  // cut inside the gate names leaves an unclosed parenthesis.
+  const metadata = isSmall ? mode.costShort : mode.phases;
+  // One column past the check, so a cut that does happen never reads into the marker.
+  const reserved = isSmall ? MODE_CHECK_WIDTH + 1 : getTerminalCellWidth(currentLabel()) + 1;
   const metadataWidth =
-    panelInnerWidth -
-    MODE_LEAD_WIDTH -
-    MODE_LABEL_WIDTH -
-    MODE_CHECK_WIDTH -
-    MODE_METADATA_PREFIX_WIDTH;
+    panelInnerWidth - MODE_LEAD_WIDTH - MODE_LABEL_WIDTH - reserved - MODE_METADATA_PREFIX_WIDTH;
   return truncateTerminalDisplayText(metadata, Math.max(0, metadataWidth));
 }
 
@@ -57,8 +77,8 @@ function visibleModeIndices(rowBudget: number, isSmall: boolean): number[] {
   if (rowBudget <= 0) return [];
   const indices: number[] = [];
   let used = 0;
-  for (let i = 0; i < MODES.length; i++) {
-    const height = modeEntryRows(i, isSmall, MODES.length);
+  for (let i = 0; i < MODE_DEFS.length; i++) {
+    const height = modeEntryRows(i, isSmall, MODE_DEFS.length);
     if (used + height > rowBudget) break;
     used += height;
     indices.push(i);
@@ -66,9 +86,11 @@ function visibleModeIndices(rowBudget: number, isSmall: boolean): number[] {
   return indices;
 }
 
-const MODES: readonly ModeDef[] = WORKFLOW_MODES.map((mode) => ({
+const MODE_DEFS: readonly ModeDef[] = WORKFLOW_MODES.map((mode) => ({
   mode,
-  ...MODE_METADATA[mode],
+  cost: modeCostText(mode, true),
+  costShort: modeCostText(mode, false),
+  phases: MODE_PHASES[mode],
 }));
 
 export function ModeSelector() {
@@ -76,7 +98,7 @@ export function ModeSelector() {
   const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
   const config = configStore.useConfig();
   const currentMode = getWorkflowMode(config);
-  const currentIdx = MODES.findIndex((m) => m.mode === currentMode);
+  const currentIdx = MODE_DEFS.findIndex((m) => m.mode === currentMode);
   const panelInnerWidth = overlayRect({ cols, rows, density: PANEL_DENSITY }).innerWidth;
   const modeRowBudget = overlayInnerRowCapacity({
     rows,
@@ -95,7 +117,7 @@ export function ModeSelector() {
   };
 
   const { selectedIndex } = useStaticSelector<ModeDef>({
-    items: MODES,
+    items: MODE_DEFS,
     initialIndex: currentIdx,
     onSelect: (item, index) => {
       void selectMode(item, index);
@@ -114,7 +136,7 @@ export function ModeSelector() {
         <Text color={t.textDim}>Workflow mode</Text>
       </Box>
 
-      {MODES.map((m, i) => {
+      {MODE_DEFS.map((m, i) => {
         if (!actionableModeIndices.has(i)) return null;
         const isSelected = i === selectedIndex;
         const isCurrent = m.mode === currentMode;
@@ -127,20 +149,20 @@ export function ModeSelector() {
               void selectMode(m, i);
             }}
           >
-            <Box flexDirection="column" marginBottom={i < MODES.length - 1 && !isSmall ? 1 : 0}>
+            <Box flexDirection="column" marginBottom={i < MODE_DEFS.length - 1 && !isSmall ? 1 : 0}>
               <ListRow
                 label={m.mode}
                 state={isSelected ? 'active' : 'default'}
                 labelWidth={MODE_LABEL_WIDTH}
-                metadata={isSmall ? smallModeMetadata(m, panelInnerWidth) : m.cost}
+                metadata={modeMetadataText(m, panelInnerWidth, isSmall)}
                 width={panelInnerWidth}
                 selected={isSmall ? isCurrent : undefined}
-                trailing={!isSmall && isCurrent ? `${glyph('check')} Current` : undefined}
+                trailing={!isSmall && isCurrent ? currentLabel() : undefined}
                 trailingColor={t.success}
               />
               {!isSmall && (
-                <Box marginLeft={14}>
-                  <Text color={t.textDim}>{m.phases}</Text>
+                <Box marginLeft={MODE_METADATA_COLUMN}>
+                  <Text color={t.textDim}>{m.cost}</Text>
                 </Box>
               )}
             </Box>

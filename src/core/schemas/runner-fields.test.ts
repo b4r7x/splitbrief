@@ -643,4 +643,13 @@ describe('createRunnerConfigSchema', () => {
 
     expect(result.success).toBe(false);
   });
+
+  it('timeout accepts 1_200_000 and rejects 1_200_001', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+    const parse = (timeout: number) =>
+      schema.safeParse({ kind: 'shell', command: './run', model: 'local-shell', timeout }).success;
+
+    expect(parse(1_200_000)).toBe(true);
+    expect(parse(1_200_001)).toBe(false);
+  });
 });

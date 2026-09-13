@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { normalizePlannerPhase } from './normalize.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import {
-  createTaskCompilationAttemptId,
-  TaskCompilationSemanticIdSchema,
-  type TaskCompilationAttemptId,
-} from '../../core/schemas/task-compilation.js';
+  createPlannerArtifactAttemptId,
+  PlannerArtifactSemanticIdSchema,
+  type PlannerArtifactAttemptId,
+} from '../../core/schemas/planner-artifact.js';
 
 function declaredFileLeaseResult(input: {
-  attemptId: TaskCompilationAttemptId;
-  receiptAttemptId: TaskCompilationAttemptId;
+  attemptId: PlannerArtifactAttemptId;
+  receiptAttemptId: PlannerArtifactAttemptId;
 }) {
   const { attemptId, receiptAttemptId } = input;
   return {
@@ -25,7 +25,7 @@ function declaredFileLeaseResult(input: {
       lease: { leaseId: 'lease-1', attemptId, relativePath: 'out/result' },
     },
     ownedArtifactReceipt: {
-      semanticId: TaskCompilationSemanticIdSchema.parse('tasks-program'),
+      semanticId: PlannerArtifactSemanticIdSchema.parse('tasks-program'),
       programId: null,
       batchId: null,
       attemptId: receiptAttemptId,
@@ -42,7 +42,7 @@ function declaredFileLeaseResult(input: {
 
 describe('normalizePlannerPhase — normalized current-call result', () => {
   it('derives phase bytes from the completed current result and retains the receipt', () => {
-    const attemptId = createTaskCompilationAttemptId();
+    const attemptId = createPlannerArtifactAttemptId();
     const result = makeRunnerCallResult({
       status: 'completed',
       text: '# Current final response',
@@ -93,10 +93,10 @@ describe('normalizePlannerPhase — normalized current-call result', () => {
   });
 
   it('rejects a declared-file receipt that does not bind the current attempt', () => {
-    const attemptId = createTaskCompilationAttemptId();
+    const attemptId = createPlannerArtifactAttemptId();
     const result = declaredFileLeaseResult({
       attemptId,
-      receiptAttemptId: createTaskCompilationAttemptId(),
+      receiptAttemptId: createPlannerArtifactAttemptId(),
     });
 
     let caught: unknown;
@@ -115,7 +115,7 @@ describe('normalizePlannerPhase — normalized current-call result', () => {
   });
 
   it('retains a matching declared-file receipt on success', () => {
-    const attemptId = createTaskCompilationAttemptId();
+    const attemptId = createPlannerArtifactAttemptId();
     const result = declaredFileLeaseResult({ attemptId, receiptAttemptId: attemptId });
 
     const phase = normalizePlannerPhase({

@@ -1,12 +1,12 @@
 import { formatTokensShort } from '../../../core/formatting.js';
+import { NO_GATES_WARNING } from '../../../core/pipeline-spec/gates.js';
+import { VALIDATION_STAGES } from '../../../core/schemas/enums.js';
 import { boundEngineEventForConsumer } from '../bound.js';
 import type { EngineEvent, EventSink } from '../types.js';
 
 export interface StdoutTextSinkOptions {
   output?: NodeJS.WritableStream | undefined;
 }
-
-const VALIDATION_STAGES = ['typecheck', 'lint', 'test'] as const;
 
 function passedGates(event: Extract<EngineEvent, { type: 'validate' }>): string {
   const passed = VALIDATION_STAGES.filter((stage) => event.stages[stage]);
@@ -45,6 +45,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
   let lastPhase: string | null = null;
   let completed = 0;
   let tokens = 0;
+  let gatelessRunAnnounced = false;
 
   function write(line: string): void {
     // A consumer's stdout pipe is a projection boundary: a closed pipe never
@@ -69,14 +70,24 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
 
     switch (bounded.type) {
       case 'validate':
-        if (bounded.status === 'done') gates.set(bounded.taskId, passedGates(bounded));
+        if (bounded.status !== 'done') return;
+        gates.set(bounded.taskId, passedGates(bounded));
+        return;
+      case 'warning':
+        // The validator decides that the project matches no stack and says so
+        // on this code; the sink repeats that verdict once, never re-derives it.
+        if (gatelessRunAnnounced || bounded.code !== NO_GATES_WARNING.code) return;
+        gatelessRunAnnounced = true;
+        write('gates: NONE — review-only');
         return;
       case 'task_completed':
         completed += 1;
         write(`task ${bounded.taskId}: done (${gates.get(bounded.taskId) ?? 'no gates'})`);
         return;
       case 'task_full_fail':
-        write(`task ${bounded.taskId}: failed (${gates.get(bounded.taskId) ?? 'no gates'})`);
+        write(
+          `task ${bounded.taskId}: failed (${bounded.reason ?? gates.get(bounded.taskId) ?? 'no gates'})`,
+        );
         return;
       case 'task_skipped':
         write(`task ${bounded.taskId}: failed (skipped)`);
@@ -84,18 +95,16 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
       case 'cost_update':
         tokens = totalTokens(bounded.tokenUsage);
         return;
-      case 'planner_status':
-        // A failed final review stays in `final-review` and says so in its
-        // summary; a passing one has already transitioned to `complete` by the
-        // time it publishes, and announces itself as `workflow_complete`.
-        if (bounded.phase !== 'final-review' || bounded.status !== 'done') return;
-        if (bounded.summary === undefined) return;
-        write('review: failed');
-        return;
-      case 'workflow_complete':
-        write('review: passed');
+      case 'workflow_complete': {
+        const verdict = bounded.review ?? 'passed';
+        write(
+          bounded.blocking === undefined
+            ? `review: ${verdict}`
+            : `review: ${verdict} (${bounded.blocking} blocking)`,
+        );
         write(`done: ${completed} tasks, ${formatTokensShort(tokens)} tokens`);
         return;
+      }
       default:
         return;
     }

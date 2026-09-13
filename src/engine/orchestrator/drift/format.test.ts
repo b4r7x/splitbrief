@@ -52,9 +52,9 @@ describe('formatDriftReportForPrompt', () => {
       preRunChangedFiles: [],
     });
     const out = formatDriftReportForPrompt(report);
-    expect(out).toContain('passed: true');
-    expect(out).toContain('score: 0.92');
-    expect(out).toContain('[warning] out_of_scope_file');
+    expect(out).toContain('passed: false');
+    expect(out).toContain('score: 0.75');
+    expect(out).toContain('[error] out_of_scope_file');
     expect(out).toContain('src/extra.ts');
   });
 

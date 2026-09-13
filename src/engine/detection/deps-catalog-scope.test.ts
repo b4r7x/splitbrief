@@ -173,6 +173,7 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
       copilot: versionShim('copilot', 'GitHub Copilot CLI 1.0.77.', [
         "printf '%s\\n' 'model: gpt-5.4'",
       ]),
+      agy: versionShim('agy', '1.2.2', ["printf '%s\\t%s\\n' 'gemini-3-pro' 'Gemini 3 Pro'"]),
     } as const;
 
     const deps = createProductionDetectionDeps({
@@ -184,8 +185,9 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
       signal: new AbortController().signal,
     });
 
-    expect(attempts).toHaveLength(6);
+    expect(attempts).toHaveLength(7);
     expect(attempts.map((attempt) => attempt.connection.tool).toSorted()).toEqual([
+      'antigravity',
       'codex',
       'command-code',
       'copilot',

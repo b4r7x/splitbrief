@@ -12,10 +12,10 @@ import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { SPLITBRIEF_DIR, SPEC_FILE } from '../../core/paths.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import {
-  createTaskCompilationAttemptId,
+  createPlannerArtifactAttemptId,
   OwnedPlannerArtifactSchema,
-  TaskCompilationSemanticIdSchema,
-} from '../../core/schemas/task-compilation.js';
+  PlannerArtifactSemanticIdSchema,
+} from '../../core/schemas/planner-artifact.js';
 import type { Config } from '../../core/schemas/config.js';
 import type {
   PhaseResult,
@@ -44,7 +44,7 @@ function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): Pha
       semanticId: `test-${logicalName}`,
       programId: null,
       batchId: null,
-      attemptId: createTaskCompilationAttemptId(),
+      attemptId: createPlannerArtifactAttemptId(),
       logicalName,
       transport: 'stdout-final',
       text,
@@ -180,14 +180,14 @@ describe('spec command', () => {
     });
     const stage = await runtime.createStage(tmp, 'planner');
     try {
-      const attemptId = createTaskCompilationAttemptId();
+      const attemptId = createPlannerArtifactAttemptId();
       const relativePath = `.splitbrief-runner/output/${attemptId}/result`;
       const review = await runtime.beginDeclaredArtifactReview({
         stagedProjectDir: stage.projectDir,
         callId: 'call-1',
         declaredRedactionValues: [],
         provenance: {
-          semanticId: TaskCompilationSemanticIdSchema.parse('interactive-runtime-artifact'),
+          semanticId: PlannerArtifactSemanticIdSchema.parse('interactive-runtime-artifact'),
           programId: null,
           batchId: null,
           attemptId,
@@ -259,14 +259,14 @@ describe('spec command', () => {
     expect(runtime.admission.onTieredApproval).toBeUndefined();
     const stage = await runtime.createStage(tmp, 'planner');
     try {
-      const attemptId = createTaskCompilationAttemptId();
+      const attemptId = createPlannerArtifactAttemptId();
       const relativePath = `.splitbrief-runner/output/${attemptId}/result`;
       const review = await runtime.beginDeclaredArtifactReview({
         stagedProjectDir: stage.projectDir,
         callId: 'call-2',
         declaredRedactionValues: [],
         provenance: {
-          semanticId: TaskCompilationSemanticIdSchema.parse('headless-runtime-artifact'),
+          semanticId: PlannerArtifactSemanticIdSchema.parse('headless-runtime-artifact'),
           programId: null,
           batchId: null,
           attemptId,

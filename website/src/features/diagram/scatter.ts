@@ -54,7 +54,7 @@ export function ghostRect(box: GhostBox): Rect {
 
 function inGhost(box: GhostBox, x: number, y: number): boolean {
   const rect = ghostRect(box);
-  return inside((x - rect.left) / rect.width, (y - rect.top) / rect.height);
+  return inside(box.seat, (x - rect.left) / rect.width, (y - rect.top) / rect.height);
 }
 
 function inRect(rect: Rect, x: number, y: number): boolean {

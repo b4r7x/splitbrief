@@ -1,108 +1,32 @@
 .s03 {
-  overflow-x: clip;
+  background: var(--panel);
 }
-.s03 .steps {
-  font-size: var(--text-label);
-  line-height: 18px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-2);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  width: fit-content;
+
+.s03 .grid {
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
 }
-.s03 .steps li {
-  display: flex;
+
+.s03 .head,
+.s03 .notes {
+  grid-column: 2;
 }
-.s03 .steps li > span:first-child {
-  width: var(--s-8);
-  color: var(--ink-3);
+
+.s03 .panel {
+  grid-column: 1;
+  background: var(--bg);
 }
-.s03 .steps li > span:last-child {
-  border-left: 1px solid var(--hair);
-  padding-left: var(--s-3);
-}
-.s03 .notes .steps {
-  margin-top: var(--s-2);
-}
+
 .s03 .notes p + p {
-  margin-top: var(--s-2);
+  margin-top: var(--s-6);
 }
-.s03 .marg-a {
-  top: 73px;
-}
-.s03 .marg-list {
-  top: 91px;
-  padding: var(--s-6) 0 0 var(--s-2);
-}
-.s03 .marg-list::before {
-  top: 0;
-  left: 0;
-}
-.s03 .marg-b {
-  top: 268px;
-  text-align: left;
-}
-@media (min-width: 1600px) {
-  .s03 {
-    padding-block: var(--s-6) var(--s-2);
+@media (max-width: 1099px) {
+  .s03 .grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .s03 .head {
-    padding-top: 0;
-  }
-  .s03 .eyebrow {
-    font-size: var(--text-label-wide);
-  }
-  .s03 .title {
-    font-size: 2rem;
-  }
-  .s03 .sub {
-    font-size: 2.0625rem;
-    line-height: 1.2;
-  }
+  .s03 .head,
+  .s03 .notes,
   .s03 .panel {
-    margin-top: var(--s-2);
-  }
-  .s03 .notes {
-    padding-top: var(--s-3);
-    font-size: 1rem;
-    line-height: 1.35;
-  }
-  .s03 .notes p {
-    max-width: calc(44ch + 1px);
-  }
-  .s03 .notes p + p {
-    margin-top: var(--s-3);
-  }
-  .s03 .notes .steps {
-    margin-top: var(--s-12);
-    font-size: var(--text-label-wide);
-    line-height: 23px;
-  }
-  .s03 .steps li > span:last-child {
-    padding-left: var(--s-6);
-  }
-  .s03 .marg-a {
-    top: 67px;
-    right: calc(-1 * var(--s-16));
-  }
-  .s03 .marg-list {
-    top: 122px;
-    font-size: var(--text-label-wide);
-    line-height: 21px;
-  }
-  .s03 .marg-b {
-    top: 329px;
-    font-size: var(--text-label-wide);
-    line-height: 21px;
-  }
-}
-@media (max-width: 767px) {
-  .s03 .notes p + p {
-    margin-top: var(--s-6);
-  }
-  .s03 .notes .steps {
-    margin-top: var(--s-8);
+    grid-column: 1;
   }
 }

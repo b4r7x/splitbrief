@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Box, Text } from 'ink';
-import { useAppKeys } from './keys.js';
+import { DRAFT_ESCAPE_HINT, useAppKeys } from './keys.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -18,13 +18,14 @@ import {
 import { createInitialState } from '../core/state/machine.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
-import { abortStore } from '../stores/workflow/abort.js';
+import { stopStore } from '../stores/workflow/stop.js';
+import { composerLiveStore } from '../stores/ui/composer-live.js';
+import { feedbackStore } from '../stores/ui/feedback.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { completionStore } from '../stores/ui/completion.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { cancelEscapeAction } from '../lib/terminal/escape-debounce.js';
 import * as handlers from '../features/workflow/handlers.js';
-import type { InterruptResult } from '../features/workflow/handlers.js';
 import { approvalPromptStore, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
 import { costApprovalStore, openCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
 import { editorStore } from '../stores/ui/editor.js';
@@ -120,20 +121,8 @@ function localExecution(feature: string): { kind: 'local'; prepared: PreparedExe
   };
 }
 
-function Harness({
-  exit,
-  interruptWorkflow,
-  cancelWorkflow = handlers.requestCancel,
-}: {
-  exit: () => void;
-  interruptWorkflow?: () => InterruptResult;
-  cancelWorkflow?: () => void;
-}) {
-  useAppKeys({
-    exit,
-    interruptWorkflow,
-    cancelWorkflow,
-  });
+function Harness({ exit }: { exit: () => void }) {
+  useAppKeys({ exit });
   return (
     <Box>
       <Text>ready</Text>
@@ -161,267 +150,161 @@ async function writeKey(ui: { stdin: { write: (d: string) => void } }, chars: st
   ui.stdin.write(chars);
 }
 
-describe('useAppKeys: Ctrl+C ladder', () => {
-  beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
-    vi.setSystemTime(1000);
-    resetAllStores();
-    routerStore.navigate({ to: 'workflow', execution: localExecution('test') });
-    lifecycleStore.__testReset({ phase: 'implementing' });
-  });
+const STOP_LADDER_SETUP = () => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+  vi.setSystemTime(1000);
+  resetAllStores();
+  handlers.clearAllHandlers();
+  routerStore.navigate({ to: 'workflow', execution: localExecution('test') });
+  lifecycleStore.__testReset({ phase: 'implementing' });
+};
 
-  afterEach(() => {
-    abortStore.clear();
-    vi.useRealTimers();
-  });
+const STOP_LADDER_TEARDOWN = () => {
+  cancelEscapeAction();
+  completionStore.reset();
+  handlers.clearAllHandlers();
+  stopStore.__testReset();
+  lifecycleStore.__testReset();
+  vi.useRealTimers();
+};
 
-  it('single Ctrl+C during a live workflow arms exit and interrupts without exiting', async () => {
+describe('useAppKeys: Ctrl+C', () => {
+  beforeEach(STOP_LADDER_SETUP);
+  afterEach(STOP_LADDER_TEARDOWN);
+
+  it('ctrl+c performs stop now without arming', async () => {
+    const abort = vi.fn();
+    handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
-    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeCtrlC(ui);
     await tick();
 
-    expect(abortStore.get().armed).toBe('exit');
-    expect(interruptWorkflow).toHaveBeenCalledTimes(1);
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(stopStore.get()).toMatchObject({ intent: 'stop-now', phase: 'requested' });
     expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 
-  it('Ctrl+C while the workflow is interrupted arms exit without re-interrupting', async () => {
+  it('a second ctrl+c stops again instead of exiting', async () => {
+    const abort = vi.fn();
+    handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
-    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'interrupted' });
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeCtrlC(ui);
     await tick();
+    await writeCtrlC(ui);
+    await tick();
 
-    expect(abortStore.get().armed).toBe('exit');
-    expect(interruptWorkflow).not.toHaveBeenCalled();
+    expect(abort).toHaveBeenCalledTimes(2);
     expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 
-  it('Ctrl+C in question mode arms exit without interrupting the turn', async () => {
+  it('ctrl+c leaves once there is nothing left to stop', async () => {
     const exit = vi.fn();
-    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
-    controlsStore.setInputMode('question');
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeCtrlC(ui);
     await tick();
 
-    expect(abortStore.get().armed).toBe('exit');
-    expect(interruptWorkflow).not.toHaveBeenCalled();
-    expect(exit).not.toHaveBeenCalled();
-    ui.unmount();
-  });
-
-  it('interrupting a live workflow closes a pending tiered approval prompt', async () => {
-    const exit = vi.fn();
-    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
-    const pending = openApprovalPrompt({
-      tier: 'sticky',
-      actionClass: 'network',
-      actionDescription: 'push to origin',
-      phase: 'implementing',
-    });
-    expect(approvalPromptStore.get().status).toBe('pending');
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
-    await tick();
-
-    await writeCtrlC(ui);
-    await tick();
-
-    expect(approvalPromptStore.get().status).toBe('idle');
-    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
-    ui.unmount();
-  });
-
-  it('interrupting a live workflow closes a pending cost-approval prompt as not approved', async () => {
-    const exit = vi.fn();
-    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
-    const pending = openCostApprovalPrompt(makeCostPrediction());
-    expect(costApprovalStore.get().status).toBe('pending');
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
-    await tick();
-
-    await writeCtrlC(ui);
-    await tick();
-
-    expect(costApprovalStore.get().status).toBe('idle');
-    await expect(pending).resolves.toBe(false);
-    ui.unmount();
-  });
-
-  it('second Ctrl+C within the 2s window calls exit()', async () => {
-    const exit = vi.fn();
-    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
-    await tick();
-
-    await writeCtrlC(ui);
-    await tick();
-    expect(exit).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(1000);
-    await writeCtrlC(ui);
-    await tick();
     expect(exit).toHaveBeenCalledTimes(1);
-    expect(interruptWorkflow).toHaveBeenCalledTimes(1);
-    ui.unmount();
-  });
-
-  it('a Ctrl+C after the 2s window is a fresh first press, not an exit', async () => {
-    const exit = vi.fn();
-    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
-    await tick();
-
-    await writeCtrlC(ui);
-    await tick();
-    expect(abortStore.get().armed).toBe('exit');
-
-    vi.advanceTimersByTime(2001);
-    await tick();
-    expect(abortStore.get().armed).toBe('none');
-
-    expect(lifecycleStore.get().phase).toBe('implementing');
-    await writeCtrlC(ui);
-    await tick();
-
-    expect(exit).not.toHaveBeenCalled();
-    expect(abortStore.get().armed).toBe('exit');
-    expect(interruptWorkflow).toHaveBeenCalledTimes(2);
+    expect(stopStore.get().intent).toBe('none');
     ui.unmount();
   });
 
   it('Ctrl+C on the home screen exits immediately on the first press', async () => {
     routerStore.navigate({ to: 'home' });
+    handlers.createAbortHandlerScope()(vi.fn());
     const exit = vi.fn();
-    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'none');
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeCtrlC(ui);
     await tick();
+
     expect(exit).toHaveBeenCalledTimes(1);
-    expect(interruptWorkflow).not.toHaveBeenCalled();
-    expect(abortStore.get().armed).toBe('none');
+    expect(stopStore.get().intent).toBe('none');
     ui.unmount();
   });
 });
 
-describe('useAppKeys: ESC interrupt/cancel ladder', () => {
-  beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
-    vi.setSystemTime(1000);
-    resetAllStores();
-    routerStore.navigate({ to: 'workflow', execution: localExecution('test') });
-    lifecycleStore.__testReset({ phase: 'implementing' });
-  });
+describe('useAppKeys: ESC stop ladder', () => {
+  beforeEach(STOP_LADDER_SETUP);
+  afterEach(STOP_LADDER_TEARDOWN);
 
-  afterEach(() => {
-    cancelEscapeAction();
-    abortStore.clear();
-    completionStore.reset();
-    handlers.clearAllHandlers();
-    lifecycleStore.__testReset();
-    vi.useRealTimers();
-  });
-
-  it('ESC during a live phase arms interrupt, then a second ESC interrupts the turn', async () => {
+  it('esc with draft is inert on run and draft', async () => {
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
+    composerLiveStore.setEmpty(false);
     const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeEsc(ui);
     await tick();
-    // The arm is deferred by the escape-debounce to let a split escape sequence cancel it first.
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
-    expect(abortStore.get().armed).toBe('interrupt');
+
+    expect(overlayStore.get().active).toBe('none');
     expect(abort).not.toHaveBeenCalled();
-
-    await writeEsc(ui);
-    await tick();
-    expect(abort).toHaveBeenCalledTimes(1);
-    expect(abortStore.get().armed).toBe('none');
-    expect(exit).not.toHaveBeenCalled();
-    ui.unmount();
-  });
-
-  it('ESC in question mode arms cancel, then a second ESC cancels the workflow', async () => {
-    controlsStore.setInputMode('question');
-    const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
-    await tick();
-
-    await writeEsc(ui);
-    await tick();
-    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
-    expect(abortStore.get().armed).toBe('cancel');
+    expect(stopStore.get().intent).toBe('none');
     expect(lifecycleStore.get().cancelled).toBe(false);
+    expect(feedbackStore.get().message).toBe(DRAFT_ESCAPE_HINT);
+    ui.unmount();
+  });
+
+  it('esc on an empty composer opens the stop sheet', async () => {
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
 
     await writeEsc(ui);
     await tick();
-    expect(lifecycleStore.get().cancelled).toBe(true);
-    expect(abortStore.get().armed).toBe('none');
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+
+    expect(overlayStore.get().active).toBe('stop-sheet');
+    expect(stopStore.get().intent).toBe('none');
     expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 
-  it('second ESC in question mode invokes the workflow cancel port', async () => {
+  it('esc on question opens sheet', async () => {
     controlsStore.setInputMode('question');
-    const cancelWorkflow = vi.fn();
-    const ui = renderFeature(
-      <Harness exit={vi.fn()} interruptWorkflow={() => 'none'} cancelWorkflow={cancelWorkflow} />,
-    );
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
-    await writeEsc(ui);
-    await tick();
 
-    expect(cancelWorkflow).toHaveBeenCalledTimes(1);
+    expect(overlayStore.get().active).toBe('stop-sheet');
+    expect(lifecycleStore.get().cancelled).toBe(false);
     ui.unmount();
   });
 
-  it('double Esc while interrupted arms and fires workflow cancel', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'interrupted' });
+  it('esc during validating-task opens sheet', async () => {
+    lifecycleStore.__testReset({ phase: 'validating-task' });
     const exit = vi.fn();
-    const cancelWorkflow = vi.fn();
-    const ui = renderFeature(
-      <Harness exit={exit} interruptWorkflow={() => 'none'} cancelWorkflow={cancelWorkflow} />,
-    );
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
-    expect(abortStore.get().armed).toBe('cancel');
 
-    await writeEsc(ui);
-    await tick();
-
-    expect(cancelWorkflow).toHaveBeenCalledTimes(1);
-    expect(exit).not.toHaveBeenCalled();
+    expect(overlayStore.get().active).toBe('stop-sheet');
     ui.unmount();
   });
 
-  it('a split escape sequence (ESC then an arrow tail) does not arm', async () => {
-    const abort = vi.fn();
-    handlers.createAbortHandlerScope()(abort);
+  it('a split escape sequence (ESC then an arrow tail) does not open the sheet', async () => {
     const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     // ESC arrives first (deferred), then the rest of an Up-arrow sequence over a slow link.
@@ -430,18 +313,31 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     await writeKey(ui, '[A');
     await tick();
 
-    // The non-ESC tail cancels the deferred arm before its debounce deadline.
     vi.advanceTimersByTime(50);
-    expect(abortStore.get().armed).toBe('none');
-    expect(abort).not.toHaveBeenCalled();
+    expect(overlayStore.get().active).toBe('none');
     expect(exit).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('esc after the run was cancelled navigates home', async () => {
+    lifecycleStore.__testReset({ cancelled: true });
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+
+    await writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+
+    expect(routerStore.get().screen).toBe('home');
+    expect(overlayStore.get().active).toBe('none');
     ui.unmount();
   });
 
   it('a split escape sequence in the cancelled state does not navigate home', async () => {
     lifecycleStore.__testReset({ cancelled: true });
     const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     // ESC arrives first (deferred), then the rest of an Up-arrow sequence over a slow link.
@@ -457,26 +353,10 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     ui.unmount();
   });
 
-  it('the ESC arming window expires after 2s', async () => {
-    const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
-    await tick();
-
-    await writeEsc(ui);
-    await tick();
-    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
-    expect(abortStore.get().armed).toBe('interrupt');
-
-    vi.advanceTimersByTime(2001);
-    await tick();
-    expect(abortStore.get().armed).toBe('none');
-    ui.unmount();
-  });
-
   it('ESC never exits the app on the home screen', async () => {
     routerStore.navigate({ to: 'home' });
     const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeEsc(ui);
@@ -485,7 +365,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     await tick();
 
     expect(exit).not.toHaveBeenCalled();
-    expect(abortStore.get().armed).toBe('none');
+    expect(overlayStore.get().active).toBe('none');
     ui.unmount();
   });
 
@@ -497,7 +377,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
       sessionId: 'summary-session',
     });
     const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeEsc(ui);
@@ -506,7 +386,6 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
 
     expect(routerStore.get().screen).toBe('home');
     expect(exit).not.toHaveBeenCalled();
-    expect(abortStore.get().armed).toBe('none');
     ui.unmount();
   });
 
@@ -518,7 +397,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
       sessionId: 'summary-session',
     });
     const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeEsc(ui);
@@ -578,10 +457,10 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     ui.unmount();
   });
 
-  it('ESC does not arm while an overlay is open (only closes the overlay)', async () => {
+  it('ESC closes an open overlay instead of opening the stop sheet', async () => {
     overlayStore.open('settings');
     const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     expect(overlayStore.get().active).toBe('settings');
@@ -590,12 +469,11 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     await tick();
 
     expect(overlayStore.get().active).toBe('none');
-    expect(abortStore.get().armed).toBe('none');
     expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 
-  it('ESC does not arm while a tiered approval prompt is pending', async () => {
+  it('ESC does not open the stop sheet while a tiered approval prompt is pending', async () => {
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
@@ -605,56 +483,54 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
       actionDescription: 'push to origin',
       phase: 'implementing',
     });
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
 
-    // The ESC arming gate is suppressed while the approval prompt owns the screen, so a press
-    // neither arms nor reaches the interrupt/cancel handlers.
-    expect(abortStore.get().armed).toBe('none');
+    // The prompt keeps its own esc-to-deny, so the global ladder stands down entirely.
+    expect(overlayStore.get().active).toBe('none');
     expect(abort).not.toHaveBeenCalled();
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 
-  it('ESC does not arm while a cost-approval prompt is pending', async () => {
+  it('ESC does not open the stop sheet while a cost-approval prompt is pending', async () => {
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     void openCostApprovalPrompt(makeCostPrediction());
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
 
-    expect(abortStore.get().armed).toBe('none');
+    expect(overlayStore.get().active).toBe('none');
     expect(abort).not.toHaveBeenCalled();
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 
-  it('ESC does not arm while a completion menu is open', async () => {
+  it('ESC does not open the stop sheet while a completion menu is open', async () => {
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     completionStore.setOpen(true);
-    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
+    const ui = renderFeature(<Harness exit={exit} />);
     await tick();
 
     await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
 
-    // The completion menu owns ESC (it dismisses the menu), so the global ladder is suppressed:
-    // dismissing the menu neither arms interruption nor reaches the interrupt/cancel handlers.
-    expect(abortStore.get().armed).toBe('none');
+    // The completion menu owns ESC (it dismisses the menu), so the global ladder is suppressed.
+    expect(overlayStore.get().active).toBe('none');
     expect(abort).not.toHaveBeenCalled();
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(exit).not.toHaveBeenCalled();
@@ -668,7 +544,7 @@ describe('useAppKeys: keystroke binding', () => {
   });
 
   afterEach(() => {
-    abortStore.clear();
+    stopStore.__testReset();
     approvalPromptStore.__testReset();
     costApprovalStore.__testReset();
   });
@@ -919,7 +795,7 @@ describe('useAppKeys: suppressed while the inline briefs field editor owns input
   afterEach(() => {
     editorStore.close();
     reviewStore.clearReview();
-    abortStore.clear();
+    stopStore.__testReset();
   });
 
   it.each([

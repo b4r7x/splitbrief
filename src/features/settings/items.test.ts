@@ -67,7 +67,7 @@ describe('settingsItemDescription', () => {
     const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
 
     expect(settingsItemDescription({ item: itemAt(items, 'seat:plan'), config })).toContain(
-      'compiles every brief',
+      'writes every Task Brief',
     );
   });
 

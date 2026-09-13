@@ -47,6 +47,8 @@ const RESUMABLE_PHASES: ReadonlySet<Phase> = new Set<Phase>([
   'reviewing-plan',
   'reviewing-briefs',
   'implementing',
+  'validating-task',
+  'escalating',
   'final-review',
 ]);
 

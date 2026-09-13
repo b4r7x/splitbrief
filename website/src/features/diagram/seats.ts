@@ -6,6 +6,7 @@ export type Palette = 'blue' | 'green' | 'mixed';
 export type Cell = { readonly c: number; readonly r: number };
 
 export type Seat = {
+  readonly shape: SeatName;
   readonly cols: number;
   readonly rows: number;
   readonly palette: Palette;
@@ -18,6 +19,7 @@ export type Seat = {
 
 export const SEATS: Readonly<Record<SeatName, Seat>> = {
   planner: {
+    shape: 'planner',
     cols: 30,
     rows: 25,
     palette: 'blue',
@@ -28,8 +30,9 @@ export const SEATS: Readonly<Record<SeatName, Seat>> = {
     seed: 1,
   },
   implementer: {
-    cols: 30,
-    rows: 25,
+    shape: 'implementer',
+    cols: 26,
+    rows: 22,
     palette: 'green',
     frequency: 12,
     tickRate: 12,
@@ -38,8 +41,9 @@ export const SEATS: Readonly<Record<SeatName, Seat>> = {
     seed: 2,
   },
   reviewer: {
-    cols: 30,
-    rows: 25,
+    shape: 'reviewer',
+    cols: 22,
+    rows: 18,
     palette: 'mixed',
     frequency: 4,
     tickRate: 8,

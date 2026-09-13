@@ -1,8 +1,9 @@
-import type { Task } from '../../core/schemas/task.js';
+import { taskFiles, type Task } from '../../core/schemas/task.js';
 
 export type EditableBriefField =
   | 'title'
   | 'file'
+  | 'files'
   | 'description'
   | 'signature'
   | 'currentCode'
@@ -18,6 +19,7 @@ export type EditableBriefField =
 const FIELD_ORDER: EditableBriefField[] = [
   'title',
   'file',
+  'files',
   'description',
   'signature',
   'currentCode',
@@ -41,6 +43,8 @@ export function readField(task: Task, field: EditableBriefField): string {
       return task.title;
     case 'file':
       return task.file;
+    case 'files':
+      return taskFiles(task).join('\n');
     case 'description':
       return task.description;
     case 'signature':
@@ -72,6 +76,10 @@ export function writeField(task: Task, field: EditableBriefField, text: string):
       return { ...task, title: text };
     case 'file':
       return { ...task, file: text };
+    case 'files': {
+      const files = splitList(text);
+      return { ...task, files, file: files[0] ?? task.file };
+    }
     case 'description':
       return { ...task, description: text };
     case 'signature':

@@ -134,28 +134,3 @@ export function classifyCliAdmittedVersion(
   if (order === null) return 'unverified';
   return order < 0 ? 'incompatible' : 'compatible';
 }
-
-export type CliCompilerVersionClassification = 'exact' | 'older' | 'newer' | 'mismatch';
-
-/**
- * The compiler path admits exactly the tested runtime version (REQ-049).
- * Older releases, newer releases, and unparseable claims are never ready —
- * unlike the forward-compatible `classifyCliAdmittedVersion` used by the
- * implementer path, this classifier has no compatibility arm to borrow.
- */
-export function classifyCliCompilerVersion(
-  input: Readonly<{
-    installedVersion: string;
-    exactAdmittedVersion: string;
-    versionScheme?: CliVersionScheme;
-  }>,
-): CliCompilerVersionClassification {
-  const order = compareCliVersions({
-    installedVersion: input.installedVersion,
-    baselineVersion: input.exactAdmittedVersion,
-    versionScheme: input.versionScheme ?? 'semver',
-  });
-  if (order === null) return 'mismatch';
-  if (order === 0) return 'exact';
-  return order < 0 ? 'older' : 'newer';
-}

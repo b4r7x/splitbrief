@@ -456,4 +456,38 @@ file: src/dangling.ts
     expect(warnings[0]).toContain('task T001');
     expect(warnings[0]).not.toContain('No Task Brief was parsed');
   });
+  it('overlapping files across briefs is a warning', () => {
+    const input = [
+      '---',
+      'id: T001',
+      'title: "Add the route"',
+      'action: create',
+      'file: src/route.ts',
+      'files: [src/route.ts, src/app.ts]',
+      'depends_on: []',
+      '---',
+      '',
+      '### Description',
+      'Add the route and wire it into the app.',
+      '',
+      '---',
+      'id: T002',
+      'title: "Wire the second route"',
+      'action: modify',
+      'file: src/app.ts',
+      'depends_on: [T001]',
+      '---',
+      '',
+      '### Description',
+      'Register the second route.',
+    ].join('\n');
+
+    const warnings: string[] = [];
+    const tasks = parseTasksStrict(input, (message) => warnings.push(message));
+
+    expect(tasks.map((t) => t.id)).toEqual(['T001', 'T002']);
+    expect(warnings).toEqual([
+      'Task Briefs T001, T002 all declare src/app.ts; the later brief modifies what the earlier one wrote',
+    ]);
+  });
 });

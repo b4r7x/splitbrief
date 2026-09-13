@@ -6,7 +6,6 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { Composer } from '../components/composer/composer.js';
-import { getHomeLayout } from '../features/home/layout.js';
 import { getLogo } from '../features/home/logo.js';
 import { ConversationFlow } from '../features/workflow/components/conversation-flow/flow.js';
 import { InputFooter } from '../features/workflow/components/input-footer.js';
@@ -83,10 +82,7 @@ const cases: ReadonlyArray<{
       await flushEffects();
 
       const frame = ui.lastFrame() ?? '';
-      const layout = getHomeLayout({ cols: 80, rows: 24 });
-      for (const line of getLogo(layout.logoTier).split('\n')) {
-        expect(frame).toContain(line.trim());
-      }
+      expect(frame).toContain(getLogo());
       ui.unmount();
     },
   },

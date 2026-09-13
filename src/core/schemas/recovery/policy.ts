@@ -1,7 +1,7 @@
 import type { RecoveryAction, RecoveryReason } from '../enums.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
-const BUDGET_ONLY_ACTIONS = [
+const PAUSE_OR_ABORT_ACTIONS = [
   'pause-run',
   'abort-workflow',
 ] as const satisfies readonly RecoveryAction[];
@@ -46,6 +46,23 @@ const CONFLICT_RECOVERY_ACTIONS = [
   'pause-run',
   'abort-workflow',
 ] as const satisfies readonly RecoveryAction[];
+const SCOPE_RECOVERY_ACTIONS = [
+  'retry-same-worker',
+  'skip-current-task',
+  'pause-run',
+  'abort-workflow',
+] as const satisfies readonly RecoveryAction[];
+const RECIPE_INVALID_ACTIONS = [
+  'retry-same-worker',
+  'switch-seat',
+  'pause-run',
+  'abort-workflow',
+] as const satisfies readonly RecoveryAction[];
+const SNAPSHOT_FAILED_ACTIONS = [
+  'retry-same-worker',
+  'pause-run',
+  'abort-workflow',
+] as const satisfies readonly RecoveryAction[];
 const DEPENDENCY_BLOCKED_ACTIONS = [
   'skip-current-task',
   'pause-run',
@@ -59,7 +76,7 @@ function copyActions(actions: readonly RecoveryAction[]): RecoveryAction[] {
 export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[] {
   switch (reason) {
     case 'budget-exceeded':
-      return copyActions(BUDGET_ONLY_ACTIONS);
+      return copyActions(PAUSE_OR_ABORT_ACTIONS);
     case 'budget-paused':
       return copyActions(BUDGET_PAUSED_ACTIONS);
     case 'user-edit-conflict':
@@ -76,6 +93,17 @@ export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[
       return copyActions(CONTEXT_OVERFLOW_ACTIONS);
     case 'dependency-blocked':
       return copyActions(DEPENDENCY_BLOCKED_ACTIONS);
+    case 'scope-violation':
+    case 'approval-denied':
+      return copyActions(SCOPE_RECOVERY_ACTIONS);
+    case 'implementer-recipe-invalid':
+      return copyActions(RECIPE_INVALID_ACTIONS);
+    case 'implementer-timeout-repeated':
+      return copyActions(USAGE_LIMIT_ACTIONS);
+    case 'snapshot-failed':
+      return copyActions(SNAPSHOT_FAILED_ACTIONS);
+    case 'review-failed':
+      return copyActions(PAUSE_OR_ABORT_ACTIONS);
     default:
       return assertNever(reason);
   }

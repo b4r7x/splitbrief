@@ -168,6 +168,39 @@ That is the whole plan; say the word and I will write it.
   });
 });
 
+describe('files frontmatter', () => {
+  const filesBlock = `---
+files: [src/slice.ts, src/slice.test.ts]
+id: T500
+title: "Slice"
+action: create
+file: src/slice.ts
+depends_on: []
+---
+
+### Description
+A slice over two files.
+`;
+
+  it('files key is recognised as a frontmatter delimiter', () => {
+    const blocks = splitTaskBlocks(`${taskBlock('T001')}${filesBlock}`);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[1]).toContain('id: T500');
+  });
+
+  it('parseTaskBlock copies the declared files onto the task', () => {
+    const result = parseTaskBlock(filesBlock);
+    if (!result.ok) throw new Error('expected the block to parse');
+    expect(result.task.files).toEqual(['src/slice.ts', 'src/slice.test.ts']);
+  });
+
+  it('leaves files unset on a one-file brief', () => {
+    const result = parseTaskBlock(taskBlock('T001'));
+    if (!result.ok) throw new Error('expected the block to parse');
+    expect(result.task.files).toBeUndefined();
+  });
+});
+
 describe('readTaskFrontmatter', () => {
   it('reads valid frontmatter with depends_on defaulting to an empty list', () => {
     const result = readTaskFrontmatter(taskBlock('T001'));

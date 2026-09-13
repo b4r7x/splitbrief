@@ -69,6 +69,16 @@ describe('discoverSkills', () => {
     expect(skills.every((s: SkillMeta) => s.scope === 'project')).toBe(true);
   });
 
+  it('the four pipeline skills are never discovered', async () => {
+    for (const id of ['splitbrief', 'splitbrief-brief', 'splitbrief-run', 'splitbrief-review']) {
+      writeSkillDir(projectRoot('.claude'), id, `name: ${id}\ndescription: d`);
+    }
+    writeFlatSkill(projectRoot('.claude'), 'keeper', 'name: Keeper\ndescription: d');
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['keeper']);
+  });
+
   it('hides the portable splitbrief pipeline skills but keeps the repo dev skills', async () => {
     writeSkillDir(projectRoot('.claude'), 'splitbrief', 'name: splitbrief\ndescription: d');
     writeSkillDir(projectRoot('.agents'), 'splitbrief-run', 'name: splitbrief-run\ndescription: d');
@@ -156,7 +166,7 @@ describe('discoverSkills', () => {
     const skills = await discoverSkills(TMP);
     expect(skills[0]?.projectDir).toBe(TMP);
 
-    const content = await loadSkillContent(skills);
+    const { content } = await loadSkillContent(skills);
     expect(content).toContain('### Confined');
     expect(content).toContain('Confined body');
   });
@@ -345,7 +355,7 @@ describe('discoverSkills', () => {
 
 describe('loadSkillContent', () => {
   it('returns empty string for no skills', async () => {
-    expect(await loadSkillContent([])).toBe('');
+    expect(await loadSkillContent([])).toEqual({ content: '', omitted: [] });
   });
 
   it('loads skill content stripping frontmatter', async () => {
@@ -366,7 +376,7 @@ describe('loadSkillContent', () => {
       },
     ];
 
-    const content = await loadSkillContent(skills);
+    const { content } = await loadSkillContent(skills);
     expect(content).toContain('### Test');
     expect(content).toContain('# Content here');
     expect(content).not.toContain('---');
@@ -391,12 +401,12 @@ describe('loadSkillContent', () => {
       },
     ];
 
-    const content = await loadSkillContent(skills);
+    const { content } = await loadSkillContent(skills);
     expect(content).toContain('[... truncated]');
     expect(content.length).toBeLessThan(20_000);
   });
 
-  it('discloses skills fully dropped after the budget break', async () => {
+  it('budget truncation reports the omitted skill names', async () => {
     const skillsDir = join(TMP, '.claude', 'skills');
     mkdirSync(skillsDir, { recursive: true });
     const bigContent = 'x'.repeat(16_000);
@@ -426,7 +436,8 @@ describe('loadSkillContent', () => {
       mk('third', 'Third'),
     ];
 
-    const content = await loadSkillContent(skills);
+    const { content, omitted } = await loadSkillContent(skills);
+    expect(omitted).toEqual(['Second', 'Third']);
     expect(content).toContain('### First');
     expect(content).not.toContain('Second body');
     expect(content).not.toContain('Third body');
@@ -458,7 +469,8 @@ describe('loadSkillContent', () => {
     });
     const skills: SkillMeta[] = [mk('a', 'Alpha'), mk('b', 'Beta'), mk('c', 'Gamma')];
 
-    const content = await loadSkillContent(skills);
+    const { content, omitted } = await loadSkillContent(skills);
+    expect(omitted).toEqual(['Gamma']);
     expect(content).toContain('### Beta');
     expect(content).toContain('[... truncated]');
     expect(content).toContain('1 more selected skills omitted');
@@ -469,7 +481,7 @@ describe('loadSkillContent', () => {
 
 describe('buildSkillsSection', () => {
   it('returns empty string for no skills', async () => {
-    expect(await buildSkillsSection([])).toBe('');
+    expect(await buildSkillsSection([])).toEqual({ section: '', omitted: [] });
   });
 
   it('wraps content in Active Project Skills heading', async () => {
@@ -487,9 +499,10 @@ describe('buildSkillsSection', () => {
       },
     ];
 
-    const section = await buildSkillsSection(skills);
+    const { section, omitted } = await buildSkillsSection(skills);
     expect(section).toMatch(/^## Active Project Skills/);
     expect(section).toContain('### Test');
     expect(section).toContain('Body');
+    expect(omitted).toEqual([]);
   });
 });

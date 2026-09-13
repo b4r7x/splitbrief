@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
 import {
   formatUsageLimitReset,
   isUsageLimitDiagnostic,
@@ -77,8 +78,16 @@ describe('isUsageLimitDiagnostic', () => {
     'tsc exited with code 2: src/main.ts(3,1): error TS2304',
     'vitest: 429 tests passed',
     'Added rate limit handling to src/api/client.ts',
+    'update your billing address',
+    'implements a rate limit',
   ])('does not classify %j as a limit', (message) => {
     expect(isUsageLimitDiagnostic(message)).toBe(false);
+  });
+
+  it('every HALT_SIGNATURES.usage phrase classifies as a usage limit', () => {
+    for (const phrase of HALT_SIGNATURES.usage) {
+      expect(isUsageLimitDiagnostic(`CLI failed: ${phrase}`)).toBe(true);
+    }
   });
 
   it.each(['HTTP 429 Too Many Requests'])('corroborates weak 429 signals for %j', (message) => {

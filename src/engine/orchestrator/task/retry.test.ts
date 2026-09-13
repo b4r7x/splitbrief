@@ -291,6 +291,58 @@ describe('retryAndRecord — retry budget', () => {
     const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
     expect(retryEvents.length).toBeGreaterThanOrEqual(2);
   });
+
+  it('error event on exhaustion', async () => {
+    const task = makeTask({ id: 'T001' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+
+    const { bus, events: busEvents } = makeBusRecorder();
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
+    });
+    const planner = makePlanner({
+      escalateHint: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateFull: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+    });
+
+    const wctx = makeWorkflowContext({
+      implementer,
+      planner,
+      bus,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { maxRetries: 2 },
+      }),
+    });
+
+    const res = await retryAndRecord({
+      wctx,
+      task,
+      initialError: 'initial tsc failure',
+      state,
+      taskStartTime: Date.now(),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(res.completed).toBe(false);
+    const errorIndex = busEvents.findIndex(
+      (e) => e.type === 'error' && e.code === 'retry_exhausted' && e.category === 'recovery',
+    );
+    const promptedIndex = busEvents.findIndex((e) => e.type === 'recovery_prompted');
+    expect(errorIndex).toBeGreaterThanOrEqual(0);
+    expect(promptedIndex).toBeGreaterThan(errorIndex);
+
+    const ledger = readEvidenceLedger(wctx);
+    expect(ledger?.tasks.find((t) => t.id === 'T001')?.status).toBe('failed');
+  });
 });
 
 describe('retryAndRecord — recovery stop points', () => {
@@ -349,6 +401,48 @@ describe('retryAndRecord — recovery stop points', () => {
         availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'abort-workflow'],
       }),
     );
+  });
+
+  it('a thrown escalation still records failed evidence', async () => {
+    const { projectDir, sessionId } = setupProject();
+
+    const task = makeTask({ id: 'T001' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+
+    const planner = makePlanner({
+      escalateHint: vi.fn().mockRejectedValueOnce(new Error('planner crashed')),
+    });
+    const implementer = makeImplementer({ retry: vi.fn() });
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      bus: makeBusRecorder().bus,
+      planner,
+      implementer,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { maxRetries: 0 },
+      }),
+    });
+
+    const result = await retryAndRecord({
+      wctx,
+      task,
+      initialError: 'initial validation failed',
+      state,
+      taskStartTime: Date.now(),
+      taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.completed).toBe(false);
+    expect(
+      readEvidenceLedger({ projectDir, sessionId })?.tasks.find((t) => t.id === 'T001'),
+    ).toMatchObject({ status: 'failed', method: 'failed' });
   });
 
   it('returns without raising recovery when retry or escalation throws an AbortError', async () => {

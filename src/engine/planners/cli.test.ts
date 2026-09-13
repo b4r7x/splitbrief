@@ -18,9 +18,23 @@ import { processError } from '../../lib/process/errors.js';
 import { SANDBOX_DIR, TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES } from '../runners/cli-tools/process-invoke.js';
+import { CLI_NO_DEADLINE_MS } from '../runners/invoke-cli-adapter.js';
 import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerFactoryOptions, PlanResult } from './types.js';
 import { writeSpecFile } from '../../core/paths-io.js';
+
+const invokeCliAdapterDeadlines = vi.hoisted(() => [] as number[]);
+
+vi.mock('../runners/invoke-cli-adapter.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../runners/invoke-cli-adapter.js')>();
+  return {
+    ...actual,
+    invokeCliAdapter: (opts: Parameters<typeof actual.invokeCliAdapter>[0]) => {
+      invokeCliAdapterDeadlines.push(opts.invocation.timeoutMs);
+      return actual.invokeCliAdapter(opts);
+    },
+  };
+});
 
 function makeConfig(overrides: Parameters<typeof makeBaseConfig>[0] = {}) {
   const implementer = overrides.implementer;
@@ -1352,4 +1366,34 @@ Session artifact must be ignored.
     expect(result.phases?.[0]?.artifact.text).toBe(stdoutText);
     expect(result.phases?.[0]?.artifact.text).not.toContain('Session artifact must be ignored');
   });
+});
+
+describe('seat deadlines', () => {
+  itUnix(
+    'reviewer seat defaults its deadline to 600000 ms; planner seat keeps no deadline',
+    async () => {
+      installShim('opencode', [
+        JSON.stringify({
+          type: 'text',
+          sessionID: 'ses-open',
+          part: { type: 'text', text: 'response' },
+        }),
+      ]);
+      const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+
+      invokeCliAdapterDeadlines.length = 0;
+      await planner.review('prompt', projectDir, { onOutput: vi.fn() });
+
+      expect(invokeCliAdapterDeadlines).toEqual([600_000]);
+
+      invokeCliAdapterDeadlines.length = 0;
+      await planner.quickPlan({
+        feature: 'plan a change',
+        projectDir,
+        callbacks: { onOutput: vi.fn() },
+      });
+
+      expect(invokeCliAdapterDeadlines).toEqual([CLI_NO_DEADLINE_MS]);
+    },
+  );
 });

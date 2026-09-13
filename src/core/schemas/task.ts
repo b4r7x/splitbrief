@@ -41,8 +41,12 @@ export const TaskSchema = z.object({
   title: z.string(),
   /** `create` if the file does not yet exist; `modify` if it does. */
   action: FileActionSchema,
-  /** Project-relative path, e.g. `src/features/auth/SignupForm.tsx`. */
+  /** Project-relative anchor path; the first entry of `files` when that is present. */
   file: z.string(),
+  /** Every path this brief may write. Absent means `[file]`. One file is the XS slice. */
+  files: z.array(z.string()).optional(),
+  /** Captured current code of the non-anchor `files` at task start, keyed by path. */
+  currentCodeByFile: z.record(z.string(), z.string()).optional(),
   /** IDs of tasks that must reach a terminal state before this task may start. */
   dependsOn: z.array(TaskIdSchema),
   /** Full prose description of what the implementer must do. */
@@ -87,3 +91,7 @@ export const TaskSchema = z.object({
 });
 
 export type Task = z.infer<typeof TaskSchema>;
+
+export function taskFiles(task: Pick<Task, 'file' | 'files'>): readonly string[] {
+  return task.files !== undefined && task.files.length > 0 ? task.files : [task.file];
+}

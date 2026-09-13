@@ -76,7 +76,10 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
         drivenEvents,
     );
     if (projection.review !== undefined) {
-      expect(approvalPromptStore.get().status).toBe('pending');
+      // A document gate is its own panel; only the tiered gates go through the approval store.
+      if (projection.reviewArtifact === undefined) {
+        expect(approvalPromptStore.get().status).toBe('pending');
+      }
       expect(questionPromptStore.get().hint).toBeNull();
       expect(getWorkflowFixturePromptRows(projection, VIEWPORT.cols)).toBeGreaterThan(0);
     }

@@ -222,6 +222,7 @@ const CLI_VERSION_LABELS: Record<CliToolId, string> = {
   'kilo-code': '',
   cursor: '',
   'command-code': '',
+  antigravity: '',
 };
 
 const CLI_AUTH_STATUS_RESPONSES: Partial<Record<CliToolId, readonly string[]>> = {
@@ -249,6 +250,12 @@ const CLI_AUTH_STATUS_RESPONSES: Partial<Record<CliToolId, readonly string[]>> =
     '  exit 0',
     'fi',
   ],
+  antigravity: [
+    'if [ "$1" = "models" ]; then',
+    `  printf '%s\\n' 'gemini-3-pro'`,
+    '  exit 0',
+    'fi',
+  ],
 };
 
 function cliShimScript(tool: CliToolId, argvLog: string | undefined): string {
@@ -256,7 +263,8 @@ function cliShimScript(tool: CliToolId, argvLog: string | undefined): string {
   return [
     '#!/bin/sh',
     ...(argvLog === undefined ? [] : [`printf '%s\\n' "$*" >> ${JSON.stringify(argvLog)}`]),
-    'if [ "$1" = "--version" ]; then',
+    // `agy` has no version flag: `agy --help` exiting 0 is its whole version probe.
+    `if [ "$1" = "--version" ] || [ "$1" = "--help" ]; then`,
     `  printf '%s\\n' '${version}'`,
     '  exit 0',
     'fi',
@@ -344,6 +352,11 @@ describe('all-admitted-tools auth channels', () => {
               'kilo-code': 'authenticated',
               cursor: 'authenticated',
               'command-code': 'authenticated',
+              // The antigravity catalog entry declares a session channel but no
+              // allowlisted credential file (`agy` documents none), so nothing can
+              // be bridged into an isolated runner environment and the fact stays
+              // unauthenticated no matter what `agy models` answers.
+              antigravity: 'unauthenticated',
             },
           );
           const copilot = result.cliTools.find((detection) => detection.tool === 'copilot');

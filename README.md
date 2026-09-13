@@ -48,7 +48,7 @@ You: "add user authentication with JWT"
     │           │
   pass        fail
     │           │
-  next task   retry (max 3)
+  next task   retry (max 2)
                 │
                 fail again
                 │
@@ -138,9 +138,10 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 | Action | Key | Effect |
 |--------|-----|--------|
 | Queue a message | Type + Enter | During live planner phases, queues text for the next safe point; planners with `injectUserTurn()` also receive it immediately |
-| Abort current call | Ctrl-C (single press) | During live phases, aborts the active model call and enters awaiting-continue |
-| Exit workflow | Ctrl-C twice within 2s | Saves state and exits; continue later with `splitbrief continue <session-id>` if the saved state is resumable |
-| Continue | Enter (empty) or type + Enter | Exit awaiting-continue; queued messages folded into next call |
+| Stop options | `esc` (empty composer) | Opens the stop sheet — stop now, pause after this brief, or end the run. No option reverts files, and your draft is kept |
+| Stop now | `ctrl+c` (one press) | Aborts the in-flight call, starts no new brief, and parks the run with its partial changes kept |
+| Quit | `ctrl+q` or `/quit` | Stops the run safely, saves the session, then exits; continue later with `splitbrief continue <session-id>` if the saved state is resumable |
+| Resume | `/resume`, or type + Enter | Restarts a parked run; typed text steers it. A blank Enter never resumes |
 
 ## Commands
 
@@ -201,7 +202,7 @@ validation:
   testCommand: npm test
 
 workflow:
-  maxRetries: 3
+  maxRetries: 2
   approve: default
   git:
     commitStrategy: none
@@ -392,7 +393,7 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 
 ## Current state
 
-Primary development stack is TypeScript/JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines.
+Primary development stack is TypeScript/JavaScript. Validation is generic over five stacks, each with its own typecheck, lint and test commands: TypeScript (`npx tsc --noEmit`, ESLint or Biome, `npm test`), JavaScript (lint and test only), Python (`mypy`/`pyright`, `ruff`/`flake8`, `pytest` under `uv`, `poetry` or bare), Go (`go vet ./...`, `golangci-lint`/`staticcheck`, `go test ./...`) and Rust (`cargo check`, `cargo clippy --no-deps`, `cargo test`). The exact per-stack table, and the `config → manifest → discovered → stack default → none` ladder that picks a command, are in [docs/FEATURES.md §Validation pipeline](https://github.com/b4r7x/splitbrief/blob/main/docs/FEATURES.md#validation-pipeline--checkpoints). Any other stack runs review-only (`gates: NONE`) rather than guessing.
 
 macOS and Linux only. Windows is not supported: the snapshot path encoding needs POSIX semantics. Support is planned, not present.
 

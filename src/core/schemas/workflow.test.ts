@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { REVIEW_STATUSES } from './enums.js';
 import { ChangedFilesSnapshotSchema, WorkflowStateSchema } from './workflow.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
@@ -53,6 +54,19 @@ describe('WorkflowStateSchema v4', () => {
     expect(ChangedFilesSnapshotSchema.parse(snapshot)).toEqual(snapshot);
   });
 
+  it('carries the run-start validation baseline through v4 persistence', () => {
+    const validationBaseline = {
+      failingStages: ['typecheck'],
+      commands: { typecheck: 'npm run typecheck' },
+      failures: { typecheck: ['src/a.ts(12,5)'] },
+    };
+    const persisted = WorkflowStateSchema.parse(
+      JSON.parse(JSON.stringify({ ...state(), validationBaseline })),
+    );
+
+    expect(persisted).toMatchObject({ validationBaseline });
+  });
+
   it('requires v4 persistence identity and rejects v3 or future state versions', () => {
     expect(WorkflowStateSchema.safeParse({ ...state(), stateVersion: 3 }).success).toBe(false);
     expect(WorkflowStateSchema.safeParse({ ...state(), stateVersion: 5 }).success).toBe(false);
@@ -102,6 +116,17 @@ describe('WorkflowStateSchema v4', () => {
         }),
       ).success,
     ).toBe(true);
+  });
+
+  it('accepts every shared review status and refuses the review-phase vocabulary', () => {
+    for (const status of REVIEW_STATUSES) {
+      expect(WorkflowStateSchema.safeParse({ ...state(), reviewStatus: status }).success).toBe(
+        true,
+      );
+    }
+    expect(WorkflowStateSchema.safeParse({ ...state(), reviewStatus: 'written' }).success).toBe(
+      false,
+    );
   });
 
   it('rejects unknown top-level persisted fields instead of silently accepting them', () => {

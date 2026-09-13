@@ -21,8 +21,7 @@
     "JetBrains Mono", "JetBrains Mono Fallback", ui-monospace, "SF Mono", Menlo, monospace;
 
   --text-display: clamp(3.25rem, 5.4vw, 4.9rem);
-  --text-wide: clamp(1.375rem, 2.1vw, 1.9rem);
-  --text-body: 0.9375rem;
+  --text-body: 1rem;
   --text-label: 0.75rem;
   --text-micro: 0.6875rem;
   --text-cta: 0.875rem;
@@ -39,43 +38,35 @@
   --s-32: 128px;
   --gutter: clamp(20px, 4.4vw, 64px);
   --content-max: 1312px;
-  --panel: #0e1114;
+  --panel: #111518;
   --red: #cf6a52;
-  --text-note: 0.8125rem;
-  --text-title: 1.5rem;
-  --text-serif-sub: 1.75rem;
-  --text-breath: 3rem;
-  --text-art: 0.6875rem;
-  --line-art: 13px;
-  --bar-h: 30px;
-  --rail: 80px;
-  --head-w: 310px;
-  --panel-w: 494px;
+  --text-note: 1rem;
+  --text-title: 0.75rem;
+  --text-serif-sub: 3rem;
+  --text-art: 0.8125rem;
+  --line-art: 20px;
+  --bar-h: 44px;
 }
 
 @media (min-width: 1600px) {
   :root {
-    --content-max: max(1664px, calc(100vw * 13 / 15));
+    --content-max: 1664px;
     --text-display: clamp(4.9rem, 5.4vw, 6.25rem);
-    --text-note: 0.875rem;
-    --text-serif-sub: 1.8125rem;
-    --text-breath: 3.5rem;
-    --text-art: 0.75rem;
-    --line-art: 14px;
-    --bar-h: 32px;
-    --text-label-wide: 0.875rem;
-    --head-w: 351px;
-    --panel-w: clamp(546px, 34.1vw, 655px);
+    --text-note: 1rem;
+    --text-serif-sub: 3.5rem;
+    --text-art: 0.875rem;
+    --line-art: 22px;
+    --bar-h: 48px;
   }
 }
 
 @media (max-width: 767px) {
   :root {
     --text-display: clamp(2.75rem, 13vw, 3.25rem);
-    --text-title: 1.25rem;
-    --text-serif-sub: 1.5rem;
-    --text-breath: 2.125rem;
-    --line-art: 15px;
-    --bar-h: 28px;
+    --text-title: 0.75rem;
+    --text-serif-sub: 2.25rem;
+    --text-art: 0.6875rem;
+    --line-art: 18px;
+    --bar-h: 40px;
   }
 }

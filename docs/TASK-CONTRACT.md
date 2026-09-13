@@ -20,10 +20,6 @@ A Task Brief may enter implementation only when the current deterministic Brief 
 Warnings remain non-blocking, and an invalid brief must never be advanced through an approval override.
 The report is written to the session folder as `brief-quality.json`.
 
-### Tiered compiler admission
-
-Task Brief compilation admits backends under tiered capability rules: the tested version produces a full capability receipt; other detected versions of supported backends are admitted with runtime-drift evidence and a run warning; unsupported backends (`copilot`, `cursor`, `command-code`, `shell`, `agent`) receive a typed fail-closed refusal (`task_compiler_capability_unsupported`). Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
-
 ## Task Brief v1: the semantic contract
 
 A `Task` is the persisted, transport-stable form of a **Product Task Brief v1** — the durable contract the planner writes for the implementer. The brief is the meaning; `tasks.md` is the markdown rendering used to hand work between phases; `state.json` is the stable JSON that SPLITBRIEF and advanced read-only integrations consume.
@@ -32,7 +28,7 @@ Every Task Brief v1 covers nine semantic sections, even when a section is brief.
 
 | # | Brief section | Schema fields | Notes |
 |---|---|---|---|
-| 1 | **Identity** | `id`, `title`, `file`, `action` | Stable identity for the task. |
+| 1 | **Identity** | `id`, `title`, `file`, `files`, `action` | Stable identity for the task. `files` is the slice the brief writes; `file` is its anchor and must be a member of `files`. When `files` is absent it resolves to `[file]`. |
 | 2 | **Intent** | `description` | What change is needed and why it matters. |
 | 3 | **Scope** | `description`, `constraints`, optional `scope.inBounds` / `scope.outOfBounds` | What is in bounds and what is out of bounds. |
 | 4 | **Code Context** | `signature`, `currentCode`, `typeDefs`, `pattern` | Existing code, signatures, types, or patterns the implementer needs. |
@@ -44,11 +40,11 @@ Every Task Brief v1 covers nine semantic sections, even when a section is brief.
 
 `tasks.md` is the markdown transport: one task block per brief, frontmatter for identity and dependencies, `### …` headings for each semantic section. The implementer prompt may reformat a brief but must not change its meaning. `state.json` is the stable external JSON; consume that for machine-readable read-only workflows.
 
-**How the Scope section is interpreted.** Scope bullets are prose, not a file list. When deciding whether a brief widens the write scope beyond `file`, SPLITBRIEF extracts path tokens from each `scope.inBounds` / `scope.approvedOutOfBounds` bullet (`scopePathPatterns` in `src/utils/path-patterns.ts`): backtick-quoted tokens first, then — when the bullet has no backticks — the whole bullet if it contains no whitespace, otherwise concrete path patterns matched out of the prose. A token only counts as a path when it carries a directory separator or a glob; a bare filename with no directory cannot denote a file other than the task's own `file` in any recorded plan, so it never widens the write scope. A bullet that names the task's own file in prose does not widen it either.
+**How the Scope section is interpreted.** Scope bullets are prose, not a file list. A brief's **declared set** is `files` plus every `scope.inBounds` and `scope.approvedOutOfBounds` bullet, and one module resolves it for every consumer — `taskDeclaredPatterns` / `isInDeclaredSet` in `src/core/scope/declared-set.ts`. When deciding whether a brief widens the write scope beyond its `files`, SPLITBRIEF extracts path tokens from each `scope.inBounds` / `scope.approvedOutOfBounds` bullet (`scopePathPatterns` in `src/utils/path-patterns.ts`): backtick-quoted tokens first, then — when the bullet has no backticks — the whole bullet if it contains no whitespace, otherwise concrete path patterns matched out of the prose. A token only counts as a path when it carries a directory separator or a glob; a bare filename with no directory cannot denote a file other than one of the task's own `files` in any recorded plan, so it never widens the write scope. A bullet that names a file the brief already declares does not widen it either.
 
 **Create-then-modify chains are legal.** A brief may declare `action: modify` on a file an earlier brief in the same plan creates. Because the task loop runs in array order, the routing preview reports such a target as `pending-earlier-task` rather than `missing-current-code`: the file is expected to exist by the time the modifying task runs, and the missing current code is a non-event, not a stale estimate.
 
-**What a direct-write implementer is told about scope and stopping.** Beyond the brief itself, a `direct` implementer receives a system preamble (`src/engine/spec/prompts/system.ts`) that restates the contract as hard rules: edit only the brief's target file plus anything `scope.approvedOutOfBounds` lists, and nothing else; stop and report instead of guessing when the brief's stop conditions are met, when the target file's current content contradicts the brief, or when the change would require touching a file outside scope; run the brief's validation commands when available and report any failure SPLITBRIEF will re-verify after promotion rather than working around it; and end with a completion report naming the files written and whether the steps were completed. The same rules are mirrored in the task's closing instruction (`src/engine/spec/prompt-formatter.ts`).
+**What a direct-write implementer is told about scope and stopping.** Beyond the brief itself, a `direct` implementer receives a system preamble (`src/engine/spec/prompts/system.ts`) that restates the contract as hard rules: edit only the files the brief lists under Files, plus every path its Scope names under In bounds or Approved out of bounds, and nothing else; stop and report instead of guessing when the brief's stop conditions are met, when a declared file's current content contradicts the brief, or when the change would require touching a file outside scope; run the brief's validation commands when available and report any failure SPLITBRIEF will re-verify after promotion rather than working around it; and end with a completion report naming the files written and whether the steps were completed. The same rules are mirrored in the task's closing instruction (`src/engine/spec/prompt-formatter.ts`).
 
 ## Where tasks live on disk
 
@@ -60,7 +56,8 @@ Every Task Brief v1 covers nine semantic sections, even when a section is brief.
 type Task = {
   id: TaskId;                        // branded string, e.g. "T001"
   title: string;                     // short human label
-  file: string;                      // project-relative path (e.g. "src/foo.ts")
+  file: string;                      // project-relative anchor path (e.g. "src/foo.ts")
+  files?: string[];                  // optional: the whole slice; defaults to [file], and file is a member
   action: 'create' | 'modify';
   description: string;               // full task description
   dependsOn: TaskId[];               // IDs of tasks that must complete first
@@ -69,7 +66,8 @@ type Task = {
   implementationSteps: string[];     // step-by-step guide for the implementer
   typeDefs: string;                  // language-specific type declarations / signatures
   signature?: string;                // optional: function/interface signature hint
-  currentCode?: string;              // optional: captured existing code at task start
+  currentCode?: string;              // optional: captured existing code of the anchor at task start
+  currentCodeByFile?: Record<string, string>;  // optional: captured existing code of the non-anchor files
   pattern?: string;                  // optional: code pattern hint
   scope?: {                          // optional: Task Brief v1 §Scope
     inBounds?: string[];
@@ -179,6 +177,18 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 - **Breaking changes** (field rename, status removal, type change) trigger a `stateVersion` bump. Consumers should check `state.stateVersion` and refuse to read unfamiliar versions.
 - The current persisted `stateVersion` is `4`. A v3 state is promoted only by the fenced owner during resume; malformed or future state is refusal/read-only state. Future bumps are documented in `CHANGELOG.md`.
 
+**v4 additive fields (2026-09-13).** These fields were added without a `stateVersion` bump; each is optional, and a state written before them reads identically:
+
+| Field | Meaning when absent |
+|---|---|
+| `Task.files` | the slice is `[task.file]` |
+| `Task.currentCodeByFile` | only the anchor's `currentCode` was captured |
+| `WorkflowState.reviewFixes` | no review fix cycle has run |
+| `WorkflowState.reviewStatus` | the final review has not resolved |
+| `WorkflowState.validationBaseline` | the run-start gate probe is re-run on resume instead of reused |
+| `Session.status: 'cancelled'` | an older run never wrote the value; a reader that does not know it should treat it as terminal but not complete |
+| evidence `skipped` / `skippedReason` | the stage ran (a skipped stage was previously indistinguishable from a pass) |
+
 ## What is NOT stable
 
 - `summary.json` shape — still evolving.
@@ -245,7 +255,8 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 | `empty_task_list` | The planner returned zero parseable Task Briefs |
 | `vague_validation` | every test matches a known vague pattern ("works", "validate", …) |
 | `missing_implementation_steps` | `task.implementationSteps` is empty |
-| `multi_file_task` | description/steps direct writes to ≥ 2 distinct file paths |
+| `write_outside_declared_files` | description/steps direct a write to a path outside the brief's declared set |
+| `anchor_not_in_files` | `files` is present and `file` is not one of its entries |
 | `missing_code_context` | `action === 'modify'` with no `currentCode`, `signature`, or `pattern` |
 | `missing_escalation` | description/steps contain risk keywords (auth, token, secret, …) and `escalation` is absent |
 | `missing_scope` | `task.scope` absent or empty |
@@ -256,8 +267,9 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 | Code | Condition |
 |---|---|
 | `missing_type_definitions` | `task.typeDefs` is empty |
+| `test_without_code` | the brief only creates a test for a sibling another brief creates; fold it into that brief's slice |
 
-`multi_file_task` only fires when the brief's description/steps name 2+ distinct project-relative file paths as **write targets** — a path governed by a write verb ("update `src/api.ts`", "create `src/utils/helpers.ts` … and update the call site in `src/api.ts`"). Referenced paths do not count: a pattern exemplar to follow, an import or type source ("importing `titleCase` from `src/text.ts`"), a negated verb ("do not modify `src/slug.ts`"), or a bare mention. Repeating the same path does not count, and the task's own `file` never makes a brief multi-file by itself.
+`write_outside_declared_files` counts write targets, not mentions: a path governed by a write verb ("update `src/api.ts`", "create `src/utils/helpers.ts`") that the declared set does not cover. Referenced paths do not count: a pattern exemplar to follow, an import or type source ("importing `titleCase` from `src/text.ts`"), a negated verb ("do not modify `src/slug.ts`"), or a bare mention. A brief whose steps write three paths, all of them listed under `files`, produces no error — the slice is the unit, not the file.
 
 ### Artifact
 
@@ -302,7 +314,8 @@ type EvidenceLedger = {
     retries: number;
     durationMs?: number;
     changedFiles: string[];
-    validation: Array<{ stage: 'typecheck' | 'lint' | 'test'; passed: boolean; errorSummary?: string }>;
+    validation: Array<{ stage: 'typecheck' | 'lint' | 'test'; passed: boolean;
+                        skipped?: boolean; skippedReason?: string; errorSummary?: string }>;
     expectedEvidence: string[];   // task.evidence ++ task.tests
     observedEvidence: string[];   // produced by orchestrator
     escalated: boolean;
@@ -323,7 +336,9 @@ Strings appended to `observedEvidence` are stable. UI and tests may match on the
 | `task reached done` | Task transitions to `done` (local implementation or escalation success) |
 | `task reached escalated` | Task transitions to `escalated` |
 | `typecheck passed` / `lint passed` / `test passed` | Validation stage reported `passed: true` |
-| `diff written for <file>` | Task produced at least one changed file |
+| `diff written for <file>` | Task produced exactly one changed file |
+| `diff written for <n> files` | Task produced more than one changed file |
+| `<stage> skipped` / `<stage> skipped (<reason>)` | The stage resolved to no command; it is recorded as skipped, never as passed |
 | `final review written` | Final review succeeded; appended to every completed task |
 | `skipped: <reason>` | `pre_task` hook denied the task |
 | `skipped: dependency failed: ...` | `handleSkippedTask(...)` skipped the task because a dependency was already failed or skipped |
@@ -383,12 +398,12 @@ type DriftReport = {
 
 | Code | Severity | Trigger |
 |---|---|---|
-| `out_of_scope_file` | warning (or error if any task declares `outOfBounds`) | Changed file is not the target of any task. |
+| `out_of_scope_file` | error (info when the file was already changed before the run started) | Changed file is outside every brief's declared set. |
 | `missing_expected_file` | warning | Task is `done` / `escalated` but its target file is not in the diff. |
 | `failed_task_with_diff` | error | Task is `failed` but its target file appears in the diff. |
 | `orphan_diff` | error | Diff contains files but every task is `failed` or `skipped`. |
 | `out_of_bounds_text_match` | error | A `task.scope.outOfBounds` pattern matches a changed-file path or appears in the raw diff text. Match literally as a substring; do not use regex or semantic matching. |
-| `missing_evidence` | warning | Task `done`/`escalated` declared expected evidence but observed evidence is empty in the ledger. |
+| `missing_evidence` | warning | Task `done`/`escalated` declared expected evidence but the ledger observed none — or observed the test stage as `skipped`, which is absence of proof, not proof. |
 
 ### Event
 

@@ -23,6 +23,9 @@ const PIN_FALLBACKS: Readonly<Record<string, () => string | undefined>> = {
   'kilo-code': () => 'kilo/kilo-auto/free',
   cursor: () => 'gpt-5.3-codex-low-fast',
   copilot: () => 'claude-haiku-4.5',
+  // `agy models` publishes no price signal SPLITBRIEF can rank, so there is no
+  // cheapest pin to fall back to: an unset env leaves the seat on agy's own default.
+  antigravity: () => undefined,
 };
 
 export function resolveReleaseMatrixSeat(tool: string): LiveSeat {
@@ -83,6 +86,13 @@ export const RELEASE_MATRIX: readonly ReleaseMatrixRow[] = [
     mode: 'quick',
     plan: 'copilot',
     build: 'copilot',
+    task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
+  },
+  {
+    id: 'quick-canary-antigravity',
+    mode: 'quick',
+    plan: 'antigravity',
+    build: 'antigravity',
     task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   },
   {

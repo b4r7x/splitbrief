@@ -1,5 +1,9 @@
 .nav {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-16);
+  border-bottom: 1px solid var(--hair);
   container-type: inline-size;
   width: min(var(--content-max), 100% - 2 * var(--gutter));
   height: 96px;
@@ -31,13 +35,13 @@
 
 .nav > * {
   --nav-unit: clamp(1px, calc(100cqw / 1016), 1.64px);
-  position: absolute;
+  position: static;
 }
 
 .nav .wordmark {
   left: calc(100% * 49 / 1016);
   top: calc(18 * var(--nav-unit));
-  font-size: calc(15 * var(--nav-unit));
+  font-size: 22px;
   min-height: 44px;
   padding-block: calc((44px - 1lh) / 2);
   margin-block: calc((1lh - 44px) / 2);
@@ -46,17 +50,18 @@
 .tagline {
   left: calc(100% * 195 / 1016);
   top: calc(19 * var(--nav-unit));
-  font-size: calc(9 * var(--nav-unit));
-  line-height: calc(12 * var(--nav-unit));
+  font-size: 10px;
+  line-height: 14px;
   letter-spacing: 0.08em;
   white-space: nowrap;
 }
 
 .nav .links {
+  margin-left: auto;
   left: calc(100% * 764 / 1016);
   top: calc(20 * var(--nav-unit));
   gap: calc(18 * var(--nav-unit));
-  font-size: calc(8.5 * var(--nav-unit));
+  font-size: var(--text-label);
   letter-spacing: 0.08em;
 
   a {

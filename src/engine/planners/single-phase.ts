@@ -19,7 +19,7 @@ import { buildProjectContextMarkdown } from './context.js';
 import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import { requireCompletedCall } from './require-completed-call.js';
-import { createTaskCompilationAttemptId } from '../../core/schemas/task-compilation.js';
+import { createPlannerArtifactAttemptId } from '../../core/schemas/planner-artifact.js';
 
 type SinglePhaseConfig = {
   invokePlan: (opts: {
@@ -53,7 +53,7 @@ let singlePhaseCallSequence = 0;
 function createSinglePhaseCallContext(config: SinglePhaseConfig): RunnerCallContext {
   return {
     callId: `single-phase-${++singlePhaseCallSequence}`,
-    attemptId: createTaskCompilationAttemptId(),
+    attemptId: createPlannerArtifactAttemptId(),
     role: 'planner',
     backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,
     transport: { kind: 'stdout-final' },
@@ -90,17 +90,19 @@ export async function runSinglePhasePlanning(
     feature: string,
     projectContext: string,
     languageContext: LanguageContext,
+    skillsContext: string | undefined,
   ) => string,
   opts: PlanOptions,
 ): Promise<PlanResult> {
-  const { feature, projectDir, callbacks, codebaseContext } = opts;
+  const { feature, projectDir, callbacks, codebaseContext, skillsContext } = opts;
   const projectContext = await buildProjectContextMarkdown(projectDir);
   const languageContext = buildProjectLanguageContext(
     projectDir,
     callbacks.discoveredValidation?.language,
   );
   const repoMapBlock = formatRepoMapBlock(codebaseContext);
-  const prompt = repoMapBlock + promptBuilder(feature, projectContext, languageContext);
+  const prompt =
+    repoMapBlock + promptBuilder(feature, projectContext, languageContext, skillsContext);
 
   callbacks.onPhase?.('planning');
   const buffer = createTranscriptBuffer({

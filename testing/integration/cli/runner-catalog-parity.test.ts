@@ -42,11 +42,29 @@ type RunnerRole = 'planner' | 'implementer';
 // service, so a written-out list would only ever record that same fact twice.
 const ADMITTED_IDS: Readonly<Record<RunnerRole, Readonly<{ cli: string[]; api: string[] }>>> = {
   planner: {
-    cli: ['claude-code', 'codex', 'opencode', 'copilot', 'kilo-code', 'cursor', 'command-code'],
+    cli: [
+      'claude-code',
+      'codex',
+      'opencode',
+      'copilot',
+      'kilo-code',
+      'cursor',
+      'command-code',
+      'antigravity',
+    ],
     api: [],
   },
   implementer: {
-    cli: ['claude-code', 'codex', 'opencode', 'copilot', 'kilo-code', 'cursor', 'command-code'],
+    cli: [
+      'claude-code',
+      'codex',
+      'opencode',
+      'copilot',
+      'kilo-code',
+      'cursor',
+      'command-code',
+      'antigravity',
+    ],
     api: [...KNOWN_API_PROVIDER_IDS],
   },
 };
@@ -296,16 +314,16 @@ describe('first-class exclusion guard', () => {
     expect(pickerIdsForRole('implementer')).toContain('command-code');
   });
 
-  it('keeps Antigravity out of first-class surfaces', () => {
+  it('admits Antigravity on every first-class surface', () => {
     const admittedIds = admittedFirstClassIds();
 
-    expect(admittedIds.has('antigravity')).toBe(false);
-    expect('antigravity' in CLI_TOOL_CATALOG).toBe(false);
-    expect('antigravity' in CLI_PLANNER_ADAPTERS).toBe(false);
-    expect('antigravity' in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
-    expect(PlannerCliToolIdSchema.safeParse('antigravity').success).toBe(false);
-    expect(ImplementerCliToolIdSchema.safeParse('antigravity').success).toBe(false);
-    expect(pickerIdsForRole('planner')).not.toContain('antigravity');
-    expect(pickerIdsForRole('implementer')).not.toContain('antigravity');
+    expect(admittedIds.has('antigravity')).toBe(true);
+    expect('antigravity' in CLI_TOOL_CATALOG).toBe(true);
+    expect('antigravity' in CLI_PLANNER_ADAPTERS).toBe(true);
+    expect('antigravity' in CLI_IMPLEMENTER_ADAPTERS).toBe(true);
+    expect(PlannerCliToolIdSchema.safeParse('antigravity').success).toBe(true);
+    expect(ImplementerCliToolIdSchema.safeParse('antigravity').success).toBe(true);
+    expect(pickerIdsForRole('planner')).toContain('antigravity');
+    expect(pickerIdsForRole('implementer')).toContain('antigravity');
   });
 });

@@ -22,7 +22,7 @@ export type Pose = {
 function isSurrounded(seat: Seat, c: number, r: number): boolean {
   for (let dr = -1; dr <= 1; dr++) {
     for (let dc = -1; dc <= 1; dc++) {
-      if (!inside((c + dc + 0.5) / seat.cols, (r + dr + 0.5) / seat.rows)) return false;
+      if (!inside(seat, (c + dc + 0.5) / seat.cols, (r + dr + 0.5) / seat.rows)) return false;
     }
   }
   return true;
@@ -31,7 +31,7 @@ function isSurrounded(seat: Seat, c: number, r: number): boolean {
 function isNearRim(seat: Seat, c: number, r: number): boolean {
   for (let dr = -1; dr <= 1; dr++) {
     for (let dc = -1; dc <= 1; dc++) {
-      if (inside((c + dc + 0.5) / seat.cols, (r + dr + 0.5) / seat.rows)) return true;
+      if (inside(seat, (c + dc + 0.5) / seat.cols, (r + dr + 0.5) / seat.rows)) return true;
     }
   }
   return false;
@@ -49,13 +49,15 @@ export function density(seat: Seat, c: number, r: number, t: number, pose: Pose 
   const v = (r + 0.5) / seat.rows;
   const tick = Math.floor(t * seat.frequency);
   const n = valueNoise(seat.seed, c / NOISE_SPAN, r / NOISE_SPAN, tick / NOISE_SPAN);
-  if (!inside(u, v)) return isNearRim(seat, c, r) ? HALO_FLOOR + 0.1 * n : 0;
-  if (eye(u, v)) return isPupil(seat, c, r, gaze) ? 1 : 0;
+  if (!inside(seat, u, v)) return isNearRim(seat, c, r) ? HALO_FLOOR + 0.1 * n : 0;
+  if (eye(seat, u, v)) return isPupil(seat, c, r, gaze) ? 1 : 0;
   const dist = Math.min(1, Math.hypot((u - 0.5) / CORE.rx, (v - CORE.v) / CORE.ry));
-  let d = 0.56 + 0.3 * (1 - dist ** 3);
-  d += 0.28 * (n - 0.5) + 0.16 * (hash(seat.seed, c, r, GRAIN_LAYER) - 0.5);
-  if (v < CROWN) d *= 0.6 + 0.4 * (v / CROWN);
-  if (v >= SKIRT) d *= 1 - (0.75 * (v - SKIRT)) / (1 - SKIRT);
+  let d = 0.48 + 0.38 * (1 - dist ** 4);
+  d += 0.2 * (n - 0.5) + 0.12 * (hash(seat.seed, c, r, GRAIN_LAYER) - 0.5);
+  if (r % 2 === 1) d *= 0.84;
+  if (c % 2 === 1) d *= 0.9;
+  if (v < CROWN) d *= 0.8 + 0.2 * (v / CROWN);
+  if (v >= SKIRT) d *= 1 - (0.35 * (v - SKIRT)) / (1 - SKIRT);
   if (!isSurrounded(seat, c, r)) d *= 0.55 + 0.35 * lift;
   d *= gain * (1 - BREATH.dip * Math.max(0, -Math.cos((2 * Math.PI * t) / BREATH.period)) ** 2);
   return Math.min(BODY_PEAK, Math.max(0, d));

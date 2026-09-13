@@ -85,24 +85,6 @@ test('no horizontal scroll from phone to wide desktop', async ({ page }) => {
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('the diagram becomes the compact vertical stage with the ghosts on one spine', async ({
-    page,
-  }) => {
-    await open(page);
-    const stage = await box(page.locator('.stage'));
-    // H06: three 210x275 canvases (the reference's equal figures) need a taller spine than 980.
-    expect([stage.width, stage.height]).toEqual([350, 1130]);
-    await expect(page.locator('.route-lines--compact')).toBeVisible();
-    await expect(page.locator('.route-lines--wide')).toBeHidden();
-    const centres = await page.locator('canvas.ghost').evaluateAll((canvases) =>
-      canvases.map((canvas) => {
-        const rect = canvas.getBoundingClientRect();
-        return Math.round(rect.left + rect.width / 2);
-      }),
-    );
-    expect(new Set(centres).size).toBe(1);
-  });
-
   test('every link and the CTA offers a 44px target and a 2px focus ring', async ({ page }) => {
     await open(page);
     for (const target of await page.locator('.links a, .cta').all()) {
@@ -124,70 +106,7 @@ test.describe('on a phone', () => {
   });
 });
 
-test('H01 navigation follows the reference landmarks inside the current frame', async ({
-  page,
-}) => {
-  // hero-header.png, x53..1069 outer frame; ink boxes measured before implementation.
-  const landmarks = [
-    { selector: '.nav .wordmark', x: 103 },
-    { selector: '.tagline', x: 248 },
-    { selector: '.nav .links a:first-child', x: 819 },
-    { selector: '.nav .links a:last-child', x: 881 },
-    { selector: '.nav .mark', x: 1004 },
-  ];
-  for (const width of [1440, 1920]) {
-    await page.setViewportSize({ width, height: 1080 });
-    await open(page);
-    const nav = await page.locator('.nav').boundingBox();
-    if (!nav) throw new Error('navigation has no frame');
-    const scale = nav.width / 1016;
-    for (const landmark of landmarks) {
-      const element = page.locator(landmark.selector);
-      const rect = await element.boundingBox();
-      if (!rect) throw new Error(`${landmark.selector} has no box`);
-      const targetX = nav.x + (landmark.x - 53) * scale;
-      expect(Math.abs(rect.x - targetX) / nav.width, landmark.selector).toBeLessThanOrEqual(0.02);
-    }
-    // Text target boxes include side bearings and 44px hit areas; ink sizes are checked in captures.
-    const mark = await box(page.locator('.nav .mark'));
-    expect(Math.abs(mark.width / (12 * scale) - 1)).toBeLessThanOrEqual(0.05);
-    expect(Math.abs(mark.height / (13 * scale) - 1)).toBeLessThanOrEqual(0.05);
-    const tagline = await page.locator('.tagline').evaluate((element) => ({
-      lines: element.innerHTML.split('<br>').length,
-      pitch: Number.parseFloat(getComputedStyle(element).lineHeight),
-    }));
-    expect(tagline.lines).toBe(3);
-    expect(Math.abs(tagline.pitch / (12 * scale) - 1)).toBeLessThanOrEqual(0.1);
-    // hero-header.png: the steps list is 16px mono on a 24px pitch at 1920 (5.65 src per glyph,
-    // 14.5 src rows), three rows on one rule; no stray mark above the claim.
-    const steps = await page.locator('.hero .steps li').evaluateAll((items) =>
-      items.map((item) => ({
-        size: Number.parseFloat(getComputedStyle(item).fontSize),
-        height: item.getBoundingClientRect().height,
-      })),
-    );
-    expect(steps).toHaveLength(3);
-    if (width === 1920) {
-      for (const step of steps) {
-        expect(Math.abs(step.size / 16 - 1)).toBeLessThanOrEqual(0.05);
-        expect(Math.abs(step.height / 24 - 1)).toBeLessThanOrEqual(0.05);
-      }
-    }
-    await expect(page.locator('.draft-mark')).toHaveCount(0);
-    const brand = page.locator('.nav .wordmark');
-    await brand.evaluate((element) => {
-      element.style.transform = 'translateX(40px)';
-    });
-    const shifted = await brand.boundingBox();
-    if (!shifted) throw new Error('perturbed brand has no box');
-    expect(Math.abs(shifted.x - (nav.x + 50 * scale)) / nav.width).toBeGreaterThan(0.02);
-    await brand.evaluate((element) => {
-      element.style.removeProperty('transform');
-    });
-  }
-});
-
-test('H01 navigation keeps real links, keyboard focus and non-overlapping targets', async ({
+test('navigation keeps real links, keyboard focus and non-overlapping targets', async ({
   page,
 }) => {
   for (const width of [360, 390, 768, 1024, 1440, 1600, 1920, 2560]) {
@@ -290,10 +209,7 @@ test('ships under 90 KB gzipped of JavaScript, 16 KB of it our own', async ({ pa
   expect(own + vendor).toBeLessThanOrEqual(90_000);
 });
 
-test('H02 headline follows the crop with four unwrapped lines and a readable eyebrow', async ({
-  page,
-}) => {
-  // hero-copy.png: 400px copy frame, 381px title ink, 56px pitch, 212px ink height.
+test('the headline keeps four readable lines and an accessible eyebrow', async ({ page }) => {
   for (const width of [360, 390, 768, 1024, 1440, 1600, 1920]) {
     await page.setViewportSize({ width, height: 1080 });
     await open(page);
@@ -318,7 +234,6 @@ test('H02 headline follows the crop with four unwrapped lines and a readable eye
     ]);
     const frame = await heading.boundingBox();
     if (!frame) throw new Error('headline has no frame');
-    const scale = Math.min(frame.width, width <= 1099 ? 544 : frame.width) / 400;
     const lines = await heading.locator('.line').evaluateAll((elements) =>
       elements.map((element) => {
         const rect = element.getBoundingClientRect();
@@ -339,11 +254,10 @@ test('H02 headline follows the crop with four unwrapped lines and a readable eye
     for (const [index, line] of lines.entries()) {
       expect(line.fragments, `${width}px line ${index + 1} wrapping`).toBe(1);
       expect(line.textRight).toBeLessThanOrEqual(frame.x + frame.width);
-      expect(Math.abs(line.height / (56 * scale) - 1)).toBeLessThanOrEqual(0.1);
+      expect(line.height).toBeGreaterThanOrEqual(32);
       const previous = lines[index - 1];
       if (previous) expect(Math.abs(line.top - previous.bottom)).toBeLessThanOrEqual(1);
     }
-    expect(Math.abs((lines[0]?.textWidth ?? 0) / (381 * scale) - 1)).toBeLessThanOrEqual(0.05);
     const label = await eyebrow.boundingBox();
     if (!label) throw new Error('eyebrow has no box');
     expect(label.y + label.height).toBeLessThan(lines[0]?.top ?? 0);
@@ -369,139 +283,28 @@ test('H02 headline follows the crop with four unwrapped lines and a readable eye
       const ratio = (luminance(ink) + 0.05) / (luminance('#101216') + 0.05);
       expect(ratio, `${ink} at ${size}px`).toBeGreaterThanOrEqual(size >= 24 ? 3 : 4.5);
     }
-
-    if (width === 1920) {
-      await heading.evaluate((element) => {
-        element.style.lineHeight = '140px';
-      });
-      const perturbed = await heading.locator('.line').first().boundingBox();
-      if (!perturbed) throw new Error('perturbed line has no box');
-      expect(Math.abs(perturbed.height / (56 * scale) - 1)).toBeGreaterThan(0.1);
-      await heading.evaluate((element) => element.style.removeProperty('line-height'));
-    }
   }
 });
 
-test('the whole page shares the wide FHD grid', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  for (const width of [360, 390, 768, 1024, 1440, 1599, 1600, 1920, 2560]) {
+test('the install command copies with feedback and keeps its size', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  for (const width of [390, 1920]) {
     await page.setViewportSize({ width, height: 1080 });
     await open(page);
-    const containers = await page
-      .locator('.nav, .hero, .lower .grid, .foot')
-      .evaluateAll((elements) =>
-        elements.map((element) => {
-          const rect = element.getBoundingClientRect();
-          return { left: rect.left, width: rect.width };
-        }),
-      );
-    expect(containers).toHaveLength(6);
-    const first = containers[0];
-    if (!first) throw new Error('page has no container');
-    for (const container of containers) {
-      expect(container.left, `${width}px left edge`).toBeCloseTo(first.left, 0);
-      expect(container.width, `${width}px width`).toBeCloseTo(first.width, 0);
-    }
-    if (width === 1440 || width >= 1600) {
-      // G01 target-landmarks: reference-v2.png outer frame x53..1069 on 1122px.
-      const targetLeft = (53 / 1122) * width;
-      const targetWidth = (1016 / 1122) * width;
-      for (const container of containers) {
-        expect(
-          (Math.abs(container.left - targetLeft) / width) * 100,
-          `${width}px reference left edge (percentage points)`,
-        ).toBeLessThanOrEqual(2);
-        expect(
-          (Math.abs(container.left + container.width - (width - targetLeft)) / width) * 100,
-          `${width}px reference right edge (percentage points)`,
-        ).toBeLessThanOrEqual(2);
-        expect(
-          (Math.abs(container.width - targetWidth) / targetWidth) * 100,
-          `${width}px reference width (relative percent)`,
-        ).toBeLessThanOrEqual(5);
-      }
-    }
-    if (width === 1920) {
-      const cta = await page.locator('.cta').boundingBox();
-      if (!cta) throw new Error('CTA has no box');
-      expect(cta.y + cta.height).toBeLessThanOrEqual(1080);
-    }
-    expect(
-      await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
-      `${width}px overflow`,
-    ).toBe(0);
+    const cta = page.getByRole('button', { name: /npm install -g splitbrief/ });
+    const before = await box(cta);
+    expect(before.height).toBe(56);
+    await cta.focus();
+    await expect(cta).toHaveCSS('outline-width', '2px');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'copied to clipboard' })).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      'npm install -g splitbrief',
+    );
+    expect(await box(page.locator('.cta'))).toEqual(before);
+    await expect(cta).toBeVisible();
+    expect(await box(cta)).toEqual(before);
   }
-});
-
-test('H03 copy block follows the crop: lede measure, CTA, three benefits and the closing quote', async ({
-  page,
-}) => {
-  // hero-copy.png: lede 6.45 src px/char (18.4px at 1920), 31px pitch, three lines; CTA 226x34 src
-  // (386x58); benefits in one row of three, separated by hairlines, 14px; the dim two-line quote
-  // 34 src below the benefits; hero frame 664 src (1136px at 1920).
-  await page.setViewportSize({ width: 1920, height: 1080 });
-  await open(page);
-  const lede = page.locator('.lede');
-  const metrics = await lede.evaluate((element) => {
-    const style = getComputedStyle(element);
-    const range = document.createRange();
-    range.selectNodeContents(element);
-    const lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top)));
-    return {
-      size: Number.parseFloat(style.fontSize),
-      lines: lines.size,
-      width: element.clientWidth,
-    };
-  });
-  expect(Math.abs(metrics.size / 18.4 - 1)).toBeLessThanOrEqual(0.05);
-  expect(metrics.lines).toBe(3);
-  expect(metrics.width).toBeLessThanOrEqual(680);
-  const cta = page.locator('.cta');
-  const before = await box(cta);
-  expect(Math.abs(before.width / 386 - 1)).toBeLessThanOrEqual(0.05);
-  expect(Math.abs(before.height / 58 - 1)).toBeLessThanOrEqual(0.05);
-  await cta.focus();
-  await expect(cta).toHaveCSS('outline-width', '2px');
-  await cta.click();
-  await expect(page.locator('.cta-notice')).toBeVisible();
-  expect(await box(cta)).toEqual(before);
-  const benefits = page.locator('.benefits li');
-  await expect(benefits).toHaveText([
-    'HIGHER QUALITY SOFTWARE',
-    'LOWER SPEND PER TASK',
-    'REAL EVIDENCE NOT VIBES',
-  ]);
-  const rows = await benefits.evaluateAll((items) =>
-    items.map((item) => Math.round(item.getBoundingClientRect().top)),
-  );
-  expect(new Set(rows).size).toBe(1);
-  const works = await page.locator('.works').boundingBox();
-  if (!works) throw new Error('works block has no box');
-  expect(works.y + works.height).toBeLessThanOrEqual(1080);
-  const quote = page.locator('.hero .quote');
-  await expect(quote).toHaveAttribute('aria-hidden', 'true');
-  await expect(quote).toContainText('“A SMALLER, CLEARER LOOP');
-  await expect(quote).toContainText('FOR LARGER THINGS.”');
-  const quoteBox = await quote.boundingBox();
-  const hero = await page.locator('.hero').boundingBox();
-  if (!quoteBox || !hero) throw new Error('quote or hero has no box');
-  expect(quoteBox.y - (works.y + works.height)).toBeGreaterThanOrEqual(48);
-  expect(quoteBox.y - (works.y + works.height)).toBeLessThanOrEqual(64);
-  expect(quoteBox.y + quoteBox.height).toBeLessThanOrEqual(hero.y + hero.height);
-  expect(Math.abs((hero.y + hero.height) / 1136 - 1)).toBeLessThanOrEqual(0.02);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await open(page);
-  const stacked = await page.locator('.benefits li').evaluateAll((items) =>
-    items.map((item) => {
-      const r = item.getBoundingClientRect();
-      return { left: Math.round(r.left), top: Math.round(r.top), height: Math.round(r.height) };
-    }),
-  );
-  expect(new Set(stacked.map((item) => item.left)).size).toBe(1);
-  expect(stacked.map((item) => item.top)).toEqual(
-    [...stacked.map((item) => item.top)].sort((a, b) => a - b),
-  );
-  for (const item of stacked) expect(item.height).toBeLessThanOrEqual(24);
 });
 
 test('the hero fold at 1920', async ({ page }) => {

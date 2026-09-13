@@ -9,7 +9,7 @@ describe('SummaryProgress', () => {
     );
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('2/4 tasks');
+    expect(frame).toContain('2/4 briefs');
     expect(frame).toContain('1 local');
     expect(frame).toContain('1 failed');
     expect(frame).not.toContain('escalated');
@@ -27,7 +27,7 @@ describe('SummaryProgress', () => {
 
     expect(frame).toContain('6/6');
     expect(frame).toContain('4 local');
-    expect(frame).not.toContain('tasks');
+    expect(frame).not.toContain('briefs');
     expect(frame).not.toContain('failed');
 
     ui.unmount();

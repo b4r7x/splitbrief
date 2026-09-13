@@ -2,10 +2,11 @@ import type {
   ImplementerCostTier,
   ImplementerWriteMode,
 } from '../../../core/schemas/implementer-config.js';
+import { taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import type { Task } from '../../../core/schemas/task.js';
+import { taskFiles } from '../../../core/schemas/task.js';
 import { uniqueSorted } from '../../../utils/collections.js';
 import { scopePathPatterns } from '../../../utils/path-patterns.js';
-import { taskScopePatterns } from '../task-scope.js';
 import type { ProfileFit } from './types.js';
 
 function normalizeScopePattern(pattern: string): string {
@@ -13,9 +14,9 @@ function normalizeScopePattern(pattern: string): string {
 }
 
 export function requiredWriteModeForTask(task: Task): ImplementerWriteMode {
-  const scopedWritePatterns = taskScopePatterns(task);
+  if (taskFiles(task).length > 1) return 'direct';
 
-  const namedScopePaths = scopedWritePatterns.flatMap(scopePathPatterns);
+  const namedScopePaths = taskDeclaredPatterns(task).flatMap(scopePathPatterns);
   const hasAdditionalPathScope = namedScopePaths.some(
     (pattern) => normalizeScopePattern(pattern) !== normalizeScopePattern(task.file),
   );

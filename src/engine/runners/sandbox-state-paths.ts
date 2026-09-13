@@ -220,6 +220,7 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
       destinationPath: '.commandcode/auth.json',
     },
   ],
+  antigravity: [],
 };
 
 /**
@@ -270,6 +271,7 @@ export const CLI_CREDENTIAL_MODELS: Readonly<Record<CliToolId, CliCredentialMode
   'kilo-code': 'rotating-oauth',
   cursor: 'rotating-oauth',
   'command-code': 'static-secret',
+  antigravity: 'rotating-oauth',
 };
 
 const SANDBOX_ROLES: readonly RunnerRole[] = ['planner', 'implementer'];

@@ -33,7 +33,6 @@ import { getLineParser } from './output-parsers.js';
 import { createParsedLineRecorder } from './parsed-line-recorder.js';
 import { createRunnerCallStderrBuffer } from './stderr-lines.js';
 import { sandboxCredentialValues } from '../runners/sandbox-credential-values.js';
-import { TASK_COMPILATION_FAILURE_CODE } from '../spec/tasks/task-compilation-codes.js';
 
 interface SpawnAndCollectOptions {
   command: string;
@@ -89,11 +88,6 @@ export const spawnCollectError = {
   isInvalidHardDeadline: matches('runner-invalid-timeout'),
 } as const;
 
-// `task_compiler_timeout` is deliberately not a teardown trigger: an envelope
-// that can latch it has already clamped the hard deadline and the idle kill to
-// the same bounds, so the cancellation is due before the latch can fire and it
-// owns both the teardown and the terminal. Latching here as well would only
-// race that cancellation and classify one deadline two ways.
 function fatalLimitFromEvent(
   event: RunnerCallEvent,
   abortOnOutputLimits: boolean,
@@ -101,7 +95,6 @@ function fatalLimitFromEvent(
   if (!abortOnOutputLimits || event.type !== 'call_warning') return null;
   const { code, message } = event.warning;
   if (
-    code === TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited ||
     code === 'runner_output_text_limit' ||
     code === 'stdout_line_overflow' ||
     code === 'stderr_line_overflow' ||
@@ -186,26 +179,12 @@ export async function spawnAndCollect(
   const credentialValues =
     opts.credentialValues ?? credentialValuesFromEnvironment(opts.env ?? process.env);
   const abortOnOutputLimits = opts.abortOnOutputLimits ?? true;
-  const envelope = context.envelope;
-  // The canonical envelope is the hard ceiling at the spawn boundary: the
-  // absolute deadline drives the cancellation timer and the idle bound clamps
-  // the watchdog kill, so a breach kills the tree instead of only latching
-  // the recorder. Raw and normalized bounds latch in the recorder, whose
-  // limit warnings tear the tree down through fatalLimitFromEvent.
-  const envelopeDeadlineMs = envelope?.deadlineMs;
-  const envelopeIdleMs = envelope?.idleTimeoutMs;
-  const effectiveTimeoutMs =
-    opts.timeoutMs === undefined
-      ? envelopeDeadlineMs
-      : envelopeDeadlineMs === undefined
-        ? opts.timeoutMs
-        : Math.min(opts.timeoutMs, envelopeDeadlineMs);
   const explicitRedactor = createRunnerCallCredentialRedactor(credentialValues);
   const redactCredential = (value: string): string => {
     const redactedCredentials = redactSecrets(explicitRedactor(value));
     return opts.redact?.(redactedCredentials) ?? redactedCredentials;
   };
-  const cancellation = createInvocationCancellation(opts.signal, effectiveTimeoutMs);
+  const cancellation = createInvocationCancellation(opts.signal, opts.timeoutMs);
   let fatalLimit: RunnerCallOutputLimit | null = null;
   const recorder = createRunnerCallRecorder({
     context,
@@ -331,14 +310,8 @@ export async function spawnAndCollect(
       },
       signal: cancellation.signal,
       idle: {
-        warnMs:
-          envelopeIdleMs === undefined
-            ? (opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS)
-            : Math.min(opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS, envelopeIdleMs),
-        killMs:
-          envelopeIdleMs === undefined
-            ? (opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS)
-            : Math.min(opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS, envelopeIdleMs),
+        warnMs: opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
+        killMs: opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS,
         onWarn: (silentMs) => recorder.stalled({ silentMs }),
         onClear: () => recorder.stallCleared(),
       },
@@ -413,7 +386,7 @@ export async function spawnAndCollect(
         const timeoutError = processError.timeout({
           command: redactCredential(opts.command),
           label: 'Custom runner',
-          timeoutMs: effectiveTimeoutMs ?? 0,
+          timeoutMs: opts.timeoutMs ?? 0,
           output: '',
         });
         recorder.finishFailed({

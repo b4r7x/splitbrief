@@ -32,6 +32,9 @@ import { usePasteDrafts } from './use-paste-drafts.js';
 import { useHintZones } from './use-hint-zones.js';
 import { useReviewKeys } from './use-review-keys.js';
 import { useDraftSync } from './use-draft-sync.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { composerLiveStore } from '../../stores/ui/composer-live.js';
+import { stopStore } from '../../stores/workflow/stop.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
 
@@ -44,10 +47,22 @@ function promptColorForMode(mode: InputMode, theme: Pick<Theme, 'text' | 'warnin
   return theme.text;
 }
 
-function placeholderForMode(mode: InputMode, hint?: string): string {
-  if (hint) return hint;
-  if (mode === 'review') return 'approve, comment, or edit…';
-  if (mode === 'question') return 'type your answer…';
+function placeholderForMode(input: {
+  mode: InputMode;
+  running: boolean;
+  stopping: boolean;
+  hint?: string | undefined;
+}): string {
+  if (input.hint) return input.hint;
+  // The gate panel above owns approve, edit and reject; the composer only ever takes the comment.
+  if (input.mode === 'review') return 'type a comment…';
+  if (input.mode === 'question') return 'type your answer…';
+  // A run being torn down takes no new work, and the legend row above already says so; repeating
+  // an invitation to queue here would contradict it.
+  if (input.stopping) return '';
+  // While a brief is building, anything typed here waits for the boundary. The placeholder says so
+  // rather than inviting a change the run will not pick up now.
+  if (input.running) return 'Queue a message for after this brief…';
   return 'Describe a change…';
 }
 
@@ -67,6 +82,8 @@ interface ComposerProps {
   width?: number;
   disabled?: boolean;
   submitKeepsDraft?: boolean;
+  /** Home keeps its example under the caret; a chat input hides it the moment it is focused. */
+  keepPlaceholderWhileFocused?: boolean | undefined;
   promptGlyph?: string | undefined;
   homeHint?: string | undefined;
   boxHints?: ComposerBoxHints | undefined;
@@ -97,6 +114,7 @@ export function Composer({
   mode,
   hint,
   currentScreen,
+  keepPlaceholderWhileFocused,
   width,
   disabled,
   submitKeepsDraft,
@@ -305,6 +323,8 @@ export function Composer({
         maxVisible: referenceSuggestionsCap,
       })
     : 0;
+  const lifecycleRunning = lifecycleStore.use((state) => state.status === 'running');
+  const stopping = stopStore.use((state) => state.intent !== 'none');
   const reserveHomeHint = currentScreen === 'home';
   const { feedbackLine, homeHintLine } = deriveHomeHintLines({
     active: reserveHomeHint && !showCommandSuggestions && !showReferenceSuggestions,
@@ -318,6 +338,12 @@ export function Composer({
     inputHeightStore.setRows(visibleRows + 2 + chipRows);
   }, [visibleRows, chipRows]);
 
+  // The app-level esc ladder decides between the stop sheet and a protected draft, and it reads
+  // keys outside this component, so what is typed here has to be published.
+  useEffect(() => {
+    composerLiveStore.setEmpty(textDraftEmpty);
+  }, [textDraftEmpty]);
+
   const completionOpen = showCommandSuggestions || showReferenceSuggestions;
   useEffect(() => {
     completionStore.setOpen(completionOpen);
@@ -327,7 +353,7 @@ export function Composer({
   return (
     <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
       {reserveHomeHint && (
-        <Box justifyContent="center" height={1}>
+        <Box height={1}>
           {feedbackLine !== null ? (
             <Text color={feedbackIsError ? theme.error : theme.textDim} wrap="truncate-end">
               {feedbackLine}
@@ -366,7 +392,13 @@ export function Composer({
               isActive={!disabled && (!briefFocusHeld || mode === 'review')}
               shouldHandleInput={shouldHandleComposerInput}
               onInputAccepted={handleComposerInputAccepted}
-              placeholder={placeholderForMode(mode, hint)}
+              placeholder={placeholderForMode({
+                mode,
+                running: lifecycleRunning,
+                stopping,
+                hint,
+              })}
+              keepPlaceholderWhileFocused={keepPlaceholderWhileFocused === true || lifecycleRunning}
               rows={1}
               maxRows={6}
               onVisibleRowsChange={setVisibleRows}

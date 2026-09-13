@@ -5,11 +5,7 @@ import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types
 import { createChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './pipeline/run.js';
 import { processError } from '../../lib/process/errors.js';
-import {
-  CLI_NO_DEADLINE_MS,
-  invokeCliAdapter,
-  toCliEnvironment,
-} from '../runners/invoke-cli-adapter.js';
+import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
 import { CLI_PROMPT_SENTINEL } from '../runners/cli-tools/candidate-contract.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
@@ -29,6 +25,9 @@ import {
 import { collectTrackedFiles } from '../snapshots/files.js';
 import { getCurrentChangedFiles } from '../../lib/git/files.js';
 import { isInternalGitStatusPath } from '../../core/paths.js';
+import { taskFiles, type Task } from '../../core/schemas/task.js';
+import { undeclaredFiles } from '../../core/scope/declared-set.js';
+import { TIMEOUTS } from '../../core/pipeline-spec/timeouts.js';
 
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
@@ -39,7 +38,7 @@ function cliNotFoundMessage(displayName: string, installUrl: string): string {
 /**
  * The files the child changed since the baseline. Git-status diffs drop
  * internal sandbox/state paths, matching the isolation retention scan, and the
- * declared file is judged by content so a file that was already dirty before
+ * declared files are judged by content so a file that was already dirty before
  * the call still counts as changed; the file-hashes branch re-walks the project
  * so files created or deleted since the baseline count as changes, mirroring
  * the shared detector.
@@ -47,17 +46,20 @@ function cliNotFoundMessage(displayName: string, installUrl: string): string {
 async function changedFilesSince(
   projectDir: string,
   baseline: ChangeDetectorBaseline,
-  declared: { file: string; hash: string | null },
+  declared: { files: readonly string[]; hashes: Record<string, string | null> },
 ): Promise<string[]> {
   if (baseline.kind === 'git-status') {
     const current = (await getCurrentChangedFiles(projectDir)).filter(
       (file) => !isInternalGitStatusPath(file),
     );
     const beforeSet = new Set(baseline.files);
-    const others = current.filter((file) => !beforeSet.has(file) && file !== declared.file);
-    const after = await hashFiles(projectDir, [declared.file]);
-    const declaredChanged = (after[declared.file] ?? null) !== declared.hash;
-    return declaredChanged ? [declared.file, ...others] : others;
+    const declaredSet = new Set(declared.files);
+    const others = current.filter((file) => !beforeSet.has(file) && !declaredSet.has(file));
+    const after = await hashFiles(projectDir, [...declared.files]);
+    const changedDeclared = declared.files.filter(
+      (file) => (after[file] ?? null) !== declared.hashes[file],
+    );
+    return [...changedDeclared, ...others];
   }
   const files = await collectTrackedFiles(projectDir, {
     ignoreProjectDir: baseline.ignoreProjectDir,
@@ -68,14 +70,15 @@ async function changedFilesSince(
 }
 
 /**
- * REQ-048 exact-effect gate: a direct-write CLI implementer succeeds only when
- * the child changed exactly the task's declared file. Nothing changed is a
- * no-staged-change failure; anything else — an unrelated file, the declared
- * file plus extras, or a wrong target — is an exact-effect failure. The
- * failure keeps the completed call's evidence (text, usage, session) while
- * carrying the stable effect code.
+ * REQ-016 declared-effect gate: a direct-write CLI implementer succeeds when
+ * the child changed something and every changed path is in the brief's
+ * declared set — its `files` plus the paths its Scope names under In bounds or
+ * Approved out of bounds. Nothing changed is a no-staged-change failure; a
+ * write outside the set is an effect failure unless the caller gates those
+ * elsewhere. The failure keeps the completed call's evidence (text, usage,
+ * session) while carrying the stable effect code.
  */
-function exactEffectFailure(
+function declaredEffectFailure(
   result: RunnerCallResult,
   code: 'no-staged-change' | 'implementer-effect-invalid',
   message: string,
@@ -83,24 +86,27 @@ function exactEffectFailure(
   return { ...result, status: 'failed', error: { code, message }, partial: true };
 }
 
-function assertExactEffect(input: {
+function assertDeclaredEffect(input: {
   result: RunnerCallResult;
   changed: readonly string[];
-  declaredFile: string;
+  task: Task;
   label: string;
+  undeclaredWrites: 'reject' | 'gate';
 }): RunnerCallResult {
   if (input.changed.length === 0) {
-    return exactEffectFailure(
+    return declaredEffectFailure(
       input.result,
       'no-staged-change',
       `${input.label} exited without changing any files`,
     );
   }
-  if (input.changed.length !== 1 || input.changed[0] !== input.declaredFile) {
-    return exactEffectFailure(
+  const undeclared =
+    input.undeclaredWrites === 'reject' ? undeclaredFiles(input.changed, input.task) : [];
+  if (undeclared.length > 0) {
+    return declaredEffectFailure(
       input.result,
       'implementer-effect-invalid',
-      `${input.label} changed ${input.changed.join(', ')} instead of exactly ${input.declaredFile}`,
+      `${input.label} wrote outside the brief's declared files: ${undeclared.join(', ')}`,
     );
   }
   return input.result;
@@ -128,7 +134,7 @@ export function createCliImplementer(
     descriptor.displayName,
     descriptor.compatibility.installUrl,
   );
-  const timeout = config.timeout;
+  const deadlineMs = config.timeout ?? TIMEOUTS.implementerMs;
   const runnerLabel = `Tool implementer (${toolName})`;
 
   return createImplementerBase({
@@ -139,17 +145,14 @@ export function createCliImplementer(
     async invoke(opts: InvokeOpts) {
       const { prompt, projectDir, onOutput, signal, callContext } = opts;
       const effectiveModel = resolveCliModel(config.model, toolName);
-      const timeoutSignal = timeout !== undefined ? AbortSignal.timeout(timeout) : undefined;
-      const composedSignal =
-        signal && timeoutSignal
-          ? AbortSignal.any([signal, timeoutSignal])
-          : (timeoutSignal ?? signal);
+      const timeoutSignal = AbortSignal.timeout(deadlineMs);
+      const composedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
       const env =
         opts.sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, config, 'implementer'));
       const adapter = resolveImplementerAdapter(toolName, config.outputFormat);
       const effectBaseline = await captureChangeDetectorBaseline(projectDir);
-      const declaredFileHash =
-        (await hashFiles(projectDir, [opts.task.file]))[opts.task.file] ?? null;
+      const declaredPaths = [...taskFiles(opts.task)];
+      const declaredHashes = await hashFiles(projectDir, declaredPaths);
 
       try {
         let executable: CliExecutableIdentity;
@@ -187,7 +190,7 @@ export function createCliImplementer(
             promptTransport: adapter.promptTransport,
             environment: toCliEnvironment(env),
             cwd: projectDir,
-            timeoutMs: timeout ?? CLI_NO_DEADLINE_MS,
+            timeoutMs: deadlineMs,
             signal: composedSignal,
           },
           prompt,
@@ -199,33 +202,34 @@ export function createCliImplementer(
             killMs: config.idleKillMs,
           },
         });
-        if (timeout !== undefined && timeoutSignal?.aborted && !signal?.aborted) {
+        if (timeoutSignal.aborted && !signal?.aborted) {
           throw processError.timeout({
             command: runnerLabel,
             label: runnerLabel,
-            timeoutMs: timeout,
+            timeoutMs: deadlineMs,
             output: result.text,
           });
         }
         if (result.status === 'completed') {
           const changed = await changedFilesSince(projectDir, effectBaseline, {
-            file: opts.task.file,
-            hash: declaredFileHash,
+            files: declaredPaths,
+            hashes: declaredHashes,
           });
-          return assertExactEffect({
+          return assertDeclaredEffect({
             result,
             changed,
-            declaredFile: opts.task.file,
+            task: opts.task,
             label: runnerLabel,
+            undeclaredWrites: opts.undeclaredWrites ?? 'reject',
           });
         }
         return result;
       } catch (err: unknown) {
-        if (timeout !== undefined && timeoutSignal?.aborted && !signal?.aborted) {
+        if (timeoutSignal.aborted && !signal?.aborted) {
           throw processError.timeout({
             command: runnerLabel,
             label: runnerLabel,
-            timeoutMs: timeout,
+            timeoutMs: deadlineMs,
             output: '',
           });
         }

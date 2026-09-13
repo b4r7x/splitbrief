@@ -1,12 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { getHomeLayout } from './layout.js';
+import { getHomeLayout, homeLead } from './layout.js';
+
+describe('homeLead', () => {
+  it('states the whole run at every catalogued viewport instead of a cut sentence', () => {
+    for (const cols of [120, 80, 60]) {
+      const { width } = getHomeLayout({ cols, rows: 40 });
+      const lead = homeLead(width);
+      expect(lead.length).toBeLessThanOrEqual(width);
+      expect(lead.startsWith('Describe a change.')).toBe(true);
+      expect(lead.endsWith('.')).toBe(true);
+    }
+  });
+
+  it('keeps the briefs and the diff in the sentence where they fit', () => {
+    expect(homeLead(108)).toContain('small briefs');
+    expect(homeLead(108)).toContain('reviews the diff');
+    expect(homeLead(76)).toContain('reviews the diff');
+    expect(homeLead(56)).toContain('reviews');
+  });
+});
 
 describe('getHomeLayout', () => {
   it('sizes the dock and body to one wide overlay budget on tall terminals', () => {
     const layout = getHomeLayout({ cols: 160, rows: 42 });
     expect(layout).toMatchObject({
       width: 108,
-      logoTier: 'full',
       inputBottomMargin: 2,
     });
   });
@@ -18,37 +36,30 @@ describe('getHomeLayout', () => {
   });
 
   it('budgets session rows against the seat block at each catalogued viewport', () => {
-    expect(getHomeLayout({ cols: 120, rows: 40 }).recentSessionLimit).toBe(18);
-    expect(getHomeLayout({ cols: 80, rows: 24 }).recentSessionLimit).toBe(5);
-    expect(getHomeLayout({ cols: 60, rows: 18 }).recentSessionLimit).toBe(2);
+    expect(getHomeLayout({ cols: 120, rows: 40 }).recentSessionLimit).toBe(21);
+    expect(getHomeLayout({ cols: 80, rows: 24 }).recentSessionLimit).toBe(8);
+    expect(getHomeLayout({ cols: 60, rows: 18 }).recentSessionLimit).toBe(4);
   });
 
-  it('keeps medium terminals on the full logo', () => {
+  it('keeps the same dock margin on medium terminals', () => {
     expect(getHomeLayout({ cols: 100, rows: 32 })).toMatchObject({
       width: 90,
-      logoTier: 'full',
       inputBottomMargin: 1,
     });
   });
 
-  it('uses the compact logo on shorter terminals', () => {
+  it('drops the dock margin on shorter terminals', () => {
     expect(getHomeLayout({ cols: 80, rows: 20 })).toMatchObject({
       width: 76,
-      logoTier: 'compact',
       inputBottomMargin: 0,
     });
-  });
-
-  it('falls back to the compact logo when the full wordmark cannot fit', () => {
-    const layout = getHomeLayout({ cols: 50, rows: 30 });
-    expect(layout.logoTier).toBe('compact');
   });
 
   it('budgets two body gap rows at narrow and wide layouts', () => {
     const narrow = getHomeLayout({ cols: 80, rows: 18 });
     const wide = getHomeLayout({ cols: 120, rows: 18 });
-    expect(narrow.recentSessionLimit).toBe(2);
-    expect(wide.recentSessionLimit).toBe(1);
+    expect(narrow.recentSessionLimit).toBe(4);
+    expect(wide.recentSessionLimit).toBe(3);
   });
 
   it('does not allocate sessions when the body gaps consume a short terminal', () => {
@@ -57,7 +68,7 @@ describe('getHomeLayout', () => {
       rows: 16,
       sessionCount: 2,
     });
-    expect(layout.recentSessionLimit).toBe(0);
+    expect(layout.recentSessionLimit).toBe(2);
     expect(layout.showHiddenCount).toBe(false);
   });
 
@@ -96,7 +107,7 @@ describe('getHomeLayout', () => {
       rows: 18,
       sessionCount: 25,
     });
-    expect(layout.recentSessionLimit).toBe(1);
+    expect(layout.recentSessionLimit).toBe(3);
     expect(layout.showHiddenCount).toBe(true);
   });
 

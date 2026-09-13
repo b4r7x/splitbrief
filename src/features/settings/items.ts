@@ -18,8 +18,8 @@ export type SettingsItem =
   | Readonly<{ kind: 'setting'; def: SettingDef; key: string }>;
 
 const SEAT_DESCRIPTIONS: Readonly<Record<CrewSeatId, string>> = {
-  plan: 'Plans the work and compiles every brief; the review seat runs this same setup while it inherits it.',
-  build: 'Executes the briefs the planner compiles; this is the seat that writes the code.',
+  plan: 'Plans the work and writes every Task Brief; the review seat inherits this setup when it has none of its own.',
+  build: 'Executes the briefs the planner writes; this is the seat that changes the code.',
   review: "Reads the diff after every task; with no tool of its own it runs the planner's setup.",
 };
 

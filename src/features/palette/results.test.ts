@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { buildPaletteResults } from './results.js';
-import type { PaletteAction, PaletteInputs } from './results.js';
+import type { PaletteAction, PaletteInputs, PaletteResult, PaletteSource } from './results.js';
 
 const noop = () => {};
 const run: PaletteAction = { kind: 'run', run: noop };
@@ -9,6 +9,7 @@ function makeInputs(overrides: Partial<PaletteInputs> = {}): PaletteInputs {
   return {
     query: '',
     commandItems: [],
+    skillItems: [],
     taskItems: [],
     sessionItems: [],
     customItems: [],
@@ -235,5 +236,75 @@ describe('buildPaletteResults', () => {
     );
 
     expect(commandItems.map((item) => item.label)).toEqual(originalOrder);
+  });
+
+  it('ranks a skill row beside the command rows in its category', () => {
+    const toggle = vi.fn();
+    const results = buildPaletteResults(
+      makeInputs({
+        query: 'layout',
+        commandItems: [
+          {
+            label: '/skills',
+            description: 'Attach project skills',
+            hint: null,
+            shortcut: null,
+            category: 'navigate',
+            action: run,
+          },
+        ],
+        skillItems: [
+          {
+            id: 'terminal-layout',
+            label: 'Skill · Terminal layout',
+            description: 'Check spacing and terminal-width behavior',
+            hint: 'attached',
+            category: 'navigate',
+            action: { kind: 'run', run: toggle },
+          },
+        ],
+      }),
+    );
+
+    expect(results.map((result) => result.id)).toEqual(['skill:terminal-layout']);
+    expect(results[0]).toMatchObject({ source: 'skill', category: 'navigate', hint: 'attached' });
+
+    const action = results[0]?.action;
+    if (action?.kind === 'run') void action.run();
+    expect(toggle).toHaveBeenCalledOnce();
+  });
+
+  it('exports a source union that covers every source a result carries', () => {
+    const results = buildPaletteResults(
+      makeInputs({
+        commandItems: [
+          {
+            label: '/skills',
+            description: 'Attach project skills',
+            hint: null,
+            shortcut: null,
+            category: 'navigate',
+            action: run,
+          },
+        ],
+        skillItems: [
+          {
+            id: 'terminal-layout',
+            label: 'Skill · Terminal layout',
+            description: 'Check spacing',
+            hint: null,
+            category: 'navigate',
+            action: run,
+          },
+        ],
+        taskItems: [{ id: 'T-001', title: 'Fix bug', action: noop }],
+        sessionItems: [{ id: 'S-001', feature: 'Auth', status: 'running', action: noop }],
+        customItems: [{ id: 'C-001', label: 'Deploy', description: '', action: noop }],
+      }),
+    );
+
+    const sources: PaletteSource[] = results.map((result) => result.source);
+    expect(sources).toEqual(['command', 'skill', 'task', 'session', 'custom']);
+    expectTypeOf<PaletteResult['source']>().toEqualTypeOf<PaletteSource>();
   });
 });

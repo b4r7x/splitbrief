@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
-import { adviseMode, formatAdvisoryText, type AdvisorResult } from './mode-advisor.js';
+import {
+  adviseMode,
+  advisePlanSize,
+  formatAdvisoryText,
+  formatPlanAdviceText,
+  type AdvisorResult,
+} from './mode-advisor.js';
 
 describe('adviseMode — risk classification', () => {
   it('typo in standard suggests quick (downgrade)', () => {
@@ -180,5 +186,50 @@ describe('formatAdvisoryText', () => {
     const text = formatAdvisoryText(result);
     expect(text).toContain('advisor:');
     expect(text.length).toBeLessThan(80);
+  });
+
+  it('formats a stop advisory carried on the event with its plan factors', () => {
+    const result: AdvisorResult = {
+      kind: 'stop',
+      risk: 'normal',
+      currentMode: 'standard',
+      suggestedMode: 'standard',
+      confidence: 1,
+      factors: ['13 briefs over the 12 cap'],
+      missing: [],
+    };
+    expect(formatAdvisoryText(result)).toBe('advisor: 13 briefs over the 12 cap · split the work');
+  });
+});
+
+describe('advisePlanSize — thresholds from MODE_UPGRADE', () => {
+  it('six files upgrade quick to standard', () => {
+    const advice = advisePlanSize({ files: 6, briefs: 2 }, 'quick');
+    expect(advice.kind).toBe('upgrade');
+    expect(advice.suggestedMode).toBe('standard');
+  });
+
+  it('six briefs upgrade quick to standard', () => {
+    const advice = advisePlanSize({ files: 3, briefs: 6 }, 'quick');
+    expect(advice.kind).toBe('upgrade');
+    expect(advice.suggestedMode).toBe('standard');
+  });
+
+  it('a plan inside the quick thresholds advises nothing', () => {
+    const advice = advisePlanSize({ files: 5, briefs: 5 }, 'quick');
+    expect(advice.kind).toBe('none');
+    expect(formatPlanAdviceText(advice)).toBe('');
+  });
+
+  it('a brief count over the standard cap advises stopping in any mode', () => {
+    const advice = advisePlanSize({ files: 20, briefs: 13 }, 'standard');
+    expect(advice.kind).toBe('stop');
+    expect(advice.suggestedMode).toBe('standard');
+    expect(formatPlanAdviceText(advice)).toContain('split the work');
+  });
+
+  it('does not upgrade a standard plan that is only past the quick thresholds', () => {
+    const advice = advisePlanSize({ files: 6, briefs: 6 }, 'standard');
+    expect(advice.kind).toBe('none');
   });
 });

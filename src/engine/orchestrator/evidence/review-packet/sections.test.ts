@@ -6,7 +6,7 @@ import { createEvidenceLedger } from '../../../../core/evidence/ledger-state.js'
 import type { EvidenceLedger } from '../../../../core/schemas/evidence.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
-import { buildValidation } from './sections.js';
+import { buildChanges, buildValidation } from './sections.js';
 import { renderReviewPacketMarkdown } from './render.js';
 
 function stateWith(...tasks: ReturnType<typeof makeTask>[]): WorkflowState {
@@ -109,5 +109,22 @@ describe('buildValidation baselineExempt carry-through', () => {
 
     expect(rendered).toContain('T001 done: 1/2 validation stages passed');
     expect(rendered).toContain('1 baseline-exempt: lint');
+  });
+});
+
+describe('buildChanges declared files', () => {
+  it('task row carries files', () => {
+    const task = makeTask({ id: 'T001', file: 'src/a.ts', files: ['src/a.ts', 'src/a.test.ts'] });
+
+    const changes = buildChanges({
+      state: stateWith(task),
+      ledger: null,
+      drift: null,
+      changedFiles: ['src/a.ts', 'src/a.test.ts', 'src/other.ts'],
+    });
+
+    expect(changes.taskFiles[0]?.files).toEqual(['src/a.ts', 'src/a.test.ts']);
+    expect(changes.taskFiles[0]?.changedFiles).toEqual(['src/a.ts', 'src/a.test.ts']);
+    expect(changes.expectedFiles).toEqual(['src/a.test.ts', 'src/a.ts']);
   });
 });

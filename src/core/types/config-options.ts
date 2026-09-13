@@ -49,4 +49,5 @@ export interface WorkflowOpts {
   json?: boolean;
   plain?: boolean;
   yolo?: boolean;
+  skills?: string[];
 }

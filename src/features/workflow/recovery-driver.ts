@@ -195,7 +195,7 @@ export function createRecoveryDriver(
       return applyAction(selected);
     }
 
-    if (republishPrompt) publishRecoveryPrompted(bus, issue);
+    if (republishPrompt) publishRecoveryPrompted(bus, sessionId, issue);
 
     openRecoveryNotice(issue);
 

@@ -1,7 +1,7 @@
 .brief {
   position: absolute;
-  left: 40.75%;
-  top: 43%;
+  left: 360px;
+  top: 290px;
   z-index: 1;
   translate: -50% -50%;
   width: 162px;
@@ -10,8 +10,9 @@
   overflow: hidden;
   white-space: nowrap;
   border: 1px solid var(--hair-strong);
+  border-top: 2px solid var(--blue);
   box-shadow: var(--highlight);
-  background: var(--bg);
+  background: var(--panel);
   font-size: 15px;
   line-height: 20px;
   letter-spacing: 0;
@@ -62,7 +63,7 @@
 
 @container hero (max-width: 700px) {
   .brief {
-    left: 38%;
-    top: 35.7%;
+    left: 140px;
+    top: 455px;
   }
 }

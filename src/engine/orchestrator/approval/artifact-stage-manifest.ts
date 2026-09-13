@@ -6,13 +6,13 @@ import { dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path';
 import {
   DeclaredArtifactLeaseSchema,
   PlannerArtifactTransportSchema,
-  TaskCompilationAttemptIdSchema,
-  TaskCompilationBatchIdSchema,
-  TASK_BRIEF_COMPILER_POLICY,
-  TaskCompilationProgramIdSchema,
-  TaskCompilationSemanticIdSchema,
-  type TaskCompilationAttemptId,
-} from '../../../core/schemas/task-compilation.js';
+  PlannerArtifactAttemptIdSchema,
+  PlannerArtifactBatchIdSchema,
+  MAX_DECLARED_ARTIFACT_BYTES,
+  PlannerArtifactProgramIdSchema,
+  PlannerArtifactSemanticIdSchema,
+  type PlannerArtifactAttemptId,
+} from '../../../core/schemas/planner-artifact.js';
 import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../../lib/fs.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import type {
@@ -40,7 +40,7 @@ export const DECLARED_ARTIFACT_STAGE_MAX_BYTES = 1024 * 1024;
 
 const ARTIFACT_PARENT_SEGMENTS = ['.splitbrief-runner', 'output'] as const;
 const ARTIFACT_SENTINEL = Buffer.from([0xff]);
-const DEFAULT_DECLARED_ARTIFACT_BOUND = TASK_BRIEF_COMPILER_POLICY.maxDeclaredArtifactBytes;
+const DEFAULT_DECLARED_ARTIFACT_BOUND = MAX_DECLARED_ARTIFACT_BYTES;
 
 type ArtifactFileHandle = Awaited<ReturnType<typeof open>>;
 
@@ -258,10 +258,10 @@ function normalizePreparation(input: PrepareArtifactStageLeaseInput): LeasePrepa
 function parseArtifactProvenance(
   source: Readonly<Record<string, unknown>>,
 ): ArtifactLeaseProvenance {
-  const semanticId = TaskCompilationSemanticIdSchema.safeParse(source.semanticId);
-  const programId = parseNullableId(source.programId, TaskCompilationProgramIdSchema);
-  const batchId = parseNullableId(source.batchId, TaskCompilationBatchIdSchema);
-  const attemptId = TaskCompilationAttemptIdSchema.safeParse(source.attemptId);
+  const semanticId = PlannerArtifactSemanticIdSchema.safeParse(source.semanticId);
+  const programId = parseNullableId(source.programId, PlannerArtifactProgramIdSchema);
+  const batchId = parseNullableId(source.batchId, PlannerArtifactBatchIdSchema);
+  const attemptId = PlannerArtifactAttemptIdSchema.safeParse(source.attemptId);
   const transport = PlannerArtifactTransportSchema.safeParse(source.transport);
   if (
     !semanticId.success ||
@@ -330,7 +330,7 @@ function parseArtifactBound(value: unknown): number {
 function resolveDeclaredPath(input: {
   lease: { data: { path?: string | undefined; relativePath?: string | undefined } };
   leaseId: string;
-  attemptId: TaskCompilationAttemptId;
+  attemptId: PlannerArtifactAttemptId;
   declaredPath?: unknown;
 }): string {
   const { lease, leaseId, attemptId, declaredPath } = input;

@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -15,7 +16,30 @@ const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/u;
 const MAX_DESCRIPTION = 1024;
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?/u;
 const REFERENCE_RE = /references\/([A-Za-z0-9._-]+\.md)/gu;
+const SCRIPT_RE = /scripts\/([A-Za-z0-9._-]+)/gu;
 const GENERATED_RE = /<!-- generated: ([A-Za-z0-9:_-]+) -->\n([\s\S]*?)<!-- \/generated -->/gu;
+export const GENERATED_SH_RE = /# generated: ([A-Za-z0-9:_-]+)\n([\s\S]*?)# \/generated/gu;
+
+/** The one skill that owns `scripts/`; every other skill mirrors from it. */
+const SCRIPT_SOURCE_SKILL = 'splitbrief-run';
+
+type GeneratedSyntax = Readonly<{
+  re: RegExp;
+  open: (id: string) => string;
+  close: string;
+}>;
+
+const MARKDOWN_GENERATED: GeneratedSyntax = {
+  re: GENERATED_RE,
+  open: (id) => `<!-- generated: ${id} -->`,
+  close: '<!-- /generated -->',
+};
+
+const SHELL_GENERATED: GeneratedSyntax = {
+  re: GENERATED_SH_RE,
+  open: (id) => `# generated: ${id}`,
+  close: '# /generated',
+};
 
 export type Frontmatter = {
   name: string;
@@ -84,19 +108,28 @@ export function validateFrontmatter(skill: string, fm: Frontmatter | null): Skil
   return issues;
 }
 
-export function mentionedReferences(body: string): string[] {
-  return [...new Set([...body.matchAll(REFERENCE_RE)].map((m) => m[1] ?? ''))]
+function mentioned(body: string, pattern: RegExp): string[] {
+  return [...new Set([...body.matchAll(pattern)].map((m) => m[1] ?? ''))]
     .filter((file) => file.length > 0)
     .sort();
+}
+
+export function mentionedReferences(body: string): string[] {
+  return mentioned(body, REFERENCE_RE);
+}
+
+export function mentionedScripts(body: string): string[] {
+  return mentioned(body, SCRIPT_RE);
 }
 
 export function renderGeneratedRegions(
   text: string,
   render: RenderBlock,
+  syntax: GeneratedSyntax = MARKDOWN_GENERATED,
 ): { text: string; unknown: string[]; changed: string[] } {
   const unknown: string[] = [];
   const changed: string[] = [];
-  const next = text.replace(GENERATED_RE, (match, id: string, current: string) => {
+  const next = text.replace(syntax.re, (match, id: string, current: string) => {
     const rendered = render(id);
     if (rendered === null) {
       unknown.push(id);
@@ -104,7 +137,7 @@ export function renderGeneratedRegions(
     }
     const body = `${rendered}\n`;
     if (body !== current) changed.push(id);
-    return `<!-- generated: ${id} -->\n${body}<!-- /generated -->`;
+    return `${syntax.open(id)}\n${body}${syntax.close}`;
   });
   return { text: next, unknown, changed };
 }
@@ -123,39 +156,96 @@ function skillDirs(root: string): string[] {
     .sort();
 }
 
-function readIfExists(path: string): string | null {
-  return existsSync(path) ? readFileSync(path, 'utf8') : null;
-}
-
 function libraryDirOf(root: string): string {
   return join(root, CANONICAL_SKILL, 'references');
 }
 
+function scriptDirOf(root: string): string {
+  return join(root, SCRIPT_SOURCE_SKILL, 'scripts');
+}
+
+/** A `scripts/<name>` mirror keeps its path; a reference mirror lands in the skill's `references/`. */
+function mirrorPaths(
+  root: string,
+  skill: string,
+  file: string,
+): { source: string; target: string } {
+  return file.startsWith('scripts/')
+    ? { source: join(root, SCRIPT_SOURCE_SKILL, file), target: join(root, skill, file) }
+    : { source: join(libraryDirOf(root), file), target: join(root, skill, 'references', file) };
+}
+
+function mirrorDrifted(source: string, target: string): boolean {
+  if (!existsSync(target)) return true;
+  if (readFileSync(target, 'utf8') !== readFileSync(source, 'utf8')) return true;
+  return (statSync(target).mode & 0o111) !== (statSync(source).mode & 0o111);
+}
+
+function listFiles(dir: string): string[] {
+  return existsSync(dir) ? readdirSync(dir).sort() : [];
+}
+
+type GeneratedFile = Readonly<{
+  skill: string;
+  name: string;
+  path: string;
+  syntax: GeneratedSyntax;
+}>;
+
+/** The canonical sources of generated regions: never a mirror, which `planSync` owns. */
+function generatedFiles(root: string): GeneratedFile[] {
+  const files: GeneratedFile[] = skillDirs(root).map((skill) => ({
+    skill,
+    name: 'SKILL.md',
+    path: join(root, skill, 'SKILL.md'),
+    syntax: MARKDOWN_GENERATED,
+  }));
+  for (const file of listMarkdown(libraryDirOf(root))) {
+    files.push({
+      skill: CANONICAL_SKILL,
+      name: `references/${file}`,
+      path: join(libraryDirOf(root), file),
+      syntax: MARKDOWN_GENERATED,
+    });
+  }
+  for (const file of listFiles(scriptDirOf(root))) {
+    files.push({
+      skill: SCRIPT_SOURCE_SKILL,
+      name: `scripts/${file}`,
+      path: join(scriptDirOf(root), file),
+      syntax: SHELL_GENERATED,
+    });
+  }
+  return files;
+}
+
 export function planGenerated(root: string, render: RenderBlock): GeneratedReport {
   const report: GeneratedReport = { issues: [], stale: [] };
-  const libraryDir = libraryDirOf(root);
-  for (const file of listMarkdown(libraryDir)) {
+  for (const file of generatedFiles(root)) {
     const { unknown, changed } = renderGeneratedRegions(
-      readFileSync(join(libraryDir, file), 'utf8'),
+      readFileSync(file.path, 'utf8'),
       render,
+      file.syntax,
     );
     for (const id of unknown) {
       report.issues.push({
-        skill: CANONICAL_SKILL,
-        message: `references/${file} has no renderer for generated block "${id}"`,
+        skill: file.skill,
+        message: `${file.name} has no renderer for generated block "${id}"`,
       });
     }
-    for (const id of changed) report.stale.push(`${CANONICAL_SKILL}/references/${file}#${id}`);
+    for (const id of changed) report.stale.push(`${file.skill}/${file.name}#${id}`);
   }
   return report;
 }
 
 export function applyGenerated(root: string, render: RenderBlock): void {
-  const libraryDir = libraryDirOf(root);
-  for (const file of listMarkdown(libraryDir)) {
-    const path = join(libraryDir, file);
-    const { text, changed } = renderGeneratedRegions(readFileSync(path, 'utf8'), render);
-    if (changed.length > 0) writeFileSync(path, text);
+  for (const file of generatedFiles(root)) {
+    const { text, changed } = renderGeneratedRegions(
+      readFileSync(file.path, 'utf8'),
+      render,
+      file.syntax,
+    );
+    if (changed.length > 0) writeFileSync(file.path, text);
   }
 }
 
@@ -170,12 +260,35 @@ export function planSync(root: string): SyncReport {
     return report;
   }
   const library = new Set(listMarkdown(libraryDir));
+  const scripts = new Set(listFiles(scriptDirOf(root)));
   for (const skill of skillDirs(root)) {
     const text = readFileSync(join(root, skill, 'SKILL.md'), 'utf8');
     const fm = parseFrontmatter(text);
     report.issues.push(...validateFrontmatter(skill, fm));
     const body = text.replace(FRONTMATTER_RE, '');
     const mentioned = mentionedReferences(body);
+    if (skill !== SCRIPT_SOURCE_SKILL) {
+      const wanted = mentionedScripts(body);
+      for (const file of wanted) {
+        if (!scripts.has(file)) {
+          report.issues.push({
+            skill,
+            message: `scripts/${file} is not in the ${SCRIPT_SOURCE_SKILL} library`,
+          });
+          continue;
+        }
+        report.actions.push({ skill, file: `scripts/${file}`, kind: 'copy' });
+        const paths = mirrorPaths(root, skill, `scripts/${file}`);
+        if (mirrorDrifted(paths.source, paths.target)) {
+          report.drift.push(`${skill}/scripts/${file}`);
+        }
+      }
+      for (const file of listFiles(join(root, skill, 'scripts'))) {
+        if (wanted.includes(file)) continue;
+        report.actions.push({ skill, file: `scripts/${file}`, kind: 'stale' });
+        report.drift.push(`${skill}/scripts/${file}`);
+      }
+    }
     if (skill === CANONICAL_SKILL) {
       for (const file of library) {
         if (!mentioned.includes(file)) {
@@ -194,8 +307,7 @@ export function planSync(root: string): SyncReport {
         continue;
       }
       report.actions.push({ skill, file, kind: 'copy' });
-      const source = readFileSync(join(libraryDir, file), 'utf8');
-      if (readIfExists(join(mirrorDir, file)) !== source) {
+      if (mirrorDrifted(join(libraryDir, file), join(mirrorDir, file))) {
         report.drift.push(`${skill}/references/${file}`);
       }
     }
@@ -210,15 +322,15 @@ export function planSync(root: string): SyncReport {
 }
 
 export function applySync(root: string, report: SyncReport): void {
-  const libraryDir = libraryDirOf(root);
   for (const action of report.actions) {
-    const target = join(root, action.skill, 'references', action.file);
+    const { source, target } = mirrorPaths(root, action.skill, action.file);
     if (action.kind === 'stale') {
       rmSync(target, { force: true });
       continue;
     }
     mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, readFileSync(join(libraryDir, action.file), 'utf8'));
+    writeFileSync(target, readFileSync(source, 'utf8'));
+    chmodSync(target, statSync(source).mode);
   }
 }
 
@@ -248,7 +360,8 @@ export function runSyncCli(
   }
   applySync(root, report);
   for (const action of report.actions) {
-    log(`  ${action.kind === 'copy' ? '→' : '−'} ${action.skill}/references/${action.file}`);
+    const label = action.file.startsWith('scripts/') ? action.file : `references/${action.file}`;
+    log(`  ${action.kind === 'copy' ? '→' : '−'} ${action.skill}/${label}`);
   }
   log(issues === 0 ? 'skills: synced' : `skills: synced with ${issues} issue(s)`);
   return issues === 0 ? 0 : 1;

@@ -32,14 +32,15 @@ Lifecycle events fire during a workflow. Each can have multiple hooks declared.
 | Event            | When                                        | Payload (event fields)                                              |
 |------------------|---------------------------------------------|----------------------------------------------------------------------|
 | `pre_planning`   | Before any planner phase starts             | `feature`                                                            |
-| `pre_task`       | Before each implementer task starts         | `taskId`, `title`, `file`, `action`, `index`, `total`                |
+| `pre_task`       | Before each implementer task starts         | `taskId`, `title`, `file`, `files`, `action`, `index`, `total`       |
 | `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `file`, `retries`, `duration`           |
 | `pre_validation` | Before tsc/lint/test runs                   | `taskId`                                                            |
 | `post_validation`| After validation finishes                   | `taskId`, `passed`, `stages` (`{typecheck,lint,test}`), `error?`     |
-| `pre_commit`     | Before optional product-level git commit    | `taskId`, `file`                                                     |
+| `pre_commit`     | Before optional product-level git commit    | `taskId`, `file`, `files`                                            |
 | `post_commit`    | After optional product-level git commit succeeds | `taskId`, `message`                                             |
 | `pre_escalation` | Before planner escalation runs              | `taskId`                                                             |
 | `on_error`       | Any unrecoverable engine error              | `message`                                                            |
+| `on_halt`        | `recovery_prompted` event — the run stopped and is waiting for a decision | `reason`, `taskId`, `headline`, `recommendedAction`, `resumeCommand` (`sessionId` rides in `context`) |
 | `on_complete`    | `workflow_complete` event                   | (none)                                                               |
 
 `pre_*` hooks **block** the workflow until they finish. `post_*` and `on_*` hooks are fire-and-forget — failures log a warning but don't gate the flow.
@@ -93,7 +94,8 @@ args: ["${event.file}", "--task=${event.taskId}"]
 
 | Placeholder          | Available in events with that field    | Resolution                               |
 |----------------------|----------------------------------------|------------------------------------------|
-| `${event.file}`      | task_*, pre_commit                     | Project-relative path string             |
+| `${event.file}`      | task_*, pre_commit                     | Project-relative anchor path string      |
+| `${event.files}`     | pre_task, pre_commit                   | JSON-stringified array of the brief's declared paths |
 | `${event.taskId}`    | task_*, validate, escalate, git_commit | Branded TaskId string                    |
 | `${event.title}`     | task_started, task_completed           | Task description                         |
 | `${event.action}`    | task_started                           | `'create'` or `'modify'`                 |
@@ -102,6 +104,10 @@ args: ["${event.file}", "--task=${event.taskId}"]
 | `${event.feature}`   | workflow_started                       | The user's feature prompt                |
 | `${event.duration}`  | task_completed, validate               | Number (ms)                              |
 | `${event.method}`    | task_completed, task_tokens            | One of `'local'`, `'escalated-intermediate'`, `'escalated-hint'`, `'escalated-full'`, `'failed'`, `'skipped'` |
+| `${event.reason}`    | recovery_prompted                      | The halt's `RecoveryReason`, e.g. `'retry-exhausted'` |
+| `${event.headline}`  | recovery_prompted                      | The operator-facing sentence, e.g. `T003 exhausted its retries` |
+| `${event.recommendedAction}` | recovery_prompted              | The `RecoveryAction` the halt recommends |
+| `${event.resumeCommand}` | recovery_prompted                  | The command that carries the run on, e.g. `splitbrief continue <id> --action retry` |
 
 Missing fields collapse to empty string. Object/array values are JSON-stringified. Placeholder values are secret-redacted and bounded before substitution; oversized strings are truncated with a placeholder. **No `eval`** — substitution is regex-based.
 
@@ -116,14 +122,15 @@ Which placeholders resolve depends on the event type. Missing fields collapse to
 | Event             | Resolvable placeholders                                                           |
 |-------------------|-----------------------------------------------------------------------------------|
 | `pre_planning`    | `${event.feature}`, `${event.ts}`, `${event.phase}`, `${event.type}`              |
-| `pre_task`        | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.action}`, `${event.index}`, `${event.total}` |
+| `pre_task`        | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.files}`, `${event.action}`, `${event.index}`, `${event.total}` |
 | `post_task`       | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.method}`, `${event.retries}`, `${event.duration}` |
 | `pre_validation`  | `${event.taskId}`                                                                 |
 | `post_validation` | `${event.taskId}`, `${event.stages}`, `${event.passed}`, `${event.error}`         |
-| `pre_commit`      | `${event.taskId}`, `${event.file}`                                                |
+| `pre_commit`      | `${event.taskId}`, `${event.file}`, `${event.files}`                              |
 | `post_commit`     | `${event.taskId}`, `${event.file}`, `${event.message}`                            |
 | `pre_escalation`  | `${event.taskId}`                                                                 |
 | `on_error`        | `${event.message}`                                                                |
+| `on_halt`         | `${event.reason}`, `${event.taskId}`, `${event.headline}`, `${event.recommendedAction}`, `${event.resumeCommand}` |
 | `on_complete`     | `${event.ts}`, `${event.phase}`, `${event.type}`                                 |
 
 ## Subprocess protocol

@@ -47,9 +47,11 @@ const SCREEN_CASES: readonly FixtureCase[] = [
   { scenarioId: 'setup-initial', factory: createSetupFixture },
 ];
 
-// The reviewer picker opens on the inherit row, so its scenario is named for that state.
+// The reviewer picker opens on the inherit row, so its scenario is named for that state, and the
+// stop sheet is named for the run it stops rather than for the overlay it rides in.
 const OVERLAY_SCENARIO_IDS: Partial<Record<(typeof ACTIVE_OVERLAYS)[number], string>> = {
   'reviewer-picker': 'overlay-reviewer-picker-inherited',
+  'stop-sheet': 'workflow-stop-sheet',
 };
 
 const OVERLAY_CASES: readonly FixtureCase[] = ACTIVE_OVERLAYS.map((overlay) => {

@@ -6,6 +6,7 @@ import { cliError } from '../errors.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
 import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
 import { sessionDir } from '../../core/paths.js';
+import { emitRecoveryAndFailIfPending, recordWriterFor } from '../headless.js';
 import { resumeSavedSession } from './continue/resume.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
@@ -55,6 +56,16 @@ export async function resumeCommand(
     throw cliError(
       `session '${sessionId}' has no usable state.json — cannot resume. Start a new workflow with \`splitbrief start\`.`,
     );
+  }
+
+  // A halted session has nothing to resume until its recovery is answered. Headless
+  // says so — with the `continue --action …` line — instead of walking into preparation.
+  if (opts.json === true || opts.plain === true) {
+    emitRecoveryAndFailIfPending({
+      state: hydrated.state,
+      sessionId,
+      writeRecord: recordWriterFor(opts.plain === true),
+    });
   }
 
   await deps.resumeSavedSession({ projectDir, sessionId, state: hydrated.state, opts });

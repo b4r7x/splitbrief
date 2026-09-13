@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { buildSummary } from './build.js';
-import type { BuildSummaryState } from './build.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
 
-function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
+type SummaryState = Parameters<typeof buildSummary>[0]['state'];
+
+function makeState(overrides?: Partial<SummaryState>): SummaryState {
   return {
     tasks: [
       makeTask({ id: 'T001', status: 'done' }),
@@ -14,6 +15,8 @@ function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
       makeTask({ id: 'T003', status: 'done' }),
     ],
     tokenUsage: makeUsage(),
+    phase: 'complete',
+    currentTaskIndex: 0,
     ...overrides,
   };
 }
@@ -233,7 +236,7 @@ describe('buildSummary', () => {
     };
     const summary = buildSummary({
       feature: 'cost prediction',
-      state: { tasks: [], tokenUsage: makeUsage() },
+      state: makeState({ tasks: [] }),
       startTime: Date.now(),
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
@@ -321,7 +324,7 @@ describe('buildSummary taskBreakdown', () => {
   it('preserves task breakdown prose', () => {
     const summary = buildSummary({
       feature: 'kept',
-      state: { tasks: [makeTask({ id: 'T001', status: 'done' })], tokenUsage: makeUsage() },
+      state: makeState({ tasks: [makeTask({ id: 'T001', status: 'done' })] }),
       startTime: Date.now(),
       taskBreakdowns: breakdownWithProse(),
       plannerTool: 'claude-code',

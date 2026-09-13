@@ -16,6 +16,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
+import { skillsStore } from '../../stores/project/skills.js';
 import { buildPaletteSources } from './sources.js';
 
 const noop = () => {};
@@ -232,6 +233,74 @@ describe('buildPaletteSources registry rows', () => {
     for (const mode of WORKFLOW_MODES) {
       expect(items.some((item) => item.label === mode)).toBe(false);
     }
+  });
+});
+
+function buildSkillRows() {
+  return buildPaletteSources({
+    commands: [],
+    screen: 'home',
+    config: makeConfig(),
+    phase: 'idle',
+    tasks: [],
+    sessions: [],
+    projectDir: '/tmp/splitbrief-test',
+    onRuntimeCommand: noop,
+    onSessionSelect: noopSessionSelect,
+  }).skillItems;
+}
+
+describe('buildPaletteSources skill rows', () => {
+  beforeEach(() => {
+    skillsStore.reset();
+    skillsStore.setAvailable([
+      {
+        id: 'terminal-layout',
+        name: 'Terminal layout',
+        description: 'Check spacing and terminal-width behavior',
+        path: 'fixtures/skills/terminal-layout/SKILL.md',
+        scope: 'project',
+      },
+      {
+        id: 'release-checks',
+        name: 'Release checks',
+        description: 'Run deterministic quality gates',
+        path: 'fixtures/skills/release-checks/SKILL.md',
+        scope: 'global',
+      },
+    ]);
+    skillsStore.setSelected(new Set(['terminal-layout']));
+  });
+
+  afterEach(() => {
+    skillsStore.reset();
+  });
+
+  it('renders one row per discovered skill and marks the attached one', () => {
+    const rows = buildSkillRows();
+
+    expect(rows.map((row) => row.label)).toEqual([
+      'Skill · Terminal layout',
+      'Skill · Release checks',
+    ]);
+    expect(rows.map((row) => row.hint)).toEqual(['attached', null]);
+    expect(rows[0]).toMatchObject({
+      id: 'terminal-layout',
+      description: 'Check spacing and terminal-width behavior',
+      category: 'navigate',
+    });
+  });
+
+  it('toggles the skill selection when a row runs', () => {
+    const rows = buildSkillRows();
+
+    const attach = rows[1]?.action;
+    if (attach?.kind === 'run') void attach.run();
+    expect([...skillsStore.get().selected].sort()).toEqual(['release-checks', 'terminal-layout']);
+
+    const detach = buildSkillRows()[0]?.action;
+    if (detach?.kind === 'run') void detach.run();
+    expect([...skillsStore.get().selected]).toEqual(['release-checks']);
   });
 });
 

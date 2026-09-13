@@ -4,15 +4,6 @@ import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableReceipt } from '../../../src/core/discovery/detection.js';
 import type { CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
-import {
-  admitCompilerCapability,
-  type CompilerCapabilityTuple,
-} from '../../../src/engine/runners/compiler-capability.js';
-import {
-  capabilityTuple,
-  COMPILER_FIXTURE_DATE,
-  conformanceProof,
-} from '#testing/helpers/factories/compiler-capability.js';
 import { createPlanner } from '../../../src/engine/runners/factory.js';
 import { codexPlannerAdapter } from '../../../src/engine/runners/cli-tools/codex.js';
 import { opencodePlannerAdapter } from '../../../src/engine/runners/cli-tools/opencode.js';
@@ -32,59 +23,6 @@ import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/hel
 const SENTINEL = 'final-\u03b1\u03b2-\u2713-\ud83d\ude80-matrix-sentinel';
 const DRAFT = 'draft bytes before the final group';
 const SESSION_ID = '00000000-0000-4000-8000-000000000000';
-
-function opencodeTuple(
-  overrides: Readonly<Partial<CompilerCapabilityTuple>> = {},
-): CompilerCapabilityTuple {
-  return capabilityTuple('opencode', overrides);
-}
-
-const CONFORMANCE_GATED_ROWS = [
-  {
-    backend: 'claude-code',
-    version: '2.1.232',
-    transport: 'stdout-final',
-    terminalContract: 'claude-terminal-result-v1',
-    credentialChannel: 'api-key',
-  },
-  {
-    backend: 'codex',
-    version: '0.147.0',
-    transport: 'declared-file',
-    terminalContract: 'codex-output-last-message-v1',
-    credentialChannel: 'api-key',
-  },
-  {
-    backend: 'kilo-code',
-    version: '7.0.49',
-    transport: 'stdout-final',
-    terminalContract: 'kilo-final-message-v1',
-    credentialChannel: 'session-copy',
-  },
-  {
-    backend: 'api',
-    version: '',
-    transport: 'stdout-final',
-    terminalContract: 'provider-final-assistant-response-v1',
-    credentialChannel: 'api-key',
-  },
-  {
-    backend: 'custom-command',
-    version: '',
-    transport: 'stdout-final',
-    terminalContract: 'custom-command-final-response-v1',
-    credentialChannel: 'api-key',
-  },
-] as const;
-
-function gatedTuple(row: (typeof CONFORMANCE_GATED_ROWS)[number]): CompilerCapabilityTuple {
-  return capabilityTuple(row.backend, {
-    version: row.version,
-    transport: row.transport,
-    terminalContract: row.terminalContract,
-    credentialChannel: row.credentialChannel,
-  });
-}
 
 function plannerAuthority(receipt: CliExecutableReceipt, tool: CliToolId, preparationId: string) {
   const slot = { role: 'planner' } as const;
@@ -120,82 +58,6 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
   });
 
   describe('mandatory OpenCode row (REQ-047, REQ-017, REQ-049)', () => {
-    it('admits the exact 1.18.15 tuple only with verified conformance and records exact non-secret evidence', () => {
-      const admission = admitCompilerCapability(opencodeTuple());
-      expect(admission).toMatchObject({
-        kind: 'admitted',
-        receipt: {
-          backend: 'opencode',
-          version: '1.18.15',
-          runtimeVersion: '1.18.15',
-          versionObservation: 'tested',
-          role: 'planner-read-only',
-          transport: 'stdout-final',
-          terminalContract: 'opencode-final-message-v1',
-          containmentProfile: 'seatbelt',
-          credentialChannel: 'session-copy',
-          envelopeVersion: 1,
-          fixtureDate: COMPILER_FIXTURE_DATE,
-        },
-      });
-      expect(admission).toMatchObject({
-        kind: 'admitted',
-        receipt: { capabilityDigest: expect.stringMatching(/^[a-f0-9]{64}$/) },
-      });
-      if (admission.kind === 'admitted') {
-        expect(Object.keys(admission.receipt).toSorted()).toEqual([
-          'backend',
-          'capabilityDigest',
-          'containmentProfile',
-          'credentialChannel',
-          'envelopeVersion',
-          'fixtureDate',
-          'role',
-          'runtimeVersion',
-          'terminalContract',
-          'transport',
-          'version',
-          'versionObservation',
-        ]);
-        expect(JSON.stringify(admission.receipt)).not.toMatch(/sk-[a-z0-9]{16,}/i);
-      }
-    });
-
-    it('refuses unverified conformance or invalid transport, but admits drifted version with drift receipt', () => {
-      expect(admitCompilerCapability(opencodeTuple({ version: '1.18.16' }))).toMatchObject({
-        kind: 'admitted',
-        receipt: {
-          backend: 'opencode',
-          version: '1.18.15',
-          runtimeVersion: '1.18.16',
-          versionObservation: 'drifted',
-        },
-      });
-      const refusedTransport = admitCompilerCapability(
-        opencodeTuple({ transport: 'declared-file' }),
-      );
-      expect(refusedTransport).toMatchObject({ kind: 'refused', missing: ['transport'] });
-      const refusedConformance = admitCompilerCapability(
-        opencodeTuple({ conformance: { ...conformanceProof(), roleVector: 'unverified' } }),
-      );
-      expect(refusedConformance).toMatchObject({ kind: 'refused', missing: ['conformance'] });
-      expect(admitCompilerCapability(opencodeTuple({ version: '1.19.0' }))).toMatchObject({
-        kind: 'admitted',
-        receipt: {
-          backend: 'opencode',
-          version: '1.18.15',
-          runtimeVersion: '1.19.0',
-          versionObservation: 'drifted',
-        },
-      });
-      if (refusedTransport.kind === 'refused') {
-        expect(refusedTransport.failure.code).toBe('task_compiler_capability_unsupported');
-      }
-      if (refusedConformance.kind === 'refused') {
-        expect(refusedConformance.failure.code).toBe('task_compiler_capability_unsupported');
-      }
-    });
-
     it('runs the planner through the production factory with the effective plan role and only the final group as content', async () => {
       const scenario = await effectScenario('capability-matrix-mandatory');
       try {
@@ -229,98 +91,6 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
         expect(invocation).not.toContain('--continue');
       } finally {
         await scenario.cleanup();
-      }
-    });
-  });
-
-  describe('conditional rows admit only complete exact evidence (REQ-016, REQ-047)', () => {
-    it.each(CONFORMANCE_GATED_ROWS)(
-      '$backend admits exact tuple with tested receipt, version drift with drifted receipt, and refuses unverified conformance',
-      (row) => {
-        const complete = admitCompilerCapability(gatedTuple(row));
-        expect(complete).toMatchObject({
-          kind: 'admitted',
-          receipt: {
-            backend: row.backend,
-            version: row.version,
-            runtimeVersion: row.version,
-            versionObservation: 'tested',
-            transport: row.transport,
-            terminalContract: row.terminalContract,
-            envelopeVersion: 1,
-            fixtureDate: COMPILER_FIXTURE_DATE,
-          },
-        });
-        expect(admitCompilerCapability({ ...gatedTuple(row), version: '9.9.9' })).toMatchObject({
-          kind: 'admitted',
-          receipt: {
-            backend: row.backend,
-            version: row.version,
-            runtimeVersion: '9.9.9',
-            versionObservation: 'drifted',
-            transport: row.transport,
-            terminalContract: row.terminalContract,
-            envelopeVersion: 1,
-            fixtureDate: COMPILER_FIXTURE_DATE,
-          },
-        });
-        const unverified = admitCompilerCapability({
-          ...gatedTuple(row),
-          conformance: { ...conformanceProof(), terminalProtocol: 'unverified' },
-        });
-        expect(unverified).toMatchObject({ kind: 'refused', missing: ['conformance'] });
-        if (unverified.kind === 'refused') {
-          expect(unverified.failure.code).toBe('task_compiler_capability_unsupported');
-        }
-      },
-    );
-  });
-
-  describe('zero-dispatch unsupported rows (REQ-016, REQ-018)', () => {
-    it('copilot and cursor planner rows refuse through the production factory with zero spawns', async () => {
-      for (const tool of ['copilot', 'cursor'] as const) {
-        const scenario = await effectScenario(`capability-matrix-unsupported-${tool}`);
-        try {
-          vi.stubEnv('PATH', `${scenario.toolsDir}${delimiter}${process.env.PATH ?? ''}`);
-          const markerPath = join(scenario.toolsDir, `${tool}-spawned.marker`);
-          const receipt = await fixtureExecutable({
-            directory: scenario.toolsDir,
-            body: `touch ${JSON.stringify(markerPath)}\nexit 0`,
-            name: tool,
-          });
-          const config = makeConfig({ planner: { kind: 'cli', tool } });
-          await expect(
-            createPlanner(config, {
-              preparedConfig: config,
-              ...plannerAuthority(receipt, tool, `unsupported-${tool}`),
-              initialSessionId: null,
-            }),
-          ).rejects.toMatchObject({ kind: 'task_compiler_capability_unsupported' });
-          expect(existsSync(markerPath)).toBe(false);
-        } finally {
-          await scenario.cleanup();
-        }
-      }
-    });
-
-    it('legacy shell and agent planner rows refuse capability with zero dispatches', () => {
-      for (const backend of ['shell', 'agent'] as const) {
-        const admission = admitCompilerCapability({
-          backend,
-          version: '',
-          role: 'planner-read-only',
-          transport: 'stdout-final',
-          terminalContract: 'unsupported',
-          containmentProfile: 'seatbelt',
-          credentialChannel: 'api-key',
-          envelopeVersion: 1,
-          conformance: conformanceProof(),
-        });
-        expect(admission).toMatchObject({ kind: 'refused', missing: ['backend'] });
-        if (admission.kind === 'refused') {
-          expect(admission.failure.code).toBe('task_compiler_capability_unsupported');
-          expect(admission.failure.message).toMatch(/legacy/);
-        }
       }
     });
   });
@@ -429,7 +199,7 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
             ...plannerAuthority(receipt, 'opencode', 'capability-matrix-config'),
             initialSessionId: null,
           }),
-        ).rejects.toMatchObject({ kind: 'task_compiler_capability_unsupported' });
+        ).rejects.toMatchObject({ kind: 'planner-configured-args-rejected' });
         expect(existsSync(markerPath)).toBe(false);
       } finally {
         await scenario.cleanup();

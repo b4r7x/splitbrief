@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { DetectedModelSchema } from '../../core/discovery/detection.js';
 import {
   nativeCliCatalogToDetectedModels,
+  parseAntigravityModelCatalog,
   parseCodexNativeModelCatalog,
   parseCommandCodeNativeModelCatalog,
   parseCopilotHelpConfigCatalog,
@@ -791,6 +792,49 @@ describe('native CLI model catalogs', () => {
       });
       const parsed = DetectedModelSchema.parse(detected);
       expect(parsed.nativeDefaultReasoningEffort).toBe('low');
+    });
+  });
+
+  describe('parseAntigravityModelCatalog', () => {
+    it('splits the tab-separated id and display name of every real `agy models` row', () => {
+      const catalog = parseAntigravityModelCatalog(
+        readFileSync(
+          join(import.meta.dirname, '../../../testing/fixtures/antigravity/models.txt'),
+          'utf-8',
+        ),
+      );
+
+      expect(catalog?.models).toHaveLength(14);
+      expect(catalog?.models.slice(0, 3)).toEqual([
+        {
+          selectionId: 'gemini-3.8-flash-high',
+          displayName: 'Gemini 3.8 Flash (High)',
+          nativeOrder: 0,
+        },
+        {
+          selectionId: 'gemini-3.8-flash-medium',
+          displayName: 'Gemini 3.8 Flash (Medium)',
+          nativeOrder: 1,
+        },
+        {
+          selectionId: 'gemini-3.8-flash-low',
+          displayName: 'Gemini 3.8 Flash (Low)',
+          nativeOrder: 2,
+        },
+      ]);
+      expect(catalog?.models.map((model) => model.selectionId)).not.toContain('agy models');
+    });
+
+    it('keeps a row whose display name is empty and drops one without an id', () => {
+      expect(parseAntigravityModelCatalog('gemini-3.8-flash-high\t\n\tGemini 3.8 Flash')).toEqual({
+        tool: 'antigravity',
+        models: [{ selectionId: 'gemini-3.8-flash-high', nativeOrder: 0 }],
+      });
+    });
+
+    it('returns null when the listing carries no tab-separated row', () => {
+      expect(parseAntigravityModelCatalog('Fetching available models...\n\n')).toBeNull();
+      expect(parseAntigravityModelCatalog('')).toBeNull();
     });
   });
 });

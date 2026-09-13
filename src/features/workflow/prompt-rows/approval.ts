@@ -1,6 +1,6 @@
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { SOFT_SEP } from '../../../components/separators.js';
-import type { ActionClass } from '../../../core/schemas/enums.js';
+import type { ActionClass, Phase } from '../../../core/schemas/enums.js';
 import type { ApprovalPromptState } from '../../../stores/approval-prompt/prompt.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { wrapHard } from '../../../utils/wrap.js';
@@ -14,13 +14,14 @@ import {
 
 const BORDER_ROWS = 2;
 
-// Every gate is the same object to the reader — a decision SPLITBRIEF is waiting on — so the noun
-// is constant and the kind rides with it. The top row then distinguishes the panels instead of
-// repeating a word, and no subject line has to carry the severity a second time.
-export const GATE_TITLE = 'Approval';
-
-export function gateTitleLine(kind: string): string {
-  return `${GATE_TITLE}${SOFT_SEP}${kind}`;
+// The title states the operation the run is asking for, in the words the reader would use to
+// describe it. The subject line under it carries the path or command the sentence points at, so
+// no row has to repeat the other and a multi-line disclosure still has somewhere to go.
+export function approvalTitle(actionClass: ActionClass): string {
+  if (actionClass === 'package_change') return 'Change a package manifest:';
+  if (actionClass === 'destructive') return 'Destructive action:';
+  if (actionClass === 'network') return 'Network access:';
+  return "Write outside the brief's declared files:";
 }
 
 export interface KeyHint {
@@ -40,7 +41,11 @@ export function formatKeyHints(hints: ReadonlyArray<KeyHint>): string {
 export const DENY_HINT: KeyHint = { key: 'esc', verb: 'deny' };
 export const CONFIRM_HINT: KeyHint = { key: 'enter', verb: 'confirm' };
 
-export const STICKY_HINTS = formatKeyHints([DENY_HINT]);
+// One selection grammar for both gate panels: the rows move under `↑↓` and settle on `⏎`, and the
+// letters stay live as accelerators. Only one gate panel is ever on screen, so this legend is the
+// single place either of them teaches the keys.
+export const SELECT_HINT: KeyHint = { key: '↑↓', verb: 'select' };
+export const STICKY_HINTS = formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'confirm' }, DENY_HINT]);
 export const CONFIRM_REASON_HINTS = formatKeyHints([CONFIRM_HINT, DENY_HINT]);
 export const CONFIRM_QUESTION = 'Why are you making this change?';
 export const CONFIRM_REASON_OPTIONAL = 'leave empty to record no reason';
@@ -49,11 +54,6 @@ export const IRREVERSIBLE_NOTE = 'this cannot be undone';
 // The refusal replaces the legend rather than adding a row, so it has to carry the way out with
 // it: the moment a user mis-keys on the most dangerous panel is not the moment to hide `esc`.
 export const CONFIRM_NUDGE = `enter confirms this write${SOFT_SEP}${formatKeyHints([DENY_HINT])}`;
-
-// The persistence disclosure is a panel-level fact, not a suffix on the `w` label: as a suffix it
-// wrapped off the option row at 40 columns. It sits with the legend, in the legend's grammar, so
-// it cannot be mistaken for a fifth option.
-export const STICKY_PERSIST_NOTE = `w writes ${SPLITBRIEF_DIR}/approvals.json`;
 
 // The engine rejects a confirm response with an empty reason, so a keyed confirm still
 // carries one — worded so the evidence trail cannot be mistaken for a stated reason.
@@ -65,11 +65,83 @@ export interface ApprovalOption {
 }
 
 export const STICKY_OPTIONS: ReadonlyArray<ApprovalOption> = [
-  { key: 'a', label: 'Approve once' },
-  { key: 's', label: 'Approve this session' },
-  { key: 'w', label: 'Approve always' },
-  { key: 'x', label: 'Deny' },
+  { key: 'a', label: 'allow this operation only' },
+  { key: 's', label: 'allow for this session' },
+  { key: 'w', label: `allow always (writes ${SPLITBRIEF_DIR}/approvals.json)` },
+  { key: 'x', label: 'deny' },
 ];
+
+export type ReviewArtifact = 'spec' | 'plan' | 'briefs';
+
+// Approving an artifact is not an end in itself — it releases the next step. Naming that step on
+// the row is what tells a first-time reader what `y` actually does to the run.
+const REVIEW_NEXT_STEP: Record<ReviewArtifact, string> = {
+  spec: 'write the plan',
+  plan: 'compile briefs',
+  briefs: 'start the build',
+};
+
+export function reviewArtifactForPhase(phase: Phase): ReviewArtifact | null {
+  if (phase === 'reviewing-spec') return 'spec';
+  if (phase === 'reviewing-plan') return 'plan';
+  if (phase === 'reviewing-briefs') return 'briefs';
+  return null;
+}
+
+export type ReviewDocumentCommand = 'approve' | 'comment' | 'edit-file' | 'reject';
+
+export interface ReviewDocumentRow extends ApprovalOption {
+  command: ReviewDocumentCommand;
+}
+
+export function reviewDocumentOptions(artifact: ReviewArtifact): ReadonlyArray<ReviewDocumentRow> {
+  return [
+    {
+      key: 'y',
+      label: `Approve ${artifact} and ${REVIEW_NEXT_STEP[artifact]}`,
+      command: 'approve',
+    },
+    { key: 'c', label: 'Request changes (type a comment)', command: 'comment' },
+    { key: 'e', label: 'Edit in $EDITOR', command: 'edit-file' },
+    { key: 'q', label: `Reject ${artifact}`, command: 'reject' },
+  ];
+}
+
+export const REVIEW_DOCUMENT_HINTS = formatKeyHints([
+  SELECT_HINT,
+  { key: '⏎', verb: 'confirm' },
+  { key: 'c', verb: 'comment' },
+  { key: 'e', verb: 'edit' },
+  { key: 'q', verb: 'reject' },
+]);
+
+// While a comment is being typed the letters are text, so the panel stops advertising them and
+// names the two keys that are still live.
+export const REVIEW_COMMENT_HINTS = formatKeyHints([
+  { key: 'enter', verb: 'send' },
+  { key: 'esc', verb: 'back' },
+]);
+
+// Below this the panel and the document it gates cannot both keep their chrome. The rows that say
+// something — the options and the legend — stay; the border and the blank above it go, because a
+// box drawn around a gate the reader can no longer read the document behind is decoration.
+export const REVIEW_DOCUMENT_COMPACT_COLS = 80;
+
+export function isCompactReviewDocument(cols: number): boolean {
+  return cols < REVIEW_DOCUMENT_COMPACT_COLS;
+}
+
+export function getReviewDocumentPromptRows(artifact: ReviewArtifact | null, cols: number): number {
+  if (artifact === null) return 0;
+  const width = approvalTextWidth(cols);
+  const options = reviewDocumentOptions(artifact);
+  const compact = isCompactReviewDocument(cols);
+  return (
+    (compact ? 0 : BORDER_ROWS + 1) +
+    approvalOptionRowCount(options, width, approvalKeyColumnWidth(options)) +
+    wrappedRows(REVIEW_DOCUMENT_HINTS, width)
+  );
+}
 
 export function getApprovalConfirmLabel(actionClass: ActionClass): string {
   if (actionClass === 'destructive') return 'control-plane file write';
@@ -103,14 +175,6 @@ export function getConfirmChooseHints(actionClass: ActionClass): string {
   return isIrreversibleActionClass(actionClass)
     ? formatKeyHints([DENY_HINT])
     : formatKeyHints([CONFIRM_HINT, DENY_HINT]);
-}
-
-export function getApprovalSeverityWord(actionClass: ActionClass): string {
-  if (actionClass === 'destructive') return 'destructive';
-  if (actionClass === 'package_change') return 'package';
-  if (actionClass === 'network') return 'network';
-  if (actionClass === 'write_out_of_scope') return 'scope';
-  return 'write';
 }
 
 /**
@@ -173,9 +237,8 @@ const STICKY_LEAD_SPACER_ROWS = 2;
 
 /**
  * What a region shorter than the panel takes from it. The blank rows go first, top down: a clipped
- * panel loses its bottom border, the note that `w` writes to disk, and the `esc deny` legend —
- * three things the reader cannot answer the gate without. Whitespace is the only row that says
- * nothing, so it is the only row that pays.
+ * panel loses its bottom border and its legend — the two things the reader cannot answer the gate
+ * without. Whitespace is the only row that says nothing, so it is the only row that pays.
  */
 export function stickySpacersShed(promptRows: number, boxRows: number): number {
   return Math.min(Math.max(0, promptRows - boxRows), STICKY_SPACER_ROWS);
@@ -290,13 +353,12 @@ function getStickyRows(actionClass: ActionClass, actionDescription: string, cols
   const width = approvalTextWidth(cols);
   return (
     BORDER_ROWS +
-    wrappedRows(gateTitleLine(getApprovalSeverityWord(actionClass)), width) +
+    wrappedRows(approvalTitle(actionClass), width) +
     1 +
     stickyRequestRowCount(actionDescription, cols) +
     1 +
     approvalOptionRowCount(STICKY_OPTIONS, width, approvalKeyColumnWidth(STICKY_OPTIONS)) +
     1 +
-    wrappedRows(STICKY_PERSIST_NOTE, width) +
     wrappedRows(STICKY_HINTS, width)
   );
 }
@@ -305,7 +367,7 @@ function getConfirmRows(actionClass: ActionClass, actionDescription: string, col
   const width = approvalTextWidth(cols);
   const options = getConfirmOptions(actionClass);
   const subjectRows =
-    wrappedRows(gateTitleLine(getApprovalSeverityWord(actionClass)), width) +
+    wrappedRows(approvalTitle(actionClass), width) +
     1 +
     confirmSubjectRowCount({ actionClass, actionDescription, cols }) +
     1;

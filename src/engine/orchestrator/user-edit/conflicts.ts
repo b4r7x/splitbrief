@@ -1,7 +1,6 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../utils/collections.js';
-import { matchesActionPattern } from '../approval/action-classifier.js';
-import { taskAcceptedPatterns } from '../task-scope.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 
 import type { UserEditConflictKind, UserEditConflictAction } from '../../../core/schemas/enums.js';
 import type { UserEditConflictFile, UserEditConflict } from '../../events/workflow-events.js';
@@ -13,7 +12,7 @@ export const DESTRUCTIVE_CONFLICT_ACTIONS: readonly UserEditConflictAction[] = [
 ];
 
 function fileMatchesTask(file: string, task: Task): boolean {
-  return taskAcceptedPatterns(task).some((pattern) => matchesActionPattern(file, pattern));
+  return isInDeclaredSet(file, taskDeclaredPatterns(task));
 }
 
 function classifyFile(opts: {

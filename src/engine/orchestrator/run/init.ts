@@ -27,7 +27,6 @@ import {
   type SpecMetadata,
 } from '../../../core/paths-io.js';
 import { readPackageJson } from '../../../core/project-meta.js';
-import { compilerDriftWarning } from '../../runners/compiler-drift-warning.js';
 import type { EventBus, EventSink } from '../../events/types.js';
 import { createBranch } from '../../../lib/git/refs.js';
 import { initLogger } from '../../../core/logger.js';
@@ -51,6 +50,7 @@ import {
   publishGitBranchCreated,
 } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
+import { restoreInterruptedTaskFiles } from '../task/rollback.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation/run.js';
 import { createCustomRunnerRuntime } from '../../runners/custom-runner-runtime.js';
@@ -252,6 +252,14 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       setTrackedState(savedState);
     }
   }
+  if (
+    savedState !== undefined &&
+    savedState.pendingRecovery === undefined &&
+    isTaskInFlight(savedState)
+  ) {
+    savedState = await restartInterruptedTask({ projectDir, sessionId, bus, state: savedState });
+    setTrackedState(savedState);
+  }
   const hasPendingRecovery = savedState?.pendingRecovery !== undefined;
 
   // Stateless backends receive priorMessages instead of plannerSessionId.
@@ -265,10 +273,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     injectedPlanner: opts._planner,
     injectedReviewer: opts._reviewer,
   });
-  const driftWarning = compilerDriftWarning({ planner, projectDir });
-  if (driftWarning !== null) {
-    publishWarning({ bus, phase: savedState?.phase ?? 'idle', message: driftWarning });
-  }
   if (savedState && !hasPendingRecovery) {
     savedState = await autoCompactResumeContext({
       projectDir,
@@ -422,6 +426,42 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   };
 
   return { ok: true, state, wctx, prepared };
+}
+
+function isTaskInFlight(state: WorkflowState): boolean {
+  return state.phase === 'validating-task' || state.phase === 'escalating';
+}
+
+/**
+ * A session killed while its brief was validating or escalating left half-written
+ * files behind and a state that points at a task no runner is executing. The brief's
+ * own declared files restart from its task-start snapshot, so the resumed run
+ * re-enters at the brief's start instead of on top of an abandoned attempt.
+ */
+async function restartInterruptedTask(args: {
+  projectDir: string;
+  sessionId: string;
+  bus: EventBus;
+  state: WorkflowState;
+}): Promise<WorkflowState> {
+  const { projectDir, sessionId, bus, state } = args;
+  const task = state.tasks[state.currentTaskIndex];
+  if (task === undefined) return state;
+  const snapshot = state.changedFilesBaseline?.activeTaskSnapshot;
+  if (snapshot !== undefined) {
+    await restoreInterruptedTaskFiles({
+      wctx: { projectDir, bus },
+      phase: state.phase,
+      task,
+      taskStartSnapshot: snapshot,
+    });
+  }
+  return transitionAndSave(
+    { projectDir, sessionId },
+    state,
+    { type: 'RESET_TASK', taskId: task.id },
+    { expectedRevision: state.stateRevision },
+  );
 }
 
 function shouldPublishResumePlannerStatus(state: WorkflowState): boolean {

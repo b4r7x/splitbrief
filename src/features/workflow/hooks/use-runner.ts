@@ -27,10 +27,14 @@ import {
   setCancelHandler,
   setClearQueueHandler,
   setQueueHandler,
+  setResumeHandler,
   setRewindHandler,
   clearAllHandlers,
   consumeBoundaryInterrupt,
+  consumeBoundaryPause,
 } from '../handlers.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
+import { onProcessRegistryChange, SIGKILL_DELAY_MS } from '../../../lib/process/registry.js';
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { closeCostApprovalPrompt } from '../../../stores/cost-approval/prompt.js';
 import { readSession } from '../../../core/sessions/io.js';
@@ -108,6 +112,7 @@ export function useWorkflowRunner({
       setClearQueueHandler,
       setQueueHandler,
       consumeBoundaryInterrupt,
+      consumeBoundaryPause,
     };
     let stateForRun = inlineState;
     if (stateForRun === undefined && prepared.runtime.resumeState !== undefined) {
@@ -260,14 +265,16 @@ export function useWorkflowRunner({
           return;
         }
         if (!saved?.pendingRecovery) {
-          // The engine run returned while the lifecycle still says interrupted —
-          // e.g. Esc-Esc aborted an approval-gate regeneration, which cancels the
-          // planning phase without publishing a cancellation event or parking a
-          // continuation prompt. Nothing is parked, so the interrupted byline's
-          // Enter-retry promise cannot be kept here; drive to the terminal
-          // summary view instead of leaving a dead workflow screen.
-          if (lifecycleStore.get().status === 'interrupted') {
-            onComplete({ summary, sessionId, status: 'interrupted' });
+          // The engine run returned un-parked after a stop, or while the lifecycle
+          // still says interrupted — e.g. Stop now aborted an approval-gate
+          // regeneration, which cancels the planning phase without publishing a
+          // cancellation event or parking a continuation prompt. Nothing is parked,
+          // so the byline's Enter-retry promise cannot be kept here; drive to the
+          // terminal summary view instead of leaving a dead workflow screen. A run
+          // the user stopped reads cancelled there, never interrupted.
+          const stopped = stopStore.get().intent !== 'none';
+          if (stopped || lifecycleStore.get().status === 'interrupted') {
+            onComplete({ summary, sessionId, status: stopped ? 'cancelled' : 'interrupted' });
           }
           return;
         }
@@ -293,6 +300,7 @@ export function useWorkflowRunner({
 
     abortedRef.current = false;
     const controller = new AbortController();
+    setResumeHandler((text) => handleResume(text));
     void startWorkflow(controller);
     return () => {
       abortedRef.current = true;
@@ -303,6 +311,36 @@ export function useWorkflowRunner({
       closeCostApprovalPrompt({ approved: false });
     };
   }, [prepared, runId]);
+
+  // The stop byline names what the processes are actually doing, so it follows the registry rather
+  // than a guess: alive after a request is terminating, still alive past the grace is forcing.
+  useEffect(() => {
+    let forceTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearForceTimer = () => {
+      if (forceTimer === null) return;
+      clearTimeout(forceTimer);
+      forceTimer = null;
+    };
+    const off = onProcessRegistryChange((count) => {
+      const { intent, phase } = stopStore.get();
+      if (intent === 'none') return;
+      if (count > 0) {
+        if (phase !== 'requested') return;
+        stopStore.markTerminating();
+        forceTimer = setTimeout(() => stopStore.markForcing(), SIGKILL_DELAY_MS);
+        return;
+      }
+      clearForceTimer();
+      // Stop now and a boundary pause both end at a park the engine owns; only a run that was told
+      // to end is over the moment its processes are.
+      if (intent !== 'end-run' && intent !== 'quit') return;
+      if (phase === 'terminating' || phase === 'forcing') stopStore.end();
+    });
+    return () => {
+      clearForceTimer();
+      off();
+    };
+  }, []);
 
   const handleResume = (injectedText?: string) => {
     if (prepared === undefined) return;

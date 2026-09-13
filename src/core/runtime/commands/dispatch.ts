@@ -26,10 +26,13 @@ export async function executeRuntimeCommand(
       options.onError(`${name} was removed: ${pointer}`);
       return;
     }
-    const suggestion = suggestRuntimeCommand(commands, name);
-    const hint = suggestion
-      ? `Did you mean ${suggestion.name}?`
-      : 'Type /help for available commands.';
+    const colonSkill = name.startsWith('/skill:') ? name.slice('/skill:'.length) : '';
+    const suggestion = colonSkill ? null : suggestRuntimeCommand(commands, name);
+    const hint = colonSkill
+      ? `Did you mean /skills ${colonSkill}?`
+      : suggestion
+        ? `Did you mean ${suggestion.name}?`
+        : 'Type /help for available commands.';
     options.onError(`Unknown command: ${name}. ${hint}`);
     return;
   }

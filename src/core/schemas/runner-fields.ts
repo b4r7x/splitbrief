@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TIMEOUTS } from '../pipeline-spec/timeouts.js';
 import { API_OFFERINGS, API_PROVIDER_CATALOG } from '../providers/api-provider-catalog.js';
 import {
   CLI_AUTH_CHANNEL_IDS,
@@ -340,7 +341,7 @@ export const GenerationCommonFields = {
   customModels: z.array(z.string()).optional(),
   contextLength: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
-  timeout: z.number().positive().max(600000).optional(),
+  timeout: z.number().positive().max(TIMEOUTS.implementerMs).optional(),
   effort: EffortLevelSchema.optional(),
   variant: z.string().min(1).optional(),
 };

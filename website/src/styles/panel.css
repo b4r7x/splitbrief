@@ -42,7 +42,7 @@
 }
 .lines {
   position: relative;
-  padding-block: var(--s-1);
+  padding-block: var(--s-4);
 }
 .lines::before {
   content: "";
@@ -100,12 +100,12 @@
 }
 @media (min-width: 1600px) {
   .panel {
-    --text-art: clamp(0.7rem, 0.73vw, 0.875rem);
-    --line-art: calc(var(--text-art) * 1.215);
-    --bar-h: 40px;
+    --text-art: 0.875rem;
+    --line-art: 22px;
+    --bar-h: 48px;
   }
   .editor {
-    --line-art: calc(var(--text-art) * 1.236);
+    --line-art: 22px;
   }
   .panel .bar .name {
     font-size: 1rem;
@@ -121,16 +121,16 @@
     padding-block: var(--s-1) var(--s-2);
   }
   .panel .lines::before {
-    left: 6.3ch;
+    left: calc(2ch + var(--s-2));
   }
   .panel .lines li {
-    grid-template-columns: 6.3ch 1fr;
+    grid-template-columns: calc(2ch + var(--s-2)) 1fr;
   }
   .panel .lines .n {
-    padding-inline: 1ch;
+    padding-inline: var(--s-1);
   }
   .panel .lines .t {
-    padding-left: 2.7ch;
+    padding-left: var(--s-1);
   }
 }
 @media (max-width: 767px) {

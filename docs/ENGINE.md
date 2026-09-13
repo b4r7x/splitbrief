@@ -10,7 +10,7 @@ Entry point: `runWorkflow()` in `src/engine/orchestrator/run/workflow.ts`. It bu
 
 1. `initializeWorkflow()` (`run/init.ts`) — creates the EventBus, subscribes all sinks, spawns the planner and implementer, bootstraps initial state or loads saved state for resume.
 2. `runPlanningPhases()` (`run/phases.ts`) — delegates to mode-specific planning (quick, standard, speckit). Each mode determines how many planner calls happen and which approval gates fire.
-3. `runTasksAndReview()` — predicts cost, gates on budget if needed, runs the task loop (implementer writes code, validation runs), then calls the planner for a final review.
+3. `runTasksAndReview()` — predicts cost, gates on budget if needed, runs the task loop (implementer writes code, validation runs), then calls the planner for a final review. `runTaskLoop()` returns one of four statuses — `complete`, `stopped` (a recovery or a reconciled halt), `cancelled`, or `paused` (the operator asked for a pause after the current brief, so the loop returns at the brief boundary with the run resumable) — and only `complete` runs the review.
 4. `saveFinalSession()` (`session-lifecycle/finalize.ts`) — persists the summary, updates stats, clears the active-session lock.
 
 If any step throws, the catch block saves state to disk, kills all subprocesses, publishes an error event, and returns a partial summary. The workflow always produces a summary, even on failure.
@@ -133,7 +133,7 @@ Several sinks can subscribe to the bus. The JSONL and logger sinks are unconditi
 
 **Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`.
 
-**Hook sink** (`src/engine/hooks/sink.ts`) — maps events to workflow hook triggers and dispatches matching hooks fire-and-forget. Only five event types trigger hooks: `task_completed` maps to `post_task`, `validate` (when done) maps to `post_validation`, `git_commit` maps to `post_commit`, `workflow_complete` maps to `on_complete`, `error` maps to `on_error`. All other events are ignored.
+**Hook sink** (`src/engine/hooks/sink.ts`) — maps events to workflow hook triggers and dispatches matching hooks fire-and-forget. Only six event types trigger hooks: `task_completed` maps to `post_task`, `validate` (when done) maps to `post_validation`, `git_commit` maps to `post_commit`, `recovery_prompted` maps to `on_halt`, `workflow_complete` maps to `on_complete`, `error` maps to `on_error`. All other events are ignored.
 
 **Logger sink** (`src/engine/events/sinks/logger.ts`) — mirrors bounded events into the debug log at a level per event type. Writes nothing when the logger is disabled.
 
@@ -142,7 +142,7 @@ flowchart LR
   E[Engine: bus.publish] --> T[TUI sink → stores → React]
   E --> J[JSONL sink → session.jsonl]
   E --> S["Stdout sink → NDJSON (--json) or plain lines (--plain)"]
-  E --> H[Hook sink → post_task, on_error, ...]
+  E --> H[Hook sink → post_task, on_halt, on_error, ...]
   E --> L[Logger sink → debug.log]
 ```
 
@@ -225,7 +225,7 @@ The two serve different consumers: `state.json` is for the state machine (small,
 
 **Event records** (`kind: 'event'`). Written by `jsonlSink` after payload bounding. Fields: `kind`, `ts`, `type` (the `EngineEvent` type name), optional `phase`, optional `taskId`, and a `data` object with event-specific fields. Known event payloads are validated before replay.
 
-**Message records** (`kind: 'message'`). Written by the transcript buffer (`src/engine/streaming/transcript-buffer.ts`) during planner and implementer streaming output. Fields: `kind`, `ts`, `role` (`'user'` or `'assistant'`), `text`, optional `phase`, and optional `interrupted`. The buffer accumulates streaming chunks and flushes at 16 KB or when the phase ends. If the call is aborted (Ctrl-C during a planner call), `flushInterrupted()` writes the partial text with `interrupted: true`. Context rebuild on resume reads these records to reconstruct the conversation history for stateless backends.
+**Message records** (`kind: 'message'`). Written by the transcript buffer (`src/engine/streaming/transcript-buffer.ts`) during planner and implementer streaming output. Fields: `kind`, `ts`, `role` (`'user'` or `'assistant'`), `text`, optional `phase`, and optional `interrupted`. The buffer accumulates streaming chunks and flushes at 16 KB or when the phase ends. If the call is aborted (Stop now during a planner call), `flushInterrupted()` writes the partial text with `interrupted: true`. Context rebuild on resume reads these records to reconstruct the conversation history for stateless backends.
 
 **Summary records** (`kind: 'summary'`). Written by the compaction system (see SUBSYSTEMS.md section 11). Contains `text`, `summarizedUpTo` timestamp, optional `tokenEstimate`, and optional `structured` fields. On resume, only messages after the latest summary's `summarizedUpTo` are loaded.
 
@@ -235,17 +235,18 @@ All three live in the same file because consumers need chronological ordering. C
 
 ## Abort handling
 
-Ctrl-C fires a SIGINT. The signal handler (registered in `withSignalHandlers`, `src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()`:
+A SIGINT — the OS signal a headless run gets from Ctrl-C — reaches the handler registered in `withSignalHandlers` (`src/engine/orchestrator/signals.ts`), which runs `shutdownWorkflow()`:
 
 1. `killAllProcesses()` — terminates all tracked subprocess (planner, implementer).
 2. Saves `state.json` from whatever `trackedState` is at the moment of interruption.
-3. If an implementer task was in progress, discards the partial file change (git checkout for tracked files, delete for new files).
+
+Shutdown reverts nothing. A task that was in progress keeps whatever it had written; the run parks with its partial changes and the operator decides what happens to them. (In the TUI `ctrl+c` never reaches this path as a signal — Ink delivers it as a key and it becomes Stop now, which aborts the call through the same `AbortController` the sheet uses.)
 
 The `withShutdownHandlers` wrapper in `session-lifecycle/shutdown.ts` returns the cancellation state so the run loop knows to stop and return a partial summary. For UI-originated aborts, `runWorkflow()` publishes a `workflow_cancelled` event with the abort reason; the TUI sink then freezes active operations through the store projection.
 
 **Continuation loop.** When a planner call is interrupted (not the whole workflow, just the current call), `withContinuationLoop()` in `src/engine/orchestrator/continuation.ts` handles it. It aborts the in-flight call via a per-call `AbortController`, transitions the state to `awaitingContinue: true`, calls `onContinuationNeeded` to ask the user whether to continue, then rebuilds the prompt with the partial response and loops. The transcript buffer flushes with `interrupted: true` so the JSONL log marks the partial response.
 
-This means a single Ctrl-C during a planner call doesn't kill the workflow — it pauses the current call and asks the user what to do. Ctrl-C at the process level (outside of an active planner call, or if no continuation callback is set) runs the shutdown path.
+This means Stop now during a planner call doesn't kill the workflow — it pauses the current call and asks the user what to do. A process-level signal (outside an active planner call, or with no continuation callback set) runs the shutdown path.
 
 ---
 
@@ -335,6 +336,9 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
   method: TaskCompletionMethod; retries: number; duration: number;
   tool?: string; model?: string; implementerProfile?: string }
 
+// Review fix cycle — the final review sent blocking findings back to implementation
+{ type: 'review_fix_started'; cycle: number; taskIds: TaskId[] }
+
 // Validation
 { type: 'validate'; taskId: TaskId; status: 'running' | 'done';
   passed: boolean; stages: ValidationStages; error?: string; duration?: number }
@@ -349,7 +353,11 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // Recovery
 { type: 'recovery_prompted'; issueId: string; reason: RecoveryReason;
   taskId?: TaskId; files: string[]; affectedTaskIds: TaskId[];
-  availableActions: RecoveryAction[]; recommendedAction: RecoveryAction }
+  availableActions: RecoveryAction[]; recommendedAction: RecoveryAction;
+  headline: string; resumeCommand: string }
+// The one event that fires the `on_halt` hook. `headline` is the operator-facing sentence
+// (`formatRecoveryHeadline`) and `resumeCommand` the line that carries the run on
+// (`formatResumeCommand`), both from `src/core/recovery/`.
 
 // Tiered approval
 { type: 'approval_prompted'; tier: ApprovalTier;
@@ -373,6 +381,11 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'workflow_config'; mode: WorkflowMode;
   plannerTool: string; plannerModel?: string;
   implementerTool: string; implementerModel?: string }
+
+// Operational message — `warning` has the same shape
+{ type: 'error'; message: string; category?: string; code?: string }
 ```
+
+**Where an `error` comes from.** The generic `error` event carries an optional `category`/`code` pair naming the halt that produced it. Two codes sit under `category: 'recovery'`: `retry_exhausted` (the retry ladder ran out for a task, `task/retry.ts`) and `review_failed` (the final review still reported blocking findings after the last fix cycle, `run/task-execution.ts`). The two other halts that stop the run mid-task — an approval gate denial (`approval-denied`) and a task-start snapshot that could not be captured (`snapshot-failed`) — raise their recovery issue without an `error` event: they reach consumers as `recovery_prompted`, which is also what fires the `on_halt` hook. Re-entering the task loop over an unresolved recovery publishes the matching `warning` (`recovery_pending_unresolved`) instead.
 
 `routingReason` on `task_started` is intended for user-facing task-start rows. Fuller context-fit and per-task routing metadata is also retained for the cost drilldown; the engine emits it as plain event data and does not import UI code.

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
-import { TASK_CONTEXT_FITS, WorkflowModeSchema } from './enums.js';
+import { REVIEW_VERDICTS, TASK_CONTEXT_FITS, WorkflowModeSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';
 import { API_OFFERINGS, type ApiOffering } from '../providers/api-provider-catalog.js';
 import { RunnerBillingPostureSchema } from '../runners/runner-billing.js';
@@ -167,7 +167,7 @@ export const CheckpointSummaryRollupSchema = z.object({
 
 export const ReviewFinalReviewStatusSchema = z.enum(['written', 'failed', 'missing', 'skipped']);
 
-export const ReviewVerdictSchema = z.enum(['pass', 'pass_with_notes', 'fail']);
+export const ReviewVerdictSchema = z.enum(REVIEW_VERDICTS);
 
 export const ReviewFindingCountsSchema = z.object({
   critical: z.number().int().nonnegative(),
@@ -227,6 +227,21 @@ export const SummarySchema = z.object({
   costPrediction: CostPredictionSchema.optional(),
   checkpointSummary: CheckpointSummaryRollupSchema.optional(),
   reviewPacket: ReviewPacketSummarySchema.optional(),
+  review: z
+    .object({
+      verdict: ReviewVerdictSchema.nullable(),
+      critical: z.number(),
+      warnings: z.number(),
+      notes: z.number(),
+    })
+    .optional(),
+  changedFiles: z.array(z.string()).optional(),
+  stoppedAt: z
+    .object({
+      taskId: z.string(),
+      partialFiles: z.array(z.string()),
+    })
+    .optional(),
 });
 
 export type CostBreakdown = z.infer<typeof CostBreakdownSchema>;

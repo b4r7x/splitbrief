@@ -12,6 +12,8 @@ import {
   PLANNER_CLI_TOOL_IDS,
 } from '../../../../core/runners/cli-tool-catalog.js';
 import { runnerRoleForActiveRole } from '../../../../core/runners/seat-roles.js';
+import type { RunnerFailureOutcomeState } from '../../../runners/errors.js';
+import { allowedActionsForReason } from '../../../../core/schemas/recovery/policy.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation/result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
@@ -21,7 +23,12 @@ import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js'
 import { includes } from '../../../../utils/type-guards.js';
 import type { RecoveryBuilderBase, TaskRecoveryContext } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
-import { chooseRecommended, hasRouteBigger, orderedActions } from './actions.js';
+import {
+  availableActionsForReason,
+  chooseRecommended,
+  hasRouteBigger,
+  orderedActions,
+} from './actions.js';
 import {
   attemptDetails,
   implementerDetails,
@@ -68,11 +75,17 @@ export interface DependencyBlockedRecoveryOptions extends RecoveryBuilderBase {
   phase?: Phase | undefined;
 }
 
-export interface RunnerUnauthenticatedRecoveryOptions
-  extends RecoveryBuilderBase,
-    TaskRecoveryContext {
+/**
+ * What every halt a runner itself caused needs: the seat's runner, the tool's
+ * own words, and — when the machine remembered another ready tool — the seat
+ * the operator could move to. The shape carries no discriminant: a signed-out
+ * runner, an exhausted quota, a refused command line and a brief that timed out
+ * twice all halt on the same three inputs.
+ */
+export interface RunnerFailureRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
   runner: Config['implementer'];
   toolMessage: string;
+  seatSwap?: SeatSwapContext | undefined;
 }
 
 /**
@@ -95,10 +108,6 @@ export type SeatSwapContext = Readonly<{
   currentTool: string;
   detectedTools: readonly DetectedSeatTool[];
 }>;
-
-export type RunnerUsageLimitRecoveryOptions = RunnerUnauthenticatedRecoveryOptions & {
-  seatSwap?: SeatSwapContext | undefined;
-};
 
 /**
  * The ready tools this seat could move to, current one excluded, each tool named
@@ -152,20 +161,17 @@ export function routeBiggerProfileFromDecision(
  * cannot restore quota.
  */
 export function buildRunnerUsageLimitRecoveryIssue(
-  opts: RunnerUsageLimitRecoveryOptions,
+  opts: RunnerFailureRecoveryOptions,
 ): RecoveryIssue {
   const phase = opts.phase ?? 'implementing';
   const displayName = runnerAuthDisplayName(opts.runner);
   const resetsAt = parseUsageLimitReset(opts.toolMessage);
   const seatSwap = switchSeatOffer(opts.seatSwap);
-  const actions = orderedActions([
-    'retry-same-worker',
-    hasRouteBigger(opts) ? 'route-bigger-worker' : undefined,
-    seatSwap !== undefined ? 'switch-seat' : undefined,
-    'skip-current-task',
-    'pause-run',
-    'abort-workflow',
-  ]);
+  const routeBigger = hasRouteBigger(opts);
+  const actions = availableActionsForReason('runner-usage-limit', {
+    switchSeat: seatSwap !== undefined,
+    routeBigger,
+  });
 
   return createRecoveryIssue({
     id: opts.id,
@@ -192,7 +198,7 @@ export function buildRunnerUsageLimitRecoveryIssue(
       limitMessage: opts.toolMessage,
       resetsAt: resetsAt?.toISOString(),
       routeBiggerProfile: opts.routeBiggerProfile,
-      canRouteBigger: hasRouteBigger(opts) ? true : undefined,
+      canRouteBigger: routeBigger ? true : undefined,
     }),
     availableActions: actions,
     recommendedAction: chooseRecommended(actions, [
@@ -211,7 +217,7 @@ export function buildRunnerUsageLimitRecoveryIssue(
  * the exact login command; the details keep the tool's own words verbatim.
  */
 export function buildRunnerUnauthenticatedRecoveryIssue(
-  opts: RunnerUnauthenticatedRecoveryOptions,
+  opts: RunnerFailureRecoveryOptions,
 ): RecoveryIssue {
   const phase = opts.phase ?? 'implementing';
   const displayName = runnerAuthDisplayName(opts.runner);
@@ -469,6 +475,263 @@ export function buildDependencyBlockedRecoveryIssue(
     }),
     availableActions: actions,
     recommendedAction: chooseRecommended(actions, ['pause-run']),
+    createdAt: opts.createdAt,
+  });
+}
+
+export interface ScopeViolationRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
+  undeclaredFiles: readonly string[];
+  tool?: string | undefined;
+}
+
+/**
+ * A direct-write implementer touched paths the brief never declared. The run
+ * stops at the operator rather than promoting writes nobody asked for; the
+ * retry carries the revert instruction, so `retry-same-worker` is the
+ * recommendation.
+ */
+export function buildScopeViolationRecoveryIssue(
+  opts: ScopeViolationRecoveryOptions,
+): RecoveryIssue {
+  const actions = orderedActions(allowedActionsForReason('scope-violation'));
+  return createRecoveryIssue({
+    id: opts.id,
+    reason: 'scope-violation',
+    phase: opts.phase ?? 'implementing',
+    task: opts.task,
+    files: [...opts.undeclaredFiles],
+    affectedTaskIds: [opts.task.id],
+    message: `${opts.task.id} wrote outside its declared files`,
+    details: [
+      `Undeclared writes: ${opts.undeclaredFiles.join(', ')}`,
+      `Declared files: ${taskFiles(opts.task).join(', ')}`,
+      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...implementerDetails(opts.selectedImplementerProfile),
+    ],
+    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
+    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
+    selectedImplementerProfile: opts.selectedImplementerProfile,
+    facts: compactFacts({
+      tool: opts.tool,
+      undeclaredFiles: opts.undeclaredFiles.join(', '),
+    }),
+    availableActions: actions,
+    recommendedAction: 'retry-same-worker',
+    createdAt: opts.createdAt,
+  });
+}
+
+function runnerModel(runner: Config['implementer']): string | undefined {
+  return 'model' in runner ? runner.model : undefined;
+}
+
+function recipeHaltIssue(opts: RunnerFailureRecoveryOptions, message: string): RecoveryIssue {
+  const displayName = runnerAuthDisplayName(opts.runner);
+  const seatSwap = switchSeatOffer(opts.seatSwap);
+  const actions = availableActionsForReason('implementer-recipe-invalid', {
+    switchSeat: seatSwap !== undefined,
+    routeBigger: false,
+  });
+  return createRecoveryIssue({
+    id: opts.id,
+    reason: 'implementer-recipe-invalid',
+    phase: opts.phase ?? 'implementing',
+    task: opts.task,
+    files: taskFiles(opts.task),
+    affectedTaskIds: [opts.task.id],
+    message,
+    details: [
+      `${displayName} reported: ${opts.toolMessage}`,
+      'The run stopped instead of spending retries on a command the tool cannot accept.',
+      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...implementerDetails(opts.selectedImplementerProfile),
+    ],
+    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
+    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
+    selectedImplementerProfile: opts.selectedImplementerProfile,
+    ...(seatSwap !== undefined && { switchSeat: seatSwap }),
+    facts: compactFacts({
+      tool: displayName,
+      model: runnerModel(opts.runner),
+      recipeMessage: opts.toolMessage,
+    }),
+    availableActions: actions,
+    recommendedAction: 'pause-run',
+    createdAt: opts.createdAt,
+  });
+}
+
+/**
+ * The tool refused the command line SPLITBRIEF built for it — an unknown flag
+ * or an argv shape the installed version does not accept. Retrying spends
+ * attempts on the same rejection, so the recipe is fixed before the run moves.
+ */
+export function buildRecipeInvalidRecoveryIssue(opts: RunnerFailureRecoveryOptions): RecoveryIssue {
+  const displayName = runnerAuthDisplayName(opts.runner);
+  return recipeHaltIssue(opts, `${displayName} rejected the command SPLITBRIEF built for it`);
+}
+
+/**
+ * A model the tool does not list is a recipe defect, not a transient failure:
+ * every attempt reaches the same refusal until the seat names a listed model.
+ */
+export function buildMissingModelRecoveryIssue(opts: RunnerFailureRecoveryOptions): RecoveryIssue {
+  const displayName = runnerAuthDisplayName(opts.runner);
+  const model = runnerModel(opts.runner) ?? 'the configured model';
+  return recipeHaltIssue(
+    opts,
+    `Model ${model} is not listed by ${displayName}; pick a listed model`,
+  );
+}
+
+/**
+ * Two timeouts in a row on one brief mean the slice does not fit the deadline,
+ * not that the attempt was unlucky. Escalating would hand the same oversized
+ * slice to the planner at planner prices, so the ladder halts here.
+ */
+export function buildRepeatedTimeoutRecoveryIssue(
+  opts: RunnerFailureRecoveryOptions,
+): RecoveryIssue {
+  const displayName = runnerAuthDisplayName(opts.runner);
+  const seatSwap = switchSeatOffer(opts.seatSwap);
+  const routeBigger = hasRouteBigger(opts);
+  const actions = availableActionsForReason('implementer-timeout-repeated', {
+    switchSeat: seatSwap !== undefined,
+    routeBigger,
+  });
+  return createRecoveryIssue({
+    id: opts.id,
+    reason: 'implementer-timeout-repeated',
+    phase: opts.phase ?? 'implementing',
+    task: opts.task,
+    files: taskFiles(opts.task),
+    affectedTaskIds: [opts.task.id],
+    message: `${displayName} timed out twice in a row on ${opts.task.id}`,
+    details: [
+      `${displayName} reported: ${opts.toolMessage}`,
+      'The run stopped instead of escalating a brief the implementer cannot finish in time.',
+      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...implementerDetails(opts.selectedImplementerProfile),
+      ...routeBiggerDetails(opts),
+    ],
+    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
+    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
+    selectedImplementerProfile: opts.selectedImplementerProfile,
+    ...(seatSwap !== undefined && { switchSeat: seatSwap }),
+    facts: compactFacts({
+      tool: displayName,
+      timeoutMessage: opts.toolMessage,
+      routeBiggerProfile: opts.routeBiggerProfile,
+      canRouteBigger: routeBigger ? true : undefined,
+    }),
+    availableActions: actions,
+    recommendedAction: 'pause-run',
+    createdAt: opts.createdAt,
+  });
+}
+
+const RUNNER_DEFECT_BUILDERS: Partial<
+  Record<RunnerFailureOutcomeState, (opts: RunnerFailureRecoveryOptions) => RecoveryIssue>
+> = {
+  'implementer-recipe-invalid': buildRecipeInvalidRecoveryIssue,
+  'missing-model': buildMissingModelRecoveryIssue,
+  'implementer-timeout-repeated': buildRepeatedTimeoutRecoveryIssue,
+};
+
+/**
+ * The one table of outcomes a runner defect raises straight to recovery, keyed
+ * by the outcome the runner reported. Every caller that halts on one — the
+ * first attempt and every rung of the ladder — reads its builder from here, so
+ * a fourth outcome is remembered once instead of in each of them.
+ */
+export function recoveryBuilderForRunnerOutcome(
+  outcome: RunnerFailureOutcomeState,
+): ((opts: RunnerFailureRecoveryOptions) => RecoveryIssue) | undefined {
+  return RUNNER_DEFECT_BUILDERS[outcome];
+}
+
+export interface ApprovalDeniedRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
+  deniedFiles?: readonly string[] | undefined;
+  denialReason?: string | undefined;
+  tool?: string | undefined;
+}
+
+/** The operator refused the brief's writes; the run waits rather than retrying into the same gate. */
+export function buildApprovalDeniedRecoveryIssue(
+  opts: ApprovalDeniedRecoveryOptions,
+): RecoveryIssue {
+  const denied = opts.deniedFiles ?? [];
+  const actions = orderedActions(allowedActionsForReason('approval-denied'));
+  return createRecoveryIssue({
+    id: opts.id,
+    reason: 'approval-denied',
+    phase: opts.phase ?? 'implementing',
+    task: opts.task,
+    files: denied.length > 0 ? [...denied] : taskFiles(opts.task),
+    affectedTaskIds: [opts.task.id],
+    message: `${opts.task.id} was denied at the approval gate`,
+    details: [
+      opts.denialReason !== undefined ? `Denied: ${opts.denialReason}` : undefined,
+      denied.length > 0 ? `Blocked files: ${denied.join(', ')}` : undefined,
+      ...attemptDetails(opts.attempts, opts.maxAttempts),
+    ].filter((detail): detail is string => detail !== undefined),
+    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
+    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
+    facts: compactFacts({ tool: opts.tool, denialReason: opts.denialReason }),
+    availableActions: actions,
+    recommendedAction: 'pause-run',
+    createdAt: opts.createdAt,
+  });
+}
+
+export interface SnapshotFailedRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
+  detail: string;
+}
+
+/**
+ * Without a task-start snapshot the run cannot tell the implementer's writes
+ * from the operator's, so drift and revert both stop working. The run halts
+ * before the brief instead of running blind.
+ */
+export function buildSnapshotFailedRecoveryIssue(
+  opts: SnapshotFailedRecoveryOptions,
+): RecoveryIssue {
+  const actions = orderedActions(allowedActionsForReason('snapshot-failed'));
+  return createRecoveryIssue({
+    id: opts.id,
+    reason: 'snapshot-failed',
+    phase: opts.phase ?? 'implementing',
+    task: opts.task,
+    files: taskFiles(opts.task),
+    affectedTaskIds: [opts.task.id],
+    message: `${opts.task.id} could not capture its task-start snapshot`,
+    details: [opts.detail, 'Scope and revert cannot be enforced without the snapshot.'],
+    availableActions: actions,
+    recommendedAction: 'retry-same-worker',
+    createdAt: opts.createdAt,
+  });
+}
+
+export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
+  phase?: Phase | undefined;
+  blocking: number;
+  detail?: string | undefined;
+}
+
+/** The final review still reports blocking findings after the fix cycles ran out. */
+export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions): RecoveryIssue {
+  const actions = orderedActions(allowedActionsForReason('review-failed'));
+  return createRecoveryIssue({
+    id: opts.id,
+    reason: 'review-failed',
+    phase: opts.phase ?? 'final-review',
+    files: [],
+    affectedTaskIds: [],
+    message: `Final review failed with ${opts.blocking} blocking finding${opts.blocking === 1 ? '' : 's'}`,
+    details: [opts.detail].filter((detail): detail is string => detail !== undefined),
+    facts: compactFacts({ blocking: opts.blocking }),
+    availableActions: actions,
+    recommendedAction: 'pause-run',
     createdAt: opts.createdAt,
   });
 }

@@ -41,6 +41,13 @@ describe('buildImplementerSystemPreamble', () => {
     expect(prompt).toMatch(/completion report/i);
   });
 
+  it('licenses the brief-declared files plus the Scope bullets, nothing else', () => {
+    const prompt = buildImplementerSystemPreamble(buildLanguageContext('typescript'), 'direct');
+    expect(prompt).toContain(
+      'Edit ONLY the files the Task Brief lists under Files, plus every path its Scope names under In bounds or Approved out of bounds',
+    );
+  });
+
   it('no longer describes the direct workspace as staged', () => {
     const prompt = buildImplementerSystemPreamble(buildLanguageContext('typescript'), 'direct');
     expect(prompt).not.toMatch(/staged/i);

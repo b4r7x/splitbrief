@@ -8,6 +8,14 @@ export type ModelRecommendation = 'recommended' | 'compatible-only';
  */
 export type CatalogVendorId = 'anthropic' | 'openai' | 'openrouter' | 'github-copilot';
 
+/**
+ * The catalog vendor that names a runner's rows when the runner's own id is not a vendor
+ * models.dev publishes. Only a runner whose listing prints bare, unprefixed ids needs an
+ * entry: a `vendor/model` id already names its vendor.
+ */
+export const MODELS_DEV_VENDOR_FOR_RUNNER: Readonly<Partial<Record<ProviderId, CatalogVendorId>>> =
+  Object.freeze({ copilot: 'github-copilot' });
+
 export interface KnownModel {
   name: string;
   recommendation: ModelRecommendation;
@@ -64,6 +72,12 @@ export const TOOL_EFFORT_LADDERS: Readonly<Partial<Record<ProviderId, ToolEffort
       exhaustive: false,
       provenance:
         'cmd --help 1.50.0 (2026-09-07): "(e.g. low, medium, high) — depends on the model"; cmd --list-models publishes no per-model levels',
+    },
+    antigravity: {
+      levels: ['low', 'medium', 'high'],
+      exhaustive: false,
+      provenance:
+        'skills/splitbrief/references/tool-recipes.md:84 (2026-09-13): agy effort `low|medium|high`; agy publishes no per-model level list',
     },
   });
 

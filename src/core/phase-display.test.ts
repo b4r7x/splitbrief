@@ -19,7 +19,7 @@ const EXPECTED_PHASE_LABELS: Record<Phase, string> = {
   implementing: 'Implementing',
   'validating-task': 'Validating Task',
   escalating: 'Escalating',
-  'final-review': 'Final Review',
+  'final-review': 'Review',
   complete: 'Complete',
 };
 
@@ -29,10 +29,14 @@ describe('formatStageLabel', () => {
     expect(formatStageLabel('build')).toBe('Build');
   });
 
-  it('title-cases every Phase member', () => {
+  it('labels every Phase member', () => {
     for (const phase of PHASES) {
       expect(formatStageLabel(phase)).toBe(EXPECTED_PHASE_LABELS[phase]);
     }
+  });
+
+  it('labels final-review with the rail stage word', () => {
+    expect(formatStageLabel('final-review')).toBe('Review');
   });
 });
 

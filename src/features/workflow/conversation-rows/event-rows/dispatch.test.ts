@@ -168,7 +168,7 @@ describe('event row dispatch', () => {
         .map(rowText)
         .join('\n');
 
-      expect(text).toContain('Workflow cancelled');
+      expect(text).toContain('Build failed');
       expect(text).not.toContain('Resume');
       expect(text).not.toContain('splitbrief continue');
     },
@@ -678,6 +678,27 @@ describe('event row dispatch', () => {
     expect(rows.every((rowValue) => rowValue.markerTone === 'warning')).toBe(true);
   });
 
+  it('task_retry counts attempts the way the build block does', () => {
+    const event: EngineEventOf<'task_retry'> = {
+      type: 'task_retry',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      attempt: 1,
+      maxRetries: 2,
+      error: 'tests failed',
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText).join('\n')).toContain('attempt 2 of 3');
+  });
+
   it('message_queued renders a Queued header above the message text', () => {
     const event: EngineEventOf<'message_queued'> = {
       type: 'message_queued',
@@ -899,5 +920,64 @@ describe('validate failure output', () => {
     });
 
     expect(rows.some((rowValue) => rowValue.kind === 'callout-body')).toBe(false);
+  });
+
+  const exemptValidate: EngineEvent = {
+    type: 'validate',
+    ts: 0,
+    phase: 'validating-task',
+    taskId: taskId('T002'),
+    status: 'done',
+    passed: true,
+    exempt: true,
+    stages: { typecheck: true, lint: false, test: false },
+    attempted: { typecheck: true, lint: true, test: true },
+    skipped: { test: true },
+    skippedReason: { test: 'no affected test file found' },
+    duration: 1_800,
+  };
+
+  it('keeps the stage notes off the one-line summary strip', () => {
+    const rows = eventRows({
+      event: exemptValidate,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 78, viewportRows: 20, streaming },
+    });
+    const texts = rows.map(rowText);
+
+    expect(texts[0]).toContain('validate');
+    expect(texts[0]).not.toContain('skipped');
+    expect(texts.slice(1)).toContain(
+      'lint pre-existing failure, test skipped (no affected test file found)',
+    );
+  });
+
+  // Appended to the strip, the reason a gate never ran was the first thing a narrow terminal cut.
+  it('wraps the stage notes rather than cutting the reason at a narrow width', () => {
+    const rows = eventRows({
+      event: exemptValidate,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 44, viewportRows: 20, streaming },
+    });
+    const notes = rows.map(rowText).slice(1).join('').replace(/\s+/g, ' ').trim();
+
+    expect(notes).toBe('lint pre-existing failure, test skipped (no affected test file found)');
+    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 44)).toBe(true);
+  });
+
+  it('names a run the user stopped apart from one that fell over', () => {
+    const stopped = eventRows({
+      event: { type: 'workflow_cancelled', ts: 0, phase: 'implementing', reason: 'user_cancelled' },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+
+    expect(stopped).toContain('Stopped by you');
+    expect(stopped).not.toContain('Build failed');
   });
 });

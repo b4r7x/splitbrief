@@ -94,7 +94,7 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('5/5 tasks');
+    expect(frame).toContain('5/5 briefs');
     expect(frame).toContain('4 local');
     expect(frame).not.toContain('Planner compiled');
     expect(frame).not.toContain('Implementer completed');
@@ -200,7 +200,7 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Drift');
+    expect(frame).toContain('Scope');
     expect(frame).toContain('1 warning');
 
     ui.unmount();
@@ -299,6 +299,19 @@ describe('SummaryScreen', () => {
         totalTasks: 4,
         completedByLocal: 3,
         escalatedToPlanner: 1,
+        review: { verdict: 'pass', critical: 0, warnings: 0, notes: 0 },
+        reviewPacket: {
+          jsonPath: 'evidence/review.json',
+          markdownPath: 'evidence/review.md',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          finalReviewStatus: 'written',
+          finalReviewVerdict: 'pass',
+          finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
+          driftPassed: true,
+          evidenceValidatedTasks: 4,
+          evidenceTotalTasks: 4,
+          missingArtifactCount: 0,
+        },
         costBreakdown: {
           hypotheticalCost: 5,
           actualPlannerCost: 1,
@@ -322,7 +335,7 @@ describe('SummaryScreen', () => {
 
     expect(frame).toContain(`${glyph('check')} SPLITBRIEF complete`);
     expect(frame).toContain('$1.50 actual vs $5.00 baseline');
-    expect(frame).toContain('4/4 tasks');
+    expect(frame).toContain('4/4 briefs');
     expect(frame).toContain('Actual cost');
     expect(frame).toContain('Saved');
     expect(frame).toContain('$3.50 (70%)');
@@ -708,8 +721,10 @@ describe('SummaryScreen', () => {
     await tick(20);
     const last = ui.lastFrame() ?? '';
 
-    expect(last).toContain('Review packet');
+    // At 24 rows the ledger window is four rows deep, so the end of the packet section is what
+    // paging reveals: its paths and its verdict, not the heading a row above them.
     expect(last).toContain('review-packet.md');
+    expect(last).toContain('final review: written');
 
     ui.unmount();
   });

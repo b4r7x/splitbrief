@@ -20,9 +20,9 @@ import { formatTasks } from '../../spec/formatter.js';
 import { persistPhases, readPersistedTasks, readTasksForApproval } from './io.js';
 import type { PhaseResult, PlannerArtifactLogicalName } from '../../planners/types.js';
 import {
-  createTaskCompilationAttemptId,
+  createPlannerArtifactAttemptId,
   OwnedPlannerArtifactSchema,
-} from '../../../core/schemas/task-compilation.js';
+} from '../../../core/schemas/planner-artifact.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -58,7 +58,7 @@ function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): Pha
       semanticId: `test-${logicalName}`,
       programId: null,
       batchId: null,
-      attemptId: createTaskCompilationAttemptId(),
+      attemptId: createPlannerArtifactAttemptId(),
       logicalName,
       transport: 'stdout-final',
       text,

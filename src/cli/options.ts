@@ -3,6 +3,8 @@ import { cliError } from './errors.js';
 import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-catalog.js';
 import { IMPLEMENTER_CLI_TOOL_IDS } from '../core/runners/cli-tool-catalog.js';
 import { META_PROVIDER_IDS, OutputFormatSchema, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
+import type { RecoveryAction } from '../core/schemas/enums.js';
+import type { SeatSwapCandidate } from '../core/schemas/recovery/schemas.js';
 
 const IMPLEMENTER_TOOL_IDS = [
   ...IMPLEMENTER_CLI_TOOL_IDS,
@@ -55,6 +57,17 @@ export function parseOutputFormatOption(value: string): string {
   return parsed.data;
 }
 
+export function parseSkillIdsOption(value: string): string[] {
+  const ids = value
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id !== '');
+  if (ids.length === 0) {
+    throw new InvalidArgumentError(`'${value}' names no skill ids.`);
+  }
+  return ids;
+}
+
 export type SeatSpec = Readonly<{ tool: string; model?: string; effort?: string }>;
 
 /**
@@ -80,6 +93,32 @@ export function parseSeatSpecOption(value: string): SeatSpec {
     throw new InvalidArgumentError(`'${value}' names an empty effort after '@'.`);
   }
   return { tool, ...(model !== undefined && { model }), ...(effort !== undefined && { effort }) };
+}
+
+export type RecoveryActionOption = Readonly<{
+  action: Extract<RecoveryAction, 'skip-current-task' | 'retry-same-worker' | 'switch-seat'>;
+  candidate?: SeatSwapCandidate;
+}>;
+
+/**
+ * The three halts `splitbrief continue` can resolve without the panel, in the
+ * words the resume line prints: `skip`, `retry`, `switch-seat:<tool>[:<model>]`.
+ */
+export function parseRecoveryActionOption(value: string): RecoveryActionOption {
+  const spec = value.trim();
+  if (spec === 'skip') return { action: 'skip-current-task' };
+  if (spec === 'retry') return { action: 'retry-same-worker' };
+  if (spec.startsWith('switch-seat:')) {
+    const seat = parseSeatSpecOption(spec.slice('switch-seat:'.length));
+    return {
+      action: 'switch-seat',
+      candidate: { tool: seat.tool, ...(seat.model !== undefined && { model: seat.model }) },
+    };
+  }
+  throw cliError(
+    `'${value}' is not a recovery action. Use skip, retry, or switch-seat:<tool>[:<model>].`,
+    2,
+  );
 }
 
 /**
@@ -225,6 +264,16 @@ export function addWorkflowOptions(cmd: Command): Command {
       false,
     )
     .option('--yolo', 'Skip file-write tiered approval prompts for this session', false)
+    .option(
+      '--skills <ids>',
+      'Attach project/global skills to the planner (comma-separated ids)',
+      parseSkillIdsOption,
+    )
+    .option(
+      '--action <action>',
+      '`continue` only: apply this action to the pending recovery — skip, retry, or switch-seat:<tool>[:<model>]',
+      parseRecoveryActionOption,
+    )
     .hook('preAction', (command) => {
       assertOutputModeExclusive(command.opts<OutputModeOpts>());
     });

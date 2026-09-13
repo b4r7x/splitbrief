@@ -81,7 +81,7 @@ Here is what happens, step by step:
 1. `splitbrief init` opens the Crew screen — PLAN, BUILD and REVIEW on one surface, plus ready-made crews when the tools they need are installed and authenticated. Apply a crew, or press Enter on a seat to set it yourself, then Continue. It writes `.splitbrief/config.yaml`.
 2. `splitbrief start` opens a fullscreen TUI. The planner thinks for a few seconds, looks at your repo, and writes a Task Brief to `.splitbrief/sessions/<date>-fix-the-typo/tasks.md`.
 3. The brief is **scored for quality** automatically. Weak briefs (missing scope, missing validation, vague tests) are blocked before any code is written.
-4. The implementer picks up the first task, generates code, and the orchestrator runs the resolved validation pipeline from config, planner discovery, or project heuristics. On failure, it retries up to 3 times, then escalates back to the planner.
+4. The implementer picks up the first task, generates code, and the orchestrator runs the resolved validation pipeline from config, planner discovery, or project heuristics. On failure, it retries twice by default, then escalates back to the planner.
 5. Each successful task records evidence and can create a checkpoint. Git commits are optional and only happen when `workflow.git.commitStrategy` is explicitly configured; the default leaves changes unstaged for manual review.
 6. After all tasks complete, the review seat does a final review — the planner unless you assigned a reviewer: it diffs the actual changes against the brief and writes `review.md`. A deterministic drift report flags anything the agent touched outside the planned scope.
 
@@ -142,7 +142,7 @@ Pick a mode based on how much ceremony the work warrants. Set with `--mode`, in 
 
 | Mode | Planner calls | Approval gates | Best for | Example prompt |
 |---|:---:|:---:|---|---|
-| `quick` | 1 | none | Trivial one-step edits and small but real tasks | `"rename foo to bar in src/util.ts"` |
+| `quick` | 1 | 0 | Trivial one-step edits and small but real tasks | `"rename foo to bar in src/util.ts"` |
 | `standard` (default) | 4 | 2 (spec + briefs) | Ordinary feature work | `"add an email validator with RFC 5321 support"` |
 | `speckit` | 6–7 | 3 (spec + plan + briefs) | Large, risky, audited work | `"migrate auth from sessions to JWT"` |
 
@@ -197,13 +197,13 @@ validation:
 
 workflow:
   mode: standard
-  maxRetries: 3
+  maxRetries: 2
   maxBudget: 2.00
   git:
     commitStrategy: none
 ```
 
-After each implementer task, the orchestrator runs the resolved typecheck, lint, and test pipeline (from this config, planner discovery, or project heuristics). On failure it retries up to `maxRetries`, then escalates to the planner.
+After each implementer task, the orchestrator runs the resolved typecheck, lint, and test pipeline — this config first, then a `package.json` script or `Makefile`/`justfile` target of that name, then planner discovery, then the detected stack's own defaults. On failure it retries up to `maxRetries` (default 2), then escalates to the planner.
 
 **3. Subscription CLI implementer (optional).** To type through the same admitted CLI instead of an API, set `implementer.kind: cli` with `tool: claude-code`. The child CLI may auto-edit SPLITBRIEF's disposable staged copy; SPLITBRIEF detects changes and asks before promoting approved paths into your checkout. Posture and auth channels: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
 
@@ -221,7 +221,7 @@ For every other planner/implementer combination, swap tools and models via the c
 
 Spend is not painted across the top of the screen. There is no persistent cost header; these are the four places a number actually appears.
 
-**Sidebar footer** — `/sidebar` toggles the workflow sidebar, which starts hidden and is unavailable at or below 120 columns. Its last line reads `Local NN%`, the share of tasks the implementer finished without escalating, followed by the run's spend when there is something priced to report:
+**Sidebar footer** — the workflow sidebar is on by default above 120 columns and paints nothing at or below 120 columns; `/sidebar` toggles it and `/tasks` brings it back. Its last line reads `Local NN%`, the share of tasks the implementer finished without escalating, followed by the run's spend when there is something priced to report:
 
 ```
 Local 80% · $0.42
@@ -261,7 +261,7 @@ Explicit non-goals, so you don't go looking:
 
 - **Not a swarm or generic multi-agent manager.** Two roles, one workflow. An implementer pool selects one capable worker per Task Brief; it does not fan out competing agents over the same checkout.
 - **Not Windows-supported.** macOS and Linux only. Several path and sandbox semantics, including the snapshot path encoding, need POSIX. Windows support is planned but not yet available.
-- **No fixed validator language.** Validation is command-based and can be resolved for TypeScript, JavaScript, Python, Go, and Rust projects.
+- **No fixed validator language.** Validation is command-based and resolves per stack for TypeScript, JavaScript, Python, Go and Rust; any other stack runs review-only (`gates: NONE`) rather than guessing a command.
 - **No SPLITBRIEF-defined tool-call protocol for implementers.** SPLITBRIEF does not layer a second control protocol on top of the runner. An implementer either returns file contents that SPLITBRIEF writes (`extracted-code`), or writes into its working directory itself (`direct` — `cli` and `agent` runners) and SPLITBRIEF inspects the resulting diff. Whatever tools the runner exposes internally are the runner's business. See [docs/VISION.md §Strategic decisions](./VISION.md).
 - **No cloud-side state.** Everything lives under `.splitbrief/` in your project. No accounts, no SaaS, no telemetry.
 

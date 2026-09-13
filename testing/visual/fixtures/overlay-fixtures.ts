@@ -9,6 +9,7 @@ import type {
 } from '../../../src/core/discovery/detection.js';
 import {
   nativeCliCatalogToDetectedModels,
+  parseAntigravityModelCatalog,
   parseCopilotHelpConfigCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
@@ -25,6 +26,8 @@ import { detectionStore } from '../../../src/stores/project/detection.js';
 import { sessionsStore } from '../../../src/stores/project/sessions.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
+import { addEvent } from '../../../src/stores/workflow/actions/event.js';
+import { taskId } from '../../../src/core/schemas/task.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
@@ -220,17 +223,23 @@ function seedSessions(): void {
 }
 
 function seedEditor(): void {
-  const filePath = 'fixtures/visual-session/plan.md';
+  const filePath = 'fixtures/visual-session/tasks.md';
   const ownerToken = reviewStore.setReviewFile(filePath, 8);
   editorStore.openRaw({
     filePath,
     ownerToken,
     value: [
-      '# Visual fixture plan',
+      '---',
+      'id: T001',
+      'title: Add greeting helper',
+      'action: modify',
+      'file: src/greet.ts',
+      'files: [src/greet.ts, src/greet.test.ts]',
+      'depends_on: []',
+      '---',
       '',
-      '1. Capture the production app.',
-      '2. Verify terminal cell geometry.',
-      '3. Export safe diagnostic artifacts.',
+      '### Description',
+      'Add a helper that returns a friendly greeting string.',
     ].join('\n'),
     layout: { columns: 72, rows: 19 },
   });
@@ -461,6 +470,90 @@ function seedCopilotNativeListing(): void {
   });
 }
 
+// Three native rows: one models.dev knows by its bare id under another owner, one it does not know
+// at all, and one from a vendor it has never heard of. Between them the picker has to show a
+// catalog name, a bare id, and the words for "no catalog entry" on the same list.
+const COMMAND_CODE_MODELS: readonly DetectedModel[] = [
+  {
+    id: 'deepseek/deepseek-v4-flash',
+    nativeOrder: 0,
+    detail: 'fast hybrid-attention reasoning',
+    nativeDefault: true,
+  },
+  { id: 'deepseek/deepseek-v4', nativeOrder: 1 },
+  { id: 'acme/private-preview-1', nativeOrder: 2 },
+];
+
+// models.dev serves DeepSeek under its own vendor id; the shared slice carries the model only under
+// Ollama Cloud, so the vendor the picker looks up is added here rather than widening the slice.
+function commandCodeModelsDevCatalog(): ReturnType<typeof ModelsDevCatalogSchema.parse> {
+  return ModelsDevCatalogSchema.parse({
+    ...modelsDevSlice(),
+    deepseek: {
+      id: 'deepseek',
+      name: 'DeepSeek',
+      models: {
+        'deepseek-v4-flash': {
+          id: 'deepseek-v4-flash',
+          name: 'DeepSeek V4 Flash',
+          limit: { context: 128_000, output: 64_000 },
+          release_date: '2026-01-12',
+          modalities: { input: ['text'], output: ['text'] },
+        },
+      },
+    },
+  });
+}
+
+function seedCommandCodeNativeListing(): void {
+  seedConfig({
+    planner: { kind: 'cli', tool: 'command-code', model: 'deepseek/deepseek-v4-flash' },
+  })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'command-code')],
+    cliModels: [
+      catalogAttempt({
+        tool: 'command-code',
+        outcome: { kind: 'success', value: [...COMMAND_CODE_MODELS] },
+      }),
+    ],
+    modelsDev: { catalog: commandCodeModelsDevCatalog() },
+  });
+}
+
+// `agy models` lists one row per effort variant (`gemini-3.8-flash-high`); the picker merges the
+// variants into one family row whose expanded child is the effort axis, so the render only tells
+// the truth when it is fed the real listing.
+function antigravityModels(): readonly DetectedModel[] {
+  const stdout = readFileSync(
+    join(import.meta.dirname, '../../fixtures/antigravity/models.txt'),
+    'utf8',
+  );
+  const catalog = parseAntigravityModelCatalog(stdout);
+  if (catalog === null) throw new Error('antigravity/models.txt did not parse');
+  return nativeCliCatalogToDetectedModels(catalog);
+}
+
+function seedAntigravityNativeListing(): void {
+  seedConfig({
+    planner: {
+      kind: 'cli',
+      tool: 'antigravity',
+      model: 'gemini-3.8-flash-medium',
+      effort: 'medium',
+    },
+  })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'antigravity')],
+    cliModels: [
+      catalogAttempt({
+        tool: 'antigravity',
+        outcome: { kind: 'success', value: [...antigravityModels()] },
+      }),
+    ],
+  });
+}
+
 function seedKiloConfirmed(): void {
   const ids = fixtureIds('kilo-models-7.0.49.txt');
   const persisted = ids[4] ?? ids[0] ?? 'kilo/kilo-auto/free';
@@ -625,9 +718,14 @@ const BUILD_COPILOT_SEAT = {
 const createHelpFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'help', underlyingScreen: 'workflow' });
 const createPaletteFixture: FixtureFactory = () =>
-  createOverlayFixture({ overlay: 'command-palette', underlyingScreen: 'workflow' });
+  createOverlayFixture({
+    overlay: 'command-palette',
+    underlyingScreen: 'workflow',
+    seed: seedSkills,
+  });
 const createSkillsFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'skills', seed: seedSkills });
+const createSkillsEmptyFixture: FixtureFactory = () => createOverlayFixture({ overlay: 'skills' });
 const createSettingsFixture: FixtureFactory = () => createOverlayFixture({ overlay: 'settings' });
 const createSettingsCrewFullFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -818,6 +916,22 @@ const createPlannerPickerCopilotFixture: FixtureFactory = () =>
     seed: seedCopilotNativeListing,
     focus: 'tool:copilot',
   });
+const createPlannerPickerCommandCodeFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedCommandCodeNativeListing,
+    focus: 'tool:command-code',
+  });
+const createPlannerPickerAntigravityFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedAntigravityNativeListing();
+      pickerViewStore.expand('gemini-3.8-flash-medium', 'gemini-3.8-flash-medium', 'medium');
+    },
+    focus: 'tool:antigravity',
+    effortDraftAfterMount: 'medium',
+  });
 const createContractChoiceFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -855,6 +969,63 @@ const createReviewerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'reviewer-picker' });
 const createReviewerPickerToolFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'reviewer-picker', focus: 'tool:codex' });
+const STOP_SHEET_TS = 1_783_958_400_000;
+const STOP_SHEET_RUNNING = taskId('T002');
+const STOP_SHEET_NEXT = taskId('T003');
+
+// The sheet's pause row names the brief it would finish and the one it would not start, so the run
+// underneath it has to have both.
+function seedStopSheet(): void {
+  addEvent({
+    type: 'tasks_planned',
+    ts: STOP_SHEET_TS,
+    phase: 'implementing',
+    total: 3,
+    tasks: [
+      {
+        id: taskId('T001'),
+        title: 'Add the stop sheet rows',
+        index: 0,
+        file: 'src/features/workflow/stop/options.ts',
+        action: 'create',
+      },
+      {
+        id: STOP_SHEET_RUNNING,
+        title: 'Render the stop sheet',
+        index: 1,
+        file: 'src/features/workflow/stop/sheet.tsx',
+        action: 'create',
+      },
+      {
+        id: STOP_SHEET_NEXT,
+        title: 'Route the stop overlay',
+        index: 2,
+        file: 'src/app/router.tsx',
+        action: 'modify',
+      },
+    ],
+  });
+  addEvent({
+    type: 'task_started',
+    ts: STOP_SHEET_TS + 100,
+    phase: 'implementing',
+    taskId: STOP_SHEET_RUNNING,
+    title: 'Render the stop sheet',
+    index: 1,
+    total: 3,
+    file: 'src/features/workflow/stop/sheet.tsx',
+    action: 'create',
+    tool: 'ollama',
+    model: 'fixture-model-v1',
+  });
+}
+
+const createStopSheetFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'stop-sheet',
+    seed: seedStopSheet,
+    underlyingScreen: 'workflow',
+  });
 const createSessionsFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'sessions', seed: seedSessions });
 const createEditorFixture: FixtureFactory = () =>
@@ -869,7 +1040,8 @@ const createCostDrilldownFixture: FixtureFactory = () =>
 export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-help'), createHelpFixture],
   [scenarioId('overlay-command-palette'), createPaletteFixture],
-  [scenarioId('overlay-skills'), createSkillsFixture],
+  [scenarioId('overlay-skills'), createSkillsEmptyFixture],
+  [scenarioId('overlay-skills-list'), createSkillsFixture],
   [scenarioId('overlay-settings'), createSettingsFixture],
   [scenarioId('overlay-settings-crew-full'), createSettingsCrewFullFixture],
   [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
@@ -900,6 +1072,8 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-malformed'), createPlannerPickerMalformedFixture],
   [scenarioId('overlay-planner-picker-claude'), createPlannerPickerClaudeFixture],
   [scenarioId('overlay-planner-picker-copilot'), createPlannerPickerCopilotFixture],
+  [scenarioId('overlay-planner-picker-command-code'), createPlannerPickerCommandCodeFixture],
+  [scenarioId('overlay-planner-picker-antigravity'), createPlannerPickerAntigravityFixture],
   [scenarioId('overlay-planner-picker-cursor'), createPlannerPickerCursorFixture],
   [scenarioId('overlay-picker-cursor-expanded'), createCursorExpandedFixture],
   [scenarioId('overlay-picker-contract-choice'), createContractChoiceFixture],
@@ -910,6 +1084,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-build-picker-auto-cheapest'), createBuildPickerAutoCheapestFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
+  [scenarioId('workflow-stop-sheet'), createStopSheetFixture],
   [scenarioId('overlay-sessions'), createSessionsFixture],
   [scenarioId('overlay-editor'), createEditorFixture],
   [scenarioId('overlay-cost-drilldown'), createCostDrilldownFixture],

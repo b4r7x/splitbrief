@@ -55,16 +55,28 @@ export interface TerminalOperation extends OperationBase {
 
 export type ActiveOperation = RunningOperation | TerminalOperation;
 
+export type ValidationStage = EngineEventOf<'validate'>['activeStage'];
+
+/** The gate command the run is inside right now, and when it started producing nothing. */
+export interface RunningValidationStage {
+  stage: NonNullable<ValidationStage>;
+  command: string | null;
+  stageStartedTs: number;
+}
+
 export interface OperationsState {
   active: ActiveOperation | null;
   last: ActiveOperation | null;
   byCallId: Map<string, ActiveOperation>;
+  /** Optional so the retention helpers can keep their narrow shape; the reducer always sets it. */
+  validationStage?: RunningValidationStage | null;
 }
 
 const initial = (): OperationsState => ({
   active: null,
   last: null,
   byCallId: new Map(),
+  validationStage: null,
 });
 
 const store = createStore<OperationsState>(initial);

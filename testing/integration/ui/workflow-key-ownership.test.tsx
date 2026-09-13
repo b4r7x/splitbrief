@@ -59,7 +59,7 @@ describe('WorkflowScreen key ownership', () => {
     await tick(PAST_GRACE);
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').toContain('Approve once');
+    expect(ui.lastFrame() ?? '').toContain('allow this operation only');
 
     // A single 's' must produce exactly one semantic action: the prompt's session-approve.
     // If the composer were still focused it would also append 's' to the input box.

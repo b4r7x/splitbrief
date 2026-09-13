@@ -20,8 +20,8 @@ describe('createRuntimeCommands registry shape', () => {
 
   it('registers the commands the reference documents, once each', () => {
     const registered = commands.map((cmd) => cmd.name);
-    expect(registered).toHaveLength(23);
-    expect(new Set(registered).size).toBe(23);
+    expect(registered).toHaveLength(26);
+    expect(new Set(registered).size).toBe(26);
   });
 
   it('files every command under the category its module owns, in category order', () => {
@@ -130,7 +130,9 @@ describe('/skills command', () => {
     const steps: string[] = [];
     const { command } = skillsCommand({
       listSkills: () => SKILL_OPTIONS,
-      refreshSkills: () => steps.push('rescan'),
+      refreshSkills: async () => {
+        steps.push('rescan');
+      },
       openOverlay: (type) => steps.push(`open:${type}`),
     });
 
@@ -208,7 +210,9 @@ describe('/skills command', () => {
     const errors: string[] = [];
     const ctx = makeCtx({
       listSkills: () => SKILL_OPTIONS,
-      refreshSkills: () => steps.push('rescan'),
+      refreshSkills: async () => {
+        steps.push('rescan');
+      },
       openOverlay: (type) => steps.push(`open:${type}`),
     });
     const commands = createRuntimeCommands(ctx);

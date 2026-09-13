@@ -37,7 +37,7 @@ interface ConversationFlowProps {
 // sidebar's own headings: a heading whose first character is a letter, above rows whose first
 // character is a symbol, differs in kind rather than in shape, and no glyph tier can collapse that.
 function taskListLabel(view: TaskListView): string {
-  return view.total > 0 ? `Completed ${view.settled}/${view.total}` : 'Completed';
+  return view.total > 0 ? `Completed ${view.passed}/${view.total}` : 'Completed';
 }
 
 function computeScrollBannerLabel(

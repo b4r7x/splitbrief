@@ -40,6 +40,7 @@ export const ACTIVE_OVERLAYS = [
   'settings',
   'mode-selector',
   ...SEAT_PICKER_OVERLAYS,
+  'stop-sheet',
   'sessions',
   'editor',
   'cost-drilldown',

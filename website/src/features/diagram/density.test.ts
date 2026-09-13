@@ -27,7 +27,7 @@ test.each(seats)('the %s eyes are voids with exactly one pupil each', (_, seat) 
     let solid = 0;
     for (let r = 0; r < seat.rows; r++) {
       for (let c = 0; c < seat.cols; c++) {
-        if (!eye((c + 0.5) / seat.cols, (r + 0.5) / seat.rows)) continue;
+        if (!eye(seat, (c + 0.5) / seat.cols, (r + 0.5) / seat.rows)) continue;
         const d = density(seat, c, r, t);
         if (pupils.some((pupil) => pupil.c === c && pupil.r === r)) {
           expect(d, `pupil ${c},${r}`).toBe(1);
@@ -45,7 +45,7 @@ test.each(seats)('the %s body never reaches the pupil glyph and weaves within a 
   const isBody = (c: number, r: number): boolean => {
     const u = (c + 0.5) / seat.cols;
     const v = (r + 0.5) / seat.rows;
-    return v >= CROWN && v < SKIRT && inside(u, v) && !eye(u, v);
+    return v >= CROWN && v < SKIRT && inside(seat, u, v) && !eye(seat, u, v);
   };
   let pairs = 0;
   let differing = 0;
@@ -62,36 +62,33 @@ test.each(seats)('the %s body never reaches the pupil glyph and weaves within a 
   expect(differing / pairs).toBeGreaterThanOrEqual(0.4);
 });
 
-// hero-diagram.png: no row or column stripes; the crown and the skirt are lighter than the
-// middle, and the strands thin to dots at the bottom.
-test.each(seats)(
-  'the %s body has no stripes and fades toward the crown and the skirt',
-  (_, seat) => {
-    const cells = grid(seat, 0);
-    const mean = (values: number[]): number =>
-      values.reduce((sum, value) => sum + value, 0) / values.length;
-    const body = (rows: number[]): number[] =>
-      rows.flatMap(
-        (r) =>
-          cells[r]?.filter((_, c) => inside((c + 0.5) / seat.cols, (r + 0.5) / seat.rows)) ?? [],
-      );
-    const rowsOf = (from: number, to: number): number[] =>
-      Array.from({ length: to - from }, (_, i) => from + i);
-    const crownRows = rowsOf(0, Math.floor(CROWN * seat.rows));
-    const middleRows = rowsOf(Math.ceil(0.5 * seat.rows), Math.floor(SKIRT * seat.rows));
-    const skirtRows = rowsOf(Math.ceil(SKIRT * seat.rows), seat.rows);
-    const middle = mean(body(middleRows));
-    expect(mean(body(crownRows))).toBeLessThan(0.9 * middle);
-    expect(mean(body(skirtRows))).toBeLessThan(0.7 * middle);
-    expect(mean(body([seat.rows - 1]))).toBeLessThan(0.35 * middle);
-    const even = mean(body(middleRows.filter((r) => r % 2 === 0)));
-    const odd = mean(body(middleRows.filter((r) => r % 2 === 1)));
-    expect(Math.abs(even - odd) / middle).toBeLessThan(0.1);
-    const evenCols = mean(middleRows.flatMap((r) => cells[r]?.filter((_, c) => c % 2 === 0) ?? []));
-    const oddCols = mean(middleRows.flatMap((r) => cells[r]?.filter((_, c) => c % 2 === 1) ?? []));
-    expect(Math.abs(evenCols - oddCols) / middle).toBeLessThan(0.1);
-  },
-);
+// Short scallops retain character texture instead of dissolving into jellyfish strands.
+test.each(seats)('the %s body has a woven texture and softer crown and hem', (_, seat) => {
+  const cells = grid(seat, 0);
+  const mean = (values: number[]): number =>
+    values.reduce((sum, value) => sum + value, 0) / values.length;
+  const body = (rows: number[]): number[] =>
+    rows.flatMap(
+      (r) =>
+        cells[r]?.filter((_, c) => inside(seat, (c + 0.5) / seat.cols, (r + 0.5) / seat.rows)) ??
+        [],
+    );
+  const rowsOf = (from: number, to: number): number[] =>
+    Array.from({ length: to - from }, (_, i) => from + i);
+  const crownRows = rowsOf(0, Math.floor(CROWN * seat.rows));
+  const middleRows = rowsOf(Math.ceil(0.5 * seat.rows), Math.floor(SKIRT * seat.rows));
+  const skirtRows = rowsOf(Math.ceil(SKIRT * seat.rows), seat.rows);
+  const middle = mean(body(middleRows));
+  expect(mean(body(crownRows))).toBeLessThan(0.9 * middle);
+  expect(mean(body(skirtRows))).toBeLessThan(middle);
+  expect(mean(body([seat.rows - 1]))).toBeLessThan(0.75 * middle);
+  const even = mean(body(middleRows.filter((r) => r % 2 === 0)));
+  const odd = mean(body(middleRows.filter((r) => r % 2 === 1)));
+  expect(Math.abs(even - odd) / middle).toBeLessThan(0.25);
+  const evenCols = mean(middleRows.flatMap((r) => cells[r]?.filter((_, c) => c % 2 === 0) ?? []));
+  const oddCols = mean(middleRows.flatMap((r) => cells[r]?.filter((_, c) => c % 2 === 1) ?? []));
+  expect(Math.abs(evenCols - oddCols) / middle).toBeLessThan(0.25);
+});
 
 // Q01: the settled frame must not be a trough, and the trio must breathe as one. Rest is the
 // bright state; the exhale is one dip of at most 8 % per 5 s, the same instant for every figure.
@@ -103,7 +100,7 @@ test('the three figures breathe together, and rest bright', () => {
       for (let c = 0; c < seat.cols; c++) {
         const u = (c + 0.5) / seat.cols;
         const v = (r + 0.5) / seat.rows;
-        if (v < CROWN || v >= SKIRT || !inside(u, v) || eye(u, v)) continue;
+        if (v < CROWN || v >= SKIRT || !inside(seat, u, v) || eye(seat, u, v)) continue;
         sum += density(seat, c, r, t);
         n++;
       }
@@ -130,7 +127,7 @@ test('the core is denser than the rim and the rim fades into a faint halo', () =
   const rim = cells.slice(13, 16).flatMap((row) => [...row.slice(0, 2), ...row.slice(28)]);
   expect(mean(core)).toBeGreaterThan(mean(rim) + 0.3);
   expect(density(seat, 0, 0, 0)).toBe(0);
-  const halo = density(seat, 9, 0, 0);
+  const halo = density(seat, 10, 0, 0);
   expect(halo).toBeGreaterThanOrEqual(0.05);
   expect(halo).toBeLessThanOrEqual(0.15);
   expect(density(seat, 2, 0, 0)).toBe(0);

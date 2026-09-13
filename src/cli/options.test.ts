@@ -11,7 +11,9 @@ import {
   parseNumberOption,
   parseOutputFormatOption,
   parsePositiveIntegerOption,
+  parseRecoveryActionOption,
   parseSeatSpecOption,
+  parseSkillIdsOption,
 } from './options.js';
 import { runCommand } from '#testing/helpers/commander.js';
 
@@ -120,6 +122,48 @@ describe('parseSeatSpecOption', () => {
   });
 });
 
+describe('parseRecoveryActionOption', () => {
+  it('maps the three continue actions to their RecoveryAction ids', () => {
+    expect(parseRecoveryActionOption('skip')).toEqual({ action: 'skip-current-task' });
+    expect(parseRecoveryActionOption('retry')).toEqual({ action: 'retry-same-worker' });
+    expect(parseRecoveryActionOption('switch-seat:codex')).toEqual({
+      action: 'switch-seat',
+      candidate: { tool: 'codex' },
+    });
+    expect(parseRecoveryActionOption('switch-seat:codex:gpt-5')).toEqual({
+      action: 'switch-seat',
+      candidate: { tool: 'codex', model: 'gpt-5' },
+    });
+  });
+
+  it('exits 2 on an action it does not offer', () => {
+    expect(() => parseRecoveryActionOption('abort')).toThrowError(
+      expect.objectContaining({ exitCode: 2 }),
+    );
+  });
+
+  it('registers --action on the workflow options', () => {
+    expect(parseWorkflowOptions(['--action', 'skip'])).toMatchObject({
+      action: { action: 'skip-current-task' },
+    });
+  });
+});
+
+describe('parseSkillIdsOption', () => {
+  it("--skills a,b parses to ['a','b']", () => {
+    expect(parseSkillIdsOption('a,b')).toEqual(['a', 'b']);
+    expect(parseSkillIdsOption(' a , b ')).toEqual(['a', 'b']);
+  });
+
+  it('rejects a list that names nothing', () => {
+    expect(() => parseSkillIdsOption(' , ')).toThrow(InvalidArgumentError);
+  });
+
+  it('registers --skills on the workflow options', () => {
+    expect(parseWorkflowOptions(['--skills', 'a,b'])).toMatchObject({ skills: ['a', 'b'] });
+  });
+});
+
 describe('--allow-unverified-auth', () => {
   it.each([
     { args: [], expected: false },
@@ -167,6 +211,7 @@ describe('runner selection help', () => {
       'kilo-code',
       'cursor',
       'command-code',
+      'antigravity',
       'shell',
       'agent',
     ]);
@@ -178,6 +223,7 @@ describe('runner selection help', () => {
       'kilo-code',
       'cursor',
       'command-code',
+      'antigravity',
       'ollama',
       'lm-studio',
       'shell',

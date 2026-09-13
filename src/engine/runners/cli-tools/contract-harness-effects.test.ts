@@ -129,7 +129,7 @@ describe('production-factory effect conformance', () => {
         ...scenario,
       });
       expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);
-      expect(outcome.reason).toMatch(/instead of exactly src\/hello\.ts/);
+      expect(outcome.reason).toMatch(/wrote outside the brief's declared files: unrelated\.txt/);
     } finally {
       await scenario.cleanup();
     }
@@ -163,7 +163,7 @@ describe('production-factory effect conformance', () => {
         ...scenario,
       });
       expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);
-      expect(outcome.reason).toMatch(/extra\.txt.*instead of exactly src\/hello\.ts/);
+      expect(outcome.reason).toMatch(/wrote outside the brief's declared files: extra\.txt/);
     } finally {
       await scenario.cleanup();
     }

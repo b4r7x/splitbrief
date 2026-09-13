@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { finishClaudeStream, createStreamHandler, interruptedError } from './stream.js';
-import { TASK_BRIEF_COMPILER_POLICY } from '../../../core/schemas/task-compilation.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
 
 const context: RunnerCallContext = {
@@ -9,26 +8,6 @@ const context: RunnerCallContext = {
   backendKind: 'cli',
   runnerName: 'claude',
 };
-
-function envelopeContext(): RunnerCallContext {
-  return {
-    ...context,
-    callId: 'claude-envelope-stream-test',
-    envelope: {
-      version: 1,
-      promptBytes: 512,
-      inputTokensUpperBound: 512,
-      requestedOutputTokens: TASK_BRIEF_COMPILER_POLICY.requestedOutputTokens,
-      outputTokensUpperBound: TASK_BRIEF_COMPILER_POLICY.maxNormalizedOutputBytes,
-      maxNormalizedOutputBytes: TASK_BRIEF_COMPILER_POLICY.maxNormalizedOutputBytes,
-      maxDeclaredArtifactBytes: TASK_BRIEF_COMPILER_POLICY.maxDeclaredArtifactBytes,
-      maxRawProtocolBytes: TASK_BRIEF_COMPILER_POLICY.maxRawProtocolBytes,
-      maxStderrBytes: TASK_BRIEF_COMPILER_POLICY.maxStderrBytes,
-      deadlineMs: TASK_BRIEF_COMPILER_POLICY.deadlineMs,
-      idleTimeoutMs: TASK_BRIEF_COMPILER_POLICY.idleTimeoutMs,
-    },
-  };
-}
 
 describe('Claude stream credential redaction', () => {
   it('redacts credential values from output callbacks, tool payloads, events, and results', () => {
@@ -147,58 +126,5 @@ describe('Claude stream credential redaction', () => {
     const result = finishClaudeStream(state);
     expect(result.status).toBe('completed');
     expect(result.text).toBe('final text');
-  });
-
-  it('fails an empty final response under a compiler envelope instead of falling back to partials', () => {
-    const events: RunnerCallEvent[] = [];
-    const { state, handleLine } = createStreamHandler({
-      context: envelopeContext(),
-      onOutput: () => {},
-      onCallEvent: (event) => events.push(event),
-    });
-
-    handleLine(
-      JSON.stringify({
-        type: 'assistant',
-        message: { content: [{ type: 'text', text: 'partial text' }] },
-      }),
-    );
-    handleLine(JSON.stringify({ type: 'result' }));
-
-    expect(() => finishClaudeStream(state)).toThrow('no final response text');
-    const errors = events.filter(
-      (event): event is Extract<RunnerCallEvent, { type: 'call_error' }> =>
-        event.type === 'call_error',
-    );
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({
-      status: 'failed',
-      error: { code: 'task_compiler_final_response_missing' },
-      partial: true,
-    });
-  });
-
-  it('redacts credentials from partial text when a compiler-enveloped call fails its final response', () => {
-    const credential = 'opaque-claude-envelope-stream-canary-8c41e2f9';
-    const events: RunnerCallEvent[] = [];
-    const { state, handleLine } = createStreamHandler({
-      context: envelopeContext(),
-      credentialValues: [credential],
-      onOutput: () => {},
-      onCallEvent: (event) => events.push(event),
-    });
-
-    handleLine(
-      JSON.stringify({
-        type: 'assistant',
-        message: { content: [{ type: 'text', text: `partial with ${credential}` }] },
-      }),
-    );
-    handleLine(JSON.stringify({ type: 'result' }));
-
-    expect(() => finishClaudeStream(state)).toThrow('no final response text');
-    const persisted = JSON.stringify(events);
-    expect(persisted).not.toContain(credential);
-    expect(persisted).toContain('***REDACTED***');
   });
 });

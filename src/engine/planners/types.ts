@@ -21,12 +21,11 @@ import {
   type OwnedPlannerArtifact,
   type PlannerArtifactTransport,
   type PlannerSessionScope,
-  type TaskCompilationAttemptId,
-  type TaskCompilationBatchId,
-  type TaskCompilationCallEnvelope,
-  type TaskCompilationProgramId,
-  type TaskCompilationSemanticId,
-} from '../../core/schemas/task-compilation.js';
+  type PlannerArtifactAttemptId,
+  type PlannerArtifactBatchId,
+  type PlannerArtifactProgramId,
+  type PlannerArtifactSemanticId,
+} from '../../core/schemas/planner-artifact.js';
 
 export type {
   DeclaredArtifactLease,
@@ -167,13 +166,12 @@ export type PhaseResult = Readonly<{
 export type PlannerArtifactLogicalName = 'research.md' | 'spec.md' | 'plan.md' | 'tasks.md';
 
 export type PlannerArtifactRequest = Readonly<{
-  semanticId: TaskCompilationSemanticId;
-  programId: TaskCompilationProgramId | null;
-  batchId: TaskCompilationBatchId | null;
-  attemptId: TaskCompilationAttemptId;
+  semanticId: PlannerArtifactSemanticId;
+  programId: PlannerArtifactProgramId | null;
+  batchId: PlannerArtifactBatchId | null;
+  attemptId: PlannerArtifactAttemptId;
   logicalName: PlannerArtifactLogicalName;
   transport: PlannerArtifactTransport;
-  envelope: TaskCompilationCallEnvelope;
 }>;
 
 export function isOwnedPlannerArtifactFor(

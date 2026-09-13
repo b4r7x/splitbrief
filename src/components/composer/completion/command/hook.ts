@@ -4,7 +4,10 @@ import type {
   CommandGuardContext,
   RuntimeCommandDef,
 } from '../../../../core/runtime/commands/types.js';
-import { suggestRuntimeCommand } from '../../../../core/runtime/commands/lookup.js';
+import {
+  rankClosedOptions,
+  suggestRuntimeCommand,
+} from '../../../../core/runtime/commands/lookup.js';
 import { detectedModelFact, seatSupportsImages } from '../../../../core/runners/capabilities.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { modelCacheStore } from '../../../../stores/discovery/model-cache/state.js';
@@ -87,35 +90,43 @@ export function useCommandCompletion({
   const hasArgs = whitespaceIndex >= 0;
   const commandToken = hasArgs ? value.slice(0, whitespaceIndex) : value;
   const query = commandToken.toLowerCase();
-  const argToken = hasArgs ? value.slice(whitespaceIndex + 1) : '';
+  const argTail = hasArgs ? value.slice(whitespaceIndex + 1) : '';
   const validCommands = commands.filter((cmd) => {
     if (!cmd.validScreens.includes(currentScreen)) return false;
     if (cmd.guard?.(guardContext) !== undefined) return false;
     return true;
   });
-  // Past the space the menu completes the second token of a closed argument set. It closes for
-  // `free` args, for `noarg` commands, and when no option matches the typed prefix, so it never
-  // swallows Enter for a line the composer must submit raw to dispatch.
-  const argCommand =
-    hasArgs && !/\s/.test(argToken)
-      ? validCommands.find((cmd) => cmd.name.toLowerCase() === query)
-      : undefined;
-  const closedArgs =
+  // Past the space the menu completes a token of a closed argument set. It closes for `free` args,
+  // for `noarg` commands, and when no option matches the typed token, so it never swallows Enter
+  // for a line the composer must submit raw to dispatch. A `multi` set keeps completing past the
+  // second token: the last token is the query and everything before it is carried in the prefix.
+  const argCommand = hasArgs
+    ? validCommands.find((cmd) => cmd.name.toLowerCase() === query)
+    : undefined;
+  const argSpec =
     argCommand?.kind === 'arg' && argCommand.args.kind === 'closed' ? argCommand.args : null;
+  const tailSplit = /^([\s\S]*\s)?(\S*)$/.exec(argTail);
+  const argToken = argSpec?.multi === true ? (tailSplit?.[2] ?? '') : argTail;
+  const argHead = argSpec?.multi === true ? (tailSplit?.[1] ?? '') : '';
+  const closedArgs =
+    argSpec !== null && (argSpec.multi === true || !/\s/.test(argTail)) ? argSpec : null;
   const argOptions =
-    argCommand !== undefined && closedArgs !== null
-      ? closedArgs.options
-          .filter((option) => option.toLowerCase().startsWith(argToken.toLowerCase()))
-          .map(
-            (option): CommandCompletionRow => ({
-              name: option,
-              description: closedArgs.optionDescriptions?.[option] ?? '',
-            }),
-          )
+    closedArgs !== null
+      ? (closedArgs.match === 'fuzzy'
+          ? rankClosedOptions(closedArgs.options, closedArgs.optionDescriptions, argToken)
+          : closedArgs.options.filter((option) =>
+              option.toLowerCase().startsWith(argToken.toLowerCase()),
+            )
+        ).map(
+          (option): CommandCompletionRow => ({
+            name: option,
+            description: closedArgs.optionDescriptions?.[option] ?? '',
+          }),
+        )
       : null;
   const argRows = argOptions !== null && argOptions.length > 0 ? argOptions : null;
   const showSuggestions = commandMode && !suppressed && (!hasArgs || argRows !== null);
-  const argPrefix = argRows === null ? null : `${commandToken} `;
+  const argPrefix = argRows === null ? null : `${commandToken} ${argHead}`;
   const matchQuery = argRows === null ? query : argToken.toLowerCase();
   const filtered = showSuggestions
     ? (argRows ?? validCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(query)))

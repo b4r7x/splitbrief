@@ -13,20 +13,18 @@ import {
   CONFIRM_REASON_HINTS,
   CONFIRM_REASON_OPTIONAL,
   CONFIRM_REASON_UNSTATED,
-  GATE_TITLE,
   IRREVERSIBLE_NOTE,
   approvalKeyColumnWidth,
   approvalOptionKeyCell,
   approvalOptionLabelText,
   approvalSubjectText,
+  approvalTitle,
   getApprovalConfirmLabel,
-  getApprovalSeverityWord,
   getConfirmChooseHints,
   getConfirmOptionZones,
   getConfirmOptions,
   isIrreversibleActionClass,
 } from '../../prompt-rows/approval.js';
-import { SOFT_SEP } from '../../../../components/separators.js';
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
 import type {
   TieredApprovalRequest,
@@ -190,11 +188,7 @@ export function ConfirmApprovalPrompt({
       overflow="hidden"
       flexShrink={0}
     >
-      <Text color={t.textDim}>
-        {GATE_TITLE}
-        {SOFT_SEP}
-        <Text color={tone}>{getApprovalSeverityWord(request.actionClass)}</Text>
-      </Text>
+      <Text color={tone}>{approvalTitle(request.actionClass)}</Text>
       <Text> </Text>
       <Text>{getApprovalConfirmLabel(request.actionClass)}</Text>
       <Text bold>{approvalSubjectText(request.actionDescription, cols)}</Text>

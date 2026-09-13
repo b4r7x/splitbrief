@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   UNREADABLE_FINGERPRINT,
   captureChangedFilesBaseline,
+  inferTaskAcceptedChangedFiles,
   changedFilesSinceBaseline,
   deserializeChangedFilesBaseline,
   refreshChangedFilesBaseline,
@@ -16,6 +17,7 @@ import {
 import { commitChanges, stageAll } from '../../lib/git/staging.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -494,6 +496,30 @@ describe('changed-files rolling disappearance', () => {
       expect(persisted.activeTaskSnapshot).toBeUndefined();
       expect(deserialized.fingerprints.get('never-created.txt')).toBe('missing');
       expect(deserialized.runStartChangedFiles).toEqual(new Set());
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe('inferTaskAcceptedChangedFiles', () => {
+  it('attributes every declared file and a prose in-bounds bullet', async () => {
+    const dir = createTempDir('infer-task-accepted-declared-set');
+    createTestGitRepo(dir);
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      for (const file of ['a.ts', 'a.test.ts', 'x.ts', 'leak.ts']) {
+        writeFileSync(join(dir, 'src', file), 'export const changed = true;\n');
+      }
+      const task = makeTask({
+        file: 'src/a.ts',
+        files: ['src/a.ts', 'src/a.test.ts'],
+        scope: { inBounds: ['`src/x.ts` \u2014 the union collapse'] },
+      });
+
+      const attributed = await inferTaskAcceptedChangedFiles(dir, task, null);
+
+      expect(attributed.sort()).toEqual(['src/a.test.ts', 'src/a.ts', 'src/x.ts']);
     } finally {
       cleanupTempDir(dir);
     }

@@ -5,7 +5,7 @@ import { eventsStore } from '../events.js';
 import { tasksStore } from '../tasks.js';
 import { tokensStore } from '../tokens.js';
 import { lifecycleStore } from '../lifecycle.js';
-import { abortStore } from '../abort.js';
+import { stopStore } from '../stop.js';
 import { configStore } from '../../project/config.js';
 import { approvalPromptStore, openApprovalPrompt } from '../../approval-prompt/prompt.js';
 import { costApprovalStore, openCostApprovalPrompt } from '../../cost-approval/prompt.js';
@@ -53,11 +53,11 @@ describe('resetWorkflow', () => {
     await expect(pending).resolves.toBe(false);
   });
 
-  it('clears armed abort state before resetting sub-stores', () => {
-    abortStore.arm('exit');
-    expect(abortStore.get().armed).toBe('exit');
+  it('clears a stop request before resetting sub-stores', () => {
+    stopStore.request('stop-now');
+    expect(stopStore.get().phase).toBe('requested');
     resetWorkflow();
-    expect(abortStore.get().armed).toBe('none');
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
   });
 
   it('resets workflow sub-stores to initial state', () => {

@@ -68,7 +68,13 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
 
     const taskStart = events.find((e) => e.type === 'task_started');
-    expect(taskStart).toMatchObject({ type: 'task_started', taskId: 'T001', index: 0, total: 1 });
+    expect(taskStart).toMatchObject({
+      type: 'task_started',
+      taskId: 'T001',
+      index: 0,
+      total: 1,
+      files: ['src/hello.ts'],
+    });
     const taskComplete = events.find((e) => e.type === 'task_completed');
     expect(taskComplete).toMatchObject({ type: 'task_completed', taskId: 'T001', method: 'local' });
   });

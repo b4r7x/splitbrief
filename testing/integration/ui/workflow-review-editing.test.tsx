@@ -11,7 +11,7 @@ import type { ApprovalReviewResult } from '../../../src/core/approval/types.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { formatTasks } from '../../../src/engine/spec/formatter.js';
-import { REVIEW_HINT } from '../../../src/features/workflow/review-commands.js';
+import { REVIEW_DOCUMENT_HINTS } from '../../../src/features/workflow/prompt-rows/approval.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { mountWorkflowScreen, prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { sessionDir } from '../../../src/core/paths.js';
@@ -32,7 +32,6 @@ const { reviewStore } = await import('../../../src/stores/workflow/review.js');
 const { externalEditRequestStore } = await import(
   '../../../src/stores/ui/external-edit-request.js'
 );
-const { abortStore } = await import('../../../src/stores/workflow/abort.js');
 
 const ENTER = '\r';
 const CTRL_E = '\x05';
@@ -40,8 +39,9 @@ const REVIEW_EDITOR_WAIT_MS = 15_000;
 
 async function waitForReviewPrompt(ui: { lastFrame: () => string | undefined }, timeout?: number) {
   await vi.waitFor(() => {
+    // The document gate is its own legend: the panel names the keys, the composer takes a comment.
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('approve');
+    expect(frame).toContain('Approve');
     expect(frame).toContain('e edit');
   }, timeout);
   await tick(20);
@@ -140,17 +140,12 @@ describe('WorkflowScreen review editing', () => {
 
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain('Simple footer task');
-        expect(ui.lastFrame() ?? '').toContain(REVIEW_HINT);
+        expect(ui.lastFrame() ?? '').toContain(REVIEW_DOCUMENT_HINTS);
       });
       const frame = ui.lastFrame() ?? '';
-      // Ctrl+C is hinted only by the armed FeedbackRow, never by the resting InputFooter.
+      // The gate panel is the only legend on screen: the resting footer adds nothing beside it.
       expect(frame).not.toContain('Ctrl+C');
       expect(frame).not.toContain('tab sections');
-
-      abortStore.arm('exit');
-      await tick(20);
-      expect(ui.lastFrame() ?? '').toContain('ctrl+c again to exit');
-      abortStore.clear();
 
       ui.unmount();
     } finally {

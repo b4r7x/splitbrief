@@ -3,6 +3,7 @@ import { useTheme } from '../../../components/theme.js';
 import { configStore } from '../../../stores/project/config.js';
 import { detectionStore } from '../../../stores/project/detection.js';
 import { skillsStore } from '../../../stores/project/skills.js';
+import type { SkillMeta } from '../../../core/skills/types.js';
 import { SOFT_SEP } from '../../../components/separators.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
@@ -39,6 +40,18 @@ export function shedToFit(input: {
   return kept;
 }
 
+// A count says a number and leaves the reader to open a picker to learn what it counts. The names
+// are what the planner is actually carrying, and `none` is a state with a word rather than a zero.
+function selectedSkillsText(skills: {
+  available: readonly SkillMeta[];
+  selected: ReadonlySet<string>;
+}): string {
+  const names = skills.available
+    .filter((skill) => skills.selected.has(skill.id))
+    .map((skill) => skill.name);
+  return names.length === 0 ? 'skills: none' : `skills: ${names.join(', ')}`;
+}
+
 function seatIdentity(seat: CrewSeat): string {
   return seat.id === 'review' && seat.source === 'planner'
     ? PLANNER_INHERITANCE.sentence
@@ -48,7 +61,7 @@ function seatIdentity(seat: CrewSeat): string {
 export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) {
   const theme = useTheme();
   const config = configStore.useConfig();
-  const skillCount = skillsStore.use((s) => s.selected.size);
+  const skills = skillsStore.use((s) => s);
   // Dim until the first discovery result ever lands: the seats are what the
   // config says, not yet what the machine confirmed.
   const coldDiscovery = detectionStore.use((s) => s.refresh.readiness.fetchedAt === null);
@@ -66,7 +79,7 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
   const mode = getWorkflowMode(config);
   const optional = shedToFit({
     lead: [mode],
-    optional: [`${skillCount} skills`, ...(coldDiscovery ? [DETECTING_TOOLS_STATUS] : [])],
+    optional: [selectedSkillsText(skills), ...(coldDiscovery ? [DETECTING_TOOLS_STATUS] : [])],
     tail: [CREW_HINT],
     width,
   });

@@ -14,6 +14,7 @@ import {
   CONFIRM_REASON_HINTS,
   CONFIRM_REASON_OPTIONAL,
   CONFIRM_REASON_UNSTATED,
+  approvalTitle,
   getApprovalPromptRows,
   getConfirmChooseHints,
 } from '../../prompt-rows/approval.js';
@@ -239,7 +240,7 @@ describe('ApprovalPrompt confirm tier', () => {
       // title, every option with its padded key cell, and a legend that ends in a whole token.
       const chooseStep = stripColor(ui.lastFrame());
       const keyCell = actionClass === 'destructive' ? 'enter  ' : 'y  ';
-      expect(chooseStep).toContain('Approval');
+      expect(chooseStep).toContain(approvalTitle(actionClass));
       expect(chooseStep).toContain(`${keyCell} Confirm`);
       expect(chooseStep).toContain('Confirm with a reason');
       expect(chooseStep).toContain('Deny');

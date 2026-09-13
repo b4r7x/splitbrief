@@ -1,10 +1,17 @@
 import { useRef } from 'react';
 import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
-import { requestRewind, requestClearQueue } from '../features/workflow/handlers.js';
+import {
+  requestClearQueue,
+  requestEndRun,
+  requestQuit,
+  requestResume,
+  requestRewind,
+} from '../features/workflow/handlers.js';
 import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
 import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
+import { getWorkflowSidebarWidth } from '../features/workflow/layout/rect.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
 import type { Config } from '../core/schemas/config.js';
@@ -16,6 +23,7 @@ import { controlsStore } from '../stores/ui/controls.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { tasksStore } from '../stores/workflow/tasks.js';
 import { projectFilesStore } from '../stores/ui/project-files.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { refreshSkills } from './refresh-skills.js';
@@ -181,10 +189,8 @@ function toggleSkill(id: string): SkillToggleResult {
   const { available, selected } = skillsStore.get();
   const skill = available.find((candidate) => candidate.id === id);
   if (skill === undefined) return { status: 'unknown' };
-  const next = new Set(selected);
-  const wasSelected = next.delete(id);
-  if (!wasSelected) next.add(id);
-  skillsStore.setSelected(next);
+  const wasSelected = selected.has(id);
+  skillsStore.toggleSelected(id);
   return { status: wasSelected ? 'deselected' : 'selected', name: skill.name };
 }
 
@@ -239,7 +245,7 @@ export function buildCommandContext({
     noActiveSession: appCommandContextError.noActiveSession,
     openOverlay: overlayStore.open,
     navigateHome: () => routerStore.navigate({ to: 'home' }),
-    quit: exit,
+    quit: () => requestQuit(exit),
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => {
@@ -260,6 +266,8 @@ export function buildCommandContext({
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: workflow.requestRewind,
     requestTaskRedo: (taskId) => workflow.requestRewind({ target: 'task', taskId }),
+    resumeRun: () => requestResume(''),
+    endRun: requestEndRun,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: workflow.requestClearQueue,
     attachImage,
@@ -281,9 +289,13 @@ export function buildCommandContext({
     scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),
     toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.findLatestActivityBatchKey),
     toggleLatestDiff: () => toggleLatestDiff(workflow.findLatestDiffKey),
+    listBriefs: () => tasksStore.get().tasks.map(({ id, status }) => ({ id, status })),
     copyTarget: (target) => copyTarget(target, workflow.resolveCopyValue),
     toggleSidebar: () => {
-      if (terminalSizeStore.get().isSmall) {
+      // The layout owns the breakpoint: at exactly 120 columns `isSmall` is false while
+      // `getWorkflowSidebarWidth` is 0, so only the layout can say whether a column will paint.
+      const { cols } = terminalSizeStore.get();
+      if (getWorkflowSidebarWidth({ cols, sidebarVisible: true }) === 0) {
         return { status: 'unavailable', message: 'Sidebar is hidden on small terminals.' };
       }
       controlsStore.toggleSidebar();

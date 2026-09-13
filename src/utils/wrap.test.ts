@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getTerminalCellWidth } from './display-text.js';
-import { wrapHard, wrapPathAware } from './wrap.js';
+import { wrapClauses, wrapHard, wrapPathAware } from './wrap.js';
 
 describe('wrapPathAware', () => {
   it('breaks an over-long path after a separator instead of mid-filename', () => {
@@ -60,5 +60,41 @@ describe('wrapPathAware', () => {
 
     expect(lines).toEqual(['界', '界/', 'ok']);
     expect(lines.join('')).toBe('界界/ok');
+  });
+});
+
+describe('wrapClauses', () => {
+  it('breaks after a clause instead of stranding its negation on the line above', () => {
+    const text = 'finish T002 including checks and review; do not start T003';
+
+    expect(wrapHard(text, 48).split('\n')).toEqual([
+      'finish T002 including checks and review; do not ',
+      'start T003',
+    ]);
+    expect(wrapClauses(text, 48).split('\n')).toEqual([
+      'finish T002 including checks and review;',
+      'do not start T003',
+    ]);
+  });
+
+  it('packs as many whole clauses onto a line as fit', () => {
+    expect(
+      wrapClauses('stop execution; mark this run cancelled; keep changes', 48).split('\n'),
+    ).toEqual(['stop execution; mark this run cancelled;', 'keep changes']);
+  });
+
+  it('leaves text that already fits on one line untouched', () => {
+    expect(wrapClauses('stop execution; keep partial changes', 48)).toBe(
+      'stop execution; keep partial changes',
+    );
+  });
+
+  it('hard-wraps a single clause wider than the line', () => {
+    expect(wrapClauses('cancel the pause; the run continues', 12).split('\n')).toEqual([
+      'cancel the ',
+      'pause;',
+      'the run ',
+      'continues',
+    ]);
   });
 });

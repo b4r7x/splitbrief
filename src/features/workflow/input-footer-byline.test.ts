@@ -3,7 +3,8 @@ import { SOFT_SEP } from '../../components/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
-import { buildInputFooterByline } from './input-footer-byline.js';
+import { buildInputFooterByline, stageFractionText } from './input-footer-byline.js';
+import { stopByline } from './stop/copy.js';
 
 function fullByline(byline: { lead: string; hint: string; queued: string; rest: string }): string {
   return `${byline.lead}${byline.hint}${byline.queued}${byline.rest}`;
@@ -282,5 +283,70 @@ describe('buildInputFooterByline', () => {
 
     expect(byline.queued).toBe('2 queued');
     expect(fullByline(byline)).toBe('2 queued · git:none');
+  });
+});
+
+describe('stageFractionText', () => {
+  it('fraction equals passed, not the index of the running brief', () => {
+    expect(stageFractionText({ passed: 2, total: 5 })).toBe('2/5');
+  });
+
+  it('is empty before the plan announces a total', () => {
+    expect(stageFractionText({ passed: 0, total: 0 })).toBe('');
+  });
+});
+
+describe('the stop byline through the footer', () => {
+  function stopLine(overrides: Parameters<typeof stopByline>[0]): string {
+    const stopped = stopByline(overrides);
+    if (stopped === null) throw new Error('expected a stop byline');
+    return fullByline(
+      buildInputFooterByline({
+        cols: 120,
+        lead: stopped.lead,
+        hintText: stopped.hint,
+        queuedText: null,
+        etaText: null,
+        gitLabel: 'git:none',
+        advisoryText: null,
+      }),
+    );
+  }
+
+  const running: Parameters<typeof stopByline>[0] = {
+    intent: 'stop-now',
+    phase: 'terminating',
+    parked: null,
+    currentTaskId: 'T002',
+    nextTaskId: 'T003',
+    passed: 1,
+    total: 5,
+    elapsedMs: 4_000,
+    sheetOpen: false,
+    questionPending: false,
+  };
+
+  it('names the wait while processes are asked to exit', () => {
+    expect(stopLine(running)).toContain(
+      'Stopping T002 · Waiting for processes to exit · elapsed 0:04 · No new work will start',
+    );
+  });
+
+  it('says it is forcing once the grace is spent', () => {
+    expect(stopLine({ ...running, phase: 'forcing' })).toContain(
+      'Stopping T002 · Forcing remaining processes to exit',
+    );
+  });
+
+  it('names the run, not the brief, while the run is ending', () => {
+    expect(stopLine({ ...running, intent: 'end-run' })).toContain(
+      'Ending run · Waiting for processes to exit · elapsed 0:04',
+    );
+  });
+
+  it('says the session is being saved on the way out', () => {
+    expect(stopLine({ ...running, intent: 'quit' })).toContain(
+      'Quitting · Stopping processes and saving session',
+    );
   });
 });

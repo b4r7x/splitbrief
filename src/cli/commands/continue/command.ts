@@ -8,6 +8,12 @@ import { resolveSessionAlias } from '../../sessions/aliases.js';
 import { assertSessionExists } from '../../sessions/resolve.js';
 import { readActive } from '../../../core/sessions/active-pointer.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { RecoveryActionOption } from '../../options.js';
+import { resolveRunConfig } from '../../build-overrides.js';
+import { createEventBus } from '../../../engine/events/bus.js';
+import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions.js';
 import { resumeSavedSession } from './resume.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 
@@ -43,9 +49,41 @@ async function resolveTargetSession(
   throw cliError('no session to continue; start one with `splitbrief start`.', 1);
 }
 
+type ContinueOpts = { projectDir: string } & WorkflowOpts & {
+    action?: RecoveryActionOption | undefined;
+  };
+
+/**
+ * `--action` answers the pending recovery before the run re-enters: the same
+ * transition the TUI panel applies, taken from the resume line an earlier halt
+ * printed. A blocked action is the operator's error, not the run's.
+ */
+function applyPendingRecoveryAction(args: {
+  sessionId: string;
+  state: WorkflowState;
+  action: RecoveryActionOption;
+  opts: ContinueOpts;
+}): { state: WorkflowState; config?: Config } {
+  const projectDir = args.opts.projectDir;
+  const result = applyRecoveryAction({
+    projectDir,
+    sessionId: args.sessionId,
+    state: args.state,
+    action: args.action.action,
+    bus: createEventBus(),
+    config: resolveRunConfig({ projectDir, opts: args.opts }),
+    ...(args.action.candidate !== undefined && { candidate: args.action.candidate }),
+  });
+  if (!result.ok) throw cliError(result.message, 1);
+  return {
+    state: result.state,
+    ...(result.switchedConfig !== undefined && { config: result.switchedConfig }),
+  };
+}
+
 export async function continueCommand(
   sessionInput: string | undefined,
-  opts: { projectDir: string } & WorkflowOpts & { plain?: boolean | undefined },
+  opts: ContinueOpts,
   deps: ContinueDeps = defaultContinueDeps,
 ): Promise<void> {
   const sessionId = await resolveTargetSession(sessionInput, opts.projectDir);
@@ -66,11 +104,22 @@ export async function continueCommand(
     );
   }
 
+  const resumed =
+    opts.action === undefined
+      ? { state: hydrated.state }
+      : applyPendingRecoveryAction({
+          sessionId,
+          state: hydrated.state,
+          action: opts.action,
+          opts,
+        });
+
   await resumeSavedSession({
     projectDir: opts.projectDir,
     sessionId,
-    state: hydrated.state,
+    state: resumed.state,
     opts,
+    ...(resumed.config !== undefined && { config: resumed.config }),
     deps,
   });
 }

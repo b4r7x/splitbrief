@@ -2,7 +2,6 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { EventBus } from '../events/types.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
-import type { Summary } from '../../core/schemas/summary.js';
 import type { Config } from '../../core/schemas/config.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
@@ -26,6 +25,9 @@ import { buildSummary, type SummaryBase } from './summary/build.js';
 import { publishError, publishPlannerStatus, publishWarningFromError } from './events.js';
 import { transitionAndSave } from './state-ops.js';
 import { runReviewerCall } from './review-call.js';
+import { parseFinalReview, type ParsedFinalReview } from '../parsers/final-review.js';
+import { VERDICT_RULES } from '../../core/pipeline-spec/review.js';
+import type { ReviewPhaseStatus } from './review-fix.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/write.js';
 import { formatTasks } from '../spec/formatter.js';
@@ -35,7 +37,13 @@ import { withContinuationLoop } from './continuation.js';
 import { composeSteeredPrompt } from '../spec/prompts/steered-prompt.js';
 import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
 
-export type FinalReviewResult = { summary: Summary; state: WorkflowState };
+export type FinalReviewResult = {
+  state: WorkflowState;
+  summaryBase: SummaryBase;
+  verdict: ParsedFinalReview | null;
+  reviewText: string;
+  reviewStatus: ReviewPhaseStatus;
+};
 
 export const finalReviewError = {
   missingRunBaseline: () =>
@@ -81,29 +89,21 @@ export async function runFinalReviewPhase(opts: {
   }
 
   const finalReviewStart = Date.now();
-  const interruptedSummary = (): FinalReviewResult => {
+  const interrupted = (): FinalReviewResult => {
     if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
     publishPlannerStatus(bus, state, 'done', {
       duration: Date.now() - finalReviewStart,
       summary: 'Final review aborted',
     });
-    return {
-      summary: buildSummary({
-        ...summaryBase,
-        projectDir,
-        sessionId,
-        state,
-        taskBreakdowns,
-        ...(phaseTimings && { phaseTimings }),
-      }),
-      state,
-    };
+    return { state, summaryBase, verdict: null, reviewText: '', reviewStatus: 'failed' };
   };
-  if (opts.signal?.aborted) return interruptedSummary();
+  if (opts.signal?.aborted) return interrupted();
   publishPlannerStatus(bus, state, 'running');
   bus.publish({ type: 'all_tasks_done', ts: Date.now(), phase: state.phase });
 
-  let reviewStatus: 'written' | 'failed' = 'written';
+  let writeStatus: 'written' | 'failed' = 'written';
+  let reviewText = '';
+  let verdict: ParsedFinalReview | null = null;
   try {
     const baseline = state.changedFilesBaseline;
     if (baseline?.runStartChangedFiles === undefined) throw finalReviewError.missingRunBaseline();
@@ -155,7 +155,21 @@ export async function runFinalReviewPhase(opts: {
     });
     const fullPrompt = queueText ? queueText + basePrompt : basePrompt;
 
-    if (opts.sinks) {
+    const callReviewer = async (prompt: string): Promise<string> => {
+      if (opts.sinks === undefined) {
+        const review = await runReviewerCall({
+          reviewer,
+          prompt,
+          projectDir,
+          sessionId,
+          bus,
+          state,
+          metadata,
+          signal: opts.signal,
+        });
+        state = review.state;
+        return review.text;
+      }
       const loop = await withContinuationLoop<{ state: WorkflowState; text: string }>({
         ctx: {
           projectDir,
@@ -172,7 +186,7 @@ export async function runFinalReviewPhase(opts: {
         body: ({ signal: callSignal, continuationPrompt, steer }) =>
           runReviewerCall({
             reviewer,
-            prompt: composeSteeredPrompt(continuationPrompt ?? fullPrompt, steer),
+            prompt: composeSteeredPrompt(continuationPrompt ?? prompt, steer),
             projectDir,
             sessionId,
             bus,
@@ -182,21 +196,19 @@ export async function runFinalReviewPhase(opts: {
           }),
       });
       state = loop.value.state;
-    } else {
-      const review = await runReviewerCall({
-        reviewer,
-        prompt: fullPrompt,
-        projectDir,
-        sessionId,
-        bus,
-        state,
-        metadata,
-        signal: opts.signal,
-      });
-      state = review.state;
+      return loop.value.text;
+    };
+
+    reviewText = await callReviewer(fullPrompt);
+    verdict = parseFinalReview(reviewText);
+    // A reply with no single verdict word cannot be acted on, and the reviewer
+    // is the only party that can supply one; it gets exactly one more turn.
+    if (verdict.verdict === null) {
+      reviewText = await callReviewer(`${fullPrompt}\n\n${VERDICT_RULES.reaskSentence}`);
+      verdict = parseFinalReview(reviewText);
     }
   } catch (err) {
-    if (opts.signal?.aborted || isAbortError(err)) return interruptedSummary();
+    if (opts.signal?.aborted || isAbortError(err)) return interrupted();
     const seat = resolveReviewerRunner(config);
     const label =
       seat.source === 'configured'
@@ -207,16 +219,16 @@ export async function runFinalReviewPhase(opts: {
       phase: state.phase,
       message: labelError(label, err),
     });
-    reviewStatus = 'failed';
+    writeStatus = 'failed';
   }
-  if (opts.signal?.aborted) return interruptedSummary();
+  if (opts.signal?.aborted) return interrupted();
 
   try {
     const ledger = readEvidenceLedger({ projectDir, sessionId });
     if (ledger) {
       writeEvidenceLedger(
         { projectDir, sessionId },
-        recordFinalReviewEvidence({ ledger, status: reviewStatus }),
+        recordFinalReviewEvidence({ ledger, status: writeStatus }),
       );
     }
   } catch (err) {
@@ -225,34 +237,25 @@ export async function runFinalReviewPhase(opts: {
 
   if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
 
-  if (reviewStatus === 'failed') {
-    publishPlannerStatus(bus, state, 'done', {
-      duration: Date.now() - finalReviewStart,
-      summary: 'Final review failed',
-    });
-  } else {
-    state = transitionAndSave({ projectDir, sessionId }, state, { type: 'REVIEW_DONE' });
-    publishPlannerStatus(bus, state, 'done', { duration: Date.now() - finalReviewStart });
-    bus.publish({ type: 'workflow_complete', ts: Date.now(), phase: state.phase });
-  }
+  publishPlannerStatus(bus, state, 'done', {
+    duration: Date.now() - finalReviewStart,
+    ...(writeStatus === 'failed' && { summary: 'Final review failed' }),
+  });
 
-  const summaryOpts = {
-    ...summaryBase,
-    projectDir,
-    sessionId,
-    state,
-    taskBreakdowns,
-    ...(phaseTimings && { phaseTimings }),
-  };
-
-  const preSummary = buildSummary(summaryOpts);
   try {
     await writeReviewPacket({
       projectDir,
       sessionId,
-      summary: preSummary,
+      summary: buildSummary({
+        ...summaryBase,
+        projectDir,
+        sessionId,
+        state,
+        taskBreakdowns,
+        ...(phaseTimings && { phaseTimings }),
+      }),
       state,
-      finalReviewStatus: reviewStatus,
+      finalReviewStatus: writeStatus,
     });
   } catch (err) {
     publishWarningFromError(
@@ -262,7 +265,11 @@ export async function runFinalReviewPhase(opts: {
     );
   }
 
-  const summary = buildSummary(summaryOpts);
-  if (reviewStatus !== 'failed') callbacks.onComplete(summary);
-  return { summary, state };
+  const reviewStatus: ReviewPhaseStatus =
+    writeStatus === 'failed'
+      ? 'failed'
+      : (verdict?.verdict ?? null) === null
+        ? 'unparseable'
+        : 'written';
+  return { state, summaryBase, verdict, reviewText, reviewStatus };
 }

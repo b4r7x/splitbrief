@@ -20,13 +20,16 @@ import { RESEARCH_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import {
-  createTaskCompilationAttemptId,
+  createPlannerArtifactAttemptId,
   OwnedPlannerArtifactSchema,
-} from '../../../core/schemas/task-compilation.js';
+} from '../../../core/schemas/planner-artifact.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import type { PlanOptions, Planner, PlannerArtifactLogicalName } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import { resolveValidationDisplayCommand } from '../validation/commands.js';
+import { readManifestCommands } from '../../../core/validation/manifest-commands.js';
+import { detectStack } from '../../../core/validation/stacks/registry.js';
+import { formatValidationCommand } from '../validation/commands.js';
+import { resolveStageCommand } from '../../../core/validation/stage-command.js';
 import { runFullPlanning } from './full.js';
 
 let dirs: string[] = [];
@@ -51,7 +54,7 @@ function phaseResult(logicalName: PlannerArtifactLogicalName, text: string) {
       semanticId: `full-test-${logicalName}`,
       programId: null,
       batchId: null,
-      attemptId: createTaskCompilationAttemptId(),
+      attemptId: createPlannerArtifactAttemptId(),
       logicalName,
       transport: 'stdout-final',
       text,
@@ -218,6 +221,51 @@ describe('runFullPlanning — questions', () => {
 
     expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
   });
+
+  it('no regen on empty answers', async () => {
+    const projectDir = createTempDir('full-empty-answers');
+    dirs.push(projectDir);
+    const sessionId = 'sess-empty-answers';
+    ensureSessionDir(projectDir, sessionId);
+
+    const question: ClarificationQuestion = { id: 'q1', type: 'confirm', text: 'Proceed?' };
+    const review = vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null });
+    const planner: Planner = makePlanner({
+      plan: vi.fn(async (opts: PlanOptions) => {
+        opts.callbacks.onQuestion?.([question]);
+        return {
+          spec: '# Spec',
+          plan: '# Plan',
+          tasks: [makePassingTask()],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      }),
+      review,
+    });
+
+    const onQuestionAsked = vi.fn().mockResolvedValue('');
+
+    const result = await runFullPlanning({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ workflow: { approve: 'none' } }),
+        callbacks: makeCallbacks({ onQuestionAsked }).callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner,
+      state: transition(createInitialState('feat'), { type: 'START' }),
+      feature: 'feat',
+      selectedSkills: undefined,
+      approveLevel: 'none',
+    });
+
+    expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
+    expect(review).not.toHaveBeenCalled();
+    expect(result.disposition).toBe('tasks-ready');
+  });
 });
 
 describe('runFullPlanning — discovered validation ingress', () => {
@@ -273,14 +321,18 @@ Some architecture.`;
     expect(persisted?.discoveredValidation?.lintCommand).toBe('npx biome check');
     expect(persisted?.discoveredValidation?.typecheckCommand).toBe('npx tsc --noEmit');
 
-    const handoffTest = resolveValidationDisplayCommand(
-      'testCommand',
+    const resolved = resolveStageCommand({
+      stage: 'test',
       config,
-      persisted?.discoveredValidation,
+      manifest: readManifestCommands(projectDir),
+      discovered: persisted?.discoveredValidation,
+      stack: detectStack(projectDir, config.validation.stack),
       projectDir,
-    );
+    });
+    const handoffTest =
+      resolved === null ? null : formatValidationCommand(resolved.cmd, resolved.args);
     expect(handoffTest).not.toBe('./scripts/evil');
-    if (handoffTest) {
+    if (handoffTest !== null) {
       expect(handoffTest).not.toMatch(/^\.\//);
       expect(handoffTest).not.toMatch(/^\//);
     }

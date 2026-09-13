@@ -10,6 +10,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
+import { skillsStore } from '../../stores/project/skills.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { commandPaletteMruStore } from '../../stores/ui/command-palette-mru.js';
@@ -54,6 +55,8 @@ function createTestCommands(): RuntimeCommandDef[] {
     openOverlay: overlayStore.open,
     navigate: (to) => routerStore.navigate({ to }),
     quit: () => {},
+    resumeRun: () => true,
+    endRun: () => true,
     setWorkflowMode: setWorkflowModeForTest,
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
@@ -69,7 +72,7 @@ function createTestCommands(): RuntimeCommandDef[] {
     refreshProjectFiles: () => {},
     listSkills: () => [],
     toggleSkill: () => ({ status: 'unknown' }),
-    refreshSkills: () => {},
+    refreshSkills: async () => {},
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: () => true,
     requestTaskRedo: () => true,
@@ -85,6 +88,7 @@ function createTestCommands(): RuntimeCommandDef[] {
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
     toggleLatestDiff: () => ({ status: 'toggled', expanded: true }),
+    listBriefs: () => [],
     toggleSidebar: () => ({ status: 'toggled', visible: true }),
     copyTarget: async () => 'empty',
   };
@@ -213,6 +217,7 @@ beforeEach(() => {
   feedbackStore.reset();
   routerStore.reset();
   sessionsStore.reset();
+  skillsStore.reset();
   tasksStore.reset();
   lifecycleStore.reset();
   commandPaletteMruStore.__testReset();
@@ -228,6 +233,7 @@ afterEach(() => {
   feedbackStore.reset();
   routerStore.reset();
   sessionsStore.reset();
+  skillsStore.reset();
   tasksStore.reset();
   lifecycleStore.reset();
   commandPaletteMruStore.__testReset();
@@ -834,6 +840,40 @@ describe('CommandPaletteOverlay', () => {
 
     expect(sessionsColumn).toBe(skillsColumn);
     expect(sessionRowColumn).toBeGreaterThan(sessionsColumn);
+    instance.unmount();
+  });
+
+  it('opens the description at one column for the command and skill rows of a section', async () => {
+    skillsStore.setAvailable([
+      {
+        id: 'terminal-layout',
+        name: 'Terminal layout',
+        description: 'Check spacing and terminal-width behavior',
+        path: 'fixtures/skills/terminal-layout/SKILL.md',
+        scope: 'project',
+        projectDir,
+      },
+      {
+        id: 'release-checks',
+        name: 'Release checks',
+        description: 'Run deterministic quality gates',
+        path: 'fixtures/skills/release-checks/SKILL.md',
+        scope: 'global',
+      },
+    ]);
+
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    const rows = paletteResultRows(instance.lastFrame() ?? '');
+    const longSkill = 'Skill · Terminal layout';
+    const shortSkill = 'Skill · Release checks';
+    const commandColumn = descriptionStart(rowContaining(rows, '/help'), '/help');
+
+    expect(descriptionStart(rowContaining(rows, longSkill), longSkill)).toBe(commandColumn);
+    expect(descriptionStart(rowContaining(rows, shortSkill), shortSkill)).toBe(commandColumn);
     instance.unmount();
   });
 

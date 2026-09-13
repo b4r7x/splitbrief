@@ -15,6 +15,7 @@ import {
 } from './events.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../core/schemas/task.js';
+import { skippedStage } from './validation/stage.js';
 
 const TASK = taskId('T001');
 
@@ -238,6 +239,38 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
     });
   });
 
+  it('validate event carries skippedReason', () => {
+    const { bus, events } = makeBusRecorder();
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
+      phase: 'result',
+      results: [
+        skippedStage('typecheck', 'no typecheck command for an unrecognised stack'),
+        skippedStage('lint', 'no lint command for an unrecognised stack'),
+      ],
+      startTime: Date.now(),
+    });
+
+    expect(events[0]).toMatchObject({
+      type: 'validate',
+      skipped: { typecheck: true, lint: true },
+      skippedReason: {
+        typecheck: 'no typecheck command for an unrecognised stack',
+        lint: 'no lint command for an unrecognised stack',
+      },
+    });
+  });
+
+  it('omits skippedReason when nothing was skipped', () => {
+    const { bus, events } = makeBusRecorder();
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
+      phase: 'result',
+      results: [{ stage: 'typecheck', passed: true }],
+      startTime: Date.now(),
+    });
+
+    expect('skippedReason' in (events[0] as Record<string, unknown>)).toBe(false);
+  });
+
   it('omits the skipped channel when no stage was skipped', () => {
     const { bus, events } = makeBusRecorder();
     publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
@@ -247,6 +280,34 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
     });
 
     expect('skipped' in (events[0] as Record<string, unknown>)).toBe(false);
+  });
+
+  it('exempt-accepted task publishes passed true with exempt true', () => {
+    const { bus, events } = makeBusRecorder();
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
+      phase: 'result',
+      results: [
+        { stage: 'typecheck', passed: true },
+        { stage: 'test', passed: false, error: 'pre-existing suite failure' },
+      ],
+      startTime: Date.now(),
+      exempt: true,
+    });
+
+    expect(events[0]).toMatchObject({ type: 'validate', passed: true, exempt: true });
+    expect('error' in (events[0] as Record<string, unknown>)).toBe(false);
+  });
+
+  it('omits exempt when every stage passed on its own', () => {
+    const { bus, events } = makeBusRecorder();
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
+      phase: 'result',
+      results: [{ stage: 'typecheck', passed: true }],
+      startTime: Date.now(),
+      exempt: true,
+    });
+
+    expect('exempt' in (events[0] as Record<string, unknown>)).toBe(false);
   });
 });
 

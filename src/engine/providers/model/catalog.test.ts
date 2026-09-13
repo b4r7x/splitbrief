@@ -276,7 +276,7 @@ describe('runner-owned catalog resolution', () => {
     expect(rows[0]?.releaseDate).toBeUndefined();
   });
 
-  it('leaves a CLI confirmed row un-enriched by models.dev metadata', () => {
+  it('crosses only the catalog name onto a CLI confirmed row', () => {
     const cache = makeModelCacheAccessor({
       catalog: {
         openai: {
@@ -302,8 +302,40 @@ describe('runner-owned catalog resolution', () => {
         membership: 'confirmed',
       },
     ]);
-    expect(rows[0]?.displayName).toBeUndefined();
+    expect(rows[0]?.displayName).toBe('GPT-5.6 Sol');
     expect(rows[0]?.contextLength).toBeUndefined();
+  });
+
+  it('native row without displayName takes catalog name', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        deepseek: {
+          id: 'deepseek',
+          models: {
+            'deepseek-v4-flash': { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
+          },
+        },
+        'github-copilot': {
+          id: 'github-copilot',
+          models: { 'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' } },
+        },
+      },
+      providerModels: {
+        opencode: [{ id: 'deepseek/deepseek-v4-flash' }],
+        copilot: [{ id: 'claude-sonnet-5' }],
+      },
+    });
+
+    const prefixed = resolveModelCatalog('opencode', { cache }).find(
+      (row) => row.selectionId === 'deepseek/deepseek-v4-flash',
+    );
+    const bare = resolveModelCatalog('copilot', { cache }).find(
+      (row) => row.selectionId === 'claude-sonnet-5',
+    );
+
+    expect(prefixed?.displayName).toBe('DeepSeek V4 Flash');
+    expect(bare?.displayName).toBe('Claude Sonnet 5');
+    expect(prefixed?.contextLength).toBeUndefined();
   });
 
   it('keeps a stale native list free of models.dev rows until a fresh probe lands', () => {
@@ -1341,7 +1373,7 @@ describe('runner-owned catalog resolution', () => {
     ]);
   });
 
-  it('keeps a CLI runtime row un-enriched at every browse state', () => {
+  it('keeps a CLI runtime row free of catalog numbers at every browse state', () => {
     const cache = makeModelCacheAccessor({
       catalog: {
         'github-copilot': {
@@ -1365,7 +1397,7 @@ describe('runner-owned catalog resolution', () => {
       );
 
       expect(row).toMatchObject({ membership: 'confirmed' });
-      expect(row?.displayName).toBeUndefined();
+      expect(row?.displayName).toBe('GPT-5.6 Sol');
       expect(row?.contextLength).toBeUndefined();
     }
 

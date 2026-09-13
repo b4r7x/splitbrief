@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
@@ -11,6 +11,7 @@ import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
+import { TIMEOUTS } from '../../core/pipeline-spec/timeouts.js';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
@@ -53,6 +54,21 @@ function installClaudeShimWithLines(
   writeFileSync(shimPath, `${script}\n`, 'utf8');
   chmodSync(shimPath, 0o755);
   return { argvFile };
+}
+
+function installTwoFileClaudeShim(relPaths: readonly string[]): void {
+  const shimPath = join(shimDir, 'claude');
+  const script = [
+    '#!/bin/bash',
+    'cat > /dev/null',
+    ...relPaths.flatMap((rel) => {
+      const target = join(projectDir, rel);
+      return [`mkdir -p "$(dirname '${target}')"`, `printf '%s' 'generated' > '${target}'`];
+    }),
+    `printf '%s\\n' '{"type":"result","result":"done"}'`,
+  ].join('\n');
+  writeFileSync(shimPath, `${script}\n`, 'utf8');
+  chmodSync(shimPath, 0o755);
 }
 
 function installRecordingCodexShim(
@@ -217,7 +233,7 @@ describe('createCliImplementer (claude-code)', () => {
     }
   });
 
-  it('fails when the claude subprocess changes no files', async () => {
+  it('nothing changed is no-staged-change', async () => {
     const argvFile = join(shimDir, 'argv.txt');
     const shimPath = join(shimDir, 'claude');
     const script = [
@@ -268,7 +284,7 @@ describe('createCliImplementer (claude-code)', () => {
     expect(existsSync(join(shimDir, 'argv.txt'))).toBe(false);
   });
 
-  it('fails when the claude subprocess changes an unrelated file instead of the declared one', async () => {
+  it('undeclared src/unrelated.ts is implementer-effect-invalid naming it', async () => {
     installRecordingClaudeShim('src/unrelated.ts');
     const config = makeClaudeConfig();
 
@@ -282,41 +298,65 @@ describe('createCliImplementer (claude-code)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('changed src/unrelated.ts instead of exactly src/hello.ts');
+    expect(result.outcome).toBe('implementer-effect-invalid');
+    expect(result.error).toContain("wrote outside the brief's declared files: src/unrelated.ts");
     expect(readFileSync(join(projectDir, 'src/unrelated.ts'), 'utf8')).toBe('generated');
   });
 
-  it('fails when the claude subprocess changes the declared file plus an extra file', async () => {
-    const shimPath = join(shimDir, 'claude');
-    writeFileSync(
-      shimPath,
-      [
-        '#!/bin/bash',
-        'cat > /dev/null',
-        'mkdir -p src',
-        "printf '%s' 'generated' > src/hello.ts",
-        "printf '%s' 'extra' > notes.md",
-        `printf '%s\\n' '{"type":"result","result":"done"}'`,
-        '',
-      ].join('\n'),
-      'utf8',
-    );
-    chmodSync(shimPath, 0o755);
+  it('anchor plus declared test file succeeds', async () => {
+    installTwoFileClaudeShim(['src/hello.ts', 'src/hello.test.ts']);
     const config = makeClaudeConfig();
 
     const implementer = createCliImplementer(cliClaudeImplementer);
     const result = await implementer.implement({
-      task: makeTask(),
+      task: makeTask({ files: ['src/hello.ts', 'src/hello.test.ts'] }),
       projectDir,
       config,
       context: { ...defaultContext, dir: projectDir },
       onOutput: () => {},
     });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('instead of exactly src/hello.ts');
-    expect(result.error).toContain('notes.md');
-    expect(result.error).toContain('src/hello.ts');
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(projectDir, 'src/hello.test.ts'), 'utf8')).toBe('generated');
+  });
+
+  it('approved out-of-bounds file alone succeeds', async () => {
+    installRecordingClaudeShim('src/shared/types.ts');
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask({ scope: { approvedOutOfBounds: ['src/shared/types.ts'] } }),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('default timeout is 20 min', async () => {
+    installRecordingClaudeShim('src/hello.ts');
+    const config = makeClaudeConfig();
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+
+    try {
+      const implementer = createCliImplementer(cliClaudeImplementer);
+      const result = await implementer.implement({
+        task: makeTask(),
+        projectDir,
+        config,
+        context: { ...defaultContext, dir: projectDir },
+        onOutput: () => {},
+      });
+
+      expect(result.success).toBe(true);
+      expect(cliClaudeImplementer.timeout).toBeUndefined();
+      expect(timeoutSpy).toHaveBeenCalledWith(TIMEOUTS.implementerMs);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
   });
 
   it('reports result usage from the structured terminal as implementer usage', async () => {
@@ -431,9 +471,7 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('instead of exactly src/hello.ts');
-    expect(result.error).toContain('src/hello.ts');
-    expect(result.error).toContain('notes.md');
+    expect(result.error).toContain("wrote outside the brief's declared files: notes.md");
   });
 
   it('fails with no-staged-change on the file-hashes path when the child changes nothing', async () => {
@@ -546,8 +584,7 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('instead of exactly src/hello.ts');
-    expect(result.error).toContain('notes.md');
+    expect(result.error).toContain("wrote outside the brief's declared files: notes.md");
     expect(result.error).not.toContain('.splitbrief');
     expect(existsSync(sandboxHomeFile)).toBe(true);
   });

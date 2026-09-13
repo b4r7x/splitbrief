@@ -4,12 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { sessionDir, SPLITBRIEF_DIR } from '../../core/paths.js';
-import {
-  createTaskCompilationAttemptId,
-  TaskCompilationSemanticIdSchema,
-} from '../../core/schemas/task-compilation.js';
 import { createCustomRunnerRuntime } from './custom-runner-runtime.js';
-import { PLANNER_ARTIFACT_MAX_BYTES, type ArtifactApprovalReview } from './types.js';
+import type { ArtifactApprovalReview } from './types.js';
 
 const tempDirs: string[] = [];
 
@@ -93,45 +89,5 @@ describe('createCustomRunnerRuntime', () => {
     stage.cleanup();
 
     expect(existsSync(stage.projectDir)).toBe(false);
-  });
-
-  it('reviews a declared artifact through the caller gate, with no session state', async () => {
-    const project = projectDir();
-    createTestGitRepo(project);
-    const reviews: ArtifactApprovalReview[] = [];
-    const runtime = sessionFreeRuntimeFor(project, reviews);
-    const stage = await runtime.createStage(project, 'planner');
-    const attemptId = createTaskCompilationAttemptId();
-    const relativePath = `.splitbrief-runner/output/${attemptId}/result`;
-
-    const prepared = await runtime.beginDeclaredArtifactReview({
-      stagedProjectDir: stage.projectDir,
-      callId: 'call-1',
-      declaredRedactionValues: [],
-      provenance: {
-        semanticId: TaskCompilationSemanticIdSchema.parse('planner-artifact-result'),
-        programId: null,
-        batchId: null,
-        attemptId,
-        transport: {
-          kind: 'declared-file',
-          lease: { leaseId: attemptId, attemptId, relativePath },
-        },
-        maxBytes: PLANNER_ARTIFACT_MAX_BYTES,
-        relativePath,
-      },
-    });
-    try {
-      writeFileSync(join(stage.projectDir, relativePath), '### Verdict\npass\n', 'utf-8');
-
-      expect(await prepared.reviewAfterChild()).toBe('### Verdict\npass\n');
-      expect(reviews.map((review) => review.text)).toEqual(['### Verdict\npass\n']);
-      expect(prepared.getReceipt()).not.toBeUndefined();
-    } finally {
-      await prepared.dispose();
-      stage.cleanup();
-    }
-
-    expect(existsSync(join(project, SPLITBRIEF_DIR))).toBe(false);
   });
 });

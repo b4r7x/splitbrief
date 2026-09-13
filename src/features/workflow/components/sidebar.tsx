@@ -300,7 +300,7 @@ export function Sidebar({ width, height }: SidebarProps) {
       {/* The header shares the footer's left edge so the panel reads on one column, not four. */}
       <Box paddingLeft={2} paddingRight={1} flexShrink={0}>
         <Text color={t.textDim}>
-          {view.total === 0 ? 'Tasks' : `Tasks ${view.settled}/${view.total}`}
+          {view.total === 0 ? 'Tasks' : `Tasks ${view.passed}/${view.total}`}
         </Text>
       </Box>
 

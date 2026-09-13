@@ -16,6 +16,7 @@ import type { EventBus } from '../../events/types.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { countBySeverity } from '../../../utils/collections.js';
 import { evaluateBriefQuality } from '../../spec/brief-quality.js';
+import { detectStack } from '../../../core/validation/stacks/registry.js';
 import { writeBriefQualityReport } from '../../spec/brief-quality-file.js';
 import type { BriefQualityCode, BriefQualityReport } from '../../spec/brief-quality.js';
 
@@ -37,8 +38,11 @@ export type BriefQualityGateResult = {
   ok: boolean;
 };
 
-export function runBriefQualityGate(input: { tasks: Task[] }): BriefQualityGateResult {
-  const evaluated = evaluateBriefQuality(input.tasks);
+export function runBriefQualityGate(input: {
+  tasks: Task[];
+  projectDir: string;
+}): BriefQualityGateResult {
+  const evaluated = evaluateBriefQuality(input.tasks, detectStack(input.projectDir));
   const issues: BriefQualityGateIssue[] = evaluated.issues.map((issue) => ({
     code: issue.code,
     severity: issue.severity,
@@ -63,7 +67,7 @@ export function runQualityGateAndReport(input: {
   bus: EventBus;
   phase: Phase;
 }): BriefQualityGateResult {
-  const result = runBriefQualityGate({ tasks: input.tasks });
+  const result = runBriefQualityGate({ tasks: input.tasks, projectDir: input.projectDir });
   writeBriefQualityReport({
     ref: { projectDir: input.projectDir, sessionId: input.sessionId },
     content: { issues: result.report.issues },

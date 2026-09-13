@@ -174,6 +174,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
           if (phase) baseConfig.publisher?.publishCallEvent({ phase, taskId: task.id, event });
         },
         sandboxEnv: opts.sandboxEnv,
+        undeclaredWrites: opts.undeclaredWrites,
       });
       callResult = invokeResult;
     } catch (err) {

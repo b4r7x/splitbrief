@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from './io.js';
 import { resolveMode } from '../runtime/resolve.js';
+import { DEFAULT_LOCAL_RETRIES } from '../../pipeline-spec/retries.js';
 import { SPLITBRIEF_DIR } from '../../paths.js';
 import { expectCli } from '#testing/helpers/config-narrowing.js';
 import { optionalSectionsYaml, writeConfigYaml } from '#testing/helpers/config-io.js';
@@ -328,7 +329,7 @@ describe('config loading', () => {
       expect(config.validation.lint).toBe(false);
       expect(config.validation.typecheck).toBe(true);
       expect(config.workflow.approve).toBe('none');
-      expect(config.workflow.maxRetries).toBe(3);
+      expect(config.workflow.maxRetries).toBe(DEFAULT_LOCAL_RETRIES);
     });
 
     it.each([

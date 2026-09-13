@@ -12,12 +12,19 @@ import { skillsStore } from '../../../../stores/project/skills.js';
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
+import { feedbackStore } from '../../../../stores/ui/feedback.js';
+import { stopStore } from '../../../../stores/workflow/stop.js';
+import { requestResume } from '../../handlers.js';
+import { useStopByline } from '../../stop/use-stop-byline.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../../stores/cost-approval/prompt.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
 import { canResumeCancelledWorkflow } from './resume.js';
+
+/** Blank Enter never resumes a parked brief, so the row says what does. */
+export const PARKED_EMPTY_SUBMIT_HINT = 'type instructions or /resume';
 
 export interface WorkflowScreenDeps {
   runWorkflow?: RunWorkflowFn | undefined;
@@ -89,6 +96,9 @@ export function useWorkflowScreen({
     canCopyFocused,
   });
 
+  const parked = stopStore.use((s) => s.phase === 'parked');
+  const stopped = useStopByline();
+
   const canResumeCancelledSession = canResumeCancelledWorkflow({
     cancelled,
     projectDir,
@@ -98,15 +108,24 @@ export function useWorkflowScreen({
     routeResumeState: prepared?.runtime.resumeState,
   });
 
-  const handleInput = cancelled
-    ? canResumeCancelledSession
-      ? runner.handleResume
-      : () => {}
-    : review.handleInput;
+  // A parked brief is waiting on this composer: typed text steers it, and an empty submit says so
+  // rather than resuming on a keystroke the user never aimed at the run.
+  const handleInput = parked
+    ? (text: string) => {
+        requestResume(text);
+      }
+    : cancelled
+      ? canResumeCancelledSession
+        ? runner.handleResume
+        : () => {}
+      : review.handleInput;
 
   const handleRuntimeCommand = onRuntimeCommand;
 
-  const cancelledHints = cancelled ? resolveCancelledHints(canResumeCancelledSession) : null;
+  // A run the user stopped already has its keys on the legend row; a second copy inside the
+  // composer box would be the same concept in two places, spelled differently.
+  const cancelledHints =
+    cancelled && stopped === null ? resolveCancelledHints(canResumeCancelledSession) : null;
   const inputHint = cancelledHints
     ? cancelledHints.placeholder
     : resolveInputHint({
@@ -131,7 +150,7 @@ export function useWorkflowScreen({
     startedAt: runner.startedAt,
     handleInput,
     handleRuntimeCommand,
-    onEmptySubmit: canResumeCancelledSession ? runner.handleResume : undefined,
+    onEmptySubmit: parked ? () => feedbackStore.setMessage(PARKED_EMPTY_SUBMIT_HINT) : undefined,
     inputHint,
     feedbackHint,
     boxHintOverride,

@@ -130,6 +130,19 @@ If a task does not fit the selected worker's context window, SPLITBRIEF should n
 
 Large prompts are a planning failure, not a reason to make every worker remember the whole session.
 
+## Slice budget
+
+A brief is a slice, not a file: one verifiable change, with every path it writes listed under `files` and `file` as the anchor. One file is the smallest slice, never the required one — a brief that creates `src/health.ts` and its `src/health.test.ts` is one slice, because one gate run proves both, and splitting it would hand the implementer a test with nothing to test.
+
+What keeps a slice inside a cheap worker's reach is `SLICE_BUDGET` (`src/core/pipeline-spec/brief.ts`). The planner prompts read it; they do not restate it, so the budget cannot drift between the prompt and the checks:
+
+| Implementer tier | Files per brief | Changed LOC per brief |
+|---|---|---|
+| mid-tier (what the planner assumes) | ≤ 5 (`maxFiles`) | ~200 (`maxChangedLoc`) |
+| frontier | ≤ 8 (`frontierMaxFiles`) | ~200 |
+
+The split rule is the gate, not the file count: split when a gate can pass on one part without the other. A brief over budget is a planning failure in the same way an over-long prompt is — the answer is a finer plan, not a bigger worker.
+
 ## Implementer pool
 
 The implemented optional profile shape is:

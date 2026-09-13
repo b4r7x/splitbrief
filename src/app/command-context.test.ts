@@ -32,6 +32,7 @@ import type { SkillMeta } from '../core/skills/types.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
+import { tasksStore } from '../stores/workflow/tasks.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
@@ -150,7 +151,7 @@ describe('buildCommandContext', () => {
   });
 
   it('toggles the workflow sidebar through the controls store', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    terminalSizeStore.__testReset({ cols: 160, rows: 45, isSmall: false });
     const ctx = build();
 
     // The sidebar ships on, so the first toggle is the one that hides it.
@@ -169,6 +170,32 @@ describe('buildCommandContext', () => {
       message: 'Sidebar is hidden on small terminals.',
     });
     expect(controlsStore.get().sidebarVisible).toBe(true);
+  });
+
+  it('does not report the workflow sidebar as shown at the layout breakpoint', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+
+    expect(build().toggleSidebar()).toEqual({
+      status: 'unavailable',
+      message: 'Sidebar is hidden on small terminals.',
+    });
+    expect(controlsStore.get().sidebarVisible).toBe(true);
+  });
+
+  it('lists the planned briefs in plan order from the tasks store', () => {
+    tasksStore.__testReset({
+      tasks: [
+        { id: 'T001', title: 'first', status: 'done' },
+        { id: 'T002', title: 'second', status: 'in_progress' },
+        { id: 'T003', title: 'third', status: 'pending' },
+      ],
+    });
+
+    expect(build().listBriefs()).toEqual([
+      { id: 'T001', status: 'done' },
+      { id: 'T002', status: 'in_progress' },
+      { id: 'T003', status: 'pending' },
+    ]);
   });
 
   it('refreshDetection derives current settings instead of reusing prior service dependencies', async () => {

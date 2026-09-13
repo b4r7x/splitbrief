@@ -7,6 +7,7 @@ import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../que
 import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
+import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 import { transitionError } from './errors.js';
 
 export const CURRENT_STATE_VERSION = 4;
@@ -71,7 +72,7 @@ const phaseActions = {
     'CLEAR_TASK_CODE',
     'HINT_FAIL',
   ],
-  'final-review': ['REVIEW_DONE'],
+  'final-review': ['REVIEW_DONE', 'REVIEW_FIX_START'],
   complete: [],
 } as const satisfies Record<Phase, readonly MachineAction['type'][]>;
 
@@ -108,16 +109,23 @@ function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
     ...state,
     tasks: state.tasks.map((t) => {
       if (t.id !== taskId) return t;
-      const { currentCode: _currentCode, ...rest } = t;
+      const { currentCode: _currentCode, currentCodeByFile: _currentCodeByFile, ...rest } = t;
       return rest;
     }),
   };
 }
 
+function stripReviewFinding(state: WorkflowState, taskId: TaskId): WorkflowState {
+  if (state.reviewFixes?.findings[taskId] === undefined) return state;
+  const { [taskId]: _resolved, ...findings } = state.reviewFixes.findings;
+  return { ...state, reviewFixes: { ...state.reviewFixes, findings } };
+}
+
 function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
   const currentId = state.tasks[state.currentTaskIndex]?.id;
   const withStatus = currentId ? setTaskStatus(state, currentId, status) : state;
-  const cleaned = currentId ? stripCurrentCode(withStatus, currentId) : withStatus;
+  const stripped = currentId ? stripCurrentCode(withStatus, currentId) : withStatus;
+  const cleaned = currentId ? stripReviewFinding(stripped, currentId) : stripped;
   return {
     ...cleaned,
     phase: 'implementing',
@@ -180,7 +188,7 @@ export function transition(
   action: MachineAction,
   opts: { maxRetries?: number | undefined; now?: Date | undefined } = {},
 ): WorkflowState {
-  const maxRetries = opts.maxRetries ?? 3;
+  const maxRetries = opts.maxRetries ?? DEFAULT_LOCAL_RETRIES;
   const now = opts.now ?? new Date();
   if (!canApplyAction(state.phase, action.type)) {
     throw transitionError.invalidActionForPhase(state.phase, action.type);
@@ -286,19 +294,18 @@ export function transition(
       return {
         ...state,
         tasks: state.tasks.map((t) =>
-          t.id === action.taskId ? { ...t, currentCode: action.code } : t,
+          t.id === action.taskId
+            ? {
+                ...t,
+                currentCode: action.code,
+                ...(action.codeByFile ? { currentCodeByFile: action.codeByFile } : {}),
+              }
+            : t,
         ),
       };
 
     case 'CLEAR_TASK_CODE':
-      return {
-        ...state,
-        tasks: state.tasks.map((t) => {
-          if (t.id !== action.taskId) return t;
-          const { currentCode: _currentCode, ...task } = t;
-          return task;
-        }),
-      };
+      return stripCurrentCode(state, action.taskId);
 
     case 'ALL_DONE':
       return { ...state, phase: 'final-review' };
@@ -308,7 +315,21 @@ export function transition(
         ...state,
         phase: 'complete',
         completedAt: now.toISOString(),
+        reviewStatus: action.reviewStatus,
       };
+
+    case 'REVIEW_FIX_START': {
+      const fixIds = new Set(Object.keys(action.fixes));
+      const firstIndex = state.tasks.findIndex((t) => fixIds.has(t.id));
+      return {
+        ...state,
+        phase: 'implementing',
+        tasks: state.tasks.map((t) => (fixIds.has(t.id) ? { ...t, status: 'pending' } : t)),
+        currentTaskIndex: firstIndex >= 0 ? firstIndex : state.currentTaskIndex,
+        attempt: 0,
+        reviewFixes: { cycle: action.cycle, findings: action.fixes },
+      };
+    }
 
     case 'CANCEL':
       return resetToIdle(state, { clearAwaitingContinue: true });

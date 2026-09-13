@@ -867,6 +867,94 @@ describe('runWorkflow — smoke', () => {
     });
   });
 
+  it('user cancel persists status cancelled', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'user-cancel-sid';
+    const { callbacks } = makeCallbacks();
+    const controller = new AbortController();
+
+    await runWorkflow({
+      feature: 'end the run',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { approve: 'none', mode: 'quick' },
+      }),
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+      _planner: makePlanner({
+        quickPlan: vi.fn().mockResolvedValue({
+          spec: '',
+          plan: '',
+          tasks: [
+            makeTask({
+              id: 'T001',
+              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the planned task ran'],
+              typeDefs: 'type HelloTask = { file: string }',
+            }),
+          ],
+          usage: null,
+        }),
+      }),
+      _implementer: makeImplementer({
+        implement: vi.fn().mockImplementation(async () => {
+          controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+          return { success: false, output: '', usage: null };
+        }),
+      }),
+    });
+
+    const { listAllSessions } = await import('../../../core/sessions/io.js');
+    expect(listAllSessions(projectDir).find((s) => s.id === sessionId)?.status).toBe('cancelled');
+  });
+
+  it('a plain pause persists status interrupted', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'plain-pause-sid';
+    const { callbacks } = makeCallbacks();
+    const controller = new AbortController();
+
+    await runWorkflow({
+      feature: 'pause the run',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { approve: 'none', mode: 'quick' },
+      }),
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+      _planner: makePlanner({
+        quickPlan: vi.fn().mockResolvedValue({
+          spec: '',
+          plan: '',
+          tasks: [
+            makeTask({
+              id: 'T001',
+              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the planned task ran'],
+              typeDefs: 'type HelloTask = { file: string }',
+            }),
+          ],
+          usage: null,
+        }),
+      }),
+      _implementer: makeImplementer({
+        implement: vi.fn().mockImplementation(async () => {
+          controller.abort();
+          return { success: false, output: '', usage: null };
+        }),
+      }),
+    });
+
+    const { listAllSessions } = await import('../../../core/sessions/io.js');
+    expect(listAllSessions(projectDir).find((s) => s.id === sessionId)?.status).toBe('interrupted');
+  });
+
   it('persists workflow_cancelled when user cancellation reaches the unavailable-planner path', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();
@@ -1069,7 +1157,10 @@ describe('runWorkflow — smoke', () => {
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (e) => events.push(e),
-      _planner: makePlanner({ quickPlan }),
+      _planner: makePlanner({
+        quickPlan,
+        review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
+      }),
       _implementer: makeImplementer(),
     });
 
@@ -1258,7 +1349,7 @@ describe('runWorkflow — smoke', () => {
         }),
         review: vi.fn().mockImplementation(async (_prompt, _dir, cbs: PlannerOutputCallbacks) => {
           emitReviewCall(cbs, 'test-planner');
-          return { text: '# Review', usage: null };
+          return { text: '# Review\n\n### Verdict\npass\n', usage: null };
         }),
       }),
       _implementer: makeImplementer(),
@@ -1308,7 +1399,7 @@ describe('runWorkflow — smoke', () => {
       _reviewer: {
         review: vi.fn().mockImplementation(async (_prompt, _dir, cbs: PlannerOutputCallbacks) => {
           emitReviewCall(cbs, 'test-reviewer');
-          return { text: '# Review', usage: null };
+          return { text: '# Review\n\n### Verdict\npass\n', usage: null };
         }),
       },
     });

@@ -16,7 +16,7 @@ import { WorkflowFooter, WorkflowHeader } from './chrome.js';
 import { ConversationFlow } from './conversation-flow/flow.js';
 import type { RouteData } from '../../../stores/navigation/router.js';
 
-const RAIL_STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Verify'];
+const RAIL_STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Review'];
 const WORKFLOW_ROUTE = {
   screen: 'workflow',
   execution: {

@@ -8,7 +8,7 @@ Read this first. It explains what SPLITBRIEF does, how it thinks, and why it's b
 
 SPLITBRIEF orchestrates two coding tools. One plans and reviews, the other executes, and SPLITBRIEF holds everything in between: the contract, the isolation, the validation, the retries, the escalation, and the evidence.
 
-**Planner** — the stronger of the two. It understands the feature request, explores the codebase, writes a detailed plan broken into single-file tasks, answers escalations, and reviews the finished work.
+**Planner** — the stronger of the two. It understands the feature request, explores the codebase, writes a detailed plan broken into slices — one verifiable change each — answers escalations, and reviews the finished work.
 
 **Implementer** — a weaker model, reached over one of two transports that are supported equally:
 
@@ -23,7 +23,7 @@ The planner thinks, the implementer types, and the implementer never certifies i
 
 ## The Task Brief
 
-The Task Brief is the contract between planner and implementer. Each brief describes exactly one file operation — create or modify — and contains everything the implementer needs to do the work without looking anything up:
+The Task Brief is the contract between planner and implementer. Each brief describes one slice — one verifiable change, listing every file it writes, with one of them as the anchor it creates or modifies — and contains everything the implementer needs to do the work without looking anything up:
 
 - What to do and why
 - The function signatures and types involved
@@ -46,15 +46,15 @@ A typical run, step by step:
 2. Planner researches the codebase — reads files, maps imports, understands patterns
 3. Planner writes a specification — what the feature should do, how it fits
 4. User reviews and approves the spec (or comments, or rejects)
-5. Planner writes Task Briefs — one per file, ordered by dependency
+5. Planner writes Task Briefs — one per slice, ordered by dependency
 6. User reviews the briefs
 7. For each task: the implementer writes code in isolation, SPLITBRIEF promotes the approved changes into the project, then validates (typecheck → lint → test)
-8. If validation fails: retry up to 3 times, then escalate to bigger models
+8. If validation fails: retry (twice by default), then escalate to bigger models
 9. If escalation fails: enter recovery — user picks next action (retry same worker, route to a bigger worker, skip, pause, abort)
 10. The review seat reviews the final result against the spec — the planner, unless a `reviewer` is configured
 11. Session summary written to disk, workflow done
 
-The user can interrupt live model calls with Ctrl-C, queue messages while the planner is working, rewind to re-plan a spec or plan, or skip individual tasks.
+The user can stop a run at any time — `esc` opens the stop options, `ctrl+c` stops now, and no option reverts files — queue messages while the planner is working, rewind to re-plan a spec or plan, or skip individual tasks.
 
 ---
 

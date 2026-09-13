@@ -151,7 +151,7 @@ describe('runHeadless — recovery stops', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Final review did not pass — workflow is incomplete.'),
+      message: expect.stringContaining('Recovery required (review-failed):'),
     });
 
     const jsonLines = stdoutChunks
@@ -161,7 +161,7 @@ describe('runHeadless — recovery stops', () => {
       .filter((line) => line.trim().startsWith('{'))
       .map((line) => JSON.parse(line) as { type?: string; sessionId?: string });
     expect(jsonLines).toContainEqual(
-      expect.objectContaining({ type: 'final_review_failed', sessionId }),
+      expect.objectContaining({ type: 'recovery_required', sessionId }),
     );
   }, 20_000);
 });
@@ -282,7 +282,7 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Workflow did not complete — the run stopped early.'),
+      message: expect.stringContaining('Recovery required (approval-denied):'),
     });
 
     const jsonLines = stdoutChunks
@@ -300,8 +300,9 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
       );
     expect(jsonLines).toContainEqual(
       expect.objectContaining({
-        type: 'error',
-        message: expect.stringContaining('status interrupted'),
+        type: 'recovery_required',
+        reason: 'approval-denied',
+        message: expect.stringContaining('denied at the approval gate'),
       }),
     );
     expect(listSessions(projectDir).find((s) => s.id === sessionId)?.status).toBe('interrupted');

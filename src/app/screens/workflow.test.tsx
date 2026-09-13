@@ -164,6 +164,10 @@ describe('WorkflowScreen chrome calibration', () => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('First review');
     });
 
+    // The document gate lists approve · comment · edit · reject, so the third step down is the
+    // rejection this test drives.
+    await flushEffects();
+    ui.stdin.write('\x1b[B');
     await flushEffects();
     ui.stdin.write('\x1b[B');
     await flushEffects();
@@ -174,14 +178,11 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Second review');
+      expect(outcomes).toEqual([{ approved: false }]);
     });
-    expect(outcomes).toEqual([{ approved: false }]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Second review');
 
-    await flushEffects();
-    ui.stdin.write('\r');
-    await tick();
-    expect(outcomes).toHaveLength(1);
+    // The next gate starts on its own first row again — the cursor never carries over.
     await flushEffects();
     ui.stdin.write('\x1b[B');
     await flushEffects();

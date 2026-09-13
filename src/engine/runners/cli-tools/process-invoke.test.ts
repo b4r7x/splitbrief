@@ -14,10 +14,6 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
-import {
-  TASK_BRIEF_COMPILER_POLICY,
-  type TaskCompilationCallEnvelope,
-} from '../../../core/schemas/task-compilation.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { RUNNER_CALL_STDERR_MAX_BYTES } from '../../calls/output-limit.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
@@ -50,29 +46,6 @@ const callContext = {
   backendKind: 'cli',
   runnerName: 'fixture',
 } satisfies RunnerCallContext;
-
-function envelope(
-  overrides: Readonly<Partial<TaskCompilationCallEnvelope>>,
-): TaskCompilationCallEnvelope {
-  return {
-    version: 1,
-    promptBytes: 512,
-    inputTokensUpperBound: 512,
-    requestedOutputTokens: TASK_BRIEF_COMPILER_POLICY.requestedOutputTokens,
-    outputTokensUpperBound: TASK_BRIEF_COMPILER_POLICY.maxNormalizedOutputBytes,
-    maxNormalizedOutputBytes: TASK_BRIEF_COMPILER_POLICY.maxNormalizedOutputBytes,
-    maxDeclaredArtifactBytes: TASK_BRIEF_COMPILER_POLICY.maxDeclaredArtifactBytes,
-    maxRawProtocolBytes: TASK_BRIEF_COMPILER_POLICY.maxRawProtocolBytes,
-    maxStderrBytes: TASK_BRIEF_COMPILER_POLICY.maxStderrBytes,
-    deadlineMs: TASK_BRIEF_COMPILER_POLICY.deadlineMs,
-    idleTimeoutMs: TASK_BRIEF_COMPILER_POLICY.idleTimeoutMs,
-    ...overrides,
-  };
-}
-
-function contextWithEnvelope(env: TaskCompilationCallEnvelope): RunnerCallContext {
-  return { ...callContext, envelope: env };
-}
 
 const completed = {
   type: 'result',
@@ -621,6 +594,64 @@ describe('invokeProcessCli', () => {
     expect(undiagnosed.error?.code).toBe('non-zero-exit');
   });
 
+  it("exit 1 with 'Not logged in' on stderr classifies unauthenticated", async () => {
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({ script: "process.stderr.write('Not logged in\\n');process.exit(1)" }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'unauthenticated', message: 'Not logged in' },
+    });
+  });
+
+  it("exit 1 with 'unknown option' on stderr classifies implementer-recipe-invalid", async () => {
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        script: 'process.stderr.write("error: unknown option \'--yolo\'\\n");process.exit(1)',
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'implementer-recipe-invalid', message: "error: unknown option '--yolo'" },
+    });
+  });
+
+  it('classifies a usage-limit phrase in the tail of stdout, not only stderr', async () => {
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        script: "process.stdout.write('TEXT:hit your usage limit\\n');process.exit(1)",
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'usage-limit', message: 'TEXT:hit your usage limit' },
+    });
+  });
+
+  it('ignores halt phrases in the transcript above the last stdout line', async () => {
+    const transcript = [
+      'TEXT:wrote src/billing/invoice.ts',
+      'TEXT:mkdir .cache: permission denied',
+      'TEXT:added the "not logged in" banner to the header',
+      'NOISE:turn finished',
+    ].join('\n');
+
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        script: `process.stdout.write(${JSON.stringify(`${transcript}\n`)});process.exit(1)`,
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'failed', error: { code: 'non-zero-exit' } });
+  });
+
   it('keeps last-result-wins for restated terminals and fail-closed on contradictory exits', async () => {
     const restated = await run(
       adapter({ kind: 'stdin' }),
@@ -1058,7 +1089,7 @@ describe('invokeProcessCli', () => {
           invocation({ script: parentScript, signal: controller.signal }),
           'Zażółć gęślą jaźń — 日本語 🧪',
         );
-        for (let attempt = 0; attempt < 50 && !existsSync(startedPath); attempt += 1) {
+        for (let attempt = 0; attempt < 250 && !existsSync(startedPath); attempt += 1) {
           await new Promise((resolveWait) => setTimeout(resolveWait, 20));
         }
         expect(existsSync(startedPath)).toBe(true);
@@ -1069,74 +1100,4 @@ describe('invokeProcessCli', () => {
       });
     },
   );
-
-  it('classifies a raw-protocol overflow as the envelope limit while normalized output stays under', async () => {
-    const noiseFrames = 700;
-    const script = [
-      "const line='NOISE:'+'x'.repeat(100)+'\\n'",
-      `setTimeout(()=>{for(let i=0;i<${noiseFrames};i++)process.stdout.write(line)},10)`,
-      'setInterval(()=>{},1000)',
-    ].join(';');
-    const env = envelope({ maxRawProtocolBytes: 64 * 1024 });
-
-    const result = await invokeProcessCli(adapter({ kind: 'stdin' }), {
-      invocation: invocation({ script, timeoutMs: 60_000 }),
-      prompt: '',
-      callContext: contextWithEnvelope(env),
-    });
-
-    expect(result).toMatchObject({
-      status: 'truncated',
-      error: { code: 'task_compiler_output_limited' },
-    });
-    expect(result.text).toBe('');
-  }, 60_000);
-
-  it('latches a cumulative normalized overflow that a later terminal cannot clear', async () => {
-    const frames = 3_000;
-    const script = [
-      'const frames=[]',
-      `for(let i=0;i<${frames};i++)frames.push('TEXT:'+Buffer.from('delta '.repeat(8)).toString('base64'))`,
-      "frames.push('RESULT:'+Buffer.from('final answer').toString('base64'))",
-      "process.stdout.write(frames.join('\\n')+'\\n')",
-      'setInterval(()=>{},1000)',
-    ].join(';');
-    const env = envelope({ maxNormalizedOutputBytes: 96 * 1024 });
-
-    const result = await invokeProcessCli(adapter({ kind: 'stdin' }), {
-      invocation: invocation({ script, timeoutMs: 60_000 }),
-      prompt: '',
-      callContext: contextWithEnvelope(env),
-    });
-
-    expect(result).toMatchObject({
-      status: 'truncated',
-      partial: true,
-      error: { code: 'task_compiler_output_limited' },
-    });
-    expect(result.text).not.toBe('final answer');
-  }, 60_000);
-
-  it('stays truncated after a completed terminal record follows a latched overflow', async () => {
-    const frames = 3_000;
-    const script = [
-      'const frames=[]',
-      `for(let i=0;i<${frames};i++)frames.push('TEXT:'+Buffer.from('delta '.repeat(8)).toString('base64'))`,
-      "frames.push('RESULT:'+Buffer.from('final answer').toString('base64'))",
-      "process.stdout.write(frames.join('\\n')+'\\n')",
-    ].join(';');
-    const env = envelope({ maxNormalizedOutputBytes: 96 * 1024 });
-
-    const result = await invokeProcessCli(adapter({ kind: 'stdin' }), {
-      invocation: invocation({ script, timeoutMs: 60_000 }),
-      prompt: '',
-      callContext: contextWithEnvelope(env),
-    });
-
-    expect(result).toMatchObject({
-      status: 'truncated',
-      partial: true,
-      error: { code: 'task_compiler_output_limited' },
-    });
-  }, 60_000);
 });

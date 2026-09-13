@@ -19,10 +19,27 @@ import type { StartDeps } from '../../../src/cli/commands/start/types.js';
 import { runHeadless } from '../../../src/cli/headless.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import type { Summary } from '../../../src/core/schemas/summary.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
+import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
+
+const mocks = vi.hoisted(() => ({
+  runWorkflow: vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>(),
+}));
+
+// `--skills` is only threaded correctly if the ids the CLI resolved arrive as
+// `RunWorkflowOptions.selectedSkills`; the orchestrator itself is not under test
+// here, so the real implementation stays the default and one case replaces it.
+vi.mock('../../../src/engine/orchestrator/run/workflow.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../../src/engine/orchestrator/run/workflow.js')>();
+  mocks.runWorkflow.mockImplementation(actual.runWorkflow);
+  return { ...actual, runWorkflow: mocks.runWorkflow };
+});
 
 const TARGET_FILE = 'src/loop.ts';
 
@@ -43,6 +60,7 @@ setupStartCommandIntegration();
 describe('splitbrief start --plain', { timeout: 90_000 }, () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    mocks.runWorkflow.mockClear();
   });
 
   it('renders the run as plain lines and puts no NDJSON record on the same stdout', async () => {
@@ -77,7 +95,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
         usage: { inputTokens: 140, outputTokens: 90 },
       }),
       review: vi.fn().mockResolvedValue({
-        text: '# Final review\n\nPassed validation.',
+        text: '# Final review\n\nPassed validation.\n\n### Verdict\npass\n',
         usage: { inputTokens: 60, outputTokens: 30 },
       }),
     });
@@ -195,5 +213,69 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
     for (const line of stdout.trimEnd().split('\n').filter(Boolean)) {
       expect(isNdjsonRecord(line)).toBe(false);
     }
+  });
+
+  it('--skills threads into runWorkflow', async () => {
+    const tmp = getStartCommandTmp();
+    writeReadyReadinessFixtures(tmp, { validation: false, codebase: false });
+    const skillDir = join(tmp, '.claude', 'skills', 'house-style');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      '---\nname: House style\ndescription: The house idiom\n---\n\nUse tabs.\n',
+      'utf-8',
+    );
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    mocks.runWorkflow.mockImplementationOnce(async () => makeSummary());
+
+    const program = new Command();
+    program.exitOverride();
+    registerStartCommand(program, { ...fakeDeps, runHeadless });
+    await program.parseAsync([
+      'node',
+      'splitbrief',
+      'start',
+      '--plain',
+      '--skills',
+      'house-style',
+      'attach a skill',
+      '--project',
+      tmp,
+    ]);
+
+    expect(mocks.runWorkflow).toHaveBeenCalledOnce();
+    expect(mocks.runWorkflow.mock.calls[0]?.[0].selectedSkills).toEqual([
+      expect.objectContaining({ id: 'house-style', name: 'House style' }),
+    ]);
+  });
+
+  it('unknown --skills id exits 2 with Unknown skill:', async () => {
+    const tmp = getStartCommandTmp();
+    writeReadyReadinessFixtures(tmp, { validation: false, codebase: false });
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const program = new Command();
+    program.exitOverride();
+    registerStartCommand(program, fakeDeps);
+
+    await expect(
+      program.parseAsync([
+        'node',
+        'splitbrief',
+        'start',
+        '--plain',
+        '--skills',
+        'no-such-skill',
+        'attach a skill',
+        '--project',
+        tmp,
+      ]),
+    ).rejects.toMatchObject({
+      exitCode: 2,
+      message: expect.stringContaining('Unknown skill: no-such-skill (scanned: '),
+    });
+    expect(mocks.runWorkflow).not.toHaveBeenCalled();
   });
 });

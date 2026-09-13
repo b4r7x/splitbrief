@@ -105,6 +105,8 @@ function eventToHookKey(e: EngineEvent): HookEvent | null {
       return e.status === 'done' ? 'post_validation' : null;
     case 'git_commit':
       return 'post_commit';
+    case 'recovery_prompted':
+      return 'on_halt';
     case 'workflow_complete':
       return 'on_complete';
     case 'error':

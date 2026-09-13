@@ -7,6 +7,7 @@ import {
   readReviewContentHeight,
 } from './snapshot.js';
 import { briefListTopOffset, hitBriefTaskRow, hitTranscriptRow } from './hit-test.js';
+import { getContentTopRow, getProgressRows } from './chrome-rows.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -128,8 +129,66 @@ describe('readConversationScrollSnapshot', () => {
     lifecycleStore.__testReset({ phase: 'idle' });
     const idle = readConversationScrollSnapshot();
 
-    expect(active.viewportHeight).toBe(idle.viewportHeight);
+    // The build block is the only chrome a live phase adds; the status byline costs nothing.
+    expect(idle.viewportHeight - active.viewportHeight).toBe(
+      getProgressRows({ phase: 'implementing', cols: 80 }),
+    );
     expect(active.totalHeight).toBe(idle.totalHeight);
+  });
+
+  it('measures the transcript around the build progress block', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+
+    const progressRows = getProgressRows({ phase: 'implementing', cols: 80 });
+    const snap = readConversationScrollSnapshot();
+
+    expect(progressRows).toBe(4);
+    // The block rides above the transcript, so its rows leave the body and push its top row down.
+    expect(snap.viewportHeight).toBe(
+      getWorkflowViewportHeight({ rows: 30, inputRows: 3, progressRows }),
+    );
+    expect(snap.contentRect.height).toBe(snap.viewportHeight);
+    expect(snap.contentRect.top).toBe(getContentTopRow() + progressRows);
+  });
+
+  it('gives the block rows back to an open gate, as the screen does', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    approvalPromptStore.__testReset({
+      status: 'pending',
+      request: makeConfirmRequest('delete generated files'),
+      resolve: () => undefined,
+    });
+
+    const snap = readConversationScrollSnapshot();
+
+    expect(snap.contentRect.top).toBe(getContentTopRow());
+    expect(snap.viewportHeight).toBe(
+      getWorkflowViewportHeight({
+        rows: 30,
+        inputRows: 3,
+        promptRows: getApprovalPromptRows(approvalPromptStore.get(), 80),
+      }),
+    );
+  });
+
+  it('cancelled runs paint no block, so the body reclaims its rows', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({
+      phase: 'implementing',
+      status: 'running',
+      startedAt: 0,
+      cancelled: true,
+    });
+
+    const snap = readConversationScrollSnapshot();
+
+    expect(snap.contentRect.top).toBe(getContentTopRow());
+    expect(snap.viewportHeight).toBe(getWorkflowViewportHeight({ rows: 30, inputRows: 3 }));
   });
 
   it('subtracts dynamic prompt rows from the conversation viewport', () => {
@@ -398,6 +457,24 @@ describe('readReviewContentHeight', () => {
     const height = readReviewContentHeight();
 
     expect(height).toBeGreaterThan(0);
+  });
+
+  it('keeps the review body on the same rows as the transcript while the block paints', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 40, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({ phase: 'final-review', status: 'running', startedAt: 0 });
+    reviewStore.setRenderedLineCount(0);
+
+    const progressRows = getProgressRows({ phase: 'final-review', cols: 80 });
+    const bodyHeight = getWorkflowViewportHeight({ rows: 40, inputRows: 3, progressRows });
+
+    expect(progressRows).toBe(4);
+    // Both panes are handed the screen's one content height, so the review frame is measured
+    // around the block exactly as the transcript is.
+    expect(readConversationScrollSnapshot().contentRect.height).toBe(bodyHeight);
+    expect(readReviewContentHeight()).toBe(
+      getReviewContentLayout(Math.max(0, bodyHeight - REVIEW_FRAME_ROWS), 0).contentHeight,
+    );
   });
 
   it('accounts for scrollable content by reserving a footer row', () => {

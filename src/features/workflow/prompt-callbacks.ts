@@ -1,15 +1,11 @@
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { openCostApprovalPrompt } from '../../stores/cost-approval/prompt.js';
-import {
-  markInterruptParked,
-  markInterruptRequested,
-} from '../../stores/workflow/actions/interrupt.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { markWorkflowPaused } from '../../stores/workflow/actions/pause.js';
+import { stopStore } from '../../stores/workflow/stop.js';
+import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
-import { SOFT_SEP } from '../../components/separators.js';
-import { REVIEW_HINT } from './review-commands.js';
 import {
   formatUserEditConflictPrompt,
   parseUserEditConflictAnswer,
@@ -17,9 +13,9 @@ import {
 import { formatTaskReviewPrompt, parseTaskReviewAnswer } from './task-review-prompt.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
-export const CONTINUATION_PROMPT =
-  'Interrupted. Type instructions to steer, or press Enter to retry.';
-export const ARTIFACT_REVIEW_HINT = `y approve${SOFT_SEP}q reject`;
+function runningTaskId(): string | null {
+  return selectRunningBrief(tasksStore.get()).current?.id ?? null;
+}
 
 interface BuildCallbacksOptions {
   inputMode: UseInputModeResult;
@@ -38,9 +34,9 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       const reviewOwner = artifactReview
         ? reviewStore.setReviewArtifact(input.text)
         : reviewStore.setReviewFile(input);
-      const hint = artifactReview ? ARTIFACT_REVIEW_HINT : REVIEW_HINT;
       try {
-        return await inputMode.setReviewMode(hint);
+        // The review panel is the legend now, so the mode carries no hint text of its own.
+        return await inputMode.setReviewMode('');
       } finally {
         reviewStore.clearReviewIfOwner(reviewOwner);
       }
@@ -50,16 +46,14 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       return parseUserEditConflictAnswer(answer, conflict.availableActions);
     },
     onCostApprovalNeeded: async (prediction) => openCostApprovalPrompt(prediction),
+    // A stopped brief parks rather than asking a question: blank Enter never resumes it, and the
+    // composer keeps its own meaning until /resume or a typed steer settles this promise.
     onContinuationNeeded: async (_partial) => {
-      markInterruptRequested();
-      while (!controller.signal.aborted && !abortedRef.current) {
-        markInterruptParked();
-        // Contract: resolvers of this prompt must call markInterruptResumed()
-        // before resolving, or the answer is treated as superseded and re-asked.
-        const text = await inputMode.setQuestionMode(CONTINUATION_PROMPT);
-        if (lifecycleStore.get().status !== 'interrupted') return text;
-      }
-      return '';
+      if (controller.signal.aborted || abortedRef.current) return '';
+      markWorkflowPaused();
+      return new Promise<string>((resolve) => {
+        stopStore.park('mid-brief', runningTaskId(), resolve);
+      });
     },
     onTieredApproval: (request) => openApprovalPrompt(request),
     onTaskReviewNeeded: async (request) => {

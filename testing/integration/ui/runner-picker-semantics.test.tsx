@@ -190,7 +190,7 @@ describe('runner picker semantics integration', () => {
       expect(plannerZones).toHaveLength(plannerCatalog.length);
       expect(plannerZones).toEqual(expect.arrayContaining(plannerCatalog.map((item) => item.id)));
       expect(plannerZones).toContain('cursor');
-      expect(plannerZones).not.toContain('antigravity');
+      expect(plannerZones).toContain('antigravity');
       expect(plannerCatalog.map((item) => item.id)).toEqual(
         expect.arrayContaining([
           'custom-command',
@@ -209,7 +209,7 @@ describe('runner picker semantics integration', () => {
       expect(implementerZones).toContain('ollama');
       expect(implementerZones).toContain('lm-studio');
       expect(implementerZones).toContain('cursor');
-      expect(implementerZones).not.toContain('antigravity');
+      expect(implementerZones).toContain('antigravity');
       expect(plannerZones).not.toContain('ollama');
       expect(plannerZones).not.toContain('lm-studio');
       expect(implementerCatalog.some((item) => item.id === 'ollama')).toBe(true);

@@ -47,6 +47,9 @@ export default defineConfig({
             'scripts/**/*.test.{ts,tsx}',
             'testing/{architecture,ci,docs,rebrand}/**/*.test.{ts,tsx}',
             'testing/compat/**/*.test.{ts,tsx}',
+            // Helpers only — testing/e2e/scenarios is the replay and live tier that
+            // `npm run test:e2e` and `npm run test:e2e:live` own.
+            'testing/e2e/helpers/**/*.test.{ts,tsx}',
             'testing/integration/**/*.test.{ts,tsx}',
             'testing/helpers/**/*.test.{ts,tsx}',
             'testing/visual/**/*.test.{ts,tsx}',

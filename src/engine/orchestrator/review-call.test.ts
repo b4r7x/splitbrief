@@ -9,6 +9,7 @@ import {
   makePlanner,
   TEST_METADATA,
 } from '#testing/helpers/orchestrator-factories.js';
+import type { PlannerOutputCallbacks } from '../planners/types.js';
 import { runReviewerCall } from './review-call.js';
 
 let dirs: string[] = [];
@@ -84,5 +85,44 @@ describe('runReviewerCall', () => {
       ),
     ).toHaveLength(1);
     expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
+  });
+
+  it('forwards the caller signal so an abort cancels the in-flight reviewer call', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus } = makeBusRecorder();
+    const controller = new AbortController();
+    const started = Promise.withResolvers<void>();
+    const reviewer = makePlanner({
+      review: vi
+        .fn()
+        .mockImplementation((_prompt: string, _dir: string, callbacks: PlannerOutputCallbacks) => {
+          started.resolve();
+          return new Promise<never>((_resolve, reject) => {
+            const signal = callbacks.signal;
+            if (!signal) {
+              reject(new Error('runReviewerCall did not forward the caller signal'));
+              return;
+            }
+            signal.addEventListener('abort', () => {
+              reject(new DOMException('The user aborted a request.', 'AbortError'));
+            });
+          });
+        }),
+    });
+
+    const call = runReviewerCall({
+      reviewer,
+      prompt: 'review the diff',
+      projectDir,
+      sessionId,
+      bus,
+      state: createInitialState('feature'),
+      signal: controller.signal,
+    });
+
+    await started.promise;
+    controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
+
+    await expect(call).rejects.toMatchObject({ name: 'AbortError' });
   });
 });

@@ -24,9 +24,11 @@ splitbrief start --mode speckit "redesign auth subsystem"
 
 | Mode | Planner calls | Approval gates | Pick when |
 |---|:---:|:---:|---|
-| `quick` | 1 | none | Trivial single-edit changes and small tasks that warrant a brief but not a spec |
-| `standard` (default) | 4 | spec | Ordinary feature work — research → spec → plan → tasks |
-| `speckit` | 6–7 | spec + plan + constitution + analyze | Risky, large, or externally visible work |
+| `quick` | 1 | 0 | Trivial edits and small tasks that warrant a brief but not a spec |
+| `standard` (default) | 4 | 2 (spec + briefs) | Ordinary feature work — research → spec → plan → tasks |
+| `speckit` | 6–7 | 3 (spec + plan + briefs) | Risky, large, or externally visible work |
+
+The counts come from `MODES` (`src/core/pipeline-spec/modes.ts`), which is also what the mode selector and the planner prompts read.
 
 **Configuration.** `workflow.mode`, `workflow.approve` (`none|spec|plan|all|default`), `workflow.maxRetries`. See [CONFIGURATION.md §workflow](./CONFIGURATION.md#5-workflow).
 
@@ -106,9 +108,23 @@ splitbrief start --json "fix parser edge case"
 
 ### Validation pipeline + checkpoints
 
-**What it does.** After every implementer task, SPLITBRIEF runs `tsc --noEmit` → Biome lint → tests (in that order, stop on first failure). On success it records evidence and can create checkpoints. Product-level git commits are optional when explicitly configured; checkpoint safety does not depend on commits.
+**What it does.** After every implementer task, SPLITBRIEF runs typecheck → lint → test (in that order, stop on first failure). The commands are the ones the project's own stack uses, not a fixed TypeScript trio. On success it records evidence and can create checkpoints. Product-level git commits are optional when explicitly configured; checkpoint safety does not depend on commits.
 
-**How to use.** Set `validation.{typecheck,lint,test,testCommand}` and `workflow.git.commitStrategy: none|checkpoint|per-task`. Optionally auto-create a branch with `workflow.git.createBranch: true` (writes to `splitbrief/<slug>`).
+**Stack coverage.** The registry is `src/core/validation/stacks/`; `detectStack` picks the first row whose marker file exists, in this order:
+
+| Stack | Marker | typecheck | lint | test | Test files |
+|---|---|---|---|---|---|
+| `rust` | `Cargo.toml` | `cargo check` | `cargo clippy --no-deps` | `cargo test` | `#[cfg(test)]` blocks in the changed file |
+| `go` | `go.mod` | `go vet ./...` | `golangci-lint run` with `.golangci.y*ml`, else `staticcheck ./...` when it is on `PATH` | `go test ./...` | `*_test.go` |
+| `python` | `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements.txt`, `Pipfile` | `mypy .` with `[tool.mypy]`/`mypy.ini`, `pyright` with `pyrightconfig.json` | `ruff check .` with `[tool.ruff]`/`ruff.toml`, else `flake8` with `.flake8` | `uv run pytest` with `uv.lock`, `poetry run pytest` with `poetry.lock`, else `pytest` | `test_*.py`, `*_test.py` |
+| `typescript` | `tsconfig.json`, or `typescript` in `package.json` dependencies | `npx tsc --noEmit` | read-only `lint` script, else `npx eslint .`, else `npx biome check .` | `npm test` when `scripts.test` exists | `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `__tests__/*.ts` |
+| `javascript` | `package.json` | — | same as typescript | `npm test` when `scripts.test` exists | `*.test.js`, `*.spec.js`, `*.test.mjs` |
+
+A blank cell means the stack has no default for that stage, so the stage is skipped unless you configure a command.
+
+**Resolution ladder.** Each stage resolves through `config → manifest → discovered → stack default → none`: an explicit `validation.{typecheck,lint,test}Command`, then a `package.json` script / `Makefile` / `justfile` target / `pyproject` section of that name, then the command the planner discovered while reading the repo, then the stack default. When every rung is empty the stage is recorded as `skipped` with the reason `no <stage> command for an unrecognised stack` — never as passed — and a run whose stages are all skipped that way prints `gates: NONE — review-only` once and leans on the review seat instead. SPLITBRIEF never falls back to `npm test` or `npx tsc --noEmit` on a project that is not a JavaScript or TypeScript one.
+
+**How to use.** Set `validation.{typecheck,lint,test}` on or off, pin the stack with `validation.stack` when the markers are ambiguous, override a single command with `validation.{typecheck,lint,test}Command`, and set `workflow.git.commitStrategy: none|checkpoint|per-task`. Optionally auto-create a branch with `workflow.git.createBranch: true` (writes to `splitbrief/<slug>`).
 
 **When to use.** `none` for manual review and commits. `checkpoint` and `per-task` are optional product behaviors for teams that want SPLITBRIEF to create git history as part of the run.
 
@@ -124,12 +140,12 @@ Events: `validate`, `git_commit`, `git_checkpoint`, `git_branch_created`.
 
 ### Retry + escalation logic
 
-**What it does.** A failing task retries up to `workflow.maxRetries` (default 3) before escalating. Escalation then runs three tiers in order: **tier 0 — intermediate** (a paid mid-tier API model retries, only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`), **tier 1 — hint** (planner suggests a fix that the implementer applies, for backends with `supportsHintEscalation`), then **tier 2 — full** (the planner writes the code itself).
+**What it does.** A failing task retries up to `workflow.maxRetries` (default 2) before escalating. Escalation then runs three tiers in order: **tier 0 — intermediate** (a paid mid-tier API model retries, only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`), **tier 1 — hint** (planner suggests a fix that the implementer applies, for backends with `supportsHintEscalation`), then **tier 2 — full** (the planner writes the code itself).
 
 **How to use.** Tune `workflow.maxRetries` and the optional intermediate tier:
 
 ```yaml
-workflow: { maxRetries: 3 }
+workflow: { maxRetries: 2 }
 escalation:
   intermediateProvider: ollama
   intermediateModel: llama3.1
@@ -153,7 +169,7 @@ Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`
 
 ### Task Briefs (the planner-implementer contract)
 
-**What it does.** The Task Brief is a single-file, self-contained executable contract with nine semantic sections: Identity, Intent, Scope, Code Context, Implementation Plan, Validation, Constraints, Escalation, Evidence. Persisted as `Task[]` in `state.json`; transported as `tasks.md`.
+**What it does.** The Task Brief is a self-contained executable contract for one slice — one verifiable change, whose files are listed under `files` and anchored by `file` — with nine semantic sections: Identity, Intent, Scope, Code Context, Implementation Plan, Validation, Constraints, Escalation, Evidence. A slice is often one file; the planner's budget is five files and roughly 150–200 changed lines. Persisted as `Task[]` in `state.json`; transported as `tasks.md`.
 
 **How to use.** Briefs are written by the planner in every mode. External tools consume the active brief by reading `.splitbrief/sessions/<id>/tasks.md` or the task list in `.splitbrief/sessions/<id>/state.json`. Brief hash metadata is recorded in evidence and drift artifacts when available; `state.json` task objects do not carry `briefHash`.
 
@@ -164,6 +180,9 @@ Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`
 id: T001
 title: Add JWT middleware
 file: src/auth/middleware.ts
+files:
+  - src/auth/middleware.ts
+  - tests/auth/middleware.test.ts
 action: create
 dependsOn: []
 ---
@@ -190,7 +209,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 ### Brief quality gate
 
-**What it does.** A deterministic linter scores every Task Brief before implementation begins. Error codes are `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, and `missing_implementation_steps`. `missing_type_definitions` is a warning. Any error-level issue blocks transition to `implementing`.
+**What it does.** A deterministic linter scores every Task Brief before implementation begins. Error codes are `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `write_outside_declared_files` (a step writes a path the brief never declared), `anchor_not_in_files` (`file` is missing from `files`), and `missing_implementation_steps`. `missing_type_definitions` and `test_without_code` (a test brief whose subject is created in another brief — fold the two into one slice) are warnings. Any error-level issue blocks transition to `implementing`.
 
 **How to use.** Always runs in all three modes. Result persists at `brief-quality.json`; events are `brief_quality_passed` or `brief_quality_failed`. Visible in the summary screen as a `Brief quality` row.
 
@@ -241,7 +260,7 @@ After the editor exits successfully, SPLITBRIEF re-reads `.splitbrief/sessions/<
 
 **What it does.** There is no persistent cost header. Spend surfaces in four places, each fed from the cost store on `cost_update`:
 
-- **Sidebar footer** — `/sidebar` toggles it; hidden by default and unavailable below 120 columns. Last line reads `Local NN%` — the share of tasks finished without escalating — followed by the run's spend when something priced ran: `Local 80% · $0.42`.
+- **Sidebar footer** — on by default above the breakpoint (121 columns and wider) and unavailable at or below it; `/sidebar` toggles it and `/tasks` brings it back. Last line reads `Local NN%` — the share of tasks finished without escalating — followed by the run's spend when something priced ran: `Local 80% · $0.42`.
 - **Ctrl+G — `Cost · breakdown`** — the full accounting surface: per phase cost, the input/output token split, `cache NN%` where the runner reports cache reads, and per-task totals with per-attempt detail.
 - **Summary screen** — leads with `$0.42 actual vs $1.80 baseline · 77% saved` when the run produced a savings estimate.
 - **Budget gate** — only with `workflow.maxBudget` set: warns at 80%, pauses at `workflow.budgetPauseThreshold` (default `0.85`), stops at the ceiling.
@@ -312,9 +331,31 @@ Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_
 
 ## Safety and control
 
+### Stopping a run
+
+**What it does.** On the workflow screen with an empty composer, `esc` opens a modal **Stop options** sheet instead of acting on the run. The sheet is the only place a stop is chosen, and every row says what it leaves behind:
+
+| Row | Consequence |
+|---|---|
+| `Stop now` | stop execution; keep partial changes |
+| `Pause after this brief` | finish `T<id>` including checks and review; do not start `T<next>` |
+| `End run` | stop execution; mark this run cancelled; keep changes |
+
+The second row appears only while a brief is running, and reads `Keep running` once a pause is already pending. The footer line is `No option reverts files. Your draft is preserved.`, the legend is `↑↓ · ⏎ · esc`, and there are no letter keys. `esc` on the sheet closes it with no effect on the run.
+
+**How to use.**
+
+- `esc` (empty composer) — open the sheet. With text in the composer `esc` spends neither the draft nor the run; the feedback row reads `clear the draft or ctrl+c to stop now`.
+- `ctrl+c` — Stop now, immediately, with no armed window and no second press. Off the workflow screen it exits as usual.
+- `ctrl+q` or `/quit` — stop safely, save the session, then exit.
+- `/resume` — restart a parked run (`Stop now` resumes the parked brief, `Pause after this brief` starts the next one). A blank Enter never resumes; type instructions and Enter to steer the resumed run.
+- `/end` — mark a parked run cancelled and keep its changes.
+
+**On-screen.** The byline reports the state and the legend row carries the keys: `Stopping T<id> · Waiting for processes to exit · elapsed <t>` (hint `No new work will start`), then `Forcing remaining processes to exit` after the 2-second grace, `Finishing T<id>` with `Pause requested; no next brief will start` for a boundary pause, and finally one of `Paused at T<id> · Partial changes kept`, `Paused after T<id> · <n> of <m> briefs complete`, or `Cancelled by you at T<id> · Changes kept`. No option reverts files: git is still the layer that reverses a run.
+
 ### Recovery stops
 
-**What it does.** When SPLITBRIEF cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, retry exhaustion, dependency-blocked tasks, user-edit or approval-promotion conflicts, budget pause, and budget exceeded.
+**What it does.** When SPLITBRIEF cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, retry exhaustion, dependency-blocked tasks, user-edit or approval-promotion conflicts, budget pause, budget exceeded, a scope violation that survived its revert retry, a refused implementer command line, two consecutive implementer timeouts on one brief, a denied approval, a failed snapshot, and a final review that still fails after its fix cycles. Every one of them also fires the `on_halt` hook.
 
 **Actions.** Available actions are filtered per issue:
 
@@ -329,7 +370,7 @@ Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_
 | `switch-seat` | Offered for `runner-usage-limit` only: moves the quota-blocked seat to another ready detected tool and re-prepares the same session on it. |
 | `planner-split-rebase` | Legacy/manual only; new recovery prompts do not offer it, and old states block with `planner-proposal-required`. |
 
-**Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero.
+**Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero; both headless renderings print the recommended action and the exact `splitbrief continue <session> --action …` line to stderr, and `continue --action <skip|retry|switch-seat:<tool>[:<model>]>` applies it without a TUI.
 
 ### Tiered approval gates (auto / sticky / confirm)
 
@@ -360,7 +401,7 @@ Or in the TUI: `/approval list` / `/approval clear`. Headless mode fails fast at
 
 **What it does.** Before final review, the orchestrator computes a deterministic drift report comparing the Task Brief against the actual git diff and the evidence ledger. Findings include out-of-scope file edits, missing target files, orphan diffs, out-of-bounds substring matches, missing observed evidence, and failed tasks that nevertheless left changes.
 
-**How to use.** Always runs. Persisted as `.splitbrief/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `score`, `errorCount`, `warningCount`. Visible on the summary screen as a `Drift` row.
+**How to use.** Always runs. Persisted as `.splitbrief/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `score`, `errorCount`, `warningCount`. Visible on the summary screen as a `Scope` row — the screen names the concept once, matching the hero's `Scope check:` line.
 
 **When to use.** No setup needed; the report is the deterministic input to the planner reviewer's qualitative judgment.
 
@@ -379,7 +420,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ### Evidence ledger
 
-**What it does.** Per-task validation, retry, escalation, and final-review log. Captures expected evidence (from `task.evidence` ++ `task.tests`) alongside observed evidence strings the orchestrator emits (`typecheck passed`, `lint passed`, `test passed`, `diff written for <file>`, `task reached done`, `task reached escalated`, `final review written`, `skipped: <reason>`). Every entry carries `briefHash` so post-hoc audits can detect brief mutations.
+**What it does.** Per-task validation, retry, escalation, and final-review log. Captures expected evidence (from `task.evidence` ++ `task.tests`) alongside observed evidence strings the orchestrator emits (`typecheck passed`, `lint passed`, `test passed`, `diff written for <n> files`, `task reached done`, `task reached escalated`, `final review written`, `skipped: <reason>`). A stage that did not run is recorded as `test skipped (<reason>)` with `skipped: true` on the entry — never as passed — and a skipped test stage counts as missing evidence in the drift report. Every entry carries `briefHash` so post-hoc audits can detect brief mutations.
 
 **How to use.** Always runs. Persisted at `.splitbrief/sessions/<id>/evidence.json` (mode 0o600). Summary screen shows `Evidence: N/M validated`.
 
@@ -389,7 +430,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 23 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
+**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 26 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
 
 **Navigate**
 
@@ -421,6 +462,8 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/approval [list\|clear]` | List or clear sticky approval grants |
 | `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
+| `/resume` | Continue a paused or stopped run |
+| `/end` | Stop the run and mark it cancelled |
 
 **View**
 
@@ -431,6 +474,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 | `/diff` | Expand or collapse the latest diff (Ctrl+D) |
 | `/cost` | Show the cost breakdown (Ctrl+G) |
 | `/sidebar` | Show or hide the workflow sidebar |
+| `/tasks` | Show the brief list — opens the sidebar and leaves it open (at or below 120 columns there is no sidebar, so the command answers with the list itself) |
 
 **Input & output**
 
@@ -491,15 +535,32 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 **The effort axis.** A model whose own source publishes an effort ladder carries one more axis than its id spells: an `effort` row built from that ladder — the route's own where a route publishes one (`opencode models --verbose` records each model's `variants` keys), the row's otherwise (a documented flag ladder, models.dev `reasoning_options`). It is not id-encoded, so there is nothing to peel, and it replaces the id-composed `effort` rather than joining it: no route ever shows two rows labelled `effort`. A model that publishes no ladder gets no row, even where a sibling route of the same merged row offers one; a model with no routes at all — a `claude-code` alias — becomes expandable for it. A seat that cannot spend a level carries no ladder either, whatever its models publish: `cursor` spells its effort inside the model id, and an api, shell or agent seat has no field for one. The row heads its route's block, ahead of that route's fast/thinking rows, cycles with the same `space`, reads `auto` until something is drafted, and confirming saves the drafted level into the field the seat's channel spells — `effort` on a flag-channel tool, `variant` on a variant-channel one — from the same ladder the row offered, so a level the row let you reach is a level the save keeps.
 
+### Build progress block
+
+**What it does.** While the run is `implementing`, a persistent block sits under the header rail at every width and says what the build is doing without a scroll:
+
+```
+3/7 briefs passed · 1 escalated · attempt 2 of 3 · ETA ~4m
+codex · implementer implementing · 12k output tokens · last event 3s ago
+```
+
+The fraction counts briefs that **passed their checks** — a started brief is not a settled one, and an escalated brief is never counted as settled. Attempts are stated as attempts (`attempt 2 of 3`, where the maximum is `1 + workflow.maxRetries`), never as retries. The ETA is an average of the briefs that finished, printed in whole minutes; with nothing to average from it reads `ETA unavailable: no brief finished yet`, and a seat swap retires it with `ETA unavailable: worker changed`. The activity line names the seat, the operation and the output tokens; while a gate command runs it names the command instead (`npm test · running 41s · no output for 8s`). After 60 seconds without a runner event the freshness line becomes `No update from <tool> for <n>s`. The same five facts regroup rather than disappear as the terminal narrows: two rows at 120 columns and wider, four at 80, five below that.
+
 ### Input footer
 
-**What it does.** Per-task progress and risk posture below the always-visible status line.
+**What it does.** One byline under the composer carrying the run's live state, and the advisor signal below it when active.
 
-**Format.** `Task N/M · mode <mode> · risk <level> · $X.XX expected`. The advisor signal renders below the footer when active: `advisor: consider quick · trivial edit`.
+**Format.** The lead is the live status — `⠙ Implementing… 1m 12s`, `Waiting for you`, `Still working — silent 3m`, a stop state such as `Paused at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, `<n> queued`, the ETA, `git:<strategy>` (`git:branch+<strategy>` when the run created a branch), the advisor line (`advisor: consider quick · trivial edit`), `y copy` when the focused region has something to copy, and the worktree name.
+
+**Steer, queue, interrupt.** The composer means a different thing in each state, and its placeholder says which:
+
+- **Queue** — while a brief is building, the placeholder reads `Queue a message for after this brief…`; text you send waits for the next safe boundary. `/queue show` and `/queue clear` inspect and discard what is pending.
+- **Steer** — while the run is parked (`Stop now`, or an interrupted call), the hint reads `type instructions, enter to send and resume`; text you send steers the resumed run. A blank Enter never resumes.
+- **Interrupt** — `ctrl+c` stops the run at once, `esc` on an empty composer opens the stop sheet. Neither is reachable by typing.
 
 ### Summary screen
 
-**What it does.** Post-run report showing the three seats — `PLAN`, `BUILD`, `REVIEW` — plus brief quality, drift score, evidence rollup, per-phase timing and per-task cost, with the `REVIEW` seat reading the reviewer's identity or, with no `reviewer:` block, the planner-inheritance sentence.
+**What it does.** Post-run report showing the three seats — `PLAN`, `BUILD`, `REVIEW` — plus brief quality, the scope check, evidence rollup, per-phase timing and per-task cost, with the `REVIEW` seat reading the reviewer's identity or, with no `reviewer:` block, the planner-inheritance sentence.
 
 **Format (header).** The three seat identities chained by `→`, then the mode and the total time, with the review segment present only when a `reviewer:` block names its own seat; below 120 columns the same three seats render as labelled `PLAN` / `BUILD` / `REVIEW` rows instead, except at 56 columns and 28 rows or smaller where they collapse to one compact line.
 
@@ -524,6 +585,7 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 | `post_commit` | After optional product-level commit |
 | `pre_escalation` | Before planner escalation |
 | `on_error` | Any unrecoverable engine error |
+| `on_halt` | A recovery issue is raised — carries `sessionId`, `taskId`, `reason`, `recommendedAction` and the `resumeCommand` to paste |
 | `on_complete` | `workflow_complete` event |
 
 ```yaml
@@ -622,11 +684,13 @@ Offered only when the PLAN seat can receive images; on a seat without vision the
 
 ### Skills
 
-**What it does.** Loads planner skills into the picker so the planner can be primed with project-specific knowledge. Source discovery lives in `src/engine/skill-discovery.ts` and does not depend on which tool holds the PLAN seat. It scans one fixed union of roots, listed here in precedence order — project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, then global `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`. The path table is `src/core/skills/scan-paths.ts`. Dedup is by skill id, first root wins, so project skills always outrank global ones. `<project>/AGENTS.md` is emitted as the `agents-root` entry whenever the file exists.
+**What it does.** Loads planner skills into the picker so the planner can be primed with project-specific knowledge. Source discovery lives in `src/engine/skill-discovery.ts` and does not depend on which tool holds the PLAN seat. It scans one fixed union of roots, listed here in precedence order — project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `./.github/skills/`, `./.commandcode/skills/`, `./.kilo/skills/`, `./.kilocode/skills/`, `./.cursor/skills/`, then global `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `~/.commandcode/skills/`, `~/.kilo/skills/`, `~/.config/kilo/skills/`, `~/.cursor/skills/`. The path table is `src/core/skills/scan-paths.ts`, and the skills overlay's empty state lists the same roots. Dedup is by skill id, first root wins, so project skills always outrank global ones. `<project>/AGENTS.md` is emitted as the `agents-root` entry whenever the file exists.
 
 **Detection.** A directory holding a `SKILL.md` is a skill and is not descended into; other directories are walked to depth 4. Loose `.md` files count only at the top level of a root. Frontmatter that omits `name` falls back to the directory (or file) name; a file with no frontmatter block is skipped. Symlinks are followed in both scopes, but project scope never leaves the project: a project symlink whose target resolves outside the project is dropped, not read.
 
-**How to use.** Open the picker via `/skills` on any screen (Ctrl+S on home). Discovery re-runs when the overlay opens, so a skill added mid-session appears without a restart. `/skills <id> [<id>…]` toggles skills from the composer instead of opening the picker; the `/` menu completes skill ids, project skills first, then already-selected global ones, and shows each skill's name and description. Selection applies to the session only. Read-only — SPLITBRIEF never writes to skill sources.
+**Where they reach the planner.** Selected skills are rendered into one `## Active Project Skills` section under a 16 000-character budget and sent with **every** planning phase — quick mode's single call as well as the spec and tasks prompts of standard and speckit. When the budget truncates, a `warning` event with code `skills_truncated` names what was dropped (`2 skills omitted (budget): …`) and the TUI feedback row says the same. The four pipeline skills (`splitbrief`, `splitbrief-brief`, `splitbrief-run`, `splitbrief-review`) are excluded from this list: the planner gets that contract from the pipeline spec, not from a skill file.
+
+**How to use.** Open the picker via `/skills` on any screen (Ctrl+S on home). Discovery re-runs when the overlay opens or when `/skills` is typed, so a skill added mid-session appears without a restart. `/skills <id> [<id>…]` toggles one or several skills from the composer instead of opening the picker; ids match fuzzily, and the `/` menu completes them project-first, then already-selected global ones, showing each skill's name and description. The command palette also carries one `Skill · <name>` row per discovered skill, which toggles selection directly. From the command line, `--skills <id,…>` selects them without a picker: on headless `start` (`--json` / `--plain`) and on `resume` / `continue` in either mode. An unknown id fails before planning with `Unknown skill: <id> (scanned: <roots>)` and exit 2. Selection applies to the session only. Read-only — SPLITBRIEF never writes to skill sources.
 
 ---
 

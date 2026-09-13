@@ -1,3 +1,4 @@
+import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
 import { isRecord } from '../../utils/type-guards.js';
 
 /**
@@ -26,11 +27,6 @@ import { isRecord } from '../../utils/type-guards.js';
  */
 const USAGE_LIMIT_STRONG_PATTERNS: readonly RegExp[] = [
   /you'?ve (?:hit|reached) your[^.!\n]{0,40}\blimit\b/,
-  /usage limit reached/,
-  /too many requests/,
-  /insufficient_quota/,
-  /exceeded your current quota/,
-  /credit balance is too low/,
   /rate.?limit.?\s+(?:reached|exceeded)/,
   /rate_limit_error/,
   /api\s+error.*\b429\b/,
@@ -50,6 +46,7 @@ function hasUsageLimitNounCorroboration(text: string): boolean {
 
 export function isUsageLimitDiagnostic(message: string): boolean {
   const text = message.toLowerCase();
+  if (HALT_SIGNATURES.usage.some((phrase) => text.includes(phrase))) return true;
   if (USAGE_LIMIT_STRONG_PATTERNS.some((pattern) => pattern.test(text))) return true;
   const weak = USAGE_LIMIT_WEAK_429.test(text) || USAGE_LIMIT_WEAK_RATE_LIMIT.test(text);
   return weak && hasUsageLimitNounCorroboration(text);

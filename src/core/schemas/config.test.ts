@@ -7,6 +7,8 @@ import {
   type ApiRunnerRole,
 } from '../providers/api-provider-catalog.js';
 import { FORBIDDEN_API_PROVIDER_IDS } from '../providers/api-provider-verdicts.js';
+import { STACKS } from '../validation/stacks/registry.js';
+import { STACK_IDS } from '../validation/stacks/types.js';
 import { ConfigSchema } from './config.js';
 import { ImplementerApiProviderIdSchema, PlannerApiProviderIdSchema } from './enums.js';
 
@@ -347,5 +349,27 @@ describe('ConfigSchema API identity', () => {
 
   it.each([1, 2, 4])('rejects config version %s', (version) => {
     expect(ConfigSchema.safeParse({ ...validConfig, version }).success).toBe(false);
+  });
+});
+
+describe('ConfigSchema validation stack pin', () => {
+  it('admits exactly the stack ids the registry can detect', () => {
+    expect([...STACK_IDS].sort()).toEqual(STACKS.map((stack) => stack.id).sort());
+
+    for (const stack of STACKS) {
+      expect(
+        ConfigSchema.safeParse({
+          ...validConfig,
+          validation: { ...validConfig.validation, stack: stack.id },
+        }).success,
+      ).toBe(true);
+    }
+
+    expect(
+      ConfigSchema.safeParse({
+        ...validConfig,
+        validation: { ...validConfig.validation, stack: 'kotlin' },
+      }).success,
+    ).toBe(false);
   });
 });

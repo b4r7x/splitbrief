@@ -305,14 +305,12 @@ describe('formatCollapsedSeatLine', () => {
       budget: 60,
     });
 
-    expect(line).toBe(
-      `PLAN ${ELLIPSIS} · BUILD qwen2.5-coder:7b (resets 17:00) · REVIEW ${ELLIPSIS}`,
-    );
+    expect(line).toBe('PLAN claude-sonnet-4 · BUILD qwen2.5-coder:7b (resets 17:00)');
     expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(60);
+    expect(line).not.toContain(ELLIPSIS);
   });
 
-  it('drops the note rather than leaving its seat unnamed', () => {
-    const plain = formatCollapsedSeatLine({ planner, build, reviewer: undefined, budget: 45 });
+  it('keeps the noted seat named and drops the seats the note crowds out', () => {
     const line = formatCollapsedSeatLine({
       planner,
       build,
@@ -321,22 +319,23 @@ describe('formatCollapsedSeatLine', () => {
       budget: 45,
     });
 
-    expect(line).toBe(plain);
-    expect(line).not.toContain('resets');
+    expect(line).toBe('BUILD qwen2.5-coder:7b (resets 17:00)');
+    expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(45);
   });
 
-  it('gives up one whole identity rather than cutting a model name in half', () => {
+  it('gives up one whole seat rather than cutting a model name in half', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
     const budget = getTerminalCellWidth(formatCollapsedSeatLine({ planner, build, reviewer })) - 4;
     const line = formatCollapsedSeatLine({ planner, build, reviewer, budget });
 
-    expect(line).toBe(`PLAN claude-sonnet-4 · BUILD qwen2.5-coder:7b · REVIEW ${ELLIPSIS}`);
+    expect(line).toBe('PLAN claude-sonnet-4 · BUILD qwen2.5-coder:7b');
+    expect(line).not.toContain(ELLIPSIS);
     expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(budget);
   });
 
   it('names the same seats at every width one identity can pay for', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
-    const paid = `PLAN claude-sonnet-4 · BUILD qwen2.5-coder:7b · REVIEW ${ELLIPSIS}`;
+    const paid = 'PLAN claude-sonnet-4 · BUILD qwen2.5-coder:7b';
     const lines: string[] = [];
 
     for (
@@ -367,21 +366,23 @@ describe('formatCollapsedSeatLine', () => {
     });
 
     expect(line).toBe(
-      `PLAN ${ELLIPSIS} · BUILD claude-sonnet-4 · REVIEW ${PLANNER_INHERITANCE.mark}`,
+      `PLAN qwen3-coder-plus-instruct-preview · REVIEW ${PLANNER_INHERITANCE.mark}`,
     );
     expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(56);
   });
 
-  it('draws no line at all when the budget leaves no name standing', () => {
+  it('keeps the seats it can name and states nothing about the rest', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
 
-    expect(formatCollapsedSeatLine({ planner, build, reviewer, budget: 41 })).toContain(
-      'claude-sonnet-4',
+    expect(formatCollapsedSeatLine({ planner, build, reviewer, budget: 41 })).toBe(
+      'PLAN claude-sonnet-4 · REVIEW gpt-5-codex',
     );
-    expect(formatCollapsedSeatLine({ planner, build, reviewer, budget: 27 })).toBe('');
-    // The mark points at the planner's name, so it cannot stand in for one:
-    // an anonymous planner takes `= planner` down with it.
-    expect(formatCollapsedSeatLine({ planner, build, reviewer: undefined, budget: 32 })).toBe('');
+    expect(formatCollapsedSeatLine({ planner, build, reviewer, budget: 27 })).toBe(
+      'PLAN claude-sonnet-4',
+    );
+    expect(formatCollapsedSeatLine({ planner, build, reviewer: undefined, budget: 32 })).toBe(
+      'PLAN claude-sonnet-4',
+    );
   });
 
   it('states no line wider than the budget it was given', () => {
@@ -438,7 +439,7 @@ describe('cutSeatIdentity', () => {
 
   it('sheds the mirrored identity from an inherited review row instead of cutting its id', () => {
     const row = `${PLANNER_INHERITANCE.mark} · Claude Code CLI · claude-sonnet-4`;
-    expect(cutSeatIdentity(row, 44)).toBe(`${PLANNER_INHERITANCE.mark} · Claude Code CLI`);
+    expect(cutSeatIdentity(row, 41)).toBe(`${PLANNER_INHERITANCE.mark} · Claude Code CLI`);
     expect(cutSeatIdentity(row, 20)).toBe(PLANNER_INHERITANCE.mark);
   });
 

@@ -28,6 +28,7 @@ export function addEvent(event: EngineEvent): void {
       taskMap === s.taskMap &&
       tasks === s.tasks &&
       counts.currentTask === s.currentTask &&
+      counts.currentAttempt === s.currentAttempt &&
       counts.totalTasks === s.totalTasks &&
       counts.taskCompletionTimes === s.taskCompletionTimes
     ) {

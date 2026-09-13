@@ -18,6 +18,7 @@ const { routerStore } = await import('../../../src/stores/navigation/router.js')
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
 const { createInitialState, transition } = await import('../../../src/core/state/machine.js');
 const { saveState } = await import('../../../src/core/state/persistence.js');
+const { requestResume } = await import('../../../src/features/workflow/handlers.js');
 
 const ENTER = '\r';
 
@@ -186,7 +187,7 @@ describe('WorkflowScreen lifecycle', () => {
     }
   });
 
-  it('keeps Enter resume available for a cancelled state that is resumable for this session', async () => {
+  it('resumes a cancelled resumable session through /resume, never a blank Enter', async () => {
     const projectDir = createTempDir('workflow-screen-cancel-resumable');
     try {
       const sessionId = 'cancelled-planning';
@@ -221,7 +222,13 @@ describe('WorkflowScreen lifecycle', () => {
       });
       await flushEffects();
 
+      // Blank Enter never restarts a run: the keystroke the composer takes by accident must not
+      // be the one that starts work.
       ui.stdin.write(ENTER);
+      await tick(20);
+      expect(runWorkflow).toHaveBeenCalledTimes(1);
+
+      requestResume('');
 
       await vi.waitFor(() => {
         expect(runWorkflow).toHaveBeenCalledTimes(2);

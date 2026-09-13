@@ -10,6 +10,7 @@ export const HOOK_EVENTS = [
   'post_commit',
   'pre_escalation',
   'on_error',
+  'on_halt',
   'on_complete',
 ] as const;
 export const HookEventSchema = z.enum(HOOK_EVENTS);

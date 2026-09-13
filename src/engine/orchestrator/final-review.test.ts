@@ -25,6 +25,8 @@ import { hashTaskBrief } from '../brief-hash.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { loadState } from '../../core/state/persistence.js';
 import { finalReviewError, runFinalReviewPhase } from './final-review.js';
+import { decideReviewOutcome } from './review-fix.js';
+import { REVIEW_CYCLE_CAP, VERDICT_RULES } from '../../core/pipeline-spec/review.js';
 import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -90,8 +92,13 @@ const REVIEWER_RUNNER = {
 
 const REVIEWER_IDENTITY = getRunnerCatalogDisplayName(REVIEWER_RUNNER);
 
+function packetStatus(projectDir: string, sessionId: string): string {
+  const packetPath = join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
+  return ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8'))).finalReview.status;
+}
+
 describe('runFinalReviewPhase', () => {
-  it('runs the reviewer, writes review.md, emits workflow_complete, transitions to complete', async () => {
+  it('runs the reviewer, writes review.md, and returns the parsed verdict', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     // A non-trivial spec so the review prompt is well-formed.
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
@@ -113,7 +120,7 @@ describe('runFinalReviewPhase', () => {
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
     const phaseTimings: Record<string, number> = {};
 
-    const { summary } = await runFinalReviewPhase({
+    const result = await runFinalReviewPhase({
       projectDir,
       sessionId,
       config: makeNoValidationConfig(),
@@ -134,21 +141,17 @@ describe('runFinalReviewPhase', () => {
     expect(existsSync(reviewPath)).toBe(true);
     expect(readFileSync(reviewPath, 'utf-8')).toContain(reviewText);
 
-    expect(completions).toHaveLength(1);
-    expect(completions[0]).toBe(summary);
+    expect(result.reviewStatus).toBe('written');
+    expect(result.verdict?.verdict).toBe('pass');
+    expect(result.state.phase).toBe('final-review');
+    expect(completions).toEqual([]);
 
     const statusEvents = events.filter((e) => e.type === 'planner_status');
     expect(statusEvents.length).toBeGreaterThanOrEqual(2);
     expect(statusEvents[0]).toMatchObject({ status: 'running' });
     expect(statusEvents.at(-1)).toMatchObject({ status: 'done' });
 
-    expect(summary.feature).toBe('test feature');
     expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
-    expect(summary.reviewPacket).toMatchObject({
-      jsonPath: REVIEW_PACKET_JSON_FILE,
-      markdownPath: REVIEW_PACKET_MARKDOWN_FILE,
-      finalReviewStatus: 'written',
-    });
     const packetPath = join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
     expect(existsSync(packetPath)).toBe(true);
     const packet = ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8')));
@@ -219,7 +222,10 @@ describe('runFinalReviewPhase', () => {
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
     const reviewer = makePlanner({
-      review: async () => ({ text: 'ok', usage: { inputTokens: 200, outputTokens: 40 } }),
+      review: async () => ({
+        text: '### Verdict\npass\n',
+        usage: { inputTokens: 200, outputTokens: 40 },
+      }),
     });
 
     const { state } = await runFinalReviewPhase({
@@ -239,7 +245,7 @@ describe('runFinalReviewPhase', () => {
     expect(state.tokenUsage.reviewerInput).toBe(200);
     expect(state.tokenUsage.reviewerOutput).toBe(40);
     const persisted = loadState({ projectDir, sessionId });
-    expect(persisted?.phase).toBe('complete');
+    expect(persisted?.phase).toBe('final-review');
     expect(persisted?.tokenUsage.reviewerInput).toBe(200);
     expect(persisted?.tokenUsage.reviewerOutput).toBe(40);
   });
@@ -338,7 +344,7 @@ describe('runFinalReviewPhase', () => {
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
     const phaseTimings: Record<string, number> = {};
 
-    const { summary } = await runFinalReviewPhase({
+    const result = await runFinalReviewPhase({
       projectDir,
       sessionId,
       config: makeNoValidationConfig(),
@@ -364,8 +370,7 @@ describe('runFinalReviewPhase', () => {
     expect(completions).toEqual([]);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
     expect(loadState({ projectDir, sessionId })?.phase).toBe('final-review');
-    expect(summary).toBeDefined();
-    expect(summary.reviewPacket?.finalReviewStatus).toBe('failed');
+    expect(result.reviewStatus).toBe('failed');
     const packetPath = join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
     expect(existsSync(packetPath)).toBe(true);
     const packet = ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8')));
@@ -389,7 +394,7 @@ describe('runFinalReviewPhase', () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 
-    const { summary } = await runFinalReviewPhase({
+    await runFinalReviewPhase({
       projectDir,
       sessionId,
       config: makeNoValidationConfig(),
@@ -403,7 +408,7 @@ describe('runFinalReviewPhase', () => {
     });
 
     expect(reviewer.review).toHaveBeenCalledTimes(1);
-    expect(summary.reviewPacket?.finalReviewStatus).toBe('failed');
+    expect(packetStatus(projectDir, sessionId)).toBe('failed');
     expect(readEvidenceLedger({ projectDir, sessionId })?.finalReview?.status).toBe('failed');
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
     const failure = events.find((event) => event.type === 'error');
@@ -464,7 +469,7 @@ describe('runFinalReviewPhase', () => {
     });
     const phaseTimings: Record<string, number> = {};
 
-    const { summary } = await runFinalReviewPhase({
+    const result = await runFinalReviewPhase({
       projectDir,
       sessionId,
       config: makeNoValidationConfig(),
@@ -479,7 +484,7 @@ describe('runFinalReviewPhase', () => {
       phaseTimings,
     });
 
-    expect(summary).toBeDefined();
+    expect(result.reviewStatus).toBe('failed');
     expect(completions).toEqual([]);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
     expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
@@ -497,7 +502,7 @@ describe('runFinalReviewPhase', () => {
     });
     const state = allTasksDoneState([], runStartHead);
 
-    const { summary: result } = await runFinalReviewPhase({
+    const result = await runFinalReviewPhase({
       projectDir,
       sessionId,
       config: makeNoValidationConfig(),
@@ -509,8 +514,8 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    expect(result).toBeDefined();
-    expect(result.totalTasks).toBe(0);
+    expect(result.state.tasks).toEqual([]);
+    expect(result.reviewText).toBe('ok');
   });
 
   it('writes active briefHash into the drift report artifact', async () => {
@@ -565,7 +570,7 @@ describe('runFinalReviewPhase', () => {
     const { bus, events } = makeBusRecorder();
     const review = vi.fn().mockResolvedValue({ text: 'ok', usage: null });
 
-    const { summary } = await runFinalReviewPhase({
+    await runFinalReviewPhase({
       projectDir,
       sessionId,
       config: makeNoValidationConfig(),
@@ -586,7 +591,7 @@ describe('runFinalReviewPhase', () => {
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
     expect(completions).toEqual([]);
     expect(loadState({ projectDir, sessionId })?.phase).toBe('final-review');
-    expect(summary.reviewPacket?.finalReviewStatus).toBe('failed');
+    expect(packetStatus(projectDir, sessionId)).toBe('failed');
   });
 
   it('fails drift for a rolling-only out-of-scope path absent at run start', async () => {
@@ -905,5 +910,140 @@ describe('runFinalReviewPhase', () => {
       ?.split('\n## Deterministic Drift Report')[0];
     expect(promptDiff).not.toContain(prohibitedMarker);
     expect(promptDiff).toContain('diff truncated');
+  });
+
+  it('unparseable verdict is re-asked once', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+
+    const prompts: string[] = [];
+    const replies = ['I think it is fine.', '### Verdict\npass\n'];
+    const reviewer = makePlanner({
+      review: async (prompt: string) => {
+        prompts.push(prompt);
+        return { text: replies[prompts.length - 1] ?? '', usage: null };
+      },
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain(VERDICT_RULES.reaskSentence);
+    expect(result.reviewStatus).toBe('written');
+    expect(result.verdict?.verdict).toBe('pass');
+  });
+
+  it('leaves a twice-unparseable verdict unparseable', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+
+    const review = vi.fn().mockResolvedValue({ text: 'looks fine to me', usage: null });
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer: makePlanner({ review }),
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    expect(review).toHaveBeenCalledTimes(2);
+    expect(result.reviewStatus).toBe('unparseable');
+    expect(decideReviewOutcome(result, [], REVIEW_CYCLE_CAP, 0)).toEqual({
+      kind: 'fail',
+      blocking: 0,
+    });
+  });
+
+  it('fail with Critical re-enters owning briefs', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    const tasks = [
+      makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' }),
+      makeTask({ id: 'T002', file: 'src/beta.ts', status: 'done' }),
+    ];
+    const reviewer = makePlanner({
+      review: async () => ({
+        text: '### Verdict\nfail\n\n### Findings\n- **Critical**: src/beta.ts leaks the token\n',
+        usage: null,
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState(tasks, runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    expect(result.reviewStatus).toBe('written');
+    expect(decideReviewOutcome(result, tasks, REVIEW_CYCLE_CAP, 0)).toEqual({
+      kind: 'fix',
+      fixes: { T002: ['src/beta.ts leaks the token'] },
+    });
+  });
+
+  it('cap 2 cycles', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const reviewer = makePlanner({
+      review: async () => ({
+        text: '### Verdict\nfail\n\n### Findings\n- **Critical**: src/alpha.ts still crashes\n',
+        usage: null,
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState(tasks, runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    expect(REVIEW_CYCLE_CAP).toBe(2);
+    for (const cycle of [0, 1]) {
+      expect(decideReviewOutcome(result, tasks, REVIEW_CYCLE_CAP, cycle).kind).toBe('fix');
+    }
+    expect(decideReviewOutcome(result, tasks, REVIEW_CYCLE_CAP, REVIEW_CYCLE_CAP)).toEqual({
+      kind: 'fail',
+      blocking: 1,
+    });
   });
 });

@@ -238,6 +238,36 @@ describe('regenerateTasks', () => {
     expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
   });
 
+  it('carries the skills context into the tasks prompt', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus } = makeBusRecorder();
+
+    const onDisk = makeTask({ id: 'T001', title: 'Disk version of the brief' });
+    writeSpecFile({ projectDir, sessionId }, TASKS_FILE, formatTasks([onDisk]), TEST_METADATA);
+
+    let seenPrompt = '';
+    const planner = makePlanner({
+      review: async (prompt: string) => {
+        seenPrompt = prompt;
+        return { text: formatTasks([onDisk]), usage: null };
+      },
+    });
+
+    await regenerateTasks({
+      projectDir,
+      sessionId,
+      planner,
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: createInitialState('feat'),
+      metadata: TEST_METADATA,
+      skillsContext: '## Active Project Skills\n\n### AuthSkill\nREGEN-SKILL-BODY',
+    });
+
+    expect(seenPrompt).toContain('## Active Project Skills');
+    expect(seenPrompt).toContain('REGEN-SKILL-BODY');
+  });
+
   it('falls back to state.tasks when tasks.md is absent on disk', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus } = makeBusRecorder();

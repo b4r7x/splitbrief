@@ -47,13 +47,8 @@ export function RecentSessions({
 
   if (!shouldLoad) return null;
 
-  if (sessions.length === 0) {
-    return (
-      <RecentSessionsShell>
-        <Text color={theme.textDim}>No recent sessions</Text>
-      </RecentSessionsShell>
-    );
-  }
+  // A first run has no history, and a heading over an empty list is a row that states an absence.
+  if (sessions.length === 0) return null;
 
   const visibleSessions = sessions.slice(0, limit ?? sessions.length);
   const hiddenCount = totalCount - visibleSessions.length;

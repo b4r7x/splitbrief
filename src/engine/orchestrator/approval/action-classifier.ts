@@ -1,14 +1,15 @@
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { ApprovalTier } from '../../../core/schemas/config.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
-import { matchesGlob, scopePathPatterns } from '../../../utils/path-patterns.js';
+import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
+import { matchesGlob } from '../../../utils/path-patterns.js';
 
 export type TierMap = Partial<Record<ActionClass, ApprovalTier>>;
 
 export type ClassifyInput = {
   actionDescription: string;
-  taskFile: string;
-  taskInBounds: string[];
+  taskFiles: readonly string[];
+  taskInBounds: readonly string[];
   dependsOnFiles: string[];
   projectDir: string;
   allowedPaths?: string[] | undefined;
@@ -106,7 +107,7 @@ function isPathLikeToken(token: string): boolean {
 }
 
 function extractPath(desc: string, input: ClassifyInput): string | null {
-  const knownPaths = [input.taskFile, ...input.dependsOnFiles]
+  const knownPaths = [...input.taskFiles, ...input.dependsOnFiles]
     .map((file) => normalizeProjectPath(file, input.projectDir))
     .filter(Boolean)
     .sort((a, b) => b.length - a.length);
@@ -125,30 +126,15 @@ function extractPath(desc: string, input: ClassifyInput): string | null {
   return null;
 }
 
-function scopeEntryPatterns(entry: string): string[] {
-  const patterns = scopePathPatterns(entry);
-  if (patterns.length > 0) return patterns;
-  // scopePathPatterns drops bare filenames (no separator or wildcard); a
-  // whitespace-free entry is a literal pattern like `tsconfig.json`, not prose.
-  const trimmed = entry.trim();
-  return trimmed.length > 0 && !/\s/.test(trimmed) ? [trimmed] : [];
-}
-
 function isInScope(filePath: string, input: ClassifyInput): boolean {
   const normalized = normalizeProjectPath(filePath, input.projectDir);
-  if (normalized === normalizeProjectPath(input.taskFile, input.projectDir)) return true;
   if (
-    input.dependsOnFiles
+    [...input.taskFiles, ...input.dependsOnFiles]
       .map((file) => normalizeProjectPath(file, input.projectDir))
       .includes(normalized)
   )
     return true;
-  if (
-    input.taskInBounds
-      .flatMap(scopeEntryPatterns)
-      .some((pattern) => matchesGlob(normalized, normalizeProjectPath(pattern, input.projectDir)))
-  )
-    return true;
+  if (isInDeclaredSet(normalized, input.taskInBounds)) return true;
   if (input.allowedPaths?.some((glob) => matchesGlob(normalized, glob))) return true;
   return false;
 }
@@ -156,11 +142,6 @@ function isInScope(filePath: string, input: ClassifyInput): boolean {
 export function extractActionPattern(input: ClassifyInput): string {
   const path = extractPath(input.actionDescription, input);
   return path ?? input.actionDescription;
-}
-
-export function matchesActionPattern(filePathOrAction: string, pattern: string): boolean {
-  if (pattern === filePathOrAction) return true;
-  return matchesGlob(filePathOrAction, pattern);
 }
 
 export function classifyAction(input: ClassifyInput, tierOverrides?: TierMap): ClassifyResult {
@@ -178,7 +159,9 @@ export function classifyAction(input: ClassifyInput, tierOverrides?: TierMap): C
   if (hasWriteVerb) {
     const targetPath = extractPath(desc, input);
     if (
-      isControlPlanePath(normalizeProjectPath(input.taskFile, input.projectDir)) ||
+      input.taskFiles.some((file) =>
+        isControlPlanePath(normalizeProjectPath(file, input.projectDir)),
+      ) ||
       (targetPath !== null && isControlPlanePath(targetPath))
     ) {
       return { actionClass: 'destructive', tier: resolveTier('destructive', tierOverrides) };

@@ -9,7 +9,7 @@ The generated blocks below come from the CLI's prompt builders (`npm run skills:
 <!-- generated: implementer-preamble -->
     SYSTEM: You are a coding agent for TypeScript. You write clean, working code directly in the working directory.
     Rules:
-    - Edit ONLY the file the Task Brief names, plus anything its Scope section lists under approved out-of-bounds. Every other file is out of bounds.
+    - Edit ONLY the files the Task Brief lists under Files, plus every path its Scope names under In bounds or Approved out of bounds. Every other file is out of bounds.
     - Do NOT add comments unless specified in the task
     - Use ESM imports with .js extensions
     - Follow the exact function signatures provided
@@ -33,14 +33,35 @@ The generated blocks below come from the CLI's prompt builders (`npm run skills:
 
     ## Task: <brief title>
 
-    ### Action: create | modify
-    ### File: <brief file>
+    ### Action: create
+    ### Files:
+    - <anchor file> (anchor)
+    - <every other path the slice writes>
 
-then the brief's sections, in this order and with these headings: `### Description`, `### Signature`, `### Type Definitions`, `### Pattern`, `### Implementation Steps` (numbered), `### Tests` (bulleted, ending with the Validation commands list), `### Scope`, `### Escalation`, `### Evidence`, `### Constraints`. Omit a heading whose section the brief does not have; never invent one. The four closing constraints from references/brief-format.md are appended to `### Constraints` only when the brief does not already end with them (briefs written by `splitbrief-brief` carry them; a CLI `tasks.md` brief does not).
+A single-file slice prints `### File: <brief file>` instead of the `### Files:` list. Then come the brief's sections, in this order and with these headings:
+
+<!-- generated: body-order -->
+1. `### Description`
+2. `### Signature`
+3. `### Type Definitions`
+4. `### Pattern`
+5. `### Current Code`
+6. `### Implementation Steps`
+7. `### Tests`
+8. `### Scope`
+9. `### Escalation`
+10. `### Evidence`
+11. `### Constraints`
+<!-- /generated -->
+
+Omit a heading whose section the brief does not have; never invent one. `### Tests` is bulleted and ends with the Validation commands list. The four closing constraints from references/brief-format.md are appended to `### Constraints` only when the brief does not already end with them (briefs written by `splitbrief-brief` carry them; a CLI `tasks.md` brief does not).
 
 ## 3. Closing line
 
-    Edit <file> directly in the working directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.
+<!-- generated: closing-line -->
+- one file: `Edit <file> directly in the working directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
+- more than one file: `Edit <file>, <second file> directly in the working directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
+<!-- /generated -->
 
 ## 4. Retry rendering
 
@@ -58,17 +79,28 @@ A retry prompt is the preamble, then the framing and the error at the top of the
 
     <closing line>
 
-| Retry (within the current ladder) | Framing |
+| Attempt | Framing |
 |---|---|
 <!-- generated: retry-framings -->
-| 1st local retry | `Your previous attempt had an error. Fix it:` |
-| 2nd local retry | `Previous attempts failed. Here is the task rephrased differently:` |
-| hint rung | `Multiple attempts have failed. Try a completely different approach:` |
+| attempt 1 | `Your previous attempt had an error. Fix it:` |
+| attempt 2 | `Previous attempts failed. Here is the task rephrased differently:` |
+| attempt 3+ | `Multiple attempts have failed. Try a completely different approach:` |
 <!-- /generated -->
 
-The table is keyed on the retry's position in the current ladder, not on the file's attempt number: a review fix cycle starts a new ladder, so its first attempt uses the 1st-retry framing with the findings as the error even when it is `attempt-5`. On the 2nd local retry, rephrase `### Description` in different words; every other section stays verbatim.
+The table is keyed on the running attempt count, exactly as the CLI keys it — a review fix cycle continues the numbering, so a fix attempt after four earlier ones takes the attempt 3+ framing. On the attempt-2 framing, rephrase `### Description` in different words; every other section stays verbatim.
 
-On the hint rung the error block starts with `Hint from the planner:` followed by the hint text from `T00N/hint.md`, a blank line, and then the original error. Drift entries are rendered as `Revert your changes to <path>; only <brief file> may change`, one per line. A `recipe-fix` re-spawn (references/tool-recipes.md) uses no framing and no error block: it is the original prompt again.
+On the hint rung the hint is appended to the error block, not prefixed to it:
+
+<!-- generated: hint-placement -->
+    <gate tail or drift list>
+
+    ## Hints from senior reviewer:
+    <hint>
+
+The composed error block is truncated to 4000 characters.
+<!-- /generated -->
+
+Drift entries are rendered as the revert instruction in references/gates.md, one per line. A `recipe-fix` re-spawn (references/tool-recipes.md) uses no framing and no error block: it is the original prompt again.
 
 ## 5. Hint prompt (answered by the session — no code)
 
@@ -168,7 +200,7 @@ From the final text of the log (structured tools: the terminal record's text fie
 The attempt has FAILED before any gate runs — record `gates: not run · drift: not run` and go to the ladder — when any of these holds:
 
 - the exit code or terminal record fails per references/tool-recipes.md;
-- the brief's `file` is not in the changed set (`git status --porcelain --untracked-files=all` minus `baseline-tree.txt`), reason `brief file unchanged`;
+- the brief's anchor `file` is not in the changed set (the baseline fingerprints in references/gates.md), reason `brief file unchanged`;
 - the final text says `changed nothing`, `no changes`, `Files written: none`, or lists no file, reason `implementer reported no change`.
 
 Only an attempt that passes these checks runs the gates and the drift check.

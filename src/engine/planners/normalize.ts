@@ -1,8 +1,8 @@
 import {
-  createTaskCompilationAttemptId,
+  createPlannerArtifactAttemptId,
   OwnedPlannerArtifactSchema,
   type PlannerArtifactTransport,
-} from '../../core/schemas/task-compilation.js';
+} from '../../core/schemas/planner-artifact.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { error } from '../../utils/error.js';
 import type { PlannerArtifactLogicalName, PlannerInvokeResult, PhaseResult } from './types.js';
@@ -25,7 +25,7 @@ export function normalizePlannerPhase(input: {
   const result = requireCompletedCall(input.result);
   const transport: PlannerArtifactTransport = result.transport ??
     input.callContext.transport ?? { kind: 'stdout-final' };
-  const attemptId = input.callContext.attemptId ?? createTaskCompilationAttemptId();
+  const attemptId = input.callContext.attemptId ?? createPlannerArtifactAttemptId();
   const runtimeReceipt = sha256Hex(
     JSON.stringify({
       callId: result.callId,

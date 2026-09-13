@@ -1,8 +1,9 @@
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import {
   makeCallbacks,
@@ -32,9 +33,6 @@ import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { parsePreparedConfig, type PreparedExecution } from '../../runners/prepared-execution.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
-import { installCompilerSeam } from '../../planners/base.js';
-import { recordRuntimeConformance } from '../../runners/runtime-conformance-cache.js';
-import { makeCompilerSeam } from '#testing/helpers/factories/compiler-seam.js';
 
 function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolation {
   return createRunIsolation({
@@ -493,55 +491,93 @@ describe('initializeWorkflow', () => {
       expect(init.wctx.isolation).toBe(isolation);
     });
   });
+});
 
-  it('publishes one compiler version drift warning', async () => {
-    await withTempDir('splitbrief-init-drift-warning', async (projectDir) => {
-      const feature = 'drift warning';
-      const sessionId = 'session-init-drift-warning';
-      const events: EngineEvent[] = [];
-      const planner = makePlanner();
-      installCompilerSeam(planner, makeCompilerSeam({ backend: 'opencode' }));
+describe('initializeWorkflow — a task interrupted mid-gate', () => {
+  it('restarts the in-flight brief and restores its files from the task-start snapshot', async () => {
+    await withTempDir('splitbrief-init-interrupted-task', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'src/two.ts': 'original' });
+      writeFileSync(join(projectDir, 'src/two.ts'), 'half written by the killed run');
+      const feature = 'resume the interrupted brief';
+      const sessionId = 'session-init-interrupted-task';
+      const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' });
 
-      const { init } = await initializeTestWorkflow({
+      const { init, tracked } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
-        plannerTool: 'opencode',
-        plannerRunner: planner,
-        eventSink: (e) => events.push(e),
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'validating-task',
+          tasks: [task],
+          currentTaskIndex: 0,
+          attempt: 2,
+          changedFilesBaseline: {
+            head: null,
+            fingerprints: {},
+            activeTaskSnapshot: {
+              head: 'HEAD',
+              files: ['src/two.ts'],
+              dirtyFileContents: { 'src/two.ts': 'original' },
+            },
+          },
+        },
       });
 
       expect(init.ok).toBe(true);
-      const warnings = events.filter((e) => e.type === 'warning');
-      expect(warnings).toHaveLength(1);
-      expect(warnings[0]?.message).toBe(
-        'planner opencode 1.19.0 differs from the tested 1.18.15; compiled with runtime-drift evidence',
-      );
+      expect(tracked.current).toMatchObject({
+        phase: 'implementing',
+        attempt: 0,
+        currentTaskIndex: 0,
+        tasks: [{ id: 'T001', status: 'pending' }],
+      });
+      expect(readFileSync(join(projectDir, 'src/two.ts'), 'utf-8')).toBe('original');
+      expect(loadState({ projectDir, sessionId })?.phase).toBe('implementing');
     });
   });
 
-  it('suppresses the warning when the cache holds the version', async () => {
-    await withTempDir('splitbrief-init-drift-suppressed', async (projectDir) => {
-      recordRuntimeConformance(projectDir, { backend: 'opencode', version: '1.19.0' });
-
-      const feature = 'drift warning suppressed';
-      const sessionId = 'session-init-drift-suppressed';
+  it('a file the operator edited after the kill is not restored', async () => {
+    await withTempDir('splitbrief-init-operator-edit', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'src/two.ts': 'original', 'src/operator.ts': 'original' });
+      writeFileSync(join(projectDir, 'src/two.ts'), 'half written by the killed run');
+      writeFileSync(join(projectDir, 'src/operator.ts'), 'edited by the operator after the kill');
+      const feature = 'resume without clobbering the operator';
+      const sessionId = 'session-init-operator-edit';
+      const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' });
       const events: EngineEvent[] = [];
-      const planner = makePlanner();
-      installCompilerSeam(planner, makeCompilerSeam({ backend: 'opencode' }));
 
       const { init } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
-        plannerTool: 'opencode',
-        plannerRunner: planner,
-        eventSink: (e) => events.push(e),
+        eventSink: (event) => events.push(event),
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'validating-task',
+          tasks: [task],
+          currentTaskIndex: 0,
+          changedFilesBaseline: {
+            head: null,
+            fingerprints: {},
+            activeTaskSnapshot: {
+              head: 'HEAD',
+              files: ['src/two.ts', 'src/operator.ts'],
+              dirtyFileContents: { 'src/two.ts': 'original', 'src/operator.ts': 'original' },
+            },
+          },
+        },
       });
 
       expect(init.ok).toBe(true);
-      const warnings = events.filter((e) => e.type === 'warning');
-      expect(warnings).toHaveLength(0);
+      expect(readFileSync(join(projectDir, 'src/operator.ts'), 'utf-8')).toBe(
+        'edited by the operator after the kill',
+      );
+      expect(readFileSync(join(projectDir, 'src/two.ts'), 'utf-8')).toBe('original');
+      expect(
+        events
+          .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
+          .map((e) => e.message),
+      ).toContain('Restored 1 unfinished change(s) from the interrupted T001: src/two.ts');
     });
   });
 });

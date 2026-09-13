@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLI_COMPILER_EVIDENCE, CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import {
   CLI_CONFORMANCE_CANDIDATES,
@@ -79,10 +79,6 @@ describe('Kilo Code role adapters', () => {
   });
 
   it('refuses incomplete conformance with zero dispatch: the row stays conditional until a complete receipt', () => {
-    // The registry row is conformance-gated: without a PASS receipt the Kilo
-    // backend stays unsupported, so no Task dispatch can occur.
-    expect(CLI_COMPILER_EVIDENCE['kilo-code'].state).toBe('conformance-gated');
-    expect(CLI_COMPILER_EVIDENCE['kilo-code'].version).toBe('7.0.49');
     // Activation requires the complete candidate receipt: the adapter and the
     // raw contract must hash to the exact identity the harness verifies.
     for (const candidate of CLI_CONFORMANCE_CANDIDATES) {

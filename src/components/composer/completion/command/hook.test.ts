@@ -78,9 +78,15 @@ const COMMANDS: RuntimeCommandDef[] = [
     category: 'navigate',
     args: {
       kind: 'closed',
-      options: ['alpha', 'bravo'],
-      optionDescriptions: { alpha: 'Reviews alpha conventions', bravo: 'Drafts bravo notes' },
+      options: ['alpha', 'bravo', 'guard'],
+      optionDescriptions: {
+        alpha: 'Reviews alpha conventions',
+        bravo: 'Drafts bravo notes',
+        guard: 'Audits security surfaces',
+      },
       optional: true,
+      multi: true,
+      match: 'fuzzy',
     },
     validScreens: ['home'],
     handler: () => {},
@@ -414,6 +420,90 @@ describe('useCommandCompletion closed arguments', () => {
         const frame = ui.lastFrame();
         expect(frame).toContain('instant');
         expect(frame).not.toContain('Workflow mode');
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+});
+
+describe('useCommandCompletion fuzzy multi arguments', () => {
+  beforeEach(() => {
+    resetAllStores();
+  });
+
+  it('description match: lists the option whose description mentions the query', async () => {
+    const { ui } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/skills sec');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame();
+        expect(frame).toContain('Audits security surfaces');
+        expect(frame).not.toContain('Drafts bravo notes');
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
+  it('fuzzy match: lists an option the query only matches out of order', async () => {
+    const { ui } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/skills brv');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame();
+        expect(frame).toContain('Drafts bravo notes');
+        expect(frame).not.toContain('Audits security surfaces');
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
+  it('second token keeps menu open and completes onto the first', async () => {
+    const { ui, commandCalls } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/skills alpha b');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame();
+        expect(frame).toContain('Drafts bravo notes');
+        expect(frame).not.toContain('Audits security surfaces');
+      },
+      { timeout: 5000 },
+    );
+
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => {
+        expect(commandCalls).toEqual(['/skills alpha bravo']);
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
+  it('a trailing space empties the query and reopens the whole set for the next token', async () => {
+    const { ui } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/skills alpha ');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame();
+        expect(frame).toContain('Reviews alpha conventions');
+        expect(frame).toContain('Drafts bravo notes');
+        expect(frame).toContain('Audits security surfaces');
       },
       { timeout: 5000 },
     );

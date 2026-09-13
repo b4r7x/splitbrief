@@ -1,18 +1,18 @@
 import type { ChildProcess } from 'node:child_process';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
-import {
-  finishRunnerCallOutputLimit,
-  RUNNER_CALL_STDERR_MAX_BYTES,
-  type RunnerCallOutputLimit,
-} from '../../calls/output-limit.js';
+import { RUNNER_CALL_STDERR_MAX_BYTES } from '../../calls/output-limit.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../../calls/status.js';
+import {
+  classifyHaltSignature,
+  HALT_SIGNATURES,
+  type HaltKind,
+} from '../../../core/pipeline-spec/halts.js';
 import type {
   RunnerCallContext,
   RunnerCallEvent,
   RunnerCallFailureStatus,
   RunnerCallResult,
 } from '../../calls/types.js';
-import { TASK_COMPILATION_FAILURE_CODE } from '../../spec/tasks/task-compilation-codes.js';
 import {
   DEFAULT_PROCESS_LINE_MAX_BYTES,
   spawnPipe,
@@ -87,7 +87,6 @@ export async function invokeProcessCli(
     });
   }
   let callbackFailed = false;
-  let envelopeLimit: RunnerCallOutputLimit | null = null;
   let timeoutController: AbortController | undefined;
   let recorder: RunnerCallRecorder;
   try {
@@ -95,24 +94,6 @@ export async function invokeProcessCli(
       context: context.callContext,
       credentialValues,
       onEvent: (event) => {
-        // A canonical envelope byte breach latches in the recorder and surfaces
-        // as this warning; tear the process tree down immediately so the hard
-        // bound is enforced at spawn, not only recorded. The catch below
-        // classifies the awaited abort as truncated with the latch code.
-        // `task_compiler_timeout` is deliberately absent: the envelope deadline
-        // already clamps the invocation timer and its idle bound clamps the
-        // watchdog kill, so both own their teardown and classify as `timeout`.
-        // Latching here would only race them and report a deadline breach as an
-        // output limit.
-        if (
-          event.type === 'call_warning' &&
-          event.warning.code === TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited
-        ) {
-          envelopeLimit = { code: event.warning.code, message: event.warning.message };
-          timeoutController?.abort(
-            new DOMException('CLI invocation envelope limit reached', 'TimeoutError'),
-          );
-        }
         try {
           context.onEvent?.(event);
         } catch (cause) {
@@ -191,21 +172,15 @@ export async function invokeProcessCli(
   }
 
   const protocolEvents: CliProtocolEvent[] = [];
+  let stdoutLastLine = '';
+  let stdoutTailCarry = '';
   let stderr = '';
   let eventCount = 0;
   let terminalSeen = false;
-  const envelope = context.callContext.envelope;
-  // The canonical envelope is the hard ceiling at the spawn boundary: its
-  // deadline clamps the invocation timer and its raw protocol bound clamps the
-  // spawn byte budget, so a breach kills the tree instead of only latching.
   timeoutController = new AbortController();
-  const timeoutMs =
-    envelope === undefined
-      ? context.invocation.timeoutMs
-      : Math.min(context.invocation.timeoutMs, envelope.deadlineMs);
   const timeout = setTimeout(
     () => timeoutController?.abort(new DOMException('CLI invocation timed out', 'TimeoutError')),
-    timeoutMs,
+    context.invocation.timeoutMs,
   );
   timeout.unref?.();
   const signal = context.invocation.signal
@@ -310,10 +285,7 @@ export async function invokeProcessCli(
       detached: process.platform !== 'win32',
       stdin: prepared.stdin,
       signal,
-      outputBudgetBytes:
-        envelope === undefined
-          ? CLI_RAW_OUTPUT_MAX_BYTES
-          : Math.min(CLI_RAW_OUTPUT_MAX_BYTES, envelope.maxRawProtocolBytes),
+      outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
       // The recorder owns every retained byte of this call and nothing here
       // reads the spawn-level stdout snapshot, so a rolling megabyte tail of a
       // multi-megabyte protocol stream would be pure cost.
@@ -328,14 +300,14 @@ export async function invokeProcessCli(
           label: adapter.descriptor.id,
           onWarn: (silentMs) => recorder.stalled({ silentMs }),
           onClear: () => recorder.stallCleared(),
-          ...(envelope !== undefined && {
-            warnMs: Math.min(context.idle.warnMs, envelope.idleTimeoutMs),
-            killMs: Math.min(context.idle.killMs, envelope.idleTimeoutMs),
-          }),
         },
       }),
       ...(context.onSpawned !== undefined && { onSpawned: context.onSpawned }),
       onStdout(chunk) {
+        const parts = (stdoutTailCarry + chunk).split('\n');
+        stdoutTailCarry = parts.pop() ?? '';
+        const lastComplete = parts.at(-1);
+        if (lastComplete !== undefined) stdoutLastLine = lastComplete;
         try {
           lineBuffer.push(chunk);
         } catch (cause) {
@@ -353,11 +325,23 @@ export async function invokeProcessCli(
       },
     });
 
+    // Halt phrases are the tool's own words for giving up, so only its
+    // diagnostic channel and the last line it printed are candidates: the
+    // transcript above that line is the model's prose, where a path under
+    // `billing/` or a shelled-out `permission denied` is ordinary task output.
+    const haltLines = (): readonly string[] => [
+      ...closed.stderr.split('\n'),
+      stdoutLastLine,
+      stdoutTailCarry,
+    ];
     if (closed.signal !== null) {
       return fail({
         recorder,
         status: 'failed',
-        error: { code: 'signal-exit', message: `CLI exited from signal ${closed.signal}` },
+        error: haltFailure(haltLines()) ?? {
+          code: 'signal-exit',
+          message: `CLI exited from signal ${closed.signal}`,
+        },
       });
     }
     if (adapter.outputContract.kind === 'structured-terminal' && !terminalSeen) {
@@ -366,7 +350,7 @@ export async function invokeProcessCli(
         return fail({
           recorder,
           status: 'failed',
-          error: {
+          error: haltFailure(haltLines()) ?? {
             code: 'non-zero-exit',
             message: `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
           },
@@ -409,7 +393,7 @@ export async function invokeProcessCli(
       return fail({
         recorder,
         status: 'failed',
-        error: {
+        error: haltFailure(haltLines()) ?? {
           code: 'non-zero-exit',
           message: `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
         },
@@ -435,12 +419,6 @@ export async function invokeProcessCli(
   } catch (cause) {
     if (callbackFailed) {
       return callbackFailure(context.callContext, credentialValues);
-    }
-    if (envelopeLimit !== null) {
-      // The recorder latched the envelope breach before the awaited reap; the
-      // terminal stays truncated with the canonical limit code and no later
-      // record can clear it.
-      return finishRunnerCallOutputLimit(recorder, envelopeLimit);
     }
     if (signal.aborted) {
       const status = runnerCallInterruptedStatus(signal);
@@ -483,19 +461,12 @@ export async function invokeProcessCli(
     }
     const fatalState = fatalStateOf(cause);
     if (fatalState !== null) {
-      // The spawn byte budget is clamped to the canonical envelope raw bound,
-      // so its breach is the envelope raw breach: classify with the canonical
-      // limit code instead of the transport backstop code.
-      const code =
-        fatalState === 'output-budget-breach' && envelope !== undefined
-          ? TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited
-          : fatalState;
       return finishFailureSafely({
         recorder,
         context: context.callContext,
         credentialValues,
         status: fatalState === 'output-budget-breach' ? 'truncated' : 'failed',
-        error: { code, message: errorMessage(cause) },
+        error: { code: fatalState, message: errorMessage(cause) },
       });
     }
     if (isENOENT(cause)) {
@@ -523,6 +494,29 @@ export async function invokeProcessCli(
     // must not replace it with a throw.
     await prepared.cleanup().catch(() => {});
   }
+}
+
+/**
+ * A halt phrase in the tail of a failed CLI run outranks the bare exit code:
+ * the ladder must not spend retries on a signed-out, out-of-quota, unknown-model
+ * or malformed-recipe process. The matched line is the diagnostic, so the user
+ * reads the tool's own words.
+ */
+const HALT_FAILURES: Readonly<Record<HaltKind, { code: string; phrases: readonly string[] }>> = {
+  auth: { code: 'unauthenticated', phrases: HALT_SIGNATURES.auth },
+  usage: { code: 'usage-limit', phrases: HALT_SIGNATURES.usage },
+  'missing-model': { code: 'missing-model', phrases: HALT_SIGNATURES.missingModel },
+  spawn: { code: 'implementer-recipe-invalid', phrases: HALT_SIGNATURES.spawnFailure },
+};
+
+function haltFailure(lines: readonly string[]): { code: string; message: string } | null {
+  const kind = classifyHaltSignature(lines);
+  if (kind === null) return null;
+  const { code, phrases } = HALT_FAILURES[kind];
+  const matched = lines.find((line) =>
+    phrases.some((phrase) => line.toLowerCase().includes(phrase)),
+  );
+  return { code, message: matched?.trim() ?? code };
 }
 
 function callbackFailure(

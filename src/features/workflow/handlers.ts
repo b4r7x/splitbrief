@@ -1,9 +1,7 @@
 import type { Phase } from '../../core/schemas/enums.js';
-import {
-  markCancellationRequested,
-  markInterruptRequested,
-} from '../../stores/workflow/actions/interrupt.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
+import { markWorkflowResumed } from '../../stores/workflow/actions/resume.js';
+import { stopStore } from '../../stores/workflow/stop.js';
 import type { RewindTarget } from '../../core/state/build-rewind-action.js';
 import type { QueueClearResult, QueueSubmissionResult } from '../../engine/orchestrator/types.js';
 
@@ -13,6 +11,7 @@ type AbortHandler = () => void;
 
 interface Handlers {
   cancel: () => void;
+  resume: (text: string) => void;
   rewind: (request: RewindTarget) => void;
   queue: (text: string, phase: Phase) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
   clearQueue: () => QueueClearResult | Promise<QueueClearResult>;
@@ -26,6 +25,7 @@ const handlers: Partial<Handlers> = {};
 // detached old scope, not steal the replacement run's just-pushed handler.
 let abortHandlers: AbortHandler[] = [];
 let pendingBoundaryInterrupt = false;
+let pendingBoundaryPause = false;
 
 function setHandler<K extends keyof Handlers>(k: K, h: Handlers[K] | null): void {
   if (h === null) delete handlers[k];
@@ -36,6 +36,7 @@ export function clearAllHandlers(): void {
   for (const k of Object.keys(handlers) as (keyof Handlers)[]) delete handlers[k];
   abortHandlers = [];
   pendingBoundaryInterrupt = false;
+  pendingBoundaryPause = false;
 }
 
 export function createAbortHandlerScope(): (h: AbortHandler | null) => void {
@@ -47,6 +48,7 @@ export function createAbortHandlerScope(): (h: AbortHandler | null) => void {
   };
 }
 export const setCancelHandler = (h: Handlers['cancel'] | null) => setHandler('cancel', h);
+export const setResumeHandler = (h: Handlers['resume'] | null) => setHandler('resume', h);
 export const setRewindHandler = (h: Handlers['rewind'] | null) => setHandler('rewind', h);
 export const setQueueHandler = (h: Handlers['queue'] | null) => setHandler('queue', h);
 export const setClearQueueHandler = (h: Handlers['clearQueue'] | null) =>
@@ -78,20 +80,64 @@ export function consumeBoundaryInterrupt(): boolean {
   return pending;
 }
 
-export type InterruptResult = 'turn' | 'workflow' | 'none';
+export function requestBoundaryPause(): void {
+  stopStore.request('pause-after-brief');
+  pendingBoundaryPause = true;
+}
 
-export function interruptTurn(): InterruptResult {
-  const alreadyInterrupted = lifecycleStore.get().status === 'interrupted';
-  markInterruptRequested();
-  if (abortTurn()) {
-    return 'turn';
+export function consumeBoundaryPause(): boolean {
+  const pending = pendingBoundaryPause;
+  pendingBoundaryPause = false;
+  return pending;
+}
+
+export function cancelBoundaryPause(): void {
+  pendingBoundaryPause = false;
+  stopStore.reset();
+}
+
+// A stop that has nothing to stop is not announced: the byline would report a run terminating
+// while no process was ever asked to.
+export function requestStopNow(): boolean {
+  const abortedCall = abortTurn();
+  const boundaryFlagged = requestBoundaryInterrupt();
+  if (!abortedCall && !boundaryFlagged) return false;
+  stopStore.request('stop-now');
+  return true;
+}
+
+// A parked brief resumes through the store's own resolver; a cancelled session has no promise
+// left to settle and restarts from its saved state instead.
+export function requestResume(text: string): boolean {
+  if (stopStore.get().phase === 'parked') {
+    stopStore.resume(text);
+    markWorkflowResumed();
+    return true;
   }
-  // Already parked at the interrupted prompt with no call in flight: planting a
-  // boundary flag here would silently discard the user's next steering answer
-  // (the continuation loop consumes the flag before reading the prompt).
-  if (alreadyInterrupted) return 'none';
-  if (requestBoundaryInterrupt()) return 'turn';
-  return requestCancel() ? 'workflow' : 'none';
+  if (!handlers.resume) return false;
+  handlers.resume(text);
+  return true;
+}
+
+export function requestEndRun(): boolean {
+  stopStore.request('end-run');
+  return requestCancel();
+}
+
+// Quit is Stop now that also leaves: the exit waits for the run to park or end so the session is
+// on disk before the process goes.
+export function requestQuit(exit: () => void): void {
+  if (!requestStopNow()) {
+    exit();
+    return;
+  }
+  stopStore.request('quit');
+  const off = stopStore.subscribe(() => {
+    const { phase } = stopStore.get();
+    if (phase !== 'parked' && phase !== 'ended') return;
+    off();
+    exit();
+  });
 }
 
 export function requestRewind(request: RewindTarget): boolean {

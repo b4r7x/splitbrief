@@ -2,18 +2,15 @@ import { isENOENT, processError } from '../../../lib/process/errors.js';
 import { redactSecrets } from '../../../utils/redact.js';
 import { truncateByChars, truncateByTailLines } from '../../../utils/truncate.js';
 import type { ValidationStage } from '../../../core/schemas/enums.js';
+import { CAPTURE_LIMITS } from '../../../core/pipeline-spec/gates.js';
+import type { Stack } from '../../../core/validation/stacks/types.js';
+import { isMissingSubcommand, type CommandSource } from '../../../core/validation/stage-command.js';
 import { extractNamedChangedFiles } from './extract-named-changed-files.js';
 import type { ValidationResult } from './result.js';
-import type { CommandSource } from './commands.js';
 import type { ValidationCommandRunner } from './types.js';
 
-const MISSING_SUBCOMMAND_EXIT_CODE = 101;
-const MAX_VALIDATION_OUTPUT_CHARS = 4096;
-const MAX_TEST_TAIL_LINES = 40;
-
-function isMissingSubcommand(code: number | null, stderr: string): boolean {
-  return code === MISSING_SUBCOMMAND_EXIT_CODE && /no such command/i.test(stderr);
-}
+export const MAX_VALIDATION_OUTPUT_CHARS = CAPTURE_LIMITS.outputChars;
+export const MAX_TEST_TAIL_LINES = CAPTURE_LIMITS.testTailLines;
 
 function sanitizeValidationOutput(text: string): string {
   return redactSecrets(truncateByChars(text, MAX_VALIDATION_OUTPUT_CHARS));
@@ -42,7 +39,13 @@ function selectFailureDetail(stage: ValidationStage, stdout: string, stderr: str
 }
 
 export function skippedStage(stage: ValidationStage, reason: string): ValidationResult {
-  return { passed: true, stage, skipped: true, output: `skipped ${stage}: ${reason}` };
+  return {
+    passed: true,
+    stage,
+    skipped: true,
+    skippedReason: reason,
+    output: `skipped ${stage}: ${reason}`,
+  };
 }
 
 export async function runValidationStep(opts: {
@@ -54,19 +57,32 @@ export async function runValidationStep(opts: {
   timeout: number;
   runCommand: ValidationCommandRunner;
   command: string;
+  stack?: Stack | null | undefined;
   signal?: AbortSignal | undefined;
   changedFiles?: readonly string[] | undefined;
 }): Promise<ValidationResult> {
-  const { stage, cmd, args, source, cwd, timeout, runCommand, command, signal, changedFiles } =
-    opts;
+  const {
+    stage,
+    cmd,
+    args,
+    source,
+    cwd,
+    timeout,
+    runCommand,
+    command,
+    stack,
+    signal,
+    changedFiles,
+  } = opts;
   try {
-    const { stdout } = await runCommand(cmd, args, {
+    const { stdout, stderr } = await runCommand(cmd, args, {
       cwd,
       timeout,
       label: `${stage} validation`,
       signal,
     });
-    return { passed: true, stage, output: sanitizeStageOutput(stage, stdout), command };
+    const green = [stdout, stderr].filter((part) => part.trim().length > 0).join('\n');
+    return { passed: true, stage, output: sanitizeStageOutput(stage, green), command };
   } catch (err: unknown) {
     if (isENOENT(err) || processError.isNotFound(err)) {
       if (source === 'config') {
@@ -78,11 +94,13 @@ export async function runValidationStep(opts: {
           command,
         };
       }
+      const notFoundReason = `${cmd} not found, skipping ${stage}`;
       return {
         passed: true,
         stage,
         skipped: true,
-        output: `${cmd} not found, skipping ${stage}`,
+        skippedReason: notFoundReason,
+        output: notFoundReason,
         command,
       };
     }
@@ -97,12 +115,14 @@ export async function runValidationStep(opts: {
     }
     if (processError.isExitCode(err)) {
       const { output, stderr } = err.data;
-      if (source !== 'config' && isMissingSubcommand(err.data.code, String(stderr ?? ''))) {
+      if (source !== 'config' && isMissingSubcommand(stack, err.data.code, String(stderr ?? ''))) {
+        const unavailableReason = `${cmd} subcommand unavailable, skipping ${stage}`;
         return {
           passed: true,
           stage,
           skipped: true,
-          output: `${cmd} subcommand unavailable, skipping ${stage}`,
+          skippedReason: unavailableReason,
+          output: unavailableReason,
           command,
         };
       }

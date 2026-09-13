@@ -1,6 +1,6 @@
 import type { Task, TaskId } from '../schemas/task.js';
 import type { QueuedMessage, WorkflowState } from '../schemas/workflow.js';
-import type { RecoveryAction } from '../schemas/enums.js';
+import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 
 export type MachineAction = StateAction;
@@ -39,10 +39,11 @@ export type StateAction =
   | { type: 'HINT_FAIL' }
   | { type: 'FULL_SUCCESS' }
   | { type: 'SKIP_TASK'; taskId: TaskId }
-  | { type: 'UPDATE_TASK_CODE'; taskId: TaskId; code: string }
+  | { type: 'UPDATE_TASK_CODE'; taskId: TaskId; code: string; codeByFile?: Record<string, string> }
   | { type: 'CLEAR_TASK_CODE'; taskId: TaskId }
   | { type: 'ALL_DONE' }
-  | { type: 'REVIEW_DONE' }
+  | { type: 'REVIEW_DONE'; reviewStatus: ReviewStatus }
+  | { type: 'REVIEW_FIX_START'; fixes: Record<string, string[]>; cycle: number }
   | { type: 'CANCEL' }
   | { type: 'ABORT_TURN' }
   | { type: 'CONTINUE_TURN' }

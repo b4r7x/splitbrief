@@ -2,6 +2,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { getMethodDisplay } from '../../../core/sessions/display.js';
+import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { SOFT_SEP } from '../../../components/separators.js';
 import { formatDuration } from '../../../utils/format-time.js';
 import {
@@ -83,8 +84,18 @@ export function TaskSummary({
     </Text>
   );
   const leadingSlot = focused === true ? focusBar : <Text color={t.textDim}>{'  '}</Text>;
+  // A brief that needed a bigger seat did not pass on the one it was given, and the sidebar says so
+  // with ▲ in warning. The same brief settling into the transcript reads the same way, or one frame
+  // carries both a success check and a "1 escalated" count for the same run.
+  const escalated = classifyTaskCompletionMethod(method) === 'escalated';
   const doneSlot =
-    focused === true ? focusBar : <Text color={t.success}>{`${glyph('check')} `}</Text>;
+    focused === true ? (
+      focusBar
+    ) : (
+      <Text color={escalated ? t.warning : t.success}>
+        {`${glyph(escalated ? 'statusEscalated' : 'check')} `}
+      </Text>
+    );
 
   if (method === 'failed') {
     return (

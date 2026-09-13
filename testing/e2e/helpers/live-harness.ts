@@ -9,7 +9,14 @@ import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { OrchestratorCallbacks } from '../../../src/engine/orchestrator/types.js';
 import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
-import { SESSION_LOG_FILE, SUMMARY_FILE } from '../../../src/core/paths.js';
+import {
+  DRIFT_REPORT_FILE,
+  EVIDENCE_FILE,
+  REVIEW_FILE,
+  SESSION_LOG_FILE,
+  SUMMARY_FILE,
+  TASKS_FILE,
+} from '../../../src/core/paths.js';
 import {
   CLI_TOOL_IDS,
   type CliToolId,
@@ -408,6 +415,15 @@ export function beginLiveManifest(root: string = DEFAULT_LIVE_ARTIFACT_ROOT): st
   return manifestPath;
 }
 
+export type LiveArtifactPaths = Readonly<{
+  summary: string | null;
+  sessionLog: string | null;
+  tasks: string | null;
+  evidence: string | null;
+  driftReport: string | null;
+  review: string | null;
+}>;
+
 export type LiveManifestRow = Readonly<{
   id: string;
   mode: LiveMatrixMode;
@@ -420,8 +436,11 @@ export type LiveManifestRow = Readonly<{
   failedTasks?: number | undefined;
   plannerInputTokens?: number | undefined;
   implementerInputTokens?: number | undefined;
+  /** Model calls per seat, so a run measures calls-per-feature across brief-granularity changes. */
+  calls?: Readonly<{ planner: number; implementer: number; review: number }> | undefined;
+  briefs?: readonly Readonly<{ id: string; durationMs: number }>[] | undefined;
   durationMs: number;
-  artifacts?: Readonly<{ summary: string | null; sessionLog: string | null }> | undefined;
+  artifacts?: LiveArtifactPaths | undefined;
 }>;
 
 export function appendLiveManifestRow(
@@ -440,30 +459,34 @@ export function appendLiveManifestRow(
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
 }
 
+function copyArtifact(sessionDir: string, rowDir: string, file: string): string | null {
+  const source = join(sessionDir, file);
+  if (!existsSync(source)) return null;
+  const target = join(rowDir, file);
+  copyFileSync(source, target);
+  return target;
+}
+
 export function copyLiveArtifacts(opts: {
   projectDir: string;
   sessionId: string;
   rowId: string;
   root?: string;
-}): { summary: string | null; sessionLog: string | null } {
+}): LiveArtifactPaths {
   const rowDir = join(opts.root ?? DEFAULT_LIVE_ARTIFACT_ROOT, opts.rowId);
   mkdirSync(rowDir, { recursive: true });
   const sessionDir = join(opts.projectDir, '.splitbrief', 'sessions', opts.sessionId);
-  const summaryTarget = join(rowDir, SUMMARY_FILE);
-  const sessionLogTarget = join(rowDir, SESSION_LOG_FILE);
-  const summarySource = join(sessionDir, SUMMARY_FILE);
-  const sessionLogSource = join(sessionDir, SESSION_LOG_FILE);
-  const hasSummary = existsSync(summarySource);
-  const hasSessionLog = existsSync(sessionLogSource);
-  if (hasSummary) copyFileSync(summarySource, summaryTarget);
-  if (hasSessionLog) copyFileSync(sessionLogSource, sessionLogTarget);
   return {
-    summary: hasSummary ? summaryTarget : null,
-    sessionLog: hasSessionLog ? sessionLogTarget : null,
+    summary: copyArtifact(sessionDir, rowDir, SUMMARY_FILE),
+    sessionLog: copyArtifact(sessionDir, rowDir, SESSION_LOG_FILE),
+    tasks: copyArtifact(sessionDir, rowDir, TASKS_FILE),
+    evidence: copyArtifact(sessionDir, rowDir, EVIDENCE_FILE),
+    driftReport: copyArtifact(sessionDir, rowDir, DRIFT_REPORT_FILE),
+    review: copyArtifact(sessionDir, rowDir, REVIEW_FILE),
   };
 }
 
-function catalogTool(tool: string): CliToolId {
+export function catalogTool(tool: string): CliToolId {
   if (!includes(CLI_TOOL_IDS, tool)) {
     throw new Error(`${tool} is not in the CLI tool catalog.`);
   }

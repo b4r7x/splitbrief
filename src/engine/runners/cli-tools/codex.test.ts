@@ -119,7 +119,7 @@ describe('Codex role adapters', () => {
       sessionId: null,
       effort: undefined,
     });
-    // REQ-017: the fresh compiler vector owns global read-only + never
+    // REQ-017: the fresh planner vector owns global read-only + never
     // approval before `exec`, ignores ambient config/rules, and is ephemeral.
     expect(readOnly).toEqual([
       '--model',

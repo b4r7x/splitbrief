@@ -69,7 +69,7 @@ src/
 │   ├── keys.ts               App-wide keyboard dispatch (useAppKeys)
 │   ├── command-context.ts    Runtime-command wiring (useRuntimeCommands)
 │   ├── screens/              FLAT page entries: home, workflow, summary, setup
-│   └── overlays/             FLAT pages: help, palette, skills, sessions, settings, runners
+│   └── overlays/             FLAT pages: help, palette, skills, sessions, settings, runners, editor, stop
 │
 ├── cli/                      Non-React CLI logic
 │   ├── commands/             commander handlers (init, start, resume, spec, status)
@@ -78,13 +78,18 @@ src/
 │
 ├── core/                     Shared domain (no React, no engine-ness)
 │   ├── config/               YAML load + validation
+│   ├── pipeline-spec/        The countable pipeline rules (modes, caps, retries,
+│   │                         ladder, timeouts, gates, halts, review, divergences)
+│   ├── recovery/             Halt headline + resume-command formatting
+│   ├── scope/                declared-set matching (files + Scope bullets)
 │   ├── state/                Workflow state machine + disk persistence
 │   ├── phases.ts             Phase taxonomy (role, cancellable, resumable)
 │   ├── runtime/commands/     Runtime command registry, dispatch, lookup
 │   ├── schemas/              Zod schemas and inferred schema-owned types
 │   ├── sessions/             Per-run summary persistence
 │   ├── settings/             Setting definitions catalog (for the /settings overlay)
-│   └── types/                TypeScript-only shared types
+│   ├── types/                TypeScript-only shared types
+│   └── validation/stacks/    The five validation stacks and their command registry
 │
 ├── engine/                   Workflow logic — zero React imports
 │   ├── orchestrator/         Main run loop (runWorkflow, planning, task loop, …)
@@ -156,7 +161,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes.
 8. For user-gated moments (approval, clarification, continuation, cost approval, edit conflicts, file-write tiered approvals, and task review), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onQuestionAsked(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onCostApprovalNeeded(…)`, `callbacks.onUserEditConflict(…)`, `callbacks.onTieredApproval(…)`, and `callbacks.onTaskReviewNeeded(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise. Budget pressure is not gated this way: spend thresholds publish `budget_warning` / `budget_paused` / `budget_exceeded` events and the pause/stop is driven through the recovery channel (`recovery_needed`).
 9. **Queue**: during live planner phases, the user may type and press Enter without aborting. The message is appended to `WorkflowState.messageQueue`; workflow lifecycle stores keep the UI queue indicators in sync. The orchestrator drains the queue at safe-points (end of current call) and appends queued messages to the next planner prompt. For planners that implement `injectUserTurn()`, each queued message is also dispatched in parallel as a native user turn into the live session.
-10. **Abort**: a single Ctrl-C fires an `AbortController` which propagates into the active planner/implementer call (for HTTP) or sends SIGTERM (for subprocesses). The partial response is preserved in `session.jsonl` with `interrupted: true`. The workflow enters an **awaiting-continue** sub-state but the `phase` does *not* reset. A second Ctrl-C within 2 seconds exits the workflow after state is saved; continue later with an explicit session id if the saved state is resumable. Esc Esc also aborts via a two-press ladder: the first Esc arms an `interrupt` (live phase) or `cancel` (question prompt) intent, the second fires it (`src/app/keys.ts`); a lone Esc with an overlay open just closes the overlay. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys.
+10. **Stop**: `ctrl+c` is Stop now — one press, no armed window — and `esc` on an empty composer opens the stop sheet, whose rows are Stop now, Pause after this brief and End run (`src/app/keys.ts`, `src/app/overlays/stop.tsx`). Stop now fires an `AbortController` which propagates into the active planner/implementer call (for HTTP) or sends SIGTERM (for subprocesses). The partial response is preserved in `session.jsonl` with `interrupted: true`, the workflow enters an **awaiting-continue** sub-state, and the `phase` does *not* reset. Nothing is reverted: the run parks with what it wrote, `/resume` carries it on and `/end` marks the session `cancelled`. `ctrl+q` / `/quit` stops and then exits once the session is on disk; a lone `esc` with an overlay open just closes the overlay. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys.
 11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` writes `summary.json`, clears `.splitbrief/active`, and the UI unmounts.
 
 ---
@@ -415,7 +420,7 @@ A snapshot of the codebase as it actually stands today, generated for an AI agen
 
 SPLITBRIEF is an orchestrator of two coding tools: one plans and reviews, the other executes, and SPLITBRIEF holds the contract, the isolation, the validation, the retry, the escalation, and the evidence between them. It composes two roles around a strict workflow:
 
-1. **Planner** — an expensive, capable model (Claude / GPT / Codex / Claude-Code CLI / etc.) that ingests the feature request, explores the repo, and compiles a Task Brief: a structured list of single-file `Task` objects with scope, validation, and evidence.
+1. **Planner** — an expensive, capable model (Claude / GPT / Codex / Claude-Code CLI / etc.) that ingests the feature request, explores the repo, and compiles a Task Brief: a structured list of `Task` objects, one per slice, each naming the files it writes plus scope, validation, and evidence.
 2. **Implementer** — the weaker model of the pair, carried either by a tool CLI configured with a cheap model or by a model behind an OpenAI-compatible API. Both transports are first-class. It executes one task at a time against its self-contained brief; the typecheck / lint / test gates that judge the result are SPLITBRIEF's, resolved from config, planner-discovered validation, heuristic fallback, or defaults.
 
 The repository layers many supporting subsystems on top of that core loop:
@@ -447,7 +452,7 @@ src/
 │   ├── keys.ts                    App-wide keyboard dispatch (useAppKeys)
 │   ├── command-context.ts         Runtime-command wiring (useRuntimeCommands)
 │   ├── screens/                   FLAT page entries: home, workflow, summary, setup
-│   └── overlays/                  FLAT pages: help, palette, skills, sessions, settings, runners
+│   └── overlays/                  FLAT pages: help, palette, skills, sessions, settings, runners, editor, stop
 ├── cli.ts                         Top-level entry; registers workflow + utility subcommands
 │
 ├── cli/                           Non-React CLI handlers
@@ -487,6 +492,14 @@ src/
 │   ├── paths-io.ts                Path-aware read/write helpers
 │   ├── phases.ts                  Phase taxonomy: cancellable, resumable,
 │   │                              live, role(planner|implementer)
+│   ├── pipeline-spec/             The pipeline's countable rules, imported by the
+│   │                              orchestrator and rendered into the skills:
+│   │                              modes, brief, retries, ladder, timeouts,
+│   │                              gates, halts, review, baseline, scope,
+│   │                              divergences
+│   ├── recovery/                  headline, resume-command, user-edit-actions
+│   ├── scope/                     declared-set: a brief's files plus its Scope
+│   │                              bullets, and the one matcher over them
 │   ├── project-meta.ts            Project name / git origin discovery
 │   ├── providers/                 catalog, known-models, model-selection,
 │   │                              provenance, pricing-identity
@@ -513,6 +526,8 @@ src/
 │   │                              Claude=3.5, GPT=4.0, DeepSeek=3.8, …)
 │   ├── types/                     config-options, state-actions (branded),
 │   │                              summary
+│   ├── validation/stacks/         typescript, javascript, python, go, rust +
+│   │                              registry, on-path, types
 │   └── validation/test-discovery  Test-command auto-detection
 │
 ├── engine/                        Workflow logic — zero React imports
@@ -700,7 +715,7 @@ src/
 │   └── workflow/                  Largest feature (entry: app/screens/workflow.tsx)
 │       ├── conversation-rows/     row-based conversation renderer
 │       ├── components/            approval-prompt, body, brief-review-*,
-│       │                          chrome, conversation-flow/, cost/compute-eta,
+│       │                          chrome, conversation-flow/,
 │       │                          divider, feedback-row, frame-panel, header,
 │       │                          input-footer, prompt-body, question-prompt,
 │       │                          rail, review-view, sidebar, task-summary
@@ -827,7 +842,7 @@ Single `EventBus` port (`src/engine/events/bus.ts`), synchronous fan-out, per-si
 | `loggerSink` | `events/sinks/logger.ts` | always | writes each event through the process logger |
 | `tuiSink` | `features/workflow/tui-sink.ts` | interactive runs | forwards every event to `workflow/actions.addEvent` |
 | `stdoutJsonSink` | `events/sinks/stdout-json.ts` | `--json` headless | NDJSON line per event on stdout |
-| Hook sink | `hooks/sink.ts` | `config.hooks` declared | dispatches matching `post_*` / `on_*` hooks |
+| Hook sink | `hooks/sink.ts` | `config.hooks` declared | dispatches matching `post_*` / `on_*` hooks, `on_halt` among them (`recovery_prompted`) |
 
 Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orchestrator call site via `src/engine/hooks/run-pre.ts` so they can block the action.
 
@@ -848,7 +863,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `brief_readiness_passed`, `brief_readiness_blocked`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received` (retained for back-compatibility so pre-merge sessions replay; nothing produces it since `instant` merged into `quick`)
 
 **Task lifecycle:**
-`task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed`, `hint_failed`
+`task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed`, `hint_failed`, `review_fix_started`
 
 **Implementer (3):**
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`
@@ -872,7 +887,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `replay_started`, `replay_complete`
 
 **Generic (2):**
-`warning`, `error`
+`warning`, `error` — both carry an optional `category` / `code` pair naming what produced them: `recovery` / `retry_exhausted` · `review_failed` · `recovery_pending_unresolved`, `skills` / `skills_truncated` (the selected skills exceeded the planner-prompt budget and were cut), `validation` / `no_gates_unknown_stack` (the project matches no validation stack, so the run is review-only).
 
 ### Exhaustive switch in conversation row rendering
 
@@ -1121,9 +1136,9 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 
 ---
 
-## 10. Runtime commands (full list, 23)
+## 10. Runtime commands (full list, 26)
 
-Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
+The registry holds 26 commands in five categories. Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
 
 **Navigate**
 
@@ -1155,6 +1170,8 @@ Defined in `src/core/runtime/commands/defs/`, one module per category, concatena
 | `/redo-task <task-id>` | Reset a task to pending and re-run it |
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/approval [list\|clear]` | List or clear sticky approval grants |
+| `/resume` | Continue a paused or stopped run |
+| `/end` | Stop the run and mark it cancelled |
 
 **View**
 
@@ -1165,6 +1182,7 @@ Defined in `src/core/runtime/commands/defs/`, one module per category, concatena
 | `/diff` | Expand or collapse the latest diff |
 | `/cost` | Show the cost breakdown |
 | `/sidebar` | Show or hide the workflow sidebar |
+| `/tasks` | Show the brief list |
 
 **Input & output**
 

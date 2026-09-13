@@ -1,6 +1,12 @@
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { Summary, CostPrediction } from '../../../core/schemas/summary.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { isTaskCompleted } from '../../../core/schemas/task.js';
+import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
+import { REVIEW_FILE } from '../../../core/paths.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { parseFinalReview } from '../../parsers/final-review.js';
 import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { formatCost } from '../../../core/formatting.js';
@@ -12,8 +18,6 @@ import {
   countLocalAndEscalatedTasks,
   type BuildSummaryState,
 } from './task-metrics.js';
-
-export type { BuildSummaryState };
 
 /**
  * The seat names here are the run's **display identity** — the seat it is on
@@ -38,10 +42,44 @@ export type SummaryBase = {
 };
 
 type BuildSummaryOptions = SummaryBase & {
-  state: BuildSummaryState;
+  state: BuildSummaryState & Pick<WorkflowState, 'phase' | 'currentTaskIndex'>;
   taskBreakdowns?: TaskTokenUsage[];
   phaseTimings?: Record<string, number>;
 };
+
+function readReviewOutcome(projectDir: string, sessionId: string): Summary['review'] {
+  const markdown = readSpecFileOrEmpty({ projectDir, sessionId }, REVIEW_FILE);
+  if (markdown === '') return undefined;
+  const { verdict, findings } = parseFinalReview(markdown);
+  return {
+    verdict,
+    critical: findings.filter((f) => f.severity === 'critical').length,
+    warnings: findings.filter((f) => f.severity === 'warning').length,
+    notes: findings.filter((f) => f.severity === 'note').length,
+  };
+}
+
+/**
+ * The run's attributed changed set is what the evidence ledger booked against
+ * its briefs — the files the run is answerable for, not every dirty path in the
+ * tree. A run that stopped mid-brief reports that brief's share as partial.
+ */
+function readFileAttribution(
+  projectDir: string,
+  sessionId: string,
+  state: BuildSummaryOptions['state'],
+): { changedFiles?: string[]; stoppedAt?: Summary['stoppedAt'] } {
+  const ledger = readEvidenceLedger({ projectDir, sessionId });
+  if (ledger === null) return {};
+  const changedFiles = [...new Set(ledger.tasks.flatMap((task) => task.changedFiles))].sort();
+  const current = state.phase === 'complete' ? undefined : state.tasks[state.currentTaskIndex];
+  if (current === undefined || isTaskCompleted(current.status)) return { changedFiles };
+  const booked = ledger.tasks.find((task) => task.id === current.id);
+  return {
+    changedFiles,
+    stoppedAt: { taskId: current.id, partialFiles: booked?.changedFiles ?? [] },
+  };
+}
 
 export function buildSummary(opts: BuildSummaryOptions): Summary {
   const {
@@ -127,6 +165,9 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   let chainDriftSummary: Summary['chainDriftSummary'];
   let checkpointSummary: Summary['checkpointSummary'];
   let reviewPacket: Summary['reviewPacket'];
+  let review: Summary['review'];
+  let changedFiles: string[] | undefined;
+  let stoppedAt: Summary['stoppedAt'];
   if (projectDir && sessionId) {
     const rollups = loadSessionArtifactRollups(projectDir, sessionId);
     evidenceSummary = rollups.evidenceSummary;
@@ -135,6 +176,8 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     chainDriftSummary = rollups.chainDriftSummary;
     checkpointSummary = rollups.checkpointSummary;
     reviewPacket = rollups.reviewPacket;
+    review = readReviewOutcome(projectDir, sessionId);
+    ({ changedFiles, stoppedAt } = readFileAttribution(projectDir, sessionId, state));
   }
 
   return {
@@ -165,5 +208,8 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     ...(costPrediction !== undefined && { costPrediction }),
     ...(checkpointSummary && { checkpointSummary }),
     ...(reviewPacket && { reviewPacket }),
+    ...(review && { review }),
+    ...(changedFiles && { changedFiles }),
+    ...(stoppedAt && { stoppedAt }),
   };
 }

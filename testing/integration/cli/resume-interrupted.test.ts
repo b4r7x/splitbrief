@@ -92,6 +92,31 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
     expect(stdout).toContain('2/2');
   });
 
+  it('kill during validation resumes at task start', async () => {
+    const sessionId = '2026-04-18-killed-in-validation';
+    mkdirSync(sessionDir(tmp, sessionId), { recursive: true });
+    const state = {
+      ...createInitialState('validate me'),
+      phase: 'validating-task' as const,
+      tasks: [makeTask({ id: 'T001', status: 'in_progress', file: 'src-two.ts' })],
+      currentTaskIndex: 0,
+      attempt: 2,
+    };
+    saveState({ projectDir: tmp, sessionId }, state);
+    writeFileSync(join(tmp, SPLITBRIEF_DIR, 'active'), sessionId + '\n');
+
+    const { exitCode, stderr, stdout } = await runCommand(['resume', '--project', tmp]);
+
+    // The CLI's half: the phase is resumable rather than refused. The brief's own
+    // restart — RESET_TASK plus the file restore — happens inside initializeWorkflow
+    // and is asserted in src/engine/orchestrator/run/init.test.ts.
+    expect(exitCode).toBe(0);
+    expect(stderr).not.toContain('cannot be resumed');
+    expect(stdout).toMatch(/Resuming/);
+    expect(stdout).toContain('validating-task');
+    expect(loadState({ projectDir: tmp, sessionId })?.tasks[0]?.id).toBe('T001');
+  });
+
   it('refuses to start a second workflow when a live process is already running the session', async () => {
     const sessionId = '2026-04-18-already-live';
     const sessDir = sessionDir(tmp, sessionId);

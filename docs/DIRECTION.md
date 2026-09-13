@@ -18,7 +18,7 @@ The post-run line — `$0.12 actual vs $0.95 baseline · 87% saved` — is a rep
 
 ### 3. Heartbeat over silence
 
-Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. The run-start validation probe is covered too: before the first task it publishes `validation_baseline` running rows naming the stage being probed, so a slow or red validation stage cannot sit silent behind `Implementing…`.
+Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. The run-start validation probe is covered too: before the first task it publishes `validation_baseline` running rows naming the stage being probed, so a slow or red validation stage cannot sit silent behind `Implementing…`. The 60 seconds this principle names are now a threshold in the code: the Build progress block prints `last event <n>s ago` on every frame and flips to `No update from <tool> for <n>s` once the silence reaches `UI_IDLE_WARN_MS` (`src/features/workflow/display/build-progress.ts`).
 
 ### 4. One command for session continuity
 

@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { TIMEOUTS } from '../../src/core/pipeline-spec/timeouts.js';
 import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../src/core/readiness/format.js';
+import type { RecoveryReason } from '../../src/core/schemas/enums.js';
 import {
   READINESS_DIAGNOSTIC_STATE_IDS,
   type ReadinessDiagnosticStateId,
@@ -105,9 +107,21 @@ describe('TROUBLESHOOTING diagnostic parity', () => {
     expect(runner).not.toMatch(/^repository:/m);
   });
 
-  it('documents compiler runtime-drift warning symptom and meaning', () => {
+  it('documents the repeated-timeout halt with the implementer wall clock', () => {
+    const reason: RecoveryReason = 'implementer-timeout-repeated';
+    expect(troubleshootingDoc).toContain('### Symptom: two consecutive timeouts halted my run');
+    expect(troubleshootingDoc).toContain(`${TIMEOUTS.implementerMs / 60_000} minutes`);
+    expect(troubleshootingDoc).toContain(reason);
+  });
+
+  it('documents a failed review verdict and the plain line that reports it', () => {
+    expect(troubleshootingDoc).toContain('### Symptom: the reviewer said `fail` — what now');
+    expect(troubleshootingDoc).toContain('review: failed');
+  });
+
+  it('documents the unrecognised-stack outcome as the run prints it', () => {
     expect(troubleshootingDoc).toContain(
-      'planner <backend> <detected> differs from the tested <tested>; compiled with runtime-drift evidence',
+      '### Symptom: the run printed `gates: NONE — review-only` and validated nothing',
     );
   });
 });

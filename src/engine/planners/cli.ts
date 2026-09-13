@@ -33,6 +33,7 @@ import { assertCliStartGate } from '../runners/start-gate.js';
 import { processError } from '../../lib/process/errors.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
 import { createQuestionAccumulator } from '../parsers/question.js';
+import { TIMEOUTS } from '../../core/pipeline-spec/timeouts.js';
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
 function cliNotFoundMessage(descriptor: CliPlannerAdapter['descriptor']): string {
@@ -136,7 +137,8 @@ export function createCliPlanner(
           sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg, 'planner')),
         ),
         cwd: projectDir,
-        timeoutMs: timeout ?? CLI_NO_DEADLINE_MS,
+        timeoutMs:
+          timeout ?? (callContext.role === 'review' ? TIMEOUTS.reviewerMs : CLI_NO_DEADLINE_MS),
         signal: effectiveSignal,
       },
       prompt,

@@ -4,11 +4,16 @@ import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js
 import type { WorkflowContext } from '../types.js';
 import type { runImplementation } from './run-implementation.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { publishError } from '../events.js';
+import { publishError, publishWarning } from '../events.js';
 import { raisePendingRecovery } from '../state-ops.js';
+import { SCOPE_RULE } from '../../../core/pipeline-spec/scope.js';
+import { taskDeclaredPatterns, undeclaredFiles } from '../../../core/scope/declared-set.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots/restore.js';
 import {
   buildRunnerUnauthenticatedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
+  recoveryBuilderForRunnerOutcome,
   routeBiggerProfileFromDecision,
 } from '../recovery/builders/task.js';
 import { isExtractedCodeApprovalRaceError } from '../../implementers/pipeline/extracted-code.js';
@@ -99,6 +104,65 @@ export async function handleFailedImplementation(opts: {
       message: `${issue.message} (runner reported: ${toolMessage})`,
     });
     return raisePendingRecovery(wctx, state, issue, setTrackedState);
+  }
+  // A defect the runner itself reported fails every attempt the same way, so
+  // the ladder is not entered at all.
+  const buildDefectIssue =
+    implState.implResult.outcome === undefined
+      ? undefined
+      : recoveryBuilderForRunnerOutcome(implState.implResult.outcome);
+  if (buildDefectIssue !== undefined) {
+    const seatSwap = await loadSeatSwapContext({
+      projectDir: wctx.projectDir,
+      seat: 'build',
+      runner: wctx.config.implementer,
+    });
+    const issue = buildDefectIssue({
+      task,
+      phase: state.phase,
+      runner: wctx.config.implementer,
+      toolMessage: implState.implResult.error ?? 'The runner refused the invocation',
+      attempts: 0,
+      maxAttempts: wctx.config.workflow.maxRetries,
+      ...(wctx.implementerProfile !== undefined && {
+        selectedImplementerProfile: wctx.implementerProfile,
+      }),
+      ...(seatSwap !== undefined && { seatSwap }),
+      createdAt: nowIso(),
+    });
+    publishError({ bus: wctx.bus, phase: state.phase, message: issue.message });
+    return raisePendingRecovery(wctx, state, issue, setTrackedState);
+  }
+  if (implState.implResult.outcome === 'implementer-effect-invalid') {
+    const undeclared = undeclaredFiles(
+      await getChangedFilesSinceSnapshot(wctx.projectDir, taskStartSnapshot),
+      task,
+    );
+    // An isolated workspace throws its writes away on cleanup; a run against
+    // the project directory has to put the undeclared paths back itself.
+    if (implState.workspace === undefined && undeclared.length > 0) {
+      await restoreDirtyFilesFromSnapshot(wctx.projectDir, taskStartSnapshot, undeclared);
+    }
+    publishWarning({
+      bus: wctx.bus,
+      phase: state.phase,
+      taskId: task.id,
+      message: `${task.id}: implementer wrote outside the declared files (${undeclared.join(', ')}); retrying with a revert instruction`,
+    });
+    const scopeRetry = await retryAndRecord({
+      wctx,
+      task,
+      initialError: SCOPE_RULE.revertInstruction(undeclared, [...taskDeclaredPatterns(task)]),
+      undeclaredWrites: 'gate',
+      state,
+      taskStartTime,
+      taskStartSnapshot,
+      tokensBefore,
+      taskBreakdowns,
+      setTrackedState,
+    });
+    await runChainAnalysisSafe({ wctx, task, state: scopeRetry.state, taskStartSnapshot });
+    return scopeRetry.state;
   }
   if (isExtractedCodeApprovalRaceError(task.file, implState.implResult.error)) {
     state = await handleApprovalTimeUserEditConflict({

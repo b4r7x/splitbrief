@@ -186,7 +186,7 @@ describe('shouldPreserveActiveState', () => {
   );
 
   it('clears a non-resumable phase without explicit resume state', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'validating-task' };
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'analyzing' };
     expect(shouldPreserveActiveState(state)).toBe(false);
   });
 

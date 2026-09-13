@@ -31,6 +31,8 @@ interface CommandContextFactoryOptions {
   getCurrentPhase: () => Phase;
   requestRewind: (request: CommandRewindRequest) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
+  resumeRun: () => boolean;
+  endRun: () => boolean;
   getQueueDepth: () => number;
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   attachImage: (input: {
@@ -54,6 +56,7 @@ interface CommandContextFactoryOptions {
   scrollConversation: RuntimeCommandContext['scrollConversation'];
   toggleLatestActivityBatch: RuntimeCommandContext['toggleLatestActivityBatch'];
   toggleLatestDiff: RuntimeCommandContext['toggleLatestDiff'];
+  listBriefs: RuntimeCommandContext['listBriefs'];
   toggleSidebar: RuntimeCommandContext['toggleSidebar'];
   copyTarget: RuntimeCommandContext['copyTarget'];
 }
@@ -95,6 +98,8 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
       return opts.requestRewind(request);
     },
     requestTaskRedo: opts.requestTaskRedo,
+    resumeRun: opts.resumeRun,
+    endRun: opts.endRun,
     getQueueDepth: opts.getQueueDepth,
     clearQueue: opts.clearQueue,
     attachImage: (path) => {
@@ -112,6 +117,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     scrollConversation: opts.scrollConversation,
     toggleLatestActivityBatch: opts.toggleLatestActivityBatch,
     toggleLatestDiff: opts.toggleLatestDiff,
+    listBriefs: opts.listBriefs,
     toggleSidebar: opts.toggleSidebar,
     copyTarget: opts.copyTarget,
   };

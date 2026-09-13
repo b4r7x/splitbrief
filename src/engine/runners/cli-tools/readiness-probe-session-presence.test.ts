@@ -2,15 +2,10 @@ import { chmod, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promi
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
-import {
-  capabilityTuple,
-  unverifiedConformanceProof,
-} from '#testing/helpers/factories/compiler-capability.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliProbeContract } from './contract.js';
 import { providerOracleAuthFact } from './provider-oracle.js';
 import { probeCliReadiness } from './readiness-probe.js';
-import { admitCompilerCapability } from '../compiler-capability.js';
 
 async function nodeExecutable(): Promise<CliExecutableIdentity> {
   const path = await realpath(process.execPath);
@@ -517,30 +512,4 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
       });
     },
   );
-
-  it('a verified oracle listing never admits compiler capability without exact conformance', async () => {
-    await withTempDir('readiness-oracle-capability', async (hostHome) => {
-      await seedOracleState(hostHome, 'opencode');
-      const executable = await oracleShim(hostHome, 'opencode', reportBody('opencode'));
-      stubHostState(hostHome);
-
-      const result = await probeCliReadiness({
-        tool: 'opencode',
-        executable,
-        authChannel: 'provider-dependent',
-        probe: oracleContract('opencode'),
-        classifyVersion: () => 'compatible',
-      });
-
-      expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
-      const admission = admitCompilerCapability(
-        capabilityTuple('opencode', {
-          version: result.installedVersion ?? '',
-          conformance: unverifiedConformanceProof(),
-        }),
-      );
-      expect(admission.kind).toBe('refused');
-      if (admission.kind === 'refused') expect(admission.missing).toEqual(['conformance']);
-    });
-  });
 });

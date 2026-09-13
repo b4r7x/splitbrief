@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import {
-  createTaskCompilationAttemptId,
-  TaskCompilationSemanticIdSchema,
-} from '../../../core/schemas/task-compilation.js';
+  createPlannerArtifactAttemptId,
+  PlannerArtifactSemanticIdSchema,
+} from '../../../core/schemas/planner-artifact.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { PLANNER_ARTIFACT_MAX_BYTES, type ArtifactApprovalReview } from '../../runners/types.js';
@@ -13,7 +13,7 @@ import { beginDeclaredArtifactReview } from './planner-artifact.js';
 import { createStagedProject } from './staged-project.js';
 import type { IsolatedWorkspace } from '../isolation/types.js';
 
-const ATTEMPT_ID = createTaskCompilationAttemptId();
+const ATTEMPT_ID = createPlannerArtifactAttemptId();
 const ARTIFACT_RELATIVE_PATH = `.splitbrief-runner/output/${ATTEMPT_ID}/result`;
 
 type Fixture = Readonly<{
@@ -56,7 +56,7 @@ async function withArtifactReview<T>(
       callId: 'call-1',
       declaredRedactionValues: [],
       provenance: {
-        semanticId: TaskCompilationSemanticIdSchema.parse('immutable-artifact-test'),
+        semanticId: PlannerArtifactSemanticIdSchema.parse('immutable-artifact-test'),
         programId: null,
         batchId: null,
         attemptId: ATTEMPT_ID,

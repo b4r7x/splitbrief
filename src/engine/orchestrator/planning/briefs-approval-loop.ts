@@ -25,8 +25,6 @@ import { regenerateTasks } from './regen.js';
 import { buildTargetedRejectionComment } from './regen-targeted.js';
 import { readPersistedTasks, readTasksForApproval } from './io.js';
 import { writeAndPublishArtifacts } from '../artifact-write.js';
-import { driftedCompilerReceipt } from '../../runners/compiler-drift-warning.js';
-import { recordRuntimeConformance } from '../../runners/runtime-conformance-cache.js';
 import type { BriefsApprovalLoopOptions, BriefsApprovalLoopResult } from './types.js';
 
 function isApprovalDecision(value: unknown): value is ApprovalReviewResult {
@@ -328,13 +326,6 @@ export async function runBriefsApprovalLoop(
       const verdict = gateQuality(tasks, 'approved');
       if (verdict === 'reject') return rejectNoProgress();
       if (verdict === 'failed') continue;
-      const receipt = driftedCompilerReceipt(planner);
-      if (receipt !== null) {
-        recordRuntimeConformance(projectDir, {
-          backend: receipt.backend,
-          version: receipt.runtimeVersion,
-        });
-      }
       state = transitionAndSave(ref, state, { type: 'BEGIN_IMPLEMENTATION' });
       return { state, tasks, outcome: 'accepted' };
     }

@@ -1,14 +1,21 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { Session } from '../../core/schemas/session.js';
+import type { SkillMeta } from '../../core/skills/types.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { CommandGuardContext, RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
+import { skillsStore } from '../../stores/project/skills.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { WorkflowTask } from '../../stores/workflow/tasks.js';
-import type { PaletteAction, PaletteCommandItem, PaletteInputs } from './results.js';
+import type {
+  PaletteAction,
+  PaletteCommandItem,
+  PaletteInputs,
+  PaletteSkillItem,
+} from './results.js';
 
 type PaletteSources = Omit<PaletteInputs, 'query' | 'mruIds'>;
 
@@ -35,6 +42,7 @@ export function buildPaletteSources({
   onRuntimeCommand,
   onSessionSelect,
 }: BuildPaletteSourcesOptions): PaletteSources {
+  const skills = skillsStore.get();
   return {
     commandItems: buildCommandItems({
       commands,
@@ -48,6 +56,7 @@ export function buildPaletteSources({
         }),
       },
     }),
+    skillItems: buildSkillItems(skills.available, skills.selected),
     taskItems: buildTaskItems(tasks, phase),
     sessionItems: buildSessionItems(sessions, projectDir, onSessionSelect),
     customItems: buildCustomItems(config, onRuntimeCommand),
@@ -107,6 +116,22 @@ export function buildCommandItems({
   }
 
   return items;
+}
+
+function buildSkillItems(skills: SkillMeta[], selected: ReadonlySet<string>): PaletteSkillItem[] {
+  return skills.map((skill) => ({
+    id: skill.id,
+    label: `Skill · ${skill.name}`,
+    description: skill.description,
+    hint: selected.has(skill.id) ? 'attached' : null,
+    category: 'navigate',
+    action: {
+      kind: 'run',
+      run: () => {
+        skillsStore.toggleSelected(skill.id);
+      },
+    },
+  }));
 }
 
 function buildTaskItems(tasks: WorkflowTask[], phase: Phase): PaletteSources['taskItems'] {

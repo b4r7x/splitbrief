@@ -4,10 +4,10 @@ description: >
   Use when a task should be compiled into self-contained Product Task Briefs
   without executing them — "splitbrief brief", "write the briefs", "compile
   task briefs for <tool>", "prepare briefs I can hand to another agent". Reads
-  the project's instruction files and gates, cuts the work one file per brief
-  in dependency order, and writes them under .splitbrief/runs/. To execute the
-  briefs afterwards: splitbrief-run. For the whole pipeline in one go:
-  splitbrief.
+  the project's instruction files and gates, cuts the work one verifiable
+  slice per brief in dependency order, and writes them under .splitbrief/runs/.
+  To execute the briefs afterwards: splitbrief-run. For the whole pipeline in
+  one go: splitbrief.
 metadata:
   author: b4r7x
   version: "1.0.0"
@@ -30,14 +30,24 @@ No crew is needed. Nothing is spawned.
 
 1. **The brief stands alone.** Code context is copied verbatim from the files it describes (references/brief-format.md); nothing is summarized from memory.
 2. **Gates are resolved now, not later.** Every brief's `### Tests` ends with the resolved validation commands (references/gates.md) so whoever executes it runs the same checks the review will quote.
-3. **One brief, one file.** Cut by file; order by dependency; caps `quick` 5 / `standard` 12; upgrade `quick` → `standard` when the file plan exceeds 5 files or 5 briefs and say so in the plan block.
+3. **One brief, one slice.** Cut into verifiable slices; order by dependency; take the slice budget and the brief caps from the block below; upgrade `quick` → `standard` when the file plan exceeds the quick thresholds and say so in the plan block.
 4. **Nothing touches git.** The briefs carry the never-commit constraint; this skill writes only under `.splitbrief/`.
+
+<!-- generated: caps -->
+| Mode | Brief cap |
+|---|---|
+| `quick` | 5 |
+| `standard` | 12 |
+| `speckit` | 12 |
+
+One brief = one verifiable slice — the code, its test and its wiring that one gate run can prove together. List every file it writes under `files`; one file is the smallest slice. Split when a gate can pass on one part without the other. Budget: at most 5 files and about 200 changed lines per brief for a mid-tier implementer; a frontier implementer may take 8. A brief whose only purpose is to test a sibling another brief creates is folded into that brief.
+<!-- /generated -->
 
 ## Phase 0 — Preflight
 
 1. Read the instruction files (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules/*`, `.github/copilot-instructions.md`); their rules become Constraints.
-2. Resolve gates per references/gates.md; run the baseline once and record it. Choose the run dir now — `.splitbrief/runs/$(date +%Y-%m-%d-%H%M%S)-<slug>/` (on collision append `-2`, `-3`, …) — create it, and write `git status --porcelain --untracked-files=all` into `baseline-tree.txt` there so `splitbrief-run` can use it.
-3. Read the files the task touches at the exports-and-structure level; cut the file plan; apply the upgrade rule.
+2. Resolve gates per references/gates.md; run the baseline once and record it. Choose the run dir now — `.splitbrief/runs/$(date +%Y-%m-%d-%H%M%S)-<slug>/` (on collision append `-2`, `-3`, …) — create it, and record the baseline fingerprints in `baseline-sha.txt` there (references/gates.md) so `splitbrief-run` can use them.
+3. Read the files the task touches at the exports-and-structure level; cut the slices; apply the upgrade rule.
 4. Print the plan block:
 
     ## SPLITBRIEF preflight — <slug> (brief only)
@@ -45,7 +55,7 @@ No crew is needed. Nothing is spawned.
     mode: quick
     gates: typecheck `npx tsc --noEmit` (manifest) · lint none · test `npm test` (default)
     baseline: typecheck PASS · test PASS (12 passed)
-    briefs: 2 → T001 src/slugify.ts (create) · T002 src/index.ts (modify, after T001)
+    briefs: 2 → T001 src/slugify.ts +1 (create) · T002 src/index.ts (modify, after T001)
     run dir: .splitbrief/runs/2026-09-08-153000-slugify/
     gitignore: .splitbrief/ ignored   (or: NOT ignored — add it to .gitignore or expect the run dir in git status)
 
@@ -59,9 +69,9 @@ No crew is needed. Nothing is spawned.
 
     ## SPLITBRIEF briefs — <slug>
     run dir: .splitbrief/runs/2026-09-08-153000-slugify/
-    | Brief | File | Action | Depends on |
+    | Brief | Files | Action | Depends on |
     |---|---|---|---|
-    | T001 | src/slugify.ts | create | — |
+    | T001 | src/slugify.ts +1 | create | — |
     | T002 | src/index.ts | modify | T001 |
     gates recorded: typecheck · test (lint: none)
     next: splitbrief-run impl=<tool>[:<model>] .splitbrief/runs/2026-09-08-153000-slugify/briefs

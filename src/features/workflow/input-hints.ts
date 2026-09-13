@@ -1,23 +1,18 @@
 import type { InputMode } from '../../core/navigation/types.js';
 import { SOFT_SEP } from '../../components/separators.js';
-import { REVIEW_HINT } from './review-commands.js';
 
 export interface InputHintInput {
   inputHint: string;
   inputMode: InputMode;
 }
 
+// A gate that is on screen is its own legend: the review and question panels spell out every live
+// key inside their own border, so the byline stays silent rather than teaching the keys twice.
 export function resolveInputHint(input: InputHintInput): string {
   const { inputHint, inputMode } = input;
-  if (inputMode === 'question') return 'answer prompt shown above';
-  if (inputHint) return inputHint;
-  if (inputMode === 'review') return REVIEW_HINT;
-  return '';
+  if (inputMode === 'review' || inputMode === 'question') return '';
+  return inputHint;
 }
-
-// Whatever the composer draft holds, `enter` still sends it — the typed review commands stay
-// live even when the single-key shortcuts are off.
-export const REVIEW_TYPING_HINT = 'enter send';
 
 // A legend that ends in an ellipsis has cut a key in half and still claims to name it. Too narrow
 // a row drops whole trailing tokens instead, so everything left standing is a complete, live key.
@@ -32,22 +27,6 @@ export function fitKeyLegend(legend: string, width: number): string {
   return fitted;
 }
 
-/**
- * The review legend names one-key actions that only exist while `reviewKeysStore.armed` is true.
- * Reading that same flag here is what keeps the legend honest: the instant the composer turns the
- * keys back into text, the row stops advertising them and names what is actually live.
- */
-export function resolveReviewKeyLegend(input: {
-  inputHint: string;
-  inReviewMode: boolean;
-  reviewKeysArmed: boolean;
-  width: number;
-}): string {
-  if (!input.inReviewMode) return input.inputHint;
-  if (!input.reviewKeysArmed) return REVIEW_TYPING_HINT;
-  return fitKeyLegend(input.inputHint, input.width);
-}
-
 export interface CancelledHints {
   placeholder: string;
   byline: string;
@@ -55,7 +34,7 @@ export interface CancelledHints {
 
 export function resolveCancelledHints(canResumeCancelled: boolean): CancelledHints {
   return canResumeCancelled
-    ? { placeholder: 'enter to resume…', byline: `esc home${SOFT_SEP}/quit` }
+    ? { placeholder: '/resume to continue…', byline: `esc home${SOFT_SEP}/quit` }
     : { placeholder: 'esc for home…', byline: '/quit to exit' };
 }
 

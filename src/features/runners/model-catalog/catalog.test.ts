@@ -10,6 +10,7 @@ import {
   getBundledModels,
   type ModelCacheAccessor,
 } from '../../../engine/providers/model/resolution.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
 import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 
@@ -921,5 +922,34 @@ describe('toModelOption displayName precedence', () => {
     const models = resolveAndSort('ollama', 'implementer', cache);
     const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
     expect(sonnet === undefined ? false : 'detail' in sonnet).toBe(false);
+  });
+
+  it('row without catalog entry says no catalog entry', () => {
+    const cache = makeModelCacheAccessor({ providerModels: { codex: [{ id: 'mystery-7b' }] } });
+
+    const row = resolveAndSort('codex', 'implementer', cache).find(
+      (model) => model.id === 'mystery-7b',
+    );
+
+    expect(row).toMatchObject({ id: 'mystery-7b', detail: 'no catalog entry' });
+    expect(row?.displayName).toBeUndefined();
+  });
+
+  it('no id appears twice', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: { 'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' } },
+        },
+      },
+      providerModels: {
+        'claude-code': [{ id: 'claude-sonnet-5' }, { id: 'claude-sonnet-5' }, { id: 'opus' }],
+      },
+    });
+
+    expect(uniqueModelIds(resolveAndSort('claude-code', 'planner', cache))).toContain(
+      'claude-sonnet-5',
+    );
   });
 });

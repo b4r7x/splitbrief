@@ -1,35 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
-  TaskCompilationSemanticIdSchema,
-  createTaskCompilationAttemptId,
-  createTaskCompilationBatchId,
-  createTaskCompilationProgramId,
-  type TaskCompilationCallEnvelope,
-} from '../../core/schemas/task-compilation.js';
+  PlannerArtifactBatchIdSchema,
+  PlannerArtifactProgramIdSchema,
+  PlannerArtifactSemanticIdSchema,
+  createPlannerArtifactAttemptId,
+} from '../../core/schemas/planner-artifact.js';
 import {
   isOwnedPlannerArtifactFor,
   type OwnedPlannerArtifact,
   type PlannerArtifactRequest,
 } from './types.js';
 
-const attemptId = createTaskCompilationAttemptId();
-const programId = createTaskCompilationProgramId({ spec: 'spec', plan: 'plan' });
-const batchId = createTaskCompilationBatchId(programId, 0, [0]);
-const semanticId = TaskCompilationSemanticIdSchema.parse('batch-0');
-
-const envelope: TaskCompilationCallEnvelope = {
-  version: 1,
-  promptBytes: 1,
-  inputTokensUpperBound: 1,
-  requestedOutputTokens: 8_192,
-  outputTokensUpperBound: 96 * 1_024,
-  maxNormalizedOutputBytes: 96 * 1_024,
-  maxDeclaredArtifactBytes: 96 * 1_024,
-  maxRawProtocolBytes: 8 * 1_024 * 1_024,
-  maxStderrBytes: 64 * 1_024,
-  deadlineMs: 10 * 60_000,
-  idleTimeoutMs: 2 * 60_000,
-};
+const attemptId = createPlannerArtifactAttemptId();
+const programId = PlannerArtifactProgramIdSchema.parse('program-0');
+const batchId = PlannerArtifactBatchIdSchema.parse('batch-id-0');
+const semanticId = PlannerArtifactSemanticIdSchema.parse('batch-0');
 
 const request: PlannerArtifactRequest = {
   semanticId,
@@ -38,7 +23,6 @@ const request: PlannerArtifactRequest = {
   attemptId,
   logicalName: 'tasks.md',
   transport: { kind: 'stdout-final' },
-  envelope,
 };
 
 const artifact: OwnedPlannerArtifact = {
@@ -86,13 +70,13 @@ describe('planner ownership types', () => {
     expect(
       isOwnedPlannerArtifactFor(request, {
         ...artifact,
-        attemptId: createTaskCompilationAttemptId(),
+        attemptId: createPlannerArtifactAttemptId(),
       }),
     ).toBe(false);
     expect(
       isOwnedPlannerArtifactFor(request, {
         ...artifact,
-        batchId: createTaskCompilationBatchId(programId, 1, [1]),
+        batchId: PlannerArtifactBatchIdSchema.parse('batch-id-1'),
       }),
     ).toBe(false);
   });

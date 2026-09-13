@@ -1,5 +1,6 @@
 import { assertNever } from '../../../utils/type-guards.js';
 import type { Phase } from '../../schemas/enums.js';
+import type { TaskStatus } from '../../schemas/enums.js';
 import type { WorkflowMode } from '../../schemas/enums.js';
 import { CREW_SEAT_IDS } from '../../crew/identity.js';
 import type { OverlayType, Screen } from '../../navigation/types.js';
@@ -65,6 +66,12 @@ export type ToggleLatestDiffResult =
 export type ToggleSidebarResult =
   | { status: 'toggled'; visible: boolean }
   | { status: 'unavailable'; message: string };
+
+/** One brief as a command names it: the id every surface calls it by, and where it got to. */
+export interface BriefListEntry {
+  readonly id: string;
+  readonly status: TaskStatus;
+}
 
 export type RuntimeConfigSaveResult =
   | Readonly<{ kind: 'saved'; ok: true }>
@@ -165,7 +172,6 @@ export const REMOVED_COMMANDS: Readonly<Record<string, string>> = {
   '/planner': 'the PLAN seat is chosen with /crew plan',
   '/reject-run': 'a run is rejected with /run reject confirm',
   '/repomap': 'the repo map rebuilds itself on each planning run, with no manual step',
-  '/resume': 'a paused workflow resumes from its approval prompt',
   '/reviewer': 'the REVIEW seat is chosen with /crew review',
   '/yolo': 'approval prompts are turned off with approval.enabled: false in the config',
 };
@@ -199,6 +205,8 @@ type CommandArgSpec =
       /** Display grammar for option sets too large to spell out in a palette or help row. */
       hint?: string;
       optional?: true;
+      multi?: boolean;
+      match?: 'prefix' | 'fuzzy';
     }
   | { kind: 'free'; hint: string };
 
@@ -233,10 +241,12 @@ export interface RuntimeCommandContext {
   refreshProjectFiles: () => void;
   listSkills: () => readonly SkillCommandOption[];
   toggleSkill: (id: string) => SkillToggleResult;
-  refreshSkills: () => void;
+  refreshSkills: () => Promise<void>;
   getCurrentPhase: () => Phase;
   requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
+  resumeRun: () => boolean;
+  endRun: () => boolean;
   getQueueDepth: () => number;
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   attachImage: (input: string) => AttachImageResult;
@@ -249,6 +259,7 @@ export interface RuntimeCommandContext {
   scrollConversation: (target: ScrollCommandTarget) => ScrollConversationResult;
   toggleLatestActivityBatch: () => ToggleLatestActivityBatchResult;
   toggleLatestDiff: () => ToggleLatestDiffResult;
+  listBriefs: () => readonly BriefListEntry[];
   toggleSidebar: () => ToggleSidebarResult;
   copyTarget: (target: CopyTarget) => Promise<CopyResult>;
 }

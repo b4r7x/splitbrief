@@ -27,4 +27,12 @@ function setSelected(ids: Set<string>) {
   store.set((s) => ({ ...s, selected: new Set(ids) }));
 }
 
-export const skillsStore = { ...storeBase(store), setAvailable, setSelected };
+function toggleSelected(id: string) {
+  store.set((s) => {
+    const selected = new Set(s.selected);
+    if (!selected.delete(id)) selected.add(id);
+    return { ...s, selected };
+  });
+}
+
+export const skillsStore = { ...storeBase(store), setAvailable, setSelected, toggleSelected };

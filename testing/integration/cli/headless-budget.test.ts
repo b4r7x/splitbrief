@@ -71,7 +71,7 @@ describe('runHeadless — budget pause behavior', () => {
     }) as never);
 
     planner = makePlanner({
-      review: vi.fn().mockResolvedValue({ text: '', usage: null }),
+      review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
     });
     implementer = makeImplementer({
       implement: vi.fn().mockResolvedValue({

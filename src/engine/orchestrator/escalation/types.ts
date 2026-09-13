@@ -3,7 +3,7 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { Implementer } from '../../implementers/types.js';
+import type { Implementer, UndeclaredWritesPolicy } from '../../implementers/types.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
 import type { ChangeDetectionKind } from '../../change-detection.js';
 import type { WorkflowContext } from '../types.js';
@@ -11,8 +11,6 @@ import type { UsageCategory } from '../tokens.js';
 import type { IsolationRole } from '../isolation/types.js';
 import type { ValidationResult } from '../validation/result.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
-
-export const MAX_HINT_ERROR_LENGTH = 4000;
 
 export type RetryResult =
   | {
@@ -35,7 +33,7 @@ export type EscalationContext = WorkflowContext & {
   taskStartTime?: number | undefined;
   taskStartSnapshot: ChangedFilesSnapshot;
   dependsOnFiles: string[];
-};
+} & UndeclaredWritesPolicy;
 
 /** Machine outcome of the attempt that produced `lastError`, with the runner that made it. */
 export type RetryAttemptFailure = {
@@ -67,7 +65,7 @@ export type RetryInvokeArgs = {
   fileIgnoreProjectDir?: string | undefined;
   /** Baseline the acquired workspace declares; sniffed from the directory when absent. */
   changeDetection?: ChangeDetectionKind | undefined;
-};
+} & UndeclaredWritesPolicy;
 
 export type RetryInvokeResult = {
   success: boolean;

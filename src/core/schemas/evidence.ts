@@ -41,6 +41,8 @@ const EvidenceValidationEntrySchema = z.object({
   retryState: z.enum(['initial-failure', 'retry', 'escalated', 'failed']).optional(),
   changedFiles: z.array(z.string()).optional(),
   baselineExempt: z.boolean().optional(),
+  skipped: z.boolean().optional(),
+  skippedReason: z.string().optional(),
 });
 export type EvidenceValidationEntry = z.infer<typeof EvidenceValidationEntrySchema>;
 

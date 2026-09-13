@@ -5,6 +5,7 @@ import { readSpecFileOrEmpty, type SpecMetadata } from '../../../core/paths-io.j
 import { SPEC_FILE, PLAN_FILE } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
 import type { Planner } from '../../planners/types.js';
+import { withPerCallAbort } from '../cancellable-call.js';
 import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { writeAndPublishArtifact } from '../artifact-write.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
@@ -227,14 +228,6 @@ async function runLiveRegenerate(opts: {
   signal?: AbortSignal | undefined;
   sinks?: WorkflowSinks | undefined;
 }): Promise<Awaited<ReturnType<Planner['regenerate']>>> {
-  const controller = opts.sinks ? new AbortController() : null;
-  const signal = controller
-    ? opts.signal === undefined
-      ? controller.signal
-      : AbortSignal.any([opts.signal, controller.signal])
-    : opts.signal;
-
-  if (controller) opts.sinks?.setAbortHandler(() => controller.abort());
   publishPlannerStatus(opts.bus, { ...opts.state, phase: opts.statusPhase }, 'running');
   opts.bus.publish({
     type: 'planner_heartbeat',
@@ -246,18 +239,22 @@ async function runLiveRegenerate(opts: {
   } satisfies EngineEventOf<'planner_heartbeat'>);
 
   try {
-    return await opts.planner.regenerate({
-      prompt: opts.prompt,
-      projectDir: opts.projectDir,
-      callbacks: {
-        // The reply is the regenerated document itself; it reaches the transcript as the
-        // artifact card published once it is written, never as a body paste.
-        onOutput: () => {},
-        signal,
-      },
+    return await withPerCallAbort({
+      sinks: opts.sinks,
+      signal: opts.signal,
+      run: (signal) =>
+        opts.planner.regenerate({
+          prompt: opts.prompt,
+          projectDir: opts.projectDir,
+          callbacks: {
+            // The reply is the regenerated document itself; it reaches the transcript as the
+            // artifact card published once it is written, never as a body paste.
+            onOutput: () => {},
+            signal,
+          },
+        }),
     });
   } finally {
-    opts.sinks?.setAbortHandler(null);
     publishPlannerStatus(opts.bus, { ...opts.state, phase: opts.statusPhase }, 'done');
   }
 }

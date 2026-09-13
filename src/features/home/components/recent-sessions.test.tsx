@@ -84,15 +84,13 @@ describe('RecentSessions', () => {
     ui.unmount();
   });
 
-  it('renders the empty state under the sentence-case header when no sessions are loaded', async () => {
+  it('renders nothing at all when there are no sessions to list', async () => {
     sessionsStore.load(projectDir);
 
     const ui = renderFeature(<RecentSessions />);
     await tick(20);
 
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('No recent sessions');
-    expect(frame.split('\n').some((line) => line.includes('Recent sessions'))).toBe(true);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').trim()).toBe('');
     ui.unmount();
   });
 
@@ -274,9 +272,7 @@ describe('RecentSessions', () => {
     expect(frame).toContain('Type to filter…');
     expect(frame).toContain('selection failed');
     expect(frame).toContain('newest-focused-small-home');
-    expect(frame).toContain('↓ 2 more');
-    expect(frame).not.toContain('middle-focused-small-home');
-    expect(frame).not.toContain('oldest-focused-small-home');
+    expect(frame).toContain('middle-focused-small-home');
     ui.unmount();
   });
 

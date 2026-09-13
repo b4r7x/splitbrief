@@ -34,6 +34,24 @@ describe('classifyUserEditConflict', () => {
     expect(conflict.availableActions).toEqual(['pause', 'skip-current-task', 'abort-workflow']);
   });
 
+  it('classifies a second declared file and a prose in-bounds bullet as current-task conflicts', () => {
+    const currentTask = makeTask({
+      id: 'T001',
+      file: 'src/current.ts',
+      files: ['src/current.ts', 'src/current.test.ts'],
+      scope: { inBounds: ['`src/x.ts` — the union collapse'] },
+    });
+    const conflict = classifyUserEditConflict({
+      files: ['src/current.test.ts', 'src/x.ts'],
+      currentTask,
+      allTasks: [currentTask],
+      currentTaskIndex: 0,
+    });
+
+    expect(conflict.kind).toBe('current-task-conflict');
+    expect(conflict.affectedTaskIds).toEqual(['T001']);
+  });
+
   it('marks future task inputs stale without blocking the current task', () => {
     const currentTask = makeTask({ id: 'T001', file: 'src/current.ts' });
     const futureTask = makeTask({ id: 'T002', file: 'src/future.ts' });

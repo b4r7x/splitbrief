@@ -5,7 +5,8 @@
   column-gap: var(--s-6);
   width: min(var(--content-max), 100% - 2 * var(--gutter));
   margin-inline: auto;
-  padding-block: var(--s-2) var(--s-8);
+  padding-block: var(--s-8);
+  border-top: 1px solid var(--hair);
   font-size: var(--text-label);
   line-height: 1.45;
   letter-spacing: 0.04em;
