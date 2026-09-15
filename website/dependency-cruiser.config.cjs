@@ -10,20 +10,20 @@ module.exports = {
     {
       name: 'no-orphans',
       severity: 'error',
-      from: { orphan: true, pathNot: '^src/main\\.ts$' },
+      from: { orphan: true, pathNot: '^src/(main|docs)\\.ts$' },
       to: {},
     },
     {
       name: 'shared-stays-independent',
       severity: 'error',
       from: { path: '^src/lib/' },
-      to: { path: '^src/(features/|main\\.ts$)' },
+      to: { path: '^src/(features/|(main|docs)\\.ts$)' },
     },
     {
       name: 'features-do-not-import-entry',
       severity: 'error',
       from: { path: '^src/features/' },
-      to: { path: '^src/main\\.ts$' },
+      to: { path: '^src/(main|docs)\\.ts$' },
     },
     {
       name: 'no-internal-barrels',

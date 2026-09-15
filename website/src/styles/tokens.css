@@ -5,6 +5,8 @@
   --ink: #e1e1df;
   --muted: #a7a7a5;
   --line: #444;
+  --scrollbar-ink: #81817d;
+  --scrollbar-rail: #343432;
   --mono: Plex, monospace;
   --page-width: 1280px;
 }

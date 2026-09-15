@@ -18,12 +18,26 @@ function ribbon(variation: number) {
 }
 
 export function mountAtmosphere(root: HTMLElement) {
-  const fragments = Array.from({ length: 6 }, (_, index) => {
+  const fragments = Array.from({ length: 8 }, (_, index) => {
+    const stream = document.createElement('div');
+    stream.className = 'ascii-stream';
     const fragment = document.createElement('pre');
     fragment.className = 'ascii-drift';
     fragment.textContent = ribbon(index);
-    return fragment;
+    stream.append(fragment);
+    return stream;
   });
   root.replaceChildren(...fragments);
-  return () => root.replaceChildren();
+  let previous = -1;
+  return {
+    paint(progress: number) {
+      if (progress === previous) return;
+      previous = progress;
+      root.style.setProperty('--expansion', progress.toFixed(4));
+    },
+    destroy() {
+      root.replaceChildren();
+      root.style.removeProperty('--expansion');
+    },
+  };
 }

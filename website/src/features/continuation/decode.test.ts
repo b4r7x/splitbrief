@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { decodeCharacter, decodeStage } from './decode.js';
+import { decodeCharacter } from '../../lib/decoder.js';
+import { decodeStage } from './decode.js';
 
 describe('scroll decoding', () => {
   it('gives every chapter a decode, readable hold and outgoing transition', () => {

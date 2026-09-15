@@ -1,3 +1,5 @@
+import { mountTabs } from '../../lib/tabs.js';
+
 const DESCRIPTIONS: Record<string, readonly [string, string, string]> = {
   'review.md': [
     'THE REVIEW',
@@ -16,7 +18,7 @@ const DESCRIPTIONS: Record<string, readonly [string, string, string]> = {
   ],
 };
 
-export function mountFiles(root: HTMLElement, onChange: () => void) {
+export function mountFiles(root: HTMLElement, request: (change: () => void) => void) {
   const tabs = [...root.querySelectorAll<HTMLButtonElement>('[data-file]')];
   const panel = root.querySelector<HTMLElement>('#file-description');
   const kind = panel?.querySelector('.file-kind');
@@ -29,52 +31,10 @@ export function mountFiles(root: HTMLElement, onChange: () => void) {
     title.textContent ?? '',
     description.textContent ?? '',
   ];
-  const abort = new AbortController();
-
-  function select(tab: HTMLButtonElement) {
+  return mountTabs(tabs, request, (tab) => {
     const content = tab === tabs[0] ? original : DESCRIPTIONS[tab.dataset.file ?? ''];
     if (!content || !panel || !kind || !title || !description) return;
-    for (const candidate of tabs) {
-      candidate.setAttribute('aria-selected', String(candidate === tab));
-      candidate.tabIndex = candidate === tab ? 0 : -1;
-    }
     panel.setAttribute('aria-labelledby', tab.id);
     [kind.textContent, title.textContent, description.textContent] = content;
-    onChange();
-  }
-
-  for (const [index, tab] of tabs.entries()) {
-    tab.addEventListener('click', () => select(tab), { signal: abort.signal });
-    tab.addEventListener(
-      'keydown',
-      (event) => {
-        const next =
-          event.key === 'Home'
-            ? 0
-            : event.key === 'End'
-              ? tabs.length - 1
-              : event.key === 'ArrowRight'
-                ? (index + 1) % tabs.length
-                : event.key === 'ArrowLeft'
-                  ? (index - 1 + tabs.length) % tabs.length
-                  : -1;
-        const target = tabs[next];
-        if (!target) return;
-        event.preventDefault();
-        select(target);
-        target.focus({ preventScroll: true });
-      },
-      { signal: abort.signal },
-    );
-  }
-
-  return () => {
-    abort.abort();
-    [kind.textContent, title.textContent, description.textContent] = original;
-    for (const [index, tab] of tabs.entries()) {
-      tab.setAttribute('aria-selected', String(index === 0));
-      tab.tabIndex = index === 0 ? 0 : -1;
-    }
-    if (tabs[0]) panel.setAttribute('aria-labelledby', tabs[0].id);
-  };
+  });
 }

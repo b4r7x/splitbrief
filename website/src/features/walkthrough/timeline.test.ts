@@ -45,13 +45,14 @@ describe('walkthrough timeline', () => {
     expect(compact.offset(1)).toBe(1890);
   });
 
-  it('keeps phase and reveal progress with the visible document in both directions', () => {
-    const position = timeline.offset(0.15);
-    for (const preferred of [0.05, 0.2, 0.9]) {
-      const progress = timeline.progressAtOffset(position, preferred);
-      expect(timeline.offset(progress)).toBeCloseTo(position, 1);
+  it('keeps the phase with the displayed document while preserving reveals in reading positions', () => {
+    for (const position of [0, 190, 399, 430, 1100, 1700, 2289]) {
+      for (const preferred of [0, 0.2, 0.9, 1]) {
+        const displayed = timeline.progressAtOffset(position, preferred);
+        expect(timeline.offset(displayed)).toBeCloseTo(position, 8);
+      }
     }
-    expect(timeline.progressAtOffset(0, 0.08)).toBe(0.08);
-    expect(timeline.progressAtOffset(400, 0.18)).toBe(0.18);
+    expect(timeline.progressAtOffset(0, 0.07)).toBe(0.07);
+    expect(timeline.progressAtOffset(950, 0.42)).toBe(0.42);
   });
 });

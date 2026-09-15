@@ -11,6 +11,7 @@
       "playwright.config.ts",
       "src/**",
       "tests/**",
+      "build/**",
       "dependency-cruiser.config.cjs",
       "knip.json"
     ]

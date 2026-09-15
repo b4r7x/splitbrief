@@ -8,6 +8,8 @@ export type Point = {
   edge: boolean;
   glyph: string;
   phase: number;
+  path: number;
+  radial: number;
 };
 
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -59,6 +61,7 @@ function beam(
   endWidth: number,
   endDepth: number,
   brightness = 0,
+  range: readonly [number, number] = [0, 1],
 ) {
   const along = Math.ceil(Math.max(Math.hypot(...vector(a, b)), Math.hypot(...vector(c, d))) * 18);
   const across = Math.ceil(Math.max(width, depth, endWidth, endDepth) * 14);
@@ -84,6 +87,8 @@ function beam(
           edge,
           glyph: edge ? '#' : glyph,
           phase: u * 4 + v,
+          path: mix(range[0], range[1], u),
+          radial: ((face + v) * Math.PI) / 2,
         });
       }
     }
@@ -125,6 +130,7 @@ export function buildPoints(): Point[] {
         0.95,
         1.25,
         sign < 0 ? 0 : 1,
+        [index / 3, next / 3],
       );
     }
   }
@@ -159,6 +165,8 @@ export function buildPoints(): Point[] {
           edge: true,
           glyph: '#',
           phase: u * 8,
+          path: u,
+          radial: side * (Math.PI / 2 + strand * 0.12),
         });
       }
     }
@@ -180,6 +188,8 @@ export function buildPoints(): Point[] {
           edge: false,
           glyph: ':',
           phase: u * 8 + v,
+          path: u,
+          radial: side * (Math.PI / 2 + v),
         });
       }
     }
@@ -196,6 +206,8 @@ export function buildPoints(): Point[] {
         edge: true,
         glyph: '=',
         phase: u * 8,
+        path: u,
+        radial: (v - 0.5) * Math.PI,
       });
     }
   }

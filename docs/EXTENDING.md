@@ -73,7 +73,7 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 
 ## 5. New planner/implementer backend
 
-Use an existing runner kind only (`cli`, `api`, `shell`, `agent`). Do not add a fifth kind — see [section 14](#14-cli-and-provider-admission-checklists).
+Use an existing runner kind only (`cli`, `api`, `shell`, `agent`). Do not add a fifth kind — see [section 15](#15-cli-and-provider-admission-checklists).
 
 1. Pick the kind in config (`RunnerKindSchema` in `src/core/schemas/enums.ts`); factory dispatch lives in `src/engine/runners/factory.ts`
 2. Create `src/engine/planners/<name>.ts` implementing the `Planner` interface from `src/engine/planners/types.ts`

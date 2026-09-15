@@ -18,7 +18,7 @@ test('presents accessible copy, the CLI wordmark, local fonts and real project l
   const projectLinks = page.getByRole('navigation', { name: 'Project links' });
   await expect(projectLinks.getByRole('link', { name: '[ docs ]' })).toHaveAttribute(
     'href',
-    'https://github.com/b4r7x/splitbrief/blob/main/docs/GETTING-STARTED.md',
+    './docs/',
   );
   await expect(projectLinks.getByRole('link', { name: '[ github ]' })).toHaveAttribute(
     'href',
@@ -93,10 +93,8 @@ test('offers 44px controls, visible keyboard focus and a working installation CT
   ).toBeFocused();
   await clickInPlace(page, page.getByRole('link', { name: 'Get started', exact: true }));
   await expect(page).toHaveURL(/#install$/);
-  await expect(
-    page.getByRole('heading', { name: 'Start with your next change.' }),
-  ).toBeInViewport();
-  for (const control of await page.locator('.copy-command, .text-link').all()) {
+  await expect(page.getByRole('heading', { name: 'Start your next change.' })).toBeInViewport();
+  for (const control of await page.locator('.copy-command:visible, .text-link:visible').all()) {
     expect((await control.boundingBox())?.height).toBeGreaterThanOrEqual(44);
   }
 });

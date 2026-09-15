@@ -13,8 +13,11 @@ export async function scrollScene(page: Page, selector: string, progress: number
       const scene = document.querySelector(selector);
       if (!scene) throw new Error(`Missing scene: ${selector}`);
       const bounds = scene.getBoundingClientRect();
+      const stage = scene.querySelector('[data-scroll-stage], [data-details-stage]');
+      if (!stage) throw new Error(`Missing stage: ${selector}`);
+      const inset = Number.parseFloat(getComputedStyle(stage).top) || 0;
       scrollTo({
-        top: scrollY + bounds.top + progress * (bounds.height - innerHeight),
+        top: scrollY + bounds.top - inset + progress * (bounds.height - stage.clientHeight),
         behavior: 'instant',
       });
     },

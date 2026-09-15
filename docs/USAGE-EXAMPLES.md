@@ -17,9 +17,7 @@ If you're new to SPLITBRIEF, read this in order: recipes 1–5 cover the basic w
 **Run:**
 
 ```bash
-# SPLITBRIEF is not published to npm yet — install from source
-git clone https://github.com/b4r7x/splitbrief.git
-cd splitbrief && npm install && npm run build && npm link
+npm install -g splitbrief
 
 cd your-project
 splitbrief init                        # interactive wizard

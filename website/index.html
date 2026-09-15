@@ -18,15 +18,7 @@
   <main id="top">
     <section class="scroll-track" data-scroll-track aria-label="Explore a SPLITBRIEF workflow">
       <div class="scroll-stage" data-scroll-stage>
-  <header class="corners">
-    <a class="brand" href="#top" aria-label="SPLITBRIEF — back to the beginning"><pre class="logo-figlet" aria-hidden="true"> ____        _ _ _   _          _       __
-/ ___| _ __ | (_) |_| |__  _ __(_) ___ / _|
-\___ \| &#x27;_ \| | | __| &#x27;_ \| &#x27;__| |/ _ \ |_
- ___) | |_) | | | |_| |_) | |  | |  __/  _|
-|____/| .__/|_|_|\__|_.__/|_|  |_|\___|_|
-      |_|</pre></a>
-    <nav class="corner-links" aria-label="Project links"><a href="https://github.com/b4r7x/splitbrief/blob/main/docs/GETTING-STARTED.md">[ docs ]</a><a href="https://github.com/b4r7x/splitbrief">[ github ]</a></nav>
-  </header>
+        <!-- site-header -->
         <div class="composition">
           <div class="introduction">
             <div><h1>Two tools. One clear handoff.</h1><p>The stronger tool plans and reviews. The smaller tool builds.</p></div>
@@ -164,32 +156,44 @@
                     <button type="button" role="tab" id="tab-state" aria-controls="file-description" aria-selected="false" tabindex="-1" data-file="state.json">state.json</button>
                   </div>
                   <div id="file-description" role="tabpanel" aria-labelledby="tab-tasks" tabindex="0">
-                    <span class="file-kind" data-decode>THE CONTRACT</span>
-                    <h3 data-decode>The brief the implementer receives.</h3>
-                    <p data-decode>Declared files, relevant code, implementation steps, acceptance checks and stop conditions. A self-contained job for the next tool.</p>
+                    <span class="file-kind" data-file-decode>THE CONTRACT</span>
+                    <h3 data-file-decode>The brief the implementer receives.</h3>
+                    <p data-file-decode>Declared files, relevant code, implementation steps, acceptance checks and stop conditions. A self-contained job for the next tool.</p>
                   </div>
                 </div>
                 <p class="detail-footnote" data-decode>Paused or unfinished? Continue from the saved session.</p>
               </section>
               <section class="detail-panel" data-panel="2" id="install" aria-labelledby="install-heading">
                 <p class="section-eyebrow" data-decode>03 / GET STARTED</p>
-                <h2 id="install-heading" data-decode>Start with your next change.</h2>
-                <p class="section-lead" data-decode>Install from source.</p>
-                <p class="detail-description" data-decode>Build the CLI, then initialize SPLITBRIEF inside the repository you want to work on.</p>
-                <div class="code-sheet install-code">
+                <h2 id="install-heading" data-decode>Start your next change.</h2>
+                <p class="section-lead" data-decode>Install once. Work in any repository.</p>
+                <p class="detail-description" data-decode>Node.js 22+ · macOS, Linux or inside WSL · a Git repository</p>
+                <div class="install-tabs" role="tablist" aria-label="Installation method">
+                  <button type="button" role="tab" id="tab-npm" aria-controls="install-npm" aria-selected="true" data-install-tab>npm</button>
+                  <button type="button" role="tab" id="tab-source" aria-controls="install-source" aria-selected="false" tabindex="-1" data-install-tab>From source</button>
+                </div>
+                <div class="install-methods">
+                <div class="code-sheet install-code install-method" id="install-npm" data-install-method role="tabpanel" aria-labelledby="tab-npm">
                   <div class="sheet-label"><span>Terminal / install</span><button class="copy-command" type="button" data-copy="install">[ copy ]</button></div>
-                  <pre id="install-command" data-decode><code>git clone https://github.com/b4r7x/splitbrief.git
+                  <pre id="install-command" data-install-decode><code>npm install -g splitbrief</code></pre>
+                  <p class="install-note" data-install-decode>The <code>splitbrief</code> command is now on your PATH.</p>
+                </div>
+                <div class="code-sheet install-code install-method" id="install-source" data-install-method role="tabpanel" aria-labelledby="tab-source">
+                  <div class="sheet-label"><span>Terminal / build from source</span><button class="copy-command" type="button" data-copy="source">[ copy ]</button></div>
+                  <pre id="source-command" data-install-decode><code>git clone https://github.com/b4r7x/splitbrief.git
 cd splitbrief
 npm install
 npm run build
 npm link</code></pre>
                 </div>
+                </div>
                 <div class="code-sheet install-code">
                   <div class="sheet-label"><span>Inside your project</span><button class="copy-command" type="button" data-copy="start">[ copy ]</button></div>
-                  <pre id="start-command" data-decode><code>splitbrief init
+                  <pre id="start-command" data-decode><code>splitbrief doctor
+splitbrief init
 splitbrief start "your change"</code></pre>
                 </div>
-                <a class="text-link" href="https://github.com/b4r7x/splitbrief/blob/main/docs/GETTING-STARTED.md">[ Read the setup guide ]</a>
+                <a class="text-link" href="./docs/getting-started/">[ Read the setup guide ]</a>
                 <p class="copy-status" role="status" aria-live="polite"></p>
               </section>
             </div>
@@ -198,7 +202,7 @@ splitbrief start "your change"</code></pre>
         </div>
       </div>
     </section>
-    <footer class="page-footer"><span>SPLITBRIEF <span class="dim">/ open source</span></span><a href="https://github.com/b4r7x/splitbrief">[ github ]</a><a href="#top">[ back to top ]</a></footer>
+    <footer class="page-footer"><div class="footer-art" data-footer-art-region aria-hidden="true"></div><span>SPLITBRIEF <span class="dim">/ open source</span></span><a href="./docs/">[ docs ]</a><a href="https://github.com/b4r7x/splitbrief">[ github ]</a><a href="#top">[ back to top ]</a></footer>
   </main>
 </body>
 </html>

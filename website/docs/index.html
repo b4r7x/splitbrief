@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#141414">
+  <meta name="description" content="{{description}}">
+  <title>{{title}} · SPLITBRIEF</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/src/features/docs/styles.css">
+  <script type="module" src="/src/docs.ts"></script>
+</head>
+<body id="top" class="docs-page" data-docs-root="{{site-root}}docs/">
+  <canvas class="ambient" data-ambient aria-hidden="true"></canvas>
+  <div class="atmosphere" data-atmosphere aria-hidden="true"></div>
+  <div class="docs-art" data-art-region aria-hidden="true"></div>
+  <a class="skip-link" href="#guide">Skip to guide</a>
+  <!-- site-header -->
+  <div class="docs-layout">
+    <aside class="docs-library">
+      <details class="docs-menu" open>
+        <summary>Documentation</summary>
+        <div class="docs-menu-body">
+          <div class="docs-search"><label class="sr-only" for="docs-search">Find a documentation page</label><input id="docs-search" type="search" placeholder="Find a page…" autocomplete="off"><button class="docs-search-clear" type="button" aria-label="Clear search" hidden>[ x ]</button></div>
+          <nav aria-label="Documentation"><!-- guide-library --></nav>
+          <p class="docs-empty" hidden>No matching pages.</p>
+        </div>
+      </details>
+      <div class="docs-tools"><a class="docs-source" href="{{source}}">[ Markdown ↗ ]</a><button class="pause" type="button" data-pause aria-pressed="false">Pause motion</button></div>
+    </aside>
+    <main id="guide" class="docs-article" tabindex="-1">
+      <p class="docs-eyebrow">DOCS / {{group}}</p>
+      <!-- guide-article -->
+      <nav class="docs-footer" aria-label="Adjacent pages"><!-- guide-pagination --></nav>
+      <a class="docs-back-top" href="#top">[ back to top ]</a>
+    </main>
+    <aside class="docs-contents">
+      <details open><summary>On this page</summary><nav aria-label="On this page"><!-- guide-contents --></nav></details>
+    </aside>
+  </div>
+  <p class="copy-status docs-copy-status" role="status" aria-live="polite"></p>
+</body>
+</html>

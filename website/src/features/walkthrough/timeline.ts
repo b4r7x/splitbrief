@@ -64,8 +64,7 @@ export function createTimeline(
       if (progress <= anchor.progress) {
         const distance = anchor.progress - previous.progress;
         const amount = distance ? Math.max(0, (progress - previous.progress) / distance) : 0;
-        const eased = amount * amount * (3 - 2 * amount);
-        return previous.offset + (anchor.offset - previous.offset) * eased;
+        return previous.offset + (anchor.offset - previous.offset) * amount;
       }
       previous = anchor;
     }
@@ -83,16 +82,17 @@ export function createTimeline(
   }
 
   function progressAtOffset(position: number, preferred: number) {
-    const difference = offset(preferred) - position;
-    if (Math.abs(difference) <= 1) return preferred;
-    let low = difference > 0 ? 0 : preferred;
-    let high = difference > 0 ? preferred : 1;
-    for (let step = 0; step < 18; step += 1) {
-      const middle = (low + high) / 2;
-      if (offset(middle) < position) low = middle;
-      else high = middle;
+    if (Math.abs(offset(preferred) - position) < 0.01) return preferred;
+    let previous = { progress: 0, offset: 0 };
+    for (const anchor of anchors) {
+      const distance = anchor.offset - previous.offset;
+      if (position <= anchor.offset && distance > 0) {
+        const amount = Math.max(0, (position - previous.offset) / distance);
+        return previous.progress + (anchor.progress - previous.progress) * amount;
+      }
+      previous = anchor;
     }
-    return (low + high) / 2;
+    return previous.progress;
   }
 
   return { offset, phaseAt, progressAtOffset };

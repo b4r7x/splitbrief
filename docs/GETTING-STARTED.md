@@ -1,6 +1,6 @@
 # Getting started with SPLITBRIEF
 
-> You installed it. Now what? This page takes you from a fresh clone to your first validated run. If you only read one SPLITBRIEF doc, read this one.
+Install SPLITBRIEF, choose your tools, and run your first change. This guide covers npm installation, building from source, and the workflow inside your repository.
 
 > **Maturity.** SPLITBRIEF is early software, pre-1.0. The orchestration loop — brief, validation, retry, escalation, review, evidence — is covered end to end by the test suite. Mileage against live models is thin: no evaluation run has been recorded yet, so nothing here is a quality claim about what a real planner and implementer will produce on your repo. Read the diffs, and expect config keys and CLI surfaces to still move. Details: [README §Measurement](../README.md#measurement).
 
@@ -41,9 +41,20 @@ For the long version, see [docs/VISION.md](./VISION.md).
 
 ## 3. Installation
 
-Requires **Node.js 22 or newer** (ESM-only) and a **git** repository to work in.
+Requires **Node.js 22 or newer**, **macOS, Linux or inside WSL**, and a **git** repository with at least one commit to work in.
 
-SPLITBRIEF is not published to npm yet. Install from source:
+### Install with npm
+
+Install the CLI globally so `splitbrief` is available from any project:
+
+```bash
+npm install -g splitbrief
+splitbrief --help
+```
+
+### Build from source
+
+To work from a local checkout of SPLITBRIEF:
 
 ```bash
 git clone https://github.com/b4r7x/splitbrief.git
@@ -53,10 +64,20 @@ npm run build
 npm link    # exposes the `splitbrief` binary on your PATH
 ```
 
-To verify:
+Verify the linked binary:
 
 ```bash
 splitbrief --help
+```
+
+### Run with npx
+
+You can also run the CLI without a global installation. Use these commands inside your project:
+
+```bash
+npx splitbrief doctor
+npx splitbrief init
+npx splitbrief start "your change"
 ```
 
 ---
@@ -255,7 +276,7 @@ Same-directory parallel writes are out of scope. A future implementer pool may c
 Explicit non-goals, so you don't go looking:
 
 - **Not a swarm or generic multi-agent manager.** Two roles, one workflow. An implementer pool selects one capable worker per Task Brief; it does not fan out competing agents over the same checkout.
-- **Not Windows-supported.** macOS and Linux only. Several path and sandbox semantics, including the snapshot path encoding, need POSIX. Windows support is planned but not yet available.
+- **Native Windows is not supported.** Use macOS, Linux or run inside WSL. The process and filesystem handling requires POSIX semantics.
 - **No fixed validator language.** Validation is command-based and resolves per stack for TypeScript, JavaScript, Python, Go and Rust; any other stack runs review-only (`gates: NONE`) rather than guessing a command.
 - **No SPLITBRIEF-defined tool-call protocol for implementers.** SPLITBRIEF does not layer a second control protocol on top of the runner. An implementer either returns file contents that SPLITBRIEF writes (`extracted-code`), or writes into its working directory itself (`direct` — `cli` and `agent` runners) and SPLITBRIEF inspects the resulting diff. Whatever tools the runner exposes internally are the runner's business. See [docs/VISION.md §Strategic decisions](./VISION.md).
 - **No cloud-side state.** Everything lives under `.splitbrief/` in your project. No accounts, no SaaS, no telemetry.

@@ -6,7 +6,6 @@ export function createMotion() {
   let disposers: Array<() => void> = [];
   let frame = 0;
   let previousTime: number | undefined;
-  let elapsedSeconds = 0;
   let needsRead = true;
   let needsMeasure = true;
   let paused = false;
@@ -32,7 +31,10 @@ export function createMotion() {
     frame = 0;
     const deltaMs = previousTime === undefined ? 16 : Math.min(48, now - previousTime);
     previousTime = now;
-    if (!paused && !reduced) elapsedSeconds += deltaMs / 1000;
+    const state = { deltaMs, snap: reduced };
+    for (const scene of scenes) {
+      if (scene.advance?.(state)) needsRead = true;
+    }
     if (needsMeasure) {
       needsMeasure = false;
       for (const scene of scenes) scene.measure();
@@ -43,9 +45,10 @@ export function createMotion() {
     }
     let settling = false;
     for (const scene of scenes) {
-      settling = scene.paint({ deltaMs, elapsedSeconds, snap: reduced }) || settling;
+      settling = scene.paint(state) || settling;
     }
-    if (settling || needsRead || (!paused && !reduced)) schedule();
+    if (settling || needsRead) schedule();
+    else previousTime = undefined;
   }
 
   function updateButtons() {
@@ -92,7 +95,6 @@ export function createMotion() {
     buttons = pauseButtons;
     active = true;
     paused = false;
-    elapsedSeconds = 0;
     const currentGeneration = generation;
     const media = matchMedia('(prefers-reduced-motion: reduce)');
     reduced = media.matches;

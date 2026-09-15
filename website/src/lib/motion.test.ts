@@ -80,35 +80,41 @@ describe('motion lifecycle', () => {
     browser.advance();
     expect(order).toEqual(['measure', 'measure', 'read', 'read', 'paint', 'paint']);
     expect(first.scene.destroy).not.toHaveBeenCalled();
-    expect(browser.callbacks.size).toBe(1);
+    expect(browser.callbacks.size).toBe(0);
     order.length = 0;
     browser.advance(1000);
-    expect(order).toEqual(['paint', 'paint']);
-    expect(first.frames.at(-1)?.deltaMs).toBe(48);
+    expect(order).toEqual([]);
     browser.window.dispatchEvent(new Event('resize'));
-    order.length = 0;
     browser.advance();
     expect(order).toEqual(['measure', 'measure', 'read', 'read', 'paint', 'paint']);
+    expect(first.frames.at(-1)?.deltaMs).toBe(16);
   });
 
-  it('freezes ambient time when paused while still rendering scroll changes', async () => {
+  it('pauses the background while still rendering scroll changes', async () => {
     const { scene, frames } = createScene();
     motion.start([scene], [browser.button]);
     await Promise.resolve();
     browser.advance();
     browser.button.dispatchEvent(new Event('click'));
     browser.advance();
-    const pausedTime = frames.at(-1)?.elapsedSeconds;
     expect(browser.callbacks.size).toBe(0);
     expect(browser.button.textContent).toBe('Resume motion');
+    expect(browser.document.documentElement.toggleAttribute).toHaveBeenLastCalledWith(
+      'data-motion-paused',
+      true,
+    );
     browser.window.dispatchEvent(new Event('scroll'));
     browser.advance(3000);
-    expect(frames.at(-1)?.elapsedSeconds).toBe(pausedTime);
+    expect(frames).toHaveLength(3);
+    expect(frames.at(-1)?.deltaMs).toBe(16);
     expect(browser.callbacks.size).toBe(0);
     browser.button.dispatchEvent(new Event('click'));
     browser.advance();
-    expect(frames.at(-1)?.elapsedSeconds).toBeGreaterThan(pausedTime ?? 0);
-    expect(browser.callbacks.size).toBe(1);
+    expect(browser.document.documentElement.toggleAttribute).toHaveBeenLastCalledWith(
+      'data-motion-paused',
+      false,
+    );
+    expect(browser.callbacks.size).toBe(0);
   });
 
   it('paints reduced motion once and follows scroll and preference changes', async () => {
@@ -119,7 +125,6 @@ describe('motion lifecycle', () => {
     browser.advance();
     expect(frames).toHaveLength(1);
     expect(frames[0]?.snap).toBe(true);
-    expect(frames[0]?.elapsedSeconds).toBe(0);
     expect(browser.button.disabled).toBe(true);
     expect(browser.callbacks.size).toBe(0);
     browser.window.dispatchEvent(new Event('scroll'));
@@ -131,7 +136,32 @@ describe('motion lifecycle', () => {
     browser.advance();
     expect(frames.at(-1)?.snap).toBe(false);
     expect(browser.button.disabled).toBe(false);
+    expect(browser.callbacks.size).toBe(0);
+  });
+
+  it('runs frames while a scene settles and sleeps after the final paint', async () => {
+    const { scene, frames } = createScene();
+    let settling = true;
+    const paint = scene.paint;
+    scene.paint = (frame) => {
+      paint(frame);
+      return settling;
+    };
+    motion.start([scene], []);
+    await Promise.resolve();
+    browser.advance();
     expect(browser.callbacks.size).toBe(1);
+    browser.advance(1000);
+    expect(frames.at(-1)?.deltaMs).toBe(48);
+    settling = false;
+    browser.advance();
+    expect(browser.callbacks.size).toBe(0);
+    browser.advance(1000);
+    expect(frames).toHaveLength(3);
+    motion.invalidate();
+    browser.advance();
+    expect(frames.at(-1)?.deltaMs).toBe(16);
+    expect(browser.callbacks.size).toBe(0);
   });
 
   it('cancels hidden frames and disposes listeners and pending font callbacks', async () => {
@@ -142,6 +172,8 @@ describe('motion lifecycle', () => {
     });
     motion.start([scene], [browser.button]);
     browser.advance();
+    motion.invalidate();
+    expect(browser.callbacks.size).toBe(1);
     browser.document.hidden = true;
     browser.document.dispatchEvent(new Event('visibilitychange'));
     expect(browser.callbacks.size).toBe(0);
@@ -164,6 +196,6 @@ describe('motion lifecycle', () => {
     motion.start([next.scene], [browser.button]);
     browser.advance();
     expect(next.scene.paint).toHaveBeenCalledOnce();
-    expect(browser.callbacks.size).toBe(1);
+    expect(browser.callbacks.size).toBe(0);
   });
 });

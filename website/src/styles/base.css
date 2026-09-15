@@ -17,8 +17,65 @@
   box-sizing: border-box;
 }
 html {
-  scroll-behavior: smooth;
   scroll-padding-top: 64px;
+}
+::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-track {
+  margin: 4px 0;
+  background:
+    linear-gradient(var(--scrollbar-rail), var(--scrollbar-rail)) center / 1px 100% no-repeat;
+}
+::-webkit-scrollbar-track:horizontal {
+  margin: 0 4px;
+  background-size: 100% 1px;
+}
+::-webkit-scrollbar-thumb {
+  min-width: 36px;
+  min-height: 36px;
+  border: 4px solid transparent;
+  border-radius: 0;
+  background-color: var(--bg);
+  background-image: repeating-linear-gradient(
+    0deg,
+    var(--scrollbar-ink) 0 1px,
+    transparent 1px 3px
+  );
+  background-position: center;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px var(--scrollbar-ink);
+}
+::-webkit-scrollbar-thumb:horizontal {
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--scrollbar-ink) 0 1px,
+    transparent 1px 3px
+  );
+}
+::-webkit-scrollbar-thumb:hover {
+  --scrollbar-ink: var(--muted);
+}
+::-webkit-scrollbar-thumb:active {
+  --scrollbar-ink: var(--ink);
+}
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-color: var(--scrollbar-ink) var(--bg);
+    scrollbar-width: thin;
+  }
 }
 body {
   margin: 0;

@@ -758,6 +758,9 @@ html.is-enhanced .scene-controls {
   }
 }
 @media (max-width: 360px) {
+  .terminal-footer {
+    min-height: 47px;
+  }
   .document-section {
     padding-inline: 14px;
   }
@@ -777,6 +780,207 @@ html.is-enhanced .scene-controls {
   .section-eyebrow span {
     font-size: 9px;
     padding-left: 7px;
+  }
+}
+html.is-enhanced .scroll-track[data-pinned="true"][data-compact="true"] .scroll-stage {
+  top: calc(-1 * var(--intro-height, 0px));
+  height: auto;
+  min-height: 0;
+  padding-bottom: 12px;
+  overflow: clip;
+}
+html.is-enhanced .scroll-track[data-pinned="true"][data-compact="true"] .terminal {
+  flex: none;
+  height: calc(100svh - 80px);
+}
+html.is-enhanced .scroll-track[data-pinned="true"][data-compact="true"] .terminal-body {
+  display: flex;
+  flex-direction: column;
+}
+html.is-enhanced .scroll-track[data-pinned="true"][data-compact="true"] .timeline {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  flex: none;
+  padding: 0 6px;
+  border-right: 0;
+  border-bottom: 1px solid var(--line);
+}
+html.is-enhanced .scroll-track[data-pinned="true"][data-compact="true"] .timeline-step {
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 44px;
+  max-height: none;
+  padding: 6px 1px;
+  background: transparent;
+  text-align: center;
+  font-size: 11px;
+}
+html.is-enhanced .scroll-track[data-pinned="true"][data-compact="true"] .timeline-step i {
+  position: relative;
+  font-size: 9px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"][data-compact="true"]
+  .timeline-step[data-state="current"]
+  i::before {
+  position: absolute;
+  right: calc(100% + 2px);
+  content: "[";
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"][data-compact="true"]
+  .timeline-step[data-state="current"]
+  i::after {
+  position: absolute;
+  left: calc(100% + 2px);
+  content: "]";
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"][data-compact="true"]
+  :is(.timeline-step small, .one-change) {
+  display: none;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"][data-compact="true"]
+  .timeline-step[data-state="current"]::before {
+  content: none;
+}
+html.is-enhanced .scroll-track[data-pinned="true"][data-compact="true"] .work-window {
+  flex: 1;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"][data-compact="true"]
+  :is(
+    .explanation,
+    .read-list,
+    .artifact-row,
+    .document-note,
+    .brief-fields > div,
+    .approval,
+    .receipt,
+    .check-row,
+    .retry,
+    .retry small,
+    .review-check,
+    .review-check small,
+    .saved-path,
+    .file-row,
+    .closed
+  ) {
+  font-size: 12px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  .document-section {
+  padding: 12px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  .work-document {
+  line-height: 1.45;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  .section-eyebrow {
+  margin-bottom: 6px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  .document-section
+  h2 {
+  font-size: 19px;
+  line-height: 1.15;
+  margin-bottom: 8px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  :is(.explanation, .read-list) {
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  .artifact-row {
+  padding-block: 6px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  :is(.brief-fields > div, .check-row) {
+  padding-block: 5px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  :is(.document-note, .approval, .receipt, .closed) {
+  margin-top: 10px;
+  line-height: 1.5;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  .approval {
+  margin-top: 8px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  :is(.handoff, .build-progress) {
+  margin-block: 14px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  :is(.retry, .review-check) {
+  margin-block: 10px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  .saved-path {
+  margin-top: 10px;
+  margin-bottom: 8px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  .file-row {
+  padding-block: 4px;
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"]:is([data-density="compact"], [data-density="tight"])
+  .closed {
+  padding-top: 8px;
+}
+html.is-enhanced .scroll-track[data-pinned="true"][data-density="tight"] .scroll-stage {
+  padding-bottom: 8px;
+}
+html.is-enhanced .scroll-track[data-pinned="true"][data-density="tight"] .terminal {
+  height: calc(100svh - 72px);
+}
+html.is-enhanced
+  .scroll-track[data-pinned="true"][data-density="tight"]
+  :is(.terminal-bar, .terminal-footer) {
+  display: none;
+}
+html.is-enhanced .scroll-track[data-pinned="true"][data-density="tight"] .command {
+  height: 36px;
+}
+@media (min-width: 700px) and (max-height: 450px) {
+  html.is-enhanced .scroll-track[data-pinned="true"][data-density="tight"] .document-section {
+    column-count: 2;
+    column-gap: 24px;
+  }
+  html.is-enhanced .scroll-track[data-pinned="true"][data-density="tight"] .document-section > * {
+    break-inside: avoid;
+  }
+}
+@media (max-height: 450px) {
+  html.is-enhanced .scroll-track[data-pinned="true"][data-compact="true"] .terminal-bar {
+    height: 30px;
+    font-size: 11px;
+  }
+  html.is-enhanced .scroll-track[data-pinned="true"][data-compact="true"] .command {
+    height: 36px;
+    font-size: 12px;
+  }
+  html.is-enhanced .scroll-track[data-pinned="true"][data-compact="true"] .timeline-step {
+    flex-direction: row;
+    gap: 11px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

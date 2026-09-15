@@ -1,3 +1,17 @@
+.ambient {
+  display: none;
+}
+
+.is-enhanced .ambient {
+  display: block;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+}
+
 .atmosphere {
   display: none;
 }
@@ -9,66 +23,93 @@
   overflow: clip;
   pointer-events: none;
   z-index: -1;
+  --expansion: 0;
+  mask-image: radial-gradient(ellipse 40% 42% at 63% 47%, #0000 25%, #0005 70%, #000 100%);
+}
+
+.ascii-stream {
+  position: absolute;
+  opacity: calc(0.25 + var(--expansion) * 0.35);
+  transform: translate3d(
+      calc(var(--expansion) * var(--shift-x, 50px)),
+      calc(var(--expansion) * var(--shift-y, -60px)),
+      0
+    )
+    scale(calc(1 + var(--expansion) * 0.24));
 }
 
 .ascii-drift {
-  position: absolute;
   margin: 0;
-  color: #505050;
-  opacity: 0.5;
+  color: #646464;
   font:
     9px / 11px Departure,
     monospace;
   letter-spacing: 1.8px;
-  animation: ascii-drift 52s ease-in-out infinite alternate;
+  animation: ascii-drift var(--duration, 18s) ease-in-out infinite alternate;
+  animation-delay: var(--delay, -7s);
 }
 
-.ascii-drift:nth-child(1) {
+.ascii-stream:nth-child(1) {
   left: -190px;
   top: 0;
-  animation-delay: -31s;
+  --delay: -11s;
 }
 
-.ascii-drift:nth-child(2) {
+.ascii-stream:nth-child(2) {
   right: -100px;
   top: 7%;
-  animation-duration: 67s;
-  animation-delay: -12s;
+  --duration: 23s;
+  --delay: -12s;
+  --shift-x: -80px;
+  --shift-y: 70px;
 }
 
-.ascii-drift:nth-child(3) {
+.ascii-stream:nth-child(3) {
   left: 7%;
   top: 46%;
-  font-size: 7px;
-  line-height: 9px;
-  opacity: 0.38;
-  animation-duration: 61s;
-  animation-delay: -48s;
+  --duration: 21s;
+  --delay: -16s;
+  --shift-x: -40px;
 }
 
-.ascii-drift:nth-child(4) {
+.ascii-stream:nth-child(4) {
   right: -130px;
   top: 62%;
-  animation-duration: 47s;
-  animation-delay: -19s;
+  --duration: 16s;
+  --delay: -9s;
+  --shift-x: -110px;
 }
 
-.ascii-drift:nth-child(5) {
+.ascii-stream:nth-child(5) {
   left: 35%;
   top: -150px;
-  font-size: 7px;
-  line-height: 9px;
-  opacity: 0.32;
-  animation-duration: 73s;
-  animation-delay: -37s;
+  --duration: 26s;
+  --delay: -17s;
+  --shift-y: 150px;
 }
 
-.ascii-drift:nth-child(6) {
+.ascii-stream:nth-child(6) {
   left: 43%;
   bottom: -230px;
-  opacity: 0.3;
-  animation-duration: 59s;
-  animation-delay: -9s;
+  --duration: 19s;
+  --delay: -9s;
+  --shift-y: -150px;
+}
+
+.ascii-stream:nth-child(7) {
+  left: -100px;
+  bottom: -190px;
+  --duration: 24s;
+  --delay: -18s;
+  --shift-y: -110px;
+}
+
+.ascii-stream:nth-child(8) {
+  right: -90px;
+  top: -200px;
+  --duration: 15s;
+  --delay: -4s;
+  --shift-y: 140px;
 }
 
 [data-motion-paused] .ascii-drift {
@@ -77,28 +118,27 @@
 
 @keyframes ascii-drift {
   from {
-    transform: translate3d(-35px, 45px, 0);
+    transform: translate3d(-65px, 65px, 0) rotate(-8deg) scale(0.94);
   }
   to {
-    transform: translate3d(45px, -55px, 0);
+    transform: translate3d(85px, -85px, 0) rotate(7deg) scale(1.08);
   }
 }
 
 @media (max-width: 850px) {
   .ascii-drift {
-    opacity: 0.3;
+    opacity: 0.65;
     font-size: 7px;
     line-height: 9px;
     letter-spacing: 0;
   }
-  .ascii-drift:nth-child(2) {
+  .ascii-stream:nth-child(2) {
     right: -220px;
   }
-  .ascii-drift:nth-child(3) {
+  .ascii-stream:nth-child(3) {
     left: -150px;
   }
-  .ascii-drift:nth-child(5),
-  .ascii-drift:nth-child(6) {
+  .ascii-stream:nth-child(n + 5) {
     display: none;
   }
 }

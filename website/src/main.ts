@@ -2,6 +2,7 @@ import { mountAscii } from './features/ascii/mount.js';
 import { mountContinuation } from './features/continuation/mount.js';
 import { mountWalkthrough } from './features/walkthrough/mount.js';
 import { createMotion } from './lib/motion.js';
+import { mountNavigation } from './lib/navigation.js';
 import type { Scene } from './lib/scene.js';
 
 function required<T extends Element>(selector: string): T {
@@ -28,13 +29,21 @@ try {
   scenes.push(walkthrough);
   const continuation = mountContinuation(required('[data-continuation]'), motion.invalidate);
   scenes.push(continuation);
+  scenes.unshift(
+    mountNavigation({
+      resolve: continuation.destination,
+      seek: continuation.seek,
+      invalidate: motion.invalidate,
+    }),
+  );
   scenes.push(
     mountAscii({
       canvas: required<HTMLCanvasElement>('[data-ambient]'),
       atmosphere: required('[data-atmosphere]'),
       region: required('[data-art-region]'),
+      footerRegion: required('[data-footer-art-region]'),
       progress: () => ({
-        workflow: walkthrough.getProgress(),
+        workflow: walkthrough.getArtProgress(),
         entry: continuation.getEntryProgress(),
         details: continuation.getProgress(),
       }),

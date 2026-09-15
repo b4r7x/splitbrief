@@ -71,17 +71,16 @@ The TUI shows planner and implementer working together as a conversation flow �
 
 ## Quick start
 
-Needs **Node.js 22+** and a **git** repository with at least one commit to work in.
+Needs **Node.js 22+**, **macOS, Linux or inside WSL**, and a **git** repository with at least one commit to work in.
 
-SPLITBRIEF is not published to npm yet. Install from source:
+Install from npm:
 
 ```bash
-git clone https://github.com/b4r7x/splitbrief.git
-cd splitbrief
-npm install
-npm run build
-npm link               # exposes the `splitbrief` binary on your PATH
+npm install -g splitbrief
+splitbrief --help
 ```
+
+For a local build or running through `npx`, see [Getting started](docs/GETTING-STARTED.md#3-installation).
 
 Then bring a planner — the stronger of the two:
 
@@ -103,6 +102,7 @@ And an implementer — the weaker **model**. It reaches SPLITBRIEF by either tra
 
 ```bash
 cd your-project
+splitbrief doctor      # check readiness without making changes or calling models
 splitbrief init        # checks installed CLI tools and reachable providers, then you pick both sides
 splitbrief start "add user authentication with JWT"
 ```
@@ -393,7 +393,7 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 
 Primary development stack is TypeScript/JavaScript. Validation is generic over five stacks, each with its own typecheck, lint and test commands: TypeScript (`npx tsc --noEmit`, ESLint or Biome, `npm test`), JavaScript (lint and test only), Python (`mypy`/`pyright`, `ruff`/`flake8`, `pytest` under `uv`, `poetry` or bare), Go (`go vet ./...`, `golangci-lint`/`staticcheck`, `go test ./...`) and Rust (`cargo check`, `cargo clippy --no-deps`, `cargo test`). The exact per-stack table, and the `config → manifest → discovered → stack default → none` ladder that picks a command, are in [docs/FEATURES.md §Validation pipeline](https://github.com/b4r7x/splitbrief/blob/main/docs/FEATURES.md#validation-pipeline--checkpoints). Any other stack runs review-only (`gates: NONE`) rather than guessing.
 
-macOS and Linux only. Windows is not supported: the snapshot path encoding needs POSIX semantics. Support is planned, not present.
+Use macOS, Linux or run inside WSL. Native Windows is not supported: process and filesystem handling requires POSIX semantics.
 
 ## Contributing
 

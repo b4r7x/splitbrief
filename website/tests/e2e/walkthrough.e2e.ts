@@ -64,51 +64,211 @@ test('the terminal stays centered while its content advances and reverses', asyn
   await expect(page.getByText('Plan. Hand off. Verify.', { exact: false })).toBeInViewport();
 });
 
-test('choosing a workflow step moves through intermediate positions before landing', async ({
+test('choosing a workflow step reaches its heading without a delayed document slide', async ({
   page,
 }) => {
   await openPage(page);
-  const document = page.locator('.work-document');
   const destination = await page
     .locator('#brief')
     .evaluate((element) => (element instanceof HTMLElement ? element.offsetTop : 0));
   expect(destination).toBeGreaterThan(0);
-  const intermediate = page.waitForFunction(
-    (destination) => {
-      const document = window.document.querySelector('.work-document');
-      if (!document) throw new Error('Workflow document is missing');
-      const offset = -new DOMMatrixReadOnly(getComputedStyle(document).transform).m42;
-      return offset > 1 && offset < destination - 1;
-    },
-    destination,
-    { polling: 'raf' },
-  );
   await clickInPlace(page, page.getByRole('button', { name: /Brief Human approval/ }));
-  await intermediate;
-  await expect
-    .poll(() =>
-      document.evaluate(
-        (element) => -new DOMMatrixReadOnly(getComputedStyle(element).transform).m42,
-      ),
-    )
-    .toBeCloseTo(destination, 0);
+  const offsets = await page.locator('.work-document').evaluate(async (element) => {
+    const offsets: number[] = [];
+    for (let frame = 0; frame < 20; frame++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      offsets.push(-new DOMMatrixReadOnly(getComputedStyle(element).transform).m42);
+    }
+    return offsets;
+  });
+  for (const offset of offsets) expect(offset).toBeCloseTo(destination, 0);
   await expect(
     page.getByRole('heading', { name: 'Give the next tool a complete job.' }),
   ).toBeInViewport();
 });
 
-test('low-height screens use ordinary flow and still reach every chapter', async ({ page }) => {
-  await page.setViewportSize({ width: 1024, height: 580 });
+test('a scroll burst softens only the terminal and finishes without a long tail', async ({
+  page,
+}) => {
   await openPage(page);
-  for (const [, heading] of chapters) {
-    const title = page.getByRole('heading', { name: heading, exact: true });
-    await title.scrollIntoViewIfNeeded();
-    await expect(title).toBeInViewport();
-  }
-  await page.goto('/#install');
+  const result = await page.evaluate(async () => {
+    const track = document.querySelector('[data-scroll-track]');
+    const stage = document.querySelector('[data-scroll-stage]');
+    const transcript = document.querySelector('.work-document');
+    const brief = document.querySelector('#brief');
+    if (!track || !stage || !transcript || !(brief instanceof HTMLElement))
+      throw new Error('Workflow is missing');
+    const bounds = track.getBoundingClientRect();
+    scrollTo({
+      top: scrollY + bounds.top + (bounds.height - stage.clientHeight) * 0.24,
+      behavior: 'instant',
+    });
+    const position = scrollY;
+    const started = performance.now();
+    const frames: Array<{ elapsed: number; y: number; offset: number }> = [];
+    while (performance.now() - started < 300) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      frames.push({
+        elapsed: performance.now() - started,
+        y: scrollY,
+        offset: -new DOMMatrixReadOnly(getComputedStyle(transcript).transform).m42,
+      });
+    }
+    return { position, destination: brief.offsetTop, frames };
+  });
+  expect(new Set(result.frames.map((frame) => frame.y))).toEqual(new Set([result.position]));
+  const intermediate = result.frames.filter(
+    (frame) => frame.offset > 1 && frame.offset < result.destination - 1,
+  );
+  expect(new Set(intermediate.map((frame) => frame.offset)).size).toBeGreaterThan(2);
+  const reached = result.frames.find((frame) => Math.abs(frame.offset - result.destination) < 0.01);
+  expect(reached?.elapsed).toBeLessThan(200);
+  expect(result.frames.at(-1)?.offset).toBe(result.destination);
+  expect(
+    result.frames
+      .filter((frame) => frame.elapsed >= 200)
+      .every((frame) => frame.offset === result.destination),
+  ).toBe(true);
+});
+
+test('scrolling onward from a clicked chapter keeps its content revealed', async ({ page }) => {
+  await openPage(page);
+  await clickInPlace(page, page.getByRole('button', { name: /Build Smaller tool/ }));
+  await settleScenes(page);
+  const frames = await page.evaluate(async () => {
+    const track = document.querySelector('[data-scroll-track]');
+    const stage = document.querySelector('[data-scroll-stage]');
+    const transcript = document.querySelector('.work-document');
+    const build = document.querySelector('#build');
+    if (!track || !stage || !transcript || !(build instanceof HTMLElement))
+      throw new Error('Workflow is missing');
+    const snapshot = () => ({
+      offset: -new DOMMatrixReadOnly(getComputedStyle(transcript).transform).m42 - build.offsetTop,
+      revealed: [...build.querySelectorAll('[data-reveal]')].every(
+        (node) => getComputedStyle(node).clipPath === 'none',
+      ),
+    });
+    const frames = [snapshot()];
+    const observer = new MutationObserver(() => frames.push(snapshot()));
+    observer.observe(transcript, { attributes: true, subtree: true, attributeFilter: ['style'] });
+    const bounds = track.getBoundingClientRect();
+    scrollTo({
+      top: scrollY + bounds.top + (bounds.height - stage.clientHeight) * 0.6,
+      behavior: 'instant',
+    });
+    for (let frame = 0; frame < 12; frame++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+    observer.disconnect();
+    return frames;
+  });
+  expect(frames[0]?.offset).toBeCloseTo(0, 1);
+  expect(frames.at(-1)?.offset).toBeGreaterThan(1);
+  expect(frames.every((frame) => frame.revealed)).toBe(true);
+});
+
+for (const viewport of [
+  { width: 320, height: 568 },
+  { width: 320, height: 740 },
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+  { width: 1024, height: 580 },
+]) {
+  test(`the terminal holds complete chapters at ${viewport.width}×${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await openPage(page);
+    await expect(page.locator('[data-scroll-track]')).toHaveAttribute('data-pinned', 'true');
+    await scrollScene(page, '[data-scroll-track]', 0.02);
+    const terminal = await page.locator('.terminal').boundingBox();
+    const window = await page.locator('.work-window').boundingBox();
+    if (!terminal || !window) throw new Error('Pinned terminal is missing');
+    expect(terminal.y).toBeCloseTo(12, 0);
+    expect(window.height).toBeGreaterThanOrEqual(200);
+    const positions: string[] = [];
+    const endings = [
+      [0.12, '#plan .document-note'],
+      [0.31, '#brief .approval'],
+      [0.48, '#build .receipt'],
+      [0.68, '#check .receipt'],
+      [0.84, '#review .document-note'],
+      [1, '#saved .closed'],
+    ] as const;
+    for (const [index, [progress, selector]] of endings.entries()) {
+      const chapter = chapters[index];
+      if (!chapter) throw new Error('Workflow chapter is incomplete');
+      await clickInPlace(
+        page,
+        page.getByRole('navigation', { name: 'Choose a workflow step' }).getByRole('button', {
+          name: new RegExp(`^${chapter[0]}`),
+        }),
+      );
+      await settleScenes(page);
+      const initialOffset = await page
+        .locator('.work-document')
+        .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).m42);
+      await scrollScene(page, '[data-scroll-track]', Math.max(0, progress - 0.0005));
+      await settleScenes(page);
+      expect(await page.locator('.terminal').boundingBox()).toEqual(terminal);
+      const heading = await page
+        .getByRole('heading', { name: chapter[1], exact: true })
+        .boundingBox();
+      const ending = await page.locator(selector).boundingBox();
+      if (!heading || !ending) throw new Error('Chapter text is missing');
+      expect(heading.y).toBeGreaterThanOrEqual(window.y - 1);
+      expect(ending.y).toBeGreaterThanOrEqual(window.y - 1);
+      expect(ending.y + ending.height).toBeLessThanOrEqual(window.y + window.height + 1);
+      await expect(page.locator(selector)).toHaveCSS('clip-path', 'none');
+      expect(
+        await page
+          .locator('.work-document')
+          .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).m42),
+      ).toBeCloseTo(initialOffset, 0);
+      positions.push(
+        await page
+          .locator('.work-document')
+          .evaluate((element) => getComputedStyle(element).transform),
+      );
+    }
+    await scrollScene(page, '[data-scroll-track]', 0.3095);
+    await settleScenes(page);
+    expect(
+      await page
+        .locator('.work-document')
+        .evaluate((element) => getComputedStyle(element).transform),
+    ).toBe(positions[1]);
+    await clickInPlace(page, page.getByRole('button', { name: 'Build', exact: true }));
+    await expect(
+      page.getByRole('heading', { name: 'One brief in. A scoped change out.' }),
+    ).toBeInViewport();
+    await scrollScene(page, '[data-scroll-track]', 1);
+    await page.mouse.wheel(0, viewport.height);
+    await expect(page.getByText('Plan. Hand off. Verify.', { exact: false })).toBeInViewport();
+  });
+}
+
+test('workflow chapters remain operable after orientation and motion preference changes', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await openPage(page);
+  const check = page.getByRole('button', { name: 'Check', exact: true });
+  await clickInPlace(page, check);
+  await expect(check).toHaveAttribute('aria-current', 'step');
+  await settleScenes(page);
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
+  await check.click();
+  await expect(check).toHaveAttribute('aria-current', 'step');
   await expect(
-    page.getByRole('heading', { name: 'Start with your next change.' }),
+    page.getByRole('heading', { name: 'Check the work. Keep the evidence.' }),
   ).toBeInViewport();
-  await page.locator('#start-command').scrollIntoViewIfNeeded();
-  await expect(page.locator('#start-command')).toBeInViewport();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await check.focus();
+  await page.keyboard.press('Enter');
+  await expect(check).toHaveAttribute('aria-current', 'step');
+  await scrollScene(page, '[data-scroll-track]', 1);
+  await expect(page.locator('.closed')).toBeInViewport();
+  await expect(page.locator('.closed')).toHaveCSS('clip-path', 'none');
 });
