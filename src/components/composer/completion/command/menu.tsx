@@ -6,7 +6,7 @@ import {
 } from '../../../pickers/aligned-option-row.js';
 import { CursorCell } from '../../../pickers/cursor-cell.js';
 import { NO_CURSOR } from '../../../pickers/cursor-glyph.js';
-import { SOFT_SEP } from '../../../separators.js';
+import { SOFT_SEP } from '../../../../core/separators.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { CompletionPanel } from '../completion-panel.js';
 

@@ -42,7 +42,7 @@ async function listWorktreeSessionIds(worktreeDir: string): Promise<string[]> {
 }
 
 function isSessionLive(worktreeDir: string, sessionId: string, phase: Phase | null): boolean {
-  if (phase === null || isTerminalPhase(phase)) return false;
+  if (phase === null || phase === 'idle' || isTerminalPhase(phase)) return false;
   const sessDir = join(worktreeDir, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
   const lockfile = readLockfile(sessDir);
   if (lockfile === null) return true;

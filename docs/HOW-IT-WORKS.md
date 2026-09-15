@@ -51,13 +51,14 @@ It finishes by awaiting planner skill discovery via `discoverSkills(projectDir)`
 Screen selection is a switch on `routerStore`'s `screen` field:
 
 - **home** — `<HomeScreen/>` — the landing screen when no feature was provided
-- **workflow** — `<WorkflowScreen/>` — the main screen during a run
-- **summary** — `<SummaryScreen/>` — post-completion results
+- **workflow** — `<WorkflowScreen/>` — the run's home, whether something is running on it or not
 - **setup** — `<SetupScreen/>` — first-run configuration wizard
 
-`<WorkflowScreen/>` is where the engine starts. Its `useWorkflowRunner()` hook (`src/features/workflow/hooks/use-runner.ts`) triggers `runWorkflow()` from the engine. The hook creates an `AbortController`, wires up cancel/rewind handlers, creates a TUI event sink, and calls `runWorkflow()` with callbacks that bridge engine gate requests to the UI's input mode system.
+There is no summary screen. A run that stops stays on the screen it was already on: the route's execution flips to `at-rest` and the same screen paints the run from its `RunRecord`, with a `Closed ─` block at the tail of its own transcript once the run is closed.
 
-The callbacks are how the engine asks for human decisions without importing React. `onApprovalNeeded` switches to review mode and resolves when the user responds. `onCostApprovalNeeded` opens the cost approval prompt. `onTaskReviewNeeded` switches to question mode. The engine `await`s these promises — it's blocked until the user answers.
+`<WorkflowScreen/>` is where the engine starts. `useRunLoop()` (`src/features/workflow/hooks/use-run-loop.ts`) triggers `runWorkflow()` from the engine: it creates an `AbortController`, wires up cancel/rewind handlers, creates a TUI event sink, and calls `runWorkflow()` with callbacks that bridge engine gate requests to the UI's input mode system. Beside it, `useRunContinue()` (`use-run-continue.ts`) owns how the run is re-entered — the state and steer its next turn starts from, and the `continueRun` call behind `/resume` and a typed correction.
+
+The callbacks are how the engine asks for human decisions without importing React. `onApprovalNeeded` switches to review mode and resolves when the user responds. `onTaskReviewNeeded` switches to question mode. The engine `await`s these promises — it's blocked until the user answers.
 
 ---
 
@@ -92,19 +93,22 @@ After initialization, `runWorkflow()` installs a queue handler (for messages the
 
 ## Planning phases
 
-`runPlanningPhases()` (`src/engine/orchestrator/run/phases.ts`) delegates to `runPlanningPhase()` (`src/engine/orchestrator/planning/run.ts`), which resolves the workflow mode and dispatches to the mode-specific handler:
+`runPlanningPhases()` (`src/engine/orchestrator/run/phases.ts`) decides whether planning runs at all — a run whose `resumeStep` names a brief or a review is past it, and one parked at a gate goes to `resumeParkedApproval()` — then delegates to `runPlanningPhase()` (`src/engine/orchestrator/planning/run.ts`), which resolves the workflow mode and hands the run to the step loop.
 
-**quick** — `runQuickPlanning()` (`src/engine/orchestrator/planning/quick.ts`). One planner call. Tasks only, no supporting documents, no approval gates. When the mode advisor classifies the prompt as `trivial`, `runPlanningPhase()` sets `trivial: true` on the phase options and the quick prompt drops its codebase-review step and caps the brief count.
+**The step loop** — `runPlanningSteps()` (`src/engine/orchestrator/planning/steps.ts`). It walks `plannerStepsFor(mode, approveLevel)` (`src/core/pipeline-spec/steps.ts`), one planner call per step:
 
-**standard** — `runFullPlanning()` (`src/engine/orchestrator/planning/full.ts`). Four planner calls: research, spec, plan, tasks. The spec goes through an approval loop — the user can approve, comment (triggers regeneration), or reject. After tasks are generated, they pass through the brief quality gate, then `runBriefsApprovalLoop()` enters `reviewing-briefs` before implementation.
+- a step whose artifact is already on disk is skipped, so a resumed run re-issues only the calls it never finished;
+- the phase transition happens **before** the call and the artifact is persisted **after** it, so `state.json` always names the call that is running;
+- a call that actually ran invalidates the artifacts below it, and so does a gate the operator revised, so nothing downstream is left stale;
+- the gate a step declares opens once the artifact lands, and parks the run at `reviewing-spec` / `reviewing-plan` until it is answered.
 
-**speckit** — `runSpeckitPlanning()` (`src/engine/orchestrator/planning/speckit.ts`). Adds clarification questions, a constitution check, and post-plan analysis on top of the standard flow.
+**quick** is one step: the `tasks` call with the quick prompt, no supporting documents and no document gates. When the mode advisor classifies the prompt as `trivial`, `runPlanningPhase()` sets `trivial: true` and the quick prompt drops its codebase-review step and caps the brief count. **standard** adds `research` → `spec` → `plan` before it. **speckit** adds the `clarify` pointer, the constitution check, and the post-plan `analyze` pass; those three bodies live in `src/engine/orchestrator/planning/speckit.ts`.
 
-Before any mode-specific handler runs, `runPlanningPhase()` builds a repo map via `buildRepoMap()` (`src/engine/codebase/repomap.ts`) — a PageRank-weighted summary of the codebase focused on files relevant to the feature. This gives the planner structural context without sending the entire codebase.
+Before the loop starts, `runPlanningPhase()` builds a repo map via `buildRepoMap()` (`src/engine/codebase/repomap.ts`) — a PageRank-weighted summary of the codebase focused on files relevant to the feature. This gives the planner structural context without sending the entire codebase.
 
 During planning, the planner streams text. `planner_heartbeat` events (`src/engine/orchestrator/planning/heartbeat.ts`) fire every 2 seconds after a 5-second threshold, carrying `phase`, `elapsedMs` (restarts when `callId` changes), `accumulatedTokens`, optional `callId`, and optional `phaseHint`. These are proof-of-life signals during long waits — the TUI shows them as a spinning indicator.
 
-Planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus speckit artifacts when produced) are written to the session folder at the end of each planning phase via `writeSpecFile()` in `src/core/paths-io.ts`.
+Planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus speckit artifacts when produced) are written to the session folder as each step completes, via `writeSpecFile()` in `src/core/paths-io.ts`. That write is what memoizes the step: the artifact on disk is the record that the call happened.
 
 The Task Briefs land as two files. `tasks.md` is written with the other
 planning artifacts by `persistPhases()`
@@ -120,7 +124,7 @@ outcome — `cancelled`, `rejected` or `failed` — and never enters execution.
 
 ## Task loop
 
-After planning, `runTasksAndReview()` (`src/engine/orchestrator/run/phases.ts`) runs a cost prediction, optionally gates on cost, and enters the task loop via `runTaskLoop()` (`src/engine/orchestrator/task/loop.ts`).
+After planning, `runTasksAndReview()` (`src/engine/orchestrator/run/task-execution.ts`) enters the task loop via `runTaskLoop()` (`src/engine/orchestrator/task/loop.ts`).
 
 `runTasksAndReview()` runs only on a `ready-for-tasks` disposition; a terminal
 result makes zero implementer or task-loop calls.
@@ -145,8 +149,6 @@ The loop iterates tasks in order (tasks are already topologically sorted by `dep
 6. Runs validation in the real project directory: typecheck, then lint, then test (`wctx.validator.runValidation()`, built by `createValidator()` in `src/engine/orchestrator/validation/run.ts`). The pipeline stops at the first failure attributable to the task; a stage already red at baseline continues so the stages behind it still get a verdict.
 7. On pass: commits (if per-task commit strategy is configured), transitions to `VALIDATION_PASS`, records evidence, runs drift chain analysis
 8. On fail: retries with the error message (up to the configured retry count), then escalates through tiers if retries are exhausted
-
-Budget enforcement happens at task boundaries — `enforceBudget()` checks accumulated cost after each task and can pause or stop the loop if the budget threshold or maximum is reached.
 
 ---
 
@@ -227,29 +229,29 @@ Evidence recording happens throughout: the evidence ledger tracks approvals, rej
 
 The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the final summary, and calls `callbacks.onComplete(summary)`. Back in `runWorkflow()`, `saveFinalSession()` writes `summary.json` and clears `.splitbrief/active`.
 
-In the TUI, `onComplete` causes the router to navigate to the summary screen, where the user sees cost breakdown, task outcomes, and the review. A configured reviewer gets its own priced line in the cost breakdown and its tool and model are recorded in the run summary; with no reviewer configured, review tokens are priced at the planner's rates and folded into the planner line, as before.
+In the TUI the run loop returning settles the run at rest on the screen it never left: one re-read of the `RunRecord` is the whole hand-off, and the closed block at the tail of the transcript states the run's spend, task outcomes, and the review. A configured reviewer gets its own priced line in the recorded cost breakdown and its tool and model are recorded in the run summary; with no reviewer configured, review tokens are priced at the planner's rates and folded into the planner line, as before.
 
 ---
 
-## Resume
+## Continue
 
-`splitbrief resume` (`src/cli/commands/resume.ts`) picks up an interrupted workflow.
+`splitbrief resume` (`src/cli/commands/resume.ts`) picks up a run that is not finished with it. A run is a durable record: it stays continuable until somebody closes it, so the only thing this refuses is a closed run.
 
 The CLI reads `.splitbrief/active` to find the session ID, loads `state.json` via `loadState()` (`src/core/state/persistence.ts`), and runs three guards:
 
-1. **Version check** -- `stateVersion` must equal `CURRENT_STATE_VERSION` (currently 3). Older versions refuse with an error.
-2. **Phase check** -- `isResumable(state)` (`src/core/phases.ts`) returns true for the `RESUMABLE_PHASES` set (`planning`, `implementing`, `final-review`) and for any phase with `awaitingContinue: true`. Every other phase -- including the review/gate phases, `analyzing`, `validating-task`, and `escalating` -- is resumable only through that override; terminal phases (`idle`, `complete`) never are.
+1. **Version check** -- `stateVersion` must equal `WORKFLOW_STATE_VERSION` (`src/core/schemas/workflow.ts`, currently 4). A v3 state is migrated on load; anything else refuses with an error.
+2. **Run-status check** -- `deriveRunStatus` (`src/core/sessions/run-status.ts`) reads the state, the lockfile and the artifacts on disk. Anything that is not closed resumes; a closed run -- ended by the user, or `complete` with a passing review -- is refused.
 3. **Recovery check** -- if `pendingRecovery` is set, the orchestrator shows the recovery prompt before dispatching work.
 
 After validation, the CLI routes to headless (`--json`) or interactive (TUI) mode, passing the loaded state as `resumeState`.
 
 Inside `initializeWorkflow()` (`src/engine/orchestrator/run/init.ts`), context rebuild follows the capability matrix:
 
-1. **Native session resume** -- if the planner has `supportsSessionResume` and `plannerSessionId` is set, the factory passes the session ID to the backend (Claude Code `--session-id`). The prior conversation survives.
+1. **Native session resume** -- if the planner has `supportsSessionResume` and `plannerSessionId` is set, the factory seeds the backend with that thread id and it resumes the conversation (`claude --resume <id>`, `codex exec resume <id>`). The id is only ever one the tool itself reported: it is captured from the stream as the call runs, so a call cut halfway still leaves a thread to pick up.
 2. **Auto-compaction + transcript rebuild** -- if `supportsSessionResume` is false, `autoCompactResumeContext()` (`src/engine/orchestrator/resume-context.ts`) checks whether the JSONL log exceeds `compactionThreshold`. If so, it summarizes old messages via `planner.summarize()`. Then `applyRebuiltContext()` rebuilds a messages array from `session.jsonl` and injects it as `resumeHolder.messages` for the next planner call.
 3. **Artifact fallback** -- if no transcript exists to rebuild from and native resume failed, the orchestrator warns the user and continues with spec/plan/tasks artifacts only.
 
-The orchestrator then publishes `workflow_resumed` and picks up from the saved phase.
+The orchestrator then publishes `workflow_resumed` and picks up at the step `resumeStep` names — the gate it parked at, the brief it was building, the review it reached, or the first planner artifact its mode has not written yet. It does not replay what is already on disk.
 
 ### Related commands
 

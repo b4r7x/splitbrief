@@ -17,6 +17,7 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { saveSummary } from '../../core/sessions/io.js';
+import { sessionsStore } from '../../stores/project/sessions.js';
 import { prepareNewSession } from '../../core/sessions/prepare.js';
 import { saveState } from '../../core/state/persistence.js';
 import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
@@ -28,27 +29,18 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import type { TieredApprovalResponse } from '../../core/approval/types.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import type {
   PreparationOutcome,
   PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
-import {
-  approvalPromptStore,
-  closeApprovalPrompt,
-  openApprovalPrompt,
-} from '../../stores/approval-prompt/prompt.js';
+import { closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { getLogo } from '../../features/home/logo.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { HomeScreen, type HomeScreenDeps } from './home.js';
-import { Layout } from '../layout.js';
-import { SessionPreparation } from '../session-preparation.js';
 
 const prepareExecutionMock = vi.fn<(input: PrepareExecutionInput) => Promise<PreparationOutcome>>();
 
@@ -189,6 +181,7 @@ const HOME_DEPS: HomeScreenDeps = {
       kind: 'prepared',
       execution: preparedResumeExecution(input),
     }),
+    hydrateRun: async () => {},
   },
 };
 
@@ -201,27 +194,17 @@ function seededViewport() {
   return { cols, rows };
 }
 
+// The temp project every suite in this file works in; `renderHome` seeds the session store from it.
+let projectDir = '';
+
+// Boot loads the session list before the screen mounts; the screen never reads
+// the directory itself, so a test seeds the store the same way.
 function renderHome(deps: HomeScreenDeps = HOME_DEPS) {
+  sessionsStore.load(projectDir);
   return renderFeature(
     <HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} deps={deps} />,
     seededViewport(),
   );
-}
-
-function HomeWithSessionPreparation({ deps }: { deps: HomeScreenDeps }) {
-  const preparationActive = sessionSelectStore.use((state) => state.preparation.kind !== 'idle');
-  return (
-    <Layout
-      screen={<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} deps={deps} />}
-      overlay={null}
-      sessionPreparation={<SessionPreparation />}
-      sessionPreparationActive={preparationActive}
-    />
-  );
-}
-
-function renderHomeWithSessionPreparation(deps: HomeScreenDeps) {
-  return renderFeature(<HomeWithSessionPreparation deps={deps} />, seededViewport());
 }
 
 beforeEach(() => {
@@ -250,8 +233,6 @@ function columnIndexOf(frame: string, text: string): number {
 }
 
 describe('HomeScreen', () => {
-  let projectDir = '';
-
   beforeEach(() => {
     forceUnicodeGlyphs();
     resetAllStores();
@@ -990,8 +971,6 @@ describe('HomeScreen', () => {
 });
 
 describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
-  let projectDir = '';
-
   function seedSessions(count: number): void {
     for (let i = 0; i < count; i++) {
       saveSummary(
@@ -999,7 +978,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
         makeSession({
           id: `focus-session-${i}`,
           feature: `focus feature ${i}`,
-          status: 'interrupted',
+          status: 'open',
           summary: null,
           startedAt: 1_700_000_000 + i,
         }),
@@ -1090,14 +1069,13 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
     }, SESSION_FILTER_WAIT_MS);
+    // Choosing a run opens it at rest on its own screen; continuing it is the next keystroke.
     const route = routerStore.get();
     expect(route.screen).toBe('workflow');
     if (route.screen === 'workflow') {
-      expect(route.execution.kind).toBe('local');
-      if (route.execution.kind === 'local') {
-        expect(route.execution.prepared.runtime.feature).toBe(target.feature);
-        expect(route.execution.prepared.session.ref.sessionId).toBe(target.id);
-      }
+      expect(route.execution.kind).toBe('at-rest');
+      expect(route.run.ref.sessionId).toBe(target.id);
+      expect(route.run.feature).toBe(target.feature);
     }
     ui.unmount();
   });
@@ -1190,7 +1168,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
         makeSession({
           id: `focus-session-${i}`,
           feature: i === 0 ? 'ancient hidden focus target' : `focus feature ${i}`,
-          status: 'interrupted',
+          status: 'open',
           summary: null,
           startedAt: 1_700_000_000 + i,
         }),
@@ -1332,13 +1310,13 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
-  it('Enter resumes an interrupted session into the workflow screen', async () => {
+  it('Enter opens an interrupted session on the workflow screen, at rest', async () => {
     saveSummary(
       { projectDir, sessionId: 'resume-me' },
       makeSession({
         id: 'resume-me',
         feature: 'resume feature',
-        status: 'interrupted',
+        status: 'open',
         summary: null,
         startedAt: 1_700_000_500,
       }),
@@ -1365,143 +1343,14 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     const route = routerStore.get();
     expect(route.screen).toBe('workflow');
     if (route.screen === 'workflow') {
-      expect(route.execution.kind).toBe('local');
-      if (route.execution.kind === 'local') {
-        expect(route.execution.prepared.session.ref.sessionId).toBe('resume-me');
-      }
+      expect(route.execution.kind).toBe('at-rest');
+      expect(route.run.ref.sessionId).toBe('resume-me');
+      expect(route.run.status.kind).toBe('open');
     }
     ui.unmount();
   });
 
-  it('renders and denies a recent-session custom-runner approval without hanging', async () => {
-    saveSummary(
-      { projectDir, sessionId: 'resume-custom-runner' },
-      makeSession({
-        id: 'resume-custom-runner',
-        feature: 'resume custom runner',
-        status: 'interrupted',
-        summary: null,
-        startedAt: 1_700_000_525,
-      }),
-    );
-    saveState(
-      { projectDir, sessionId: 'resume-custom-runner' },
-      {
-        ...createInitialState('resume custom runner'),
-        phase: 'implementing',
-      },
-    );
-    let approvalResponse: TieredApprovalResponse | undefined;
-    let resumeSettled = false;
-    const deps: HomeScreenDeps = {
-      ...HOME_DEPS,
-      sessionSelect: {
-        ...HOME_DEPS.sessionSelect,
-        prepareResume: async () => {
-          approvalResponse = await openApprovalPrompt({
-            tier: 'sticky',
-            actionClass: 'network',
-            actionDescription: 'Run the configured custom tool for this session',
-            phase: 'implementing',
-          });
-          resumeSettled = true;
-          return {
-            kind: 'blocked',
-            report: readinessReport([
-              {
-                id: 'runners.custom-approval',
-                severity: 'blocker',
-                summary: 'The configured custom runner was not approved.',
-              },
-            ]),
-          };
-        },
-      },
-    };
-
-    const ui = renderHomeWithSessionPreparation(deps);
-    await flushEffects();
-    ui.stdin.write(CTRL_R);
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
-    ui.stdin.write(ENTER);
-
-    // Anchor on the store before polling the frame: the prompt mounts one
-    // render after the approval request settles into the store.
-    await vi.waitFor(() => expect(approvalPromptStore.get().status).toBe('pending'));
-    await vi.waitFor(() => {
-      const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Run the configured custom tool for this session');
-      expect(frame).not.toContain(RECENT_SESSIONS_HINT);
-      expect(frame).not.toContain(DEFAULT_HOME_HINT);
-    });
-    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-    ui.stdin.write(ESC);
-
-    await vi.waitFor(() => expect(resumeSettled).toBe(true));
-    expect(approvalResponse).toEqual({ decision: 'deny', reason: 'user_cancelled' });
-    expect(routerStore.get()).toEqual({ screen: 'home' });
-    await vi.waitFor(() => {
-      const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Tool preparation');
-      expect(frame).toContain('Blocked');
-      expect(frame).toContain('The configured custom runner was');
-      expect(frame).toContain('not approved.');
-      expect(frame).toContain('r retry');
-      expect(frame).toContain('esc back');
-      expect(frame).toContain('s settings');
-    });
-    ui.unmount();
-  });
-
-  it('renders a rejected recent-session preparation on the shared failed surface', async () => {
-    saveSummary(
-      { projectDir, sessionId: 'resume-rejected' },
-      makeSession({
-        id: 'resume-rejected',
-        feature: 'resume rejected boundary',
-        status: 'interrupted',
-        summary: null,
-        startedAt: 1_700_000_526,
-      }),
-    );
-    saveState(
-      { projectDir, sessionId: 'resume-rejected' },
-      {
-        ...createInitialState('resume rejected boundary'),
-        phase: 'implementing',
-      },
-    );
-    const deps: HomeScreenDeps = {
-      ...HOME_DEPS,
-      sessionSelect: {
-        ...HOME_DEPS.sessionSelect,
-        prepareResume: async () => {
-          throw new Error('home resume boundary rejected');
-        },
-      },
-    };
-    const ui = renderHomeWithSessionPreparation(deps);
-    await flushEffects();
-    ui.stdin.write(CTRL_R);
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
-    ui.stdin.write(ENTER);
-
-    await vi.waitFor(() => {
-      const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Tool preparation');
-      expect(frame).toContain('Failed');
-      expect(frame).toContain('home resume boundary rejected');
-      expect(frame).toContain('r retry');
-    });
-    expect(routerStore.get()).toEqual({ screen: 'home' });
-    ui.unmount();
-  });
-
-  it('Enter opens a completed session summary from the recent-sessions list', async () => {
+  it('Enter opens a finished run on the workflow screen, at rest', async () => {
     const summary = makeSummary({ feature: 'completed feature' });
     saveSummary(
       { projectDir, sessionId: 'summary-me' },
@@ -1524,24 +1373,26 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
-      expect(routerStore.get().screen).toBe('summary');
+      expect(routerStore.get().screen).toBe('workflow');
     }, SESSION_FILTER_WAIT_MS);
 
     const route = routerStore.get();
-    if (route.screen === 'summary') {
-      expect(route.sessionId).toBe('summary-me');
-      expect(route.summary).toEqual(summary);
+    if (route.screen === 'workflow') {
+      expect(route.run.ref.sessionId).toBe('summary-me');
+      expect(route.run.summary).toEqual(summary);
+      expect(route.execution.kind).toBe('at-rest');
     }
     ui.unmount();
   });
 
-  it('Enter on a failed session without a summary stays on home and surfaces feedback', async () => {
+  it('Enter on a failed session opens it at rest rather than refusing to show it', async () => {
     saveSummary(
       { projectDir, sessionId: 'failed-one' },
       makeSession({
         id: 'failed-one',
         feature: 'broken feature',
-        status: 'failed',
+        status: 'open',
+        stop: 'failed',
         summary: null,
         startedAt: 1_700_000_600,
       }),
@@ -1557,11 +1408,14 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('failed without a summary');
+      expect(routerStore.get().screen).toBe('workflow');
     }, SESSION_FILTER_WAIT_MS);
 
-    expect(routerStore.get().screen).toBe('home');
-    expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
+    const route = routerStore.get();
+    if (route.screen === 'workflow') {
+      expect(route.run.ref.sessionId).toBe('failed-one');
+      expect(route.execution.kind).toBe('at-rest');
+    }
     ui.unmount();
   });
 

@@ -106,16 +106,19 @@ export function requestStopNow(): boolean {
   return true;
 }
 
-// A parked brief resumes through the store's own resolver; a cancelled session has no promise
-// left to settle and restarts from its saved state instead.
+// Continuing is one path, and the run owns it: the handler it installs settles a park
+// this process is holding or re-enters the run at rest, and decides which.
 export function requestResume(text: string): boolean {
-  if (stopStore.get().phase === 'parked') {
-    stopStore.resume(text);
-    markWorkflowResumed();
-    return true;
-  }
   if (!handlers.resume) return false;
   handlers.resume(text);
+  return true;
+}
+
+/** Settles a park this process is holding. False when the run is at rest. */
+export function resumeParkedRun(steer: string): boolean {
+  if (stopStore.get().phase !== 'parked') return false;
+  stopStore.resume(steer);
+  markWorkflowResumed();
   return true;
 }
 

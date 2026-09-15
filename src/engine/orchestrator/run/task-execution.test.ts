@@ -1,7 +1,7 @@
 import { describe, expect, it, afterEach, vi } from 'vitest';
 import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
@@ -16,7 +16,22 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
+import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import { runTasksAndReview } from './task-execution.js';
+
+/** The sink the TUI installs, with the boundary pause pending exactly once. */
+function pauseOnceSinks(): WorkflowSinks {
+  let pending = true;
+  return {
+    setAbortHandler: () => {},
+    setQueueHandler: () => {},
+    consumeBoundaryPause: () => {
+      const wasPending = pending;
+      pending = false;
+      return wasPending;
+    },
+  };
+}
 
 let dirs: string[] = [];
 
@@ -60,6 +75,8 @@ function runOptions(opts: {
   state: WorkflowState;
   reviewText: string | ((call: number) => string);
   onComplete: () => void;
+  sinks?: WorkflowSinks | undefined;
+  onContinuationNeeded?: OrchestratorCallbacks['onContinuationNeeded'] | undefined;
 }) {
   const { bus, events } = makeBusRecorder();
   let calls = 0;
@@ -71,9 +88,12 @@ function runOptions(opts: {
     },
   });
   const implementer = makeImplementer({
-    implement: vi.fn().mockImplementation(async () => {
-      mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
-      writeFileSync(join(opts.projectDir, 'src/alpha.ts'), `export const alpha = ${Date.now()};\n`);
+    // Each brief writes the file it declared, so a run with more than one brief
+    // does not read as an undeclared write.
+    implement: vi.fn().mockImplementation(async (call: { task: Task }) => {
+      const file = call.task.file ?? 'src/alpha.ts';
+      mkdirSync(join(opts.projectDir, dirname(file)), { recursive: true });
+      writeFileSync(join(opts.projectDir, file), `export const value = ${Date.now()};\n`);
       return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
     }),
   });
@@ -81,11 +101,17 @@ function runOptions(opts: {
     projectDir: opts.projectDir,
     sessionId: opts.sessionId,
     config: makeNoValidationConfig({ workflow: {} }),
-    callbacks: makeCallbacks({ onComplete: opts.onComplete }).callbacks,
+    callbacks: makeCallbacks({
+      onComplete: opts.onComplete,
+      ...(opts.onContinuationNeeded !== undefined && {
+        onContinuationNeeded: opts.onContinuationNeeded,
+      }),
+    }).callbacks,
     bus,
     planner: reviewer,
     reviewer,
     implementer,
+    ...(opts.sinks !== undefined && { sinks: opts.sinks }),
   });
   return {
     events,
@@ -105,6 +131,69 @@ function runOptions(opts: {
     },
   };
 }
+
+describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
+  it('parks between briefs, records the brief it stopped before, and continues into it', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', file: 'src/alpha.ts' }),
+      makeTask({ id: 'T002', file: 'src/beta.ts' }),
+    ];
+    const parks: { partial: string; at: string }[] = [];
+    const { events, implementer, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 0),
+      reviewText: '### Verdict\npass\n',
+      onComplete: vi.fn(),
+      sinks: pauseOnceSinks(),
+      onContinuationNeeded: async (partial, at) => {
+        parks.push({ partial, at });
+        return 'use the shared helper';
+      },
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(parks).toEqual([{ partial: '', at: 'boundary' }]);
+    expect(events.find((e) => e.type === 'turn_interrupted')).toMatchObject({
+      source: 'user',
+      at: 'boundary',
+    });
+    // Both briefs ran: the park held the run between them rather than ending it.
+    expect(implementer.implement).toHaveBeenCalledTimes(2);
+    expect(result.completed).toBe(true);
+    // The park was cleared when the operator continued.
+    expect(result.state.interruptedStep).toBeUndefined();
+  });
+
+  it('records a boundary park and stops when nothing can continue the run in place', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', file: 'src/alpha.ts' }),
+      makeTask({ id: 'T002', file: 'src/beta.ts' }),
+    ];
+    const { implementer, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 0),
+      reviewText: '### Verdict\npass\n',
+      onComplete: vi.fn(),
+      sinks: pauseOnceSinks(),
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(implementer.implement).toHaveBeenCalledTimes(1);
+    expect(result.completed).toBe(false);
+    expect(result.cancelled).toBe(false);
+    expect(result.state.interruptedStep).toMatchObject({
+      step: { kind: 'brief', taskId: 'T002', attempt: 0 },
+      source: 'user',
+      cut: 'boundary',
+    });
+  });
+});
 
 describe('runTasksAndReview', { timeout: 120_000 }, () => {
   it('review fail dispatches REVIEW_DONE with reviewStatus failed and no onComplete', async () => {

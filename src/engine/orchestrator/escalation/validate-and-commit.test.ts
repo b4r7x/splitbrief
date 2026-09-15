@@ -46,7 +46,6 @@ function configWithProfiles(): Config {
           offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen-small',
-          costTier: 'local',
           contextLength: 8_192,
         },
       },

@@ -44,6 +44,14 @@ const rows = getConversationRowsWindowProjection({ projection, windowStart, wind
 
 `src/features/workflow/conversation-rows/projection-cache.ts` caches projections by width, viewport height, expansion state, streaming state, and event content. `src/features/workflow/conversation-rows/build.ts` returns `ConversationRowBlock` records with `rowCount`, `renderableUnits`, and `createRows(windowStart, windowEnd)`, so scrolling by one row does not allocate every row in a large session. Each materialized row is rendered by `ConversationRowView` in `src/features/workflow/components/conversation-flow/row-view.tsx`. The row view has `height={1}`, `overflow="hidden"`, and `Text wrap="truncate-end"` so a row descriptor cannot expand the viewport.
 
+A closed run's ledger is part of this transcript, not a second scroller: `closedTranscriptBlock`
+(`src/features/workflow/closed/block.tsx`) is appended to the projection's block list after the run's
+own events (`tail`, `computeConversationRowScroll`), so `Closed ─ / Briefs ─ / Files ─ / Run ─`
+scrolls with the events above it under one offset. Its rows carry a prebuilt `node` rather than
+segments, and each is one line, so the row count the scroll model charges is exact. It registers
+zero renderable units — it is not an event the run emitted, so it never counts toward the
+`N new events` banner.
+
 Completed task summaries are pinned above the dynamic conversation window. `src/core/sections/completed-task-summary-rows.ts` returns how many completed summaries fit in the current viewport; the dynamic scroll viewport subtracts those rows before building scroll state.
 
 ## Scroll Window

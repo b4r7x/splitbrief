@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Box } from 'ink';
+import type { ConversationRowBlock } from '../conversation-rows/types.js';
 import { ConversationFlow } from './conversation-flow/flow.js';
 import { Sidebar } from './sidebar.js';
 import { ReviewView } from './review-view.js';
@@ -20,6 +21,7 @@ export function WorkflowBody({
   contentWidth,
   onScrollAbove,
   onScrollBelow,
+  transcriptTail,
 }: {
   showSidebar: boolean;
   sidebarWidth: number;
@@ -29,6 +31,8 @@ export function WorkflowBody({
   contentWidth: number;
   onScrollAbove?: (label: string) => void;
   onScrollBelow?: (label: string) => void;
+  /** Blocks that follow the last event the run wrote; a closed run's ledger is the only one. */
+  transcriptTail?: readonly ConversationRowBlock[] | undefined;
 }) {
   // A region too short to seat a document row gets the conversation instead: the frame would paint
   // an empty box over the approval panel it is meant to explain.
@@ -64,6 +68,7 @@ export function WorkflowBody({
             contentWidth={contentWidth}
             onScrollAbove={onScrollAbove}
             onScrollBelow={onScrollBelow}
+            {...(transcriptTail !== undefined && { tail: transcriptTail })}
           />
         )}
       </Box>

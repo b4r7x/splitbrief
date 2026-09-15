@@ -92,7 +92,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
 
     expect(implement).toHaveBeenCalledTimes(1);
     const session = listSessions(projectDir).find((s) => s.id === sessionId);
-    expect(session?.status).toBe('interrupted');
+    expect(session?.status).toBe('open');
   });
 
   it('stops the run on SIGTERM the same way', async () => {
@@ -118,7 +118,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
 
     expect(implement).toHaveBeenCalledTimes(1);
     const session = listSessions(projectDir).find((s) => s.id === sessionId);
-    expect(session?.status).toBe('interrupted');
+    expect(session?.status).toBe('open');
   });
 
   it('does not emit retry or escalation events after a mid-run SIGINT (no paid churn)', async () => {
@@ -163,7 +163,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     expect(emittedTypes).not.toContain('escalate');
 
     const session = listSessions(projectDir).find((s) => s.id === sessionId);
-    expect(session?.status).toBe('interrupted');
+    expect(session?.status).toBe('open');
   });
 
   it('leaves a broken-pipe guard on stdout and stderr so a closed consumer cannot crash the run', async () => {

@@ -26,12 +26,12 @@ function setupProject(): { projectDir: string; sessionId: string } {
 }
 
 describe('handlePlanningFailure', () => {
-  it('aborted planning publishes no `error` event; non-abort failures still do', () => {
+  it('aborted planning publishes no `error` event; non-abort failures still do', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = { ...createInitialState('feature'), phase: 'planning' as const };
     const { bus: abortBus, events: abortEvents } = makeBusRecorder();
 
-    handlePlanningFailure({
+    await handlePlanningFailure({
       err: error('operation-aborted', 'workflow-rewind'),
       projectDir,
       sessionId,
@@ -42,7 +42,7 @@ describe('handlePlanningFailure', () => {
     expect(abortEvents.some((event) => event.type === 'error')).toBe(false);
 
     const { bus: failBus, events: failEvents } = makeBusRecorder();
-    handlePlanningFailure({
+    await handlePlanningFailure({
       err: error('runner-call-failed', 'Planner planner call failed', {
         status: 'failed',
         error: { code: 'planner-failed', message: 'planner exploded' },
@@ -57,7 +57,28 @@ describe('handlePlanningFailure', () => {
     expect(published?.type === 'error' && published.message).toContain('planner exploded');
   });
 
-  it('preserves the persisted rewind request when planning aborts', () => {
+  it('an abort parks the step instead of ending the run', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = { ...createInitialState('feature'), phase: 'planning' as const };
+    saveState({ projectDir, sessionId }, state);
+
+    const result = await handlePlanningFailure({
+      err: error('operation-aborted', 'user stopped it'),
+      projectDir,
+      sessionId,
+      state,
+      wctx: makeWctx({ projectDir, sessionId }),
+    });
+
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'interrupted' });
+    expect(result.state.phase).toBe('planning');
+    expect(result.state.closed).toBeUndefined();
+    expect(result.state.interruptedStep?.source).toBe('user');
+    expect(result.state.interruptedStep?.step).toEqual({ kind: 'planner', call: 'plan' });
+    expect(loadState({ projectDir, sessionId })?.interruptedStep?.source).toBe('user');
+  });
+
+  it('preserves the persisted rewind request when planning aborts', async () => {
     const { projectDir, sessionId } = setupProject();
     const staleState = { ...createInitialState('feature'), phase: 'planning' as const };
     const persistedState = {
@@ -68,7 +89,7 @@ describe('handlePlanningFailure', () => {
 
     const wctx = makeWctx({ projectDir, sessionId });
 
-    const result = handlePlanningFailure({
+    const result = await handlePlanningFailure({
       err: error('operation-aborted', 'approval gate cancelled'),
       projectDir,
       sessionId,
@@ -76,7 +97,7 @@ describe('handlePlanningFailure', () => {
       wctx,
     });
 
-    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'interrupted' });
     expect(result.state.rewindPending).toEqual({
       target: 'plan',
       comment: 'rewind to the plan',
@@ -85,10 +106,10 @@ describe('handlePlanningFailure', () => {
       target: 'plan',
       comment: 'rewind to the plan',
     });
-    expect(loadState({ projectDir, sessionId })?.phase).toBe('idle');
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('planning');
   });
 
-  it('rebases cancellation after planner usage booking so the paid usage remains persisted', () => {
+  it('rebases the halt after planner usage booking so the paid usage remains persisted', async () => {
     const { projectDir, sessionId } = setupProject();
     const staleState = { ...createInitialState('feature'), phase: 'planning' as const };
     saveState({ projectDir, sessionId }, staleState);
@@ -99,7 +120,7 @@ describe('handlePlanningFailure', () => {
       outputTokens: 40,
     });
 
-    const result = handlePlanningFailure({
+    const result = await handlePlanningFailure({
       err: error('planning-parse-failed', 'planner output could not be parsed'),
       projectDir,
       sessionId,
@@ -107,8 +128,8 @@ describe('handlePlanningFailure', () => {
       wctx: makeWctx({ projectDir, sessionId }),
     });
 
-    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
-    expect(result.state.phase).toBe('idle');
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(result.state.phase).toBe('planning');
     expect(result.state.tokenUsage).toMatchObject({ plannerInput: 125, plannerOutput: 40 });
     expect(loadState({ projectDir, sessionId })?.tokenUsage).toMatchObject({
       plannerInput: 125,
@@ -116,7 +137,33 @@ describe('handlePlanningFailure', () => {
     });
   });
 
-  it('surfaces the planner tool diagnosis and the login command for an auth failure', () => {
+  it('raises a plan-seat recovery the operator can answer', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = { ...createInitialState('feature'), phase: 'planning' as const };
+    saveState({ projectDir, sessionId }, state);
+
+    const result = await handlePlanningFailure({
+      err: error('planning-parse-failed', 'planner output could not be parsed'),
+      projectDir,
+      sessionId,
+      state,
+      wctx: makeWctx({ projectDir, sessionId }),
+    });
+
+    const issue = result.state.pendingRecovery;
+    expect(issue?.reason).toBe('planner-call-failed');
+    expect(issue?.seat).toBe('plan');
+    expect(issue?.phase).toBe('planning');
+    expect(issue?.availableActions).toEqual(
+      expect.arrayContaining(['retry-same-worker', 'pause-run', 'end-run']),
+    );
+    expect(issue?.availableActions).not.toContain('skip-current-task');
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery?.reason).toBe(
+      'planner-call-failed',
+    );
+  });
+
+  it('surfaces the planner tool diagnosis and the login command for an auth failure', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = { ...createInitialState('feature'), phase: 'planning' as const };
     const { bus, events } = makeBusRecorder();
@@ -129,7 +176,7 @@ describe('handlePlanningFailure', () => {
       error: { code: 'codex-turn-failed', message: codexMessage },
     });
 
-    const result = handlePlanningFailure({
+    const result = await handlePlanningFailure({
       err,
       projectDir,
       sessionId,
@@ -144,14 +191,15 @@ describe('handlePlanningFailure', () => {
       }),
     });
 
-    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(result.state.pendingRecovery?.reason).toBe('runner-unauthenticated');
     const published = events.find((event) => event.type === 'error');
     expect(published?.type === 'error' && published.message).toContain(codexMessage);
     expect(published?.type === 'error' && published.message).toContain('codex logout');
     expect(published?.type === 'error' && published.message).toContain('codex login');
   });
 
-  it('surfaces the reset time for a planner usage limit instead of login advice', () => {
+  it('surfaces the reset time for a planner usage limit instead of login advice', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = { ...createInitialState('feature'), phase: 'planning' as const };
     const { bus, events } = makeBusRecorder();
@@ -164,7 +212,7 @@ describe('handlePlanningFailure', () => {
       error: { code: 'codex-turn-failed', message: codexLimit },
     });
 
-    const result = handlePlanningFailure({
+    const result = await handlePlanningFailure({
       err,
       projectDir,
       sessionId,
@@ -179,7 +227,9 @@ describe('handlePlanningFailure', () => {
       }),
     });
 
-    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(result.state.pendingRecovery?.reason).toBe('runner-usage-limit');
+    expect(result.state.pendingRecovery?.resetAt).toBeDefined();
     const published = events.find((event) => event.type === 'error');
     expect(published?.type === 'error' && published.message).toContain(codexLimit);
     expect(published?.type === 'error' && published.message).toContain('hit its usage limit');
@@ -188,7 +238,7 @@ describe('handlePlanningFailure', () => {
     expect(published?.type === 'error' && published.message).not.toContain('codex logout');
   });
 
-  it('planning failure copy does not say resume when CANCEL is dispatched', () => {
+  it('a halted planner call keeps its phase so the step can be re-issued', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = { ...createInitialState('feature'), phase: 'planning' as const };
     const { bus, events } = makeBusRecorder();
@@ -200,7 +250,7 @@ describe('handlePlanningFailure', () => {
       },
     });
 
-    const result = handlePlanningFailure({
+    const result = await handlePlanningFailure({
       err,
       projectDir,
       sessionId,
@@ -208,9 +258,9 @@ describe('handlePlanningFailure', () => {
       wctx: makeWctx({ projectDir, sessionId, bus }),
     });
 
-    expect(result.state.phase).toBe('idle');
+    expect(result.state.phase).toBe('planning');
+    expect(result.state.closed).toBeUndefined();
     const published = events.find((event) => event.type === 'error');
     expect(published?.type === 'error' && published.message).toContain('then start again');
-    expect(published?.type === 'error' && published.message).not.toContain('resume');
   });
 });

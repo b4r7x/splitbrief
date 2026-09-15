@@ -35,8 +35,8 @@ type HandleRetryOptions = {
 
 /**
  * A signed-out runner halts the ladder: the next tier would silently hand
- * the task to the planner at planner prices, which is exactly the failure
- * an expired login must not cause. Raise the login recovery and stop.
+ * the task to the planner, which is exactly the outcome an expired login must
+ * not cause. Raise the login recovery and stop.
  */
 function unauthenticatedHalt(
   ctx: EscalationContext,
@@ -109,7 +109,7 @@ async function usageLimitHalt(
 /**
  * An outcome the recovery builders recognise as a runner defect halts the
  * ladder for the same reason the auth and quota halts do — the next tier would
- * hand the same defect to the planner at planner prices.
+ * hand the same defect to the planner.
  */
 async function runnerDefectHalt(
   ctx: EscalationContext,

@@ -3,7 +3,7 @@ import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { SOFT_SEP } from '../components/separators.js';
+import { SOFT_SEP } from '../core/separators.js';
 import { CREW_SEAT_LABELS } from '../core/crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS } from '../core/runners/seat-roles.js';
 import { configStore } from '../stores/project/config.js';

@@ -9,4 +9,6 @@ export const transitionError = {
       `Cannot apply ${action} while workflow is in ${phase}.`,
       { phase, action },
     ),
+  runClosed: (action: MachineAction['type']) =>
+    error('state-run-closed', `Cannot apply ${action}: this run is closed.`, { action }),
 } as const;

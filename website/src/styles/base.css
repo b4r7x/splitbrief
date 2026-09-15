@@ -1,171 +1,89 @@
 @font-face {
-  font-family: "Bodoni Moda Fallback";
-  src: local("Georgia");
-  size-adjust: 99.03%;
-  ascent-override: 113.6%;
-  descent-override: 40.39%;
-  line-gap-override: 0%;
+  font-family: Space;
+  src: url("../assets/fonts/space-grotesk-latin.woff2") format("woff2");
+  font-display: swap;
 }
-
 @font-face {
-  font-family: "JetBrains Mono Fallback";
-  src: local("Menlo"), local("Courier New");
-  size-adjust: 100%;
-  ascent-override: 102.01%;
-  descent-override: 30%;
-  line-gap-override: 0%;
+  font-family: Plex;
+  src: url("../assets/fonts/ibm-plex-mono-latin.woff2") format("woff2");
+  font-display: swap;
 }
-
-*,
-::before,
-::after {
+@font-face {
+  font-family: Departure;
+  src: url("../assets/fonts/departure-mono-regular.woff2") format("woff2");
+  font-display: swap;
+}
+* {
   box-sizing: border-box;
 }
-
-:root {
-  color-scheme: dark;
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 64px;
 }
-
-@media (prefers-reduced-motion: no-preference) {
-  html {
-    scroll-behavior: smooth;
-  }
-}
-
 body {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--text-body);
-  line-height: 1.6;
-  color: var(--ink-2);
-  background-color: var(--bg);
-  background-image: var(--bg-vignette);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Space, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
-
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.06;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23g)'/%3E%3C/svg%3E");
-}
-
-h1,
-h2,
-p,
-figure,
-ol,
-ul,
-pre {
-  margin: 0;
-}
-
-ol,
-ul {
-  padding: 0;
-  list-style: none;
-}
-
-h1,
-h2 {
-  font-weight: 400;
-  text-wrap: balance;
-}
-
-h1 {
-  font-family: var(--font-display);
-  font-size: var(--text-display);
-  line-height: 1;
-  letter-spacing: 0;
-  font-optical-sizing: none;
-  font-variation-settings: "opsz" 20;
-  color: var(--ink);
-}
-
-p {
-  text-wrap: pretty;
-}
-
-strong {
-  font-weight: 500;
-  color: var(--ink);
-}
-
-b {
-  font-weight: inherit;
-  color: var(--ink);
-}
-
 a {
   color: inherit;
   text-decoration: none;
 }
-
 button {
   font: inherit;
   color: inherit;
-  background: none;
-  border: 0;
-  padding: 0;
   cursor: pointer;
 }
-
-canvas {
-  display: block;
+a,
+button {
+  -webkit-tap-highlight-color: transparent;
 }
-
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}
+button:disabled {
+  cursor: default;
+}
 ::selection {
-  background: var(--selection);
-  color: var(--ink);
+  background: #dededc;
+  color: #141414;
 }
-
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 3px;
+.dim {
+  color: #999;
 }
-
-section > :is(.eyebrow, .claim) {
-  font-size: var(--text-label);
-  line-height: 1.45;
-  letter-spacing: 0.08em;
-}
-
-.dash::after {
-  content: "";
-  display: block;
-  width: 18px;
-  height: 1px;
-  margin-top: var(--s-4);
-  background: var(--ink-3);
-}
-
-.rule {
-  width: min(var(--content-max), 100% - 2 * var(--gutter));
-  margin: 0 auto;
-  border: 0;
-  border-top: 1px solid var(--hair);
-}
-
-.visually-hidden {
+.skip-link {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
+  z-index: 20;
+  top: 16px;
+  left: 50%;
+  transform: translate(-50%, -180%);
+  padding: 12px 18px;
+  background: var(--panel);
+  font: 13px / 1.6 var(--mono);
+}
+.skip-link:focus {
+  transform: translateX(-50%);
+}
+.pause {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 44px;
   padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
   border: 0;
+  background: none;
+  color: #b6b6b2;
+  font: inherit;
+  white-space: nowrap;
 }
-
-.no-js canvas {
-  display: none;
+.pause:hover:not(:disabled) {
+  color: #eee;
 }
-
-.js .ghost-fallback {
-  display: none;
+.pause:disabled {
+  color: var(--muted);
 }

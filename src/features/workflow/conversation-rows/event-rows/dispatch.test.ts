@@ -432,7 +432,7 @@ describe('event row dispatch', () => {
     expect(text).not.toContain(secret);
   });
 
-  it('renders task routing reasons instead of generic cost posture noise', () => {
+  it('renders the routing reason on a task-start row', () => {
     const event: EngineEventOf<'task_started'> = {
       type: 'task_started',
       ts: 0,
@@ -448,7 +448,6 @@ describe('event row dispatch', () => {
       contextFit: 'tight',
       estimatedTokens: 95_000,
       contextLength: 100_000,
-      costPosture: 'Selected unknown cost tier via cheapest-capable routing',
       routingReason: 'current code reduced to fit cheap-cloud context',
     };
 
@@ -464,7 +463,6 @@ describe('event row dispatch', () => {
     expect(text.replace(/\s+/g, ' ')).toContain(
       'why current code reduced to fit cheap-cloud context',
     );
-    expect(text).not.toContain('cost Selected unknown cost tier');
     expect(lines.every((line) => line.length <= 52)).toBe(true);
   });
 
@@ -513,18 +511,6 @@ describe('event row dispatch', () => {
       },
       stateWord: 'error',
       body: 'disk write boundary exceeded',
-    },
-    {
-      name: 'budget_exceeded',
-      event: {
-        type: 'budget_exceeded',
-        ts: 0,
-        phase: 'implementing',
-        currentCost: 12,
-        maxBudget: 10,
-      },
-      stateWord: 'budget',
-      body: 'Exceeded',
     },
     {
       name: 'recovery_action_failed',

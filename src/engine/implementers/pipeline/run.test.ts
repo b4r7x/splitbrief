@@ -56,6 +56,85 @@ describe('createImplementerBase — language-aware system preamble', () => {
   });
 });
 
+describe('createImplementerBase — continuation', () => {
+  it('keeps the brief body and trails the partial, the changed files and the steer', async () => {
+    let seenPrompt = '';
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      seenPrompt = opts.prompt;
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+    const task = makeTask({ id: 'T007', title: 'Add the retry ladder' });
+
+    await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      continuation: {
+        partial: 'I started editing retry.ts',
+        steer: 'keep the existing signature',
+        extra: 'These declared files already changed since the task started: src/retry.ts',
+      },
+    });
+
+    // The brief is still the prompt; the continuation is a note on the end of it.
+    expect(seenPrompt).toContain('Add the retry ladder');
+    expect(seenPrompt).toContain('I started editing retry.ts');
+    expect(seenPrompt).toContain('src/retry.ts');
+    expect(seenPrompt).toContain('keep the existing signature');
+    expect(seenPrompt.indexOf('Add the retry ladder')).toBeLessThan(
+      seenPrompt.indexOf('I started editing retry.ts'),
+    );
+  });
+
+  it('sends the brief alone when nothing was interrupted', async () => {
+    let seenPrompt = '';
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      seenPrompt = opts.prompt;
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    await implementer.implement({
+      task: makeTask({ title: 'Add the retry ladder' }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(seenPrompt).toContain('Add the retry ladder');
+    expect(seenPrompt).not.toContain('[Continuation]');
+  });
+
+  it('keeps the retry findings when a reopened brief is continued', async () => {
+    let seenPrompt = '';
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      seenPrompt = opts.prompt;
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    await implementer.retry({
+      task: makeTask({ title: 'Add the retry ladder' }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      error: 'the reviewer says the error is swallowed',
+      attempt: 1,
+      kind: 'local',
+      continuation: { partial: 'I was half way', steer: 'start from the top' },
+    });
+
+    expect(seenPrompt).toContain('the reviewer says the error is swallowed');
+    expect(seenPrompt).toContain('I was half way');
+    expect(seenPrompt).toContain('start from the top');
+  });
+});
+
 describe('createImplementerBase — prompt write contracts', () => {
   it('gives direct-write implementers the isolation editing and validation contract', async () => {
     let seenPrompt = '';

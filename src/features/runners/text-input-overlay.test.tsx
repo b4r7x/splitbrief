@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { glyph } from '../../lib/glyphs.js';

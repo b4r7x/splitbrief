@@ -63,7 +63,7 @@ describe('RecentSessions', () => {
     expect(frame).toContain('bravo');
     expect(frame).not.toContain(FOCUS_BAR);
     expect(frame).not.toContain('Esc back');
-    expect(lineContaining(frame, 'alpha')).toMatch(/^○ alpha/);
+    expect(lineContaining(frame, 'alpha')).toMatch(/^◌ alpha/);
     ui.unmount();
   });
 
@@ -128,10 +128,7 @@ describe('RecentSessions', () => {
   });
 
   it('a resize that changes limit but keeps it positive does not re-read the sessions directory', async () => {
-    saveSummary(
-      { projectDir, sessionId: 'rs-first' },
-      makeSession({ id: 'rs-first', feature: 'first', startedAt: 1_700_000_000 }),
-    );
+    seed([{ id: 'rs-first', feature: 'first', startedAt: 1_700_000_000 }]);
 
     const ui = renderFeature(<RecentSessions limit={5} />);
     await tick(20);
@@ -149,7 +146,7 @@ describe('RecentSessions', () => {
     ui.unmount();
   });
 
-  it('limit<=0 renders null and skips the load effect', async () => {
+  it('limit<=0 renders null and reads nothing', async () => {
     seed([{ id: 'hidden-one', feature: 'should-not-load', startedAt: 1_700_000_000 }]);
     sessionsStore.reset();
 

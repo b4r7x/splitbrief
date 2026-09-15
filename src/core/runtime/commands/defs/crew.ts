@@ -1,6 +1,6 @@
 import { ALL_SCREENS, seatPickerOverlayFor } from '../../../navigation/types.js';
 import { CREW_SEAT_ROLES } from '../../../crew/seats.js';
-import { describeModeCost } from '../../../pipeline-spec/mode-cost.js';
+import { describeModeShape } from '../../../pipeline-spec/mode-shape.js';
 import {
   RETIRED_WORKFLOW_MODE,
   WORKFLOW_MODES,
@@ -48,7 +48,7 @@ export function crewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
         kind: 'closed',
         options: WORKFLOW_MODES,
         optionDescriptions: Object.fromEntries(
-          WORKFLOW_MODES.map((mode) => [mode, describeModeCost(mode, { gateNames: true })]),
+          WORKFLOW_MODES.map((mode) => [mode, describeModeShape(mode, { gateNames: true })]),
         ),
         optionHints: { [ctx.getWorkflowMode()]: 'current' },
         optional: true,

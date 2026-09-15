@@ -21,7 +21,6 @@ import type {
 } from '../events/types.js';
 import type { ValidationResult } from './validation/result.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
-import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 import type { UserEditConflict, TaskReviewRequest } from '../events/workflow-events.js';
@@ -159,7 +158,6 @@ export function publishTaskStart(
     contextLength?: number;
     currentCodeTruncated?: boolean;
     currentCodeContextMode?: CurrentCodeContextMode;
-    costPosture?: string;
     routingReason?: string;
   },
 ): void {
@@ -383,47 +381,6 @@ export function publishEscalate(
 
 export function publishCostUpdate(ctx: BusContext, tokenUsage: TokenUsage): void {
   ctx.bus.publish({ type: 'cost_update', ts: Date.now(), phase: ctx.phase, tokenUsage });
-}
-
-export function publishCostPrediction(ctx: BusContext, prediction: CostPrediction): void {
-  ctx.bus.publish({ type: 'cost_prediction', ts: Date.now(), phase: ctx.phase, prediction });
-}
-
-export function publishBudgetWarning(
-  opts: BusContext & { currentCost: number; maxBudget: number },
-): void {
-  opts.bus.publish({
-    type: 'budget_warning',
-    ts: Date.now(),
-    phase: opts.phase,
-    currentCost: opts.currentCost,
-    maxBudget: opts.maxBudget,
-  });
-}
-
-export function publishBudgetPaused(
-  opts: BusContext & { currentCost: number; maxBudget: number; threshold: number },
-): void {
-  opts.bus.publish({
-    type: 'budget_paused',
-    ts: Date.now(),
-    phase: opts.phase,
-    currentCost: opts.currentCost,
-    maxBudget: opts.maxBudget,
-    threshold: opts.threshold,
-  });
-}
-
-export function publishBudgetExceeded(
-  opts: BusContext & { currentCost: number; maxBudget: number },
-): void {
-  opts.bus.publish({
-    type: 'budget_exceeded',
-    ts: Date.now(),
-    phase: opts.phase,
-    currentCost: opts.currentCost,
-    maxBudget: opts.maxBudget,
-  });
 }
 
 export function publishError(options: PublishOperationalMessageOptions): void {

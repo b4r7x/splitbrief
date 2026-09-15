@@ -131,6 +131,13 @@ export function ConversationRowView({
   focused?: boolean;
 }) {
   const t = useTheme();
+  if (row.node !== undefined) {
+    return (
+      <Box height={1} overflow="hidden" flexShrink={0}>
+        {row.node}
+      </Box>
+    );
+  }
   const markerColor = markerColorFor(row, lifecycle, t);
   const codeBg = row.codeBg === true ? t.markdown.codeBg : undefined;
   const content = (

@@ -9,7 +9,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { focusHasResolvableCopy } from '../copy/resolve.js';
-import { getActiveRailStage } from '../layout/chrome-rows.js';
+import { getActiveRailStage } from '../../../core/rail-stages.js';
 import {
   deriveLiveStatus,
   formatStageElapsed,
@@ -39,9 +39,12 @@ import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 export function InputFooter({
   width,
   waiting = false,
+  byline: givenByline,
 }: {
   width?: number | undefined;
   waiting?: boolean | undefined;
+  /** A run at rest states where it stands from its record; there is no live status to derive. */
+  byline?: string | undefined;
 }) {
   const t = useTheme();
   const [lifecycle, { cols }, tasks, tokens, operations] = useStores(
@@ -174,6 +177,16 @@ export function InputFooter({
     copyHint: copyResolvable ? 'y copy' : null,
     worktreeLabel: worktreeName ? sanitizeTerminalDisplayText(worktreeName) : null,
   });
+
+  if (givenByline !== undefined) {
+    return (
+      <Box width="100%" paddingX={0} height={1} flexShrink={0}>
+        <Text color={t.textDim} wrap="truncate-end">
+          {givenByline}
+        </Text>
+      </Box>
+    );
+  }
 
   return (
     <Box width="100%" paddingX={0} height={1} flexShrink={0}>

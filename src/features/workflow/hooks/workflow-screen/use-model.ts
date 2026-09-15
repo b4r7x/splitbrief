@@ -2,32 +2,40 @@ import { sessionDir } from '../../../../core/paths.js';
 import type { CopyResult, CopyTarget } from '../../../../core/runtime/commands/types.js';
 import type { Focus } from '../../../../stores/ui/focus.js';
 import { useInputMode } from '../use-input-mode.js';
-import { useWorkflowRunner, type RunWorkflowFn, type WorkflowCompletion } from '../use-runner.js';
+import { useRunContinue } from '../use-run-continue.js';
+import { useRunLoop, type RunWorkflowFn } from '../use-run-loop.js';
 import { createReviewInputHandler } from '../../review-parser.js';
 import { useWorkflowKeys } from '../use-keys.js';
 import { useBriefReviewKeys } from '../use-brief-review-keys.js';
-import { resolveCancelledHints, resolveInputHint } from '../../input-hints.js';
+import { resolveInputHint } from '../../input-hints.js';
+import { continueRun } from '../../../../engine/orchestrator/run/continue.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { skillsStore } from '../../../../stores/project/skills.js';
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
+import {
+  continueRunInPlace,
+  type SessionSelectDeps,
+} from '../../../../stores/navigation/session-select.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { feedbackStore } from '../../../../stores/ui/feedback.js';
 import { stopStore } from '../../../../stores/workflow/stop.js';
-import { requestResume } from '../../handlers.js';
-import { useStopByline } from '../../stop/use-stop-byline.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../../../stores/cost-approval/prompt.js';
 import { useStores } from '../../../../stores/use-stores.js';
+import { getShowSpend } from '../../../../core/config/accessors/values.js';
+import { atRestComposer, atRestRailStages } from '../../at-rest.js';
+import { deriveSummaryView } from '../../closed/view-model.js';
+import { hydrateResume } from '../../resume-hydration.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
-import { canResumeCancelledWorkflow } from './resume.js';
 
 /** Blank Enter never resumes a parked brief, so the row says what does. */
 export const PARKED_EMPTY_SUBMIT_HINT = 'type instructions or /resume';
 
 export interface WorkflowScreenDeps {
   runWorkflow?: RunWorkflowFn | undefined;
+  /** The app's preparation composition root; continuing a run at rest re-prepares its tools. */
+  sessionSelect?: SessionSelectDeps | undefined;
 }
 
 interface UseWorkflowScreenOptions {
@@ -44,14 +52,17 @@ export function useWorkflowScreen({
   deps,
 }: UseWorkflowScreenOptions) {
   const configuredProjectDir = configStore.use((s) => s.projectDir);
+  const showSpend = configStore.use((s) => s.config === null || getShowSpend(s.config));
   const [skills] = useStores(skillsStore);
   const selectedSkillMetas = skills.available.filter((m) => skills.selected.has(m.id));
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
   const route = routerStore.use((s) => s);
-  const execution = route.screen === 'workflow' ? route.execution : undefined;
-  const prepared = execution?.kind === 'local' ? execution.prepared : undefined;
-  const projectDir = prepared?.session.ref.projectDir ?? configuredProjectDir;
-  const sessionId = prepared?.session.ref.sessionId;
+  const workflowRoute = route.screen === 'workflow' ? route : undefined;
+  const record = workflowRoute?.run;
+  const execution = workflowRoute?.execution;
+  const local = execution?.kind === 'local' ? execution : undefined;
+  const prepared = local?.prepared;
+  const projectDir = record?.ref.projectDir ?? configuredProjectDir;
 
   const inputMode = useInputMode();
   const review = createReviewInputHandler(inputMode);
@@ -61,24 +72,20 @@ export function useWorkflowScreen({
     reviewStore,
   );
 
-  const onComplete = ({ summary, sessionId: completedSessionId, status }: WorkflowCompletion) =>
-    routerStore.navigate({ to: 'summary', summary, sessionId: completedSessionId, status });
-
-  const runner = useWorkflowRunner({
+  const continuation = useRunContinue({ prepared, inputMode });
+  const runner = useRunLoop({
     prepared,
-    onComplete,
+    ...(local?.steer !== undefined && { steer: local.steer }),
     selectedSkills: selectedSkillMetas,
     inputMode,
+    continuation,
     runWorkflow: deps?.runWorkflow,
   });
 
   const approvalPromptState = approvalPromptStore.use((s) => s);
-  const costApprovalState = costApprovalStore.use((s) => s);
-  const approvalPending = approvalPromptState.status === 'pending';
-  const costPending = costApprovalState.status === 'pending';
-  const promptPending = approvalPending || costPending;
+  const promptPending = approvalPromptState.status === 'pending';
 
-  const activeSessionId = sessionId ?? runner.sessionId;
+  const activeSessionId = record?.ref.sessionId ?? runner.sessionId;
   const sessionDirPath =
     activeSessionId === undefined ? undefined : sessionDir(projectDir, activeSessionId);
 
@@ -97,63 +104,81 @@ export function useWorkflowScreen({
   });
 
   const parked = stopStore.use((s) => s.phase === 'parked');
-  const stopped = useStopByline();
 
-  const canResumeCancelledSession = canResumeCancelledWorkflow({
-    cancelled,
-    projectDir,
-    sessionId,
-    runnerSessionId: runner.sessionId,
-    routeSessionId: prepared?.session.ref.sessionId,
-    routeResumeState: prepared?.runtime.resumeState,
-  });
+  const atRestRecord = execution?.kind === 'at-rest' ? record : undefined;
+  const composer = atRestRecord === undefined ? null : atRestComposer(atRestRecord);
+  const closedView =
+    atRestRecord === undefined ? null : deriveSummaryView({ record: atRestRecord, showSpend });
+  const closed = atRestRecord !== undefined && atRestRecord.status.kind === 'closed';
 
-  // A parked brief is waiting on this composer: typed text steers it, and an empty submit says so
-  // rather than resuming on a keystroke the user never aimed at the run.
-  const handleInput = parked
-    ? (text: string) => {
-        requestResume(text);
-      }
-    : cancelled
-      ? canResumeCancelledSession
-        ? runner.handleResume
-        : () => {}
-      : review.handleInput;
+  // One continuation path for a run at rest: the engine decides whether the run can be picked up,
+  // the preparation attempt re-enters it in place, and the screen never moves.
+  const continueAtRest = (text: string): void => {
+    const sessionSelect = deps?.sessionSelect;
+    if (atRestRecord === undefined || sessionSelect === undefined) return;
+    const outcome = continueRun({
+      ref: atRestRecord.ref,
+      ...(text.trim() === '' ? {} : { steer: text }),
+      deps: {
+        resumeParked: () => false,
+        loadState: hydrateResume,
+        restart: ({ state, steer }) => {
+          void continueRunInPlace({
+            record: atRestRecord,
+            state,
+            ...(steer !== undefined && { steer }),
+            deps: sessionSelect,
+          });
+        },
+      },
+    });
+    if (outcome.kind === 'refused') feedbackStore.setError(outcome.message);
+  };
 
-  const handleRuntimeCommand = onRuntimeCommand;
+  // A parked brief and a run at rest continue the same way — one path, which settles the park or
+  // re-enters the run and says so when it cannot.
+  const handleInput =
+    atRestRecord !== undefined
+      ? continueAtRest
+      : parked || cancelled
+        ? continuation.handleResume
+        : review.handleInput;
 
-  // A run the user stopped already has its keys on the legend row; a second copy inside the
-  // composer box would be the same concept in two places, spelled differently.
-  const cancelledHints =
-    cancelled && stopped === null ? resolveCancelledHints(canResumeCancelledSession) : null;
-  const inputHint = cancelledHints
-    ? cancelledHints.placeholder
-    : resolveInputHint({
-        inputHint: inputMode.hint,
-        inputMode: inputMode.mode,
-      });
-  const feedbackHint = cancelledHints ? '' : inputHint;
-  const boxHintOverride = cancelledHints ? { keys: cancelledHints.byline, cost: false } : undefined;
+  const inputHint =
+    composer !== null
+      ? composer.placeholder
+      : resolveInputHint({ inputHint: inputMode.hint, inputMode: inputMode.mode });
 
   return {
     hasOverlay,
-    phase: phase,
+    phase,
     cancelled,
     inputMode,
     reviewFilePath,
     approvalPromptState,
-    costApprovalState,
-    approvalPending,
-    costPending,
     promptPending,
     navigateBriefReview,
     startedAt: runner.startedAt,
+    /** The run on screen, at rest; undefined while a local process is driving it. */
+    atRestRecord,
+    closed,
+    closedView,
+    railStages: atRestRecord === undefined ? undefined : atRestRailStages(atRestRecord),
+    continuable: composer?.continuable ?? false,
     handleInput,
-    handleRuntimeCommand,
-    onEmptySubmit: parked ? () => feedbackStore.setMessage(PARKED_EMPTY_SUBMIT_HINT) : undefined,
+    handleRuntimeCommand: onRuntimeCommand,
+    // A bare Enter does what the placeholder says it does: continues a run that can be continued,
+    // and goes home from one that cannot.
+    onEmptySubmit:
+      atRestRecord !== undefined
+        ? composer?.continuable === true
+          ? () => continueAtRest('')
+          : () => routerStore.navigate({ to: 'home' })
+        : parked
+          ? () => feedbackStore.setMessage(PARKED_EMPTY_SUBMIT_HINT)
+          : undefined,
     inputHint,
-    feedbackHint,
-    boxHintOverride,
+    commandsOnly: composer?.commandsOnly ?? false,
     questionEpoch: inputMode.questionEpoch,
   };
 }

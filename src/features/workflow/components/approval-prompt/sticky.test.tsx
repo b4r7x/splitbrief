@@ -340,7 +340,7 @@ describe('ApprovalPrompt document review panel', () => {
     );
     const frame = stripColor(ui.lastFrame());
     expect(frame).toContain('Approve plan and compile briefs');
-    expect(frame).toContain('Reject plan');
+    expect(frame).toContain('End run (close this run; keep changes)');
     expect(frame).toContain(REVIEW_DOCUMENT_HINTS);
     ui.unmount();
   });

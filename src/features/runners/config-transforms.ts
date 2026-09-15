@@ -4,7 +4,7 @@ import {
   ImplementerConfigSchema,
   type ImplementerConfig,
 } from '../../core/schemas/implementer-config.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import { updateActiveRunner } from '../../core/config/accessors/active-runner.js';
 import {

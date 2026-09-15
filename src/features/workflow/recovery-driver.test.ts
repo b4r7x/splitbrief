@@ -18,6 +18,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { createRecoveryDriver } from './recovery-driver.js';
+import { addTuiEvent } from './tui-sink.js';
 
 let dirs: string[] = [];
 
@@ -85,6 +86,7 @@ function runDriver(
     prepared,
     inputMode,
     abortedRef: { current: false },
+    sink: addTuiEvent,
     setInlineResume: () => {},
   });
   return promptPendingRecovery({
@@ -167,7 +169,7 @@ describe('createRecoveryDriver', () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',
       message: 'T001 hit the implementer usage limit',
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'abort-workflow'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
       recommendedAction: 'switch-seat',
       switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code', model: 'opus' }] },
     });
@@ -188,7 +190,7 @@ describe('createRecoveryDriver', () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',
       message: 'T001 hit the implementer usage limit',
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'abort-workflow'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
       recommendedAction: 'switch-seat',
       resetAt: '2026-07-13T17:00:00.000Z',
       switchSeat: {
@@ -211,7 +213,7 @@ describe('createRecoveryDriver', () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',
       message: 'T001 hit the implementer usage limit',
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'abort-workflow'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
       recommendedAction: 'switch-seat',
       resetAt: '2026-07-13T17:00:00.000Z',
       switchSeat: { seat: 'build', candidates: [{ tool: 'opencode' }] },
@@ -232,5 +234,43 @@ describe('createRecoveryDriver', () => {
       { seat: 'build', resetAt: Date.parse('2026-07-13T17:00:00.000Z') },
     ]);
     expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null });
+  });
+
+  it('end run closes the run on the state and stops the loop', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'review-failed',
+      taskId: undefined,
+      availableActions: ['pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+    });
+    const { inputMode } = makeInputMode(['a']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(result.shouldRun).toBe(false);
+    expect(result.state?.closed?.as).toBe('ended');
+    expect(result.state?.pendingRecovery).toBeUndefined();
+    const persisted = loadState(prepared.session.ref);
+    expect(persisted?.closed?.as).toBe('ended');
+    expect(feedbackStore.get().message).toContain('Run ended');
+  });
+
+  it('revise asks for the correction and carries it into the queue', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'brief-review-no-progress',
+      taskId: undefined,
+      phase: 'reviewing-briefs',
+      availableActions: ['revise', 'end-run'],
+      recommendedAction: 'revise',
+    });
+    const { inputMode } = makeInputMode(['v', 'split the first brief']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(result.shouldRun).toBe(true);
+    expect(result.state?.pendingRecovery).toBeUndefined();
+    expect(result.state?.messageQueue.map((message) => message.text)).toEqual([
+      'split the first brief',
+    ]);
   });
 });

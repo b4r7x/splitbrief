@@ -108,7 +108,7 @@ function failIfSessionFailed(
   writeRecord: RecordWriter,
 ): void {
   const session = readSession({ projectDir, sessionId });
-  if (session?.status !== 'failed') return;
+  if (session?.stop !== 'failed') return;
   writeRecord({
     type: 'error',
     message: `Session ${sessionId} ended with status failed.`,
@@ -117,23 +117,23 @@ function failIfSessionFailed(
 }
 
 // A run stopped short of completion — a tiered approval refused headlessly, a gate
-// that ended the task loop, an operator ending the run — saves the session as
-// 'interrupted' or 'cancelled' without a pendingRecovery and without a 'failed'
-// status, so the guards above miss it. A user-requested abort never reaches here:
-// the signal check in runHeadless returns first, keeping SIGINT/SIGTERM at exit 0.
+// that ended the task loop, an operator ending the run — saves the session open or
+// ended, without a pendingRecovery and without a failed stop reason, so the guards
+// above miss it. A user-requested abort never reaches here: the signal check in
+// runHeadless returns first, keeping SIGINT/SIGTERM at exit 0.
 function failIfSessionInterrupted(
   projectDir: string,
   sessionId: string,
   writeRecord: RecordWriter,
 ): void {
   const session = readSession({ projectDir, sessionId });
-  if (session?.status !== 'interrupted' && session?.status !== 'cancelled') return;
+  if (session === null || session.status === 'complete') return;
   writeRecord({
     type: 'error',
     message: `Session ${sessionId} ended with status ${session.status}.`,
   });
   throw cliError(
-    session.status === 'cancelled'
+    session.status === 'ended'
       ? 'Workflow was cancelled.'
       : 'Workflow did not complete — the run stopped early.',
     1,

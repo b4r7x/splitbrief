@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
-import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { readActive, reactivateExistingSession } from '../../core/sessions/active-pointer.js';
 import { saveState } from '../../core/state/persistence.js';
 import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
+import type { RunRecord } from '../../core/sessions/run-record.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type {
   PreparationOutcome,
@@ -17,6 +18,7 @@ import { overlayStore } from '../ui/overlay.js';
 import { routerStore } from './router.js';
 import {
   cancelSessionPreparation,
+  continueRunInPlace,
   handleSessionSelect,
   sessionSelectStore,
   type SessionSelectDeps,
@@ -68,8 +70,20 @@ function sessionSelectDeps(overrides: Partial<SessionSelectDeps> = {}): SessionS
     prepareResume: async () => {
       throw new Error('Resume preparation was not expected');
     },
+    hydrateRun: async () => {},
     ...overrides,
   };
+}
+
+function openRecord(sessionId: string): RunRecord {
+  return makeRunRecord({
+    ref: { projectDir: tmp, sessionId },
+    status: {
+      kind: 'open',
+      stop: { kind: 'interrupted' },
+      resumeAt: { kind: 'planner', call: 'tasks' },
+    },
+  });
 }
 
 beforeEach(() => {
@@ -86,56 +100,55 @@ afterEach(() => {
   sessionSelectStore.reset();
 });
 
-describe('handleSessionSelect (Enter routing)', () => {
-  it('recent session resume prepares the existing session before local navigation', async () => {
+describe('handleSessionSelect', () => {
+  it('replays the run and opens it at rest, whatever the run did', async () => {
     overlayStore.open('sessions');
-    const session = makeSession({
-      id: 'sess-resume',
-      feature: 'add auth',
-      status: 'interrupted',
-      summary: null,
-    });
+    const session = makeSession({ id: 'sess-open', feature: 'add auth', status: 'open' });
     const savedState = { ...createInitialState('saved add auth'), phase: 'implementing' as const };
     saveState({ projectDir: tmp, sessionId: session.id }, savedState);
-    const prepared = preparedResumeExecution(tmp, session.id, savedState);
-    let resolvePreparation: ((outcome: PreparationOutcome) => void) | undefined;
-    const pendingPreparation = new Promise<PreparationOutcome>((resolve) => {
-      resolvePreparation = resolve;
-    });
-    const deps = sessionSelectDeps({
-      loadResumeState: () => ({ kind: 'loaded', state: savedState }),
-      prepareResume: async ({ ref, state }) => {
-        expect(ref).toEqual({ projectDir: tmp, sessionId: session.id });
-        expect(state).toBe(savedState);
-        return pendingPreparation;
-      },
-    });
+    const hydrateRun = vi.fn(async (_record: RunRecord) => {});
 
-    const selection = handleSessionSelect(session, tmp, deps);
+    await handleSessionSelect(session, tmp, sessionSelectDeps({ hydrateRun }));
 
-    expect(overlayStore.get().active).toBe('none');
-    expect(sessionSelectStore.get().preparation.kind).toBe('preparing');
-    expect(routerStore.get().screen).toBe('home');
-    if (resolvePreparation === undefined) throw new Error('Preparation did not start');
-    resolvePreparation({ kind: 'prepared', execution: prepared });
-    await selection;
-
+    expect(hydrateRun).toHaveBeenCalledOnce();
+    const hydrated = hydrateRun.mock.calls.at(0);
+    expect(hydrated).toBeDefined();
     expect(overlayStore.get().active).toBe('none');
     const route = routerStore.get();
     expect(route.screen).toBe('workflow');
     if (route.screen === 'workflow') {
-      expect(route.execution.kind).toBe('local');
-      if (route.execution.kind === 'local') {
-        expect(route.execution.prepared).toBe(prepared);
-        expect(route.execution.prepared.runtime.feature).toBe('saved add auth');
-        expect(route.execution.prepared.runtime.resumeState).toEqual(savedState);
-        expect(route.execution.prepared.session.ref.sessionId).toBe(session.id);
-      }
+      expect(route.execution.kind).toBe('at-rest');
+      expect(route.run.ref.sessionId).toBe(session.id);
     }
     expect(sessionSelectStore.get().error).toBeNull();
   });
 
-  it('refuses to replace an active local workflow before resume preparation starts', async () => {
+  it('opens a finished run the same way, without preparing anything', async () => {
+    const session = makeSession({ id: 'sess-complete', feature: 'shipped', status: 'complete' });
+    const prepareResume = vi.fn<SessionSelectDeps['prepareResume']>();
+
+    await handleSessionSelect(session, tmp, sessionSelectDeps({ prepareResume }));
+
+    expect(prepareResume).not.toHaveBeenCalled();
+    expect(routerStore.get().screen).toBe('workflow');
+  });
+
+  it('opens a run whose state cannot be read, rather than refusing to show it', async () => {
+    overlayStore.open('sessions');
+    const session = makeSession({ id: 'sess-no-state', feature: 'add auth', status: 'open' });
+
+    await handleSessionSelect(session, tmp, sessionSelectDeps());
+
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen === 'workflow') {
+      expect(route.run.hydration.kind).not.toBe('loaded');
+      expect(route.execution.kind).toBe('at-rest');
+    }
+    expect(sessionSelectStore.get().error).toBeNull();
+  });
+
+  it('refuses to replace a local workflow this process is driving', async () => {
     const currentState = {
       ...createInitialState('current local workflow'),
       phase: 'implementing' as const,
@@ -143,369 +156,139 @@ describe('handleSessionSelect (Enter routing)', () => {
     const currentPrepared = preparedResumeExecution(tmp, 'current-local', currentState);
     routerStore.navigate({
       to: 'workflow',
+      run: makeRunRecord({ ref: currentPrepared.session.ref }),
       execution: { kind: 'local', prepared: currentPrepared },
     });
     const exactRoute = routerStore.get();
     overlayStore.open('sessions');
-    const selected = makeSession({
-      id: 'resume-other',
-      feature: 'resume another session',
-      status: 'interrupted',
-      summary: null,
-    });
-    const selectedState = {
-      ...createInitialState(selected.feature),
-      phase: 'implementing' as const,
-    };
-    const prepareResume = vi.fn<SessionSelectDeps['prepareResume']>();
+    const selected = makeSession({ id: 'resume-other', feature: 'another run', status: 'open' });
+    const hydrateRun = vi.fn(async () => {});
 
-    await handleSessionSelect(
-      selected,
-      tmp,
-      sessionSelectDeps({
-        loadResumeState: () => ({ kind: 'loaded', state: selectedState }),
-        prepareResume,
-      }),
-    );
+    await handleSessionSelect(selected, tmp, sessionSelectDeps({ hydrateRun }));
 
-    expect(prepareResume).not.toHaveBeenCalled();
+    expect(hydrateRun).not.toHaveBeenCalled();
     expect(routerStore.get()).toBe(exactRoute);
-    expect(exactRoute.screen).toBe('workflow');
-    if (exactRoute.screen === 'workflow' && exactRoute.execution.kind === 'local') {
-      expect(exactRoute.execution.prepared).toBe(currentPrepared);
-    }
     expect(overlayStore.get().active).toBe('sessions');
+    expect(sessionSelectStore.get().error).toContain('another run');
+  });
+});
+
+describe('continueRunInPlace', () => {
+  it('flips the execution in place once the tools are prepared, carrying the steer', async () => {
+    const savedState = { ...createInitialState('continue me'), phase: 'implementing' as const };
+    const record = openRecord('sess-continue');
+    routerStore.navigate({ to: 'workflow', run: record, execution: { kind: 'at-rest' } });
+    const prepared = preparedResumeExecution(tmp, record.ref.sessionId, savedState);
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    const deps = sessionSelectDeps({
+      prepareResume: async ({ ref, state }) => {
+        expect(ref).toEqual(record.ref);
+        expect(state).toBe(savedState);
+        return pending.promise;
+      },
+    });
+
+    const attempt = continueRunInPlace({
+      record,
+      state: savedState,
+      steer: 'use the cached parser',
+      deps,
+    });
+    expect(sessionSelectStore.get().preparation.kind).toBe('preparing');
+    pending.resolve({ kind: 'prepared', execution: prepared });
+    await attempt;
+
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen === 'workflow' && route.execution.kind === 'local') {
+      expect(route.execution.prepared).toBe(prepared);
+      expect(route.execution.steer).toBe('use the cached parser');
+    }
     expect(sessionSelectStore.get().preparation.kind).toBe('idle');
-    expect(sessionSelectStore.get().error).toContain('current local workflow');
   });
 
-  it('single-flights duplicate resume selections', async () => {
-    const session = makeSession({
-      id: 'sess-duplicate',
-      feature: 'resume once',
-      status: 'interrupted',
-      summary: null,
-    });
+  it('single-flights a duplicate continuation of the same run', async () => {
     const savedState = { ...createInitialState('resume once'), phase: 'implementing' as const };
+    const record = openRecord('sess-duplicate');
     const pending = Promise.withResolvers<PreparationOutcome>();
     const signals: AbortSignal[] = [];
     const prepareResume = vi.fn((_input, signal: AbortSignal) => {
       signals.push(signal);
       return pending.promise;
     });
-    const deps = sessionSelectDeps({
-      loadResumeState: () => ({ kind: 'loaded', state: savedState }),
-      prepareResume,
-    });
+    const deps = sessionSelectDeps({ prepareResume });
 
-    const first = handleSessionSelect(session, tmp, deps);
-    const duplicate = handleSessionSelect(session, tmp, deps);
+    const first = continueRunInPlace({ record, state: savedState, deps });
+    const duplicate = continueRunInPlace({ record, state: savedState, deps });
     await Promise.resolve();
 
     expect(prepareResume).toHaveBeenCalledOnce();
     expect(signals).toHaveLength(1);
-    expect(signals[0]?.aborted).toBe(false);
 
     pending.resolve({
       kind: 'blocked',
-      report: preparedResumeExecution(tmp, session.id, savedState).report,
+      report: preparedResumeExecution(tmp, record.ref.sessionId, savedState).report,
     });
     await Promise.all([first, duplicate]);
     expect(sessionSelectStore.get().preparation.kind).toBe('blocked');
   });
 
-  it('cancels the caller-owned signal and exact-clears a late existing-session receipt', async () => {
+  it('cancels the caller-owned signal and clears a late existing-session receipt', async () => {
     overlayStore.open('sessions');
-    const session = makeSession({
-      id: 'sess-cancelled',
-      feature: 'cancel resume',
-      status: 'interrupted',
-      summary: null,
-    });
     const savedState = { ...createInitialState('cancel resume'), phase: 'implementing' as const };
+    const record = openRecord('sess-cancelled');
     const pending = Promise.withResolvers<PreparationOutcome>();
     let signal: AbortSignal | undefined;
-    const selection = handleSessionSelect(
-      session,
-      tmp,
-      sessionSelectDeps({
-        loadResumeState: () => ({ kind: 'loaded', state: savedState }),
+    const attempt = continueRunInPlace({
+      record,
+      state: savedState,
+      deps: sessionSelectDeps({
         prepareResume: (_input, attemptSignal) => {
           signal = attemptSignal;
           return pending.promise;
         },
       }),
-    );
+    });
     await Promise.resolve();
 
     cancelSessionPreparation();
     expect(signal?.aborted).toBe(true);
     expect(sessionSelectStore.get().preparation.kind).toBe('idle');
-    expect(overlayStore.get().active).toBe('sessions');
 
-    const active = reactivateExistingSession({ projectDir: tmp, sessionId: session.id });
-    const execution = {
-      ...preparedResumeExecution(tmp, session.id, savedState),
-      session: {
-        kind: 'existing' as const,
-        ref: { projectDir: tmp, sessionId: session.id },
-        active,
+    const active = reactivateExistingSession({ projectDir: tmp, sessionId: record.ref.sessionId });
+    pending.resolve({
+      kind: 'prepared',
+      execution: {
+        ...preparedResumeExecution(tmp, record.ref.sessionId, savedState),
+        session: {
+          kind: 'existing',
+          ref: record.ref,
+          active,
+        },
       },
-    };
-    pending.resolve({ kind: 'prepared', execution });
-    await selection;
+    });
+    await attempt;
 
     expect(readActive(tmp)).toBeNull();
     expect(routerStore.get().screen).toBe('home');
   });
 
-  it('routes only the latest selection and preserves its newer active receipt', async () => {
-    const firstSession = makeSession({
-      id: 'sess-first',
-      feature: 'first resume',
-      status: 'interrupted',
-      summary: null,
-    });
-    const secondSession = makeSession({
-      id: 'sess-second',
-      feature: 'second resume',
-      status: 'interrupted',
-      summary: null,
-    });
-    const states = new Map([
-      [firstSession.id, { ...createInitialState('first resume'), phase: 'implementing' as const }],
-      [
-        secondSession.id,
-        { ...createInitialState('second resume'), phase: 'implementing' as const },
-      ],
-    ]);
-    const first = Promise.withResolvers<PreparationOutcome>();
-    const second = Promise.withResolvers<PreparationOutcome>();
-    const signals: AbortSignal[] = [];
-    const prepareResume: SessionSelectDeps['prepareResume'] = ({ ref }, signal) => {
-      signals.push(signal);
-      return ref.sessionId === firstSession.id ? first.promise : second.promise;
-    };
-    const deps = sessionSelectDeps({
-      loadResumeState: ({ sessionId }) => {
-        const found = states.get(sessionId);
-        return found === undefined ? { kind: 'missing' } : { kind: 'loaded', state: found };
-      },
-      prepareResume,
-    });
-
-    const firstSelection = handleSessionSelect(firstSession, tmp, deps);
-    await Promise.resolve();
-    const secondSelection = handleSessionSelect(secondSession, tmp, deps);
-    await Promise.resolve();
-    expect(signals[0]?.aborted).toBe(true);
-
-    const secondActive = reactivateExistingSession({
-      projectDir: tmp,
-      sessionId: secondSession.id,
-    });
-    second.resolve({
-      kind: 'prepared',
-      execution: {
-        ...preparedResumeExecution(tmp, secondSession.id, states.get(secondSession.id)!),
-        session: {
-          kind: 'existing',
-          ref: { projectDir: tmp, sessionId: secondSession.id },
-          active: secondActive,
-        },
-      },
-    });
-    await secondSelection;
-
-    first.resolve({
-      kind: 'prepared',
-      execution: preparedResumeExecution(tmp, firstSession.id, states.get(firstSession.id)!),
-    });
-    await firstSelection;
-
-    const route = routerStore.get();
-    expect(route.screen).toBe('workflow');
-    if (route.screen === 'workflow' && route.execution.kind === 'local') {
-      expect(route.execution.prepared.session.ref.sessionId).toBe(secondSession.id);
-    }
-    expect(readActive(tmp)).toBe(secondSession.id);
-  });
-
   it('reifies an unexpected preparation rejection as a generic failed state', async () => {
-    const session = makeSession({
-      id: 'sess-rejected',
-      feature: 'rejected resume',
-      status: 'interrupted',
-      summary: null,
-    });
     const savedState = { ...createInitialState('rejected resume'), phase: 'implementing' as const };
 
-    await expect(
-      handleSessionSelect(
-        session,
-        tmp,
-        sessionSelectDeps({
-          loadResumeState: () => ({ kind: 'loaded', state: savedState }),
-          prepareResume: async () => {
-            throw new Error('resume boundary rejected');
-          },
-        }),
-      ),
-    ).resolves.toBeUndefined();
+    await continueRunInPlace({
+      record: openRecord('sess-rejected'),
+      state: savedState,
+      deps: sessionSelectDeps({
+        prepareResume: async () => {
+          throw new Error('resume boundary rejected');
+        },
+      }),
+    });
 
     expect(sessionSelectStore.get().preparation).toMatchObject({
       kind: 'failed',
       error: expect.objectContaining({ message: 'resume boundary rejected' }),
     });
-  });
-
-  it('refuses to resume an interrupted session whose saved state never reached a resumable phase', async () => {
-    overlayStore.open('sessions');
-    const session = makeSession({
-      id: 'sess-poisoned',
-      feature: 'add auth',
-      status: 'interrupted',
-      summary: null,
-    });
-    const savedState = { ...createInitialState('saved add auth'), phase: 'idle' as const };
-    saveState({ projectDir: tmp, sessionId: session.id }, savedState);
-
-    await handleSessionSelect(session, tmp, sessionSelectDeps());
-
-    expect(overlayStore.get().active).toBe('sessions');
-    expect(routerStore.get().screen).toBe('home');
-    const { error } = sessionSelectStore.get();
-    expect(error ?? '').toContain('interrupted before it made progress');
-    expect(error ?? '').toContain('add auth');
-  });
-
-  it('keeps the picker open and surfaces feedback when an interrupted session has no valid state', async () => {
-    overlayStore.open('sessions');
-    const session = makeSession({
-      id: 'sess-missing-state',
-      feature: 'add auth',
-      status: 'interrupted',
-      summary: null,
-    });
-
-    await handleSessionSelect(session, tmp, sessionSelectDeps());
-
-    expect(overlayStore.get().active).toBe('sessions');
-    expect(routerStore.get().screen).toBe('home');
-    expect(sessionSelectStore.get().error ?? '').toContain('saved workflow state');
-  });
-
-  it('opens an interrupted session summary when no resumable state is available', async () => {
-    overlayStore.open('sessions');
-    const summary = makeSummary({ feature: 'partial refactor' });
-    const session = makeSession({
-      id: 'sess-interrupted-summary',
-      feature: 'partial refactor',
-      status: 'interrupted',
-      summary,
-    });
-
-    await handleSessionSelect(session, tmp, sessionSelectDeps());
-
-    expect(overlayStore.get().active).toBe('none');
-    const route = routerStore.get();
-    expect(route.screen).toBe('summary');
-    if (route.screen === 'summary') {
-      expect(route.summary).toEqual(summary);
-      expect(route.sessionId).toBe('sess-interrupted-summary');
-      expect(route.status).toBe('interrupted');
-    }
-    expect(sessionSelectStore.get().error).toBeNull();
-  });
-
-  it('navigates from home to the summary screen when the session completed with a summary', async () => {
-    overlayStore.open('sessions');
-    const summary = makeSummary({ feature: 'refactor payments' });
-    const session = makeSession({ id: 'sess-complete', status: 'complete', summary });
-
-    await handleSessionSelect(session, tmp, sessionSelectDeps());
-
-    expect(overlayStore.get().active).toBe('none');
-    const route = routerStore.get();
-    expect(route.screen).toBe('summary');
-    if (route.screen === 'summary') {
-      expect(route.summary).toEqual(summary);
-      expect(route.sessionId).toBe('sess-complete');
-      expect(route.status).toBe('complete');
-    }
-    expect(sessionSelectStore.get().error).toBeNull();
-  });
-
-  it('replaces an open summary when a failed session has a summary to display', async () => {
-    routerStore.init({
-      screen: 'summary',
-      summary: makeSummary({ feature: 'old summary' }),
-      sessionId: 'old-session',
-      status: 'complete',
-    });
-    overlayStore.open('sessions');
-    const summary = makeSummary({ feature: 'failed feature' });
-    const session = makeSession({
-      id: 'failed-summary',
-      feature: 'failed feature',
-      status: 'failed',
-      summary,
-    });
-
-    await handleSessionSelect(session, tmp, sessionSelectDeps());
-
-    expect(overlayStore.get().active).toBe('none');
-    const route = routerStore.get();
-    expect(route.screen).toBe('summary');
-    if (route.screen === 'summary') {
-      expect(route.summary).toEqual(summary);
-      expect(route.sessionId).toBe('failed-summary');
-      expect(route.status).toBe('failed');
-    }
-    expect(sessionSelectStore.get().error).toBeNull();
-  });
-
-  it('keeps the overlay open and surfaces feedback for a failed session without a summary', async () => {
-    overlayStore.open('sessions');
-    const session = makeSession({ feature: 'add auth', status: 'failed', summary: null });
-
-    await handleSessionSelect(session, tmp, sessionSelectDeps());
-
-    expect(overlayStore.get().active).toBe('sessions');
-    expect(routerStore.get().screen).toBe('home');
-    expect(sessionSelectStore.get().error ?? '').toContain('add auth');
-  });
-
-  it('strips OSC-52/CSI control bytes from the feature name interpolated into a selection error', async () => {
-    overlayStore.open('sessions');
-    const payload = 'ZWNobyBwd25lZA==';
-    const malicious = `before\u001b]52;c;${payload}\u0007\u001b[2Jafter`;
-    const session = makeSession({ feature: malicious, status: 'failed', summary: null });
-
-    await handleSessionSelect(session, tmp, sessionSelectDeps());
-
-    const error = sessionSelectStore.get().error ?? '';
-    expect(error).toContain('beforeafter');
-    expect(error).not.toContain(payload);
-    expect(error).not.toContain(']52');
-    expect(error).not.toContain('[2J');
-  });
-
-  it('surfaces an error and stays on home when the loader throws for an unsafe session id', async () => {
-    overlayStore.open('sessions');
-    const session = makeSession({
-      id: 'bad/id',
-      feature: 'add auth',
-      status: 'interrupted',
-      summary: null,
-    });
-
-    await handleSessionSelect(session, tmp, sessionSelectDeps());
-
-    const { error } = sessionSelectStore.get();
-    expect(error ?? '').toContain('add auth');
-    expect(error ?? '').toContain('Cannot resume');
-    expect(overlayStore.get().active).toBe('sessions');
-    expect(routerStore.get().screen).toBe('home');
   });
 });

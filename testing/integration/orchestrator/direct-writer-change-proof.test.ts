@@ -28,6 +28,8 @@ import type { CliStartGate } from '../../../src/engine/runners/start-gate.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -478,12 +480,13 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
     const events: EngineEvent[] = [];
     const task = proofTask();
     const planner = makePlanner({
-      quickPlan: vi.fn().mockResolvedValue({
-        spec: '',
-        plan: '',
-        tasks: [task],
-        usage: { inputTokens: 40, outputTokens: 20 },
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          tasks: [task],
+          usage: { inputTokens: 40, outputTokens: 20 },
+        }),
+      ),
     });
 
     const feature = 'prove direct writer promotion';

@@ -5,20 +5,19 @@ import {
   resolveApproveLevel,
   blocksBriefsGate,
 } from '../../../core/config/runtime/resolve.js';
-import { runQuickPlanning } from './quick.js';
-import { runFullPlanning } from './full.js';
-import { runSpeckitPlanning } from './speckit.js';
+import { runPlanningSteps } from './steps.js';
+import { runRewindPlanning } from './rewind.js';
 import { adviseMode, advisePlanSize } from './mode-advisor.js';
 import { runBriefQualityWithRepair } from './brief-quality-gate.js';
 import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult, PlanningProducerResult } from './types.js';
 import { writeAndPublishArtifacts } from '../artifact-write.js';
-import { transitionAndSave } from '../state-ops.js';
+import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { publishWarning } from '../events.js';
 import { firstBriefError } from '../../spec/brief-quality.js';
-import { handlePlanningFailure } from './failure.js';
-import { planningError } from './errors.js';
+import { buildBriefQualityUnrepairedRecoveryIssue } from '../recovery/builders/planner.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { taskFiles } from '../../../core/schemas/task.js';
 
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
@@ -103,12 +102,10 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     ...(advisory.risk === 'trivial' ? { trivial: true } : {}),
   };
 
-  const produced: PlanningProducerResult =
-    mode === 'quick'
-      ? await runQuickPlanning(optsWithContext)
-      : mode === 'speckit'
-        ? await runSpeckitPlanning(optsWithContext)
-        : await runFullPlanning(optsWithContext);
+  const rewindPending = optsWithContext.rewindPending;
+  const produced: PlanningProducerResult = rewindPending
+    ? await runRewindPlanning(optsWithContext, rewindPending)
+    : await runPlanningSteps(optsWithContext);
   if (produced.disposition === 'terminal') return produced;
 
   const { planner } = opts;
@@ -177,8 +174,10 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     switch (loop.outcome) {
       case 'accepted':
         return { disposition: 'ready-for-tasks', state: loop.state, tasks: loop.tasks };
-      case 'rejected':
-        return { disposition: 'terminal', state: loop.state, outcome: 'rejected' };
+      case 'closed':
+        return { disposition: 'terminal', state: loop.state, outcome: 'closed' };
+      case 'halted':
+        return { disposition: 'terminal', state: loop.state, outcome: 'halted' };
       case 'aborted':
         return { disposition: 'terminal', state: loop.state, outcome: 'cancelled' };
       case 'failed':
@@ -190,16 +189,17 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
 
   if (!quality.report.passed) {
     const firstError = firstBriefError(quality.report);
-    return handlePlanningFailure({
-      err: planningError.briefQualityGateFailed(
-        firstError?.code ?? 'unknown',
-        firstError?.taskId ?? 'unknown',
-      ),
-      projectDir,
-      sessionId,
-      state,
-      wctx,
+    const issue = buildBriefQualityUnrepairedRecoveryIssue({
+      phase: state.phase,
+      message: `Task Brief quality gate failed: ${firstError?.code ?? 'unknown'} in ${firstError?.taskId ?? 'unknown'}`,
+      details: ['The repair pass could not fix it and no briefs gate is configured to review it.'],
+      createdAt: nowIso(),
     });
+    return {
+      disposition: 'terminal',
+      state: raisePendingRecovery({ projectDir, sessionId, bus }, state, issue),
+      outcome: 'halted',
+    };
   }
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEF_ADMISSION_OPENED' });

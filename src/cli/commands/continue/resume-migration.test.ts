@@ -15,16 +15,23 @@ function resumableState(overrides: Partial<WorkflowState> = {}): WorkflowState {
 }
 
 describe('resume migration boundary', () => {
-  it('accepts only current v4 resumable phases', () => {
+  it('accepts any open v4 run and refuses a closed one', () => {
     const state = resumableState();
 
     expect(() => assertResumableState(state, 'session-1')).not.toThrow();
+    expect(() => assertResumableState({ ...state, phase: 'idle' }, 'session-1')).not.toThrow();
     expect(() => assertResumableState({ ...state, stateVersion: 3 }, 'session-1')).toThrow(
       /not current v4 and cannot be resumed/,
     );
-    expect(() => assertResumableState({ ...state, phase: 'idle' }, 'session-1')).toThrow(
-      /cannot be resumed/,
-    );
+    expect(() =>
+      assertResumableState({ ...state, phase: 'complete', reviewStatus: 'passed' }, 'session-1'),
+    ).toThrow(/Run session-1 is closed \(complete\); nothing to resume\./);
+    expect(() =>
+      assertResumableState(
+        { ...state, closed: { at: '2026-09-01T00:00:00.000Z', as: 'ended' } },
+        'session-1',
+      ),
+    ).toThrow(/Run session-1 is closed \(ended\); nothing to resume\./);
   });
 
   it('carries recovery identity fields into preparation instead of deriving them from artifacts', async () => {

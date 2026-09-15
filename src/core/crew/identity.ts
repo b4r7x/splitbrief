@@ -10,11 +10,8 @@ import {
 } from '../config/accessors/runner-config.js';
 import { formatModelName, peelDisplayLabel } from '../model-display.js';
 import { getProviderDisplayName } from '../providers/catalog.js';
-import {
-  AUTOMATIC_MODEL,
-  isAutoCheapestModel,
-  normalizeConfiguredModel,
-} from '../providers/automatic-model.js';
+import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
+import { SOFT_SEP } from '../separators.js';
 import {
   peelAxisTokensFromModelId,
   runnerEffortChannel,
@@ -37,19 +34,13 @@ export const CREW_LABEL_WIDTH = 8;
 /** `model: auto` is this word on every surface, never a resolved catalog default. */
 export const AUTO_MODEL_WORD = 'auto';
 
-/**
- * `model: auto:cheapest` is this phrase on every surface — the seat identity and the picker row
- * that sets it read the same words, so the BUILD seat is never two names for one policy.
- */
-export const AUTO_CHEAPEST_MODEL_WORD = 'Auto (cheapest capable)';
-
 export const PLANNER_INHERITANCE = Object.freeze({
   sentence: 'same as planner',
   mark: '= PLAN',
 });
 
 /** The one middle dot that joins the parts of every crew identity, on the row and in the fold marker. */
-export const CREW_IDENTITY_SEPARATOR = ' · ';
+export const CREW_IDENTITY_SEPARATOR = SOFT_SEP;
 const CLAUDE_BRAND = 'Claude';
 const HANGING_SEPARATOR = /[ ·]+$/u;
 
@@ -60,7 +51,6 @@ function modelWord(runner: RunnerConfig, displayName?: string | undefined): stri
     runner.kind === 'cli' ? runner.tool : undefined,
   );
   if (model === undefined || model === AUTOMATIC_MODEL) return AUTO_MODEL_WORD;
-  if (isAutoCheapestModel(model)) return AUTO_CHEAPEST_MODEL_WORD;
   if (runnerEffortChannel(runner) === 'model-id') {
     const peeled = displayName ? peelDisplayLabel(displayName) : '';
     if (peeled !== '') return peeled;
@@ -205,29 +195,49 @@ export function formatCollapsedSeatLine(
   const plannerName = input.displayNames?.planner ?? input.displayNames?.plan;
   const buildName = input.displayNames?.build;
   const reviewerName = input.displayNames?.reviewer ?? input.displayNames?.review ?? plannerName;
-  const review =
-    input.reviewer === undefined
-      ? PLANNER_INHERITANCE.mark
-      : formatShortSeatIdentity(input.reviewer, reviewerName);
+  return formatCollapsedSeatLineFromIdentities({
+    plan: formatShortSeatIdentity(input.planner, plannerName),
+    build: formatShortSeatIdentity(input.build, buildName),
+    review:
+      input.reviewer === undefined ? null : formatShortSeatIdentity(input.reviewer, reviewerName),
+    budget: input.budget,
+    notes: input.notes,
+  });
+}
+
+/**
+ * The layout half: three identities already resolved, laid out to a budget. A finished run has
+ * names on record but no runner blocks, so this is the seam the summary header enters through.
+ * A `null` review seat is the planner's, and says so with the inheritance mark.
+ */
+export function formatCollapsedSeatLineFromIdentities(
+  input: Readonly<{
+    plan: string;
+    build: string;
+    review: string | null;
+    budget?: number | undefined;
+    notes?: Partial<Record<CrewSeatId, string>> | undefined;
+  }>,
+): string {
   const notes = input.notes;
   const seats: CollapsedSeat[] = [
     {
       label: CREW_SEAT_LABELS.plan,
-      identity: formatShortSeatIdentity(input.planner, plannerName),
+      identity: input.plan,
       named: true,
       ...(notes?.plan !== undefined && { note: notes.plan }),
     },
     {
       label: CREW_SEAT_LABELS.build,
-      identity: formatShortSeatIdentity(input.build, buildName),
+      identity: input.build,
       named: true,
       ...(notes?.build !== undefined && { note: notes.build }),
     },
     // The inheritance mark points at the planner's name; it is not one itself.
     {
       label: CREW_SEAT_LABELS.review,
-      identity: review,
-      named: input.reviewer !== undefined,
+      identity: input.review ?? PLANNER_INHERITANCE.mark,
+      named: input.review !== null,
       ...(notes?.review !== undefined && { note: notes.review }),
     },
   ];
@@ -235,8 +245,8 @@ export function formatCollapsedSeatLine(
 }
 
 /**
- * Every segment is an atom: `· h…` names no effort, `· claude-sonnet…` names a model that does not
- * exist, and `Auto (cheapest capa…` names no policy. A budget that cannot seat a whole segment
+ * Every segment is an atom: `· h…` names no effort and `· claude-sonnet…` names a model that does
+ * not exist. A budget that cannot seat a whole segment
  * sheds it, tail first, down to the leading one — the same print-whole-or-drop rule the picker's
  * catalog id follows. Only the leading segment is ever cut, and when the cut ends in the ellipsis
  * the trailing separator run goes with it.

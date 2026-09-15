@@ -1,7 +1,7 @@
 ---
 name: splitbrief-review
 description: >
-  Use when a change made by another tool, a cheaper model, or a colleague
+  Use when a change made by another tool, a weaker model, or a colleague
   should be reviewed against its briefs, spec, or stated intent with recorded
   evidence — "splitbrief review", "review what cmd/opencode built", "review this
   diff against the briefs". Runs the project's gates once, assembles a review

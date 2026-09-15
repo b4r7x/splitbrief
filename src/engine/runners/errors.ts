@@ -18,7 +18,7 @@ export const RUNNER_OUTCOME_STATES = [
   'platform-limitation',
   'implementer-effect-invalid',
   'implementer-recipe-invalid',
-  'implementer-timeout-repeated',
+  'runner-timeout-repeated',
   'missing-model',
   'success',
 ] as const;
@@ -42,7 +42,7 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
     case 'unauthenticated':
       return 'Authenticate the CLI, then retry.';
     case 'usage-limit':
-      return 'Wait for the usage limit to reset, switch the seat to another tool, or abort.';
+      return 'Wait for the usage limit to reset, switch the seat to another tool, or end the run.';
     case 'timeout':
       return 'Retry the command or increase its configured timeout.';
     case 'user-abort':
@@ -65,7 +65,7 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
       return "The implementer wrote outside the brief's declared files. Retry with a revert instruction or widen Scope.";
     case 'implementer-recipe-invalid':
       return 'Correct the tool recipe (flags or permissions) and retry; this attempt consumed no retry.';
-    case 'implementer-timeout-repeated':
+    case 'runner-timeout-repeated':
       return 'Two consecutive attempts timed out; switch the seat, route a bigger worker, or skip.';
     case 'missing-model':
       return 'Pick a model the tool lists, then retry.';

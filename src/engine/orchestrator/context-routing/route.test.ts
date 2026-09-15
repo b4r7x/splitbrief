@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
-import type { ImplementerCostTier } from '../../../core/schemas/implementer-config.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
@@ -12,14 +11,9 @@ const context: ProjectContext = {
   dir: '/repo',
 };
 
-function profile(
-  name: string,
-  costTier: ImplementerCostTier,
-  contextLength?: number,
-): ResolvedImplementerProfile {
+function profile(name: string, contextLength?: number): ResolvedImplementerProfile {
   return {
     name,
-    costTier,
     config: {
       kind: 'api',
       provider: 'ollama',
@@ -34,14 +28,9 @@ function profile(
   };
 }
 
-function customEndpointProfile(
-  name: string,
-  costTier: ImplementerCostTier,
-  contextLength?: number,
-): ResolvedImplementerProfile {
+function customEndpointProfile(name: string, contextLength?: number): ResolvedImplementerProfile {
   return {
     name,
-    costTier,
     config: {
       kind: 'api',
       provider: 'custom-endpoint',
@@ -58,13 +47,11 @@ function customEndpointProfile(
 
 function customApiProfile(
   name: string,
-  costTier: ImplementerCostTier,
   contextLength?: number,
   apiKey?: string,
 ): ResolvedImplementerProfile {
   return {
     name,
-    costTier,
     config: {
       kind: 'api',
       provider: 'custom-cloud',
@@ -80,14 +67,9 @@ function customApiProfile(
   };
 }
 
-function directProfile(
-  name: string,
-  costTier: ImplementerCostTier,
-  contextLength?: number,
-): ResolvedImplementerProfile {
+function directProfile(name: string, contextLength?: number): ResolvedImplementerProfile {
   return {
     name,
-    costTier,
     config: {
       kind: 'agent',
       command: name,
@@ -106,26 +88,24 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [profile('local-large', 'local', 20_000), profile('local-small', 'local', 10_000)],
+      profiles: [profile('local-large', 20_000), profile('local-small', 10_000)],
     });
 
     expect(decision.selectedProfile).toBe('local-small');
-    expect(decision.selectedCostTier).toBe('local');
-    expect(decision.costPosture).toContain('Selected local cost tier');
     expect(decision.fit).toBe('fits');
     expect(decision.rejected.map((rejected) => rejected.profile)).toEqual(['local-large']);
   });
 
-  it('sorts local and cheap tiers before more expensive capable profiles', () => {
+  it('selects the smallest capable context window among capable profiles', () => {
     const task = makeTask();
 
     const decision = routeTaskToImplementerProfile({
       task,
       context,
       profiles: [
-        profile('frontier-big', 'frontier', 200_000),
-        profile('standard-big', 'standard', 80_000),
-        profile('cheap-big', 'cheap', 40_000),
+        profile('frontier-big', 200_000),
+        profile('standard-big', 80_000),
+        profile('cheap-big', 40_000),
       ],
     });
 
@@ -136,24 +116,18 @@ describe('routeTaskToImplementerProfile', () => {
     ]);
   });
 
-  it('handles unknown cost tiers deterministically by profile name', () => {
+  it('breaks a tie deterministically by profile name', () => {
     const task = makeTask();
 
     const first = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        profile('zeta-worker', 'unknown', 10_000),
-        profile('alpha-worker', 'unknown', 10_000),
-      ],
+      profiles: [profile('zeta-worker', 10_000), profile('alpha-worker', 10_000)],
     });
     const second = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        profile('alpha-worker', 'unknown', 10_000),
-        profile('zeta-worker', 'unknown', 10_000),
-      ],
+      profiles: [profile('alpha-worker', 10_000), profile('zeta-worker', 10_000)],
     });
 
     expect(first.selectedProfile).toBe('alpha-worker');
@@ -166,10 +140,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        profile('local-too-small', 'local', 100),
-        profile('cheap-capable', 'cheap', 10_000),
-      ],
+      profiles: [profile('local-too-small', 100), profile('cheap-capable', 10_000)],
     });
 
     expect(decision.selectedProfile).toBe('cheap-capable');
@@ -187,10 +158,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        customEndpointProfile('cheap-cloud', 'cheap', 20_000),
-        profile('standard-local', 'standard', 20_000),
-      ],
+      profiles: [customEndpointProfile('cheap-cloud', 20_000), profile('standard-local', 20_000)],
     });
 
     expect(decision.selectedProfile).toBe('standard-local');
@@ -208,10 +176,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        customApiProfile('cheap-custom', 'cheap', 20_000),
-        profile('standard-local', 'standard', 20_000),
-      ],
+      profiles: [customApiProfile('cheap-custom', 20_000), profile('standard-local', 20_000)],
     });
 
     expect(decision.selectedProfile).toBe('standard-local');
@@ -227,7 +192,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [customEndpointProfile('cheap-cloud', 'cheap', 20_000)],
+      profiles: [customEndpointProfile('cheap-cloud', 20_000)],
     });
 
     expect(decision.selectedProfile).toBeUndefined();
@@ -244,10 +209,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        profile('local-api', 'local', 20_000),
-        directProfile('agent-worker', 'standard', 20_000),
-      ],
+      profiles: [profile('local-api', 20_000), directProfile('agent-worker', 20_000)],
     });
 
     expect(decision.selectedProfile).toBe('agent-worker');
@@ -272,10 +234,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        profile('local-api', 'local', 20_000),
-        directProfile('agent-worker', 'standard', 20_000),
-      ],
+      profiles: [profile('local-api', 20_000), directProfile('agent-worker', 40_000)],
     });
 
     expect(decision.selectedProfile).toBe('local-api');
@@ -291,10 +250,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        profile('local-api', 'local', 20_000),
-        directProfile('agent-worker', 'standard', 20_000),
-      ],
+      profiles: [profile('local-api', 20_000), directProfile('agent-worker', 40_000)],
     });
 
     expect(decision.selectedProfile).toBe('local-api');
@@ -305,10 +261,7 @@ describe('routeTaskToImplementerProfile', () => {
     const secondPath = routeTaskToImplementerProfile({
       task: makeTask({ file: 'src/main.ts', scope: { inBounds: ['src/sidecar.ts'] } }),
       context,
-      profiles: [
-        profile('local-api', 'local', 20_000),
-        directProfile('agent-worker', 'standard', 20_000),
-      ],
+      profiles: [profile('local-api', 20_000), directProfile('agent-worker', 20_000)],
     });
     expect(secondPath.requiredWriteMode).toBe('direct');
     expect(secondPath.selectedProfile).toBe('agent-worker');
@@ -316,10 +269,7 @@ describe('routeTaskToImplementerProfile', () => {
     const globPath = routeTaskToImplementerProfile({
       task: makeTask({ file: 'src/main.ts', scope: { inBounds: ['src/features/**'] } }),
       context,
-      profiles: [
-        profile('local-api', 'local', 20_000),
-        directProfile('agent-worker', 'standard', 20_000),
-      ],
+      profiles: [profile('local-api', 20_000), directProfile('agent-worker', 20_000)],
     });
     expect(globPath.requiredWriteMode).toBe('direct');
     expect(globPath.selectedProfile).toBe('agent-worker');
@@ -334,10 +284,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        profile('local-api', 'local', 20_000),
-        directProfile('agent-worker', 'standard', 20_000),
-      ],
+      profiles: [profile('local-api', 20_000), directProfile('agent-worker', 40_000)],
     });
 
     expect(decision.selectedProfile).toBe('local-api');
@@ -353,10 +300,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        profile('local-api', 'local', 20_000),
-        directProfile('agent-worker', 'standard', 20_000),
-      ],
+      profiles: [profile('local-api', 20_000), directProfile('agent-worker', 40_000)],
     });
 
     expect(decision.selectedProfile).toBe('local-api');
@@ -369,10 +313,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [
-        profile('local-too-small', 'local', 100),
-        profile('cheap-too-small', 'cheap', 150),
-      ],
+      profiles: [profile('local-too-small', 100), profile('cheap-too-small', 150)],
     });
 
     expect(decision.selectedProfile).toBeUndefined();
@@ -387,7 +328,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [profile('legacy-default', 'unknown')],
+      profiles: [profile('legacy-default')],
       conservativeContextLength: 10_000,
     });
 
@@ -405,7 +346,7 @@ describe('routeTaskToImplementerProfile', () => {
         ),
       }),
       context,
-      profiles: [profile('unknown-model', 'local')],
+      profiles: [profile('unknown-model')],
     });
 
     expect(decision.contextLength).toBe(DEFAULT_UNKNOWN_CONTEXT_LENGTH);
@@ -425,7 +366,6 @@ describe('routeTaskToImplementerProfile', () => {
     };
     const runtimeWorker: ResolvedImplementerProfile = {
       name: 'runtime-worker',
-      costTier: 'cheap',
       config: {
         kind: 'api',
         provider: 'lm-studio',
@@ -466,7 +406,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [profile('small-local', 'local', 2000), profile('larger-cheap', 'cheap', 40_000)],
+      profiles: [profile('small-local', 2000), profile('larger-cheap', 40_000)],
     });
 
     expect(decision.selectedProfile).toBe('larger-cheap');
@@ -503,7 +443,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [profile('function-context-worker', 'local', 6000)],
+      profiles: [profile('function-context-worker', 6000)],
     });
 
     expect(decision.selectedProfile).toBe('function-context-worker');

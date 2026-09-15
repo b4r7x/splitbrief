@@ -3,7 +3,7 @@ import { detectionStore } from '../../stores/project/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { cliProviderAuthFacts } from '../../core/discovery/detection.js';

@@ -144,7 +144,6 @@ describe('buildSummary', () => {
     expect(summary.completedByLocal).toBe(0);
     expect(summary.escalatedToPlanner).toBe(1);
     expect(summary.escalationRate).toBe(1);
-    expect(summary.costBreakdown?.localCompletionRate).toBe(0);
   });
 
   it('zero tasks → no division by zero', () => {
@@ -164,7 +163,7 @@ describe('buildSummary', () => {
     expect(summary.escalationRate).toBe(0);
     expect(Number.isFinite(summary.escalationRate)).toBe(true);
     if (!summary.costBreakdown) throw new Error('expected costBreakdown on summary');
-    expect(Number.isFinite(summary.costBreakdown.savingsPercentage)).toBe(true);
+    expect(Number.isFinite(summary.costBreakdown.totalActualCost)).toBe(true);
   });
 
   it('token usage passed through correctly', () => {
@@ -218,31 +217,10 @@ describe('buildSummary', () => {
         implementerTokens: 100,
         escalationTokens: 0,
         retryCount: 0,
-        costPosture: 'unknown-price',
       },
     ]);
     // Verify input array was NOT mutated
     expect(breakdowns[0]).not.toHaveProperty('cost');
-  });
-
-  it('includes available cost prediction data', () => {
-    const prediction = {
-      estimatedTasks: 2,
-      lowCost: 0.01,
-      expectedCost: 0.02,
-      highCost: 0.04,
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-    };
-    const summary = buildSummary({
-      feature: 'cost prediction',
-      state: makeState({ tasks: [] }),
-      startTime: Date.now(),
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-      costPrediction: prediction,
-    });
-    expect(summary.costPrediction).toEqual(prediction);
   });
 
   it('includes model fields when provided', () => {
@@ -315,7 +293,6 @@ function breakdownWithProse() {
       model: 'qwen-local',
       implementerProfile: 'local-small',
       routingReason: `routing prose ${SENTINEL}`,
-      costPosture: `posture prose ${SENTINEL}`,
     },
   ];
 }
@@ -335,6 +312,5 @@ describe('buildSummary taskBreakdown', () => {
     if (!row) throw new Error('expected a task breakdown row');
     expect(row.taskTitle).toBe(`secret title ${SENTINEL}`);
     expect(row.routingReason).toBe(`routing prose ${SENTINEL}`);
-    expect(row.costPosture).toBe(`posture prose ${SENTINEL}`);
   });
 });

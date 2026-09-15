@@ -38,7 +38,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 **Why deferred.**
 
-- Our phase-based workflow already provides coarse rewind via approval-gate rejection (`REJECT_SPEC` / `REJECT_PLAN`) and the shipped soft rewind commands (`/revise-spec`, `/revise-plan`, `/redo-task`). That covers 90% of cases.
+- Our phase-based workflow already provides coarse rewind via the gate's **Request changes** row and the shipped soft rewind commands (`/revise-spec`, `/revise-plan`, `/redo-task`). That covers 90% of cases.
 - Full rewind requires versioning every artifact at every rewind-able point, which roughly doubles disk footprint for a session.
 - UI complexity is non-trivial: picker, preview of which artifacts will change, confirmation.
 - Git commits complicate things: if tasks were already committed (and maybe pushed), rewind can't silently un-commit.

@@ -9,6 +9,8 @@ import { runPlanningPhase } from '../../../src/engine/orchestrator/planning/run.
 import type { OrchestratorCallbacks } from '../../../src/engine/orchestrator/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import {
   TEST_METADATA,
   TEST_SINKS,
@@ -106,12 +108,13 @@ describe('brief quality repair loop', () => {
 
     const regenerationPrompts: string[] = [];
     const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Spec',
-        plan: '# Plan',
-        tasks: [makeTask({ scope: undefined, evidence: [] })],
-        usage: { inputTokens: 100, outputTokens: 50 },
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          usage: { inputTokens: 100, outputTokens: 50 },
+          ...(call === 'tasks' ? { tasks: [makeTask({ scope: undefined, evidence: [] })] } : {}),
+        }),
+      ),
       review: vi.fn().mockImplementation(async (prompt: string) => {
         regenerationPrompts.push(prompt);
         return regenerationPrompts.length === 1
@@ -160,7 +163,7 @@ describe('brief quality repair loop', () => {
     );
     expect(loadState({ projectDir, sessionId })?.phase).toBe('reviewing-briefs');
 
-    expect(planner.plan).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(planner.runPhase).mock.calls).toHaveLength(4);
     expect(planner.review).toHaveBeenCalledTimes(2);
     expect(regenerationPrompts).toHaveLength(2);
     expect(regenerationPrompts[0]).toContain('Task T001 has no scope definition');

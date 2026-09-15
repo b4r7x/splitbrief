@@ -12,6 +12,29 @@ import { gateChangedFiles } from '../approval/gate-files.js';
 import { persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
+import { inferTaskAcceptedChangedFiles } from '../changed-files-baseline.js';
+
+/**
+ * The brief's own declared files that already moved since it started. A restarted
+ * attempt is told about them so it edits what is there instead of writing the
+ * file again from nothing.
+ */
+async function changedDeclaredFilesNote(
+  projectDir: string,
+  task: Task,
+  taskStartSnapshot: ChangedFilesSnapshot,
+): Promise<{ extra?: string }> {
+  try {
+    const changed = await inferTaskAcceptedChangedFiles(projectDir, task, taskStartSnapshot.head);
+    if (changed.length === 0) return {};
+    return {
+      extra: `These declared files already changed since the task started: ${changed.join(', ')}`,
+    };
+  } catch {
+    // Best-effort context: a snapshot head the operator rewrote must not stop the restart.
+    return {};
+  }
+}
 
 export type RunImplementationResult = {
   state: WorkflowState;
@@ -50,6 +73,9 @@ export async function runImplementation(opts: {
   let preApplyApprovalDenied = false;
   let preApplyApprovedFiles: string[] = [];
 
+  const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
+  const seed = wctx.continuation?.take(step);
+
   let loop: { state: WorkflowState; value: ImplementerResult };
   try {
     workspace = usesIsolation
@@ -66,8 +92,24 @@ export async function runImplementation(opts: {
         sinks: wctx.sinks,
       },
       state,
+      step,
+      ...(seed === undefined ? {} : { seed }),
       onStateChange: setTrackedState,
-      body: ({ signal, continuationPrompt, steer, recordOutput }) => {
+      body: async ({ signal, partial, steer, recordOutput }) => {
+        // The brief restarts on its own prompt. What the cut attempt already
+        // wrote is still on disk, so it is named rather than re-derived.
+        const continuation =
+          partial === undefined && steer === undefined
+            ? undefined
+            : {
+                ...(partial !== undefined && { partial }),
+                ...(steer !== undefined && { steer }),
+                ...(await changedDeclaredFilesNote(
+                  workspace?.projectDir ?? projectDir,
+                  task,
+                  opts.taskStartSnapshot,
+                )),
+              };
         const call: ImplementerOptions = {
           task,
           projectDir: workspace?.projectDir ?? projectDir,
@@ -87,8 +129,7 @@ export async function runImplementation(opts: {
           sandboxEnv: workspace?.sandboxEnv,
           fileIgnoreProjectDir: workspace ? projectDir : undefined,
           changeDetection: workspace?.changeDetection,
-          continuationPrompt,
-          steer,
+          ...(continuation !== undefined && { continuation }),
           phase: state.phase,
           approveWrite: async (file) => {
             if (workspace) return { allow: true };

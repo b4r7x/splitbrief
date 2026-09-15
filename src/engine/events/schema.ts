@@ -16,8 +16,8 @@ import {
 } from '../../core/schemas/enums.js';
 import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
+import { StepCutSchema } from '../../core/schemas/run-step.js';
 import { TaskReviewRecoverySchema } from '../../core/schemas/recovery/schemas.js';
-import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
 import { RewindEventVariantSchemas } from '../../core/state/rewind-event.js';
 import { RunnerCallTextChannelSchema } from '../../core/runner-call-contract.js';
@@ -220,7 +220,6 @@ export const taskReviewRequestFields = {
       contextLength: z.number().optional(),
       currentCodeTruncated: z.boolean(),
       currentCodeContextMode: CurrentCodeContextModeSchema,
-      costPosture: z.string(),
       reason: z.string(),
     })
     .optional(),
@@ -240,6 +239,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   phaseEvent('turn_interrupted').extend({
     source: z.enum(['user', 'watchdog']).optional(),
+    /** Where the stop landed: inside the call, or between two briefs. */
+    at: StepCutSchema.optional(),
   }),
   phaseEvent('workflow_config').extend({
     mode: WorkflowModeSchema,
@@ -455,7 +456,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     contextLength: z.number().optional(),
     currentCodeTruncated: z.boolean().optional(),
     currentCodeContextMode: CurrentCodeContextModeSchema.optional(),
-    costPosture: z.string().optional(),
     routingReason: z.string().optional(),
   }),
   phaseEvent('task_completed').extend({
@@ -504,7 +504,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     contextLength: z.number().optional(),
     currentCodeTruncated: z.boolean().optional(),
     currentCodeContextMode: CurrentCodeContextModeSchema.optional(),
-    costPosture: z.string().optional(),
     routingReason: z.string().optional(),
   }),
   phaseEvent('task_review_needed').extend(taskReviewRequestFields),
@@ -594,20 +593,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     reason: z.enum(['unsupported-backend', 'capability-degraded']),
   }),
   phaseEvent('cost_update').extend({ tokenUsage: TokenUsageSchema }),
-  phaseEvent('cost_prediction').extend({ prediction: CostPredictionSchema }),
-  phaseEvent('budget_warning').extend({
-    currentCost: z.number(),
-    maxBudget: z.number(),
-  }),
-  phaseEvent('budget_paused').extend({
-    currentCost: z.number(),
-    maxBudget: z.number(),
-    threshold: z.number(),
-  }),
-  phaseEvent('budget_exceeded').extend({
-    currentCost: z.number(),
-    maxBudget: z.number(),
-  }),
   phaseEvent('approval_prompted').extend({
     tier: ApprovalTierSchema,
     actionClass: ActionClassSchema,

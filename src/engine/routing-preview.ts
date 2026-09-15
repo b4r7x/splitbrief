@@ -81,10 +81,6 @@ export function buildRoutingPreviewMetadata(
       return {
         taskId: routingTask.id,
         ...(decision.selectedProfile !== undefined && { workerProfile: decision.selectedProfile }),
-        ...(decision.selectedCostTier !== undefined && {
-          selectedCostTier: decision.selectedCostTier,
-        }),
-        costPosture: decision.costPosture,
         contextFit: decision.fit,
         estimatedTokens: decision.estimatedTokens,
         ...(decision.contextLength !== undefined && { contextLength: decision.contextLength }),

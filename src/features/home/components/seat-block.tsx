@@ -4,7 +4,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { detectionStore } from '../../../stores/project/detection.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { getWorkflowMode } from '../../../core/config/accessors/values.js';

@@ -10,7 +10,6 @@ export type WorkflowKeyAction =
   | { type: 'none' }
   | { type: 'toggle-diff'; key: string }
   | { type: 'toggle-activity-batch'; key: string }
-  | { type: 'open-cost-drilldown' }
   | { type: 'review-scroll'; offset: number }
   | {
       type: 'conversation-scroll-up';
@@ -57,7 +56,6 @@ export function handleWorkflowCtrlChords(options: WorkflowCtrlChordsInput): Work
     if (diffKey != null) return { type: 'toggle-diff', key: diffKey };
     return NONE;
   }
-  if (owner.action === 'cost') return { type: 'open-cost-drilldown' };
   return NONE;
 }
 

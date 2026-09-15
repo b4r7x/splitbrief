@@ -27,6 +27,7 @@ import { customRunnerAdmissionError } from './custom-launchability.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { prepareExecution } from './prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
+import { callPhase } from '#testing/helpers/planner-call.js';
 
 type CustomRunnerRole = 'planner' | 'implementer';
 type CustomCommandContract = 'output' | 'direct';
@@ -481,12 +482,12 @@ Preserve the declared-file receipt.
     const planner = await createPlanner(config, undefined, {
       customRuntime: factoryRuntime(fixture, 'interactive'),
     });
-    const result = await planner.quickPlan({
+    const result = await callPhase(planner, {
       feature: 'preserve the declared artifact receipt',
       projectDir: fixture.projectDir,
       callbacks: { onOutput: () => {} },
     });
-    const artifact = result.phases?.[0]?.artifact;
+    const artifact = result.artifact.artifact;
 
     expect(artifact).toBeDefined();
     expect(artifact?.transport).toBe('declared-file');

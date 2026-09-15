@@ -1,6 +1,6 @@
 import { normalizeKeySignature, type KeyLike } from './normalize.js';
 
-export type ReviewActionKeyCommand = 'approve' | 'edit-file' | 'reject' | 'comment';
+export type ReviewActionKeyCommand = 'approve' | 'edit-file' | 'end-run' | 'comment';
 
 // Every command here is also a typed review command, so a key press and the word
 // it stands for settle the gate through the same parser.
@@ -8,7 +8,7 @@ const REVIEW_ACTION_KEYS: Record<string, ReviewActionKeyCommand> = {
   y: 'approve',
   e: 'edit-file',
   c: 'comment',
-  q: 'reject',
+  q: 'end-run',
 };
 
 export const REVIEW_COMMENT_DRAFT = 'comment ';

@@ -192,20 +192,12 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
 
     expect(implementer.implement).toHaveBeenCalledTimes(2);
-    expect(implementer.implement).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        task: expect.objectContaining({ id: 'T001' }),
-        continuationPrompt: undefined,
-      }),
-    );
-    expect(implementer.implement).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        task: expect.objectContaining({ id: 'T002' }),
-        continuationPrompt: undefined,
-      }),
-    );
+    // Each brief is its own call, and neither carries anything the brief before it left behind.
+    const dispatched = vi.mocked(implementer.implement).mock.calls;
+    expect(dispatched[0]?.[0]?.task.id).toBe('T001');
+    expect(dispatched[0]?.[0]?.continuation).toBeUndefined();
+    expect(dispatched[1]?.[0]?.task.id).toBe('T002');
+    expect(dispatched[1]?.[0]?.continuation).toBeUndefined();
     expect(result.state.currentTaskIndex).toBe(2);
   });
 });

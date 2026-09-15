@@ -1,11 +1,7 @@
-import type {
-  ImplementerCostTier,
-  ImplementerWriteMode,
-} from '../../../core/schemas/implementer-config.js';
+import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { taskFiles } from '../../../core/schemas/task.js';
-import { uniqueSorted } from '../../../utils/collections.js';
 import { scopePathPatterns } from '../../../utils/path-patterns.js';
 import type { ProfileFit } from './types.js';
 
@@ -24,37 +20,7 @@ export function requiredWriteModeForTask(task: Task): ImplementerWriteMode {
   return hasAdditionalPathScope ? 'direct' : 'extracted-code';
 }
 
-const COST_TIER_RANK: Record<ImplementerCostTier, number> = {
-  local: 0,
-  cheap: 1,
-  standard: 2,
-  frontier: 3,
-  unknown: 4,
-};
-
-/**
- * An unpriced profile carries no scalar to compare, so it ranks by cost tier
- * ahead of every priced one rather than tying with it: a tie against a priced
- * profile would make the comparator intransitive (priced $1/frontier after
- * unpriced/standard after priced $10/local after priced $1/frontier), and
- * `Array.prototype.sort` leaves an intransitive comparator's order undefined.
- */
-function priceRank(left: ProfileFit, right: ProfileFit): number {
-  const leftPrice = left.profile.pricePer1M;
-  const rightPrice = right.profile.pricePer1M;
-  if (leftPrice === undefined && rightPrice === undefined) return 0;
-  if (leftPrice === undefined) return -1;
-  if (rightPrice === undefined) return 1;
-  return leftPrice - rightPrice;
-}
-
 export function compareProfileRouteRank(left: ProfileFit, right: ProfileFit): number {
-  const priced = priceRank(left, right);
-  if (priced !== 0) return priced;
-
-  const costRank = COST_TIER_RANK[left.profile.costTier] - COST_TIER_RANK[right.profile.costTier];
-  if (costRank !== 0) return costRank;
-
   const contextRank = left.contextLength - right.contextLength;
   if (contextRank !== 0) return contextRank;
 
@@ -92,11 +58,7 @@ export function selectedReason(profileFit: ProfileFit): string {
     : '';
   const reductionNote = currentCodeReductionNote(profileFit, ',');
   const capabilityNote = profileFit.requiredWriteMode === 'direct' ? ', direct-write capable' : '';
-  const priceNote =
-    profileFit.profile.pricePer1M === undefined
-      ? ''
-      : ` · $${profileFit.profile.pricePer1M.toFixed(2)}/1M blended`;
-  return `Selected cheapest capable profile ${profileFit.profile.name} (${profileFit.fit}, estimated ${profileFit.estimatedTokens}/${profileFit.contextLength} tokens${fallbackNote}${capabilityNote}${priceNote}${reductionNote})`;
+  return `Selected profile ${profileFit.profile.name} (${profileFit.fit}, estimated ${profileFit.estimatedTokens}/${profileFit.contextLength} tokens${fallbackNote}${capabilityNote}${reductionNote})`;
 }
 
 function currentCodeReductionNote(profileFit: ProfileFit, prefix: string): string {
@@ -107,15 +69,4 @@ function currentCodeReductionNote(profileFit: ProfileFit, prefix: string): strin
     return `${prefix} current code truncated from ${profileFit.untruncatedEstimatedTokens} untruncated tokens`;
   }
   return '';
-}
-
-export function costPosture(selected: ProfileFit | undefined, rejected: ProfileFit[]): string {
-  if (!selected) return 'No capable implementer profile; no cost tier selected';
-  const rejectedTiers = uniqueSorted(rejected.map((profileFit) => profileFit.profile.costTier));
-  const rejectedNote =
-    rejectedTiers.length > 0 ? `; rejected tiers: ${rejectedTiers.join(', ')}` : '';
-  if (selected.profile.pricePer1M !== undefined) {
-    return `Selected cheapest priced profile at $${selected.profile.pricePer1M.toFixed(2)}/1M blended via auto-cheapest routing`;
-  }
-  return `Selected ${selected.profile.costTier} cost tier via cheapest-capable routing${rejectedNote}`;
 }

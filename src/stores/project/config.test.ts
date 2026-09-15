@@ -391,7 +391,6 @@ describe('config persistence semantic diff', () => {
             tool: 'codex',
             model: 'gpt-5.4-mini',
             label: 'Fast',
-            costTier: 'standard',
           },
         },
       },
@@ -406,8 +405,7 @@ describe('config persistence semantic diff', () => {
             kind: 'cli',
             tool: 'codex',
             model: 'gpt-5.4-mini',
-            label: 'Fast',
-            costTier: 'cheap',
+            label: 'Fast profile',
           },
         },
       },
@@ -420,8 +418,8 @@ describe('config persistence semantic diff', () => {
       expect.arrayContaining([
         { path: ['escalation'], value: { enabled: true } },
         {
-          path: ['implementer_profiles', 'profiles', 'fast', 'cost_tier'],
-          value: 'cheap',
+          path: ['implementer_profiles', 'profiles', 'fast', 'label'],
+          value: 'Fast profile',
         },
       ]),
     );
@@ -476,7 +474,6 @@ implementer_profiles:
       tool: codex
       model: "gpt-5.4-mini" # keep quoting and comment
       label: 'Fast profile'
-      cost_tier: standard
 escalation:
   enabled: false
 my_custom_key: "keep: this # exactly"
@@ -493,7 +490,7 @@ my_custom_key: "keep: this # exactly"
       implementerProfiles: {
         default: 'fast',
         profiles: {
-          fast: { ...fastProfile, costTier: 'cheap' },
+          fast: { ...fastProfile, label: 'Fast' },
         },
       },
     };
@@ -503,12 +500,12 @@ my_custom_key: "keep: this # exactly"
     const afterRaw = readRawConfig();
     expect(
       afterRaw
-        .replace('cost_tier: cheap', 'cost_tier: standard')
+        .replace("label: 'Fast'", "label: 'Fast profile'")
         .replace('enabled: true', 'enabled: false'),
     ).toBe(beforeRaw);
     const reloaded = loadConfig(tmpDir).config;
     expect(reloaded.escalation?.enabled).toBe(true);
-    expect(reloaded.implementerProfiles?.profiles.fast?.costTier).toBe('cheap');
+    expect(reloaded.implementerProfiles?.profiles.fast?.label).toBe('Fast');
     expect(reloaded.implementerProfiles?.profiles.fast?.model).toBe('gpt-5.4-mini');
   });
 

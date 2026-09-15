@@ -97,7 +97,7 @@ export function applyTaskBreakdownCosts(input: CostBreakdownInput): TaskTokenUsa
               ...(reviewerTool !== undefined && { reviewerTool }),
             }),
           }
-        : { costPosture: task.costPosture ?? 'unknown-price' }),
+        : {}),
     };
   });
 }

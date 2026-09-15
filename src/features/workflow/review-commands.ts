@@ -1,18 +1,19 @@
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 // Both review phases take the same four keys and the same typed commands.
-export const REVIEW_HINT = `y approve${SOFT_SEP}c comment${SOFT_SEP}q reject${SOFT_SEP}e edit`;
+export const REVIEW_HINT = `y approve${SOFT_SEP}c comment${SOFT_SEP}q end run${SOFT_SEP}e edit`;
 // Named with the same words the legend just taught. Every one of them parses, so the recovery
-// message cannot send a user who read `q reject` off to type a word the legend never showed.
+// message cannot send a user who read `q end run` off to type a word the legend never showed.
 export const REVIEW_UNKNOWN_COMMAND_MESSAGE =
-  'Unknown command. Use: approve, comment <text>, reject, or edit';
+  'Unknown command. Use: approve, comment <text>, end-run, or edit';
 
 const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue']);
-const REJECT_ALIASES = new Set(['quit', 'reject', 'no', 'n', 'q']);
+// The gate no longer rejects, it ends the run; the words it used to take still parse.
+const END_RUN_ALIASES = new Set(['end-run', 'end run', 'end', 'quit', 'q', 'reject', 'no', 'n']);
 
-type LocalBriefReviewAction = 'approve' | 'reject' | 'status';
+type LocalBriefReviewAction = 'approve' | 'end-run' | 'status';
 
 export type LegacyReviewCommand =
   | { readonly action: 'revise'; readonly comment: string }
@@ -34,7 +35,7 @@ export function parseReviewCommand(text: string): ReviewAction {
   const raw = text.trim();
   const cmd = raw.toLowerCase();
   if (APPROVE_ALIASES.has(cmd)) return briefReviewAction('approve');
-  if (REJECT_ALIASES.has(cmd)) return briefReviewAction('reject');
+  if (END_RUN_ALIASES.has(cmd)) return briefReviewAction('end-run');
   if (cmd === 'external_edit_applied') {
     return legacyReviewAction({ action: 'external_edit_applied' });
   }
@@ -61,8 +62,8 @@ export function reviewCommandToApprovalReviewResult(
   switch (command.action) {
     case 'approve':
       return { approved: true };
-    case 'reject':
-      return { approved: false };
+    case 'end-run':
+      return { approved: false, action: 'end-run' };
     case 'revise':
       return { approved: false, action: 'revise', comment: command.comment };
     case 'external_edit_applied':

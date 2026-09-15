@@ -1,8 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import {
-  withAutoRouteProfiles,
-  withoutImplementerProfiles,
-} from '../../../core/config/accessors/implementer-profiles.js';
 import { applyRunnerPreparationChecks, collectReadiness } from '../../../core/readiness/collect.js';
 import { exemptLiveSessionBlocker } from '../../../core/readiness/checks/repo.js';
 import {
@@ -39,21 +35,20 @@ import { probeRunnerAvailability, type RunnerAvailabilityRole } from '../probe-a
 import { resolveCliExecutableAliases } from '../resolve-cli-executable.js';
 import { checkRunnerTrust } from '../trust.js';
 import { persistedTrustAbortError, throwIfPreparationAborted } from './abort-guard.js';
-import {
-  admitAutoRouteRows,
-  autoRouteFallbackChecks,
-  derivedAutoRouteProfiles,
-  type EvaluatedSlot,
-} from './auto-route-admission.js';
-import { loadAutoRouteCandidates } from './auto-route-candidates.js';
 import { evaluateCandidate } from './evaluate-candidate.js';
 import { blockedCheck, runnerCandidates } from './runner-candidates.js';
+import type { RunnerCandidate } from './runner-candidates.js';
 import type {
   PreparationContext,
   PreparationPolicy,
   PrepareExecutionDependencies,
   SlotEvaluation,
 } from './types.js';
+
+type EvaluatedSlot = Readonly<{
+  candidate: RunnerCandidate;
+  evaluation: SlotEvaluation;
+}>;
 
 type PrepareExecutionCommon = Readonly<{
   feature: string;
@@ -187,19 +182,7 @@ type ReportSink = { report?: ReadinessReport | undefined };
  */
 async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<AdmissionResult> {
   throwIfAborted(input.signal);
-  // An `auto:cheapest` implementer seat is a policy, not a runner: the priced
-  // rows it can be routed to become its profile table here, before admission
-  // enumerates the slots, so every derived row is probed and gated like any
-  // other profile and the router can reach it later.
-  const autoRouteCandidates = await loadAutoRouteCandidates({
-    projectDir: input.projectDir,
-    config: input.effectiveConfig,
-  });
-  throwIfAborted(input.signal);
-  const routed = withAutoRouteProfiles(input.effectiveConfig, autoRouteCandidates);
-  const derived = derivedAutoRouteProfiles(input.effectiveConfig, routed);
-  const routingChecks = autoRouteFallbackChecks(input.effectiveConfig, routed);
-  const config = parsePreparedConfig(routed);
+  const config = parsePreparedConfig(input.effectiveConfig);
   const deps = { ...DEFAULT_DEPENDENCIES, ...input.deps };
   const preparationId = deps.newPreparationId();
   const collected = await deps.collectReadiness({
@@ -261,19 +244,15 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
     }
     throwIfPreparationAborted(input.signal, trustPersisted);
   }
-  const routing = admitAutoRouteRows({ evaluated, derived });
-  const slotChecks = [...routingChecks, ...routing.checks];
+  const slotChecks = evaluated.map((slot) => slot.evaluation.check);
   report = applyRunnerPreparationChecks(report, slotChecks);
   sink.report = report;
-  if (routing.kept.some((slot) => slot.evaluation.kind === 'blocked')) {
+  if (evaluated.some((slot) => slot.evaluation.kind === 'blocked')) {
     return { kind: 'blocked', report };
   }
-  const admittedConfig =
-    routing.dropped.size === 0
-      ? config
-      : parsePreparedConfig(withoutImplementerProfiles(routed, routing.dropped));
+  const admittedConfig = config;
 
-  const gates = routing.kept.flatMap((slot) =>
+  const gates = evaluated.flatMap((slot) =>
     slot.evaluation.kind === 'admitted' ? [slot.evaluation.gate] : [],
   );
   let revalidationBlockers: ReadinessCheck[];
@@ -453,13 +432,7 @@ export async function collectRunnerAdmissionChecks(
 ): Promise<readonly ReadinessCheck[]> {
   const signal = input.signal ?? new AbortController().signal;
   throwIfAborted(signal);
-  const autoRouteCandidates = await loadAutoRouteCandidates({
-    projectDir: input.projectDir,
-    config: input.config,
-  });
-  const routed = withAutoRouteProfiles(input.config, autoRouteCandidates);
-  const derived = derivedAutoRouteProfiles(input.config, routed);
-  const config = parsePreparedConfig(routed);
+  const config = parsePreparedConfig(input.config);
   const deps = { ...DEFAULT_DEPENDENCIES, ...input.deps };
   const preparationId = deps.newPreparationId();
   const policy: PreparationPolicy = {
@@ -490,8 +463,5 @@ export async function collectRunnerAdmissionChecks(
     evaluated.push({ candidate, evaluation });
     throwIfAborted(signal);
   }
-  return [
-    ...autoRouteFallbackChecks(input.config, routed),
-    ...admitAutoRouteRows({ evaluated, derived }).checks,
-  ];
+  return evaluated.map((slot) => slot.evaluation.check);
 }

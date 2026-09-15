@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeSession } from '#testing/helpers/factories/session.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { ReadinessReport } from '../core/readiness/types.js';
@@ -18,7 +18,7 @@ import {
 } from '../engine/runners/prepared-execution.js';
 import { closeApprovalPrompt, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
 import {
-  handleSessionSelect,
+  continueRunInPlace,
   sessionSelectStore,
   type SessionSelectDeps,
 } from '../stores/navigation/session-select.js';
@@ -89,6 +89,17 @@ function preparedExecution(
   };
 }
 
+/** The run is already on its screen when a continuation prepares its tools. */
+function showAtRest(projectDir: string, sessionId: string, feature: string) {
+  const record = makeRunRecord({
+    ref: { projectDir, sessionId },
+    feature,
+    status: { kind: 'open', stop: { kind: 'interrupted' }, resumeAt: { kind: 'review', cycle: 0 } },
+  });
+  routerStore.navigate({ to: 'workflow', run: record, execution: { kind: 'at-rest' } });
+  return record;
+}
+
 describe('SessionPreparation', () => {
   let projectDir = '';
 
@@ -110,16 +121,12 @@ describe('SessionPreparation', () => {
   });
 
   it('shows generic preparation and Escape cancels the caller signal and restores its picker', async () => {
-    const session = makeSession({
-      id: 'resume-escape',
-      feature: 'resume with escape',
-      status: 'interrupted',
-      summary: null,
-    });
-    const state = { ...createInitialState(session.feature), phase: 'implementing' as const };
+    const record = showAtRest(projectDir, 'resume-escape', 'resume with escape');
+    const state = { ...createInitialState(record.feature), phase: 'implementing' as const };
     const pending = Promise.withResolvers<PreparationOutcome>();
     let signal: AbortSignal | undefined;
     const deps: SessionSelectDeps = {
+      hydrateRun: async () => {},
       loadResumeState: () => ({ kind: 'loaded', state }),
       prepareResume: (_input, attemptSignal) => {
         signal = attemptSignal;
@@ -129,7 +136,7 @@ describe('SessionPreparation', () => {
     const ui = renderFeature(<SessionPreparation />);
     overlayStore.open('sessions');
 
-    const selection = handleSessionSelect(session, projectDir, deps);
+    const selection = continueRunInPlace({ record, state, deps });
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('Preparing your tools…');
     expect(ui.lastFrame() ?? '').toContain('Checking your configured runners');
@@ -147,15 +154,11 @@ describe('SessionPreparation', () => {
   });
 
   it('closes the originating overlay before a tiered approval owns input', async () => {
-    const session = makeSession({
-      id: 'resume-approval',
-      feature: 'resume with approval',
-      status: 'interrupted',
-      summary: null,
-    });
-    const state = { ...createInitialState(session.feature), phase: 'implementing' as const };
+    const record = showAtRest(projectDir, 'resume-approval', 'resume with approval');
+    const state = { ...createInitialState(record.feature), phase: 'implementing' as const };
     let approvalSettled = false;
     const deps: SessionSelectDeps = {
+      hydrateRun: async () => {},
       loadResumeState: () => ({ kind: 'loaded', state }),
       prepareResume: async () => {
         await openApprovalPrompt({
@@ -172,7 +175,7 @@ describe('SessionPreparation', () => {
     const ui = renderFeature(<SessionPreparation />);
     overlayStore.open('sessions');
 
-    const selection = handleSessionSelect(session, projectDir, deps);
+    const selection = continueRunInPlace({ record, state, deps });
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain('Approve the configured runner for this resume');
     });
@@ -188,21 +191,21 @@ describe('SessionPreparation', () => {
   });
 
   it('unmount cancels the attempt and exact-clears a prepared result that arrives later', async () => {
-    const session = makeSession({
-      id: 'resume-unmount',
-      feature: 'resume then unmount',
-      status: 'interrupted',
-      summary: null,
-    });
-    const state = { ...createInitialState(session.feature), phase: 'implementing' as const };
+    const record = showAtRest(projectDir, 'resume-unmount', 'resume then unmount');
+    const state = { ...createInitialState(record.feature), phase: 'implementing' as const };
     const pending = Promise.withResolvers<PreparationOutcome>();
     let signal: AbortSignal | undefined;
     const ui = renderFeature(<SessionPreparation />);
-    const selection = handleSessionSelect(session, projectDir, {
-      loadResumeState: () => ({ kind: 'loaded', state }),
-      prepareResume: (_input, attemptSignal) => {
-        signal = attemptSignal;
-        return pending.promise;
+    const selection = continueRunInPlace({
+      record,
+      state,
+      deps: {
+        hydrateRun: async () => {},
+        loadResumeState: () => ({ kind: 'loaded', state }),
+        prepareResume: (_input, attemptSignal) => {
+          signal = attemptSignal;
+          return pending.promise;
+        },
       },
     });
     await flushEffects();
@@ -210,53 +213,60 @@ describe('SessionPreparation', () => {
     ui.unmount();
     expect(signal?.aborted).toBe(true);
 
-    const active = reactivateExistingSession({ projectDir, sessionId: session.id });
+    const active = reactivateExistingSession({ projectDir, sessionId: record.ref.sessionId });
     pending.resolve({
       kind: 'prepared',
-      execution: preparedExecution(projectDir, session.id, state, active),
+      execution: preparedExecution(projectDir, record.ref.sessionId, state, active),
     });
     await selection;
 
+    // The abandoned attempt releases the session it claimed, and the run stays the resting one
+    // it already was rather than becoming the run this process drives.
     expect(readActive(projectDir)).toBeNull();
-    expect(routerStore.get().screen).toBe('home');
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen !== 'workflow') throw new Error('expected the workflow route');
+    expect(route.execution.kind).toBe('at-rest');
   });
 
   it('Retry starts a fresh attempt and routes only its exact prepared result', async () => {
-    const session = makeSession({
-      id: 'resume-retry',
-      feature: 'resume after retry',
-      status: 'interrupted',
-      summary: null,
-    });
-    const state = { ...createInitialState(session.feature), phase: 'implementing' as const };
+    const record = showAtRest(projectDir, 'resume-retry', 'resume after retry');
+    const state = { ...createInitialState(record.feature), phase: 'implementing' as const };
+    const sessionId = record.ref.sessionId;
     let calls = 0;
     const prepareResume = vi.fn<SessionSelectDeps['prepareResume']>(async () => {
       calls += 1;
       if (calls === 1) return { kind: 'blocked', report: blockedReport() };
-      const active = reactivateExistingSession({ projectDir, sessionId: session.id });
+      const active = reactivateExistingSession({ projectDir, sessionId });
       return {
         kind: 'prepared',
-        execution: preparedExecution(projectDir, session.id, state, active),
+        execution: preparedExecution(projectDir, sessionId, state, active),
       };
     });
     const ui = renderFeature(<SessionPreparation />);
 
-    await handleSessionSelect(session, projectDir, {
-      loadResumeState: () => ({ kind: 'loaded', state }),
-      prepareResume,
+    await continueRunInPlace({
+      record,
+      state,
+      deps: {
+        hydrateRun: async () => {},
+        loadResumeState: () => ({ kind: 'loaded', state }),
+        prepareResume,
+      },
     });
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('r retry');
 
     ui.stdin.write('r');
-    await vi.waitFor(() => expect(routerStore.get().screen).toBe('workflow'));
+    await vi.waitFor(() => {
+      const current = routerStore.get();
+      expect(current.screen === 'workflow' && current.execution.kind === 'local').toBe(true);
+    });
     expect(prepareResume).toHaveBeenCalledTimes(2);
     const route = routerStore.get();
-    expect(route.screen).toBe('workflow');
     if (route.screen !== 'workflow') throw new Error('expected the workflow route');
-    expect(route.execution.kind).toBe('local');
     if (route.execution.kind !== 'local') throw new Error('expected a local execution');
-    expect(route.execution.prepared.preparationId).toBe(`resume-${session.id}`);
+    expect(route.execution.prepared.preparationId).toBe(`resume-${sessionId}`);
     ui.unmount();
   });
 });

@@ -228,14 +228,14 @@ describe('usageLimitGuidance', () => {
   it('names the reset when known and never suggests logging in', () => {
     const guidance = usageLimitGuidance(new Date('2026-08-08T15:27:00'));
     expect(guidance).toBe(
-      'The limit resets at Aug 8, 2026, 3:27 PM; wait for it, switch the seat to another tool, or abort.',
+      'The limit resets at Aug 8, 2026, 3:27 PM; wait for it, switch the seat to another tool, or end the run.',
     );
     expect(guidance).not.toMatch(/log ?in|log ?out/i);
   });
 
   it('still offers the real options when the reset is unknown', () => {
     expect(usageLimitGuidance(null)).toBe(
-      'Wait for the limit to reset, switch the seat to another tool, or abort.',
+      'Wait for the limit to reset, switch the seat to another tool, or end the run.',
     );
   });
 });

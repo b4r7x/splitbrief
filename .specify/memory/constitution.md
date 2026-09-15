@@ -1,6 +1,40 @@
 <!--
 Sync Impact Report
-- Version change: 2.0.0 → 2.1.0 (MINOR: I, V and VI expanded — two roles,
+- Version change: 2.2.0 → 2.2.1 (PATCH: V gains one sentence stating that a
+  run is a durable, continuable record until the user closes it — a
+  clarification of the checkpoint discipline already described, not a new
+  principle)
+- Modified principles (2.2.1):
+  - V. Validate Before Checkpoint (a run is not discarded by stopping; it
+    stays continuable until it is closed)
+- Updated sections (2.2.1): none
+- Templates requiring updates (2.2.1):
+  - .specify/templates/plan-template.md ✅ compatible
+  - .specify/templates/spec-template.md ✅ compatible
+  - .specify/templates/tasks-template.md ✅ compatible
+- Follow-up TODOs (2.2.1): none
+
+Prior pass — 2.1.0 → 2.2.0 (MINOR: I and VI lose their cost framing —
+  the split is justified by capability, and spend is a reported fact rather
+  than a promise or a design criterion)
+- Modified principles (2.2.0):
+  - I. Two-Tool Orchestration (the discipline of not spending the stronger
+    tool on mechanical work is restated as a capability argument; the mandate
+    to evaluate every architectural decision against strong-model token cost
+    is dropped, and so is the "lower cost is a consequence / savings MAY be
+    reported" clause)
+  - VI. Identity & Anti-Goals (the identity sentence no longer ends on cost,
+    and the TUI mandate lists validation results and escalation flow rather
+    than cost savings)
+- Updated sections (2.2.0): Technical Constraints and the anti-goal boundary
+  conditions lose "cheaper model" and "cost tracking" phrasings
+- Templates requiring updates (2.2.0):
+  - .specify/templates/plan-template.md ✅ compatible
+  - .specify/templates/spec-template.md ✅ compatible
+  - .specify/templates/tasks-template.md ✅ compatible
+- Follow-up TODOs (2.2.0): none
+
+Prior pass — 2.0.0 → 2.1.0 (MINOR: I, V and VI expanded — two roles,
   three fixed seats; the review seat is separately assignable)
 - Modified principles (2.1.0):
   - I. Two-Tool Orchestration (two roles fill three seats — plan, build,
@@ -79,15 +113,13 @@ review prompt; when it is left unassigned the planner fills it, exactly
 as before.
 
 The stronger tool MUST NOT be spent on mechanical work. Research,
-specification writing, planning, review, and escalation are its jobs;
-typing out the edit is not. Every architectural decision MUST be
-evaluated against strong-model token cost, and features that raise that
-cost without proportional quality improvement MUST be rejected or
-deferred.
+specification writing, planning, review, and escalation are the jobs
+its capability changes the result on; typing out the edit is not.
+Features that consume the stronger tool's attention without a
+proportional quality improvement MUST be rejected or deferred.
 
-Lower cost is a consequence of the split, not the promise. Savings MAY
-be reported as measured fact; they MUST NOT be the headline claim, and
-a saving alone MUST NOT justify a feature.
+What a run spent is a reported fact when the prices are known. It MUST
+NOT be a headline claim, and it alone MUST NOT justify a feature.
 
 Where the user already pays for a coding tool subscription, that
 subscription MUST be usable as the planner — planning MUST NOT require
@@ -114,7 +146,7 @@ The implementer is a weaker **model**, not a weaker **transport**. Two
 paths are first-class and MUST be held to the same maturity in prompt,
 isolation, validation, and documentation:
 - a runner that writes the files itself, such as a CLI tool driving a
-  cheaper model (`cli`, `agent` — `writesFiles: direct`)
+  smaller model (`cli`, `agent` — `writesFiles: direct`)
 - a runner that returns file contents as text, which SPLITBRIEF then
   writes, such as an API model (`api`, `shell` —
   `writesFiles: extracted-code`)
@@ -177,6 +209,13 @@ against the original specification before the workflow is marked
 complete. The review seat performs it: the planner unless a reviewer is
 assigned (Principle I).
 
+A run is a durable, continuable record until the user closes it. Stopping
+one — a park, a gate, a halt, an error, or a killed process — MUST NOT
+discard it: the run keeps its place and picks up at the first step it has
+not finished. Exactly two things close a run: passing that final review,
+and the user explicitly ending it. Closing MUST NOT revert what the run
+wrote.
+
 ### VI. Identity & Anti-Goals
 
 SPLITBRIEF is an **orchestrator of two coding tools** (planner +
@@ -184,14 +223,13 @@ implementer) across **three fixed seats** (plan, build, review). One role
 plans and reviews, the other executes, and SPLITBRIEF holds the contract,
 validation, retry, escalation, and evidence between them. Running the
 sides on models from different labs is part of the value: a reviewer that
-did not write the code does not repeat its own blind spots. Lower cost
-follows from the split — it is not the identity.
+did not write the code does not repeat its own blind spots.
 
 The collaboration between planner and implementer MUST be **visible,
 understandable, and satisfying to use**. Beautiful visualization of the
 orchestration is part of the product identity — not scope creep. The TUI
-MUST expose the planner/implementer dialog, cost savings, validation
-results, and escalation flow so users see and feel the value.
+MUST expose the planner/implementer dialog, validation results, and
+escalation flow so users see and feel the value.
 
 SPLITBRIEF is NOT:
 - A universal AI connector that "connects any AI to any AI"
@@ -212,7 +250,7 @@ Explicit anti-goals that MUST NOT be implemented:
    ownership of validation (tsc/lint/test), retry, escalation,
    checkpoints, and the overall workflow.
 2. Rich visualization of the two-role orchestration (structured event
-   cards, diff views, pipeline progress, cost tracking) is encouraged
+   cards, diff views, pipeline progress, token telemetry) is encouraged
    as product differentiation, not multi-agent coordination.
 3. Pointing the review seat at a third tool is seat assignment, not a
    third agent. It violates none of the anti-goals above: the seat count
@@ -236,7 +274,7 @@ Explicit anti-goals that MUST NOT be implemented:
 - **Project languages**: TypeScript and JavaScript are the primary stack; command-based
   validation is also resolved for configured or detected Python, Go, and Rust pipelines
 - **Planner**: Pluggable runner kinds via config: `cli`, `api`, `shell`, and `agent`
-- **Implementer**: The same four runner kinds as planner. Runners that write files themselves (`cli`, `agent` — for example a CLI tool driving a cheaper model) and runners that return file contents as text for SPLITBRIEF to write (`api`, `shell` — for example an API model) are equally supported; the user picks, and the write mode follows from the kind
+- **Implementer**: The same four runner kinds as planner. Runners that write files themselves (`cli`, `agent` — for example a CLI tool driving a smaller model) and runners that return file contents as text for SPLITBRIEF to write (`api`, `shell` — for example an API model) are equally supported; the user picks, and the write mode follows from the kind
 - **Edit format**: Whole-file replacement for files under 200 lines,
   search/replace blocks for larger files
 
@@ -279,4 +317,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 2.1.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-08-22
+**Version**: 2.2.1 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-09-15

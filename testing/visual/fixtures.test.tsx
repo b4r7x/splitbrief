@@ -22,7 +22,6 @@ import {
   CLAUDE_CODE_OPTION_CACHE,
   createHomeFixture,
   createSetupFixture,
-  createSummaryFixture,
   createWorkflowBaseFixture,
   teardownVisualFixture,
   visualConfig,
@@ -43,7 +42,6 @@ function requireOverlayFixture(id: string): FixtureFactory {
 const SCREEN_CASES: readonly FixtureCase[] = [
   { scenarioId: 'home-empty', factory: createHomeFixture },
   { scenarioId: 'workflow-idle', factory: createWorkflowBaseFixture },
-  { scenarioId: 'summary-success', factory: createSummaryFixture },
   { scenarioId: 'setup-initial', factory: createSetupFixture },
 ];
 

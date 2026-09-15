@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -21,7 +22,7 @@ import { saveSummary } from '../core/sessions/io.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Implementer } from '../engine/implementers/types.js';
-import type { Planner } from '../engine/planners/types.js';
+import type { Planner, RunPhaseInput } from '../engine/planners/types.js';
 
 // The two terminal guards read state and session after the run; skipping the run
 // itself is what makes them reachable without driving a whole workflow.
@@ -346,18 +347,19 @@ describe('runHeadless — with a reviewer configured', () => {
     expect(prepared.gates).toContainEqual(expect.objectContaining({ slot: { role: 'reviewer' } }));
 
     const planner = makePlanner({
-      quickPlan: vi.fn().mockResolvedValue({
-        spec: '',
-        plan: '',
-        tasks: [
-          makeTask({
-            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['everything else'] },
-            evidence: ['src/hello.test.ts passes'],
-            typeDefs: 'export type Hello = string;',
-          }),
-        ],
-        usage: { inputTokens: 50, outputTokens: 25 },
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          tasks: [
+            makeTask({
+              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['everything else'] },
+              evidence: ['src/hello.test.ts passes'],
+              typeDefs: 'export type Hello = string;',
+            }),
+          ],
+          usage: { inputTokens: 50, outputTokens: 25 },
+        }),
+      ),
     });
 
     // `/bin/cat` echoes the prompt back, so the verdict never parses: the review
@@ -506,7 +508,7 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
         startedAt: Date.now(),
         completedAt: Date.now(),
         stateVersion: 4,
-        status: 'cancelled',
+        status: 'ended',
         summary: null,
       },
     );

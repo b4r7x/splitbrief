@@ -14,6 +14,8 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -73,12 +75,13 @@ describe('resume planning continuation with a direct-writing implementer', {
     });
 
     const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Spec\n\nResume the paused planning turn.',
-        plan: '# Plan\n\nCreate the resumed module.',
-        tasks: [task],
-        usage: { inputTokens: 120, outputTokens: 80 },
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          usage: { inputTokens: 120, outputTokens: 80 },
+          ...(call === 'tasks' ? { tasks: [task] } : {}),
+        }),
+      ),
     });
     const implementer = makeImplementer({
       capabilities: { writesFiles: 'direct' },
@@ -166,7 +169,12 @@ describe('resume planning continuation with a direct-writing implementer', {
       _eventSink: (event) => events.push(event),
     });
 
-    expect(planner.plan).toHaveBeenCalledTimes(1);
+    // The run was parked inside planning, so it re-issues the call it was on and the one below
+    // it; the documents above are the run's own record and are not asked for again.
+    expect(vi.mocked(planner.runPhase).mock.calls.map((call) => call[0].call)).toEqual([
+      'plan',
+      'tasks',
+    ]);
     expect(implementer.implement).toHaveBeenCalledTimes(1);
     expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toBe(implementation);
     expect(summary.totalTasks).toBe(1);

@@ -6,7 +6,6 @@ import {
   type TaskTokenUsage,
   type TokenUsage,
 } from '../../core/schemas/tokens.js';
-import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { attributePhaseTokenDelta } from '../../core/state/token-attribution.js';
@@ -51,7 +50,6 @@ export type TaskAttemptTokens = Pick<
   | 'contextLength'
   | 'currentCodeTruncated'
   | 'currentCodeContextMode'
-  | 'costPosture'
   | 'routingReason'
 >;
 
@@ -67,7 +65,6 @@ export interface TokensState {
   tokenUsage: TokenUsage | null;
   perPhase: Partial<Record<Phase, PhaseTokens>>;
   perTask: Record<string, PerTaskTokens>;
-  prediction: CostPrediction | null;
   completedTaskCount: number;
   pricingContext: PricingContext | null;
 }
@@ -87,7 +84,6 @@ const initial: TokensState = {
   tokenUsage: null,
   perPhase: {},
   perTask: {},
-  prediction: null,
   completedTaskCount: 0,
   pricingContext: null,
 };
@@ -209,9 +205,6 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
         perPhase: { ...state.perPhase, [phase]: updatedPhase },
       };
     }
-
-    case 'cost_prediction':
-      return { ...state, prediction: event.prediction };
 
     case 'task_tokens': {
       const existing = state.perTask[event.taskId] ?? { totalTokens: 0, title: '', attempts: [] };
@@ -351,9 +344,6 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'queue_cleared':
     case 'user_message':
     case 'planner_attachments_dropped':
-    case 'budget_warning':
-    case 'budget_paused':
-    case 'budget_exceeded':
     case 'approval_prompted':
     case 'approval_granted':
     case 'approval_rejected':

@@ -12,27 +12,19 @@ SPLITBRIEF is a CLI tool. CLI tools are loved when they respect the developer's 
 
 `splitbrief "fix the typo in README"` must work. No subcommand, no prior `init`, no config file for single-shot tasks. Auto-detect available models. Reserve `start` as explicit subcommand for power users; bare positional arg is the default path.
 
-### 2. Savings reported, not promised
-
-The post-run line — `$0.12 actual vs $0.95 baseline · 87% saved` — is a reported fact, not the argument for switching; that argument is the pairing and what the review catches (`VISION.md`). Report it honestly: the baseline reprices the implementer's tokens at planner rates, so it answers "what would this run have cost on the planner alone", not a measured A/B. When pricing for either side is unknown the estimate is suppressed rather than guessed (`hasSavingsEstimate: false`, `src/engine/providers/cost/breakdown.ts`). It stays prominent and copy-pasteable — it just stops being the headline.
-
-### 3. Heartbeat over silence
+### 2. Heartbeat over silence
 
 Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. The run-start validation probe is covered too: before the first task it publishes `validation_baseline` running rows naming the stage being probed, so a slow or red validation stage cannot sit silent behind `Implementing…`. The 60 seconds this principle names are now a threshold in the code: the Build progress block prints `last event <n>s ago` on every frame and flips to `No update from <tool> for <n>s` once the silence reaches `UI_IDLE_WARN_MS` (`src/features/workflow/display/build-progress.ts`).
 
-### 4. One command for session continuity
+### 3. One command for session continuity
 
 Users should never think about session lifecycle. `splitbrief continue` figures out the right thing: it resolves the session by alias, id or the active pointer and resumes it from saved state. Kill the tmux-complexity of separate session commands for the 90% case.
 
-### 5. Progressive disclosure everywhere
+### 4. Progressive disclosure everywhere
 
 Default output is minimal. Details expand on keypress. Config starts at 3 lines (planner + implementer) and grows only when needed. Help shows examples, not just flags. Brief review exposes the active commands inline and sends text edits to the user's external editor.
 
-### 6. Cost-gated approval
-
-Before implementation starts the cost gate opens as a bordered panel: a `12 tasks` header, then one labelled row each for `est`, `all-planner` and `saving`, then the `y approve` / `x deny` options. When the estimate covers prompt input only, the labels say so and a scope note names what is tracked at runtime instead (`formatCostGateSummary`, `src/core/cost-gate-summary.ts`). This is the last cheap moment to cut scope; the numbers are there to inform that decision, not to congratulate the user.
-
-### 7. Streaming partial output
+### 5. Streaming partial output
 
 For API implementers, stream the last N lines being written in real-time. Transforms "generating foo.ts... 28s" into watching code materialize. Users watch instead of context-switching away.
 
@@ -46,9 +38,9 @@ A run is judged by whether the change holds up, not by what it cost. Three numbe
 |---|---|
 | First-pass rate | Share of tasks that passed validation on the implementer's first attempt — no retry, no escalation. This is what the Task Brief contract, the implementer prompt, and the isolation are tuned against. |
 | Cross-lab review effectiveness | What the planner's review of the run diff caught that the deterministic pipeline did not — logic errors and edge cases, where the cross-lab gap is widest. |
-| Cost | Reported alongside the other two, per run and cumulatively. Alone it proves nothing: a first-pass rate bought with an expensive implementer is not a result. A run that recorded no priced usage reports that instead of a fabricated zero. |
+| Spend | Reported alongside the other two, per run. Alone it proves nothing: a first-pass rate bought on the stronger tool is not a result. A run that recorded no priced usage reports that instead of a fabricated zero. |
 
-`evals/` is scored on these, not on cost alone.
+`evals/` is scored on the first two, not on spend.
 
 ---
 
@@ -165,7 +157,6 @@ The niche has direct competitors now (`VISION.md`). Any single row here can be m
 |---|---|
 | `doctor` | Pre-flight readiness check with blockers/warnings/suggestions |
 | Recovery system | Typed `RecoveryIssue` → user chooses `RecoveryAction` (skip, retry, abort, switch-profile) |
-| Budget tracking | Real-time cost prediction, budget gates, `budget_exceeded` events |
 | Mode system | `quick`/`standard`/`speckit` — adjusts ceremony to task complexity |
 | Drift detection | Detects when implementation diverges from plan |
 | Worktree isolation | One git worktree per run for a direct-writing implementer, project dependencies linked in, changes promoted back hash-guarded. Isolates files, not the runtime — it is not a security boundary |
@@ -199,7 +190,7 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 | Error UX | 7/10 | Crash diagnostics excellent; recovery prompts lack consequence descriptions |
 | Session management | 9/10 | `splitbrief continue` resolves by numeric alias, id, or the active pointer (the separate `last`, `ps` and `attach` commands were retired) |
 | Planning phase UX | 9/10 | Per-task reject+regen, contextual footer keybindings |
-| Cost visibility | 9/10 | Hero savings stat on the summary screen, cost-gated approval (the separate `splitbrief stats` command was retired) |
+| Spend visibility | 9/10 | Cost row on a closed run (the separate `splitbrief stats` command was retired) |
 | Streaming output | 9/10 | Live partial output during API implementer generation |
 | Configuration | 6/10 | Progressive disclosure missing, three approval escape hatches |
 
@@ -212,9 +203,7 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 | `--help` with 14 real examples | Not just flag descriptions — concrete command examples with explanations | ✅ |
 | `splitbrief continue` | Smart command: attaches if running, resumes if interrupted | ✅ |
 | `splitbrief last` | Attach or resume the most recent session | Retired — `splitbrief continue 1` targets the most recent session, and the bare form resumes the active pointer |
-| `splitbrief stats` | Cumulative savings across all sessions | Retired — per-run savings live on the summary screen |
-| Hero savings post-run | "$0.12 actual vs $0.95 all-planner — 87% saved" | ✅ |
-| Cost-gated approval | Task count, `est` / `all-planner` / `saving` rows and `y`/`x` options before implementation starts | ✅ |
+| `splitbrief stats` | Cumulative spend across all sessions | Retired — per-run spend lives on the run screen |
 | Planner heartbeat | Token counter or phase hint during long waits | ✅ |
 | Streaming partial output | Last N lines from API implementer in real-time | ✅ |
 | Per-task reject + regen | Flag tasks, press `R` to send back to planner | ✅ |

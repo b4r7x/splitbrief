@@ -4,7 +4,9 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EventBus } from '../../events/types.js';
 import { createBusTextHandler, publishError, publishWarning } from '../events.js';
-import { transitionAndSave } from '../state-ops.js';
+import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { buildBriefReviewNoProgressRecoveryIssue } from '../recovery/builders/planner.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { readSpecFile } from '../../../core/paths-io.js';
 import { topoSort } from '../../../core/state/topo-sort.js';
@@ -32,7 +34,7 @@ function isApprovalDecision(value: unknown): value is ApprovalReviewResult {
   if (!('approved' in value) || typeof value.approved !== 'boolean') return false;
   if (value.approved) return true;
   const action = 'action' in value ? value.action : undefined;
-  if (action === undefined || action === 'edit') return true;
+  if (action === undefined || action === 'edit' || action === 'end-run') return true;
   return action === 'revise' && 'comment' in value && typeof value.comment === 'string';
 }
 
@@ -46,6 +48,10 @@ function isRevisionDecision(
   result: ApprovalReviewResult,
 ): result is Extract<ApprovalReviewResult, { action: 'revise' }> {
   return !result.approved && 'action' in result && result.action === 'revise';
+}
+
+function isEndRunDecision(result: ApprovalReviewResult): boolean {
+  return !result.approved && 'action' in result && result.action === 'end-run';
 }
 
 function firstBriefErrorMessage(report: BriefQualityReport): string {
@@ -122,15 +128,24 @@ export async function runBriefsApprovalLoop(
   state = transitionAndSave(ref, state, { type: 'BRIEF_ADMISSION_OPENED' });
   const tracker = createBriefReviewTracker();
 
-  const rejectNoProgress = (): BriefsApprovalLoopResult => {
+  // Twenty turns on the same failure is not review any more. The run halts for a
+  // decision at the gate it is already parked on; it never ends itself.
+  const haltNoProgress = (): BriefsApprovalLoopResult => {
+    const message = `Task Brief review made no progress after ${MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS} consecutive attempts.`;
     publishError({
       bus,
       phase: state.phase,
-      message: `Task Brief review made no progress after ${MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS} consecutive attempts; rejecting the Task Briefs.`,
+      message,
       safety: { category: 'workflow', code: 'brief_review_no_progress' },
     });
-    state = transitionAndSave(ref, state, { type: 'REJECT_BRIEFS' });
-    return { state, tasks, outcome: 'rejected' };
+    const issue = buildBriefReviewNoProgressRecoveryIssue({
+      phase: state.phase,
+      message,
+      details: ['Send the planner a correction, or end the run and keep what is on disk.'],
+      createdAt: nowIso(),
+    });
+    state = raisePendingRecovery({ ...ref, bus }, state, issue);
+    return { state, tasks, outcome: 'halted' };
   };
 
   const registerFailure = (detail: string): boolean =>
@@ -145,15 +160,15 @@ export async function runBriefsApprovalLoop(
       phase: state.phase,
     });
 
-  /** Re-measures the candidate briefs; 'reject' once the no-progress tracker has tripped. */
-  const gateQuality = (candidate: Task[], detail: string): 'ok' | 'failed' | 'reject' => {
+  /** Re-measures the candidate briefs; 'halt' once the no-progress tracker has tripped. */
+  const gateQuality = (candidate: Task[], detail: string): 'ok' | 'failed' | 'halt' => {
     const quality = qualityFor(candidate);
     if (quality.ok) {
       tracker.reset();
       return 'ok';
     }
     publishBriefQualityFailure(bus, state.phase, quality.report);
-    return registerFailure(`quality:${detail}`) ? 'reject' : 'failed';
+    return registerFailure(`quality:${detail}`) ? 'halt' : 'failed';
   };
 
   while (true) {
@@ -190,20 +205,20 @@ export async function runBriefsApprovalLoop(
       );
       if (!edited.ok) {
         publishError({ bus, phase: state.phase, message: edited.message });
-        if (registerFailure(edited.message)) return rejectNoProgress();
+        if (registerFailure(edited.message)) return haltNoProgress();
         continue;
       }
       const readiness = await readinessFor(edited.tasks);
       if (!readiness.ok) {
         publishReadinessBlockWarning({ bus, phase: state.phase, report: readiness });
-        if (registerFailure(readinessBlockDetail(readiness))) return rejectNoProgress();
+        if (registerFailure(readinessBlockDetail(readiness))) return haltNoProgress();
         continue;
       }
       tasks = edited.tasks;
       writeBriefs(briefsBody());
       const quality = qualityFor(tasks);
       if (!quality.ok) publishBriefQualityFailure(bus, state.phase, quality.report);
-      if (registerFailure('edit-applied')) return rejectNoProgress();
+      if (registerFailure('edit-applied')) return haltNoProgress();
       continue;
     }
 
@@ -218,14 +233,14 @@ export async function runBriefsApprovalLoop(
       });
       if (!revised.ok) {
         publishError({ bus, phase: state.phase, message: revised.message });
-        if (registerFailure(revised.message)) return rejectNoProgress();
+        if (registerFailure(revised.message)) return haltNoProgress();
         continue;
       }
       tasks = revised.tasks;
       const revision = getBriefRevisionComment(decision, tasks);
       if (!revision.ok) {
         publishError({ bus, phase: state.phase, message: revision.message });
-        if (registerFailure(revision.message)) return rejectNoProgress();
+        if (registerFailure(revision.message)) return haltNoProgress();
         continue;
       }
       createBusTextHandler({ bus, phase: state.phase })(
@@ -263,7 +278,7 @@ export async function runBriefsApprovalLoop(
           `\n[Brief quality gate failed after revision: ${firstBriefErrorMessage(quality.report)}. Please review and try again.]\n`,
         );
         if (registerFailure(`quality:${firstBriefErrorMessage(quality.report)}`))
-          return rejectNoProgress();
+          return haltNoProgress();
       } else {
         tracker.reset();
       }
@@ -281,7 +296,7 @@ export async function runBriefsApprovalLoop(
       });
       if (!approved.ok) {
         publishError({ bus, phase: state.phase, message: approved.message });
-        if (registerFailure(approved.message)) return rejectNoProgress();
+        if (registerFailure(approved.message)) return haltNoProgress();
         continue;
       }
       const readiness = await readinessFor(approved.tasks);
@@ -297,7 +312,7 @@ export async function runBriefsApprovalLoop(
         } else {
           tracker.offerOverride(fingerprint);
           publishReadinessBlockWarning({ bus, phase: state.phase, report: readiness });
-          if (tracker.registerFailure(fingerprint)) return rejectNoProgress();
+          if (tracker.registerFailure(fingerprint)) return haltNoProgress();
           continue;
         }
       }
@@ -308,7 +323,7 @@ export async function runBriefsApprovalLoop(
           phase: state.phase,
           message: 'Task Brief set must retain at least one task.',
         });
-        if (registerFailure('empty-task-set')) return rejectNoProgress();
+        if (registerFailure('empty-task-set')) return haltNoProgress();
         continue;
       }
       try {
@@ -319,18 +334,21 @@ export async function runBriefsApprovalLoop(
           phase: state.phase,
           message: labelError('Task Brief dependency graph is invalid', err),
         });
-        if (registerFailure(labelError('topo-sort', err))) return rejectNoProgress();
+        if (registerFailure(labelError('topo-sort', err))) return haltNoProgress();
         continue;
       }
       writeBriefs(formatTasks(tasks));
       const verdict = gateQuality(tasks, 'approved');
-      if (verdict === 'reject') return rejectNoProgress();
+      if (verdict === 'halt') return haltNoProgress();
       if (verdict === 'failed') continue;
       state = transitionAndSave(ref, state, { type: 'BEGIN_IMPLEMENTATION' });
       return { state, tasks, outcome: 'accepted' };
     }
 
-    state = transitionAndSave(ref, state, { type: 'REJECT_BRIEFS' });
-    return { state, tasks, outcome: 'rejected' };
+    if (isEndRunDecision(decision)) {
+      state = transitionAndSave(ref, state, { type: 'CLOSE_RUN' });
+      return { state, tasks, outcome: 'closed' };
+    }
+    // No decision reached the gate: re-ask rather than reading silence as an end.
   }
 }

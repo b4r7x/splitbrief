@@ -4,6 +4,8 @@ import { initStores } from '../../init-stores.js';
 import { renderApp } from '../../render/app.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { readRunRecord } from '../../../core/sessions/run-record-io.js';
+import { hydrateRun } from '../../../features/workflow/run-history.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import {
   assertHeadlessTaskReviewDisabled,
@@ -128,7 +130,15 @@ export async function resumeSavedSession(args: {
     skillsStore.setSelected(new Set(resumeSkillIds));
   }
   const execution = await prepareResume(interaction);
-  routerStore.init({ screen: 'workflow', execution: { kind: 'local', prepared: execution } });
+  const record = readRunRecord(ref);
+  // The run keeps the history it already wrote: replayed before the screen mounts, appended to by
+  // the live bus from there.
+  await hydrateRun(record);
+  routerStore.init({
+    screen: 'workflow',
+    run: record,
+    execution: { kind: 'local', prepared: execution },
+  });
 
   await deps.renderApp(createElement(App), {
     fullscreen: renderOptions.useFullscreen,

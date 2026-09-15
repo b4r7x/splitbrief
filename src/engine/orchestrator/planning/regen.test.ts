@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { createInitialState, transition } from '../../../core/state/machine.js';
+import { createInitialState } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { ensureSessionDir, readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
 import { PLAN_FILE, SPEC_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
@@ -15,7 +15,7 @@ import {
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTestSinks, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
 import { formatTasks } from '../../spec/formatter.js';
-import { regeneratePlanAndTasks, regenerateTasks } from './regen.js';
+import { regenerateTasks } from './regen.js';
 
 let dirs: string[] = [];
 
@@ -32,175 +32,6 @@ function setupProjectDir(): { projectDir: string; sessionId: string } {
 afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
-});
-
-function planningStateWithQueuedMessage() {
-  let state = createInitialState('feature');
-  state = transition(state, { type: 'START' });
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  return {
-    ...state,
-    messageQueue: [
-      {
-        id: 'queued-1',
-        text: 'include retry handling in regenerated briefs',
-        queuedAt: new Date().toISOString(),
-        phase: 'planning' as const,
-        deliveredViaNative: false,
-        nativeDeliveryState: 'pending' as const,
-        origin: 'user-input' as const,
-      },
-    ],
-  };
-}
-
-describe('regeneratePlanAndTasks', () => {
-  it('rejects an invalid plan replacement before writing, publishing, or prompting for tasks', async () => {
-    const { projectDir, sessionId } = setupProjectDir();
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-    const previousPlan = readSpecFile({ projectDir, sessionId }, PLAN_FILE);
-    const planner = makePlanner({
-      review: vi.fn().mockResolvedValue({
-        text: 'planner prose without an artifact heading',
-        usage: { inputTokens: 17, outputTokens: 9 },
-      }),
-    });
-
-    await expect(
-      regeneratePlanAndTasks({
-        projectDir,
-        sessionId,
-        planner,
-        callbacks,
-        bus,
-        state: planningStateWithQueuedMessage(),
-        metadata: TEST_METADATA,
-      }),
-    ).rejects.toMatchObject({ kind: 'planning-invalid-artifact' });
-
-    expect(planner.review).toHaveBeenCalledTimes(1);
-    expect(readSpecFile({ projectDir, sessionId }, PLAN_FILE)).toBe(previousPlan);
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
-
-    const persisted = loadState({ projectDir, sessionId });
-    expect(persisted).not.toBeNull();
-    if (persisted === null) throw new Error('expected usage state to be persisted');
-    expect(persisted.tokenUsage).toMatchObject({ plannerInput: 17, plannerOutput: 9 });
-  });
-
-  it('leaves queued feedback pending and Tasks, quality, permit, and events untouched when task regeneration fails after plan regeneration', async () => {
-    const { projectDir, sessionId } = setupProjectDir();
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-    writeSpecFile(
-      { projectDir, sessionId },
-      TASKS_FILE,
-      '# Authoritative Task Briefs\n\nPrior bytes stay.\n',
-      TEST_METADATA,
-    );
-    const priorTasksBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
-    const planner = makePlanner({
-      review: vi
-        .fn()
-        .mockResolvedValueOnce({ text: '# Plan\n\nRegenerated.\n', usage: null })
-        .mockRejectedValueOnce(new Error('task regeneration failed')),
-    });
-
-    await expect(
-      regeneratePlanAndTasks({
-        projectDir,
-        sessionId,
-        planner,
-        callbacks,
-        bus,
-        state: planningStateWithQueuedMessage(),
-        metadata: TEST_METADATA,
-      }),
-    ).rejects.toThrow('task regeneration failed');
-
-    const saved = loadState({ projectDir, sessionId });
-    expect(saved?.messageQueue[0]?.drainedAt).toBeUndefined();
-    expect(events.some((event) => event.type === 'queue_drained')).toBe(false);
-    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
-    expect(
-      events.filter((event) => event.type === 'artifact_written').map((event) => event.filename),
-    ).toEqual([PLAN_FILE]);
-    expect(events.filter((event) => event.type.startsWith('brief_quality'))).toHaveLength(0);
-  });
-
-  it('commits queued feedback and projects the regenerated plan as an approval document after plan and task regeneration both succeed', async () => {
-    const { projectDir, sessionId } = setupProjectDir();
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-    writeSpecFile(
-      { projectDir, sessionId },
-      TASKS_FILE,
-      '# Prior Task Briefs\n\nUnchanged.\n',
-      TEST_METADATA,
-    );
-    const priorTasksBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
-    const priorPlanBytes = readSpecFile({ projectDir, sessionId }, PLAN_FILE);
-    const planner = makePlanner({
-      review: vi
-        .fn()
-        .mockResolvedValueOnce({ text: '# Plan\n\nRegenerated.\n', usage: null })
-        .mockResolvedValueOnce({ text: REAL_TASKS_MD, usage: null }),
-    });
-
-    const result = await regeneratePlanAndTasks({
-      projectDir,
-      sessionId,
-      planner,
-      callbacks,
-      bus,
-      state: planningStateWithQueuedMessage(),
-      metadata: TEST_METADATA,
-    });
-
-    expect(result.tasks).toHaveLength(1);
-    expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
-    expect(events.some((event) => event.type === 'queue_drained' && event.count === 1)).toBe(true);
-    expect(
-      events.filter((event) => event.type === 'artifact_written').map((event) => event.filename),
-    ).toEqual([PLAN_FILE]);
-    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
-    expect(readSpecFile({ projectDir, sessionId }, PLAN_FILE)).not.toBe(priorPlanBytes);
-    expect(readSpecFile({ projectDir, sessionId }, PLAN_FILE)).toContain('# Plan\n\nRegenerated.');
-  });
-
-  it('preserves the authoritative Tasks, plan, quality, permit, and events when plan regeneration fails', async () => {
-    const { projectDir, sessionId } = setupProjectDir();
-    const { bus, events } = makeBusRecorder();
-    writeSpecFile(
-      { projectDir, sessionId },
-      TASKS_FILE,
-      '# Authoritative Task Briefs\n\nPrior bytes stay.\n',
-      TEST_METADATA,
-    );
-    const priorTasksBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
-    const priorPlanBytes = readSpecFile({ projectDir, sessionId }, PLAN_FILE);
-    const planner = makePlanner({
-      review: vi.fn().mockRejectedValue(new Error('plan regeneration failed')),
-    });
-
-    await expect(
-      regeneratePlanAndTasks({
-        projectDir,
-        sessionId,
-        planner,
-        callbacks: makeCallbacks().callbacks,
-        bus,
-        state: createInitialState('feat'),
-        metadata: TEST_METADATA,
-      }),
-    ).rejects.toThrow('plan regeneration failed');
-
-    expect(readSpecFile({ projectDir, sessionId }, PLAN_FILE)).toBe(priorPlanBytes);
-    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
-    expect(events.filter((event) => event.type.startsWith('brief_quality'))).toHaveLength(0);
-  });
 });
 
 describe('regenerateTasks', () => {
@@ -444,6 +275,8 @@ This replacement must fail strict parsing.
 
     expect(prompts).toHaveLength(2);
     expect(prompts[1]).toContain('retry with more detail');
+    // The retry is the same regeneration prompt with the note on the end.
+    expect(prompts[1]?.startsWith(prompts[0] ?? '')).toBe(true);
     expect(result.tasks).toHaveLength(1);
     expect(events.filter((e) => e.type === 'turn_interrupted')).toHaveLength(1);
     expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);

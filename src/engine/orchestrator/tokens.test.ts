@@ -204,7 +204,7 @@ describe('recordTaskUsage — usage-not-reported warning', () => {
     expect(warnings[0]).toMatchObject({
       type: 'warning',
       taskId: 'T001',
-      category: 'cost',
+      category: 'usage',
       code: 'implementer_usage_not_reported',
     });
     expect(String((warnings[0] as { message: unknown }).message)).toContain('codex');

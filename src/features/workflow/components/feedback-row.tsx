@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
@@ -9,7 +9,8 @@ import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { fitKeyLegend, hintStateSeverity } from '../input-hints.js';
+import { fitKeyLegend } from '../../../core/key-legend.js';
+import { hintStateSeverity } from '../input-hints.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
 
 // The keys a run answers to while it is working. `esc` opens the stop sheet rather than stopping,

@@ -13,7 +13,6 @@ export type FixtureRow = Readonly<{
   build: string;
   review: string;
   timeoutMs: number;
-  maxBudgetUsd: number;
 }>;
 
 const FIXTURE_FEATURE =
@@ -30,7 +29,6 @@ export const FIXTURE_ROWS: readonly FixtureRow[] = [
     build: 'command-code',
     review: 'codex',
     timeoutMs: 300_000,
-    maxBudgetUsd: 0.05,
   },
   {
     id: 'fixture-standard-claude-cmd-codex',
@@ -42,7 +40,6 @@ export const FIXTURE_ROWS: readonly FixtureRow[] = [
     build: 'command-code',
     review: 'codex',
     timeoutMs: 900_000,
-    maxBudgetUsd: 0.5,
   },
 ];
 

@@ -30,7 +30,6 @@ export const READINESS_NEXT_ACTION_KINDS = [
   'prepare-runner',
   'clean-or-isolate-repo',
   'raise-context',
-  'set-budget',
   'exit',
 ] as const;
 export const ReadinessNextActionKindSchema = z.enum(READINESS_NEXT_ACTION_KINDS);

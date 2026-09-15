@@ -44,7 +44,6 @@ const LOCAL_AGENT_PROFILE = {
   kind: 'agent',
   command: 'local-worker',
   model: 'local-model',
-  costTier: 'cheap',
 } as const;
 
 function blockedReport(kinds: BriefReadinessBlockKind[]): BriefReadinessGateReport {
@@ -316,7 +315,6 @@ describe('runBriefReadinessGate', () => {
             provider: 'ollama',
             apiBase: 'http://localhost:11434/v1',
             model: 'runtime-wide',
-            costTier: 'standard',
           },
         },
       },

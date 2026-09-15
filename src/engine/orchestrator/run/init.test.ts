@@ -21,6 +21,7 @@ import { reactivateExistingSession } from '../../../core/sessions/active-pointer
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { taskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
 import { createEventBus } from '../../events/bus.js';
@@ -578,6 +579,90 @@ describe('initializeWorkflow — a task interrupted mid-gate', () => {
           .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
           .map((e) => e.message),
       ).toContain('Restored 1 unfinished change(s) from the interrupted T001: src/two.ts');
+    });
+  });
+});
+
+describe('initializeWorkflow — a brief killed while its runner was building', () => {
+  it('restarts the brief and restores its files, the same as a kill mid-gate', async () => {
+    await withTempDir('splitbrief-init-killed-implementing', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'src/two.ts': 'original' });
+      writeFileSync(join(projectDir, 'src/two.ts'), 'half written by the killed run');
+      const feature = 'resume a brief killed during the subprocess';
+      const sessionId = 'session-init-killed-implementing';
+
+      const { init, tracked } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'implementing',
+          tasks: [makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' })],
+          currentTaskIndex: 0,
+          attempt: 1,
+          changedFilesBaseline: {
+            head: null,
+            fingerprints: {},
+            activeTaskSnapshot: {
+              head: 'HEAD',
+              files: ['src/two.ts'],
+              dirtyFileContents: { 'src/two.ts': 'original' },
+            },
+          },
+        },
+      });
+
+      expect(init.ok).toBe(true);
+      expect(tracked.current).toMatchObject({
+        phase: 'implementing',
+        attempt: 0,
+        tasks: [{ id: 'T001', status: 'pending' }],
+      });
+      expect(readFileSync(join(projectDir, 'src/two.ts'), 'utf-8')).toBe('original');
+    });
+  });
+
+  it('keeps the partial edits of a brief the operator parked on purpose', async () => {
+    await withTempDir('splitbrief-init-parked-brief', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'src/two.ts': 'original' });
+      writeFileSync(join(projectDir, 'src/two.ts'), 'half written before the park');
+      const feature = 'continue a parked brief';
+      const sessionId = 'session-init-parked-brief';
+
+      const { init, tracked } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'implementing',
+          tasks: [makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' })],
+          currentTaskIndex: 0,
+          attempt: 1,
+          interruptedStep: {
+            step: { kind: 'brief', taskId: taskId('T001'), attempt: 1 },
+            source: 'user',
+            cut: 'mid-step',
+            at: '2026-01-01T00:00:00.000Z',
+          },
+          changedFilesBaseline: {
+            head: null,
+            fingerprints: {},
+            activeTaskSnapshot: {
+              head: 'HEAD',
+              files: ['src/two.ts'],
+              dirtyFileContents: { 'src/two.ts': 'original' },
+            },
+          },
+        },
+      });
+
+      expect(init.ok).toBe(true);
+      expect(readFileSync(join(projectDir, 'src/two.ts'), 'utf-8')).toBe(
+        'half written before the park',
+      );
+      expect(tracked.current).toMatchObject({ tasks: [{ id: 'T001', status: 'in_progress' }] });
     });
   });
 });

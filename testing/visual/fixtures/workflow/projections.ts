@@ -1,9 +1,9 @@
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
+import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import { makeTask } from '../../../helpers/factories/task.js';
-import { makeUsage } from '../../../helpers/factories/summary.js';
 import { makeImplState } from '../../../helpers/factories/workflow-state.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import type { ReviewArtifact } from '../../../../src/features/workflow/prompt-rows/approval.js';
@@ -13,6 +13,7 @@ import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt
 import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores/workflow/stop.js';
 import type { ScenarioId } from '../../contracts/identifiers.js';
 import { scenarioId } from '../../contracts/identifiers.js';
+import { atRestProjections } from './at-rest-projections.js';
 
 export const WORKFLOW_FIXTURE_VERSION = 1;
 
@@ -58,68 +59,6 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   recovery: 'switch BUILD to OpenCode CLI',
 });
 
-export const WORKFLOW_SUCCESS_SUMMARY: Readonly<Summary> = Object.freeze({
-  feature: WORKFLOW_FIXTURE_TEXT.success,
-  totalTasks: 1,
-  completedByLocal: 1,
-  escalatedToPlanner: 0,
-  skipped: 0,
-  failed: 0,
-  totalTime: 4_200,
-  tokenUsage: makeUsage({
-    plannerInput: 120,
-    plannerOutput: 40,
-    implementerInput: 240,
-    implementerOutput: 80,
-  }),
-  estimatedCostSavings: '$0.01',
-  escalationRate: 0,
-  plannerTool: 'claude-code',
-  plannerModel: 'fixture-planner-v1',
-  implementerTool: 'ollama',
-  implementerModel: FIXED_RUNNER_MODEL,
-  mode: 'standard',
-  phaseTimings: {
-    planning: 1_200,
-    implementing: 2_400,
-    'final-review': 600,
-  },
-  reviewPacket: {
-    jsonPath: 'evidence/review.json',
-    markdownPath: 'evidence/review.md',
-    generatedAt: '2026-01-01T00:00:00.000Z',
-    finalReviewStatus: 'written' as const,
-    finalReviewVerdict: 'pass' as const,
-    finalReviewFindingCounts: { critical: 0, warning: 1, note: 2 },
-    driftPassed: true,
-    evidenceValidatedTasks: 1,
-    evidenceTotalTasks: 1,
-    missingArtifactCount: 0,
-  },
-  review: { verdict: 'pass' as const, critical: 0, warnings: 1, notes: 2 },
-  driftSummary: { passed: true, score: 1, errorCount: 0, warningCount: 0 },
-  changedFiles: [WORKFLOW_FIXTURE_REVIEW_FILE],
-});
-
-export const WORKFLOW_REVIEW_FAILED_SUMMARY: Readonly<Summary> = Object.freeze({
-  ...WORKFLOW_SUCCESS_SUMMARY,
-  reviewPacket: {
-    ...WORKFLOW_SUCCESS_SUMMARY.reviewPacket,
-    jsonPath: 'evidence/review.json',
-    markdownPath: 'evidence/review.md',
-    generatedAt: '2026-01-01T00:00:00.000Z',
-    finalReviewStatus: 'written' as const,
-    finalReviewVerdict: 'fail' as const,
-    finalReviewFindingCounts: { critical: 2, warning: 1, note: 0 },
-    driftPassed: false,
-    evidenceValidatedTasks: 1,
-    evidenceTotalTasks: 1,
-    missingArtifactCount: 0,
-  },
-  review: { verdict: 'fail' as const, critical: 2, warnings: 1, notes: 0 },
-  driftSummary: { passed: false, score: 0.6, errorCount: 1, warningCount: 1 },
-});
-
 interface FixtureQuestion {
   readonly prompt: string;
   readonly answer: string;
@@ -146,6 +85,15 @@ export interface FixtureStopState {
   readonly parked?: { readonly kind: StopParkKind; readonly taskId: string };
 }
 
+/**
+ * A run the screen opens at rest: its record, and the session log its transcript replays when the
+ * scenario is about the replay itself rather than about the block at the tail.
+ */
+export interface FixtureAtRestRoute {
+  readonly record: RunRecord;
+  readonly log?: string;
+}
+
 export interface WorkflowFixtureProjection {
   readonly scenarioId: ScenarioId;
   readonly feature: string;
@@ -165,6 +113,8 @@ export interface WorkflowFixtureProjection {
   readonly resumeState?: WorkflowState;
   readonly summary?: Readonly<Summary>;
   readonly stop?: FixtureStopState;
+  /** Set when the scenario shows a run that is not moving; the screen mounts no runner. */
+  readonly atRest?: FixtureAtRestRoute;
 }
 
 const WORKFLOW_IDLE_ID = scenarioId('workflow-idle');
@@ -182,8 +132,6 @@ const WORKFLOW_PAUSED_MID_BRIEF_ID = scenarioId('workflow-paused-mid-brief');
 const WORKFLOW_PAUSED_BOUNDARY_ID = scenarioId('workflow-paused-boundary');
 const WORKFLOW_STOPPING_ID = scenarioId('workflow-stopping');
 const WORKFLOW_STOPPED_ID = scenarioId('workflow-stopped');
-const SUMMARY_SUCCESS_ID = scenarioId('summary-success');
-const SUMMARY_REVIEW_FAILED_ID = scenarioId('summary-review-failed');
 const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
 const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
 
@@ -605,46 +553,6 @@ const questionProjection: WorkflowFixtureProjection = {
   },
 };
 
-const successProjection: WorkflowFixtureProjection = {
-  scenarioId: SUMMARY_SUCCESS_ID,
-  feature: WORKFLOW_FIXTURE_TEXT.success,
-  inputMode: 'normal',
-  sidebarVisible: false,
-  events: [
-    {
-      type: 'workflow_started',
-      ts: FIXED_TS,
-      phase: 'implementing',
-      feature: WORKFLOW_FIXTURE_TEXT.success,
-    },
-    {
-      type: 'workflow_complete',
-      ts: FIXED_TS + 4_200,
-      phase: 'complete',
-    },
-  ],
-  summary: WORKFLOW_SUCCESS_SUMMARY,
-};
-
-const reviewFailedProjection: WorkflowFixtureProjection = {
-  ...{
-    scenarioId: SUMMARY_REVIEW_FAILED_ID,
-    feature: WORKFLOW_FIXTURE_TEXT.success,
-    inputMode: 'normal' as const,
-    sidebarVisible: false,
-    events: [
-      {
-        type: 'workflow_started' as const,
-        ts: FIXED_TS,
-        phase: 'implementing' as const,
-        feature: WORKFLOW_FIXTURE_TEXT.success,
-      },
-      { type: 'workflow_complete' as const, ts: FIXED_TS + 4_200, phase: 'complete' as const },
-    ],
-    summary: WORKFLOW_REVIEW_FAILED_SUMMARY,
-  },
-};
-
 const failureProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_FAILURE_ID,
   feature: WORKFLOW_FEATURE,
@@ -746,7 +654,7 @@ const usageLimitRecoveryIssue: RecoveryIssue = {
     candidates: [{ tool: 'opencode' }, { tool: 'codex' }],
   },
   facts: { tool: 'Ollama' },
-  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'abort-workflow'],
+  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
   recommendedAction: 'switch-seat',
   createdAt: new Date(FIXED_TS).toISOString(),
 };
@@ -880,14 +788,14 @@ const projections = [
   pausedBoundaryProjection,
   stoppingProjection,
   stoppedProjection,
-  successProjection,
-  reviewFailedProjection,
   failureProjection,
   usageLimitRecoveryProjection,
 ] as const;
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =
-  new Map(projections.map((projection) => [projection.scenarioId, projection]));
+  new Map(
+    [...projections, ...atRestProjections].map((projection) => [projection.scenarioId, projection]),
+  );
 
 /** The text the question panel prints: a clarification prompt, or the halt the resumed state carries. */
 export function fixtureQuestionHint(projection: WorkflowFixtureProjection): string | null {
@@ -917,7 +825,6 @@ export function getWorkflowFixturePromptRows(
   const questionHint = projection.inputMode === 'question' ? fixtureQuestionHint(projection) : null;
   return getWorkflowPromptRows({
     approvalState,
-    costApprovalState: { status: 'idle' },
     questionHint,
     reviewArtifact: projection.reviewArtifact ?? null,
     cols,

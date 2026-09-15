@@ -35,15 +35,23 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
       return `${taskName(issue)} wrote outside its declared files`;
     case 'implementer-recipe-invalid':
       return `Tool recipe rejected by ${toolName(issue)}`;
-    case 'implementer-timeout-repeated':
+    case 'runner-timeout-repeated':
       return `Two timeouts in a row on ${taskName(issue)}`;
+    case 'planner-call-failed':
+      return 'Planner call failed';
+    case 'planner-returned-no-briefs':
+      return 'Planner returned no briefs';
+    case 'constitution-check-failed':
+      return 'Constitution check failed';
+    case 'brief-review-no-progress':
+      return 'Brief review is not making progress';
+    case 'brief-quality-unrepaired':
+      return 'Task Briefs still fail the quality gate';
     case 'implementation-error':
     case 'validation-failed':
     case 'context-overflow':
     case 'user-edit-conflict':
     case 'approval-promotion-conflict':
-    case 'budget-paused':
-    case 'budget-exceeded':
     case 'dependency-blocked':
     case 'review-failed':
     case 'approval-denied':

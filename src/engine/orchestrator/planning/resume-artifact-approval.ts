@@ -22,7 +22,7 @@ export async function resumeArtifactApproval(opts: {
   wctx: PlannerCallbacksContext & { planner: Planner };
   state: WorkflowState;
   phase: 'reviewing-spec' | 'reviewing-plan';
-}): Promise<{ state: WorkflowState; cancelled: boolean; regenerated: boolean }> {
+}): Promise<{ state: WorkflowState; closed: boolean; cancelled: boolean; regenerated: boolean }> {
   const { wctx, state, phase } = opts;
   const { projectDir, sessionId, config, bus, planner } = wctx;
   const filename = ARTIFACT_FILES[phase];
@@ -35,7 +35,7 @@ export async function resumeArtifactApproval(opts: {
       message: `Cannot resume ${phase}: ${filename} is missing from the session directory`,
       safety: { category: 'planning', code: 'artifact_not_restorable' },
     });
-    return { state, cancelled: true, regenerated: false };
+    return { state, closed: false, cancelled: true, regenerated: false };
   }
 
   const approveLevel = resolveApproveLevel({
@@ -44,7 +44,7 @@ export async function resumeArtifactApproval(opts: {
   });
   const blocksGate =
     phase === 'reviewing-spec' ? blocksSpecGate(approveLevel) : blocksPlanGate(approveLevel);
-  if (!blocksGate) return { state, cancelled: false, regenerated: false };
+  if (!blocksGate) return { state, closed: false, cancelled: false, regenerated: false };
 
   const loop = await runApprovalLoop({
     type: phase === 'reviewing-spec' ? 'spec' : 'plan',
@@ -62,7 +62,8 @@ export async function resumeArtifactApproval(opts: {
 
   return {
     state: loop.state,
-    cancelled: loop.rejected || loop.aborted === true,
+    closed: loop.closed,
+    cancelled: loop.aborted === true,
     regenerated: loop.regenerated,
   };
 }

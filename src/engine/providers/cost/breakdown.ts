@@ -18,13 +18,12 @@ import {
 import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
 import { normalizeProviderEndpoint } from '../../../core/providers/endpoint-policy.js';
 import { splitSeatTokenTotals } from '../../../core/providers/seat-totals.js';
-import { formatCost, formatCostFact } from '../../../core/formatting.js';
+import { formatCost } from '../../../core/formatting.js';
 import { resolvePricing, type ResolvedPricing } from '../pricing-resolver.js';
 import type { ModelCacheAccessor } from '../model/resolution.js';
 import {
   allocatedCacheTokens,
   buildProviderUsageSegment,
-  calculateCacheReadSavings,
   recordPricedUsage,
   recordProviderCost,
   resolveTaskPricingModel,
@@ -145,15 +144,6 @@ export function describeOfferingBillingPresentation(
   }
 }
 
-export function formatOfferingAwareExtraCost(
-  metadata: ProviderRunMetadata,
-  extraAmount: number,
-): string | null {
-  if (metadata.offering === 'coding-subscription') return null;
-  if (!Number.isFinite(extraAmount) || extraAmount <= 0) return null;
-  return `Extra ${formatCostFact(extraAmount)}`;
-}
-
 function collectRunMetadataTools(opts: CostBreakdownOptions): string[] {
   const tools = new Set<string>([opts.plannerTool, opts.implementerTool]);
   if (opts.reviewerTool !== undefined) tools.add(opts.reviewerTool);
@@ -194,9 +184,6 @@ function buildProviderRunMetadataRecord(
 
 type CostBreakdownOptions = {
   tokenUsage: TokenUsage;
-  totalTasks: number;
-  escalatedCount: number;
-  completedLocalTasks?: number | undefined;
   plannerTool: string;
   implementerTool: string;
   plannerModel?: string | undefined;
@@ -211,7 +198,6 @@ type ImplementerCostAccounting = {
   hasPricedUsage: boolean;
   hasUnpricedUsage: boolean;
   providerCosts: Record<string, ProviderCostEntry>;
-  cacheReadSavings: number;
 };
 
 function applyImplementerUsageSegment(
@@ -220,11 +206,6 @@ function applyImplementerUsageSegment(
 ): void {
   if (segment.usageTokens <= 0) return;
   accounting.actualImplementerCost += segment.cost;
-  accounting.cacheReadSavings += calculateCacheReadSavings(
-    segment.cacheReadTokens,
-    segment.pricing,
-    segment.contextTokens,
-  );
   if (segment.pricing.isPriced) {
     accounting.hasPricedUsage = true;
   }
@@ -271,7 +252,6 @@ function calculateAggregateImplementerCost(
     hasPricedUsage: false,
     hasUnpricedUsage: false,
     providerCosts: {},
-    cacheReadSavings: 0,
   };
   applyImplementerUsageSegment(
     accounting,
@@ -301,7 +281,6 @@ function calculateTaskAwareImplementerCost(
     hasPricedUsage: false,
     hasUnpricedUsage: false,
     providerCosts: {},
-    cacheReadSavings: 0,
   };
   let accountedTokens = 0;
   let accountedCacheReadTokens = 0;
@@ -386,8 +365,7 @@ export function calculateCostBreakdown(
   opts: CostBreakdownOptions,
   cache?: ModelCacheAccessor,
 ): CostBreakdown {
-  const { tokenUsage, totalTasks, escalatedCount, completedLocalTasks, plannerTool, plannerModel } =
-    opts;
+  const { tokenUsage, plannerTool, plannerModel } = opts;
   const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
   const implementerPricing = resolvePricing(opts.implementerTool, cache, opts.implementerModel);
   const reviewerTool = opts.reviewerTool;
@@ -442,47 +420,6 @@ export function calculateCostBreakdown(
     reviewerSegment === undefined || reviewerSegment.usageTokens <= 0 || reviewerSegment.costKnown;
   const isTotalActualCostKnown =
     isActualPlannerCostKnown && isActualImplementerCostKnown && isActualReviewerCostKnown;
-  const hypotheticalImplementerSegment = buildProviderUsageSegment({
-    tool: plannerTool,
-    model: plannerModel,
-    inputTokens: tokenUsage.implementerInput,
-    outputTokens: tokenUsage.implementerOutput,
-    cacheReadTokens: tokenUsage.implementerCacheRead ?? 0,
-    cacheCreateTokens: tokenUsage.implementerCacheCreate ?? 0,
-    pricing: plannerPricing,
-  });
-  const hypotheticalImplementerCost = hypotheticalImplementerSegment.cost;
-  const isHypotheticalImplementerCostKnown =
-    implementerUsageTokens <= 0 || hypotheticalImplementerSegment.costKnown;
-  const hypotheticalReviewerSegment =
-    reviewerSegment === undefined
-      ? undefined
-      : buildProviderUsageSegment({
-          tool: plannerTool,
-          model: plannerModel,
-          inputTokens: reviewerSegment.inputTokens,
-          outputTokens: reviewerSegment.outputTokens,
-          cacheReadTokens: reviewerSegment.cacheReadTokens,
-          cacheCreateTokens: reviewerSegment.cacheCreateTokens,
-          pricing: plannerPricing,
-        });
-  const isHypotheticalReviewerCostKnown =
-    hypotheticalReviewerSegment === undefined ||
-    hypotheticalReviewerSegment.usageTokens <= 0 ||
-    hypotheticalReviewerSegment.costKnown;
-  const isAllPlannerBaselineKnown =
-    isActualPlannerCostKnown &&
-    isHypotheticalImplementerCostKnown &&
-    isHypotheticalReviewerCostKnown;
-  const hypotheticalCost = isAllPlannerBaselineKnown
-    ? actualPlannerCost + hypotheticalImplementerCost + (hypotheticalReviewerSegment?.cost ?? 0)
-    : 0;
-  const hasSavingsEstimate = isAllPlannerBaselineKnown && isTotalActualCostKnown;
-  const savingsAmount = hasSavingsEstimate ? hypotheticalCost - totalActualCost : 0;
-  const savingsPercentage =
-    hasSavingsEstimate && hypotheticalCost > 0 ? (savingsAmount / hypotheticalCost) * 100 : 0;
-  const localSuccesses = completedLocalTasks ?? Math.max(0, totalTasks - escalatedCount);
-  const localCompletionRate = totalTasks > 0 ? localSuccesses / totalTasks : 0;
   const hasPricedUsage =
     (plannerSegment.usageTokens > 0 && plannerPricing.isPriced) ||
     implementerAccounting.hasPricedUsage ||
@@ -519,48 +456,24 @@ export function calculateCostBreakdown(
     (tokenUsage.implementerCacheCreate ?? 0) +
     (reviewerSegment?.cacheCreateTokens ?? 0);
 
-  let cacheReadSavings = 0;
-  if (cacheReadTokens > 0) {
-    cacheReadSavings += calculateCacheReadSavings(
-      plannerTotals.cacheRead,
-      plannerPricing,
-      plannerSegment.contextTokens,
-    );
-    cacheReadSavings += implementerAccounting.cacheReadSavings;
-    if (reviewerSegment !== undefined) {
-      cacheReadSavings += calculateCacheReadSavings(
-        reviewerSegment.cacheReadTokens,
-        reviewerSegment.pricing,
-        reviewerSegment.contextTokens,
-      );
-    }
-  }
-
   const { providerRunMetadata, offeringPresentations } = buildProviderRunMetadataRecord(
     opts,
     Object.keys(providerCosts).length > 0 ? providerCosts : undefined,
   );
 
   return {
-    hypotheticalCost,
     actualPlannerCost,
     actualImplementerCost,
     totalActualCost,
-    savingsAmount,
-    savingsPercentage,
-    localCompletionRate,
     hasPricedUsage,
     hasUnpricedUsage,
-    hasSavingsEstimate,
     isActualPlannerCostKnown,
     isActualImplementerCostKnown,
     ...(reviewerSegment !== undefined && { actualReviewerCost, isActualReviewerCostKnown }),
     isTotalActualCostKnown,
-    isAllPlannerBaselineKnown,
     providerCosts: Object.keys(providerCosts).length > 0 ? providerCosts : undefined,
     ...(Object.keys(providerRunMetadata).length > 0 && { providerRunMetadata }),
     ...(Object.keys(offeringPresentations).length > 0 && { offeringPresentations }),
-    ...(cacheReadSavings > 0 && { cacheReadSavings }),
     ...(cacheReadTokens > 0 && { cacheReadTokens }),
     ...(cacheWriteTokens > 0 && { cacheWriteTokens }),
   };

@@ -355,7 +355,7 @@ describe('handleWorkflowCtrlChords', () => {
     ).toEqual({ type: 'toggle-diff', key: 'implementer_generate_done:1' });
   });
 
-  it('maps Ctrl+G to the cost drilldown', () => {
+  it('leaves Ctrl+G unbound now that the cost drilldown is gone', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'g',
@@ -364,7 +364,7 @@ describe('handleWorkflowCtrlChords', () => {
         findLatestDiff: () => null,
         findLatestActivityBatch: () => null,
       }),
-    ).toEqual({ type: 'open-cost-drilldown' });
+    ).toEqual({ type: 'none' });
   });
 
   it('ignores plain a and A so they reach the composer as text', () => {

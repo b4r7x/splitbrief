@@ -58,15 +58,6 @@ describe('formatSeatIdentity', () => {
     ).toContain('auto');
   });
 
-  it('reads price routing with the same words the picker row that sets it uses', () => {
-    expect(formatSeatIdentity({ kind: 'cli', tool: 'claude-code', model: 'auto:cheapest' })).toBe(
-      'Claude Code CLI · Auto (cheapest capable)',
-    );
-    expect(
-      formatShortSeatIdentity({ kind: 'cli', tool: 'claude-code', model: 'auto:cheapest' }),
-    ).toBe('Auto (cheapest capable)');
-  });
-
   it('renders a hostile model id as measurable, control-free text', () => {
     const identity = formatSeatIdentity({
       kind: 'api',
@@ -425,9 +416,9 @@ describe('fitSeatIdentity', () => {
 
 describe('cutSeatIdentity', () => {
   it('takes the trailing space with the cut when the leading segment is the one cut', () => {
-    const policy = 'Auto (cheapest capable)';
-    for (let budget = 4; budget < getTerminalCellWidth(policy); budget++) {
-      const cut = cutSeatIdentity(policy, budget);
+    const label = 'Automatic (tool decides)';
+    for (let budget = 4; budget < getTerminalCellWidth(label); budget++) {
+      const cut = cutSeatIdentity(label, budget);
       expect(cut.endsWith('…')).toBe(true);
       expect(cut).not.toMatch(/[ ·]…$/);
     }

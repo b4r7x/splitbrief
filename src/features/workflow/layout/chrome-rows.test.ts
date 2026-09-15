@@ -4,30 +4,32 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import { PHASES } from '../../../core/schemas/enums.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import {
+  RAIL_STAGES,
+  getActiveRailStage,
+  getRailActiveIndex,
+  getRailStages,
+  isRailCurrent,
+  railIsHandoff,
+  railStageCompletionTimesFromPhaseFirstSeen,
+  railStageRole,
+} from '../../../core/rail-stages.js';
+import {
   RAIL_MARKER_SLOT_WIDTH,
   RAIL_SHORT_LABEL,
-  RAIL_STAGES,
   FIXED_CHROME_ROWS,
   WORKFLOW_CHROME_ORDER,
   WORKFLOW_CHROME_ROWS,
   chooseFormBVariant,
-  getActiveRailStage,
   getChromeContentWidth,
   getChromeHeight,
   getContentTopRow,
   getProgressRows,
-  getRailActiveIndex,
   getRailDriftPassed,
-  getRailStages,
   getWorkflowChromeRows,
-  isRailCurrent,
   measureFormB,
   railConnectorWidth,
   railFormBLabel,
   railFormBSegmentWidth,
-  railIsHandoff,
-  railStageCompletionTimesFromPhaseFirstSeen,
-  railStageRole,
   selectRailForm,
 } from './chrome-rows.js';
 

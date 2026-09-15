@@ -20,7 +20,8 @@ import {
   buildContextOverflowRecoveryIssue,
   buildRetryExhaustedRecoveryIssue,
 } from './builders/task.js';
-import { buildBudgetPausedRecoveryIssue } from './builders/workflow.js';
+import { buildUserEditConflictRecoveryIssue } from './builders/workflow.js';
+import { classifyUserEditConflict } from '../user-edit/conflicts.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 
@@ -65,12 +66,10 @@ function contextOverflowRoutingDecision(taskId: Task['id']): RoutingDecision {
     contextLength: 32_768,
     currentCodeTruncated: false,
     currentCodeContextMode: 'whole-file',
-    costPosture: 'No capable implementer profile; no cost tier selected',
     reason: 'No capable implementer profile can fit this task prompt',
     rejected: [
       {
         profile: 'local-qwen',
-        costTier: 'local',
         profileWriteMode: 'extracted-code',
         requiredWriteMode: 'extracted-code',
         reason: 'Estimated 45000 tokens overflows 32768-token context',
@@ -86,16 +85,18 @@ function contextOverflowRoutingDecision(taskId: Task['id']): RoutingDecision {
 }
 
 describe('applyRecoveryAction: persisted success effects', () => {
-  it('continues only a safe budget pause and clears pending recovery', () => {
-    const { projectDir, sessionId } = setupSession('continue-budget');
+  it('continues only a safe user-edit conflict and clears pending recovery', () => {
+    const { projectDir, sessionId } = setupSession('continue-safe-conflict');
     const task = makeTask({ id: 'T030', file: 'src/next.ts' });
-    const issue = buildBudgetPausedRecoveryIssue({
+    const issue = buildUserEditConflictRecoveryIssue({
       createdAt,
-      currentCost: 4.25,
-      maxBudget: 5,
-      threshold: 0.85,
-      nextTask: task,
-      blockedStep: 'before T030',
+      currentTask: task,
+      conflict: classifyUserEditConflict({
+        files: ['README.md'],
+        currentTask: task,
+        allTasks: [task],
+        currentTaskIndex: 0,
+      }),
     });
     const state = { ...implementingState([task]), pendingRecovery: issue };
     const { bus, events } = makeBus(projectDir, sessionId);
@@ -111,9 +112,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
 
     expect(result).toMatchObject({ ok: true, status: 'continued' });
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.state.budgetPauseAcknowledgedAtCost).toBe(4.25);
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
-    expect(loadState({ projectDir, sessionId })?.budgetPauseAcknowledgedAtCost).toBe(4.25);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
     );
@@ -157,8 +156,8 @@ describe('applyRecoveryAction: persisted success effects', () => {
     );
   });
 
-  it('aborts intentionally without mutating task status', () => {
-    const { projectDir, sessionId } = setupSession('abort-workflow');
+  it('ends the run without mutating task status', () => {
+    const { projectDir, sessionId } = setupSession('end-run');
     const completedTask = makeTask({ id: 'T032', status: 'done' });
     const task = makeTask({ id: 'T033', status: 'in_progress' });
     const issue = buildRetryExhaustedRecoveryIssue({
@@ -175,18 +174,20 @@ describe('applyRecoveryAction: persisted success effects', () => {
       projectDir,
       sessionId,
       state,
-      action: 'abort-workflow',
+      action: 'end-run',
       bus,
     });
 
-    expect(result).toMatchObject({ ok: true, status: 'aborted' });
-    expect(result.state.phase).toBe('idle');
+    expect(result).toMatchObject({ ok: true, status: 'closed' });
+    expect(result.state.closed?.as).toBe('ended');
+    expect(result.state.phase).toBe('implementing');
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(result.state.tasks.map((task) => task.id)).toEqual(['T032', 'T033']);
     expect(result.state.currentTaskIndex).toBe(1);
     expect(result.state.tasks[1]?.status).toBe('in_progress');
     const persisted = loadState({ projectDir, sessionId });
-    expect(persisted?.phase).toBe('idle');
+    expect(persisted?.closed?.as).toBe('ended');
+    expect(persisted?.phase).toBe('implementing');
     expect(persisted?.pendingRecovery).toBeUndefined();
     expect(persisted?.tasks.map((task) => task.id)).toEqual(['T032', 'T033']);
     expect(persisted?.currentTaskIndex).toBe(1);
@@ -333,7 +334,6 @@ describe('applyRecoveryAction: persisted success effects', () => {
               apiBase: 'https://api.example.com/v1',
               apiKey: 'test-key',
               model: 'deepseek-chat',
-              costTier: 'cheap',
             },
             'local-qwen': {
               kind: 'api',
@@ -342,7 +342,6 @@ describe('applyRecoveryAction: persisted success effects', () => {
               offering: 'local',
               apiBase: 'http://localhost:11434/v1',
               model: 'qwen-small',
-              costTier: 'local',
             },
           },
         },

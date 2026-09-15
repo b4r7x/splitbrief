@@ -1,6 +1,7 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { Session } from '../../core/schemas/session.js';
+import { sessionStatusWord } from '../../core/sessions/display.js';
 import type { SkillMeta } from '../../core/skills/types.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { CommandGuardContext, RuntimeCommandDef } from '../../core/runtime/commands/types.js';
@@ -156,7 +157,7 @@ function buildSessionItems(
   return sessions.slice(0, 10).map((s) => ({
     id: s.id,
     feature: s.feature,
-    status: s.status,
+    status: sessionStatusWord(s),
     action: async () => {
       await onSessionSelect(s, projectDir);
       const error = sessionSelectStore.get().error;

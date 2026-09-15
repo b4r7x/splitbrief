@@ -86,9 +86,9 @@ SPLITBRIEF_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/
 - `testing/helpers/factories/<domain>.ts` = pure **TypeScript constructors** returning typed objects with overrides. No I/O.
 - **Rule of two:** data stays inline inside one test file until a second test needs it. Promotion happens on the second consumer, not the first.
 
-**Feature sub-components get a colocated test when they carry behaviour.** A sub-component that renders a visible affordance off branching state — an approval prompt, a cost drilldown, a brief review scorecard, a pipeline bar — is tested next to its `*.tsx` against `lastFrame()` and observable store state, the same way `src/features/workflow/components/` and `src/features/summary/components/` already are. Styling-only or pure-passthrough sub-components stay covered transitively through the page seam (`app/screens/<x>.tsx` / `app/overlays/<x>.tsx`); do not add a "does not crash" test for them. Shared primitives in `src/components/` (`MultilineInput` → `input/multiline-input.test.tsx`, `ScrollWindow` → `pickers/scroll-window.test.ts`, `SessionRow` → `session-row.test.tsx`) carry their own colocated tests — their cost amortises across consumers. A primitive whose behaviour lives in a backing hook is covered through that hook's test instead (`FilterableList` via `src/hooks/use-filterable-list.test.tsx`).
+**Feature sub-components get a colocated test when they carry behaviour.** A sub-component that renders a visible affordance off branching state — an approval prompt, a brief review scorecard, a pipeline bar — is tested next to its `*.tsx` against `lastFrame()` and observable store state, the same way `src/features/workflow/components/` already is. Styling-only or pure-passthrough sub-components stay covered transitively through the page seam (`app/screens/<x>.tsx` / `app/overlays/<x>.tsx`); do not add a "does not crash" test for them. Shared primitives in `src/components/` (`MultilineInput` → `input/multiline-input.test.tsx`, `ScrollWindow` → `pickers/scroll-window.test.ts`, `SessionRow` → `session-row.test.tsx`) carry their own colocated tests — their cost amortises across consumers. A primitive whose behaviour lives in a backing hook is covered through that hook's test instead (`FilterableList` via `src/hooks/use-filterable-list.test.tsx`).
 
-**Decision-bearing orchestrator modules get a colocated test.** A module in `src/engine/orchestrator/` that makes a decision or owns observable control-flow behaviour — budget/cost gating, escalation tiers, queue drain order, signal-handler cleanup, planning-phase routing, recovery actions, the task loop and step — is unit-tested next to its source against its returned decision and the events it emits. This is why `escalation/step.test.ts`, `queue/submit.test.ts`, `signals.test.ts`, `planning/*.test.ts`, `recovery/*.test.ts`, `task/loop-*.test.ts`, `task/step.test.ts`, and `run/workflow.test.ts` (the same files the Recovery flow section below tells you to run) all exist. The `runWorkflow()` integration seam under `testing/integration/orchestrator/` covers the composition of these modules across a full multi-phase run, not the per-module decision. Reserve it for behaviour that only emerges from wiring several modules together (a phase progressing, a task pausing before overwriting a user edit, a workflow completing). Trivial glue with no branch of its own — a function that only forwards to an already-tested helper — stays covered transitively at that seam.
+**Decision-bearing orchestrator modules get a colocated test.** A module in `src/engine/orchestrator/` that makes a decision or owns observable control-flow behaviour — escalation tiers, queue drain order, signal-handler cleanup, planning-phase routing, recovery actions, the task loop and step — is unit-tested next to its source against its returned decision and the events it emits. This is why `escalation/step.test.ts`, `queue/submit.test.ts`, `signals.test.ts`, `planning/*.test.ts`, `recovery/*.test.ts`, `task/loop-*.test.ts`, `task/step.test.ts`, and `run/workflow.test.ts` (the same files the Recovery flow section below tells you to run) all exist. The `runWorkflow()` integration seam under `testing/integration/orchestrator/` covers the composition of these modules across a full multi-phase run, not the per-module decision. Reserve it for behaviour that only emerges from wiring several modules together (a phase progressing, a task pausing before overwriting a user edit, a workflow completing). Trivial glue with no branch of its own — a function that only forwards to an already-tested helper — stays covered transitively at that seam.
 
 **CLI-protocol full-loop tests.** `testing/integration/orchestrator/full-loop-opencode-cli.test.ts`, `full-loop-codex-cli.test.ts`, and `full-loop-claude-code-cli.test.ts` drive `runWorkflow()` end to end against fake binaries that speak each tool's real protocol terminal (opencode `step_finish`, codex `turn.completed`, claude-code stream-json `result`). They pin that turn/result usage reaches the run summary's `tokenUsage` buckets — cache-adjusted for codex — and the first `taskBreakdown` entry, with the prompt transport (argv positional for codex, stdin for claude-code) exercised against the real arg vector. They cannot detect adapter/binary version drift by construction; that gap is covered by the gated real-binary smoke in `testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts` (run with `npm run test:e2e:live:smoke`; the replay e2e config never collects it), which also asserts the real run records non-zero implementer input tokens.
 
@@ -108,7 +108,7 @@ Colocated support files under `src/**` that import `vitest` or another dev-only 
 
 Cost-aware implementer routing, user-edit conflict handling, and the brief review gate follow the same rule: test the decision contract, not the private call graph.
 
-**Routing and context fit.** Public pure helpers are valid unit-test targets when they encode product policy. Examples: context-window classification, prompt-size estimation, profile ordering, cheapest-capable selection, and no-capable-profile failure. These tests should assert the returned decision object, selected profile, rejection reasons, and fit status. Do not spy on internal sort helpers or duplicate the full prompt formatter in the test.
+**Routing and context fit.** Public pure helpers are valid unit-test targets when they encode product policy. Examples: context-window classification, prompt-size estimation, profile ordering, capable-profile selection, and no-capable-profile failure. These tests should assert the returned decision object, selected profile, rejection reasons, and fit status. Do not spy on internal sort helpers or duplicate the full prompt formatter in the test.
 
 **User-edit conflicts.** Conflict tests should set up real task/file ownership data and assert the public classification or emitted event: conflict kind, affected task ids, `safeToContinue`, and available actions. Do not assert that a particular detector function was called. Orchestrator-level coverage belongs at the task loop or `runWorkflow()` seam when the behavior is "pause before overwriting the user" or "continue on unrelated external edits."
 
@@ -129,9 +129,6 @@ npm test -- src/core/schemas/enums.test.ts
 npm test -- src/core/state/machine.test.ts
 npm test -- src/core/state/persistence.test.ts src/core/sessions/log-writer.test.ts src/core/payload-bounds.test.ts
 npm test -- src/engine/orchestrator/recovery/actions.test.ts src/engine/orchestrator/recovery/actions-persistence.test.ts src/engine/orchestrator/recovery/builders/task.test.ts src/engine/orchestrator/recovery/builders/workflow.test.ts
-npm test -- src/engine/orchestrator/budget/check.test.ts
-npm test -- src/engine/orchestrator/budget/knownness.test.ts
-npm test -- src/engine/orchestrator/budget/enforce.test.ts
 npm test -- src/engine/orchestrator/task/loop-happy-path.test.ts
 npm test -- src/engine/orchestrator/task/step.test.ts
 npm test -- src/engine/orchestrator/run/workflow.test.ts
@@ -163,7 +160,7 @@ Skipping is two-layered. With the env unset every case reports skipped and the r
 
 Model pins are cheap by default: `claude-code` → `haiku`, `codex` → `gpt-5.6-luna`, `opencode` → the first free id discovered from `opencode models` at run time, `command-code` → `deepseek/deepseek-v4-flash`. Each is overridable via `SPLITBRIEF_REAL_CLI_<TOOL>_MODEL`. A ceiling refuses any pin whose tokens include `opus`, `fable`, or `sol` outright, so a mistyped env var cannot burn credits on a frontier model.
 
-Easy runs `quick` mode — one planner call plus one implementer call — under a `workflow.maxBudget` of $0.05, with a 300 s per-case timeout. Heavy runs `standard` mode with a compiled brief and a final review held by the planner, under a `workflow.maxBudget` of $0.50, with a 900 s per-case timeout. Both ceilings come from `MAX_BUDGET_USD` in the harness and are enforced by the orchestrator's budget guard, which stops a run that crosses one and pauses a run whose spend cannot be priced. The per-case vitest timeout is the only wall-clock bound.
+Easy runs `quick` mode — one planner call plus one implementer call — with a 300 s per-case timeout. Heavy runs `standard` mode with a compiled brief and a final review held by the planner, with a 900 s per-case timeout. The per-case vitest timeout is the only bound.
 
 Like `real-cli-planner-implementer-smoke.test.ts`, the live tier is opt-in drift evidence, never the admission proof.
 
@@ -177,7 +174,7 @@ The skills' shell scripts are proven the same deterministic way, not by the live
 
 ### Release matrix
 
-Above the easy/heavy pairs sits the release matrix: `testing/e2e/scenarios/live/release-matrix.test.ts` runs one row per entry of `testing/e2e/live/matrix.ts` — `{ id, mode, plan, build, review?, task }` — covering every workflow mode (`quick`, `standard`, `speckit`), a same-tool canary for every CLI tool in the catalog, and cross-vendor pairs where the plan and build tools differ. Seats resolve their cheapest pin through the same `liveModelPin` ceiling as the tiers below.
+Above the easy/heavy pairs sits the release matrix: `testing/e2e/scenarios/live/release-matrix.test.ts` runs one row per entry of `testing/e2e/live/matrix.ts` — `{ id, mode, plan, build, review?, task }` — covering every workflow mode (`quick`, `standard`, `speckit`), a same-tool canary for every CLI tool in the catalog, and cross-vendor pairs where the plan and build tools differ. Seats resolve their pin through the same `liveModelPin` table as the tiers below.
 
 Its switch is `SPLITBRIEF_RELEASE_LIVE=1` (the npm script `test:e2e:release` sets `SPLITBRIEF_REAL_CLI_E2E=1` itself); unset, the file prints `skipped: SPLITBRIEF_RELEASE_LIVE not set` and every row exits skipped. Readiness is stricter here than in the tier below: a tool that is missing or not `ready` fails its row unless its id is listed in the comma-separated `SPLITBRIEF_LIVE_SKIP` allow-list, in which case the row skips with a reason.
 
@@ -234,7 +231,7 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 
 it('quick mode completes one task via local implementer', async () => {
   const task = makeTask();
-  const { planner } = fauxPlanner({ plans: [{ tasks: [task] }] });
+  const { planner } = fauxPlanner({ phases: [{ tasks: [task] }] });
   const { implementer } = fauxImplementer({ steps: [{ success: true, output: 'done' }] });
   const events: EngineEvent[] = [];
   await runWorkflow({
@@ -296,7 +293,7 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 - A test asserting width-dependent output must pass the viewport to `renderFeature` (`renderFeature(<WorkflowScreen />, { cols: 120, rows: 40 })`); without one it renders at the 100-column default.
 - Use `testing/helpers/temp-dir.ts:withTempDir()` for filesystem work. Never mock `node:fs`.
 - Use real `git` via `testing/helpers/git.ts:createTestGitRepo()`. Never stub `simple-git`.
-- **Zero new fakes.** Use `fauxPlanner` / `fauxImplementer` from `testing/helpers/faux/`. Extend them via `plans`, `steps`, `escalations`, `quickPlans`, or `retries`, not by copying their shape into a new file.
+- **Zero new fakes.** Use `fauxPlanner` / `fauxImplementer` from `testing/helpers/faux/`. Extend them via `phases`, `steps`, `escalations`, or `retries`, not by copying their shape into a new file.
 - **No `vi.mock()` on internal modules** (`./`, `../`). The sanctioned repo-wide targets are `node:fs/promises` (write-failure / `mkdtemp` interception), `node:fs` (`statSync` ENOENT simulation), and `ink` + `fullscreen-ink` (CLI integration tests only).
 - **Import `testing/helpers/**` from any test — under `src/**`, `testing/**`, or `evals/**` — via the `#testing/*` subpath import** (`import { makeConfig } from '#testing/helpers/factories/config.js'`), never a relative `../../helpers/...` or `../../../testing/helpers/...` path. The alias is defined once in `package.json` `imports` (`"#testing/*": "./testing/*"`), and gate 20 (`scripts/testing-helper-imports.ts`) fails any test in those three roots whose relative import resolves into `testing/helpers/**`.
 - Exit codes via `isCliError`. `commander.exitOverride()` throws; `runCommand()` catches and returns the exit code.
@@ -307,8 +304,7 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 
 **Planner (`fauxPlanner`):**
 
-- `plans` — each `plan()` call consumes the next entry (`tasks`, optional `spec` / `plan` / `usage`, or `throws`).
-- `quickPlans` — same shape for `quickPlan()`.
+- `phases` — each `runPhase()` call consumes the next entry (`tasks`, optional `usage`, or `throws`).
 - `escalations` — entries for `escalateHint()` and `escalateFull()` (`success`, `output`, `code`, `usage`, or `throws`).
 
 **Implementer (`fauxImplementer`):**
@@ -363,7 +359,7 @@ Orchestrator tests use **typed faux objects** that implement the real `Planner` 
 
 | Level | Seam | When to use |
 |---|---|---|
-| **L1: Faux objects** | `Planner` / `Implementer` interface | 90% of orchestrator tests. Declarative `plans` / `steps` arrays, no network, <50ms. |
+| **L1: Faux objects** | `Planner` / `Implementer` interface | 90% of orchestrator tests. Declarative `phases` / `steps` arrays, no network, <50ms. |
 | **L2: Faux HTTP server** | Localhost SSE (OpenAI / Anthropic protocol) | Testing `api.ts` runner: rate limits, malformed SSE, token accounting, effort parameters. Real fetch hits localhost. |
 
 ### L1 design
@@ -593,6 +589,20 @@ The profile owns the colour level of the capture, so `unicode-color` writes styl
 Repeat `--scenario`, `--viewport`, or `--element` to select more than one value. The command validates the complete selection before it mounts a fixture. With no filters, it captures every catalog scenario at all three viewports, including each full frame and every declared crop.
 
 The run directory is content-addressed from the normalized selection. Repeating the same command replaces that run atomically, so a failed or narrower rerun cannot leave stale success records in its manifest.
+
+**The run screen's own scenarios.** There is no summary screen, so the four `summary-*` scenarios are gone. Seven scenarios cover the run screen when nothing is running on it, all under the `workflow` screen with the standard viewport matrix and the elements `header` / `transcript` / `composer`:
+
+| Scenario | What it shows |
+|---|---|
+| `workflow-at-rest-paused` | paused mid-brief; `× build` on the rail, `Paused at T003 · type a correction or ⏎ to continue` |
+| `workflow-at-rest-halted` | a quota halt; `✗ build`, `Halted · Usage limit on ollama · ⏎ to decide` |
+| `workflow-at-rest-waiting-gate` | parked at the spec gate; `Waiting at the spec gate · ⏎ to reopen it` |
+| `workflow-closed-complete-ready` | five `●`, the `Closed ─` block, `Keep it with /run accept…` |
+| `workflow-closed-complete-needs-attention` | the same block with a failing review and a dirty scope |
+| `workflow-closed-ended` | a run somebody ended inside T003; `× Ended · Build 2/5 · stopped in T003` |
+| `workflow-replayed-history` | the transcript read back from `testing/fixtures/session-log/run.jsonl` |
+
+The at-rest fixtures go through the production path: the fixture copies a real log into the session dir, calls `hydrateRun`, and inits the route at rest. Nothing is staged into the stores by hand.
 
 ### Artifact layout
 

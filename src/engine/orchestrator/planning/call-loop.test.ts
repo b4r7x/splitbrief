@@ -9,6 +9,8 @@ import {
   makeCallbacks,
 } from '#testing/helpers/orchestrator-factories.js';
 import { createTestSinks } from '#testing/helpers/planning-phase.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import { phaseInputs } from '#testing/helpers/planner-call.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -18,36 +20,11 @@ import type { PlannerCallbacks } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { HEARTBEAT_THRESHOLD_MS, PLANNER_KEEPALIVE_INTERVAL_MS } from './heartbeat.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
+import { createContinuationHolder } from '../continuation.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { Config } from '../../../core/schemas/config.js';
-import {
-  createPlannerArtifactAttemptId,
-  OwnedPlannerArtifactSchema,
-} from '../../../core/schemas/planner-artifact.js';
-import type { PhaseResult, PlannerArtifactLogicalName } from '../../planners/types.js';
-import { sha256Hex } from '../../../utils/sha256.js';
 
 let dirs: string[] = [];
-
-function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): PhaseResult {
-  const digest = sha256Hex(text);
-  return {
-    artifact: OwnedPlannerArtifactSchema.parse({
-      semanticId: `test-${logicalName}`,
-      programId: null,
-      batchId: null,
-      attemptId: createPlannerArtifactAttemptId(),
-      logicalName,
-      transport: 'stdout-final',
-      text,
-      byteLength: Buffer.byteLength(text, 'utf8'),
-      sha256: digest,
-      runtimeReceipt: digest,
-      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
-      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
-    }),
-  };
-}
 
 afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
@@ -107,7 +84,7 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
   it('stops heartbeat timers even when the planner throws', async () => {
     const { projectDir, sessionId } = setupSession();
     const planner = makePlanner({
-      plan: vi.fn().mockRejectedValue(new Error('planner crashed')),
+      runPhase: vi.fn().mockRejectedValue(new Error('planner crashed')),
     });
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx(projectDir, sessionId, {
@@ -127,7 +104,8 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
       wctx,
       state: planningState(),
       planner,
-      feature: 'test feature',
+      call: 'tasks',
+      inputs: phaseInputs({ feature: 'test feature' }),
     }).catch((err: Error) => err);
 
     await vi.advanceTimersByTimeAsync(0);
@@ -147,22 +125,19 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
     const { projectDir, sessionId } = setupSession();
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
-      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-        callbacks.onCallEvent?.({
-          type: 'call_started',
-          ts: Date.now(),
-          callId: 'planner-call-1',
-          role: 'planner',
-          backendKind: 'cli',
-        });
-        await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_THRESHOLD_MS));
-        return {
-          spec: '',
-          plan: '',
-          tasks: [makeTask()],
-          usage: null,
-        };
-      }),
+      runPhase: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onCallEvent?.({
+            type: 'call_started',
+            ts: Date.now(),
+            callId: 'planner-call-1',
+            role: 'planner',
+            backendKind: 'cli',
+          });
+          await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_THRESHOLD_MS));
+          return makePhaseCallResult({ call: 'tasks', tasks: [makeTask()] });
+        }),
     });
     const wctx = makeWctx(projectDir, sessionId, {
       bus,
@@ -181,7 +156,8 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
       wctx,
       state: planningState(),
       planner,
-      feature: 'test feature',
+      call: 'tasks',
+      inputs: phaseInputs({ feature: 'test feature' }),
     });
 
     await vi.advanceTimersByTimeAsync(0);
@@ -200,22 +176,23 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
     const { projectDir, sessionId } = setupSession();
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
-      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-        callbacks.onCallEvent?.({
-          type: 'call_started',
-          ts: Date.now(),
-          callId: 'planner-call-1',
-          role: 'planner',
-          backendKind: 'cli',
-        });
-        await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_THRESHOLD_MS + 100));
-        return {
-          spec: '',
-          plan: '',
-          tasks: [makeTask()],
-          usage: { inputTokens: 100, outputTokens: 50 },
-        };
-      }),
+      runPhase: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onCallEvent?.({
+            type: 'call_started',
+            ts: Date.now(),
+            callId: 'planner-call-1',
+            role: 'planner',
+            backendKind: 'cli',
+          });
+          await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_THRESHOLD_MS + 100));
+          return makePhaseCallResult({
+            call: 'tasks',
+            tasks: [makeTask()],
+            usage: { inputTokens: 100, outputTokens: 50 },
+          });
+        }),
     });
     const wctx = makeWctx(projectDir, sessionId, {
       bus,
@@ -234,7 +211,8 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
       wctx,
       state: planningState(),
       planner,
-      feature: 'test feature',
+      call: 'tasks',
+      inputs: phaseInputs({ feature: 'test feature' }),
     });
 
     await vi.advanceTimersByTimeAsync(0);
@@ -262,7 +240,7 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
       resolveActive = resolve;
     });
     const planner = makePlanner({
-      plan: vi.fn().mockImplementation(({ callbacks }: { callbacks: PlannerCallbacks }) => {
+      runPhase: vi.fn().mockImplementation(({ callbacks }: { callbacks: PlannerCallbacks }) => {
         capturedSignal = callbacks.signal;
         resolveActive();
         return new Promise((_resolve, reject) => {
@@ -283,7 +261,8 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
       wctx,
       state: planningState(),
       planner,
-      feature: 'test feature',
+      call: 'tasks',
+      inputs: phaseInputs({ feature: 'test feature' }),
     });
 
     await active;
@@ -296,14 +275,8 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
 describe('runPlannerCallInContinuationLoop — zero-task result', () => {
   it('makes one call and leaves the zero-task warning to the caller', async () => {
     const { projectDir, sessionId } = setupSession();
-    const plan = vi.fn().mockResolvedValue({
-      spec: '',
-      plan: '',
-      tasks: [],
-      usage: null,
-      phases: [phaseResult('tasks.md', '# empty')],
-    });
-    const planner = makePlanner({ plan });
+    const runPhase = vi.fn().mockResolvedValue(makePhaseCallResult({ call: 'tasks', tasks: [] }));
+    const planner = makePlanner({ runPhase });
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx(projectDir, sessionId, { bus });
 
@@ -311,10 +284,11 @@ describe('runPlannerCallInContinuationLoop — zero-task result', () => {
       wctx,
       state: planningState(),
       planner,
-      feature: 'test feature',
+      call: 'tasks',
+      inputs: phaseInputs({ feature: 'test feature' }),
     });
 
-    expect(plan).toHaveBeenCalledTimes(1);
+    expect(runPhase).toHaveBeenCalledTimes(1);
     expect(result.tasks).toHaveLength(0);
     expect(
       events.find(
@@ -327,10 +301,10 @@ describe('runPlannerCallInContinuationLoop — zero-task result', () => {
 describe('runPlannerCallInContinuationLoop — runner auth', () => {
   it('runs a legacy CLI planner config on its descriptor default auth channel', async () => {
     const { projectDir, sessionId } = setupSession();
-    const plan = vi
+    const runPhase = vi
       .fn()
-      .mockResolvedValue({ spec: '', plan: '', tasks: [makeTask()], usage: null });
-    const planner = makePlanner({ plan });
+      .mockResolvedValue(makePhaseCallResult({ call: 'tasks', tasks: [makeTask()] }));
+    const planner = makePlanner({ runPhase });
     const current = makeConfig();
     const config = {
       ...current,
@@ -342,10 +316,11 @@ describe('runPlannerCallInContinuationLoop — runner auth', () => {
       wctx,
       state: planningState(),
       planner,
-      feature: 'test feature',
+      call: 'tasks',
+      inputs: phaseInputs({ feature: 'test feature' }),
     });
 
-    expect(plan).toHaveBeenCalled();
+    expect(runPhase).toHaveBeenCalled();
     // The default channel is the non-bridging one, so no host login state is
     // copied into the sandbox for a configuration that selected nothing.
     expect(existsSync(join(projectDir, SANDBOX_DIR, 'home', '.codex'))).toBe(false);
@@ -356,13 +331,15 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
   it('publishes marker-free planner text', async () => {
     const { projectDir, sessionId } = setupSession();
     const planner = makePlanner({
-      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-        callbacks.onOutput('before ');
-        callbacks.onOutput('<!-- Q:{"id":"q1","type"');
-        callbacks.onOutput(':"choice","text":"Pick","options":["a","b"]} -->');
-        callbacks.onOutput(' after');
-        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
-      }),
+      runPhase: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onOutput('before ');
+          callbacks.onOutput('<!-- Q:{"id":"q1","type"');
+          callbacks.onOutput(':"choice","text":"Pick","options":["a","b"]} -->');
+          callbacks.onOutput(' after');
+          return makePhaseCallResult({ call: 'tasks', tasks: [makeTask()] });
+        }),
     });
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx(projectDir, sessionId, { bus });
@@ -371,7 +348,8 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       wctx,
       state: planningState(),
       planner,
-      feature: 'test feature',
+      call: 'tasks',
+      inputs: phaseInputs({ feature: 'test feature' }),
     });
 
     const publishedText = events
@@ -392,10 +370,12 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       options: ['a', 'b'],
     };
     const planner = makePlanner({
-      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-        callbacks.onQuestion?.([question]);
-        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
-      }),
+      runPhase: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onQuestion?.([question]);
+          return makePhaseCallResult({ call: 'tasks', tasks: [makeTask()] });
+        }),
     });
     const wctx = makeWctx(projectDir, sessionId);
     const collectedQuestions: ClarificationQuestion[] = [];
@@ -404,7 +384,8 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       wctx,
       state: planningState(),
       planner,
-      feature: 'test feature',
+      call: 'tasks',
+      inputs: phaseInputs({ feature: 'test feature' }),
       collectedQuestions,
     });
 
@@ -431,11 +412,13 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       text: id,
     }));
     const planner = makePlanner({
-      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-        callbacks.onQuestion?.([firstQuestion, firstQuestion]);
-        callbacks.onQuestion?.([duplicateQuestion, ...distinctQuestions]);
-        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
-      }),
+      runPhase: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onQuestion?.([firstQuestion, firstQuestion]);
+          callbacks.onQuestion?.([duplicateQuestion, ...distinctQuestions]);
+          return makePhaseCallResult({ call: 'tasks', tasks: [makeTask()] });
+        }),
     });
     const wctx = makeWctx(projectDir, sessionId);
     const collectedQuestions: ClarificationQuestion[] = [];
@@ -444,7 +427,8 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       wctx,
       state: planningState(),
       planner,
-      feature: 'test feature',
+      call: 'tasks',
+      inputs: phaseInputs({ feature: 'test feature' }),
       collectedQuestions,
     });
 
@@ -457,15 +441,17 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
     const sinks = createTestSinks();
     let callCount = 0;
     const planner = makePlanner({
-      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-        callCount++;
-        if (callCount === 1) {
-          callbacks.onOutput(marker);
-          sinks.abortTurn();
-          throw new DOMException('The user aborted a request.', 'AbortError');
-        }
-        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
-      }),
+      runPhase: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callCount++;
+          if (callCount === 1) {
+            callbacks.onOutput(marker);
+            sinks.abortTurn();
+            throw new DOMException('The user aborted a request.', 'AbortError');
+          }
+          return makePhaseCallResult({ call: 'tasks', tasks: [makeTask()] });
+        }),
     });
     const continuationPrompts: string[] = [];
     const wctx = makeWctx(projectDir, sessionId, {
@@ -482,20 +468,131 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       wctx,
       state: planningState(),
       planner,
-      feature: 'test feature',
+      call: 'tasks',
+      inputs: phaseInputs({ feature: 'test feature' }),
     });
 
     expect(continuationPrompts).toEqual([marker]);
     expect(callCount).toBe(2);
   });
 
+  it('continues a native session with one user turn, never the step prompt again', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const sinks = createTestSinks();
+    const prompts: (string | undefined)[] = [];
+    const turns: (string | undefined)[] = [];
+    let callCount = 0;
+    const planner = makePlanner({
+      capabilities: { ...makePlanner().capabilities, supportsSessionResume: true },
+      runPhase: vi.fn().mockImplementation(async ({ callbacks, inputs }) => {
+        callCount++;
+        prompts.push(inputs.promptSuffix);
+        turns.push(inputs.continuationTurn);
+        if (callCount === 1) {
+          callbacks.onOutput('half a spec');
+          sinks.abortTurn();
+          throw new DOMException('The user aborted a request.', 'AbortError');
+        }
+        return makePhaseCallResult({ call: 'spec' });
+      }),
+    });
+    const wctx = makeWctx(projectDir, sessionId, {
+      sinks,
+      callbacks: makeCallbacks({ onContinuationNeeded: async () => 'shorter, please' }).callbacks,
+    });
+
+    await runPlannerCallInContinuationLoop({
+      wctx,
+      state: { ...planningState(), plannerSessionId: 'native-1' },
+      planner,
+      call: 'spec',
+      inputs: phaseInputs({ feature: 'test feature' }),
+    });
+
+    expect(callCount).toBe(2);
+    expect(turns[0]).toBeUndefined();
+    expect(turns[1]).toContain('shorter, please');
+    expect(turns[1]).toContain('spec.md');
+    // The session already holds the step's prompt, so nothing trails a rebuilt one.
+    expect(prompts[1]).toBeUndefined();
+  });
+
+  it('continues a stateless seat by re-issuing the step prompt with the partial on the end', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const sinks = createTestSinks();
+    const suffixes: (string | undefined)[] = [];
+    const turns: (string | undefined)[] = [];
+    let callCount = 0;
+    const planner = makePlanner({
+      runPhase: vi.fn().mockImplementation(async ({ callbacks, inputs }) => {
+        callCount++;
+        suffixes.push(inputs.promptSuffix);
+        turns.push(inputs.continuationTurn);
+        if (callCount === 1) {
+          callbacks.onOutput('half a spec');
+          sinks.abortTurn();
+          throw new DOMException('The user aborted a request.', 'AbortError');
+        }
+        return makePhaseCallResult({ call: 'spec' });
+      }),
+    });
+    const wctx = makeWctx(projectDir, sessionId, {
+      sinks,
+      callbacks: makeCallbacks({ onContinuationNeeded: async () => 'shorter, please' }).callbacks,
+    });
+
+    await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      call: 'spec',
+      inputs: phaseInputs({ feature: 'test feature' }),
+    });
+
+    expect(turns).toEqual([undefined, undefined]);
+    expect(suffixes[0]).toBeUndefined();
+    expect(suffixes[1]).toContain('half a spec');
+    expect(suffixes[1]).toContain('shorter, please');
+  });
+
+  it('seeds the first call from the continuation the run was restarted with', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const suffixes: (string | undefined)[] = [];
+    const planner = makePlanner({
+      runPhase: vi.fn().mockImplementation(async ({ inputs }) => {
+        suffixes.push(inputs.promptSuffix);
+        return makePhaseCallResult({ call: 'spec' });
+      }),
+    });
+    const wctx = makeWctx(projectDir, sessionId, {
+      continuation: createContinuationHolder({
+        step: { kind: 'planner', call: 'spec' },
+        partial: 'what the killed process wrote',
+        steer: 'drop the migration section',
+      }),
+    });
+
+    await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      call: 'spec',
+      inputs: phaseInputs({ feature: 'test feature' }),
+    });
+
+    expect(suffixes[0]).toContain('what the killed process wrote');
+    expect(suffixes[0]).toContain('drop the migration section');
+  });
+
   it('releases held planner text when the planner call throws', async () => {
     const { projectDir, sessionId } = setupSession();
     const planner = makePlanner({
-      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-        callbacks.onOutput('Findings so far. <!-- Q:{"id":"q1","text":"Which file');
-        throw new Error('planner crashed');
-      }),
+      runPhase: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onOutput('Findings so far. <!-- Q:{"id":"q1","text":"Which file');
+          throw new Error('planner crashed');
+        }),
     });
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx(projectDir, sessionId, { bus });
@@ -505,7 +602,8 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
         wctx,
         state: planningState(),
         planner,
-        feature: 'test feature',
+        call: 'tasks',
+        inputs: phaseInputs({ feature: 'test feature' }),
       }),
     ).rejects.toThrow('planner crashed');
 
@@ -522,15 +620,17 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
     const sinks = createTestSinks();
     let callCount = 0;
     const planner = makePlanner({
-      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-        callCount++;
-        if (callCount === 1) {
-          callbacks.onOutput('Partial findings. <!-- Q:{"id":"q1","text":"Which file');
-          sinks.abortTurn();
-          throw new DOMException('The user aborted a request.', 'AbortError');
-        }
-        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
-      }),
+      runPhase: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callCount++;
+          if (callCount === 1) {
+            callbacks.onOutput('Partial findings. <!-- Q:{"id":"q1","text":"Which file');
+            sinks.abortTurn();
+            throw new DOMException('The user aborted a request.', 'AbortError');
+          }
+          return makePhaseCallResult({ call: 'tasks', tasks: [makeTask()] });
+        }),
     });
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx(projectDir, sessionId, {
@@ -543,7 +643,8 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       wctx,
       state: planningState(),
       planner,
-      feature: 'test feature',
+      call: 'tasks',
+      inputs: phaseInputs({ feature: 'test feature' }),
     });
 
     const publishedText = events

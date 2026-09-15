@@ -1,5 +1,5 @@
 import type { Config } from '../../../core/schemas/config.js';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { formatTime } from '../../../utils/format-time.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type { OperationRole, OperationsState } from '../../../stores/workflow/operations/state.js';

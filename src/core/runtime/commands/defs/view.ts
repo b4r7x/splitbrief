@@ -138,15 +138,5 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
         ctx.setFeedbackMessage(result.expanded ? 'Expanded latest diff' : 'Collapsed latest diff');
       },
     },
-    {
-      kind: 'noarg',
-      name: '/cost',
-      label: 'cost',
-      description: 'Show the cost breakdown',
-      shortcut: getShortcutKey('cost-drilldown'),
-      category: 'view',
-      validScreens: ['workflow'],
-      handler: () => ctx.openOverlay('cost-drilldown'),
-    },
   ];
 }

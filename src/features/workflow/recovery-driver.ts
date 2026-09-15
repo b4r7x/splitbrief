@@ -4,10 +4,8 @@ import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { clearActiveReceipt } from '../../core/sessions/active-pointer.js';
-import { createEventBus } from '../../engine/events/bus.js';
-import { createJsonlSink } from '../../engine/events/sinks/jsonl.js';
-import type { EventBus } from '../../engine/events/types.js';
+import type { EventSink } from '../../engine/events/types.js';
+import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
 import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
 import type { SeatSwapChoice } from '../../engine/orchestrator/run/seat-swap.js';
@@ -22,7 +20,6 @@ import {
   parseRecoveryActionAnswer,
   switchSeatCandidateForAnswer,
 } from './recovery-prompt.js';
-import { addTuiEvent } from './tui-sink.js';
 
 type PendingRecoveryResult =
   | {
@@ -44,20 +41,9 @@ interface RecoveryDriverOptions {
   prepared: PreparedExecution;
   inputMode: UseInputModeResult;
   abortedRef: { current: boolean };
+  /** Where the panel's own events land on screen; the engine adds the session log. */
+  sink: EventSink;
   setInlineResume: (state: WorkflowState) => void;
-}
-
-function createRecoveryBus(projectDir: string, sessionId: string): EventBus {
-  const bus = createEventBus();
-  bus.subscribe(addTuiEvent);
-  bus.subscribe(
-    createJsonlSink({
-      projectDir,
-      sessionId,
-      onDegraded: (warning) => bus.publish(warning),
-    }),
-  );
-  return bus;
 }
 
 /**
@@ -109,8 +95,8 @@ function openRecoveryNotice(issue: RecoveryIssue): void {
 export function createRecoveryDriver(
   opts: RecoveryDriverOptions,
 ): (args: PromptPendingRecoveryArgs) => Promise<PendingRecoveryResult> {
-  const { prepared, inputMode, abortedRef, setInlineResume } = opts;
-  const { ref, active } = prepared.session;
+  const { prepared, inputMode, abortedRef, sink, setInlineResume } = opts;
+  const { ref } = prepared.session;
   const { projectDir, sessionId } = ref;
   const config = prepared.config;
 
@@ -122,9 +108,24 @@ export function createRecoveryDriver(
     const issue = state.pendingRecovery;
     if (issue === undefined) return { shouldRun: true, state };
 
-    const bus = createRecoveryBus(projectDir, sessionId);
+    const bus = createRecoveryBus({ projectDir, sessionId, sink });
 
-    const applyAction = (action: RecoveryAction, answer = ''): PendingRecoveryResult => {
+    // `revise` carries the operator's words to the planner, so the panel asks for
+    // them before it applies: an empty answer resolves the halt with no note.
+    const promptRecoveryComment = async (action: RecoveryAction): Promise<string> => {
+      if (action !== 'revise' && action !== 'revise-spec') return '';
+      return inputMode.setQuestionMode(
+        action === 'revise-spec'
+          ? 'What should the spec say instead? (enter sends no note)'
+          : 'What should the planner change? (enter sends no note)',
+      );
+    };
+
+    const applyAction = (
+      action: RecoveryAction,
+      answer = '',
+      comment = '',
+    ): PendingRecoveryResult => {
       recoveryNoticeStore.clear();
       if (action === 'switch-seat') {
         const candidate = switchSeatCandidateForAnswer(answer, issue.switchSeat);
@@ -148,6 +149,7 @@ export function createRecoveryDriver(
         bus,
         config,
         mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+        ...(comment.trim() === '' ? {} : { comment }),
       });
 
       setInlineResume(result.state);
@@ -165,12 +167,11 @@ export function createRecoveryDriver(
         return { shouldRun: false, state: result.state };
       }
 
-      if (result.status === 'aborted') {
-        // Nothing ran after the halt, so there is no summary to write; releasing
-        // the active pointer is what ends the session — the sessions listing
-        // recovers its 'interrupted' status from the saved state.
-        clearActiveReceipt(ref, active);
-        feedbackStore.setMessage('Workflow aborted.');
+      if (result.status === 'closed') {
+        // The close is on the state; the run loop finalizes the session from it —
+        // one summary, one receipt release, through the same path every other
+        // ending takes.
+        feedbackStore.setMessage('Run ended. The files it wrote are still on disk.');
         return { shouldRun: false, state: result.state };
       }
 
@@ -210,7 +211,12 @@ export function createRecoveryDriver(
         feedbackStore.setError('Unknown recovery action.');
         continue;
       }
-      return applyAction(action, answer);
+      const comment = await promptRecoveryComment(action);
+      if (controller.signal.aborted || abortedRef.current) {
+        recoveryNoticeStore.clear();
+        return { shouldRun: false, state };
+      }
+      return applyAction(action, answer, comment);
     }
   };
 }

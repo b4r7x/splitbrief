@@ -18,12 +18,7 @@ export function pathAwareRows(text: string, width: number): number {
 }
 
 export const APPROVAL_HORIZONTAL_CHROME = 4;
-export const COST_HORIZONTAL_CHROME = 4;
 
 export function approvalTextWidth(cols: number): number {
   return Math.max(MIN_TEXT_WIDTH, cols - APPROVAL_HORIZONTAL_CHROME);
-}
-
-export function costTextWidth(cols: number): number {
-  return Math.max(MIN_TEXT_WIDTH, cols - COST_HORIZONTAL_CHROME);
 }

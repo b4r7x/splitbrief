@@ -194,7 +194,6 @@ describe('tokensStore — per-task attempt accumulation', () => {
         contextLength: 100_000,
         currentCodeTruncated: true,
         currentCodeContextMode: 'function-level',
-        costPosture: 'unknown-price',
         routingReason: 'rerouted after context estimate exceeded cheap profile',
       }),
     );
@@ -211,7 +210,6 @@ describe('tokensStore — per-task attempt accumulation', () => {
       contextLength: 100_000,
       currentCodeTruncated: true,
       currentCodeContextMode: 'function-level',
-      costPosture: 'unknown-price',
       routingReason: 'rerouted after context estimate exceeded cheap profile',
     });
     expect(tokensStore.get().perTask['T001']?.totalTokens).toBe(187);

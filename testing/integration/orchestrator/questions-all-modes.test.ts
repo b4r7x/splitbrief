@@ -8,16 +8,17 @@ import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { OrchestratorCallbacks } from '../../../src/engine/orchestrator/types.js';
 import { runPlanningPhase } from '../../../src/engine/orchestrator/planning/run.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import {
   createQuestionAccumulator,
   extractQuestionsFromStream,
 } from '../../../src/engine/parsers/question.js';
 import { CONVERSATIONAL_CAPS } from '../../../src/engine/planners/types.js';
 import type {
-  PlanOptions,
+  PhaseCallResult,
   Planner,
   PlannerCallbacks,
-  PlanResult,
+  RunPhaseInput,
 } from '../../../src/engine/planners/types.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -61,11 +62,13 @@ function splitIntoChunks(text: string, size: number): string[] {
   return chunks;
 }
 
+type RecordedCall = { call: string; feature: string; promptPrefix: string };
+
 function makeMarkerPlanner(opts: {
   flavor: (typeof FLAVORS)[number];
   markers: readonly string[];
-}): { planner: Planner; planningInputs: string[]; reviewPrompts: string[] } {
-  const planningInputs: string[] = [];
+}): { planner: Planner; planningInputs: RecordedCall[]; reviewPrompts: string[] } {
+  const planningInputs: RecordedCall[] = [];
   const reviewPrompts: string[] = [];
   const narration = `Reviewing the feature request.\n\n${opts.markers.join('\n')}\n\nDrafting Task Briefs.\n`;
 
@@ -92,28 +95,22 @@ function makeMarkerPlanner(opts: {
     }
   };
 
-  const respond = async (planOpts: PlanOptions, result: PlanResult): Promise<PlanResult> => {
-    planningInputs.push(planOpts.feature);
-    if (planningInputs.length === 1) stream(planOpts.callbacks);
-    return result;
-  };
-
-  const fullPlan: PlanResult = {
-    spec: '# Spec',
-    plan: '# Plan',
-    tasks: [makePassingTask()],
-    usage: { inputTokens: 100, outputTokens: 50 },
-  };
-  const briefOnly: PlanResult = {
-    spec: '',
-    plan: '',
-    tasks: [makePassingTask()],
-    usage: { inputTokens: 50, outputTokens: 25 },
+  const respond = async (input: RunPhaseInput): Promise<PhaseCallResult> => {
+    planningInputs.push({
+      call: input.call,
+      feature: input.inputs.feature,
+      promptPrefix: input.inputs.promptPrefix ?? '',
+    });
+    if (planningInputs.length === 1) stream(input.callbacks);
+    return makePhaseCallResult({
+      call: input.call,
+      usage: { inputTokens: 100, outputTokens: 50 },
+      ...(input.call === 'tasks' ? { tasks: [makePassingTask()] } : {}),
+    });
   };
 
   const planner = makePlanner({
-    plan: vi.fn((planOpts: PlanOptions) => respond(planOpts, fullPlan)),
-    quickPlan: vi.fn((planOpts: PlanOptions) => respond(planOpts, briefOnly)),
+    runPhase: vi.fn(respond),
     review: vi.fn(async (prompt: string) => {
       reviewPrompts.push(prompt);
       return { text: REAL_TASKS_MD, usage: null };
@@ -230,12 +227,18 @@ function modeSuite(mode: WorkflowMode): void {
     expect(specContent).toContain('## Clarifications');
     expect(specContent).toContain(ANSWER);
 
-    // Every mode now finishes the turn: the answer is queued and the brief quality
-    // gate drains the queue into one regeneration before it gates, so the answer
-    // reaches the planner in the same turn instead of waiting for the next one.
-    expect(reviewPrompts.some((prompt) => prompt.includes(ANSWER))).toBe(true);
-    expect(planningInputs).toHaveLength(1);
-    expect(planningInputs[0]).not.toContain(ANSWER);
+    // The answer reaches the planner inside the same turn, and never as a re-run of the whole
+    // turn: every call still runs once and none is handed the answer as its feature. A mode with
+    // calls below the spec leads their prompt with it; quick has none, so the brief quality
+    // regeneration is where it lands.
+    const calls = planningInputs.map((input) => input.call);
+    expect(new Set(calls).size, 'each call runs once').toBe(calls.length);
+    expect(planningInputs.every((input) => !input.feature.includes(ANSWER))).toBe(true);
+    if (mode === 'quick') {
+      expect(reviewPrompts.some((prompt) => prompt.includes(ANSWER))).toBe(true);
+    } else {
+      expect(planningInputs.some((input) => input.promptPrefix.includes(ANSWER))).toBe(true);
+    }
     expectMarkerFreePlannerText(first.events);
   });
 

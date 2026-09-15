@@ -46,7 +46,7 @@ describe('Composer review action keys', () => {
   it.each([
     ['y', 'approve'],
     ['e', 'edit-file'],
-    ['q', 'reject'],
+    ['q', 'end-run'],
   ])('settles the gate when %s is pressed on an empty draft', async (typed, command) => {
     const submissions: string[] = [];
     const ui = renderFeature(reviewComposer(submissions));
@@ -160,7 +160,7 @@ describe('Composer review action keys', () => {
   // to keep working after the one-key shortcuts were added.
   it.each([
     ['approve', { kind: 'brief-review-command', command: { action: 'approve' } }],
-    ['reject', { kind: 'brief-review-command', command: { action: 'reject' } }],
+    ['end-run', { kind: 'brief-review-command', command: { action: 'end-run' } }],
     ['edit-file', { kind: 'open-external-editor' }],
     [
       'comment add more evidence',

@@ -124,14 +124,6 @@ describe('resolveKeyOwner', () => {
       expected: null,
     },
     {
-      name: 'question Ctrl+G does not open the cost drilldown',
-      input: 'g',
-      key: { ctrl: true },
-      inputMode: 'question',
-      composerFocus: true,
-      expected: null,
-    },
-    {
       name: 'review Shift+Down outside the review surface',
       input: '',
       key: { shift: true, downArrow: true },

@@ -257,7 +257,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
     });
 
     expect(retry).toHaveBeenCalledTimes(TIMEOUTS.consecutiveTimeoutsHalt);
-    expect(outcome.lastFailure?.outcome).toBe('implementer-timeout-repeated');
+    expect(outcome.lastFailure?.outcome).toBe('runner-timeout-repeated');
     expect(outcome.result).toBeUndefined();
   });
 

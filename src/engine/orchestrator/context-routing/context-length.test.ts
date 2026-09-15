@@ -8,7 +8,6 @@ import { resolveProfileContextLength } from './context-length.js';
 function profile(isDefault: boolean): ResolvedImplementerProfile {
   return {
     name: isDefault ? 'detected-worker' : 'sibling-worker',
-    costTier: 'cheap',
     capabilities: { writesFiles: 'extracted-code' },
     isDefault,
     config: {
@@ -83,7 +82,6 @@ describe('resolveProfileContextLength', () => {
   it('resolves a CLI profile under automatic model selection at the smallest bundled window', () => {
     const cliAuto: ResolvedImplementerProfile = {
       name: 'codex-auto',
-      costTier: 'cheap',
       capabilities: { writesFiles: 'direct' },
       isDefault: false,
       config: {
@@ -111,7 +109,6 @@ describe('resolveProfileContextLength', () => {
     };
     const cliPinned: ResolvedImplementerProfile = {
       name: 'codex-pinned',
-      costTier: 'cheap',
       capabilities: { writesFiles: 'direct' },
       isDefault: false,
       config: {

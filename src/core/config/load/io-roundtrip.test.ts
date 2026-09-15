@@ -197,7 +197,6 @@ describe('config roundtrip', () => {
               api_base: 'http://localhost:11434/v1',
               model: 'qwen2.5-coder:7b',
               context_length: 32768,
-              cost_tier: 'local',
             },
             'agent-cli': {
               kind: 'cli',
@@ -205,7 +204,6 @@ describe('config roundtrip', () => {
               model: 'gpt-5.4-mini',
               context_length: 200000,
               label: 'Codex CLI',
-              cost_tier: 'standard',
             },
           },
         },
@@ -245,7 +243,6 @@ describe('config roundtrip', () => {
               model: 'existing-model',
               custom_models: ['existing-model'],
               label: 'Active cloud',
-              cost_tier: 'cheap',
             },
             'dormant-local': {
               kind: 'cli',
@@ -321,7 +318,6 @@ describe('config roundtrip', () => {
         command: 'local-implementer --stdio',
         model: 'existing-model',
         label: 'Active cloud',
-        costTier: 'cheap',
       });
 
       const commandYaml = YAML.parse(readFileSync(path, 'utf-8')) as {
@@ -334,7 +330,6 @@ describe('config roundtrip', () => {
         command: 'local-implementer --stdio',
         model: 'existing-model',
         label: 'Active cloud',
-        cost_tier: 'cheap',
       });
 
       current = commitImplementerSelection({
@@ -360,11 +355,10 @@ describe('config roundtrip', () => {
     it('converts snake_case keys to camelCase', () => {
       const dir = join(TMP, 'snake-case');
       writeConfigYaml(dir, {
-        workflow: { max_retries: 5, cost_gate: true, git: { commit_strategy: 'checkpoint' } },
+        workflow: { max_retries: 5, git: { commit_strategy: 'checkpoint' } },
       });
 
       const { config } = loadConfig(dir);
-      expect(config.workflow.costGate).toBe(true);
       expect(config.workflow.maxRetries).toBe(5);
       expect(config.workflow.git?.commitStrategy).toBe('checkpoint');
 
@@ -374,7 +368,6 @@ describe('config roundtrip', () => {
       ) as Record<string, unknown>;
       const workflow = written.workflow as Record<string, unknown>;
       expect(workflow.max_retries).toBe(5);
-      expect(workflow.cost_gate).toBe(true);
       expect((workflow.git as Record<string, unknown>).commit_strategy).toBe('checkpoint');
     });
   });

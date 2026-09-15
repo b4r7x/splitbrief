@@ -10,27 +10,12 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import {
-  CONFIG_FILE,
-  PLAN_FILE,
-  READINESS_FILE,
-  SPEC_FILE,
-  SPLITBRIEF_DIR,
-  TASKS_FILE,
-} from '../../core/paths.js';
+import { CONFIG_FILE, READINESS_FILE, SPLITBRIEF_DIR, TASKS_FILE } from '../../core/paths.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { RETIRED_WORKFLOW_MODE_NOTICE } from '../../core/schemas/enums.js';
 import type { Config } from '../../core/schemas/config.js';
-import {
-  createPlannerArtifactAttemptId,
-  OwnedPlannerArtifactSchema,
-} from '../../core/schemas/planner-artifact.js';
-import type {
-  PhaseResult,
-  Planner,
-  PlannerArtifactLogicalName,
-} from '../../engine/planners/types.js';
-import { sha256Hex } from '../../utils/sha256.js';
+import type { Planner, PlannerDocumentCall, RunPhaseInput } from '../../engine/planners/types.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { registerSpecCommand } from './spec.js';
 
 const createPlannerMock = vi.fn<(config: Config) => Promise<Planner>>();
@@ -39,26 +24,6 @@ let tmp: string;
 let shimDir: string;
 let restoreCompatibleCliShim: (() => void) | undefined;
 let consoleSpy: ReturnType<typeof vi.spyOn>;
-
-function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): PhaseResult {
-  const digest = sha256Hex(text);
-  return {
-    artifact: OwnedPlannerArtifactSchema.parse({
-      semanticId: `test-${logicalName}`,
-      programId: null,
-      batchId: null,
-      attemptId: createPlannerArtifactAttemptId(),
-      logicalName,
-      transport: 'stdout-final',
-      text,
-      byteLength: Buffer.byteLength(text, 'utf8'),
-      sha256: digest,
-      runtimeReceipt: digest,
-      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
-      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
-    }),
-  };
-}
 
 beforeEach(() => {
   tmp = realpathSync(createTempDir('spec-mode-test'));
@@ -111,40 +76,23 @@ function parseSpec(args: string[]): Promise<unknown> {
   ]);
 }
 
-function plannerWithStandardPhases(): Planner {
+const PHASE_TEXT: Record<PlannerDocumentCall, string> = {
+  research: '# Research',
+  spec: '# Generated Spec',
+  plan: '# Generated Plan',
+  tasks: '# Generated Tasks',
+};
+
+function plannerRecordingPhases(): Planner {
   return makePlanner({
-    plan: vi.fn().mockResolvedValue({
-      spec: '# Generated Spec',
-      plan: '# Generated Plan',
-      tasks: [],
-      usage: null,
-      phases: [
-        phaseResult('research.md', '# Research'),
-        phaseResult(SPEC_FILE, '# Generated Spec'),
-        phaseResult(PLAN_FILE, '# Generated Plan'),
-        phaseResult(TASKS_FILE, '# Generated Tasks'),
-      ],
-    }),
+    runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+      makePhaseCallResult({ call, text: PHASE_TEXT[call], ...(call === 'tasks' && { tasks: [] }) }),
+    ),
   });
 }
 
-function plannerWithSingleTaskPhase(): Planner {
-  return makePlanner({
-    plan: vi.fn().mockResolvedValue({
-      spec: '',
-      plan: '',
-      tasks: [],
-      usage: null,
-      phases: [phaseResult(TASKS_FILE, '# Generated Tasks')],
-    }),
-    quickPlan: vi.fn().mockResolvedValue({
-      spec: '',
-      plan: '',
-      tasks: [],
-      usage: null,
-      phases: [phaseResult(TASKS_FILE, '# Generated Tasks')],
-    }),
-  });
+function calledPhases(planner: Planner): string[] {
+  return vi.mocked(planner.runPhase).mock.calls.map((call) => call[0].call);
 }
 
 describe('spec --mode', () => {
@@ -164,13 +112,12 @@ describe('spec --mode', () => {
   });
 
   it('--mode quick writes only the tasks artifact', async () => {
-    const planner = plannerWithSingleTaskPhase();
+    const planner = plannerRecordingPhases();
     createPlannerMock.mockResolvedValue(planner);
 
     await parseSpec(['--mode', 'quick', 'rename the config loader']);
 
-    expect(vi.mocked(planner.quickPlan)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(planner.plan)).not.toHaveBeenCalled();
+    expect(calledPhases(planner)).toEqual(['tasks']);
     const [session, ...rest] = readdirSync(sessionsRoot());
     expect(rest).toHaveLength(0);
     if (!session) throw new Error('expected one session folder');
@@ -179,22 +126,21 @@ describe('spec --mode', () => {
   });
 
   it('runs the quick planner call when --mode instant is given', async () => {
-    const planner = plannerWithSingleTaskPhase();
+    const planner = plannerRecordingPhases();
     createPlannerMock.mockResolvedValue(planner);
 
     await parseSpec(['--mode', 'instant', 'fix the button']);
 
-    expect(vi.mocked(planner.quickPlan)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(planner.plan)).not.toHaveBeenCalled();
+    expect(calledPhases(planner)).toEqual(['tasks']);
   });
 
   it('--mode standard writes research, spec, plan and tasks artifacts', async () => {
-    const planner = plannerWithStandardPhases();
+    const planner = plannerRecordingPhases();
     createPlannerMock.mockResolvedValue(planner);
 
     await parseSpec(['--mode', 'standard', 'add health endpoint']);
 
-    expect(vi.mocked(planner.plan)).toHaveBeenCalledTimes(1);
+    expect(calledPhases(planner)).toEqual(['research', 'spec', 'plan', 'tasks']);
     const [session, ...rest] = readdirSync(sessionsRoot());
     expect(rest).toHaveLength(0);
     if (!session) throw new Error('expected one session folder');
@@ -208,13 +154,12 @@ describe('spec --mode', () => {
   });
 
   it('--mode speckit writes the same artifact set as --mode standard', async () => {
-    const planner = plannerWithStandardPhases();
+    const planner = plannerRecordingPhases();
     createPlannerMock.mockResolvedValue(planner);
 
     await parseSpec(['--mode', 'speckit', 'replace the auth provider']);
 
-    expect(vi.mocked(planner.plan)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(planner.quickPlan)).not.toHaveBeenCalled();
+    expect(calledPhases(planner)).toEqual(['research', 'spec', 'plan', 'tasks']);
     const [session, ...rest] = readdirSync(sessionsRoot());
     expect(rest).toHaveLength(0);
     if (!session) throw new Error('expected one session folder');
@@ -229,24 +174,22 @@ describe('spec --mode', () => {
 
   it('with no flag, a config-file workflow.mode: quick selects the single-call route', async () => {
     writeConfig(makeConfig({ workflow: { mode: 'quick' } }));
-    const planner = plannerWithSingleTaskPhase();
+    const planner = plannerRecordingPhases();
     createPlannerMock.mockResolvedValue(planner);
 
     await parseSpec(['rename the config loader']);
 
-    expect(vi.mocked(planner.quickPlan)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(planner.plan)).not.toHaveBeenCalled();
+    expect(calledPhases(planner)).toEqual(['tasks']);
   });
 
   it('an explicit --mode standard wins over the config file', async () => {
     writeConfig(makeConfig({ workflow: { mode: 'quick' } }));
-    const planner = plannerWithStandardPhases();
+    const planner = plannerRecordingPhases();
     createPlannerMock.mockResolvedValue(planner);
 
     await parseSpec(['--mode', 'standard', 'add health endpoint']);
 
-    expect(vi.mocked(planner.plan)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(planner.quickPlan)).not.toHaveBeenCalled();
+    expect(calledPhases(planner)).toEqual(['research', 'spec', 'plan', 'tasks']);
   });
 
   it('an unrecognized --mode value rejects, names the three modes, and creates no session folder', async () => {
@@ -277,7 +220,7 @@ describe('spec --mode', () => {
       stderrChunks.push(String(chunk));
       return true;
     });
-    const planner = plannerWithSingleTaskPhase();
+    const planner = plannerRecordingPhases();
     createPlannerMock.mockResolvedValue(planner);
     try {
       await parseSpec(['fix the button']);
@@ -285,7 +228,7 @@ describe('spec --mode', () => {
       stderrSpy.mockRestore();
     }
 
-    expect(vi.mocked(planner.quickPlan)).toHaveBeenCalledTimes(1);
+    expect(calledPhases(planner)).toEqual(['tasks']);
     expect(
       stderrChunks.filter((chunk) => chunk.includes(RETIRED_WORKFLOW_MODE_NOTICE)),
     ).toHaveLength(1);
@@ -307,7 +250,7 @@ describe('spec --mode', () => {
       stderrChunks.push(String(chunk));
       return true;
     });
-    createPlannerMock.mockResolvedValue(plannerWithStandardPhases());
+    createPlannerMock.mockResolvedValue(plannerRecordingPhases());
     try {
       await parseSpec(['warn me']);
     } finally {

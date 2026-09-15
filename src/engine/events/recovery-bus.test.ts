@@ -17,7 +17,7 @@ function recoveryEvent(overrides: Record<string, unknown> = {}): EngineEvent {
     reason: 'context-overflow',
     files: [],
     affectedTaskIds: [],
-    availableActions: ['pause-run', 'abort-workflow'],
+    availableActions: ['pause-run', 'end-run'],
     recommendedAction: 'pause-run',
     headline: 'Context overflowed',
     resumeCommand: 'splitbrief resume',
@@ -99,7 +99,7 @@ describe('recovery EventBus boundary', () => {
     const { output, writes } = writeCapture();
     bus.subscribe(createStdoutJsonSink({ output }));
     const event = recoveryEvent();
-    const conflicting = recoveryEvent({ recommendedAction: 'abort-workflow' });
+    const conflicting = recoveryEvent({ recommendedAction: 'end-run' });
 
     bus.publish(event);
     bus.publish(event);
@@ -116,7 +116,7 @@ describe('recovery EventBus boundary', () => {
     expect(issueIds).toEqual(['issue-1', 'issue-1', 'issue-1']);
     expect(records[2]).toMatchObject({
       type: 'event',
-      data: { recommendedAction: 'abort-workflow' },
+      data: { recommendedAction: 'end-run' },
     });
   });
 

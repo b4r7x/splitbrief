@@ -12,6 +12,7 @@ import {
   requestResume,
   requestStopNow,
   requestClearQueue,
+  resumeParkedRun,
   setCancelHandler,
   setClearQueueHandler,
   setResumeHandler,
@@ -168,25 +169,54 @@ describe('requestResume', () => {
     stopStore.__testReset();
   });
 
+  it('hands every continuation to the run, park or no park', () => {
+    const resume = vi.fn();
+    const steer = vi.fn();
+    setResumeHandler(resume);
+    stopStore.park('mid-brief', 'T002', steer);
+
+    expect(requestResume('use the other adapter')).toBe(true);
+    expect(resume).toHaveBeenCalledWith('use the other adapter');
+    // The run decides what continuing means; nothing settles behind its back.
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('reports nothing to resume when no run is on screen', () => {
+    expect(requestResume('')).toBe(false);
+  });
+});
+
+describe('resumeParkedRun', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
   it('settles a parked brief with the typed steer', () => {
     const steer = vi.fn();
     stopStore.park('mid-brief', 'T002', steer);
 
-    expect(requestResume('use the other adapter')).toBe(true);
+    expect(resumeParkedRun('use the other adapter')).toBe(true);
     expect(steer).toHaveBeenCalledWith('use the other adapter');
     expect(stopStore.get().phase).toBe('idle');
   });
 
-  it('restarts a saved run when nothing is parked', () => {
-    const resume = vi.fn();
-    setResumeHandler(resume);
+  it('settles a boundary park so the run starts the next brief', () => {
+    const steer = vi.fn();
+    stopStore.request('pause-after-brief');
+    stopStore.park('boundary', 'T001', steer);
 
-    expect(requestResume('')).toBe(true);
-    expect(resume).toHaveBeenCalledWith('');
+    expect(resumeParkedRun('')).toBe(true);
+    expect(steer).toHaveBeenCalledWith('');
   });
 
-  it('reports nothing to resume with no park and no saved run', () => {
-    expect(requestResume('')).toBe(false);
+  it('reports no park when the run is at rest', () => {
+    expect(resumeParkedRun('')).toBe(false);
   });
 });
 

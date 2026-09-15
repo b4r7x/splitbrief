@@ -9,11 +9,11 @@ How the orchestrator runs, how events flow, and how the engine talks to the UI w
 Entry point: `runWorkflow()` in `src/engine/orchestrator/run/workflow.ts`. It builds a `WorkflowContext`, runs the planner, runs the implementer on each task, reviews the result, and writes a summary. The top-level sequence:
 
 1. `initializeWorkflow()` (`run/init.ts`) — creates the EventBus, subscribes all sinks, spawns the planner and implementer, bootstraps initial state or loads saved state for resume.
-2. `runPlanningPhases()` (`run/phases.ts`) — delegates to mode-specific planning (quick, standard, speckit). Each mode determines how many planner calls happen and which approval gates fire.
-3. `runTasksAndReview()` — predicts cost, gates on budget if needed, runs the task loop (implementer writes code, validation runs), then calls the planner for a final review. `runTaskLoop()` returns one of four statuses — `complete`, `stopped` (a recovery or a reconciled halt), `cancelled`, or `paused` (the operator asked for a pause after the current brief, so the loop returns at the brief boundary with the run resumable) — and only `complete` runs the review.
-4. `saveFinalSession()` (`session-lifecycle/finalize.ts`) — persists the summary, updates stats, clears the active-session lock.
+2. `runPlanningPhases()` (`run/phases.ts`) — decides what this entry runs, then hands off to the step loop (`planning/steps.ts`). A mode is an ordered list of steps, one planner call each (`plannerStepsFor`, `src/core/pipeline-spec/steps.ts`); the loop skips every step whose artifact is already on disk, so a re-entry spends only the calls it still owes. A run whose resume step is a brief or a review is past planning and returns ready-for-tasks without entering the loop.
+3. `runTasksAndReview()` — runs the task loop (implementer writes code, validation runs), then calls the planner for a final review. `runTaskLoop()` returns one of four statuses — `complete`, `stopped` (a recovery or a reconciled halt), `cancelled`, or `paused` (the operator asked for a pause after the current brief) — and only `complete` runs the review. A `paused` loop does not end the run: `runTasksAndReview` parks it in place, recording the brief it stopped before and awaiting a continuation exactly as a mid-call park does, then re-enters the loop when the operator continues. A host with no prompt surface records the park and returns, so the run resumes at that brief later.
+4. `saveFinalSession()` (`session-lifecycle/finalize.ts`) — persists the summary and updates stats. It does not take a status from its caller: it derives the run's status with `deriveRunStatus` from the tracked state, the lockfile and the artifacts on disk, writes that into `summary.json` alongside the run's phase and mode, and releases the active-session receipt **only when the run is closed**. A run that merely stopped keeps its pointer, because it is still continuable.
 
-If any step throws, the catch block saves state to disk, kills all subprocesses, publishes an error event, and returns a partial summary. The workflow always produces a summary, even on failure.
+If any step throws, the catch block records the error on the state as `lastFailure: { step, message, at }`, saves state to disk, kills all subprocesses, publishes an error event, and returns a partial summary. The run is not marked failed — there is no such status. `deriveRunStatus` reads `lastFailure` and reports the run as `open`, stopped for reason `failed`, and continuing it retries the step it died on.
 
 ```mermaid
 flowchart TD
@@ -23,19 +23,19 @@ flowchart TD
   E --> F[saveFinalSession]
   B -->|planner unavailable| G[early return with summary]
   E -->|signal aborted| F
-  A -->|catch| H[saveState + killAllProcesses + partial summary]
+  A -->|catch| H[recordLastFailure + saveState + killAllProcesses + partial summary]
 ```
 
 ### Orchestrator subdirectories
 
 The orchestrator is split by concern under `src/engine/orchestrator/`:
 
-- **`planning/`** — Mode-specific planner flows. `quick.ts` does one call for briefs; `full.ts` does research/spec/plan/tasks; `speckit.ts` adds clarification and constitution phases. `regen.ts` and `rewind.ts` handle regeneration from feedback and rewinding to earlier phases.
+- **`planning/`** — The planner step loop. `steps.ts` runs one call per step of `plannerStepsFor(mode, approveLevel)`, memoized by the artifact each step writes; `speckit.ts` holds the three calls only speckit makes (clarify, constitution, analyze); `invalidate.ts` drops what a revised artifact invalidated; `regen.ts` regenerates briefs from feedback and `rewind.ts` handles `/revise-spec` and `/revise-plan`.
 - **`task/`** — The task loop. `loop.ts` iterates tasks, `step.ts` runs a single task (call implementer, validate, retry), `commit.ts` handles per-task git commits, `pre-task.ts` runs pre-task setup.
+- **`run/`** — The run's own entry and exit. `workflow.ts` is `runWorkflow`, `init.ts` builds the context, `phases.ts` decides what a re-entry runs, and `continue.ts` is `continueRun` — the one path that picks a run up: it settles a park this process holds, re-enters a run at rest on its saved state with the operator's steer, or refuses a run that is missing, unreadable or closed, with the reason.
 - **`escalation/`** — Tiered escalation when the implementer fails. Local retries (`local-retries.ts`) come first, then `tier.ts` dispatches the tiers (`intermediate.ts` / `INTERMEDIATE_TIER` retries with a paid mid-tier API model from `escalation.intermediateProvider`, `hint.ts` / `HINT_TIER` has the planner write a hint that the implementer applies, `full.ts` / `FULL_TIER` hands the task to the planner to write the code itself).
-- **`recovery/`** — User-facing recovery flow after all escalation tiers fail. Presents the user with choices: retry same worker, route to a bigger worker, skip, pause, or abort.
+- **`recovery/`** — User-facing recovery flow for anything a turn cannot decide alone: the escalation ladder running out, and the planner-seat halts in `builders/planner.ts`. Presents the user with choices: retry same worker, route to a bigger worker, switch the seat, revise, skip, pause, or end the run. `bus.ts` builds the bus a recovery answered between two turns publishes on, so a host that holds no live orchestrator still records the prompt and the decision.
 - **`approval/`** — Tiered approval system for declared file writes. Classifies changed paths by risk (in-scope, out-of-scope, control-plane, package change) and gates those writes at auto/sticky/confirm tiers.
-- **`budget/`** — Cost prediction and budget enforcement. `cost-prediction.ts` estimates prompt-input cost before tasks start; `check.ts` holds pure threshold math; `knownness.ts` resolves usage-price knownness for runtime spend; `enforce.ts` publishes budget events, drives recovery, and runs post-task enforcement via `checkBudgetAfterTask`.
 - **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
 - **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the review seat. The review text is parsed into a structured verdict, per-criterion marks and categorised findings by `parseFinalReview()` in `src/engine/parsers/final-review.ts`; an unrecognised review degrades to an unknown verdict. The verdict, criteria counts and finding counts land in the packet's final-review section and are rolled up into `summary.json` (`reviewPacket.finalReviewVerdict`, `reviewPacket.finalReviewFindingCounts`).
 - **`user-edit/`** — Detects when the user edits files outside of SPLITBRIEF during a running workflow. `conflicts.ts` handles merge conflicts between user edits and implementer output. The pre-task gate no longer stops the run on an inspection failure: a failed changed-file scan degrades to a warning and the task proceeds, and a conflict is raised only from a scan that produced a file list.
@@ -159,13 +159,10 @@ Two separate communication mechanisms serve different purposes.
 - `onApprovalNeeded(type, filePath)` — spec, plan, or briefs review
 - `onUserEditConflict(conflict)` — a user edit collides with in-flight work
 - `onQuestionAsked(question, num, total)` — planner asks a clarification question
-- `onCostApprovalNeeded(prediction)` — predicted spend needs sign-off
 - `onContinuationNeeded(partialResponse)` — planner call was interrupted, should we continue?
 - `onTieredApproval(request)` — a declared implementer file write needs tiered approval
 - `onTaskReviewNeeded(request)` — task needs human review
 - `onComplete(summary)` — workflow finished
-
-Budget pressure is **not** a gating callback. The engine never calls a budget callback; spend thresholds and unknown paid-pricing cases publish `budget_warning` / `budget_paused` / `budget_exceeded` events on the bus, and the actual pause/stop is driven through the recovery channel (`recovery_needed`), not a dedicated budget prompt.
 
 In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, workflow review gates are auto-approved, questions answer empty, recovery exits non-zero, and file-write tiered approvals fail closed unless approval config already allows the write.
 
@@ -207,7 +204,9 @@ The full path from engine to pixel:
 
 Two complementary paths:
 
-**`saveState()`** (`src/core/state/persistence.ts`) — writes `state.json` on every phase transition via `transitionAndSave()`. This is the resume source of truth. `splitbrief resume` reads this file to know what phase, which tasks, and what progress. It's overwritten, not appended.
+**`saveState()`** (`src/core/state/persistence.ts`) — writes `state.json` on every phase transition via `transitionAndSave()`. This is the continuation source of truth: `splitbrief resume` reads it to know what phase, which tasks, and what progress. It's overwritten, not appended.
+
+One API owns the file. `src/core/state/state-file.ts` reads and classifies it and owns `revisionFromBytes`, the compare-and-swap revision every reader shares; `src/engine/orchestrator/state-ops.ts` is the only writer, and `commitWorkflowState` stamps `WORKFLOW_STATE_VERSION` (`src/core/schemas/workflow.ts`) rather than spelling the number. No caller writes `state.json` directly or infers a revision from an event stream.
 
 A persisted changed-files baseline has two provenance states: `head: null` records a known unborn start, and a SHA records the exact run-start commit. State without a baseline is rejected at final review (`finalReviewError.missingRunBaseline`) rather than reconstructed from commit subjects.
 
@@ -230,6 +229,12 @@ The two serve different consumers: `state.json` is for the state machine (small,
 **Summary records** (`kind: 'summary'`). Written by the compaction system (see SUBSYSTEMS.md section 11). Contains `text`, `summarizedUpTo` timestamp, optional `tokenEstimate`, and optional `structured` fields. On resume, only messages after the latest summary's `summarizedUpTo` are loaded.
 
 All three live in the same file because consumers need chronological ordering. Context rebuild reads message records and, when compaction exists, uses the latest summary record as a synthetic message before loading later messages. A separate file per record type would require merge-sorting at read time. Session-log writes and readers share bounded record-size limits; malformed or oversized lines are skipped with diagnostics rather than being silently treated as valid history.
+
+### Replay
+
+`readRunEvents(ref)` (`src/engine/events/replay.ts`) inverts `toEngineEventEntry`: it reads the session log through `readSessionLogWithDiagnostics`, lifts each event record's `type`, `ts`, `phase` and `taskId` back out of the record and onto the payload, turns the ISO timestamp back into epoch milliseconds, and validates the result with the engine's event parser. A record whose type no longer exists in the schema, or whose data no longer parses, is skipped and counted — a retired variant cannot stop an old session from replaying. A type is reported in `unknownTypes` only when no record of that type parsed, so one bad payload does not condemn the variant. The returned array is wrapped in the two replay events: `replay_started` first, `replay_complete` last, both carrying the read diagnostics (lines read, events replayed, and what was skipped and why). Both sit on the log clock, never the wall clock: `replay_started.ts` is the first replayed event, `replay_complete.ts` is the last, and `replay_complete.durationMs` is the span between them — the stretch of run the replay covers, not how long the read took. A replay is therefore byte-identical across repeated reads of the same log. Those two events have no other publisher; they are infrastructure-phase, so the lifecycle reducer ignores their `phase`, and they render no transcript row. Replay lives in `src/engine/` rather than `src/core/` because `core` may not import the event schema.
+
+The consumer is `loadEvents` (`src/stores/workflow/actions/load.ts`). It calls `resetWorkflow()` first — a loaded run replaces whatever was on screen, so no store may keep the previous run's tasks, tokens or lifecycle — then folds the whole array through the same reducers the live path runs per event and commits each store once. The event log is built by `mergeEventLog` (`src/stores/workflow/events.ts`), the batch form of `mergeEvent`: both decide the tail merge in one shared helper, and the batch form marks evicted entries in place and materializes once, so a 50k-event log costs a single pass rather than a whole-array copy per event past the cap.
 
 ---
 
@@ -278,7 +283,6 @@ type Summary = {
   failed: number
   totalTime: number                       // ms
   tokenUsage: TokenUsage
-  estimatedCostSavings: string
   escalationRate: number
 
   // Runner identity
@@ -292,29 +296,24 @@ type Summary = {
   taskBreakdown?: TaskTokenUsage[]
   phaseTimings?: Record<string, number>   // phase name → ms
 
-  // Cost analysis
+  // Spend
   costBreakdown?: {
-    hypotheticalCost: number              // what it would cost if planner did everything
     actualPlannerCost: number
     actualImplementerCost: number
     totalActualCost: number
-    savingsAmount: number
-    savingsPercentage: number
-    localCompletionRate: number
     providerCosts?: Record<string, { inputTokens: number; outputTokens: number; cost: number }>
   }
 
   // Quality signals
   briefQuality?: { score: number; passed: boolean; errorCount: number; warningCount: number }
   driftSummary?: { passed: boolean; score: number; errorCount: number; warningCount: number }
-  costPrediction?: CostPrediction          // deterministic prompt-input estimate, not total spend
   evidenceSummary?: { path: string; totalTasks: number; tasksWithValidationEvidence: number; ... }
   reviewPacket?: ReviewPacketSummary
   checkpointSummary?: CheckpointSummaryRollup
 }
 ```
 
-The summary is the final artifact. It carries enough data to render the summary screen and compute cumulative project stats without re-reading the JSONL log.
+The summary is the final artifact. It carries enough data to render a closed run’s ledger and compute cumulative project stats without re-reading the JSONL log.
 
 ---
 
@@ -388,4 +387,4 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 
 **Where an `error` comes from.** The generic `error` event carries an optional `category`/`code` pair naming the halt that produced it. Two codes sit under `category: 'recovery'`: `retry_exhausted` (the retry ladder ran out for a task, `task/retry.ts`) and `review_failed` (the final review still reported blocking findings after the last fix cycle, `run/task-execution.ts`). The two other halts that stop the run mid-task — an approval gate denial (`approval-denied`) and a task-start snapshot that could not be captured (`snapshot-failed`) — raise their recovery issue without an `error` event: they reach consumers as `recovery_prompted`, which is also what fires the `on_halt` hook. Re-entering the task loop over an unresolved recovery publishes the matching `warning` (`recovery_pending_unresolved`) instead.
 
-`routingReason` on `task_started` is intended for user-facing task-start rows. Fuller context-fit and per-task routing metadata is also retained for the cost drilldown; the engine emits it as plain event data and does not import UI code.
+`routingReason` on `task_started` is intended for user-facing task-start rows. Fuller context-fit and per-task routing metadata is also retained in the run record; the engine emits it as plain event data and does not import UI code.

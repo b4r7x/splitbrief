@@ -38,8 +38,8 @@ function setup(name: string, offered: boolean) {
       taskId: task.id,
       affectedTaskIds: [task.id],
       availableActions: offered
-        ? ['retry-same-worker', 'switch-seat', 'pause-run', 'abort-workflow']
-        : ['retry-same-worker', 'pause-run', 'abort-workflow'],
+        ? ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run']
+        : ['retry-same-worker', 'pause-run', 'end-run'],
       recommendedAction: offered ? 'switch-seat' : 'pause-run',
       ...(offered && {
         switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code', model: 'sonnet' }] },

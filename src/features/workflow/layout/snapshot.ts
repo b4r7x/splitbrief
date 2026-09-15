@@ -1,4 +1,5 @@
-import { getProgressRows, getRailActiveIndex, selectRailForm } from './chrome-rows.js';
+import { getRailActiveIndex } from '../../../core/rail-stages.js';
+import { getProgressRows, selectRailForm } from './chrome-rows.js';
 import {
   briefListTopOffset,
   getRailStageZones,
@@ -25,14 +26,15 @@ import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
+import { transcriptTailStore } from '../../../stores/workflow/transcript-tail.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { reviewArtifactForPhase } from '../prompt-rows/approval.js';
 import { getWorkflowPromptRows } from '../prompt-rows/workflow.js';
+import type { ConversationRowBlock } from '../conversation-rows/types.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../conversation-rows/viewport.js';
 
@@ -64,15 +66,10 @@ interface ConversationLayoutSnapshot {
 function readWorkflowPromptRows(): number {
   const controls = controlsStore.get();
   const approvalState = approvalPromptStore.get();
-  const costApprovalState = costApprovalStore.get();
   // A tiered gate takes the zone from the review panel, so the two are never budgeted together.
-  const documentReview =
-    controls.inputMode === 'review' &&
-    approvalState.status !== 'pending' &&
-    costApprovalState.status !== 'pending';
+  const documentReview = controls.inputMode === 'review' && approvalState.status !== 'pending';
   return getWorkflowPromptRows({
     approvalState,
-    costApprovalState,
     questionHint: controls.inputMode === 'question' ? questionPromptStore.get().hint : null,
     reviewArtifact: documentReview ? reviewArtifactForPhase(lifecycleStore.get().phase) : null,
     cols: terminalSizeStore.get().cols,
@@ -240,6 +237,16 @@ export function readConversationHoverSnapshot(): ConversationHoverSnapshot {
   };
 }
 
+/**
+ * What the screen appended after the run's own events, as measurements only: the keys scroll the
+ * same document the renderer painted, and they never need the rows themselves.
+ */
+function transcriptTailBlocks(): readonly ConversationRowBlock[] {
+  const { rowCount, renderableUnits } = transcriptTailStore.get();
+  if (rowCount === 0 && renderableUnits === 0) return [];
+  return [{ key: 'transcript-tail', rowCount, renderableUnits, createRows: () => [] }];
+}
+
 export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
   const layout = readConversationLayoutSnapshot();
   const scroll = conversationScrollStore.get();
@@ -259,6 +266,7 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     renderableCountAtScroll: scroll.renderableCountAtScroll,
     heightAtScroll: scroll.heightAtScroll,
     streaming: streamingOutputStore.get(),
+    tail: transcriptTailBlocks(),
   });
   return {
     conversationWidth: layout.conversationWidth,

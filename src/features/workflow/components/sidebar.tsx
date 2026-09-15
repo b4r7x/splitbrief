@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { borderStyleFor, glyph, type GlyphName } from '../../../lib/glyphs.js';
 import { useTheme } from '../../../components/theme.js';
 import type { Theme } from '../../../components/theme.js';
@@ -22,7 +22,7 @@ import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/c
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { formatStageElapsed } from '../display/live-activity.js';
-import { getActiveRailStage } from '../layout/chrome-rows.js';
+import { getActiveRailStage } from '../../../core/rail-stages.js';
 import {
   getSidebarTaskListRows,
   getSidebarTaskTitleWidth,
@@ -32,8 +32,9 @@ import {
 import { useAdvisory } from '../hooks/use-advisory.js';
 import { useCostStats } from '../hooks/use-cost-stats.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
-import { formatCostDisplay } from '../cost-text.js';
-import { Divider } from './divider.js';
+import { formatCostDisplay } from '../spend-text.js';
+import { formatLocalSharePct } from '../display/local-share.js';
+import { Divider } from '../../../components/divider.js';
 
 interface SidebarProps {
   width: number;
@@ -255,8 +256,8 @@ export function Sidebar({ width, height }: SidebarProps) {
   const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
   const innerWidth = Math.max(0, width - 5);
 
-  const costFmt = formatCostDisplay(cost.localRate, cost.costBreakdown, cost.pricingState);
-  // The cost row is unconditional; mode and the done/escalated split are not.
+  const costFmt = formatCostDisplay(cost.costBreakdown, cost.pricingState);
+  // The local-share row is unconditional; mode and the done/escalated split are not.
   const footerRows = seats.length + 1 + (mode ? 1 : 0) + (escalatedCount > 0 ? 1 : 0);
   // Without a height the caller is not budgeting rows, so the list never windows.
   const listRows =
@@ -354,9 +355,9 @@ export function Sidebar({ width, height }: SidebarProps) {
           <Text color={t.textDim}>
             local{' '}
             <Text color={rateColor(cost.localRate, cost.routedTasks, t)}>
-              {costFmt.localRatePct}
+              {formatLocalSharePct(cost.localRate)}
             </Text>
-            {costFmt.showSpend && (
+            {cost.showSpend && costFmt.hasSpend && (
               <Text>
                 {SOFT_SEP}
                 {costFmt.spentText}

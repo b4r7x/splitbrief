@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../planners/types.js';
 import {
   auto,
   makePassingPlanner,
   makePassingTask,
-  runPhase as runPhaseHelper,
+  runPlanningTurn as runPhaseHelper,
 } from '#testing/helpers/planning-phase.js';
 import { MODE_UPGRADE } from '../../../core/pipeline-spec/modes.js';
 import type { EngineEvent } from '../../events/types.js';
@@ -24,9 +26,13 @@ function producing(count: number) {
   const tasks = Array.from({ length: count }, (_, i) =>
     makePassingTask(`T${String(i + 1).padStart(3, '0')}`),
   );
-  return vi
-    .fn()
-    .mockResolvedValue({ spec: '', plan: '', tasks, usage: { inputTokens: 1, outputTokens: 1 } });
+  return vi.fn(async ({ call }: RunPhaseInput) =>
+    makePhaseCallResult({
+      call,
+      usage: { inputTokens: 1, outputTokens: 1 },
+      ...(call === 'tasks' ? { tasks } : {}),
+    }),
+  );
 }
 
 function modeAdvice(events: readonly EngineEvent[]) {
@@ -39,7 +45,7 @@ describe('runPlanningPhase — plan-size advice', () => {
     const { events } = await runPhaseHelper(dirs, {
       feature: FEATURE,
       config: makeConfig({ workflow: auto('standard') }),
-      planner: makePassingPlanner({ plan: producing(over) }),
+      planner: makePassingPlanner({ runPhase: producing(over) }),
     });
 
     expect(modeAdvice(events)).toMatchObject([
@@ -56,7 +62,7 @@ describe('runPlanningPhase — plan-size advice', () => {
       feature: FEATURE,
       config: makeConfig({ workflow: auto('quick') }),
       planner: makePassingPlanner({
-        quickPlan: producing(MODE_UPGRADE.quickToStandard.briefs + 1),
+        runPhase: producing(MODE_UPGRADE.quickToStandard.briefs + 1),
       }),
     });
 
@@ -67,7 +73,7 @@ describe('runPlanningPhase — plan-size advice', () => {
     const { events } = await runPhaseHelper(dirs, {
       feature: FEATURE,
       config: makeConfig({ workflow: auto('standard') }),
-      planner: makePassingPlanner({ plan: producing(MODE_UPGRADE.standardCap) }),
+      planner: makePassingPlanner({ runPhase: producing(MODE_UPGRADE.standardCap) }),
     });
 
     expect(modeAdvice(events)).toEqual([]);

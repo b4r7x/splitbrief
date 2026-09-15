@@ -82,7 +82,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       kind: 'noarg',
       name: '/end',
       label: 'end run',
-      description: 'Stop the run and mark it cancelled',
+      description: 'Close the run, keeping every change on disk',
       category: 'workflow',
       validScreens: ['workflow'],
       guard: (c) => (isLivePhase(c.phase) ? undefined : 'No run to end in this phase'),
@@ -134,7 +134,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       description: 'List or clear sticky approval grants',
       category: 'workflow',
       args: { kind: 'closed', options: APPROVAL_ACTIONS, optional: true },
-      validScreens: ['workflow', 'summary'],
+      validScreens: ['workflow'],
       handler: (args) => {
         const sub = args?.trim().toLowerCase();
         if (!sub || sub === 'list') {
@@ -164,7 +164,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       description: 'Accept or reject what this run wrote',
       category: 'workflow',
       args: { kind: 'closed', options: RUN_ACTIONS },
-      validScreens: ['workflow', 'summary'],
+      validScreens: ['workflow'],
       handler: async (args) => {
         const [action = '', confirmation] = (args ?? '')
           .trim()
@@ -178,6 +178,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
         if (action === 'accept') {
           try {
             const result = await ctx.acceptRunSnapshot();
+            ctx.refreshRun();
             ctx.setFeedbackMessage(`Run accepted at snapshot ${result.snapshotId}`);
           } catch (err) {
             ctx.setFeedbackError(toErrorMessage(err));
@@ -202,6 +203,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
             ctx.setFeedbackError(`Run already accepted at snapshot ${result.snapshotId}.`);
             return;
           }
+          ctx.refreshRun();
           const message = formatRejectRunMessage(result);
           if (result.conflictedPaths.length > 0 || result.missingSnapshotFiles.length > 0) {
             ctx.setFeedbackError(message);

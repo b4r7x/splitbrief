@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createRuntimeCommands } from './registry.js';
 import { ALL_SCREENS } from '../../navigation/types.js';
 import { WORKFLOW_MODES, type WorkflowMode } from '../../schemas/enums.js';
-import { describeModeCost } from '../../pipeline-spec/mode-cost.js';
+import { describeModeShape } from '../../pipeline-spec/mode-shape.js';
 import {
   COMMAND_CATEGORIES,
   REMOVED_COMMANDS,
@@ -22,8 +22,8 @@ describe('createRuntimeCommands registry shape', () => {
 
   it('registers the commands the reference documents, once each', () => {
     const registered = commands.map((cmd) => cmd.name);
-    expect(registered).toHaveLength(26);
-    expect(new Set(registered).size).toBe(26);
+    expect(registered).toHaveLength(25);
+    expect(new Set(registered).size).toBe(25);
   });
 
   it('files every command under the category its module owns, in category order', () => {
@@ -107,7 +107,7 @@ describe('/mode options', () => {
     expect(args.options).toEqual([...WORKFLOW_MODES]);
     expect(args.optionDescriptions).toEqual(
       Object.fromEntries(
-        WORKFLOW_MODES.map((mode) => [mode, describeModeCost(mode, { gateNames: true })]),
+        WORKFLOW_MODES.map((mode) => [mode, describeModeShape(mode, { gateNames: true })]),
       ),
     );
   });

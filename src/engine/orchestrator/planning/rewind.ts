@@ -1,83 +1,29 @@
+import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
-import type { Task } from '../../../core/schemas/task.js';
 import type { Planner } from '../../planners/types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../../core/paths-io.js';
-import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
+import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
 import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { writeAndPublishArtifact } from '../artifact-write.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
-import { runApprovalLoop } from '../approval/loop.js';
+import { resetDriftChainState } from '../drift/chain-state.js';
 import {
   commitQueueMessagesDrained,
   readQueueForPrompt,
   releaseQueueMessagesForPrompt,
 } from '../queue/drain.js';
 import { formatDrainedMessages } from '../queue/prompt.js';
-import { regenerateTasks, regenerateTasksIfNeeded, regeneratePlanAndTasks } from './regen.js';
 import { handlePlanningFailure } from './failure.js';
+import { invalidateFrom } from './invalidate.js';
+import { runPlanningSteps } from './steps.js';
+import { withRewindFeedback } from './rewind-feedback.js';
 import type { PlanningPhaseOptions, PlanningProducerResult } from './types.js';
 
 type RewindPending = NonNullable<PlanningPhaseOptions['rewindPending']>;
-
-async function finishPlanAndBriefsApproval(args: {
-  wctx: PlannerCallbacksContext;
-  planner: Planner;
-  state: WorkflowState;
-  tasks: Task[];
-  skipPlanApproval: boolean;
-  metadata: SpecMetadata;
-}): Promise<PlanningProducerResult> {
-  const { wctx, planner, tasks, skipPlanApproval, metadata } = args;
-  const { projectDir, sessionId, callbacks } = wctx;
-  const signal = wctx.signal;
-  let state = args.state;
-
-  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'PLAN_DONE', tasks });
-  publishPlannerStatus(wctx.bus, state, 'running');
-
-  const planPath = join(sessionDir(projectDir, sessionId), PLAN_FILE);
-  let finalTasks = tasks;
-  if (!skipPlanApproval) {
-    const planLoop = await runApprovalLoop({
-      type: 'plan',
-      filePath: planPath,
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus: wctx.bus,
-      state,
-      signal,
-      specMetadata: metadata,
-      sinks: wctx.sinks,
-    });
-    state = planLoop.state;
-    if (planLoop.rejected || planLoop.aborted) {
-      return { disposition: 'terminal', state, outcome: 'rejected' };
-    }
-    const regen = await regenerateTasksIfNeeded({
-      regenerated: planLoop.regenerated,
-      projectDir,
-      sessionId,
-      planner,
-      callbacks,
-      bus: wctx.bus,
-      state,
-      tasks,
-      metadata,
-      signal,
-      sinks: wctx.sinks,
-    });
-    state = regen.state;
-    finalTasks = regen.tasks;
-  }
-
-  return { disposition: 'tasks-ready', state: { ...state, tasks: finalTasks }, tasks: finalTasks };
-}
 
 async function regenerateRewoundArtifact(args: {
   wctx: PlannerCallbacksContext;
@@ -118,132 +64,49 @@ async function regenerateRewoundArtifact(args: {
   return state;
 }
 
-export async function handleRewindSpec(args: {
-  opts: PlanningPhaseOptions;
-  rewindPending: RewindPending;
-  skipSpecApproval: boolean;
-  skipPlanApproval: boolean;
-  metadata: SpecMetadata;
-  skillsContext: string | undefined;
-  state: WorkflowState;
-}): Promise<PlanningProducerResult> {
-  const { opts, rewindPending, skipSpecApproval, skipPlanApproval, metadata, skillsContext } = args;
+/**
+ * `/revise-spec` and `/revise-plan`: the named artifact is rewritten from the
+ * operator's comment, everything downstream of it is invalidated, and the step
+ * loop re-runs exactly the calls that lost their artifact.
+ */
+export async function runRewindPlanning(
+  opts: PlanningPhaseOptions,
+  rewindPending: RewindPending,
+): Promise<PlanningProducerResult> {
   const { wctx, planner } = opts;
-  const { projectDir, sessionId, callbacks } = wctx;
-  const signal = wctx.signal;
-  let state = args.state;
-
-  publishPlannerStatus(wctx.bus, state, 'running');
-
-  if (rewindPending.comment) {
-    appendMessage(
-      { projectDir, sessionId },
-      { role: 'user', phase: 'specifying', text: rewindPending.comment },
-    );
-    const current = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
-    const queued = readQueueForPrompt({ projectDir, sessionId, state });
-    try {
-      state = queued.state;
-      state = await regenerateRewoundArtifact({
-        wctx,
-        planner,
-        state,
-        target: 'spec',
-        current,
-        comment: rewindPending.comment,
-        metadata,
-        queuedMessages: queued.messages,
-      });
-      state = commitQueueMessagesDrained({
-        projectDir,
-        sessionId,
-        state,
-        messages: queued.messages,
-        bus: wctx.bus,
-      }).state;
-      wctx.bus.publish({
-        type: 'spec_regenerated',
-        ts: Date.now(),
-        phase: state.phase,
-        comment: rewindPending.comment,
-      });
-    } catch (err) {
-      return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
-    } finally {
-      releaseQueueMessagesForPrompt({ projectDir, sessionId }, queued.messages);
-    }
+  const { projectDir, sessionId, metadata } = wctx;
+  const ref = { projectDir, sessionId };
+  let state = transitionAndSave(ref, opts.state, { type: 'CLEAR_REWIND_PENDING' });
+  try {
+    resetDriftChainState(ref);
+  } catch {
+    // non-fatal: rewind continues even if chain state reset fails
   }
-
-  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'SPEC_DONE' });
   publishPlannerStatus(wctx.bus, state, 'running');
 
-  const specPath = join(sessionDir(projectDir, sessionId), SPEC_FILE);
-  if (!skipSpecApproval) {
-    const specLoop = await runApprovalLoop({
-      type: 'spec',
-      filePath: specPath,
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus: wctx.bus,
+  // Quick mode has one artifact and no documents to revise: the comment rides the
+  // feature and the briefs are compiled again.
+  if ((state.mode ?? 'standard') === 'quick') {
+    rmSync(join(sessionDir(projectDir, sessionId), TASKS_FILE), { force: true });
+    return runPlanningSteps({
+      ...opts,
       state,
-      signal,
-      specMetadata: metadata,
-      sinks: wctx.sinks,
+      feature: withRewindFeedback(opts.feature, rewindPending),
     });
-    state = specLoop.state;
-    if (specLoop.rejected || specLoop.aborted) {
-      return { disposition: 'terminal', state, outcome: 'rejected' };
-    }
   }
 
-  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'APPROVE_SPEC' });
-  publishPlannerStatus(wctx.bus, state, 'running');
-
-  const { state: planAndTasksState, tasks } = await regeneratePlanAndTasks({
-    projectDir,
-    sessionId,
-    planner,
-    callbacks,
-    bus: wctx.bus,
-    state,
-    metadata,
-    skillsContext,
-    signal,
-    sinks: wctx.sinks,
-  });
-  state = planAndTasksState;
-
-  return finishPlanAndBriefsApproval({
-    wctx,
-    planner,
-    state,
-    tasks,
-    skipPlanApproval,
-    metadata,
-  });
-}
-
-export async function handleRewindPlan(args: {
-  opts: PlanningPhaseOptions;
-  rewindPending: RewindPending;
-  skipPlanApproval: boolean;
-  metadata: SpecMetadata;
-  state: WorkflowState;
-}): Promise<PlanningProducerResult> {
-  const { opts, rewindPending, skipPlanApproval, metadata } = args;
-  const { wctx, planner } = opts;
-  const { projectDir, sessionId, callbacks } = wctx;
-  const signal = wctx.signal;
-  let state = args.state;
-
-  if (rewindPending.comment) {
-    appendMessage(
-      { projectDir, sessionId },
-      { role: 'user', phase: 'planning', text: rewindPending.comment },
-    );
-    const current = readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
+  const target = rewindPending.target;
+  const comment = rewindPending.comment;
+  if (comment) {
+    if (opts.beforeFirstCall && !(await opts.beforeFirstCall())) {
+      return { disposition: 'terminal', state, outcome: 'cancelled' };
+    }
+    appendMessage(ref, {
+      role: 'user',
+      phase: target === 'spec' ? 'specifying' : 'planning',
+      text: comment,
+    });
+    const current = readSpecFileOrEmpty(ref, target === 'spec' ? SPEC_FILE : PLAN_FILE);
     const queued = readQueueForPrompt({ projectDir, sessionId, state });
     try {
       state = queued.state;
@@ -251,9 +114,9 @@ export async function handleRewindPlan(args: {
         wctx,
         planner,
         state,
-        target: 'plan',
+        target,
         current,
-        comment: rewindPending.comment,
+        comment,
         metadata,
         queuedMessages: queued.messages,
       });
@@ -265,38 +128,25 @@ export async function handleRewindPlan(args: {
         bus: wctx.bus,
       }).state;
       wctx.bus.publish({
-        type: 'plan_regenerated',
+        type: target === 'spec' ? 'spec_regenerated' : 'plan_regenerated',
         ts: Date.now(),
         phase: state.phase,
-        comment: rewindPending.comment,
+        comment,
       });
     } catch (err) {
       return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
     } finally {
-      releaseQueueMessagesForPrompt({ projectDir, sessionId }, queued.messages);
+      releaseQueueMessagesForPrompt(ref, queued.messages);
     }
   }
 
-  const taskRegen = await regenerateTasks({
-    projectDir,
-    sessionId,
-    planner,
-    callbacks,
-    bus: wctx.bus,
+  invalidateFrom(ref, target);
+  return runPlanningSteps({
+    ...opts,
     state,
-    metadata,
-    signal,
-    sinks: wctx.sinks,
-  });
-  state = taskRegen.state;
-  const rewindTasks: Task[] = taskRegen.tasks;
-
-  return finishPlanAndBriefsApproval({
-    wctx,
-    planner,
-    state,
-    tasks: rewindTasks,
-    skipPlanApproval,
-    metadata,
+    startAt: target,
+    // A plan rewind never re-opens the spec gate: the spec it was approved
+    // against has not changed.
+    ...(target === 'plan' ? { passedGates: ['spec' as const] } : {}),
   });
 }

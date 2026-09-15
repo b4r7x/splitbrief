@@ -58,7 +58,7 @@ Store modules may import engine types with `import type` (`EngineEvent`, detecti
 
 Cancellation has the same shape in every path. UI cancel first records a local cancellation intent so the screen stops spinning immediately, then the engine publishes `workflow_cancelled` with a reason such as `user_cancelled`. Both paths terminalize running operations with `endedAt` and `durationMs`; late `runner_call_error(status: aborted)` or final cost events are accepted idempotently.
 
-When the workflow needs a human decision -- approve a spec, answer a question, confirm a cost -- it uses a separate mechanism: the engine awaits a promise, and the UI resolves it when the user acts. These blocking callbacks are distinct from the fire-and-forget event path. The approval stores (`src/stores/approval-prompt/`, `src/stores/cost-approval/`) and the `useInputMode` hook manage this.
+When the workflow needs a human decision -- approve a spec, answer a question, confirm a write -- it uses a separate mechanism: the engine awaits a promise, and the UI resolves it when the user acts. These blocking callbacks are distinct from the fire-and-forget event path. The approval store (`src/stores/approval-prompt/`) and the `useInputMode` hook manage this.
 
 ---
 
@@ -76,12 +76,13 @@ Runtime state of the active workflow run.
 - **conversationScrollStore** -- scroll offset for the conversation view.
 - **stopStore** -- the run's stop state: the `intent` the operator chose (`none` / `stop-now` / `pause-after-brief` / `end-run` / `quit`), the `phase` it has reached (`idle` → `requested` → `terminating` → `forcing` → `parked` / `ended`), when it was asked for, and the parked brief with the resolver that resumes it. There is no armed-intent ladder: one press opens the sheet, one row applies.
 - **streamingOutputStore** -- live implementer output lines.
+- **transcriptTailStore** -- the rows and scroll units the blocks after the run's own events add, so the keyboard scrolls the document the screen painted rather than stopping at the last event.
 - **reviewStore** -- which file is under review, the scroll offset, and the rendered Markdown row height.
 - **attachmentsStore** -- files attached to the next user message.
 
 ### Navigation -- `src/stores/navigation/`
 
-- **routerStore** -- current screen (`home` | `workflow` | `summary` | `setup`) plus screen-specific data (feature name, resume state, summary, summary status). Validates transitions against a fixed map. Session selection routes resumable interrupted sessions to `workflow`; sessions with a persisted summary open `summary` with their terminal status.
+- **routerStore** -- current screen (`home` | `workflow` | `setup`) plus screen-specific data. Validates transitions against a fixed map. The `workflow` route carries the run itself: a `RunRecord` (`src/core/sessions/run-record.ts`) and whether a process in this session is driving it (`execution: { kind: 'local'; prepared; steer? } | { kind: 'at-rest' }`). Every session selection lands there — `handleSessionSelect` reads the record, replays the history and navigates at rest, whatever the run did. The record is complete before the route changes, so the screen does no disk IO; `routerStore.updateRun({ run, execution? })` re-reads it in place when the run loop returns or a command changes its checkpoint.
 
 ### UI -- `src/stores/ui/`
 
@@ -108,7 +109,7 @@ Runtime state of the active workflow run.
 
 - **modelCacheStore** -- provider model lists with TTL-based expiry.
 
-### Approval -- `src/stores/approval-prompt/`, `src/stores/cost-approval/`
+### Approval -- `src/stores/approval-prompt/`
 
 Promise-based gates. `openApprovalPrompt(request)` returns a promise. The store holds the pending request and its `resolve` function. The UI renders the prompt, the user acts, the component calls `closeApprovalPrompt(response)`, and the promise resolves. The engine continues.
 
@@ -136,7 +137,6 @@ Use `store.use(selector)` when reading one store. Use `useStores()` when reading
 |---|---|---|
 | `home` | `HomeScreen` | `src/app/screens/home.tsx` |
 | `workflow` | `WorkflowScreen` | `src/app/screens/workflow.tsx` |
-| `summary` | `SummaryScreen` | `src/app/screens/summary.tsx` |
 | `setup` | `SetupScreen` | `src/app/screens/setup.tsx` |
 
 Features are vertical slices. Each `src/features/<name>/` owns its screen (or overlay/picker), local components in `components/`, local hooks in `hooks/`. Features never import from each other. Shared code lives in `src/components/`, `src/hooks/`, `src/utils/`.
@@ -151,7 +151,7 @@ The main screen during execution. Key hooks:
 - **`useInputMode()`** -- manages three input modes: `normal` (typing), `review` (approve/reject), `question` (answering planner). `setReviewMode()` and `setQuestionMode()` return promises -- the engine blocks until the user acts, then the promise resolves.
 - **`useWorkflowKeys()`** -- workflow-local keyboard shortcuts: Ctrl-D toggles the latest diff locally, plus review/conversation arrow navigation. Stop now (`ctrl+c`) and the `esc` that opens the stop sheet live in `src/app/keys.ts`.
 
-Key components: `Header` (phase rail), `ConversationFlow` (row-based event stream), `Sidebar`, `Composer`, `InputFooter` (byline), `ApprovalPrompt`, `CostApprovalPromptConnected`, `QuestionPrompt`.
+Key components: `Header` (phase rail), `ConversationFlow` (row-based event stream), `Sidebar`, `Composer`, `InputFooter` (byline), `ApprovalPrompt`, `QuestionPrompt`.
 
 The **Build progress block** is fixed chrome under the header rail (`BuildProgressBlock`, `src/features/workflow/components/build-progress.tsx`, rendered by the workflow page inside `ScreenShell`'s header). `deriveBuildProgress` (`src/features/workflow/display/build-progress.ts`) reads the task, token, lifecycle and operations stores and returns five facts — counts (`3/7 briefs passed`, plus `escalated` / `failed` only when non-zero), `attempt N of M`, the ETA (`ETA ~4m`, or `ETA unavailable: no brief finished yet` — never invented before a brief has finished), the activity line (the seat and what it is doing, or the gate command it is inside, with output tokens), and freshness (`last event 3s ago`, or `No update from <tool> for 74s` past `UI_IDLE_WARN_MS`). The same five facts appear at every width, regrouped rather than dropped: two rows at 120 columns and wider, four at 80, five below. The only fraction in the block is passed briefs.
 
@@ -177,7 +177,7 @@ Transcript rows share one column model. Columns 0–1 are the glyph slot (`❯` 
 
 Activity batches always render a header (`Plan activity  4 updates  [Codex]`), even for a single event, so the header does not flicker in as a batch grows. Ledger labels render as Capitalized display strings via `display/activity-label-display.ts` (`Run`, `Read`, `Edit`, `Search`, `Call`, `List`, …); stage ids and hints stay lowercase (`spec › plan`, `+3 more · ctrl+a`, `git:none`). Shell commands from CLI runners pass through the conservative prettifier in `display/shell-activity-pretty.ts`: `cat` / `sed -n` / `head` / `tail` become `Read`, `rg` / `grep` become `Search`, `ls` becomes `List`, and anything compound (`&&`, `|`, `;`, redirects) stays a raw `Run`.
 
-Live status renders in the byline under the composer, not as a transcript row. `deriveLiveStatus()` in `display/live-activity.ts` decides whether a stage is live; `InputFooter` renders `⠼ Researching… 2:24 · git:none` with spinner, verb, and elapsed in the active stage's role hue and the rest dim. While a prompt is open (question, review, approval, cost) the byline shows `○ waiting for you · <stage> · …` instead. The byline carries only derived status, never model answer text or raw stdout. Spinner frames are braille on every unicode-tier terminal and `|/-\` on the ascii tier (`src/lib/glyphs.ts`).
+Live status renders in the byline under the composer, not as a transcript row. `deriveLiveStatus()` in `display/live-activity.ts` decides whether a stage is live; `InputFooter` renders `⠼ Researching… 2:24 · git:none` with spinner, verb, and elapsed in the active stage's role hue and the rest dim. While a prompt is open (question, review, approval) the byline shows `○ waiting for you · <stage> · …` instead. The byline carries only derived status, never model answer text or raw stdout. Spinner frames are braille on every unicode-tier terminal and `|/-\` on the ascii tier (`src/lib/glyphs.ts`).
 
 Scroll banners ride the chrome dividers instead of consuming transcript rows: `N lines above` on the header divider, `N lines below · ↓ N new events` on the footer divider. `flow.tsx` reports the labels through `onScrollAbove` / `onScrollBelow`, and `layout/scroll-window.ts` gives the window the full viewport height. Question-mode prompts (interrupt continuation, clarify questions, task review, edit conflicts) render as a bordered panel above the composer (`components/question-prompt.tsx`, budgeted by `getQuestionPromptRows` in `prompt-rows/question.ts`) with the transcript still visible; only review mode swaps the body.
 
@@ -224,7 +224,7 @@ introduce a second breakpoint or hidden bottom row.
 
 `overlayStore` manages a stack. Opening an overlay pushes the current one onto the stack. `Esc` pops. When an overlay is active, `Layout` (`src/app/layout.tsx`) hides the screen and renders the overlay in its place.
 
-Overlay types: `help`, `command-palette`, `skills`, `settings`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `stop-sheet`, `sessions`, `editor`, `cost-drilldown` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`, which spreads `SEAT_PICKER_OVERLAYS` (one picker overlay per seat picker role). There is no `crew` overlay: crew is the first section of `settings`.
+Overlay types: `help`, `command-palette`, `skills`, `settings`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `stop-sheet`, `sessions`, `editor` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`, which spreads `SEAT_PICKER_OVERLAYS` (one picker overlay per seat picker role). There is no `crew` overlay: crew is the first section of `settings`.
 
 The `stop-sheet` overlay (`src/app/overlays/stop.tsx`, panel in `src/features/workflow/stop/sheet.tsx`) is how a run is stopped: `esc` on an empty composer opens it while the run is still stoppable, its rows come from `stopSheetRows` (`stop/options.ts`), and choosing one writes the intent into `stopStore`. It carries no letter accelerators — `↑↓ · ⏎ · esc` — and its footer states the rule for every row: *No option reverts files. Your draft is preserved.*
 
@@ -251,10 +251,12 @@ The first-run setup screen (`src/app/screens/setup.tsx`) composes the same featu
 | density | share | min | max | who |
 |---|---|---|---|---|
 | `compact` | 0.60 | 56 | 72 | start preparation, the picker's "initializing tools" panel |
-| `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, skills, sessions, the summary screen, the picker's sub-steps |
-| `wide` | 0.90 | 76 | 140 | the seat picker, setup, the cost drilldown, the home body and composer (capped locally at 108) |
+| `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, skills, sessions, the picker's sub-steps |
+| `wide` | 0.90 | 76 | 140 | the seat picker, setup, the home body and composer (capped locally at 108) |
 
 `width = min(cols - 4, max(min, floor(cols * share)), max)`; the frame costs 6 columns and 4 rows, and `overlayGutterRows` gives back one row of vertical air per 6 rows above the 18-row floor, capped at 2 (the first at 24 rows, the second at 30). Every panel passes a `density` to `OverlayPanel`; `maxWidth` no longer exists, so nothing renders byte-identical at 80 and 120 columns.
+
+The workflow screen takes no density, live or at rest: its rail, dividers, transcript (the closed run's ledger included) and composer all span `getChromeContentWidth(cols)`, and nothing on it is centred.
 
 ### Picker view state
 
@@ -350,7 +352,6 @@ interface TokensState {
   localCount: number;       // tasks completed by primary implementer
   escalatedCount: number;   // tasks completed via escalation
   completedTaskCount: number;
-  prediction: CostPrediction | null;       // deterministic prompt-input estimate
   pricingContext: { plannerTool: string; implementerTool: string;
     plannerModel?: string; implementerModel?: string } | null;
 }
@@ -393,9 +394,7 @@ interface ComposerDraftRequest {
 // src/stores/navigation/router.ts
 type RouteData =
   | { screen: 'home' }
-  | { screen: 'workflow'; execution: WorkflowExecution }
-  | { screen: 'summary'; summary: Summary; sessionId?: string;
-      status: Session['status'] }
+  | { screen: 'workflow'; run: RunRecord; execution: WorkflowExecution }
   | { screen: 'setup'; onComplete?: 'home' | 'workflow'; feature?: string };
 ```
 

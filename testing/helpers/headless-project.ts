@@ -67,38 +67,6 @@ export function writeHeadlessConfigYaml(projectDir: string, yamlLines: string[])
   chmodSync(filePath, 0o600);
 }
 
-export function writeBudgetHeadlessConfigYaml(projectDir: string, pauseThreshold = 0.85): void {
-  writeHeadlessConfigYaml(projectDir, [
-    'version: 3',
-    'planner:',
-    '  kind: api',
-    '  provider: custom-planner-api',
-    '  service: custom-planner-api',
-    '  offering: payg',
-    '  model: claude-sonnet-4-6',
-    '  api_base: https://api.planner.example/v1',
-    '  api_key: test-key',
-    'implementer:',
-    '  kind: api',
-    '  provider: custom-planner-api',
-    '  service: custom-planner-api',
-    '  offering: payg',
-    '  model: claude-sonnet-4-6',
-    '  api_base: https://api.planner.example/v1',
-    '  api_key: test-key',
-    'validation:',
-    '  typecheck: false',
-    '  lint: false',
-    '  test: false',
-    '  test_command: "noop"',
-    'workflow:',
-    '  mode: quick',
-    '  approve: none',
-    '  max_budget: 20',
-    `  budget_pause_threshold: ${pauseThreshold}`,
-  ]);
-}
-
 export function writeMinimalHeadlessConfigYaml(
   projectDir: string,
   opts?: { reviewerTool: string },
@@ -132,11 +100,5 @@ export function writeMinimalHeadlessConfigYaml(
 export function createHeadlessGitProject(tempPrefix: string): string {
   const projectDir = createTempDir(tempPrefix);
   createTestGitRepo(projectDir);
-  return projectDir;
-}
-
-export function setupBudgetHeadlessProject(pauseThreshold = 0.85): string {
-  const projectDir = createHeadlessGitProject('headless-budget-test');
-  writeBudgetHeadlessConfigYaml(projectDir, pauseThreshold);
   return projectDir;
 }

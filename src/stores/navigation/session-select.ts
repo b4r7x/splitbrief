@@ -1,11 +1,11 @@
 import type { Session } from '../../core/schemas/session.js';
-import type { Summary } from '../../core/schemas/summary.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { OwnedResumeState } from '../../core/state/resume-hydration.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { OverlayType } from '../../core/navigation/types.js';
-import { isResumable } from '../../core/phases.js';
+import type { RunRecord } from '../../core/sessions/run-record.js';
+import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import type {
   PreparationOutcome,
   PreparedExecution,
@@ -38,10 +38,11 @@ interface SessionSelectState {
 const initial: SessionSelectState = { error: null, preparation: { kind: 'idle' } };
 const store = createStore<SessionSelectState>(initial);
 
-type ResumeRequest = Readonly<{
-  sessionId: string;
-  projectDir: string;
+type PreparationRequest = Readonly<{
+  record: RunRecord;
   state: WorkflowState;
+  /** What the operator typed to continue this run; it rides into the first step's own prompt. */
+  steer?: string | undefined;
   deps: SessionSelectDeps;
   returnOverlay: OverlayType;
 }>;
@@ -50,13 +51,13 @@ type ActiveAttempt = Readonly<{
   id: number;
   key: string;
   controller: AbortController;
-  request: ResumeRequest;
+  request: PreparationRequest;
   promise: Promise<void>;
 }>;
 
 let attemptId = 0;
 let activeAttempt: ActiveAttempt | undefined;
-let lastRequest: ResumeRequest | undefined;
+let lastRequest: PreparationRequest | undefined;
 
 function setSelectionError(error: string) {
   store.set((state) => ({ ...state, error }));
@@ -83,6 +84,8 @@ export interface SessionSelectDeps {
     input: Readonly<{ ref: SessionRef; state: WorkflowState }>,
     signal: AbortSignal,
   ) => Promise<PreparationOutcome>;
+  /** Replays a run's history into the workflow stores; the feature layer owns the replay itself. */
+  hydrateRun: (record: RunRecord) => Promise<void>;
   cancelPendingApproval?: (() => void) | undefined;
 }
 
@@ -126,8 +129,31 @@ function finishAttempt(id: number): void {
   if (activeAttempt?.id === id) activeAttempt = undefined;
 }
 
-function beginResume(request: ResumeRequest): Promise<void> {
-  const key = `${request.projectDir}\0${request.sessionId}`;
+/**
+ * Prepare this run's tools and hand it to the screen it is already on. The workflow screen is the
+ * run's home whether it is moving or not, so a continuation flips the execution in place: nothing
+ * navigates, and the transcript the replay put on screen stays where it is.
+ */
+export function continueRunInPlace(
+  input: Readonly<{
+    record: RunRecord;
+    state: WorkflowState;
+    steer?: string | undefined;
+    deps: SessionSelectDeps;
+  }>,
+): Promise<void> {
+  return beginPreparation({
+    record: input.record,
+    state: input.state,
+    ...(input.steer !== undefined && { steer: input.steer }),
+    deps: input.deps,
+    returnOverlay: overlayStore.get().active,
+  });
+}
+
+function beginPreparation(request: PreparationRequest): Promise<void> {
+  const { projectDir, sessionId } = request.record.ref;
+  const key = `${projectDir}\0${sessionId}`;
   if (activeAttempt?.key === key) return activeAttempt.promise;
 
   activeAttempt?.controller.abort();
@@ -139,7 +165,7 @@ function beginResume(request: ResumeRequest): Promise<void> {
   dismissOverlays();
   store.set({ error: null, preparation: { kind: 'preparing' } });
 
-  const ref = { projectDir: request.projectDir, sessionId: request.sessionId };
+  const ref = { projectDir, sessionId };
   const promise = Promise.resolve()
     .then(() => request.deps.prepareResume({ ref, state: request.state }, controller.signal))
     .then(
@@ -151,9 +177,13 @@ function beginResume(request: ResumeRequest): Promise<void> {
 
         switch (outcome.kind) {
           case 'prepared':
-            routerStore.navigate({
-              to: 'workflow',
-              execution: { kind: 'local', prepared: outcome.execution },
+            routerStore.updateRun({
+              run: request.record,
+              execution: {
+                kind: 'local',
+                prepared: outcome.execution,
+                ...(request.steer !== undefined && { steer: request.steer }),
+              },
             });
             lastRequest = undefined;
             store.set({ error: null, preparation: { kind: 'idle' } });
@@ -195,7 +225,7 @@ function beginResume(request: ResumeRequest): Promise<void> {
 export function retrySessionPreparation(): Promise<void> {
   if (activeAttempt) return activeAttempt.promise;
   if (!lastRequest) return Promise.resolve();
-  return beginResume(lastRequest);
+  return beginPreparation(lastRequest);
 }
 
 export function cancelSessionPreparation(options: { restoreOrigin?: boolean } = {}): void {
@@ -217,79 +247,26 @@ function resetSessionSelection(): void {
   store.reset();
 }
 
-function openSummary(session: Session, summary: Summary) {
-  clearSelectionError();
-  overlayStore.close();
-  routerStore.navigate({
-    to: 'summary',
-    summary,
-    sessionId: session.id,
-    status: session.status,
-  });
-}
-
+/**
+ * Opening a run is one thing whatever the run did: read its record, replay its history, and show it
+ * on the workflow screen at rest. Only a run this process is already driving refuses — two local
+ * runs cannot share one screen.
+ */
 export async function handleSessionSelect(
   session: Session,
   projectDir: string,
   deps: SessionSelectDeps,
 ): Promise<void> {
   const feature = sanitizeTerminalDisplayText(session.feature);
-  if (session.status === 'interrupted') {
-    let hydration: OwnedResumeState;
-    let resumeError: string | null = null;
-    try {
-      hydration = deps.loadResumeState({ projectDir, sessionId: session.id });
-    } catch (err) {
-      hydration = { kind: 'missing' };
-      resumeError = `Cannot resume "${feature}": ${toErrorMessage(err)}`;
-    }
-
-    const resumeState = hydration.kind === 'loaded' ? hydration.state : null;
-    if (resumeState && isResumable(resumeState)) {
-      const route = routerStore.get();
-      if (route.screen === 'workflow' && route.execution.kind === 'local') {
-        setSelectionError(
-          `Cannot resume "${feature}": finish or cancel the current local workflow first.`,
-        );
-        return;
-      }
-      return beginResume({
-        sessionId: session.id,
-        projectDir,
-        state: resumeState,
-        deps,
-        returnOverlay: overlayStore.get().active,
-      });
-    }
-
-    if (session.summary) {
-      openSummary(session, session.summary);
-      return;
-    }
-
-    if (resumeError) {
-      setSelectionError(resumeError);
-      return;
-    }
-
-    if (hydration.kind === 'invalid') {
-      setSelectionError(`Cannot resume "${feature}": ${hydration.message}`);
-      return;
-    }
-
-    if (!resumeState) {
-      setSelectionError('Cannot resume: saved workflow state is missing or invalid');
-      return;
-    }
-
-    setSelectionError(
-      `Cannot resume "${feature}": interrupted before it made progress — start it again.`,
-    );
+  const route = routerStore.get();
+  if (route.screen === 'workflow' && route.execution.kind === 'local') {
+    setSelectionError(`Cannot open "${feature}": stop the run on screen first.`);
     return;
   }
-  if (session.summary) {
-    openSummary(session, session.summary);
-    return;
-  }
-  setSelectionError(`Session "${feature}" failed without a summary to display`);
+
+  const record = readRunRecord({ projectDir, sessionId: session.id });
+  clearSelectionError();
+  dismissOverlays();
+  await deps.hydrateRun(record);
+  routerStore.navigate({ to: 'workflow', run: record, execution: { kind: 'at-rest' } });
 }

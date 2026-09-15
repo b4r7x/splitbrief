@@ -118,7 +118,13 @@ export function createClaudeCodePlanner(opts: {
             projectDir,
             sessionId: resumeId ?? null,
             onOutput: attemptCallbacks.onOutput,
-            onSessionId: attemptCallbacks.onSessionId,
+            // The native id is captured as it streams, not after the call returns:
+            // the next phase resumes the same conversation even when this one is
+            // interrupted, and a run cut mid-call still has a thread to pick up.
+            onSessionId: (id: string) => {
+              if (resumeId === undefined || id === resumeId) session.capture(id);
+              attemptCallbacks.onSessionId?.(id);
+            },
             onQuestion: attemptCallbacks.onQuestion,
             onCallEvent: attemptCallbacks.onCallEvent,
             callContext: createSessionAttemptCallContext(callContext, attempt),
@@ -150,17 +156,7 @@ export function createClaudeCodePlanner(opts: {
     backendKind: 'cli',
 
     async invokePlan({ prompt, projectDir, callbacks, callContext, images, signal }) {
-      const result = await invokeWithSessionFallback(
-        prompt,
-        projectDir,
-        callbacks,
-        callContext,
-        images,
-        signal,
-      );
-      const nextSessionId = result.sessionId ?? result.nativeSessionId;
-      session.capture(nextSessionId);
-      return result;
+      return invokeWithSessionFallback(prompt, projectDir, callbacks, callContext, images, signal);
     },
 
     async invokeEscalate({

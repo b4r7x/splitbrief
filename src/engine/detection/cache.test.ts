@@ -218,7 +218,6 @@ describe('detection cache', () => {
     const raw = await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8');
     expect(raw).not.toContain('sk-credential-shaped-model');
     expect(raw).not.toContain('model id with spaces');
-    expect(raw).toContain('pricingInput');
     expect(raw).toContain('DeepSeek Chat');
     expect(JSON.parse(raw).cliCatalogs[0]).not.toHaveProperty('role');
 
@@ -232,8 +231,6 @@ describe('detection cache', () => {
             {
               id: 'deepseek/deepseek-chat',
               contextLength: 131_072,
-              pricingInput: 3,
-              pricingOutput: 12,
               nativeHidden: false,
               displayName: 'DeepSeek Chat',
             },

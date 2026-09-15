@@ -8,7 +8,7 @@ import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import { glyph } from '../../lib/glyphs.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { getTheme } from '../../components/theme.js';
 import { ELLIPSIS } from '../../utils/display-text.js';
 import type { ProvenanceWord } from '../../core/providers/provenance.js';

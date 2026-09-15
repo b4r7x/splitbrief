@@ -104,15 +104,18 @@ export const RECOVERY_REASONS = [
   'context-overflow',
   'user-edit-conflict',
   'approval-promotion-conflict',
-  'budget-paused',
-  'budget-exceeded',
   'dependency-blocked',
   'scope-violation',
   'implementer-recipe-invalid',
-  'implementer-timeout-repeated',
+  'runner-timeout-repeated',
   'review-failed',
   'approval-denied',
   'snapshot-failed',
+  'planner-call-failed',
+  'planner-returned-no-briefs',
+  'constitution-check-failed',
+  'brief-review-no-progress',
+  'brief-quality-unrepaired',
 ] as const;
 export const RecoveryReasonSchema = z.enum(RECOVERY_REASONS);
 export type RecoveryReason = z.infer<typeof RecoveryReasonSchema>;
@@ -122,10 +125,12 @@ export const RECOVERY_ACTIONS = [
   'route-bigger-worker',
   'switch-seat',
   'planner-split-rebase',
+  'revise',
+  'revise-spec',
   'continue',
   'skip-current-task',
   'pause-run',
-  'abort-workflow',
+  'end-run',
 ] as const;
 export const RecoveryActionSchema = z.enum(RECOVERY_ACTIONS);
 export type RecoveryAction = z.infer<typeof RecoveryActionSchema>;
@@ -134,10 +139,12 @@ export const PROMPTABLE_RECOVERY_ACTIONS: RecoveryAction[] = [
   'retry-same-worker',
   'route-bigger-worker',
   'switch-seat',
+  'revise',
+  'revise-spec',
   'continue',
   'skip-current-task',
   'pause-run',
-  'abort-workflow',
+  'end-run',
 ];
 
 const RECOVERY_STATUSES = ['awaiting-user', 'paused', 'applying'] as const;

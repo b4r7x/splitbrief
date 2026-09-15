@@ -28,7 +28,6 @@ export function formatTaskStartedValue(
     parts.push(`code ${event.currentCodeContextMode}`);
   }
   if (event.routingReason) parts.push(`why ${event.routingReason}`);
-  else if (event.costPosture) parts.push(`cost ${event.costPosture}`);
   return parts.join(' · ');
 }
 

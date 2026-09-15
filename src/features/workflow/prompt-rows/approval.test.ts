@@ -25,7 +25,14 @@ describe('reviewDocumentOptions', () => {
     const rows = reviewDocumentOptions('plan');
 
     expect(rows.map((row) => row.key)).toEqual(['y', 'c', 'e', 'q']);
-    expect(rows.map((row) => row.command)).toEqual(['approve', 'comment', 'edit-file', 'reject']);
+    expect(rows.map((row) => row.command)).toEqual(['approve', 'comment', 'edit-file', 'end-run']);
+  });
+
+  it('names what ending the run does instead of calling it a rejection', () => {
+    const labels = reviewDocumentOptions('briefs').map((row) => row.label);
+
+    expect(labels).toContain('End run (close this run; keep changes)');
+    expect(labels.join(' ')).not.toMatch(/reject/i);
   });
 });
 

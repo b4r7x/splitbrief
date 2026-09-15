@@ -12,7 +12,7 @@ Type `/` in the TUI to open the command picker. Dispatch inside `src/core/runtim
 2. If no exact match, a removed name gets a pointer to its replacement (`removedCommandPointer`, `src/core/runtime/commands/lookup.ts`) instead of `Unknown command`.
 3. Otherwise `suggestRuntimeCommand` in the same module may suggest a close command in the error message — it does not auto-execute. Example: `/mde` returns `Unknown command: /mde. Did you mean /mode?` without running `/mode`.
 
-Each command declares `validScreens`. The screens are `home`, `workflow`, `summary`, and `setup` (`src/core/navigation/types.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/core/navigation/types.ts`) is shorthand for "available everywhere".
+Each command declares `validScreens`. The screens are `home`, `workflow`, and `setup` (`src/core/navigation/types.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/core/navigation/types.ts`) is shorthand for "available everywhere".
 
 Each command may also declare a `guard`, which returns one true sentence when the command cannot run right now (wrong phase, no vision on the PLAN seat) and `undefined` otherwise. The command palette and the composer `/` picker hide guarded-out rows; help lists every command valid for the screen. The rewind predicates are the single source of truth for when a rewind can run:
 
@@ -22,7 +22,7 @@ Each command may also declare a `guard`, which returns one true sentence when th
 
 Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, assembled by `createCommandContext` in `src/core/runtime/commands/context-factory.ts` — every config write goes through its `saveConfig` path; the TUI (`src/app/command-context.ts`) only supplies the callbacks. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
-The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 26 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
+The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 25 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
 
 ---
 
@@ -65,11 +65,11 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 
 ### `/sessions`
 
-- **Purpose**: Browse summary-backed past sessions. Opens the sessions overlay backed by `.splitbrief/sessions/` so you can resume interrupted runs or inspect completed runs.
+- **Purpose**: Browse past runs. Opens the sessions overlay backed by `.splitbrief/sessions/`; `⏎` opens the run on the workflow screen at rest, with its history replayed, whatever the run did — an open run is continued from there, a closed one is read.
 - **Screens**: all.
 - **Args**: none.
 - **Example**: `/sessions`
-- **Behavior**: Opens the `sessions` overlay. Selecting an interrupted session loads workflow state directly; selecting a completed session opens its summary. Failed sessions without summaries show feedback instead.
+- **Behavior**: Opens the `sessions` overlay. Selecting a run reads its record, replays its `session.jsonl` into the workflow stores and opens the workflow screen at rest; the only refusal is a local run this process is already driving.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens overlay via `overlayStore.open`.
 - **See also**: `/home`, `/settings`.
 
@@ -80,14 +80,14 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Args**: none.
 - **Shortcut**: `Ctrl+,` (`src/core/keybindings/registry.ts`).
 - **Example**: `/settings`
-- **Behavior**: Opens the `settings` overlay. **Crew is the first section**: the three seats (`PLAN`, `BUILD`, `REVIEW`) live there as read-only rows, not in separate per-seat sections; `Enter` on a seat opens that seat's picker, which is where its tool, model and effort are chosen. Everything below it is the ordinary settings list. Mutations are persisted to project config on save.
+- **Behavior**: Opens the `settings` overlay. **Crew is the first section**: the three seats (`PLAN`, `BUILD`, `REVIEW`) live there as read-only rows, not in separate per-seat sections; `Enter` on a seat opens that seat's picker, which is where its tool, model and effort are chosen. Everything below it is the ordinary settings list, grouped Crew → Tuning → Workflow → Validation; the Workflow group carries Mode, Spec/plan gates, Max retries, Compaction format, **Show spend** (`workflow.showSpend` — the spend figure in the sidebar footer and a closed run's `Cost` row, on by default), Commit strategy and Create branch. Mutations are persisted to project config on save.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens the overlay via `overlayStore.open`; a focus of `seat:<id>` or `filter:<text>` is parsed by `parseSettingsFocus` (`src/features/settings/focus.ts`).
 - **See also**: `/crew`, `/mode`, `/skills`.
 
 ### `/home`
 
-- **Purpose**: Navigate back to the home screen from the workflow or summary screen. Leaving an active workflow unmounts the workflow UI and aborts the active run.
-- **Screens**: `workflow`, `summary`.
+- **Purpose**: Navigate back to the home screen from the workflow screen. Leaving an active workflow unmounts the workflow UI and aborts the active run.
+- **Screens**: `workflow`.
 - **Args**: none.
 - **Example**: `/home`
 - **Behavior**: Calls `routerStore.navigate({ to: 'home' })`. The home screen shows the prompt input and recent sessions.
@@ -114,7 +114,7 @@ Commands that decide who does the work and how: the three seats, the workflow mo
 ### `/mode [name]`
 
 - **Purpose**: Switch workflow mode at runtime. With no argument, refills the composer with `/mode ` so the three modes appear as completion rows, each with its planning-call and gate count and `current` on the active one. With a valid mode name, persists the selection so subsequent runs inherit it.
-- **Screens**: all (`home`, `workflow`, `summary`, `setup`).
+- **Screens**: all (`home`, `workflow`, `setup`).
 - **Args**: optional. Valid values: `quick`, `standard`, `speckit` (the `WORKFLOW_MODES` tuple in `src/core/schemas/enums.ts`). The retired `instant` is still accepted and sets `quick`. Invalid values print `"Invalid mode: <x>. Valid modes: quick, standard, speckit"`.
 - **Example**: `/mode`, `/mode speckit`, `/mode quick`
 - **Behavior**: Successful save prints `"Workflow mode set to: <mode>"`, or `"instant was merged into quick; workflow mode set to: quick"` when the retired name was used. Failure to save (typically a malformed config file) surfaces the underlying error on the feedback line. Mode semantics live in `docs/WORKFLOW.md` §3.
@@ -182,23 +182,23 @@ Commands that mutate the active run: rewind to an earlier phase, re-run a task, 
 
 ### `/resume`
 
-- **Purpose**: Continue a run that the stop sheet parked — a `Stop now` pause at a brief, or a `Pause after this brief` pause at the boundary.
+- **Purpose**: Continue a run — one parked by the stop sheet (`Stop now` at a brief, `Pause after this brief` at the boundary) or one left at rest on disk.
 - **Screens**: `workflow`.
 - **Phase guard**: `isLivePhase(phase)`; elsewhere the feedback line reads `"No run to resume in this phase"`.
 - **Args**: none.
 - **Example**: `/resume`
-- **Behavior**: Calls `ctx.resumeRun()`. A run parked mid-brief re-enters that brief; a run parked at a boundary starts the next one. With nothing parked the feedback line reads `"Nothing to resume."`. Typing instructions and pressing Enter at a mid-brief park resumes with that text as steering; a blank Enter never resumes.
+- **Behavior**: Calls `ctx.resumeRun()`, which reaches `continueRun` (`src/engine/orchestrator/run/continue.ts`) — the one path for both cases. A park this process is holding settles in place: a brief parked mid-call re-enters that brief, a boundary park starts the next one. A run at rest is re-entered on its saved state. With nothing parked the feedback line reads `"Nothing to resume."`, and a closed run is refused with its reason rather than restarted. Typing instructions and pressing Enter continues with that text as the step's steer, composed into the step's own prompt rather than replacing it; a blank Enter never resumes a mid-brief park.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; the park itself is `stopStore` (`src/stores/workflow/stop.ts`).
 - **See also**: `/end`, `/quit`.
 
 ### `/end`
 
-- **Purpose**: Stop the run and mark it cancelled, keeping every change on disk.
+- **Purpose**: Close the run, keeping every change on disk.
 - **Screens**: `workflow`.
 - **Phase guard**: `isLivePhase(phase)`; elsewhere the feedback line reads `"No run to end in this phase"`.
 - **Args**: none.
 - **Example**: `/end`
-- **Behavior**: Calls `ctx.endRun()` — the same transition as the sheet's `End run` row. Execution stops as it does for Stop now, the session is persisted with status `cancelled`, and the byline reads `Cancelled by you at T<id> · Changes kept` with the hint `esc home · /quit`. With no active run the feedback line reads `"No active run to end."`. Nothing is reverted; git is still the layer that reverses a run.
+- **Behavior**: Calls `ctx.endRun()` — the same transition as the sheet's `End run` row. Execution stops as it does for Stop now, the state records `closed: { at, as: 'ended' }` so the run lists as `ended` and nothing resumes it, and the byline reads `Cancelled by you at T<id> · Changes kept` with the hint `esc home · /quit`. With no active run the feedback line reads `"No active run to end."`. Nothing is reverted; git is still the layer that reverses a run.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`.
 - **See also**: `/resume`, `/run`.
 
@@ -215,7 +215,7 @@ Commands that mutate the active run: rewind to an earlier phase, re-run a task, 
 ### `/approval [list|clear]`
 
 - **Purpose**: Inspect or revoke sticky approval grants — the persistent "always approve this file-write pattern" decisions you have made during prior runs (e.g. always allow writes under `src/foo/**`).
-- **Screens**: `workflow`, `summary`.
+- **Screens**: `workflow` (live or at rest).
 - **Args**: optional. `list` (default) shows the current grants; `clear` revokes all grants (the `APPROVAL_ACTIONS` tuple in `src/core/runtime/commands/types.ts`).
 - **Example**: `/approval`, `/approval list`, `/approval clear`
 - **Behavior**:
@@ -228,7 +228,7 @@ Commands that mutate the active run: rewind to an earlier phase, re-run a task, 
 ### `/run accept|reject`
 
 - **Purpose**: Settle what this run wrote. Accepting writes an accepted run snapshot so a later rejection refuses to roll back past it. Rejecting discards what the run wrote by restoring the baseline the run started from. Both halves are backed by real snapshots: a run captures its baseline once, before the first task runs, and records exactly one run snapshot in the run ledger (`src/engine/snapshots/run/ledger.ts`) after the task loop completes and before the final review reads the diff (`ensureRunBaselineSnapshot` / `recordRunSnapshotForRun`, `src/engine/orchestrator/run/snapshots.ts`). A run that stopped before the final review records nothing, so a rejection then reports that there is no run snapshot to reject.
-- **Screens**: `workflow`, `summary`.
+- **Screens**: `workflow` (live or at rest).
 - **Args**: required. `accept` or `reject` (the `RUN_ACTIONS` tuple in `src/core/runtime/commands/types.ts`); `reject` additionally requires the literal `confirm`. Missing or unknown actions print `"Usage: /run <accept|reject>"`; `/run reject` without confirmation prints `"Usage: /run reject confirm"`.
 - **Example**: `/run accept`, `/run reject confirm`
 - **Behavior**: `accept` prints `"Run accepted at snapshot <id>"` and seals the ledger, so a later `reject confirm` is refused. `reject confirm` is refused while work is active (`"Run rejection is unavailable while work is active."`), when the run recorded no snapshot (`"No run snapshot to reject."`), and when the run was already accepted. Otherwise files the run edited are restored from the baseline and files the run created are deleted — each one only if its current hash still matches the recorded run snapshot; user edits made after that snapshot are reported as conflicts and never overwritten, and restored/deleted counts are reported on success.
@@ -290,18 +290,7 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Example**: `/diff`
 - **Behavior**: Prints `"Expanded latest diff"` or `"Collapsed latest diff"`. With no diff to show, the feedback line says why instead. Same phase semantics as the key.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`; toggle wiring in the command context.
-- **See also**: `/activity`, `/cost`.
-
-### `/cost`
-
-- **Purpose**: Open the cost breakdown — the command mirror of `Ctrl+G`.
-- **Screens**: `workflow`.
-- **Args**: none.
-- **Shortcut**: `Ctrl+G` (`src/core/keybindings/registry.ts`).
-- **Example**: `/cost`
-- **Behavior**: Opens the `cost-drilldown` overlay, which breaks the run's spend down by seat and by phase. Same phase semantics as the key.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`; opens overlay via `overlayStore.open`.
-- **See also**: `/copy` (`/copy cost`), `/diff`.
+- **See also**: `/activity`, `/copy` (`/copy cost`).
 
 ---
 
@@ -318,7 +307,7 @@ Commands that move data in or out: clipboard copies and image attachments. `cate
   - `brief` — the focused (or top-of-window) Task Brief's source text.
   - `path` — the focused brief's file path, relative to the project directory.
   - `command` — the configured planner runner command.
-  - `cost` — the current cost summary text.
+  - `cost` — the sidebar's spend figure, or `spend display is off` while the **Show spend** setting is off.
 - **Example**: `/copy`, `/copy brief`, `/copy path`, `/copy cost`
 - **Behavior**: Resolves the raw value (never the sanitized display copy) and writes it to the clipboard. When the target has no value the feedback line reads `"Nothing to copy"`. A confirmed native or tmux copy reads `"Copied (native)"` / `"Copied (tmux-buffer)"`; an OSC-52 escape the terminal may silently drop reads `"Copy escape sent; verify your clipboard (some terminals block it)"`; a failure reads `"Could not copy"`.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/io.ts`; value resolution in `src/features/workflow/copy/resolve.ts`; clipboard delivery in `src/lib/clipboard/clipboard.ts`.
@@ -376,11 +365,11 @@ Most slash commands have no dedicated keybinding — open the command palette wi
 | `Ctrl+,` | Open settings overlay | `src/app/keys.ts` |
 | `Ctrl+Q` | Stop the run safely, save the session, exit | `src/app/keys.ts` |
 | `Ctrl+C` | Stop now (workflow screen) or exit otherwise — one press, always | `src/app/keys.ts` |
-| `Esc` | Open the stop sheet (workflow screen, empty composer); otherwise close the topmost overlay, or navigate home once the workflow is cancelled | `src/app/keys.ts` |
+| `Esc` | Open the stop sheet (workflow screen, empty composer, a run this process is driving); go home on a run at rest; otherwise close the topmost overlay | `src/app/keys.ts` |
 
-`Ctrl+C` is one press with one meaning. Off the workflow screen, and on it once the run is cancelled, it exits immediately. On the workflow screen with a run left to stop it performs **Stop now** (`requestStopNow` in `src/features/workflow/handlers.ts`): the in-flight call aborts along with any retry, escalation or per-task review call, no new brief is scheduled, and the run parks as `Paused at T<id> · Partial changes kept`. There is no armed window and no second press to learn.
+`Ctrl+C` is one press with one meaning. Off the workflow screen, and on a run at rest, it exits immediately. On the workflow screen with a run left to stop it performs **Stop now** (`requestStopNow` in `src/features/workflow/handlers.ts`): the in-flight call aborts along with any retry, escalation or per-task review call, no new brief is scheduled, and the run parks as `Paused at T<id> · Partial changes kept`. There is no armed window and no second press to learn.
 
-`Esc` on the workflow screen opens the modal stop sheet (`src/app/overlays/stop.tsx`) whenever the run can still be stopped — including while a question prompt, a review gate or a validation stage is live, none of which takes the press for itself. The sheet is `Stop options`: `Stop now`, `Pause after this brief` (hidden when no brief is running, `Keep running` once a pause is pending), `End run`, with the footer `No option reverts files. Your draft is preserved.` and the legend `↑↓ · ⏎ · esc`. No letter key is armed, the composer is hidden while it is open, and `esc` closes it with no effect on the run. With text in the composer the press spends neither the draft nor the run: the feedback row reads `clear the draft or ctrl+c to stop now`. Overlays and completion menus still take `esc` first, and a permission prompt keeps its own explicit esc-to-deny.
+`Esc` on the workflow screen opens the modal stop sheet (`src/app/overlays/stop.tsx`) whenever this process is driving a run that can still be stopped — on a run at rest there is no process to stop, so the press goes home — including while a question prompt, a review gate or a validation stage is live, none of which takes the press for itself. The sheet is `Stop options`: `Stop now`, `Pause after this brief` (hidden when no brief is running, `Keep running` once a pause is pending), `End run`, with the footer `No option reverts files. Your draft is preserved.` and the legend `↑↓ · ⏎ · esc`. No letter key is armed, the composer is hidden while it is open, and `esc` closes it with no effect on the run. With text in the composer the press spends neither the draft nor the run: the feedback row reads `clear the draft or ctrl+c to stop now`. Overlays and completion menus still take `esc` first, and a permission prompt keeps its own explicit esc-to-deny.
 
 ### Home screen only
 
@@ -397,9 +386,8 @@ macOS terminals do not always forward physical `PageUp`, `PageDown`, `Home`, or 
 
 | Key | Action | Source |
 |---|---|---|
-| `Ctrl+G` | Open the cost drilldown overlay (any key dismisses it) | `use-keys.ts:118` |
 | `Ctrl+D` | Toggle the most recent diff in the conversation | `keyboard.ts` `handleWorkflowCtrlChords` |
-| `Esc` | Open the stop sheet on an empty composer; navigate home once the workflow has been cancelled | `src/app/keys.ts` |
+| `Esc` | Open the stop sheet on an empty composer while a run is live; go home on a run at rest | `src/app/keys.ts` |
 | `Shift+↑` | Scroll conversation up by one line | `keyboard.ts` `handleConversationScroll` |
 | `Shift+↓` | Scroll conversation down by one line | `keyboard.ts` `handleConversationScroll` |
 | `PageUp` | Scroll conversation up by one page | `keyboard.ts` `handleConversationScroll` |
@@ -485,11 +473,9 @@ The keymap is protocol-free and is the single source of truth in [`src/core/keyb
 
 When the opt-in `$EDITOR` handover is used instead, `VISUAL` takes precedence over `EDITOR` in editor resolution ([`src/features/workflow/editor-command.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/features/workflow/editor-command.ts) `resolveEditorArgv`); this precedence is asserted by [`src/features/workflow/editor-command.test.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/features/workflow/editor-command.test.ts).
 
-### Summary screen
+### A run at rest
 
-| Key | Action | Source |
-|---|---|---|
-| `Enter` | Continue (handled by the summary screen; shortcut labels come from `src/core/keybindings/registry.ts`) |
+The workflow screen is the run's home when nothing is running on it too. An **open** run takes a correction: typed text steers the next step and a bare `Enter` continues it. A **closed** run's composer takes commands only — every command valid on `workflow` is typed here as usual, an empty `Enter` goes home, and plain text is refused as it is typed with the dim notice `Only /commands here · ⏎ on an empty line goes home`. `esc` leaves a run at rest for home rather than opening the stop sheet: there is nothing to stop.
 
 ---
 
@@ -500,7 +486,7 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 | ID | Key | Description | Screens |
 |---|---|---|---|
 | `exit` | `ctrl+c` | Stop now | workflow |
-| `exit` | `ctrl+c` | Exit | home, summary, setup |
+| `exit` | `ctrl+c` | Exit | home, setup |
 | `command-palette` | `ctrl+k` | Command palette | all |
 | `help` | `ctrl+/` | Help | all |
 | `quit` | `ctrl+q` | Quit | all |
@@ -508,9 +494,8 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 | `recent-sessions` | `ctrl+r` | Focus recent sessions | home |
 | `skills` | `ctrl+s` | Skills picker | home |
 | `settings` | `ctrl+,` | Settings | all |
-| `close-overlay` | `esc` | Close overlay | home, summary, setup |
+| `close-overlay` | `esc` | Close overlay | home, setup |
 | `toggle-diff` | `ctrl+d` | Toggle diff | workflow |
-| `cost-drilldown` | `ctrl+g` | Cost drilldown | workflow |
 | `scroll` | `shift+↑/↓, pgup/pgdn, home/end` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
 | `review-edit` | `ctrl+e` | Open editor in review mode only | workflow |
 | `activity` | `/activity, ctrl+a` | Expand activity rows | workflow |
@@ -525,10 +510,9 @@ Alphabetical, for fast lookup.
 - [`/activity`](#activity) — expand or collapse the latest hidden activity rows.
 - [`/approval`](#approval-listclear) — list or clear sticky approval grants.
 - [`/copy`](#copy-messagebriefpathcommandcost) — copy a reviewed value to the system clipboard.
-- [`/cost`](#cost) — open the cost breakdown.
 - [`/crew`](#crew-planbuildreview) — change who fills the `PLAN`, `BUILD`, or `REVIEW` seat.
 - [`/diff`](#diff) — expand or collapse the latest diff.
-- [`/end`](#end) — stop the run and mark it cancelled.
+- [`/end`](#end) — close the run, keeping every change on disk.
 - [`/help`](#help) — open the help overlay.
 - [`/home`](#home) — navigate to the home screen.
 - [`/image`](#image-pathlistremove) — attach, list, or remove images for the next planner call.
@@ -555,7 +539,7 @@ Alphabetical, for fast lookup.
 
 - [`FEATURES.md`](./FEATURES.md#slash-commands-palette) — the shorter overview document, useful as a quick refresher.
 - [`docs/WORKFLOW.md`](./WORKFLOW.md) — workflow phases, modes, and the rewind state machine.
-- [`docs/CONCEPTS.md`](./CONCEPTS.md) — shared vocabulary (phase, queue, awaiting-continue, etc.).
+- [`docs/CONCEPTS.md`](./CONCEPTS.md) — shared vocabulary (phase, queue, run status, stop reason, step, etc.).
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — how the TUI, stores, engine, and runners are layered.
 - [`docs/STORES.md`](./STORES.md) — `configStore`, `overlayStore`, `feedbackStore`, `lifecycleStore`, `routerStore`, `attachmentsStore`.
 - [`src/core/runtime/commands/`](https://github.com/b4r7x/splitbrief/tree/main/src/core/runtime/commands) — `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (`registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`, `registry-session.test.ts`, `registry-snapshots.test.ts`, …) cover the phase / screen / arg matrix.

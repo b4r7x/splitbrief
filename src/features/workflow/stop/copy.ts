@@ -1,4 +1,4 @@
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../stores/workflow/stop.js';
 import { formatStageElapsed } from '../display/live-activity.js';
 

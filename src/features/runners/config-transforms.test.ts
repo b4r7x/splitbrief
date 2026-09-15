@@ -96,7 +96,6 @@ implementer_profiles:
       custom_models:
         - existing-model
       label: Active cloud
-      cost_tier: cheap
     dormant-local:
       kind: cli
       tool: codex
@@ -489,7 +488,6 @@ describe('runner selection commits', () => {
       command: 'local-implementer --stdio',
       model: 'existing-model',
       label: 'Active cloud',
-      costTier: 'cheap',
     });
 
     for (const updated of [

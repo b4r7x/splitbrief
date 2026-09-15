@@ -154,9 +154,9 @@ export function routeBiggerProfileFromDecision(
 
 /**
  * A runner that ran out of quota halts the run the same way a signed-out one
- * does: retrying is free but cannot succeed until the limit resets, and
- * silently escalating every task to the planner is the expensive failure the
- * halt exists to prevent. The message names the reset time whenever the
+ * does: retrying cannot succeed until the limit resets, and silently
+ * escalating every task to the planner is the outcome the halt exists to
+ * prevent. The message names the reset time whenever the
  * tool's own diagnostic carried one; login is never suggested because it
  * cannot restore quota.
  */
@@ -175,6 +175,7 @@ export function buildRunnerUsageLimitRecoveryIssue(
 
   return createRecoveryIssue({
     id: opts.id,
+    seat: 'build',
     reason: 'runner-usage-limit',
     phase,
     task: opts.task,
@@ -211,9 +212,9 @@ export function buildRunnerUsageLimitRecoveryIssue(
 }
 
 /**
- * A signed-out runner halts the run instead of escalating: retrying costs
- * nothing but cannot succeed, and silently routing every task to the planner
- * is the expensive failure the halt exists to prevent. The message carries
+ * A signed-out runner halts the run instead of escalating: retrying cannot
+ * succeed, and silently routing every task to the planner is the outcome the
+ * halt exists to prevent. The message carries
  * the exact login command; the details keep the tool's own words verbatim.
  */
 export function buildRunnerUnauthenticatedRecoveryIssue(
@@ -226,11 +227,12 @@ export function buildRunnerUnauthenticatedRecoveryIssue(
     'retry-same-worker',
     'skip-current-task',
     'pause-run',
-    'abort-workflow',
+    'end-run',
   ]);
 
   return createRecoveryIssue({
     id: opts.id,
+    seat: 'build',
     reason: 'runner-unauthenticated',
     phase,
     task: opts.task,
@@ -267,7 +269,7 @@ export function buildRetryExhaustedRecoveryIssue(
     hasRouteBigger(opts) ? 'route-bigger-worker' : undefined,
     'skip-current-task',
     'pause-run',
-    'abort-workflow',
+    'end-run',
   ]);
   const recommendedAction = chooseRecommended(actions, [
     'route-bigger-worker',
@@ -277,6 +279,7 @@ export function buildRetryExhaustedRecoveryIssue(
 
   return createRecoveryIssue({
     id: opts.id,
+    seat: 'build',
     reason: 'retry-exhausted',
     phase,
     task: opts.task,
@@ -350,12 +353,13 @@ export function buildContextOverflowRecoveryIssue(
   const actions = orderedActions([
     canRouteBigger ? 'route-bigger-worker' : undefined,
     'pause-run',
-    'abort-workflow',
+    'end-run',
   ]);
   const recommendedAction = chooseRecommended(actions, ['route-bigger-worker', 'pause-run']);
 
   return createRecoveryIssue({
     id: opts.id,
+    seat: 'build',
     reason: 'context-overflow',
     phase,
     task: opts.task,
@@ -399,7 +403,7 @@ export function buildImplementerUnavailableRecoveryIssue(
     'retry-same-worker',
     'skip-current-task',
     'pause-run',
-    'abort-workflow',
+    'end-run',
   ]);
   const recommendedAction = chooseRecommended(actions, [
     'route-bigger-worker',
@@ -409,6 +413,7 @@ export function buildImplementerUnavailableRecoveryIssue(
 
   return createRecoveryIssue({
     id: opts.id,
+    seat: 'build',
     reason: 'implementation-error',
     phase,
     task: opts.task,
@@ -459,10 +464,11 @@ export function buildDependencyBlockedRecoveryIssue(
   ]);
   const affectedTaskIds = uniqueSortedIds([opts.task.id, ...blockedByTaskIds]);
   const blockedFiles = (opts.blockedByTasks ?? []).map((task) => task.file);
-  const actions = orderedActions(['skip-current-task', 'pause-run', 'abort-workflow']);
+  const actions = orderedActions(['skip-current-task', 'pause-run', 'end-run']);
 
   return createRecoveryIssue({
     id: opts.id,
+    seat: 'build',
     reason: 'dependency-blocked',
     phase,
     task: opts.task,
@@ -496,6 +502,7 @@ export function buildScopeViolationRecoveryIssue(
   const actions = orderedActions(allowedActionsForReason('scope-violation'));
   return createRecoveryIssue({
     id: opts.id,
+    seat: 'build',
     reason: 'scope-violation',
     phase: opts.phase ?? 'implementing',
     task: opts.task,
@@ -534,6 +541,7 @@ function recipeHaltIssue(opts: RunnerFailureRecoveryOptions, message: string): R
   });
   return createRecoveryIssue({
     id: opts.id,
+    seat: 'build',
     reason: 'implementer-recipe-invalid',
     phase: opts.phase ?? 'implementing',
     task: opts.task,
@@ -587,7 +595,7 @@ export function buildMissingModelRecoveryIssue(opts: RunnerFailureRecoveryOption
 /**
  * Two timeouts in a row on one brief mean the slice does not fit the deadline,
  * not that the attempt was unlucky. Escalating would hand the same oversized
- * slice to the planner at planner prices, so the ladder halts here.
+ * slice to the planner, so the ladder halts here.
  */
 export function buildRepeatedTimeoutRecoveryIssue(
   opts: RunnerFailureRecoveryOptions,
@@ -595,13 +603,14 @@ export function buildRepeatedTimeoutRecoveryIssue(
   const displayName = runnerAuthDisplayName(opts.runner);
   const seatSwap = switchSeatOffer(opts.seatSwap);
   const routeBigger = hasRouteBigger(opts);
-  const actions = availableActionsForReason('implementer-timeout-repeated', {
+  const actions = availableActionsForReason('runner-timeout-repeated', {
     switchSeat: seatSwap !== undefined,
     routeBigger,
   });
   return createRecoveryIssue({
     id: opts.id,
-    reason: 'implementer-timeout-repeated',
+    seat: 'build',
+    reason: 'runner-timeout-repeated',
     phase: opts.phase ?? 'implementing',
     task: opts.task,
     files: taskFiles(opts.task),
@@ -635,7 +644,7 @@ const RUNNER_DEFECT_BUILDERS: Partial<
 > = {
   'implementer-recipe-invalid': buildRecipeInvalidRecoveryIssue,
   'missing-model': buildMissingModelRecoveryIssue,
-  'implementer-timeout-repeated': buildRepeatedTimeoutRecoveryIssue,
+  'runner-timeout-repeated': buildRepeatedTimeoutRecoveryIssue,
 };
 
 /**
@@ -664,6 +673,7 @@ export function buildApprovalDeniedRecoveryIssue(
   const actions = orderedActions(allowedActionsForReason('approval-denied'));
   return createRecoveryIssue({
     id: opts.id,
+    seat: 'build',
     reason: 'approval-denied',
     phase: opts.phase ?? 'implementing',
     task: opts.task,
@@ -699,6 +709,7 @@ export function buildSnapshotFailedRecoveryIssue(
   const actions = orderedActions(allowedActionsForReason('snapshot-failed'));
   return createRecoveryIssue({
     id: opts.id,
+    seat: 'build',
     reason: 'snapshot-failed',
     phase: opts.phase ?? 'implementing',
     task: opts.task,
@@ -723,6 +734,7 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
   const actions = orderedActions(allowedActionsForReason('review-failed'));
   return createRecoveryIssue({
     id: opts.id,
+    seat: 'build',
     reason: 'review-failed',
     phase: opts.phase ?? 'final-review',
     files: [],

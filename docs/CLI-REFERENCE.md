@@ -62,7 +62,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
   [--reviewer-api-base <url>] [--reviewer-api-key-env <var>] [--reviewer-args <arg>] \
   [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
-  [--budget <amount>] [--planner-effort <level>] [--reviewer-effort <level>] [--yolo] \
+  [--planner-effort <level>] [--reviewer-effort <level>] [--yolo] \
   [--skills <ids>] [--project <dir>] \
   [--no-fullscreen] [--no-mouse] [--hover] \
   [--allow-hooks] [--allow-repo-runners] [--allow-unverified-auth] \
@@ -103,7 +103,6 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--reviewer-effort <level>` | enum | — | Reviewer effort hint: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The seat's tool accepts a subset and reports what it rejects. Requires the review seat to have its own runner: with no `reviewer` block in config and no `--reviewer`, the run is refused with a message naming `--reviewer`. On a configured reviewer whose backend has no reasoning control, it is dropped with a stderr warning. |
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
-| `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow warns/pauses before the cap, stops when exceeded, and pauses when paid usage has unknown pricing. |
 | `--skills <ids>` | string | — | Comma-separated planner-skill ids to attach for this run, the headless equivalent of the `/skills` picker. Resolved against the same scan roots before planning starts; an id no root carries fails with `Unknown skill: <id> (scanned: <roots>)` and exit `2`. On `start` it applies to headless runs (`--json` / `--plain`); on `resume` and `continue` it applies in both modes. |
 | `--yolo` | boolean | `false` | Disable file-write tiered approval prompts for the session. Spec/plan gates still follow `--approve` / mode policy, and briefs review remains separate. This is not a shell or network sandbox setting. |
 | `--project <dir>` | path | cwd | Project directory. |
@@ -131,8 +130,8 @@ splitbrief start
 # Standard workflow on a feature description
 splitbrief start "extract auth into module"
 
-# Speckit mode with budget cap
-splitbrief start --mode speckit --budget 2.00 "rewrite billing"
+# Speckit mode
+splitbrief start --mode speckit "rewrite billing"
 
 # Headless / CI: stream NDJSON events
 splitbrief start --json --approve none "fix flaky test in user.test.ts"
@@ -145,7 +144,7 @@ splitbrief start --plain --approve none "fix flaky test in user.test.ts"
 ### Exit codes
 
 - `0` — workflow completed (or TUI exited cleanly).
-- `1` — invalid or unwritable config, planner/implementer failure, budget exceeded, a pending recovery nobody answered, a final review that ended `failed`, a session saved as `cancelled` or `interrupted`, or any uncaught error.
+- `1` — invalid or unwritable config, planner/implementer failure, a pending recovery nobody answered, a final review that ended `failed`, or a run that did not reach `complete` (it is saved `open` or `ended` and can be continued with `splitbrief continue <id>`), or any uncaught error.
 - `2` — an invalid flag combination, such as `--plain` together with `--json`, or an unusable flag value such as an unknown `--skills` id or a `--action` that names no recovery action.
 
 ### Files affected
@@ -428,7 +427,7 @@ Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `i
 
 - Missing config reports `splitbrief init`; legacy config warnings report `splitbrief init --reconfigure`, but `doctor` does not run setup commands.
 - Validation readiness is posture only. It reports disabled checks or missing npm scripts without running validation commands; the exception is `--probe-validation`, which runs the configured commands.
-- Runner availability is probed for the `api` runners a run would call (`runners.availability.planner`, `runners.availability.implementer.<profile>`, and `runners.availability.reviewer` when a `reviewer` block is configured). Each probe is one model-list round trip against the endpoint the runner already targets, bounded by a 2s budget and run in parallel. An unreachable planner or default implementer is a blocker — the planning phase is paid for before the implementer is first used — while a non-default profile is a warning. A probe that could not run or overran its budget reports `not-probed` (info); it never reports available. When no probe runs at all, readiness says so and makes no claim (`runners.availability`).
+- Runner availability is probed for the `api` runners a run would call (`runners.availability.planner`, `runners.availability.implementer.<profile>`, and `runners.availability.reviewer` when a `reviewer` block is configured). Each probe is one model-list round trip against the endpoint the runner already targets, bounded by a 2s budget and run in parallel. An unreachable planner or default implementer is a blocker — the planning phase runs before the implementer is first used — while a non-default profile is a warning. A probe that could not run or overran its budget reports `not-probed` (info); it never reports available. When no probe runs at all, readiness says so and makes no claim (`runners.availability`).
 - The arg-vector preflight runs here too, so a blocker `start` would raise can be inspected without starting a run: a flag the installed binary's help does not advertise is a blocker (`runners.cli.<tool>.arg-vector.<role>`), a flag it marks deprecated is a warning, and a help text that cannot be read reports ok. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
 - A `shell` or `agent` runner reaches execution only through an owner-only trust receipt, so `doctor` replays that admission read-only (`runners.consent.planner`, `runners.consent.implementer.<profile>`, and `runners.consent.reviewer` when a `reviewer` block is configured) instead of only warning that the runner can execute commands. The verdict is reported for a run started the way `doctor` was started: on a TTY it is a warning naming the one-time confirmation `start` would prompt for, and with `--json` or a non-TTY stdin it is the blocker a non-interactive run receives. Nothing is written and no receipt is granted — `doctor` takes no `--allow-repo-runners`, so a run that passes that flag can be admitted where `doctor` reports a blocker, and the check's remediation names the flag.
 - Headless runner admission is replayed the same way: with `--json` or a non-TTY stdin, `doctor` runs the same `runners.preparation.*` checks `start --json` would fail on when a configured CLI runner lacks a trusted readiness identity or would otherwise be refused headless admission. Each check's remediation names `--allow-unverified-auth` when that flag would admit the run; `doctor` accepts no override flags, so a headless run that passes `--allow-unverified-auth` can proceed where `doctor` reports a blocker. Interactive `doctor` on a TTY does not emit these preparation blockers — interactive `start` discloses and prompts instead.
@@ -564,7 +563,9 @@ splitbrief status --project ../other-repo
 splitbrief resume [options]
 ```
 
-Resume the current active interrupted session. Validates the saved state version and current phase; refuses to resume from a non-resumable phase or stale schema. If the active pointer was cleared after a run was ended (`/end`, status `cancelled`) or a stale lockfile was cleaned up, use `splitbrief continue <session-id>` instead. Accepts the same workflow flags as `start`.
+Continue the most recent run. A run is a durable record: it stays continuable until somebody closes it, so this refuses exactly three things — no active pointer, a saved state that is missing or unreadable, and a **closed** run (ended with `/end`, or `complete` with a passing review). Every other stop — parked, waiting at a gate, halted on a recovery, stopped by an error, killed outright — is picked up at the step it left off.
+
+Closing a run clears `.splitbrief/active`, so after an `/end` there is nothing for `resume` to find; name an older run with `splitbrief continue <session-id>`. Accepts the same workflow flags as `start`.
 
 ### Usage
 
@@ -580,7 +581,7 @@ splitbrief resume [--mode <mode>] [--approve <level>] \
   [--reviewer-api-base <url>] [--reviewer-api-key-env <var>] [--reviewer-args <arg>] \
   [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
-  [--budget <amount>] [--planner-effort <level>] [--reviewer-effort <level>] [--yolo] \
+  [--planner-effort <level>] [--reviewer-effort <level>] [--yolo] \
   [--skills <ids>] [--project <dir>] \
   [--no-fullscreen] [--no-mouse] [--hover] \
   [--allow-hooks] [--allow-repo-runners] [--json] [--plain]
@@ -588,7 +589,7 @@ splitbrief resume [--mode <mode>] [--approve <level>] \
 
 ### Options
 
-Resume accepts the same workflow override options as `start`. See [`splitbrief start`](#splitbrief-start) for the shared runner, mode, budget, and approval flags.
+Resume accepts the same workflow override options as `start`. See [`splitbrief start`](#splitbrief-start) for the shared runner, mode, and approval flags.
 
 | Flag | Notes |
 |---|---|
@@ -613,7 +614,7 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 ### Exit codes
 
 - `0` — resumed successfully (TUI or headless).
-- `1` — no active session, missing `state.json`, schema older than `CURRENT_STATE_VERSION`, non-resumable phase, or any downstream failure.
+- `1` — no active session, missing or unreadable `state.json`, a schema version `WORKFLOW_STATE_VERSION` cannot load, a closed run, or any downstream failure.
 
 ### Files affected
 
@@ -623,14 +624,15 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 ### See also
 
 - `splitbrief start` — fresh run.
-- `splitbrief status` — see the current phase before resuming.
+- `splitbrief continue` — continue a run by id or alias.
+- `splitbrief status` — see the current phase before continuing.
 - [WORKFLOW.md](./WORKFLOW.md), [CHANGELOG.md](../CHANGELOG.md) — schema migrations.
 
 ### Behavior notes
 
 - The version guard rejects resume with: `saved state is from an older version and cannot be resumed. Please start a new workflow with 'splitbrief start'.`
 - A session with a pending recovery is not refused headlessly. `resume --plain` and `resume --json` print the issue, the recommended action and the `splitbrief continue … --action …` line to stderr and exit `1`; pass that action to `continue` to carry on.
-- `isResumable(state)` rejects any non-resumable phase (anything outside `RESUMABLE_PHASES` — `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `validating-task`, `escalating`, `final-review` — without `awaitingContinue`) with: `session '<id>' is in phase "<phase>" which cannot be resumed.` A run killed during validation or escalation re-enters at the start of the brief it was on, with that brief's files restored from its task-start snapshot.
+- Any open run resumes. `deriveRunStatus` (`src/core/sessions/run-status.ts`) decides: a run is open until it is closed, and only two things close it — a final review that passed, and an explicit End run. A closed run is refused with `Run <id> is closed (complete|ended); nothing to resume.` A run killed during validation or escalation re-enters at the start of the brief it was on, with that brief's files restored from its task-start snapshot.
 - A short `Resuming: <feature> (phase: <phase>, task N/M)` line prints before the TUI mounts.
 - The workflow mode is pinned in `state.json` alongside `plannerModel`; resume reuses the saved mode and approval level unless `--mode` is passed explicitly, in which case the override applies and a warning is printed.
 
@@ -641,10 +643,10 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 **Synopsis**
 
 ```
-splitbrief continue [session-id-or-number] [--action <skip|retry|switch-seat:<tool>[:<model>]>] [resume options]
+splitbrief continue [session-id-or-number] [--action <skip|retry|switch-seat:<tool>[:<model>]|end-run>] [resume options]
 ```
 
-Session continuity command: resolves the active session, a session id, or a numeric alias, then resumes it. With `--action` it first answers the session's pending recovery, so a halted headless run is resolved from the shell instead of a TUI.
+Continue a run by name: resolves the active session, a session id, or a numeric alias, then picks the run up where it stopped. With `--action` it first answers the run's pending recovery, so a halted headless run is resolved from the shell instead of a TUI. Any open run continues; only a closed one is refused.
 
 ### Options
 
@@ -655,11 +657,11 @@ Session continuity command: resolves the active session, a session id, or a nume
 | `--approve <level>` | approval | mode default | Spec/plan document approval mode. |
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--allow-repo-runners` | boolean | `false` | Trust repo-local shell/agent runner commands from project config for resumed workflow execution. |
-| `--action <skip\|retry\|switch-seat:<tool>[:<model>]>` | enum | — | Apply this action to the session's pending recovery, then continue — the headless equivalent of choosing it in the recovery panel. `skip` is `skip-current-task`, `retry` is `retry-same-worker`, and `switch-seat:<tool>[:<model>]` moves the blocked seat. |
+| `--action <skip\|retry\|switch-seat:<tool>[:<model>]\|end-run>` | enum | — | Apply this action to the run's pending recovery, then continue — the headless equivalent of choosing it in the recovery panel. `skip` is `skip-current-task`, `retry` is `retry-same-worker`, `switch-seat:<tool>[:<model>]` moves the blocked seat, and `end-run` closes the run. The first three carry the run on; `end-run` records the close, prints `Run <id> closed. The files it wrote are still on disk.` and stops there. |
 | `--skills <ids>` | string | — | Comma-separated planner-skill ids for the rest of the run, in headless and interactive mode alike. |
-| `--json` | boolean | `false` | Resume an interrupted session in headless NDJSON mode. |
-| `--plain` | boolean | `false` | Resume an interrupted session in headless plain-line mode. Mutually exclusive with `--json`. |
-| Other resume flags | — | — | Runner overrides, mode, budget, `--no-fullscreen`, `--no-mouse`, `--hover`, and approval controls. |
+| `--json` | boolean | `false` | Continue the run in headless NDJSON mode. |
+| `--plain` | boolean | `false` | Continue the run in headless plain-line mode. Mutually exclusive with `--json`. |
+| Other resume flags | — | — | Runner overrides, mode, `--no-fullscreen`, `--no-mouse`, `--hover`, and approval controls. |
 
 ### Examples
 
@@ -678,13 +680,16 @@ splitbrief continue 2026-05-01-add-auth --action skip --plain
 
 # Move a quota-blocked seat to another tool and carry on
 splitbrief continue --action switch-seat:claude-code:sonnet --json
+
+# Give up on a halted run: close it, keep everything it wrote
+splitbrief continue 2026-05-01-add-auth --action end-run
 ```
 
 ### Exit codes
 
-- `0` — resumed successfully.
-- `1` — no session to continue, unusable saved state, an `--action` the pending recovery does not allow (the refusal names the issue's available actions), or an underlying resume failure.
-- `2` — `--action` did not name a recovery action: `'<value>' is not a recovery action. Use skip, retry, or switch-seat:<tool>[:<model>].`
+- `0` — the run continued, or `--action end-run` closed it.
+- `1` — no run to continue, a run that is still running, unusable saved state, a **closed** run, an `--action` the pending recovery does not allow (the refusal names the issue's available actions), or an underlying failure.
+- `2` — `--action` did not name a recovery action: `'<value>' is not a recovery action. Use skip, retry, switch-seat:<tool>[:<model>], or end-run.`
 
 ### Files affected
 
@@ -693,11 +698,12 @@ splitbrief continue --action switch-seat:claude-code:sonnet --json
 
 ### See also
 
-- `splitbrief resume` — explicit resume of an interrupted session.
+- `splitbrief resume` — continue the most recent run.
 
 ### Behavior notes
 
 - `continue` delegates to `resume`, including `--json` or `--plain` when passed.
+- `--action end-run` is the one action that does not re-enter the run: the close is recorded on `state.json`, the run lists as `ended`, and the command returns 0 without starting anything.
 - `--action` is applied before the run re-enters: the named `RecoveryAction` runs through the same `applyRecoveryAction` transition the panel uses, and the run continues from the state it produced. Without `--action`, a session with a pending recovery is not refused outright — headless prints the issue, the recommended action and the exact `continue --action …` line to stderr and exits `1`, and `resume --plain` behaves the same way.
 - Both commands compare the crew they are about to run against the crew the session last ran with (`.splitbrief/sessions/<id>/seats.json`). A seat that changed prints one stderr line per seat — `PLAN seat changed <old> → <new>; context will be rebuilt` for the plan seat, `…; the rest of the run uses the new seat` for the others. A moved plan seat also drops the saved planner session, because it cannot be replayed on a different tool, so the run rebuilds planner context from the transcript. The run itself re-records the crew once it starts, so a resume that never gets past preparation keeps the notice for the next attempt, and an in-app resume from the sessions overlay maintains the record the same way (it reports the change as a workflow warning). The identity is the same `<tool> · <model>` string the crew rows and the workflow header show.
 
@@ -802,7 +808,7 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 | `--allow-repo-runners` | `start`, `resume`, `continue`, `spec`, `review` | `false` | Trust repo-local shell/agent runner execution from project config. Separate from hook trust. |
 | `--allow-unverified-auth` | `start`, `resume`, `continue`, `review` | `false` | Let a headless run proceed with unverified CLI authentication. No effect on interactive runs, which disclose and prompt. |
 | `--plain` | `start`, `resume`, `continue` | `false` | Plain-line headless stream — `phase:`, `task:`, `review:` and `done:` lines. Refuses to run alongside `--json` (exit `2`). |
-| `--json` | `start`, `resume`, `continue`, `doctor` | `false` | Public NDJSON record stream for workflow commands; a single JSON object for `doctor`. Workflow events are wrapped as `{ "type": "event", "data": ... }`. For `continue`, applies only when the target is an interrupted resumable session. |
+| `--json` | `start`, `resume`, `continue`, `doctor` | `false` | Public NDJSON record stream for workflow commands; a single JSON object for `doctor`. Workflow events are wrapped as `{ "type": "event", "data": ... }`. For `continue`, applies only when the target run is open; a closed run is refused before anything streams. |
 
 ### Where state lives
 

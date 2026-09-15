@@ -5,7 +5,6 @@ import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { approvalPromptStore } from '../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../stores/cost-approval/prompt.js';
 import { completionStore } from '../stores/ui/completion.js';
 import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin/active.js';
 import {
@@ -32,11 +31,11 @@ const NONE: AppKeyAction = { type: 'none' };
 /** What esc says when the composer holds text: the run is untouched and so is the draft. */
 export const DRAFT_ESCAPE_HINT = 'clear the draft or ctrl+c to stop now';
 
-// Help and the cost drilldown render no Escape handler of their own and rely on this global close.
-// Every other overlay closes itself on Escape, so the global handler must stand down once one of
-// them sits on a non-empty stack — otherwise a single Escape would fire both handlers and pop past
-// the parent (e.g. a runner picker opened from settings would skip settings and close outright).
-const GLOBAL_ESC_OVERLAYS = new Set<OverlayType>(['help', 'cost-drilldown']);
+// Help renders no Escape handler of its own and relies on this global close. Every other overlay
+// closes itself on Escape, so the global handler must stand down once one of them sits on a
+// non-empty stack — otherwise a single Escape would fire both handlers and pop past the parent
+// (e.g. a runner picker opened from settings would skip settings and close outright).
+const GLOBAL_ESC_OVERLAYS = new Set<OverlayType>(['help']);
 
 // These overlays handle Escape themselves — the runner pickers give it a meaning beyond closing
 // (a non-empty filter query clears first, only a second press exits). The global close must stand
@@ -99,11 +98,10 @@ function runDeferredEscape(input: string, immediate: () => void, deferred: () =>
 }
 
 export function useAppKeys({ exit }: UseAppKeysOptions) {
-  const [route, overlay, approval, cost, completion, sessionSelection] = useStores(
+  const [route, overlay, approval, completion, sessionSelection] = useStores(
     routerStore,
     overlayStore,
     approvalPromptStore,
-    costApprovalStore,
     completionStore,
     sessionSelectStore,
   );
@@ -113,7 +111,7 @@ export function useAppKeys({ exit }: UseAppKeysOptions) {
   const overlayClosesOnGlobalEscape =
     !SELF_ESC_OVERLAYS.has(overlayActive) &&
     (!overlayHasStack || GLOBAL_ESC_OVERLAYS.has(overlayActive));
-  const promptPending = approval.status === 'pending' || cost.status === 'pending';
+  const promptPending = approval.status === 'pending';
   const completionOpen = completion.open;
   const sessionPreparationActive = sessionSelection.preparation.kind !== 'idle';
   // The inline briefs field editor is not an overlay (it renders inside the workflow screen), so
@@ -127,7 +125,12 @@ export function useAppKeys({ exit }: UseAppKeysOptions) {
     if (!(key.ctrl && input === 'c')) return;
     // Ctrl+C is Stop now on the workflow screen — one press, no armed window. Where there is no
     // run left to stop it keeps its usual meaning and leaves.
-    if (route.screen !== 'workflow' || lifecycleStore.get().cancelled) {
+    // A run at rest has no process to stop, so the chord keeps its usual meaning and leaves.
+    if (
+      route.screen !== 'workflow' ||
+      route.execution.kind === 'at-rest' ||
+      lifecycleStore.get().cancelled
+    ) {
       exit();
       return;
     }
@@ -142,6 +145,11 @@ export function useAppKeys({ exit }: UseAppKeysOptions) {
       // Text in the composer is the user's, and so is the run behind it: the press spends neither.
       if (!composerLiveStore.get().empty) {
         feedbackStore.setMessage(DRAFT_ESCAPE_HINT);
+        return;
+      }
+      // Nothing is running on a run at rest: the press leaves rather than offering to stop it.
+      if (route.screen === 'workflow' && route.execution.kind === 'at-rest') {
+        runDeferredEscape(input, goHome, goHome);
         return;
       }
       if (stopSheetReachable()) {
@@ -160,23 +168,6 @@ export function useAppKeys({ exit }: UseAppKeysOptions) {
         !completionOpen &&
         !sessionPreparationActive &&
         !fieldSessionOwned,
-    },
-  );
-
-  useInput(
-    (input, key) => {
-      if (!key.escape) return;
-      if (getActiveFilteredStdin()?.isPasteActive()) return;
-      runDeferredEscape(input, goHome, goHome);
-    },
-    {
-      isActive:
-        route.screen === 'summary' &&
-        !isOpen &&
-        !overlayExclusive &&
-        !promptPending &&
-        !completionOpen &&
-        !sessionPreparationActive,
     },
   );
 

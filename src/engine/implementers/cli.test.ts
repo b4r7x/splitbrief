@@ -939,7 +939,9 @@ describe('createCliImplementer (opencode arg vector)', () => {
       });
       events = [];
     }
-  }, 60_000);
+    // Fifty iterations of spawn-descendant-reap is about thirteen seconds alone. The repetition is
+    // the point of the case, so the budget absorbs the contention instead of the iteration count.
+  }, 180_000);
 });
 
 describe('createCliImplementer (timeout surfacing)', () => {

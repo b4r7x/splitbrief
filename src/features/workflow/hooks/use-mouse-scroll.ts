@@ -2,7 +2,6 @@ import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { completionStore } from '../../../stores/ui/completion.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout/snapshot.js';
@@ -14,12 +13,10 @@ export function promptOwnsInput(): boolean {
   return modalPromptOwnsInput() || controlsStore.get().inputMode === 'question';
 }
 
-// Question prompts keep the transcript scrollable, so the wheel only yields to
-// the modal approval/cost selectors; presses still route via promptOwnsInput.
+// Question prompts keep the transcript scrollable, so the wheel only yields to the modal approval
+// selector; presses still route via promptOwnsInput.
 export function modalPromptOwnsInput(): boolean {
-  return (
-    approvalPromptStore.get().status === 'pending' || costApprovalStore.get().status === 'pending'
-  );
+  return approvalPromptStore.get().status === 'pending';
 }
 
 export function handleWorkflowMouseWheel(event: MouseEvent): void {

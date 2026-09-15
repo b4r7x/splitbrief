@@ -6,7 +6,6 @@ import type { EditorEvent, EditorSurface } from '../../core/editor/editor-state.
 import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { approvalPromptStore } from '../../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../stores/cost-approval/prompt.js';
 import { copyToClipboard } from '../../lib/clipboard/clipboard.js';
 import { useFieldSessionOwned } from './use-field-session-owned.js';
 
@@ -35,13 +34,12 @@ export function useEditorKeys({
   const overlayReady = overlayStore.use((s) => s.exclusive && s.active === 'editor');
   const fieldOwned = useFieldSessionOwned();
   // The inline field editor is not itself an overlay, so it must stand down whenever an overlay
-  // or approval/cost prompt covers it — otherwise its useInput and the overlay's both fire for
+  // or approval prompt covers it — otherwise its useInput and the overlay's both fire for
   // every keystroke (two owners for one event, CON-D / REQ-049) and typing into the overlay also
   // mutates the hidden brief buffer. This mirrors the composer's disabled=(hasOverlay||promptPending).
   const overlayBlocking = overlayStore.use((s) => s.active !== 'none');
   const promptPending = approvalPromptStore.use((s) => s.status === 'pending');
-  const costPending = costApprovalStore.use((s) => s.status === 'pending');
-  const fieldActive = fieldOwned && !overlayBlocking && !promptPending && !costPending;
+  const fieldActive = fieldOwned && !overlayBlocking && !promptPending;
   const isActive = surfaceOpen && (surface === 'raw' ? overlayReady : fieldActive);
 
   ink.useInput(

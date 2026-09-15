@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../planners/types.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   auto,
   makeBriefQualityFailureTask,
   makePassingPlanner,
-  runPhase,
+  runPlanningTurn,
 } from '#testing/helpers/planning-phase.js';
 
 const dirs: string[] = [];
@@ -21,7 +23,7 @@ describe('cross-mode disposition contract', () => {
     ['standard', { mode: 'standard' }],
     ['speckit', { mode: 'speckit' }],
   ] as const)('%s mode returns exactly one explicit disposition', async (_label, workflow) => {
-    const { result } = await runPhase(dirs, { config: makeConfig({ workflow }) });
+    const { result } = await runPlanningTurn(dirs, { config: makeConfig({ workflow }) });
 
     expect(result.disposition).toBe('ready-for-tasks');
     if (result.disposition !== 'ready-for-tasks') throw new Error('expected ready-for-tasks');
@@ -33,51 +35,49 @@ describe('cross-mode disposition contract', () => {
     { label: 'quick mode', workflow: auto('quick') },
     { label: 'standard mode with --approve none', workflow: auto('standard') },
   ])(
-    '$label fails the run when the brief quality gate is still failing after repairs',
+    '$label halts the run when the brief quality gate is still failing after repairs',
     async ({ workflow }) => {
-      const { result, events } = await runPhase(dirs, {
+      const { result, events } = await runPlanningTurn(dirs, {
         config: makeConfig({ workflow: { ...workflow, maxRetries: 0 } }),
         planner: makePassingPlanner({
-          quickPlan: vi.fn().mockResolvedValue({
-            spec: '',
-            plan: '',
-            tasks: [makeBriefQualityFailureTask()],
-            usage: { inputTokens: 5, outputTokens: 1 },
-          }),
-          plan: vi.fn().mockResolvedValue({
-            spec: '# Spec',
-            plan: '# Plan',
-            tasks: [makeBriefQualityFailureTask()],
-            usage: { inputTokens: 5, outputTokens: 1 },
-          }),
+          runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+            makePhaseCallResult({
+              call,
+              usage: { inputTokens: 5, outputTokens: 1 },
+              ...(call === 'tasks' ? { tasks: [makeBriefQualityFailureTask()] } : {}),
+            }),
+          ),
         }),
       });
 
-      expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
-      expect(result.state.phase).toBe('idle');
+      expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+      expect(result.state.closed).toBeUndefined();
+      expect(result.state.pendingRecovery).toMatchObject({
+        reason: 'brief-quality-unrepaired',
+        seat: 'plan',
+        recommendedAction: 'revise',
+      });
       expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(1);
-      expect(
-        events.some(
-          (event) => event.type === 'error' && event.message.includes('brief quality gate failed'),
-        ),
-      ).toBe(true);
+      expect(events.some((event) => event.type === 'recovery_prompted')).toBe(true);
     },
   );
 
   it('a producer that never reaches tasks surfaces the terminal disposition', async () => {
-    const { result } = await runPhase(dirs, {
+    const { result } = await runPlanningTurn(dirs, {
       config: makeConfig({ workflow: { mode: 'quick' } }),
       planner: makePassingPlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '',
-          tasks: [],
-          usage: { inputTokens: 5, outputTokens: 1 },
-        }),
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            usage: { inputTokens: 5, outputTokens: 1 },
+            ...(call === 'tasks' ? { tasks: [] } : {}),
+          }),
+        ),
       }),
     });
 
-    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
     expect(result.state.tasks).toEqual([]);
+    expect(result.state.pendingRecovery?.reason).toBe('planner-returned-no-briefs');
   });
 });

@@ -241,13 +241,7 @@ export function buildEscalations(opts: {
     failedTasks: state.tasks
       .filter((task) => task.status === 'failed')
       .map((task) => ({ taskId: task.id, title: task.title })),
-    warnings: events.filter(
-      (event) =>
-        event.type === 'warning' ||
-        event.type === 'budget_warning' ||
-        event.type === 'budget_paused' ||
-        event.type === 'budget_exceeded',
-    ),
+    warnings: events.filter((event) => event.type === 'warning'),
   };
 }
 
@@ -256,24 +250,17 @@ export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket
     tokenUsage: summary.tokenUsage,
     costBreakdown: summary.costBreakdown
       ? {
-          hypotheticalCost: summary.costBreakdown.hypotheticalCost,
           actualPlannerCost: summary.costBreakdown.actualPlannerCost,
           actualImplementerCost: summary.costBreakdown.actualImplementerCost,
           ...(summary.costBreakdown.actualReviewerCost !== undefined && {
             actualReviewerCost: summary.costBreakdown.actualReviewerCost,
           }),
           totalActualCost: summary.costBreakdown.totalActualCost,
-          savingsAmount: summary.costBreakdown.savingsAmount,
-          savingsPercentage: summary.costBreakdown.savingsPercentage,
-          localCompletionRate: summary.costBreakdown.localCompletionRate,
           ...(summary.costBreakdown.hasPricedUsage !== undefined && {
             hasPricedUsage: summary.costBreakdown.hasPricedUsage,
           }),
           ...(summary.costBreakdown.hasUnpricedUsage !== undefined && {
             hasUnpricedUsage: summary.costBreakdown.hasUnpricedUsage,
-          }),
-          ...(summary.costBreakdown.hasSavingsEstimate !== undefined && {
-            hasSavingsEstimate: summary.costBreakdown.hasSavingsEstimate,
           }),
           ...(summary.costBreakdown.isActualReviewerCostKnown !== undefined && {
             isActualReviewerCostKnown: summary.costBreakdown.isActualReviewerCostKnown,
@@ -281,13 +268,8 @@ export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket
           ...(summary.costBreakdown.isTotalActualCostKnown !== undefined && {
             isTotalActualCostKnown: summary.costBreakdown.isTotalActualCostKnown,
           }),
-          ...(summary.costBreakdown.isAllPlannerBaselineKnown !== undefined && {
-            isAllPlannerBaselineKnown: summary.costBreakdown.isAllPlannerBaselineKnown,
-          }),
         }
       : null,
-    estimatedCostSavings:
-      summary.costBreakdown?.hasSavingsEstimate === false ? null : summary.estimatedCostSavings,
     taskRouting: summary.taskBreakdown ?? [],
     routingWarnings: events
       .filter(

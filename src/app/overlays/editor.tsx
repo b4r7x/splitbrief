@@ -9,7 +9,7 @@ import { configStore } from '../../stores/project/config.js';
 import { externalEditRequestStore } from '../../stores/ui/external-edit-request.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { useTheme } from '../../components/theme.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { useEditorKeys } from '../../features/editor/use-editor-keys.js';
 import { EditorBufferView } from '../../features/editor/editor-buffer-view.js';
 import { FramePanel, OVERLAY_FRAME_COLS } from '../../features/workflow/components/frame-panel.js';

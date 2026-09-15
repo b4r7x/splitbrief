@@ -13,11 +13,11 @@
 It splits the work an AI normally does in one shot into two roles:
 
 - A **planner** — the stronger of the two, which *thinks*: it reads your repo, asks clarifying questions, and compiles your request into a structured **Task Brief**. Admitted planners (CLI subscriptions, APIs, shells, agents) are listed in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
-- An **implementer** — a weaker **model** that *types*: it executes one task at a time against the brief, with the resolved typecheck, lint, and test pipeline after each. It reaches SPLITBRIEF over either of two equally supported transports — a CLI tool driving a cheaper model, which writes files itself, or an API model, which returns file contents that SPLITBRIEF writes. You pick; SPLITBRIEF favours neither. Admitted implementers and API/local providers are in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
+- An **implementer** — a weaker **model** that *types*: it executes one task at a time against the brief, with the resolved typecheck, lint, and test pipeline after each. It reaches SPLITBRIEF over either of two equally supported transports — a CLI tool driving a smaller model, which writes files itself, or an API model, which returns file contents that SPLITBRIEF writes. You pick; SPLITBRIEF favours neither. Admitted implementers and API/local providers are in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
 
-The orchestrator in the middle owns persistence, validation, retries, escalation, checkpoints, and final review. It persists state at workflow boundaries; abort and continue preserve resumable phases, and the brief is durable on disk. The implementer never certifies its own work, and the advantage compounds when the two sides come from different labs: a reviewer from another model family does not inherit the implementer's blind spots.
+The orchestrator in the middle owns persistence, validation, retries, escalation, checkpoints, and final review. It persists state at workflow boundaries; a run stays continuable until you close it, and the brief is durable on disk. The implementer never certifies its own work, and the advantage compounds when the two sides come from different labs: a reviewer from another model family does not inherit the implementer's blind spots.
 
-Cost falls out of the same split rather than driving it: the strong tool spends its tokens on research, brief compilation, review, and escalation; the weak one spends its tokens typing. What you actually save depends on the task mix, model choices, and escalation rate — SPLITBRIEF reports the split per run and promises no ratio.
+The split follows capability: the strong tool spends its tokens on research, brief compilation, review, and escalation; the weak one spends its tokens typing. SPLITBRIEF reports the token split per run, and the spend alongside it when the prices are known.
 
 ---
 
@@ -28,7 +28,7 @@ Today's AI coding workflow has four sharp edges that SPLITBRIEF is designed to f
 | Problem | What goes wrong | What SPLITBRIEF does |
 |---|---|---|
 | **Self-review** | A model reviewing its own output repeats its own blind spots. | The tool that wrote the code never signs it off — the review seat reviews, a deterministic pipeline decides. |
-| **Token burn** | Frontier models spend expensive tokens on mechanical edits. | The planner writes the brief. A weaker implementer writes the code. |
+| **Misused capability** | Frontier models spend their strongest reasoning on mechanical edits. | The planner writes the brief. A weaker implementer writes the code. |
 | **Plan drift** | The agent forgets the plan halfway and starts inventing. | The brief is on disk, the review seat reviews the final diff against it. |
 | **Destructive actions** | A bad rename or migration trashes the working tree, no undo. | Checkpoints, file-level snapshots, hash-guarded restore. |
 | **Vendor lock-in** | Switching from Claude → Codex means re-learning the tool. | Four interchangeable runner kinds (`cli`, `api`, `shell`, `agent`) on both sides. |
@@ -98,7 +98,7 @@ Use `/quit` or `Ctrl-Q` to exit. State is on disk. Resume later with `splitbrief
                                           │
                                           ▼
        ┌──────────────────────────────────────────────────────────────────┐
-       │  PLANNER (expensive · slow · smart)                              │
+       │  PLANNER (slow · smart · stateful)                               │
        │                                                                  │
        │  admitted planner (see PLANNERS-AND-IMPLEMENTERS.md)             │
        │                                                                  │
@@ -122,7 +122,7 @@ Use `/quit` or `Ctrl-Q` to exit. State is on disk. Resume later with `splitbrief
                                           │
                                           ▼
        ┌──────────────────────────────────────────────────────────────────┐
-       │  IMPLEMENTER (cheap · fast · stateless per task)                 │
+       │  IMPLEMENTER (fast · weaker · stateless per task)                │
        │                                                                  │
        │  admitted implementer (see CONFIGURATION.md + PLANNERS-AND-IMPLEMENTERS) │
        │                                                                  │
@@ -198,7 +198,6 @@ validation:
 workflow:
   mode: standard
   maxRetries: 2
-  maxBudget: 2.00
   git:
     commitStrategy: none
 ```
@@ -207,7 +206,7 @@ After each implementer task, the orchestrator runs the resolved typecheck, lint,
 
 **3. Subscription CLI implementer (optional).** To type through the same admitted CLI instead of an API, set `implementer.kind: cli` with `tool: claude-code`. The child CLI may auto-edit SPLITBRIEF's disposable staged copy; SPLITBRIEF detects changes and asks before promoting approved paths into your checkout. Posture and auth channels: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
 
-**4. Named implementer profiles.** Persist multiple implementer backends under `implementerProfiles` — profile names are stable identifiers saved in config and referenced by routing/recovery events. Example: keep `local-qwen` (Ollama, `costTier: local`) and `local-lmstudio` (the LM Studio row above, `costTier: local`); set `default` to the profile SPLITBRIEF should pick when no routing hint applies. Schema and persistence rules: [CONFIGURATION.md](./CONFIGURATION.md#optional-implementerprofiles).
+**4. Named implementer profiles.** Persist multiple implementer backends under `implementerProfiles` — profile names are stable identifiers saved in config and referenced by routing/recovery events. Example: keep `local-qwen` (Ollama) and `local-lmstudio` (the LM Studio row above); set `default` to the profile SPLITBRIEF should pick when routing names none. Schema and persistence rules: [CONFIGURATION.md](./CONFIGURATION.md#optional-implementerprofiles).
 
 **5. Billing and privacy.** `subscription-included` CLIs bill through your vendor login; `api-metered` / `provider-dependent` APIs bill per request; `local` providers keep traffic on loopback. SPLITBRIEF does not persist API keys to session artifacts and redacts known secret patterns in protected output — see [API-KEYS.md](./API-KEYS.md).
 
@@ -217,9 +216,9 @@ For every other planner/implementer combination, swap tools and models via the c
 
 ---
 
-## 8. Cost transparency
+## 8. Spend
 
-Spend is not painted across the top of the screen. There is no persistent cost header; these are the four places a number actually appears.
+Spend is not painted across the top of the screen. There is no persistent cost header; these are the two places a number actually appears, and Settings ▸ Workflow ▸ **Show spend** (`workflow.showSpend`, on by default) turns both off.
 
 **Sidebar footer** — the workflow sidebar is on by default above 120 columns and paints nothing at or below 120 columns; `/sidebar` toggles it and `/tasks` brings it back. Its last line reads `Local NN%`, the share of tasks the implementer finished without escalating, followed by the run's spend when there is something priced to report:
 
@@ -227,15 +226,11 @@ Spend is not painted across the top of the screen. There is no persistent cost h
 Local 80% · $0.42
 ```
 
-The spend token is omitted entirely when nothing in the run is priced, rather than showing `$0.00`. A mixed run reads `$0.42 + unpriced`; a run whose priced total is incomplete reads `$0.42 + unknown`; a subscription runner shows its billing label instead of a dollar figure. `/copy cost` puts the same string on your clipboard.
+The spend token is omitted entirely when nothing in the run is priced, rather than showing `$0.00`. A mixed run reads `$0.42 + unpriced`; a run whose priced total is incomplete reads `$0.42 + unknown`; a subscription runner shows its billing label instead of a dollar figure. `/copy cost` puts the same string on your clipboard, and answers `spend display is off` while the toggle is off.
 
-**Ctrl+G — `Cost · breakdown`** — the one full accounting surface. Per phase: cost, the input/output token split (output is the expensive half), `cache NN%` where the runner reports a cache read, and cache-create tokens when there are any. Per task: total tokens and per-attempt detail, so a task that took three attempts shows all three.
+**Closed run** — one `Cost` row in the `Run` block at the tail of a finished run’s transcript: `$0.42` when every seat is priced, `$0.42 + unknown` when the priced total is incomplete. A run with nothing metered shows the offering label instead of a figure (`subscription-included`, `local`, or both joined), and a run with no figure at all reads `not estimated`. Never `$0.00`. With **Show spend** off the row is not rendered at all.
 
-**Summary screen** — when the run produced a savings estimate, the completion screen leads with `$0.42 actual vs $1.80 baseline · 77% saved` and, under it, how much of that came from routing locally. No estimate, no line.
-
-**Budget gate** — with `workflow.maxBudget` set, the task loop warns at 80% of it, pauses at `workflow.budgetPauseThreshold` (default `0.85`) and asks you to continue, and stops at the ceiling. It also pauses when paid usage has unknown pricing, because spend that cannot be proven against the cap is not spend that can be ignored. In headless `--json` mode the pause emits a `recovery_required` record and exits non-zero, so CI stops instead of burning.
-
-Local and subscription runners that expose no pricing are reported as unpriced, never as `$0.00` — SPLITBRIEF does not invent a saving it cannot compute.
+Local and subscription runners that expose no pricing are reported as unpriced, never as `$0.00`.
 
 ---
 
@@ -251,7 +246,7 @@ Three additional safety nets:
 2. **Drift detection.** Before the final review, the orchestrator computes a deterministic drift report comparing the actual diff to the Task Brief. Out-of-scope file edits, missing target files, orphan diffs, and missing observed evidence all show up. The review seat sees this report alongside the diff so it cannot rubber-stamp a runaway agent.
 3. **Tiered approval.** Declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and pass through an `auto` / `sticky` / `confirm` gate: `auto` proceeds silently for reads and in-scope writes; `sticky` prompts once per session and persists the grant for out-of-scope writes; `confirm` always requires a typed phrase for destructive writes or package manifest/lockfile changes. Sticky grants persist in `.splitbrief/approvals.json` and are managed via `splitbrief approval list / clear`.
 
-Same-directory parallel writes are out of scope. A future implementer pool may choose the cheapest capable worker for each Task Brief, but it is still one implementer role running safely against one checkout.
+Same-directory parallel writes are out of scope. A future implementer pool may choose the capable worker with the smallest sufficient context window for each Task Brief, but it is still one implementer role running safely against one checkout.
 
 ---
 
@@ -282,7 +277,7 @@ These features are active by default unless noted:
 | If you want to… | Read |
 |---|---|
 | Find any doc by topic | [docs/README.md](./README.md) — the index |
-| Look up vocabulary (planner, brief, queue, awaiting-continue, etc.) | [docs/CONCEPTS.md](./CONCEPTS.md) |
+| Look up vocabulary (planner, brief, queue, run status, stop reason, etc.) | [docs/CONCEPTS.md](./CONCEPTS.md) |
 | See all shipped features | [docs/FEATURES.md](./FEATURES.md) — feature inventory |
 | End-to-end how-tos and cookbook recipes | [docs/USAGE-EXAMPLES.md](./USAGE-EXAMPLES.md) |
 | Every CLI command and flag | [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md) |

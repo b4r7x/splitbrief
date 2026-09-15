@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, describe, it, expect } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { render } from 'ink-testing-library';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -57,6 +58,7 @@ function createTestCommands(): RuntimeCommandDef[] {
     quit: () => {},
     resumeRun: () => true,
     endRun: () => true,
+    refreshRun: () => {},
     setWorkflowMode: setWorkflowModeForTest,
     getWorkflowMode: () => configStore.get().config?.workflow.mode ?? 'standard',
     prefillComposer: composerDraftStore.request,
@@ -117,6 +119,7 @@ function renderCommandPalette(): ReturnType<typeof render> {
 function enterWorkflowScreen(): void {
   routerStore.navigate({
     to: 'workflow',
+    run: makeRunRecord(),
     execution: {
       kind: 'local',
       prepared: makePreparedExecution({
@@ -390,10 +393,11 @@ describe('CommandPaletteOverlay', () => {
     const session = makeSession({
       id: 'sess-abc',
       feature: 'add login form',
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
     saveSummary({ projectDir: projectDir, sessionId: session.id }, session);
+    sessionsStore.load(projectDir);
 
     const instance = renderCommandPalette();
     await tick(1);
@@ -608,15 +612,16 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
-  it('session action does not double-close overlay (underlying overlay survives)', async () => {
+  it('opening a run from the palette clears every overlay and shows it at rest', async () => {
     const uniqueFeature = 'uniquefeaturexyz987';
     const session = makeSession({
       id: 'sess-regression',
       feature: uniqueFeature,
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
     saveSummary({ projectDir: projectDir, sessionId: session.id }, session);
+    sessionsStore.load(projectDir);
 
     overlayStore.reset();
     overlayStore.open('settings');
@@ -638,7 +643,13 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    expect(overlayStore.get().active).toBe('settings');
+    // The run takes the screen, so nothing is left layered over it — not the palette that
+    // opened it and not the overlay the palette was opened from.
+    expect(overlayStore.get().active).toBe('none');
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen !== 'workflow') throw new Error('expected the workflow route');
+    expect(route.execution.kind).toBe('at-rest');
 
     instance.unmount();
   });
@@ -755,7 +766,7 @@ describe('CommandPaletteOverlay', () => {
     const rows = commandRows(instance.lastFrame() ?? '');
     expect(rows.some((row) => row.includes('/help'))).toBe(true);
     expect(rows.some((row) => row.includes('/diff'))).toBe(false);
-    expect(rows.some((row) => row.includes('/cost'))).toBe(false);
+    expect(rows.some((row) => row.includes('/sidebar'))).toBe(false);
     instance.unmount();
   });
 
@@ -794,10 +805,11 @@ describe('CommandPaletteOverlay', () => {
     const session = makeSession({
       id: 'sess-long-title',
       feature,
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
     saveSummary({ projectDir, sessionId: session.id }, session);
+    sessionsStore.load(projectDir);
 
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const instance = renderCommandPalette();
@@ -821,10 +833,11 @@ describe('CommandPaletteOverlay', () => {
     const session = makeSession({
       id: 'sess-widening',
       feature,
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
     saveSummary({ projectDir, sessionId: session.id }, session);
+    sessionsStore.load(projectDir);
 
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const instance = renderCommandPalette();
@@ -884,10 +897,11 @@ describe('CommandPaletteOverlay', () => {
     const session = makeSession({
       id: 'sess-height',
       feature,
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
     saveSummary({ projectDir, sessionId: session.id }, session);
+    sessionsStore.load(projectDir);
 
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const instance = renderCommandPalette();

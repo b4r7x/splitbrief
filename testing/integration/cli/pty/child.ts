@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createElement } from 'react';
 import { App, type AppProps } from '../../../../src/app/root.js';
@@ -99,6 +100,7 @@ export async function runPtyChild(
     const prepared = await preparePtyExecution(projectDir, config);
     routerStore.init({
       screen: 'workflow',
+      run: makeRunRecord(),
       execution: { kind: 'local', prepared },
     });
 

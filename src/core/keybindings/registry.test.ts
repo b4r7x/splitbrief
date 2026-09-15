@@ -15,7 +15,7 @@ describe('workflow scroll shortcut', () => {
   });
 
   it('no duplicate chord', () => {
-    for (const screen of ['home', 'workflow', 'summary', 'setup'] as const) {
+    for (const screen of ['home', 'workflow', 'setup'] as const) {
       const keys = getShortcutsForScreen(screen, { inputMode: 'review' }).map((s) => s.key);
       expect(new Set(keys).size, `${screen} advertises one meaning per chord`).toBe(keys.length);
     }
@@ -35,7 +35,7 @@ describe('workflow scroll shortcut', () => {
   });
 
   it('uses lowercase key labels throughout the help registry', () => {
-    const screens: readonly Screen[] = ['home', 'workflow', 'summary', 'setup'];
+    const screens: readonly Screen[] = ['home', 'workflow', 'setup'];
     const labels = screens.flatMap((screen) =>
       getShortcutsForScreen(screen, { inputMode: 'review' }).map((shortcut) => shortcut.key),
     );
@@ -54,7 +54,6 @@ describe('workflow scroll shortcut', () => {
         'ctrl+e',
         'shift+↑/↓, pgup/pgdn, home/end',
         '/activity, ctrl+a',
-        'enter',
       ]),
     );
     expect(labels.some((label) => /[A-Z]/.test(label))).toBe(false);

@@ -1,6 +1,14 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
-import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -12,13 +20,14 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { RunnerCallContext } from '../../../engine/calls/types.js';
-import type { PlanOptions, PlannerOutputCallbacks } from '../../../engine/planners/types.js';
+import type { RunPhaseInput, PlannerOutputCallbacks } from '../../../engine/planners/types.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -152,6 +161,11 @@ async function runWorkflow(input: WorkflowTestOptions) {
       feature,
     });
   ensureSessionDir(projectDir, sessionId);
+  // An open run keeps the active pointer, so a second run in one project has to take it over the
+  // way `prepareNewSession` does rather than collide with the run before it.
+  if (readActive(projectDir) !== null && readActive(projectDir) !== sessionId) {
+    rmSync(join(projectDir, SPLITBRIEF_DIR, 'active'), { force: true });
+  }
   const active = reactivateExistingSession({ projectDir, sessionId });
   const preparationId = `workflow-test-${sessionId}`;
   const gates: RunnerGate[] = [
@@ -311,11 +325,10 @@ describe('runWorkflow — smoke', () => {
     };
     const onContinuationNeeded = vi.fn(async () => 'should not run');
     const { callbacks } = makeCallbacks({ onContinuationNeeded });
-    const quickPlan = vi.fn().mockImplementation(async () => {
+    const runPhase = vi.fn(async ({ call }: RunPhaseInput) => {
       expect(pendingBoundaryInterrupt).toBe(false);
-      return {
-        spec: '',
-        plan: '',
+      return makePhaseCallResult({
+        call,
         tasks: [
           makeTask({
             id: 'T001',
@@ -325,7 +338,7 @@ describe('runWorkflow — smoke', () => {
           }),
         ],
         usage: { inputTokens: 50, outputTokens: 25 },
-      };
+      });
     });
 
     const summary = await runWorkflow({
@@ -345,18 +358,18 @@ describe('runWorkflow — smoke', () => {
         consumeBoundaryInterrupt,
       },
       _eventSink: (e) => events.push(e),
-      _planner: makePlanner({ quickPlan }),
+      _planner: makePlanner({ runPhase }),
       _implementer: makeImplementer(),
     });
 
     expect(events.find((e) => e.type === 'turn_interrupted')).toBeUndefined();
     expect(onContinuationNeeded).not.toHaveBeenCalled();
-    expect(quickPlan).toHaveBeenCalled();
+    expect(runPhase).toHaveBeenCalled();
     expect(pendingBoundaryInterrupt).toBe(false);
     expect(summary.totalTasks).toBe(1);
   }, 20_000);
 
-  it('records the session status as failed (not interrupted) when planning fails', async () => {
+  it('records the planning failure as the stop reason of an open run', async () => {
     const projectDir = setupProject();
     const sessionId = 'planning-failed-sid';
     const { callbacks } = makeCallbacks();
@@ -368,9 +381,8 @@ describe('runWorkflow — smoke', () => {
       },
     });
 
-    // An available planner that returns zero tasks routes through handlePlanningFailure
-    // with a real (non-abort) error. The persisted session must read as 'failed', not the
-    // user-cancel status 'interrupted' (F-127).
+    // An available planner that returns zero briefs raises a halt the operator answers. The run
+    // stays open — nothing closed it — and the record names the halt as why it stopped.
     await runWorkflow({
       feature: 'planning-failure',
       projectDir,
@@ -379,29 +391,29 @@ describe('runWorkflow — smoke', () => {
       sessionId,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _planner: makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '',
-          tasks: [],
-          usage: { inputTokens: 50, outputTokens: 25 },
-        }),
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [],
+            usage: { inputTokens: 50, outputTokens: 25 },
+          }),
+        ),
       }),
     });
 
-    const { listAllSessions } = await import('../../../core/sessions/io.js');
-    const persisted = listAllSessions(projectDir).find((s) => s.id === sessionId);
-    expect(persisted?.status).toBe('failed');
+    const { listSessions } = await import('../../../core/sessions/io.js');
+    const persisted = listSessions(projectDir).find((s) => s.id === sessionId);
+    expect(persisted).toMatchObject({ status: 'open', stop: 'halted' });
   });
 
-  it('initialization failure yields a failed session status', async () => {
+  it('initialization failure leaves the run open', async () => {
     const projectDir = setupProject();
     const sessionId = 'init-failed-sid';
     const { callbacks } = makeCallbacks();
     const config = unavailablePlannerConfig();
 
     // The planner is unavailable, so initializeWorkflow returns `ok: false` before any
-    // planning work starts. The persisted session must read as 'failed', not the default
-    // 'interrupted' status.
+    // planning work starts. Nothing closed the run, so it stays open and continuable.
     await runWorkflow({
       feature: 'init-failure',
       projectDir,
@@ -411,9 +423,9 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
     });
 
-    const { listAllSessions } = await import('../../../core/sessions/io.js');
-    const persisted = listAllSessions(projectDir).find((s) => s.id === sessionId);
-    expect(persisted?.status).toBe('failed');
+    const { listSessions } = await import('../../../core/sessions/io.js');
+    const persisted = listSessions(projectDir).find((s) => s.id === sessionId);
+    expect(persisted?.status).toBe('open');
   });
 
   it('writes a liveness record (pid + fresh heartbeat) for an interactive run and marks it exited on completion', async () => {
@@ -477,15 +489,14 @@ describe('runWorkflow — smoke', () => {
       sessionId,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _planner: makePlanner({
-        quickPlan: vi.fn().mockImplementation(async () => {
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) => {
           registerProcess(groupChild, { group: true });
           entriesDuringRun = readRunnerPids({ projectDir, sessionId });
-          return {
-            spec: '',
-            plan: '',
+          return makePhaseCallResult({
+            call,
             tasks: [makeTask()],
             usage: { inputTokens: 50, outputTokens: 25 },
-          };
+          });
         }),
       }),
       _implementer: makeImplementer(),
@@ -562,22 +573,21 @@ describe('runWorkflow — smoke', () => {
         callbacks,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
         _planner: makePlanner({
-          quickPlan: vi.fn().mockImplementation(async (opts: PlanOptions) => {
+          runPhase: vi.fn(async (opts: RunPhaseInput) => {
             registerProcess(child);
             opts.callbacks.onQuestion?.([{ id: 'q1', type: 'input', text: 'Continue?' }]);
-            return {
-              spec: '',
-              plan: '',
+            return makePhaseCallResult({
+              call: opts.call,
               tasks: [makeTask()],
               usage: { inputTokens: 50, outputTokens: 25 },
-            };
+            });
           }),
         }),
         _implementer: makeImplementer(),
       });
 
       expect(summary.totalTasks).toBe(0);
-      expect(JSON.parse(readFileSync(summaryPath, 'utf8'))).toMatchObject({ status: 'failed' });
+      expect(JSON.parse(readFileSync(summaryPath, 'utf8'))).toMatchObject({ status: 'open' });
       expect(child.exitCode).toBe(0);
       expect(existsSync(observedEarlySummaryPath)).toBe(false);
     },
@@ -639,8 +649,7 @@ describe('runWorkflow — smoke', () => {
       await vi.waitFor(() => expect(firstAvailability).toHaveBeenCalledTimes(1));
       const secondPlanner = makePlanner({
         isAvailable: vi.fn(),
-        quickPlan: vi.fn(),
-        plan: vi.fn(),
+        runPhase: vi.fn(),
       });
       await expect(
         runWorkflow({
@@ -655,8 +664,7 @@ describe('runWorkflow — smoke', () => {
         }),
       ).rejects.toMatchObject({ kind: 'workflow-session-already-live' });
       expect(secondPlanner.isAvailable).not.toHaveBeenCalled();
-      expect(secondPlanner.plan).not.toHaveBeenCalled();
-      expect(secondPlanner.quickPlan).not.toHaveBeenCalled();
+      expect(secondPlanner.runPhase).not.toHaveBeenCalled();
     } finally {
       releaseFirst.resolve();
       await firstRun;
@@ -671,7 +679,7 @@ describe('runWorkflow — smoke', () => {
     writeRawState(ref, legacyWorkflowState('legacy state'));
     const before = readFileSync(stateFile(ref));
 
-    const planner = makePlanner({ isAvailable: vi.fn(), plan: vi.fn(), quickPlan: vi.fn() });
+    const planner = makePlanner({ isAvailable: vi.fn(), runPhase: vi.fn() });
     const summary = await runWorkflow({
       feature: 'legacy state',
       projectDir,
@@ -686,8 +694,7 @@ describe('runWorkflow — smoke', () => {
     expect(summary.totalTasks).toBe(0);
     expect(readFileSync(stateFile(ref))).toEqual(before);
     expect(planner.isAvailable).not.toHaveBeenCalled();
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(planner.runPhase).not.toHaveBeenCalled();
     expect(planner.review).not.toHaveBeenCalled();
   });
 
@@ -700,8 +707,7 @@ describe('runWorkflow — smoke', () => {
     const before = readFileSync(stateFile(ref));
     const planner = makePlanner({
       isAvailable: vi.fn(),
-      plan: vi.fn(),
-      quickPlan: vi.fn(),
+      runPhase: vi.fn(),
     });
 
     const summary = await runWorkflow({
@@ -718,8 +724,7 @@ describe('runWorkflow — smoke', () => {
     expect(summary.totalTasks).toBe(0);
     expect(readFileSync(stateFile(ref))).toEqual(before);
     expect(planner.isAvailable).not.toHaveBeenCalled();
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(planner.runPhase).not.toHaveBeenCalled();
   });
 
   it('refuses a new-workflow run over a session that already started', async () => {
@@ -729,7 +734,7 @@ describe('runWorkflow — smoke', () => {
     ensureSessionDir(projectDir, sessionId);
     saveState(ref, makeImplStateWithMetadata([makeTask({ id: 'T001' })]));
     const before = readFileSync(stateFile(ref));
-    const planner = makePlanner({ isAvailable: vi.fn(), plan: vi.fn(), quickPlan: vi.fn() });
+    const planner = makePlanner({ isAvailable: vi.fn(), runPhase: vi.fn() });
 
     await expect(
       runWorkflow({
@@ -749,8 +754,7 @@ describe('runWorkflow — smoke', () => {
 
     expect(readFileSync(stateFile(ref))).toEqual(before);
     expect(planner.isAvailable).not.toHaveBeenCalled();
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(planner.runPhase).not.toHaveBeenCalled();
   });
 
   it('uses the explicit sessionId when provided and creates the session directory', async () => {
@@ -848,14 +852,13 @@ describe('runWorkflow — smoke', () => {
       signal: controller.signal,
       _eventSink: (event) => events.push(event),
       _planner: makePlanner({
-        quickPlan: vi.fn().mockImplementation(async () => {
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) => {
           controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
-          return {
-            spec: '',
-            plan: '',
+          return makePhaseCallResult({
+            call,
             tasks: [makeTask()],
             usage: null,
-          };
+          });
         }),
       }),
       _implementer: makeImplementer(),
@@ -867,7 +870,7 @@ describe('runWorkflow — smoke', () => {
     });
   });
 
-  it('user cancel persists status cancelled', async () => {
+  it('End run closes the run on the state', async () => {
     const projectDir = setupProject();
     const sessionId = 'user-cancel-sid';
     const { callbacks } = makeCallbacks();
@@ -885,19 +888,20 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       signal: controller.signal,
       _planner: makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '',
-          tasks: [
-            makeTask({
-              id: 'T001',
-              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the planned task ran'],
-              typeDefs: 'type HelloTask = { file: string }',
-            }),
-          ],
-          usage: null,
-        }),
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [
+              makeTask({
+                id: 'T001',
+                scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+                evidence: ['task_completed event shows the planned task ran'],
+                typeDefs: 'type HelloTask = { file: string }',
+              }),
+            ],
+            usage: null,
+          }),
+        ),
       }),
       _implementer: makeImplementer({
         implement: vi.fn().mockImplementation(async () => {
@@ -907,11 +911,13 @@ describe('runWorkflow — smoke', () => {
       }),
     });
 
-    const { listAllSessions } = await import('../../../core/sessions/io.js');
-    expect(listAllSessions(projectDir).find((s) => s.id === sessionId)?.status).toBe('cancelled');
+    const { listSessions } = await import('../../../core/sessions/io.js');
+    expect(listSessions(projectDir).find((s) => s.id === sessionId)?.status).toBe('ended');
+    const { loadState } = await import('../../../core/state/persistence.js');
+    expect(loadState({ projectDir, sessionId })?.closed?.as).toBe('ended');
   });
 
-  it('a plain pause persists status interrupted', async () => {
+  it('a plain abort parks the step and leaves the run open', async () => {
     const projectDir = setupProject();
     const sessionId = 'plain-pause-sid';
     const { callbacks } = makeCallbacks();
@@ -929,19 +935,20 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       signal: controller.signal,
       _planner: makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '',
-          tasks: [
-            makeTask({
-              id: 'T001',
-              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the planned task ran'],
-              typeDefs: 'type HelloTask = { file: string }',
-            }),
-          ],
-          usage: null,
-        }),
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [
+              makeTask({
+                id: 'T001',
+                scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+                evidence: ['task_completed event shows the planned task ran'],
+                typeDefs: 'type HelloTask = { file: string }',
+              }),
+            ],
+            usage: null,
+          }),
+        ),
       }),
       _implementer: makeImplementer({
         implement: vi.fn().mockImplementation(async () => {
@@ -951,8 +958,14 @@ describe('runWorkflow — smoke', () => {
       }),
     });
 
-    const { listAllSessions } = await import('../../../core/sessions/io.js');
-    expect(listAllSessions(projectDir).find((s) => s.id === sessionId)?.status).toBe('interrupted');
+    const { listSessions } = await import('../../../core/sessions/io.js');
+    const row = listSessions(projectDir).find((s) => s.id === sessionId);
+    expect(row?.status).toBe('open');
+    expect(row?.stop).toBe('paused');
+    const { loadState } = await import('../../../core/state/persistence.js');
+    const saved = loadState({ projectDir, sessionId });
+    expect(saved?.closed).toBeUndefined();
+    expect(saved?.interruptedStep?.source).toBe('user');
   });
 
   it('persists workflow_cancelled when user cancellation reaches the unavailable-planner path', async () => {
@@ -1030,7 +1043,7 @@ describe('runWorkflow — smoke', () => {
     expect(loadState({ projectDir, sessionId })?.phase).toBe('reviewing-plan');
   });
 
-  it('clears the active session for a normal aborted run', async () => {
+  it('keeps the active session for an aborted run so it can be picked up', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();
     const sessionId = 'explicit-normal-abort-sid';
@@ -1056,7 +1069,8 @@ describe('runWorkflow — smoke', () => {
       signal: controller.signal,
     });
 
-    expect(readActive(projectDir)).toBeNull();
+    // An abort parks the run rather than ending it, so `splitbrief resume` still finds it.
+    expect(readActive(projectDir)).toBe(sessionId);
   });
 
   it('carries the planner-produced tasks straight into the task loop and completes them', async () => {
@@ -1080,19 +1094,20 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (e) => events.push(e),
       _planner: makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '',
-          tasks: [
-            makeTask({
-              id: 'T001',
-              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the planned task ran'],
-              typeDefs: 'type HelloTask = { file: string }',
-            }),
-          ],
-          usage: { inputTokens: 50, outputTokens: 25 },
-        }),
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [
+              makeTask({
+                id: 'T001',
+                scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+                evidence: ['task_completed event shows the planned task ran'],
+                typeDefs: 'type HelloTask = { file: string }',
+              }),
+            ],
+            usage: { inputTokens: 50, outputTokens: 25 },
+          }),
+        ),
       }),
       _implementer: makeImplementer(),
     });
@@ -1104,38 +1119,40 @@ describe('runWorkflow — smoke', () => {
 
   it('a rewind at the task boundary loops back to planning', async () => {
     const projectDir = setupProject();
-    const quickPlan = vi
+    const runPhase = vi
       .fn()
-      .mockResolvedValueOnce({
-        spec: '',
-        plan: '# First plan',
-        tasks: [
-          makeTask({
-            id: 'T001',
-            title: 'First task',
-            file: 'src/first.ts',
-            scope: { inBounds: ['src/first.ts'], outOfBounds: ['other files'] },
-            evidence: ['task_completed event shows the first task ran'],
-            typeDefs: 'type FirstTask = { file: string }',
-          }),
-        ],
-        usage: null,
-      })
-      .mockResolvedValueOnce({
-        spec: '',
-        plan: '# Revised plan',
-        tasks: [
-          makeTask({
-            id: 'T002',
-            title: 'Revised task',
-            file: 'src/revised.ts',
-            scope: { inBounds: ['src/revised.ts'], outOfBounds: ['other files'] },
-            evidence: ['task_completed event shows the revised task ran'],
-            typeDefs: 'type RevisedTask = { file: string }',
-          }),
-        ],
-        usage: null,
-      });
+      .mockResolvedValueOnce(
+        makePhaseCallResult({
+          call: 'tasks',
+          tasks: [
+            makeTask({
+              id: 'T001',
+              title: 'First task',
+              file: 'src/first.ts',
+              scope: { inBounds: ['src/first.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the first task ran'],
+              typeDefs: 'type FirstTask = { file: string }',
+            }),
+          ],
+          usage: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        makePhaseCallResult({
+          call: 'tasks',
+          tasks: [
+            makeTask({
+              id: 'T002',
+              title: 'Revised task',
+              file: 'src/revised.ts',
+              scope: { inBounds: ['src/revised.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the revised task ran'],
+              typeDefs: 'type RevisedTask = { file: string }',
+            }),
+          ],
+          usage: null,
+        }),
+      );
     const onTaskReviewNeeded = vi
       .fn()
       .mockResolvedValueOnce({ action: 'revise-plan' })
@@ -1158,13 +1175,13 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (e) => events.push(e),
       _planner: makePlanner({
-        quickPlan,
+        runPhase,
         review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
       }),
       _implementer: makeImplementer(),
     });
 
-    expect(quickPlan).toHaveBeenCalledTimes(2);
+    expect(runPhase).toHaveBeenCalledTimes(2);
     expect(onTaskReviewNeeded).toHaveBeenCalledTimes(2);
     expect(onTaskReviewNeeded.mock.calls.map(([request]) => request.taskId)).toEqual([
       'T001',
@@ -1200,21 +1217,22 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (e) => events.push(e),
       _planner: makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '# Plan',
-          tasks: [
-            makeTask({
-              id: 'T001',
-              title: 'Abortable task',
-              file: 'src/abortable.ts',
-              scope: { inBounds: ['src/abortable.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the task ran'],
-              typeDefs: 'type AbortableTask = { file: string }',
-            }),
-          ],
-          usage: null,
-        }),
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [
+              makeTask({
+                id: 'T001',
+                title: 'Abortable task',
+                file: 'src/abortable.ts',
+                scope: { inBounds: ['src/abortable.ts'], outOfBounds: ['other files'] },
+                evidence: ['task_completed event shows the task ran'],
+                typeDefs: 'type AbortableTask = { file: string }',
+              }),
+            ],
+            usage: null,
+          }),
+        ),
       }),
       _implementer: makeImplementer(),
     });
@@ -1260,7 +1278,7 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (event) => events.push(event),
       _planner: makePlanner({
-        quickPlan: vi.fn().mockImplementation(async (opts: PlanOptions) => {
+        runPhase: vi.fn(async (opts: RunPhaseInput) => {
           opts.callbacks.onCallEvent?.({ type: 'call_started', ts: startedAt, ...call });
           opts.callbacks.onCallEvent?.({
             type: 'call_usage',
@@ -1282,12 +1300,11 @@ describe('runWorkflow — smoke', () => {
             usage,
             nativeSessionId: null,
           });
-          return {
-            spec: '',
-            plan: '',
+          return makePhaseCallResult({
+            call: opts.call,
             tasks: [makeTask()],
             usage: null,
-          };
+          });
         }),
       }),
       _implementer: makeImplementer(),
@@ -1332,21 +1349,22 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (event) => events.push(event),
       _planner: makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '# Plan',
-          tasks: [
-            makeTask({
-              id: 'T001',
-              title: 'Reviewable task',
-              file: 'src/reviewable.ts',
-              scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the task ran'],
-              typeDefs: 'type ReviewableTask = { file: string }',
-            }),
-          ],
-          usage: null,
-        }),
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [
+              makeTask({
+                id: 'T001',
+                title: 'Reviewable task',
+                file: 'src/reviewable.ts',
+                scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
+                evidence: ['task_completed event shows the task ran'],
+                typeDefs: 'type ReviewableTask = { file: string }',
+              }),
+            ],
+            usage: null,
+          }),
+        ),
         review: vi.fn().mockImplementation(async (_prompt, _dir, cbs: PlannerOutputCallbacks) => {
           emitReviewCall(cbs, 'test-planner');
           return { text: '# Review\n\n### Verdict\npass\n', usage: null };
@@ -1366,21 +1384,22 @@ describe('runWorkflow — smoke', () => {
     const { callbacks } = makeCallbacks();
     const events: EngineEvent[] = [];
     const planner = makePlanner({
-      quickPlan: vi.fn().mockResolvedValue({
-        spec: '',
-        plan: '# Plan',
-        tasks: [
-          makeTask({
-            id: 'T001',
-            title: 'Reviewable task',
-            file: 'src/reviewable.ts',
-            scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
-            evidence: ['task_completed event shows the task ran'],
-            typeDefs: 'type ReviewableTask = { file: string }',
-          }),
-        ],
-        usage: null,
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          tasks: [
+            makeTask({
+              id: 'T001',
+              title: 'Reviewable task',
+              file: 'src/reviewable.ts',
+              scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the task ran'],
+              typeDefs: 'type ReviewableTask = { file: string }',
+            }),
+          ],
+          usage: null,
+        }),
+      ),
     });
 
     await runWorkflow({
@@ -1753,8 +1772,8 @@ describe('runWorkflow — recovery resume', () => {
 
     // The persisted session record keeps the original start instead of overwriting it with
     // the resume's wall-clock time.
-    const { listAllSessions } = await import('../../../core/sessions/io.js');
-    const persisted = listAllSessions(projectDir).find((s) => s.id === sessionId);
+    const { listSessions } = await import('../../../core/sessions/io.js');
+    const persisted = listSessions(projectDir).find((s) => s.id === sessionId);
     expect(persisted?.startedAt).toBe(originalStartMs);
   });
 

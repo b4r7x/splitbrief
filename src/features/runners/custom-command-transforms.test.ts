@@ -45,7 +45,6 @@ implementer_profiles:
       custom_models:
         - existing-model
       label: Active cloud
-      cost_tier: cheap
     dormant-local:
       kind: cli
       tool: codex
@@ -116,7 +115,6 @@ describe('custom command catalog transforms', () => {
       command: './tools/review',
       model: 'existing-model',
       label: 'Active cloud',
-      costTier: 'cheap',
     });
     expect(selected.config.implementerProfiles?.profiles['dormant-local']).toEqual(dormant);
   });

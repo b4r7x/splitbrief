@@ -55,13 +55,6 @@ type LiveRunResult = Readonly<{ summary: Summary; projectDir: string }>;
 
 const REFUSED_MODEL_TOKENS: readonly string[] = ['opus', 'fable', 'sol'];
 
-/** Per-pair spend ceiling documented in docs/TESTING.md, by the mode each tier runs (speckit: $1 — six-to-seven planner calls on cheap pins). */
-const MAX_BUDGET_USD: Readonly<Record<LiveMatrixMode, number>> = {
-  quick: 0.05,
-  standard: 0.5,
-  speckit: 1,
-};
-
 let bannerPrinted = false;
 
 function assertModelUnderCostCeiling(tool: string, model: string): void {
@@ -259,7 +252,6 @@ export async function runLiveScenario(
         mode: scenario.mode,
         approve: 'none',
         maxRetries: scenario.maxRetries,
-        maxBudget: MAX_BUDGET_USD[scenario.mode],
       },
     });
     mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
@@ -515,7 +507,6 @@ export function releaseMatrixConfig(run: ReleaseMatrixRun, tier: LiveMatrixTier)
       mode: run.mode,
       approve: 'none',
       maxRetries: tier.maxRetries,
-      maxBudget: MAX_BUDGET_USD[run.mode],
     },
   });
 }

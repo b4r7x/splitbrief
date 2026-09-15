@@ -52,15 +52,19 @@ type ActionRow = Extract<PromptRow, { kind: 'action' } | { kind: 'note' }>;
 
 const REBASE_CONTINUATION = '(approve / edit / reject the proposal)';
 
+// `revise` and `revise-spec` share a key: no reason offers both, and the answer
+// is matched only against the actions the issue itself carries.
 const ACTION_KEYS: Record<RecoveryAction, string> = {
   'retry-same-worker': 'r',
   'route-bigger-worker': 'b',
   'switch-seat': 'w',
   'planner-split-rebase': 'p',
+  revise: 'v',
+  'revise-spec': 'v',
   continue: 'c',
   'skip-current-task': 's',
   'pause-run': 'space',
-  'abort-workflow': 'a',
+  'end-run': 'a',
 };
 
 export const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
@@ -68,10 +72,12 @@ export const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
   'route-bigger-worker': ['b', 'bigger', 'route', 'route bigger', 'route-bigger-worker'],
   'switch-seat': ['w', 'switch', 'switch seat', 'switch-seat'],
   'planner-split-rebase': [],
+  revise: ['v', 'revise', 'comment'],
+  'revise-spec': ['v', 'revise', 'revise spec', 'revise-spec'],
   continue: ['c', 'continue', 'cont'],
   'skip-current-task': ['s', 'skip', 'skip task', 'skip-current-task'],
   'pause-run': ['space', 'pause', 'pause run', 'pause-run'],
-  'abort-workflow': ['a', 'abort', 'quit', 'q', 'abort-workflow'],
+  'end-run': ['a', 'end', 'end run', 'end-run', 'abort', 'quit', 'q'],
 };
 
 /** The numbered form of the seat key, as the prompt prints it for a second and third offer. */
@@ -85,7 +91,6 @@ export interface RecoveryActionChoiceContext {
 
 export function getRecoveryPromptActions(issue: RecoveryIssue): RecoveryAction[] {
   const allowed = new Set(issue.availableActions);
-  if (issue.reason === 'budget-exceeded') allowed.delete('continue');
   return ACTION_ORDER.filter((action) => allowed.has(action));
 }
 
@@ -104,14 +109,18 @@ function formatRecoveryActionText(
       return 'switch the seat to another tool';
     case 'planner-split-rebase':
       return `ask planner to ${rebaseVerb(context)}`;
+    case 'revise':
+      return 'revise · send the planner a correction';
+    case 'revise-spec':
+      return 'revise the spec · send it back with a note';
     case 'continue':
       return 'continue';
     case 'skip-current-task':
       return 'skip task';
     case 'pause-run':
       return 'pause · no new brief starts, changes kept';
-    case 'abort-workflow':
-      return 'abort · stops the run, changes kept';
+    case 'end-run':
+      return 'end run · closes this run, changes kept';
   }
 }
 

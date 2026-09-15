@@ -451,7 +451,6 @@ describe('initStores', () => {
         failed: 0,
         totalTime: 0,
         tokenUsage: makeUsage(),
-        estimatedCostSavings: '$0.00',
         escalationRate: 0,
       },
     };

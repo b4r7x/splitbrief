@@ -63,24 +63,28 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
   }
 }
 
-export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEvent[] {
-  if (event.type === 'runner_call_text_delta') return events;
+type TailMerge =
+  | { readonly kind: 'drop' }
+  | { readonly kind: 'replace'; readonly event: EngineEvent }
+  | { readonly kind: 'append' };
 
-  const last = events[events.length - 1];
+const DROP_TAIL_MERGE: TailMerge = { kind: 'drop' };
+const APPEND_TAIL_MERGE: TailMerge = { kind: 'append' };
+
+// The only part of the log an arriving event can change besides its own slot. Both the live path
+// and the batch path decide here, so they cannot drift apart.
+function mergeIntoTail(last: EngineEvent | undefined, event: EngineEvent): TailMerge {
+  if (event.type === 'runner_call_text_delta') return DROP_TAIL_MERGE;
   if (
     event.type === 'planner_text' &&
     last?.type === 'planner_text' &&
     (last.role ?? 'planner') === (event.role ?? 'planner') &&
     (last.content ?? 'plain') === (event.content ?? 'plain')
   ) {
-    let mergedText = last.text + event.text;
-    if (mergedText.length > MAX_MERGED_TEXT_LENGTH) {
-      mergedText = mergedText.slice(-MAX_MERGED_TEXT_LENGTH);
-    }
-    const merged = { ...last, text: mergedText };
-    const next = events.slice();
-    next[next.length - 1] = merged;
-    return next;
+    const joined = last.text + event.text;
+    const text =
+      joined.length > MAX_MERGED_TEXT_LENGTH ? joined.slice(-MAX_MERGED_TEXT_LENGTH) : joined;
+    return { kind: 'replace', event: { ...last, text } };
   }
   if (
     event.type === 'validate' &&
@@ -88,9 +92,7 @@ export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEve
     last?.type === 'validate' &&
     last.status === 'running'
   ) {
-    const next = events.slice();
-    next[next.length - 1] = event;
-    return next;
+    return { kind: 'replace', event };
   }
   if (
     event.type === 'validation_baseline' &&
@@ -98,8 +100,17 @@ export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEve
     last?.type === 'validation_baseline' &&
     last.status === 'running'
   ) {
+    return { kind: 'replace', event };
+  }
+  return APPEND_TAIL_MERGE;
+}
+
+export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEvent[] {
+  const merge = mergeIntoTail(events[events.length - 1], event);
+  if (merge.kind === 'drop') return events;
+  if (merge.kind === 'replace') {
     const next = events.slice();
-    next[next.length - 1] = event;
+    next[next.length - 1] = merge.event;
     return next;
   }
   if (events.length >= MAX_EVENTS) {
@@ -111,6 +122,67 @@ export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEve
     return [...kept, event];
   }
   return [...events, event];
+}
+
+// The batch form of mergeEvent for a replayed log: same projection, same tail merge, same eviction
+// order, but the survivors are marked in place and materialized once, so a 50k-event log costs one
+// pass rather than one whole-array copy per event past the cap.
+export function mergeEventLog(events: EngineEvent[]): EngineEvent[] {
+  const log: EngineEvent[] = [];
+  const dropped: boolean[] = [];
+  let live = 0;
+  let evictable = 0;
+  let oldest = 0;
+
+  for (const event of events) {
+    const projected = projectEventForTuiEventLog(event);
+    if (projected === null) continue;
+    const merge = mergeIntoTail(log[log.length - 1], projected);
+    if (merge.kind === 'drop') continue;
+    if (merge.kind === 'replace') {
+      log[log.length - 1] = merge.event;
+      continue;
+    }
+    if (live >= MAX_EVENTS) {
+      evictable = nextEvictableIndex(log, dropped, evictable);
+      if (evictable < log.length) {
+        dropped[evictable] = true;
+        evictable += 1;
+      } else {
+        oldest = nextSurvivingIndex(dropped, oldest, log.length);
+        dropped[oldest] = true;
+        oldest += 1;
+      }
+      live -= 1;
+    }
+    log.push(projected);
+    dropped.push(false);
+    live += 1;
+  }
+
+  return log.filter((_, index) => dropped[index] !== true);
+}
+
+// Both scans resume where the last one stopped: an entry already passed over is structural or
+// dropped for the rest of the fold, so neither cursor ever walks backwards.
+function nextEvictableIndex(
+  log: readonly EngineEvent[],
+  dropped: readonly boolean[],
+  from: number,
+): number {
+  for (let index = from; index < log.length; index += 1) {
+    const event = log[index];
+    if (event === undefined || dropped[index] === true) continue;
+    if (!isStructuralTranscriptEvent(event)) return index;
+  }
+  return log.length;
+}
+
+function nextSurvivingIndex(dropped: readonly boolean[], from: number, end: number): number {
+  for (let index = from; index < end; index += 1) {
+    if (dropped[index] !== true) return index;
+  }
+  return end;
 }
 
 function projectRunnerActivityForTuiEventLog(

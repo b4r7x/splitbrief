@@ -55,7 +55,6 @@ function tokensState(): TokensState {
     tokenUsage: null,
     perPhase: {},
     perTask: {},
-    prediction: null,
     completedTaskCount: 0,
     pricingContext: null,
   };

@@ -71,8 +71,7 @@
     "orchestrator",
     "opus",
     "ollama",
-    "local-model",
-    "cost-optimization"
+    "local-model"
   ],
   "imports": {
     "#testing/*": "./testing/*"

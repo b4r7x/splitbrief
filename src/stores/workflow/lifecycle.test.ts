@@ -8,6 +8,7 @@ import {
 import { addEvent } from './actions/event.js';
 import { markWorkflowPaused } from './actions/pause.js';
 import { resetWorkflow } from './actions/reset.js';
+import { hydrateFromState } from './actions/hydrate.js';
 import { makePlannerStatus, makePlannerText } from '#testing/helpers/events/planner.js';
 import {
   makeRunnerCallActivity,
@@ -194,7 +195,8 @@ describe('lifecycleStore', () => {
   });
 
   it('records phaseFirstSeenTs for the resumed phase on workflow_resumed', () => {
-    resetWorkflow({
+    resetWorkflow();
+    hydrateFromState({
       stateVersion: 1,
       phase: 'specifying',
       feature: 'f',

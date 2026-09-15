@@ -311,7 +311,6 @@ function writeRunnerConfigYaml(
       profiles: {
         [profileName]: {
           label: 'Active cloud',
-          cost_tier: 'cheap',
           ...toYaml(args.profile as Record<string, unknown>),
         },
         'dormant-local': {

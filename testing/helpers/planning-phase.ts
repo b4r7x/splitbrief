@@ -20,7 +20,13 @@ import { writeEvidenceLedger } from '../../src/core/evidence/ledger-storage.js';
 import { recordRejectionEvidence } from '../../src/engine/orchestrator/evidence/approval.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../../src/engine/orchestrator/types.js';
 import type { ApprovalReviewResult } from '../../src/core/approval/types.js';
-import type { Planner } from '../../src/engine/planners/types.js';
+import type {
+  PhaseInputs,
+  Planner,
+  PlannerDocumentCall,
+  RunPhaseInput,
+} from '../../src/engine/planners/types.js';
+import { makePhaseCallResult } from './factories/phase-call.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import type { Attachment } from '../../src/core/schemas/attachment.js';
 
@@ -120,20 +126,34 @@ export function makeBriefQualityFailureTask() {
 
 export function makePassingPlanner(overrides?: Partial<Planner>): Planner {
   return makePlanner({
-    plan: vi.fn().mockResolvedValue({
-      spec: '# Spec',
-      plan: '# Plan',
-      tasks: [makePassingTask()],
-      usage: { inputTokens: 100, outputTokens: 50 },
-    }),
-    quickPlan: vi.fn().mockResolvedValue({
-      spec: '',
-      plan: '',
-      tasks: [makePassingTask()],
-      usage: { inputTokens: 50, outputTokens: 25 },
+    runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+      makePhaseCallResult({
+        call,
+        ...(call === 'tasks' ? { text: REAL_TASKS_MD, tasks: [makePassingTask()] } : {}),
+        ...(call === 'tasks' ? { usage: { inputTokens: 100, outputTokens: 50 } } : {}),
+      }),
+    ),
+    ...overrides,
+  });
+}
+
+/** A passing planner that records the inputs of every call it is asked to make. */
+export function makeRecordingPlanner(overrides?: Partial<Planner>): {
+  planner: Planner;
+  calls: Array<{ call: PlannerDocumentCall; inputs: PhaseInputs }>;
+} {
+  const calls: Array<{ call: PlannerDocumentCall; inputs: PhaseInputs }> = [];
+  const planner = makePassingPlanner({
+    runPhase: vi.fn(async ({ call, inputs }: RunPhaseInput) => {
+      calls.push({ call, inputs });
+      return makePhaseCallResult({
+        call,
+        ...(call === 'tasks' ? { text: REAL_TASKS_MD, tasks: [makePassingTask()] } : {}),
+      });
     }),
     ...overrides,
   });
+  return { planner, calls };
 }
 
 export function seedRejectionEvidence(projectDir: string, sessionId: string): void {
@@ -182,7 +202,7 @@ export type RunOpts = {
   sinks?: WorkflowSinks & { abortTurn: () => boolean };
 };
 
-export async function runPhase(dirs: string[], opts: RunOpts = {}) {
+export async function runPlanningTurn(dirs: string[], opts: RunOpts = {}) {
   const { projectDir, sessionId } = setupProject(dirs);
   const planner = opts.planner ?? makePassingPlanner();
   const callbacks = opts.callbacks ?? makeCallbacks().callbacks;
@@ -218,7 +238,7 @@ export type OwnedRunOpts = RunOpts & {
 
 /**
  * Runs planning through the workflow-owner seam used by the real orchestrator.
- * Direct producer tests should use runPhase; approval/materialization tests use
+ * Direct producer tests should use runPlanningTurn; approval/materialization tests use
  * this helper so they exercise runPlanningPhases rather than the bare producer.
  */
 export async function runOwnedPlanningPhase(dirs: string[], opts: OwnedRunOpts = {}) {

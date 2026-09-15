@@ -2,11 +2,10 @@ import type { Task } from '../../../src/core/schemas/task.js';
 import type { TokenDelta } from '../../../src/core/schemas/tokens.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
 import { ONE_SHOT_API_CAPS } from '../../../src/engine/planners/types.js';
+import { makePhaseCallResult } from '../factories/phase-call.js';
 
 export type FauxPlanScript = {
   tasks: Task[];
-  spec?: string;
-  plan?: string;
   usage?: TokenDelta | null;
   throws?: Error;
 };
@@ -20,8 +19,7 @@ export type FauxEscalationScript = {
 };
 
 export type FauxPlannerState = {
-  planCallCount: number;
-  quickPlanCallCount: number;
+  phaseCallCount: number;
   escalateHintCallCount: number;
   escalateFullCallCount: number;
   receivedFeatures: string[];
@@ -29,17 +27,14 @@ export type FauxPlannerState = {
 };
 
 export function fauxPlanner(opts?: {
-  plans?: FauxPlanScript[];
+  phases?: FauxPlanScript[];
   escalations?: FauxEscalationScript[];
-  quickPlans?: FauxPlanScript[];
 }): { planner: Planner; state: FauxPlannerState } {
-  const plans = opts?.plans ?? [];
+  const phases = opts?.phases ?? [];
   const escalations = opts?.escalations ?? [];
-  const quickPlans = opts?.quickPlans ?? [];
 
   const state: FauxPlannerState = {
-    planCallCount: 0,
-    quickPlanCallCount: 0,
+    phaseCallCount: 0,
     escalateHintCallCount: 0,
     escalateFullCallCount: 0,
     receivedFeatures: [],
@@ -47,17 +42,16 @@ export function fauxPlanner(opts?: {
   };
 
   const planner: Planner = {
-    async plan({ feature }) {
-      state.planCallCount++;
-      state.receivedFeatures.push(feature);
-      const script = plans[(state.planCallCount - 1) % plans.length];
+    async runPhase({ call, inputs }) {
+      state.phaseCallCount++;
+      state.receivedFeatures.push(inputs.feature);
+      const script = phases[(state.phaseCallCount - 1) % phases.length];
       if (script?.throws) throw script.throws;
-      return {
-        spec: script?.spec ?? '',
-        plan: script?.plan ?? '',
-        tasks: script?.tasks ?? [],
+      return makePhaseCallResult({
+        call,
         usage: script?.usage ?? null,
-      };
+        ...(call === 'tasks' ? { tasks: script?.tasks ?? [] } : {}),
+      });
     },
 
     async regenerate() {
@@ -86,19 +80,6 @@ export function fauxPlanner(opts?: {
         success: script?.success ?? false,
         output: script?.output ?? '',
         code: script?.code ?? null,
-        usage: script?.usage ?? null,
-      };
-    },
-
-    async quickPlan({ feature }) {
-      state.quickPlanCallCount++;
-      state.receivedFeatures.push(feature);
-      const script = quickPlans[(state.quickPlanCallCount - 1) % quickPlans.length];
-      if (script?.throws) throw script.throws;
-      return {
-        spec: script?.spec ?? '',
-        plan: script?.plan ?? '',
-        tasks: script?.tasks ?? [],
         usage: script?.usage ?? null,
       };
     },

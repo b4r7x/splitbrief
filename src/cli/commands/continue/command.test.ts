@@ -16,7 +16,7 @@ import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import { parseRecoveryActionOption } from '../../options.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 
@@ -208,15 +208,32 @@ describe('continueCommand', () => {
     );
   });
 
-  it('throws for a completed session that is not resumable', async () => {
+  it('continues a run that reached complete without a passing review', async () => {
     const projectDir = makeTmpProject();
     const sessDir = makeSessionDir(projectDir, '2025-04-01-done');
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-done' });
     writeState(sessDir, 'complete');
 
-    await expect(continueCommand('2025-04-01-done', { projectDir }, deps)).rejects.toThrow(
-      /cannot be resumed/,
+    await continueCommand('2025-04-01-done', { projectDir, json: true }, deps);
+
+    // A passing review is what closes a run; reaching the last phase without one does not.
+    expect(headlessRuns).toHaveLength(1);
+  });
+
+  it('refuses a run that closed on a passing review', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-closed';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    saveState(
+      { projectDir, sessionId },
+      { ...createInitialState('test-feature'), phase: 'complete', reviewStatus: 'passed' },
     );
+
+    await expect(continueCommand(sessionId, { projectDir, json: true }, deps)).rejects.toThrow(
+      /Run 2025-04-01-closed is closed \(complete\); nothing to resume\./,
+    );
+    expect(headlessRuns).toHaveLength(0);
   });
 
   it('resumes a reviewing-briefs session addressed by alias number', async () => {
@@ -300,7 +317,7 @@ describe('continueCommand', () => {
         action: 'switch-seat:codex',
         issue: {
           reason: 'runner-usage-limit',
-          availableActions: ['switch-seat', 'pause-run', 'abort-workflow'],
+          availableActions: ['switch-seat', 'pause-run', 'end-run'],
           recommendedAction: 'switch-seat',
           switchSeat: { seat: 'build', candidates: [{ tool: 'codex' }] },
         } as Partial<RecoveryIssue>,
@@ -334,6 +351,35 @@ describe('continueCommand', () => {
     }
   });
 
+  it('closes the run on --action end-run and never re-enters it', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-action-end-run';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('test-feature'),
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001' })],
+        pendingRecovery: makeRecoveryIssue({
+          status: 'paused',
+          availableActions: ['pause-run', 'end-run'],
+          recommendedAction: 'pause-run',
+        }),
+      },
+    );
+
+    await continueCommand(
+      sessionId,
+      { projectDir, json: true, action: parseRecoveryActionOption('end-run') },
+      deps,
+    );
+
+    expect(headlessRuns).toHaveLength(0);
+    expect(loadState({ projectDir, sessionId })?.closed).toMatchObject({ as: 'ended' });
+  });
+
   it('exits 1 when the named action is not one the halt offers', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-action-blocked';
@@ -347,7 +393,7 @@ describe('continueCommand', () => {
         tasks: [makeTask({ id: 'T001' })],
         pendingRecovery: makeRecoveryIssue({
           status: 'paused',
-          availableActions: ['pause-run', 'abort-workflow'],
+          availableActions: ['pause-run', 'end-run'],
           recommendedAction: 'pause-run',
         }),
       },

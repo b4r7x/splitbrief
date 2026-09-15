@@ -53,7 +53,6 @@ export const TaskTokenUsageSchema = z.object({
   contextLength: z.number().nonnegative().optional(),
   currentCodeTruncated: z.boolean().optional(),
   currentCodeContextMode: CurrentCodeContextModeSchema.optional(),
-  costPosture: z.string().optional(),
   routingReason: z.string().optional(),
 });
 
@@ -72,7 +71,6 @@ export const TASK_USAGE_METADATA_KEYS = [
   'contextLength',
   'currentCodeTruncated',
   'currentCodeContextMode',
-  'costPosture',
   'routingReason',
 ] as const;
 

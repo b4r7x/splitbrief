@@ -212,13 +212,13 @@ async function createBundleFixture(profile?: TerminalProfile) {
     timeoutMs: 5_000,
   });
   const scenario = ScenarioDefinitionSchema.parse({
-    id: 'summary-success',
-    title: 'Summary success',
-    surface: { kind: 'screen', screen: 'summary' },
+    id: 'workflow-closed-complete-ready',
+    title: 'Closed run ready',
+    surface: { kind: 'screen', screen: 'workflow' },
     fixtureVersion: 1,
     viewports: [frameViewport],
     checkpoints: [checkpoint],
-    elements: [{ id: 'summary-hero', title: 'Summary outcome', required: true }],
+    elements: [{ id: 'header', title: 'Workflow header', required: true }],
   });
   const provenance = ArtifactProvenanceSchema.parse({
     scenarioId: scenario.id,
@@ -239,10 +239,10 @@ async function createBundleFixture(profile?: TerminalProfile) {
     identity,
     projectRoot: process.cwd(),
   });
-  const summaryHero = elementId('summary-hero');
+  const closedHeader = elementId('header');
   const selection = CaptureSelectionSchema.parse({
-    requests: [{ provenance, elementIds: [summaryHero] }],
-    targets: [{ provenance, elementIds: [summaryHero] }],
+    requests: [{ provenance, elementIds: [closedHeader] }],
+    targets: [{ provenance, elementIds: [closedHeader] }],
     ...(profile === undefined ? {} : { profile }),
   });
   const determinism = DeterminismEnvelopeSchema.parse({

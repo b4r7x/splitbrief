@@ -1,4 +1,4 @@
-import { formatCost, formatScoreSummary } from '../../../../core/formatting.js';
+import { formatScoreSummary } from '../../../../core/formatting.js';
 import { formatModelName } from '../../../../core/model-display.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
@@ -7,7 +7,6 @@ import { pluralize, countNoun } from '../../../../utils/pluralize.js';
 import { runnerActivityBatchRowBlock } from '../activity-rows.js';
 import { borderedCardRowsBlock } from '../bordered-card-block.js';
 import { calloutRowsBlock } from '../callout-block.js';
-import { costPredictionRows } from '../cost-prediction-rows.js';
 import { formatExternalChangesValue } from '../event-format.js';
 import type { ConversationRowBlock, ConversationRowTone, RowBuildContext } from '../types.js';
 import {
@@ -15,7 +14,6 @@ import {
   compositeBlock,
   promptTextBlock,
   rowSeedsBlock,
-  rowsBlock,
   wrappedTextBlock,
 } from '../row-block-compose.js';
 import { artifactWrittenRowBlock } from './artifact-card.js';
@@ -332,32 +330,6 @@ export function eventRowBlock(options: {
         keyPrefix,
         label: 'error',
         value: event.message,
-        width: ctx.width,
-        severity: 'error',
-      });
-    case 'cost_prediction':
-      return rowsBlock(keyPrefix, costPredictionRows(keyPrefix, event, ctx.width));
-    case 'budget_warning':
-      return calloutRowsBlock({
-        keyPrefix,
-        label: 'budget',
-        value: `80% reached: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
-        width: ctx.width,
-        severity: 'warning',
-      });
-    case 'budget_paused':
-      return calloutRowsBlock({
-        keyPrefix,
-        label: 'budget',
-        value: `Paused: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
-        width: ctx.width,
-        severity: 'warning',
-      });
-    case 'budget_exceeded':
-      return calloutRowsBlock({
-        keyPrefix,
-        label: 'budget',
-        value: `Exceeded: ${formatCost(event.currentCost)} of ${formatCost(event.maxBudget)} limit`,
         width: ctx.width,
         severity: 'error',
       });

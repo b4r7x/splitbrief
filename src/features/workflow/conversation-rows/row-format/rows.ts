@@ -4,7 +4,7 @@ import type {
   ConversationRowSegment,
   ConversationRowTone,
 } from '../types.js';
-import { sanitizeRowDisplayText, wrappedRowTexts } from './text.js';
+import { sanitizeRowDisplayText } from './text.js';
 
 export interface RowInput {
   key: string;
@@ -40,24 +40,4 @@ export function segmentedRow(
       text: sanitizeRowDisplayText(segment.text),
     })),
   };
-}
-
-export function wrapRows(rows: ConversationRow[], width: number): ConversationRow[] {
-  const next: ConversationRow[] = [];
-  for (const sourceRow of rows) {
-    const text = rowText(sourceRow);
-    const wrapped = wrappedRowTexts(text, width);
-    for (const line of wrapped) {
-      next.push(
-        row({
-          key: `${sourceRow.key}-${next.length}`,
-          text: line,
-          tone: sourceRow.segments[0]?.tone ?? 'text',
-          bold: sourceRow.segments[0]?.bold ?? false,
-          kind: sourceRow.kind,
-        }),
-      );
-    }
-  }
-  return next;
 }

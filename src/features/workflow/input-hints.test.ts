@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  resolveCancelledHints,
-  resolveInputHint,
-  fitKeyLegend,
-  hintStateSeverity,
-} from './input-hints.js';
+import { resolveInputHint, hintStateSeverity } from './input-hints.js';
 
 describe('resolveInputHint', () => {
   it.each(['review', 'question'] as const)(
@@ -18,37 +13,6 @@ describe('resolveInputHint', () => {
     expect(resolveInputHint({ inputHint: 'Reconnecting…', inputMode: 'normal' })).toBe(
       'Reconnecting…',
     );
-  });
-});
-
-describe('fitKeyLegend', () => {
-  it('drops whole trailing tokens rather than ellipsising a key in half', () => {
-    const legend = 'y approve · c comment · q reject · e edit';
-
-    expect(fitKeyLegend(legend, legend.length)).toBe(legend);
-    expect(fitKeyLegend(legend, 40)).toBe('y approve · c comment · q reject');
-    expect(fitKeyLegend(legend, 20)).toBe('y approve');
-    expect(fitKeyLegend(legend, 40)).not.toContain('…');
-  });
-
-  it('shows nothing rather than a fragment when not even one token fits', () => {
-    expect(fitKeyLegend('y approve · c comment', 4)).toBe('');
-  });
-});
-
-describe('resolveCancelledHints', () => {
-  it('splits a resumable cancel into a /resume placeholder and a dim exit byline', () => {
-    expect(resolveCancelledHints(true)).toEqual({
-      placeholder: '/resume to continue…',
-      byline: 'esc home · /quit',
-    });
-  });
-
-  it('splits a non-resumable cancel into an Esc-for-home placeholder and a /quit byline', () => {
-    expect(resolveCancelledHints(false)).toEqual({
-      placeholder: 'esc for home…',
-      byline: '/quit to exit',
-    });
   });
 });
 

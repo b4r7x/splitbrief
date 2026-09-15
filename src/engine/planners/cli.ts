@@ -17,6 +17,7 @@ import type { CliPlannerAdapter } from '../runners/cli-tools/contract.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import {
+  createSessionResumeState,
   isSessionExpiredError,
   sessionResumeExpiredError,
   sessionResumeMismatchError,
@@ -62,6 +63,11 @@ export function createCliPlanner(
   const command = adapter.descriptor.command;
   const notFoundMessage = cliNotFoundMessage(adapter.descriptor);
   const { supportsSessionResume, supportsEffort } = adapter;
+
+  // The only thread a CLI resumes is one it reported itself. The SPLITBRIEF session
+  // id is not a tool thread id, so it never reaches --resume.
+  const nativeSession = createSessionResumeState();
+  nativeSession.capture(initialSessionId ?? null);
 
   const effort = plannerCfg.effort;
   const variant = plannerCfg.variant;
@@ -152,6 +158,7 @@ export function createCliPlanner(
                 unexpectedResumeSessionId = id;
                 return;
               }
+              nativeSession.capture(id);
               callbacks.onSessionId?.(id);
             }
           : undefined,
@@ -216,7 +223,7 @@ export function createCliPlanner(
     const detached = callContext.sessionScope?.kind === 'detached-fresh';
     const resumeId =
       supportsSessionResume && accessMode !== 'write-files' && !detached
-        ? (callbacks.sessionId ?? initialSessionId ?? null)
+        ? nativeSession.getResumeId()
         : null;
     try {
       return await finish(
@@ -233,6 +240,7 @@ export function createCliPlanner(
       );
     } catch (err) {
       if (resumeId !== null && isSessionExpiredError(err)) {
+        nativeSession.capture(null);
         callbacks.onSessionExpired?.(resumeId);
       }
       throw err;

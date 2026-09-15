@@ -40,7 +40,6 @@ function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolati
 type DirectRunnerInput = Readonly<{
   id: string;
   file: string;
-  costTier: 'cheap' | 'standard';
   sessionId: string;
 }>;
 
@@ -75,7 +74,6 @@ function makeDirectRunner(input: DirectRunnerInput) {
       idleKillMs: command.idleKillMs,
       env: command.env,
       model: input.id,
-      costTier: input.costTier,
       capabilities: { writesFiles: 'direct' as const },
     },
   };
@@ -238,7 +236,6 @@ describe('configured direct stage canaries', () => {
           const main = makeDirectRunner({
             id: 'main-direct',
             file: 'src/main-direct.ts',
-            costTier: 'cheap',
             sessionId,
           });
           const config = directConfig([main]);
@@ -288,13 +285,11 @@ describe('configured direct stage canaries', () => {
           const main = makeDirectRunner({
             id: 'main-direct',
             file: 'src/main-direct.ts',
-            costTier: 'cheap',
             sessionId,
           });
           const retry = makeDirectRunner({
             id: 'retry-direct',
             file: 'src/retry-direct.ts',
-            costTier: 'standard',
             sessionId,
           });
           const config = directConfig([main, retry]);

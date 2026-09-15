@@ -6,7 +6,7 @@ import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import { SessionRow } from '../../components/session-row.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import {
   handleSessionSelect,
   sessionSelectStore,
@@ -15,16 +15,12 @@ import {
 import { filterSession } from '../../core/sessions/search.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 
-const SESSION_PICKER_HINT = `\u2191\u2193 navigate${SOFT_SEP}type filter${SOFT_SEP}\u23ce resume/view${SOFT_SEP}esc close`;
+const SESSION_PICKER_HINT = `\u2191\u2193 navigate${SOFT_SEP}type filter${SOFT_SEP}\u23ce open${SOFT_SEP}esc close`;
 
 export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSelectDeps } = {}) {
   const t = useTheme();
   const selectionError = sessionSelectStore.use((s) => s.error);
-  const [{ projectDir }, { allSessions: sessions }] = useStores(configStore, sessionsStore);
-
-  useEffect(() => {
-    sessionsStore.loadAll(projectDir);
-  }, [projectDir]);
+  const [{ projectDir }, { sessions }] = useStores(configStore, sessionsStore);
 
   useEffect(() => {
     sessionSelectStore.clearError();

@@ -18,7 +18,6 @@ describe('readiness status', () => {
 
   it('selects the highest-priority next action from checks', () => {
     const checks: ReadinessCheck[] = [
-      { id: 'budget', severity: 'warning', summary: 'no budget', nextAction: 'set-budget' },
       {
         id: 'repo',
         severity: 'blocker',
@@ -47,7 +46,6 @@ describe('readiness status', () => {
   it('ignores advisory next actions for ready-with-warnings reports', () => {
     const checks: ReadinessCheck[] = [
       { id: 'context', severity: 'warning', summary: 'small context', nextAction: 'raise-context' },
-      { id: 'budget', severity: 'warning', summary: 'no budget', nextAction: 'set-budget' },
     ];
 
     expect(selectNextAction(checks, 'ready-with-warnings')).toMatchObject({

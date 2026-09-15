@@ -14,7 +14,6 @@ import { selectRoutingProfile } from './routing-selection.js';
 function cacheOnlyResolvableProfile(): ResolvedImplementerProfile {
   return {
     name: 'cache-worker',
-    costTier: 'cheap',
     capabilities: { writesFiles: 'extracted-code' },
     isDefault: true,
     config: {
@@ -32,7 +31,6 @@ function detectedFallbackProfiles(): ResolvedImplementerProfile[] {
   return [
     {
       name: 'cheap-detected-worker',
-      costTier: 'cheap',
       capabilities: { writesFiles: 'extracted-code' },
       isDefault: true,
       config: {
@@ -43,7 +41,6 @@ function detectedFallbackProfiles(): ResolvedImplementerProfile[] {
     },
     {
       name: 'standard-worker',
-      costTier: 'standard',
       capabilities: { writesFiles: 'extracted-code' },
       isDefault: false,
       config: {

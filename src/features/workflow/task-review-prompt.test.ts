@@ -58,7 +58,6 @@ const request: TaskReviewRequest = {
     contextLength: 1000,
     currentCodeTruncated: false,
     currentCodeContextMode: 'none',
-    costPosture: 'local',
     reason: 'Selected cheapest capable profile local-small.',
   },
   availableCommands: [...TASK_REVIEW_COMMANDS],

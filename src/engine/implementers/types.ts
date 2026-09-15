@@ -72,8 +72,14 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy {
   fileIgnoreProjectDir?: string | undefined;
   /** Baseline the caller's workspace declares; sniffed from the directory when absent. */
   changeDetection?: ChangeDetectionKind | undefined;
-  continuationPrompt?: string | undefined;
-  steer?: string | undefined;
+  /**
+   * The brief restarts on its own prompt; this is what the cut attempt left
+   * behind. `extra` carries the declared files that already changed, so the
+   * implementer edits on top of them instead of rewriting from scratch.
+   */
+  continuation?:
+    | { partial?: string | undefined; steer?: string | undefined; extra?: string | undefined }
+    | undefined;
   languageContext?: LanguageContext | undefined;
   phase?: Phase | undefined;
   approveWrite?:

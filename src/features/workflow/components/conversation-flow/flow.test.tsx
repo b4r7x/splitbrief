@@ -119,7 +119,7 @@ function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
     estimatedTokens: 3911,
     contextLength: 32768,
     currentCodeContextMode: 'whole-file',
-    costPosture: 'Selected unknown cost tier via cheapest-capable routing',
+    routingReason: 'smallest capable context window',
   });
 }
 
@@ -429,7 +429,7 @@ describe('ConversationFlow', () => {
     const scrolledRows = windowRows(scrolledFrame);
 
     expect(scrolledRows.slice(1)).toEqual(bottomRows.slice(0, -1));
-    expect(belowCalls.at(-1)).toBe('5 lines below');
+    expect(belowCalls.at(-1)).toBe('4 lines below');
     expect(frameRowCount(scrolledFrame)).toBeLessThanOrEqual(7);
 
     scrolled.unmount();

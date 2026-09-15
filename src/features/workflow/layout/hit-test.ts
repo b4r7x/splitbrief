@@ -3,17 +3,19 @@ import { resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { SIMPLE_REVIEW_BASE_CHROME_ROWS, SIMPLE_TASK_ROW_HEIGHT } from './brief-review.js';
 import {
-  chooseFormBVariant,
   getActiveRailStage,
-  getChromeContentWidth,
   getRailStages,
   isRailCurrent,
-  railConnectorWidth,
-  railFormBSegmentWidth,
   railIsHandoff,
-  type RailForm,
   type RailStage,
   type RailStageState,
+} from '../../../core/rail-stages.js';
+import {
+  chooseFormBVariant,
+  getChromeContentWidth,
+  railConnectorWidth,
+  railFormBSegmentWidth,
+  type RailForm,
 } from './chrome-rows.js';
 import type { WorkflowContentRect } from './rect.js';
 

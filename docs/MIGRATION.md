@@ -1,6 +1,56 @@
-# Migration guide — EventBus architecture (2026-04-20 release)
+# Migration guides
 
-For changes and amendments after the 2026-04-20 release, see [`CHANGELOG.md`](../CHANGELOG.md) at the repository root.
+Two releases changed enough to need one. The [run contract](#the-run-contract-2026-09) is the recent one; the EventBus release is below it. For everything else, see [`CHANGELOG.md`](../CHANGELOG.md) at the repository root.
+
+---
+
+## The run contract (2026-09)
+
+A run is now a durable, continuable record until the user closes it. Nothing resets to `idle`, gates no longer reject, and budget gating is gone. Existing session directories and configs still load; the changes below are for integrators and for anyone with scripts or saved configs naming the old vocabulary.
+
+### Action renames
+
+| Was | Now |
+|---|---|
+| `CANCEL` | `CLOSE_RUN` — records `closed: { at, as: 'ended' }`, clears the park and the halt, leaves `phase` alone |
+| `REJECT_SPEC` / `REJECT_PLAN` / `REJECT_BRIEFS` | deleted. A gate offers Approve · Request changes · Edit · End run; anything else re-opens it |
+| `CONSTITUTION_CHECK_FAIL` | deleted — a hard violation raises a `constitution-check-failed` recovery instead |
+| `ABORT_PENDING_RECOVERY` | deleted — `end-run` closes the run through `CLOSE_RUN` |
+| `ACKNOWLEDGE_BUDGET_PAUSE` | deleted with budget gating |
+| `ABORT_TURN` / `CONTINUE_TURN` | replaced by `INTERRUPT_STEP` / `RESUME_STEP`, which record *which* step was cut and where |
+| `resetToIdle` | deleted. `idle` is the pre-`START` phase; nothing returns to it |
+| recovery action `abort-workflow` | `end-run` |
+| recovery reason `implementer-timeout-repeated` | `runner-timeout-repeated` |
+
+New actions: `CLOSE_RUN`, `INTERRUPT_STEP`, `RESUME_STEP`, `BEGIN_PLANNING`. New recovery reasons: `planner-call-failed`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress`, `brief-quality-unrepaired`. New recovery actions: `revise`, `revise-spec`.
+
+`spec_rejected` and `plan_rejected` keep their wire names so old logs replay; they now record that a gate ended the run rather than approving it. The `recovery_resolved` outcome literal for `end-run` is still `aborted`, for the same reason.
+
+### Removed events
+
+`cost_prediction`, `budget_warning`, `budget_paused`, `budget_exceeded`. A consumer that switched on them should drop those arms; `cost_update` is unchanged and is the only spend event. New: `turn_interrupted` carries an optional `at` (`mid-step` | `boundary`), and `replay_started` / `replay_complete` wrap a log read back into an event array.
+
+### Removed config keys
+
+`workflow.maxBudget`, `workflow.budgetPauseThreshold`, `workflow.costGate`, `implementerProfiles.profiles.*.costTier`, `implementerProfiles.profiles.*.pricePer1M`, and the `implementer.model: auto:cheapest` marker. Each is a load error, not a silent ignore — see [CONFIGURATION.md §Removed config keys](./CONFIGURATION.md#removed-config-keys). New: `workflow.showSpend` (default `true`).
+
+### `Session.status` values
+
+`open` | `complete` | `ended`, derived by `deriveRunStatus` rather than taken from the exit path. The legacy literals `interrupted`, `failed` and `cancelled` still parse and map to `open` (`failed` additionally sets `stop: 'failed'`). A row also carries optional `phase`, `mode` and `stop` (`paused` | `waiting` | `halted` | `failed` | `interrupted`).
+
+`WorkflowState` gains three optional fields — `closed`, `interruptedStep`, `lastFailure` — with no `stateVersion` bump; a state written before them reads identically. `budgetPauseAcknowledgedAtCost` joins the legacy strip list.
+
+### Planner interface
+
+`Planner.plan()` and `Planner.quickPlan()` are gone, and with them `PlanOptions`. A planner implements `runPhase({ call, projectDir, inputs, callbacks })` — one call, one document, one artifact — and the orchestrator's step loop decides the order. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
+
+### Removed UI surface
+
+The summary screen is gone, and with it the `summary` route, `loadSummaryContext` and `resume-verdict.ts`. A run that stops stays on the run screen; a closed run grows a ledger block at the tail of its own transcript. The cost drilldown overlay, its `Ctrl+G` binding and the `/cost` command are also gone.
+
+---
+
+## EventBus architecture (2026-04-20 release)
 
 ## TL;DR
 
@@ -61,7 +111,7 @@ If you query session JSONL files programmatically:
 
 ## Headless mode (--json flag)
 
-New `--json` flag on workflow commands. Disables the Ink TUI, emits an NDJSON `EngineEvent` stream on stdout (one JSON document per line, parseable by `jq` or any NDJSON consumer), auto-approves workflow review gates, answers clarifications with an empty string, keeps file-write tiered approvals under approval config, and emits recovery before exiting non-zero on budget pauses or budget exceedance.
+New `--json` flag on workflow commands. Disables the Ink TUI, emits an NDJSON `EngineEvent` stream on stdout (one JSON document per line, parseable by `jq` or any NDJSON consumer), auto-approves workflow review gates, answers clarifications with an empty string, keeps file-write tiered approvals under approval config, and emits recovery before exiting non-zero.
 
 Exit codes:
 - `0` — workflow completed successfully (`workflow_complete` emitted).

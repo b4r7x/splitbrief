@@ -19,7 +19,7 @@ describe('resolveEditorKeyAction', () => {
     expect(resolve('', { escape: true })).toEqual({ kind: 'cancel' });
   });
 
-  it('maps Ctrl+O and Ctrl+G without binding cost-drilldown in the editor resolver', () => {
+  it('maps Ctrl+O to open-external and leaves Ctrl+G unbound in the editor resolver', () => {
     expect(resolve('o', { ctrl: true })).toEqual({ kind: 'open-external' });
     expect(resolve('g', { ctrl: true })).toBeNull();
   });

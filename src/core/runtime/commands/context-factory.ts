@@ -51,6 +51,7 @@ interface CommandContextFactoryOptions {
     projectDir: string,
     sessionId: string,
   ) => ReturnType<RuntimeCommandContext['acceptRunSnapshot']>;
+  refreshRun: RuntimeCommandContext['refreshRun'];
   rejectRunSnapshot: (
     projectDir: string,
     sessionId: string,
@@ -121,6 +122,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
       opts.acceptRunSnapshot(opts.projectDir(), sessionIdOrThrow('/run accept')),
     rejectRunSnapshot: () =>
       opts.rejectRunSnapshot(opts.projectDir(), sessionIdOrThrow('/run reject')),
+    refreshRun: opts.refreshRun,
     scrollConversation: opts.scrollConversation,
     toggleLatestActivityBatch: opts.toggleLatestActivityBatch,
     toggleLatestDiff: opts.toggleLatestDiff,

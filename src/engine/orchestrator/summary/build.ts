@@ -1,5 +1,5 @@
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import type { Summary, CostPrediction } from '../../../core/schemas/summary.js';
+import type { Summary } from '../../../core/schemas/summary.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
@@ -9,7 +9,6 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
 import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
-import { formatCost } from '../../../core/formatting.js';
 import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';
 import { loadSessionArtifactRollups } from './artifact-rollups.js';
 import { reconcileTokenUsageWithSessionLog } from './usage-reconcile.js';
@@ -37,7 +36,6 @@ export type SummaryBase = {
   mode?: WorkflowMode;
   projectDir?: string;
   sessionId?: string;
-  costPrediction?: CostPrediction | undefined;
   pricingCache?: ModelCacheAccessor | undefined;
 };
 
@@ -97,7 +95,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     mode,
     projectDir,
     sessionId,
-    costPrediction,
     pricingCache,
   } = opts;
   const totalTasks = state.tasks.length;
@@ -131,9 +128,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   const costBreakdown = calculateCostBreakdown(
     {
       tokenUsage,
-      totalTasks,
-      escalatedCount: escalatedToPlanner,
-      completedLocalTasks: completedByLocal,
       plannerTool: plannerSpentTool,
       implementerTool: implementerSpentTool,
       plannerModel: plannerSpentModel,
@@ -144,10 +138,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     },
     pricingCache,
   );
-  const estimatedCostSavings = costBreakdown.hasSavingsEstimate
-    ? formatCost(costBreakdown.savingsAmount)
-    : 'unavailable';
-
   const costedBreakdowns = applyTaskBreakdownCosts({
     state,
     taskBreakdowns,
@@ -182,6 +172,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
 
   return {
     feature,
+    phase: state.phase,
     totalTasks,
     completedByLocal,
     escalatedToPlanner,
@@ -189,7 +180,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     failed,
     totalTime,
     tokenUsage,
-    estimatedCostSavings,
     escalationRate,
     taskBreakdown: costedBreakdowns,
     costBreakdown,
@@ -205,7 +195,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     ...(briefQuality && { briefQuality }),
     ...(driftSummary && { driftSummary }),
     ...(chainDriftSummary && { chainDriftSummary }),
-    ...(costPrediction !== undefined && { costPrediction }),
     ...(checkpointSummary && { checkpointSummary }),
     ...(reviewPacket && { reviewPacket }),
     ...(review && { review }),

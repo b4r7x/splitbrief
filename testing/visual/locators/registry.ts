@@ -2,7 +2,6 @@ import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/r
 import { getProgressRows } from '../../../src/features/workflow/layout/chrome-rows.js';
 import { getHomeLayout, homeConfigBlockRows } from '../../../src/features/home/layout.js';
 import { getLogoHeight } from '../../../src/features/home/logo.js';
-import { overlayWidth } from '../../../src/core/navigation/overlay-rect.js';
 import {
   workflowFixtureProjections,
   type WorkflowFixtureProjection,
@@ -79,22 +78,6 @@ const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
     description: 'Question panel around its checkpoint marker',
     rowsAbove: 1,
     rowsBelow: 3,
-  },
-  'summary:header': {
-    kind: 'layout',
-    description: 'Summary heading and workflow byline bounds',
-    resolve: resolveSummaryHeader,
-  },
-  'summary:summary-hero': {
-    kind: 'marker',
-    description: 'Summary hero around its outcome marker',
-    rowsAbove: 2,
-    rowsBelow: 2,
-  },
-  'summary:summary-details': {
-    kind: 'layout',
-    description: 'Summary run details and evidence bounds',
-    resolve: resolveSummaryDetails,
   },
   'setup:header': {
     kind: 'marker',
@@ -232,29 +215,6 @@ function isCardRow(grid: CellGrid, y: number, left: number, right: number): bool
 
 function isPaintedCell(cell: Cell | undefined): boolean {
   return cell !== undefined && cell.grapheme.trim() !== '';
-}
-
-function resolveSummaryHeader(context: LocatorContext): CellRect {
-  const { cols } = context.grid.identity.provenance.viewport;
-  const width = overlayWidth({ cols, density: 'roomy' });
-  return CellRectSchema.parse({
-    x: Math.floor((cols - width) / 2),
-    y: 1,
-    width,
-    height: cols < 120 ? 1 : 2,
-  });
-}
-
-function resolveSummaryDetails(context: LocatorContext): CellRect {
-  const { rows } = context.grid.identity.provenance.viewport;
-  const header = resolveSummaryHeader(context);
-  const y = header.y + header.height;
-  return CellRectSchema.parse({
-    x: header.x,
-    y,
-    width: header.width,
-    height: rows - y - 5,
-  });
 }
 
 function resolveFullFrame(context: LocatorContext): CellRect {

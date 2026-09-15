@@ -261,6 +261,8 @@ export interface RuntimeCommandContext {
   clearApprovals: () => number;
   acceptRunSnapshot: () => Promise<AcceptRunSnapshotResult>;
   rejectRunSnapshot: () => Promise<RejectRunSnapshotResult>;
+  /** Re-reads the run on screen, so a command that changed its record changes what the screen says. */
+  refreshRun: () => void;
   scrollConversation: (target: ScrollCommandTarget) => ScrollConversationResult;
   toggleLatestActivityBatch: () => ToggleLatestActivityBatchResult;
   toggleLatestDiff: () => ToggleLatestDiffResult;

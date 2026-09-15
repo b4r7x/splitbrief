@@ -11,10 +11,8 @@ import { join } from 'node:path';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { parseTasksStrict } from '../../spec/tasks/parse.js';
-import { buildPlanPrompt } from '../../spec/prompts/plan.js';
 import { buildTasksPrompt } from '../../spec/prompts/tasks.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import { buildProjectContextMarkdown } from '../../planners/context.js';
 import { publishPlannerStatus, publishWarning } from '../events.js';
 import { runPlannerReview } from '../planner-review.js';
 import {
@@ -24,7 +22,7 @@ import {
 } from '../queue/drain.js';
 import { formatDrainedMessages } from '../queue/prompt.js';
 import { readPersistedTasks } from './io.js';
-import { composeSteeredPrompt } from '../../spec/prompts/steered-prompt.js';
+import { composeContinuation } from '../../spec/prompts/continuation.js';
 import { withContinuationLoop } from '../continuation.js';
 
 type RegenerateFromFeedbackCtx = {
@@ -37,7 +35,6 @@ type RegenerateFromFeedbackCtx = {
   metadata: SpecMetadata;
   signal?: AbortSignal | undefined;
   skillsContext?: string | undefined;
-  planOverride?: string | undefined;
   feedback?: string | undefined;
   queuedMessages?: readonly QueuedMessage[] | undefined;
   commitQueue?: boolean | undefined;
@@ -46,32 +43,14 @@ type RegenerateFromFeedbackCtx = {
   sinks?: WorkflowSinks | undefined;
 };
 
-type PlanRegenResult = {
-  kind: 'plan';
-  state: WorkflowState;
-  plan: string;
-  queuedMessages: readonly QueuedMessage[];
-};
 type TasksRegenResult = {
-  kind: 'tasks';
   state: WorkflowState;
   tasks: Task[];
   queuedMessages: readonly QueuedMessage[];
 };
 
-async function regenerateFromFeedback(
-  kind: 'plan',
-  ctx: RegenerateFromFeedbackCtx,
-): Promise<PlanRegenResult>;
-async function regenerateFromFeedback(
-  kind: 'tasks',
-  ctx: RegenerateFromFeedbackCtx,
-): Promise<TasksRegenResult>;
-async function regenerateFromFeedback(
-  kind: 'plan' | 'tasks',
-  ctx: RegenerateFromFeedbackCtx,
-): Promise<PlanRegenResult | TasksRegenResult> {
-  const { projectDir, sessionId, bus, skillsContext, planOverride } = ctx;
+async function regenerateFromFeedback(ctx: RegenerateFromFeedbackCtx): Promise<TasksRegenResult> {
+  const { projectDir, sessionId, bus, skillsContext } = ctx;
   let { state } = ctx;
 
   const ownsQueueClaim = ctx.queuedMessages === undefined;
@@ -91,27 +70,7 @@ async function regenerateFromFeedback(
       state.discoveredValidation?.language,
     );
 
-    if (kind === 'plan') {
-      const projectContext = await buildProjectContextMarkdown(projectDir);
-      const basePrompt = buildPlanPrompt({
-        spec: { content: spec, hasClarifications: spec.includes('## Clarifications') },
-        projectContext,
-        skillsContext,
-        languageContext,
-      });
-      const result = await runRegenerationReview({
-        kind,
-        ctx,
-        state,
-        prompt: prefix ? prefix + basePrompt : basePrompt,
-      });
-      state = result.state;
-      state = maybeCommitQueue(ctx, state, queued.messages);
-      transferredQueueClaim = ownsQueueClaim && ctx.commitQueue === false;
-      return { kind: 'plan', state, plan: result.text, queuedMessages: queued.messages };
-    }
-
-    const plan = planOverride ?? readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
+    const plan = readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
     const persisted = await readPersistedTasks(
       join(sessionDir(projectDir, sessionId), TASKS_FILE),
       (message) => publishWarning({ bus, phase: state.phase, message }),
@@ -125,7 +84,6 @@ async function regenerateFromFeedback(
       skillsContext,
     });
     const result = await runRegenerationReview({
-      kind,
       ctx,
       state,
       prompt: prefix ? prefix + basePrompt : basePrompt,
@@ -136,12 +94,7 @@ async function regenerateFromFeedback(
     );
     state = maybeCommitQueue(ctx, state, queued.messages);
     transferredQueueClaim = ownsQueueClaim && ctx.commitQueue === false;
-    return {
-      kind: 'tasks',
-      state,
-      tasks,
-      queuedMessages: queued.messages,
-    };
+    return { state, tasks, queuedMessages: queued.messages };
   } finally {
     if (ownsQueueClaim && !transferredQueueClaim) {
       releaseQueueMessagesForPrompt({ projectDir, sessionId }, queued.messages);
@@ -165,15 +118,12 @@ function maybeCommitQueue(
 }
 
 async function runRegenerationReview(opts: {
-  kind: 'plan' | 'tasks';
   ctx: RegenerateFromFeedbackCtx;
   state: WorkflowState;
   prompt: string;
 }): Promise<{ state: WorkflowState; text: string }> {
   const statusPhase = opts.ctx.statusPhase ?? 'planning';
-  const summary =
-    opts.ctx.statusSummary ??
-    (opts.kind === 'plan' ? 'regenerating plan from feedback' : 'regenerating Task Briefs');
+  const summary = opts.ctx.statusSummary ?? 'regenerating Task Briefs';
   const sinks: WorkflowSinks = opts.ctx.sinks ?? {
     setAbortHandler: () => {},
     setQueueHandler: () => {},
@@ -201,20 +151,24 @@ async function runRegenerationReview(opts: {
         sinks,
       },
       state,
+      step: { kind: 'planner', call: 'tasks' },
       onStateChange: (s) => {
         state = s;
       },
-      body: ({ signal, continuationPrompt, steer }) =>
+      body: ({ signal, partial, steer }) =>
         runPlannerReview({
           planner: opts.ctx.planner,
-          prompt: composeSteeredPrompt(continuationPrompt ?? opts.prompt, steer),
+          prompt:
+            partial === undefined && steer === undefined
+              ? opts.prompt
+              : composeContinuation({ basePrompt: opts.prompt, partial, steer }),
           projectDir: opts.ctx.projectDir,
           sessionId: opts.ctx.sessionId,
           bus: opts.ctx.bus,
           state,
           metadata: opts.ctx.metadata,
           signal,
-          ...(opts.kind === 'plan' ? { writeTo: PLAN_FILE } : { returnCandidate: true }),
+          returnCandidate: true,
         }),
     });
     return loop.value;
@@ -240,18 +194,8 @@ type RegenerateBaseOptions = {
 };
 
 type RegenerateTasksOptions = RegenerateBaseOptions & {
-  planOverride?: string | undefined;
   feedback?: string | undefined;
   skillsContext?: string | undefined;
-};
-
-type RegeneratePlanAndTasksOptions = RegenerateBaseOptions & {
-  skillsContext?: string | undefined;
-};
-
-type RegenerateTasksIfNeededOptions = RegenerateBaseOptions & {
-  regenerated: boolean;
-  tasks: Task[];
 };
 
 export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
@@ -267,7 +211,6 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     bus,
     state,
     metadata,
-    planOverride,
     feedback,
     signal,
     queuedMessages,
@@ -277,7 +220,7 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     sinks,
     skillsContext,
   } = opts;
-  const result = await regenerateFromFeedback('tasks', {
+  const result = await regenerateFromFeedback({
     projectDir,
     sessionId,
     planner,
@@ -285,7 +228,6 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     bus,
     state,
     metadata,
-    planOverride,
     feedback,
     signal,
     queuedMessages,
@@ -296,63 +238,4 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     skillsContext,
   });
   return { state: result.state, tasks: result.tasks, queuedMessages: result.queuedMessages };
-}
-
-export async function regeneratePlanAndTasks(
-  opts: RegeneratePlanAndTasksOptions,
-): Promise<{ state: WorkflowState; tasks: Task[] }> {
-  const { projectDir, sessionId, planner, callbacks, bus, state, metadata, skillsContext, signal } =
-    opts;
-  const queued = readQueueForPrompt({ projectDir, sessionId, state });
-  try {
-    const planRegen = await regenerateFromFeedback('plan', {
-      projectDir,
-      sessionId,
-      planner,
-      callbacks,
-      bus,
-      state: queued.state,
-      metadata,
-      skillsContext,
-      signal,
-      queuedMessages: queued.messages,
-      commitQueue: false,
-      sinks: opts.sinks,
-    });
-    const taskRegen = await regenerateFromFeedback('tasks', {
-      projectDir,
-      sessionId,
-      planner,
-      callbacks,
-      bus,
-      state: planRegen.state,
-      metadata,
-      planOverride: planRegen.plan,
-      skillsContext,
-      signal,
-      queuedMessages: [],
-      commitQueue: false,
-      sinks: opts.sinks,
-    });
-    const nextState =
-      queued.messages.length === 0
-        ? taskRegen.state
-        : commitQueueMessagesDrained({
-            projectDir,
-            sessionId,
-            state: taskRegen.state,
-            messages: queued.messages,
-            bus,
-          }).state;
-    return { state: nextState, tasks: taskRegen.tasks };
-  } finally {
-    releaseQueueMessagesForPrompt({ projectDir, sessionId }, queued.messages);
-  }
-}
-
-export async function regenerateTasksIfNeeded(
-  opts: RegenerateTasksIfNeededOptions,
-): Promise<{ state: WorkflowState; tasks: Task[] }> {
-  if (!opts.regenerated) return { state: opts.state, tasks: opts.tasks };
-  return regenerateTasks(opts);
 }

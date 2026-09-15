@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { Layout } from './layout.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
-import { SummaryScreen } from './screens/summary.js';
 import { SetupScreen } from './screens/setup.js';
 import { HelpOverlay } from './overlays/help.js';
 import { CommandPaletteOverlay } from './overlays/palette.js';
@@ -12,7 +11,6 @@ import { StopSheetOverlay } from './overlays/stop.js';
 import { EditorOverlay } from './overlays/editor.js';
 import { SettingsOverlay } from './overlays/settings.js';
 import { ToolModelPicker } from './overlays/runners.js';
-import { CostDrilldownOverlay } from '../features/workflow/cost-drilldown/overlay.js';
 import { focusHasResolvableCopy } from '../features/workflow/copy/resolve.js';
 import type { RuntimeCommandDef, CopyResult, CopyTarget } from '../core/runtime/commands/types.js';
 import type { OverlayType, Screen } from '../core/navigation/types.js';
@@ -83,10 +81,6 @@ function renderScreen({
           deps={workflowDeps}
         />
       );
-    case 'summary':
-      return (
-        <SummaryScreen commands={commands} onRuntimeCommand={(raw) => onRuntime(raw, 'summary')} />
-      );
     case 'setup':
       return <SetupScreen />;
     default:
@@ -128,8 +122,6 @@ function renderOverlay({
       return <SessionsPicker />;
     case 'editor':
       return <EditorOverlay />;
-    case 'cost-drilldown':
-      return <CostDrilldownOverlay />;
     default:
       return assertNever(active);
   }

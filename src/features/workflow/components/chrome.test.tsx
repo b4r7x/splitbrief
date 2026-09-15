@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -19,6 +20,7 @@ import type { RouteData } from '../../../stores/navigation/router.js';
 const RAIL_STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Review'];
 const WORKFLOW_ROUTE = {
   screen: 'workflow',
+  run: makeRunRecord(),
   execution: {
     kind: 'local',
     prepared: makePreparedExecution({

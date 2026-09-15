@@ -92,8 +92,6 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
 
   const resolvedProfiles = resolveImplementerProfiles(config);
   const singleImplementerMode = config.implementerProfiles === undefined;
-  let budgetWarningEmitted = false;
-  let budgetPauseEmitted = false;
   if (state.pendingRecovery) {
     const recovery = state.pendingRecovery;
     publishWarning({
@@ -324,19 +322,14 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       setTrackedState,
       task: refreshedTask,
       taskIndex: i,
-      totalTasks,
       baseline: changedFilesBaseline,
       acknowledgedUserEditFiles,
       taskBreakdowns,
       routingDecision,
       implementerProfile: selectedProfile.name,
-      budgetWarningEmitted,
-      budgetPauseEmitted,
     });
     state = reconcile.state;
     changedFilesBaseline = reconcile.baseline;
-    budgetWarningEmitted = reconcile.budgetWarningEmitted;
-    budgetPauseEmitted = reconcile.budgetPauseEmitted;
     if (reconcile.stop) {
       persistTaskBreakdowns();
       setCurrentTask(undefined);

@@ -15,7 +15,8 @@ import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
-import { Composer } from './composer.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { COMMANDS_ONLY_NOTICE, Composer } from './composer.js';
 
 describe('Composer blocking-question isolation', () => {
   beforeEach(() => {
@@ -619,4 +620,122 @@ describe('Composer workflow width', () => {
       ui.unmount();
     },
   );
+});
+describe('Composer commands-only input', () => {
+  let projectDir: string;
+  let imagePath: string;
+
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 100, rows: 24 });
+    projectDir = createTempDir('composer-commands-only');
+    imagePath = join(projectDir, 'shot.png');
+    writeFileSync(imagePath, 'png-bytes');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(projectDir);
+  });
+
+  function renderCommandsOnly() {
+    return renderDockedComposer({
+      commands: [],
+      currentScreen: 'home',
+      mode: 'normal',
+      hint: '',
+      commandsOnly: true,
+      onRuntimeCommand: () => {},
+    });
+  }
+
+  it('says why a typed letter goes nowhere and leaves the draft empty', async () => {
+    const ui = renderCommandsOnly();
+    await flushEffects();
+    ui.stdin.write('z');
+    await flushEffects();
+
+    expect(feedbackStore.get().message).toBe('Only /commands here · ⏎ on an empty line goes home');
+    expect(feedbackStore.get().isError).toBe(false);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('z');
+    ui.unmount();
+  });
+
+  it('takes a slash and every letter typed after it', async () => {
+    const ui = renderCommandsOnly();
+    await flushEffects();
+    ui.stdin.write('/');
+    await flushEffects();
+    for (const letter of ['s', 'e', 'a', 't']) {
+      ui.stdin.write(letter);
+      await flushEffects();
+    }
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/seat');
+    expect(feedbackStore.get().message).toBeNull();
+    ui.unmount();
+  });
+
+  it('swallows a pasted line that does not open with a slash', async () => {
+    const ui = renderCommandsOnly();
+    await flushEffects();
+    ui.stdin.write('zebra stripes');
+    await flushEffects();
+
+    expect(feedbackStore.get().message).toBe(COMMANDS_ONLY_NOTICE);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('zebra');
+    ui.unmount();
+  });
+
+  it('refuses a prefilled draft that is not a command and keeps it for editing', async () => {
+    const ui = renderCommandsOnly();
+    await flushEffects();
+    composerDraftStore.request('rewrite the validator');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('rewrite the validator');
+
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(feedbackStore.get().message).toBe(COMMANDS_ONLY_NOTICE);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('rewrite the validator');
+    ui.unmount();
+  });
+
+  it('attaches nothing from a dropped image while it takes commands only', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const ui = renderCommandsOnly();
+    await flushEffects();
+    ui.stdin.write(`"${imagePath}"`);
+    await flushEffects();
+
+    expect(attachmentsStore.peek()).toEqual([]);
+    ui.unmount();
+  });
+
+  it('keeps the drop affordance off the hint line while it takes commands only', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        homeHint="/help · /settings"
+        commandsOnly
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('/help · /settings');
+    expect(frame).not.toContain('drop an image');
+    ui.unmount();
+  });
 });

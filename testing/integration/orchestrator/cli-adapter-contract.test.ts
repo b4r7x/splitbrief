@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ANTIGRAVITY_CLI_ADMISSION_VERDICT,
   CLI_TOOL_CATALOG,
@@ -816,11 +816,15 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
       for (let attempt = 0; attempt < 100 && !existsSync(startedMarker); attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
-      for (let attempt = 0; attempt < 100 && !existsSync(descendantPidFile); attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
+      // The shim's redirection creates the file before it writes the pid into it, so wait for the
+      // content rather than the name; under load the two are far enough apart to read an empty file.
+      await vi.waitFor(
+        () => {
+          expect(readFileSync(descendantPidFile, 'utf8').trim()).not.toBe('');
+        },
+        { timeout: 4_000, interval: 25 },
+      );
       expect(existsSync(startedMarker)).toBe(true);
-      expect(existsSync(descendantPidFile)).toBe(true);
       const descendantPid = Number.parseInt(readFileSync(descendantPidFile, 'utf8'), 10);
       expect(descendantPid).toBeGreaterThan(1);
       expect(processIsAbsent(descendantPid)).toBe(false);
@@ -854,7 +858,7 @@ describe('T-017 stable CLI outcome taxonomy', () => {
       'platform-limitation',
       'implementer-effect-invalid',
       'implementer-recipe-invalid',
-      'implementer-timeout-repeated',
+      'runner-timeout-repeated',
       'missing-model',
     ]);
     expect([...RUNNER_OUTCOME_STATES].sort()).toEqual([...covered].sort());

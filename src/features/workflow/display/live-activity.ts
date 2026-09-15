@@ -9,7 +9,7 @@ import {
   railStageCompletionTimesFromPhaseFirstSeen,
   railStageRole,
   type RailRole,
-} from '../layout/chrome-rows.js';
+} from '../../../core/rail-stages.js';
 import type { ConversationRowTone } from '../conversation-rows/types.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 

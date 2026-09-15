@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
@@ -47,7 +48,7 @@ describe('WorkflowScreen lifecycle', () => {
     routerStore.init({ screen: 'home' });
   });
 
-  it('routes completion with the prepared session id without reading ambient session state', async () => {
+  it('settles the finished run in place, on the screen it never left', async () => {
     const projectDir = createTempDir('workflow-screen-complete');
     try {
       const summary = makeSummary({ feature: 'generated completion id' });
@@ -55,6 +56,7 @@ describe('WorkflowScreen lifecycle', () => {
         opts.callbacks.onComplete(summary);
         return summary;
       });
+
       const config = makeConfig();
       const prepared = prepareWorkflowExecution({
         projectDir,
@@ -66,6 +68,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
+        run: makeRunRecord(),
         execution: { kind: 'local', prepared },
       });
 
@@ -74,17 +77,16 @@ describe('WorkflowScreen lifecycle', () => {
       );
 
       await vi.waitFor(() => {
-        expect(routerStore.get().screen).toBe('summary');
+        const settled = routerStore.get();
+        expect(settled.screen === 'workflow' && settled.execution.kind).toBe('at-rest');
       });
 
       const firstCall = runWorkflow.mock.calls[0];
       if (!firstCall) throw new Error('expected runWorkflow to be called');
       const route = routerStore.get();
       expect(firstCall[0].prepared).toBe(prepared);
-      if (route.screen === 'summary') {
-        expect(route.summary).toEqual(summary);
-        expect(route.sessionId).toBe(prepared.session.ref.sessionId);
-        expect(route.status).toBe('complete');
+      if (route.screen === 'workflow') {
+        expect(route.run.ref.sessionId).toBe(prepared.session.ref.sessionId);
       }
 
       ui.unmount();
@@ -93,7 +95,7 @@ describe('WorkflowScreen lifecycle', () => {
     }
   });
 
-  it('routes final-review failures as interrupted summaries instead of defaulting to complete', async () => {
+  it('settles a failed final review at rest rather than leaving a live-looking screen', async () => {
     const projectDir = createTempDir('workflow-screen-final-review-failed');
     try {
       const summary = makeSummary({ feature: 'final review failure' });
@@ -116,6 +118,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
+        run: makeRunRecord(),
         execution: { kind: 'local', prepared },
       });
 
@@ -124,13 +127,13 @@ describe('WorkflowScreen lifecycle', () => {
       );
 
       await vi.waitFor(() => {
-        expect(routerStore.get().screen).toBe('summary');
+        const settled = routerStore.get();
+        expect(settled.screen === 'workflow' && settled.execution.kind).toBe('at-rest');
       });
 
       const route = routerStore.get();
-      if (route.screen === 'summary') {
-        expect(route.summary).toEqual(summary);
-        expect(route.status).toBe('interrupted');
+      if (route.screen === 'workflow') {
+        expect(route.run.status.kind).toBe('open');
       }
 
       ui.unmount();
@@ -157,6 +160,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
+        run: makeRunRecord(),
         execution: { kind: 'local', prepared },
       });
 
@@ -205,6 +209,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
+        run: makeRunRecord(),
         execution: { kind: 'local', prepared },
       });
 

@@ -95,13 +95,12 @@ describe('eventRows colored left-rule callouts', () => {
     expect(bodyRow.segments[0]?.tone).toBe('textDim');
   });
 
-  it('renders budget_warning as a yellow left rule + yellow label + dim body', () => {
-    const event: EngineEventOf<'budget_warning'> = {
-      type: 'budget_warning',
+  it('renders warning events as a yellow left rule + yellow label + dim body', () => {
+    const event: EngineEventOf<'warning'> = {
+      type: 'warning',
       ts: 0,
       phase: 'implementing',
-      currentCost: 8_000,
-      maxBudget: 10_000,
+      message: 'the runner reported no usage',
     };
 
     const rows = rowsFor(event);
@@ -113,27 +112,11 @@ describe('eventRows colored left-rule callouts', () => {
     const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-top');
     expect(topRow.markerTone).toBe('warning');
     expect(topRow.segments[0]?.tone).toBe('warning');
-    expect(rowText(topRow)).toContain('budget');
+    expect(rowText(topRow)).toContain('warning');
 
     const bodyRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-body');
-    expect(rowText(bodyRow)).toContain('80% reached');
+    expect(rowText(bodyRow)).toContain('the runner reported no usage');
     expect(bodyRow.segments[0]?.tone).toBe('textDim');
-  });
-
-  it('routes budget_exceeded through a red left rule (hard stop, not yellow)', () => {
-    const event: EngineEventOf<'budget_exceeded'> = {
-      type: 'budget_exceeded',
-      ts: 0,
-      phase: 'implementing',
-      currentCost: 12_000,
-      maxBudget: 10_000,
-    };
-
-    const rows = rowsFor(event);
-    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-top');
-    expect(topRow.markerTone).toBe('error');
-    expect(topRow.segments[0]?.tone).toBe('error');
-    expect(rowText(topRow)).toContain('budget');
   });
 
   it('keeps task_skipped as a flat row with no label header and no left rule', () => {

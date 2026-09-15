@@ -103,7 +103,6 @@ const PRICED_CHEAP_WORKER = {
   apiKey: 'test-key',
   model: 'deepseek-v4-flash',
   contextLength: 20_000,
-  costTier: 'cheap' as const,
 };
 
 function profileImplementerRuntime(
@@ -138,190 +137,6 @@ function setupProject(): { projectDir: string; sessionId: string } {
 }
 
 describe('runTasksAndReview', { timeout: 90_000 }, () => {
-  it('publishes deterministic cost prediction before task execution', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makePassingTask('T001');
-    const state = makeImplState([task]);
-    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
-    const planner = makePlanner();
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-    const implementer = makeImplementer({
-      implement: vi.fn().mockResolvedValue({
-        success: true,
-        output: 'code',
-        usage: { inputTokens: 50, outputTokens: 25 },
-      }),
-    });
-    const config = {
-      ...makeNoValidationConfig({
-        planner: PRICED_PLANNER,
-        workflow: {},
-      }),
-      implementerProfiles: {
-        default: 'cheap-worker',
-        profiles: {
-          'cheap-worker': PRICED_CHEAP_WORKER,
-        },
-      },
-    };
-
-    await runTasksAndReview({
-      wctx: {
-        projectDir,
-        sessionId,
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        config,
-        callbacks,
-        bus,
-        planner,
-        reviewer: planner,
-        context: defaultContext,
-        ...profileImplementerRuntime(implementer),
-        modelCache: PRICED_MODEL_CACHE,
-        metadata: {
-          plannerTool: 'custom-endpoint',
-          plannerModel: 'claude-opus-5',
-          implementerTool: 'custom-cloud',
-          implementerModel: 'deepseek-v4-flash',
-          mode: 'standard',
-        },
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-      },
-      state: executionState,
-      planning: {
-        disposition: 'ready-for-tasks' as const,
-        state: executionState,
-        tasks: executionState.tasks ?? [],
-      },
-      summaryBase: {
-        feature: 'feat',
-        startTime: Date.now(),
-        plannerTool: 'custom-endpoint',
-        plannerModel: 'claude-opus-5',
-        implementerTool: 'custom-cloud',
-        implementerModel: 'deepseek-v4-flash',
-      },
-      phaseTimings: {},
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    const predictionIndex = events.findIndex((event) => event.type === 'cost_prediction');
-    const taskStartIndex = events.findIndex((event) => event.type === 'task_started');
-    const prediction = events.find((event) => event.type === 'cost_prediction');
-
-    expect(predictionIndex).toBeGreaterThanOrEqual(0);
-    expect(taskStartIndex).toBeGreaterThan(predictionIndex);
-    expect(prediction).toMatchObject({
-      type: 'cost_prediction',
-      prediction: {
-        estimatedTasks: 1,
-        deterministic: {
-          taskCount: 1,
-          taskFitCounts: { fits: 1, tight: 0, overflow: 0, unknown: 0 },
-          totals: {
-            unknownCostReason: [],
-          },
-        },
-      },
-    });
-    if (prediction?.type === 'cost_prediction') {
-      expect(prediction.prediction.deterministic?.totals.knownActualEstimate).toBeGreaterThan(0);
-      expect(prediction.prediction.deterministic?.totals.hypotheticalAllPlanner).toBeGreaterThan(0);
-      expect(prediction.prediction.deterministic?.totals.estimatedSavings).toBeGreaterThan(0);
-    }
-  }, 90_000);
-
-  it('skips the cost gate and warns when implementer pricing is unknown', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makePassingTask('T001');
-    const state = makeImplState([task]);
-    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
-    const planner = makePlanner();
-    const onCostApprovalNeeded = vi.fn().mockResolvedValue(true);
-    const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-    const config = {
-      ...makeNoValidationConfig({
-        planner: PRICED_PLANNER,
-        workflow: {},
-      }),
-      implementerProfiles: {
-        default: 'unknown-worker',
-        profiles: {
-          'unknown-worker': {
-            kind: 'api' as const,
-            provider: 'custom-cloud',
-            service: 'custom-cloud' as const,
-            offering: 'payg' as const,
-            apiBase: 'https://models.example/v1',
-            apiKey: 'test-key',
-            model: 'custom-model',
-            contextLength: 20_000,
-            costTier: 'unknown' as const,
-          },
-        },
-      },
-    };
-
-    await runTasksAndReview({
-      wctx: {
-        projectDir,
-        sessionId,
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        config,
-        callbacks,
-        bus,
-        planner,
-        reviewer: planner,
-        context: defaultContext,
-        ...profileImplementerRuntime(),
-        modelCache: PRICED_MODEL_CACHE,
-        metadata: {
-          plannerTool: 'custom-endpoint',
-          plannerModel: 'claude-opus-5',
-          implementerTool: 'custom-cloud',
-          implementerModel: 'custom-model',
-          mode: 'standard',
-        },
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-      },
-      state: executionState,
-      planning: {
-        disposition: 'ready-for-tasks' as const,
-        state: executionState,
-        tasks: executionState.tasks ?? [],
-      },
-      summaryBase: {
-        feature: 'feat',
-        startTime: Date.now(),
-        plannerTool: 'custom-endpoint',
-        plannerModel: 'claude-opus-5',
-        implementerTool: 'custom-cloud',
-        implementerModel: 'custom-model',
-      },
-      phaseTimings: {},
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    const prediction = events.find((event) => event.type === 'cost_prediction');
-    expect(prediction).toMatchObject({
-      prediction: { deterministic: { totals: { knownActualEstimate: null } } },
-    });
-    expect(onCostApprovalNeeded).not.toHaveBeenCalled();
-    expect(
-      events.some(
-        (event) =>
-          event.type === 'warning' &&
-          event.message === 'cost gate skipped: implementer pricing unknown',
-      ),
-    ).toBe(true);
-  }, 90_000);
-
   it('does not run final review when the task loop stops before completion', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makePassingTask('T001');
@@ -497,7 +312,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     ).toBeDefined();
   });
 
-  it('skips the cost gate and predicts only remaining tasks when resuming past the first task', async () => {
+  it('runs only the remaining tasks when resuming past the first task', async () => {
     const { projectDir, sessionId } = setupProject();
     const done = makePassingTask('T001');
     done.status = 'done';
@@ -505,8 +320,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const state = makeImplState([done, remaining], { currentTaskIndex: 1 });
     const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const planner = makePlanner();
-    const onCostApprovalNeeded = vi.fn().mockResolvedValue(true);
-    const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
+    const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const config = {
       ...makeNoValidationConfig({
@@ -571,90 +385,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(onCostApprovalNeeded).not.toHaveBeenCalled();
     const taskStarts = events.filter((event) => event.type === 'task_started');
     expect(taskStarts.map((event) => event.taskId)).toEqual(['T002']);
-    const prediction = events.find((event) => event.type === 'cost_prediction');
-    expect(prediction).toBeDefined();
-    expect(prediction).toMatchObject({
-      type: 'cost_prediction',
-      prediction: { deterministic: { taskCount: 1 } },
-    });
     expect(result.summary.totalTasks).toBe(2);
-  }, 90_000);
-
-  it('aborts without executing any task when the cost gate is declined', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const state = makeImplState([makePassingTask('T001'), makePassingTask('T002')]);
-    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
-    const planner = makePlanner();
-    const onCostApprovalNeeded = vi.fn().mockResolvedValue(false);
-    const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-    const implement = vi.fn().mockResolvedValue({
-      success: true,
-      output: 'code',
-      usage: { inputTokens: 50, outputTokens: 25 },
-    });
-    const config = {
-      ...makeNoValidationConfig({
-        planner: PRICED_PLANNER,
-        workflow: {},
-      }),
-      implementerProfiles: {
-        default: 'cheap-worker',
-        profiles: {
-          'cheap-worker': PRICED_CHEAP_WORKER,
-        },
-      },
-    };
-
-    const result = await runTasksAndReview({
-      wctx: {
-        projectDir,
-        sessionId,
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        config,
-        callbacks,
-        bus,
-        planner,
-        reviewer: planner,
-        context: defaultContext,
-        ...profileImplementerRuntime(makeImplementer({ implement })),
-        modelCache: PRICED_MODEL_CACHE,
-        metadata: {
-          plannerTool: 'custom-endpoint',
-          plannerModel: 'claude-opus-5',
-          implementerTool: 'custom-cloud',
-          implementerModel: 'deepseek-v4-flash',
-          mode: 'standard',
-        },
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-      },
-      state: executionState,
-      planning: {
-        disposition: 'ready-for-tasks' as const,
-        state: executionState,
-        tasks: executionState.tasks ?? [],
-      },
-      summaryBase: {
-        feature: 'feat',
-        startTime: Date.now(),
-        plannerTool: 'custom-endpoint',
-        plannerModel: 'claude-opus-5',
-        implementerTool: 'custom-cloud',
-        implementerModel: 'deepseek-v4-flash',
-      },
-      phaseTimings: {},
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(onCostApprovalNeeded).toHaveBeenCalledTimes(1);
-    expect(result.completed).toBe(false);
-    expect(implement).not.toHaveBeenCalled();
-    expect(events.some((event) => event.type === 'task_started')).toBe(false);
   }, 90_000);
 
   it('resumes a persisted failed-final-review state and completes when the review passes', async () => {
@@ -772,8 +505,7 @@ describe('runPlanningPhases', () => {
     });
 
     expect(result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(planner.runPhase).not.toHaveBeenCalled();
     expect(
       events.some(
         (event) =>
@@ -817,8 +549,7 @@ describe('runPlanningPhases', () => {
     });
 
     expect(result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(planner.runPhase).not.toHaveBeenCalled();
     expect(
       events.some(
         (event) =>
@@ -876,8 +607,7 @@ describe('runPlanningPhases', () => {
     expect(result.state.phase).toBe('implementing');
     expect(result.state.tasks[0]?.title).toBe('Add auth');
     expect(result.state.tasks[0]?.file).toBe('src/auth.ts');
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(planner.runPhase).not.toHaveBeenCalled();
     expect(implementer.implement).not.toHaveBeenCalled();
   });
 
@@ -888,7 +618,7 @@ describe('runPlanningPhases', () => {
     const implementer = makeImplementer();
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockResolvedValue({ approved: false });
+      .mockResolvedValue({ approved: false, action: 'end-run' });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
     const savedState: WorkflowState = {
@@ -926,9 +656,9 @@ describe('runPlanningPhases', () => {
       'spec',
       join(sessionDir(projectDir, sessionId), SPEC_FILE),
     );
-    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'closed' });
+    expect(result.state.closed?.as).toBe('ended');
+    expect(planner.runPhase).not.toHaveBeenCalled();
     expect(implementer.implement).not.toHaveBeenCalled();
   });
 
@@ -966,8 +696,7 @@ describe('runPlanningPhases', () => {
 
     expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.tasks.map((task) => task.id)).toEqual(['T001']);
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(planner.runPhase).not.toHaveBeenCalled();
     expect(implementer.implement).not.toHaveBeenCalled();
   });
 });

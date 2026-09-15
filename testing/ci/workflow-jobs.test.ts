@@ -39,7 +39,13 @@ const ci = parseWorkflow('ci.yml');
 
 describe('CI workflow topology', () => {
   it('splits the push gate into independent parallel jobs', () => {
-    expect(Object.keys(ci.jobs).sort()).toEqual(['e2e-replay', 'smoke', 'static', 'unit']);
+    expect(Object.keys(ci.jobs).sort()).toEqual([
+      'e2e-replay',
+      'smoke',
+      'static',
+      'unit',
+      'website',
+    ]);
   });
 
   it('shards the unit run four ways without coverage instrumentation', () => {

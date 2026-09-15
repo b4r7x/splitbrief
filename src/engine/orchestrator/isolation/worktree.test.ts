@@ -91,7 +91,9 @@ function filesRunnersWouldDiscover(root: string, prefix = ''): string[] {
   return found;
 }
 
-describe('ensureIsolationWorktree', () => {
+// Every case here builds a repository and a linked worktree out of real git subprocesses; the
+// slowest takes under two seconds alone, and the budget is the room four forks need on a loaded box.
+describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
   it('isolation worktree path is outside the git dir and outside the project worktree', async () => {
     delete process.env.XDG_STATE_HOME;
     createTestGitRepo(repoDir, { 'README.md': '# test\n' });

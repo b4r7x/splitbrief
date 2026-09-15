@@ -42,7 +42,6 @@ export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
     },
     approve: opts.approve,
     mode: opts.mode,
-    budget: opts.budget,
     plannerEffort: opts.plannerEffort,
     reviewerEffort: opts.reviewerEffort,
     yolo: opts.yolo,

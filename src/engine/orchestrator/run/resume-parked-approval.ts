@@ -4,18 +4,15 @@ import type { Planner } from '../../planners/types.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
 import { resumeBriefsApproval } from '../planning/resume-briefs.js';
 import { resumeArtifactApproval } from '../planning/resume-artifact-approval.js';
-import { regeneratePlanAndTasks, regenerateTasksIfNeeded } from '../planning/regen.js';
-import { handlePlanningFailure } from '../planning/failure.js';
-import { transitionAndSave } from '../state-ops.js';
+import { invalidateFrom } from '../planning/invalidate.js';
+import { runPlanningSteps } from '../planning/steps.js';
 import { plannerCallbacksContextOf } from './planner-callbacks-context.js';
 import { APPROVAL_PARKED_ARTIFACT } from './task-execution.js';
 
 // Continues a resumed artifact approval from the persisted artifacts, never from a fresh
-// planning turn: an approved spec.md drives plan/brief regeneration and then the plan gate,
-// and a plan the planner revised at either gate invalidates the briefs it produced, so they
-// are regenerated before the briefs gate reads tasks.md. This is what rewind.ts does after
-// its own APPROVE_SPEC; re-planning would overwrite the artifact just approved and re-prompt
-// the same gate.
+// planning turn: the approved artifact stays, everything the approval invalidated is
+// dropped, and the step loop re-runs exactly the calls that lost their artifact before
+// the next gate opens.
 export async function continueApprovedArtifact(opts: {
   wctx: PlannerCallbacksContext & { planner: Planner };
   phase: 'reviewing-spec' | 'reviewing-plan';
@@ -23,68 +20,25 @@ export async function continueApprovedArtifact(opts: {
   setTrackedState: (s: WorkflowState) => void;
 }): Promise<PlanningPhaseResult> {
   const { wctx, setTrackedState } = opts;
-  const { projectDir, sessionId, callbacks, bus, metadata, sinks, signal, planner } = wctx;
+  const { projectDir, sessionId, planner } = wctx;
   const ref = { projectDir, sessionId };
-  let { state, regenerated } = opts.approval;
-  let tasks = state.tasks;
+  const { state, regenerated } = opts.approval;
+  const gate = opts.phase === 'reviewing-spec' ? 'spec' : 'plan';
 
-  if (opts.phase === 'reviewing-spec') {
-    state = transitionAndSave(ref, state, { type: 'APPROVE_SPEC' });
-    let planAndTasks: Awaited<ReturnType<typeof regeneratePlanAndTasks>>;
-    try {
-      planAndTasks = await regeneratePlanAndTasks({
-        ...ref,
-        planner,
-        callbacks,
-        bus,
-        state,
-        metadata,
-        signal,
-        sinks,
-      });
-    } catch (err) {
-      return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
-    }
-    tasks = planAndTasks.tasks;
-    state = transitionAndSave(ref, planAndTasks.state, {
-      type: 'PLAN_DONE',
-      tasks,
-    });
-    setTrackedState(state);
+  if (regenerated) invalidateFrom(ref, gate);
 
-    const planApproval = await resumeArtifactApproval({
-      wctx,
-      state,
-      phase: 'reviewing-plan',
-    });
-    if (planApproval.cancelled) {
-      return { disposition: 'terminal', state: planApproval.state, outcome: 'cancelled' };
-    }
-    state = planApproval.state;
-    regenerated = planApproval.regenerated;
-  }
+  const steps = await runPlanningSteps({
+    wctx,
+    planner,
+    state,
+    feature: state.feature,
+    startAt: gate === 'spec' ? 'plan' : 'tasks',
+    passedGates: gate === 'spec' ? ['spec'] : ['spec', 'plan'],
+  });
+  setTrackedState(steps.state);
+  if (steps.disposition === 'terminal') return steps;
 
-  let regen: Awaited<ReturnType<typeof regenerateTasksIfNeeded>>;
-  try {
-    regen = await regenerateTasksIfNeeded({
-      ...ref,
-      regenerated,
-      planner,
-      callbacks,
-      bus,
-      state,
-      tasks,
-      metadata,
-      signal,
-      sinks,
-    });
-  } catch (err) {
-    return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
-  }
-  state = regen.state;
-  tasks = regen.tasks;
-
-  const briefs = await resumeBriefsApproval({ wctx, state });
+  const briefs = await resumeBriefsApproval({ wctx, state: steps.state });
   setTrackedState(briefs.state);
   return briefs;
 }
@@ -108,14 +62,16 @@ export async function resumeParkedApproval(opts: {
   if (state.phase === 'reviewing-spec' || state.phase === 'reviewing-plan') {
     const phase = state.phase;
     const resumed = await resumeArtifactApproval({ wctx: resumeWctx, state, phase });
-    const continued: PlanningPhaseResult = resumed.cancelled
-      ? { disposition: 'terminal', state: resumed.state, outcome: 'cancelled' }
-      : await continueApprovedArtifact({
-          wctx: resumeWctx,
-          phase,
-          approval: resumed,
-          setTrackedState,
-        });
+    const continued: PlanningPhaseResult = resumed.closed
+      ? { disposition: 'terminal', state: resumed.state, outcome: 'closed' }
+      : resumed.cancelled
+        ? { disposition: 'terminal', state: resumed.state, outcome: 'cancelled' }
+        : await continueApprovedArtifact({
+            wctx: resumeWctx,
+            phase,
+            approval: resumed,
+            setTrackedState,
+          });
     setTrackedState(continued.state);
     phaseTimings.planning = Date.now() - startTime;
     return continued;

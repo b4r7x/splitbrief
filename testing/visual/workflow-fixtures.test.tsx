@@ -4,7 +4,6 @@ import { renderFeature, type RenderFeatureResult, tick } from '#testing/helpers/
 import { App } from '../../src/app/root.js';
 import { getWorkflowPromptRows } from '../../src/features/workflow/prompt-rows/workflow.js';
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../src/stores/cost-approval/prompt.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js';
 import { controlsStore } from '../../src/stores/ui/controls.js';
@@ -68,13 +67,21 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
     ).toBe(true);
     expect(controlsStore.get().inputMode).toBe(projection.inputMode);
     expect(controlsStore.get().sidebarVisible).toBe(projection.sidebarVisible);
-    // A resumed halt republishes its own prompt through the recovery driver, so
-    // that one event belongs to production, not to the projection's event list.
-    const drivenEvents = projection.resumeState?.pendingRecovery === undefined ? 0 : 1;
-    expect(eventsStore.get().events).toHaveLength(
-      projection.events.filter((event) => projectEventForTuiEventLog(event) !== null).length +
-        drivenEvents,
-    );
+    if (projection.atRest === undefined) {
+      // A resumed halt republishes its own prompt through the recovery driver, so
+      // that one event belongs to production, not to the projection's event list.
+      const drivenEvents = projection.resumeState?.pendingRecovery === undefined ? 0 : 1;
+      expect(eventsStore.get().events).toHaveLength(
+        projection.events.filter((event) => projectEventForTuiEventLog(event) !== null).length +
+          drivenEvents,
+      );
+    } else {
+      // A run at rest stages no events: its transcript is its own history, and the replay
+      // brackets whatever the run wrote with the two markers that say where it came from.
+      const types = eventsStore.get().events.map((event) => event.type);
+      expect(types[0], projection.scenarioId).toBe('replay_started');
+      expect(types.at(-1), projection.scenarioId).toBe('replay_complete');
+    }
     if (projection.review !== undefined) {
       // A document gate is its own panel; only the tiered gates go through the approval store.
       if (projection.reviewArtifact === undefined) {
@@ -169,7 +176,6 @@ describe('workflow visual fixtures', () => {
       expect(getWorkflowFixturePromptRows(projection, VIEWPORT.cols)).toBe(
         getWorkflowPromptRows({
           approvalState: approvalPromptStore.get(),
-          costApprovalState: costApprovalStore.get(),
           questionHint,
           cols: VIEWPORT.cols,
         }),

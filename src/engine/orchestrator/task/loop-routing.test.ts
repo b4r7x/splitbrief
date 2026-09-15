@@ -42,7 +42,6 @@ function profilesConfig(windows: { largeWindow: number; smallWindow: number }): 
           offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen-large',
-          costTier: 'cheap',
           contextLength: windows.largeWindow,
         },
         'local-small': {
@@ -52,7 +51,6 @@ function profilesConfig(windows: { largeWindow: number; smallWindow: number }): 
           offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen-small',
-          costTier: 'local',
           contextLength: windows.smallWindow,
         },
       },
@@ -123,7 +121,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       contextFit: expect.stringMatching(/fits|tight/),
       estimatedTokens: expect.any(Number),
       contextLength: 32768,
-      routingReason: expect.stringContaining('Selected cheapest capable profile cheap-large'),
+      routingReason: expect.stringContaining('Selected profile cheap-large'),
     });
     expect(events.find((event) => event.type === 'task_tokens')).toMatchObject({
       type: 'task_tokens',
@@ -135,7 +133,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       estimatedTokens: expect.any(Number),
       contextLength: 32768,
       currentCodeContextMode: 'none',
-      routingReason: expect.stringContaining('Selected cheapest capable profile cheap-large'),
+      routingReason: expect.stringContaining('Selected profile cheap-large'),
     });
     expect(events.find((event) => event.type === 'task_completed')).toMatchObject({
       type: 'task_completed',
@@ -150,7 +148,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       tool: 'ollama',
       model: 'qwen-large',
       currentCodeContextMode: 'none',
-      routingReason: expect.stringContaining('Selected cheapest capable profile cheap-large'),
+      routingReason: expect.stringContaining('Selected profile cheap-large'),
     });
   });
 
@@ -283,7 +281,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
             offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen-small',
-            costTier: 'local',
             contextLength: 10_000,
           },
         },

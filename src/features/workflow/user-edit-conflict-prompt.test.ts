@@ -26,7 +26,7 @@ describe('user edit conflict prompt', () => {
     expect(prompt).toContain('affected T001');
     expect(prompt).toContain(`${glyph('liveBar')} [space]  pause`);
     expect(prompt).toContain('[s]  skip task');
-    expect(prompt).toContain('[a]  abort');
+    expect(prompt).toContain('[a]  end run');
     expect(prompt).not.toContain('ask planner');
   });
 

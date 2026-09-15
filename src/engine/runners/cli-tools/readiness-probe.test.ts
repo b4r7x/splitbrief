@@ -30,10 +30,18 @@ async function nodeExecutable(): Promise<CliExecutableIdentity> {
   };
 }
 
+/**
+ * How long a probe waits for a `node -e` script that answers immediately. These cases are about
+ * what the probe concludes, never about how fast a process starts, and a machine running the whole
+ * suite at once takes far longer than a second to spawn one. A case that is about a timeout sets
+ * its own, much shorter, value.
+ */
+const PROBE_TIMEOUT_MS = 10_000;
+
 function probe(
   versionScript = "console.log('codex 0.40.0')",
   authScript = 'process.exit(0)',
-  timeoutMs = 1_000,
+  timeoutMs = PROBE_TIMEOUT_MS,
 ): CliProbeContract {
   return {
     version: {
@@ -65,7 +73,7 @@ function declaredProbe(
   const version = {
     command: ['node', '-e', options.versionScript ?? "console.log('codex 0.40.0')"] as const,
     cwd: 'neutral' as const,
-    timeoutMs: 1_000,
+    timeoutMs: PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   const auth = {
@@ -73,13 +81,13 @@ function declaredProbe(
       options.authCommand ??
       (['node', '-e', options.authScript ?? "console.log('verified')"] as const),
     cwd: 'neutral' as const,
-    timeoutMs: options.authTimeoutMs ?? 1_000,
+    timeoutMs: options.authTimeoutMs ?? PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   const catalog = {
     command: ['node', '-e', options.catalogScript ?? "console.log('model-a')"] as const,
     cwd: 'neutral' as const,
-    timeoutMs: 1_000,
+    timeoutMs: PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   return {
@@ -152,13 +160,13 @@ function opencodeProbe(
   const version = {
     command: ['opencode', '--version'] as const,
     cwd: 'neutral' as const,
-    timeoutMs: 2_000,
+    timeoutMs: PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   const auth = {
     command: ['opencode', 'providers', 'list'] as const,
     cwd: 'neutral' as const,
-    timeoutMs: options.authTimeoutMs ?? 2_000,
+    timeoutMs: options.authTimeoutMs ?? PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   return {
@@ -178,7 +186,7 @@ function opencodeProbe(
       catalog: {
         command: ['opencode', 'models'] as const,
         cwd: 'neutral' as const,
-        timeoutMs: 2_000,
+        timeoutMs: PROBE_TIMEOUT_MS,
         maxOutputBytes: 1_024,
         kind: 'catalog',
         parse: () => ({ kind: 'success', value: [] }),
@@ -594,7 +602,7 @@ describe('CLI readiness probe', () => {
         }
       });
     },
-    3_000,
+    30_000,
   );
 
   it.runIf(process.platform !== 'win32')(
@@ -610,7 +618,9 @@ describe('CLI readiness probe', () => {
           executable,
           authChannel: 'api-key',
           probe: declaredProbe({
-            authTimeoutMs: 3_000,
+            // Long enough for the grandchild to record its pid before the reap, on a machine
+            // running the whole suite at once; the elapsed assertion below still holds.
+            authTimeoutMs: 8_000,
             authScript: [
               'const { spawn } = require("node:child_process");',
               `const descendant = spawn(process.execPath, ["-e", ${JSON.stringify(`require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); process.on("SIGTERM", () => {}); setInterval(() => {}, 1_000)`)}], { stdio: "ignore" });`,

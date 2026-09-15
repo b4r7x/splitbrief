@@ -1,0 +1,104 @@
+.atmosphere {
+  display: none;
+}
+
+.is-enhanced .atmosphere {
+  display: block;
+  position: fixed;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.ascii-drift {
+  position: absolute;
+  margin: 0;
+  color: #505050;
+  opacity: 0.5;
+  font:
+    9px / 11px Departure,
+    monospace;
+  letter-spacing: 1.8px;
+  animation: ascii-drift 52s ease-in-out infinite alternate;
+}
+
+.ascii-drift:nth-child(1) {
+  left: -190px;
+  top: 0;
+  animation-delay: -31s;
+}
+
+.ascii-drift:nth-child(2) {
+  right: -100px;
+  top: 7%;
+  animation-duration: 67s;
+  animation-delay: -12s;
+}
+
+.ascii-drift:nth-child(3) {
+  left: 7%;
+  top: 46%;
+  font-size: 7px;
+  line-height: 9px;
+  opacity: 0.38;
+  animation-duration: 61s;
+  animation-delay: -48s;
+}
+
+.ascii-drift:nth-child(4) {
+  right: -130px;
+  top: 62%;
+  animation-duration: 47s;
+  animation-delay: -19s;
+}
+
+.ascii-drift:nth-child(5) {
+  left: 35%;
+  top: -150px;
+  font-size: 7px;
+  line-height: 9px;
+  opacity: 0.32;
+  animation-duration: 73s;
+  animation-delay: -37s;
+}
+
+.ascii-drift:nth-child(6) {
+  left: 43%;
+  bottom: -230px;
+  opacity: 0.3;
+  animation-duration: 59s;
+  animation-delay: -9s;
+}
+
+[data-motion-paused] .ascii-drift {
+  animation-play-state: paused;
+}
+
+@keyframes ascii-drift {
+  from {
+    transform: translate3d(-35px, 45px, 0);
+  }
+  to {
+    transform: translate3d(45px, -55px, 0);
+  }
+}
+
+@media (max-width: 850px) {
+  .ascii-drift {
+    opacity: 0.3;
+    font-size: 7px;
+    line-height: 9px;
+    letter-spacing: 0;
+  }
+  .ascii-drift:nth-child(2) {
+    right: -220px;
+  }
+  .ascii-drift:nth-child(3) {
+    left: -150px;
+  }
+  .ascii-drift:nth-child(5),
+  .ascii-drift:nth-child(6) {
+    display: none;
+  }
+}

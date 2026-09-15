@@ -18,7 +18,6 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { getApprovalPromptRows } from '../prompt-rows/approval.js';
 import { getQuestionPromptRows } from '../prompt-rows/question.js';
@@ -42,7 +41,6 @@ beforeEach(() => {
   controlsStore.reset();
   reviewStore.reset();
   approvalPromptStore.reset();
-  costApprovalStore.reset();
   questionPromptStore.reset();
 });
 
@@ -69,7 +67,7 @@ function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
     estimatedTokens: 3911,
     contextLength: 32768,
     currentCodeContextMode: 'whole-file',
-    costPosture: 'Selected unknown cost tier via cheapest-capable routing',
+    routingReason: 'smallest capable context window',
   });
 }
 

@@ -13,8 +13,12 @@ malformed write. All modes (`quick`, `standard`, and `speckit`) and all callers
 (TUI and headless) consume the same v4 projection and command policy. Read-only
 integrations may observe state but never promote a local migration, retry a
 provider, or bypass the revision check. The keys `stateFence`,
-`authorityRevision`, `generation`, `permit` and `briefRecovery` are legacy: a
-loaded state that still carries them has them stripped.
+`authorityRevision`, `generation`, `permit`, `briefRecovery` and
+`budgetPauseAcknowledgedAtCost` are legacy (`LEGACY_STATE_KEYS`,
+`src/core/schemas/workflow.ts`): a loaded state that still carries them has them
+stripped, so a state written before those subsystems were removed still loads.
+The version number itself has one home, `WORKFLOW_STATE_VERSION`; no reader and
+no writer spells `4`.
 
 A Task Brief may enter implementation only when the current deterministic Brief Quality report has zero errors.
 Warnings remain non-blocking, and an invalid brief must never be advanced through an approval override.
@@ -186,8 +190,12 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 | `WorkflowState.reviewFixes` | no review fix cycle has run |
 | `WorkflowState.reviewStatus` | the final review has not resolved |
 | `WorkflowState.validationBaseline` | the run-start gate probe is re-run on resume instead of reused |
-| `Session.status: 'cancelled'` | an older run never wrote the value; a reader that does not know it should treat it as terminal but not complete |
+| `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` between two briefs — and a record written before `cut` existed falls back to the presence of a `partialRef` |
+| `WorkflowState.closed` | the run was never explicitly ended, so it is still continuable |
+| `WorkflowState.lastFailure` | the run recorded no failure; it stopped for some other reason |
 | evidence `skipped` / `skippedReason` | the stage ran (a skipped stage was previously indistinguishable from a pass) |
+
+**`Session.status` (2026-09-15).** The session record's status is now `open` \| `complete` \| `ended`, derived from the state by `deriveRunStatus` rather than from the exit path the run happened to take. The legacy literals `interrupted`, `failed` and `cancelled` still parse: they map to `open`, and `failed` additionally sets `stop: 'failed'`. The row also carries optional `phase`, `mode` and `stop` (`paused` \| `waiting` \| `halted` \| `failed` \| `interrupted`); an absent `stop` on an open row means the run is still going.
 
 ## What is NOT stable
 
@@ -346,7 +354,7 @@ Strings appended to `observedEvidence` are stable. UI and tests may match on the
 ### Summary rollup
 
 `Summary.evidenceSummary` (optional, additive) carries a compact rollup so the
-summary screen can render counts without re-reading the ledger:
+closed run can render counts without re-reading the ledger:
 
 ```ts
 {

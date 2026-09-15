@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { externalEditRequestStore } from '../../stores/ui/external-edit-request.js';
 import { reviewStore } from '../../stores/workflow/review.js';

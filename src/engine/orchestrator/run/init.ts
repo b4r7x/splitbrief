@@ -38,7 +38,7 @@ import type {
   WorkflowContext,
   WorkflowSinks,
 } from '../types.js';
-import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
+import { runSeatIdentity } from '../../../core/providers/seat-identity.js';
 import { buildSummary, type SummaryBase } from '../summary/build.js';
 import {
   publishError,
@@ -50,6 +50,14 @@ import {
   publishGitBranchCreated,
 } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
+import {
+  createContinuationHolder,
+  readInterruptedPartial,
+  type ContinuationHolder,
+} from '../continuation.js';
+import { artifactPresence } from '../../../core/sessions/run-record-io.js';
+import { resumeStep } from '../../../core/sessions/run-status.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import { restoreInterruptedTaskFiles } from '../task/rollback.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation/run.js';
@@ -79,6 +87,11 @@ export type RunWorkflowOptions = {
   signal?: AbortSignal | undefined;
   /** Transient rewind feedback used by same-process continuation when transcript persistence is disabled. */
   rewindFeedback?: string | undefined;
+  /**
+   * What the operator said when they continued this run. It seeds the first
+   * step's continuation, so that step composes it into its own prompt.
+   */
+  steer?: string | undefined;
   /** Headless mode: install one stdout sink (NDJSON, or text under `plain`); the CLI skips the TUI. */
   headless?: boolean | undefined;
   /** `--plain`: the run's single stdout sink renders text instead of NDJSON. */
@@ -217,7 +230,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     // The caller built summaryBase from the pre-swap config. Spend stays attributed
     // to the seat that spent it (buildSummary prices from the saved state); the run's
     // display identity is the seat now in use.
-    const ident = runPricingIdentity(config);
+    const ident = runSeatIdentity(config);
     summaryBase = {
       ...summaryBase,
       plannerTool: ident.plannerTool,
@@ -261,6 +274,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     setTrackedState(savedState);
   }
   const hasPendingRecovery = savedState?.pendingRecovery !== undefined;
+  const continuation = await resumeContinuation({ projectDir, sessionId }, savedState, opts.steer);
 
   // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
@@ -423,20 +437,54 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     }),
     ...(opts.streamingSink !== undefined && { streamingSink: opts.streamingSink }),
     ...(runtime.plannerContext !== undefined && { plannerContext: runtime.plannerContext }),
+    continuation,
   };
 
   return { ok: true, state, wctx, prepared };
 }
 
-function isTaskInFlight(state: WorkflowState): boolean {
-  return state.phase === 'validating-task' || state.phase === 'escalating';
+/**
+ * What this run was continued with. The step the stop recorded owns it, so the
+ * partial a cut attempt left reaches that step and no other; a run continued
+ * without a recorded park seeds the steer at the step it picks up.
+ */
+async function resumeContinuation(
+  ref: SessionRef,
+  state: WorkflowState | undefined,
+  steer: string | undefined,
+): Promise<ContinuationHolder> {
+  if (state === undefined) return createContinuationHolder();
+  const interrupted = state.interruptedStep;
+  // A boundary park cut nothing, and a cold crash flushed nothing it can name.
+  const partial =
+    interrupted !== undefined && interrupted.cut !== 'boundary'
+      ? await readInterruptedPartial(ref)
+      : undefined;
+  if (partial === undefined && steer === undefined) return createContinuationHolder();
+  return createContinuationHolder({
+    step: interrupted?.step ?? resumeStep(state, artifactPresence(ref)),
+    ...(partial !== undefined && { partial }),
+    ...(steer !== undefined && { steer }),
+  });
 }
 
 /**
- * A session killed while its brief was validating or escalating left half-written
- * files behind and a state that points at a task no runner is executing. The brief's
- * own declared files restart from its task-start snapshot, so the resumed run
- * re-enters at the brief's start instead of on top of an abandoned attempt.
+ * A brief no runner is executing any more. Validating and escalating say so by
+ * their phase; `implementing` needs the task's own status, because that is also
+ * the phase of a brief the operator parked on purpose — and a park keeps its
+ * partial edits and continues with context rather than restarting clean.
+ */
+function isTaskInFlight(state: WorkflowState): boolean {
+  if (state.phase === 'validating-task' || state.phase === 'escalating') return true;
+  if (state.phase !== 'implementing' || state.interruptedStep !== undefined) return false;
+  return state.tasks[state.currentTaskIndex]?.status === 'in_progress';
+}
+
+/**
+ * A session killed while its brief was running left half-written files behind and
+ * a state that points at a task no runner is executing. The brief's own declared
+ * files restart from its task-start snapshot, so the resumed run re-enters at the
+ * brief's start instead of on top of an abandoned attempt.
  */
 async function restartInterruptedTask(args: {
   projectDir: string;

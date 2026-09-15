@@ -91,7 +91,6 @@ function fixtureConfig(row: FixtureRow, seats: FixtureRowSeats): Config {
       mode: row.mode,
       approve: 'none',
       maxRetries: 1,
-      maxBudget: row.maxBudgetUsd,
     },
   });
 }

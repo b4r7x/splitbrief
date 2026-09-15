@@ -61,7 +61,7 @@ const MODEL_EVALUATION_EVIDENCE_PATH = join(
 );
 
 describe('eval harness', () => {
-  it('compares fake run metrics for cost savings and quality retention', () => {
+  it('compares fake run metrics for cost and quality retention', () => {
     const baseline = collectRunMetrics({
       scenarioId: 'fake',
       mode: 'baseline',
@@ -92,9 +92,9 @@ describe('eval harness', () => {
       routed,
     });
 
-    expect(comparison.costSavingsPercent).toBe(60);
     expect(comparison.qualityRetentionPercent).toBe(50);
-    expect(comparison.savingsUSD).toBeCloseTo(0.06);
+    expect(comparison.baselineCostUSD).toBeCloseTo(0.1);
+    expect(comparison.routedCostUSD).toBeCloseTo(0.04);
     expect(routed.quality.failedChecks).toEqual(['missing edge case']);
   });
 
@@ -113,13 +113,9 @@ describe('eval harness', () => {
       mode: 'baseline',
       summary: makeSummary(0, {
         costBreakdown: {
-          hypotheticalCost: 0,
           actualPlannerCost: 0,
           actualImplementerCost: 0,
           totalActualCost: 0,
-          savingsAmount: 0,
-          savingsPercentage: 0,
-          localCompletionRate: 1,
           hasPricedUsage: false,
           hasUnpricedUsage: true,
           isTotalActualCostKnown: false,
@@ -135,13 +131,9 @@ describe('eval harness', () => {
       mode: 'baseline',
       summary: makeSummary(0.1, {
         costBreakdown: {
-          hypotheticalCost: 0.2,
           actualPlannerCost: 0.1,
           actualImplementerCost: 0,
           totalActualCost: 0.1,
-          savingsAmount: 0,
-          savingsPercentage: 0,
-          localCompletionRate: 1,
           hasPricedUsage: true,
           hasUnpricedUsage: true,
           isTotalActualCostKnown: false,
@@ -173,8 +165,6 @@ describe('eval harness', () => {
     const tokenUsage = makeUsage();
     const costBreakdown = calculateCostBreakdown({
       tokenUsage,
-      totalTasks: 0,
-      escalatedCount: 0,
       plannerTool: 'custom-endpoint',
       implementerTool: 'custom-endpoint',
       plannerModel: 'gpt-4o',
@@ -237,13 +227,12 @@ describe('eval harness', () => {
       const markdown = readFileSync(mdPath, 'utf-8');
 
       expect(json.aggregate.scenariosRun).toBe(1);
-      expect(json.aggregate.totalSavingsUSD).toBeCloseTo(0.06);
       expect(json.aggregate.avgBaselineFirstPassRatePercent).toBe(0);
       expect(json.aggregate.avgRoutedFirstPassRatePercent).toBe(0);
       expect(json.aggregate.totalRetryAttempts).toBe(0);
       expect(json.aggregate.totalEscalations).toBe(0);
       expect(markdown).toContain('Fake scenario');
-      expect(markdown).toContain('$0.0600');
+      expect(markdown).toContain('$0.1000');
     });
   });
 
@@ -258,8 +247,8 @@ describe('eval harness', () => {
         .slice(1);
 
       expect(dataRows[0]).toContain('First-pass (baseline)');
-      expect(dataRows[dataRows.length - 1]).toContain('Total savings');
-      expect(dataRows[dataRows.length - 4]).toContain('Avg cost savings');
+      expect(dataRows[dataRows.length - 1]).toContain('Total routed cost');
+      expect(dataRows[dataRows.length - 2]).toContain('Total baseline cost');
     });
   });
 
@@ -279,34 +268,12 @@ describe('eval harness', () => {
       const markdown = readFileSync(mdPath, 'utf-8');
       const summary = markdown.slice(0, markdown.indexOf('## Per-scenario results'));
 
-      expect(summary).toContain('| Avg cost savings | n/a |');
       expect(summary).toContain('| Total baseline cost | n/a |');
       expect(summary).toContain('| Total routed cost | n/a |');
-      expect(summary).toContain('| Total savings | n/a |');
       expect(markdown).not.toContain('$0.0000');
       expect(markdown.split('\n').find((line) => line.includes('Priced scenario'))).toContain(
         '$0.1000',
       );
-    });
-  });
-
-  it('withholds the routed and savings aggregates when a routed run was unpriced, keeping the fully priced baseline total', async () => {
-    await withTempDir((dir) => {
-      const scenario = compareScenario({
-        scenarioId: 'fix-bug',
-        scenarioName: 'Routed unpriced',
-        baseline: makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
-        routed: makeRunMetrics({ mode: 'routed', cost: 0.04, priced: false }),
-      });
-      const { mdPath } = generateReport(makeReportOf([scenario]), dir);
-      const markdown = readFileSync(mdPath, 'utf-8');
-      const summary = markdown.slice(0, markdown.indexOf('## Per-scenario results'));
-
-      expect(summary).toContain('| Total baseline cost | $0.1000 |');
-      expect(summary).toContain('| Total routed cost | n/a |');
-      expect(summary).toContain('| Total savings | n/a |');
-      expect(summary).toContain('| Avg cost savings | n/a |');
-      expect(markdown).not.toContain('$0.0000');
     });
   });
 
@@ -323,11 +290,7 @@ describe('eval harness', () => {
       const summary = readFileSync(mdPath, 'utf-8');
 
       expect(summary).toContain('| Total routed cost | n/a |');
-      expect(summary).toContain('| Total savings | n/a |');
-      expect(summary).toContain('| Avg cost savings | n/a |');
       expect(json.aggregate.totalRoutedCostUSD).toBeNull();
-      expect(json.aggregate.totalSavingsUSD).toBeNull();
-      expect(json.aggregate.avgCostSavingsPercent).toBeNull();
       expect(json.aggregate.totalBaselineCostUSD).toBeCloseTo(0.1);
       expect(json.aggregate.scenariosRun).toBe(1);
     });
@@ -340,8 +303,6 @@ describe('eval harness', () => {
 
       expect(json.aggregate.totalBaselineCostUSD).toBeNull();
       expect(json.aggregate.totalRoutedCostUSD).toBeNull();
-      expect(json.aggregate.totalSavingsUSD).toBeNull();
-      expect(json.aggregate.avgCostSavingsPercent).toBeNull();
     });
   });
 
@@ -350,10 +311,8 @@ describe('eval harness', () => {
       const { mdPath } = generateReport(makeReport(null), dir);
       const summary = readFileSync(mdPath, 'utf-8');
 
-      expect(summary).toContain('| Avg cost savings | 60% |');
       expect(summary).toContain('| Total baseline cost | $0.1000 |');
       expect(summary).toContain('| Total routed cost | $0.0400 |');
-      expect(summary).toContain('| Total savings | $0.0600 |');
     });
   });
 
@@ -377,10 +336,8 @@ describe('eval harness', () => {
 
   it('excludes unpriced runs from the aggregate totals instead of averaging in a fabricated zero', () => {
     const mixed = aggregateComparisons(mixedPricingScenarios());
-    expect(mixed.avgCostSavingsPercent).toBe(60);
     expect(mixed.totalBaselineCostUSD).toBeCloseTo(0.1);
     expect(mixed.totalRoutedCostUSD).toBeCloseTo(0.04);
-    expect(mixed.totalSavingsUSD).toBeCloseTo(0.06);
 
     const routedUnpriced = aggregateComparisons([
       compareScenario({
@@ -391,8 +348,6 @@ describe('eval harness', () => {
       }),
     ]);
     expect(routedUnpriced.totalRoutedCostUSD).toBeNull();
-    expect(routedUnpriced.totalSavingsUSD).toBeNull();
-    expect(routedUnpriced.avgCostSavingsPercent).toBeNull();
   });
 
   it('renders an unknown review verdict as unknown in the scenario table, never as pass', async () => {
@@ -458,25 +413,17 @@ describe('eval harness', () => {
     });
   });
 
-  it('prints first-pass rates first on the CLI and the cost line last, saying unpriced when nothing was priced', () => {
+  it('prints first-pass rates first on the CLI and quality retention last', () => {
     const lines = formatCliSummary(makeReport(null));
     expect(lines[0]).toBe('First-pass (baseline): 0%');
-    expect(lines[lines.length - 1]).toBe('Total savings: $0.0600');
-
-    const unpriced = formatCliSummary(makeReport(null, undefined, false));
-    expect(unpriced[0]).toBe('First-pass (baseline): 0%');
-    expect(unpriced[unpriced.length - 1]).toBe('Total savings: unpriced');
+    expect(lines[lines.length - 1]).toContain('Avg quality retention');
   });
 
-  it('prints the review line second on the CLI, after first-pass and before cost', () => {
+  it('prints the review line third on the CLI, after the first-pass rows', () => {
     const lines = formatCliSummary(makeReport(null));
     expect(lines[2]).toContain('Review yield:');
     expect(lines[2]).toContain('planner: planner-model');
     expect(lines[2]).toContain('routed implementer: routed-model');
-    const avgCostIndex = lines.findIndex((line) => line.startsWith('Avg cost savings'));
-    expect(avgCostIndex).toBeGreaterThan(
-      lines.findIndex((line) => line.startsWith('Review yield')),
-    );
   });
 
   it('keeps raw events out of the report while still deriving the retry count', async () => {

@@ -6,10 +6,8 @@ import { DRAFT_ESCAPE_HINT, useAppKeys } from './keys.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeSession } from '#testing/helpers/factories/session.js';
-import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import {
   parsePreparedConfig,
   type PreparationOutcome,
@@ -27,10 +25,9 @@ import { controlsStore } from '../stores/ui/controls.js';
 import { cancelEscapeAction } from '../lib/terminal/escape-debounce.js';
 import * as handlers from '../features/workflow/handlers.js';
 import { approvalPromptStore, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
-import { costApprovalStore, openCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
 import { editorStore } from '../stores/ui/editor.js';
 import { reviewStore } from '../stores/workflow/review.js';
-import { handleSessionSelect, sessionSelectStore } from '../stores/navigation/session-select.js';
+import { continueRunInPlace, sessionSelectStore } from '../stores/navigation/session-select.js';
 import { configStore } from '../stores/project/config.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { SessionPreparation } from './session-preparation.js';
@@ -155,7 +152,11 @@ const STOP_LADDER_SETUP = () => {
   vi.setSystemTime(1000);
   resetAllStores();
   handlers.clearAllHandlers();
-  routerStore.navigate({ to: 'workflow', execution: localExecution('test') });
+  routerStore.navigate({
+    to: 'workflow',
+    run: makeRunRecord(),
+    execution: localExecution('test'),
+  });
   lifecycleStore.__testReset({ phase: 'implementing' });
 };
 
@@ -369,70 +370,30 @@ describe('useAppKeys: ESC stop ladder', () => {
     ui.unmount();
   });
 
-  it('ESC on the summary screen navigates home without exiting', async () => {
-    routerStore.navigate({
-      to: 'summary',
-      summary: makeSummary(),
-      status: 'complete',
-      sessionId: 'summary-session',
+  it('session preparation owns Escape and shortcuts while returning to the run it came from', async () => {
+    const record = makeRunRecord({
+      ref: { projectDir: '/tmp/session-preparation-keys', sessionId: 'resume-from-run' },
+      status: {
+        kind: 'open',
+        stop: { kind: 'interrupted' },
+        resumeAt: { kind: 'planner', call: 'tasks' },
+      },
     });
-    const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick();
-
-    await writeEsc(ui);
-    await tick();
-    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
-
-    expect(routerStore.get().screen).toBe('home');
-    expect(exit).not.toHaveBeenCalled();
-    ui.unmount();
-  });
-
-  it('a split escape sequence on the summary screen does not navigate home', async () => {
-    routerStore.navigate({
-      to: 'summary',
-      summary: makeSummary(),
-      status: 'complete',
-      sessionId: 'summary-session',
-    });
-    const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick();
-
-    await writeEsc(ui);
-    await tick();
-    await writeKey(ui, '[A');
-    await tick();
-    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
-
-    expect(routerStore.get().screen).toBe('summary');
-    expect(exit).not.toHaveBeenCalled();
-    ui.unmount();
-  });
-
-  it('session preparation owns Escape and shortcuts while returning to its summary origin', async () => {
-    routerStore.navigate({
-      to: 'summary',
-      summary: makeSummary(),
-      status: 'complete',
-      sessionId: 'summary-session',
-    });
-    const exactSummaryRoute = routerStore.get();
-    const selected = makeSession({
-      id: 'resume-from-summary',
-      feature: 'resume from summary',
-      status: 'interrupted',
-      summary: null,
-    });
+    routerStore.navigate({ to: 'workflow', run: record, execution: { kind: 'at-rest' } });
+    const exactRoute = routerStore.get();
     const resumeState = {
-      ...createInitialState(selected.feature),
+      ...createInitialState('resume from run'),
       phase: 'implementing' as const,
     };
     const pending = Promise.withResolvers<PreparationOutcome>();
-    const selection = handleSessionSelect(selected, '/tmp/session-preparation-keys', {
-      loadResumeState: () => ({ kind: 'loaded', state: resumeState }),
-      prepareResume: () => pending.promise,
+    const selection = continueRunInPlace({
+      record,
+      state: resumeState,
+      deps: {
+        loadResumeState: () => ({ kind: 'loaded', state: resumeState }),
+        prepareResume: () => pending.promise,
+        hydrateRun: async () => {},
+      },
     });
     const exit = vi.fn();
     const ui = renderFeature(<SessionPreparationKeysHarness exit={exit} />);
@@ -444,12 +405,12 @@ describe('useAppKeys: ESC stop ladder', () => {
     await writeKey(ui, '\x0b');
     await tick();
     expect(overlayStore.get().active).toBe('none');
-    expect(routerStore.get()).toBe(exactSummaryRoute);
+    expect(routerStore.get()).toBe(exactRoute);
 
     await writeEsc(ui);
     await tick();
     expect(sessionSelectStore.get().preparation.kind).toBe('idle');
-    expect(routerStore.get()).toBe(exactSummaryRoute);
+    expect(routerStore.get()).toBe(exactRoute);
     expect(exit).not.toHaveBeenCalled();
 
     pending.resolve({ kind: 'aborted' });
@@ -498,25 +459,6 @@ describe('useAppKeys: ESC stop ladder', () => {
     ui.unmount();
   });
 
-  it('ESC does not open the stop sheet while a cost-approval prompt is pending', async () => {
-    const abort = vi.fn();
-    handlers.createAbortHandlerScope()(abort);
-    const exit = vi.fn();
-    void openCostApprovalPrompt(makeCostPrediction());
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick();
-
-    await writeEsc(ui);
-    await tick();
-    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
-
-    expect(overlayStore.get().active).toBe('none');
-    expect(abort).not.toHaveBeenCalled();
-    expect(lifecycleStore.get().cancelled).toBe(false);
-    expect(exit).not.toHaveBeenCalled();
-    ui.unmount();
-  });
-
   it('ESC does not open the stop sheet while a completion menu is open', async () => {
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
@@ -546,7 +488,6 @@ describe('useAppKeys: keystroke binding', () => {
   afterEach(() => {
     stopStore.__testReset();
     approvalPromptStore.__testReset();
-    costApprovalStore.__testReset();
   });
 
   it.each([
@@ -667,19 +608,6 @@ describe('useAppKeys: keystroke binding', () => {
     ui.unmount();
   });
 
-  it('Ctrl+K while a cost-approval prompt is pending does not open an overlay over it', async () => {
-    const exit = vi.fn();
-    void openCostApprovalPrompt(makeCostPrediction());
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick(20);
-
-    await writeKey(ui, '\x0b');
-    await tick(20);
-
-    expect(overlayStore.get().active).toBe('none');
-    ui.unmount();
-  });
-
   it('Ctrl+Q calls exit()', async () => {
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} />);
@@ -779,6 +707,7 @@ describe('useAppKeys: suppressed while the inline briefs field editor owns input
     resetAllStores();
     routerStore.navigate({
       to: 'workflow',
+      run: makeRunRecord(),
       execution: localExecution('field-edit test'),
     });
     // The field editor is not an overlay: give a field session ownership of the live prompt by

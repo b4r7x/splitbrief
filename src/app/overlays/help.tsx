@@ -4,7 +4,7 @@ import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays
 import { ListGroupHeader, ListRow } from '../../components/list-row.js';
 import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { buildCommandItems } from '../../features/palette/sources.js';
 import { getShortcutsForScreen } from '../../core/keybindings/registry.js';
 import { resolveScrollKey, type ScrollKeyAction } from '../../core/keybindings/scroll.js';

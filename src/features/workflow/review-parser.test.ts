@@ -141,11 +141,11 @@ describe('review input ownership', () => {
     expect(inputMode.resolve).toHaveBeenCalledWith('q');
   });
 
-  it('uses the same typed refusal path for a review reject key', async () => {
+  it('uses the same typed refusal path for the review end-run key', async () => {
     const inputMode = makeInputMode('review');
 
     await createReviewInputHandler(inputMode).handleInput('q');
 
-    expect(inputMode.resolve).toHaveBeenCalledWith({ approved: false });
+    expect(inputMode.resolve).toHaveBeenCalledWith({ approved: false, action: 'end-run' });
   });
 });

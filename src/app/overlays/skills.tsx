@@ -4,7 +4,7 @@ import { useTheme } from '../../components/theme.js';
 import type { SkillMeta } from '../../core/skills/types.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
 import { ListRow } from '../../components/list-row.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';

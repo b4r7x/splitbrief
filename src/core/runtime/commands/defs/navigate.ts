@@ -109,7 +109,7 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       label: 'home',
       description: 'Return to home screen',
       category: 'navigate',
-      validScreens: ['workflow', 'summary'],
+      validScreens: ['workflow'],
       handler: () => ctx.navigate('home'),
     },
     {

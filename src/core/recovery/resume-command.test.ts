@@ -18,7 +18,7 @@ describe('formatResumeCommand', () => {
   it('carries the first swap candidate for a seat switch', () => {
     const issue = makeRecoveryIssue({
       reason: 'runner-usage-limit',
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'abort-workflow'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
       recommendedAction: 'switch-seat',
       switchSeat: { seat: 'build', candidates: [{ tool: 'codex' }, { tool: 'cursor' }] },
     });

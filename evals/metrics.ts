@@ -84,11 +84,9 @@ export type ScenarioComparison = {
   scenarioName: string;
   baseline: RunMetrics;
   routed: RunMetrics;
-  costSavingsPercent: number;
   qualityRetentionPercent: number;
   baselineCostUSD: number;
   routedCostUSD: number;
-  savingsUSD: number;
   firstPassRateDeltaPercent: number;
 };
 
@@ -99,15 +97,11 @@ export type EvalReport = {
   routedImplementerModel: string;
   scenarios: ScenarioComparison[];
   aggregate: {
-    /** Average over the pairs priced on both sides; `null` when no pair was. */
-    avgCostSavingsPercent: number | null;
     avgQualityRetentionPercent: number;
     /** Sum over the priced baseline runs; `null` when none of them was priced. */
     totalBaselineCostUSD: number | null;
     /** Sum over the priced routed runs; `null` when none of them was priced. */
     totalRoutedCostUSD: number | null;
-    /** Sum over the pairs priced on both sides; `null` when no pair was. */
-    totalSavingsUSD: number | null;
     scenariosRun: number;
     scenariosWhereRoutedMatchedBaseline: number;
     avgBaselineFirstPassRatePercent: number;
@@ -264,17 +258,9 @@ export function aggregateComparisons(comparisons: ScenarioComparison[]): EvalRep
     (comparison) => comparison.baseline.cost.pricingAvailable,
   );
   const pricedRouted = comparisons.filter((comparison) => comparison.routed.cost.pricingAvailable);
-  const pricedPairs = comparisons.filter(
-    (comparison) =>
-      comparison.baseline.cost.pricingAvailable && comparison.routed.cost.pricingAvailable,
-  );
   const greenRuns = collectGreenRunAggregates(comparisons);
 
   return {
-    avgCostSavingsPercent:
-      pricedPairs.length > 0
-        ? roundTenth(average(pricedPairs.map((comparison) => comparison.costSavingsPercent)))
-        : null,
     avgQualityRetentionPercent: roundTenth(
       average(comparisons.map((comparison) => comparison.qualityRetentionPercent)),
     ),
@@ -282,7 +268,6 @@ export function aggregateComparisons(comparisons: ScenarioComparison[]): EvalRep
       pricedBaselines.map((comparison) => comparison.baselineCostUSD),
     ),
     totalRoutedCostUSD: sumOrNull(pricedRouted.map((comparison) => comparison.routedCostUSD)),
-    totalSavingsUSD: sumOrNull(pricedPairs.map((comparison) => comparison.savingsUSD)),
     scenariosRun: comparisons.length,
     scenariosWhereRoutedMatchedBaseline: comparisons.filter(
       (comparison) => comparison.qualityRetentionPercent >= 100,
@@ -328,8 +313,6 @@ export function compareScenario(
   const { scenarioId, scenarioName, baseline, routed } = input;
   const baselineCost = baseline.cost.estimatedCostUSD;
   const routedCost = routed.cost.estimatedCostUSD;
-  const savings = baselineCost - routedCost;
-  const savingsPercent = baselineCost > 0 ? (savings / baselineCost) * 100 : 0;
 
   const baselineQuality = baseline.quality.score;
   const routedQuality = routed.quality.score;
@@ -340,11 +323,9 @@ export function compareScenario(
     scenarioName,
     baseline,
     routed,
-    costSavingsPercent: Math.round(savingsPercent * 10) / 10,
     qualityRetentionPercent: Math.round(qualityRetention * 10) / 10,
     baselineCostUSD: baselineCost,
     routedCostUSD: routedCost,
-    savingsUSD: savings,
     firstPassRateDeltaPercent:
       Math.round((routed.outcome.firstPassRate - baseline.outcome.firstPassRate) * 100 * 10) / 10,
   };

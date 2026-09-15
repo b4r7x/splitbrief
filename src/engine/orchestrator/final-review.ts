@@ -1,5 +1,6 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
+import type { ContinuationHolder } from './continuation.js';
 import type { EventBus } from '../events/types.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Config } from '../../core/schemas/config.js';
@@ -34,7 +35,7 @@ import { formatTasks } from '../spec/formatter.js';
 import { drainQueue } from './queue/drain.js';
 import { formatDrainedMessages } from './queue/prompt.js';
 import { withContinuationLoop } from './continuation.js';
-import { composeSteeredPrompt } from '../spec/prompts/steered-prompt.js';
+import { composeContinuation } from '../spec/prompts/continuation.js';
 import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
 
 export type FinalReviewResult = {
@@ -64,6 +65,7 @@ export async function runFinalReviewPhase(opts: {
   metadata?: SpecMetadata | null;
   signal?: AbortSignal | undefined;
   sinks?: WorkflowSinks | undefined;
+  continuation?: ContinuationHolder | undefined;
   summaryBase: SummaryBase;
   taskBreakdowns: TaskTokenUsage[];
   phaseTimings?: Record<string, number>;
@@ -155,6 +157,11 @@ export async function runFinalReviewPhase(opts: {
     });
     const fullPrompt = queueText ? queueText + basePrompt : basePrompt;
 
+    const reviewStep = { kind: 'review' as const, cycle: state.reviewFixes?.cycle ?? 0 };
+    // One continuation, one call: the verdict re-ask is a fresh question, not a
+    // second continuation of the attempt that was cut.
+    let seed = opts.continuation?.take(reviewStep);
+
     const callReviewer = async (prompt: string): Promise<string> => {
       if (opts.sinks === undefined) {
         const review = await runReviewerCall({
@@ -170,6 +177,8 @@ export async function runFinalReviewPhase(opts: {
         state = review.state;
         return review.text;
       }
+      const loopSeed = seed;
+      seed = undefined;
       const loop = await withContinuationLoop<{ state: WorkflowState; text: string }>({
         ctx: {
           projectDir,
@@ -180,13 +189,21 @@ export async function runFinalReviewPhase(opts: {
           sinks: opts.sinks,
         },
         state,
+        step: reviewStep,
+        ...(loopSeed === undefined ? {} : { seed: loopSeed }),
         onStateChange: (s) => {
           state = s;
         },
-        body: ({ signal: callSignal, continuationPrompt, steer }) =>
+        // The review is one shot by constitution: a continuation re-issues the
+        // whole deterministic prompt — spec, briefs, diff, drift, evidence — with
+        // the operator's note on the end. It never resumes a session.
+        body: ({ signal: callSignal, partial, steer }) =>
           runReviewerCall({
             reviewer,
-            prompt: composeSteeredPrompt(continuationPrompt ?? prompt, steer),
+            prompt:
+              partial === undefined && steer === undefined
+                ? prompt
+                : composeContinuation({ basePrompt: prompt, partial, steer }),
             projectDir,
             sessionId,
             bus,

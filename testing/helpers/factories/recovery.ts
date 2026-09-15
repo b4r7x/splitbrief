@@ -21,7 +21,7 @@ export function makeRecoveryIssue(overrides: Partial<RecoveryIssue> = {}): Recov
       'route-bigger-worker',
       'skip-current-task',
       'pause-run',
-      'abort-workflow',
+      'end-run',
     ],
     recommendedAction: 'retry-same-worker',
     createdAt: '2026-04-28T12:00:00.000Z',

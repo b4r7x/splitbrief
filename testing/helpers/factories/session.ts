@@ -7,13 +7,14 @@ type SessionOverrides = Partial<Omit<Session, 'status' | 'summary'>> & {
 };
 
 export function makeSession(overrides?: SessionOverrides): Session {
-  const status = overrides?.status ?? ('interrupted' as const);
+  const status = overrides?.status ?? ('open' as const);
   const base = {
     id: 'sess-1',
     feature: 'test feature',
     startedAt: 1_700_000_000,
     completedAt: null,
     stateVersion: 1,
+    ...(status === 'open' && { stop: 'interrupted' as const }),
     ...overrides,
   };
   if (status === 'complete') {

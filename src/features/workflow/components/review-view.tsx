@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { renderReviewRows } from './review-rows-cache.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { projectRelativePathLabel } from '../../../utils/path-links.js';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import { ScrollIndicator } from '../../../components/scroll-indicator.js';
 import {
@@ -11,7 +11,7 @@ import {
   getScrollableDocumentLineCount,
   ScrollableDocument,
 } from '../../../components/scrollable-document.js';
-import { Divider } from './divider.js';
+import { Divider } from '../../../components/divider.js';
 import { FramePanel } from './frame-panel.js';
 import { useTheme } from '../../../components/theme.js';
 import { getReviewColumnWidth, getReviewContentLayout, REVIEW_FRAME_ROWS } from '../layout/rect.js';

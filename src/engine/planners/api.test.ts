@@ -3,6 +3,8 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Config } from '../../core/schemas/config.js';
 import { createApiPlanner } from './api.js';
+import { runDocumentPhases } from './document-phases.js';
+import { callPhase } from '#testing/helpers/planner-call.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let server: http.Server;
@@ -239,11 +241,13 @@ describe('createApiPlanner', () => {
     expect(receivedBodies[0]).not.toHaveProperty('reasoning_effort');
   });
 
-  it('plan() runs four phases and accumulates token usage across them', async () => {
+  it('spends one call per document phase and accumulates token usage across them', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
     openAiCompletionChunks = [validPlannerArtifact];
 
-    const result = await planner.plan({
+    const result = await runDocumentPhases({
+      planner,
+      mode: 'standard',
       feature: 'test feature',
       projectDir,
       callbacks: {
@@ -256,21 +260,27 @@ describe('createApiPlanner', () => {
     expect(result.usage).toEqual({ inputTokens: 42 * 4, outputTokens: 17 * 4 });
   });
 
-  it('plan() injects priorMessages into the first phase chat history (FR-007 api-kind)', async () => {
+  it('injects priorMessages into the first call of the planner only (FR-007 api-kind)', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
     openAiCompletionChunks = [validPlannerArtifact];
+    const priorMessages = [
+      { role: 'user' as const, content: 'start: add auth' },
+      { role: 'assistant' as const, content: 'we should use JWT' },
+    ];
 
-    await planner.plan({
+    await callPhase(planner, {
+      call: 'research',
       feature: 'add auth',
       projectDir,
-      callbacks: {
-        onOutput: vi.fn(),
-        onPhase: vi.fn(),
-        priorMessages: [
-          { role: 'user', content: 'start: add auth' },
-          { role: 'assistant', content: 'we should use JWT' },
-        ],
-      },
+      priorMessages,
+      callbacks: { onOutput: vi.fn(), onPhase: vi.fn() },
+    });
+    await callPhase(planner, {
+      call: 'spec',
+      feature: 'add auth',
+      projectDir,
+      priorMessages,
+      callbacks: { onOutput: vi.fn(), onPhase: vi.fn() },
     });
 
     expect(receivedBodies.length).toBeGreaterThan(0);

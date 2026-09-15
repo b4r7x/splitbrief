@@ -1,4 +1,4 @@
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { formatDuration } from '../../../utils/format-time.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { getMaxVisibleDiffLines } from '../layout/diff-height.js';

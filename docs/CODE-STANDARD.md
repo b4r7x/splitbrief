@@ -55,7 +55,7 @@ utils/  →  lib/  →  core/  →  engine/  →  (stores/)  →  features/
 
 Blockers (also gated by [INVARIANTS.md](./INVARIANTS.md) #9, #12, #12b, #12c): `utils/→core/`, `lib/→engine/`, `core/→features/`, `features/A→features/B`, any `engine/→react|ink|features|components|hooks|cli`.
 
-**Shared-helper reachability is part of layer discipline.** A helper that a lower layer needs must live where that layer can import it. A formatter buried in `engine/orchestrator/recovery/builders/shared.ts` cannot be reused by `core/layout` or `features/` — so those layers re-implement it and drift (the `formatPercent` / `formatCost` family, `clamp`, `pluralize`, `escapeRegExp`, the regex-escape and extract-JSON helpers all hit this). **Before duplicating, check whether the existing copy is simply in the wrong layer.** The fix for "I can't reuse it" is usually "move it down to `core/` or `utils/`", not "copy it".
+**Shared-helper reachability is part of layer discipline.** A helper that a lower layer needs must live where that layer can import it. A formatter buried in `engine/orchestrator/recovery/builders/shared.ts` cannot be reused by `core/layout` or `features/` — so those layers re-implement it and drift (the `formatCost` family, `clamp`, `pluralize`, `escapeRegExp`, the regex-escape and extract-JSON helpers all hit this). **Before duplicating, check whether the existing copy is simply in the wrong layer.** The fix for "I can't reuse it" is usually "move it down to `core/` or `utils/`", not "copy it".
 
 **`app/` and `cli/` are peers**, not stacked — neither may import the other's internals. Shared top-of-stack wiring goes to a neutral home both can import (`stores/`, or `core/runtime/`), never sideways.
 
@@ -101,7 +101,7 @@ Counter-rule: do **not** collapse scattered small files into one 460-LOC file wi
 
 ## 4. Parameter design
 
-This is the single most violated standard in the codebase, so the bar is explicit. It **tightens [PRINCIPLES.md](./PRINCIPLES.md) rule 21** — these are the operative thresholds:
+This is the single most violated standard in the codebase, so the bar is explicit. It **tightens [PRINCIPLES.md](./PRINCIPLES.md) rule 22** — these are the operative thresholds:
 
 | Trigger | Requirement |
 |---|---|
@@ -112,7 +112,7 @@ This is the single most violated standard in the codebase, so the bar is explici
 
 The boolean-trap and transposition-hazard rows are **count-independent hard flags**: `createOpenAICompatProvider(id, baseURL, apiKeyEnv, false, overrides)` is a violation because of the bare `false` and the three adjacent strings, not because of arity.
 
-**Exemption** (carried from rule 21): a tiny *local, non-exported* math/helper primitive may stay positional (`row(key, text, width)`, `clamp(v, min, max)` *if* min/max are not transposable in practice). Exported = no exemption.
+**Exemption** (carried from rule 22): a tiny *local, non-exported* math/helper primitive may stay positional (`row(key, text, width)`, `clamp(v, min, max)` *if* min/max are not transposable in practice). Exported = no exemption.
 
 **Split oversized option objects by concern** — do not pass a 12-field grab bag. Recurring (projectDir, sessionId, state, bus) prefix → extract a `WorkflowContext`/`SessionRef` and pass `(ctx, { … })`.
 
@@ -133,7 +133,7 @@ When a function immediately fans its positional args into an options object for 
 ## 5. Naming & file naming
 
 - **kebab-case** files and folders (`models-dev.ts`, `lm-studio.ts`); single word where natural (`pricing.ts`).
-- **File name matches its primary export / responsibility.** `platform.ts` exporting only `assertNotWindows` oversells; `format.ts` holding one generic `capitalize` is mislocated and misnamed. A single-export file reads `verb-of-noun` (`format-cost-gate-summary.ts` → `formatCostGateSummary`).
+- **File name matches its primary export / responsibility.** `platform.ts` exporting only `assertNotWindows` oversells; `format.ts` holding one generic `capitalize` is mislocated and misnamed. A single-export file reads `verb-of-noun` (`build-routing-event-fields.ts` → `buildRoutingEventFields`).
 - **No `dir/dir.ts` stutter.** A folder's entry file names its responsibility, not the folder: `run/workflow.ts`, `escalation/handle.ts`, `commands/dispatch.ts`/`registry.ts` — never `run/run.ts`, `escalation/escalation.ts`, or `commands/commands.ts`.
 - **No two sibling exports sharing a name with different signatures.** Two `formatContextFit` / two `buildSelectionKey` in one feature force readers to disambiguate by file — rename to distinct intent names.
 - **No misleading directory placement.** Terminal-display helpers (theme colors, glyphs) do not belong in `core/` (React-free domain) just because one feature consumes them; move to the feature.
@@ -212,7 +212,7 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 
 ## References
 
-- [PRINCIPLES.md](./PRINCIPLES.md) — one-page rule index (this doc tightens rule 21).
+- [PRINCIPLES.md](./PRINCIPLES.md) — one-page rule index (this doc tightens rule 22).
 - [STRUCTURE.md](./STRUCTURE.md) — file tree, folder colocation, file-length triggers.
 - [LAYERS.md](./LAYERS.md) — layer boundaries and import direction.
 - [TYPES.md](./TYPES.md) · [ERRORS.md](./ERRORS.md) · [HOOKS.md](./HOOKS.md) · [NO-BARRELS.md](./NO-BARRELS.md) · [STORES.md](./STORES.md) · [TESTING.md](./TESTING.md) · [INVARIANTS.md](./INVARIANTS.md) — the canonical authorities this standard consolidates.

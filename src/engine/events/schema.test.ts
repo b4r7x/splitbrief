@@ -507,6 +507,26 @@ describe('parseEngineEvent', () => {
     ).toEqual(expect.objectContaining({ type: 'turn_interrupted', source: 'watchdog' }));
   });
 
+  it('turn_interrupted carries where the stop landed', () => {
+    expect(
+      parseEngineEvent({
+        type: 'turn_interrupted',
+        ts: 1,
+        phase: 'implementing',
+        source: 'user',
+        at: 'boundary',
+      }),
+    ).toEqual(expect.objectContaining({ type: 'turn_interrupted', at: 'boundary' }));
+    expect(
+      parseEngineEvent({
+        type: 'turn_interrupted',
+        ts: 1,
+        phase: 'implementing',
+        at: 'somewhere-else',
+      }),
+    ).toBeNull();
+  });
+
   it('runner_call_stalled requires silentMs and runner_call_stall_cleared parses', () => {
     const base = {
       ts: 1,

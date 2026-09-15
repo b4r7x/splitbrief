@@ -7,9 +7,11 @@ import {
   restoreClipboardExecFixture,
 } from '#testing/helpers/clipboard-exec-fixture.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { routerStore } from '../stores/navigation/router.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { EngineEventOf } from '../engine/events/types.js';
 import type { RewindTarget } from '../core/state/build-rewind-action.js';
@@ -178,6 +180,21 @@ describe('buildCommandContext', () => {
     expect(build().toggleSidebar()).toEqual({
       status: 'unavailable',
       message: 'Sidebar is hidden on small terminals.',
+    });
+    expect(controlsStore.get().sidebarVisible).toBe(true);
+  });
+
+  it('does not report a sidebar on a run that has closed', () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ status: { kind: 'closed', as: 'complete' } }),
+      execution: { kind: 'at-rest' },
+    });
+
+    expect(build().toggleSidebar()).toEqual({
+      status: 'unavailable',
+      message: 'A closed run has no sidebar.',
     });
     expect(controlsStore.get().sidebarVisible).toBe(true);
   });

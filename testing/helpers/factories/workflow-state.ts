@@ -33,3 +33,8 @@ export function makeLegacyV3State(feature = 'legacy-feature'): WorkflowState {
     messageQueue: [],
   };
 }
+
+/** A saved state at one phase; the fields a display test reads and nothing else invented. */
+export function makeWorkflowState(overrides: Partial<WorkflowState> = {}): WorkflowState {
+  return { ...createInitialState('feat'), ...overrides };
+}

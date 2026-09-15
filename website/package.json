@@ -12,14 +12,13 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "shots": "playwright test tests/e2e/shots.e2e.ts",
-    "render-static": "tsx tools/render-static.ts"
+    "check:structure": "../node_modules/.bin/depcruise --config dependency-cruiser.config.cjs src && ../node_modules/.bin/knip",
+    "check": "npm run typecheck && npm run lint && npm run check:structure && npm test && npm run e2e"
   },
-  "dependencies": {},
   "devDependencies": {
     "@biomejs/biome": "^2.5.12",
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.20.1",
-    "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"

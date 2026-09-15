@@ -1,5 +1,5 @@
 import type { CrewSeatId } from '../../core/crew/identity.js';
-import { describeModeCost } from '../../core/pipeline-spec/mode-cost.js';
+import { describeModeShape } from '../../core/pipeline-spec/mode-shape.js';
 import { WORKFLOW_MODES } from '../../core/schemas/enums.js';
 import {
   padTerminalDisplayTextEnd,
@@ -34,7 +34,7 @@ export function settingsHelpLines(input: { item: SettingsItem; value: unknown })
   const def = item.def;
   if (def.id === MODE_SETTING_ID) {
     return WORKFLOW_MODES.map((mode) => ({
-      text: `${mode.padEnd(MODE_LABEL_COLS)}${describeModeCost(mode)}`,
+      text: `${mode.padEnd(MODE_LABEL_COLS)}${describeModeShape(mode)}`,
       current: mode === value,
     }));
   }

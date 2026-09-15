@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { ListRow } from '../../../components/list-row.js';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { availableRows } from '../../../components/pickers/scroll-window.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';

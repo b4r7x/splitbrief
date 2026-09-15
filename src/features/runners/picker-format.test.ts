@@ -12,7 +12,7 @@ import {
   pickerListingSource,
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import { mergeOptionFamilies } from './model-catalog/option-merge.js';

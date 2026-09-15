@@ -36,12 +36,10 @@ function overflowRoutingDecision(overrides: Partial<RoutingDecision> = {}): Rout
     contextLength: 32_768,
     currentCodeTruncated: false,
     currentCodeContextMode: 'whole-file',
-    costPosture: 'No capable implementer profile; no cost tier selected',
     reason: 'No capable implementer profile can fit this task prompt',
     rejected: [
       {
         profile: 'local-qwen',
-        costTier: 'local',
         profileWriteMode: 'extracted-code',
         requiredWriteMode: 'extracted-code',
         reason: 'Estimated 45000 tokens overflows 32768-token context',
@@ -74,12 +72,7 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     expect(issue.phase).toBe('escalating');
     expect(issue.recommendedAction).toBe('route-bigger-worker');
     expect(issue.availableActions).toEqual(
-      expect.arrayContaining([
-        'route-bigger-worker',
-        'skip-current-task',
-        'pause-run',
-        'abort-workflow',
-      ]),
+      expect.arrayContaining(['route-bigger-worker', 'skip-current-task', 'pause-run', 'end-run']),
     );
     expect(issue.availableActions).not.toContain('retry-same-worker');
     expect(issue.availableActions).not.toContain('planner-split-rebase');
@@ -127,7 +120,7 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
       'retry-same-worker',
       'skip-current-task',
       'pause-run',
-      'abort-workflow',
+      'end-run',
     ]);
     expect(issue.recommendedAction).toBe('pause-run');
     expectValidRecoveryIssue(issue);
@@ -246,7 +239,7 @@ describe('buildContextOverflowRecoveryIssue', () => {
     expect(withRoute.reason).toBe('context-overflow');
     expect(withRoute.recommendedAction).toBe('route-bigger-worker');
     expect(withRoute.availableActions).toEqual(
-      expect.arrayContaining(['route-bigger-worker', 'pause-run', 'abort-workflow']),
+      expect.arrayContaining(['route-bigger-worker', 'pause-run', 'end-run']),
     );
     expect(withRoute.availableActions).not.toContain('planner-split-rebase');
     expect(withRoute.facts).toMatchObject({
@@ -263,9 +256,7 @@ describe('buildContextOverflowRecoveryIssue', () => {
     });
 
     expect(withoutRoute.recommendedAction).toBe('pause-run');
-    expect(withoutRoute.availableActions).toEqual(
-      expect.arrayContaining(['pause-run', 'abort-workflow']),
-    );
+    expect(withoutRoute.availableActions).toEqual(expect.arrayContaining(['pause-run', 'end-run']));
     expect(withoutRoute.availableActions).not.toContain('planner-split-rebase');
     expectValidRecoveryIssue(withoutRoute);
 
@@ -279,7 +270,7 @@ describe('buildContextOverflowRecoveryIssue', () => {
 
     expect(explicitlyUnavailableRoute.recommendedAction).toBe('pause-run');
     expect(explicitlyUnavailableRoute.availableActions).toEqual(
-      expect.arrayContaining(['pause-run', 'abort-workflow']),
+      expect.arrayContaining(['pause-run', 'end-run']),
     );
     expect(explicitlyUnavailableRoute.availableActions).not.toContain('route-bigger-worker');
     expect(explicitlyUnavailableRoute.availableActions).not.toContain('planner-split-rebase');
@@ -307,7 +298,7 @@ describe('buildDependencyBlockedRecoveryIssue', () => {
     expect(issue.affectedTaskIds).toEqual([dependency.id, task.id]);
     expect(issue.details).toEqual(['Blocked dependencies: T018 (failed)']);
     expect(issue.availableActions).toEqual(
-      expect.arrayContaining(['skip-current-task', 'pause-run', 'abort-workflow']),
+      expect.arrayContaining(['skip-current-task', 'pause-run', 'end-run']),
     );
     expect(issue.availableActions).not.toContain('planner-split-rebase');
     expect(issue.recommendedAction).toBe('pause-run');
@@ -412,13 +403,13 @@ describe('buildRepeatedTimeoutRecoveryIssue', () => {
       createdAt,
     });
 
-    expect(issue.reason).toBe('implementer-timeout-repeated');
+    expect(issue.reason).toBe('runner-timeout-repeated');
     expect(issue.message).toContain('timed out twice in a row on T024');
     expect(issue.availableActions).toEqual([
       'retry-same-worker',
       'skip-current-task',
       'pause-run',
-      'abort-workflow',
+      'end-run',
     ]);
     expect(issue.recommendedAction).toBe('pause-run');
     expectValidRecoveryIssue(issue);
@@ -446,7 +437,7 @@ describe('buildRepeatedTimeoutRecoveryIssue', () => {
       'switch-seat',
       'skip-current-task',
       'pause-run',
-      'abort-workflow',
+      'end-run',
     ]);
     expect(issue.facts?.routeBiggerProfile).toBe('cloud-big');
     expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'claude-code' }] });
@@ -500,7 +491,7 @@ describe('buildReviewFailedRecoveryIssue', () => {
     expect(issue.reason).toBe('review-failed');
     expect(issue.phase).toBe('final-review');
     expect(issue.message).toBe('Final review failed with 3 blocking findings');
-    expect(issue.availableActions).toEqual(['pause-run', 'abort-workflow']);
+    expect(issue.availableActions).toEqual(['pause-run', 'end-run']);
     expect(issue.recommendedAction).toBe('pause-run');
     expectValidRecoveryIssue(issue);
   });
@@ -512,7 +503,7 @@ describe('recoveryBuilderForRunnerOutcome', () => {
       buildRecipeInvalidRecoveryIssue,
     );
     expect(recoveryBuilderForRunnerOutcome('missing-model')).toBe(buildMissingModelRecoveryIssue);
-    expect(recoveryBuilderForRunnerOutcome('implementer-timeout-repeated')).toBe(
+    expect(recoveryBuilderForRunnerOutcome('runner-timeout-repeated')).toBe(
       buildRepeatedTimeoutRecoveryIssue,
     );
     expect(recoveryBuilderForRunnerOutcome('timeout')).toBeUndefined();

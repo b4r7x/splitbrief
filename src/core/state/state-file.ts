@@ -84,7 +84,7 @@ export function cacheRevision(
   });
 }
 
-function revisionFromBytes(bytes: Uint8Array, stat: BigIntStats): ConfigRevision {
+export function revisionFromBytes(bytes: Uint8Array, stat: BigIntStats): ConfigRevision {
   return {
     rawSha256: sha256Hex(bytes),
     fileIdentity: {

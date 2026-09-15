@@ -72,7 +72,15 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
             const message = error instanceof Error ? error.message : 'checkpoint wait failed';
             throw new Error(`${message}\nLast frame:\n${handle.lastFrame() ?? '<empty>'}`);
           }
-          const grid = await createFrameGrid(scenario, frameViewport, frame);
+          let grid: Awaited<ReturnType<typeof createFrameGrid>>;
+          try {
+            grid = await createFrameGrid(scenario, frameViewport, frame);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'frame grid failed';
+            throw new Error(
+              `${scenario.id}/${frameViewport.cols}x${frameViewport.rows}: ${message}\nFrame:\n${frame}`,
+            );
+          }
 
           for (const element of scenario.elements) {
             const label = `${scenario.id}/${frameViewport.cols}x${frameViewport.rows}/${element.id}`;
@@ -167,20 +175,6 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
       elementId: 'approval-panel',
     });
 
-    const summary = requireScenario('summary-success');
-    const summaryCheckpoint = requireCheckpoint(summary);
-    const summaryGrid = await createFrameGrid(
-      summary,
-      VIEWPORT,
-      `${ESC}[2;4H${summaryCheckpoint.marker}`,
-    );
-    const hero = resolveElementLocator({
-      scenario: summary,
-      checkpoint: summaryCheckpoint,
-      grid: summaryGrid,
-      elementId: 'summary-hero',
-    });
-
     // At 80x24 the home body is 76 cols wide ('wide' overlay width) centred at x=2,
     // and 11 rows tall: full-tier logo (6) + trailing gap row (1) + seat block (4).
     expect(header).toMatchObject({
@@ -197,11 +191,6 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
       kind: 'marker',
       rect: { x: 0, y: 7, width: 80, height: 5 },
     });
-    expect(hero).toMatchObject({
-      kind: 'marker',
-      rect: { x: 0, y: 0, width: 80, height: 4 },
-    });
-
     expect(approval.provenance).toMatchObject({
       scenarioId: review.id,
       scenarioTitle: review.title,

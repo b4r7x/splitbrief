@@ -62,7 +62,7 @@ Both the planner and the implementer are configured with a `kind` field. There a
 
 | Kind | What it is | Example | Write mode as implementer | When to use |
 |------|-----------|---------|---------------------------|-------------|
-| `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor` | `direct` | Default planner path; uses existing subscriptions. As an implementer, one of the two first-class transports — a known tool pointed at a cheaper model |
+| `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor` | `direct` | Default planner path; uses existing subscriptions. As an implementer, one of the two first-class transports — a known tool pointed at a smaller model |
 | `api` | Any OpenAI-compatible HTTP endpoint | Ollama, LM Studio, custom endpoint | `extracted-code` | The other first-class implementer transport — a weaker model behind an endpoint, local or remote |
 | `shell` | An arbitrary command. Prompt → stdin, code → stdout. No shell/network sandbox | Any custom script | `extracted-code` | Users who want to plug in a tool we don't know |
 | `agent` | A command that writes files directly to disk. No stdout extraction or shell/network sandbox | A complete coding agent used as an implementer | `direct` | When the tool handles file writing itself |
@@ -108,7 +108,19 @@ idle
 
 **Live phases** (Stop now aborts the active call): `researching`, `specifying`, `planning`, `implementing`, `escalating`, and `final-review`.
 
-**Resumable phases** (saved state can continue from here): `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `validating-task`, `escalating`, `final-review` — the `RESUMABLE_PHASES` set in `src/core/phases.ts` — plus any phase with `awaitingContinue: true`. The generative phases `researching` / `specifying`, `clarifying`, `constitution-check` and `analyzing` are **not resumable** without `awaitingContinue` — if a cold crash wiped the process mid-stream, the stream is lost and planning restarts from the last saved artifact.
+**Run status** (`src/core/sessions/run-status.ts`): the one vocabulary for how a run stands — `running` (a process still holds it), `open` (it came to rest and can be picked up) or `closed` (`complete` when the final review passed, `ended` when the user closed it). `deriveRunStatus` is the only place that decides, from the saved state, the lockfile and the artifacts on disk; every listing, guard and screen reads it rather than inferring its own.
+
+**Stop reason**: why an open run came to rest — `paused` (at a boundary or mid-step), `waiting` (on the spec, plan or briefs gate), `halted` (a pending recovery), `failed` (the run recorded a failure) or `interrupted` (nothing said why). The session listing carries it as `stop` and the row spells it as one word.
+
+**Step** (`StepRef`, `src/core/schemas/run-step.ts`): a place in the run — a planner call (`research`, `spec`, `plan`, `tasks`, `clarify`, `constitution`, `analyze`), a gate (`spec`, `plan`, `briefs`), a brief (`taskId` plus `attempt`) or a review cycle. `resumeStep(state, artifacts)` names the step a run picks up at; the first missing planner artifact in the mode's order decides when the run never reached a gate.
+
+**Closed**: the one thing that stops a run being continuable. `state.closed` is written by `CLOSE_RUN` — the **End run** row on the stop sheet, the same row on a document gate, the `end-run` recovery action, `/end` — and a run that passed its final review closes as `complete`. A closed run keeps every file it wrote; closing reverts nothing.
+
+**Continuing a run**: `continueRun` (`src/engine/orchestrator/run/continue.ts`) is the one path. A park this process still holds settles in place; a run at rest is re-entered on its saved state with what the operator typed riding along as a *steer*, folded into the step's own prompt rather than replacing it. A cold crash mid-generation loses the stream, not the run: the step loop picks up at the first artifact it has not written.
+
+**Continuation / steer**: the operator's words for the step a stop cut. A continuation never replaces the step's prompt — `composeContinuation` (`src/engine/spec/prompts/continuation.ts`) trails the partial and the steer behind the real prompt, and the planner with a native session gets one extra user turn on the conversation it already ran the step on.
+
+**`awaitingContinue`**: the boolean the state carried before `interruptedStep` existed. It still parses and still reads as parked, but `interruptedStep` is the field that says *which* step and *where* the cut landed.
 
 ---
 
@@ -234,7 +246,7 @@ Flow:
 
 ## Stop sheet
 
-The **stop sheet** is the one place a run is stopped from: `esc` on an empty composer opens it, and it offers **Stop now** (keep partial changes), **Pause after this brief** (finish the current brief, start no other) and **End run** (mark the session `cancelled`). `ctrl+c` is Stop now without the sheet. No option reverts files, and the composer draft survives all of them. A stopped run parks rather than ending: `/resume` carries it on (typed text is sent as steering instructions) and `/end` closes it out.
+The **stop sheet** is the one place a run is stopped from: `esc` on an empty composer opens it, and it offers **Stop now** (keep partial changes), **Pause after this brief** (finish the current brief, start no other) and **End run** (close the run). `ctrl+c` is Stop now without the sheet. No option reverts files, and the composer draft survives all of them. A stopped run parks rather than ending: `/resume` carries it on (typed text is sent as steering instructions) and `/end` closes it out.
 
 ## Awaiting-continue
 
@@ -274,11 +286,11 @@ The engine publishes every observable step as an `EngineEvent` on a single `Even
 - **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract, so ordering is preserved and a slow sink can delay later sinks. Shipped sinks: `jsonlSink`, `loggerSink`, optional `tuiSink`, optional `stdoutJsonSink`, and optional hook sink.
 - **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'reviewing-briefs' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Phase-bearing `EngineEvent` variants carry the current `phase` so sinks (hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
 
-Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onCostApprovalNeeded`, `onUserEditConflict`, `onTieredApproval`, `onTaskReviewNeeded`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Budget pressure is not gated by a callback: it publishes `budget_*` events and pauses through the recovery channel. Use the bus for broadcast; use callbacks for gates.
+Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onUserEditConflict`, `onTieredApproval`, `onTaskReviewNeeded`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Use the bus for broadcast; use callbacks for gates.
 
 ## Headless mode
 
-`splitbrief start --json "feature"` runs the workflow without the Ink TUI. Workflow host callbacks are stubbed: review gates approve, clarifications and continuations answer empty, and budget pause/exceeded recovery exits non-zero. File-write tiered approvals are not auto-approved and can fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
+`splitbrief start --json "feature"` runs the workflow without the Ink TUI. Workflow host callbacks are stubbed: review gates approve, and clarifications and continuations answer empty. File-write tiered approvals are not auto-approved and can fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
 
 ## Hooks (workflow)
 

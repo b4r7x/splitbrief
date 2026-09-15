@@ -90,6 +90,8 @@ export const READINESS_FILE = 'readiness.json';
 export const REVIEW_PACKET_JSON_FILE = 'review-packet.json';
 export const REVIEW_PACKET_MARKDOWN_FILE = 'review-packet.md';
 export const LOCKFILE = 'lockfile.json';
+/** The run-snapshot ledger, under `snapshotsDir`; carries the accept/reject decision. */
+export const RUN_LEDGER_FILE = 'run-ledger.json';
 export const UI_PREFS_FILE = 'ui-prefs.json';
 export const RUNTIME_CONFORMANCE_FILE = 'runtime-conformance.json';
 

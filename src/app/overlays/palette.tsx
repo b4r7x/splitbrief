@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { FilterInput } from '../../components/filter-input.js';
 import { useTheme } from '../../components/theme.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
 import { ListRow } from '../../components/list-row.js';
 import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
@@ -79,10 +79,6 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
   const projectDir = configStore.use((s) => s.projectDir);
   const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);
-
-  useEffect(() => {
-    sessionsStore.load(projectDir);
-  }, [projectDir]);
 
   const sources = buildPaletteSources({
     commands,

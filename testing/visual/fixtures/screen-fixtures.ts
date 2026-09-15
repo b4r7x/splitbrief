@@ -20,7 +20,7 @@ import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { makeConfig } from '../../helpers/factories/config.js';
 import { cliDetectionFor } from '../../helpers/factories/detection.js';
-import { makeSummary } from '../../helpers/factories/summary.js';
+import { makeRunRecord } from '../../helpers/factories/run-record.js';
 import { resetAllStores } from '../../helpers/stores.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import type {
@@ -192,34 +192,11 @@ export function createWorkflowBaseFixture(
     });
     return {
       screen: 'workflow',
+      run: makeRunRecord({ ref: prepared.session.ref, feature }),
       execution: { kind: 'local', prepared },
     };
   });
 }
-
-export const createSummaryFixture: FixtureFactory = () =>
-  createRouteFixture(() => ({
-    screen: 'summary',
-    sessionId: 'visual-summary',
-    status: 'complete',
-    summary: makeSummary({
-      feature: 'Visual fixture workflow complete',
-      totalTasks: 4,
-      completedByLocal: 3,
-      escalatedToPlanner: 1,
-      totalTime: 82_000,
-      estimatedCostSavings: '$4.80',
-      escalationRate: 0.25,
-      plannerTool: 'claude-code',
-      plannerModel: 'claude-sonnet-4',
-      implementerTool: 'ollama',
-      implementerModel: 'qwen2.5-coder:7b',
-      mode: 'standard',
-      briefQuality: { score: 0.94, passed: true, errorCount: 0, warningCount: 1 },
-      driftSummary: { score: 0.98, passed: true, errorCount: 0, warningCount: 0 },
-      phaseTimings: { planning: 18_000, implementing: 52_000, validating: 12_000 },
-    }),
-  }));
 
 function publishFreshDiscovery(): void {
   publishVisualDiscovery({

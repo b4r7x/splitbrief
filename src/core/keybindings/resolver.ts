@@ -16,7 +16,7 @@ export interface KeyResolverContext {
 
 export type KeyOwner =
   | { owner: 'text-editing'; action: TextEditingKeyAction }
-  | { owner: 'workflow'; action: 'toggle-diff' | 'toggle-activity' | 'cost' }
+  | { owner: 'workflow'; action: 'toggle-diff' | 'toggle-activity' }
   | { owner: 'conversation-scroll'; action: 'scroll' }
   | { owner: 'review'; action: 'scroll' }
   | { owner: 'overlay'; action: 'close' };
@@ -62,16 +62,12 @@ export function resolveKeyOwner(context: KeyResolverContext): KeyOwner | null {
   if (context.inputMode !== 'normal') return null;
 
   if (isCtrlKey(context.key, 'd')) return { owner: 'workflow', action: 'toggle-diff' };
-  if (isCtrlKey(context.key, 'g')) return { owner: 'workflow', action: 'cost' };
 
   return null;
 }
 
 function resolveOverlayOwner(context: KeyResolverContext): KeyOwner | null {
   if (context.overlay === 'none') return null;
-  if (context.overlay === 'cost-drilldown') {
-    return { owner: 'overlay', action: 'close' };
-  }
   if (context.key.key === 'escape') return { owner: 'overlay', action: 'close' };
   return null;
 }

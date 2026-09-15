@@ -1,4 +1,5 @@
 import type { Phase, RecoveryAction, RecoveryReason } from '../../../../core/schemas/enums.js';
+import type { CrewSeatId } from '../../../../core/crew/identity.js';
 import type {
   RecoveryFact,
   RecoveryIssue,
@@ -47,6 +48,7 @@ export function createRecoveryIssue(opts: {
   id?: string | undefined;
   reason: RecoveryReason;
   phase: Phase;
+  seat?: CrewSeatId | undefined;
   task?: Task | undefined;
   files: string[];
   affectedTaskIds: TaskId[];
@@ -74,6 +76,7 @@ export function createRecoveryIssue(opts: {
     reason: opts.reason,
     phase: opts.phase,
     status: 'awaiting-user',
+    ...(opts.seat !== undefined ? { seat: opts.seat } : {}),
     ...(opts.task ? { taskId: opts.task.id, taskTitle: opts.task.title } : {}),
     files: uniqueSorted(opts.files, { trim: true, nonEmpty: true }),
     affectedTaskIds: uniqueSortedIds(opts.affectedTaskIds),

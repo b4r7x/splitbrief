@@ -1,0 +1,348 @@
+.ambient {
+  display: none;
+}
+.is-enhanced .ambient {
+  display: block;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+}
+.corners {
+  position: relative;
+  height: 95px;
+  z-index: 4;
+  pointer-events: none;
+}
+.brand {
+  position: absolute;
+  left: 36px;
+  top: 25px;
+  --wm-scale: 0.62;
+  font: 10px / 1 var(--mono);
+  letter-spacing: 0;
+  width: calc(43ch * var(--wm-scale));
+  min-height: 44px;
+  pointer-events: auto;
+  transition: opacity 0.15s;
+}
+.logo-figlet {
+  margin: 0;
+  font: 10px / 1 var(--mono);
+  letter-spacing: 0;
+  white-space: pre;
+  transform: scale(var(--wm-scale));
+  transform-origin: top left;
+  color: var(--ink);
+}
+.brand:hover {
+  opacity: 0.72;
+}
+.corner-links {
+  position: absolute;
+  right: 36px;
+  top: 22px;
+  display: flex;
+  gap: 24px;
+  font: 12px / 1.6 var(--mono);
+  color: #c0c0bd;
+  pointer-events: auto;
+}
+.corner-links a {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.corner-links a:hover,
+.page-footer a:hover {
+  color: #fff;
+}
+.composition {
+  width: min(var(--page-width), calc(100% - 112px));
+  margin: 28px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 19px;
+}
+.is-enhanced [data-scroll-track][data-pinned="true"] .corners {
+  position: absolute;
+  inset: 0 0 auto;
+}
+.is-enhanced [data-scroll-track][data-pinned="true"] .composition {
+  position: absolute;
+  left: 50%;
+  top: clamp(104px, 14svh, 140px);
+  bottom: 19px;
+  margin: 0;
+  transform: translateX(-50%);
+}
+.introduction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 36px;
+  flex: none;
+}
+h1 {
+  margin: 0 0 12px;
+  font-size: clamp(27px, 2.35vw, 37px);
+  font-weight: 500;
+  letter-spacing: -1.35px;
+  line-height: 1.15;
+}
+.introduction p {
+  font-size: 17px;
+  line-height: 1.5;
+  letter-spacing: -0.15px;
+  color: #b5b5b2;
+  margin: 0;
+}
+.get-started {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  flex: none;
+  min-height: 44px;
+  padding: 10px 0;
+  font: 14px / 1.6 var(--mono);
+  color: #d2d2ce;
+  transition: color 0.15s;
+}
+.get-started span {
+  color: #94948f;
+  transition:
+    transform 0.15s,
+    color 0.15s;
+}
+.get-started:hover {
+  color: #fff;
+}
+.get-started:hover span:first-child {
+  transform: translateX(-2px);
+  color: #ddd;
+}
+.get-started:hover span:last-child {
+  transform: translateX(2px);
+  color: #ddd;
+}
+.closing {
+  display: none;
+}
+.is-enhanced .closing {
+  height: 100svh;
+  min-height: 600px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 70px 24px 34px;
+  text-align: center;
+}
+.closing p {
+  font-size: 25px;
+  line-height: 1.5;
+  letter-spacing: -0.7px;
+  margin: 0;
+}
+.closing p > :where(span) {
+  display: block;
+  font: 12px / 1.6 var(--mono);
+  color: #aaa;
+  margin-top: 12px;
+  letter-spacing: 0;
+}
+.closing > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font: 12px / 1.5 var(--mono);
+  color: #c1c1bd;
+}
+.closing > a > :where(span) {
+  margin-left: 20px;
+}
+.page-footer {
+  width: min(var(--page-width), calc(100% - 112px));
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  border-top: 1px solid #454545;
+  margin: 45px auto 0;
+  padding: 18px 0 28px;
+  font: 11px / 1.5 var(--mono);
+  color: #bbb;
+}
+.page-footer > span {
+  margin-right: auto;
+}
+.page-footer a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+@media (max-height: 800px) and (min-width: 801px) {
+  .is-enhanced [data-scroll-track][data-pinned="true"] .composition {
+    top: 100px;
+    bottom: 12px;
+    gap: 12px;
+  }
+  .introduction p {
+    font-size: 15px;
+  }
+  h1 {
+    font-size: 29px;
+    margin-bottom: 9px;
+  }
+}
+@media (max-width: 1100px) {
+  .composition,
+  .page-footer {
+    width: calc(100% - 72px);
+  }
+  h1 {
+    font-size: 29px;
+  }
+  .introduction p {
+    font-size: 14px;
+  }
+  .get-started {
+    font-size: 12px;
+    gap: 7px;
+  }
+}
+@media (max-width: 800px) {
+  .brand {
+    left: 24px;
+    top: 22px;
+    --wm-scale: 0.57;
+  }
+  .corner-links {
+    right: 24px;
+    top: 16px;
+    font-size: 10px;
+    gap: 16px;
+  }
+  .composition {
+    width: calc(100% - 40px);
+    gap: 13px;
+  }
+  .is-enhanced [data-scroll-track][data-pinned="true"] .composition {
+    top: 103px;
+    bottom: 13px;
+  }
+  .introduction {
+    align-items: flex-start;
+    gap: 15px;
+  }
+  .introduction > div {
+    min-width: 0;
+  }
+  h1 {
+    font-size: 26px;
+    letter-spacing: -0.9px;
+    max-width: 420px;
+    margin-bottom: 9px;
+  }
+  .introduction p {
+    font-size: 13px;
+    max-width: 340px;
+    line-height: 1.55;
+  }
+  .get-started {
+    font-size: 11px;
+  }
+  .closing p {
+    font-size: 23px;
+  }
+  .page-footer {
+    width: calc(100% - 48px);
+    gap: 20px;
+    flex-wrap: wrap;
+    font-size: 10px;
+  }
+  .page-footer > span {
+    width: 100%;
+  }
+}
+@media (max-width: 500px) {
+  .composition {
+    width: calc(100% - 28px);
+    gap: 12px;
+  }
+  .is-enhanced [data-scroll-track][data-pinned="true"] .composition {
+    top: 95px;
+    bottom: 9px;
+  }
+  .introduction {
+    display: block;
+    position: relative;
+    padding-bottom: 51px;
+  }
+  h1 {
+    font-size: 26px;
+    max-width: 330px;
+    margin-bottom: 9px;
+  }
+  .introduction p {
+    font-size: 12px;
+    line-height: 1.55;
+    max-width: 320px;
+  }
+  .get-started {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    font-size: 12px;
+    gap: 7px;
+  }
+  .brand {
+    left: 19px;
+    --wm-scale: 0.58;
+  }
+  .corner-links {
+    right: 18px;
+    gap: 12px;
+    font-size: 9px;
+    top: 15px;
+  }
+  .closing p {
+    font-size: 21px;
+  }
+  .closing p span,
+  .closing > a {
+    font-size: 11px;
+  }
+  .page-footer {
+    width: calc(100% - 36px);
+    gap: 16px;
+  }
+}
+@media (max-width: 360px) {
+  h1 {
+    font-size: 24px;
+  }
+  .introduction p {
+    font-size: 11px;
+  }
+  .composition {
+    width: calc(100% - 22px);
+  }
+  .is-enhanced [data-scroll-track][data-pinned="true"] .composition {
+    top: 91px;
+  }
+  .brand {
+    left: 16px;
+    --wm-scale: 0.51;
+  }
+  .corner-links {
+    right: 14px;
+    font-size: 8px;
+    gap: 10px;
+  }
+}

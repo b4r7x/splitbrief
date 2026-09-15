@@ -9,7 +9,7 @@ import { conversationScrollStore } from '../../../stores/workflow/conversation-s
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { PROMPT_ZONE_Z } from '../components/approval-prompt.js';
-import { RAIL_STAGES } from '../layout/chrome-rows.js';
+import { RAIL_STAGES } from '../../../core/rail-stages.js';
 import { hitBriefTaskRow, hitRailStage, hitTranscriptRow } from '../layout/hit-test.js';
 import {
   readBriefListSnapshot,

@@ -358,7 +358,6 @@ describe('applyCLIOverrides — runner commands', () => {
             apiBase: 'https://api.example.test/v1',
             apiKey: 'test-key',
             model: 'qwen/qwen3-coder',
-            costTier: 'cheap',
           },
           'local-qwen': {
             kind: 'api',
@@ -366,7 +365,6 @@ describe('applyCLIOverrides — runner commands', () => {
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen2.5-coder:7b',
             label: 'Local Qwen',
-            costTier: 'local',
           },
         },
       },
@@ -386,7 +384,6 @@ describe('applyCLIOverrides — runner commands', () => {
     expect(resolved.defaultProfile).toMatchObject({
       name: 'local-qwen',
       label: 'Local Qwen',
-      costTier: 'local',
       capabilities: { writesFiles: 'direct' },
       config: {
         kind: 'cli',

@@ -1,12 +1,6 @@
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
-import {
-  AUTOMATIC_MODEL,
-  AUTO_CHEAPEST_MODEL,
-  isAutoCheapestModel,
-  isAutomaticModel,
-} from '../../../core/providers/automatic-model.js';
-import { AUTO_CHEAPEST_MODEL_WORD } from '../../../core/crew/identity.js';
+import { AUTOMATIC_MODEL, isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -29,19 +23,10 @@ import type { PickerOption } from './options.js';
 import { mergeOptionFamilies } from './option-merge.js';
 import { mergeProviderVariants } from './provider-merge.js';
 import { sortModelsByRecency, type ModelOption } from './recency.js';
-import { AUTO_CHEAPEST_ROW_DETAIL } from './rows.js';
 
 // A selection policy, not catalog data: it carries no context length, pricing,
 // release date or provenance, and is synthesized per render rather than merged.
 const AUTOMATIC_MODEL_OPTION: ModelOption = Object.freeze({ id: AUTOMATIC_MODEL });
-
-// The BUILD seat's price-routing policy: profile derivation ranks priced
-// candidates per brief, so the row names the policy rather than any one model.
-const AUTO_CHEAPEST_MODEL_OPTION: ModelOption = Object.freeze({
-  id: AUTO_CHEAPEST_MODEL,
-  displayName: AUTO_CHEAPEST_MODEL_WORD,
-  detail: AUTO_CHEAPEST_ROW_DETAIL,
-});
 
 export interface PickerModelCounts {
   readonly confirmed: number;
@@ -324,7 +309,7 @@ export function buildRightModels(params: {
     : [];
   const customOptions: ModelOption[] = capability.allowsCustom
     ? params.customModels
-        .filter((id) => !isAutomaticModel(id) && !isAutoCheapestModel(id))
+        .filter((id) => !isAutomaticModel(id))
         .map((id): ModelOption => ({ id, isCustom: true, membership: 'custom' }))
     : [];
 
@@ -346,16 +331,9 @@ export function buildRightModels(params: {
   // Automatic selection is structural, never a catalog row: cursor's native list
   // ships its own `auto` line, which would otherwise duplicate the synthesized
   // option — same id, same list key.
-  const listed = rows.filter((row) => !isAutomaticModel(row.id) && !isAutoCheapestModel(row.id));
+  const listed = rows.filter((row) => !isAutomaticModel(row.id));
   const automatic = capability.allowsAutomatic ? [AUTOMATIC_MODEL_OPTION] : [];
-  // Price routing is the BUILD seat's own policy, so its row leads every CLI
-  // column the seat can edit; the PLAN and REVIEW seats never see it, and
-  // neither does an api, shell or agent column — routing derives priced rows
-  // from CLI catalogs alone, so those seats would transmit the marker as a
-  // model id.
-  return params.role === 'implementer' && params.currentItem.kind === 'cli'
-    ? [AUTO_CHEAPEST_MODEL_OPTION, ...automatic, ...listed]
-    : [...automatic, ...listed];
+  return [...automatic, ...listed];
 }
 
 export function isCurrentConfig(

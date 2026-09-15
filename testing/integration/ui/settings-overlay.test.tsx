@@ -271,7 +271,8 @@ describe('settings overlay integration', () => {
   });
 
   it('PageDown moves by visible selectable settings without skipping a section', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
+    // Tall enough to seat the whole Workflow section, which is what the page has to land inside.
+    terminalSizeStore.__testReset({ cols: 100, rows: 26, isSmall: false });
     overlayStore.open('settings', 'implementer.temperature');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
@@ -282,7 +283,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Max retries');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Show spend');
       // The page lands inside the next section with the whole of it on screen — its first row
       // included — so no row was stepped over unseen.
       expect(frame).toContain('Mode');

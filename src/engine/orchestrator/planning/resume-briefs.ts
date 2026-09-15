@@ -16,7 +16,7 @@ export async function resumeBriefsApproval(opts: {
   const { projectDir, sessionId, bus, planner } = wctx;
 
   if (state.phase === 'idle') {
-    return { disposition: 'terminal', state, outcome: 'rejected' };
+    return { disposition: 'terminal', state, outcome: 'cancelled' };
   }
 
   const tasksFilePath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
@@ -53,8 +53,10 @@ export async function resumeBriefsApproval(opts: {
   switch (briefsLoop.outcome) {
     case 'accepted':
       return { disposition: 'ready-for-tasks', state: briefsLoop.state, tasks: briefsLoop.tasks };
-    case 'rejected':
-      return { disposition: 'terminal', state: briefsLoop.state, outcome: 'rejected' };
+    case 'closed':
+      return { disposition: 'terminal', state: briefsLoop.state, outcome: 'closed' };
+    case 'halted':
+      return { disposition: 'terminal', state: briefsLoop.state, outcome: 'halted' };
     case 'aborted':
       return { disposition: 'terminal', state: briefsLoop.state, outcome: 'cancelled' };
     case 'failed':

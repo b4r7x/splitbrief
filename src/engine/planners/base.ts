@@ -7,10 +7,8 @@ import type {
   Planner,
   PlannerCallbacks,
   PlannerOutputCallbacks,
-  PlanOptions,
   EscalateOptions,
   RegenerateOptions,
-  PlanResult,
   EscalationResult,
   RegenerateResult,
   PlannerCapabilities,
@@ -21,11 +19,9 @@ import type {
   PlannerUserTurnOptions,
   PlannerInvokeResult,
 } from './types.js';
-import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
 import { DEFAULT_AVAILABILITY } from '../availability.js';
 import { escalateFull, escalateHint } from './escalation.js';
-import { runSinglePhasePlanning } from './single-phase.js';
-import { runMultiPhasePlanning } from './multi-phase.js';
+import { createPhaseRunner } from './run-phase.js';
 import { createPlannerCallContext } from './call-context.js';
 import { summarize, summarizeStructured } from './summary.js';
 import { toTokenDelta } from '../calls/projection.js';
@@ -98,23 +94,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
   const capabilities = config.capabilities;
 
   const planner: Planner = {
-    async plan(opts: PlanOptions): Promise<PlanResult> {
-      return runMultiPhasePlanning(config, opts);
-    },
-    async quickPlan(opts: PlanOptions): Promise<PlanResult> {
-      return runSinglePhasePlanning(
-        config,
-        (feature, projectContext, languageContext, skillsContext) =>
-          buildQuickPlanPrompt({
-            feature,
-            projectContext,
-            languageContext,
-            skillsContext,
-            trivial: opts.trivial,
-          }),
-        opts,
-      );
-    },
+    runPhase: createPhaseRunner(config),
 
     async regenerate(opts: RegenerateOptions): Promise<RegenerateResult> {
       const { prompt, projectDir, callbacks } = opts;

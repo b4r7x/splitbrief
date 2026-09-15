@@ -14,7 +14,7 @@ import {
   type ReviewArtifact,
 } from '../../prompt-rows/approval.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
-import { fitKeyLegend } from '../../input-hints.js';
+import { fitKeyLegend } from '../../../../core/key-legend.js';
 
 export interface DocumentReviewPromptProps {
   artifact: ReviewArtifact;

@@ -3,9 +3,9 @@ import type { Phase } from '../../core/schemas/enums.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
-import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
 import type { ChangeDetectionKind } from '../change-detection.js';
+import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type {
   CustomRunnerRuntimePort,
@@ -126,23 +126,6 @@ export interface PlannerCallbacks {
   onSessionExpired?: ((previousId: string) => void) | undefined;
   /** Session ID for agent planners that write files to the session directory. */
   sessionId?: string | undefined;
-  /**
-   * Prior conversation messages to inject into the first planner phase on resume.
-   * Set by the orchestrator when the backend has no native session resume OR after a
-   * session-expired fallback. Consumed by backends in their own shape (prompt prefix vs
-   * OpenAI messages array).
-   */
-  priorMessages?: PriorMessage[] | undefined;
-  /**
-   * Image attachments to deliver with the next planner call. Drained from the
-   * attachments store at planning-phase entry. Backends that report
-   * `capabilities.supportsImages: false` should never receive a non-empty list
-   * (the orchestrator drops them with a `planner_attachments_dropped` event).
-   * Multi-phase backends consume them on the first invocation only.
-   */
-  attachments?: Attachment[] | undefined;
-  /** Validation toolchain discovered by prior research or restored workflow state. */
-  discoveredValidation?: DiscoveredValidation | undefined;
   /** Abort signal propagated from the continuation loop so backends can cancel in-flight requests. */
   signal?: AbortSignal | undefined;
   /** Normalized backend call lifecycle events. Orchestrator callbacks bind these to the EventBus. */
@@ -197,20 +180,91 @@ export function isOwnedPlannerArtifactFor(
   return artifact.sourceReceipt.leaseId === request.transport.lease.leaseId;
 }
 
+/** The planner calls that turn a prompt into one markdown planning document. */
+export type PlannerDocumentCall = Extract<PlannerCall, 'research' | 'spec' | 'plan' | 'tasks'>;
+
+const DOCUMENT_CALLS: readonly PlannerCall[] = ['research', 'spec', 'plan', 'tasks'];
+
+export function isPlannerDocumentCall(call: PlannerCall): call is PlannerDocumentCall {
+  return DOCUMENT_CALLS.includes(call);
+}
+
 /**
- * Result of a planner run. The durable contract handed to the implementer is the
- * `tasks` array — each entry is the persisted form of a Product Task Brief v1
- * (see `docs/TASK-CONTRACT.md`). `spec` and `plan` are optional support documents
- * that may be empty for quick mode; they exist to feed brief compilation,
- * not as the primary handoff artifact.
+ * Everything one planner call reads. The caller owns the artifacts: it reads
+ * `research`/`spec`/`plan` back from the session directory and hands them in, so
+ * a call never depends on a sibling call having happened in the same process.
+ */
+export interface PhaseInputs {
+  feature: string;
+  research?: string | undefined;
+  spec?: string | undefined;
+  plan?: string | undefined;
+  projectContext: string;
+  languageContext: LanguageContext;
+  skillsContext?: string | undefined;
+  codebaseContext?: string | undefined;
+  /**
+   * Text that leads the built prompt: the steer the operator typed, the messages
+   * queued for this call, and the rejections the planner has to respect.
+   */
+  promptPrefix?: string | undefined;
+  /**
+   * Text that trails the built prompt. The continuation block a stateless seat
+   * needs: the partial its cut attempt produced and what the operator said.
+   */
+  promptSuffix?: string | undefined;
+  /**
+   * Replaces the built prompt with one user turn. Only a seat holding the native
+   * session this step already ran on gets one: the conversation still carries the
+   * step's prompt, so re-sending it would ask the same question twice.
+   */
+  continuationTurn?: string | undefined;
+  /**
+   * Prior conversation messages to inject into the first planner call of the
+   * process. Set by the orchestrator when the backend has no native session
+   * resume OR after a session-expired fallback. Consumed by backends in their own
+   * shape (prompt prefix vs OpenAI messages array).
+   */
+  priorMessages?: PriorMessage[] | undefined;
+  /**
+   * Image attachments to deliver with this call. Drained from the attachments
+   * store at planning-phase entry. Backends that report
+   * `capabilities.supportsImages: false` should never receive a non-empty list
+   * (the orchestrator drops them with a `planner_attachments_dropped` event).
+   * A planner consumes them on its first call only.
+   */
+  attachments?: Attachment[] | undefined;
+  /** The `tasks` call compiles briefs straight from the feature: one call, no spec, no plan. */
+  quickPlan?: { trivial: boolean } | undefined;
+}
+
+export interface RunPhaseInput {
+  call: PlannerDocumentCall;
+  projectDir: string;
+  inputs: PhaseInputs;
+  callbacks: PlannerCallbacks;
+}
+
+/** What one planner call produced: its text, its owned artifact, its spend. */
+export interface PhaseCallResult {
+  text: string;
+  usage: TokenDelta | null;
+  artifact: PhaseResult;
+  /** Parsed Product Task Briefs; the `tasks` call only. */
+  tasks?: Task[] | undefined;
+}
+
+/**
+ * Result of running a mode's document calls end to end, outside a durable run.
+ * The contract handed to the implementer is the `tasks` array — each entry is the
+ * persisted form of a Product Task Brief v1 (see `docs/TASK-CONTRACT.md`).
  */
 export interface PlanResult {
   spec: string;
   plan: string;
   tasks: Task[];
   usage: TokenDelta | null;
-  /** Phase outputs to be persisted by the orchestrator. */
-  phases?: PhaseResult[] | undefined;
+  phases: PhaseResult[];
 }
 
 export interface EscalationResult {
@@ -223,16 +277,6 @@ export interface EscalationResult {
 export interface RegenerateResult {
   text: string;
   usage: TokenDelta | null;
-}
-
-export interface PlanOptions {
-  feature: string;
-  projectDir: string;
-  callbacks: PlannerCallbacks;
-  skillsContext?: string | undefined;
-  codebaseContext?: string | undefined;
-  /** The advisor classified this prompt as a trivial edit, so a single-call planner drops its codebase-review step and caps the brief count. */
-  trivial?: boolean | undefined;
 }
 
 export interface EscalateOptions {
@@ -254,15 +298,14 @@ export interface RegenerateOptions {
 }
 
 export interface Planner extends RunnerRuntime {
-  plan(opts: PlanOptions): Promise<PlanResult>;
+  /** One planner call: one prompt, one document, one owned artifact. */
+  runPhase(input: RunPhaseInput): Promise<PhaseCallResult>;
 
   regenerate(opts: RegenerateOptions): Promise<RegenerateResult>;
 
   escalateHint(opts: EscalateOptions): Promise<EscalationResult>;
 
   escalateFull(opts: EscalateOptions): Promise<EscalationResult>;
-
-  quickPlan(opts: PlanOptions): Promise<PlanResult>;
 
   review(
     prompt: string,

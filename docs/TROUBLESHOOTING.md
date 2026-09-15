@@ -190,36 +190,20 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Anthropic / OpenAI bill spiked after a single run
 
-**Likely cause:** The planner is configured with an expensive model (commonly Opus) and the implementer uses the same model. Standard and speckit modes call the planner 4 and 6–7 times respectively per task; multiplying that by Opus pricing escalates fast.
+**Likely cause:** The planner is configured with a frontier model (commonly Opus) and the implementer uses the same model. Standard and speckit modes call the planner 4 and 6–7 times respectively per task; multiplying that by Opus pricing escalates fast.
 
 **Fix:**
 1. Open `.splitbrief/config.yaml` and inspect `planner.kind` and `planner.model`.
-2. Keep Opus for the planner only when you genuinely need its planning quality; for most work Sonnet 4.6 is the better cost/quality point.
-3. Switch the implementer to a cheap or local runner: an `api` runner pointed at Ollama / LM Studio, or `cli` with a Haiku-class model.
+2. Keep Opus for the planner only when you genuinely need its planning quality; for most work Sonnet 4.6 is the better quality point.
+3. Switch the implementer to a smaller or local runner: an `api` runner pointed at Ollama / LM Studio, or `cli` with a Haiku-class model.
 4. Run `splitbrief status` to confirm the resolved configuration matches your intent.
-5. Set `workflow.maxBudget` so the next runaway is bounded.
 
-**Prevention:** Decouple planner and implementer cost tiers — that asymmetry is the entire point of SPLITBRIEF. Always set `workflow.maxBudget` for production usage.
+**Prevention:** Keep the two seats on different models — that asymmetry is the entire point of SPLITBRIEF.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/ARCHITECTURE.md](./ARCHITECTURE.md), [docs/VISION.md](./VISION.md).
 
 ---
 
-### Symptom: Workflow keeps pausing with "budget threshold reached"
-
-**Likely cause:** `workflow.budgetPauseThreshold` (a fraction of `maxBudget`) is set too low for the task at hand, or `maxBudget` is too tight. The orchestrator's budget guard fires whenever the rolling spend crosses the threshold.
-
-**Fix:**
-1. Inspect `workflow.maxBudget` and `workflow.budgetPauseThreshold` in `.splitbrief/config.yaml`.
-2. Either raise `maxBudget` (if the task legitimately needs more headroom) or lower `budgetPauseThreshold` (if you want the warning earlier and resume manually each time).
-3. If you simply want to silence the pause for one run, pass `--budget <usd>` on the CLI.
-4. Inspect `summary.json` after the run for the actual spend distribution and right-size the limits.
-
-**Prevention:** Calibrate budgets against `summary.json` from a few representative runs before locking them down.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), `src/engine/orchestrator/budget/`.
-
----
 
 ### Symptom: Cache hit percentage stuck at 0% in the cost status line
 
@@ -341,20 +325,19 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ---
 
-### Symptom: quick mode failed with zero tasks
+### Symptom: the run halted with "the planner returned no briefs"
 
-**Likely cause:** The single planner call returned no parsable Task Briefs, and the one retry returned none either. The failed attempt contributes no Brief generation: a coded, transcript-safe warning (`planner_returned_zero_tasks`) is published, and the attempt writes no planning artifact. The planning result is terminal under the workflow owner and parked when no owner authority is present.
+**Likely cause:** The `tasks` call returned no parsable Task Briefs. The call is never repeated automatically — there is no zero-task retry and no repair pass. A coded, transcript-safe warning (`planner_returned_zero_tasks`) is published, no `tasks.md` is written, and the run halts on a `planner-returned-no-briefs` recovery rather than entering implementation with nothing to build. This is the same in every mode, not just `quick`.
 
 **Fix:**
-1. Read the `planner_returned_zero_tasks` warning in the transcript or `session.jsonl` — it states that the failed attempt contributes no Brief generation, so there is no planner artifact on disk to inspect for the attempt.
-2. If the planner's output was prose with no briefs, the planner model may be too weak to emit Task Briefs: raise the planner model or switch to `--mode standard`.
-3. If the planner produced nothing at all, check the runner diagnostics (`planner.timeout`, stream-idle guard, provider health) and re-run.
-4. If the result parked, resume the session and choose `retry`, `edit`, or `reject` from the persisted projection.
-5. Re-run with `splitbrief start --mode quick "<feature>"`.
+1. Answer the recovery panel. `retry-same-worker` re-issues the `tasks` call — the step is un-memoized because no artifact landed, so nothing else is re-run. `revise` sends the planner a correction first. `end-run` closes the run and keeps whatever is on disk.
+2. Headlessly, the same halt prints the `continue --action …` line and exits 1: `splitbrief continue <session-id> --action retry`, or `--action end-run` to close it.
+3. If the planner's output was prose with no briefs, the model may be too weak to emit Task Briefs: raise the planner model or switch to `--mode standard`.
+4. If the planner produced nothing at all, check the runner diagnostics (`planner.timeout`, stream-idle guard, provider health) before retrying.
 
-**Prevention:** Keep `quick` for trivial edits and reserve the multi-call modes for anything where brief quality matters — a zero-task outcome is usually a mode/model mismatch.
+**Prevention:** Keep `quick` for trivial edits and reserve the multi-call modes for anything where brief quality matters — a zero-brief outcome is usually a mode/model mismatch.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (mode table), `src/engine/orchestrator/planning/quick.ts`.
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §3 (the step table), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), `src/engine/orchestrator/planning/steps.ts`.
 
 ---
 
@@ -399,8 +382,8 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 **There is deliberately no automatic fallback to the planner.** SPLITBRIEF will not quietly re-run the review on a different model and present the result as if you had asked for it — a review's value is which model produced it, so a review nobody can attribute is worse than a missing one. The run's evidence trail says the review failed, and that is the honest answer.
 
 **Fix:**
-1. Read the error on the summary screen or in `session.jsonl` — it names the reviewer seat, so you can tell a reviewer failure apart from a planner failure at a glance.
-2. Fix the underlying runner (see the readiness families above), then re-run the review by resuming: `final-review` is a resumable phase.
+1. Read the error on the run screen or in `session.jsonl` — it names the reviewer seat, so you can tell a reviewer failure apart from a planner failure at a glance.
+2. Fix the underlying runner (see the readiness families above), then re-run the review by continuing the run: it picks up at the review it reached.
 3. To get the review from the planner instead, remove the `reviewer` block (or point `/reviewer` at the planner's tool) and resume. That is a decision you make, not one SPLITBRIEF makes for you.
 
 **Prevention:** Give a metered reviewer a `timeout` that fits a diff-sized read, and prefer a reviewer whose credentials do not expire mid-run.
@@ -416,7 +399,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped to the brief whose `files` its paths name, those briefs re-enter implementation with the finding text as the error block, gates and drift run again, and the review is re-run. At most **two** such cycles per run (`REVIEW_CYCLE_CAP`). What you are looking at is the state after those cycles.
 
 **Fix:**
-1. Read `.splitbrief/sessions/<id>/review.md` — the Critical findings are the blocking list, in the reviewer's own words. The summary hero says `Build finished · changes need attention` with `review failed · <n> blocking, <n> advisory`, and `⏎` opens the first blocking finding.
+1. Read `.splitbrief/sessions/<id>/review.md` — the Critical findings are the blocking list, in the reviewer's own words. The summary's outcome line reads `⚠ Needs attention · … · review failed <n> blocking, <n> advisory · …`, its `Packet` row names the `review-packet.md` to open, and its byline says `Read the <n> blocking findings in the packet, or revert it with /run reject confirm`.
 2. Fix the findings yourself, or re-brief them: the working tree still holds every change the run made, so this is ordinary code review from here.
 3. A finding whose paths name no brief cannot be routed back, so it is never auto-fixed — those are the ones to read first.
 4. An unparseable verdict is re-asked once; a second unparseable reply is reported as `review: failed (unparseable verdict)`. That is a reviewer-output problem, not a code problem — check the reviewer's output format before re-running.
@@ -528,13 +511,13 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 **Likely cause:** Older builds spent `esc esc` on an interrupt ladder with a 2-second armed window and asked for `Ctrl-C` twice to exit. Both are gone. There is now one sheet and one immediate key.
 
 **Fix:**
-1. `esc` on an empty composer opens the **Stop options** sheet: `Stop now` (stop execution, keep partial changes), `Pause after this brief` (finish `T<id>` including its checks and review, start no next brief), `End run` (stop and mark the run cancelled, keep changes). `↑↓ · ⏎ · esc`, no letter keys, and `esc` closes it without touching the run. No option reverts files.
+1. `esc` on an empty composer opens the **Stop options** sheet: `Stop now` (stop execution, keep partial changes), `Pause after this brief` (finish `T<id>` including its checks and review, start no next brief), `End run` (stop and close the run, keep changes). `↑↓ · ⏎ · esc`, no letter keys, and `esc` closes it without touching the run. No option reverts files.
 2. `ctrl+c` is Stop now, immediately, one press. It aborts the in-flight call along with any retry, escalation or per-task review call, and parks the run as `Paused at T<id> · Partial changes kept`.
 3. `ctrl+q` or `/quit` stops safely, saves the session, then exits.
 4. With text in the composer, `esc` changes neither the run nor the draft — the feedback row says `clear the draft or ctrl+c to stop now`.
-5. Restart with `/resume` (type instructions first if you want to steer; a blank Enter never resumes) or from the shell with `splitbrief continue <session-id>`. `/end` marks a parked run cancelled.
+5. Restart with `/resume` (type instructions first if you want to steer; a blank Enter never resumes) or from the shell with `splitbrief continue <session-id>`. `/end` closes a parked run; after that nothing picks it up.
 
-**Prevention:** None needed — the legend row states the live keys (`esc stop options · ctrl+c stop now · ctrl+k commands · /help`), and a cancelled call still never spends retries or escalation budget: an aborted implementer call stops the retry loop instead of consuming `workflow.maxRetries`.
+**Prevention:** None needed — the legend row states the live keys (`esc stop options · ctrl+c stop now · ctrl+k commands · /help`), and a cancelled call still never spends retries or escalation attempts: an aborted implementer call stops the retry loop instead of consuming `workflow.maxRetries`.
 
 **See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (retry arithmetic), `src/engine/orchestrator/escalation/local-retries.ts`.
 
@@ -542,11 +525,11 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 
 ### Symptom: two consecutive timeouts halted my run
 
-**Likely cause:** The implementer hit its wall clock twice in a row on the same brief. Each `cli` implementer attempt gets 20 minutes (`TIMEOUTS.implementerMs`, overridable per seat with `implementer.timeout`, capped at the same 20 minutes); a review call gets 10. A second consecutive `timeout` outcome on one brief raises the recovery issue `implementer-timeout-repeated` — `<tool> timed out twice in a row on T00N` — instead of retrying or escalating, because handing an unfinishable brief to the planner only spends planner money on the same defect.
+**Likely cause:** The implementer hit its wall clock twice in a row on the same brief. Each `cli` implementer attempt gets 20 minutes (`TIMEOUTS.implementerMs`, overridable per seat with `implementer.timeout`, capped at the same 20 minutes); a review call gets 10. A second consecutive `timeout` outcome on one brief raises the recovery issue `runner-timeout-repeated` — `<tool> timed out twice in a row on T00N` — instead of retrying or escalating, because handing an unfinishable brief to the planner only spends planner money on the same defect.
 
 **Fix:**
 1. Read the issue's details: they carry the tool's own last message, the attempt count, and the implementer profile that was selected.
-2. The offered actions are retry, route to a bigger worker, switch seat, skip the brief, pause, or abort. Headless, the stderr block prints the exact line to paste — for example `splitbrief continue <session> --action retry`.
+2. The offered actions are retry, route to a bigger worker, switch seat, skip the brief, pause, or end the run. Headless, the stderr block prints the exact line to paste — for example `splitbrief continue <session> --action retry`.
 3. If the brief is simply too large for this seat, the durable fix is a smaller slice: split it in the briefs editor (`Ctrl+E` at the briefs gate) so each brief is one verifiable change of at most five files.
 4. If the tool is genuinely slow rather than stuck, raise its seat's `timeout` toward the 1 200 000 ms cap, or move the seat to a faster model.
 5. Distinguish it from silence: `idleWarnMs` / `idleKillMs` watch for *no output*, while this halt is about total wall clock. A run producing output steadily for 20 minutes still times out.
@@ -654,6 +637,51 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ---
 
+### Symptom: `splitbrief resume` says the run is closed
+
+**Likely cause:** A closed run is the one thing continuing refuses. `state.json` records `closed: { at, as: 'ended' }` — written by **End run** on the stop sheet or a document gate, the `end-run` recovery action, or `/end` — or the run reached `complete` with a passing final review. Closing a run clears `.splitbrief/active`, so `resume` with no argument finds nothing at all.
+
+**Fix:**
+1. Run `splitbrief ps` to list runs; a closed one shows `× ended` or `✓ complete`.
+2. Its files are still on disk and its session directory is intact — read `summary.json`, `review.md` and the evidence ledger, or open it with `/sessions` and read the `Closed ─` block at the tail of its transcript.
+3. To carry the work on, start a new run: `splitbrief start "<what is left>"`. A closed run is a record, not a workspace.
+
+**Prevention:** Use **Stop now** or **Pause after this brief** when you mean to come back. Only **End run** closes; the stop sheet's footer says so.
+
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §6, [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md).
+
+---
+
+### Symptom: `splitbrief resume` refuses with unreadable or unsupported saved state
+
+**Likely cause:** `state.json` is missing, is not valid JSON, fails the v4 schema, or records a `stateVersion` newer than `WORKFLOW_STATE_VERSION`. A v3 state is migrated on load; anything else is refused rather than guessed at.
+
+**Fix:**
+1. `splitbrief status` names the session; check `.splitbrief/sessions/<id>/state.json` exists and parses (`node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" <path>`).
+2. A state written by a newer SPLITBRIEF cannot be read by an older one. Upgrade, or start a fresh run.
+3. The session's artifacts are independent of its state: `tasks.md`, `spec.md`, `plan.md` and `review.md` are still readable and can seed a new run.
+
+**Prevention:** Do not hand-edit `state.json`. Every legitimate mutation goes through the compare-and-swap in `state-ops.ts`; an edited file loses that guarantee.
+
+**See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) §v4 contract boundary.
+
+---
+
+### Symptom: continuing a run re-opens the planner halt instead of building
+
+**Likely cause:** The run stopped on a planner-seat recovery — `planner-call-failed`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress`, `brief-quality-unrepaired`, or a seat-blocked `runner-unauthenticated` / `runner-usage-limit` on the **plan** seat. A halt is answered before any work runs, so continuing shows the panel first. That is the design: the run is waiting on a decision, not stuck.
+
+**Fix:**
+1. In the TUI, answer the panel. The issue carries its own `seat`, so a swap offer names the seat that is actually blocked.
+2. Headlessly, the halt printed the exact line to run: `splitbrief continue <session-id> --action retry` (or `--action switch-seat:<tool>`, `--action skip`, `--action end-run`).
+3. `pause-run` leaves the halt in place, so the next continuation shows the same panel. That is deliberate — it is not a loop.
+
+**Prevention:** Nothing to prevent. A halt is a question; leaving it unanswered means it gets asked again.
+
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) §Recovery.
+
+---
+
 ### Symptom: a session is reported active but nothing is running
 
 **Likely cause:** Each session writes a per-session lockfile at `.splitbrief/sessions/<id>/lockfile.json` that records the PID, heartbeat, and exit marker. If `.splitbrief/active` still points at a non-terminal `state.json`, older versions could treat that pointer as live even when the lockfile already had `exitedAt`.
@@ -661,7 +689,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 **Fix:**
 1. Run `splitbrief status` to see what the project believes is running.
 2. Run `splitbrief start ...` again. Current versions clear `.splitbrief/active` automatically when the active lockfile has exited or the PID is gone.
-3. If you want to resume that interrupted session instead of starting fresh, run `splitbrief continue <session-id>`.
+3. If you want to continue that run instead of starting fresh, run `splitbrief continue <session-id>`.
 4. If the lock is fresh and a real process is alive, you have a genuine concurrent session. Finish that one rather than starting another.
 
 **Prevention:** Prefer clean TUI cancellation or `splitbrief continue` for interrupted work.

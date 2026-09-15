@@ -1,33 +1,10 @@
 import { z } from 'zod';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
-import { REVIEW_VERDICTS, TASK_CONTEXT_FITS, WorkflowModeSchema } from './enums.js';
+import { PhaseSchema, REVIEW_VERDICTS, WorkflowModeSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';
 import { API_OFFERINGS, type ApiOffering } from '../providers/api-provider-catalog.js';
 import { RunnerBillingPostureSchema } from '../runners/runner-billing.js';
-
-export const ESTIMATE_CONTEXT_CONFIDENCES = [
-  'context-explicit',
-  'context-detected',
-  'context-known-catalog',
-  'context-cached-provider',
-  'context-conservative-fallback',
-  'profile-unavailable',
-] as const;
-export const EstimateContextConfidenceSchema = z.enum(ESTIMATE_CONTEXT_CONFIDENCES);
-
-export const ESTIMATE_PRICE_CONFIDENCES = [
-  'price-known',
-  'price-unknown',
-  'profile-unavailable',
-] as const;
-export const EstimatePriceConfidenceSchema = z.enum(ESTIMATE_PRICE_CONFIDENCES);
-
-export const ESTIMATE_UNKNOWN_COST_REASONS = [
-  'implementer-price-unknown',
-  'planner-price-unknown',
-  'profile-unavailable',
-] as const;
-export const EstimateUnknownCostReasonSchema = z.enum(ESTIMATE_UNKNOWN_COST_REASONS);
+import { uniqueInOrder } from '../../utils/collections.js';
 
 export const ChainDriftSummarySchema = z.object({
   score: z.number().min(0).max(1),
@@ -75,83 +52,23 @@ export type ProviderRunMetadata = z.infer<typeof ProviderRunMetadataSchema>;
 export type OfferingBillingPresentation = z.infer<typeof OfferingBillingPresentationSchema>;
 
 export const CostBreakdownSchema = z.object({
-  hypotheticalCost: z.number().nonnegative(),
   actualPlannerCost: z.number().nonnegative(),
   actualImplementerCost: z.number().nonnegative(),
   actualReviewerCost: z.number().nonnegative().optional(),
   totalActualCost: z.number().nonnegative(),
-  savingsAmount: z.number(),
-  savingsPercentage: z.number(),
-  localCompletionRate: z.number().nonnegative().max(1),
   hasPricedUsage: z.boolean().optional(),
   hasUnpricedUsage: z.boolean().optional(),
-  hasSavingsEstimate: z.boolean().optional(),
   isActualPlannerCostKnown: z.boolean().optional(),
   isActualImplementerCostKnown: z.boolean().optional(),
   isActualReviewerCostKnown: z.boolean().optional(),
   isTotalActualCostKnown: z.boolean().optional(),
-  isAllPlannerBaselineKnown: z.boolean().optional(),
   providerCosts: z.record(z.string(), ProviderCostSchema).optional(),
   /** Billing identity of every runner the run used, keyed by tool/provider id. */
   providerRunMetadata: z.record(z.string(), ProviderRunMetadataSchema).optional(),
   /** Offering-correct cost and billing labels for those runners. */
   offeringPresentations: z.record(z.string(), OfferingBillingPresentationSchema).optional(),
-  cacheReadSavings: z.number().nonnegative().optional(),
   cacheReadTokens: z.number().nonnegative().optional(),
   cacheWriteTokens: z.number().nonnegative().optional(),
-});
-
-export const CostPredictionSchema = z.object({
-  estimatedTasks: z.number().nonnegative(),
-  lowCost: z.number().nonnegative(),
-  expectedCost: z.number().nonnegative(),
-  highCost: z.number().nonnegative(),
-  plannerTool: z.string(),
-  implementerTool: z.string(),
-  deterministic: z
-    .object({
-      estimateScope: z.literal('prompt-input-only').optional(),
-      taskCount: z.number().int().nonnegative(),
-      taskFitCounts: z.object({
-        fits: z.number().int().nonnegative(),
-        tight: z.number().int().nonnegative(),
-        overflow: z.number().int().nonnegative(),
-        unknown: z.number().int().nonnegative(),
-      }),
-      contextConfidenceCounts: z.object({
-        contextExplicit: z.number().int().nonnegative(),
-        contextDetected: z.number().int().nonnegative(),
-        contextKnownCatalog: z.number().int().nonnegative(),
-        contextCachedProvider: z.number().int().nonnegative(),
-        contextConservativeFallback: z.number().int().nonnegative(),
-        profileUnavailable: z.number().int().nonnegative(),
-      }),
-      priceConfidenceCounts: z.object({
-        priceKnown: z.number().int().nonnegative(),
-        priceUnknown: z.number().int().nonnegative(),
-        profileUnavailable: z.number().int().nonnegative(),
-      }),
-      tasks: z.array(
-        z.object({
-          taskId: TaskIdSchema,
-          title: z.string(),
-          estimatedPromptTokens: z.number().int().nonnegative(),
-          selectedProfileId: z.string().nullable(),
-          contextFit: z.enum([...TASK_CONTEXT_FITS, 'unknown']),
-          contextConfidence: EstimateContextConfidenceSchema,
-          priceConfidence: EstimatePriceConfidenceSchema,
-          estimatedImplementerCost: z.number().nonnegative().nullable(),
-          hypotheticalPlannerCost: z.number().nonnegative().nullable(),
-        }),
-      ),
-      totals: z.object({
-        knownActualEstimate: z.number().nonnegative().nullable(),
-        hypotheticalAllPlanner: z.number().nonnegative().nullable(),
-        estimatedSavings: z.number().nullable(),
-        unknownCostReason: z.array(EstimateUnknownCostReasonSchema),
-      }),
-    })
-    .optional(),
 });
 
 export const CheckpointSummaryRollupSchema = z.object({
@@ -199,7 +116,6 @@ export const SummarySchema = z.object({
   failed: z.number().nonnegative(),
   totalTime: z.number().nonnegative(),
   tokenUsage: TokenUsageSchema,
-  estimatedCostSavings: z.string(),
   escalationRate: z.number().nonnegative(),
   taskBreakdown: z.array(TaskTokenUsageSchema).optional(),
   costBreakdown: CostBreakdownSchema.optional(),
@@ -224,7 +140,6 @@ export const SummarySchema = z.object({
   briefQuality: BriefQualitySummarySchema.optional(),
   driftSummary: DriftSummarySchema.optional(),
   chainDriftSummary: ChainDriftSummarySchema.optional(),
-  costPrediction: CostPredictionSchema.optional(),
   checkpointSummary: CheckpointSummaryRollupSchema.optional(),
   reviewPacket: ReviewPacketSummarySchema.optional(),
   review: z
@@ -238,16 +153,17 @@ export const SummarySchema = z.object({
   changedFiles: z.array(z.string()).optional(),
   stoppedAt: z
     .object({
-      taskId: z.string(),
+      taskId: TaskIdSchema,
       partialFiles: z.array(z.string()),
     })
     .optional(),
+  phase: PhaseSchema.optional(),
 });
 
+export type BriefQualitySummary = z.infer<typeof BriefQualitySummarySchema>;
 export type CostBreakdown = z.infer<typeof CostBreakdownSchema>;
+export type ReviewVerdict = z.infer<typeof ReviewVerdictSchema>;
 export type Summary = z.infer<typeof SummarySchema>;
-export type CostPrediction = z.infer<typeof CostPredictionSchema>;
-export type CheckpointSummaryRollup = z.infer<typeof CheckpointSummaryRollupSchema>;
 export type ReviewPacketSummary = z.infer<typeof ReviewPacketSummarySchema>;
 
 export interface CostKnownFlags {
@@ -255,7 +171,6 @@ export interface CostKnownFlags {
   implementerCostKnown: boolean;
   reviewerCostKnown?: boolean;
   totalCostKnown: boolean;
-  allPlannerBaselineKnown: boolean;
 }
 
 export function costKnownFlags(breakdown: CostBreakdown): CostKnownFlags {
@@ -266,8 +181,6 @@ export function costKnownFlags(breakdown: CostBreakdown): CostKnownFlags {
     breakdown.isActualImplementerCostKnown ?? !(breakdown.hasUnpricedUsage === true);
   const totalCostKnown =
     breakdown.isTotalActualCostKnown ?? (plannerCostKnown && implementerCostKnown);
-  const allPlannerBaselineKnown =
-    breakdown.isAllPlannerBaselineKnown ?? breakdown.hasSavingsEstimate ?? true;
   return {
     plannerCostKnown,
     implementerCostKnown,
@@ -275,7 +188,6 @@ export function costKnownFlags(breakdown: CostBreakdown): CostKnownFlags {
       reviewerCostKnown: breakdown.isActualReviewerCostKnown,
     }),
     totalCostKnown,
-    allPlannerBaselineKnown,
   };
 }
 
@@ -290,12 +202,13 @@ const UNMETERED_OFFERINGS = new Set<ApiOffering>(['coding-subscription', 'local'
 export function unmeteredRunCostLabel(breakdown: CostBreakdown): string | null {
   const entries = Object.entries(breakdown.providerRunMetadata ?? {});
   if (entries.length === 0) return null;
-  const labels = new Set<string>();
+  const labels: string[] = [];
   for (const [tool, metadata] of entries) {
     if (!UNMETERED_OFFERINGS.has(metadata.offering)) return null;
     const label = breakdown.offeringPresentations?.[tool]?.costLabel;
     if (label === undefined) return null;
-    labels.add(label);
+    labels.push(label);
   }
-  return labels.size === 1 ? ([...labels][0] ?? null) : null;
+  const unique = uniqueInOrder(labels);
+  return unique.length === 0 ? null : unique.join(' · ');
 }

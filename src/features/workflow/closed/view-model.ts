@@ -1,0 +1,204 @@
+import type { Phase, TaskCompletionMethod, WorkflowMode } from '../../../core/schemas/enums.js';
+import type { BriefQualitySummary, ReviewVerdict, Summary } from '../../../core/schemas/summary.js';
+import type { TaskId } from '../../../core/schemas/task.js';
+import type { RunRecord } from '../../../core/sessions/run-record.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { getRailStages, type RailHalt, type RailStageState } from '../../../core/rail-stages.js';
+import {
+  briefRows,
+  buildSeatView,
+  costView,
+  filesView,
+  phaseTimings,
+  reviewSeatView,
+  reviewView,
+  scopeView,
+  seatView,
+  tokensView,
+} from './projections.js';
+
+/** How a closed run reads: every check agreed, something needs a look, or it was ended. */
+export type SummaryOutcomeKind = 'ready' | 'needs-attention' | 'ended';
+
+export type SeatView =
+  | Readonly<{ kind: 'named'; identity: string; short: string }>
+  | Readonly<{ kind: 'inherits' }>
+  | Readonly<{ kind: 'mixed'; profiles: readonly string[] }>
+  | Readonly<{ kind: 'unset' }>;
+
+export type BriefRowState = 'local' | 'escalated' | 'failed' | 'skipped' | 'stopped' | 'pending';
+
+export interface BriefRow {
+  id: TaskId;
+  title: string;
+  state: BriefRowState;
+  method: TaskCompletionMethod | null;
+  retries: number;
+  durationMs: number | null;
+  file: string | null;
+  partialFiles: number;
+}
+
+export type ReviewView =
+  | Readonly<{ kind: 'not-run' }>
+  | Readonly<{ kind: 'failed' | 'missing' | 'skipped' }>
+  | Readonly<{
+      kind: 'written';
+      verdict: ReviewVerdict | null;
+      counts: Readonly<{ critical: number; warning: number; note: number }>;
+      markdownPath: string;
+      driftPassed: boolean | null;
+      evidence: Readonly<{ validated: number; total: number }>;
+      missingArtifacts: number;
+    }>;
+
+export type ScopeView =
+  | Readonly<{ kind: 'not-run' }>
+  | Readonly<{
+      kind: 'checked';
+      passed: boolean;
+      score: number;
+      errors: number;
+      warnings: number;
+    }>;
+
+export type CostView =
+  | Readonly<{ kind: 'unmetered'; label: string }>
+  | Readonly<{ kind: 'unpriced' }>
+  | Readonly<{ kind: 'priced'; actual: number; partial: boolean }>;
+
+export type PhaseTiming = Readonly<{ phase: 'planning' | 'implementing' | 'review'; ms: number }>;
+
+export interface SummaryView {
+  outcome: Readonly<{ kind: SummaryOutcomeKind }>;
+  run: Readonly<{
+    feature: string;
+    mode: WorkflowMode | null;
+    totalMs: number;
+    phase: Phase;
+    sessionId: string;
+  }>;
+  rail: RailStageState[];
+  seats: Readonly<{ plan: SeatView; build: SeatView; review: SeatView }>;
+  briefs: Readonly<{
+    total: number;
+    passed: number;
+    local: number;
+    escalated: number;
+    failed: number;
+    skipped: number;
+    rows: BriefRow[];
+  }>;
+  review: ReviewView;
+  scope: ScopeView;
+  quality: BriefQualitySummary | null;
+  /** Null when the reader turned the spend display off: the run has no cost row at all. */
+  cost: CostView | null;
+  tokens: Readonly<{ plan: number; build: number; review: number }>;
+  files: Readonly<{
+    changed: string[] | null;
+    partial: ReadonlySet<string>;
+    stoppedAt: Readonly<{ taskId: TaskId; partialFiles: string[] }> | null;
+  }>;
+  checkpoint: 'accepted' | 'rejected' | null;
+  phases: PhaseTiming[];
+}
+
+/**
+ * The run record, plus the one display preference the screen reads from config: the closed block
+ * derives its view from the record navigation carried and nothing else.
+ */
+export interface DeriveSummaryViewInput {
+  record: RunRecord;
+  /** `workflow.showSpend`; absent reads as on, the way the config default does. */
+  showSpend?: boolean | undefined;
+}
+
+/**
+ * What a closed run is, in one view. Null for a run that is still open — an open run has no
+ * outcome yet — and for a closed run that left no record to read.
+ */
+export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | null {
+  const { record } = input;
+  if (record.status.kind !== 'closed') return null;
+  const summary = record.summary;
+  if (summary === null) return null;
+  const ledger = record.ledger;
+  const outcomeKind = outcomeKindFor(summary, record.status.as);
+  const phase = resolvePhase(summary, savedPhase(record));
+  const rows = briefRows(summary, ledger);
+  return {
+    outcome: { kind: outcomeKind },
+    run: {
+      feature: sanitizeTerminalDisplayText(summary.feature),
+      mode: summary.mode ?? null,
+      totalMs: summary.totalTime,
+      phase,
+      sessionId: sanitizeTerminalDisplayText(record.ref.sessionId),
+    },
+    rail: railFor(phase, outcomeKind),
+    seats: {
+      plan: seatView(summary.plannerTool, summary.plannerModel),
+      build: buildSeatView(summary),
+      review: reviewSeatView(summary),
+    },
+    briefs: {
+      total: summary.totalTasks,
+      passed: summary.completedByLocal,
+      local: summary.completedByLocal,
+      escalated: summary.escalatedToPlanner,
+      failed: summary.failed,
+      skipped: summary.skipped,
+      rows,
+    },
+    review: reviewView(summary),
+    scope: scopeView(summary),
+    quality: summary.briefQuality ?? null,
+    cost: input.showSpend === false ? null : costView(summary.costBreakdown),
+    tokens: tokensView(summary),
+    files: filesView(summary),
+    checkpoint: record.checkpoint?.kind ?? null,
+    phases: phaseTimings(summary),
+  };
+}
+
+function savedPhase(record: RunRecord): Phase | null {
+  return record.hydration.kind === 'loaded' ? record.hydration.state.phase : null;
+}
+
+/**
+ * Ready is the whole run agreeing: it finished, the packet was written, the verdict allows it, the
+ * scope check passed and no brief failed. Anything short of that on a finished run needs attention.
+ */
+function outcomeKindFor(summary: Summary, closedAs: 'complete' | 'ended'): SummaryOutcomeKind {
+  if (closedAs === 'ended') return 'ended';
+  const packet = summary.reviewPacket;
+  const verdict = packet?.finalReviewVerdict ?? null;
+  const ready =
+    packet?.finalReviewStatus === 'written' &&
+    (verdict === 'pass' || verdict === 'pass_with_notes') &&
+    packet.driftPassed === true &&
+    summary.failed === 0;
+  return ready ? 'ready' : 'needs-attention';
+}
+
+/**
+ * The phase the run stopped in. The saved state is read first, then the summary's own record, then
+ * what the record does carry — so a legacy summary still freezes the rail at the right stage.
+ */
+function resolvePhase(summary: Summary, saved: Phase | null): Phase {
+  // `idle` is where a run that never started stands, so it names no stage.
+  const recorded = saved ?? summary.phase ?? null;
+  if (recorded !== null && recorded !== 'idle') return recorded;
+  if (summary.stoppedAt !== undefined || summary.totalTasks > 0) return 'implementing';
+  if (summary.reviewPacket !== undefined) return 'final-review';
+  return 'planning';
+}
+
+function railFor(phase: Phase, kind: SummaryOutcomeKind): RailStageState[] {
+  if (kind !== 'ended') return getRailStages('complete');
+  return getRailStages(phase, { halted: ENDED_HALT });
+}
+
+/** A run somebody ended is not a run that broke: the stage it stopped on wears the cancel mark. */
+const ENDED_HALT: RailHalt = 'cancelled';

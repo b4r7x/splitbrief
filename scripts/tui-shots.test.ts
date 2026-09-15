@@ -209,8 +209,15 @@ describe('tui-shots CLI behavior', () => {
     },
     {
       name: 'element missing from one selected scenario',
-      args: ['--scenario', 'home-empty', '--scenario', 'summary-success', '--element', 'hero'],
-      message: 'Element "hero" is not declared by scenario summary-success',
+      args: [
+        '--scenario',
+        'home-empty',
+        '--scenario',
+        'workflow-closed-complete-ready',
+        '--element',
+        'hero',
+      ],
+      message: 'Element "hero" is not declared by scenario workflow-closed-complete-ready',
     },
     {
       name: 'output escape',

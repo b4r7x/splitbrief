@@ -375,7 +375,7 @@ describe('auto is a selection policy, never catalog data', () => {
     expect(ids).toContain('my-model');
   });
 
-  it('offers only the policy rows for backend-default and auto-only tools', () => {
+  it('offers only the Auto row for backend-default and auto-only tools', () => {
     for (const policy of ['backend-default', 'auto-only'] as const) {
       expect(
         buildRightModels({
@@ -383,14 +383,7 @@ describe('auto is a selection policy, never catalog data', () => {
           customModels: [],
           currentItem: cliItem('copilot', policy),
         }),
-      ).toEqual([
-        {
-          id: 'auto:cheapest',
-          displayName: 'Auto (cheapest capable)',
-          detail: 'priced per brief',
-        },
-        { id: 'auto' },
-      ]);
+      ).toEqual([{ id: 'auto' }]);
     }
   });
 
@@ -428,61 +421,6 @@ describe('auto is a selection policy, never catalog data', () => {
   it('never lets an auto row back into the resolved model catalog', () => {
     expect(resolveAndSort('copilot', 'implementer').map((model) => model.id)).not.toContain('auto');
     expect(resolveAndSort('codex', 'planner').map((model) => model.id)).not.toContain('auto');
-  });
-});
-
-describe('auto:cheapest is the BUILD seat price-routing row', () => {
-  it("the BUILD picker's first row is Auto (cheapest capable)", () => {
-    const models = buildRightModels({
-      role: 'implementer',
-      customModels: [],
-      currentItem: cliItem('claude-code', 'optional'),
-    });
-
-    expect(models[0]).toEqual({
-      id: 'auto:cheapest',
-      displayName: 'Auto (cheapest capable)',
-      detail: 'priced per brief',
-    });
-  });
-
-  it('an api, shell or agent BUILD column has no Auto (cheapest capable) row', () => {
-    for (const kind of ['api', 'shell', 'agent'] as const) {
-      const models = buildRightModels({
-        role: 'implementer',
-        customModels: ['my-model'],
-        currentItem: pickerItem(
-          {
-            id: kind,
-            displayName: kind,
-            kind,
-            roles: ['planner', 'implementer'],
-            modelPolicy: 'per-call',
-            billing: 'api-metered',
-            permissions: READY_CLI_PERMISSIONS,
-            status: { state: 'ready', remediation: null },
-            available: true,
-          },
-          true,
-        ),
-      });
-
-      expect(models.map((model) => model.id)).not.toContain('auto:cheapest');
-      expect(models[0]?.id).toBe('auto');
-    }
-  });
-
-  it('the PLAN and REVIEW pickers have no Auto (cheapest capable) row', () => {
-    for (const role of ['planner', 'reviewer'] as const) {
-      const models = buildRightModels({
-        role,
-        customModels: [],
-        currentItem: cliItem('claude-code', 'optional'),
-      });
-
-      expect(models.map((model) => model.id)).not.toContain('auto:cheapest');
-      expect(models[0]?.id).toBe('auto');
-    }
   });
 });
 

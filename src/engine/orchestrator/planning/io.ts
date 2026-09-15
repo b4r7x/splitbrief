@@ -10,7 +10,7 @@ import { formatTasks } from '../../spec/formatter.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 import { writeAndPublishArtifacts, type ArtifactKind } from '../artifact-write.js';
-import type { PlanResult } from '../../planners/types.js';
+import type { PhaseResult } from '../../planners/types.js';
 
 function artifactKindFor(filename: string): ArtifactKind {
   switch (filename) {
@@ -32,7 +32,7 @@ function artifactKindFor(filename: string): ArtifactKind {
 export function persistPhases(opts: {
   projectDir: string;
   sessionId: string;
-  phases: PlanResult['phases'];
+  phases: readonly PhaseResult[] | undefined;
   metadata: SpecMetadata;
   bus: EventBus;
   phase: Phase;

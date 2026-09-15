@@ -89,7 +89,7 @@ Full schema: [CONFIGURATION.md §planner](./CONFIGURATION.md#2-planner) and [CON
 
 ### Run Readiness / Doctor
 
-**What it does.** Before `splitbrief start` spends planner or implementer tokens, SPLITBRIEF checks config, mode/approval resolution, runner posture, context length, validation settings, git status, active-session conflicts, and budget posture. Blockers stop the run; warnings can continue.
+**What it does.** Before `splitbrief start` spends planner or implementer tokens, SPLITBRIEF checks config, mode/approval resolution, runner posture, context length, validation settings, git status, and active-session conflicts. Blockers stop the run; warnings can continue.
 
 **How to use.**
 
@@ -102,7 +102,7 @@ splitbrief start --json "fix parser edge case"
 
 `splitbrief doctor` is strictly read-only and writes no config, sessions, worktrees, snapshots, or model calls. It runs no validation subprocesses unless `--probe-validation` is given. Its one network call is the runner availability probe: a model-list request to the `api` endpoint each configured runner already targets, so an unreachable planner or default implementer is a blocker here instead of a `fetch failed` after the planning phase has been paid for. A local workflow start prepares every runner context it may select and persists that attempt's compact `.splitbrief/sessions/<id>/readiness.json` before execution begins. If fresh preparation is blocked, cached success cannot create a session or start a process. In headless mode the readiness report is emitted as the first structured JSON line.
 
-**When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, disabled validation, or unset budget.
+**When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, or disabled validation.
 
 **Events/output.** Human output groups checks into config, runners, context, validation, repository, and cost. JSON output uses `{ type: "readiness_report", report: ... }`. Validation readiness is posture only by default — disabled checks, missing npm scripts, and configured commands are reported without running them; `--probe-validation` runs the real commands and can take minutes.
 
@@ -151,7 +151,7 @@ escalation:
   intermediateModel: llama3.1
 ```
 
-**When to use.** Set `escalation.intermediateProvider` to add a mid-tier model between the cheap implementer and the expensive planner; it is active by default once configured. Set `escalation.enabled: false` to disable that intermediate tier without removing the provider config.
+**When to use.** Set `escalation.intermediateProvider` to add a mid-tier model between the implementer and the planner; it is active by default once configured. Set `escalation.enabled: false` to disable that intermediate tier without removing the provider config.
 
 Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`. Tokens consumed during escalation are tracked separately (`escalationInput` / `escalationOutput`) so you can see how much "rescue" cost.
 
@@ -211,7 +211,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 **What it does.** A deterministic linter scores every Task Brief before implementation begins. Error codes are `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `write_outside_declared_files` (a step writes a path the brief never declared), `anchor_not_in_files` (`file` is missing from `files`), and `missing_implementation_steps`. `missing_type_definitions` and `test_without_code` (a test brief whose subject is created in another brief — fold the two into one slice) are warnings. Any error-level issue blocks transition to `implementing`.
 
-**How to use.** Always runs in all three modes. Result persists at `brief-quality.json`; events are `brief_quality_passed` or `brief_quality_failed`. Visible in the summary screen as a `Brief quality` row.
+**How to use.** Always runs in all three modes. Result persists at `brief-quality.json`; events are `brief_quality_passed` or `brief_quality_failed`. Visible in a closed run’s `Run` block's `Briefs` row (`quality 0.92 · 1 warning`), present only when the gate ran.
 
 **When to use.** Out of the box. To inspect after the fact, read `.splitbrief/sessions/<id>/brief-quality.json`.
 
@@ -254,62 +254,24 @@ After the editor exits successfully, SPLITBRIEF re-reads `.splitbrief/sessions/<
 
 ---
 
-## Cost telemetry
+## Spend
 
 ### Where spend appears
 
-**What it does.** There is no persistent cost header. Spend surfaces in four places, each fed from the cost store on `cost_update`:
+**What it does.** There is no persistent cost header. Spend surfaces in two places, each fed from the cost store on `cost_update`:
 
 - **Sidebar footer** — on by default above the breakpoint (121 columns and wider) and unavailable at or below it; `/sidebar` toggles it and `/tasks` brings it back. Last line reads `Local NN%` — the share of tasks finished without escalating — followed by the run's spend when something priced ran: `Local 80% · $0.42`.
-- **Ctrl+G — `Cost · breakdown`** — the full accounting surface: per phase cost, the input/output token split, `cache NN%` where the runner reports cache reads, and per-task totals with per-attempt detail.
-- **Summary screen** — leads with `$0.42 actual vs $1.80 baseline · 77% saved` when the run produced a savings estimate.
-- **Budget gate** — only with `workflow.maxBudget` set: warns at 80%, pauses at `workflow.budgetPauseThreshold` (default `0.85`), stops at the ceiling.
+- **Closed run** — one `Cost` row in the `Run` block at the transcript tail: `$0.42` when every seat is priced, `$0.42 + unknown` for a partly priced crew, the run's unmetered labels joined in first-seen order (`subscription-included`, `local`, `subscription-included · local`) when nothing was metered, and `not estimated` when no figure exists. Nothing sits beside it — no baseline, no comparison, no saving. A crew that booked no metered tokens reads `subscription-included`, never `$0.00`. It is a reported fact about the run, not a claim SPLITBRIEF makes up front — see [VISION.md](./VISION.md) for what the tool promises instead.
 
 **How to use.** No setup. `/copy cost` puts the sidebar string on your clipboard. Runners that expose no pricing are reported as unpriced, never as `$0.00`.
 
-### Cost drilldown overlay (`Ctrl+G`)
-
-**What it does.** Opens a per-phase and per-task breakdown: horizontal bars for each planner phase showing input vs output token split (output is typically 3–5x more expensive) and cache-hit %; per-task bars showing total tokens.
-
-**How to use.** Press `Ctrl+G` from any workflow screen. Any key dismisses it.
-
-**When to use.** When you want to see which planner phase or which task is dominating the bill.
+**Turning it off.** Settings ▸ Workflow ▸ **Show spend** (`workflow.showSpend`, on by default) hides both: the sidebar keeps `Local NN%` and drops the figure beside it, a closed run's ledger drops the `Cost` row entirely, and `/copy cost` answers `spend display is off`. The toggle is display-only — token counts and the recorded cost breakdown are unaffected.
 
 ### Pricing catalog
 
-**What it does.** Per-model pricing for any metered API runner, including a custom endpoint you configure yourself. Rates follow the model, not the provider preset: a `vendor/model` id is rated through that vendor's catalog row, a bare id is matched across the catalog. `local` replaces the dollar amount when the implementer is unpriced (for example local Ollama or an OpenCode/Claude-Code subscription) so no fake savings are shown.
+**What it does.** Per-model pricing for any metered API runner, including a custom endpoint you configure yourself. Rates follow the model, not the provider preset: a `vendor/model` id is rated through that vendor's catalog row, a bare id is matched across the catalog. `local` replaces the dollar amount when the implementer is unpriced (for example local Ollama or an OpenCode/Claude-Code subscription).
 
 **How to use.** Pricing is auto-resolved from the model id against the models.dev catalog, the runtime model cache, or the bundled fallback (see `src/engine/providers/pricing-resolver.ts`). Local, CLI and shell/agent runners are never priced.
-
-### Budget pause gate
-
-**What it does.** At 80% of `workflow.maxBudget` a warning event fires. At the configurable pause threshold (default 0.85), the task loop persists a `budget-paused` recovery issue and prompts with filtered actions. Below max budget the user can continue, pause, or abort. At 100%, the workflow persists `budget-exceeded`; ordinary continue is not offered.
-
-**How to use.**
-
-```yaml
-workflow:
-  maxBudget: 5.00
-  budgetPauseThreshold: 0.85   # 0.0–1.0; default 0.85
-```
-
-Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_exceeded` (100%), followed by `recovery_prompted` when a persisted recovery decision is required. Headless `--json` mode emits `recovery_required` with available actions and exits non-zero instead of blocking.
-
-### Cost-gated plan approval
-
-**What it does.** Before implementation starts, the brief review gate shows a cost-aware approval prompt: task count, estimated implementation cost, all-planner comparison cost, and savings percentage. Transforms rubber-stamp approval into an informed cost decision.
-
-**How to use.** Always active in modes with approval gates (standard, speckit). The prompt renders automatically when briefs are ready.
-
-**Format.** The totals line of the `Cost prediction` block: `Implementer: $0.14 All planner: $1.20 Savings: $1.06` (`Prompt input` / `All-planner prompt` / `Prompt saving` when the estimate covers prompt input only), followed by the `Planner: … Implementer: …` seat line.
-
-### Hero savings stat (summary screen)
-
-**What it does.** After a completed workflow, the summary screen reports what the run actually cost against an all-planner baseline, with the percentage difference. Copy-pasteable format for sharing. This is a reported outcome of the run, not a claim SPLITBRIEF makes up front — see [VISION.md](./VISION.md) for what the tool promises instead.
-
-**Format.** `$0.12 actual vs $0.95 baseline · 87% saved`
-
-**How to use.** Always shown on the post-run summary screen when pricing data is available. When the implementer is unpriced (local/subscription), `local` replaces the dollar amount.
 
 ### Planner heartbeat
 
@@ -339,7 +301,7 @@ Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_
 |---|---|
 | `Stop now` | stop execution; keep partial changes |
 | `Pause after this brief` | finish `T<id>` including checks and review; do not start `T<next>` |
-| `End run` | stop execution; mark this run cancelled; keep changes |
+| `End run` | stop execution; close this run; keep changes |
 
 The second row appears only while a brief is running, and reads `Keep running` once a pause is already pending. The footer line is `No option reverts files. Your draft is preserved.`, the legend is `↑↓ · ⏎ · esc`, and there are no letter keys. `esc` on the sheet closes it with no effect on the run.
 
@@ -349,28 +311,30 @@ The second row appears only while a brief is running, and reads `Keep running` o
 - `ctrl+c` — Stop now, immediately, with no armed window and no second press. Off the workflow screen it exits as usual.
 - `ctrl+q` or `/quit` — stop safely, save the session, then exit.
 - `/resume` — restart a parked run (`Stop now` resumes the parked brief, `Pause after this brief` starts the next one). A blank Enter never resumes; type instructions and Enter to steer the resumed run.
-- `/end` — mark a parked run cancelled and keep its changes.
+- `/end` — close a parked run and keep its changes. After that nothing picks it up.
 
 **On-screen.** The byline reports the state and the legend row carries the keys: `Stopping T<id> · Waiting for processes to exit · elapsed <t>` (hint `No new work will start`), then `Forcing remaining processes to exit` after the 2-second grace, `Finishing T<id>` with `Pause requested; no next brief will start` for a boundary pause, and finally one of `Paused at T<id> · Partial changes kept`, `Paused after T<id> · <n> of <m> briefs complete`, or `Cancelled by you at T<id> · Changes kept`. No option reverts files: git is still the layer that reverses a run.
 
 ### Recovery stops
 
-**What it does.** When SPLITBRIEF cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, retry exhaustion, dependency-blocked tasks, user-edit or approval-promotion conflicts, budget pause, budget exceeded, a scope violation that survived its revert retry, a refused implementer command line, two consecutive implementer timeouts on one brief, a denied approval, a failed snapshot, and a final review that still fails after its fix cycles. Every one of them also fires the `on_halt` hook.
+**What it does.** When SPLITBRIEF cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, retry exhaustion, dependency-blocked tasks, user-edit or approval-promotion conflicts, a scope violation that survived its revert retry, a refused implementer command line, two consecutive implementer timeouts on one brief, a denied approval, a failed snapshot, and a final review that still fails after its fix cycles. The planner seat raises them too — a failed planner call, a `tasks` call that parsed no briefs, a hard constitution violation, a briefs gate that stopped making progress, and a brief-quality repair that failed where no gate exists to decide — and every issue carries the `seat` it belongs to, so the panel and the swap offer name the seat that is actually stuck. Every one of them also fires the `on_halt` hook.
 
 **Actions.** Available actions are filtered per issue:
 
 | Action | Current behavior |
 |---|---|
 | `retry-same-worker` | Resets only the current task and reruns it in a fresh worker context. |
-| `continue` | Allowed only for budget pause below max budget or safe unrelated user edits; never for `budget-exceeded`. |
+| `continue` | Allowed only for safe unrelated user edits. |
 | `skip-current-task` | Marks the task skipped, records evidence, and leaves dependents for normal blocked-dependency recovery. |
 | `pause-run` | Leaves the active session resumable with the issue intact. |
-| `abort-workflow` | Ends through the normal intentional shutdown path without staging or committing. |
+| `end-run` | Closes the run: `state.json` records `closed`, the run lists as `ended`, and nothing reverts. |
+| `revise` | Queues the operator's correction for the next planner turn, then clears the halt. |
+| `revise-spec` | Rewinds to `specifying` with the operator's note, then clears the halt. |
 | `route-bigger-worker` | Resets the current task and reruns it with the larger implementer profile named by the recovery issue. |
-| `switch-seat` | Offered for `runner-usage-limit` only: moves the quota-blocked seat to another ready detected tool and re-prepares the same session on it. |
+| `switch-seat` | Offered for the halts the seat itself caused — `runner-usage-limit`, `runner-unauthenticated`, `implementer-recipe-invalid`, `runner-timeout-repeated`, `planner-call-failed` — on the plan seat as readily as the build seat: moves the blocked seat to another ready detected tool and re-prepares the same session on it. |
 | `planner-split-rebase` | Legacy/manual only; new recovery prompts do not offer it, and old states block with `planner-proposal-required`. |
 
-**Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero; both headless renderings print the recommended action and the exact `splitbrief continue <session> --action …` line to stderr, and `continue --action <skip|retry|switch-seat:<tool>[:<model>]>` applies it without a TUI.
+**Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero; both headless renderings print the recommended action and the exact `splitbrief continue <session> --action …` line to stderr, and `continue --action <skip|retry|switch-seat:<tool>[:<model>]|end-run>` applies it without a TUI.
 
 ### Tiered approval gates (auto / sticky / confirm)
 
@@ -401,7 +365,7 @@ Or in the TUI: `/approval list` / `/approval clear`. Headless mode fails fast at
 
 **What it does.** Before final review, the orchestrator computes a deterministic drift report comparing the Task Brief against the actual git diff and the evidence ledger. Findings include out-of-scope file edits, missing target files, orphan diffs, out-of-bounds substring matches, missing observed evidence, and failed tasks that nevertheless left changes.
 
-**How to use.** Always runs. Persisted as `.splitbrief/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `score`, `errorCount`, `warningCount`. Visible on the summary screen as a `Scope` row — the screen names the concept once, matching the hero's `Scope check:` line.
+**How to use.** Always runs. Persisted as `.splitbrief/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `score`, `errorCount`, `warningCount`. Visible in a closed run’s `Run` block's `Scope` row — `score 1.00`, `score 0.60 · 1 error · 1 warning`, or `not checked`. That row is the only place the screen names the concept.
 
 **When to use.** No setup needed; the report is the deterministic input to the planner reviewer's qualitative judgment.
 
@@ -422,7 +386,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 **What it does.** Per-task validation, retry, escalation, and final-review log. Captures expected evidence (from `task.evidence` ++ `task.tests`) alongside observed evidence strings the orchestrator emits (`typecheck passed`, `lint passed`, `test passed`, `diff written for <n> files`, `task reached done`, `task reached escalated`, `final review written`, `skipped: <reason>`). A stage that did not run is recorded as `test skipped (<reason>)` with `skipped: true` on the entry — never as passed — and a skipped test stage counts as missing evidence in the drift report. Every entry carries `briefHash` so post-hoc audits can detect brief mutations.
 
-**How to use.** Always runs. Persisted at `.splitbrief/sessions/<id>/evidence.json` (mode 0o600). Summary screen shows `Evidence: N/M validated`.
+**How to use.** Always runs. Persisted at `.splitbrief/sessions/<id>/evidence.json` (mode 0o600). A closed run reads it twice over: it seeds the `Briefs` section with every planned brief, and its validated count closes the Run block's `Review` row (`3/3 briefs validated`).
 
 ---
 
@@ -430,7 +394,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 26 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
+**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 25 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
 
 **Navigate**
 
@@ -463,7 +427,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 | `/approval [list\|clear]` | List or clear sticky approval grants |
 | `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
 | `/resume` | Continue a paused or stopped run |
-| `/end` | Stop the run and mark it cancelled |
+| `/end` | Close the run, keeping every change on disk |
 
 **View**
 
@@ -472,7 +436,6 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 | `/scroll <top\|bottom\|page-up\|page-down>` | Scroll the conversation |
 | `/activity` | Expand or collapse the latest activity batch |
 | `/diff` | Expand or collapse the latest diff (Ctrl+D) |
-| `/cost` | Show the cost breakdown (Ctrl+G) |
 | `/sidebar` | Show or hide the workflow sidebar |
 | `/tasks` | Show the brief list — opens the sidebar and leaves it open (at or below 120 columns there is no sidebar, so the command answers with the list itself) |
 
@@ -517,7 +480,7 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 **What it does.** One overlay for crew, validation and workflow defaults. Open via `/settings` (Ctrl+,). Writes back to `.splitbrief/config.yaml`. Crew is its first section; there is no separate crew surface.
 
-**The help block.** The bottom of the panel explains the highlighted row and nothing else. A labelled rule heads it — `Mode ────` to the right edge, the same rule the cost breakdown uses for its sections — carrying the row's own label, or the seat word on a crew row. The block is bottom-anchored and five rows tall: the rule never touches the last row of the list, and under it sit at most three rows of help, so the legend stays put and nothing below it ever shifts as the cursor moves. A bounded number keeps its range on the line that names it (`Max retry attempts per task · 0–10`); an enum adds a row listing its options; `Mode` gets the whole cost table the `/mode ` completion rows show, one line per mode, with the mode the config is on painted bright and marked `current` on the right edge.
+**The help block.** The bottom of the panel explains the highlighted row and nothing else. A labelled rule heads it — `Mode ────` to the right edge, the same rule a closed run's ledger uses for its sections — carrying the row's own label, or the seat word on a crew row. The block is bottom-anchored and five rows tall: the rule never touches the last row of the list, and under it sit at most three rows of help, so the legend stays put and nothing below it ever shifts as the cursor moves. A bounded number keeps its range on the line that names it (`Max retry attempts per task · 0–10`); an enum adds a row listing its options; `Mode` gets the whole shape table the `/mode ` completion rows show, one line per mode, with the mode the config is on painted bright and marked `current` on the right edge.
 
 **Reading the list.** Values are as bright as the labels they belong to; only the section headers, the help and the key legend stay dim. The blank row between sections is spent only where the list has rows to spare: below an 18-row list budget the sections close up, which is what keeps a settings row on screen at 80x24 rather than a gap. An unset `Test command` reads `auto`, the stack's own runner, not a dash. The legend names the one key the highlighted row answers to — `space cycle` on an enum, `space toggle` on a boolean, `⏎ edit` on a string or number, `⏎ change seat` on a crew row.
 
@@ -562,11 +525,34 @@ The fraction counts briefs that **passed their checks** — a started brief is n
 - **Steer** — while the run is parked (`Stop now`, or an interrupted call), the hint reads `type instructions, enter to send and resume`; text you send steers the resumed run. A blank Enter never resumes.
 - **Interrupt** — `ctrl+c` stops the run at once, `esc` on an empty composer opens the stop sheet. Neither is reachable by typing.
 
-### Summary screen
+### Run screen at rest
 
-**What it does.** Post-run report showing the three seats — `PLAN`, `BUILD`, `REVIEW` — plus brief quality, the scope check, evidence rollup, per-phase timing and per-task cost, with the `REVIEW` seat reading the reviewer's identity or, with no `reviewer:` block, the planner-inheritance sentence.
+**What it does.** The workflow screen is the run's home whether anything is running on it or not. Opening a run from `/sessions`, from the home list or from the palette replays its `session.jsonl` into the workflow stores and shows the run exactly where it stopped: the same header rail, the same transcript, the same footer. Nothing navigates to a second screen, and continuing the run flips it back to live in place. There is no summary screen.
 
-**Format (header).** The three seat identities chained by `→`, then the mode and the total time, with the review segment present only when a `reviewer:` block names its own seat; below 120 columns the same three seats render as labelled `PLAN` / `BUILD` / `REVIEW` rows instead, except at 56 columns and 28 rows or smaller where they collapse to one compact line.
+**Format (header).** The rail and the collapsed seat line, marked for a run that is not moving: stages the run cleared paint `●` in their role hue, stages it never reached `○` dim, and the stage it stopped on wears the mark its stop earned — `×` in warning tone for a run that is paused, waiting at a gate, or interrupted (a stop you can answer), `✗` in error tone for a run that halted on a recovery or died on an error. A closed, complete run shows five `●`. A closed run's seat line names the crew that actually ran it, read from its own record; an open run's names the crew it would continue on.
+
+**Format (composer and byline).** An open run takes a correction: the placeholder reads `Type a correction, or ⏎ to continue…`, a bare `⏎` continues it, and typed text rides into the next step's own prompt as a steer. The byline says where it stopped and the one key that moves it:
+
+- `Paused at T003 · type a correction or ⏎ to continue`
+- `Waiting at the spec gate · ⏎ to reopen it`
+- `Halted · Usage limit on ollama · ⏎ to decide`
+- `Stopped by an error · Planning failed. · ⏎ to retry the step`
+- `Interrupted · ⏎ to continue from the tasks step`
+
+A run nothing can pick up says why before where — `Saved state unreadable · start it again from home` — and takes `/commands` only. A run another process is driving reads `Running in another process`.
+
+**Format (closed run).** A run that was ended or completed takes `/commands` only (`/ for a command · ⏎ for home…`; a keystroke that would start the line with anything but `/` is refused as it is typed, and `⏎` on an empty line goes home) and its ledger is appended to the tail of its own transcript — one scroller, below the last event the run wrote — as a `Closed ─` rule, one outcome sentence, and three labelled sections in a fixed order:
+
+- One outcome sentence led by its glyph: `✓ Ready · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed`, `⚠ Needs attention · …`, or `× Ended · Build 2/5 · stopped in T003 · partial changes kept`. The fraction counts briefs that passed — never one that merely started or escalated. Whole ` · ` tokens shed from the right when the line overruns; nothing is cut mid-token.
+- `Briefs` — one row per planned brief in plan order, in the transcript's grammar: `✓ T001 Add validator module  src/validate.ts · local · 84.2s`, `▲` escalated, `✗` failed, `–` skipped, `×` the brief the run stopped inside (`· stopped · 2 partial files`), `○` a brief that never started.
+- `Files` — the changed set, sorted, project-relative and middle-cut, with ` · partial` on a file the stopped brief left half-written.
+- `Run` — labelled facts, one home each: `Crew` (only when the header named fewer than three seats), `Review`, `Packet`, `Scope`, `Briefs` (brief quality), `Cost`, `Tokens`, `Phases`, `Session`. A fact with no value carries one absence word — `not run`, `not checked`, `not estimated` — never `—`, `n/a` or `$0.00`.
+
+A closed run whose record was never written says so in one line rather than painting an empty ledger: `× Ended · no run record was written`.
+
+**Format (closed byline).** `Keep it with /run accept, or revert it with /run reject confirm` when the run is ready, `Read the 2 blocking findings in the packet, or revert it with /run reject confirm` when it needs attention, `esc home` on a run that was ended. `/run accept` and `/run reject confirm` re-read the record, so the byline flips to `Accepted · nothing left to do` or `Rejected · its files were restored` as soon as the command lands.
+
+**How to use.** `⏎` on a session row opens the run. `esc` leaves a run at rest for home — there is nothing to stop, so no stop sheet opens. When the transcript outgrows its height it scrolls a line at a time with `shift+↑↓` (plain arrows stay with the composer history) or a page with `pgup`/`pgdn`, the legend gains `shift+↑↓ scroll`, and the byline never scrolls away.
 
 ---
 
@@ -624,7 +610,6 @@ splitbrief start --json --allow-hooks --mode quick "add lint rule for empty catc
 
 **Behavior differences.**
 
-- Budget pause threshold (default 85%) exits non-zero with a machine-readable error instead of blocking.
 - Sticky / confirm-tier approvals fail fast.
 - All other behavior matches an interactive run.
 
@@ -644,12 +629,15 @@ splitbrief status
 splitbrief doctor [--json]
 ```
 
-### `splitbrief resume`
+### `splitbrief resume` / `splitbrief continue`
 
-**What it does.** Re-enters the active workflow at the saved phase. Refuses if `.splitbrief/active` or `state.json` is missing, version-mismatched, or in a non-resumable phase (`researching`, `specifying`, `planning` without `awaitingContinue`).
+**What it does.** Picks a run up where it stopped. A run is a durable record: it stays continuable until somebody closes it, so the only refusals are a missing or unreadable `state.json`, no active pointer, and a **closed** run (ended with `/end`, or `complete` with a passing review). It does not replay what is already on disk — the step loop starts at the first artifact the run has not written.
 
 ```bash
-splitbrief resume
+splitbrief resume                                   # the most recent run
+splitbrief continue 2026-05-01-add-auth             # a named run
+splitbrief continue --action retry --json           # answer its halt, headlessly
+splitbrief continue --action end-run                # close it instead
 ```
 
 For backends without native session resume, the planner context is rebuilt from `session.jsonl` (`transcript/rebuild.ts`).

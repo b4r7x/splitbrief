@@ -49,7 +49,7 @@ describe('HelpOverlay', () => {
         commands={[
           command('/skills', ['home']),
           command('/redo-task', ['workflow']),
-          command('/home', ['workflow', 'summary']),
+          command('/home', ['workflow']),
         ]}
       />,
     );

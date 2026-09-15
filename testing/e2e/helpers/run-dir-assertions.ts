@@ -15,7 +15,7 @@ import {
   SUMMARY_FILE,
   TASKS_FILE,
 } from '../../../src/core/paths.js';
-import { phaseCostRole } from '../../../src/core/phases.js';
+import { phaseTokenRole } from '../../../src/core/phases.js';
 import { MODES } from '../../../src/core/pipeline-spec/modes.js';
 import { DriftReportSchema } from '../../../src/core/schemas/drift.js';
 import { EvidenceLedgerSchema } from '../../../src/core/schemas/evidence.js';
@@ -166,11 +166,11 @@ function countRunnerCalls(events: readonly SessionLogEventEntry[]): RunnerCallCo
     const role = eventField(entry.data, 'role');
     // A planner-seat call outside the planning phases is an escalation or a
     // summary, and carries its own role; the mode's planner-call budget counts
-    // only the phases `phaseCostRole` attributes to the planner.
+    // only the phases `phaseTokenRole` attributes to the planner.
     if (
       role === 'planner' &&
       entry.phase !== undefined &&
-      phaseCostRole(entry.phase) === 'planner'
+      phaseTokenRole(entry.phase) === 'planner'
     ) {
       planner += 1;
     }

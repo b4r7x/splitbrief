@@ -104,12 +104,10 @@ export const ConfigSchema = z.object({
     mode: WorkflowModeSchema.optional(),
     briefReview: z.enum(['simple']).optional(),
     taskReview: TaskReviewModeSchema.optional(),
-    maxBudget: z.number().positive().optional(),
-    budgetPauseThreshold: z.number().min(0).max(1).optional(),
     driftChainThreshold: z.number().min(0).max(1).optional(),
-    costGate: z.boolean().optional(),
     compactionThreshold: z.number().int().min(10).optional(),
     compactionFormat: CompactionFormatSchema.default('auto'),
+    showSpend: z.boolean().optional(),
   }),
   sessions: z
     .object({

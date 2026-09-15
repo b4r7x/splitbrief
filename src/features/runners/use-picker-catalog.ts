@@ -10,7 +10,6 @@ import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { getRunnerCommand } from '../../core/config/accessors/runner-config.js';
 import {
   AUTOMATIC_MODEL,
-  isAutoCheapestModel,
   isAutomaticModel,
   normalizeConfiguredModel,
 } from '../../core/providers/automatic-model.js';
@@ -127,14 +126,10 @@ function rowIndexForModel(rows: readonly RightRow[], persistedModel: string | un
   return 0;
 }
 
-/** The models the tool's own listing produced: an Auto row is an affordance, so is price routing, and a custom row is the user's. */
+/** The models the tool's own listing produced: an Auto row is an affordance and a custom row is the user's. */
 function countModelRows(rows: readonly RightRow[]): number {
   return rows.filter(
-    (row) =>
-      row.kind === 'model' &&
-      row.provenance !== 'Custom' &&
-      !isAutomaticModel(row.model.id) &&
-      !isAutoCheapestModel(row.model.id),
+    (row) => row.kind === 'model' && row.provenance !== 'Custom' && !isAutomaticModel(row.model.id),
   ).length;
 }
 

@@ -28,7 +28,7 @@ src/
 │   ├── keys.ts                              # app-wide keyboard dispatch (useAppKeys)
 │   ├── command-context.ts                   # runtime-command wiring (useRuntimeCommands)
 │   ├── refresh-skills.ts                    # helper: re-run skill discovery when the skills overlay opens
-│   ├── screens/                             # FLAT page entries: home, workflow, summary, setup
+│   ├── screens/                             # FLAT page entries: home, workflow, setup
 │   └── overlays/                            # FLAT pages: help, palette, skills, sessions, settings, runners, editor, stop
 ├── cli/                                     # CLI subcommand handlers
 ├── core/                                    # domain logic (config, types, state, formatting)
@@ -42,7 +42,6 @@ src/
     ├── workflow/
     ├── home/
     ├── palette/
-    ├── summary/
     ├── settings/                            # retains items.ts + presentation.ts + hooks/
     ├── crew/                                # seat rows + renderers (no page of its own)
     ├── runners/
@@ -114,6 +113,7 @@ src/stores/ui/
 src/engine/events/
 ├── bus.ts             # createEventBus() — sync pub/sub with per-sink crash isolation
 ├── schema.ts          # EngineEventSchema type-dispatched schema + parseEngineEvent
+├── replay.ts          # readRunEvents(ref) — the inverse of the JSONL writer, for reading a run back
 ├── types.ts           # EngineEvent alias (z.infer of EngineEventSchema) + EventSink + EventBus ports
 └── sinks/
     ├── jsonl.ts       # appends every event to sessions/<id>/session.jsonl
@@ -121,7 +121,7 @@ src/engine/events/
     ├── stdout-json.ts # NDJSON emitter for `splitbrief start --json`
     └── stdout-text.ts # plain-line emitter for `splitbrief start --plain`
 ```
-The interactive TUI sink lives at `src/features/workflow/tui-sink.ts` because it forwards into workflow stores. Subscription happens in one place: `attachRunSinks()` in `src/engine/orchestrator/run/init-sinks.ts`.
+The interactive TUI sink lives at `src/features/workflow/tui-sink.ts` because it forwards into workflow stores. Subscription happens in one place: `attachRunSinks()` in `src/engine/orchestrator/run/init-sinks.ts`. Nothing under `src/features/` ever constructs a bus: a recovery answered between two turns gets its bus from `src/engine/orchestrator/recovery/bus.ts`, which subscribes the host's sink and the session log the same way a running turn's would be ([INVARIANTS.md](./INVARIANTS.md) gate 52).
 
 ### `src/engine/hooks/` — workflow hook runtime
 
@@ -154,8 +154,8 @@ src/engine/codebase/
 
 ```
 src/core/pipeline-spec/      # the typed pipeline contract: ladder.ts, retries.ts, gates.ts, halts.ts,
-                             #   modes.ts, review.ts, brief.ts, scope.ts, baseline.ts, timeouts.ts,
-                             #   divergences.ts — pure data, no I/O
+                             #   modes.ts, steps.ts, mode-shape.ts, review.ts, brief.ts, scope.ts,
+                             #   baseline.ts, timeouts.ts, divergences.ts — pure data, no I/O
 src/core/scope/              # declared-set.ts — the one path ↔ Scope matcher every consumer calls
 src/core/validation/stacks/  # typescript · javascript · python · go · rust rows + registry.ts
 src/core/recovery/           # headline.ts, resume-command.ts, user-edit-actions.ts
@@ -208,6 +208,9 @@ src/core/sessions/
 ├── ownership-marker.ts # prepare-time ownership proof machinery
 ├── log-reader.ts      # JSONL session log reader
 ├── log-writer.ts      # appendEngineEvent and the on-disk log append path
+├── run-status.ts      # RunStatus, StopReason, deriveRunStatus, resumeStep — how a run stands
+├── run-record.ts      # RunRecord + loadRunRecord — everything a screen or guard needs about one run
+├── run-record-io.ts   # defaultRunRecordDeps / readRunRecord — the record's composition root
 ├── guards.ts          # clearStaleSession and related session-state predicates
 ├── orphans.ts         # collectable non-session directory sweep
 ├── compaction.ts      # session-log compaction
@@ -248,16 +251,22 @@ features/workflow/
 │   ├── workflow-screen/      # screen model split by intent
 │   │   ├── use-model.ts      # public useWorkflowScreen + WorkflowScreenDeps
 │   │   ├── use-inline-edit.ts # inline field context + external-edit CAS
-│   │   ├── use-readiness.ts  # readiness collection + TUI persistence
-│   │   └── resume.ts         # cancelled-session resumability
-│   ├── use-runner.ts
+│   │   └── use-readiness.ts  # readiness collection + TUI persistence
+│   ├── use-run-loop.ts       # runWorkflow + the recovery loop + the process-registry stop watcher
+│   ├── use-run-continue.ts   # how the run is re-entered: the state, the steer, continueRun
 │   └── use-keys.ts
+├── closed/                   # a closed run's ledger: view-model, projections, outcome, byline, copy, rows
+├── run-history.ts            # hydrateRun — replay the log, lay the saved state over it
+├── at-rest.ts                # rail stages and composer contract when nothing is running
+├── spend-text.ts             # the one spend formatter the sidebar, the hint and /copy cost read
 ├── handlers.ts               # pure helper — engine↔UI bridge
 ├── keyboard.ts               # pure helper — keyboard action dispatchers
 ├── input-footer-byline.ts    # pure byline layout — width budget, truncation, accessory ordering
 ├── display/                  # pure display formatters — activity labels, shell prettifier, tones
 └── layout/                   # geometry helpers — rects, chrome rows, snapshots
 ```
+
+There is no `features/summary/` and no `app/screens/summary.tsx`. A run that stops stays on the run screen; `features/workflow/closed/` is its ledger, rendered as a block at the tail of the same transcript.
 
 The page `app/screens/workflow.tsx` holds the composition (layout math + `ScreenShell` JSX) and delegates state to `useWorkflowScreen()` in `hooks/workflow-screen/use-model.ts`.
 
@@ -504,9 +513,8 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 
 | Surface | Responsibility | Entry page | Feature folder |
 |---|---|---|---|
-| `workflow` | Running workflow — conversation flow, event cards, sidebar, input mode, keyboard, runner lifecycle | `app/screens/workflow.tsx` | `features/workflow/` |
+| `workflow` | The run, live and at rest — conversation flow, event cards, sidebar, input mode, keyboard, runner lifecycle, history replay, and a closed run's ledger (`features/workflow/closed/`) | `app/screens/workflow.tsx` | `features/workflow/` |
 | `home` | Landing screen — banner, seat block, recent sessions, input | `app/screens/home.tsx` | `features/home/` |
-| `summary` | Post-workflow report — cost, task table, phase timing | `app/screens/summary.tsx` | `features/summary/` |
 | `setup` | First-run crew setup — ready-made crews above the seat block | `app/screens/setup.tsx` | dissolved (page only) |
 | `palette` | Command palette overlay — source assembly, filtering, MRU ranking | `app/overlays/palette.tsx` | `features/palette/` |
 | `settings` | Settings overlay — the crew section plus the field editor for config | `app/overlays/settings.tsx` | `features/settings/` (items + presentation + hooks) |
@@ -573,9 +581,10 @@ The canonical patterns in this codebase are `src/engine/orchestrator/planning/` 
 ```
 orchestrator/
 ├── planning/
-│   ├── run.ts        # entry — dispatches to the right planning variant
-│   ├── full.ts       # internal — standard/full planning flow
-│   ├── quick.ts      # internal — quick-mode planning flow
+│   ├── run.ts        # entry — resolves the mode and runs the step loop
+│   ├── steps.ts      # internal — one planner call per step, memoized by artifact
+│   ├── speckit.ts    # internal — the clarify, constitution and analyze calls
+│   ├── invalidate.ts # internal — drops what a revised artifact invalidated
 │   ├── rewind.ts     # internal — rewind-to-approval flow
 │   ├── io.ts         # internal — spec/brief read-write helpers
 │   ├── call-loop.ts  # internal — planner call/stream loop

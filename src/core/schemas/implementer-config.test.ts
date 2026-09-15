@@ -88,40 +88,6 @@ describe('ImplementerConfigSchema', () => {
       ).toBe(false);
     }
   });
-  it('keeps the auto:cheapest marker accepted in the top-level implementer seat block', () => {
-    const result = ImplementerConfigSchema.safeParse({
-      kind: 'cli',
-      tool: 'kilo-code',
-      model: 'auto:cheapest',
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects the auto:cheapest marker on a non-cli implementer seat', () => {
-    const seats = [
-      {
-        kind: 'api',
-        provider: 'ollama',
-        service: 'ollama',
-        offering: 'local',
-        apiBase: 'http://localhost:11434/v1',
-        model: 'auto:cheapest',
-      },
-      { kind: 'shell', command: './tools/build', model: 'auto:cheapest' },
-      { kind: 'agent', command: './tools/apply', model: 'auto:cheapest' },
-    ] as const;
-
-    for (const seat of seats) {
-      const result = ImplementerConfigSchema.safeParse(seat);
-      expect(result.success, seat.kind).toBe(false);
-      if (result.success) continue;
-      const issue = result.error.issues.find((candidate) => candidate.path[0] === 'model');
-      expect(issue?.message).toBe(
-        `model "auto:cheapest" routes a cli implementer seat to a priced model; a "${seat.kind}" seat must name a concrete model`,
-      );
-    }
-  });
-
   it('parses an inline agent and exposes the real persisted catalog independently', () => {
     const implementer = ImplementerConfigSchema.parse({
       kind: 'agent',
@@ -161,51 +127,6 @@ describe('ImplementerConfigSchema', () => {
 });
 
 describe('ImplementerProfileConfigSchema', () => {
-  const MARKER_ISSUE_MESSAGE =
-    'model "auto:cheapest" is the implementer seat\'s auto-routing marker; a profile must name a concrete model';
-
-  it('rejects the auto:cheapest marker inside a cli implementer profile', () => {
-    const result = ImplementerProfileConfigSchema.safeParse({
-      kind: 'cli',
-      tool: 'kilo-code',
-      model: 'auto:cheapest',
-    });
-    expect(result.success).toBe(false);
-    if (result.success) return;
-    expect(result.error.issues).toHaveLength(1);
-    expect(result.error.issues[0]?.path).toEqual(['model']);
-    expect(result.error.issues[0]?.message).toBe(MARKER_ISSUE_MESSAGE);
-  });
-
-  it('rejects the auto:cheapest marker inside an api implementer profile', () => {
-    const result = ImplementerProfileConfigSchema.safeParse({
-      kind: 'api',
-      provider: 'ollama',
-      service: 'ollama',
-      offering: 'local',
-      apiBase: 'http://localhost:11434/v1',
-      model: 'auto:cheapest',
-    });
-    expect(result.success).toBe(false);
-    if (result.success) return;
-    expect(result.error.issues).toHaveLength(1);
-    expect(result.error.issues[0]?.path).toEqual(['model']);
-    expect(result.error.issues[0]?.message).toBe(MARKER_ISSUE_MESSAGE);
-  });
-
-  it('rejects the marker in a profile however it is cased or padded', () => {
-    for (const model of [' auto:cheapest ', 'Auto:Cheapest']) {
-      const result = ImplementerProfileConfigSchema.safeParse({
-        kind: 'cli',
-        tool: 'kilo-code',
-        model,
-      });
-      expect(result.success, model).toBe(false);
-      if (result.success) continue;
-      expect(result.error.issues[0]?.message).toBe(MARKER_ISSUE_MESSAGE);
-    }
-  });
-
   it('still accepts profiles naming a concrete model', () => {
     const result = ImplementerProfileConfigSchema.safeParse({
       kind: 'cli',

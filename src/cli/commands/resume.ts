@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
-import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
+import { loadRunRecord } from '../../core/sessions/run-record.js';
+import { defaultRunRecordDeps } from '../../core/sessions/run-record-io.js';
 import { addWorkflowOptions } from '../options.js';
 import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
@@ -46,7 +47,13 @@ export async function resumeCommand(
     );
   }
 
-  const hydrated = loadOwnerWorkflowState({ projectDir, sessionId });
+  // The record reads the run once: its state and what it left on disk. Liveness is
+  // already settled above, so the record is told rather than asked.
+  const record = loadRunRecord(
+    { projectDir, sessionId },
+    { ...defaultRunRecordDeps(), liveness: () => 'not-alive' },
+  );
+  const hydrated = record.hydration;
 
   if (hydrated.kind === 'invalid') {
     throw cliError(`session '${sessionId}' has invalid saved state: ${hydrated.message}`, 1);

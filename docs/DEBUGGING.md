@@ -52,7 +52,7 @@ splitbrief start --json "feature description" 2>/dev/null | jq .
 
 Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/engine/events/sinks/stdout-json.ts`) in place of the TUI. The JSONL sink still writes the on-disk session log.
 
-`--json` requires a feature argument on `start`. `resume` and `continue` rehydrate interrupted sessions from saved state.
+`--json` requires a feature argument on `start`. `resume` and `continue` pick an open run up from its saved state.
 
 ### Debug environment variables
 
@@ -108,7 +108,6 @@ Diagnostic path:
 4. For CLI runners, ensure the tool is on `PATH` (planner CLI probe is in `src/engine/planners/cli.ts`).
 5. `cost_update` events stop arriving → the subprocess is live but not producing tokens; check remote provider status.
 
-`--budget` / `workflow.maxBudget` caps dollar cost but does not enforce wall-clock timeouts directly.
 
 ### "Cannot find module" for a relative import
 
@@ -125,11 +124,11 @@ See [PRINCIPLES.md](./PRINCIPLES.md) — ESM rule.
 
 ### "No active workflow" on `resume`
 
-Cause: `.splitbrief/active` is missing, or the pointed-to session has no `state.json`, or `stateVersion` does not match the current version.
+Cause: `.splitbrief/active` is missing — closing a run releases it — or the pointed-to session has no readable `state.json`, or its `stateVersion` is one `WORKFLOW_STATE_VERSION` cannot load. Name an older run with `splitbrief continue <session-id>`.
 
 Fix:
 - Incompatible `stateVersion`: the state file is ignored with a warning — start a fresh workflow with `splitbrief start`.
-- Unresumable phase (e.g. `complete`): start a fresh workflow with `splitbrief start`.
+- A closed run (ended by the user, or `complete` with a passing review): it is a record, not a workspace — start a fresh workflow with `splitbrief start`. Every other stop is continuable.
 - The `resume` command's exact error messages are in `src/cli/commands/resume.ts`.
 
 ### Tests pass locally but fail in CI (or vice versa)

@@ -87,7 +87,6 @@ function configWithProfiles(): Config {
           apiBase: 'https://api.example.com/v1',
           apiKey: 'test-key',
           model: 'deepseek-chat',
-          costTier: 'cheap',
           contextLength: 128_000,
         },
         'local-small': {
@@ -97,7 +96,6 @@ function configWithProfiles(): Config {
           offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen-small',
-          costTier: 'local',
           contextLength: 8_192,
         },
       },

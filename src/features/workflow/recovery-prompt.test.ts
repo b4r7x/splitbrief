@@ -55,7 +55,7 @@ const baseIssue: RecoveryIssue = {
     'planner-split-rebase',
     'skip-current-task',
     'pause-run',
-    'abort-workflow',
+    'end-run',
   ],
   recommendedAction: 'route-bigger-worker',
   createdAt: '2026-04-29T12:00:00.000Z',
@@ -76,7 +76,7 @@ describe('recovery prompt', () => {
       details: ['Codex reported: 5-hour limit reached'],
       facts: {},
       switchSeat: { seat: 'build', candidates },
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'abort-workflow'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
       recommendedAction: 'switch-seat',
     };
   }
@@ -87,7 +87,7 @@ describe('recovery prompt', () => {
     const issue: RecoveryIssue = {
       ...usageLimitIssue([{ tool: 'opencode' }]),
       message:
-        'Ollama hit its usage limit. The limit resets at Jan 1, 2026, 5:00 PM; wait for it, switch the seat to another tool, or abort.',
+        'Ollama hit its usage limit. The limit resets at Jan 1, 2026, 5:00 PM; wait for it, switch the seat to another tool, or end the run.',
       facts: { tool: 'Ollama' },
       resetAt: resetAt.toISOString(),
     };
@@ -107,7 +107,7 @@ describe('recovery prompt', () => {
     expect(visible).toContain('[w1]  switch BUILD to Claude Code CLI · sonnet');
     expect(visible).toContain('[w2]  switch BUILD to OpenCode CLI');
     expect(visible).toContain('[r]  retry same worker');
-    expect(visible).toContain('[a]  abort');
+    expect(visible).toContain('[a]  end run');
     expect(visible).not.toContain('opencode,');
   });
 
@@ -166,7 +166,7 @@ describe('recovery prompt', () => {
     expect(visible).toContain('[b]  route to bigger worker · cheap-cloud');
     expect(visible).toContain('[s]  skip task');
     expect(visible).toContain('[space]  pause');
-    expect(visible).toContain('[a]  abort');
+    expect(visible).toContain('[a]  end run');
     expect(visible).not.toContain('[c]  continue');
     expect(visible).not.toContain('ask planner');
   });
@@ -206,7 +206,7 @@ describe('recovery prompt', () => {
     expect(parseRecoveryActionAnswer('route bigger', baseIssue)).toBe('route-bigger-worker');
     expect(parseRecoveryActionAnswer('skip', baseIssue)).toBe('skip-current-task');
     expect(parseRecoveryActionAnswer(' ', baseIssue)).toBe('pause-run');
-    expect(parseRecoveryActionAnswer('abort', baseIssue)).toBe('abort-workflow');
+    expect(parseRecoveryActionAnswer('abort', baseIssue)).toBe('end-run');
   });
 
   it('marks the recommended action and applies it only for empty Enter', async () => {
@@ -227,7 +227,7 @@ describe('recovery prompt', () => {
     const issue: RecoveryIssue = {
       ...baseIssue,
       id: 'rec_unpromptable',
-      availableActions: ['planner-split-rebase', 'pause-run', 'abort-workflow'],
+      availableActions: ['planner-split-rebase', 'pause-run', 'end-run'],
       recommendedAction: 'planner-split-rebase',
     };
 
@@ -239,49 +239,46 @@ describe('recovery prompt', () => {
 
   it('parses continue only when the issue allows it', () => {
     const issue: RecoveryIssue = {
-      id: 'rec_budget_pause',
-      reason: 'budget-paused',
+      id: 'rec_conflict',
+      reason: 'user-edit-conflict',
       phase: 'implementing',
       status: 'awaiting-user',
-      message: 'Budget pause at 87%',
-      files: [],
+      message: 'You edited a file this brief is changing',
+      files: ['src/validate.ts'],
       affectedTaskIds: [],
-      details: ['Spent $4.36 of $5.00'],
-      facts: { currentCost: 4.36, maxBudget: 5, belowMaxBudget: true },
-      availableActions: ['continue', 'pause-run', 'abort-workflow'],
+      details: ['Conflict kind: unrelated-file', 'Safe to continue: yes'],
+      availableActions: ['continue', 'pause-run', 'end-run'],
       recommendedAction: 'continue',
       createdAt: '2026-04-29T12:00:00.000Z',
     };
 
     expect(parseRecoveryActionAnswer('c', issue)).toBe('continue');
+    expect(
+      parseRecoveryActionAnswer('c', { ...issue, availableActions: ['pause-run'] }),
+    ).toBeNull();
   });
 
-  it('hides ordinary continue for budget exceeded even if malformed state advertises it', async () => {
+  it('offers only the actions the issue carries, with its details under the headline', async () => {
     const issue: RecoveryIssue = {
-      id: 'rec_budget',
-      reason: 'budget-exceeded',
+      id: 'rec_overflow',
+      reason: 'context-overflow',
       phase: 'implementing',
       status: 'awaiting-user',
-      message: 'Budget exceeded at 105%',
+      message: 'Context overflowed on T004',
       files: [],
       affectedTaskIds: [],
-      details: [
-        'Spent $5.25 of $5.00',
-        'Blocked step: before T004',
-        'Continuing requires a separate raise-budget flow.',
-      ],
-      facts: { currentCost: 5.25, maxBudget: 5 },
-      availableActions: ['continue', 'pause-run', 'abort-workflow'],
-      recommendedAction: 'continue',
+      details: ['Blocked step: before T004'],
+      availableActions: ['pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
       createdAt: '2026-04-29T12:00:00.000Z',
     };
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('recovery needed · Budget exceeded at 105%');
-    expect(visible).toContain('spent $5.25 of $5.00');
+    expect(visible).toContain('recovery needed · Context overflowed on T004');
+    expect(visible).toContain('Blocked step: before T004');
     expect(visible).toContain('[space]  pause');
-    expect(visible).toContain('[a]  abort');
+    expect(visible).toContain('[a]  end run');
     expect(visible).not.toContain('[c]  continue');
     expect(parseRecoveryActionAnswer('c', issue)).toBeNull();
   });
@@ -299,12 +296,7 @@ describe('recovery prompt', () => {
       affectedTaskIds: [taskId('T004'), taskId('T006')],
       details: ['Conflict kind: current-task-conflict', 'Safe to continue: no'],
       facts: { conflictKind: 'current-task-conflict', safeToContinue: false },
-      availableActions: [
-        'planner-split-rebase',
-        'skip-current-task',
-        'pause-run',
-        'abort-workflow',
-      ],
+      availableActions: ['planner-split-rebase', 'skip-current-task', 'pause-run', 'end-run'],
       recommendedAction: 'planner-split-rebase',
       createdAt: '2026-04-29T12:00:00.000Z',
     };
@@ -314,6 +306,33 @@ describe('recovery prompt', () => {
     expect(visible).toContain('[space]  pause');
     expect(visible).not.toContain('ask planner');
     expect(parseRecoveryActionAnswer('p', issue)).toBeNull();
+  });
+
+  it('spells the run-level answers in the words the gate uses', () => {
+    expect(formatRecoveryActionLines(['revise', 'end-run'], {}, 'revise')).toEqual([
+      `${recommendedRowPrefix()}[v]  revise · send the planner a correction`,
+      '[a]  end run · closes this run, changes kept',
+    ]);
+    expect(formatRecoveryActionLines(['revise-spec', 'end-run'], {}, 'revise-spec')[0]).toContain(
+      'revise the spec',
+    );
+  });
+
+  it.each([
+    ['v', 'revise'],
+    ['revise', 'revise'],
+    ['a', 'end-run'],
+    ['end', 'end-run'],
+    ['abort', 'end-run'],
+  ] as const)('parses %s as %s when the halt offers it', (answer, action) => {
+    const issue: RecoveryIssue = {
+      ...baseIssue,
+      reason: 'brief-review-no-progress',
+      availableActions: ['revise', 'end-run'],
+      recommendedAction: 'revise',
+    };
+
+    expect(parseRecoveryActionAnswer(answer, issue)).toBe(action);
   });
 
   it('uses ascii recommended-row and pass-headline prefixes when the glyph tier is ascii', () => {

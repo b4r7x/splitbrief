@@ -10,11 +10,8 @@ import { eventsStore } from '../../../stores/workflow/events.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { skillsStore } from '../../../stores/project/skills.js';
-import {
-  getRailStages,
-  RAIL_MARKER_SLOT_WIDTH,
-  railConnectorString,
-} from '../layout/chrome-rows.js';
+import { getRailStages } from '../../../core/rail-stages.js';
+import { RAIL_MARKER_SLOT_WIDTH, railConnectorString } from '../layout/chrome-rows.js';
 import {
   buildRailFraction,
   getRailStageZones,
@@ -27,6 +24,7 @@ const STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Review'];
 const ACTIVE = glyph('stageActive');
 const DONE = glyph('stageDone');
 const PENDING = glyph('stagePending');
+const CANCELLED = glyph('statusCancelled');
 
 function countActiveMarkers(frame: string): number {
   return stripAnsiStyles(frame).split(ACTIVE).length - 1;
@@ -263,7 +261,7 @@ describe('Rail — Form C (narrow floor)', () => {
 
   it('builds the cancelled stage line without a task fraction', () => {
     expect(railFormCText(getRailStages('implementing', { cancelled: true }), '3/7')).toBe(
-      `${PENDING} Build${RAIL_FORM_C_CANCELLED_SUFFIX}`,
+      `${CANCELLED} Build${RAIL_FORM_C_CANCELLED_SUFFIX}`,
     );
   });
 

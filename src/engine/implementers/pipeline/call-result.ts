@@ -90,7 +90,7 @@ function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
     case 'platform-limitation':
     case 'implementer-effect-invalid':
     case 'implementer-recipe-invalid':
-    case 'implementer-timeout-repeated':
+    case 'runner-timeout-repeated':
     case 'missing-model':
       return code;
     default:

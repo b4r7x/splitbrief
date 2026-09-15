@@ -11,6 +11,8 @@ import {
   makeImplementer,
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
@@ -55,25 +57,30 @@ describe('run with no reviewer configured', () => {
     const events: EngineEvent[] = [];
 
     const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Spec\n\nCreate a validated module.',
-        plan: '# Plan\n\nCreate the module and pass validation.',
-        tasks: [
-          makeTask({
-            id: 'T001',
-            action: 'create',
-            file: targetFile,
-            title: 'Create validated module',
-            description: 'Create a module that satisfies the project validation script.',
-            implementationSteps: ['Create src/loop.ts with the marker export.'],
-            tests: ['node validate.mjs passes'],
-            scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
-            evidence: ['validation passes before workflow_complete'],
-            typeDefs: 'export const loop: string',
-          }),
-        ],
-        usage: PLAN_USAGE,
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          usage: PLAN_USAGE,
+          ...(call === 'tasks'
+            ? {
+                tasks: [
+                  makeTask({
+                    id: 'T001',
+                    action: 'create',
+                    file: targetFile,
+                    title: 'Create validated module',
+                    description: 'Create a module that satisfies the project validation script.',
+                    implementationSteps: ['Create src/loop.ts with the marker export.'],
+                    tests: ['node validate.mjs passes'],
+                    scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
+                    evidence: ['validation passes before workflow_complete'],
+                    typeDefs: 'export const loop: string',
+                  }),
+                ],
+              }
+            : {}),
+        }),
+      ),
       review: vi
         .fn()
         .mockImplementation(async (_prompt: string, _dir: string, cb: PlannerOutputCallbacks) => {
@@ -160,15 +167,23 @@ describe('run with no reviewer configured', () => {
       'user_message',
       'workflow_config',
       'mode_resolved',
+      // Four planner calls, each its own durable step: it starts, it books its tokens, and its
+      // document is on disk before the next one begins.
+      'planner_status',
       'cost_update',
+      'artifact_written',
       'planner_status',
+      'cost_update',
+      'artifact_written',
       'planner_status',
+      'cost_update',
+      'artifact_written',
       'planner_status',
+      'cost_update',
+      'artifact_written',
       'planner_status',
       'brief_quality_passed',
       'artifact_written',
-      'cost_prediction',
-      'warning',
       'snapshot_created',
       'tasks_planned',
       'validation_baseline',
@@ -214,11 +229,13 @@ describe('run with no reviewer configured', () => {
     expect(summary.tokenUsage.reviewerOutput).toBe(REVIEW_USAGE.outputTokens);
 
     // A run without a reviewer bills the review tokens on the strong side's single cost line.
+    // Each planner call books its own usage, so the planning half is one charge per call.
+    const plannerCalls = vi.mocked(planner.runPhase).mock.calls.length;
     const providerCosts = summary.costBreakdown?.providerCosts ?? {};
     expect(Object.keys(providerCosts)).toEqual([PLANNER_PROVIDER]);
     expect(providerCosts[PLANNER_PROVIDER]).toMatchObject({
-      inputTokens: PLAN_USAGE.inputTokens + REVIEW_USAGE.inputTokens,
-      outputTokens: PLAN_USAGE.outputTokens + REVIEW_USAGE.outputTokens,
+      inputTokens: PLAN_USAGE.inputTokens * plannerCalls + REVIEW_USAGE.inputTokens,
+      outputTokens: PLAN_USAGE.outputTokens * plannerCalls + REVIEW_USAGE.outputTokens,
     });
     expect(summary.costBreakdown?.actualReviewerCost).toBeUndefined();
 

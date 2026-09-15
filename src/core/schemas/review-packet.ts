@@ -323,22 +323,15 @@ const ReviewPacketEscalationsSchema = z.object({
 const ReviewPacketCostSchema = z.object({
   tokenUsage: TokenUsageSchema,
   costBreakdown: CostBreakdownSchema.pick({
-    hypotheticalCost: true,
     actualPlannerCost: true,
     actualImplementerCost: true,
     actualReviewerCost: true,
     totalActualCost: true,
-    savingsAmount: true,
-    savingsPercentage: true,
-    localCompletionRate: true,
     hasPricedUsage: true,
     hasUnpricedUsage: true,
-    hasSavingsEstimate: true,
     isActualReviewerCostKnown: true,
     isTotalActualCostKnown: true,
-    isAllPlannerBaselineKnown: true,
   }).nullable(),
-  estimatedCostSavings: z.string().nullable(),
   taskRouting: z.array(TaskTokenUsageSchema),
   routingWarnings: z.array(ReviewPacketEventSchema),
 });

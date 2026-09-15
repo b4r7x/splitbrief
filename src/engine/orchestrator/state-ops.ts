@@ -1,12 +1,11 @@
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, statSync, type BigIntStats } from 'node:fs';
 import { join } from 'node:path';
 import type { MachineAction } from '../../core/state/types.js';
 import { transition } from '../../core/state/machine.js';
 import { loadState } from '../../core/state/persistence.js';
-import { serializedState } from '../../core/state/state-file.js';
+import { revisionFromBytes, serializedState } from '../../core/state/state-file.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
+import { WorkflowStateSchema, WORKFLOW_STATE_VERSION } from '../../core/schemas/workflow.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { confinedAtomicWriteFileSync, type ConfigRevision } from '../../lib/confined-fs-atomic.js';
@@ -14,6 +13,7 @@ import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import { STATE_FILE, sessionDir } from '../../core/paths.js';
 import { assertSessionDirConfined } from '../../core/sessions/confinement.js';
 import { error, type AppError } from '../../utils/error.js';
+import { warnError } from '../../lib/warn.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { addUsage, type UsageCategory } from './tokens.js';
 import { publishCostUpdate, publishRecoveryPrompted } from './events.js';
@@ -96,22 +96,6 @@ export function workflowStatePath(ref: SessionRef): string {
   return join(realpathSync(sessionDir(ref.projectDir, ref.sessionId)), STATE_FILE);
 }
 
-function digestBytes(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex');
-}
-
-function revisionFromHead(bytes: Buffer, stat: BigIntStats): ConfigRevision {
-  return {
-    rawSha256: digestBytes(bytes),
-    fileIdentity: {
-      dev: stat.dev,
-      ino: stat.ino,
-      size: stat.size,
-      mtimeNs: stat.mtimeNs,
-    },
-  };
-}
-
 export function revisionsMatch(left: ConfigRevision, right: ConfigRevision): boolean {
   return (
     left.rawSha256 === right.rawSha256 &&
@@ -154,11 +138,8 @@ function readStateHead(ref: SessionRef): StateHead | null {
     throw stateOpsError.invalidHead('Workflow state failed schema validation.');
   }
 
-  return {
-    state: parsed.data,
-    revision: revisionFromHead(bytes, stat),
-    digest: digestBytes(bytes),
-  };
+  const revision = revisionFromBytes(bytes, stat);
+  return { state: parsed.data, revision, digest: revision.rawSha256 };
 }
 
 export type WorkflowStateHead = StateHead;
@@ -367,7 +348,7 @@ export function commitWorkflowState(input: WorkflowStateCommitInput): WorkflowSt
       ? WorkflowStateSchema.parse(input.next)
       : WorkflowStateSchema.parse({
           ...input.next,
-          stateVersion: 4,
+          stateVersion: WORKFLOW_STATE_VERSION,
           stateRevision: workflowStateRevision(input.expected) + 1,
         });
   const result = confinedAtomicWriteFileSync(
@@ -473,6 +454,27 @@ export function transitionAndSave(
       return transition(base, action, { maxRetries: options?.maxRetries });
     },
   });
+}
+
+/**
+ * Records why a run stopped, through the same CAS boundary as every other head
+ * write. A conflict means a later writer already moved the head on; the failure
+ * is reported through the bus either way, so the in-memory state is returned
+ * rather than raising over a run that has already ended.
+ */
+export function recordLastFailure(
+  ref: SessionRef,
+  state: WorkflowState,
+  failure: NonNullable<WorkflowState['lastFailure']>,
+): WorkflowState {
+  try {
+    const next = { ...state, lastFailure: failure };
+    const result = commitWorkflowState({ ref, expected: state, next });
+    return result.kind === 'conflict' ? state : result.state;
+  } catch (err) {
+    warnError('Failed to record the run failure on the workflow state', err);
+    return state;
+  }
 }
 
 export function raisePendingRecovery(

@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { TwoColumnPicker, type PreviewContext } from './two-column-picker/picker.js';
 import type { TerminalPane } from './two-column-picker/types.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { overlayStore } from '../../stores/ui/overlay.js';

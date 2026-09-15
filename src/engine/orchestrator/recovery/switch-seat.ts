@@ -3,7 +3,6 @@ import {
   ImplementerConfigSchema,
   type ImplementerConfig,
 } from '../../../core/schemas/implementer-config.js';
-import { isAutoCheapestModel } from '../../../core/providers/automatic-model.js';
 import { updateDefaultImplementerConfig } from '../../../core/config/accessors/implementer-profiles.js';
 import { PlannerConfigSchema } from '../../../core/schemas/planner-config.js';
 import { ReviewerConfigSchema } from '../../../core/schemas/reviewer-config.js';
@@ -14,16 +13,10 @@ import { assertNever } from '../../../utils/type-guards.js';
 /**
  * The build seat is routed out of the implementer profile table whenever the
  * config carries one, so repointing `config.implementer` alone would leave the
- * run on the tool that hit its limit. A table `auto:cheapest` derived at the
- * preparation boundary is an artifact of the routing policy this swap replaces,
- * so it goes and the switched seat stands alone; a table the config declared is
- * kept with its default entry repointed at the chosen tool.
+ * run on the tool that hit its limit: the table's default entry is repointed at
+ * the chosen tool instead.
  */
 function configWithSwitchedBuildSeat(config: Config, implementer: ImplementerConfig): Config {
-  if (config.implementerProfiles !== undefined && isAutoCheapestModel(config.implementer.model)) {
-    const { implementerProfiles: _derived, ...rest } = config;
-    return { ...rest, implementer };
-  }
   return updateDefaultImplementerConfig(config, () => implementer);
 }
 

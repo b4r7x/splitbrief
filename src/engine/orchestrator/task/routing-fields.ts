@@ -9,7 +9,6 @@ export type RoutingEventFields = Pick<
   | 'contextLength'
   | 'currentCodeTruncated'
   | 'currentCodeContextMode'
-  | 'costPosture'
   | 'reason'
 >;
 
@@ -21,7 +20,6 @@ type RoutingPayloadFields = Pick<
   | 'contextLength'
   | 'currentCodeTruncated'
   | 'currentCodeContextMode'
-  | 'costPosture'
   | 'routingReason'
 >;
 
@@ -36,7 +34,6 @@ export function buildRoutingEventFields(decision: RoutingEventFields | undefined
     ...(decision.contextLength !== undefined && { contextLength: decision.contextLength }),
     currentCodeTruncated: decision.currentCodeTruncated,
     currentCodeContextMode: decision.currentCodeContextMode,
-    costPosture: decision.costPosture,
     routingReason: decision.reason,
   };
 }

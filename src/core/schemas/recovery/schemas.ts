@@ -50,6 +50,8 @@ export const RecoveryIssueSchema = z
     reason: recoveryActionFields.reason,
     phase: PhaseSchema,
     status: RecoveryStatusSchema,
+    /** Which seat the halt is about, when it is about a seat rather than the run. */
+    seat: z.enum(CREW_SEAT_IDS).optional(),
     taskId: TaskIdSchema.optional(),
     taskTitle: z.string().optional(),
     files: z.array(z.string()),

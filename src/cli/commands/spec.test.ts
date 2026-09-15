@@ -30,44 +30,31 @@ import {
 } from '../../core/paths.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
-import {
-  createPlannerArtifactAttemptId,
-  OwnedPlannerArtifactSchema,
-} from '../../core/schemas/planner-artifact.js';
-import type {
-  PhaseResult,
-  Planner,
-  PlannerArtifactLogicalName,
-} from '../../engine/planners/types.js';
-import { sha256Hex } from '../../utils/sha256.js';
+import type { Planner, RunPhaseInput } from '../../engine/planners/types.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { registerSpecCommand } from './spec.js';
 
 const createPlannerMock = vi.fn<(config: Config) => Promise<Planner>>();
+
+const PHASE_TEXT: Record<string, string> = {
+  research: '# Research',
+  spec: '# Generated Spec',
+  plan: '# Generated Plan',
+  tasks: '# Tasks',
+};
+
+function phaseFor(input: RunPhaseInput, tasks?: ReturnType<typeof makeTask>[]) {
+  return makePhaseCallResult({
+    call: input.call,
+    text: PHASE_TEXT[input.call] ?? '# Artifact',
+    ...(input.call === 'tasks' ? { tasks: tasks ?? [] } : {}),
+  });
+}
 
 let tmp: string;
 let shimDir: string;
 let restoreCompatibleCliShim: (() => void) | undefined;
 let consoleSpy: MockInstance<typeof console.log>;
-
-function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): PhaseResult {
-  const digest = sha256Hex(text);
-  return {
-    artifact: OwnedPlannerArtifactSchema.parse({
-      semanticId: `test-${logicalName}`,
-      programId: null,
-      batchId: null,
-      attemptId: createPlannerArtifactAttemptId(),
-      logicalName,
-      transport: 'stdout-final',
-      text,
-      byteLength: Buffer.byteLength(text, 'utf8'),
-      sha256: digest,
-      runtimeReceipt: digest,
-      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
-      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
-    }),
-  };
-}
 
 beforeEach(() => {
   tmp = realpathSync(createTempDir('spec-command-test'));
@@ -93,13 +80,7 @@ beforeEach(() => {
   createPlannerMock.mockReset();
   createPlannerMock.mockResolvedValue(
     makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Generated Spec',
-        plan: '# Generated Plan',
-        tasks: [],
-        usage: null,
-        phases: [phaseResult(SPEC_FILE, '# Generated Spec')],
-      }),
+      runPhase: vi.fn(async (input: RunPhaseInput) => phaseFor(input)),
     }),
   );
 });
@@ -232,15 +213,9 @@ describe('spec command', () => {
     });
     createPlannerMock.mockResolvedValue(
       makePlanner({
-        plan: vi.fn().mockImplementation(async ({ callbacks }) => {
-          callbacks.onOutput('\u001b]52;c;clipboard-secret\u0007visible\u009b2K');
-          return {
-            spec: '# Generated Spec',
-            plan: '# Generated Plan',
-            tasks: [],
-            usage: null,
-            phases: [phaseResult(SPEC_FILE, '# Generated Spec')],
-          };
+        runPhase: vi.fn(async (input: RunPhaseInput) => {
+          input.callbacks.onOutput('\u001b]52;c;clipboard-secret\u0007visible\u009b2K');
+          return phaseFor(input);
         }),
       }),
     );
@@ -292,15 +267,6 @@ describe('spec command — resolved-mode reporting', () => {
     return consoleSpy.mock.calls.map((args) => String(args[0])).join('\n');
   }
 
-  function standardPhases() {
-    return [
-      phaseResult(RESEARCH_FILE, '# Research'),
-      phaseResult(SPEC_FILE, '# Spec'),
-      phaseResult(PLAN_FILE, '# Plan'),
-      phaseResult(TASKS_FILE, '# Tasks'),
-    ];
-  }
-
   it('names the planner and the resolved mode on the pre-planning line', async () => {
     writeConfig(
       makeConfig({
@@ -334,13 +300,7 @@ describe('spec command — resolved-mode reporting', () => {
   it('reports only tasks.md in quick mode', async () => {
     createPlannerMock.mockResolvedValue(
       makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '',
-          tasks: [makeTask()],
-          usage: null,
-          phases: [phaseResult(TASKS_FILE, '# Tasks')],
-        }),
+        runPhase: vi.fn(async (input: RunPhaseInput) => phaseFor(input, [makeTask()])),
       }),
     );
 
@@ -355,13 +315,7 @@ describe('spec command — resolved-mode reporting', () => {
   it('lists research, spec, plan and tasks with absolute paths that exist on disk', async () => {
     createPlannerMock.mockResolvedValue(
       makePlanner({
-        plan: vi.fn().mockResolvedValue({
-          spec: '# Spec',
-          plan: '# Plan',
-          tasks: [],
-          usage: null,
-          phases: standardPhases(),
-        }),
+        runPhase: vi.fn(async (input: RunPhaseInput) => phaseFor(input)),
       }),
     );
 
@@ -381,13 +335,7 @@ describe('spec command — resolved-mode reporting', () => {
   it('reports the task count exactly once, on the tasks line', async () => {
     createPlannerMock.mockResolvedValue(
       makePlanner({
-        plan: vi.fn().mockResolvedValue({
-          spec: '# Spec',
-          plan: '# Plan',
-          tasks: [makeTask(), makeTask()],
-          usage: null,
-          phases: standardPhases(),
-        }),
+        runPhase: vi.fn(async (input: RunPhaseInput) => phaseFor(input, [makeTask(), makeTask()])),
       }),
     );
 
@@ -405,7 +353,7 @@ describe('spec command — preparation ownership across the planner call', () =>
   it('a failing planner call leaves no session directory behind and clears the active pointer', async () => {
     createPlannerMock.mockResolvedValue(
       makePlanner({
-        plan: vi.fn().mockRejectedValue(new Error('planner exploded')),
+        runPhase: vi.fn().mockRejectedValue(new Error('planner exploded')),
       }),
     );
     const program = new Command();

@@ -75,9 +75,9 @@ describe('resolveEffectiveConfig', () => {
     expect(() =>
       resolveEffectiveConfig({
         base,
-        overrides: { budget: -1 },
+        overrides: { contextLength: -1 },
       }),
-    ).toThrow(/Must be a positive number/);
+    ).toThrow(/contextLength/);
   });
 
   it('applies implementer model override before validation', () => {

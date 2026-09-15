@@ -1,5 +1,5 @@
 import type { MachineAction, StateAction } from './types.js';
-import type { WorkflowState } from '../schemas/workflow.js';
+import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../schemas/workflow.js';
 import type { TaskId } from '../schemas/task.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
 import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
@@ -10,12 +10,10 @@ import { includes } from '../../utils/type-guards.js';
 import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 import { transitionError } from './errors.js';
 
-export const CURRENT_STATE_VERSION = 4;
-
 const anytimeActions = [
-  'CANCEL',
-  'ABORT_TURN',
-  'CONTINUE_TURN',
+  'CLOSE_RUN',
+  'INTERRUPT_STEP',
+  'RESUME_STEP',
   'SET_PLANNER_SESSION_ID',
   'REWIND_TO_SPEC',
   'REWIND_TO_PLAN',
@@ -29,8 +27,6 @@ const anytimeActions = [
   'SET_PENDING_RECOVERY',
   'PAUSE_PENDING_RECOVERY',
   'MARK_RECOVERY_APPLYING',
-  'ACKNOWLEDGE_BUDGET_PAUSE',
-  'ABORT_PENDING_RECOVERY',
   'RESOLVE_PENDING_RECOVERY',
 ] as const satisfies readonly MachineAction['type'][];
 
@@ -43,15 +39,21 @@ const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
 ] as const satisfies readonly MachineAction['type'][];
 
 const phaseActions = {
-  idle: ['START', 'RESEARCH_DONE', 'SPEC_CLARIFY_START'],
-  researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'PLAN_DONE'],
-  specifying: ['SPEC_DONE', 'RESEARCH_DONE', 'PLAN_DONE'],
-  'reviewing-spec': ['APPROVE_SPEC', 'REJECT_SPEC', 'SPEC_CLARIFY_START'],
+  idle: ['START', 'RESEARCH_DONE', 'SPEC_CLARIFY_START', 'BEGIN_PLANNING'],
+  researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'PLAN_DONE', 'BEGIN_PLANNING'],
+  specifying: ['SPEC_DONE', 'RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START', 'BEGIN_PLANNING'],
+  'reviewing-spec': ['APPROVE_SPEC', 'SPEC_CLARIFY_START', 'PLAN_DONE'],
   clarifying: ['SPEC_CLARIFY_DONE'],
-  'constitution-check': ['CONSTITUTION_CHECK_PASS', 'CONSTITUTION_CHECK_FAIL'],
-  planning: ['RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START', 'BRIEF_ADMISSION_OPENED'],
-  'reviewing-plan': ['REJECT_PLAN', 'PLAN_DONE', 'BRIEF_ADMISSION_OPENED', 'ANALYZE_START'],
-  'reviewing-briefs': ['BRIEF_ADMISSION_OPENED', 'BEGIN_IMPLEMENTATION', 'REJECT_BRIEFS'],
+  'constitution-check': ['CONSTITUTION_CHECK_PASS', 'SPEC_DONE'],
+  planning: [
+    'RESEARCH_DONE',
+    'PLAN_DONE',
+    'SPEC_CLARIFY_START',
+    'BRIEF_ADMISSION_OPENED',
+    'ANALYZE_START',
+  ],
+  'reviewing-plan': ['PLAN_DONE', 'BRIEF_ADMISSION_OPENED', 'ANALYZE_START', 'BEGIN_PLANNING'],
+  'reviewing-briefs': ['BRIEF_ADMISSION_OPENED', 'BEGIN_IMPLEMENTATION'],
   analyzing: ['PLAN_DONE'],
   implementing: [
     'START_TASK',
@@ -82,7 +84,7 @@ function canApplyAction(phase: Phase, action: MachineAction['type']): boolean {
 
 export function createInitialState(feature: string, now: Date = new Date()): WorkflowState {
   return {
-    stateVersion: CURRENT_STATE_VERSION,
+    stateVersion: WORKFLOW_STATE_VERSION,
     stateRevision: 0,
     phase: 'idle',
     feature,
@@ -169,20 +171,6 @@ function rewindReset(
   };
 }
 
-function resetToIdle(
-  state: WorkflowState,
-  opts: { clearAwaitingContinue?: boolean } = {},
-): WorkflowState {
-  return {
-    ...state,
-    phase: 'idle',
-    ...(opts.clearAwaitingContinue ? { awaitingContinue: false } : {}),
-    tasks: [],
-    currentTaskIndex: 0,
-    attempt: 0,
-  };
-}
-
 export function transition(
   state: WorkflowState,
   action: MachineAction,
@@ -190,6 +178,11 @@ export function transition(
 ): WorkflowState {
   const maxRetries = opts.maxRetries ?? DEFAULT_LOCAL_RETRIES;
   const now = opts.now ?? new Date();
+  // A closed run is the one terminal state: nothing reopens it, so every action
+  // but the close itself is refused rather than silently mutating a finished run.
+  if (state.closed !== undefined && action.type !== 'CLOSE_RUN') {
+    throw transitionError.runClosed(action.type);
+  }
   if (!canApplyAction(state.phase, action.type)) {
     throw transitionError.invalidActionForPhase(state.phase, action.type);
   }
@@ -207,14 +200,11 @@ export function transition(
     case 'APPROVE_SPEC':
       return { ...state, phase: 'planning' };
 
-    case 'REJECT_SPEC':
-      return resetToIdle(state);
+    case 'BEGIN_PLANNING':
+      return { ...state, phase: 'planning' };
 
     case 'PLAN_DONE':
       return { ...state, phase: 'reviewing-plan', tasks: action.tasks };
-
-    case 'REJECT_PLAN':
-      return resetToIdle(state);
 
     case 'BEGIN_IMPLEMENTATION':
       return {
@@ -223,9 +213,6 @@ export function transition(
         currentTaskIndex: 0,
         attempt: 0,
       };
-
-    case 'REJECT_BRIEFS':
-      return resetToIdle(state);
 
     case 'BRIEF_ADMISSION_OPENED':
       return {
@@ -243,9 +230,6 @@ export function transition(
 
     case 'CONSTITUTION_CHECK_PASS':
       return { ...state, phase: 'planning' };
-
-    case 'CONSTITUTION_CHECK_FAIL':
-      return resetToIdle(state, { clearAwaitingContinue: true });
 
     case 'ANALYZE_START':
       return { ...state, phase: 'analyzing' };
@@ -331,14 +315,29 @@ export function transition(
       };
     }
 
-    case 'CANCEL':
-      return resetToIdle(state, { clearAwaitingContinue: true });
+    case 'CLOSE_RUN':
+      return {
+        ...state,
+        closed: { at: action.at ?? now.toISOString(), as: 'ended' },
+        interruptedStep: undefined,
+        pendingRecovery: undefined,
+      };
 
-    case 'ABORT_TURN':
-      return { ...state, awaitingContinue: true };
+    case 'INTERRUPT_STEP':
+      return {
+        ...state,
+        interruptedStep: {
+          step: action.step,
+          source: action.source,
+          cut: action.cut,
+          ...(action.partialRef ? { partialRef: action.partialRef } : {}),
+          at: now.toISOString(),
+        },
+        awaitingContinue: true,
+      };
 
-    case 'CONTINUE_TURN':
-      return { ...state, awaitingContinue: false };
+    case 'RESUME_STEP':
+      return { ...state, interruptedStep: undefined, awaitingContinue: false };
 
     case 'SET_PLANNER_SESSION_ID':
       return { ...state, plannerSessionId: action.sessionId };
@@ -428,17 +427,6 @@ export function transition(
 
     case 'MARK_RECOVERY_APPLYING':
       return markRecoveryApplying(state, action);
-
-    case 'ACKNOWLEDGE_BUDGET_PAUSE':
-      return { ...state, budgetPauseAcknowledgedAtCost: action.cost };
-
-    case 'ABORT_PENDING_RECOVERY':
-      return {
-        ...resetToIdle(state, { clearAwaitingContinue: true }),
-        tasks: state.tasks,
-        currentTaskIndex: state.currentTaskIndex,
-        pendingRecovery: undefined,
-      };
 
     case 'RESOLVE_PENDING_RECOVERY':
       return { ...state, pendingRecovery: undefined };

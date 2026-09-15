@@ -8,7 +8,7 @@ const NO_MODIFIERS: KeyLike = {};
 describe('resolveReviewActionKey', () => {
   it.each([
     ['y', 'approve', { kind: 'brief-review-command', command: { action: 'approve' } }],
-    ['q', 'reject', { kind: 'brief-review-command', command: { action: 'reject' } }],
+    ['q', 'end-run', { kind: 'brief-review-command', command: { action: 'end-run' } }],
     ['e', 'edit-file', { kind: 'open-external-editor' }],
   ] as const)('keeps the key and typed route aligned for %s', (input, keyAction, typedAction) => {
     expect(resolveReviewActionKey(input, NO_MODIFIERS)).toBe(keyAction);

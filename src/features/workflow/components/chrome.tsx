@@ -5,25 +5,26 @@ import { Composer, type ComposerBoxHints } from '../../../components/composer/co
 import { Header } from './header.js';
 import { FeedbackRow } from './feedback-row.js';
 import { InputFooter } from './input-footer.js';
-import { Divider } from './divider.js';
+import { Divider } from '../../../components/divider.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useFieldSessionOwned } from '../../editor/use-field-session-owned.js';
-import { formatCostDisplay } from '../cost-text.js';
+import { formatCostDisplay } from '../spend-text.js';
 import { useCostStats } from '../hooks/use-cost-stats.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { ComposerBoxHintOverride } from '../input-hints.js';
+import type { RailStageState } from '../../../core/rail-stages.js';
 import type { RailForm } from '../layout/chrome-rows.js';
 
 function useComposerBoxHints(override?: ComposerBoxHintOverride | undefined): ComposerBoxHints {
   const complete = lifecycleStore.use((s) => s.phase === 'complete');
-  const { localRate, costBreakdown, pricingState } = useCostStats();
+  const { costBreakdown, pricingState, showSpend } = useCostStats();
   const baseKeys = override?.keys ?? '';
   const keys = complete
     ? [baseKeys, glyph('check')].filter((part) => part.length > 0).join('  ')
     : baseKeys;
-  const display = formatCostDisplay(localRate, costBreakdown, pricingState);
-  const cost = override?.cost && display.showSpend ? display.spentText : undefined;
+  const display = formatCostDisplay(costBreakdown, pricingState);
+  const cost = override?.cost && showSpend && display.hasSpend ? display.spentText : undefined;
   return { keys, cost };
 }
 
@@ -31,18 +32,28 @@ export function WorkflowHeader({
   startedAt,
   scrollAboveLabel = '',
   railForm,
+  stages,
+  seatLine,
   children,
 }: {
   startedAt: string;
   scrollAboveLabel?: string;
   railForm?: RailForm | undefined;
+  /** A run at rest names its own stages and the crew that actually ran it. */
+  stages?: readonly RailStageState[] | undefined;
+  seatLine?: string | undefined;
   /** Chrome rows that belong above the divider, so the body starts at one boundary. */
   children?: ReactNode;
 }) {
   const cols = terminalSizeStore.use((s) => s.cols);
   return (
     <>
-      <Header startedAt={startedAt} railForm={railForm} />
+      <Header
+        startedAt={startedAt}
+        railForm={railForm}
+        {...(stages !== undefined && { stages })}
+        {...(seatLine !== undefined && { seatLine })}
+      />
       {children}
       <Divider width={cols} label={scrollAboveLabel} tone="textDim" />
     </>
@@ -58,6 +69,8 @@ export function WorkflowFooter({
   inputHint,
   feedbackHint,
   boxHintOverride,
+  commandsOnly,
+  byline,
   disabled,
   onEditShortcut,
   onReviewBoundaryNavigate,
@@ -75,6 +88,10 @@ export function WorkflowFooter({
   inputHint: string;
   feedbackHint?: string | undefined;
   boxHintOverride?: ComposerBoxHintOverride | undefined;
+  /** A stopped run that cannot be resumed has nothing to take but commands. */
+  commandsOnly?: boolean | undefined;
+  /** The byline of a run at rest, which has no live status to derive one from. */
+  byline?: string | undefined;
   disabled: boolean;
   onEditShortcut?: (() => void) | undefined;
   onReviewBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
@@ -98,6 +115,7 @@ export function WorkflowFooter({
         commands={commands}
         mode={mode}
         hint={inputHint}
+        commandsOnly={commandsOnly}
         currentScreen="workflow"
         disabled={disabled || fieldEditorOpen}
         boxHints={boxHints}
@@ -108,7 +126,7 @@ export function WorkflowFooter({
         {...(onReviewInteraction ? { onReviewInteraction } : {})}
         reviewYankActive={reviewYankActive}
       />
-      <InputFooter waiting={waitingForUser} />
+      <InputFooter waiting={waitingForUser} {...(byline !== undefined && { byline })} />
     </>
   );
   return footer;

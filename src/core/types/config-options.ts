@@ -40,7 +40,6 @@ export interface WorkflowOpts {
   hover?: boolean;
   mode?: WorkflowMode;
   approve?: ApproveLevel;
-  budget?: number;
   plannerEffort?: EffortLevel;
   reviewerEffort?: EffortLevel;
   allowHooks?: boolean;

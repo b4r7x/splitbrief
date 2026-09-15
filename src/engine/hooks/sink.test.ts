@@ -93,7 +93,7 @@ const recoveryPromptedEvent: EngineEvent = {
   taskId: taskId('T001'),
   files: [],
   affectedTaskIds: [],
-  availableActions: ['skip-current-task', 'abort-workflow'],
+  availableActions: ['skip-current-task', 'end-run'],
   recommendedAction: 'skip-current-task',
   headline: 'T001 exhausted its retries',
   resumeCommand: 'splitbrief continue sess-1 --action skip',

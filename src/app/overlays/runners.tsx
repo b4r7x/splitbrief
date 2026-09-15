@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useInput } from 'ink';
 import { seatPickerLane, type SeatPickerRole } from '../../core/runners/seat-roles.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
-import { arrowSep, SOFT_SEP } from '../../components/separators.js';
+import { arrowSep, SOFT_SEP } from '../../core/separators.js';
 import { BOOT_MANIFEST_TITLE } from '../../core/discovery/copy.js';
 import { BootManifest } from '../../features/runners/boot-manifest.js';
 import { overlayStore } from '../../stores/ui/overlay.js';

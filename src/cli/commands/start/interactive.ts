@@ -4,6 +4,7 @@ import { COLD_START_STDERR_LINE } from '../../../core/discovery/copy.js';
 import { assertInteractiveTty, setupWorkflow } from '../../setup.js';
 import { initStoresForTuiMount } from '../../init-stores.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { readRunRecord } from '../../../core/sessions/run-record-io.js';
 import { hasRememberedDetection } from '../../../engine/detection/cache.js';
 import { releasePreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
 import { assertNoLiveSessionForCli, prepareStartExecution } from './readiness.js';
@@ -68,6 +69,7 @@ export async function runInteractiveStart(args: InteractiveDispatchArgs): Promis
         releasePreparedExecutionOwnership(execution);
         routerStore.navigate({
           to: 'workflow',
+          run: readRunRecord(execution.session.ref),
           execution: { kind: 'local', prepared: execution },
         });
       })

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { Box, Text } from 'ink';
 import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { tick } from '#testing/helpers/ink.js';
@@ -63,6 +64,7 @@ describe('ESC through the real FilteredStdin pipeline (live workflow)', () => {
     });
     routerStore.navigate({
       to: 'workflow',
+      run: makeRunRecord(),
       execution: { kind: 'local', prepared },
     });
     // 'researching' is a live phase, which is what gates the ESC arming ladder.

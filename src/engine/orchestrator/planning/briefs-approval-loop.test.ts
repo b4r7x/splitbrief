@@ -155,7 +155,7 @@ describe('runBriefsApprovalLoop', () => {
         comment: 'narrow the scope',
         taskIds: [taskId('T001')],
       })
-      .mockResolvedValueOnce({ approved: false });
+      .mockResolvedValueOnce({ approved: false, action: 'end-run' });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
 
     const { result } = await runApprovalLoop({
@@ -169,14 +169,14 @@ describe('runBriefsApprovalLoop', () => {
 
     expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
     expect(reviewPrompts).toEqual([expect.stringContaining('narrow the scope')]);
-    expect(result).toMatchObject({ outcome: 'rejected' });
+    expect(result).toMatchObject({ outcome: 'closed' });
   });
 
-  it('not approved rejects', async () => {
+  it('end run closes the run and leaves the gate phase alone', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockResolvedValue({ approved: false });
+      .mockResolvedValue({ approved: false, action: 'end-run' });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
 
     const { result } = await runApprovalLoop({
@@ -189,8 +189,31 @@ describe('runBriefsApprovalLoop', () => {
     });
 
     expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
-    expect(result).toMatchObject({ outcome: 'rejected' });
-    expect(result.state.phase).toBe('idle');
+    expect(result).toMatchObject({ outcome: 'closed' });
+    expect(result.state.phase).toBe('reviewing-briefs');
+    expect(result.state.closed?.as).toBe('ended');
+  });
+
+  it('an answer that is not a decision re-opens the gate instead of ending the run', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockResolvedValueOnce({ approved: false })
+      .mockResolvedValueOnce({ approved: false })
+      .mockResolvedValue({ approved: false, action: 'end-run' });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+
+    const { result } = await runApprovalLoop({
+      projectDir,
+      sessionId,
+      planner: makePassingPlanner(),
+      callbacks,
+      config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
+      tasks: [makePassingTask()],
+    });
+
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(3);
+    expect(result).toMatchObject({ outcome: 'closed' });
   });
 
   it('approving briefs edited on disk re-runs the quality gate and refuses the errors', async () => {
@@ -202,7 +225,7 @@ describe('runBriefsApprovalLoop', () => {
         writeFileSync(tasksPath, EDITED_TASKS_MD, 'utf8');
         return { approved: true };
       })
-      .mockResolvedValueOnce({ approved: false });
+      .mockResolvedValueOnce({ approved: false, action: 'end-run' });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
 
     const { result, events } = await runApprovalLoop({
@@ -215,7 +238,7 @@ describe('runBriefsApprovalLoop', () => {
     });
 
     expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
-    expect(result).toMatchObject({ outcome: 'rejected' });
+    expect(result).toMatchObject({ outcome: 'closed' });
     expect(result.state.phase).not.toBe('implementing');
     const report = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE), 'utf-8'),
@@ -232,7 +255,7 @@ describe('runBriefsApprovalLoop', () => {
     ).toBe(true);
   });
 
-  it('twenty identical unproductive attempts reject the briefs', async () => {
+  it('twenty identical unproductive attempts halt the run for a decision', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
     const overflowingTasks = formatTasks([makeOverflowingTask()]);
@@ -254,8 +277,13 @@ describe('runBriefsApprovalLoop', () => {
     });
 
     expect(onApprovalNeeded).toHaveBeenCalledTimes(20);
-    expect(result).toMatchObject({ outcome: 'rejected' });
-    expect(result.state.phase).toBe('idle');
+    expect(result).toMatchObject({ outcome: 'halted' });
+    expect(result.state.phase).toBe('reviewing-briefs');
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'brief-review-no-progress',
+      availableActions: ['revise', 'end-run'],
+      recommendedAction: 'revise',
+    });
     expect(
       events.some((event) => event.type === 'error' && event.code === 'brief_review_no_progress'),
     ).toBe(true);

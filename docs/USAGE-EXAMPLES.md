@@ -100,7 +100,7 @@ workflow_complete
 
 `quick` mode produces a `tasks.md` transport in the session folder and runs the brief-quality gate, but skips the supporting `spec.md` / `plan.md` and the `reviewing-briefs` approval gate. Useful when you want the brief on disk for audit but don't need the ceremony of standard mode.
 
-**Variations:** Add `--budget 0.50` to cap spend. Pair with `--implementer ollama` to keep the implementer free. If you want only the Task Brief without touching the working tree at all, `splitbrief spec --mode quick "add an isAdult helper that returns true when age >= 18"` produces the same single `tasks.md` planning output without implementing.
+**Variations:** Pair with `--implementer ollama` to keep the implementer local. If you want only the Task Brief without touching the working tree at all, `splitbrief spec --mode quick "add an isAdult helper that returns true when age >= 18"` produces the same single `tasks.md` planning output without implementing.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.2.
 
@@ -123,7 +123,7 @@ mode resolved: standard
 phase: researching
 phase: specifying      → spec.md
 phase: reviewing-spec  ← awaiting approval
-  y approve · c comment · q reject · e edit
+  y approve · c comment · q end run · e edit
 > y
 phase: planning        → plan.md, tasks.md
 phase: reviewing-briefs ← brief approval (simple view)
@@ -180,45 +180,11 @@ Speckit runs 6–7 planner calls and writes `research.md`, `spec.md`, `clarifica
 
 ---
 
-## Cost management
+## Spend
 
-### 6. Set a budget
+### 6. Use a smaller implementer
 
-**When:** you want the workflow to warn at 80% and pause at a configurable threshold of a dollar ceiling.
-
-**Setup (`.splitbrief/config.yaml`):**
-
-```yaml
-workflow:
-  maxBudget: 2.00
-  budgetPauseThreshold: 0.85   # pause prompt at 85% of maxBudget
-```
-
-**Run:**
-
-```bash
-splitbrief start "refactor the payments module"
-```
-
-**You'll see (status line):**
-
-```
-mode standard · spent $1.23 · proj $1.81 · budget $2.00 · plan 62% · cache 41%
-budget_warning · spent $1.60 / $2.00 (80%)
-budget_paused  · spent $1.70 / $2.00 (85%)  → continue? [y/N]
-```
-
-Three events fire as spend grows: `budget_warning` at 80%, `budget_paused` at the configured threshold, and `budget_exceeded` at 100% — the last halts the workflow.
-
-**Variations:** `--budget 5.00` overrides the config field for one run. Omit `maxBudget` entirely to disable budget enforcement.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) `workflow.maxBudget`, recipe 8.
-
----
-
-### 7. Use a cheap implementer
-
-**When:** you want an expensive planner (Claude Code subscription) to compile briefs but a cheap local model to execute them.
+**When:** you want a strong planner (Claude Code subscription) to compile briefs but a small local model to execute them.
 
 **Setup (`.splitbrief/config.yaml`):**
 
@@ -246,7 +212,6 @@ implementerProfiles:
       apiBase: http://localhost:1234/v1
       model: qwen2.5-coder-7b
       label: LM Studio Qwen2.5 Coder
-      costTier: local
 validation:
   typecheck: true
   lint: true
@@ -279,13 +244,14 @@ The planner bills through your Claude Code subscription, so its usage reads `unp
 
 ---
 
-### 8. Review cost breakdown
+### 7. Review what a run spent
 
 **When:** the run is over (or paused) and you want to see where the spend went.
 
 **Run:**
 
-In the TUI, press `Ctrl+G` to open the cost drilldown. Or post-hoc:
+In the TUI, the sidebar footer carries the running figure and a closed run's `Cost` row carries
+the final one. Both are hidden while Settings ▸ Workflow ▸ **Show spend** is off. Post-hoc:
 
 ```bash
 jq 'select(.type == "cost_update")' .splitbrief/sessions/<id>/session.jsonl | tail -20
@@ -293,21 +259,16 @@ jq 'select(.type == "cost_update")' .splitbrief/sessions/<id>/session.jsonl | ta
 
 **You'll see:**
 
-TUI `Ctrl+G` drilldown:
+A closed run's `Run` block:
 
 ```
-Cost breakdown
-  planner    research        $0.18
-  planner    specifying      $0.22
-  planner    planning        $0.35
-  planner    final-review    $0.11
-  implementer (per task)     local
-  escalation                 $0.04
-  ──────────────────────────────────
-  total                      $0.90
+Cost      $0.90
 ```
 
-The drilldown reads from `summary.json` (final spend) plus per-event `cost_update` records in `session.jsonl`. Bars at the top of each row scale to the largest line item.
+`$0.90 + unknown` when part of the run had no price, the crew's billing labels
+(`subscription-included`, `local`) when nothing was metered, and `not estimated` when no figure
+exists. The final figure is recorded in `summary.json`; the per-event trail is the `cost_update`
+records in `session.jsonl`.
 
 **Variations:** `splitbrief status` prints the active workflow phase, task, and provider status.
 
@@ -315,7 +276,7 @@ The drilldown reads from `summary.json` (final spend) plus per-event `cost_updat
 
 ---
 
-### 9. Use Claude Code subscription as planner
+### 8. Use Claude Code subscription as planner
 
 **When:** you have a Claude Pro / Max subscription and don't want to pay per-token through the API.
 
@@ -357,7 +318,7 @@ validate · tsc ✓ lint ✓ test ✓
 
 `kind: cli` spawns `claude` as a subprocess with the brief on stdin. Spend goes through your subscription, so SPLITBRIEF shows the planner as `unpriced`; only the Ollama implementer reads `local`, and the session total reads `unpriced`.
 
-**Variations:** Swap `tool` for any admitted CLI in the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix); `splitbrief init` auto-detects installed tools. For a hosted cloud implementer instead of local Ollama, use recipe 7.
+**Variations:** Swap `tool` for any admitted CLI in the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix); `splitbrief init` auto-detects installed tools. For a hosted cloud implementer instead of local Ollama, use recipe 6.
 
 **See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md) §planner / §implementer, [docs/API-KEYS.md](./API-KEYS.md).
 
@@ -365,7 +326,7 @@ validate · tsc ✓ lint ✓ test ✓
 
 ## Safety
 
-### 10. Approve risky declared file writes explicitly
+### 9. Approve risky declared file writes explicitly
 
 **When:** you want SPLITBRIEF to confirm before the implementer writes control-plane paths, package manifests/lockfiles, or files outside the task's declared scope.
 
@@ -405,11 +366,11 @@ Sticky grants persist to `.splitbrief/approvals.json`; revoke with `splitbrief a
 
 **Variations:** Set every produced file-write class to `auto` for legacy YOLO behavior, or to `confirm` for paranoid mode. A `--json` run has no reply channel, so any class left at `sticky` or `confirm` fails closed there with `APPROVAL_REQUIRED`.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, recipe 11.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, recipe 10.
 
 ---
 
-### 11. Catch agent drift early
+### 10. Catch agent drift early
 
 **When:** you suspect the implementer is editing files outside the brief's scope across multiple tasks.
 
@@ -439,7 +400,7 @@ drift_chain_detected
 
 The drift chain detector tracks out-of-bounds files across tasks. A high score indicates the implementer is repeatedly straying into the same off-scope area — usually a sign the brief was wrong about scope.
 
-**Variations:** Inspect the final deterministic report directly: `cat .splitbrief/sessions/<id>/drift-report.json | jq`. Inspect `drift-chains.json` for cross-task chain state. The summary screen shows a `Scope` row with the latest score.
+**Variations:** Inspect the final deterministic report directly: `cat .splitbrief/sessions/<id>/drift-report.json | jq`. Inspect `drift-chains.json` for cross-task chain state. A closed run shows a `Scope` row with the latest score.
 
 **See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) §Drift detection rules.
 
@@ -447,7 +408,7 @@ The drift chain detector tracks out-of-bounds files across tasks. A high score i
 
 ## Mid-workflow control
 
-### 12. Pause and edit the brief
+### 11. Pause and edit the brief
 
 **When:** the planner produced a brief that's mostly right but needs a tweak before implementation starts.
 
@@ -460,7 +421,7 @@ phase: reviewing-briefs
   T001 add validator     create  src/auth/validate.ts
   T002 wire validator    modify  src/auth/middleware.ts
   T003 add tests         create  src/auth/validate.test.ts
-  y approve · c comment · q reject · e edit
+  y approve · c comment · q end run · e edit
 > e
 ```
 
@@ -478,11 +439,11 @@ phase: implementing
 
 **Variations:** `comment <text>` triggers planner regeneration with the comment as feedback. The comment goes through `planner.regenerate(...)` exactly the same way `/revise-spec <text>` does.
 
-**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/revise-spec`, recipe 13.
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/revise-spec`, recipe 12.
 
 ---
 
-### 13. Reject the brief and regenerate
+### 12. Reject the brief and regenerate
 
 **When:** the brief got the architecture wrong and you want a do-over.
 
@@ -512,7 +473,7 @@ A non-empty `comment <text>` regenerates. `reject` ends the workflow.
 
 ---
 
-### 14. Migrate away from rich brief review
+### 13. Migrate away from rich brief review
 
 **When:** an older project config still sets `workflow.briefReview: rich`, and config load now refuses it.
 
@@ -538,7 +499,7 @@ phase: reviewing-briefs
   T002 wire validator    modify  src/auth/middleware.ts
   T003 add tests         create  src/auth/validate.test.ts
 
-  y approve · c comment · q reject · e edit
+  y approve · c comment · q end run · e edit
 ```
 
 `e` on an empty composer, plus `Ctrl+E`, `edit`, `E`, and `edit-file`, open `.splitbrief/sessions/<id>/tasks.md` in the external editor. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; SPLITBRIEF re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
@@ -549,7 +510,7 @@ phase: reviewing-briefs
 
 ---
 
-### 15. Skip a task
+### 14. Skip a task
 
 **When:** one task in the brief is wrong and you want to move on without running it.
 
@@ -585,13 +546,13 @@ T003 ✓
 
 Denied tasks land in the evidence ledger as `skipped: <reason>`. There is no `/skip-task` slash command today — denying via hook is the supported path.
 
-**Variations:** To re-run a skipped task later, see recipe 16.
+**Variations:** To re-run a skipped task later, see recipe 15.
 
-**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 26.
+**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 24.
 
 ---
 
-### 16. Redo a completed task
+### 15. Redo a completed task
 
 **When:** a task succeeded but the result wasn't what you wanted, and you've now updated the spec via `/revise-spec`.
 
@@ -619,7 +580,7 @@ task_completed T003
 
 ---
 
-### 17. Switch mode mid-workflow
+### 16. Switch mode mid-workflow
 
 **When:** the run is taking longer than expected, or the planner classified the task wrong.
 
@@ -643,7 +604,7 @@ Workflow mode set to: quick
 
 ---
 
-### 18. Stop a run cleanly
+### 17. Stop a run cleanly
 
 **When:** something is wrong and you want to stop without losing the partial transcript or the changes already written.
 
@@ -693,7 +654,7 @@ No option reverts files: git is the layer that reverses a run, which is why SPLI
 
 ## Headless / CI
 
-### 19. Run in CI without TUI
+### 18. Run in CI without TUI
 
 **When:** you want SPLITBRIEF to run unattended in GitHub Actions or another CI runner.
 
@@ -719,11 +680,11 @@ splitbrief start --json --allow-hooks "regenerate API client from openapi.yaml" 
 
 **Variations:** `CI=1` env var auto-disables fullscreen mode even without `--json`.
 
-**See also:** recipes 20–22.
+**See also:** recipes 19–21.
 
 ---
 
-### 20. Parse cost in CI
+### 19. Parse cost in CI
 
 **When:** you want to extract the final cost from a CI run and post it as a build comment.
 
@@ -752,52 +713,11 @@ The same data lives in `.splitbrief/sessions/<id>/summary.json` once the run fin
 
 **Variations:** Filter for failures: `jq 'select(.type == "task_full_fail" or .type == "error")' events.ndjson`.
 
-**See also:** [docs/DEBUGGING.md](./DEBUGGING.md) §Event log, [docs/CONFIGURATION.md](./CONFIGURATION.md), recipe 8.
+**See also:** [docs/DEBUGGING.md](./DEBUGGING.md) §Event log, [docs/CONFIGURATION.md](./CONFIGURATION.md), recipe 7.
 
 ---
 
-### 21. Fail CI on budget exceeded
-
-**When:** you want CI to bail when spend exceeds the configured ceiling.
-
-**Setup (`.splitbrief/config.yaml`):**
-
-```yaml
-workflow:
-  maxBudget: 1.50
-```
-
-**CI script:**
-
-```bash
-splitbrief start --json --allow-hooks --approve none "..." | tee events.ndjson
-status=$?
-
-if jq -e 'select(.type == "budget_exceeded")' events.ndjson > /dev/null; then
-  echo "::error::splitbrief budget exceeded; failing build"
-  exit 1
-fi
-
-exit $status
-```
-
-**You'll see:**
-
-```
-{"type":"budget_warning","ts":...,"spent":1.20,"budget":1.50}
-{"type":"budget_exceeded","ts":...,"spent":1.51,"budget":1.50}
-::error::splitbrief budget exceeded; failing build
-```
-
-`--json` exit code is 0 on `workflow_complete`, non-zero on workflow errors. The grep above adds an extra gate on the soft budget signal.
-
-**Variations:** Combine with `--approve none` for unattended runs that should skip spec and plan prompts. Standard and speckit still stop at briefs review; use quick mode if you need no brief-review prompt.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) `workflow.maxBudget`, recipes 6, 19.
-
----
-
-### 22. Read a headless run without a JSON parser
+### 20. Read a headless run without a JSON parser
 
 **When:** CI or a shell script needs the shape of a run — which phase, which task, what the review said — and piping NDJSON through `jq` is more machinery than the job deserves.
 
@@ -839,17 +759,17 @@ splitbrief start --plain "..." | grep -c '^task .*: failed' # tasks that did not
 splitbrief start --plain "..." | tail -1                    # the closing line
 ```
 
-Cost is reported in tokens, not dollars: the event stream carries token counts, and the price catalog lives outside the run. For dollars, use `--json` (recipe 20) or read `summary.json` after the run.
+Cost is reported in tokens, not dollars: the event stream carries token counts, and the price catalog lives outside the run. For dollars, use `--json` (recipe 19) or read `summary.json` after the run.
 
 `--plain` and `--json` are two renderings of one stream and cannot share stdout — passing both exits `2` with `--plain and --json cannot be combined; choose one output mode.`
 
 **Variations:** `splitbrief resume --plain` and `splitbrief continue --plain` render a resumed run the same way. A resume that lands on a different crew than the one that started the run prints `PLAN seat changed <old> → <new>; context will be rebuilt` to stderr first, so redirect stderr if you want stdout alone.
 
-**See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md) §Plain output stream, recipes 20–21.
+**See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md) §Plain output stream, recipe 19.
 
 ---
 
-### 23. Answer a halted run without a TUI
+### 21. Answer a halted run without a TUI
 
 **When:** a `--json` or `--plain` run stopped on a recovery issue in CI, and you want to resolve it from the shell instead of opening the recovery panel.
 
@@ -891,7 +811,7 @@ done: 2 tasks, 96.1k tokens
 
 ---
 
-### 24. Prime the planner with project skills
+### 22. Prime the planner with project skills
 
 **When:** the repo carries planner skills — house conventions, a testing standard, a security checklist — and you want a scripted run to use them without opening the picker.
 
@@ -924,7 +844,7 @@ with exit `2`.
 
 ## Power user
 
-### 25. Define project-level coding rules
+### 23. Define project-level coding rules
 
 **When:** you want speckit's constitution-check to enforce project conventions (no React Context, ESM `.js` suffix, etc.).
 
@@ -966,7 +886,7 @@ A hard violation (`severity: hard`) aborts the run with a `warning` event explai
 
 ---
 
-### 26. Run pre/post task shell hooks
+### 24. Run pre/post task shell hooks
 
 **When:** you want to format with Prettier and run Biome after every task without modifying the validation pipeline.
 
@@ -1014,13 +934,13 @@ The receipt goes to `~/.splitbrief/trust/hooks.json`, keyed by this checkout —
 
 **Variations:** `on_failure: block` aborts; `warn` (default) logs; `ignore` is silent. Mandatory `timeout_ms` ceiling: 300_000 ms.
 
-**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 15.
+**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 14.
 
 ---
 
 ## TUI quick reference
 
-### 27. Open the command palette
+### 25. Open the command palette
 
 **When:** you want to discover or quickly invoke any of the slash commands from anywhere in the TUI.
 
@@ -1066,7 +986,7 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 
 ---
 
-### 28. Confirm a destructive file write (confirm tier)
+### 26. Confirm a destructive file write (confirm tier)
 
 **When:** a declared file write is classified as `destructive` (for example, a control-plane path under `.splitbrief/**`) and `approval.tiers.destructive` is set to `confirm`.
 
@@ -1102,11 +1022,11 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 - Confirm-tier approvals are one-shot and are NOT persisted to `.splitbrief/approvals.json`.
 - Only `sticky`-tier grants are saved to `approvals.json`.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval.tiers, recipe 10.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval.tiers, recipe 9.
 
 ---
 
-### 29. Adapt the plan from a rejection
+### 27. Adapt the plan from a rejection
 
 **When:** the implementer proposed an action you rejected, and you want the planner to take that rejection into account on the next run. Planner and implementer roles: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
@@ -1148,7 +1068,7 @@ plan_regenerated · 3 tasks  ← T002 now avoids the rejected path
 
 ## One-shot review
 
-### 30. Review a diff without starting a run
+### 28. Review a diff without starting a run
 
 **When:** the code is already written — by you, a teammate, or another agent — and you want SPLITBRIEF's review seat on it without a plan, a session, or a state machine.
 

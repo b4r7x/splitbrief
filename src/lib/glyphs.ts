@@ -11,6 +11,7 @@ export const GLYPH_NAMES = [
   'statusEscalated',
   'statusInProgress',
   'statusPending',
+  'statusOpen',
   'statusCancelled',
   'statusSkipped',
   'statusWarning',
@@ -54,6 +55,7 @@ const UNICODE_GLYPHS: Record<GlyphName, string> = {
   statusEscalated: '▲',
   statusInProgress: '◉',
   statusPending: '○',
+  statusOpen: '◌',
   statusCancelled: '×',
   statusSkipped: '–',
   statusWarning: '⚠',
@@ -92,6 +94,7 @@ const ASCII_GLYPHS: Record<GlyphName, string> = {
   statusEscalated: '!',
   statusInProgress: '@',
   statusPending: 'o',
+  statusOpen: 'o',
   statusCancelled: 'x',
   statusSkipped: '-',
   statusWarning: '!',
@@ -133,7 +136,7 @@ export const BRAILLE_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴',
 // What the ascii tier guarantees is exactly this table: no box-drawing and no non-ASCII marker from
 // `glyph()`. It is not a whole-product ASCII floor, and must not be read as one — the truncation
 // ellipsis (`ELLIPSIS` in `utils/display-text.ts`) and the `·` run separator (`SOFT_SEP` in
-// `components/separators.ts`) are untiered constants that render the same at both tiers, so a host
+// `core/separators.ts`) are untiered constants that render the same at both tiers, so a host
 // that mojibakes `─` mojibakes those too. Tiering them means routing every call site through
 // `glyph()`, including the measured hot path in `display-text.ts`; that is a real change with no
 // observed defect behind it yet, and it is tracked rather than done here.

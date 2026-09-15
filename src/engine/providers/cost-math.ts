@@ -224,23 +224,6 @@ export function allocatedCacheTokens(opts: {
   return cacheTokens * (tokens / totalTokens);
 }
 
-export function calculateCacheReadSavings(
-  cacheReadTokens: number,
-  pricing: ResolvedPricing,
-  contextTokens = cacheReadTokens,
-): number {
-  const selectedPricing = selectPricingForContext(pricing, contextTokens);
-  if (
-    !selectedPricing.isPriced ||
-    selectedPricing.cacheReadPer1M === undefined ||
-    cacheReadTokens <= 0
-  )
-    return 0;
-  return (
-    (cacheReadTokens / 1_000_000) * (selectedPricing.inputPer1M - selectedPricing.cacheReadPer1M)
-  );
-}
-
 export function recordPricedUsage(
   providerCosts: Record<string, ProviderCostEntry>,
   entry: {

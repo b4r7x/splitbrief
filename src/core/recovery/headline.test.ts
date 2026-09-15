@@ -7,7 +7,7 @@ const usageLimitIssue = makeRecoveryIssue({
   reason: 'runner-usage-limit',
   resetAt: '2026-09-13T17:00:00.000Z',
   facts: { tool: 'Claude Code' },
-  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'abort-workflow'],
+  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
   recommendedAction: 'switch-seat',
 });
 
@@ -42,7 +42,12 @@ describe('formatRecoveryHeadline', () => {
         { reason: 'implementer-recipe-invalid', facts: { tool: 'Cursor' } },
         'Tool recipe rejected by Cursor',
       ],
-      [{ reason: 'implementer-timeout-repeated' }, 'Two timeouts in a row on T001'],
+      [{ reason: 'runner-timeout-repeated' }, 'Two timeouts in a row on T001'],
+      [{ reason: 'planner-call-failed' }, 'Planner call failed'],
+      [{ reason: 'planner-returned-no-briefs' }, 'Planner returned no briefs'],
+      [{ reason: 'constitution-check-failed' }, 'Constitution check failed'],
+      [{ reason: 'brief-review-no-progress' }, 'Brief review is not making progress'],
+      [{ reason: 'brief-quality-unrepaired' }, 'Task Briefs still fail the quality gate'],
     ];
     for (const [overrides, expected] of cases) {
       expect(formatRecoveryHeadline(makeRecoveryIssue(overrides))).toBe(expected);
@@ -56,13 +61,13 @@ describe('formatRecoveryHeadline', () => {
     expect(
       formatRecoveryHeadline(
         makeRecoveryIssue({
-          reason: 'budget-exceeded',
+          reason: 'review-failed',
           taskId: undefined,
-          availableActions: ['pause-run', 'abort-workflow'],
+          availableActions: ['pause-run', 'end-run'],
           recommendedAction: 'pause-run',
         }),
       ),
-    ).toBe('Budget exceeded on the current brief');
+    ).toBe('Review failed on the current brief');
   });
 
   it('names the task the issue carries', () => {

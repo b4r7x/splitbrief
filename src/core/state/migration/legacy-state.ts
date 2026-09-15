@@ -32,7 +32,6 @@ export const legacyWorkflowStateSchema = z
     approve: ApproveLevelSchema.optional(),
     selectedSkills: z.array(z.string()).optional(),
     awaitingContinue: z.boolean().default(false),
-    budgetPauseAcknowledgedAtCost: z.number().optional(),
     messageQueue: z.array(QueuedMessageSchema).default([]),
     rewindPending: z
       .object({

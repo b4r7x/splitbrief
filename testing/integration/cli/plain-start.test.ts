@@ -9,6 +9,8 @@ import {
   writeReadyReadinessFixtures,
 } from '#testing/helpers/start-command.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   preparedHeadlessExecution,
@@ -88,12 +90,13 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
     });
 
     const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Spec\n\nCreate a module.',
-        plan: '# Plan\n\nUse the configured implementer.',
-        tasks: [task],
-        usage: { inputTokens: 140, outputTokens: 90 },
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          usage: { inputTokens: 140, outputTokens: 90 },
+          ...(call === 'tasks' ? { tasks: [task] } : {}),
+        }),
+      ),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nPassed validation.\n\n### Verdict\npass\n',
         usage: { inputTokens: 60, outputTokens: 30 },

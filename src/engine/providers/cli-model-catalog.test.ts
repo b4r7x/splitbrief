@@ -201,8 +201,6 @@ describe('native CLI model catalogs', () => {
         nativeReasoningEfforts: lunaLadder,
         supportsToolCalls: true,
         outputModalities: ['text'],
-        pricingInput: 0,
-        pricingOutput: 0,
       },
       {
         selectionId: 'openai/gpt-5.6-luna-fast',
@@ -212,8 +210,6 @@ describe('native CLI model catalogs', () => {
         nativeReasoningEfforts: lunaLadder,
         supportsToolCalls: true,
         outputModalities: ['text'],
-        pricingInput: 0,
-        pricingOutput: 0,
       },
       {
         selectionId: 'opencode-go/gpt-5.6-luna',
@@ -223,8 +219,6 @@ describe('native CLI model catalogs', () => {
         nativeReasoningEfforts: lunaLadder,
         supportsToolCalls: true,
         outputModalities: ['text'],
-        pricingInput: 0.2,
-        pricingOutput: 1.2,
       },
       {
         selectionId: 'opencode-go/minimax-m3',
@@ -234,8 +228,6 @@ describe('native CLI model catalogs', () => {
         nativeReasoningEfforts: ['none', 'thinking'],
         supportsToolCalls: true,
         outputModalities: ['text'],
-        pricingInput: 0.3,
-        pricingOutput: 1.2,
       },
       {
         selectionId: 'opencode-go/qwen3.7-max',
@@ -245,8 +237,6 @@ describe('native CLI model catalogs', () => {
         nativeReasoningEfforts: [],
         supportsToolCalls: true,
         outputModalities: ['text'],
-        pricingInput: 2.5,
-        pricingOutput: 7.5,
       },
     ]);
 
@@ -290,7 +280,7 @@ describe('native CLI model catalogs', () => {
     ]);
   });
 
-  it('carries verbose cost blocks as pricing on kilo entries and detected models', () => {
+  it('reads a verbose block limit and drops its cost from kilo entries and detected models', () => {
     const catalog = parseKiloNativeModelCatalog(
       [
         'kilo/kilo-auto/pro',
@@ -314,15 +304,11 @@ describe('native CLI model catalogs', () => {
         nativeOrder: 0,
         displayName: 'Auto Pro',
         contextWindow: 200000,
-        pricingInput: 0.25,
-        pricingOutput: 1.5,
       },
       {
         selectionId: 'kilo/kilo-auto/free',
         nativeOrder: 1,
         displayName: 'Auto Free',
-        pricingInput: 0,
-        pricingOutput: 0,
       },
     ]);
     expect(nativeCliCatalogToDetectedModels(catalog)).toEqual([
@@ -331,20 +317,16 @@ describe('native CLI model catalogs', () => {
         nativeOrder: 0,
         displayName: 'Auto Pro',
         contextLength: 200000,
-        pricingInput: 0.25,
-        pricingOutput: 1.5,
       },
       {
         id: 'kilo/kilo-auto/free',
         nativeOrder: 1,
         displayName: 'Auto Free',
-        pricingInput: 0,
-        pricingOutput: 0,
       },
     ]);
   });
 
-  it('omits pricing only when a verbose block publishes no cost or a partial one', () => {
+  it('parses a verbose block that publishes no cost and one that publishes a partial cost', () => {
     const catalog = parseKiloNativeModelCatalog(
       [
         'kilo/anthropic/claude-sonnet-4-6',
@@ -369,11 +351,10 @@ describe('native CLI model catalogs', () => {
       selectionId: 'kilo/kilo-auto/partial',
       nativeOrder: 1,
       displayName: 'Partial Price',
-      pricingInput: 0.25,
     });
   });
 
-  it('carries no pricing fields for the tools without verbose cost blocks', () => {
+  it('carries no pricing key on any parsed catalog entry', () => {
     const codex = parseCodexNativeModelCatalog(JSON.stringify(CODEX_BUNDLED_SLICE));
     if (codex === null) throw new Error('Expected the bundled Codex slice to parse');
     const cursor = parseCursorNativeModelCatalog(
@@ -400,9 +381,7 @@ describe('native CLI model catalogs', () => {
 
     for (const catalog of [codex, cursor, commandCode, copilot]) {
       expect(
-        catalog.models.every(
-          (model) => model.pricingInput === undefined && model.pricingOutput === undefined,
-        ),
+        catalog.models.every((model) => !('pricingInput' in model) && !('pricingOutput' in model)),
       ).toBe(true);
     }
   });

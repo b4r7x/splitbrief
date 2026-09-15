@@ -33,7 +33,7 @@ import { useStores } from '../../stores/use-stores.js';
 import { FilterInput } from '../../components/filter-input.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { glyph } from '../../lib/glyphs.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 
 const DESCRIPTION_MIN_TERMINAL_ROWS = 19;
 const BASE_CHROME_ROWS = 9;

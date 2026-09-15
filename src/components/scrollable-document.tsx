@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { resolveScrollKey, type ScrollKeyAction } from '../core/keybindings/scroll.js';
+import {
+  resolveScrollKey,
+  type ScrollKeyAction,
+  type ScrollLineKeyMode,
+} from '../core/keybindings/scroll.js';
 import { clamp } from '../utils/math.js';
 import { glyph } from '../lib/glyphs.js';
 import {
@@ -23,6 +27,8 @@ interface ScrollableDocumentProps {
   rows: readonly ScrollableDocumentRow[];
   height: number;
   isActive?: boolean | undefined;
+  /** Which arrow keys scroll a line here; a surface sharing them with a composer keeps 'none'. */
+  lineKeys?: ScrollLineKeyMode | undefined;
   scrollOffset?: number | undefined;
   onScrollOffsetChange?: ((offset: number) => void) | undefined;
   placeholder?: ReactNode;
@@ -143,6 +149,7 @@ export function ScrollableDocument({
   rows,
   height,
   isActive = true,
+  lineKeys = 'none',
   scrollOffset: controlledScrollOffset,
   onScrollOffsetChange,
   placeholder,
@@ -175,11 +182,7 @@ export function ScrollableDocument({
 
   useInput(
     (input, key) => {
-      const scrollKey = resolveScrollKey({
-        input,
-        key,
-        lineKeys: 'none',
-      });
+      const scrollKey = resolveScrollKey({ input, key, lineKeys });
       if (scrollKey === null) return;
       setRequestedOffset(
         offsetForScrollAction({
@@ -198,9 +201,11 @@ export function ScrollableDocument({
     visibleHeight: windowState.visibleHeight,
   });
   const showGutter = showScrollbar && hasOverflow;
+  // The gutter is paid for only while it paints: a document that fits leaves its rows the whole
+  // width, so a section rule inside it ends where the chrome rule above it does.
   const contentWidth =
     showScrollbar && width !== undefined
-      ? Math.max(1, getScrollViewportContentWidth(width))
+      ? Math.max(1, showGutter ? getScrollViewportContentWidth(width) : width)
       : undefined;
   const thumb = getScrollbarThumb({
     offset: windowState.offset,

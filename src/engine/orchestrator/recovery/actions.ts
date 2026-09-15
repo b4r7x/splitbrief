@@ -1,19 +1,17 @@
+import { randomUUID } from 'node:crypto';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { allowedActionsForReason } from '../../../core/schemas/recovery/policy.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { configWithSwitchedSeat } from './switch-seat.js';
-import {
-  recoveryFactBoolean,
-  recoveryFactNumber,
-  recoveryFactString,
-} from '../../../core/schemas/recovery/facts.js';
+import { recoveryFactBoolean, recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { nowIso } from '../../../utils/format-time.js';
 import type { EventBus } from '../../events/types.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -45,7 +43,7 @@ export type RecoveryActionBlockedCode =
 export type RecoveryActionAppliedStatus =
   | 'continued'
   | 'paused'
-  | 'aborted'
+  | 'closed'
   | 'skipped-current-task'
   | 'retry-current-task';
 
@@ -97,6 +95,8 @@ export interface ApplyRecoveryActionOptions {
   mode?: WorkflowMode | undefined;
   /** `switch-seat` only: which offered tool the seat moves to. Defaults to the first offer. */
   candidate?: SeatSwapCandidate | undefined;
+  /** `revise` / `revise-spec` only: what the operator wants changed. */
+  comment?: string | undefined;
 }
 
 export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyRecoveryActionResult {
@@ -149,8 +149,12 @@ export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyReco
   switch (opts.action) {
     case 'pause-run':
       return applyPauseRecoveryAction(opts, issue);
-    case 'abort-workflow':
-      return applyAbortRecoveryAction(opts, issue);
+    case 'end-run':
+      return applyEndRunRecoveryAction(opts, issue);
+    case 'revise':
+      return applyReviseRecoveryAction(opts, issue);
+    case 'revise-spec':
+      return applyReviseSpecRecoveryAction(opts, issue);
     case 'skip-current-task':
       return applySkipCurrentTaskRecoveryAction(opts, issue);
     case 'retry-same-worker':
@@ -183,20 +187,6 @@ function applyContinueRecoveryAction(
   }
 
   let state = markRecoveryApplying(opts, issue);
-  if (issue.reason === 'budget-paused') {
-    const acknowledgedAtCost = recoveryFactNumber(issue.facts, 'currentCost');
-    if (acknowledgedAtCost !== undefined) {
-      state = transitionAndSave(
-        opts,
-        state,
-        {
-          type: 'ACKNOWLEDGE_BUDGET_PAUSE',
-          cost: acknowledgedAtCost,
-        },
-        { expectedRevision: state.stateRevision ?? 0 },
-      );
-    }
-  }
   state = transitionAndSave(
     opts,
     state,
@@ -226,7 +216,12 @@ function applyPauseRecoveryAction(
   return { ok: true, action: opts.action, issue, state, status: 'paused' };
 }
 
-function applyAbortRecoveryAction(
+/**
+ * The one way a halt ends a run: the close is written to the state, so the run
+ * reads `closed · ended` afterwards instead of resetting to a phase it never
+ * returned to. Nothing the implementer wrote is reverted.
+ */
+function applyEndRunRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
@@ -234,11 +229,74 @@ function applyAbortRecoveryAction(
   state = transitionAndSave(
     opts,
     state,
-    { type: 'ABORT_PENDING_RECOVERY' },
+    { type: 'CLOSE_RUN' },
     { expectedRevision: state.stateRevision ?? 0 },
   );
   publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'aborted' });
-  return { ok: true, action: opts.action, issue, state, status: 'aborted' };
+  return { ok: true, action: opts.action, issue, state, status: 'closed' };
+}
+
+/**
+ * The operator's correction rides the message queue, which is where every other
+ * mid-run instruction to the planner goes; the next planner turn drains it. An
+ * empty comment is still a decision — the halt resolves and the step re-runs.
+ */
+function applyReviseRecoveryAction(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+): ApplyRecoveryActionResult {
+  let state = markRecoveryApplying(opts, issue);
+  const comment = opts.comment?.trim() ?? '';
+  if (comment.length > 0) {
+    state = transitionAndSave(
+      opts,
+      state,
+      {
+        type: 'ENQUEUE_USER_MSG',
+        message: {
+          id: randomUUID(),
+          text: comment,
+          queuedAt: nowIso(),
+          phase: issue.phase,
+          deliveredViaNative: false,
+          nativeDeliveryState: 'pending',
+          origin: 'user-input',
+        },
+      },
+      { expectedRevision: state.stateRevision ?? 0 },
+    );
+  }
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'RESOLVE_PENDING_RECOVERY' },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
+  return { ok: true, action: opts.action, issue, state, status: 'continued' };
+}
+
+/** Send the spec back to the planner with the operator's note, then resume planning. */
+function applyReviseSpecRecoveryAction(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+): ApplyRecoveryActionResult {
+  let state = markRecoveryApplying(opts, issue);
+  const comment = opts.comment?.trim() ?? '';
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'REWIND_TO_SPEC', ...(comment.length > 0 && { comment }) },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'RESOLVE_PENDING_RECOVERY' },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
+  return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
 
 function applySkipCurrentTaskRecoveryAction(
@@ -435,17 +493,38 @@ export function applySwitchSeatRecoveryAction(
     });
   }
 
-  const applied = applyRetryCurrentTaskRecoveryAction(
-    { ...opts, action },
-    issue,
-    'Switching a seat requires the pending recovery task to match the current task index.',
-  );
+  // A seat-level halt — a planner call that could not run at all — names no brief:
+  // resolving it is the whole move, and the run re-issues its step on the new seat.
+  // A halt that names a brief still replays that brief there.
+  const applied =
+    issue.taskId === undefined
+      ? resolveSeatSwapWithoutTask({ ...opts, action }, issue)
+      : applyRetryCurrentTaskRecoveryAction(
+          { ...opts, action },
+          issue,
+          'Switching a seat requires the pending recovery task to match the current task index.',
+        );
   if (!applied.ok) return applied;
   return {
     ...applied,
     switchedSeat: { seat: offer.seat, candidate: chosen },
     switchedConfig,
   };
+}
+
+function resolveSeatSwapWithoutTask(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+): ApplyRecoveryActionResult {
+  let state = markRecoveryApplying(opts, issue);
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'RESOLVE_PENDING_RECOVERY' },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
+  return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
 
 function applyRetryCurrentTaskRecoveryAction(
@@ -601,15 +680,6 @@ function recordRecoverySkipEvidence(opts: {
 }
 
 function isSafeContinue(issue: RecoveryIssue): boolean {
-  if (issue.reason === 'budget-exceeded') return false;
-  if (issue.reason === 'budget-paused') {
-    const belowMaxBudget = recoveryFactBoolean(issue.facts, 'belowMaxBudget');
-    if (belowMaxBudget === true) return true;
-
-    const currentCost = recoveryFactNumber(issue.facts, 'currentCost');
-    const maxBudget = recoveryFactNumber(issue.facts, 'maxBudget');
-    return currentCost !== undefined && maxBudget !== undefined && currentCost < maxBudget;
-  }
   if (issue.reason === 'user-edit-conflict') {
     return recoveryFactBoolean(issue.facts, 'safeToContinue') === true;
   }

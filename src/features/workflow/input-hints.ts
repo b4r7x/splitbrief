@@ -1,5 +1,4 @@
 import type { InputMode } from '../../core/navigation/types.js';
-import { SOFT_SEP } from '../../components/separators.js';
 
 export interface InputHintInput {
   inputHint: string;
@@ -12,30 +11,6 @@ export function resolveInputHint(input: InputHintInput): string {
   const { inputHint, inputMode } = input;
   if (inputMode === 'review' || inputMode === 'question') return '';
   return inputHint;
-}
-
-// A legend that ends in an ellipsis has cut a key in half and still claims to name it. Too narrow
-// a row drops whole trailing tokens instead, so everything left standing is a complete, live key.
-export function fitKeyLegend(legend: string, width: number): string {
-  if (legend.length <= width) return legend;
-  let fitted = '';
-  for (const token of legend.split(SOFT_SEP)) {
-    const next = fitted === '' ? token : `${fitted}${SOFT_SEP}${token}`;
-    if (next.length > width) break;
-    fitted = next;
-  }
-  return fitted;
-}
-
-export interface CancelledHints {
-  placeholder: string;
-  byline: string;
-}
-
-export function resolveCancelledHints(canResumeCancelled: boolean): CancelledHints {
-  return canResumeCancelled
-    ? { placeholder: '/resume to continue…', byline: `esc home${SOFT_SEP}/quit` }
-    : { placeholder: 'esc for home…', byline: '/quit to exit' };
 }
 
 export interface ComposerBoxHintOverride {

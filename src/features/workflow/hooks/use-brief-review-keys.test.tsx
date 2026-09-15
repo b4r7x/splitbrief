@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { Box, Text } from 'ink';
 import { useBriefReviewKeys, type BriefReviewNavigate } from './use-brief-review-keys.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -47,6 +48,7 @@ describe('useBriefReviewKeys: y yank', () => {
     resetAllStores();
     routerStore.navigate({
       to: 'workflow',
+      run: makeRunRecord(),
       execution: {
         kind: 'local',
         prepared: makePreparedExecution({

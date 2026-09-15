@@ -15,7 +15,7 @@ import { recoveryBuilderForRunnerOutcome } from '../recovery/builders/task.js';
  * Outcomes every further local attempt reproduces: a signed-out or
  * quota-exhausted runner, plus every runner defect the recovery builders
  * already recognise. The retries stop so the caller halts the ladder instead of
- * paying planner prices for a defect no retry can fix.
+ * escalating to the planner over a defect no retry can fix.
  */
 function haltsLocalRetries(outcome: RunnerFailureOutcomeState): boolean {
   return (
@@ -148,7 +148,7 @@ export async function runLocalRetries(
     if (consecutiveTimeouts >= TIMEOUTS.consecutiveTimeoutsHalt) {
       return {
         ...outcome,
-        lastFailure: { ...failure, outcome: 'implementer-timeout-repeated' },
+        lastFailure: { ...failure, outcome: 'runner-timeout-repeated' },
       };
     }
   }

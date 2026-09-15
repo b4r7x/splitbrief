@@ -29,21 +29,8 @@ function makeState(overrides?: Partial<SummaryState>): SummaryState {
   };
 }
 
-describe('buildSummary estimatedCostSavings', () => {
-  it('returns $0.00 when no implementer tokens used', () => {
-    const usage = makeUsage({ plannerInput: 1000, plannerOutput: 500 });
-    const summary = summaryOf({
-      feature: 'f',
-      state: makeState({ tasks: [], tokenUsage: usage }),
-      startTime: Date.now(),
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerTool: 'ollama',
-    });
-    expect(summary.estimatedCostSavings).toBe('$0.00');
-  });
-
-  it('calculates savings for known token values', () => {
+describe('buildSummary cost knownness', () => {
+  it('prices a run whose seats are both in the catalog', () => {
     const usage = makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 });
     const summary = summaryOf({
       feature: 'f',
@@ -54,13 +41,11 @@ describe('buildSummary estimatedCostSavings', () => {
       implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
     });
-    expect(summary.estimatedCostSavings).toBe('$11.58');
-    expect(summary.costBreakdown?.hypotheticalCost).toBe(12);
     expect(summary.costBreakdown?.actualImplementerCost).toBeCloseTo(0.42, 10);
-    expect(summary.costBreakdown?.hasSavingsEstimate).toBe(true);
+    expect(summary.costBreakdown?.isTotalActualCostKnown).toBe(true);
   });
 
-  it('marks savings unavailable when implementer price is unknown', () => {
+  it('marks the total unknown when the implementer price is unknown', () => {
     const usage = makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 });
     const summary = summaryOf({
       feature: 'f',
@@ -71,29 +56,8 @@ describe('buildSummary estimatedCostSavings', () => {
       implementerTool: 'ollama',
     });
 
-    expect(summary.estimatedCostSavings).toBe('unavailable');
-    expect(summary.costBreakdown?.hasSavingsEstimate).toBe(false);
     expect(summary.costBreakdown?.isActualImplementerCostKnown).toBe(false);
     expect(summary.costBreakdown?.isTotalActualCostKnown).toBe(false);
-  });
-
-  it('formats tiny known savings as $0.00', () => {
-    const usage = makeUsage({
-      plannerInput: 10_000_000,
-      plannerOutput: 5_000_000,
-      implementerInput: 100,
-      implementerOutput: 50,
-    });
-    const summary = summaryOf({
-      feature: 'f',
-      state: makeState({ tasks: [], tokenUsage: usage }),
-      startTime: Date.now(),
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerTool: 'custom-worker-api',
-      implementerModel: 'deepseek-v4-flash',
-    });
-    expect(summary.estimatedCostSavings).toBe('$0.00');
   });
 });
 
@@ -168,7 +132,6 @@ describe('buildSummary task costs', () => {
     const first = summary.taskBreakdown?.[0];
     if (!first) throw new Error('expected a task breakdown entry');
     expect(first.cost).toBeUndefined();
-    expect(first.costPosture).toBe('unknown-price');
   });
 
   it('keeps per-task escalation costs aligned with model-aware summary totals', () => {
@@ -248,7 +211,6 @@ describe('buildSummary task costs', () => {
     if (!first || !second || !summary.costBreakdown)
       throw new Error('expected task and cost breakdown');
     expect(first.cost).toBeUndefined();
-    expect(first.costPosture).toBe('unknown-price');
     expect(second.cost).toBeCloseTo(0.21, 10);
     expect(summary.costBreakdown.actualImplementerCost).toBeCloseTo(0.21, 10);
     expect((first.cost ?? 0) + (second.cost ?? 0)).toBeCloseTo(
@@ -256,7 +218,6 @@ describe('buildSummary task costs', () => {
       10,
     );
     expect(summary.costBreakdown.hasUnpricedUsage).toBe(true);
-    expect(summary.costBreakdown.hasSavingsEstimate).toBe(false);
   });
 });
 

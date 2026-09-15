@@ -330,5 +330,5 @@ export function usageLimitWaitClause(resetsAt: Date | null): string {
  * suggests re-authenticating — a login cannot restore quota.
  */
 export function usageLimitGuidance(resetsAt: Date | null): string {
-  return `${usageLimitWaitClause(resetsAt)}, switch the seat to another tool, or abort.`;
+  return `${usageLimitWaitClause(resetsAt)}, switch the seat to another tool, or end the run.`;
 }

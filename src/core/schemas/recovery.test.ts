@@ -5,14 +5,14 @@ describe('RecoveryIssueSchema', () => {
   it('rejects a recommended action that is not available', () => {
     const result = RecoveryIssueSchema.safeParse({
       id: 'rec_2026_04_28_002',
-      reason: 'budget-exceeded',
+      reason: 'review-failed',
       phase: 'implementing',
       status: 'awaiting-user',
       files: [],
       affectedTaskIds: [],
-      message: 'Budget exceeded',
-      details: ['Spent $5.00 of $5.00'],
-      availableActions: ['pause-run', 'abort-workflow'],
+      message: 'Review failed',
+      details: ['The planner rejected the final review'],
+      availableActions: ['pause-run', 'end-run'],
       recommendedAction: 'continue',
       createdAt: '2026-04-28T12:00:00.000Z',
     });
@@ -23,14 +23,14 @@ describe('RecoveryIssueSchema', () => {
   it('rejects available actions that violate the reason policy', () => {
     const result = RecoveryIssueSchema.safeParse({
       id: 'rec_2026_04_28_006',
-      reason: 'budget-exceeded',
+      reason: 'review-failed',
       phase: 'implementing',
       status: 'awaiting-user',
       files: [],
       affectedTaskIds: [],
-      message: 'Budget exceeded',
-      details: ['Spent $5.00 of $5.00'],
-      availableActions: ['pause-run', 'abort-workflow', 'skip-current-task'],
+      message: 'Review failed',
+      details: ['The planner rejected the final review'],
+      availableActions: ['pause-run', 'end-run', 'skip-current-task'],
       recommendedAction: 'pause-run',
       createdAt: '2026-04-28T12:00:00.000Z',
     });
@@ -59,14 +59,14 @@ describe('RecoveryIssueSchema', () => {
   it('rejects a selected action that is not available', () => {
     const result = RecoveryIssueSchema.safeParse({
       id: 'rec_2026_04_28_005',
-      reason: 'budget-exceeded',
+      reason: 'review-failed',
       phase: 'implementing',
       status: 'applying',
       files: [],
       affectedTaskIds: [],
-      message: 'Budget exceeded',
-      details: ['Spent $5.00 of $5.00'],
-      availableActions: ['pause-run', 'abort-workflow'],
+      message: 'Review failed',
+      details: ['The planner rejected the final review'],
+      availableActions: ['pause-run', 'end-run'],
       recommendedAction: 'pause-run',
       selectedAction: 'continue',
       createdAt: '2026-04-28T12:00:00.000Z',

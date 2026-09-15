@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { StepRef } from '../../core/schemas/run-step.js';
+import { taskId } from '../../core/schemas/task.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
@@ -8,11 +10,13 @@ import { join } from 'node:path';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { STATE_FILE } from '../../core/paths.js';
 import {
-  buildContinuationPrompt,
+  createContinuationHolder,
+  readInterruptedPartial,
   withContinuationLoop,
   type ContinuationLoopCtx,
 } from './continuation.js';
-import { composeSteeredPrompt } from '../spec/prompts/steered-prompt.js';
+import { composeContinuation } from '../spec/prompts/continuation.js';
+import { appendMessage } from '../../core/sessions/log-writer.js';
 import { createEventBus } from '../events/bus.js';
 import { processError } from '../../lib/process/errors.js';
 import type { WorkflowSinks } from './types.js';
@@ -48,20 +52,71 @@ afterEach(() => {
   dirs = [];
 });
 
-describe('buildContinuationPrompt', () => {
-  it('combines partial output with the user message', () => {
-    const prompt = buildContinuationPrompt('half-written spec', 'add auth section');
-    expect(prompt).toContain('half-written spec');
-    expect(prompt).toContain('add auth section');
-    expect(prompt).toContain('interrupted');
+describe('readInterruptedPartial', () => {
+  it('returns the last interrupted flush and ignores completed messages', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const ref = { projectDir, sessionId };
+    appendMessage(ref, { role: 'assistant', text: 'an older cut', interrupted: true });
+    appendMessage(ref, { role: 'assistant', text: 'a finished call' });
+    appendMessage(ref, { role: 'assistant', text: 'the cut attempt', interrupted: true });
+
+    expect(await readInterruptedPartial(ref)).toBe('the cut attempt');
   });
 
-  it('falls back to a default instruction when the user message is blank', () => {
-    const prompt = buildContinuationPrompt('partial', '   ');
-    expect(prompt).toContain('partial');
-    expect(prompt).toContain('continue from where you left off');
+  it('is absent when nothing was ever cut', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    appendMessage({ projectDir, sessionId }, { role: 'assistant', text: 'a finished call' });
+
+    expect(await readInterruptedPartial({ projectDir, sessionId })).toBeUndefined();
   });
 });
+
+describe('createContinuationHolder', () => {
+  it('hands the seed to the step it was recorded at, once', () => {
+    const holder = createContinuationHolder({
+      step: { kind: 'planner', call: 'spec' },
+      partial: 'half a spec',
+      steer: 'shorter',
+    });
+
+    expect(holder.take({ kind: 'planner', call: 'spec' })).toEqual({
+      partial: 'half a spec',
+      steer: 'shorter',
+    });
+    expect(holder.take({ kind: 'planner', call: 'spec' })).toBeUndefined();
+  });
+
+  it('withholds the seed from a step it does not belong to', () => {
+    const holder = createContinuationHolder({
+      step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+      partial: 'half a brief',
+    });
+
+    expect(holder.take({ kind: 'brief', taskId: taskId('T002'), attempt: 0 })).toBeUndefined();
+    expect(holder.take({ kind: 'planner', call: 'tasks' })).toBeUndefined();
+    expect(holder.take({ kind: 'brief', taskId: taskId('T001'), attempt: 2 })).toEqual({
+      partial: 'half a brief',
+    });
+  });
+
+  it('holds a steer for the step a boundary park stopped before', () => {
+    const holder = createContinuationHolder();
+    holder.hold({ kind: 'brief', taskId: taskId('T002'), attempt: 0 }, 'use the new helper');
+
+    expect(holder.take({ kind: 'brief', taskId: taskId('T002'), attempt: 0 })).toEqual({
+      steer: 'use the new helper',
+    });
+  });
+
+  it('holds nothing when the operator continued without words', () => {
+    const holder = createContinuationHolder();
+    holder.hold({ kind: 'brief', taskId: taskId('T002'), attempt: 0 }, undefined);
+
+    expect(holder.take({ kind: 'brief', taskId: taskId('T002'), attempt: 0 })).toBeUndefined();
+  });
+});
+
+const PLANNER_STEP: StepRef = { kind: 'planner', call: 'research' };
 
 describe('withContinuationLoop', () => {
   it('returns the body value on happy path and leaves awaitingContinue false', async () => {
@@ -80,6 +135,7 @@ describe('withContinuationLoop', () => {
     const result = await withContinuationLoop<number>({
       ctx,
       state,
+      step: PLANNER_STEP,
       body: async () => 42,
     });
 
@@ -100,14 +156,17 @@ describe('withContinuationLoop', () => {
     const state: WorkflowState = createInitialState('feat');
 
     let attempt = 0;
-    const seenContinuationPrompts: (string | undefined)[] = [];
+    const seenPartials: (string | undefined)[] = [];
+    const seenSteers: (string | undefined)[] = [];
 
     const result = await withContinuationLoop<string>({
       ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
       state,
-      body: async ({ signal, continuationPrompt, recordOutput }) => {
+      step: PLANNER_STEP,
+      body: async ({ signal, partial, steer, recordOutput }) => {
         attempt += 1;
-        seenContinuationPrompts.push(continuationPrompt);
+        seenPartials.push(partial);
+        seenSteers.push(steer);
 
         if (attempt === 1) {
           recordOutput('partial-output-1');
@@ -121,12 +180,11 @@ describe('withContinuationLoop', () => {
 
     expect(result.value).toBe('ok');
     expect(attempt).toBe(2);
-    expect(seenContinuationPrompts[0]).toBeUndefined();
-    expect(seenContinuationPrompts[1]).toBeDefined();
-    expect(seenContinuationPrompts[1]).toContain('partial-output-1');
-    expect(seenContinuationPrompts[1]).toContain('please finish it');
+    expect(seenPartials[0]).toBeUndefined();
+    expect(seenPartials[1]).toBe('partial-output-1');
+    expect(seenSteers[1]).toBe('please finish it');
     expect(userReplies).toEqual(['partial-output-1']);
-    // CONTINUE_TURN was the last transition — the loop exited with awaitingContinue = false.
+    // RESUME_STEP was the last transition — the loop exited with the park cleared.
     expect(result.state.awaitingContinue).toBe(false);
   });
 
@@ -142,6 +200,7 @@ describe('withContinuationLoop', () => {
     const result = await withContinuationLoop<string>({
       ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
       state,
+      step: PLANNER_STEP,
       body: async ({ signal, recordOutput }) => {
         attempt += 1;
         if (attempt === 1) {
@@ -182,8 +241,9 @@ describe('withContinuationLoop', () => {
     const result = await withContinuationLoop<string>({
       ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
       state,
-      body: async ({ continuationPrompt, steer }) => {
-        prompts.push(composeSteeredPrompt(continuationPrompt ?? 'the primary prompt', steer));
+      step: PLANNER_STEP,
+      body: async ({ partial, steer }) => {
+        prompts.push(composeContinuation({ basePrompt: 'the primary prompt', partial, steer }));
         return 'done';
       },
     });
@@ -211,14 +271,19 @@ describe('withContinuationLoop', () => {
         },
       };
       const { callbacks } = makeCallbacks({ onContinuationNeeded: async () => reply });
-      const bodyArgs: { continuationPrompt: string | undefined; steer: string | undefined }[] = [];
+      const bodyArgs: { partial: string | undefined; steer: string | undefined }[] = [];
       const prompts: string[] = [];
       await withContinuationLoop<string>({
         ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
         state,
-        body: async ({ continuationPrompt, steer }) => {
-          bodyArgs.push({ continuationPrompt, steer });
-          prompts.push(composeSteeredPrompt(continuationPrompt ?? 'PRIMARY PROMPT', steer));
+        step: PLANNER_STEP,
+        body: async ({ partial, steer }) => {
+          bodyArgs.push({ partial, steer });
+          prompts.push(
+            partial === undefined && steer === undefined
+              ? 'PRIMARY PROMPT'
+              : composeContinuation({ basePrompt: 'PRIMARY PROMPT', partial, steer }),
+          );
           return 'done';
         },
       });
@@ -226,16 +291,16 @@ describe('withContinuationLoop', () => {
     };
 
     const emptyEnter = await runParked('');
-    expect(emptyEnter.bodyArgs).toEqual([{ continuationPrompt: undefined, steer: undefined }]);
+    expect(emptyEnter.bodyArgs).toEqual([{ partial: undefined, steer: undefined }]);
     expect(emptyEnter.prompts).toEqual(['PRIMARY PROMPT']);
 
     const steered = await runParked('focus on the auth module');
-    expect(steered.bodyArgs[0]?.continuationPrompt).toBeUndefined();
+    expect(steered.bodyArgs[0]?.partial).toBeUndefined();
     expect(steered.prompts[0]).toContain('focus on the auth module');
     expect(steered.prompts[0]).toContain('PRIMARY PROMPT');
   });
 
-  it('an outer-signal abort while parked skips the CONTINUE_TURN save', async () => {
+  it('an outer-signal abort while parked skips the RESUME_STEP save', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const outer = new AbortController();
     let resolvePrompt: (text: string) => void = () => {};
@@ -264,6 +329,7 @@ describe('withContinuationLoop', () => {
         signal: outer.signal,
       },
       state,
+      step: PLANNER_STEP,
       body: async ({ signal }) => {
         sinks.trigger();
         if (signal.aborted) throw new Error('aborted');
@@ -277,8 +343,13 @@ describe('withContinuationLoop', () => {
 
     await expect(loop).rejects.toThrow('workflow rewound');
     const statePath = join(projectDir, '.splitbrief', 'sessions', sessionId, STATE_FILE);
-    const saved = JSON.parse(readFileSync(statePath, 'utf8')) as { awaitingContinue?: boolean };
+    const saved = JSON.parse(readFileSync(statePath, 'utf8')) as {
+      awaitingContinue?: boolean;
+      interruptedStep?: { step: StepRef; source: string };
+    };
     expect(saved.awaitingContinue).toBe(true);
+    expect(saved.interruptedStep?.step).toEqual(PLANNER_STEP);
+    expect(saved.interruptedStep?.source).toBe('user');
   });
 
   it('a command-idle-timeout failure routes to the continuation prompt', async () => {
@@ -294,15 +365,16 @@ describe('withContinuationLoop', () => {
     const result = await withContinuationLoop<string>({
       ctx: { projectDir, sessionId, callbacks, bus, sinks },
       state,
-      body: async ({ signal, continuationPrompt, recordOutput }) => {
+      step: PLANNER_STEP,
+      body: async ({ signal, partial, steer, recordOutput }) => {
         attempt += 1;
         if (attempt === 1) {
           recordOutput('silent partial');
           expect(signal.aborted).toBe(false);
           throw processError.idleTimeout({ command: 'opencode', idleMs: 300_000 });
         }
-        expect(continuationPrompt).toContain('silent partial');
-        expect(continuationPrompt).toContain('retry please');
+        expect(partial).toContain('silent partial');
+        expect(steer).toBe('retry please');
         return 'recovered';
       },
     });
@@ -331,6 +403,7 @@ describe('withContinuationLoop', () => {
     await withContinuationLoop<string>({
       ctx: { projectDir, sessionId, callbacks, bus, sinks },
       state,
+      step: PLANNER_STEP,
       body: async ({ signal }) => {
         attempt += 1;
         if (attempt === 1) {
@@ -360,6 +433,7 @@ describe('withContinuationLoop', () => {
       withContinuationLoop<number>({
         ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
         state,
+        step: PLANNER_STEP,
         body: async () => {
           throw err;
         },
@@ -387,6 +461,7 @@ describe('withContinuationLoop', () => {
           signal: outer.signal,
         },
         state,
+        step: PLANNER_STEP,
         body: async ({ signal }) => {
           sinks.trigger();
           expect(signal.aborted).toBe(true);
@@ -417,6 +492,7 @@ describe('withContinuationLoop', () => {
         sinks,
       },
       state,
+      step: PLANNER_STEP,
       body: async ({ signal, recordOutput }) => {
         attempt += 1;
         if (attempt === 1) {
@@ -432,8 +508,12 @@ describe('withContinuationLoop', () => {
     const stagedStatePath = join(stagedDir, '.splitbrief', 'sessions', sessionId, STATE_FILE);
     expect(existsSync(realStatePath)).toBe(true);
     expect(existsSync(stagedStatePath)).toBe(false);
-    const saved = JSON.parse(readFileSync(realStatePath, 'utf8')) as { awaitingContinue?: boolean };
+    const saved = JSON.parse(readFileSync(realStatePath, 'utf8')) as {
+      awaitingContinue?: boolean;
+      interruptedStep?: unknown;
+    };
     expect(saved.awaitingContinue).toBe(false);
+    expect(saved.interruptedStep).toBeUndefined();
   });
 
   it('clears the abort handler sink on normal completion and on rethrow', async () => {
@@ -445,6 +525,7 @@ describe('withContinuationLoop', () => {
     await withContinuationLoop<number>({
       ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
       state,
+      step: PLANNER_STEP,
       body: async () => 1,
     });
     expect(sinks.hasHandler()).toBe(false);
@@ -454,6 +535,7 @@ describe('withContinuationLoop', () => {
       withContinuationLoop<number>({
         ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
         state,
+        step: PLANNER_STEP,
         body: async () => {
           throw new Error('boom');
         },

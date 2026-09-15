@@ -6,7 +6,7 @@ import type {
   InvokeOpts,
   RetryOptions,
 } from '../types.js';
-import { composeSteeredPrompt } from '../../spec/prompts/steered-prompt.js';
+import { composeContinuation } from '../../spec/prompts/continuation.js';
 import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
 import { toTokenDelta } from '../../calls/projection.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
@@ -309,12 +309,22 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
   return {
     async implement(opts: ImplementerOptions): Promise<ImplementerResult> {
-      const prompt = composeSteeredPrompt(opts.continuationPrompt ?? buildPrompt(opts), opts.steer);
+      // A restarted brief is the same brief: the prompt is the brief's own, with
+      // the cut attempt's partial and the files it already wrote trailing it.
+      const base = buildPrompt(opts);
+      const prompt =
+        opts.continuation === undefined
+          ? base
+          : composeContinuation({ basePrompt: base, ...opts.continuation });
       return runPipeline(opts, prompt, 0);
     },
 
     async retry(opts: RetryOptions): Promise<ImplementerResult> {
-      const prompt = buildRetryPrompt(opts);
+      const base = buildRetryPrompt(opts);
+      const prompt =
+        opts.continuation === undefined
+          ? base
+          : composeContinuation({ basePrompt: base, ...opts.continuation });
       const temperature =
         opts.kind === 'hint'
           ? opts.config.implementer.temperature

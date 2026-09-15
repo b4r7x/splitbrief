@@ -108,7 +108,7 @@ describe('TROUBLESHOOTING diagnostic parity', () => {
   });
 
   it('documents the repeated-timeout halt with the implementer wall clock', () => {
-    const reason: RecoveryReason = 'implementer-timeout-repeated';
+    const reason: RecoveryReason = 'runner-timeout-repeated';
     expect(troubleshootingDoc).toContain('### Symptom: two consecutive timeouts halted my run');
     expect(troubleshootingDoc).toContain(`${TIMEOUTS.implementerMs / 60_000} minutes`);
     expect(troubleshootingDoc).toContain(reason);

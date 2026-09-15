@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "splitbrief",
-  "description": "The SPLITBRIEF pipeline as agent skills: this session plans and compiles Product Task Briefs, a cheaper coding tool builds them, the project's own gates and a drift check judge every attempt, a bounded retry ladder escalates, and an evidence-bound review closes the run",
+  "description": "The SPLITBRIEF pipeline as agent skills: this session plans and compiles Product Task Briefs, another coding tool builds them, the project's own gates and a drift check judge every attempt, a bounded retry ladder escalates, and an evidence-bound review closes the run",
   "owner": {
     "name": "b4r7x"
   },

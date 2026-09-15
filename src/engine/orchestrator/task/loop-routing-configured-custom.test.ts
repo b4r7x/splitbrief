@@ -48,7 +48,8 @@ type RoutedRunner = Readonly<{
   id: string;
   profile: string;
   contract: CustomContract;
-  costTier: 'cheap' | 'standard';
+  /** Routing ranks capable profiles by context window, so the selected one declares the smaller. */
+  contextLength: number;
 }>;
 
 function writesFiles(contract: CustomContract): 'extracted-code' | 'direct' {
@@ -108,8 +109,7 @@ function configuredRunner(runner: RoutedRunner, script: string) {
       kind: runner.contract === 'output' ? ('shell' as const) : ('agent' as const),
       ...common,
       model: `${runner.id}-model`,
-      contextLength: 32_768,
-      costTier: runner.costTier,
+      contextLength: runner.contextLength,
       capabilities: { writesFiles: writesFiles(runner.contract) },
     },
     command: {
@@ -150,11 +150,7 @@ function configuredProfileConfig(
       taskFile: input.taskFile,
     }),
   );
-  const {
-    costTier: _costTier,
-    capabilities: _capabilities,
-    ...fallbackImplementer
-  } = fallback.profile;
+  const { capabilities: _capabilities, ...fallbackImplementer } = fallback.profile;
 
   return ConfigSchema.parse({
     ...makeNoValidationConfig({
@@ -247,13 +243,13 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
         id: 'default-output-stable-id',
         profile: 'default-output',
         contract: 'output' as const,
-        costTier: 'cheap' as const,
+        contextLength: 65_536,
       },
       selected: {
         id: 'selected-direct-stable-id',
         profile: 'selected-direct',
         contract: 'direct' as const,
-        costTier: 'standard' as const,
+        contextLength: 32_768,
       },
       scope: { inBounds: ['src/profile-direct.ts', 'src/another-in-scope-file.ts'] },
     },
@@ -263,13 +259,13 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
         id: 'default-direct-stable-id',
         profile: 'default-direct',
         contract: 'direct' as const,
-        costTier: 'standard' as const,
+        contextLength: 65_536,
       },
       selected: {
         id: 'selected-output-stable-id',
         profile: 'selected-output',
         contract: 'output' as const,
-        costTier: 'cheap' as const,
+        contextLength: 32_768,
       },
     },
   ] as const)(

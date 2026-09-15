@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';

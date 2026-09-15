@@ -35,18 +35,6 @@ export function parsePositiveIntegerOption(value: string): number {
   return parsed;
 }
 
-export function parseBudgetOption(value: string): number {
-  const trimmed = value.trim();
-  if (trimmed.length === 0 || !/^\d+(\.\d+)?$/.test(trimmed)) {
-    throw new InvalidArgumentError(`'${value}' is not a valid budget amount.`);
-  }
-  const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new InvalidArgumentError(`'${value}' must be a positive number.`);
-  }
-  return parsed;
-}
-
 export function parseOutputFormatOption(value: string): string {
   const parsed = OutputFormatSchema.safeParse(value);
   if (!parsed.success) {
@@ -96,18 +84,23 @@ export function parseSeatSpecOption(value: string): SeatSpec {
 }
 
 export type RecoveryActionOption = Readonly<{
-  action: Extract<RecoveryAction, 'skip-current-task' | 'retry-same-worker' | 'switch-seat'>;
+  action: Extract<
+    RecoveryAction,
+    'skip-current-task' | 'retry-same-worker' | 'switch-seat' | 'end-run'
+  >;
   candidate?: SeatSwapCandidate;
 }>;
 
 /**
- * The three halts `splitbrief continue` can resolve without the panel, in the
- * words the resume line prints: `skip`, `retry`, `switch-seat:<tool>[:<model>]`.
+ * The halts `splitbrief continue` can answer without the panel, in the words the
+ * resume line prints: `skip`, `retry`, `switch-seat:<tool>[:<model>]`, `end-run`.
+ * The first three carry the run on; `end-run` closes it and the command stops there.
  */
 export function parseRecoveryActionOption(value: string): RecoveryActionOption {
   const spec = value.trim();
   if (spec === 'skip') return { action: 'skip-current-task' };
   if (spec === 'retry') return { action: 'retry-same-worker' };
+  if (spec === 'end-run') return { action: 'end-run' };
   if (spec.startsWith('switch-seat:')) {
     const seat = parseSeatSpecOption(spec.slice('switch-seat:'.length));
     return {
@@ -116,7 +109,7 @@ export function parseRecoveryActionOption(value: string): RecoveryActionOption {
     };
   }
   throw cliError(
-    `'${value}' is not a recovery action. Use skip, retry, or switch-seat:<tool>[:<model>].`,
+    `'${value}' is not a recovery action. Use skip, retry, switch-seat:<tool>[:<model>], or end-run.`,
     2,
   );
 }
@@ -241,7 +234,6 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--no-mouse', 'Disable mouse tracking')
     .option('--hover', 'Enable hover highlight (opt-in; requires mouse + fullscreen)', false)
     .option('--mode <mode>', 'Workflow mode: quick, standard, or speckit')
-    .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseBudgetOption)
     .option(
       '--planner-effort <level>',
       "Planner effort hint: none, minimal, low, medium, high, xhigh, max. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it.",
@@ -271,7 +263,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     )
     .option(
       '--action <action>',
-      '`continue` only: apply this action to the pending recovery — skip, retry, or switch-seat:<tool>[:<model>]',
+      '`continue` only: apply this action to the pending recovery — skip, retry, switch-seat:<tool>[:<model>], or end-run',
       parseRecoveryActionOption,
     )
     .hook('preAction', (command) => {

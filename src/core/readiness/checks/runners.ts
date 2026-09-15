@@ -50,13 +50,11 @@ export function buildRunnerChecks(
       summary: `Default implementer ${formatRunner(defaultProfile.config)} via profile ${defaultProfile.name}.`,
       details: [
         `Profiles: ${resolved.profiles.map((profile) => profile.name).join(', ')}`,
-        `Cost tier: ${defaultProfile.costTier}`,
         `Write mode: ${defaultProfile.capabilities.writesFiles}`,
       ],
       metadata: {
         defaultProfile: defaultProfile.name,
         profileCount: resolved.profiles.length,
-        costTier: defaultProfile.costTier,
         writeMode: defaultProfile.capabilities.writesFiles,
       },
     });
@@ -209,15 +207,6 @@ function buildImplementerProfileMetadataChecks(
     if (!configured) return [];
 
     const checks: ReadinessCheck[] = [];
-    if (configured.costTier === undefined) {
-      checks.push({
-        id: 'runners.implementer.profile-cost-tier-missing',
-        severity: 'info',
-        summary: `Implementer profile ${profile.name} has no costTier; routing treats it as unknown.`,
-        metadata: { profile: profile.name, costTier: null },
-      });
-    }
-
     if (configured.capabilities?.writesFiles === undefined) {
       checks.push({
         id: 'runners.implementer.profile-writes-files-inferred',

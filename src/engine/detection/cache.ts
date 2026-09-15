@@ -86,8 +86,6 @@ const CacheVersionStringSchema = CacheVersionStringBaseSchema.refine(
 
 const MAX_CACHED_MODELS_PER_ENTRY = 500;
 
-const CachedPriceSchema = z.number().finite().nonnegative().optional();
-
 const CachedModelIdSchema = z
   .string()
   .min(1)
@@ -101,13 +99,10 @@ const CachedModelIdSchema = z
 /**
  * Presentation-only projection of a detected model. Remembered rows carry
  * identity, the tool's own display name and detail, sizing, ordering, the
- * effort ladder and its default, the modality flags, and the per-million rates
- * the tool published for the row, so a cold start can paint the picker and a
- * run can rank an `auto:cheapest` seat before the live refresh lands. Rates and
- * the hidden flag are public catalog numbers from the tool's own listing, not
- * credential or account material; pricing provenance stays memory-only because
- * it names the lane that resolved the rate, which a remembered row cannot
- * vouch for once it is stale.
+ * effort ladder and its default and the modality flags, so a cold start can
+ * paint the picker before the live refresh lands. The hidden flag is a public
+ * catalog value from the tool's own listing, not credential or account
+ * material.
  */
 const CachedModelSchema = z
   .object({
@@ -123,8 +118,6 @@ const CachedModelSchema = z
     nativeDefaultReasoningEffort: z.string().trim().min(1).max(64).optional(),
     supportsToolCalls: z.boolean().optional(),
     outputModalities: z.array(z.string().min(1).max(32)).max(8).readonly().optional(),
-    pricingInput: CachedPriceSchema,
-    pricingOutput: CachedPriceSchema,
     isFree: z.boolean().optional(),
   })
   .strict();
@@ -286,8 +279,6 @@ function cachedModels(models: readonly DetectedModel[]): CachedModel[] {
       ...(model.outputModalities === undefined
         ? {}
         : { outputModalities: [...model.outputModalities] }),
-      ...(model.pricingInput === undefined ? {} : { pricingInput: model.pricingInput }),
-      ...(model.pricingOutput === undefined ? {} : { pricingOutput: model.pricingOutput }),
       ...(model.isFree === undefined ? {} : { isFree: model.isFree }),
     });
     if (result.success) sanitized.push(result.data);
@@ -457,19 +448,6 @@ export async function loadRememberedSnapshot(
 ): Promise<DetectionCacheSnapshot | null> {
   const cache = await readCache(projectDir);
   if (cache === null) return null;
-  return snapshotFromCache(cache);
-}
-
-/**
- * The same read, withheld past the readiness freshness bound: routing turns
- * remembered rows into runner slots that must pass fresh admission, so a record
- * older than that bound describes a machine nobody has checked recently.
- */
-export async function loadFreshRememberedSnapshot(
-  projectDir: string,
-): Promise<DetectionCacheSnapshot | null> {
-  const cache = await readCache(projectDir);
-  if (cache === null || Date.now() - cache.fetchedAt >= DEFAULT_TTL_MS) return null;
   return snapshotFromCache(cache);
 }
 

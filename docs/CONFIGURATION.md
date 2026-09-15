@@ -30,7 +30,7 @@ implementerProfiles:
   default: local-qwen
   profiles: { local-qwen: { kind: api, ... }, cheap-cloud: { kind: api, ... } }
 validation:     { typecheck, lint, test, testCommand }
-workflow:       { mode, approve, maxRetries, git, isolation, maxBudget, ... }
+workflow:       { mode, approve, maxRetries, git, isolation, ... }
 sessions:       { scope: project }
 escalation:     { enabled, intermediateProvider, intermediateModel }
 codebase:       { enabled, tokenBudget, include, exclude }
@@ -69,11 +69,11 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `model` | string | — | Model identifier, or `auto`. Planner: optional. Implementer: required for `api`, `shell`, and `agent`; optional for `cli`, where omitting `model` and writing `model: auto` are equivalent — both delegate to the tool's own default. The implementer `cli` seat block also accepts `auto:cheapest` — a routing marker rather than a model id: it derives the implementer profile pool from priced discovered rows (§3). Config load rejects it on the `api`, `shell` and `agent` variants, which have no derivation to fall back on and would transmit the marker as a model id, and inside `implementerProfiles.profiles`, where a profile must name a concrete model. |
+| `model` | string | — | Model identifier, or `auto`. Planner: optional. Implementer: required for `api`, `shell`, and `agent`; optional for `cli`, where omitting `model` and writing `model: auto` are equivalent — both delegate to the tool's own default. |
 | `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. Pricing remains unknown unless models.dev, runtime provider metadata, or the bundled catalog supplies rates. |
 | `contextLength` | int > 0 | detected, else `32768` | Override the detected context window. Useful for self-hosted Ollama/LM Studio whose `/api/show` reports the wrong number. When neither configured nor detected, SPLITBRIEF assumes the single documented default `DEFAULT_UNKNOWN_CONTEXT_LENGTH` (32768, `src/core/tokens/context-length.ts`) for routing and budget sizing alike. |
 | `temperature` | 0..2 | provider default | Sampling temperature. Honored only by the `api` kind (planner, reviewer, and implementer); the `cli`, `shell`, and `agent` kinds cannot pass it to their backend and drop it with a stderr warning. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
-| `timeout` | ms (≤ 1200000) | 20 min on a `cli` implementer call, 10 min on a `cli` review call, otherwise unset → no total-call cap (output silence is guarded separately: the 60s `api` stream-idle guard or `idleWarnMs`/`idleKillMs` below — see Troubleshooting) | Total wall-clock budget for a single planner, reviewer, or implementer call; aborts the call when exceeded. The defaults are `TIMEOUTS.implementerMs` / `TIMEOUTS.reviewerMs` (`src/core/pipeline-spec/timeouts.ts`), and the cap is the implementer deadline. Two consecutive timeouts on one brief stop the run with an `implementer-timeout-repeated` recovery instead of escalating. Raise for long planner thinks; lower for cheap probe calls. |
+| `timeout` | ms (≤ 1200000) | 20 min on a `cli` implementer call, 10 min on a `cli` review call, otherwise unset → no total-call cap (output silence is guarded separately: the 60s `api` stream-idle guard or `idleWarnMs`/`idleKillMs` below — see Troubleshooting) | Total wall-clock budget for a single planner, reviewer, or implementer call; aborts the call when exceeded. The defaults are `TIMEOUTS.implementerMs` / `TIMEOUTS.reviewerMs` (`src/core/pipeline-spec/timeouts.ts`), and the cap is the implementer deadline. Two consecutive timeouts on one brief stop the run with an `runner-timeout-repeated` recovery instead of escalating. Raise for long planner thinks; lower for quick probe calls. |
 | `idleWarnMs` | ms (≤ 3600000) | `300000` | Inactivity watchdog warn threshold: after this much output silence on a running call, the byline shows a "still working" warning; any stdout/stderr output clears it and resets the timer. |
 | `idleKillMs` | ms (≤ 3600000) | `1800000` | Inactivity watchdog kill threshold: at this much output silence the runner's process group is terminated (SIGTERM, then SIGKILL after a grace window) and the call is marked failed. For planner calls a retry prompt is offered; a failed implementer call feeds the task's retry/escalation ladder instead, whose retry prompts rebuild the full Task Brief per attempt. |
 | `effort` | `none\|minimal\|low\|medium\|high\|xhigh\|max` | unset | Reasoning-effort hint. The union above is what config accepts; the levels a seat may actually use are the selected model's own ladder, not a fixed list per tool — the seat's tool accepts a subset and reports what it rejects. How a seat's effort intent reaches its tool is the seat's channel — `CliEffortChannel` (`src/core/runners/effort-channel.ts`), resolved by `seatEffortChannel` (`src/core/runners/capabilities.ts`) — and only one of the four channels carries this field. `cli` `claude-code`, `codex`, `copilot` and `command-code` are channel `effort-flag`: they deliver this `EffortLevel` verbatim on the tool's own effort argument, on the planner, reviewer, and implementer seats — `claude-code`, `copilot` and `command-code` emit `--effort <level>`, `codex` emits `-c model_reasoning_effort=<level>`. `cli` `opencode` and `kilo-code` are channel `variant`: they have a real effort channel, but it is a named preset delivered through the separate `variant` field on `--variant`, not through `effort`. `cli` `cursor` is channel `model-id`: effort is encoded in the selected model id's suffix, so there is no separate field to set — choose it in the model picker. Only the `api`, `shell`, and `agent` kinds are channel `none`. `seatSupportsEffort` is now `seatEffortChannel(...) !== 'none'`; a caller that means "takes the `effort` field" tests for `effort-flag`. An undeliverable value is not sent: changing a seat in the TUI clears it and says so (`Effort <level> cleared: <tool> has no effort channel`) on every seat whose channel is not `effort-flag`, and a headless run drops it, with a `planner-effort`/`reviewer-effort: dropped` stderr warning on the planner and review seats, silently on the implementer seat. The same clearing and dropping applies to `variant` on a seat whose channel is not `variant`. |
@@ -84,8 +84,6 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 ### Pricing metadata
 
 Pricing is resolved from cached `models.dev` metadata first when available, then from runtime provider metadata or the bundled catalog. `models.dev` context pricing tiers are preserved: flat base rates apply below the tier threshold, and the highest matching context tier applies when prompt/cache context reaches that threshold. Local-only unpriced runners are displayed as local/unpriced rather than dollar-priced. Picker lane order is separate from this ladder — a CLI tool renders its own listing with the bundled `KNOWN_MODELS` aliases as the offline fallback, and an `api` runner adds models.dev rows beside its runtime list — and does not reorder pricing or context lookup; see [Model catalog lanes](./PLANNERS-AND-IMPLEMENTERS.md#model-catalog-lanes).
-
-If an API-billed or otherwise paid runner has unknown model pricing and `workflow.maxBudget` is set, runtime budget tracking pauses instead of treating that usage as `$0`. Continue only after acknowledging unknown spend or configuring pricing.
 
 ### `kind: cli`
 
@@ -272,7 +270,7 @@ The reviewer is a planner-tier seat and shares the planner's admission set, so a
 
 ### Falling back to the planner
 
-- **No `reviewer` block:** the planner runner performs the review. Review tokens are priced at the planner's rates and folded into the planner line in the summary and the cost drilldown.
+- **No `reviewer` block:** the planner runner performs the review. Review tokens are priced at the planner's rates and folded into the planner line in the run summary.
 - **A `reviewer` block:** the reviewer performs the review and gets its own priced line in both.
 - **A configured reviewer that fails admission** blocks the run before it starts, with a readiness blocker naming the reviewer seat. **A configured reviewer that fails mid-call** is reported as a failed review (`finalReviewStatus: "failed"` in the run summary, `finalReview.status` in the review packet), with the reviewer's identity in the error and the final-review evidence still recorded. SPLITBRIEF never silently hands the review back to the planner.
 
@@ -306,9 +304,9 @@ reviewer:
 
 ## 3. `implementer`
 
-The implementer is the weaker of the two models. What makes a runner the implementer is the model behind it, not the transport SPLITBRIEF uses to reach it: a coding-agent CLI pointed at a cheaper model and an OpenAI-compatible API endpoint are equally first-class here, and SPLITBRIEF favors neither. They differ mechanically in one place — a `cli` or `agent` implementer writes files itself (`writesFiles: direct`), while an `api` or `shell` implementer returns file contents that SPLITBRIEF writes (`writesFiles: extracted-code`). Where a direct writer works before its changes reach your checkout is set by `workflow.isolation` (§5).
+The implementer is the weaker of the two models. What makes a runner the implementer is the model behind it, not the transport SPLITBRIEF uses to reach it: a coding-agent CLI pointed at a smaller model and an OpenAI-compatible API endpoint are equally first-class here, and SPLITBRIEF favors neither. They differ mechanically in one place — a `cli` or `agent` implementer writes files itself (`writesFiles: direct`), while an `api` or `shell` implementer returns file contents that SPLITBRIEF writes (`writesFiles: extracted-code`). Where a direct writer works before its changes reach your checkout is set by `workflow.isolation` (§5).
 
-Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, and `agent` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to delegate to the tool's own configured default; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `ollama` → `qwen3-coder:30b`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. A third spelling, `auto:cheapest`, is implementer-only and names no model: it marks the seat block for auto-routing, and profile derivation (see `implementerProfiles` below) replaces the pool with one profile per priced discovered row. It is valid only on a `cli` seat block — on an `api`, `shell` or `agent` seat, and inside `implementerProfiles.profiles`, config load rejects it, because those seats transmit the model id they are given and a profile must name a concrete model. Implementer write behavior (`extracted-code` vs `direct`) is not a choice: `capabilities.writesFiles` may be declared per profile under `implementerProfiles`, but it must match the runner kind's write mode, and config load rejects a mismatch.
+Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, and `agent` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to delegate to the tool's own configured default; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `ollama` → `qwen3-coder:30b`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. Implementer write behavior (`extracted-code` vs `direct`) is not a choice: `capabilities.writesFiles` may be declared per profile under `implementerProfiles`, but it must match the runner kind's write mode, and config load rejects a mismatch.
 
 YAML — minimal (local Ollama):
 
@@ -322,7 +320,7 @@ implementer:
   model: qwen3-coder:30b
 ```
 
-YAML — a coding-agent CLI running a cheaper model than the planner:
+YAML — a coding-agent CLI running a smaller model than the planner:
 
 ```yaml
 implementer:
@@ -352,9 +350,9 @@ implementer:
 `contextLength` is SPLITBRIEF's assumed input context window, used to size the prompt budget. When neither configured nor detected, every consumer — routing and the prompt and request budgets alike — resolves to the single documented default `DEFAULT_UNKNOWN_CONTEXT_LENGTH` (32768) in `src/core/tokens/context-length.ts`, so an omitted window never means "unlimited" to one consumer and a different number to another. A boot-probed window applies only to the default implementer profile; a sibling profile that declares no `contextLength` routes at the shared default. When no window is known, the model-resolution ladder in `src/engine/providers/model/context-window.ts` answers: for an `api` runner, the models.dev cache when hydrated, else the runtime snapshot, else the bundled catalog row for the pinned model; for a CLI tool, its own listing, else the bundled catalog row — and for a CLI tool under `model: auto`, which resolves to no model id, the smallest window the bundled catalog guarantees for that tool (automatic selection never adds a `--model` flag). It does **not** change a provider's real model context. For Ollama, configure the model/server `num_ctx` first; use `contextLength` or `SPLITBRIEF_CONTEXT_LENGTH` only to match or override SPLITBRIEF's detection. It is also **not** the per-response output cap — SPLITBRIEF clamps `max_tokens` to the model's max-output limit independently, so a large context window never produces an over-large output request.
 
 **When to use:**
-- *Coding-agent CLI on a cheaper model* — you already pay for a Claude Code / Codex / Copilot subscription and want the implementer step to run there on a smaller model than the planner uses.
+- *Coding-agent CLI on a smaller model* — you already pay for a Claude Code / Codex / Copilot subscription and want the implementer step to run there on a smaller model than the planner uses.
 - *Cheap local API* — Ollama or LM Studio for cost-free iteration on small tasks.
-- *Mid-tier API* — a cheaper-than-frontier model behind your own custom endpoint.
+- *Mid-tier API* — a below-frontier model behind your own custom endpoint.
 - *Frontier* — the same model class as the planner when you want its quality for the implementer step too.
 
 **See also:** §2 `planner`, §6 `escalation` (for mid-tier fallback), [REPOMAP.md](./REPOMAP.md) (codebase context the implementer never sees, only the planner).
@@ -388,10 +386,9 @@ implementerProfiles:
       model: qwen2.5-coder:7b
       contextLength: 32768
       label: Local Qwen
-      costTier: local
       capabilities:
         writesFiles: extracted-code
-    cheap-cloud:
+    small-cloud:
       kind: api
       provider: custom-endpoint
       service: custom-endpoint
@@ -400,8 +397,7 @@ implementerProfiles:
       apiKey: <paste-your-endpoint-key>
       model: your-cheap-cloud-model
       contextLength: 131072
-      label: Cheap cloud
-      costTier: cheap
+      label: Small cloud
       capabilities:
         writesFiles: extracted-code
 ```
@@ -411,18 +407,13 @@ implementerProfiles:
 | Field | Type | Description |
 |---|---|---|
 | `label` | string | Optional display label for TUI/events. |
-| `costTier` | `local\|cheap\|standard\|frontier\|unknown` | Optional routing hint. Defaults to `unknown` in accessors when omitted. |
 | `capabilities.writesFiles` | `extracted-code\|direct` | Optional routing metadata. Defaults from runner kind: `api`/`shell` extract one file from stdout; `cli`/`agent` write directly. Explicit values must match the runner kind. |
 
 If `implementerProfiles.default` is omitted, SPLITBRIEF resolves the default profile deterministically from the first profile name in sorted order. If `default` is set, it must name an existing profile.
 
-Setting `model: auto:cheapest` on the implementer seat block swaps the pool above for derived profiles: one per discovered ready model row that lists both an input and an output price — the `cost` prices in the `opencode models --verbose` and `kilo models --verbose` catalogs. Rows without a price are excluded. Derived rows are ranked by the blended price `input + 4×output` per 1M, cheapest first, and the cheapest row becomes the pool's default; each row carries a concrete model under a stable `auto-<tool>-<model>` name, with the blended price on its label, so the routing described below selects among priced concrete profiles as usual.
+Task-start rows show the concrete routing reason when a worker is selected, and the run's recorded per-task metadata carries richer routing and context data for post-run inspection.
 
-The marker is a `cli` seat-block spelling only: on an `api`, `shell` or `agent` seat, and inside `implementerProfiles.profiles`, config load rejects `auto:cheapest`. When discovery finds no priced row — a cold or stale detection record included — no pool is derived, the configured profiles above are used unchanged (or, with no `implementerProfiles` block at all, the `implementer` seat block itself remains the only profile), and readiness carries a warning naming that the tool's own default model will run instead of the cheapest priced one. Derived rows are re-admitted like any other profile, and one that fails admission is dropped with a warning as long as another derived row is admitted; the preparation is blocked only when none survives.
-
-Task-start rows show the concrete routing reason when a worker is selected, and the cost drilldown carries richer routing and context data for post-run inspection.
-
-When recovery offers `route-bigger-worker`, the issue names a target profile from this pool. Selecting that action resets only the current task and reruns it once with the named profile instead of the cheapest-capable routing choice.
+When recovery offers `route-bigger-worker`, the issue names a target profile from this pool. Selecting that action resets only the current task and reruns it once with the named profile instead of the routing choice.
 
 ---
 
@@ -500,7 +491,7 @@ Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `li
 **When to use the toggles:**
 - Disable `test` for repos with no test suite.
 - Disable `lint` if your linter is enforced only at PR time (CI) and you want faster local iteration.
-- Leave `typecheck: true` for typed languages — it's the cheapest signal that the implementer wrote compilable code.
+- Leave `typecheck: true` for typed languages — it's the fastest signal that the implementer wrote compilable code.
 
 ### Baseline-relative acceptance
 
@@ -512,7 +503,7 @@ A task's validation is judged against the run's baseline, not absolute repositor
 
 ## 5. `workflow`
 
-Mode, spec/plan document gates, retries, budget, git strategy, and brief-review style.
+Mode, spec/plan document gates, retries, git strategy, and brief-review style.
 
 ### Schema
 
@@ -538,11 +529,7 @@ workflow: {
   briefReview?:           'simple';
   taskReview?:            'none' | 'failed' | 'every';
 
-  // Budget
-  maxBudget?:             number > 0;
-  budgetPauseThreshold?:  0..1;
   driftChainThreshold?:   0..1;
-  costGate?:              boolean; // default true
 
   // Speckit-only
   speckit?:               { minCoverage?: 0..1 };
@@ -550,6 +537,9 @@ workflow: {
   // Transcript
   compactionThreshold?:   number;  // int >= 10
   compactionFormat:       'auto' | 'freeform' | 'structured'; // default auto
+
+  // Display
+  showSpend?:             boolean; // default true
 }
 ```
 
@@ -565,13 +555,11 @@ workflow: {
 | `isolation` | enum | `worktree` | Where an implementer that writes files itself does its work before changes are promoted into the project: `worktree` (one linked git worktree per run) or `staged-copy` (a temporary copy of the project per task). Unused when the implementer returns file contents (`writesFiles: extracted-code`) — SPLITBRIEF writes those files into the project itself. |
 | `briefReview` | enum | `simple` | `simple` is the only accepted value. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` in the external editor. |
 | `taskReview` | enum | `none` | Per-task review gate after implementation: `none` (never pause), `failed` (pause only when a task fails, hits recovery, or its validation fails), `every` (pause after every advancing task). **Requires an interactive TUI run** — any value other than `none` is rejected at startup in headless mode (`src/cli/headless.ts`), so leave it `none` for CI. |
-| `maxBudget` | number > 0 | unset | USD ceiling. Workflow warns at 80%, pauses at `budgetPauseThreshold` (default `0.85`), stops at the hard cap, and pauses when paid usage has unknown pricing instead of treating it as `$0`. |
-| `budgetPauseThreshold` | 0..1 | `0.85` | Fraction of `maxBudget` at which to pause. e.g. `0.8` pauses at 80%. |
 | `driftChainThreshold` | 0..1 | `0.6` | Threshold used when omitted; higher = fewer drift-chain events. |
-| `costGate` | boolean | `true` | Pause for cost approval before implementation when a deterministic prompt-input estimate is available. Set `false` to skip the gate. The gate is always skipped in `quick` mode and when no deterministic estimate exists. Output, retries, validation reruns, and escalation are tracked at runtime. |
 | `speckit.minCoverage` | 0..1 | `0.9` | Speckit-mode spec/plan→task traceability threshold. The analyze phase emits a `warning` event when measured `specTaskCoverage` or `planTaskCoverage` falls below this value. Not a test-coverage gate. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
+| `showSpend` (`show_spend`) | boolean | `true` | Whether the run's spend figure is shown when pricing is known: the sidebar footer's `· $0.42` and the `Cost` row in a closed run's ledger. Off hides both (the sidebar keeps `Local NN%`) and makes `/copy cost` answer `spend display is off`. Display only — token accounting and the recorded cost breakdown are unchanged. Toggle it in Settings ▸ Workflow ▸ **Show spend**. |
 
 ### Per-mode defaults
 
@@ -617,7 +605,7 @@ workflow:
   maxRetries: 2
 ```
 
-Speckit with budget and manual commits:
+Speckit with manual commits:
 
 ```yaml
 workflow:
@@ -625,8 +613,6 @@ workflow:
   approve: all
   maxRetries: 2
   briefReview: simple
-  maxBudget: 5.00
-  budgetPauseThreshold: 0.8
   driftChainThreshold: 0.6
   git:
     commitStrategy: none
@@ -649,8 +635,6 @@ workflow:
 - `git.createBranch: true` — when running SPLITBRIEF in CI or against `main` and you don't want the changes landing on the current branch.
 - `git.commitStrategy: none` — the default and recommended setting for manual review; SPLITBRIEF leaves changes unstaged so you can review and commit them yourself.
 - `isolation: worktree` — the default, and the only strategy where the implementer can run the project's own typecheck, lint, and tests before handing work back. Choose `staged-copy` only when a linked git worktree is not workable for your setup.
-- `maxBudget` — always set this for API-billed runs. It's your stop-loss.
-- `budgetPauseThreshold` — set for unattended runs so you can intervene before the hard ceiling. Unknown paid pricing pauses regardless of the threshold because the runtime cannot prove spend against the cap.
 - `briefReview: simple` — the only accepted brief review mode. Use `Ctrl+E`, `e`, `edit`, `E`, or `edit-file` to edit the persisted Task Brief in the external editor.
 
 **See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) (`/mode` runtime override). Workflow approval level is set with `--approve` or `workflow.approve`.
@@ -687,9 +671,9 @@ escalation:
 
 **Editing from the TUI.** The intermediate tier is configured in YAML only. The Crew section of Settings exposes planner, implementer, and reviewer seats; it has no escalation row or picker. Set `enabled: false` in YAML to disable the tier while retaining its provider and model configuration.
 
-**When to use:** you run a cheap implementer (a small local model, or a cheap model behind your own endpoint) and want a "10x cheaper than the planner but smarter than the implementer" stop along the way before paying for an Opus retry. Skip if your implementer is already frontier-class. Setting `intermediateProvider` is enough to turn the tier on; add `enabled: false` only when you want to keep the provider config but bypass the tier.
+**When to use:** you run a small implementer (a local model, or a small model behind your own endpoint) and want a stop that is stronger than the implementer but weaker than the planner before the task reaches the planner itself. Skip if your implementer is already frontier-class. Setting `intermediateProvider` is enough to turn the tier on; add `enabled: false` only when you want to keep the provider config but bypass the tier.
 
-**Budget knownness.** Escalation and recovery provider calls follow the same knownness rules as every other paid call. Unknown provider cost is not zero. Without `workflow.maxBudget`, a bounded operation with missing pricing is admitted as a provider-dependent reservation: USD stays absent or unknown, never `0`, until the price resolves. With `maxBudget` configured, unknown price or spend refuses before dispatch with `brief_budget_unknown` instead of being guessed at. A pre-acceptance refusal consumes no allowance and makes no provider call.
+**Pricing knownness.** Escalation and recovery provider calls follow the same knownness rules as every other call. Unknown provider cost is not zero. A call whose price does not resolve leaves the run's USD figure absent or unknown, never `0`, and SPLITBRIEF never invents a rate to fill the gap.
 
 ---
 
@@ -1006,7 +990,6 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 |---|---|---|
 | `--approve <level>` | Spec/plan document gates: `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue |
 | `--mode <mode>` | `quick` \| `standard` \| `speckit` | start, spec, resume, continue |
-| `--budget <amount>` | Dollar ceiling | start, resume, continue |
 | `--model <m>` | Alias for `--implementer-model` | start, resume, continue |
 | `--provider <p>` | Alias for `--implementer` | start, resume, continue |
 | `--planner <tool>` | Planner tool override | start, resume, continue |
@@ -1082,7 +1065,7 @@ Runner identities that a `version: 3` config once accepted are rejected by name,
 
 ### Removed config keys
 
-Fifteen shapes that a `version: 3` config once carried are gone: twelve removed keys, plus three
+Twenty-one shapes that a `version: 3` config once carried are gone: eighteen removed keys, plus three
 removed **values** of keys that still exist (`workflow.briefReview: rich`, a hook entry's
 `kind: module`, `sessions.scope: global`). There is no version bump and no migration pass — every
 one of them fails the load. One load names them all: `validateConfig`
@@ -1111,12 +1094,18 @@ key.
 | `snapshots` (the whole block, including `snapshots.auto.*`) | rejected — `snapshots: Unknown config key …` | None. Snapshots are still taken as the baseline for change detection and for `/run reject`; the trigger points are fixed, not configurable, and there is no `splitbrief snapshot` command. A run captures its baseline before the first task and records one run snapshot at the end for `/run reject` to roll back to (see [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md)). |
 | `plannerEstimateReview` | rejected — `plannerEstimateReview: Unknown config key …` | None. The estimate-review gate is gone; the brief-approval gate (§5 `approve`) is the remaining stop before implementation. |
 | `autoSplitOverflow` | rejected — `autoSplitOverflow: Unknown config key …` | None. An overflowing task is reported rather than split automatically; re-plan or narrow the feature description. |
+| `workflow.maxBudget` (`max_budget`) | rejected — `workflow.maxBudget: Unknown config key …` | None. Budget gates are gone; a run reports what it spent and stops when you stop it. |
+| `workflow.budgetPauseThreshold` (`budget_pause_threshold`) | rejected — `workflow.budgetPauseThreshold: Unknown config key …` | None. There is no budget pause to threshold. |
+| `workflow.costGate` (`cost_gate`) | rejected — `workflow.costGate: Unknown config key …` | None. The cost-approval gate is gone; the brief-approval gate (§5 `approve`) is the remaining stop before implementation. |
+| `implementerProfiles.profiles.*.costTier` (`cost_tier`) | rejected — `cost_tier: Unknown config key …` | None. Routing is by capability — context window, then name — never by price. |
+| `implementerProfiles.profiles.*.pricePer1M` (`price_per1_m`) | rejected — `price_per1_m: Unknown config key …` | None. Profiles carry no price. |
+| `implementer.model: auto:cheapest` | rejected — `Unknown model …` from the runner, since the marker is no longer parsed | Name a concrete model, or `auto` to delegate to the tool's own default. |
 
 ---
 
 ## 17. Full production example
 
-A representative config: Claude Code subscription as planner, a small local LM Studio model as implementer, mid-tier escalation to a larger local Ollama model, budget caps, hooks, and tiered approval. Use it as a starting point, then adjust credentials, budgets, hooks, and approval tiers for your environment.
+A representative config: Claude Code subscription as planner, a small local LM Studio model as implementer, mid-tier escalation to a larger local Ollama model, hooks, and tiered approval. Use it as a starting point, then adjust credentials, hooks, and approval tiers for your environment.
 
 <!-- config-example: full-production -->
 ```yaml
@@ -1152,14 +1141,12 @@ validation:
   test: true
   testCommand: npm test -- --run --reporter=dot
 
-# ---------- Workflow: speckit, all gates, manual commits, budget cap ----------
+# ---------- Workflow: speckit, all gates, manual commits ----------
 workflow:
   mode: speckit
   approve: all
   briefReview: simple
   maxRetries: 2
-  maxBudget: 5.00
-  budgetPauseThreshold: 0.8
   driftChainThreshold: 0.6
   git:
     commitStrategy: none

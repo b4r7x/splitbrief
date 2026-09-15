@@ -2,7 +2,8 @@ import { setupWorkflow } from '../../setup.js';
 import { initStores } from '../../init-stores.js';
 import { renderApp } from '../../render/app.js';
 import { cliError } from '../../errors.js';
-import { loadOwnerWorkflowState } from '../../../core/state/resume-hydration.js';
+import { loadRunRecord } from '../../../core/sessions/run-record.js';
+import { defaultRunRecordDeps } from '../../../core/sessions/run-record-io.js';
 import { runHeadless } from '../../headless.js';
 import { resolveSessionAlias } from '../../sessions/aliases.js';
 import { assertSessionExists } from '../../sessions/resolve.js';
@@ -88,7 +89,8 @@ export async function continueCommand(
 ): Promise<void> {
   const sessionId = await resolveTargetSession(sessionInput, opts.projectDir);
 
-  const hydrated = loadOwnerWorkflowState({ projectDir: opts.projectDir, sessionId });
+  const record = loadRunRecord({ projectDir: opts.projectDir, sessionId }, defaultRunRecordDeps());
+  const hydrated = record.hydration;
 
   if (hydrated.kind === 'invalid') {
     throw cliError(
@@ -104,6 +106,10 @@ export async function continueCommand(
     );
   }
 
+  if (record.status.kind === 'running') {
+    throw cliError(`session '${sessionId}' is still running — stop it before continuing.`, 1);
+  }
+
   const resumed =
     opts.action === undefined
       ? { state: hydrated.state }
@@ -113,6 +119,13 @@ export async function continueCommand(
           action: opts.action,
           opts,
         });
+
+  // `end-run` is the one action that does not carry the run on: the close is
+  // recorded and there is nothing left to re-enter.
+  if (resumed.state.closed !== undefined) {
+    console.log(`Run ${sessionId} closed. The files it wrote are still on disk.`);
+    return;
+  }
 
   await resumeSavedSession({
     projectDir: opts.projectDir,

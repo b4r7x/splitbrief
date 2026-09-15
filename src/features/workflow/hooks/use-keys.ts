@@ -30,9 +30,6 @@ function applyAction(action: WorkflowKeyAction) {
     case 'toggle-activity-batch':
       conversationScrollStore.toggleActivityBatch(action.key);
       return;
-    case 'open-cost-drilldown':
-      overlayStore.open('cost-drilldown');
-      return;
     case 'review-scroll':
       reviewStore.setScrollOffset(action.offset);
       return;

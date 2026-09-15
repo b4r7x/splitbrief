@@ -208,8 +208,8 @@ describe('runnerCallOutcome — implementer-side failure codes', () => {
     expect(runnerCallOutcome(failed('implementer-recipe-invalid', 'bad flag')).state).toBe(
       'implementer-recipe-invalid',
     );
-    expect(runnerCallOutcome(failed('implementer-timeout-repeated', 'twice')).state).toBe(
-      'implementer-timeout-repeated',
+    expect(runnerCallOutcome(failed('runner-timeout-repeated', 'twice')).state).toBe(
+      'runner-timeout-repeated',
     );
     expect(runnerCallOutcome(failed('missing-model', 'no such model')).state).toBe('missing-model');
   });

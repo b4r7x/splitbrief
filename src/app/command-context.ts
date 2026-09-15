@@ -53,6 +53,7 @@ import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
+import { readRunRecord } from '../core/sessions/run-record-io.js';
 import {
   readApprovalsStore,
   mutateApprovalsStore,
@@ -88,10 +89,7 @@ const appCommandContextError = {
 } as const;
 
 function routeSessionId(route: RouteData, projectDir: string): string | null {
-  if (route.screen === 'workflow') {
-    return route.execution.prepared.session.ref.sessionId;
-  }
-  if (route.screen === 'summary' && route.sessionId) return route.sessionId;
+  if (route.screen === 'workflow') return route.run.ref.sessionId;
   return readActive(projectDir);
 }
 
@@ -213,8 +211,8 @@ export function buildCommandContext({
   workflow: WorkflowCommandPorts;
 }): RuntimeCommandContext {
   const route = routerStore.get();
-  const prepared = route.screen === 'workflow' ? route.execution.prepared : null;
-  const projectDir = prepared?.session.ref.projectDir ?? configStore.get().projectDir;
+  const projectDir =
+    route.screen === 'workflow' ? route.run.ref.projectDir : configStore.get().projectDir;
   return createCommandContext({
     projectDir: () => projectDir,
     getConfig: () => configStore.get().config,
@@ -289,6 +287,11 @@ export function buildCommandContext({
     },
     acceptRunSnapshot,
     rejectRunSnapshot,
+    refreshRun: () => {
+      const route = routerStore.get();
+      if (route.screen !== 'workflow') return;
+      routerStore.updateRun({ run: readRunRecord(route.run.ref) });
+    },
     scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),
     toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.findLatestActivityBatchKey),
     toggleLatestDiff: () => toggleLatestDiff(workflow.findLatestDiffKey),
@@ -300,6 +303,16 @@ export function buildCommandContext({
       const { cols } = terminalSizeStore.get();
       if (getWorkflowSidebarWidth({ cols, sidebarVisible: true }) === 0) {
         return { status: 'unavailable', message: 'Sidebar is hidden on small terminals.' };
+      }
+      // A closed run takes the whole width and states its crew and its briefs in the block at the
+      // end of its transcript, so there is no column for this to open.
+      const current = routerStore.get();
+      if (
+        current.screen === 'workflow' &&
+        current.execution.kind === 'at-rest' &&
+        current.run.status.kind === 'closed'
+      ) {
+        return { status: 'unavailable', message: 'A closed run has no sidebar.' };
       }
       controlsStore.toggleSidebar();
       const visible = controlsStore.get().sidebarVisible;

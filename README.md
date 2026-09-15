@@ -16,7 +16,7 @@ A model reviewing its own output repeats its own blind spots — the assumptions
 
 Same-lab still works — two instances of one tool are a valid configuration. You give up the blind-spot argument, not the pipeline.
 
-Cost falls out of the same split rather than driving it: the expensive tool spends its tokens on research, brief compilation, review, and escalation; the cheap one spends its tokens typing. See [Cost](#cost) for what that does and does not promise.
+The split follows capability: the stronger tool spends its tokens on research, brief compilation, review, and escalation; the weaker one spends its tokens typing. See [Spend](#spend) for what the run reports.
 
 ## How it works
 
@@ -67,7 +67,7 @@ You: "add user authentication with JWT"
 
 How the changes land depends on which kind of implementer you picked. A tool that writes files itself (`writesFiles: direct` — the `cli` and `agent` kinds) works in an isolated directory; SPLITBRIEF promotes the result into your project and refuses to overwrite a file that changed while the task was running. A model that returns file contents (`writesFiles: extracted-code` — the `api` and `shell` kinds) never touches your working tree; SPLITBRIEF writes each file itself, one approval gate at a time. Isolation covers files only — same ports, same database, same hooks and config — so it is not a security boundary.
 
-The TUI shows planner and implementer working together as a conversation flow — event cards, inline diffs, real-time cost tracking.
+The TUI shows planner and implementer working together as a conversation flow — event cards, inline diffs, live token counts.
 
 ## Quick start
 
@@ -86,7 +86,7 @@ npm link               # exposes the `splitbrief` binary on your PATH
 Then bring a planner — the stronger of the two:
 
 ```bash
-# Claude Code (default planner): install from https://claude.ai/code — uses your existing subscription, $0 extra
+# Claude Code (default planner): install from https://claude.ai/code — uses your existing subscription
 # Cursor Agent CLI: install from https://cursor.com/cli
 npm install -g @openai/codex      # Codex
 npm install -g @github/copilot    # Copilot
@@ -98,7 +98,7 @@ npm install -g command-code       # Command Code (binary `cmd`)
 
 And an implementer — the weaker **model**. It reaches SPLITBRIEF by either transport, and SPLITBRIEF favours neither:
 
-- **A CLI tool running a cheaper model.** Any of the tools above, pointed at a cheap model. The tool writes files itself, in an isolated directory.
+- **A CLI tool running a smaller model.** Any of the tools above, pointed at a smaller model. The tool writes files itself, in an isolated directory.
 - **An API model.** A local Ollama or LM Studio daemon — `ollama pull qwen3-coder:30b`, or a coding model loaded in LM Studio — or any OpenAI-compatible endpoint. The model returns file contents; SPLITBRIEF writes them.
 
 ```bash
@@ -186,7 +186,7 @@ planner:
   tool: claude-code          # claude-code | codex | opencode | copilot | kilo-code | cursor | command-code
 
 implementer:
-  kind: api                  # or `kind: cli` with a `tool:`, to run a CLI tool on a cheaper model
+  kind: api                  # or `kind: cli` with a `tool:`, to run a CLI tool on a smaller model
   provider: ollama           # catalog ID, or any custom name
   service: ollama            # required on every api runner — nothing is back-filled
   offering: local            # payg | free-quota | coding-subscription | local
@@ -208,7 +208,7 @@ workflow:
     commitStrategy: none
 ```
 
-`contextLength` should match the model's effective window after the provider itself is configured. 25% is reserved for output. Minimum 8192. Optional implementer profiles still keep one implementer role: SPLITBRIEF selects the cheapest capable profile for each Task Brief instead of becoming a multi-agent manager.
+`contextLength` should match the model's effective window after the provider itself is configured. 25% is reserved for output. Minimum 8192. Optional implementer profiles still keep one implementer role: SPLITBRIEF selects the capable profile with the smallest sufficient context window for each Task Brief instead of becoming a multi-agent manager.
 
 Git commit strategies are opt-in. The default (`commitStrategy: none`) leaves changes unstaged for manual review; set `checkpoint` or `per-task` only if you want SPLITBRIEF to create git history.
 
@@ -345,19 +345,17 @@ Sizes and speeds are indicative for a recent consumer GPU, not measurements take
 
 Per-token prices are not hardcoded here. They come from models.dev at startup and are shown next to each model in the picker, so the number you see is the one your provider charges today.
 
-## Cost
+## Spend
 
-Keeping the expensive tool on research, brief compilation, review, and escalation, and the cheap one on typing, is what makes a run cost less than doing the whole thing on the expensive tool. That is arithmetic, not a benchmark: what you actually save depends on provider pricing, subscription limits, task size, how good the implementer is, how much validation you have, and how often escalation fires.
+SPLITBRIEF reports what a run spent when it knows the prices: token counts per seat always, and a dollar figure whenever every seat the run used is priced in the catalog. A run that recorded unpriced usage says so instead of publishing a figure it cannot stand behind.
 
-SPLITBRIEF reports the token and dollar split per run. It does not promise a ratio.
-
-There is no spend cap unless you set one. `workflow.maxBudget` in config, or `--budget` on the command line, makes a run pause when it reaches the cap; without either, a run keeps spending until it finishes or you stop it. `splitbrief doctor` reports which of the two applies before you start.
+The figure is a fact about the run, not a target. You can hide it in Settings.
 
 ## Measurement
 
 Two numbers decide whether this design earns its complexity: **first-pass rate** — how often the implementer satisfies a Task Brief without escalation — and **cross-lab review effectiveness** — how much the planner's review catches that validation did not. Those are what will be published here.
 
-Neither is measured yet. The `evals/` harness can be driven from a cassette alone — `--replay` needs no API key and no base URL, because the endpoint and a placeholder credential are resolved from the provider catalog — but it has never produced a recorded run, which is also why every model in the bundled catalog is marked `compatible-only` — `recommended` is reserved for models with recorded evaluation metrics, and none exist. Until those numbers appear in this section, nothing in this README is a performance claim. Cost is reported, never promised: a run that recorded no priced usage reports that explicitly instead of a fabricated zero.
+Neither is measured yet. The `evals/` harness can be driven from a cassette alone — `--replay` needs no API key and no base URL, because the endpoint and a placeholder credential are resolved from the provider catalog — but it has never produced a recorded run, which is also why every model in the bundled catalog is marked `compatible-only` — `recommended` is reserved for models with recorded evaluation metrics, and none exist. Until those numbers appear in this section, nothing in this README is a performance claim. Spend is reported as a fact: a run that recorded no priced usage reports that explicitly instead of a fabricated zero.
 
 ## Use the pipeline as skills
 

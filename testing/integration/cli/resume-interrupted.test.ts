@@ -18,7 +18,9 @@ import { toYaml } from '../../../src/core/config/load/transform.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState, loadState } from '../../../src/core/state/persistence.js';
 import { writeLockfile } from '../../../src/core/sessions/lockfile.js';
-import { SPLITBRIEF_DIR, CONFIG_FILE, sessionDir } from '../../../src/core/paths.js';
+import { SPLITBRIEF_DIR, CONFIG_FILE, RESEARCH_FILE, sessionDir } from '../../../src/core/paths.js';
+import { artifactPresence } from '../../../src/core/sessions/run-record-io.js';
+import { resumeStep } from '../../../src/core/sessions/run-status.js';
 
 // Resume runs the same readiness gate as start, and the default config points the
 // implementer at a local Ollama. The shared no-claim mock keeps the verdict off
@@ -115,6 +117,33 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
     expect(stdout).toMatch(/Resuming/);
     expect(stdout).toContain('validating-task');
     expect(loadState({ projectDir: tmp, sessionId })?.tasks[0]?.id).toBe('T001');
+  });
+
+  it('kill during spec resumes at spec', async () => {
+    const sessionId = '2026-04-18-killed-in-spec';
+    mkdirSync(sessionDir(tmp, sessionId), { recursive: true });
+    writeFileSync(join(sessionDir(tmp, sessionId), RESEARCH_FILE), '# Research\n\nFindings.\n');
+    const state = {
+      ...createInitialState('spec me'),
+      phase: 'specifying' as const,
+      mode: 'standard' as const,
+    };
+    saveState({ projectDir: tmp, sessionId }, state);
+    writeFileSync(join(tmp, SPLITBRIEF_DIR, 'active'), sessionId + '\n');
+
+    const { exitCode, stderr, stdout } = await runCommand(['resume', '--project', tmp]);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).not.toContain('cannot be resumed');
+    expect(stdout).toMatch(/Resuming/);
+    expect(stdout).toContain('specifying');
+    // research.md is on disk and spec.md is not: the run picks up at the spec call.
+    const saved = loadState({ projectDir: tmp, sessionId });
+    if (saved === null) throw new Error('expected the resumed state to load');
+    expect(resumeStep(saved, artifactPresence({ projectDir: tmp, sessionId }))).toEqual({
+      kind: 'planner',
+      call: 'spec',
+    });
   });
 
   it('refuses to start a second workflow when a live process is already running the session', async () => {

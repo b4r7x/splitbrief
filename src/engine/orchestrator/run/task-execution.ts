@@ -1,15 +1,12 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { CostPrediction, Summary } from '../../../core/schemas/summary.js';
+import type { Summary } from '../../../core/schemas/summary.js';
 import type { Phase } from '../../../core/schemas/enums.js';
+import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { WorkflowContext } from '../types.js';
 
 import { buildSummary, type SummaryBase } from '../summary/build.js';
-import { publishCostPrediction, publishError, publishWarning } from '../events.js';
-import { decideCostGate } from '../cost-gate.js';
-import { predictCost } from '../budget/cost-prediction.js';
-import { estimateDeterministicCost } from '../budget/estimate.js';
-import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
+import { publishError } from '../events.js';
 import { runTaskLoop } from '../task/loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
 import { decideReviewOutcome } from '../review-fix.js';
@@ -37,44 +34,57 @@ export const APPROVAL_PARKED_ARTIFACT: Partial<Record<Phase, string>> = {
   'reviewing-briefs': TASKS_FILE,
 };
 
-function predictTasksCost(opts: {
-  tasks: Task[];
-  summaryBase: SummaryBase;
+/**
+ * Pause after this brief, held in place. The state records the brief the run
+ * will start next, so leaving the screen persists as a boundary park and the
+ * run picks up there; `/resume` settles the promise and the loop carries on.
+ */
+async function parkAtBoundary(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
-}): CostPrediction {
-  return {
-    ...predictCost({
-      taskCount: opts.tasks.length,
-      plannerTool: opts.summaryBase.plannerTool,
-      implementerTool: opts.summaryBase.implementerTool,
-      plannerModel: opts.summaryBase.plannerModel,
-      implementerModel: opts.summaryBase.implementerModel,
-      tokenUsage: opts.state.tokenUsage,
-      cache: opts.wctx.modelCache,
-      config: opts.wctx.config,
-    }),
-    deterministic: estimateDeterministicCost({
-      tasks: opts.tasks,
-      context: opts.wctx.context,
-      config: opts.wctx.config,
-      pricingCache: opts.wctx.modelCache,
-      languageContext: buildProjectLanguageContext(
-        opts.wctx.projectDir,
-        opts.state.discoveredValidation?.language,
-      ),
-      ...(opts.wctx.detectedContextLength !== undefined && {
-        detectedContextLength: opts.wctx.detectedContextLength,
-      }),
-    }),
-  };
+  setTrackedState: (s: WorkflowState) => void;
+}): Promise<{ state: WorkflowState; continued: boolean }> {
+  const { wctx, setTrackedState } = args;
+  const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
+  const onContinuationNeeded = wctx.callbacks.onContinuationNeeded;
+  const nextTask = args.state.tasks[args.state.currentTaskIndex];
+  const step: StepRef =
+    nextTask === undefined
+      ? { kind: 'review', cycle: args.state.reviewFixes?.cycle ?? 0 }
+      : { kind: 'brief', taskId: nextTask.id, attempt: 0 };
+
+  let state = transitionAndSave(ref, args.state, {
+    type: 'INTERRUPT_STEP',
+    step,
+    source: 'user',
+    cut: 'boundary',
+  });
+  setTrackedState(state);
+  wctx.bus.publish({
+    type: 'turn_interrupted',
+    ts: Date.now(),
+    phase: state.phase,
+    source: 'user',
+    at: 'boundary',
+  });
+
+  // No prompt surface means nothing can continue this run in place; the park is
+  // recorded and the run ends, resumable at the brief it stopped before.
+  if (onContinuationNeeded === undefined) return { state, continued: false };
+
+  const steer = await onContinuationNeeded('', 'boundary');
+  if (wctx.signal?.aborted) return { state, continued: false };
+  state = transitionAndSave(ref, state, { type: 'RESUME_STEP' });
+  setTrackedState(state);
+  wctx.continuation?.hold(step, steer.trim() === '' ? undefined : steer);
+  return { state, continued: true };
 }
 
 export async function runTasksAndReview(
   opts: RunTasksAndReviewOptions,
 ): Promise<{ summary: Summary; completed: boolean; cancelled: boolean; state: WorkflowState }> {
   const { wctx, phaseTimings, setTrackedState, setCurrentTask } = opts;
-  let { summaryBase } = opts;
+  const { summaryBase } = opts;
   let { state } = opts;
   const { callbacks } = wctx;
   const bail = () => ({
@@ -88,45 +98,6 @@ export async function runTasksAndReview(
     return bail();
   }
 
-  // On resume the task loop continues from currentTaskIndex, so the pre-task cost
-  // gauntlet must predict over the remaining tasks only and must not re-gate work
-  // that is already in flight.
-  const isResume = state.currentTaskIndex > 0;
-  const gateTasks = isResume ? state.tasks.slice(state.currentTaskIndex) : state.tasks;
-
-  if (gateTasks.length > 0) {
-    const prediction: CostPrediction = predictTasksCost({
-      tasks: gateTasks,
-      summaryBase,
-      wctx,
-      state,
-    });
-    publishCostPrediction({ bus: wctx.bus, phase: state.phase }, prediction);
-
-    if (!isResume) {
-      const gateDecision = decideCostGate({
-        mode: state.mode ?? wctx.config.workflow?.mode,
-        prediction,
-        costGateEnabled: wctx.config.workflow.costGate !== false,
-      });
-      if (gateDecision === 'skip-unknown-cost') {
-        publishWarning({
-          bus: wctx.bus,
-          phase: state.phase,
-          message: 'cost gate skipped: implementer pricing unknown',
-        });
-      }
-      if (gateDecision === 'gate' && wctx.callbacks.onCostApprovalNeeded) {
-        const approved = await wctx.callbacks.onCostApprovalNeeded(prediction);
-        if (!approved) {
-          return bail();
-        }
-      }
-    }
-
-    summaryBase = { ...summaryBase, costPrediction: prediction };
-  }
-
   await ensureRunBaselineSnapshot({
     projectDir: wctx.projectDir,
     sessionId: wctx.sessionId,
@@ -135,13 +106,28 @@ export async function runTasksAndReview(
   });
 
   const phaseStart = Date.now();
-  const taskResult = await runTaskLoop({
+  let taskResult = await runTaskLoop({
     wctx,
     initialState: state,
     setTrackedState,
     setCurrentTask,
   });
   state = taskResult.state;
+
+  // Pause after this brief holds the run in place rather than ending it: the
+  // operator continues into the next brief, or leaves and resumes later.
+  while (taskResult.status === 'paused') {
+    const parked = await parkAtBoundary({ wctx, state, setTrackedState });
+    state = parked.state;
+    if (!parked.continued) break;
+    taskResult = await runTaskLoop({
+      wctx,
+      initialState: state,
+      setTrackedState,
+      setCurrentTask,
+    });
+    state = taskResult.state;
+  }
 
   phaseTimings.implementing = Date.now() - phaseStart;
 
@@ -202,6 +188,7 @@ export async function runTasksAndReview(
       metadata: wctx.metadata,
       signal: wctx.signal,
       sinks: wctx.sinks,
+      ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),
       summaryBase,
       taskBreakdowns,
       phaseTimings,

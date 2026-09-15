@@ -61,7 +61,7 @@ function writeBriefs(projectDir: string, sessionId: string): void {
 }
 
 describe('resumeBriefsApproval', () => {
-  it('rejected persisted briefs surface terminal rejected', async () => {
+  it('an idle saved state has no briefs review to resume', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
@@ -71,7 +71,7 @@ describe('resumeBriefsApproval', () => {
       state: { ...createInitialState('feature'), phase: 'idle' },
     });
 
-    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
     expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
   });
 
@@ -137,11 +137,11 @@ describe('resumeBriefsApproval', () => {
     );
   });
 
-  it('briefs rejected at the prompt surface terminal rejected', async () => {
+  it('ending the run at the briefs prompt closes it without changing the phase', async () => {
     const { projectDir, sessionId } = setupProject();
     writeBriefs(projectDir, sessionId);
     const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }),
+      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false, action: 'end-run' }),
     });
     const { bus } = makeBusRecorder();
 
@@ -150,8 +150,9 @@ describe('resumeBriefsApproval', () => {
       state: briefsState(),
     });
 
-    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
-    expect(result.state.phase).toBe('idle');
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'closed' });
+    expect(result.state.phase).toBe('reviewing-briefs');
+    expect(result.state.closed?.as).toBe('ended');
   });
 
   it('an aborted briefs review surfaces terminal cancelled', async () => {

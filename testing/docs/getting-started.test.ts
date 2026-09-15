@@ -1,14 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { getShortcutKey } from '../../src/core/keybindings/registry.js';
+import { SETTINGS_DEFS } from '../../src/core/settings/catalog.js';
 import { createRuntimeCommands } from '../../src/core/runtime/commands/registry.js';
 import { COPY_TARGETS } from '../../src/core/runtime/commands/types.js';
 import { makeCtx } from '#testing/helpers/runtime-commands.js';
-import {
-  BUDGET_PAUSE_THRESHOLD,
-  BUDGET_WARNING_THRESHOLD,
-} from '../../src/engine/orchestrator/budget/check.js';
 import { getWorkflowSidebarWidth } from '../../src/features/workflow/layout/rect.js';
 
 const projectRoot = join(import.meta.dirname, '../..');
@@ -26,7 +22,7 @@ function section(doc: string, heading: string): string {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
-const costSection = section(gettingStarted, '\n## 8. Cost transparency\n');
+const costSection = section(gettingStarted, '\n## 8. Spend\n');
 
 // A reader who meets the product through either of these two files has to
 // learn what it is before they are told how to run it. The audited state was
@@ -71,7 +67,7 @@ describe('install story', () => {
 // §8 documented a top status line reading `spent … proj … budget … cache …`
 // that no component renders. Every surface it now names is checked against the
 // registry or constant that produces it.
-describe('cost transparency section', () => {
+describe('spend section', () => {
   it('describes no always-visible cost header', () => {
     expect(costSection).not.toMatch(/top status line/i);
     expect(costSection).not.toMatch(/always visible/i);
@@ -87,20 +83,13 @@ describe('cost transparency section', () => {
     expect(costSection).toContain('at or below 120 columns');
   });
 
-  it('names the drilldown overlay by its real shortcut', () => {
-    expect(getShortcutKey('cost-drilldown')).toBe('ctrl+g');
-    expect(costSection).toContain('Ctrl+G');
+  it('names the Settings toggle that hides every spend figure', () => {
+    expect(SETTINGS_DEFS.some((def) => def.id === 'workflow.showSpend')).toBe(true);
+    expect(costSection).toContain('workflow.showSpend');
   });
 
   it('names a copy target the command actually accepts', () => {
     expect(COPY_TARGETS).toContain('cost');
     expect(costSection).toContain('`/copy cost`');
-  });
-
-  it('quotes the budget thresholds the orchestrator enforces', () => {
-    expect(costSection).toContain(`${BUDGET_WARNING_THRESHOLD * 100}%`);
-    expect(costSection).toContain(`\`${BUDGET_PAUSE_THRESHOLD}\``);
-    expect(costSection).toContain('`workflow.budgetPauseThreshold`');
-    expect(costSection).toContain('recovery_required');
   });
 });

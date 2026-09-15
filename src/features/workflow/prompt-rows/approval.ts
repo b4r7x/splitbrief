@@ -1,5 +1,5 @@
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import type { ActionClass, Phase } from '../../../core/schemas/enums.js';
 import type { ApprovalPromptState } from '../../../stores/approval-prompt/prompt.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
@@ -88,7 +88,7 @@ export function reviewArtifactForPhase(phase: Phase): ReviewArtifact | null {
   return null;
 }
 
-export type ReviewDocumentCommand = 'approve' | 'comment' | 'edit-file' | 'reject';
+export type ReviewDocumentCommand = 'approve' | 'comment' | 'edit-file' | 'end-run';
 
 export interface ReviewDocumentRow extends ApprovalOption {
   command: ReviewDocumentCommand;
@@ -101,9 +101,9 @@ export function reviewDocumentOptions(artifact: ReviewArtifact): ReadonlyArray<R
       label: `Approve ${artifact} and ${REVIEW_NEXT_STEP[artifact]}`,
       command: 'approve',
     },
-    { key: 'c', label: 'Request changes (type a comment)', command: 'comment' },
+    { key: 'c', label: 'Request changes (type what to change)', command: 'comment' },
     { key: 'e', label: 'Edit in $EDITOR', command: 'edit-file' },
-    { key: 'q', label: `Reject ${artifact}`, command: 'reject' },
+    { key: 'q', label: 'End run (close this run; keep changes)', command: 'end-run' },
   ];
 }
 
@@ -112,7 +112,7 @@ export const REVIEW_DOCUMENT_HINTS = formatKeyHints([
   { key: '⏎', verb: 'confirm' },
   { key: 'c', verb: 'comment' },
   { key: 'e', verb: 'edit' },
-  { key: 'q', verb: 'reject' },
+  { key: 'q', verb: 'end run' },
 ]);
 
 // While a comment is being typed the letters are text, so the panel stops advertising them and

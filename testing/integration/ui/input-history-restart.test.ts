@@ -144,7 +144,7 @@ describe('composer input history screens', () => {
     const runtime = await loadRuntime();
     runtime.resetAllStores();
 
-    for (const screen of ['workflow', 'summary'] as const) {
+    for (const screen of ['workflow', 'home'] as const) {
       const submissions: string[] = [];
       const ui = runtime.renderComposer({
         commands: [],
@@ -186,7 +186,7 @@ describe('composer input history screens', () => {
         label: 'Resume',
         description: 'Resume workflow',
         category: 'navigate',
-        validScreens: ['home', 'workflow', 'summary'],
+        validScreens: ['home', 'workflow'],
         handler: () => {},
       },
     ];
@@ -194,7 +194,7 @@ describe('composer input history screens', () => {
 
     const ui = runtime.renderComposer({
       commands,
-      currentScreen: 'summary',
+      currentScreen: 'home',
       mode: 'normal',
       hint: '',
       onSubmit: () => {},

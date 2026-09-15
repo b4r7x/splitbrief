@@ -23,8 +23,8 @@ const PIN_FALLBACKS: Readonly<Record<string, () => string | undefined>> = {
   'kilo-code': () => 'kilo/kilo-auto/free',
   cursor: () => 'gpt-5.3-codex-low-fast',
   copilot: () => 'claude-haiku-4.5',
-  // `agy models` publishes no price signal SPLITBRIEF can rank, so there is no
-  // cheapest pin to fall back to: an unset env leaves the seat on agy's own default.
+  // `agy models` publishes nothing SPLITBRIEF can pin, so an unset env leaves
+  // the seat on agy's own default.
   antigravity: () => undefined,
 };
 

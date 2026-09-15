@@ -46,6 +46,7 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     listApprovals: () => [],
     clearApprovals: () => 0,
     acceptRunSnapshot: async () => ({ snapshotId: 'snap-accepted', isFirstSnapshot: false }),
+    refreshRun: noop,
     rejectRunSnapshot: async () => ({
       status: 'rejected',
       snapshotId: 'snap-run',
@@ -67,7 +68,7 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
 export function runCommandInTest(args: {
   commands: RuntimeCommandDef[];
   raw: string;
-  screen: 'home' | 'workflow' | 'summary' | 'setup';
+  screen: 'home' | 'workflow' | 'setup';
   phase?: Phase;
   onError: (msg: string) => void;
 }): Promise<void> {

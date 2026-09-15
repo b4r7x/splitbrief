@@ -279,7 +279,7 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.state.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
-      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'abort-workflow'],
+      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
     });
     expect(loadState(wctx)?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
@@ -387,7 +387,7 @@ describe('retryAndRecord — recovery stop points', () => {
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
-      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'abort-workflow'],
+      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
@@ -398,7 +398,7 @@ describe('retryAndRecord — recovery stop points', () => {
         type: 'recovery_prompted',
         reason: 'retry-exhausted',
         taskId: 'T001',
-        availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'abort-workflow'],
+        availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
       }),
     );
   });

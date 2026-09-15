@@ -15,6 +15,8 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { focusStore } from '../../stores/ui/focus.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
+import { SOFT_SEP } from '../../core/separators.js';
+import { isTextEntryInput } from '../../lib/terminal/text-entry.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
@@ -29,7 +31,7 @@ import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { deriveHomeHintLines, noVisionFeedbackMessage } from './home-hint.js';
 import { useProjectFiles } from './use-project-files.js';
 import { usePasteDrafts } from './use-paste-drafts.js';
-import { useHintZones } from './use-hint-zones.js';
+import { compactComposerHints, computeComposerHintBudget } from './hint-zones.js';
 import { useReviewKeys } from './use-review-keys.js';
 import { useDraftSync } from './use-draft-sync.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
@@ -37,6 +39,8 @@ import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
+
+export const COMMANDS_ONLY_NOTICE = `Only /commands here${SOFT_SEP}⏎ on an empty line goes home`;
 
 // The prompt glyph is structure: it marks where typing goes, it does not name a category. Weight
 // and position carry it, never hue — so normal and review draw the same mark. Question mode keeps
@@ -73,7 +77,7 @@ export interface ComposerBoxHints {
 }
 
 interface ComposerProps {
-  onSubmit: (text: string) => void;
+  onSubmit?: ((text: string) => void) | undefined;
   onRuntimeCommand: (command: string) => void;
   commands: RuntimeCommandDef[];
   mode: InputMode;
@@ -82,6 +86,8 @@ interface ComposerProps {
   width?: number;
   disabled?: boolean;
   submitKeepsDraft?: boolean;
+  /** A record of a finished run takes commands, not work: plain text is refused, not queued. */
+  commandsOnly?: boolean | undefined;
   /** Home keeps its example under the caret; a chat input hides it the moment it is focused. */
   keepPlaceholderWhileFocused?: boolean | undefined;
   promptGlyph?: string | undefined;
@@ -92,7 +98,6 @@ interface ComposerProps {
   onReviewBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
   onReviewInteraction?: (() => void) | undefined;
   reviewYankActive?: boolean | undefined;
-  boxLeftOffset?: number | undefined;
   questionEpoch?: number | undefined;
   inputPaddingX?: number | undefined;
   draftRestore?: Readonly<{ epoch: number; value: string }> | undefined;
@@ -118,6 +123,7 @@ export function Composer({
   width,
   disabled,
   submitKeepsDraft,
+  commandsOnly,
   promptGlyph,
   homeHint,
   boxHints,
@@ -126,7 +132,6 @@ export function Composer({
   onReviewBoundaryNavigate,
   onReviewInteraction,
   reviewYankActive = false,
-  boxLeftOffset,
   questionEpoch,
   inputPaddingX = 1,
   draftRestore,
@@ -217,7 +222,7 @@ export function Composer({
 
   const handleSubmit = (text: string) => {
     if (mode !== 'normal') {
-      onSubmit(expandPastes(text, pastes));
+      onSubmit?.(expandPastes(text, pastes));
       if (!submitKeepsDraft) clearDraft();
       return;
     }
@@ -229,6 +234,11 @@ export function Composer({
       return;
     }
 
+    if (commandsOnly === true && !trimmed.startsWith('/')) {
+      feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
+      return;
+    }
+
     if (trimmed) inputHistoryStore.pushSubmission(trimmed, { currentScreen });
 
     if (trimmed.startsWith('/')) {
@@ -237,11 +247,20 @@ export function Composer({
       return;
     }
 
-    onSubmit(expandPastes(trimmed, pastes));
+    onSubmit?.(expandPastes(trimmed, pastes));
     if (!submitKeepsDraft) clearDraft();
   };
 
   const textDraftEmpty = value.length === 0 && pastes.length === 0;
+
+  // Only the first character of a draft decides this: once a line is under way the keys are text
+  // again, so editing a command never has to pass the gate a second time.
+  const commandsOnlyGate = (input: string, key: Key): boolean => {
+    if (commandsOnly !== true || !textDraftEmpty) return true;
+    if (!isTextEntryInput(input, key) || input.startsWith('/')) return true;
+    feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
+    return false;
+  };
 
   const { shouldHandleComposerInput } = useReviewKeys({
     mode,
@@ -253,7 +272,7 @@ export function Composer({
       handleDraftChange(text);
       bumpEpoch();
     },
-    onCommand: onSubmit,
+    onCommand: onSubmit ?? (() => undefined),
   });
 
   // Same discipline as the review keys: the chip pop only owns Backspace while there is
@@ -292,20 +311,12 @@ export function Composer({
   };
 
   const hintBoxWidth = width ?? cols;
-  const registerHintZones =
-    currentScreen === 'workflow' &&
-    !disabled &&
-    (width === undefined || boxLeftOffset !== undefined);
-  const hintBoxLeft = 1 + (boxLeftOffset ?? 0);
-  const hintDisplay = useHintZones({
-    boxHints,
-    hintBoxWidth,
-    inputPaddingX,
-    visibleRows,
-    rows,
-    registerHintZones,
-    hintBoxLeft,
-  });
+  const hintDisplay = boxHints
+    ? compactComposerHints(
+        { keys: boxHints.keys, cost: boxHints.cost },
+        computeComposerHintBudget({ boxWidth: hintBoxWidth, paddingX: inputPaddingX }),
+      )
+    : null;
 
   const completionCap = computeCompletionCap(rows, visibleRows);
   const referenceSuggestionsCap = Math.min(MAX_REFERENCE_SUGGESTIONS, completionCap);
@@ -331,7 +342,7 @@ export function Composer({
     homeHint,
     feedbackMessage,
     width: width ?? cols,
-    dropEnabled: !disabled && plannerSupportsImages,
+    dropEnabled: !disabled && plannerSupportsImages && commandsOnly !== true,
   });
 
   useEffect(() => {
@@ -386,11 +397,13 @@ export function Composer({
               value={value}
               onChange={handleChange}
               onSubmit={handleSubmit}
-              onFileDrop={handleFileDrop}
+              {...(commandsOnly === true ? {} : { onFileDrop: handleFileDrop })}
               columns={inputColumns}
               focus={!disabled && !briefFocusHeld}
               isActive={!disabled && (!briefFocusHeld || mode === 'review')}
-              shouldHandleInput={shouldHandleComposerInput}
+              shouldHandleInput={(input, key) =>
+                shouldHandleComposerInput(input, key) && commandsOnlyGate(input, key)
+              }
               onInputAccepted={handleComposerInputAccepted}
               placeholder={placeholderForMode({
                 mode,

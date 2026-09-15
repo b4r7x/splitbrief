@@ -112,7 +112,7 @@ src/
 │   ├── workflow/             components + hooks + pure helpers (largest feature)
 │   ├── home/                 components + recent-sessions hook + logo
 │   ├── palette/              command-palette sources + result ranking
-│   ├── summary/              components + detail rows + hooks
+│   ├── summary/              pure view model + copy + row builders + layout
 │   ├── settings/             items + presentation + hooks
 │   └── runners/              picker view + catalog adapter + hooks (planner / implementer runner selection)
 ├── components/               Shared UI (cross-feature): primitives + shared overlays + pickers + input
@@ -159,16 +159,16 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 
    `saveState()` writes to `.splitbrief/sessions/<id>/state.json` on every phase transition.
 7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes.
-8. For user-gated moments (approval, clarification, continuation, cost approval, edit conflicts, file-write tiered approvals, and task review), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onQuestionAsked(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onCostApprovalNeeded(…)`, `callbacks.onUserEditConflict(…)`, `callbacks.onTieredApproval(…)`, and `callbacks.onTaskReviewNeeded(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise. Budget pressure is not gated this way: spend thresholds publish `budget_warning` / `budget_paused` / `budget_exceeded` events and the pause/stop is driven through the recovery channel (`recovery_needed`).
+8. For user-gated moments (approval, clarification, continuation, edit conflicts, file-write tiered approvals, and task review), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onQuestionAsked(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onUserEditConflict(…)`, `callbacks.onTieredApproval(…)`, and `callbacks.onTaskReviewNeeded(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise.
 9. **Queue**: during live planner phases, the user may type and press Enter without aborting. The message is appended to `WorkflowState.messageQueue`; workflow lifecycle stores keep the UI queue indicators in sync. The orchestrator drains the queue at safe-points (end of current call) and appends queued messages to the next planner prompt. For planners that implement `injectUserTurn()`, each queued message is also dispatched in parallel as a native user turn into the live session.
-10. **Stop**: `ctrl+c` is Stop now — one press, no armed window — and `esc` on an empty composer opens the stop sheet, whose rows are Stop now, Pause after this brief and End run (`src/app/keys.ts`, `src/app/overlays/stop.tsx`). Stop now fires an `AbortController` which propagates into the active planner/implementer call (for HTTP) or sends SIGTERM (for subprocesses). The partial response is preserved in `session.jsonl` with `interrupted: true`, the workflow enters an **awaiting-continue** sub-state, and the `phase` does *not* reset. Nothing is reverted: the run parks with what it wrote, `/resume` carries it on and `/end` marks the session `cancelled`. `ctrl+q` / `/quit` stops and then exits once the session is on disk; a lone `esc` with an overlay open just closes the overlay. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys.
-11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` writes `summary.json`, clears `.splitbrief/active`, and the UI unmounts.
+10. **Stop**: `ctrl+c` is Stop now — one press, no armed window — and `esc` on an empty composer opens the stop sheet, whose rows are Stop now, Pause after this brief and End run (`src/app/keys.ts`, `src/app/overlays/stop.tsx`). Stop now fires an `AbortController` which propagates into the active planner/implementer call (for HTTP) or sends SIGTERM (for subprocesses). The partial response is preserved in `session.jsonl` with `interrupted: true`, the state records `interruptedStep` — the step the stop cut and whether the cut landed `mid-step` or at a `boundary` — and the `phase` does *not* reset. Nothing is reverted: the run parks with what it wrote, `/resume` carries it on, and `/end` dispatches `CLOSE_RUN` so the run lists as `ended`. `ctrl+q` / `/quit` stops and then exits once the session is on disk; a lone `esc` with an overlay open just closes the overlay. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys.
+11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` derives the run's status, writes `summary.json`, and releases `.splitbrief/active` only if the run closed. The UI does not unmount: the run settles at rest on the screen it was already on, and the route's `execution` flips to `at-rest`.
 
 ---
 
 ## Planner / implementer symmetry
 
-The planner receives a token-budgeted [repo-map](./REPOMAP.md) of the codebase on every workflow start so it can compile sharper Task Briefs and decide when spec work is worth the cost.
+The planner receives a token-budgeted [repo-map](./REPOMAP.md) of the codebase on every workflow start so it can compile sharper Task Briefs and decide when spec work is worth doing.
 
 Prompt builders receive a language context resolved from planner-discovered validation, project heuristics, or a generic fallback. TypeScript keeps the existing ESM-with-`.js` guidance; Python, Go, Rust, JavaScript, and generic prompts use language-appropriate imports, module wording, examples, and type guidance.
 
@@ -352,7 +352,7 @@ The engine emits **EngineEvent** values through a single `EventBus` port. Sinks 
 - **`stdoutJsonSink`** (`src/engine/events/sinks/stdout-json.ts`) emits NDJSON to stdout for headless / `--json` mode (see `src/cli/headless.ts`).
 - **Event sinks are synchronous.** Each `publish()` runs all subscribed sinks in registration order, inline. A throw inside one sink is caught per-sink and does not break fan-out to the others.
 
-Events and gating callbacks are separate mechanisms. `bus.publish` is pub/sub (broadcast, fire-and-forget, no return value). `callbacks.onApprovalNeeded` / `onQuestionAsked` / `onContinuationNeeded` / `onCostApprovalNeeded` / `onUserEditConflict` / `onTieredApproval` / `onTaskReviewNeeded` stay as discrete `await`-able request/response pairs supplied by the workflow host — CLI TUI for interactive runs, stubs from `runHeadless` for `--json`. `onComplete(summary)` is a synchronous completion notification. Budget pressure is not a callback: it fans out as `budget_warning` / `budget_paused` / `budget_exceeded` events and resolves through the recovery channel.
+Events and gating callbacks are separate mechanisms. `bus.publish` is pub/sub (broadcast, fire-and-forget, no return value). `callbacks.onApprovalNeeded` / `onQuestionAsked` / `onContinuationNeeded` / `onUserEditConflict` / `onTieredApproval` / `onTaskReviewNeeded` stay as discrete `await`-able request/response pairs supplied by the workflow host — CLI TUI for interactive runs, stubs from `runHeadless` for `--json`. `onComplete(summary)` is a synchronous completion notification.
 
 ### Design decisions — Why EventBus
 
@@ -451,7 +451,7 @@ src/
 │   ├── layout.tsx                 Structural shell (header + body + footer)
 │   ├── keys.ts                    App-wide keyboard dispatch (useAppKeys)
 │   ├── command-context.ts         Runtime-command wiring (useRuntimeCommands)
-│   ├── screens/                   FLAT page entries: home, workflow, summary, setup
+│   ├── screens/                   FLAT page entries: home, workflow, setup
 │   └── overlays/                  FLAT pages: help, palette, skills, sessions, settings, runners, editor, stop
 ├── cli.ts                         Top-level entry; registers workflow + utility subcommands
 │
@@ -502,7 +502,7 @@ src/
 │   │                              bullets, and the one matcher over them
 │   ├── project-meta.ts            Project name / git origin discovery
 │   ├── providers/                 catalog, known-models, model-selection,
-│   │                              provenance, pricing-identity
+│   │                              provenance, seat-identity
 │   ├── runners/                   capabilities (what a CLI tool can be told
 │   │                              to run), cli-tool-catalog, runner-billing
 │   ├── schemas/                   All Zod schemas (see §6 storage)
@@ -515,7 +515,12 @@ src/
 │   │                              task, tokens, workflow
 │   ├── sessions/                  analytics, display, errors, guards, io,
 │   │                              lifecycle (active lock + session-id
-│   │                              generation), log-reader
+│   │                              generation), log-reader, run-status
+│   │                              (deriveRunStatus + resumeStep — the one
+│   │                              answer for how a run stands), run-record +
+│   │                              run-record-io (the RunRecord every screen,
+│   │                              listing and CLI guard reads, complete before
+│   │                              the route changes so no screen does IO)
 │   ├── settings/                  catalog (settings registry),
 │   │                              presentation (UI labels)
 │   ├── runtime/commands/          registry, dispatch, lookup, types
@@ -573,7 +578,6 @@ src/
 │   │   │                          file-snapshots, tiered approval
 │   │   │                          (`tiered-approval`, `types`, `sticky`,
 │   │   │                          `confirm`, `events`) gates
-│   │   ├── budget/                budget gates, prediction, estimates
 │   │   ├── clarifications.ts      Q&A loop helpers
 │   │   ├── continuation.ts        withContinuationLoop (pause/resume gate)
 │   │   ├── drift/                 per-task drift and chained drift state
@@ -597,7 +601,7 @@ src/
 │   │   │                          refreshAndPersistCode
 │   │   ├── summary/               buildSummary (build.ts), artifact rollups, task metrics
 │   │   ├── task/                  loop, step, retry, commit, routing,
-│   │   │                          review, budget-check, pre-task helpers
+│   │   │                          review and pre-task helpers
 │   │   ├── tokens.ts              Token-usage accumulation
 │   │   ├── transcript/            Fallback resume context + compaction
 │   │   │                          without native session resume
@@ -610,8 +614,8 @@ src/
 │   ├── planners/                  4 backends: agent, api,
 │   │                              claude-code (cli specialization), cli,
 │   │                              shell + base, command-invoke, context,
-│   │                              escalation, single-phase, summary,
-│   │                              types
+│   │                              document-phases, escalation, run-phase,
+│   │                              summary, types
 │   ├── providers/                 candidate-contract, capabilities,
 │   │                              capability-inference, catalog-detection,
 │   │                              cli-model-catalog, client, conformance,
@@ -706,11 +710,9 @@ src/
 │   │                              (planner / implementer runner selection)
 │   ├── settings/                  items (section + row model, Crew first) +
 │   │                              presentation + hooks/{buffer, editor}
-│   ├── summary/                   components (cost-breakdown, hero-savings,
-│   │                              phase-timing, progress, checkpoints,
-│   │                              review-packet, compact-*) + detail-rows +
-│   │                              detail-layout + presentation +
-│   │                              use-summary-evidence-ledger
+│   ├── summary/                   view-model (deriveSummaryView) + copy +
+│   │                              rows/{briefs, files, run} + document +
+│   │                              layout
 │   └── workflow/                  Largest feature (entry: app/screens/workflow.tsx)
 │       ├── conversation-rows/     row-based conversation renderer
 │       ├── components/            approval-prompt, body, brief-review-*,
@@ -718,23 +720,29 @@ src/
 │       │                          divider, feedback-row, frame-panel, header,
 │       │                          input-footer, prompt-body, question-prompt,
 │       │                          rail, review-view, sidebar, task-summary
-│       ├── cost-drilldown/        overlay + phase-breakdown +
-│       │                          task-breakdown + seat-bar
-│       ├── display/               activity-display-text,
+│       ├── display/               activity-display-text, local-share,
 │       │                          runner-activity-display
 │       ├── handlers.ts            Runtime command context actions
+│       ├── at-rest.ts             Rail + composer contract when nothing runs
+│       ├── closed/                A closed run's ledger: view-model,
+│       │                          projections, outcome, byline, copy, rows,
+│       │                          block, header, tone
 │       ├── hooks/                 use-advisory, use-brief-review-keys,
 │       │                          use-cost-stats, use-input-mode,
 │       │                          use-keys, use-mouse-pointer,
 │       │                          use-mouse-scroll, use-review-content,
-│       │                          use-runner, workflow-screen/{use-model,
+│       │                          use-run-loop, use-run-continue,
+│       │                          workflow-screen/{use-model,
 │       │                          use-attachment, use-inline-edit,
-│       │                          use-readiness, resume}
+│       │                          use-readiness}
 │       ├── keyboard.ts            Workflow keymap
 │       ├── layout/                layout math (brief-review, chrome-rows,
-│       │                          cost-chrome, diff-height, rect, hit-test,
+│       │                          diff-height, rect, hit-test,
 │       │                          scroll-window, snapshot, task-row)
-│       ├── recovery-driver.ts     Recovery flow (+ recovery-prompt)
+│       ├── recovery-driver.ts     Recovery flow (+ recovery-prompt); its bus
+│       │                          comes from engine/orchestrator/recovery/bus
+│       ├── run-history.ts         hydrateRun — replay the log, overlay state
+│       ├── spend-text.ts          The one spend formatter every surface reads
 │       ├── review-parser.ts       Review-text parser (+ review-commands)
 │       └── tui-sink.ts            EngineEvent → workflow store sink
 │
@@ -821,11 +829,11 @@ Three modes are canonical (`'quick' | 'standard' | 'speckit'`); the retired `'in
 | `standard` (default) | 4 | optional spec | yes | yes | `research.md`, `spec.md`, `plan.md`, `tasks.md` |
 | `speckit` | 6–7 | optional spec + plan + constitution + analyze | yes | yes | `research.md`, `spec.md`, `plan.md`, `tasks.md`, `clarifications.md`, `constitution-check.json`, `analyze.json` |
 
-Implementation: `src/engine/orchestrator/planning/{quick,full,speckit}.ts`. `full.ts` is `standard`. The shared helpers each live in their own file:
+Implementation: `src/engine/orchestrator/planning/steps.ts` runs every mode from the step table in `src/core/pipeline-spec/steps.ts`; `speckit.ts` holds the three calls only speckit makes. The shared helpers each live in their own file:
 
 - `runBriefQualityGate(...)` (`planning/brief-quality-gate.ts`) — runs `BriefQualityScorer` (`src/engine/spec/brief-quality.ts`) and writes `brief-quality.json`. Error codes: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, `missing_implementation_steps`. Warning code: `missing_type_definitions`. Publishes `brief_quality_passed` or `brief_quality_failed`.
 - `runBriefReadinessGateAndReport({...})` (`planning/brief-readiness-gate.ts`) — runs `evaluateBriefReadiness` over routing-preview metadata, writes `brief-readiness.json`, and publishes `brief_readiness_passed` or `brief_readiness_blocked`.
-- `runBriefsApprovalLoop({...})` (`planning/briefs-approval-loop.ts`) — invoked from `full.ts` (standard), `speckit.ts`, and `rewind.ts`. Enters `reviewing-briefs` phase; awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
+- `runBriefsApprovalLoop({...})` (`planning/briefs-approval-loop.ts`) — invoked from `planning/run.ts` after the quality pass and from `planning/resume-briefs.ts` on a resumed gate. Enters `reviewing-briefs` phase; awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
 
 A `mode-advisor` (`planning/mode-advisor.ts`) emits `mode_advice` for trivial requests in higher modes; user can /mode to switch.
 
@@ -849,8 +857,8 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 `src/engine/events/schema.ts` defines the type-dispatched event contract as `EngineEventSchema` (the `EngineEvent` alias is `z.infer`d in `src/engine/events/types.ts`). Every `EngineEvent` carries `ts: number`; most carry `phase: Phase`. The phase-less variants are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`. The grouped summary below is a navigation aid; use the source contract for the exact, exhaustive event list and field shapes. For key event shapes with full field definitions, see [ENGINE.md](./ENGINE.md).
 
-**Workflow lifecycle (6):**
-`workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `paused_external_changes`
+**Workflow lifecycle (7):**
+`workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `paused_external_changes`, `turn_interrupted` — the pause event. It carries `source` (`user` | `watchdog`) and `at`, where the stop landed: `mid-step` inside a call, `boundary` between two briefs. One event covers both parks; the position is the only difference.
 
 **Recovery:**
 `recovery_prompted`, `recovery_action_selected`, `recovery_action_failed`, `recovery_resolved`
@@ -859,7 +867,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `planner_status`, `planner_text`, `planner_heartbeat`
 
 **Planning milestones (20):**
-`spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `brief_readiness_passed`, `brief_readiness_blocked`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received` (retained for back-compatibility so pre-merge sessions replay; nothing produces it since `instant` merged into `quick`)
+`spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated` (the two `*_rejected` names predate the gate rewrite: a gate no longer rejects, and these now record that a gate ended the run rather than approving it — the wire name is kept so old logs replay), `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `brief_readiness_passed`, `brief_readiness_blocked`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received` (retained for back-compatibility so pre-merge sessions replay; nothing produces it since `instant` merged into `quick`)
 
 **Task lifecycle:**
 `task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed`, `hint_failed`, `review_fix_started`
@@ -876,14 +884,14 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 **Attachments (1):**
 `planner_attachments_dropped`
 
-**Cost & budget (5):**
-`cost_update`, `cost_prediction`, `budget_warning`, `budget_paused`, `budget_exceeded`
+**Cost (1):**
+`cost_update`
 
 **Tiered approval:**
 `approval_prompted`, `approval_granted`, `approval_rejected`, `approval_sticky_recorded`, `approval_mode_changed`
 
 **Session replay (2):**
-`replay_started`, `replay_complete`
+`replay_started`, `replay_complete` — published only by `readRunEvents` (`src/engine/events/replay.ts`), which wraps a `session.jsonl` read back into an `EngineEvent[]` for `loadEvents` (`src/stores/workflow/actions/load.ts`). See [ENGINE.md](./ENGINE.md#replay).
 
 **Generic (2):**
 `warning`, `error` — both carry an optional `category` / `code` pair naming what produced them: `recovery` / `retry_exhausted` · `review_failed` · `recovery_pending_unresolved`, `skills` / `skills_truncated` (the selected skills exceeded the planner-prompt budget and were cut), `validation` / `no_gates_unknown_stack` (the project matches no validation stack, so the run is review-only).
@@ -929,7 +937,10 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
         ├── drift-chains.json       Chained-drift detector state
         ├── brief-quality.json      Latest brief-quality report
         ├── brief-readiness.json    Latest brief-readiness report (when the gate ran)
-        ├── summary.json            Final aggregates (written once at end-of-run)
+        ├── summary.json            Final aggregates (written once at end-of-run, carrying the
+        │                            derived run status, phase and mode)
+        ├── seats.json               The crew the run last ran with
+        ├── run-ledger.json          Run snapshot + accept/reject decision
         └── snapshots/
             ├── .lock               Per-session snapshot lock (~60s stale TTL)
             ├── baseline/           Full-tree copy on first snapshot
@@ -945,9 +956,9 @@ Also relative to project root, **outside** `.splitbrief/`:
 - `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` — the run's implementer isolation worktree (`src/engine/orchestrator/isolation/`). Defaults to `~/.local/state/splitbrief/trees/...`; outside `.git/` (direct-writing CLIs refuse paths there) and outside the project tree so a project-rooted test glob cannot walk into the second copy. See [HOW-IT-WORKS.md §Isolation and promotion](./HOW-IT-WORKS.md#isolation-and-promotion).
 - `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `AGENTS.md` — skill sources, read-only to SPLITBRIEF. The order is the discovery precedence order (project before global, first root wins per skill id); the list lives in `src/core/skills/scan-paths.ts`.
 
-Single source of truth for `resume`: `state.json` + the session folder it lives in. If `state.json` is missing or stateVersion-mismatched, `resume` refuses. `session.jsonl` is the fallback context source for backends without native session resume (`src/engine/orchestrator/transcript/rebuild.ts`).
+Single source of truth for continuing a run: `state.json` + the session folder it lives in. If `state.json` is missing or stateVersion-mismatched, `resume` refuses; so does a run whose `state.json` records `closed`. Everything else is picked up at `resumeStep`. `session.jsonl` is the fallback context source for backends without native session resume (`src/engine/orchestrator/transcript/rebuild.ts`).
 
-**Concurrency:** at most one foreground active session per project directory; the presence of `.splitbrief/active` is the foreground lock. Each session also writes a `lockfile.json` carrying its pid and heartbeat, which is how a stale `active` pointer is detected.
+**Concurrency:** at most one foreground active session per project directory; the presence of `.splitbrief/active` is the foreground lock. Each session also writes a `lockfile.json` carrying its pid and heartbeat, which is how a stale `active` pointer is detected — and how `deriveRunStatus` tells a `running` run from one at rest. The pointer is released when the run **closes**, not when it stops: a run that parked or halted keeps it, because it is still continuable.
 
 Path encoding: snapshots URL-encode each path segment then join with `__` to flatten to a single filename per file (`encodeSnapshotPath` in `engine/snapshots/path-codec.ts`).
 
@@ -1127,17 +1138,17 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 | `splitbrief spec` | — | Same as start but exits after planning artifacts are produced. The mode decides which planning phases run; `--mode` is among its flags. |
 | `splitbrief init` | — | Interactive setup; writes `.splitbrief/config.yaml`. |
 | `splitbrief status` | — | Print active session state to stdout. Read-only; doesn't acquire the lock. |
-| `splitbrief resume` | — | Re-enter the workflow at the saved phase. Refuses if `state.json` is missing or stateVersion-mismatched. |
+| `splitbrief resume` | — | Continue the most recent run at `resumeStep`. Refuses a missing or version-mismatched `state.json`, and a closed run. |
 | `splitbrief doctor` | — | Run readiness checks for config, tools, models, hooks, and project state. |
 | `splitbrief approval` | `list`, `clear --scope session\|always\|all` | Manage sticky approval grants in `.splitbrief/approvals.json`. |
-| `splitbrief continue [session-id]` | — | Continue a session from its saved state. |
+| `splitbrief continue [session-id]` | — | Continue a named run from its saved state. `--action <skip\|retry\|switch-seat:…\|end-run>` answers its pending recovery first; `end-run` closes the run and stops there. |
 | `splitbrief review` | — | Review an existing session's diff without running the workflow. |
 
 ---
 
-## 10. Runtime commands (full list, 26)
+## 10. Runtime commands (full list, 25)
 
-The registry holds 26 commands in five categories. Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
+The registry holds 25 commands in five categories. Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
 
 **Navigate**
 
@@ -1170,7 +1181,7 @@ The registry holds 26 commands in five categories. Defined in `src/core/runtime/
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/approval [list\|clear]` | List or clear sticky approval grants |
 | `/resume` | Continue a paused or stopped run |
-| `/end` | Stop the run and mark it cancelled |
+| `/end` | Close the run, keeping every change on disk |
 
 **View**
 
@@ -1179,7 +1190,6 @@ The registry holds 26 commands in five categories. Defined in `src/core/runtime/
 | `/scroll <top\|bottom\|page-up\|page-down>` | Scroll the workflow conversation |
 | `/activity` | Expand or collapse the latest activity batch |
 | `/diff` | Expand or collapse the latest diff |
-| `/cost` | Show the cost breakdown |
 | `/sidebar` | Show or hide the workflow sidebar |
 | `/tasks` | Show the brief list |
 
@@ -1198,9 +1208,9 @@ The registry holds 26 commands in five categories. Defined in `src/core/runtime/
 
 ```yaml
 workflow:
-  budgetPauseThreshold: 0.85   # 0.0–1.0; default 0.85; pause prompt at this fraction of maxBudget
   driftChainThreshold: 0.6     # 0.0–1.0; default 0.6; emit drift_chain_detected at/above this score
   briefReview: simple          # 'simple' is the only accepted value
+  showSpend: true              # default true; hide every spend figure when false
 
 palette:
   customActions:               # command-palette spec: add project-specific palette entries
@@ -1210,7 +1220,7 @@ palette:
       command: /mode quick     # runtime command to invoke (must start with '/')
 ```
 
-All sections are optional; absence means the documented default is used. The `palette.customActions` array is empty by default. Existing config sections (`planner`, `implementer`, `validation`, `workflow.{maxBudget,maxRetries,approve,...}`, `escalation`, `codebase`, `hooks`, `approval`) are unchanged in shape.
+All sections are optional; absence means the documented default is used. The `palette.customActions` array is empty by default. Existing config sections (`planner`, `implementer`, `validation`, `workflow.{maxRetries,approve,...}`, `escalation`, `codebase`, `hooks`, `approval`) are unchanged in shape.
 
 ---
 
@@ -1239,7 +1249,7 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 11. **One foreground active session per project directory.** `.splitbrief/active` is the foreground lock; each session's `lockfile.json` carries the pid and heartbeat that detect a stale pointer.
 12. **Snapshot path encoding.** Blob filenames always go through `encodeSnapshotPath` (a one-way `sha256` hash) — never bare-join slashes. Encoding is not reversible; the original path is recovered from the manifest's `fileEntries[].path`, never decoded.
 13. **Sanctioned `as` / `!` only.** Production code may not use unsafe assertions outside the named modules listed in `CLAUDE.md`.
-14. **No pinned overlay widths.** Every overlay, picker and panel sizes itself through `src/core/navigation/overlay-rect.ts`; the density table is the only place a width number lives. Enforced by `scripts/check-invariants.ts` gate 46 (`docs/INVARIANTS.md` row 46): `maxWidth=` under `src/app src/features src/components/overlays`, the retired width constants (`getResponsivePanelWidth`, `getClampedTerminalWidth`, `PICKER_WIDTHS`, `SUB_PANEL_MAX_WIDTH`, `MAX_PANEL_WIDTH`, `SETUP_PANEL_WIDTH`, `PALETTE_MAX_WIDTH`) anywhere under `src`, and `isSmall` in the width-choice path list must each stay at 0. Content-density branches that survive (`features/summary/*`, `workflow/components/header.tsx`) are deliberately outside that path list.
+14. **No pinned overlay widths.** Every overlay, picker and panel sizes itself through `src/core/navigation/overlay-rect.ts`; the density table is the only place a width number lives. Enforced by `scripts/check-invariants.ts` gate 46 (`docs/INVARIANTS.md` row 46): `maxWidth=` under `src/app src/features src/components/overlays`, the retired width constants (`getResponsivePanelWidth`, `getClampedTerminalWidth`, `PICKER_WIDTHS`, `SUB_PANEL_MAX_WIDTH`, `MAX_PANEL_WIDTH`, `SETUP_PANEL_WIDTH`, `PALETTE_MAX_WIDTH`) anywhere under `src`, and `isSmall` in the width-choice path list must each stay at 0. Content-density branches that survive (`workflow/components/header.tsx`) are deliberately outside that path list.
 15. **Capability inference lives in `core/`, not `engine/`.** The UI must never import `engine/providers/capability-inference`; what a runner can be told to run is decided in `src/core/runners/capabilities.ts`. Enforced by `scripts/check-invariants.ts` gate 47 (`docs/INVARIANTS.md` row 47): `from '.*engine/providers/capability-inference` under `src/features src/app src/components src/core` must stay at 0.
 
 ---
@@ -1252,7 +1262,7 @@ Quickest path for a fresh agent:
 2. `src/cli/commands/start/register.ts` — see the bootstrap flow.
 3. `src/engine/orchestrator/run/workflow.ts` → `run/init.ts` → `run/phases.ts` — see the top-level loop.
 4. `src/engine/orchestrator/planning/{quick,full,speckit}.ts` — see how each mode differs.
-5. `src/engine/orchestrator/task/loop.ts` and `src/engine/orchestrator/task/step.ts` (entry) with internal helpers such as `analyze-drift.ts` and `rollback.ts` — see the per-task loop with auto-snapshot, drift chain, evidence, and budget integration.
+5. `src/engine/orchestrator/task/loop.ts` and `src/engine/orchestrator/task/step.ts` (entry) with internal helpers such as `analyze-drift.ts` and `rollback.ts` — see the per-task loop with auto-snapshot, drift chain, and evidence integration.
 6. `src/engine/events/schema.ts` — see the full event vocabulary (`EngineEventSchema`).
 7. `src/core/paths.ts` — see every path the system writes.
 

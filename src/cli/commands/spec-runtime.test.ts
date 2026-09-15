@@ -9,24 +9,19 @@ import {
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { SPLITBRIEF_DIR, SPEC_FILE } from '../../core/paths.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import {
   createPlannerArtifactAttemptId,
-  OwnedPlannerArtifactSchema,
   PlannerArtifactSemanticIdSchema,
 } from '../../core/schemas/planner-artifact.js';
 import type { Config } from '../../core/schemas/config.js';
-import type {
-  PhaseResult,
-  Planner,
-  PlannerArtifactLogicalName,
-} from '../../engine/planners/types.js';
+import type { Planner, RunPhaseInput } from '../../engine/planners/types.js';
 import type {
   ArtifactApprovalReview,
   CustomRunnerRuntimePort,
 } from '../../engine/runners/types.js';
-import { sha256Hex } from '../../utils/sha256.js';
 import { registerSpecCommand } from './spec.js';
 
 const createPlannerMock = vi.fn<(config: Config) => Promise<Planner>>();
@@ -36,26 +31,6 @@ let shimDir: string;
 let restoreCompatibleCliShim: (() => void) | undefined;
 let consoleSpy: ReturnType<typeof vi.spyOn>;
 let originalIsTTY: boolean | undefined;
-
-function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): PhaseResult {
-  const digest = sha256Hex(text);
-  return {
-    artifact: OwnedPlannerArtifactSchema.parse({
-      semanticId: `test-${logicalName}`,
-      programId: null,
-      batchId: null,
-      attemptId: createPlannerArtifactAttemptId(),
-      logicalName,
-      transport: 'stdout-final',
-      text,
-      byteLength: Buffer.byteLength(text, 'utf8'),
-      sha256: digest,
-      runtimeReceipt: digest,
-      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
-      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
-    }),
-  };
-}
 
 function setStdinIsTTY(value: boolean | undefined): void {
   Object.defineProperty(process.stdin, 'isTTY', { value, writable: true, configurable: true });
@@ -81,13 +56,9 @@ beforeEach(() => {
   createPlannerMock.mockReset();
   createPlannerMock.mockResolvedValue(
     makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Generated Spec',
-        plan: '# Generated Plan',
-        tasks: [],
-        usage: null,
-        phases: [phaseResult(SPEC_FILE, '# Generated Spec')],
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({ call, ...(call === 'tasks' ? { tasks: [] } : {}) }),
+      ),
     }),
   );
 });

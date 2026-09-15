@@ -4,7 +4,7 @@ description: >
   Use when this session should plan a task and a different coding tool should
   build it, spawned and supervised from here — "splitbrief", "delegate this to
   opencode/codex/cursor/cmd/claude", "you plan, X implements, Y reviews", "plan
-  it and let a cheaper model build it". Compiles Product Task Briefs, runs the
+  it here, let another tool build it". Compiles Product Task Briefs, runs the
   implementer CLI headless per brief, validates with the project's own gates,
   checks drift against the brief's scope, retries and escalates on a bounded
   ladder, then reviews with recorded evidence. Briefs only: splitbrief-brief.
@@ -55,7 +55,7 @@ Default: `quick`. Upgrade `quick` → `standard` when the plan exceeds 5 files o
 1. **The brief stands alone.** Nothing from this session's context reaches the implementer unless it is written into the brief. Code context is copied verbatim (references/brief-format.md), never summarized.
 2. **Gates decide, not the implementer.** Every attempt that changed the brief's files is followed by the resolved gates and the drift check (references/gates.md). An implementer's "tests pass" is a claim; the recorded output is the fact.
 3. **One brief, one slice, one process at a time.** Briefs run sequentially in dependency order. Never spawn two implementers at once.
-4. **The ladder is bounded and halts are hard.** Local retries → hint → takeover, per brief. An auth error, a usage limit, a missing binary, or two consecutive timeouts stop the whole run and are reported with the fix — the next rung would silently hand the work to this session at planner prices.
+4. **The ladder is bounded and halts are hard.** Local retries → hint → takeover, per brief. An auth error, a usage limit, a missing binary, or two consecutive timeouts stop the whole run and are reported with the fix — the next rung would silently hand the work back to this session.
 5. **Review is evidence-bound.** The reviewer quotes the Recorded Validation Output or says validation was not recorded. A reviewer that asserts green tests from nowhere is wrong by construction.
 6. **Nothing touches git.** No `git add`, `git commit`, `git stash`, no `.bak` files — not by this session, not by the implementer (the rule is in every brief's Constraints). The working tree is left for the human.
 7. **Materialize before you move.** The run dir, `plan.md`, `progress.md`, and `evidence.md` exist on disk before the first spawn. `plan` mode is the only path that leaves nothing behind.

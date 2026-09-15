@@ -20,7 +20,7 @@ const SHORTCUTS: ShortcutInfo[] = [
     id: 'exit',
     key: 'ctrl+c',
     description: 'Exit',
-    screens: ['home', 'summary', 'setup'],
+    screens: ['home', 'setup'],
   },
   { id: 'command-palette', key: 'ctrl+k', description: 'Command palette', screens: ALL_SCREENS },
   { id: 'help', key: 'ctrl+/', description: 'Help', screens: ALL_SCREENS },
@@ -45,15 +45,9 @@ const SHORTCUTS: ShortcutInfo[] = [
     id: 'close-overlay',
     key: 'esc',
     description: 'Close overlay',
-    screens: ['home', 'summary', 'setup'],
+    screens: ['home', 'setup'],
   },
   { id: 'toggle-diff', key: 'ctrl+d', description: 'Toggle diff', screens: ['workflow'] },
-  {
-    id: 'cost-drilldown',
-    key: 'ctrl+g',
-    description: 'Cost drilldown',
-    screens: ['workflow'],
-  },
   {
     id: 'scroll',
     key: 'shift+↑/↓, pgup/pgdn, home/end',
@@ -73,7 +67,6 @@ const SHORTCUTS: ShortcutInfo[] = [
     description: 'Expand activity rows',
     screens: ['workflow'],
   },
-  { id: 'continue', key: 'enter', description: 'Continue', screens: ['summary'] },
 ];
 
 export function getShortcutKey(id: string): string | null {

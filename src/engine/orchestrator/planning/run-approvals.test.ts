@@ -8,11 +8,14 @@ import { writeSpecFile } from '../../../core/paths-io.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ApprovalReviewResult } from '../../../core/approval/types.js';
+import type { RunPhaseInput } from '../../planners/types.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import {
   REAL_TASKS_MD,
   setupProject,
   makePassingTask,
   makePassingPlanner,
+  makeRecordingPlanner,
   sequencedApproval,
   auto,
   manual,
@@ -58,20 +61,19 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
   it.each(happyCases)('$name', async ({ workflow, approvals, useQuickPlan }) => {
     const onApprovalNeeded = approvals ? sequencedApproval(approvals) : undefined;
     const { callbacks } = makeCallbacks(onApprovalNeeded ? { onApprovalNeeded } : undefined);
-    // Distinctive task id lets us verify quickPlan's output flowed through, not plan's.
-    let quickPlanCalls = 0;
-    const quickPlan = useQuickPlan
-      ? async () => {
-          quickPlanCalls++;
-          return {
-            spec: '',
-            plan: '',
-            tasks: [makePassingTask('T099')],
+    // Distinctive task id lets us verify the quick tasks call flowed through.
+    const calls: string[] = [];
+    const phaseRunner = useQuickPlan
+      ? vi.fn(async ({ call }: RunPhaseInput) => {
+          calls.push(call);
+          return makePhaseCallResult({
+            call,
             usage: { inputTokens: 50, outputTokens: 25 },
-          };
-        }
+            ...(call === 'tasks' ? { tasks: [makePassingTask('T099')] } : {}),
+          });
+        })
       : undefined;
-    const planner = makePassingPlanner(quickPlan ? { quickPlan } : undefined);
+    const planner = makePassingPlanner(phaseRunner ? { runPhase: phaseRunner } : undefined);
 
     const { result } = await runPhase({ planner, callbacks, config: makeConfig({ workflow }) });
 
@@ -79,7 +81,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     expect(result.tasks).toHaveLength(1);
     expect(result.state.phase).toBe('implementing');
     if (useQuickPlan) {
-      expect(quickPlanCalls).toBe(1);
+      expect(calls).toEqual(['tasks']);
       expect(result.tasks[0]?.id).toBe('T099');
     }
   });
@@ -105,10 +107,8 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
       { approved: true },
     ]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    // After regeneration, regeneratePlanAndTasks → planner.review() produces a
-    // real tasks.md block that parseTasks will accept. The regenerate output is
-    // distinctive text so we can observe it flowed through instead of the
-    // initial plan's spec.
+    // The gate's comment goes to planner.regenerate; the revised spec then
+    // invalidates the plan and the briefs, which the step loop compiles again.
     const regenArgs: Array<{ prompt: string }> = [];
     const planner = makePassingPlanner({
       review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
@@ -134,13 +134,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
 
   it('spec gate: editing spec.md on disk then approving regenerates plan and tasks from the edit', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
-    const reviewPrompts: string[] = [];
-    const planner = makePassingPlanner({
-      review: async (prompt: string) => {
-        reviewPrompts.push(prompt);
-        return { text: REAL_TASKS_MD, usage: null };
-      },
-    });
+    const { planner, calls } = makeRecordingPlanner();
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockImplementationOnce(async () => {
@@ -162,18 +156,13 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
 
     expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
-    expect(reviewPrompts.some((p) => p.includes('User-edited auth.'))).toBe(true);
+    const replanned = calls.filter((entry) => entry.call === 'plan');
+    expect(replanned.at(-1)?.inputs.spec).toContain('User-edited auth.');
   });
 
   it('plan gate: editing plan.md on disk then approving regenerates tasks from the edit', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
-    const reviewPrompts: string[] = [];
-    const planner = makePassingPlanner({
-      review: async (prompt: string) => {
-        reviewPrompts.push(prompt);
-        return { text: REAL_TASKS_MD, usage: null };
-      },
-    });
+    const { planner, calls } = makeRecordingPlanner();
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockResolvedValueOnce({ approved: true })
@@ -201,6 +190,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
 
     expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
-    expect(reviewPrompts.some((p) => p.includes('User-edited JWT plan.'))).toBe(true);
+    const recompiled = calls.filter((entry) => entry.call === 'tasks');
+    expect(recompiled.at(-1)?.inputs.plan).toContain('User-edited JWT plan.');
   });
 });

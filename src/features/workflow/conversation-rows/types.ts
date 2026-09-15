@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
@@ -73,6 +74,12 @@ export interface ConversationRow {
   markerTone?: ConversationRowTone;
   headerContinuation?: boolean;
   codeBg?: true;
+  /**
+   * A row the transcript paints as given, marker and segments both skipped. It is how a block that
+   * already has its own single-line renderer — the closed run's ledger — joins the one scroller
+   * instead of opening a second.
+   */
+  node?: ReactNode;
 }
 
 export interface ConversationRowsResult {
@@ -120,6 +127,8 @@ export interface ConversationRowScrollInputs extends ConversationRowInputs {
   rawScrollOffset: number;
   renderableCountAtScroll: number;
   heightAtScroll: number;
+  /** Blocks appended after the last event; the closed run's ledger is the only one today. */
+  tail?: readonly ConversationRowBlock[] | undefined;
 }
 
 export interface RowBuildContext {

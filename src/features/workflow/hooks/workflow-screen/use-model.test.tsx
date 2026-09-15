@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -39,6 +40,7 @@ describe('useWorkflowScreen while a brief is parked', () => {
     projectDir = createTempDir('use-model-parked');
     routerStore.navigate({
       to: 'workflow',
+      run: makeRunRecord(),
       execution: {
         kind: 'local',
         prepared: prepareWorkflowExecution({

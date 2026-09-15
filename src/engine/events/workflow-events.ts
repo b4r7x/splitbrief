@@ -70,7 +70,6 @@ export type TaskReviewRequest = {
         contextLength?: number | undefined;
         currentCodeTruncated: boolean;
         currentCodeContextMode: CurrentCodeContextMode;
-        costPosture: string;
         reason: string;
       }
     | undefined;

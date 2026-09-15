@@ -10,6 +10,7 @@ import {
 import { TaskSchema } from './task.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema } from './recovery/schemas.js';
+import { StepCutSchema, StepRefSchema } from './run-step.js';
 import { topoSort } from '../state/topo-sort.js';
 import { isRecord } from '../../utils/type-guards.js';
 
@@ -90,7 +91,6 @@ const WorkflowStateFields = {
   approve: ApproveLevelSchema.optional(),
   selectedSkills: z.array(z.string()).optional(),
   awaitingContinue: z.boolean().default(false),
-  budgetPauseAcknowledgedAtCost: z.number().optional(),
   messageQueue: z.array(QueuedMessageSchema).default([]),
   rewindPending: z
     .object({
@@ -109,6 +109,17 @@ const WorkflowStateFields = {
     })
     .optional(),
   reviewStatus: z.enum(REVIEW_STATUSES).optional(),
+  interruptedStep: z
+    .object({
+      step: StepRefSchema,
+      source: z.enum(['user', 'watchdog']),
+      cut: StepCutSchema.optional(),
+      partialRef: z.object({ kind: z.literal('session-log'), index: z.number().int() }).optional(),
+      at: z.string(),
+    })
+    .optional(),
+  closed: z.object({ at: z.string(), as: z.literal('ended') }).optional(),
+  lastFailure: z.object({ step: StepRefSchema, message: z.string(), at: z.string() }).optional(),
   external: z.record(z.string(), z.unknown()).optional(),
 };
 
@@ -118,6 +129,7 @@ const LEGACY_STATE_KEYS = [
   'generation',
   'permit',
   'briefRecovery',
+  'budgetPauseAcknowledgedAtCost',
 ] as const;
 
 function stripLegacyStateKeys(value: unknown): unknown {

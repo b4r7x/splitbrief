@@ -32,7 +32,7 @@ describe('DocumentReviewPrompt', () => {
     );
 
     expect(frame).toContain(row);
-    expect(frame).toContain(`Reject ${artifact}`);
+    expect(frame).toContain('End run (close this run; keep changes)');
   });
 
   it('teaches the selection keys once, inside its own border', () => {

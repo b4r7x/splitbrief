@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { formatElapsedClock } from '../../../utils/format-time.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
@@ -16,12 +17,16 @@ import { formatCollapsedSeatLine } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { formatResetNote } from '../../../core/recovery/reset-clock.js';
+import type { RailStageState } from '../../../core/rail-stages.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
 import { measureRailCells, Rail } from './rail.js';
 
 interface HeaderProps {
   startedAt: string;
   railForm?: RailForm | undefined;
+  /** A run at rest names the stages its own record earned, and the crew that actually ran it. */
+  stages?: readonly RailStageState[] | undefined;
+  seatLine?: string | undefined;
 }
 
 const TIMER_WIDTH = 8;
@@ -34,15 +39,6 @@ export interface HeaderLayout {
   seatRoom: number;
   showElapsed: boolean;
   showSeats: boolean;
-}
-
-function formatElapsedClock(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const seconds = String(totalSeconds % 60).padStart(2, '0');
-  const minutes = Math.floor(totalSeconds / 60) % 60;
-  const hours = Math.floor(totalSeconds / 3600);
-  if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`;
-  return `${minutes}:${seconds}`;
 }
 
 function formatElapsed(
@@ -111,7 +107,7 @@ export function getHeaderLayout(input: {
   return { contentWidth, railWidth, seatRoom, showElapsed, showSeats };
 }
 
-export function Header({ startedAt, railForm }: HeaderProps) {
+export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }: HeaderProps) {
   const [{ cols }, lifecycle, tasks, tokens, eventsState, recoveryNotice] = useStores(
     terminalSizeStore,
     lifecycleStore,
@@ -121,7 +117,6 @@ export function Header({ startedAt, railForm }: HeaderProps) {
     recoveryNoticeStore,
   );
   const { startedAt: lifecycleStartedAt, endedAt, durationMs, phase, cancelled } = lifecycle;
-  const t = useTheme();
   const config = configStore.use((s) => s.config);
   const displayNames = useCrewDisplayNames(config);
   const railCells = measureRailCells({
@@ -132,13 +127,14 @@ export function Header({ startedAt, railForm }: HeaderProps) {
     tasks,
     localCount: tokens.localCount,
     events: eventsState.events,
+    ...(stages !== undefined && { stages }),
   });
 
   // The room does not depend on the line, so the first pass measures it, the
   // line is cut to it, and the second pass lays the bar out around what fits.
   const { seatRoom } = getHeaderLayout({ cols, railCells });
   const seatNotes = seatResetNotes(recoveryNotice.seat, recoveryNotice.resetAt);
-  const seatLine = config
+  const liveSeatLine = config
     ? formatCollapsedSeatLine({
         planner: config.planner,
         build: resolveImplementerProfiles(config).defaultProfile.config,
@@ -148,16 +144,49 @@ export function Header({ startedAt, railForm }: HeaderProps) {
         ...(seatNotes !== undefined && { notes: seatNotes }),
       })
     : '';
-  const layout = getHeaderLayout({
-    cols,
-    railCells,
-    seatCells: getTerminalCellWidth(seatLine),
-  });
+  const seatLine = givenSeatLine ?? liveSeatLine;
+  return (
+    <HeaderRow
+      cols={cols}
+      railCells={railCells}
+      seatLine={seatLine}
+      rail={<Rail form={railForm} {...(stages !== undefined && { stages })} />}
+      clock={
+        <ElapsedClock
+          mountedAt={startedAt}
+          lifecycleStartedAt={lifecycleStartedAt}
+          endedAt={endedAt}
+          durationMs={durationMs}
+        />
+      }
+    />
+  );
+}
 
+/**
+ * The header bar itself: rail on the left, the seat line and the clock pinned right, each paid for
+ * out of one budget. It reads no store, so the summary screen can paint the same bar from a
+ * finished run's record.
+ */
+export function HeaderRow({
+  rail,
+  railCells,
+  seatLine,
+  clock,
+  cols,
+}: {
+  rail: ReactNode;
+  railCells: number;
+  seatLine: string;
+  clock: ReactNode;
+  cols: number;
+}) {
+  const t = useTheme();
+  const layout = getHeaderLayout({ cols, railCells, seatCells: getTerminalCellWidth(seatLine) });
   return (
     <Box width="100%" height={1} overflow="hidden">
       <Box width={layout.railWidth} overflow="hidden">
-        <Rail form={railForm} />
+        {rail}
       </Box>
       <Box flexGrow={1} />
       {layout.showSeats && (
@@ -165,16 +194,7 @@ export function Header({ startedAt, railForm }: HeaderProps) {
           <Text color={t.textDim}>{seatLine}</Text>
         </Box>
       )}
-      {layout.showElapsed && (
-        <Box justifyContent="flex-end">
-          <ElapsedClock
-            mountedAt={startedAt}
-            lifecycleStartedAt={lifecycleStartedAt}
-            endedAt={endedAt}
-            durationMs={durationMs}
-          />
-        </Box>
-      )}
+      {layout.showElapsed && <Box justifyContent="flex-end">{clock}</Box>}
     </Box>
   );
 }

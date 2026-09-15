@@ -18,6 +18,7 @@ import { writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
+import { callPhase } from '#testing/helpers/planner-call.js';
 
 let shimDir: string;
 let projectDir: string;
@@ -233,7 +234,7 @@ Create the Claude fallback file.
       initialSessionId: 'sess-old',
     });
 
-    const result = await planner.quickPlan({
+    const result = await callPhase(planner, {
       feature: 'fallback',
       projectDir,
       callbacks: {
@@ -296,7 +297,7 @@ Create the Claude mismatch fallback file.
       initialSessionId: 'sess-old',
     });
 
-    const result = await planner.quickPlan({
+    const result = await callPhase(planner, {
       feature: 'fallback',
       projectDir,
       callbacks: {
@@ -378,7 +379,7 @@ Create \`src/text.test.ts\` with vitest tests for \`titleCase\`.
 
     const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
 
-    const result = await planner.quickPlan({
+    const result = await callPhase(planner, {
       feature: 'add a titleCase function to src/text.ts',
       projectDir,
       callbacks: {
@@ -389,9 +390,72 @@ Create \`src/text.test.ts\` with vitest tests for \`titleCase\`.
     });
 
     expect(warnings).toEqual([]);
-    expect(result.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
-    expect(result.phases?.[0]?.artifact.text).toContain('id: T001');
-    expect(result.phases?.[0]?.rawOutput).toBeUndefined();
+    expect(result.tasks?.map((task) => task.id)).toEqual(['T001', 'T002']);
+    expect(result.artifact.artifact.text).toContain('id: T001');
+    expect(result.artifact.rawOutput).toBeUndefined();
+  });
+
+  it('captures the native session id as it streams, so the next call resumes a failed one', async () => {
+    const tasksMarkdown = `---
+id: T001
+title: Claude stream capture task
+action: create
+file: src/claude-stream.ts
+depends_on: []
+---
+
+### Description
+Create the stream capture file.
+
+### Tests
+- second call resumes the captured thread
+`;
+    const argvLog = join(shimDir, 'argv-log.txt');
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        `printf '%s ' "$@" >> '${argvLog}'`,
+        `printf '\\n' >> '${argvLog}'`,
+        'if printf \'%s\\n\' "$@" | grep -q "^--resume$"; then',
+        `  printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-stream', result: tasksMarkdown, usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
+        '  exit 0',
+        'fi',
+        `printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-stream' }).replace(/'/g, "'\\''")}'`,
+        'exit 1',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
+    await expect(
+      callPhase(planner, {
+        call: 'research',
+        feature: 'first call dies after the id',
+        projectDir,
+        callbacks: { onOutput: () => {} },
+      }),
+    ).rejects.toBeDefined();
+
+    const second = await callPhase(planner, {
+      feature: 'second call',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
+    expect(second.tasks).toHaveLength(1);
+
+    const calls = readFileSync(argvLog, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => line.trim().split(' '));
+    expect(calls).toHaveLength(2);
+    expect(calls[0] ?? []).not.toContain('--resume');
+    const secondArgs = calls[1] ?? [];
+    expect(secondArgs.slice(secondArgs.indexOf('--resume'))).toEqual(['--resume', 'sess-stream']);
   });
 
   it('never re-sends a consumed session id: the second consecutive planner call resumes it', async () => {
@@ -426,12 +490,12 @@ Create the Claude retry file.
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
     const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
-    const first = await planner.quickPlan({
+    const first = await callPhase(planner, {
       feature: 'first call',
       projectDir,
       callbacks: { onOutput: () => {} },
     });
-    const second = await planner.quickPlan({
+    const second = await callPhase(planner, {
       feature: 'retry call',
       projectDir,
       callbacks: { onOutput: () => {} },

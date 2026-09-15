@@ -11,7 +11,8 @@
       "playwright.config.ts",
       "src/**",
       "tests/**",
-      "tools/**"
+      "dependency-cruiser.config.cjs",
+      "knip.json"
     ]
   },
   "formatter": {
@@ -28,7 +29,10 @@
         "useImportType": "error",
         "useFilenamingConvention": {
           "level": "error",
-          "options": { "filenameCases": ["kebab-case"], "requireAscii": true }
+          "options": {
+            "filenameCases": ["kebab-case"],
+            "requireAscii": true
+          }
         }
       }
     }

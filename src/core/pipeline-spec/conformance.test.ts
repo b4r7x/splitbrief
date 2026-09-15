@@ -14,19 +14,19 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import {
   REAL_TASKS_MD,
-  makePassingTask,
   runOwnedPlanningPhase,
   setupProject,
 } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { renderBlock } from '../../../scripts/skill-blocks.js';
+import { TASKS_FILE } from '../paths.js';
 import { handleRetryAndEscalation } from '../../engine/orchestrator/escalation/handle.js';
 import {
   MAX_TEST_TAIL_LINES,
   MAX_VALIDATION_OUTPUT_CHARS,
 } from '../../engine/orchestrator/validation/stage.js';
 import { parseFinalReview } from '../../engine/parsers/final-review.js';
-import { runMultiPhasePlanning } from '../../engine/planners/multi-phase.js';
+import { createPlannerBase } from '../../engine/planners/base.js';
 import type { Planner } from '../../engine/planners/types.js';
 import { isAuthFailureDiagnostic } from '../../engine/runners/auth-failure.js';
 import { isUsageLimitDiagnostic } from '../../engine/runners/usage-limit.js';
@@ -162,7 +162,6 @@ const PHASE_OUTPUTS = [
   '# Research\n\nFindings.',
   '# Spec\n\nRequirements.',
   '# Plan\n\n## File Structure\n### New Files\n- `src/auth.ts`\n  Purpose: the module.',
-  REAL_TASKS_MD,
 ];
 
 const ANALYZE_JSON = `\`\`\`json
@@ -173,23 +172,20 @@ const ANALYZE_JSON = `\`\`\`json
 function countingPlanner(): { planner: Planner; calls: () => number } {
   let calls = 0;
   let phase = 0;
-  const planner = makePlanner({
-    plan: (options) =>
-      runMultiPhasePlanning(
-        {
-          invokePlan: async () => {
-            const text = PHASE_OUTPUTS[phase] ?? '';
-            phase += 1;
-            calls += 1;
-            return makeRunnerCallResult({ status: 'completed', text });
-          },
-        },
-        options,
-      ),
-    quickPlan: async () => {
+  const base = createPlannerBase({
+    invokePlan: async ({ artifactFile }) => {
+      const text =
+        artifactFile === TASKS_FILE ? REAL_TASKS_MD : (PHASE_OUTPUTS[phase] ?? '# Heading\n\nbody');
+      phase += 1;
       calls += 1;
-      return { spec: '', plan: '', tasks: [makePassingTask()], usage: null };
+      return makeRunnerCallResult({ status: 'completed', text });
     },
+    invokeEscalate: async () => makeRunnerCallResult({ status: 'completed', text: '' }),
+    isAvailable: async () => true,
+    capabilities: makePlanner().capabilities,
+  });
+  const planner = makePlanner({
+    runPhase: base.runPhase,
     review: async () => {
       calls += 1;
       return { text: ANALYZE_JSON, usage: null };

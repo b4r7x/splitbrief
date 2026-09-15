@@ -30,13 +30,14 @@ import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
-import { routerStore } from '../../../src/stores/navigation/router.js';
+import { routerStore, type RouteData } from '../../../src/stores/navigation/router.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
+import { makeRunRecord } from '../../helpers/factories/run-record.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { cursorDetectedModels } from '../../helpers/factories/cursor-models.js';
 import { cliDetectionFor } from '../../helpers/factories/detection.js';
 import { makeSession } from '../../helpers/factories/session.js';
-import { makeSummary, makeUsage } from '../../helpers/factories/summary.js';
+import { makeSummary } from '../../helpers/factories/summary.js';
 import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common.js';
 import {
   publishVisualDiscovery,
@@ -63,6 +64,16 @@ function overlayPrepared(): PreparedExecution {
     config,
     sessionId: 'visual-overlay-session',
   });
+}
+
+/** The run behind an overlay: one record, and the execution driving it, exactly as a run starts. */
+function overlayWorkflowRoute(): RouteData {
+  const prepared = overlayPrepared();
+  return {
+    screen: 'workflow',
+    run: makeRunRecord({ ref: prepared.session.ref, feature: prepared.runtime.feature }),
+    execution: { kind: 'local', prepared },
+  };
 }
 
 /** The merged two-route row the provider-expansion frames open on. */
@@ -211,7 +222,6 @@ function seedSessions(): void {
       totalTasks: 4,
       completedByLocal: 4,
       totalTime: 82_000,
-      estimatedCostSavings: '$4.80',
     }),
   });
   // The sessions overlay re-reads the project directory on mount, so the
@@ -219,7 +229,7 @@ function seedSessions(): void {
   const dir = join(sessionsRoot(VISUAL_FIXTURE_PROJECT_DIR), session.id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'summary.json'), JSON.stringify(session));
-  sessionsStore.__testReset({ sessions: [session], allSessions: [session], totalCount: 1 });
+  sessionsStore.__testReset({ sessions: [session], totalCount: 1 });
 }
 
 function seedEditor(): void {
@@ -242,86 +252,6 @@ function seedEditor(): void {
       'Add a helper that returns a friendly greeting string.',
     ].join('\n'),
     layout: { columns: 72, rows: 19 },
-  });
-}
-
-function seedCostBreakdown(): void {
-  tokensStore.__testReset({
-    localCount: 3,
-    escalatedCount: 1,
-    completedTaskCount: 4,
-    tokenUsage: makeUsage({
-      plannerInput: 4_200,
-      plannerOutput: 1_100,
-      implementerInput: 12_400,
-      implementerOutput: 3_800,
-      escalationInput: 1_200,
-      escalationOutput: 440,
-      reviewerInput: 1_800,
-      reviewerOutput: 600,
-    }),
-    pricingContext: {
-      plannerTool: 'claude-code',
-      plannerModel: 'claude-sonnet-4',
-      implementerTool: 'ollama',
-      implementerModel: 'qwen2.5-coder:7b',
-      reviewerTool: 'codex',
-      reviewerModel: 'gpt-5-codex',
-    },
-    perPhase: {
-      planning: {
-        inputTokens: 4_200,
-        outputTokens: 1_100,
-        cacheReadTokens: 800,
-        cacheCreateTokens: 0,
-      },
-      implementing: {
-        inputTokens: 13_600,
-        outputTokens: 4_240,
-        cacheReadTokens: 2_100,
-        cacheCreateTokens: 320,
-      },
-    },
-    perTask: {
-      T001: {
-        title: 'Build terminal fixture',
-        totalTokens: 8_400,
-        attempts: [
-          {
-            method: 'local',
-            implementerTokens: 8_400,
-            escalationTokens: 0,
-            retryCount: 0,
-            tool: 'ollama',
-            model: 'qwen2.5-coder:7b',
-            implementerProfile: 'local-fast',
-            contextFit: 'fits',
-            estimatedTokens: 7_900,
-            contextLength: 32_768,
-            costPosture: 'local',
-          },
-        ],
-      },
-      T002: {
-        title: 'Verify artifact geometry',
-        totalTokens: 5_440,
-        attempts: [
-          {
-            method: 'escalated-full',
-            implementerTokens: 3_800,
-            escalationTokens: 1_640,
-            retryCount: 1,
-            tool: 'ollama',
-            model: 'qwen2.5-coder:7b',
-            implementerProfile: 'local-fast',
-            contextFit: 'tight',
-            estimatedTokens: 29_100,
-            contextLength: 32_768,
-            routingReason: 'Complex terminal geometry verification',
-          },
-        ],
-      },
-    },
   });
 }
 
@@ -419,22 +349,6 @@ function seedClaudeAliasRows(): void {
     modelsDev: { catalog: modelsDevSlice() },
   });
 }
-
-function seedImplementerClaudeCheapest(): void {
-  seedConfig({
-    implementer: { kind: 'cli', tool: 'claude-code', model: 'auto:cheapest' },
-  })();
-  publishVisualDiscovery({
-    cliTools: [cliDetectionFor('ready', 'claude-code')],
-    modelsDev: { catalog: modelsDevSlice() },
-  });
-}
-
-/**
- * The one arm where the browse escape widens anything: a local runner with no
- * inventory of its own still has a models.dev lane, so the live lane hides the
- * bundled fallback row and the escape is what restores it.
- */
 function seedOllamaCatalogLane(): void {
   seedConfig({
     implementer: {
@@ -625,9 +539,7 @@ function createOverlayFixture(options: {
     setup: (context) => {
       setupVisualFixture(context);
       routerStore.init(
-        underlyingScreen === 'workflow'
-          ? { screen: 'workflow', execution: { kind: 'local', prepared: overlayPrepared() } }
-          : { screen: underlyingScreen },
+        underlyingScreen === 'workflow' ? overlayWorkflowRoute() : { screen: underlyingScreen },
       );
       seedRunnerCatalog();
       seed();
@@ -749,12 +661,6 @@ const createSettingsCrewKiloCopilotFixture: FixtureFactory = () =>
     overlay: 'settings',
     seed: seedConfig({ planner: PLANNER_KILO_SEAT, implementer: BUILD_COPILOT_SEAT }),
     focus: 'seat:plan',
-  });
-const createSettingsBuildAutoCheapestFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'settings',
-    seed: seedImplementerClaudeCheapest,
-    focus: 'seat:build',
   });
 const createSettingsFloorFullFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -957,12 +863,6 @@ const createPickerBrowseEscapeFixture: FixtureFactory = () =>
     seed: seedOllamaCatalogLane,
     focus: 'tool:ollama',
   });
-const createBuildPickerAutoCheapestFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'implementer-picker',
-    seed: seedImplementerClaudeCheapest,
-    focus: 'tool:claude-code',
-  });
 const createReviewerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'reviewer-picker' });
 const createReviewerPickerToolFixture: FixtureFactory = () =>
@@ -1028,12 +928,6 @@ const createSessionsFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'sessions', seed: seedSessions });
 const createEditorFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'editor', seed: seedEditor, underlyingScreen: 'workflow' });
-const createCostDrilldownFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'cost-drilldown',
-    seed: seedCostBreakdown,
-    underlyingScreen: 'workflow',
-  });
 
 export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-help'), createHelpFixture],
@@ -1044,7 +938,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-crew-full'), createSettingsCrewFullFixture],
   [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
   [scenarioId('overlay-settings-crew-kilo-copilot'), createSettingsCrewKiloCopilotFixture],
-  [scenarioId('overlay-settings-build-auto-cheapest'), createSettingsBuildAutoCheapestFixture],
   [scenarioId('overlay-settings-floor-full'), createSettingsFloorFullFixture],
   [scenarioId('overlay-settings-filtered'), createSettingsFilteredFixture],
   [scenarioId('overlay-settings-filter-plan'), createSettingsFilterPlanFixture],
@@ -1078,11 +971,9 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-custom-model'), createCustomModelFixture],
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
   [scenarioId('overlay-picker-browse-escape'), createPickerBrowseEscapeFixture],
-  [scenarioId('overlay-build-picker-auto-cheapest'), createBuildPickerAutoCheapestFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
   [scenarioId('workflow-stop-sheet'), createStopSheetFixture],
   [scenarioId('overlay-sessions'), createSessionsFixture],
   [scenarioId('overlay-editor'), createEditorFixture],
-  [scenarioId('overlay-cost-drilldown'), createCostDrilldownFixture],
 ]);

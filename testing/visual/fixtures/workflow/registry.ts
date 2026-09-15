@@ -81,7 +81,7 @@ const checkpointPredicates = [
   [checkpointId('review'), includesAll('allow this operation only', WORKFLOW_FIXTURE_TEXT.review)],
   // The document loads from disk after the panel paints, so each gate waits on the first row of
   // its own document too — otherwise the frame captures a gate over an empty box.
-  [checkpointId('approval-document'), includesAll('Reject plan', 'Fixture plan')],
+  [checkpointId('approval-document'), includesAll('End run', 'Fixture plan')],
   [checkpointId('approval-permission'), includesAll('allow this operation only')],
   [checkpointId('reviewing-briefs'), includesAll('Approve briefs', 'T001 modify')],
   [checkpointId('question'), includesAll(WORKFLOW_FIXTURE_TEXT.question)],
@@ -89,8 +89,16 @@ const checkpointPredicates = [
   [checkpointId('paused-boundary'), includesAll('briefs complete')],
   [checkpointId('stopping'), includesAll('No new work will start')],
   [checkpointId('stopped'), includesAll('Changes kept')],
-  [checkpointId('success'), includesAll('complete', WORKFLOW_FIXTURE_TEXT.success)],
-  [checkpointId('review-failed'), includesAll('Build finished', 'changes need attention')],
+  // A run at rest carries its own name: the marker is the session the record names, which the
+  // closed block states in full and the open byline carries. Nothing else is width-stable — the
+  // byline sheds its reason and then its alternative as the terminal narrows.
+  [checkpointId('at-rest-paused'), includesAll()],
+  [checkpointId('at-rest-halted'), includesAll()],
+  [checkpointId('at-rest-waiting'), includesAll()],
+  [checkpointId('closed-ready'), includesAll()],
+  [checkpointId('closed-needs-attention'), includesAll()],
+  [checkpointId('closed-ended'), includesAll()],
+  [checkpointId('replayed'), includesAll()],
   [checkpointId('failure'), includesAll(WORKFLOW_FIXTURE_TEXT.failure, 'Build failed')],
   [checkpointId('recovery'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];

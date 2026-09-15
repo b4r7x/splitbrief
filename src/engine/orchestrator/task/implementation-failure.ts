@@ -74,8 +74,8 @@ export async function handleFailedImplementation(opts: {
     return raisePendingRecovery(wctx, state, issue, setTrackedState);
   }
   // An implementer that ran out of quota halts the same way: retrying
-  // before the reset cannot succeed, and escalating would silently bill
-  // every task at planner prices.
+  // before the reset cannot succeed, and escalating would silently move
+  // every task onto the planner.
   if (implState.implResult.outcome === 'usage-limit') {
     const toolMessage = implState.implResult.error ?? 'The runner reported a usage limit';
     const routeBiggerProfile = routeBiggerProfileFromDecision(wctx.routingDecision);

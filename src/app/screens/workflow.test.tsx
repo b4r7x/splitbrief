@@ -1,4 +1,10 @@
 import { writeFileSync } from 'node:fs';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { taskId } from '../../core/schemas/task.js';
+import { saveState } from '../../core/state/persistence.js';
+import { addEvent } from '../../stores/workflow/actions/event.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -26,6 +32,8 @@ const { terminalSizeStore } = await import('../../stores/ui/terminal-size.js');
 const { routerStore } = await import('../../stores/navigation/router.js');
 const { inputHeightStore } = await import('../../stores/ui/input-height.js');
 const { inputHistoryStore } = await import('../../stores/ui/input-history.js');
+const { feedbackStore } = await import('../../stores/ui/feedback.js');
+const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/composer.js');
 
 const FIXED_TS = 1_783_958_400_000;
 const SHIFT_ENTER = '\x1b[13;2u';
@@ -76,9 +84,11 @@ function preparedExecution(projectDir: string, feature: string): PreparedExecuti
 }
 
 function navigatePreparedWorkflow(projectDir: string, feature: string): void {
+  const prepared = preparedExecution(projectDir, feature);
   routerStore.navigate({
     to: 'workflow',
-    execution: { kind: 'local', prepared: preparedExecution(projectDir, feature) },
+    run: makeRunRecord({ ref: prepared.session.ref }),
+    execution: { kind: 'local', prepared },
   });
 }
 
@@ -164,8 +174,8 @@ describe('WorkflowScreen chrome calibration', () => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('First review');
     });
 
-    // The document gate lists approve · comment · edit · reject, so the third step down is the
-    // rejection this test drives.
+    // The document gate lists approve · comment · edit · end run, so the third step down is the
+    // end-run row this test drives.
     await flushEffects();
     ui.stdin.write('\x1b[B');
     await flushEffects();
@@ -178,9 +188,13 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(outcomes).toEqual([{ approved: false }]);
+      expect(outcomes).toEqual([{ approved: false, action: 'end-run' }]);
     });
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Second review');
+    // The second gate's document is read from disk after its prompt opens, so the frame that
+    // carries it lands a paint later than the answer that opened it.
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Second review');
+    });
 
     // The next gate starts on its own first row again — the cursor never carries over.
     await flushEffects();
@@ -190,7 +204,7 @@ describe('WorkflowScreen chrome calibration', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(outcomes).toEqual([{ approved: false }, { approved: true }]);
+      expect(outcomes).toEqual([{ approved: false, action: 'end-run' }, { approved: true }]);
     });
     ui.unmount();
   });
@@ -283,8 +297,143 @@ describe('WorkflowScreen chrome calibration', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(outcome).toEqual({ approved: false });
+      expect(outcome).toEqual({ approved: false, action: 'end-run' });
     });
+    ui.unmount();
+  });
+});
+describe('WorkflowScreen showing a run at rest', () => {
+  let projectDir = '';
+
+  beforeEach(() => {
+    resetAllStores();
+    projectDir = createTempDir('workflow-at-rest');
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    runWorkflow.mockReset();
+    runWorkflow.mockReturnValue(pendingWorkflow());
+  });
+
+  afterEach(() => {
+    resetAllStores();
+    if (projectDir) cleanupTempDir(projectDir);
+  });
+
+  function openRun(overrides: Partial<Parameters<typeof makeRunRecord>[0]> = {}) {
+    const record = makeRunRecord({
+      ref: { projectDir, sessionId: 'at-rest-session' },
+      status: {
+        kind: 'open',
+        stop: { kind: 'paused', at: 'mid-step' },
+        resumeAt: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
+      },
+      hydration: { kind: 'loaded', state: makeWorkflowState({ phase: 'implementing' }) },
+      ...overrides,
+    });
+    routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
+    return record;
+  }
+
+  function closedRun(
+    as: 'complete' | 'ended',
+    extra: Partial<Parameters<typeof makeRunRecord>[0]> = {},
+  ) {
+    return openRun({
+      status: { kind: 'closed', as },
+      summary: makeSummary({ feature: 'closed at rest', totalTasks: 0 }),
+      ...extra,
+    });
+  }
+
+  it('shows the history the replay put on the screen, with nothing running', async () => {
+    openRun();
+    addEvent({
+      type: 'planner_text',
+      ts: FIXED_TS,
+      phase: 'implementing',
+      text: 'The signup form posts straight to the route handler.',
+    });
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('signup form posts');
+    expect(runWorkflow).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('states what an open run takes and continues it on a typed correction', async () => {
+    const record = openRun();
+    const state = makeWorkflowState({ phase: 'implementing' });
+    saveState(record.ref, state);
+    const prepareResume = vi.fn(async () => ({
+      kind: 'prepared' as const,
+      execution: preparedExecution(projectDir, 'continued run'),
+    }));
+
+    const ui = renderFeature(
+      <WorkflowScreen
+        commands={[]}
+        onRuntimeCommand={vi.fn()}
+        deps={{
+          runWorkflow,
+          sessionSelect: {
+            loadResumeState: () => ({ kind: 'loaded', state }),
+            prepareResume,
+            hydrateRun: async () => {},
+          },
+        }}
+      />,
+    );
+    await flushEffects();
+    const byline = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(byline).toContain('Paused at T003');
+    expect(byline).toContain('type a correction or ⏎ to continue');
+
+    ui.stdin.write('use the cached parser');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(prepareResume).toHaveBeenCalled();
+    });
+
+    const route = routerStore.get();
+    if (route.screen === 'workflow' && route.execution.kind === 'local') {
+      expect(route.execution.steer).toBe('use the cached parser');
+    } else {
+      throw new Error('expected the continuation to flip the execution in place');
+    }
+    ui.unmount();
+  });
+
+  it('takes only commands on a closed run and paints its ledger at the transcript tail', async () => {
+    closedRun('complete');
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Closed');
+    expect(frame).toContain('Session');
+
+    ui.stdin.write('z');
+    await flushEffects();
+    expect(feedbackStore.get().message).toBe(COMMANDS_ONLY_NOTICE);
+    ui.unmount();
+  });
+
+  it('flips the byline when the run record says the run was accepted', async () => {
+    const record = closedRun('complete');
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/run accept');
+
+    routerStore.updateRun({ run: { ...record, checkpoint: { kind: 'accepted' } } });
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Accepted');
+    expect(frame).not.toContain('Keep it with /run accept');
     ui.unmount();
   });
 });

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { glyph } from '../../lib/glyphs.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
@@ -30,6 +30,7 @@ import { observePreparationCleanup } from '../../features/start-preparation/obse
 import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
 import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
@@ -370,6 +371,7 @@ export function SetupScreen({ prepare = prepareExecution }: SetupScreenProps) {
     onPrepared: (execution) => {
       routerStore.navigate({
         to: 'workflow',
+        run: readRunRecord(execution.session.ref),
         execution: { kind: 'local', prepared: execution },
       });
     },

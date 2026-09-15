@@ -133,7 +133,6 @@ export function makeReviewPacket(overrides?: Partial<ReviewPacket>): ReviewPacke
     cost: {
       tokenUsage: makeUsage(),
       costBreakdown: null,
-      estimatedCostSavings: null,
       taskRouting: [],
       routingWarnings: [],
     },

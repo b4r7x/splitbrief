@@ -1,8 +1,5 @@
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
-import type {
-  ImplementerCostTier,
-  ImplementerWriteMode,
-} from '../../../core/schemas/implementer-config.js';
+import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
@@ -35,7 +32,6 @@ export interface RouteTaskOptions extends ContextFitOptions {
 
 export interface RejectedImplementerProfile {
   profile: string;
-  costTier: ImplementerCostTier;
   profileWriteMode: ImplementerWriteMode;
   requiredWriteMode: ImplementerWriteMode;
   reason: string;
@@ -50,7 +46,6 @@ export interface RejectedImplementerProfile {
 export interface RoutingDecision {
   taskId: TaskId;
   selectedProfile?: string | undefined;
-  selectedCostTier?: ImplementerCostTier | undefined;
   selectedWriteMode?: ImplementerWriteMode | undefined;
   requiredWriteMode: ImplementerWriteMode;
   fit: TaskContextFit;
@@ -59,7 +54,6 @@ export interface RoutingDecision {
   contextLength?: number | undefined;
   currentCodeTruncated: boolean;
   currentCodeContextMode: CurrentCodeContextMode;
-  costPosture: string;
   reason: string;
   rejected: RejectedImplementerProfile[];
 }

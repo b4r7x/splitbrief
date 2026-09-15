@@ -327,7 +327,7 @@ describe('buildPaletteSources session items', () => {
     const session = makeSession({
       id: 'sess-resume',
       feature: 'add auth',
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
     const savedState = {
@@ -357,6 +357,7 @@ describe('buildPaletteSources session items', () => {
               resumeState: state,
             }),
           }),
+          hydrateRun: async () => {},
         }),
     });
 
@@ -364,18 +365,18 @@ describe('buildPaletteSources session items', () => {
 
     const route = routerStore.get();
     expect(route.screen).toBe('workflow');
-    if (route.screen === 'workflow' && route.execution.kind === 'local') {
-      expect(route.execution.prepared.runtime.feature).toBe('saved add auth');
-      expect(route.execution.prepared.runtime.resumeState).toEqual(savedState);
-      expect(route.execution.prepared.session.ref.sessionId).toBe(session.id);
+    if (route.screen === 'workflow') {
+      expect(route.execution.kind).toBe('at-rest');
+      expect(route.run.ref.sessionId).toBe(session.id);
+      expect(route.run.hydration).toEqual({ kind: 'loaded', state: savedState });
     }
   });
 
-  it('surfaces palette-triggered session selection errors through global feedback', async () => {
+  it('opens a palette-picked run with no saved state at rest, rather than refusing it', async () => {
     const session = makeSession({
       id: 'sess-missing-state',
       feature: 'missing state',
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
 
@@ -394,17 +395,17 @@ describe('buildPaletteSources session items', () => {
           prepareResume: async () => {
             throw new Error('Preparation should not run without saved state');
           },
+          hydrateRun: async () => {},
         }),
     });
 
     await sessionItems[0]?.action();
 
-    expect(sessionSelectStore.get().error).toBe(
-      'Cannot resume: saved workflow state is missing or invalid',
-    );
-    expect(feedbackStore.get()).toMatchObject({
-      isError: true,
-      message: 'Cannot resume: saved workflow state is missing or invalid',
-    });
+    expect(sessionSelectStore.get().error).toBeNull();
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen === 'workflow') {
+      expect(route.run.hydration.kind).not.toBe('loaded');
+    }
   });
 });

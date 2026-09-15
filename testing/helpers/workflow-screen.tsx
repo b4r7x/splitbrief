@@ -1,4 +1,5 @@
 import { WorkflowScreen } from '../../src/app/screens/workflow.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
@@ -103,8 +104,12 @@ export function mountWorkflowScreen({
   const prepared = prepareWorkflowExecution({ projectDir, feature, config });
   configStore.__testReset({ config, projectDir });
   terminalSizeStore.__testReset({ cols: 120, rows, isSmall: false });
+  // A local route always carries the record of the run its execution prepared, exactly as
+  // `splitbrief start` and a continuation build it; a record naming another run would point every
+  // confined artifact read at the wrong session directory.
   routerStore.navigate({
     to: 'workflow',
+    run: makeRunRecord({ ref: prepared.session.ref, feature }),
     execution: { kind: 'local', prepared },
   });
   return renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={() => {}} deps={deps} />);

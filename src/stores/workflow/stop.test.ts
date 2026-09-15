@@ -39,6 +39,22 @@ describe('stopStore', () => {
     expect(stopStore.get()).toMatchObject({ intent: 'quit', phase: 'ended', parked: null });
   });
 
+  it('a boundary pause parks on the brief it stopped after and resumes into the next one', () => {
+    const resolve = vi.fn();
+
+    stopStore.request('pause-after-brief');
+    stopStore.park('boundary', 'T001', resolve);
+
+    expect(stopStore.get().phase).toBe('parked');
+    expect(stopStore.get().parked).toMatchObject({ kind: 'boundary', taskId: 'T001' });
+
+    stopStore.resume('');
+
+    expect(resolve).toHaveBeenCalledExactlyOnceWith('');
+    expect(stopStore.get().phase).toBe('idle');
+    expect(stopStore.get().intent).toBe('none');
+  });
+
   it('parks a boundary pause with no resolver and resumes without throwing', () => {
     stopStore.request('pause-after-brief');
     stopStore.park('boundary', null, null);

@@ -23,8 +23,6 @@ export interface NativeCliModelCatalogEntry {
   readonly contextWindow?: number | undefined;
   readonly supportsToolCalls?: boolean | undefined;
   readonly outputModalities?: readonly string[] | undefined;
-  readonly pricingInput?: number | undefined;
-  readonly pricingOutput?: number | undefined;
 }
 
 export interface NativeCliModelCatalog {
@@ -103,13 +101,6 @@ const VerboseModelBlockSchema = z
       .object({
         toolcall: z.boolean().optional(),
         output: z.object({ text: z.boolean().optional() }).passthrough().optional(),
-      })
-      .passthrough()
-      .optional(),
-    cost: z
-      .object({
-        input: z.number().finite().nonnegative().optional(),
-        output: z.number().finite().nonnegative().optional(),
       })
       .passthrough()
       .optional(),
@@ -225,16 +216,12 @@ function verboseBlockFields(
   const variants = block.data.variants;
   const toolcall = block.data.capabilities?.toolcall;
   const outputText = block.data.capabilities?.output?.text;
-  const costInput = block.data.cost?.input;
-  const costOutput = block.data.cost?.output;
   return {
     ...(block.data.name === undefined ? {} : { displayName: block.data.name }),
     ...(context === undefined || context === 0 ? {} : { contextWindow: context }),
     ...(variants === undefined ? {} : { nativeReasoningEfforts: Object.keys(variants) }),
     ...(toolcall === undefined ? {} : { supportsToolCalls: toolcall }),
     ...(outputText === undefined ? {} : { outputModalities: outputText ? ['text'] : [] }),
-    ...(costInput === undefined ? {} : { pricingInput: costInput }),
-    ...(costOutput === undefined ? {} : { pricingOutput: costOutput }),
   };
 }
 
@@ -396,8 +383,6 @@ export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog)
     ...(model.outputModalities === undefined
       ? {}
       : { outputModalities: [...model.outputModalities] }),
-    ...(model.pricingInput === undefined ? {} : { pricingInput: model.pricingInput }),
-    ...(model.pricingOutput === undefined ? {} : { pricingOutput: model.pricingOutput }),
   }));
 }
 

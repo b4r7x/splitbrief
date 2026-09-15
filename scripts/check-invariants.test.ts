@@ -290,7 +290,6 @@ describe('check-invariants', () => {
         'features/home',
         'features/runners',
         'features/start-preparation',
-        'features/workflow/cost-drilldown',
         'components/overlays',
         'components/pickers',
       ]) {
@@ -348,6 +347,67 @@ describe('check-invariants', () => {
           '[47] Capability inference is imported from core, never from engine: 1 (expected 0) FAIL',
         ),
       ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('passes the run-contract gates 49 through 52 on the maintained tree', () => {
+    const gates = [
+      ...getInvariantGates('49'),
+      ...getInvariantGates('50'),
+      ...getInvariantGates('51'),
+      ...getInvariantGates('52'),
+    ];
+    expect(gates).toHaveLength(4);
+    const { lines, log } = captureLog();
+
+    expect(runInvariantGates(gates, undefined, log)).toBe(0);
+    expect(lines).toEqual(
+      gates.map((gate) => `  \u2713 [${gate.id}] ${gate.description}: 0 (expected 0) PASS`),
+    );
+  });
+
+  it('gates 49 through 52 detect the retired vocabulary in a synthetic tree', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-run-contract-'));
+    try {
+      for (const dir of ['core/state', 'core/sessions', 'core/schemas', 'features/workflow']) {
+        mkdirSync(join(root, dir), { recursive: true });
+      }
+      writeFileSync(
+        join(root, 'core/state/machine.ts'),
+        "case 'REJECT_SPEC':\n  return resetToIdle(state);\n",
+      );
+      writeFileSync(join(root, 'core/sessions/phases.ts'), 'export function isResumable() {}\n');
+      writeFileSync(
+        join(root, 'core/schemas/config.ts'),
+        'maxBudget: z.number(),\ncostTier: z.string(),\n',
+      );
+      writeFileSync(
+        join(root, 'features/workflow/driver.ts'),
+        "import { createEventBus } from '../../engine/events/bus.js';\n",
+      );
+      const gates = [
+        ...getInvariantGates('49'),
+        ...getInvariantGates('50'),
+        ...getInvariantGates('51'),
+        ...getInvariantGates('52'),
+      ].map((gate) => ({
+        ...gate,
+        command: gate.command
+          .replaceAll('src/features', `${root}/features`)
+          .replaceAll('src', root),
+      }));
+      const { lines, log } = captureLog();
+
+      expect(runInvariantGates(gates, undefined, log)).toBe(4);
+      expect(lines).toEqual([
+        expect.stringContaining('[49]'),
+        expect.stringContaining('[50]'),
+        expect.stringContaining('[51]'),
+        expect.stringContaining('[52]'),
+      ]);
+      for (const line of lines) expect(line).toContain('FAIL');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

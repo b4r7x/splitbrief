@@ -1,15 +1,11 @@
 import { LIST_ROW_LABEL_FLOOR, ListRow } from '../../components/list-row.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { getTheme } from '../../components/theme.js';
 import { formatContextLength } from '../../core/formatting.js';
 import { formatModelName } from '../../core/model-display.js';
-import { isAutoCheapestModel, isAutomaticModel } from '../../core/providers/automatic-model.js';
+import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import { glyph } from '../../lib/glyphs.js';
-import {
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
-  truncateTerminalDisplayText,
-} from '../../utils/display-text.js';
+import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { isOptionFamily, routePrefixesOf } from './model-catalog/option-axis.js';
@@ -118,24 +114,6 @@ function fitModelMetadata(input: {
   return (fitted ?? rungs.at(-1)) || undefined;
 }
 
-/** Two cells buy an ellipsis and one character, which says nothing: the row drops the policy. */
-const MIN_POLICY_DETAIL_CELLS = 2;
-
-/**
- * The policy row's label is its whole identity, so it holds a fixed column and
- * the one-line policy truncates into whatever is left — never the reverse.
- */
-function policyDetailTail(
-  detail: string,
-  labelWidth: number,
-  maxWidth: number,
-): string | undefined {
-  const budget = maxWidth - MODEL_ROW_CHROME - labelWidth;
-  return budget <= MIN_POLICY_DETAIL_CELLS
-    ? undefined
-    : truncateTerminalDisplayText(detail, budget);
-}
-
 interface ModelRowParams {
   row: RightRow;
   isCursor: boolean;
@@ -206,7 +184,6 @@ export function renderModelRow({
   const routeCount = routePrefixesOf(variants).length;
   const provenance =
     row.provenance === 'Stale' || (row.provenance === 'Custom' && !sectioned) ? row.provenance : '';
-  const isPolicyRow = isAutoCheapestModel(row.model.id);
   const detail = isAutomaticModel(row.model.id)
     ? AUTO_ROW_METADATA
     : (row.model.detail ?? formatContextLength(row.model.contextLength));
@@ -223,14 +200,6 @@ export function renderModelRow({
     catalogId: row.model.catalogModelId,
     maxWidth,
   });
-  // The policy row keeps its fixed label column only while every cell of row
-  // furniture fits beside it; below that the row takes the standard path, where
-  // the name truncates like any other long name rather than eating the caret
-  // lead and the check.
-  const nameWidth = getTerminalCellWidth(name);
-  const protectedLabel = isPolicyRow && maxWidth - MODEL_ROW_CHROME >= nameWidth;
-  const policyDetail = protectedLabel ? policyDetailTail(detail, nameWidth, maxWidth) : undefined;
-
   return (
     <ListRow
       label={name}
@@ -239,9 +208,8 @@ export function renderModelRow({
       // A namespaced id (`anthropic/claude-opus-4.5`) is named by its tail, and a cut inside a
       // segment names nothing: it gives up whole leading segments instead.
       labelTruncate={name.includes('/') ? 'path' : 'end'}
-      metadata={protectedLabel ? policyDetail : metadata}
+      metadata={metadata}
       width={maxWidth}
-      labelWidth={protectedLabel ? nameWidth : undefined}
       trailing={
         isExpandableRow(row, auth)
           ? glyph(row.expanded ? 'disclosureOpen' : 'disclosureClosed')

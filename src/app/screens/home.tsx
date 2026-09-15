@@ -13,7 +13,7 @@ import { prepareExecution } from '../../engine/runners/prepare-execution/prepare
 import { useTheme } from '../../components/theme.js';
 import { Composer } from '../../components/composer/composer.js';
 import { ScreenShell } from '../../components/screen-shell.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { HomeSeatBlock, shedToFit } from '../../features/home/components/seat-block.js';
 import { RecentSessions } from '../../features/home/components/recent-sessions.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
@@ -25,6 +25,7 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
 import type { Session } from '../../core/schemas/session.js';
+import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import {
   handleSessionSelect,
   type SessionSelectDeps,
@@ -185,6 +186,7 @@ export function HomeScreen({
     onPrepared: (execution) => {
       routerStore.navigate({
         to: 'workflow',
+        run: readRunRecord(execution.session.ref),
         execution: { kind: 'local', prepared: execution },
       });
     },

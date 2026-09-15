@@ -7,6 +7,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RunnerCallEvent } from '../calls/types.js';
+import { callPhase } from '#testing/helpers/planner-call.js';
 
 let projectDir: string;
 
@@ -85,7 +86,7 @@ describe('createAgentPlanner', () => {
     expect(result.usage).toBe(null);
   });
 
-  it('quickPlan ignores pre-seeded session tasks.md and derives content from stdout only', async () => {
+  it('the tasks call ignores pre-seeded session tasks.md and derives content from stdout only', async () => {
     const config = defaultAgentConfig();
     const planner = createAgentPlanner(config);
     const SESSION_ID = 'test-session-2024';
@@ -109,18 +110,15 @@ Create a test file.
 `;
     setupMockFiles(projectDir, SESSION_ID, { 'tasks.md': tasksContent });
 
-    const result = await planner.quickPlan({ feature: 'test feature', projectDir, callbacks });
-    expect(result.spec).toBe('');
-    expect(result.plan).toBe('');
+    const result = await callPhase(planner, { feature: 'test feature', projectDir, callbacks });
     expect(result.tasks).toHaveLength(0);
-    const artifactText = result.phases?.[0]?.artifact.text ?? '';
-    expect(result.phases).toHaveLength(1);
+    const artifactText = result.artifact.artifact.text;
     expect(artifactText).toContain('test output');
     expect(artifactText).not.toContain('Create a test file.');
     expect(artifactText).not.toContain('T001');
   });
 
-  it('full plan ignores pre-seeded session files and rejects non-spec stdout', async () => {
+  it('the spec call ignores pre-seeded session files and rejects non-spec stdout', async () => {
     const config = defaultAgentConfig();
     const planner = createAgentPlanner(config);
     const SESSION_ID = 'test-session-2024';
@@ -150,7 +148,7 @@ Create the main feature.
     setupMockFiles(projectDir, SESSION_ID, mockFiles);
 
     await expect(
-      planner.plan({ feature: 'test feature', projectDir, callbacks }),
+      callPhase(planner, { call: 'spec', feature: 'test feature', projectDir, callbacks }),
     ).rejects.toMatchObject({
       kind: 'planning-invalid-artifact',
       data: { phase: 'specifying', filename: 'spec.md' },

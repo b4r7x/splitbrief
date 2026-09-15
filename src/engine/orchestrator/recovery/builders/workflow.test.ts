@@ -7,8 +7,6 @@ import {
 } from '../../user-edit/conflicts.js';
 import {
   buildApprovalPromotionConflictRecoveryIssue,
-  buildBudgetExceededRecoveryIssue,
-  buildBudgetPausedRecoveryIssue,
   buildUserEditConflictRecoveryIssue,
 } from './workflow.js';
 
@@ -40,7 +38,7 @@ describe('buildUserEditConflictRecoveryIssue', () => {
     expect(issue.files).toEqual(['src/current.ts']);
     expect(issue.affectedTaskIds).toEqual([task.id]);
     expect(issue.availableActions).toEqual(
-      expect.arrayContaining(['skip-current-task', 'pause-run', 'abort-workflow']),
+      expect.arrayContaining(['skip-current-task', 'pause-run', 'end-run']),
     );
     expect(issue.availableActions).not.toContain('planner-split-rebase');
     expect(issue.recommendedAction).toBe('pause-run');
@@ -63,7 +61,7 @@ describe('buildUserEditConflictRecoveryIssue', () => {
     });
 
     expect(issue.availableActions).toEqual(
-      expect.arrayContaining(['continue', 'pause-run', 'abort-workflow']),
+      expect.arrayContaining(['continue', 'pause-run', 'end-run']),
     );
     expect(issue.recommendedAction).toBe('continue');
     expect(issue.facts).toMatchObject({ safeToContinue: true, conflictKind: 'unrelated' });
@@ -89,7 +87,7 @@ describe('buildUserEditConflictRecoveryIssue', () => {
       createdAt,
     });
 
-    expect(issue.availableActions).toEqual(expect.arrayContaining(['pause-run', 'abort-workflow']));
+    expect(issue.availableActions).toEqual(expect.arrayContaining(['pause-run', 'end-run']));
     expect(issue.availableActions).not.toContain('continue');
     expectValidRecoveryIssue(issue);
   });
@@ -112,61 +110,10 @@ describe('buildApprovalPromotionConflictRecoveryIssue', () => {
     expect(issue.reason).toBe('approval-promotion-conflict');
     expect(issue.message).toBe('Approval promotion blocked for T016');
     expect(issue.availableActions).toEqual(
-      expect.arrayContaining(['skip-current-task', 'pause-run', 'abort-workflow']),
+      expect.arrayContaining(['skip-current-task', 'pause-run', 'end-run']),
     );
     expect(issue.availableActions).not.toContain('planner-split-rebase');
     expect(issue.availableActions).not.toContain('continue');
-    expectValidRecoveryIssue(issue);
-  });
-});
-
-describe('buildBudgetPausedRecoveryIssue', () => {
-  it('builds budget-paused issues with continue only below max budget', () => {
-    const nextTask = makeTask({ id: 'T017', file: 'src/next.ts' });
-
-    const belowMax = buildBudgetPausedRecoveryIssue({
-      createdAt,
-      currentCost: 4.25,
-      maxBudget: 5,
-      threshold: 0.85,
-      nextTask,
-      blockedStep: 'before T017',
-    });
-
-    expect(belowMax.reason).toBe('budget-paused');
-    expect(belowMax.availableActions).toEqual(
-      expect.arrayContaining(['continue', 'pause-run', 'abort-workflow']),
-    );
-    expect(belowMax.facts).toMatchObject({ budgetPercent: 85, belowMaxBudget: true });
-    expectValidRecoveryIssue(belowMax);
-
-    const atMax = buildBudgetPausedRecoveryIssue({
-      createdAt,
-      currentCost: 5,
-      maxBudget: 5,
-      nextTask,
-    });
-
-    expect(atMax.availableActions).toEqual(expect.arrayContaining(['pause-run', 'abort-workflow']));
-    expect(atMax.availableActions).not.toContain('continue');
-    expectValidRecoveryIssue(atMax);
-  });
-});
-
-describe('buildBudgetExceededRecoveryIssue', () => {
-  it('builds budget-exceeded issues without ordinary continue', () => {
-    const issue = buildBudgetExceededRecoveryIssue({
-      createdAt,
-      currentCost: 5.25,
-      maxBudget: 5,
-      blockedStep: 'before final review',
-    });
-
-    expect(issue.reason).toBe('budget-exceeded');
-    expect(issue.availableActions).toEqual(expect.arrayContaining(['pause-run', 'abort-workflow']));
-    expect(issue.availableActions).not.toContain('continue');
-    expect(issue.recommendedAction).toBe('pause-run');
-    expect(issue.details).toContain('Continuing requires a separate raise-budget flow.');
     expectValidRecoveryIssue(issue);
   });
 });

@@ -18,7 +18,6 @@ export const CLIOverridesSchema = z.object({
   reviewer: RunnerOverrideSchema.optional(),
   approve: z.string().optional(),
   mode: z.string().optional(),
-  budget: z.number().optional(),
   contextLength: z.number().optional(),
   plannerEffort: z.string().optional(),
   reviewerEffort: z.string().optional(),

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { renderFeature, flushEffects, tick } from '#testing/helpers/ink.js';
@@ -126,6 +127,7 @@ describe('WorkflowScreen review editing', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
+        run: makeRunRecord(),
         execution: { kind: 'local', prepared },
       });
       runWorkflow.mockImplementationOnce(async (opts) => {
@@ -242,7 +244,9 @@ describe('WorkflowScreen review editing', () => {
           'utf-8',
         );
         lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-        void opts.callbacks.onApprovalNeeded('briefs', tasksPath);
+        // The run stays in flight while the gate waits, exactly as it does in production: a mock
+        // that returned first would settle the route and take the gate off screen.
+        await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
         return makeSummary();
       });
       const ui = mountWorkflow(projectDir);
@@ -250,7 +254,7 @@ describe('WorkflowScreen review editing', () => {
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain('Inline shortcut task');
       });
-      await flushEffects();
+      await waitForReviewPrompt(ui);
 
       ui.stdin.write(CTRL_E);
 

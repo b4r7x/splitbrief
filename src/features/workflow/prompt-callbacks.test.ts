@@ -36,7 +36,6 @@ function makeCallbacksWithInputMode(inputMode: UseInputModeResult) {
     inputMode,
     abortedRef: { current: false },
     controller: new AbortController(),
-    onComplete: () => {},
   });
 }
 
@@ -203,10 +202,9 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
       inputMode: { ...makeInputMode(''), setQuestionMode },
       abortedRef: { current: false },
       controller,
-      onComplete: () => {},
     });
 
-    const result = await callbacks.onContinuationNeeded?.('partial output');
+    const result = await callbacks.onContinuationNeeded?.('partial output', 'mid-step');
 
     expect(result).toBe('');
     expect(setQuestionMode).not.toHaveBeenCalled();
@@ -217,7 +215,7 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
     const setQuestionMode = vi.fn<UseInputModeResult['setQuestionMode']>();
     const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setQuestionMode });
 
-    const pending = callbacks.onContinuationNeeded?.('partial output');
+    const pending = callbacks.onContinuationNeeded?.('partial output', 'mid-step');
     await Promise.resolve();
 
     expect(setQuestionMode).not.toHaveBeenCalled();
@@ -235,10 +233,32 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
   it('resumes with an empty steer when /resume settles the park', async () => {
     const callbacks = makeCallbacksWithInputMode(makeInputMode(''));
 
-    const pending = callbacks.onContinuationNeeded?.('partial output');
+    const pending = callbacks.onContinuationNeeded?.('partial output', 'mid-step');
     await Promise.resolve();
     stopStore.resume('');
 
+    await expect(pending).resolves.toBe('');
+  });
+
+  it('parks a boundary pause on the brief it stopped after', async () => {
+    tasksStore.__testReset({
+      tasks: [
+        { id: 'T001', title: 'first', status: 'done' },
+        { id: 'T002', title: 'second', status: 'pending' },
+      ],
+      totalTasks: 2,
+    });
+    const callbacks = makeCallbacksWithInputMode(makeInputMode(''));
+
+    const pending = callbacks.onContinuationNeeded?.('', 'boundary');
+    await Promise.resolve();
+
+    expect(stopStore.get()).toMatchObject({
+      phase: 'parked',
+      parked: { kind: 'boundary', taskId: 'T001' },
+    });
+
+    stopStore.resume('');
     await expect(pending).resolves.toBe('');
   });
 });

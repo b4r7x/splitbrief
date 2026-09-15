@@ -10,6 +10,7 @@ import { TASKS_FILE } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import type { PlannerFactoryOptions } from './types.js';
 import type { RunnerCallEvent } from '../calls/types.js';
+import { callPhase } from '#testing/helpers/planner-call.js';
 
 function makeConfig(overrides: Parameters<typeof makeBaseConfig>[0] = {}) {
   const implementer = overrides.implementer;
@@ -106,19 +107,19 @@ Stale ambient content.
     ]);
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
 
-    const result = await planner.quickPlan({
+    const result = await callPhase(planner, {
       feature: 'current-call only',
       projectDir,
       callbacks: { onOutput: vi.fn(), sessionId: 'workflow-session' },
     });
 
-    expect(result.tasks.map((task) => task.id)).toEqual(['T001']);
-    expect(result.phases?.[0]?.artifact).toMatchObject({
+    expect(result.tasks?.map((task) => task.id)).toEqual(['T001']);
+    expect(result.artifact.artifact).toMatchObject({
       logicalName: TASKS_FILE,
       transport: 'stdout-final',
       text: finalText,
     });
-    expect(result.phases?.[0]?.rawOutput).toBeUndefined();
+    expect(result.artifact.rawOutput).toBeUndefined();
   });
 
   it('detached-expiry: a failed resume claims no artifact from an ambient tasks file', async () => {
@@ -161,7 +162,7 @@ Stale ambient content.
     );
 
     await expect(
-      planner.quickPlan({
+      callPhase(planner, {
         feature: 'detached expiry',
         projectDir,
         callbacks: {

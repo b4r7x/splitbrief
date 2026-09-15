@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { useTheme } from '../../components/theme.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import { overlayStore } from '../../stores/ui/overlay.js';

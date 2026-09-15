@@ -1,7 +1,8 @@
 import type { Command } from 'commander';
 import ansis from 'ansis';
 import { createPlanner } from '../../engine/runners/factory.js';
-import type { Planner, PlanOptions, PlanResult } from '../../engine/planners/types.js';
+import { runDocumentPhases } from '../../engine/planners/document-phases.js';
+import type { Planner, PlanResult } from '../../engine/planners/types.js';
 import type { Phase, WorkflowMode } from '../../core/schemas/enums.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 import { getWorkflowMode } from '../../core/config/accessors/values.js';
@@ -17,7 +18,6 @@ import {
   type EffectiveConfigWarning,
 } from '../../core/config/runtime/effective-config.js';
 import { workflowOptsToCLIOverrides } from '../../core/config/runtime/overrides/from-options.js';
-import { assertNever } from '../../utils/type-guards.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
 import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-runtime.js';
 import {
@@ -148,7 +148,9 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       let result: PlanResult;
       try {
         result = await withCliErrors(() =>
-          selectPlanCall(planner, mode).call(planner, {
+          runDocumentPhases({
+            planner,
+            mode,
             feature: execution.runtime.feature,
             projectDir,
             callbacks: {
@@ -170,32 +172,17 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       }
       releasePreparedExecutionOwnership(execution);
 
-      for (const phase of result.phases ?? []) {
+      for (const phase of result.phases) {
         writeSpecFile({ projectDir, sessionId }, phase.artifact.logicalName, phase.artifact.text);
       }
 
       const sessionPath = sessionDir(projectDir, sessionId);
       console.log('\nSpec generation complete.');
       console.log(`  Session: ${ansis.dim(sessionId)}`);
-      for (const phase of result.phases ?? []) {
+      for (const phase of result.phases) {
         const taskSuffix =
           phase.artifact.logicalName === TASKS_FILE ? ` (${result.tasks.length} tasks)` : '';
         console.log(`  ${ansis.dim(`${sessionPath}/${phase.artifact.logicalName}`)}${taskSuffix}`);
       }
     });
-}
-
-function selectPlanCall(
-  planner: Planner,
-  mode: WorkflowMode,
-): (opts: PlanOptions) => Promise<PlanResult> {
-  switch (mode) {
-    case 'quick':
-      return planner.quickPlan;
-    case 'standard':
-    case 'speckit':
-      return planner.plan;
-    default:
-      return assertNever(mode);
-  }
 }

@@ -1,7 +1,7 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import type { WorkflowScreenDeps } from '../../../../src/features/workflow/hooks/workflow-screen/use-model.js';
-import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-runner.js';
+import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-run-loop.js';
 import {
   closeApprovalPrompt,
   openApprovalPrompt,
@@ -12,13 +12,19 @@ import { controlsStore } from '../../../../src/stores/ui/controls.js';
 import { addEvent } from '../../../../src/stores/workflow/actions/event.js';
 import { reviewStore } from '../../../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
+import { SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
+import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
 import type { FixtureContext, FixtureFactory } from '../common.js';
 import {
   createWorkflowBaseFixture,
   teardownVisualFixture,
   VISUAL_FIXTURE_PROJECT_DIR,
 } from '../screen-fixtures.js';
-import { WORKFLOW_FIXTURE_TASK_ID, type WorkflowFixtureProjection } from './projections.js';
+import {
+  WORKFLOW_FIXTURE_TASK_ID,
+  type FixtureAtRestRoute,
+  type WorkflowFixtureProjection,
+} from './projections.js';
 
 function getReviewFilePath(review: NonNullable<WorkflowFixtureProjection['review']>): string {
   return resolve(VISUAL_FIXTURE_PROJECT_DIR, review.filePath);
@@ -78,16 +84,38 @@ async function setupProjection(
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, projection.review.source);
   }
-  if (projection.summary !== undefined) {
-    routerStore.init({ screen: 'summary', summary: projection.summary, status: 'complete' });
-  } else {
-    const route = routerStore.get();
-    if (route.screen !== 'workflow') {
-      throw new Error(`Workflow fixture ${projection.scenarioId} failed to initialize its route`);
-    }
+  const route = routerStore.get();
+  if (route.screen !== 'workflow') {
+    throw new Error(`Workflow fixture ${projection.scenarioId} failed to initialize its route`);
+  }
+  if (projection.atRest !== undefined) {
+    // A run at rest is the same screen with no process behind it: its transcript is whatever its
+    // log replays, and the route carries the record the closed block and the byline read.
+    await seedRunLog(projection.atRest);
+    await hydrateRun(projection.atRest.record);
+    controlsStore.setSidebar(projection.sidebarVisible);
+    controlsStore.setInputMode(projection.inputMode);
+    routerStore.navigate({
+      to: 'workflow',
+      run: projection.atRest.record,
+      execution: { kind: 'at-rest' },
+    });
+    return;
   }
 
   applyProjection(projection);
+}
+
+/** The replay reads the session log from disk, so a scenario about the replay writes one first. */
+async function seedRunLog(route: FixtureAtRestRoute): Promise<void> {
+  if (route.log === undefined) return;
+  const source = resolve(process.cwd(), route.log);
+  const target = join(
+    sessionDir(route.record.ref.projectDir, route.record.ref.sessionId),
+    SESSION_LOG_FILE,
+  );
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, await readFile(source, 'utf8'));
 }
 
 function activateFixtureInputMode(

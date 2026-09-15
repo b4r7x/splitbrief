@@ -25,6 +25,7 @@ import { hashTaskBrief } from '../brief-hash.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { loadState } from '../../core/state/persistence.js';
 import { finalReviewError, runFinalReviewPhase } from './final-review.js';
+import { createContinuationHolder } from './continuation.js';
 import { decideReviewOutcome } from './review-fix.js';
 import { REVIEW_CYCLE_CAP, VERDICT_RULES } from '../../core/pipeline-spec/review.js';
 import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
@@ -96,6 +97,86 @@ function packetStatus(projectDir: string, sessionId: string): string {
   const packetPath = join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
   return ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8'))).finalReview.status;
 }
+
+describe('runFinalReviewPhase continuation', () => {
+  it('re-issues the whole review prompt with the note, never a session resume', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
+    const prompts: string[] = [];
+    const reviewer = makePlanner({
+      review: async (prompt: string) => {
+        prompts.push(prompt);
+        return { text: '### Verdict\npass\n', usage: null };
+      },
+    });
+    const { bus } = makeBusRecorder();
+    const { callbacks } = makeCallbacks();
+
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      continuation: createContinuationHolder({
+        step: { kind: 'review', cycle: 0 },
+        partial: 'I had listed two findings',
+        steer: 'ignore the formatting nits',
+      }),
+      summaryBase: { ...SUMMARY_BASE, projectDir, sessionId },
+      taskBreakdowns: [],
+    });
+
+    expect(prompts).toHaveLength(1);
+    // The spec, the briefs and the diff are all still in the prompt.
+    expect(prompts[0]).toContain('Add auth.');
+    expect(prompts[0]).toContain('T001');
+    expect(prompts[0]).toContain('I had listed two findings');
+    expect(prompts[0]).toContain('ignore the formatting nits');
+  });
+
+  it('asks for a missing verdict without repeating the continuation note', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
+    const prompts: string[] = [];
+    let calls = 0;
+    const reviewer = makePlanner({
+      review: async (prompt: string) => {
+        prompts.push(prompt);
+        calls += 1;
+        return { text: calls === 1 ? 'no verdict here' : '### Verdict\npass\n', usage: null };
+      },
+    });
+    const { bus } = makeBusRecorder();
+    const { callbacks } = makeCallbacks();
+
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      continuation: createContinuationHolder({
+        step: { kind: 'review', cycle: 0 },
+        steer: 'ignore the formatting nits',
+      }),
+      summaryBase: { ...SUMMARY_BASE, projectDir, sessionId },
+      taskBreakdowns: [],
+    });
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain('ignore the formatting nits');
+    expect(prompts[1]).not.toContain('ignore the formatting nits');
+  });
+});
 
 describe('runFinalReviewPhase', () => {
   it('runs the reviewer, writes review.md, and returns the parsed verdict', async () => {

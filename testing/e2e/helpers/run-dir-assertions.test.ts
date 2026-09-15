@@ -156,7 +156,6 @@ function writeSessionDir(dir: string, overrides: Readonly<Record<string, string>
           reviewerInput: 400,
           reviewerOutput: 120,
         },
-        estimatedCostSavings: '$0.00',
         escalationRate: 0,
         taskBreakdown: [
           {

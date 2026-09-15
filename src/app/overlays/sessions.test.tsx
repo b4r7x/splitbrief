@@ -4,6 +4,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
@@ -19,10 +22,13 @@ import { flushEffects, tick } from '#testing/helpers/ink.js';
 
 let tmp: string;
 
+// The picker renders what the store already holds — boot loads it, and a finished
+// run refreshes it — so a fixture that writes a session also seeds the store.
 function writeSessionSummary(projectDir: string, session: Session): void {
   const dir = join(projectDir, SPLITBRIEF_DIR, 'sessions', session.id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'summary.json'), JSON.stringify(session));
+  sessionsStore.load(projectDir);
 }
 
 beforeEach(() => {
@@ -53,7 +59,7 @@ describe('SessionsPicker', () => {
       makeSession({
         id: 'sess-alpha',
         feature: 'add authentication',
-        status: 'interrupted',
+        status: 'open',
         summary: null,
       }),
     );
@@ -62,7 +68,7 @@ describe('SessionsPicker', () => {
       makeSession({
         id: 'sess-beta',
         feature: 'refactor payments',
-        status: 'interrupted',
+        status: 'open',
         summary: null,
       }),
     );
@@ -123,7 +129,7 @@ describe('SessionsPicker', () => {
       makeSession({
         id: 'sess-alpha-visible-id',
         feature: 'alpha feature',
-        status: 'interrupted',
+        status: 'open',
         summary: null,
       }),
     );
@@ -164,15 +170,26 @@ describe('SessionsPicker', () => {
   });
 
   it('keeps a selection error visible while the picker stays open', async () => {
-    writeSessionSummary(
-      tmp,
-      makeSession({
-        id: 'sess-missing-state',
-        feature: 'resume missing state',
-        status: 'interrupted',
-        summary: null,
-      }),
-    );
+    const running = makeSession({
+      id: 'sess-running',
+      feature: 'run already on screen',
+      status: 'open',
+      summary: null,
+    });
+    writeSessionSummary(tmp, running);
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord(),
+      execution: {
+        kind: 'local',
+        prepared: makePreparedExecution({
+          projectDir: tmp,
+          sessionId: 'sess-local-run',
+          feature: 'a local run',
+          config: makeConfig(),
+        }),
+      },
+    });
 
     overlayStore.open('sessions');
     const instance = render(<SessionsPicker />);
@@ -182,37 +199,36 @@ describe('SessionsPicker', () => {
     instance.stdin.write('\r');
     await vi.waitFor(() => {
       const current = instance.lastFrame() ?? '';
-      expect(current).toContain('resume missing state');
-      expect(current).toContain('saved workflow state is missing or invalid');
+      expect(current).toContain('stop the run on screen first');
     });
 
-    const frame = instance.lastFrame() ?? '';
-    expect(frame).not.toContain('Error:');
-    expect(routerStore.get().screen).toBe('home');
+    expect(routerStore.get().screen).toBe('workflow');
     expect(overlayStore.get().active).toBe('sessions');
 
     instance.unmount();
     expect(sessionSelectStore.get().error).toBeNull();
   });
 
-  it('reifies a rejected resume boundary without an unhandled event callback promise', async () => {
+  it('opens the selected run at rest, replayed, without preparing anything', async () => {
     const session = makeSession({
-      id: 'sess-rejected-resume',
-      feature: 'resume rejected boundary',
-      status: 'interrupted',
+      id: 'sess-open-at-rest',
+      feature: 'open at rest',
+      status: 'open',
       summary: null,
     });
     writeSessionSummary(tmp, session);
     overlayStore.open('sessions');
+    const hydrateRun = vi.fn(async () => {});
     const instance = render(
       <SessionsPicker
         deps={{
+          hydrateRun,
           loadResumeState: () => ({
             kind: 'loaded',
             state: { ...createInitialState(session.feature), phase: 'implementing' },
           }),
           prepareResume: async () => {
-            throw new Error('sessions overlay resume rejected');
+            throw new Error('opening a run prepares nothing');
           },
         }}
       />,
@@ -222,12 +238,12 @@ describe('SessionsPicker', () => {
 
     instance.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(sessionSelectStore.get().preparation).toMatchObject({
-        kind: 'failed',
-        error: expect.objectContaining({ message: 'sessions overlay resume rejected' }),
-      });
+      expect(routerStore.get().screen).toBe('workflow');
     });
-    expect(routerStore.get().screen).toBe('home');
+
+    expect(hydrateRun).toHaveBeenCalledOnce();
+    const route = routerStore.get();
+    if (route.screen === 'workflow') expect(route.execution.kind).toBe('at-rest');
     expect(overlayStore.get().active).toBe('none');
     instance.unmount();
   });
@@ -245,7 +261,7 @@ describe('SessionsPicker', () => {
         makeSession({
           id: 'sess-alpha',
           feature: 'alpha feature',
-          status: 'interrupted',
+          status: 'open',
           summary: null,
         }),
       );

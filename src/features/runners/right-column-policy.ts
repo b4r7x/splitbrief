@@ -4,7 +4,7 @@ import { seatPickerLane, type SeatPickerRole } from '../../core/runners/seat-rol
 import { seatEffortChannel } from '../../core/runners/capabilities.js';
 import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { PickerOption } from './model-catalog/options.js';
 import {

@@ -5,7 +5,7 @@
 > 2. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) — the complete data flow with file paths
 > 3. [WORKFLOW.md](./WORKFLOW.md) — the state machine, phases, modes
 
-**SPLITBRIEF** orchestrates two coding tools. One plans and reviews, the other executes, and SPLITBRIEF holds the contract, the isolation, the validation, the retries, the escalation, and the evidence between them. Lower cost follows from the split; it is not the promise.
+**SPLITBRIEF** orchestrates two coding tools. One plans and reviews, the other executes, and SPLITBRIEF holds the contract, the isolation, the validation, the retries, the escalation, and the evidence between them. What a run spent is reported after it finishes; it is not the promise.
 
 ---
 
@@ -15,10 +15,10 @@ Read these to learn how SPLITBRIEF works. Each doc builds on the previous one.
 
 | Doc | What it covers |
 |-----|---------------|
-| [MENTAL-MODEL.md](./MENTAL-MODEL.md) | The concept: two roles, Task Brief contract, four layers, modes, sessions. No code. |
+| [MENTAL-MODEL.md](./MENTAL-MODEL.md) | The concept: two roles, Task Brief contract, four layers, modes, runs. No code. |
 | [CONCEPTS.md](./CONCEPTS.md) | Concepts & glossary: shared vocabulary used throughout `src/` and the other docs. |
 | [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) | The same flow with file paths and function names. CLI entry → stores → TUI → engine → planning → tasks → review. |
-| [WORKFLOW.md](./WORKFLOW.md) | The state machine: every phase, every transition, abort/continue, resume, rewind. |
+| [WORKFLOW.md](./WORKFLOW.md) | The state machine: every phase, every transition, the run contract, stopping and continuing, rewind. |
 | [ENGINE.md](./ENGINE.md) | The orchestrator, EventBus, sinks, callbacks vs events, abort handling, message queue. |
 | [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) | Four runner kinds, planner/implementer interfaces, Task Brief structure, token accounting. |
 | [STORES-AND-UI.md](./STORES-AND-UI.md) | Store factory, store groups, how events reach React, screens, overlays. |
@@ -76,8 +76,8 @@ Specialized subsystem docs linked from the main chapters above.
 - [FUTURE.md](./FUTURE.md) — Open questions, longer-horizon backlog
 - [FEATURES.md](./FEATURES.md) — Feature catalog
 - [CHANGELOG.md](../CHANGELOG.md) — Release notes
-- [MIGRATION.md](./MIGRATION.md) — Migration guide for the 2026-04-20 EventBus architecture release
-- [COST-AWARE-IMPLEMENTER-DIRECTION.md](./COST-AWARE-IMPLEMENTER-DIRECTION.md) — Implementer direction
+- [MIGRATION.md](./MIGRATION.md) — Migration guides: the 2026-04-20 EventBus release and the 2026-09 run contract
+- [IMPLEMENTER-DIRECTION.md](./IMPLEMENTER-DIRECTION.md) — Implementer direction
 
 ## Project-level
 

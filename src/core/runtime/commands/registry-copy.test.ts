@@ -95,7 +95,7 @@ describe('/copy command', () => {
     expect(error).toMatch(/Invalid copy target/);
   });
 
-  it.each(['summary', 'home'] as const)(
+  it.each(['home'] as const)(
     'is unavailable on %s so stale workflow stores are never read',
     async (screen) => {
       let copied = false;

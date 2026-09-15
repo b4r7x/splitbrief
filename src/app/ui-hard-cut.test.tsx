@@ -1,4 +1,5 @@
 import { Box, Text } from 'ink';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -22,6 +23,7 @@ import { HomeScreen } from './screens/home.js';
 function localWorkflowRoute(feature: string): RouteData {
   return {
     screen: 'workflow',
+    run: makeRunRecord(),
     execution: {
       kind: 'local',
       prepared: makePreparedExecution({

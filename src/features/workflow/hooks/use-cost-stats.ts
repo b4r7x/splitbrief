@@ -3,15 +3,21 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { useStores } from '../../../stores/use-stores.js';
+import { getShowSpend } from '../../../core/config/accessors/values.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
-import type { PricingState } from '../layout/cost-chrome.js';
-import { asReactiveModelCache, computeCostBreakdownStats } from '../cost-text.js';
+import { localShare } from '../display/local-share.js';
+import {
+  asReactiveModelCache,
+  computeCostBreakdownStats,
+  type PricingState,
+} from '../spend-text.js';
 
 interface CostStats {
   localRate: number;
   routedTasks: number;
   costBreakdown: CostBreakdown | null;
   pricingState: PricingState;
+  showSpend: boolean;
   currentTask: number;
   totalTasks: number;
   taskCompletionTimes: number[];
@@ -30,22 +36,21 @@ export function useCostStats(): CostStats {
     { currentTask, totalTasks, taskCompletionTimes },
   ] = useStores(tokensStore, tasksStore);
 
-  const { localRate, routedTasks, costBreakdown, pricingState } = computeCostBreakdownStats({
+  const { costBreakdown, pricingState } = computeCostBreakdownStats({
     config,
     pricingContext,
     perTask,
     tokenUsage,
-    localCount,
-    escalatedCount,
-    totalTasks,
     modelCache,
   });
+  const { rate, routedTasks } = localShare({ localCount, escalatedCount });
 
   return {
-    localRate,
+    localRate: rate,
     routedTasks,
     costBreakdown,
     pricingState,
+    showSpend: getShowSpend(config),
     currentTask,
     totalTasks,
     taskCompletionTimes,

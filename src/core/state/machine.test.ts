@@ -54,7 +54,16 @@ describe('transition', () => {
     },
   );
 
-  it('REJECT_SPEC -> idle', () => {
+  it.each(['REJECT_SPEC', 'REJECT_PLAN', 'REJECT_BRIEFS', 'CONSTITUTION_CHECK_FAIL'] as const)(
+    'no longer accepts %s from any phase',
+    (type) => {
+      const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-spec' };
+
+      expect(() => transition(state, { type } as never)).toThrow(`Cannot apply ${type}`);
+    },
+  );
+
+  it('CLOSE_RUN records the close and leaves the phase and tasks alone', () => {
     const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -63,11 +72,54 @@ describe('transition', () => {
       currentTaskIndex: 1,
       attempt: 2,
     };
-    const next = transition(state, { type: 'REJECT_SPEC' });
-    expect(next.phase).toBe('idle');
-    expect(next.tasks).toEqual([]);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
+    const next = transition(
+      state,
+      { type: 'CLOSE_RUN' },
+      { now: new Date('2026-05-01T10:00:00Z') },
+    );
+    expect(next.closed).toEqual({ at: '2026-05-01T10:00:00.000Z', as: 'ended' });
+    expect(next.phase).toBe('reviewing-spec');
+    expect(next.tasks).toEqual(tasks);
+    expect(next.currentTaskIndex).toBe(1);
+    expect(next.attempt).toBe(2);
+  });
+
+  it('CLOSE_RUN takes the timestamp the caller gives it', () => {
+    const state = createInitialState('feat');
+    const next = transition(state, { type: 'CLOSE_RUN', at: '2026-01-02T03:04:05.000Z' });
+    expect(next.closed?.at).toBe('2026-01-02T03:04:05.000Z');
+  });
+
+  it('CLOSE_RUN clears the parked step and the pending recovery', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      pendingRecovery: makeRecoveryIssue(),
+      interruptedStep: {
+        step: { kind: 'planner', call: 'spec' },
+        source: 'user',
+        at: '2026-04-01T00:00:00.000Z',
+      },
+    };
+    const next = transition(state, { type: 'CLOSE_RUN' });
+    expect(next.pendingRecovery).toBeUndefined();
+    expect(next.interruptedStep).toBeUndefined();
+  });
+
+  it('a closed run refuses every transition but CLOSE_RUN', () => {
+    const closed: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      closed: { at: '2026-05-01T10:00:00.000Z', as: 'ended' },
+    };
+
+    expect(() => transition(closed, { type: 'ALL_DONE' })).toThrow(
+      'Cannot apply ALL_DONE: this run is closed.',
+    );
+    expect(() => transition(closed, { type: 'RESUME_STEP' })).toThrow(
+      'Cannot apply RESUME_STEP: this run is closed.',
+    );
+    expect(transition(closed, { type: 'CLOSE_RUN' }).closed?.as).toBe('ended');
   });
 
   it.each([
@@ -135,7 +187,7 @@ describe('transition', () => {
     expect(getEscalatedTaskIds(next)).toEqual(['T001']);
   });
 
-  it('CANCEL -> idle with tasks cleared and counters reset', () => {
+  it('CLOSE_RUN keeps the tasks and the feature it closed over', () => {
     const tasks = [makeTask({ id: 'T000', status: 'done' }), makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -144,41 +196,77 @@ describe('transition', () => {
       currentTaskIndex: 1,
       attempt: 2,
     };
-    const next = transition(state, { type: 'CANCEL' });
-    expect(next.phase).toBe('idle');
-    expect(next.tasks).toEqual([]);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
+    const next = transition(state, { type: 'CLOSE_RUN' });
+    expect(next.phase).toBe('implementing');
+    expect(next.tasks).toEqual(tasks);
+    expect(next.currentTaskIndex).toBe(1);
     expect(next.feature).toBe('feat');
   });
 
-  it('CANCEL clears awaitingContinue', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'implementing',
-      awaitingContinue: true,
-    };
-    const next = transition(state, { type: 'CANCEL' });
-    expect(next.awaitingContinue).toBe(false);
-  });
-
-  it('ABORT_TURN sets awaitingContinue to true', () => {
+  it('INTERRUPT_STEP records the step it cut and parks the run', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
     };
-    const next = transition(state, { type: 'ABORT_TURN' });
+    const next = transition(
+      state,
+      {
+        type: 'INTERRUPT_STEP',
+        step: { kind: 'brief', taskId: taskId('T001'), attempt: 2 },
+        source: 'user',
+        cut: 'mid-step',
+      },
+      { now: new Date('2026-05-01T10:00:00Z') },
+    );
+    expect(next.interruptedStep).toEqual({
+      step: { kind: 'brief', taskId: 'T001', attempt: 2 },
+      source: 'user',
+      cut: 'mid-step',
+      at: '2026-05-01T10:00:00.000Z',
+    });
     expect(next.awaitingContinue).toBe(true);
     expect(next.phase).toBe('implementing');
   });
 
-  it('CONTINUE_TURN clears awaitingContinue', () => {
+  it('INTERRUPT_STEP keeps a captured partial when the caller names one', () => {
+    const next = transition(createInitialState('feat'), {
+      type: 'INTERRUPT_STEP',
+      step: { kind: 'planner', call: 'research' },
+      source: 'watchdog',
+      cut: 'mid-step',
+      partialRef: { kind: 'session-log', index: 7 },
+    });
+    expect(next.interruptedStep?.partialRef).toEqual({ kind: 'session-log', index: 7 });
+    expect(next.interruptedStep?.source).toBe('watchdog');
+  });
+
+  it('INTERRUPT_STEP records a pause between briefs as a boundary cut', () => {
+    const next = transition(
+      { ...createInitialState('feat'), phase: 'implementing' },
+      {
+        type: 'INTERRUPT_STEP',
+        step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+        source: 'user',
+        cut: 'boundary',
+      },
+    );
+    expect(next.interruptedStep?.cut).toBe('boundary');
+    expect(next.awaitingContinue).toBe(true);
+  });
+
+  it('RESUME_STEP clears the parked step', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
       awaitingContinue: true,
+      interruptedStep: {
+        step: { kind: 'review', cycle: 1 },
+        source: 'user',
+        at: '2026-04-01T00:00:00.000Z',
+      },
     };
-    const next = transition(state, { type: 'CONTINUE_TURN' });
+    const next = transition(state, { type: 'RESUME_STEP' });
+    expect(next.interruptedStep).toBeUndefined();
     expect(next.awaitingContinue).toBe(false);
     expect(next.phase).toBe('implementing');
   });
@@ -200,22 +288,6 @@ describe('transition', () => {
     const next = transition(state, { type: 'CLEAR_QUEUE' });
 
     expect(next.messageQueue.map((message) => message.id)).toEqual(['msg-native', 'msg-drained']);
-  });
-
-  it('REJECT_PLAN -> idle', () => {
-    const tasks = [makeTask({ id: 'T001' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-plan',
-      tasks,
-      currentTaskIndex: 1,
-      attempt: 2,
-    };
-    const next = transition(state, { type: 'REJECT_PLAN' });
-    expect(next.phase).toBe('idle');
-    expect(next.tasks).toEqual([]);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
   });
 
   it('HINT_FAIL -> stays in escalating', () => {
@@ -449,6 +521,44 @@ describe('transition', () => {
     expect(next.phase).toBe('clarifying');
   });
 
+  it.each(['idle', 'researching', 'specifying'] as const)(
+    'BEGIN_PLANNING enters planning from %s',
+    (phase) => {
+      const state: WorkflowState = { ...createInitialState('feat'), phase };
+      expect(transition(state, { type: 'BEGIN_PLANNING' }).phase).toBe('planning');
+    },
+  );
+
+  // A plan gate answered with a revision invalidates the briefs, so the step loop has to re-enter
+  // planning to compile them again from the plan the operator just changed.
+  it('BEGIN_PLANNING re-enters planning from a parked plan gate', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-plan' };
+    expect(transition(state, { type: 'BEGIN_PLANNING' }).phase).toBe('planning');
+  });
+
+  it('SPEC_CLARIFY_START enters clarifying from specifying', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'specifying' };
+    expect(transition(state, { type: 'SPEC_CLARIFY_START' }).phase).toBe('clarifying');
+  });
+
+  it('SPEC_DONE opens the spec gate from constitution-check', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'constitution-check' };
+    expect(transition(state, { type: 'SPEC_DONE' }).phase).toBe('reviewing-spec');
+  });
+
+  it('ANALYZE_START enters analyzing from planning', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'planning' };
+    expect(transition(state, { type: 'ANALYZE_START' }).phase).toBe('analyzing');
+  });
+
+  it('PLAN_DONE settles an approved spec gate whose plan is unchanged', () => {
+    const tasks = [makeTask({ id: 'T001' })];
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-spec' };
+    const next = transition(state, { type: 'PLAN_DONE', tasks });
+    expect(next.phase).toBe('reviewing-plan');
+    expect(next.tasks).toEqual(tasks);
+  });
+
   it('SPEC_CLARIFY_DONE -> constitution-check', () => {
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'clarifying' };
     const next = transition(state, { type: 'SPEC_CLARIFY_DONE' });
@@ -459,26 +569,6 @@ describe('transition', () => {
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'constitution-check' };
     const next = transition(state, { type: 'CONSTITUTION_CHECK_PASS' });
     expect(next.phase).toBe('planning');
-  });
-
-  it('CONSTITUTION_CHECK_FAIL -> idle and clears awaitingContinue', () => {
-    const tasks = [makeTask({ id: 'T001' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'constitution-check',
-      awaitingContinue: true,
-      tasks,
-      currentTaskIndex: 1,
-      attempt: 2,
-    };
-    const next = transition(state, {
-      type: 'CONSTITUTION_CHECK_FAIL',
-    });
-    expect(next.phase).toBe('idle');
-    expect(next.awaitingContinue).toBe(false);
-    expect(next.tasks).toEqual([]);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
   });
 
   it('ANALYZE_START -> analyzing', () => {
@@ -536,22 +626,6 @@ describe('transition', () => {
     const next = transition(state, { type: 'BEGIN_IMPLEMENTATION' });
     expect(next.phase).toBe('implementing');
     expect(next.tasks).toEqual(tasks);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
-  });
-
-  it('REJECT_BRIEFS resets to idle', () => {
-    const tasks = [makeTask({ id: 'T001' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-briefs',
-      tasks,
-      currentTaskIndex: 1,
-      attempt: 2,
-    };
-    const next = transition(state, { type: 'REJECT_BRIEFS' });
-    expect(next.phase).toBe('idle');
-    expect(next.tasks).toEqual([]);
     expect(next.currentTaskIndex).toBe(0);
     expect(next.attempt).toBe(0);
   });

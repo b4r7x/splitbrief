@@ -1,4 +1,4 @@
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { countNoun } from '../../utils/pluralize.js';
 import type { ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
 import { isCliToolId, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
@@ -373,7 +373,7 @@ function laneStatus(lane: CatalogLane): string | undefined {
 }
 
 /**
- * The byline sheds its cheapest fact first so the billing word is the last segment standing:
+ * The byline sheds its least useful fact first so the billing word is the last segment standing:
  * capability words, then the version the tool row already prints, then the clause that qualifies
  * the source, then the provenance itself.
  */

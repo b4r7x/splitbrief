@@ -1,30 +1,54 @@
-import { mountReveal } from './features/aura/reveal';
-import { mountCopyButton } from './features/copy-button';
-import { mountDiagram } from './features/diagram/mount';
-import { mountBackdrop } from './features/fragments/mount';
-import { onReducedMotionChange, prefersReducedMotion } from './lib/reduced-motion';
+import { mountAscii } from './features/ascii/mount.js';
+import { mountContinuation } from './features/continuation/mount.js';
+import { mountWalkthrough } from './features/walkthrough/mount.js';
+import { createMotion } from './lib/motion.js';
+import type { Scene } from './lib/scene.js';
 
-const cta = document.querySelector<HTMLButtonElement>('.cta');
-if (cta) mountCopyButton(cta);
-
-const backdrop = document.createElement('div');
-backdrop.className = 'backdrop';
-backdrop.setAttribute('aria-hidden', 'true');
-document.body.prepend(backdrop);
-
-const diagram = document.querySelector<HTMLElement>('.diagram');
-const motion: { start(): void; stop(): void }[] = [
-  mountBackdrop(backdrop),
-  ...(diagram ? [mountDiagram(diagram)] : []),
-];
-mountReveal([...document.querySelectorAll('.lower section')]);
-
-function setMotion(reduced: boolean): void {
-  for (const feature of motion) {
-    if (reduced) feature.stop();
-    else feature.start();
-  }
+function required<T extends Element>(selector: string): T {
+  const element = document.querySelector<T>(selector);
+  if (!element) throw new Error(`Missing page element: ${selector}`);
+  return element;
 }
 
-setMotion(prefersReducedMotion());
-onReducedMotionChange(setMotion);
+const motion = createMotion();
+const scenes: Scene[] = [];
+let started = false;
+let disposed = false;
+
+function dispose() {
+  if (disposed) return;
+  disposed = true;
+  motion.destroy();
+  if (!started) for (const scene of scenes) scene.destroy();
+  document.documentElement.classList.remove('is-enhanced');
+}
+
+try {
+  const walkthrough = mountWalkthrough(required('[data-scroll-track]'), motion.invalidate);
+  scenes.push(walkthrough);
+  const continuation = mountContinuation(required('[data-continuation]'), motion.invalidate);
+  scenes.push(continuation);
+  scenes.push(
+    mountAscii({
+      canvas: required<HTMLCanvasElement>('[data-ambient]'),
+      atmosphere: required('[data-atmosphere]'),
+      region: required('[data-art-region]'),
+      progress: () => ({
+        workflow: walkthrough.getProgress(),
+        entry: continuation.getEntryProgress(),
+        details: continuation.getProgress(),
+      }),
+    }),
+  );
+  document.documentElement.classList.add('is-enhanced');
+  motion.start(scenes, [...document.querySelectorAll<HTMLButtonElement>('[data-pause]')]);
+  started = true;
+} catch (error) {
+  dispose();
+  console.error('Page enhancement failed; the document remains readable.', error);
+}
+
+if (import.meta.hot) {
+  import.meta.hot.accept();
+  import.meta.hot.dispose(dispose);
+}

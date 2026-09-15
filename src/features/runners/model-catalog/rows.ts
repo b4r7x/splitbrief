@@ -1,4 +1,4 @@
-import { isAutoCheapestModel, isAutomaticModel } from '../../../core/providers/automatic-model.js';
+import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import type { ProvenanceWord } from '../../../core/providers/provenance.js';
 import type {
   CliProviderAuth,
@@ -91,14 +91,6 @@ export const CATALOG_FETCH_FAILED = 'Could not load models';
 
 /** One wording for the Auto row's metadata cell; the row model carries no size. */
 export const AUTO_ROW_METADATA = 'tool decides';
-
-/**
- * The one line the BUILD seat's price-routing row carries in its metadata cell. The row's name is
- * `AUTO_CHEAPEST_MODEL_WORD`, so the picker and every seat identity spell the policy the same way;
- * the name already says `cheapest`, so the cell adds only the basis and the granularity, short
- * enough to print whole in what the protected label leaves it.
- */
-export const AUTO_CHEAPEST_ROW_DETAIL = 'priced per brief';
 
 /** One wording for the escape row that opens the unfiltered catalog. */
 export const BROWSE_CATALOG_TEXT = 'Browse the full catalog…';
@@ -264,7 +256,7 @@ export function buildRightRows(input: {
   const automatic: ModelOption[] = [];
   let placements: Placement[] = [];
   for (const model of input.models) {
-    if (isAutomaticModel(model.id) || isAutoCheapestModel(model.id)) {
+    if (isAutomaticModel(model.id)) {
       automatic.push(model);
       continue;
     }

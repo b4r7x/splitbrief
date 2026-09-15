@@ -5,12 +5,14 @@ import type {
   UserEditConflictAction,
 } from '../../core/schemas/enums.js';
 import type { TaskId } from '../../core/schemas/task.js';
+import type { StepCut } from '../../core/schemas/run-step.js';
+import type { ContinuationHolder } from './continuation.js';
 import type { ProjectContext } from '../../core/state/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { SpecMetadata } from '../../core/paths-io.js';
-import type { CostPrediction, Summary } from '../../core/schemas/summary.js';
+import type { Summary } from '../../core/schemas/summary.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Validator } from './validation/types.js';
 import type { RunIsolation } from './isolation/types.js';
@@ -42,8 +44,12 @@ export interface OrchestratorCallbacks {
   onQuestionAsked?:
     | ((question: ClarificationQuestion, num: number, total: number) => Promise<string>)
     | undefined;
-  onCostApprovalNeeded?: ((prediction: CostPrediction) => Promise<boolean>) | undefined;
-  onContinuationNeeded?: ((partialResponse: string) => Promise<string>) | undefined;
+  /**
+   * Parks the run until the operator continues it, resolving with their steer.
+   * `at` says what they are looking at: a call cut in flight, or a run held
+   * between two briefs.
+   */
+  onContinuationNeeded?: ((partialResponse: string, at: StepCut) => Promise<string>) | undefined;
   onTieredApproval?:
     | ((request: TieredApprovalRequest) => Promise<TieredApprovalResponse>)
     | undefined;
@@ -108,6 +114,12 @@ export interface WorkflowContext {
   plannerContext?: string | undefined;
   detectedContextLength?: number | undefined;
   setRewindFeedback?: ((feedback: string | undefined) => void) | undefined;
+  /**
+   * The continuation this run carries: the partial its cut attempt left and the
+   * steer that restarted it. The step the run stopped at takes it; every other
+   * step sees nothing.
+   */
+  continuation?: ContinuationHolder | undefined;
 }
 
 export type WorkflowPersistenceContext = SessionRef & { bus: EventBus };
@@ -126,4 +138,5 @@ export type PlannerCallbacksContext = Pick<
   | 'drainPendingAttachments'
   | 'modelCache'
   | 'detectedContextLength'
+  | 'continuation'
 >;

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -67,6 +68,7 @@ describe('InputFooter', () => {
     configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/splitbrief-test' });
     routerStore.init({
       screen: 'workflow',
+      run: makeRunRecord(),
       execution: {
         kind: 'local',
         prepared: makePreparedExecution({
@@ -545,6 +547,7 @@ describe('InputFooter', () => {
     const dirty = `${esc}]52;c;YWJj${bel}clean-tree${esc}[2K`;
     routerStore.init({
       screen: 'workflow',
+      run: makeRunRecord(),
       execution: {
         kind: 'local',
         prepared: makePreparedExecution({
@@ -573,6 +576,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     routerStore.init({
       screen: 'workflow',
+      run: makeRunRecord(),
       execution: {
         kind: 'local',
         prepared: makePreparedExecution({

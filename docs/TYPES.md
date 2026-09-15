@@ -32,7 +32,6 @@ TypeScript types exist for things that cannot be expressed as runtime-checkable 
 **Contract-module carve-outs.** `z.infer<>` aliases normally live beside their schema, with a small exception for contract modules that bundle inferred aliases with schema-less ports or projections:
 - `src/engine/events/types.ts` exports `EngineEvent = z.infer<typeof EngineEventSchema>` beside the schema-less `EventBus` / `EventSink` ports. The schema remains `src/engine/events/schema.ts`.
 - `src/engine/calls/types.ts` exports runner-call inferred aliases beside schema-less call/projection contracts. The schemas remain `src/engine/calls/schema.ts`.
-- `src/engine/orchestrator/budget/estimate.ts` exports budget-estimate aliases derived from summary schemas because the estimate API is a projection contract, not the summary schema owner.
 
 These aliases must stay mechanically derived from their schemas, never hand-written.
 
@@ -48,7 +47,7 @@ For any TS-only type (not a Zod schema), the placement depends on who uses it.
 
 ```ts
 // src/core/navigation/types.ts
-export type Screen = 'home' | 'workflow' | 'summary' | 'setup';
+export type Screen = 'home' | 'workflow' | 'setup';
 export type InputMode = 'normal' | 'review' | 'question';
 // ... types used only by this file live here, not in a separate *-types.ts
 ```

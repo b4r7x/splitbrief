@@ -1,6 +1,6 @@
 import type { TokenUsage } from '../schemas/tokens.js';
 import type { Phase } from '../schemas/enums.js';
-import { phaseCostRole } from '../phases.js';
+import { phaseTokenRole } from '../phases.js';
 
 export interface PhaseTokenDelta {
   input: number;
@@ -60,7 +60,7 @@ export function attributePhaseTokenDelta(
     ),
   };
 
-  const role = phaseCostRole(phase);
+  const role = phaseTokenRole(phase);
   return {
     planner: role === null ? ZERO_DELTA : plannerDelta,
     implementer: role === 'implementer' ? implementerDelta : ZERO_DELTA,

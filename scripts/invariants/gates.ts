@@ -273,7 +273,7 @@ export const gates: readonly Gate[] = [
     id: '46',
     description: 'Pinned overlay widths are gone',
     command:
-      '{ rg -n "maxWidth=" src/app src/features src/components/overlays || true; rg -n "getResponsivePanelWidth|getClampedTerminalWidth|PICKER_WIDTHS|SUB_PANEL_MAX_WIDTH|MAX_PANEL_WIDTH|SETUP_PANEL_WIDTH|PALETTE_MAX_WIDTH" src || true; rg -n "isSmall" src/app/overlays src/app/screens/home.tsx src/app/screens/setup.tsx src/features/home/layout.ts src/features/runners src/features/start-preparation src/features/workflow/cost-drilldown src/components/overlays src/components/pickers testing/visual/locators/registry.ts --glob \'!**/*.test.ts\' --glob \'!**/*.test.tsx\' || true; } | wc -l',
+      '{ rg -n "maxWidth=" src/app src/features src/components/overlays || true; rg -n "getResponsivePanelWidth|getClampedTerminalWidth|PICKER_WIDTHS|SUB_PANEL_MAX_WIDTH|MAX_PANEL_WIDTH|SETUP_PANEL_WIDTH|PALETTE_MAX_WIDTH" src || true; rg -n "isSmall" src/app/overlays src/app/screens/home.tsx src/app/screens/setup.tsx src/features/home/layout.ts src/features/runners src/features/start-preparation src/components/overlays src/components/pickers testing/visual/locators/registry.ts --glob \'!**/*.test.ts\' --glob \'!**/*.test.tsx\' || true; } | wc -l',
     expected: 0,
   },
   {
@@ -287,6 +287,35 @@ export const gates: readonly Gate[] = [
     id: '48',
     description: 'Validation stack literals live only in src/core/validation/stacks',
     command: `{ rg -n "npx tsc|npm test|\\.test\\.ts'" src --glob '!**/*.test.*' --glob '!src/core/validation/stacks/**' || true; } | wc -l`,
+    expected: 0,
+  },
+  {
+    id: '49',
+    description:
+      'No gate-rejection or reset-to-idle state actions (a run is closed, never reset; gates never reject)',
+    command:
+      "{ rg -n \"REJECT_SPEC|REJECT_PLAN|REJECT_BRIEFS|'CANCEL'|resetToIdle|ABORT_TURN|CONTINUE_TURN\" src --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
+    expected: 0,
+  },
+  {
+    id: '50',
+    description: 'No resumable-phase or summary-screen vocabulary (every open run is continuable)',
+    command:
+      '{ rg -n "isResumable|resumeVerdict|SummaryPayload|loadSummaryContext|RESUMABLE_PHASES" src || true; } | wc -l',
+    expected: 0,
+  },
+  {
+    id: '51',
+    description: 'No budget, price-tier or savings vocabulary (spend is a fact, never a gate)',
+    command:
+      '{ rg -n "maxBudget|budgetPauseThreshold|costTier|pricePer1M|auto:cheapest|estimatedCostSavings|hypotheticalCost|savingsPercentage|costPosture" src || true; } | wc -l',
+    expected: 0,
+  },
+  {
+    id: '52',
+    description: 'Features never construct an EventBus; the engine owns every bus',
+    command:
+      "{ rg -n \"createEventBus|new EventBus\" src/features --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
     expected: 0,
   },
 ];

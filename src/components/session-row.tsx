@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from './theme.js';
 import { listRowLead } from './list-row.js';
-import { SOFT_SEP } from './separators.js';
+import { SOFT_SEP } from '../core/separators.js';
 import type { Session } from '../core/schemas/session.js';
 import { getSessionStatusDisplay } from '../core/sessions/display.js';
 import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
@@ -52,8 +52,7 @@ function isSelected(cursor: SessionRowCursor): boolean {
 
 export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps) {
   const t = useTheme();
-  const display = getSessionStatusDisplay(session.status, t);
-  const failed = session.status === 'failed';
+  const display = getSessionStatusDisplay(session, t);
   const icon = display.icon;
   const iconColor = display.color;
   const time = formatRelativeTime(session.startedAt);
@@ -82,14 +81,10 @@ export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps)
       <Box flexShrink={0} justifyContent="flex-end" backgroundColor={bg}>
         <Text wrap="truncate-end">
           <Text color={t.textDim}> {time}</Text>
-          {failed && (
-            <>
-              <Text color={t.textDim}>{SOFT_SEP}</Text>
-              <Text color={t.error} dimColor>
-                failed
-              </Text>
-            </>
-          )}
+          <Text color={t.textDim}>{SOFT_SEP}</Text>
+          <Text color={iconColor} dimColor>
+            {display.word}
+          </Text>
         </Text>
       </Box>
     </Box>

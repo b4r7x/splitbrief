@@ -30,14 +30,24 @@ export const WIDE_VIEWPORTS: readonly Viewport[] = Object.freeze([
   viewport({ cols: 160, rows: 45 }),
 ]);
 
+/**
+ * The run screen is the run's home live and at rest, so the gallery has to cover both: the stages
+ * a moving run passes through, and every way a run can sit still on that same screen.
+ */
 export const REQUIRED_WORKFLOW_CHECKPOINT_IDS = [
   'idle',
   'planning',
   'implementation',
   'review',
   'question',
-  'success',
   'failure',
+  'at-rest-paused',
+  'at-rest-halted',
+  'at-rest-waiting',
+  'closed-ready',
+  'closed-needs-attention',
+  'closed-ended',
+  'replayed',
 ] as const;
 
 export const REQUIRED_WORKFLOW_CHECKPOINT_KINDS = [
@@ -406,6 +416,118 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-paused',
+      title: 'Workflow · a paused run at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-paused',
+        title: 'Paused run at rest',
+        kind: 'ready',
+        marker: 'Paused at',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-halted',
+      title: 'Workflow · a halted run at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-halted',
+        title: 'Halted run at rest',
+        kind: 'ready',
+        marker: 'Halted',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-waiting-gate',
+      title: 'Workflow · a run parked at a gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-waiting',
+        title: 'Run waiting at a gate',
+        kind: 'ready',
+        marker: 'Waiting at the',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-complete-ready',
+      title: 'Workflow · closed and ready to keep',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-ready',
+        title: 'Closed run ready to keep',
+        kind: 'success',
+        marker: 'visual-closed-ready',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-complete-needs-attention',
+      title: 'Workflow · closed and needing attention',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-needs-attention',
+        title: 'Closed run needing attention',
+        kind: 'success',
+        marker: 'visual-closed-needs-attention',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-ended',
+      title: 'Workflow · ended by the user',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-ended',
+        title: 'Ended run',
+        kind: 'failure',
+        marker: 'visual-closed-ended',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-replayed-history',
+      title: 'Workflow · history replayed from the run log',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'replayed',
+        title: 'Replayed run history',
+        kind: 'ready',
+        marker: 'Interrupted',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-stopped',
       title: 'Workflow · cancelled by the user',
       surface: screenSurface('workflow'),
@@ -466,40 +588,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'composer', title: 'Workflow composer' },
         { id: 'completion', title: 'Command argument completion menu' },
-      ],
-    }),
-  ],
-  summary: [
-    defineScenario({
-      id: 'summary-success',
-      title: 'Summary · successful workflow',
-      surface: screenSurface('summary'),
-      checkpoint: {
-        id: 'success',
-        title: 'Successful summary',
-        kind: 'success',
-        marker: 'Visual fixture workflow complete',
-      },
-      elements: [
-        { id: 'header', title: 'Summary header' },
-        { id: 'summary-hero', title: 'Summary outcome' },
-        { id: 'summary-details', title: 'Summary details' },
-      ],
-    }),
-    defineScenario({
-      id: 'summary-review-failed',
-      title: 'Summary · review failed',
-      surface: screenSurface('summary'),
-      checkpoint: {
-        id: 'review-failed',
-        title: 'Failed review summary',
-        kind: 'success',
-        marker: 'review failed',
-      },
-      elements: [
-        { id: 'header', title: 'Summary header' },
-        { id: 'summary-hero', title: 'Summary outcome' },
-        { id: 'summary-details', title: 'Summary details' },
       ],
     }),
   ],
@@ -612,11 +700,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-settings-crew-kilo-copilot',
         title: 'Overlay · settings · Kilo plan seat, Copilot build seat',
-        marker: 'Settings',
-      },
-      {
-        id: 'overlay-settings-build-auto-cheapest',
-        title: 'Overlay · settings · build seat on price routing',
         marker: 'Settings',
       },
       {
@@ -785,11 +868,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · implementer picker',
         marker: 'Add custom model',
       },
-      {
-        id: 'overlay-build-picker-auto-cheapest',
-        title: 'Overlay · implementer picker · Auto cheapest capable row',
-        marker: PICKER_TITLE_MARKER,
-      },
     ],
   }),
   'reviewer-picker': overlayGroup({
@@ -832,19 +910,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     panelTitle: 'Editor frame',
     checkpointTitle: 'Editor ready',
     scenarios: [{ id: 'overlay-editor', title: 'Overlay · editor', marker: 'Add greeting helper' }],
-  }),
-  'cost-drilldown': overlayGroup({
-    overlay: 'cost-drilldown',
-    underlyingScreen: 'workflow',
-    panelTitle: 'Cost breakdown panel',
-    checkpointTitle: 'Cost breakdown ready',
-    scenarios: [
-      {
-        id: 'overlay-cost-drilldown',
-        title: 'Overlay · cost breakdown',
-        marker: 'Cost · breakdown',
-      },
-    ],
   }),
 };
 

@@ -98,11 +98,11 @@ describe('substituteEventFields', () => {
 
   it('handles nested object access via dot path', () => {
     const event: EngineEvent = {
-      type: 'cost_prediction',
+      type: 'cost_update',
       ts: 1,
       phase: 'planning',
-      prediction: { totalCost: 1.23 } as never,
+      tokenUsage: { plannerInput: 1 } as never,
     };
-    expect(substituteEventFields(S('event.prediction.totalCost'), event)).toBe('1.23');
+    expect(substituteEventFields(S('event.tokenUsage.plannerInput'), event)).toBe('1');
   });
 });

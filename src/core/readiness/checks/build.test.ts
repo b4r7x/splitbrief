@@ -203,44 +203,11 @@ describe('readiness checks', () => {
 
     expect(report.status).toBe('ready');
     expect(
-      checks.find((check) => check.id === 'runners.implementer.profile-cost-tier-missing'),
-    ).toMatchObject({
-      severity: 'info',
-      metadata: { profile: 'local-qwen', costTier: null },
-    });
-    expect(
       checks.find((check) => check.id === 'runners.implementer.profile-writes-files-inferred'),
     ).toMatchObject({
       severity: 'info',
       metadata: { profile: 'local-qwen', writesFiles: 'extracted-code' },
     });
-  });
-
-  it('treats missing budget as an advisory note, not a run action', () => {
-    const config = makeConfig({
-      planner: {
-        kind: 'api',
-        provider: 'custom-endpoint',
-        service: 'example-llm',
-        offering: 'payg',
-        apiBase: 'https://api.example.test/v1',
-        model: 'acme/reasoner-1',
-        contextLength: 128_000,
-      },
-      implementer: { contextLength: 32_768 },
-    });
-
-    const report = buildReadinessReport(baseInput({ config }));
-    const budget = report.sections
-      .flatMap((section) => section.checks)
-      .find((check) => check.id === 'cost.budget-missing');
-
-    expect(budget).toMatchObject({
-      severity: 'info',
-      summary: 'Budget cap is off for priced or unknown runners.',
-    });
-    expect(budget?.nextAction).toBeUndefined();
-    expect(report.nextAction.kind).toBe('continue');
   });
 
   it('warns when validation is disabled and the npm test script is missing', () => {
@@ -300,7 +267,6 @@ describe('readiness checks', () => {
           model: 'qwen2.5-coder:7b',
           apiBase: 'http://localhost:11434/v1',
           contextLength: 32768,
-          costTier: 'local',
           capabilities: { writesFiles: 'extracted-code' },
         },
       },
@@ -318,7 +284,6 @@ describe('readiness checks', () => {
     expect(profileCheck?.summary).toContain('local-qwen');
     expect(profileCheck?.metadata).toMatchObject({
       defaultProfile: 'local-qwen',
-      costTier: 'local',
       writeMode: 'extracted-code',
     });
   });

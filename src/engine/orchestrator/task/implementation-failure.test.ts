@@ -101,7 +101,7 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
       implState: implState({
         success: false,
         output: '',
-        outcome: 'implementer-timeout-repeated',
+        outcome: 'runner-timeout-repeated',
         error: 'implementer timed out',
       }),
       taskStartTime: Date.now(),
@@ -112,7 +112,7 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
     });
 
     expect(implementer.retry).not.toHaveBeenCalled();
-    expect(next.pendingRecovery?.reason).toBe('implementer-timeout-repeated');
+    expect(next.pendingRecovery?.reason).toBe('runner-timeout-repeated');
   });
 });
 

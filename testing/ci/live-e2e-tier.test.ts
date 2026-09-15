@@ -199,15 +199,8 @@ describe('live e2e tier gating', () => {
 
 describe('live e2e tier documentation', () => {
   const tierDoc = docSection('\n## Live CLI e2e tier\n');
-  const harness = readFileSync(join(REPO_ROOT, 'testing/e2e/helpers/live-harness.ts'), 'utf-8');
 
-  it('promises only the ceilings the harness and the scenarios carry', () => {
-    expect(tierDoc).toContain('$0.05');
-    expect(tierDoc).toContain('$0.50');
-    expect(harness).toMatch(/quick: 0\.05,/);
-    expect(harness).toMatch(/standard: 0\.5,/);
-    expect(harness).toContain('maxBudget: MAX_BUDGET_USD[scenario.mode]');
-
+  it('promises only the timeouts the scenarios carry', () => {
     const scenarios = readdirSync(LIVE_SCENARIO_DIR).filter((name) => name.endsWith('.test.ts'));
     expect(scenarios.length).toBeGreaterThan(0);
     for (const name of scenarios) {
@@ -257,7 +250,7 @@ describe('release matrix invariants', () => {
     }
   });
 
-  it('resolves the cheapest pin per tool through liveModelPin', () => {
+  it('resolves the default pin per tool through liveModelPin', () => {
     expect(resolveReleaseMatrixSeat('claude-code')).toEqual({
       tool: 'claude-code',
       model: 'haiku',
@@ -427,7 +420,6 @@ describe('release matrix manifest and config', () => {
     expect(config.implementer.contextLength).toBe(4096);
     expect(config.reviewer).toBeUndefined();
     expect(config.workflow.mode).toBe('quick');
-    expect(config.workflow.maxBudget).toBe(0.05);
   });
 
   it('assembles a speckit row config with the reviewer seat', () => {
@@ -440,7 +432,6 @@ describe('release matrix manifest and config', () => {
 
     expect(reviewer.tool).toBe('codex');
     expect(config.workflow.mode).toBe('speckit');
-    expect(config.workflow.maxBudget).toBe(1);
 
     const contextMd = MATRIX_TIERS.speckit.contextMd;
     if (contextMd === undefined) throw new Error('unreachable');

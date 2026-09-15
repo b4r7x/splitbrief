@@ -63,14 +63,16 @@ interface InterruptedLifecycleState extends LifecycleBase {
   reason: null;
 }
 
+// A paused run read back from disk knows when it last did anything, so its clock can be frozen
+// there; a live park has no end yet and leaves both null.
 interface PausedLifecycleState extends LifecycleBase {
   phase: RunningPhase;
   status: 'paused';
   interruptParked: false;
   cancelled: false;
   startedAt: number | null;
-  endedAt: null;
-  durationMs: null;
+  endedAt: number | null;
+  durationMs: number | null;
   reason: null;
 }
 
@@ -340,7 +342,9 @@ export function clearLifecycleInterrupted(state: LifecycleState): LifecycleState
 // steer landed and the work carried on.
 export function clearLifecyclePaused(state: LifecycleState): LifecycleState {
   if (state.status !== 'paused') return state;
-  return { ...state, status: 'running' };
+  // A run that is moving again has no end and no duration: the frozen clock a run at rest carried
+  // belongs to the pause it just left.
+  return { ...state, status: 'running', endedAt: null, durationMs: null };
 }
 
 function markLifecycleComplete(

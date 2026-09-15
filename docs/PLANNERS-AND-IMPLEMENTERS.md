@@ -45,8 +45,7 @@ Defined in `src/engine/planners/types.ts`. Every planner implements:
 
 ```typescript
 interface Planner extends RunnerRuntime {
-  plan(feature, projectDir, callbacks, skillsContext?, codebaseContext?): Promise<PlanResult>
-  quickPlan(feature, projectDir, callbacks, codebaseContext?): Promise<PlanResult>
+  runPhase({ call, projectDir, inputs, callbacks }): Promise<PhaseCallResult>
   regenerate(prompt, artifactType, projectDir, callbacks): Promise<RegenerateResult>
   escalateHint(task, error, projectDir, callbacks, languageContext?): Promise<EscalationResult>
   escalateFull(task, error, projectDir, callbacks, languageContext?): Promise<EscalationResult>
@@ -58,23 +57,28 @@ interface Planner extends RunnerRuntime {
 }
 ```
 
-`plan()` runs the full 4-phase pipeline: research, spec, plan, tasks. `quickPlan()` collapses that into one call.
+`runPhase()` is **one** planner call: one prompt, one document, one owned artifact. `call` is `research | spec | plan | tasks`; the orchestrator's step loop (`src/engine/orchestrator/planning/steps.ts`) decides which calls a mode makes and in what order, persists each artifact as it lands, and hands the next call whatever it needs through `inputs`. A planner never sequences a mode for itself, so a run that stops between two calls loses nothing.
 
 `escalateHint()` and `escalateFull()` handle tiered escalation when the implementer fails. Both prompt builders include a **Similar Issues** section with language-matched few-shot examples selected by keyword scoring against the error text (`src/engine/spec/prompts/escalation-examples.ts`). `regenerate()` re-runs spec or plan after user comments. `review()` does the final review pass.
 
-`PlanResult` is the return type for all planning methods:
+`PhaseInputs` is everything one call reads — `feature`, the `research` / `spec` / `plan` text the caller read back from disk, `projectContext`, `languageContext`, the optional `skillsContext` / `codebaseContext`, a `promptPrefix` (drained queue, recorded rejections), a `promptSuffix` (the continuation block a stateless seat needs), a `continuationTurn` that replaces the built prompt for a seat already holding this step's session, `priorMessages` and `attachments` for the first call of the process, and `quickPlan: { trivial }` when the `tasks` call is compiling briefs straight from the feature.
+
+**Continuation per seat.** A step cut by Stop now is continued, not restarted from a blob. The step's own prompt is always stated; the continuation trails it (`composeContinuation`, `src/engine/spec/prompts/continuation.ts`). A planner holding a native session (`claude-code`, `codex` after its own thread id is captured) gets one extra user turn on that session — the steer plus *Continue the `<call>` step and output the complete `<artifact>` again* — because the conversation already carries the prompt. A stateless planner gets the rebuilt step prompt with the partial and the steer on the end. The reviewer re-issues its whole deterministic prompt, rebuilt from disk, with the note appended; it is one shot by constitution and never resumes a session. The implementer restarts the brief on `buildPrompt`, with the partial and a line naming the declared files that already changed since the task started; the attempt count does not move.
+
+`PhaseCallResult` is what one call produced:
 
 ```typescript
-interface PlanResult {
-  spec: string
-  plan: string
-  tasks: Task[]
+interface PhaseCallResult {
+  text: string
   usage: TokenDelta | null
-  phases?: PhaseResult[]
+  artifact: PhaseResult
+  tasks?: Task[]   // the `tasks` call only
 }
 ```
 
-The `tasks[]` array is the durable contract. `spec` and `plan` are supporting documents for human review -- they may be empty in quick mode.
+The `tasks[]` array is the durable contract. `research.md`, `spec.md` and `plan.md` are supporting documents for human review — quick mode writes none of them.
+
+`runDocumentPhases()` (`src/engine/planners/document-phases.ts`) runs a mode's document calls back to back with no state, no gates and no durability. `splitbrief spec` is its only caller; every real run goes through the orchestrator's step loop instead.
 
 ---
 
@@ -112,7 +116,7 @@ The orchestrator reads capabilities, not backend identity, to decide what's poss
 |---|---|
 | `supportsConversationalPlanning` | Planner can emit inline clarification questions during planning |
 | `supportsHintEscalation` | Planner can produce a short hint before full escalation |
-| `supportsSessionResume` | Backend exposes a reusable session handle (Claude `--session-id`, Codex exec resume) |
+| `supportsSessionResume` | Backend exposes a reusable thread handle it reports itself (Claude `--resume`, Codex exec resume) |
 | `supportsEffort` | Backend honors effort/reasoning hints (thinking budget, `reasoning_effort`) — narrowly, that it accepts the `effort: EffortLevel` field on the wire. It is not the seat's effort channel: a tool that carries effort as an opencode `--variant` preset or inside its model id has a real channel while this capability stays false. `seatEffortChannel` (`src/core/runners/capabilities.ts`) is what answers the wider question; see [CONFIGURATION.md](./CONFIGURATION.md) common generation fields. |
 | `supportsImages` | Backend can accept image attachments (vision models) |
 | `supportsSelfSummarisation` | Planner can summarize its own prior transcript for compaction |
@@ -130,21 +134,25 @@ When a capability is missing, the orchestrator falls back. No session resume mea
 
 `src/engine/planners/base.ts` -- `createPlannerBase(config)`.
 
-Wraps a backend-specific `invokePlan()` function with the standard 4-phase pipeline:
+Wraps a backend-specific `invokePlan()` function as `runPhase` (`src/engine/planners/run-phase.ts`), which selects the prompt builder for the call it was handed:
 
-1. **Research** -- `buildResearchPrompt()`. Repo map injected as `<repo-map>` block. Image attachments delivered on this first phase only.
-2. **Spec** -- `buildSpecPrompt()`. Language context extracted from research output.
-3. **Plan** -- `buildPlanPrompt()`. Project context and skills context injected.
-4. **Tasks** -- `buildTasksPrompt()`. Output is markdown that gets parsed into `Task[]`.
+| `call` | Prompt | Artifact |
+|---|---|---|
+| `research` | `buildResearchPrompt()`, with the repo map as a `<repo-map>` block | `research.md` |
+| `spec` | `buildSpecPrompt()`, reading `inputs.research` | `spec.md` |
+| `plan` | `buildPlanPrompt()`, reading `inputs.spec` | `plan.md` |
+| `tasks` | `buildTasksPrompt()`, or `buildQuickPlanPrompt()` when `inputs.quickPlan` is set | `tasks.md` |
 
-Each phase:
+Each call:
 - Calls `callbacks.onPhase()` so the UI can update
 - Creates a transcript buffer (16KB, flushed to `session.jsonl`)
-- On resume, injects prior messages into the first phase. API backends receive them as an OpenAI messages array (`consumesPriorMessages: true`). CLI backends get a prompt-level prefix.
+- Injects `inputs.priorMessages` into the first call this planner instance makes, and never again. API backends receive them as an OpenAI messages array (`consumesPriorMessages: true`); CLI backends get a prompt-level prefix. `inputs.attachments` are delivered the same way, on the first call only.
 - Converts the backend response into `RunnerCallResult` immediately, then accumulates token usage from the typed call result
 - Returns the phase artifact text from the completed terminal result only; stdin/stdout adapters never reopen files that a backend wrote
 
-The `quickPlan()` path skips straight to a single-phase call using `buildQuickPlanPrompt()`. Same pipeline machinery, one invocation instead of four. When the mode advisor classified the prompt as `trivial`, `PlanOptions.trivial` is set and the prompt drops its codebase-review step and caps the brief count.
+Quick mode is the `tasks` call with `inputs.quickPlan` set: same machinery, one invocation instead of four. When the mode advisor classified the prompt as `trivial`, `quickPlan.trivial` is true and the prompt drops its codebase-review step and caps the brief count.
+
+**Native session continuity.** A backend that resumes its own thread keeps it across the calls of a run. Claude Code captures the id **as it streams** (`onSessionId`, inside `runClaudePlannerStream`), not after the call returns, so a call cut halfway still leaves a thread the next call resumes. The CLI planner keeps the same in-memory `SessionResumeState` and passes only an id the tool itself reported — codex resumes its own thread id, never the SPLITBRIEF session id, which is not a tool thread at all.
 
 Planner backend invoke functions return `RunnerCallResult`. Use `toInvokeResult()` only at outer legacy postprocess/extraction boundaries that explicitly need `{ text, usage }`; do not collapse typed call results before they reach the planner base. New adapters must emit typed call results directly and set `backendKind` (`api`, `cli`, `shell`, or `agent`).
 
@@ -236,7 +244,7 @@ The implementer sees only its own brief. It has no access to the spec, the plan,
 
 The implementer is the **weaker model** of the pair. Which transport carries that model is a user choice, and two of them are equally supported:
 
-- a **tool CLI running a cheaper model** -- `codex`, `claude-code`, or any other admitted CLI pointed at a low-cost model. Write mode `direct`.
+- a **tool CLI running a smaller model** -- `codex`, `claude-code`, or any other admitted CLI pointed at a smaller model. Write mode `direct`.
 - a **model behind an OpenAI-compatible API** -- a local Ollama or LM Studio daemon, or a custom endpoint you declare. Write mode `extracted-code`.
 
 Neither is the fallback for the other. Both get the same brief, the same prompt contract, and the same promotion and validation treatment. Isolation is the one thing they do not share: per ADR-4 the run's isolation directory is scoped to a direct writer, and `workflow.isolation` is not consulted for an `extracted-code` implementer (see below). SPLITBRIEF does not favour a transport.
@@ -270,7 +278,7 @@ type ImplementerCapabilities = {
 
 It records **who holds the pen**, not which path is preferred.
 
-A brief **requires** a direct-write implementer when it declares more than one file (`files.length > 1`), and otherwise only when its `scope.inBounds` / `scope.approvedOutOfBounds` bullets name a concrete path token beyond the task's own `file` — a token carrying a directory separator or a glob, extracted by `scopePathPatterns` in `src/utils/path-patterns.ts` (`requiredWriteModeForTask`, `src/engine/orchestrator/context-routing/decision.ts`). Scope bullets are prose: a bullet that only re-names the task file, or names no path token at all, does not widen the write scope, and the brief routes to an `extracted-code` implementer. The same module ranks profile routes: when the implementer seat carries `model: auto:cheapest`, `compareProfileRouteRank` orders priced profiles by blended price ahead of cost tier (derivation under [Token accounting](#token-accounting)).
+A brief **requires** a direct-write implementer when it declares more than one file (`files.length > 1`), and otherwise only when its `scope.inBounds` / `scope.approvedOutOfBounds` bullets name a concrete path token beyond the task's own `file` — a token carrying a directory separator or a glob, extracted by `scopePathPatterns` in `src/utils/path-patterns.ts` (`requiredWriteModeForTask`, `src/engine/orchestrator/context-routing/decision.ts`). Scope bullets are prose: a bullet that only re-names the task file, or names no path token at all, does not widen the write scope, and the brief routes to an `extracted-code` implementer. The same module ranks profile routes: `compareProfileRouteRank` orders the capable profiles by context window, smallest sufficient window first, then by name.
 
 | | `extracted-code` | `direct` |
 |---|---|---|
@@ -334,7 +342,7 @@ For retries, `buildRetryPrompt()` prepends the error message with escalating fra
 
 The implementer base normalizes backend output into `RunnerCallResult` before processing files. A non-completed status returns a failed `ImplementerResult` with partial output and usage preserved; user aborts, timeouts, truncation, refusals, unsupported tools, and incomplete streams are not collapsed into generic success/failure strings.
 
-**Call deadlines.** A CLI implementer call runs under a deadline of `config.timeout ?? TIMEOUTS.implementerMs` — 20 minutes (`src/engine/implementers/cli.ts`, `src/core/pipeline-spec/timeouts.ts`), which is also the cap the `timeout` config field accepts. The reviewer's one call runs under `TIMEOUTS.reviewerMs`, 10 minutes (`src/engine/planners/cli.ts`, the `review` role); every other planner call has no deadline of its own, because a planning turn's length is the operator's to judge. A deadline that fires is a `timeout` outcome, not a crash, and two of them in a row on the same brief stop the run with an `implementer-timeout-repeated` recovery rather than escalating an oversized slice at planner prices (`TIMEOUTS.consecutiveTimeoutsHalt`).
+**Call deadlines.** A CLI implementer call runs under a deadline of `config.timeout ?? TIMEOUTS.implementerMs` — 20 minutes (`src/engine/implementers/cli.ts`, `src/core/pipeline-spec/timeouts.ts`), which is also the cap the `timeout` config field accepts. The reviewer's one call runs under `TIMEOUTS.reviewerMs`, 10 minutes (`src/engine/planners/cli.ts`, the `review` role); every other planner call has no deadline of its own, because a planning turn's length is the operator's to judge. A deadline that fires is a `timeout` outcome, not a crash, and two of them in a row on the same brief stop the run with an `runner-timeout-repeated` recovery rather than escalating an oversized slice to the planner (`TIMEOUTS.consecutiveTimeoutsHalt`).
 
 ---
 
@@ -355,13 +363,13 @@ Deltas are normalized in `src/engine/calls/usage.ts`, which handles delta, cumul
 
 Session totals (`TokenUsage`) carry four categories, not three: `planner*`, `implementer*`, `escalation*`, and `reviewer*` (`reviewerInput`, `reviewerOutput`, and the optional `reviewerCacheRead` / `reviewerCacheCreate`). `usageCategoryForRunnerCallRole()` (`src/engine/orchestrator/tokens.ts`) routes the `'review'` call role into the `reviewer` bucket; `'planner'`, `'summary'`, and `'compaction'` stay on the planner. Session state written before the reviewer bucket existed loads with those fields at `0`.
 
-Pricing follows the seat: with a `reviewer` block, the reviewer's tokens are priced at the reviewer runner's rates and shown as their own line in the summary and the cost drilldown; without one, they are priced at the planner's rates and folded into the planner line, exactly as before.
+Pricing follows the seat: with a `reviewer` block, the reviewer's tokens are priced at the reviewer runner's rates and shown as their own line in the run summary; without one, they are priced at the planner's rates and folded into the planner line, exactly as before.
 
 CLI runners report usage through their protocol terminal: codex through its `turn.completed` record, claude-code and opencode through their streamed terminal events. Codex's `input_tokens` counts cached input, so the normalizer excludes `cached_input_tokens` from the reported input total and surfaces it as `cacheReadTokens`; claude-code's terminal `result` line takes precedence over mid-stream deltas. A CLI runner that completes without reporting usage records zero implementer tokens — by design for structurally unpriced runners, and never fabricated.
 
 Per-task usage is recorded as `TaskTokenUsage`, which tracks: implementer tokens, escalation tokens, retry count, cost, model used, context fit classification (`fits` / `tight` / `overflow`), and the `currentCodeContextMode` that was selected.
 
-A runner completing a task without reporting usage is recorded as zero tokens and surfaced, not hidden: `recordTaskUsage` (`src/engine/orchestrator/tokens.ts`) publishes exactly one warning with `category: 'cost'` and `code: 'implementer_usage_not_reported'`, naming the runner and the task, when neither the implementer nor the escalation delta is non-zero. The warning lands in `session.jsonl` and in the review packet's warnings list. An escalated task that spent planner tokens does not warn. SPLITBRIEF never invents a price or synthesises token counts for a runner that reported none — a CLI runner staying structurally unpriced is by design, and this warning is what makes a run that did real work distinguishable from a run whose runner reported nothing.
+A runner completing a task without reporting usage is recorded as zero tokens and surfaced, not hidden: `recordTaskUsage` (`src/engine/orchestrator/tokens.ts`) publishes exactly one warning with `category: 'usage'` and `code: 'implementer_usage_not_reported'`, naming the runner and the task, when neither the implementer nor the escalation delta is non-zero. The warning lands in `session.jsonl` and in the review packet's warnings list. An escalated task that spent planner tokens does not warn. SPLITBRIEF never invents a price or synthesises token counts for a runner that reported none — a CLI runner staying structurally unpriced is by design, and this warning is what makes a run that did real work distinguishable from a run whose runner reported nothing.
 
 **Token budget for implementer prompts** (`src/engine/spec/token-budget.ts`):
 
@@ -375,9 +383,7 @@ A boot-probed window applies only to the default implementer profile — the pro
 
 A CLI runner under `model: auto` — or with the model omitted — resolves to no model id, so its window is the smallest the bundled catalog guarantees for that tool (`resolveRunnerContextWindow`, `src/engine/providers/model/context-window.ts`); automatic selection never adds a `--model` flag.
 
-The implementer seat has one further `model` spelling with different mechanics: `auto:cheapest`. It is a routing marker, not a model id, and a CLI seat never transmits it: when no priced row is derived the adapter omits `--model` entirely and the tool's own default applies. An `api` seat has no literal model to send in that fallback path, so config load rejects the marker on every non-`cli` implementer variant and the BUILD picker offers the row on CLI columns only. Where `model: auto` leaves the choice to the tool, `auto:cheapest` has the router derive the profile list per task batch from priced discovered rows — the CLI catalog `cost` rows for opencode and kilo-code — and rank it by the blended `input + 4×output` price per 1M tokens. Unpriced rows are excluded rather than ranked last. Each derived profile is named `auto-<tool>-<model>`, carries the blended price as its `pricePer1M`, and the cheapest derived profile is the default; when discovery yields no priced row, derivation yields nothing, the configured profiles stand, and readiness warns that the seat will run the tool's own default model. A named profile under `implementerProfiles` cannot carry the marker — a profile must name a concrete model.
-
-Derived profiles meet the same comparator as configured ones: `compareProfileRouteRank` (`src/engine/orchestrator/context-routing/decision.ts`) ranks priced profiles by price ahead of cost tier, then context window, then name. A routed selection reports the price, not just the tier: `Selected cheapest priced profile at $X.XX/1M blended via auto-cheapest routing`.
+Routing between configured profiles is by capability, never by price: `compareProfileRouteRank` (`src/engine/orchestrator/context-routing/decision.ts`) ranks the capable profiles by context window, smallest sufficient window first, then by name. A routed selection names the profile and the fit it was chosen on: `Selected profile <name> (fits, estimated N/M tokens)`.
 
 The window the router decides is the one the prompt budget uses: `configForProfile()` (`src/engine/orchestrator/task/routing.ts`) copies the decided `contextLength` into the config handed to the selected implementer when the profile declares none — a window the profile declared for itself is never overridden — so the wire carries the routed window rather than an unbudgeted whole-file prompt.
 
@@ -410,7 +416,7 @@ Spawns a CLI tool as a subprocess. Supported tools: `claude-code`, `codex`, `ope
 
 Every planner call declares its transport before dispatch: the current call's final response (`stdout-final`) or an exact declared-file lease. The candidate is that call's authoritative final output; session files, project-root artifacts, markdown-linked paths, prose mentions, stderr, and earlier attempts are evidence at most, never content. Claude Code continues a session it already minted with `--resume`. Output is parsed line by line via each tool's protocol parser; a configured `outputFormat` cannot replace a structured terminal contract.
 
-The implementer writes files directly (`writesFiles: 'direct'`) inside the run's isolation directory, and change detection runs there. Claude Code gets a special path through `runClaudeOneShot()`. A CLI configured with a cheaper model than the planner's is one of the two canonical implementer setups -- see [Write modes](#write-modes).
+The implementer writes files directly (`writesFiles: 'direct'`) inside the run's isolation directory, and change detection runs there. Claude Code gets a special path through `runClaudeOneShot()`. A CLI configured with a smaller model than the planner's is one of the two canonical implementer setups -- see [Write modes](#write-modes).
 
 #### Canonical CLI runner matrix
 
@@ -523,7 +529,7 @@ REST call to an OpenAI-compatible HTTP endpoint. Works with: Ollama, LM Studio, 
 
 The planner uses `dispatchStreamCompletion()`, which streams the OpenAI-compatible chat-completions protocol. Prior messages are passed as a proper messages array (`consumesPriorMessages: true`). Token usage comes from the API response.
 
-The implementer extracts code from the response text (`writesFiles: 'extracted-code'`). System preamble is sent as a separate system message. Token budget calculation determines `maxTokens`. Temperature increases on retry (`retryTemperatureStep: 0.1`). This is the other canonical implementer setup -- a cheap model reached over HTTP, with SPLITBRIEF holding the pen.
+The implementer extracts code from the response text (`writesFiles: 'extracted-code'`). System preamble is sent as a separate system message. Token budget calculation determines `maxTokens`. Temperature increases on retry (`retryTemperatureStep: 0.1`). This is the other canonical implementer setup -- a smaller model reached over HTTP, with SPLITBRIEF holding the pen.
 
 Availability is probed, not assumed. An api-kind implementer's `isAvailable()` contacts the provider's model list (`createProviderAvailability`, the same helper the api planner uses) and reports unavailable when the endpoint refuses the connection or returns an empty list. A local endpoint is not assumed reachable just because it is local. The probe fires once per task iteration at the task-loop availability gate, and the verdict is never cached across tasks, so a daemon started between task N and task N+1 is picked up on N+1.
 
@@ -639,11 +645,9 @@ type Config = {
     mode?: WorkflowMode          // quick | standard | speckit
     approve?: ApproveLevel       // none | spec | plan | all | default
     maxRetries: number
-    maxBudget?: number           // dollars
-    budgetPauseThreshold?: number // 0–1
     compactionThreshold?: number
     git?: { commitStrategy?: CommitStrategy; createBranch?: boolean }
-    // ... plus taskReview, briefReview, costGate, driftChainThreshold
+    // ... plus taskReview, briefReview, driftChainThreshold
   }
   escalation?: { intermediateProvider?: string; intermediateModel?: string; enabled?: boolean }
   approval?: { enabled?: boolean; tiers?: TierMap; feedRejectionsToPlanner?: boolean; ... }
@@ -653,7 +657,7 @@ type Config = {
 }
 ```
 
-Factory dispatch reads `config.planner.kind` and `config.implementer.kind` and lazy-loads the matching backend module. The rest of the config flows through to the orchestrator, validation pipeline, and budget enforcement.
+Factory dispatch reads `config.planner.kind` and `config.implementer.kind` and lazy-loads the matching backend module. The rest of the config flows through to the orchestrator, the validation pipeline and the prompt token budget.
 
 ---
 

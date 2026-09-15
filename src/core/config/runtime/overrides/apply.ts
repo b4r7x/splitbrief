@@ -69,12 +69,6 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
     const mode = parseOverrideOrThrow(WorkflowModeSchema, overrides.mode, 'mode', WORKFLOW_MODES);
     next = { ...next, workflow: { ...next.workflow, mode } };
   }
-  if (overrides.budget !== undefined) {
-    if (!Number.isFinite(overrides.budget) || overrides.budget <= 0) {
-      throw configError.invalidOverride('budget', overrides.budget, 'Must be a positive number.');
-    }
-    next = { ...next, workflow: { ...next.workflow, maxBudget: overrides.budget } };
-  }
   if (overrides.plannerEffort !== undefined) {
     const effort = parseOverrideOrThrow(
       EffortLevelSchema,
