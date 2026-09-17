@@ -42,6 +42,9 @@ import {
 } from '../../features/workflow/prompt-rows/approval.js';
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
+import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
+import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
+import { formatRecoveryPrompt } from '../../features/workflow/recovery-prompt.js';
 import { REVIEW_COMMENT_DRAFT } from '../../core/keybindings/review.js';
 import { clamp } from '../../utils/math.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
@@ -78,6 +81,8 @@ export function WorkflowScreen({
   const reviewKeysArmed = reviewKeysStore.use((state) => state.armed);
   const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
   const briefFocus = focusStore.use((focus) => focus);
+  const recoveryIssue = recoveryNoticeStore.use((state) => state.issue);
+  const plannerQuestions = questionPromptStore.use((state) => state.questions ?? []);
 
   const model = useWorkflowScreen({
     onRuntimeCommand,
@@ -136,11 +141,33 @@ export function WorkflowScreen({
   });
   const showSidebar = sidebarWidth > 0;
   const questionHint = model.inputMode.mode === 'question' ? model.inputMode.hint : null;
+  const recoveryPromptOpen =
+    recoveryIssue !== null &&
+    questionHint !== null &&
+    questionHint === formatRecoveryPrompt(recoveryIssue);
+  const recoveryFocusKey = `${recoveryIssue?.id ?? ''}:${model.inputMode.questionEpoch}`;
+  const [recoveryFocus, setRecoveryFocus] = useState<{
+    key: string;
+    menu: boolean;
+  } | null>(null);
+  useLayoutEffect(() => {
+    setRecoveryFocus((previous) => {
+      if (!recoveryPromptOpen) return null;
+      return previous?.key === recoveryFocusKey ? previous : { key: recoveryFocusKey, menu: true };
+    });
+  }, [recoveryFocusKey, recoveryPromptOpen]);
+  const recoveryMenuFocused = recoveryPromptOpen
+    ? recoveryFocus?.key === recoveryFocusKey
+      ? recoveryFocus.menu
+      : true
+    : false;
   const railForm = selectRailForm({ phase: model.phase, cols });
   const requestedPromptRows = getWorkflowPromptRows({
     approvalState: model.approvalPromptState,
     questionHint,
     reviewArtifact,
+    recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
+    questions: plannerQuestions,
     cols,
   });
   // A gate on screen is the only thing to act on, and it needs every row it can get. The build
@@ -148,7 +175,11 @@ export function WorkflowScreen({
   const progressRows =
     requestedPromptRows > 0 || model.atRestRecord !== undefined
       ? 0
-      : getProgressRows({ phase: model.phase, cols, cancelled: model.cancelled });
+      : getProgressRows({
+          phase: model.phase,
+          cols,
+          cancelled: model.cancelled || recoveryIssue !== null,
+        });
   const promptRows = clampWorkflowPromptRows({
     rows,
     inputRows,
@@ -236,11 +267,25 @@ export function WorkflowScreen({
             onRuntimeCommand={model.handleRuntimeCommand}
             commands={commands}
             mode={model.inputMode.mode}
-            inputHint={model.inputHint}
+            inputHint={
+              recoveryPromptOpen
+                ? 'Type a correction, or tab to choose an action…'
+                : plannerQuestions !== undefined
+                  ? model.inputMode.hint
+                  : model.inputHint
+            }
             questionEpoch={model.questionEpoch}
             feedbackHint={legend}
             commandsOnly={model.commandsOnly}
             waitingForUser={model.inputMode.mode !== 'normal' || model.promptPending}
+            {...(recoveryPromptOpen
+              ? {
+                  recoveryMenuFocused,
+                  onToggleRecoveryMenu: () => {
+                    setRecoveryFocus({ key: recoveryFocusKey, menu: !recoveryMenuFocused });
+                  },
+                }
+              : {})}
             onReviewBoundaryNavigate={handleReviewBoundaryNavigate}
             {...(byline !== undefined && { byline })}
             {...(reviewArtifact !== null
@@ -284,7 +329,19 @@ export function WorkflowScreen({
           />
         )}
         {model.inputMode.mode === 'question' && (
-          <QuestionPrompt hint={model.inputMode.hint} width={cols} clampedBoxRows={promptBoxRows} />
+          <QuestionPrompt
+            key={recoveryFocusKey}
+            hint={model.inputMode.hint}
+            width={cols}
+            clampedBoxRows={promptBoxRows}
+            recoveryIssue={recoveryPromptOpen ? recoveryIssue : null}
+            recoveryMenuFocused={recoveryMenuFocused}
+            onRecoveryFocusChange={(menuFocused) => {
+              setRecoveryFocus({ key: recoveryFocusKey, menu: menuFocused });
+            }}
+            onRecoveryResolve={(answer) => model.inputMode.resolve(answer)}
+            questions={plannerQuestions}
+          />
         )}
       </Box>
     </ScreenShell>

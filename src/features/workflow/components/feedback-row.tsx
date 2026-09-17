@@ -45,9 +45,10 @@ export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined
   const runningHint = running ? fitKeyLegend(RUNNING_LEGEND, cols - 1) : '';
   const stopHint =
     stopped === null || stopped.hint === '' ? '' : fitKeyLegend(stopped.hint, cols - 1);
-  const displayMessage = owned
-    ? ''
-    : safeMessage || summarizeDisplayLine(inputHint) || stopHint || runningHint;
+  const displayMessage =
+    owned && !isError
+      ? ''
+      : safeMessage || summarizeDisplayLine(inputHint) || stopHint || runningHint;
   const severity = isError ? 'error' : displayMessage ? hintStateSeverity(displayMessage) : null;
   const wordColor = severity === 'error' ? t.error : severity === 'warning' ? t.warning : null;
 

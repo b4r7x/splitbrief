@@ -13,6 +13,16 @@ import { RecoveryIssueSchema } from './recovery/schemas.js';
 import { StepCutSchema, StepRefSchema } from './run-step.js';
 import { topoSort } from '../state/topo-sort.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { ClarificationQuestionSchema } from './question.js';
+
+export const PlannerConversationSchema = z.object({
+  call: z.enum(['research', 'spec', 'plan', 'tasks']),
+  text: z.string(),
+  questions: z.array(ClarificationQuestionSchema),
+  answers: z.array(z.object({ reply: z.string(), answer: z.string() })),
+  answered: z.boolean().default(false),
+});
+export type PlannerConversation = z.infer<typeof PlannerConversationSchema>;
 
 export const WORKFLOW_STATE_VERSION = 4;
 
@@ -112,6 +122,7 @@ const WorkflowStateFields = {
     .optional(),
   changedFilesBaseline: ChangedFilesBaselineSchema.optional(),
   pendingRecovery: RecoveryIssueSchema.optional(),
+  pendingPlannerConversation: PlannerConversationSchema.optional(),
   discoveredValidation: DiscoveredValidationSchema.optional(),
   validationBaseline: ValidationBaselineSchema.optional(),
   reviewFixes: z

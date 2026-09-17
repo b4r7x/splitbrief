@@ -78,6 +78,8 @@ export function WorkflowFooter({
   reviewEpoch,
   questionEpoch,
   waitingForUser = false,
+  recoveryMenuFocused = false,
+  onToggleRecoveryMenu,
   readClipboardImage,
   listProjectFiles,
 }: {
@@ -101,6 +103,8 @@ export function WorkflowFooter({
   reviewEpoch?: number | undefined;
   questionEpoch?: number | undefined;
   waitingForUser?: boolean | undefined;
+  recoveryMenuFocused?: boolean | undefined;
+  onToggleRecoveryMenu?: (() => void) | undefined;
   readClipboardImage?: typeof readSystemClipboardImage | undefined;
   listProjectFiles?: typeof listFiles | undefined;
 }) {
@@ -122,7 +126,8 @@ export function WorkflowFooter({
         hint={inputHint}
         commandsOnly={commandsOnly}
         currentScreen="workflow"
-        disabled={disabled || fieldEditorOpen}
+        disabled={disabled || fieldEditorOpen || recoveryMenuFocused}
+        {...(onToggleRecoveryMenu !== undefined ? { onTab: onToggleRecoveryMenu } : {})}
         boxHints={boxHints}
         questionEpoch={questionEpoch}
         inputPaddingX={0}

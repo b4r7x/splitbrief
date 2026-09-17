@@ -487,6 +487,7 @@ Preserve the declared-file receipt.
       projectDir: fixture.projectDir,
       callbacks: { onOutput: () => {} },
     });
+    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
     const artifact = result.artifact.artifact;
 
     expect(artifact).toBeDefined();

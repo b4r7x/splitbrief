@@ -22,13 +22,45 @@ export async function readRunEvents(ref: SessionRef): Promise<RunReplay> {
   const replayed: EngineEvent[] = [];
   const failedTypes: string[] = [];
   const parsedTypes = new Set<string>();
+  const parsedEvents = entries.map((entry) =>
+    entry.kind === 'event' ? engineEventFromLogEntry(entry) : null,
+  );
+  const pairedUserEvents = new Set<number>();
   let eventEntries = 0;
+  let restoredMessages = 0;
 
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
+    if (entry.kind === 'message' && entry.role === 'user') {
+      // Message/event pairs are adjacent writes. Equal replies in later turns are distinct.
+      const pairedIndex = [index - 1, index + 1].find((candidateIndex) => {
+        const candidate = parsedEvents[candidateIndex];
+        return (
+          !pairedUserEvents.has(candidateIndex) &&
+          candidate?.type === 'user_message' &&
+          candidate.text === entry.text &&
+          (entry.phase === undefined || candidate.phase === entry.phase)
+        );
+      });
+      if (pairedIndex !== undefined) {
+        pairedUserEvents.add(pairedIndex);
+        continue;
+      }
+      const ts = entryTimestamp(entry.ts);
+      if (ts !== null) {
+        replayed.push({
+          type: 'user_message',
+          ts,
+          phase: entry.phase ?? 'idle',
+          text: entry.text,
+        });
+        restoredMessages += 1;
+      }
+      continue;
+    }
     if (entry.kind !== 'event') continue;
     eventEntries += 1;
-    const event = engineEventFromLogEntry(entry);
-    if (event === null) {
+    const event = parsedEvents[index];
+    if (event === null || event === undefined) {
       if (!failedTypes.includes(entry.type)) failedTypes.push(entry.type);
       continue;
     }
@@ -37,12 +69,12 @@ export async function readRunEvents(ref: SessionRef): Promise<RunReplay> {
   }
 
   const unknownTypes = failedTypes.filter((type) => !parsedTypes.has(type));
-  const skipped = eventEntries - replayed.length;
+  const skipped = eventEntries - (replayed.length - restoredMessages);
   const diagnostics = {
     totalLines: read.totalLines,
     replayedEvents: replayed.length,
     skippedBlank: read.skippedBlank,
-    skippedNonEvent: entries.length - eventEntries,
+    skippedNonEvent: entries.length - eventEntries - restoredMessages,
     skippedMalformed: read.skippedMalformed + read.skippedInvalid,
     skippedUnknown: skipped,
     skippedOversized: read.skippedOversized,

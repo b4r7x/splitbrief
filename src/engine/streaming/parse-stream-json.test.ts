@@ -233,3 +233,19 @@ describe('parseStreamLine', () => {
     });
   });
 });
+
+it('identifies actual native init independently from result session IDs', () => {
+  expect(
+    parseStreamLine(jsonLine({ type: 'system', subtype: 'init', session_id: 'sess-1' })),
+  ).toMatchObject({ isSessionInit: true, sessionId: 'sess-1' });
+  expect(
+    parseStreamLine(
+      jsonLine({
+        type: 'result',
+        session_id: 'sess-1',
+        is_error: true,
+        result: 'session not found',
+      }),
+    ).isSessionInit,
+  ).toBeUndefined();
+});

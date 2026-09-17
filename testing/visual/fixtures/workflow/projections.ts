@@ -1,3 +1,4 @@
+import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
@@ -8,6 +9,7 @@ import { makeUsage } from '../../../helpers/factories/summary.js';
 import { makeImplState, makeWorkflowState } from '../../../helpers/factories/workflow-state.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import type { TaskReviewRequest } from '../../../../src/engine/events/workflow-events.js';
+import type { ClarificationQuestion } from '../../../../src/core/schemas/question.js';
 import type { ReviewArtifact } from '../../../../src/features/workflow/prompt-rows/approval.js';
 import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-rows/workflow.js';
 import { formatRecoveryPrompt } from '../../../../src/features/workflow/recovery-prompt.js';
@@ -59,13 +61,14 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   questionAnswer: 'Use the bounded synthetic answer.',
   success: 'Visual fixture workflow complete',
   failure: 'Synthetic runner failure: bounded fixture',
-  recovery: 'switch BUILD to OpenCode CLI',
+  recovery: 'Change BUILD tool',
   apiContext: 'Nothing was sent to PLAN',
 });
 
 interface FixtureQuestion {
   readonly prompt: string;
   readonly answer: string;
+  readonly questions?: readonly ClarificationQuestion[];
 }
 
 interface FixtureApproval {
@@ -161,6 +164,31 @@ const planningProjection: WorkflowFixtureProjection = {
       feature: WORKFLOW_FEATURE,
     },
     {
+      type: 'artifact_written',
+      ts: FIXED_TS + 50,
+      phase: 'researching',
+      filename: 'research.md',
+      path: '.splitbrief/sessions/2026-09-17-workflow-conversation-recovery/research.md',
+      lineCount: 24,
+      excerpt: ['Project Overview', 'Existing workflow and recovery behavior'],
+      omittedCount: 5,
+      omittedUnit: 'section',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 60,
+      phase: 'planning',
+      role: 'planner',
+      content: 'plain',
+      text: 'Which module should the plan cover?',
+    },
+    {
+      type: 'user_message',
+      ts: FIXED_TS + 70,
+      phase: 'planning',
+      text: 'Refactor src/auth.ts; preserve the public API.',
+    },
+    {
       type: 'planner_status',
       ts: FIXED_TS + 100,
       phase: 'planning',
@@ -210,6 +238,28 @@ const FIXTURE_TASKS_PLANNED: EngineEvent = {
     },
   ],
 };
+
+const wideCommandActivity = projectRunnerCallActivity(
+  {
+    ts: FIXED_TS + 350,
+    callId: FIXED_CALL_ID,
+    role: 'implementer',
+    backendKind: 'api',
+    runnerName: FIXED_RUNNER_NAME,
+    model: FIXED_RUNNER_MODEL,
+    attempt: 1,
+    type: 'call_tool_use_delta',
+    channel: 'tool',
+    toolUseId: 'wide-command',
+    name: 'Bash',
+    inputDelta: JSON.stringify({
+      command:
+        'npm exec vitest run src/engine/calls/activity.test.ts src/features/workflow/display/activity-display-text.test.ts --reporter=verbose',
+    }),
+  },
+  2,
+);
+if (wideCommandActivity === null) throw new Error('Missing wide command fixture activity');
 
 const implementationProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IMPLEMENTATION_ID,
@@ -278,6 +328,20 @@ const implementationProjection: WorkflowFixtureProjection = {
       target: WORKFLOW_FIXTURE_REVIEW_FILE,
       redacted: false,
       rawAvailable: false,
+    },
+    {
+      type: 'runner_call_activity',
+      ts: FIXED_TS + 350,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      callId: FIXED_CALL_ID,
+      role: 'implementer',
+      backendKind: 'api',
+      runnerName: FIXED_RUNNER_NAME,
+      model: FIXED_RUNNER_MODEL,
+      attempt: 1,
+      sequence: 2,
+      ...wideCommandActivity,
     },
   ],
   streaming: {
@@ -555,7 +619,41 @@ const questionProjection: WorkflowFixtureProjection = {
   question: {
     prompt: WORKFLOW_FIXTURE_TEXT.question,
     answer: WORKFLOW_FIXTURE_TEXT.questionAnswer,
+    questions: [
+      {
+        id: 'fixture-answer',
+        type: 'choice',
+        text: WORKFLOW_FIXTURE_TEXT.question,
+        options: ['Use the bounded answer', 'Use a live answer'],
+        default: 'Use the bounded answer',
+      },
+      {
+        id: 'fixture-deterministic',
+        type: 'confirm',
+        text: 'Should the capture remain deterministic?',
+        default: true,
+      },
+    ],
   },
+};
+
+const plannerReplyProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-planner-reply'),
+  feature: 'Refactor my code',
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'researching', feature: 'Refactor my code' },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 100,
+      phase: 'researching',
+      role: 'planner',
+      content: 'plain',
+      text: 'Which module should change? Tell me what is wrong or what behavior you want to improve.',
+    },
+  ],
+  question: { prompt: 'Reply to the planner…', answer: 'Refactor src/auth.ts.', questions: [] },
 };
 
 const taskReviewRequest: TaskReviewRequest = {
@@ -696,11 +794,16 @@ const usageLimitRecoveryIssue: RecoveryIssue = {
   resetAt: new Date(WORKFLOW_FIXTURE_RESET_AT).toISOString(),
   switchSeat: {
     seat: 'build',
-    // Tool-only, because that is all a candidate can be today: the offer is built
-    // from the readiness snapshot (`loadSeatSwapContext`), and a `CliToolDetection`
-    // carries no model. A candidate that does name one is covered by the component
-    // test, not staged here as a state the engine cannot produce.
-    candidates: [{ tool: 'opencode' }, { tool: 'codex' }],
+    // Keep six detected tools in the fixture so the Change tool picker proves it scrolls and
+    // reaches every candidate. Tool-only candidates match the readiness snapshot shape.
+    candidates: [
+      { tool: 'opencode' },
+      { tool: 'codex' },
+      { tool: 'claude-code', model: 'sonnet' },
+      { tool: 'cursor' },
+      { tool: 'copilot' },
+      { tool: 'kilo-code' },
+    ],
   },
   facts: { tool: 'Ollama' },
   availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
@@ -876,6 +979,7 @@ const projections = [
   approvalPermissionProjection,
   reviewingBriefsProjection,
   questionProjection,
+  plannerReplyProjection,
   taskReviewProjection,
   pausedMidBriefProjection,
   pausedBoundaryProjection,
@@ -920,6 +1024,7 @@ export function getWorkflowFixturePromptRows(
   return getWorkflowPromptRows({
     approvalState,
     questionHint,
+    questions: projection.question?.questions,
     reviewArtifact: projection.reviewArtifact ?? null,
     cols,
   });

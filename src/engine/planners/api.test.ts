@@ -6,6 +6,7 @@ import { createApiPlanner } from './api.js';
 import { runDocumentPhases } from './document-phases.js';
 import { callPhase } from '#testing/helpers/planner-call.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/phase-call.js';
 
 let server: http.Server;
 let port: number;
@@ -20,6 +21,7 @@ let receivedHeaders: http.IncomingHttpHeaders[];
 let receivedCatalogRequests: { pathname: string; limit: string | null }[];
 let projectDir: string;
 let openAiCompletionChunks: string[];
+let openAiCompletionReplies: string[];
 
 const validPlannerArtifact = `---
 id: T001
@@ -131,6 +133,7 @@ beforeEach(async () => {
   receivedHeaders = [];
   receivedCatalogRequests = [];
   openAiCompletionChunks = ['Hello ', 'world'];
+  openAiCompletionReplies = [];
   projectDir = createTempDir('api-planner-test');
 
   server = http.createServer((req, res) => {
@@ -157,7 +160,8 @@ beforeEach(async () => {
       req.on('end', () => {
         receivedBodies.push(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
         receivedHeaders.push(req.headers);
-        streamSseChunks(res, openAiCompletionChunks, {
+        const reply = openAiCompletionReplies.shift();
+        streamSseChunks(res, reply === undefined ? openAiCompletionChunks : [reply], {
           prompt_tokens: 42,
           completion_tokens: 17,
         });
@@ -254,7 +258,12 @@ describe('createApiPlanner', () => {
 
   it('spends one call per document phase and accumulates token usage across them', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
-    openAiCompletionChunks = [validPlannerArtifact];
+    openAiCompletionReplies = [
+      PLANNER_DOCUMENT_FIXTURES.research,
+      PLANNER_DOCUMENT_FIXTURES.spec,
+      PLANNER_DOCUMENT_FIXTURES.plan,
+      validPlannerArtifact,
+    ];
 
     const result = await runDocumentPhases({
       planner,
@@ -284,7 +293,7 @@ describe('createApiPlanner', () => {
 
   it('injects priorMessages into the first call of the planner only (FR-007 api-kind)', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
-    openAiCompletionChunks = [validPlannerArtifact];
+    openAiCompletionReplies = [PLANNER_DOCUMENT_FIXTURES.research, PLANNER_DOCUMENT_FIXTURES.spec];
     const priorMessages = [
       { role: 'user' as const, content: 'start: add auth' },
       { role: 'assistant' as const, content: 'we should use JWT' },

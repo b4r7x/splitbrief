@@ -5,6 +5,7 @@ import type { GateName, PlannerCall, StepRef } from '../schemas/run-step.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 
 export type StopReason =
+  | { kind: 'input-required' }
   | { kind: 'paused'; at: 'mid-step' | 'boundary' }
   | { kind: 'waiting'; gate: GateName }
   | { kind: 'halted'; issue: RecoveryIssue }
@@ -70,6 +71,9 @@ const PHASE_GATE: Partial<Record<Phase, GateName>> = {
  * has not written yet.
  */
 export function resumeStep(state: WorkflowState, artifacts: ArtifactPresence): StepRef {
+  if (state.pendingPlannerConversation !== undefined) {
+    return { kind: 'planner', call: state.pendingPlannerConversation.call };
+  }
   const gate = PHASE_GATE[state.phase];
   if (gate !== undefined) return { kind: 'gate', gate };
 
@@ -130,6 +134,12 @@ export function deriveRunStatus(
 
   if (state.pendingRecovery !== undefined) {
     return open({ kind: 'halted', issue: state.pendingRecovery });
+  }
+  if (
+    state.pendingPlannerConversation !== undefined &&
+    !state.pendingPlannerConversation.answered
+  ) {
+    return open({ kind: 'input-required' });
   }
   // The stop records where it landed. States written before it did fall back to
   // the captured partial: only a call cut in flight leaves one.

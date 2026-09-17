@@ -554,7 +554,7 @@ describe('runWorkflow — smoke', () => {
       await new Promise<void>((resolve) => child.stdout?.once('data', () => resolve()));
 
       const { callbacks } = makeCallbacks({
-        onQuestionAsked: vi.fn(async () => {
+        onPlannerReply: vi.fn(async () => {
           throw new Error('question handler failed');
         }),
       });
@@ -573,14 +573,9 @@ describe('runWorkflow — smoke', () => {
         callbacks,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
         _planner: makePlanner({
-          runPhase: vi.fn(async (opts: RunPhaseInput) => {
+          runPhase: vi.fn(async () => {
             registerProcess(child);
-            opts.callbacks.onQuestion?.([{ id: 'q1', type: 'input', text: 'Continue?' }]);
-            return makePhaseCallResult({
-              call: opts.call,
-              tasks: [makeTask()],
-              usage: { inputTokens: 50, outputTokens: 25 },
-            });
+            return { kind: 'conversation' as const, text: 'Continue?', questions: [], usage: null };
           }),
         }),
         _implementer: makeImplementer(),

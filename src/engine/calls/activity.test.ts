@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { EngineEventSchema } from '../events/schema.js';
 import { projectRunnerCallActivity } from './activity.js';
 import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
@@ -228,14 +228,97 @@ describe('projectRunnerCallActivity', () => {
     ).toBeNull();
   });
 
-  it('bounds activity labels by terminal cell width', () => {
+  it('preserves activity text beyond the old display caps', () => {
+    const command = `npm test ${'界🙂e\u0301'.repeat(40)}`;
+    expect(
+      projectRunnerCallActivity(
+        runnerToolUse({ name: 'Bash', inputDelta: JSON.stringify({ command }) }),
+        1,
+      ),
+    ).toMatchObject({ label: `running ${command}`, target: command });
+    expect(
+      projectRunnerCallActivity(
+        {
+          ...runnerCallBase,
+          type: 'call_text_delta',
+          channel: 'system',
+          text: command,
+        },
+        1,
+      ),
+    ).toMatchObject({ textPartial: command });
+    expect(
+      projectRunnerCallActivity(
+        {
+          ...runnerCallBase,
+          type: 'call_warning',
+          warning: runnerWarning({ code: 'progress', message: command }),
+        },
+        1,
+      ),
+    ).toMatchObject({ diagnosticPartial: command });
+  });
+
+  it('keeps oversized Unicode payloads within the event schema bounds', () => {
+    const command = `npm test ${'🙂界'.repeat(1500)}`;
+    const activities = [
+      projectRunnerCallActivity(
+        runnerToolUse({ name: 'Bash', inputDelta: JSON.stringify({ command }) }),
+        1,
+      ),
+      projectRunnerCallActivity(
+        { ...runnerCallBase, type: 'call_text_delta', channel: 'system', text: command },
+        1,
+      ),
+      projectRunnerCallActivity(
+        {
+          ...runnerCallBase,
+          type: 'call_warning',
+          warning: runnerWarning({ code: 'progress', message: command }),
+        },
+        1,
+      ),
+    ];
+    for (const activity of activities) {
+      expect(activity).not.toBeNull();
+      expect(
+        EngineEventSchema.safeParse({
+          ...runnerCallBase,
+          ...activity,
+          type: 'runner_call_activity',
+          phase: 'implementing',
+          sequence: 1,
+        }).success,
+      ).toBe(true);
+      for (const value of [
+        activity?.label,
+        activity?.target,
+        activity?.textPartial,
+        activity?.diagnosticPartial,
+      ]) {
+        if (value !== undefined) expect(value.isWellFormed()).toBe(true);
+      }
+    }
+    expect(activities[0]?.label.length).toBeLessThanOrEqual(512);
+    expect(activities[0]?.target?.length).toBeLessThanOrEqual(2048);
+  });
+
+  it('redacts and normalizes command text beyond the old display caps', () => {
+    const prefix = `npm test ${'test/file.ts '.repeat(12)}`;
     const activity = projectRunnerCallActivity(
-      runnerToolUse({ name: 'Bash', inputDelta: `{"command":"${'界🙂'.repeat(80)}"}` }),
+      runnerToolUse({
+        name: 'Bash',
+        inputDelta: JSON.stringify({
+          command: `${prefix}\n\u001b[31msk-abcdefghijklmnopqrst\u001b[0m`,
+        }),
+      }),
       1,
     );
-
-    expect(activity).not.toBeNull();
-    if (activity !== null) expect(getTerminalCellWidth(activity.label)).toBeLessThanOrEqual(80);
+    expect(activity).toMatchObject({
+      redacted: true,
+      target: `${prefix}sk-***REDACTED***`,
+    });
+    expect(activity?.label).not.toContain('abcdefghijklmnopqrst');
   });
 
   it('projects terminal success and failure states as distinct activity', () => {

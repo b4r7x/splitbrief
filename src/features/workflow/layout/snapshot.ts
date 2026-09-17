@@ -32,6 +32,8 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { formatRecoveryPrompt } from '../recovery-prompt.js';
 import { reviewArtifactForPhase } from '../prompt-rows/approval.js';
 import { getWorkflowPromptRows } from '../prompt-rows/workflow.js';
 import type { ConversationRowBlock } from '../conversation-rows/types.js';
@@ -66,12 +68,20 @@ interface ConversationLayoutSnapshot {
 function readWorkflowPromptRows(): number {
   const controls = controlsStore.get();
   const approvalState = approvalPromptStore.get();
+  const recoveryIssue = recoveryNoticeStore.get().issue;
+  const questionHint = controls.inputMode === 'question' ? questionPromptStore.get().hint : null;
+  const recoveryPrompt =
+    recoveryIssue !== null &&
+    questionHint !== null &&
+    questionHint === formatRecoveryPrompt(recoveryIssue);
   // A tiered gate takes the zone from the review panel, so the two are never budgeted together.
   const documentReview = controls.inputMode === 'review' && approvalState.status !== 'pending';
   return getWorkflowPromptRows({
     approvalState,
-    questionHint: controls.inputMode === 'question' ? questionPromptStore.get().hint : null,
+    questionHint,
     reviewArtifact: documentReview ? reviewArtifactForPhase(lifecycleStore.get().phase) : null,
+    recoveryIssue: recoveryPrompt ? recoveryIssue : null,
+    questions: questionPromptStore.get().questions,
     cols: terminalSizeStore.get().cols,
   });
 }
@@ -81,6 +91,7 @@ function readWorkflowPromptRows(): number {
 // or they scroll and hit-test a viewport the renderer never painted.
 function readProgressRows(promptRows: number): number {
   if (promptRows > 0) return 0;
+  if (recoveryNoticeStore.get().issue !== null) return 0;
   const lifecycle = lifecycleStore.get();
   return getProgressRows({
     phase: lifecycle.phase,

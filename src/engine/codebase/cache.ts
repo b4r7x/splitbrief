@@ -5,6 +5,9 @@ import type { Database } from 'better-sqlite3';
 import type { FileNode } from './types.js';
 import { error, matches } from '../../utils/error.js';
 import { isNodeError } from '../../lib/process/errors.js';
+import { createLogger } from '../../lib/logger.js';
+import { warnStderr } from '../../lib/warn.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 
 const repomapCacheError = {
   dbPathEscapes: (dbPath: string) =>
@@ -20,6 +23,16 @@ const CORRUPTION_CODES = new Set(['SQLITE_CORRUPT', 'SQLITE_NOTADB']);
 
 function isCorruptionError(err: unknown): boolean {
   return isNodeError(err) && err.code !== undefined && CORRUPTION_CODES.has(err.code);
+}
+
+function isNativeBindingUnavailable(err: unknown): boolean {
+  return (
+    (isNodeError(err) &&
+      (err.code === 'ERR_DLOPEN_FAILED' ||
+        err.code === 'MODULE_NOT_FOUND' ||
+        err.code === 'ERR_MODULE_NOT_FOUND')) ||
+    (err instanceof Error && err.message.startsWith('Could not locate the bindings file.'))
+  );
 }
 
 export type Metrics = { hits: number; misses: number };
@@ -42,15 +55,13 @@ type CacheRow = {
 };
 
 export interface ParseCacheOptions {
-  onWarn?: (message: string) => void;
+  onWarn?: (message: string, details?: string) => void;
 }
 
 export async function createParseCache(
   dbPath: string,
   opts: ParseCacheOptions = {},
 ): Promise<ParseCache> {
-  const { default: Database } = await import('better-sqlite3');
-
   const resolvedDbPath = resolve(dbPath);
   const cacheDir = dirname(resolvedDbPath);
 
@@ -72,7 +83,8 @@ export async function createParseCache(
     // realpathSync throws when the db file does not exist yet; the cache dir was already proven non-symlink above.
   }
 
-  function openDb(): Database {
+  async function openDb(): Promise<Database> {
+    const { default: Database } = await import('better-sqlite3');
     const handle = new Database(dbPath);
     try {
       handle.pragma('journal_mode = WAL');
@@ -101,11 +113,27 @@ export async function createParseCache(
 
   let db: Database;
   try {
-    db = openDb();
+    db = await openDb();
   } catch (err) {
+    if (isNativeBindingUnavailable(err)) {
+      const message = 'Repo-map cache unavailable. Continuing without caching.';
+      const details = toErrorMessage(err, { preserveLineBreaks: true });
+      createLogger('repo-map').warn(message, details);
+      if (opts.onWarn) opts.onWarn(message, details);
+      else warnStderr(message);
+      const metrics: Metrics = { hits: 0, misses: 0 };
+      return {
+        metrics,
+        async getOrParse(path, parse) {
+          metrics.misses++;
+          return parse(path, await stat(path));
+        },
+        close() {},
+      };
+    }
     if (!isCorruptionError(err)) throw err;
     discardCorruptDb();
-    db = openDb();
+    db = await openDb();
     opts.onWarn?.(`repo-map cache was corrupt and has been reset: ${dbPath}`);
   }
 

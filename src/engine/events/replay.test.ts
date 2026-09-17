@@ -471,6 +471,67 @@ describe('readRunEvents', () => {
     expect(diagnostics).toEqual({ total: 0, skipped: 0, unknownTypes: [] });
   });
 
+  it('restores message-only answers in order without merging repeated replies', async () => {
+    const append = createSessionLogAppender(ref());
+    const message = {
+      kind: 'message',
+      role: 'user',
+      phase: 'researching',
+      text: 'Keep the API.',
+    } as const;
+    append({ ...message, ts: String(TS) });
+    append(toEngineEventEntry(sampleFor('planner_text', { ts: TS + 1 })));
+    append({ ...message, ts: String(TS + 2) });
+
+    const { events, diagnostics } = await readRunEvents(ref());
+
+    expect(events.slice(1, -1).map((event) => event.type)).toEqual([
+      'user_message',
+      'planner_text',
+      'user_message',
+    ]);
+    expect(
+      events.filter((event) => event.type === 'user_message').map((event) => event.text),
+    ).toEqual(['Keep the API.', 'Keep the API.']);
+    expect(diagnostics).toEqual({ total: 1, skipped: 0, unknownTypes: [] });
+    expect(events.at(-1)).toMatchObject({ diagnostics: { replayedEvents: 3, skippedNonEvent: 0 } });
+  });
+
+  it.each(['message-first', 'event-first'] as const)(
+    'pairs %s records once without hiding a separate identical reply',
+    async (order) => {
+      const append = createSessionLogAppender(ref());
+      const message = {
+        kind: 'message',
+        role: 'user',
+        phase: 'researching',
+        text: 'Continue.',
+        ts: String(TS),
+      } as const;
+      const event = sampleFor('user_message', { phase: 'researching', text: message.text });
+      if (order === 'message-first') append(message);
+      append(toEngineEventEntry(event));
+      if (order === 'event-first') append(message);
+      append({ ...message, ts: String(TS + 1) });
+
+      const { events, diagnostics } = await readRunEvents(ref());
+
+      expect(events.filter((event) => event.type === 'user_message')).toHaveLength(2);
+      expect(diagnostics.skipped).toBe(0);
+    },
+  );
+
+  it('keeps a message when its neighboring user event is malformed', async () => {
+    const append = createSessionLogAppender(ref());
+    append({ kind: 'message', role: 'user', text: 'Continue.', ts: String(TS) });
+    append({ kind: 'event', type: 'user_message', ts: 'invalid', data: { text: 'Continue.' } });
+
+    const { events, diagnostics } = await readRunEvents(ref());
+
+    expect(events[1]).toMatchObject({ type: 'user_message', text: 'Continue.', phase: 'idle' });
+    expect(diagnostics.skipped).toBe(1);
+  });
+
   it('skips retired variants, malformed data and unreadable lines, and counts each', async () => {
     const dir = sessionDir(projectDir, sessionId);
     mkdirSync(dir, { recursive: true });

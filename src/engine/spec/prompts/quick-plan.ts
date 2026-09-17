@@ -1,6 +1,6 @@
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
-import { buildPrompt, instructionsSection } from './builder.js';
+import { plannerConversationSection, buildPrompt, instructionsSection } from './builder.js';
 import { buildTaskFormatExample } from './task-format-example.js';
 import { requiredBriefSectionsProse } from './required-sections.js';
 import { MODES } from '../../../core/pipeline-spec/modes.js';
@@ -27,6 +27,7 @@ export function buildQuickPlanPrompt(input: QuickPlanPromptInput): string {
       ? 'You are compiling the narrowest useful set of **Product Task Brief v1** records for a tiny change in an existing codebase. Emit an ordered list of self-contained Task Briefs and stop — no spec, no plan. The `tasks.md` file is the markdown transport; each brief is the durable contract a small implementer model will execute.'
       : 'You are compiling **Product Task Brief v1** records for a small change in an existing codebase. Briefly analyze the project, then emit an ordered list of self-contained Task Briefs. The `tasks.md` file is the markdown transport; each brief is the durable contract a small implementer model will execute.',
     sections: [
+      plannerConversationSection,
       { heading: 'Specification', body: feature },
       {
         heading: 'Project Context',

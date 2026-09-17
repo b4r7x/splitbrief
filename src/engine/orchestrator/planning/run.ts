@@ -73,8 +73,14 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
       ? await buildRepoMap(projectDir, {
           featureText: opts.feature,
           tokenBudget: config.codebase?.tokenBudget ?? 4000,
-          onWarn: (message) =>
-            wctx.bus.publish({ type: 'warning', ts: Date.now(), phase: state.phase, message }),
+          onWarn: (message, details) =>
+            wctx.bus.publish({
+              type: 'warning',
+              ts: Date.now(),
+              phase: state.phase,
+              message,
+              ...(details === undefined ? {} : { details }),
+            }),
           ...(config.codebase?.include && { include: config.codebase.include }),
           ...(config.codebase?.exclude && { exclude: config.codebase.exclude }),
         })

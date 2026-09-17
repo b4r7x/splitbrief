@@ -113,6 +113,7 @@ Stale ambient content.
       callbacks: { onOutput: vi.fn(), sessionId: 'workflow-session' },
     });
 
+    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
     expect(result.tasks?.map((task) => task.id)).toEqual(['T001']);
     expect(result.artifact.artifact).toMatchObject({
       logicalName: TASKS_FILE,

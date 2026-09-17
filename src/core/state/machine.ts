@@ -14,6 +14,8 @@ const anytimeActions = [
   'CLOSE_RUN',
   'INTERRUPT_STEP',
   'RESUME_STEP',
+  'SET_PLANNER_CONVERSATION',
+  'CLEAR_PLANNER_CONVERSATION',
   'SET_PLANNER_SESSION_ID',
   'REWIND_TO_SPEC',
   'REWIND_TO_PLAN',
@@ -321,6 +323,7 @@ export function transition(
         closed: { at: action.at ?? now.toISOString(), as: 'ended' },
         interruptedStep: undefined,
         pendingRecovery: undefined,
+        pendingPlannerConversation: undefined,
       };
 
     case 'INTERRUPT_STEP':
@@ -338,6 +341,26 @@ export function transition(
 
     case 'RESUME_STEP':
       return { ...state, interruptedStep: undefined, awaitingContinue: false };
+
+    case 'SET_PLANNER_CONVERSATION':
+      return {
+        ...state,
+        phase:
+          action.conversation.call === 'research'
+            ? 'researching'
+            : action.conversation.call === 'spec'
+              ? 'specifying'
+              : 'planning',
+        pendingPlannerConversation: action.conversation,
+      };
+
+    case 'CLEAR_PLANNER_CONVERSATION':
+      return {
+        ...state,
+        pendingPlannerConversation: undefined,
+        interruptedStep: undefined,
+        awaitingContinue: false,
+      };
 
     case 'SET_PLANNER_SESSION_ID':
       return { ...state, plannerSessionId: action.sessionId };

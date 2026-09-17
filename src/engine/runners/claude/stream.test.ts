@@ -128,3 +128,22 @@ describe('Claude stream credential redaction', () => {
     expect(result.text).toBe('final text');
   });
 });
+
+it('observes matching native init even when the resume ID is already seeded', () => {
+  const initialized: string[] = [];
+  const persisted: string[] = [];
+  const { state, handleLine } = createStreamHandler({
+    context,
+    onOutput: () => {},
+    onSessionInit: (id) => initialized.push(id),
+    onSessionId: (id) => persisted.push(id),
+  });
+  state.sessionId = 'sess-old';
+  handleLine(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-old' }));
+  handleLine(
+    JSON.stringify({ type: 'assistant', session_id: 'sess-old', message: { content: [] } }),
+  );
+  handleLine(JSON.stringify({ type: 'result', session_id: 'sess-old', result: 'done' }));
+  expect(initialized).toEqual(['sess-old']);
+  expect(persisted).toEqual([]);
+});

@@ -238,7 +238,7 @@ it('quick mode completes one task via local implementer', async () => {
     feature: 'add hello module',
     projectDir,
     config: makeConfig(),
-    callbacks: { /* gating stubs: onApprovalNeeded, onQuestionAsked, ... */ },
+    callbacks: { /* gating stubs: onApprovalNeeded, onPlannerReply, ... */ },
     sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
     // The fakes MUST go through `_planner` / `_implementer` (RunWorkflowOptions).
     // Passing bare `planner` / `implementer` keys is silently ignored and spawns real subprocesses.

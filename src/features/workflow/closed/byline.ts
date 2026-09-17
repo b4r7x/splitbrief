@@ -68,6 +68,7 @@ export const NO_RECORD_LINE = 'Ended · no run record was written';
 /** The composer placeholder, by what the run on screen will take. */
 export const AT_REST_PLACEHOLDER = {
   open: 'Type a correction, or ⏎ to continue…',
+  inputRequired: 'Type your answer, or ⏎ to continue…',
   closed: `/ for a command${SOFT_SEP}⏎ for home…`,
 } as const;
 
@@ -104,6 +105,8 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
       };
     case 'waiting':
       return { reason: `Waiting at the ${stop.gate} gate`, action: '⏎ to reopen it' };
+    case 'input-required':
+      return { reason: 'Waiting for your answer', action: 'Type a reply or ⏎ to continue' };
     case 'halted':
       return {
         reason: `Halted${SOFT_SEP}${formatRecoveryHeadline(stop.issue)}`,

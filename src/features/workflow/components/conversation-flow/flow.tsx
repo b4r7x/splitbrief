@@ -6,6 +6,9 @@ import { getScrollWindowState } from '../../layout/scroll-window.js';
 import { getWorkflowSidebarWidth } from '../../layout/rect.js';
 import { controlsStore } from '../../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
+import { recoveryNoticeStore } from '../../../../stores/workflow/recovery-notice.js';
+import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.js';
+import { deriveWorkflowDisplay } from '../../display/workflow-status.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { transcriptTailStore } from '../../../../stores/workflow/transcript-tail.js';
@@ -76,6 +79,8 @@ export function ConversationFlow({
     tasks,
     controls,
     terminalSize,
+    recovery,
+    approval,
   ] = useStores(
     conversationScrollStore,
     streamingOutputStore,
@@ -83,8 +88,17 @@ export function ConversationFlow({
     tasksStore,
     controlsStore,
     terminalSizeStore,
+    recoveryNoticeStore,
+    approvalPromptStore,
   );
-  const isRunning = lifecycle.status === 'running';
+  const display = deriveWorkflowDisplay({
+    status: lifecycle.status,
+    cancelled: lifecycle.cancelled,
+    pendingQuestion: controls.inputMode !== 'normal',
+    pendingRecovery: recovery.issue !== null,
+    pendingApproval: approval.status === 'pending',
+  });
+  const isRunning = display.animate;
   const sections = useSections();
   const viewportHeight = Math.max(0, height);
   const cols = conversationWidth;

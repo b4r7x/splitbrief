@@ -64,6 +64,8 @@ describe('Claude Code role adapters', () => {
       'high',
       '--permission-mode',
       'plan',
+      '--disallowedTools',
+      'AskUserQuestion',
       '--resume',
       'session-1',
       '--label',
@@ -196,6 +198,8 @@ describe('Claude Code role adapters', () => {
       '--include-partial-messages',
       '--permission-mode',
       'plan',
+      '--disallowedTools',
+      'AskUserQuestion',
     ]);
     expect(claudeCodePlannerAdapter.validateArgs({ invocationArgs: init, baseArgs: init })).toEqual(
       { valid: true },

@@ -18,6 +18,7 @@ describe('fauxPlanner', () => {
       inputs: { feature: 'add feature', projectContext: '', languageContext: LANGUAGE_CONTEXT },
       callbacks: { onOutput: () => {} },
     });
+    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
     expect(result.tasks).toHaveLength(1);
     expect(state.phaseCallCount).toBe(1);
     expect(state.receivedFeatures).toEqual(['add feature']);

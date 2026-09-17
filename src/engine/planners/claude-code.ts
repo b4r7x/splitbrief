@@ -1,3 +1,4 @@
+import { error } from '../../utils/error.js';
 import type { Planner, EscalationResult, PlannerUserTurnResult } from './types.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
@@ -110,6 +111,8 @@ export function createClaudeCodePlanner(opts: {
     return runWithResumeFallback(
       session,
       async (resumeId, attempt) => {
+        let resumeConfirmed = false;
+        let mismatchedId: string | undefined;
         const callbackBuffer =
           resumeId === undefined ? null : createRunnerAttemptCallbackBuffer(callbacks);
         const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
@@ -120,11 +123,25 @@ export function createClaudeCodePlanner(opts: {
             projectDir,
             sessionId: resumeId ?? null,
             onOutput: attemptCallbacks.onOutput,
+            onSessionInit: (id) => {
+              if (resumeId !== undefined && id !== resumeId) {
+                mismatchedId = id;
+                return;
+              }
+              if (id === resumeId && mismatchedId === undefined) {
+                resumeConfirmed = true;
+                callbackBuffer?.flush();
+              }
+            },
             // The native id is captured as it streams, not after the call returns:
             // the next phase resumes the same conversation even when this one is
             // interrupted, and a run cut mid-call still has a thread to pick up.
             onSessionId: (id: string) => {
-              if (resumeId === undefined || id === resumeId) session.capture(id);
+              if (resumeId !== undefined && id !== resumeId) {
+                mismatchedId = id;
+                return;
+              }
+              session.capture(id);
               attemptCallbacks.onSessionId?.(id);
             },
             onQuestion: attemptCallbacks.onQuestion,
@@ -133,7 +150,7 @@ export function createClaudeCodePlanner(opts: {
             ...claudeRunnerPrep({ env, signal: effectiveSignal }),
             ...(images && images.length > 0 ? { images } : {}),
           });
-          const returnedSessionId = result.sessionId ?? result.nativeSessionId;
+          const returnedSessionId = mismatchedId ?? result.sessionId ?? result.nativeSessionId;
           if (
             resumeId !== undefined &&
             returnedSessionId !== null &&
@@ -143,7 +160,18 @@ export function createClaudeCodePlanner(opts: {
           }
           callbackBuffer?.flush();
           return result;
-        } catch (err) {
+        } catch (caught) {
+          const err =
+            mismatchedId !== undefined && resumeId !== undefined
+              ? sessionResumeMismatchError(resumeId, mismatchedId)
+              : caught;
+          if (resumeConfirmed && isSessionExpiredError(err)) {
+            throw error(
+              'session-resume-failed',
+              'The confirmed Claude session failed; continue this step to retry.',
+              { cause: err },
+            );
+          }
           if (resumeId === undefined || !isSessionExpiredError(err)) callbackBuffer?.flush();
           throw err;
         }
@@ -196,6 +224,8 @@ export function createClaudeCodePlanner(opts: {
         onCallEvent: injection.callbacks?.onCallEvent,
       });
       let flushCallbacks = true;
+      let resumeConfirmed = false;
+      let mismatchedId: string | undefined;
       try {
         const env = await createRunnerSandboxEnv(injection.projectDir, runnerConfig, 'planner');
         const result = await runClaudePlannerStream({
@@ -203,11 +233,21 @@ export function createClaudeCodePlanner(opts: {
           projectDir: injection.projectDir,
           sessionId,
           onOutput: callbackBuffer.callbacks.onOutput,
+          onSessionId: (id) => {
+            if (id !== sessionId) mismatchedId = id;
+          },
+          onSessionInit: (id) => {
+            if (id !== sessionId) mismatchedId = id;
+            if (id === sessionId && mismatchedId === undefined) {
+              resumeConfirmed = true;
+              callbackBuffer.flush();
+            }
+          },
           onCallEvent: callbackBuffer.callbacks.onCallEvent,
           ...(injection.callContext !== undefined && { callContext: injection.callContext }),
           ...claudeRunnerPrep({ env, signal: effectiveSignal }),
         });
-        const returnedSessionId = result.sessionId ?? result.nativeSessionId;
+        const returnedSessionId = mismatchedId ?? result.sessionId ?? result.nativeSessionId;
         if (returnedSessionId !== null && returnedSessionId !== sessionId) {
           flushCallbacks = false;
           throw sessionResumeMismatchError(sessionId, returnedSessionId);
@@ -215,7 +255,16 @@ export function createClaudeCodePlanner(opts: {
         session.capture(returnedSessionId);
         callbackBuffer.flush();
         return { status: 'delivered', usage: toTokenDelta(result.usage) };
-      } catch (err) {
+      } catch (caught) {
+        const err =
+          mismatchedId !== undefined ? sessionResumeMismatchError(sessionId, mismatchedId) : caught;
+        if (resumeConfirmed && isSessionExpiredError(err)) {
+          throw error(
+            'session-resume-failed',
+            'The confirmed Claude session failed; continue this step to retry.',
+            { cause: err },
+          );
+        }
         if (flushCallbacks && !isSessionExpiredError(err)) callbackBuffer.flush();
         throw err;
       }

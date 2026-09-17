@@ -32,6 +32,10 @@ import {
 import { RAIL_FORM_C_CANCELLED_SUFFIX, resolveRailFraction } from '../layout/hit-test.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { TasksState } from '../../../stores/workflow/tasks.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 
 interface RailDoneSummary {
   totalTasks: number;
@@ -220,18 +224,34 @@ export function Rail({
   /** A run at rest paints the stages its record names, not the ones a live phase implies. */
   stages?: readonly RailStageState[] | undefined;
 }) {
-  const [{ cols }, lifecycle, tasks, tokens, eventsState] = useStores(
+  const [{ cols }, lifecycle, tasks, tokens, eventsState, controls, approval, recovery] = useStores(
     terminalSizeStore,
     lifecycleStore,
     tasksStore,
     tokensStore,
     eventsStore,
+    controlsStore,
+    approvalPromptStore,
+    recoveryNoticeStore,
   );
   const phase = lifecycle.phase;
   const cancelled = lifecycle.cancelled;
   const resolved: RailForm = form ?? 'B';
   const contentWidth = getChromeContentWidth(cols);
-  const stages = [...(givenStages ?? getRailStages(phase, { cancelled }))];
+  const display = deriveWorkflowDisplay({
+    status: lifecycle.status,
+    cancelled,
+    pendingQuestion: controls.inputMode !== 'normal',
+    pendingRecovery: recovery.issue !== null,
+    pendingApproval: approval.status === 'pending',
+  });
+  const stages = [
+    ...(givenStages ??
+      getRailStages(phase, {
+        cancelled,
+        ...(display.halted === undefined ? {} : { halted: display.halted }),
+      })),
+  ];
   const fraction = resolveRailFraction({
     phase,
     currentTask: tasks.currentTask,

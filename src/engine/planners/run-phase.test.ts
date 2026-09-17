@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { callPhase, phaseInputs } from '#testing/helpers/planner-call.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
+import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/phase-call.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
 import { createPlannerBase } from './base.js';
 import { runDocumentPhases } from './document-phases.js';
@@ -75,7 +75,6 @@ function readSessionLog(dir: string, sessionId: string): unknown[] {
 
 beforeEach(() => {
   projectDir = createTempDir('planner-run-phase');
-  createTestGitRepo(projectDir);
 });
 
 afterEach(() => {
@@ -84,7 +83,9 @@ afterEach(() => {
 
 describe('runPhase — one call per phase', () => {
   it('spends exactly one backend call and owns one artifact', async () => {
-    const { planner, prompts, artifactFiles } = recordingPlanner(['# Research\n\nFindings.']);
+    const { planner, prompts, artifactFiles } = recordingPlanner([
+      PLANNER_DOCUMENT_FIXTURES.research,
+    ]);
 
     const result = await callPhase(planner, {
       call: 'research',
@@ -94,8 +95,9 @@ describe('runPhase — one call per phase', () => {
 
     expect(prompts).toHaveLength(1);
     expect(artifactFiles).toEqual(['research.md']);
+    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
     expect(result.artifact.artifact.logicalName).toBe('research.md');
-    expect(result.artifact.artifact.text).toBe('# Research\n\nFindings.');
+    expect(result.artifact.artifact.text).toBe(PLANNER_DOCUMENT_FIXTURES.research);
     expect(result.artifact.rawOutput).toBeUndefined();
     expect(result.tasks).toBeUndefined();
   });
@@ -128,6 +130,7 @@ describe('runPhase — one call per phase', () => {
   it('parses Task Briefs on the tasks call only', async () => {
     const { planner } = recordingPlanner([taskMarkdown, taskMarkdown]);
     const tasks = await callPhase(planner, { projectDir, callbacks: { onOutput: () => {} } });
+    if (tasks.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
     expect(tasks.tasks?.map((task) => task.id)).toEqual(['T001']);
 
     const { planner: other } = recordingPlanner([taskMarkdown]);
@@ -136,11 +139,11 @@ describe('runPhase — one call per phase', () => {
       projectDir,
       callbacks: { onOutput: () => {} },
     });
-    expect(plan.tasks).toBeUndefined();
+    expect(plan.kind).toBe('conversation');
   });
 
   it('leads the prompt with the caller-supplied prefix', async () => {
-    const { planner, prompts } = recordingPlanner(['# Research\n\nFindings.']);
+    const { planner, prompts } = recordingPlanner([PLANNER_DOCUMENT_FIXTURES.research]);
     await planner.runPhase({
       call: 'research',
       projectDir,
@@ -151,7 +154,7 @@ describe('runPhase — one call per phase', () => {
   });
 
   it('trails the prompt with the caller-supplied suffix', async () => {
-    const { planner, prompts } = recordingPlanner(['# Research\n\nFindings.']);
+    const { planner, prompts } = recordingPlanner([PLANNER_DOCUMENT_FIXTURES.research]);
     await planner.runPhase({
       call: 'research',
       projectDir,
@@ -164,7 +167,7 @@ describe('runPhase — one call per phase', () => {
   });
 
   it('sends the continuation turn alone when the seat already holds the step prompt', async () => {
-    const { planner, prompts } = recordingPlanner(['# Research\n\nFindings.']);
+    const { planner, prompts } = recordingPlanner([PLANNER_DOCUMENT_FIXTURES.research]);
     await planner.runPhase({
       call: 'research',
       projectDir,
@@ -190,6 +193,56 @@ describe('runPhase — one call per phase', () => {
       kind: 'planning-invalid-artifact',
       data: { phase: 'specifying', filename: 'spec.md' },
     });
+  });
+
+  it.each(['research', 'tasks'] as const)(
+    'rejects an empty %s response rather than asking the user to answer nothing',
+    async (call) => {
+      const { planner } = recordingPlanner(['']);
+      await expect(
+        callPhase(planner, { call, projectDir, callbacks: { onOutput: () => {} } }),
+      ).rejects.toMatchObject({ kind: 'planner-empty-output', data: { call } });
+    },
+  );
+
+  it('keeps streamed questions conversational when the final spec text is empty', async () => {
+    const question = { id: 'scope', type: 'input' as const, text: 'Which module should change?' };
+    const planner = createPlannerBase({
+      invokePlan: async ({ callbacks }) => {
+        callbacks.onQuestion?.([question]);
+        return completedRunnerCall('');
+      },
+      invokeEscalate: async () => completedRunnerCall(''),
+      isAvailable: async () => true,
+      capabilities,
+    });
+    const result = await callPhase(planner, {
+      call: 'spec',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
+    expect(result).toMatchObject({ kind: 'conversation', text: '', questions: [question] });
+    expect(result).not.toHaveProperty('artifact');
+  });
+
+  it('does not diagnose an ordinary tasks conversation as an unparsed Task Brief', async () => {
+    const { planner } = recordingPlanner(['Which file should I change?']);
+    const warnings: string[] = [];
+    const result = await callPhase(planner, {
+      projectDir,
+      callbacks: { onOutput: () => {}, onWarning: (message) => warnings.push(message) },
+    });
+    expect(result.kind).toBe('conversation');
+    expect(warnings).toEqual([]);
+  });
+
+  it('still rejects malformed task-shaped output', async () => {
+    const { planner } = recordingPlanner([
+      taskMarkdown.replace('action: create', 'action: invalid-action'),
+    ]);
+    await expect(
+      callPhase(planner, { projectDir, callbacks: { onOutput: () => {} } }),
+    ).rejects.toMatchObject({ kind: 'parse-tasks-invalid-block' });
   });
 
   it('flushes interrupted buffered output when the call aborts', async () => {
@@ -229,7 +282,10 @@ describe('runPhase — one call per phase', () => {
 
 describe('runPhase — prior messages and attachments', () => {
   it('prepends the prior conversation to the first call of the planner only', async () => {
-    const { planner, prompts } = recordingPlanner(['# Research\n\nFindings.', '# Spec\n\nBody.']);
+    const { planner, prompts } = recordingPlanner([
+      PLANNER_DOCUMENT_FIXTURES.research,
+      PLANNER_DOCUMENT_FIXTURES.spec,
+    ]);
     const priorMessages = [
       { role: 'user' as const, content: 'first turn' },
       { role: 'assistant' as const, content: 'first answer' },
@@ -283,9 +339,9 @@ describe('runPhase — prior messages and attachments', () => {
 describe('runDocumentPhases', () => {
   it('runs one call per document step and returns every artifact', async () => {
     const { planner, prompts, artifactFiles } = recordingPlanner([
-      '# Research\n\nFindings.',
-      '# Spec\n\nRequirements.',
-      '# Plan\n\nSteps.',
+      PLANNER_DOCUMENT_FIXTURES.research,
+      PLANNER_DOCUMENT_FIXTURES.spec,
+      PLANNER_DOCUMENT_FIXTURES.plan,
       taskMarkdown,
     ]);
 
@@ -300,22 +356,23 @@ describe('runDocumentPhases', () => {
     expect(prompts).toHaveLength(4);
     expect(artifactFiles).toEqual(['research.md', 'spec.md', 'plan.md', 'tasks.md']);
     expect(result.phases).toHaveLength(4);
-    expect(result.spec).toBe('# Spec\n\nRequirements.');
-    expect(result.plan).toBe('# Plan\n\nSteps.');
+    expect(result.spec).toBe(PLANNER_DOCUMENT_FIXTURES.spec);
+    expect(result.plan).toBe(PLANNER_DOCUMENT_FIXTURES.plan);
     expect(result.tasks.map((task) => task.id)).toEqual(['T001']);
   });
 
   it('feeds the language the research call discovered into the later prompts', async () => {
     const { planner, prompts } = recordingPlanner([
-      `## Validation Tools
+      PLANNER_DOCUMENT_FIXTURES.research +
+        `\n\n## Validation Tools
 
 - **Language**: python
 - **Type checker**: \`mypy src/\`
 - **Linter**: \`ruff check\`
 - **Test runner**: \`pytest\`
 - **Test file pattern**: \`test_*.py\``,
-      '# Spec',
-      '# Plan',
+      PLANNER_DOCUMENT_FIXTURES.spec,
+      PLANNER_DOCUMENT_FIXTURES.plan,
       taskMarkdown,
     ]);
 

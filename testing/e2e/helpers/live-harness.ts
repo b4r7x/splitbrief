@@ -169,7 +169,7 @@ async function executeLiveWorkflow(opts: {
   projectDir: string;
   feature: string;
   effectiveConfig: Config;
-  onQuestionAsked?: NonNullable<OrchestratorCallbacks['onQuestionAsked']>;
+  onPlannerReply?: NonNullable<OrchestratorCallbacks['onPlannerReply']>;
 }): Promise<{ summary: Summary; sessionId: string }> {
   const preparation = await prepareExecution({
     projectDir: opts.projectDir,
@@ -203,7 +203,7 @@ async function executeLiveWorkflow(opts: {
   const summary = await runWorkflow({
     prepared: preparation.execution,
     callbacks: makeCallbacks(
-      opts.onQuestionAsked === undefined ? {} : { onQuestionAsked: opts.onQuestionAsked },
+      opts.onPlannerReply === undefined ? {} : { onPlannerReply: opts.onPlannerReply },
     ).callbacks,
     sinks: TEST_WORKFLOW_SINKS,
   });
@@ -607,7 +607,7 @@ export async function runReleaseMatrixRow(run: ReleaseMatrixRun): Promise<Releas
       projectDir,
       feature: run.task,
       effectiveConfig: config,
-      ...(run.mode === 'speckit' ? { onQuestionAsked: async () => tier.contextMd ?? '' } : {}),
+      ...(run.mode === 'speckit' ? { onPlannerReply: async () => tier.contextMd ?? '' } : {}),
     });
     releaseMatrixAssertions(run.mode, { summary, projectDir });
     const artifacts = copyLiveArtifacts({ projectDir, sessionId, rowId: run.id });

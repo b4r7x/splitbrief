@@ -108,6 +108,16 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 
 ---
 
+### Symptom: `Repo-map cache unavailable. Continuing without caching.`
+
+The native `better-sqlite3` binding is missing or was built for a different Node version. SPLITBRIEF still parses the project and supplies the repo-map to the planner; only the cache is unavailable. The session log keeps the full diagnostic without printing its list of attempted paths into the conversation.
+
+Run `npm rebuild better-sqlite3` in the SPLITBRIEF installation directory to restore the cache. Reinstalling dependencies with lifecycle scripts disabled can leave the native binding absent.
+
+**See also:** [REPOMAP.md](./REPOMAP.md#cache).
+
+---
+
 ### Symptom: `EACCES: permission denied, open '.splitbrief/...'` or config writes silently fail
 
 **Likely cause:** The `.splitbrief/` directory was created by another user (often `root` after a `sudo` invocation), or sits on a filesystem mounted read-only. SPLITBRIEF writes session state, snapshots, and configuration there continuously.

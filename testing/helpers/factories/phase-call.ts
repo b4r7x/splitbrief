@@ -4,11 +4,12 @@ import type { TokenDelta } from '../../../src/core/schemas/tokens.js';
 import { createPlannerCallContext } from '../../../src/engine/planners/call-context.js';
 import { normalizePlannerPhase } from '../../../src/engine/planners/normalize.js';
 import type {
-  PhaseCallResult,
+  ArtifactCallResult,
   PlannerArtifactLogicalName,
   PlannerDocumentCall,
 } from '../../../src/engine/planners/types.js';
 import { makeRunnerCallResult } from './runner-call.js';
+import { PLANNER_DOCUMENT_SECTIONS } from '../../../src/core/pipeline-spec/planner-documents.js';
 
 const ARTIFACT: Record<PlannerDocumentCall, PlannerArtifactLogicalName> = {
   research: RESEARCH_FILE,
@@ -17,10 +18,21 @@ const ARTIFACT: Record<PlannerDocumentCall, PlannerArtifactLogicalName> = {
   tasks: TASKS_FILE,
 };
 
-const DEFAULT_TEXT: Record<PlannerDocumentCall, string> = {
-  research: '# Research\n\nFindings.',
-  spec: '# Spec\n\nRequirements.',
-  plan: '# Plan\n\n## File Structure\n### New Files\n- `src/auth.ts`\n  Purpose: the module.',
+export const PLANNER_DOCUMENT_FIXTURES = {
+  research:
+    '# Research\n\n' +
+    PLANNER_DOCUMENT_SECTIONS.research.map((heading) => `## ${heading}\nFindings.`).join('\n\n'),
+  spec:
+    '# Spec\n\n' +
+    PLANNER_DOCUMENT_SECTIONS.spec.map((heading) => `## ${heading}\nRequirements.`).join('\n\n'),
+  plan:
+    '# Plan\n\n' +
+    PLANNER_DOCUMENT_SECTIONS.plan
+      .map(
+        (heading) =>
+          `## ${heading}\n${heading === 'File Structure' ? '### New Files\n- `src/auth.ts`\n  Purpose: the module.\n### Modified Files\nNone.' : 'Implementation details.'}`,
+      )
+      .join('\n\n'),
   tasks: '# Task Briefs',
 };
 
@@ -30,8 +42,8 @@ export function makePhaseCallResult(opts: {
   text?: string | undefined;
   tasks?: Task[] | undefined;
   usage?: TokenDelta | null | undefined;
-}): PhaseCallResult {
-  const text = opts.text ?? DEFAULT_TEXT[opts.call];
+}): ArtifactCallResult {
+  const text = opts.text ?? PLANNER_DOCUMENT_FIXTURES[opts.call];
   const callContext = createPlannerCallContext({ backendKind: 'api' }, 'planner');
   const result = makeRunnerCallResult({
     status: 'completed',
@@ -40,6 +52,7 @@ export function makePhaseCallResult(opts: {
     role: 'planner',
   });
   return {
+    kind: 'artifact',
     text,
     usage: opts.usage ?? null,
     artifact: normalizePlannerPhase({

@@ -251,13 +251,23 @@ export interface RunPhaseInput {
 }
 
 /** What one planner call produced: its text, its owned artifact, its spend. */
-export interface PhaseCallResult {
+export interface ArtifactCallResult {
+  kind: 'artifact';
   text: string;
   usage: TokenDelta | null;
   artifact: PhaseResult;
   /** Parsed Product Task Briefs; the `tasks` call only. */
   tasks?: Task[] | undefined;
 }
+
+export type PhaseCallResult =
+  | ArtifactCallResult
+  | {
+      kind: 'conversation';
+      text: string;
+      usage: TokenDelta | null;
+      questions: ClarificationQuestion[];
+    };
 
 /**
  * Result of running a mode's document calls end to end, outside a durable run.

@@ -133,6 +133,39 @@ function formatRecoveryActionText(
   }
 }
 
+/** The words shown by the interactive picker; machine action names stay in the action channel. */
+export function recoveryActionLabel(
+  action: RecoveryAction,
+  context: RecoveryActionChoiceContext = {},
+): string {
+  switch (action) {
+    case 'retry-same-worker':
+      return context.seatRetry === undefined
+        ? 'Try again'
+        : `Try again with ${CREW_SEAT_LABELS[context.seatRetry]}`;
+    case 'route-bigger-worker': {
+      const profile = recoveryFactString(context.facts, 'routeBiggerProfile');
+      return profile === undefined ? 'Use a bigger worker' : `Use a bigger worker · ${profile}`;
+    }
+    case 'switch-seat':
+      return `Change ${CREW_SEAT_LABELS[context.switchSeat?.seat ?? 'build']} tool`;
+    case 'planner-split-rebase':
+      return `Ask planner to ${rebaseVerb(context)}`;
+    case 'revise':
+      return 'Send a correction';
+    case 'revise-spec':
+      return 'Revise the spec';
+    case 'continue':
+      return 'Continue';
+    case 'skip-current-task':
+      return 'Skip task';
+    case 'pause-run':
+      return 'Pause run';
+    case 'end-run':
+      return 'End run';
+  }
+}
+
 /** How many of a seat's detected tools the halt offers; a longer list is a settings question. */
 export const OFFERED_SEAT_SWAP_CANDIDATES = 3;
 
@@ -190,10 +223,10 @@ export function switchSeatCandidateForAnswer(
   input: string,
   offer: SwitchSeatOffer | undefined,
 ): SeatSwapCandidate | undefined {
-  const offered = offeredSeatSwapCandidates(offer);
+  const candidates = offer?.candidates ?? [];
   const match = SWITCH_SEAT_ROW_KEY.exec(input.trim().toLowerCase());
-  if (match?.[1] === undefined) return offered[0];
-  return offered[Number.parseInt(match[1], 10) - 1];
+  if (match?.[1] === undefined) return candidates[0];
+  return candidates[Number.parseInt(match[1], 10) - 1];
 }
 
 function rebaseVerb(context: RecoveryActionChoiceContext): string {
@@ -327,6 +360,19 @@ export function formatRecoveryPrompt(issue: RecoveryIssue): string {
   return promptRowsToString(buildRecoveryPromptRows(issue));
 }
 
+/** The issue and its facts for the picker; action rows are rendered as real selectable rows. */
+export function formatRecoveryPromptSummary(issue: RecoveryIssue): string {
+  const rows = buildRecoveryPromptRows(issue).filter(
+    (row): row is Exclude<PromptRow, { kind: 'action' } | { kind: 'note' }> =>
+      row.kind !== 'action' && row.kind !== 'note',
+  );
+  return promptRowsToString(rows);
+}
+
+export function recommendedRecoveryAction(issue: RecoveryIssue): RecoveryAction | undefined {
+  return resolveRecommendedAction(issue, getRecoveryPromptActions(issue));
+}
+
 export function parseRecoveryActionAnswer(
   input: string,
   issue: RecoveryIssue,
@@ -352,7 +398,7 @@ function numberedSwitchSeatAction(
   actions: readonly RecoveryAction[],
 ): RecoveryAction | null {
   if (!actions.includes('switch-seat')) return null;
-  const offered = offeredSeatSwapCandidates(issue.switchSeat);
+  const offered = issue.switchSeat?.candidates ?? [];
   if (offered.length < 2) return null;
   return switchSeatCandidateForAnswer(value, issue.switchSeat) === undefined ? null : 'switch-seat';
 }
@@ -389,7 +435,7 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
     issue.attempts !== undefined && !issue.message.endsWith('.')
       ? ` after ${countNoun(issue.attempts, 'attempt')}`
       : '';
-  return `recovery needed · ${issue.message}${attemptSuffix}`;
+  return `Recovery needed · ${issue.message}${attemptSuffix}`;
 }
 
 /** The clock the seat comes back on, in the words the header uses — the panel's only spelling of it. */
@@ -429,10 +475,10 @@ function formatUsageLimitHeadline(issue: RecoveryIssue): string | undefined {
 
 function formatSubjectLines(issue: RecoveryIssue): string[] {
   const lines: string[] = [];
-  if (issue.taskId && issue.taskTitle) lines.push(`task ${issue.taskId} · ${issue.taskTitle}`);
-  if (issue.files.length > 0) lines.push(`files ${formatMiddotList(issue.files, 3)}`);
+  if (issue.taskId && issue.taskTitle) lines.push(`Task ${issue.taskId} · ${issue.taskTitle}`);
+  if (issue.files.length > 0) lines.push(`Files ${formatMiddotList(issue.files, 3)}`);
   const affected = issue.affectedTaskIds.filter((taskId) => taskId !== issue.taskId);
-  if (affected.length > 0) lines.push(`affected ${formatMiddotList(affected, 3)}`);
+  if (affected.length > 0) lines.push(`Affected ${formatMiddotList(affected, 3)}`);
   return lines;
 }
 
@@ -454,9 +500,9 @@ function formatDetailLines(issue: RecoveryIssue): string[] {
 }
 
 function formatDetailLine(detail: string): string {
-  if (detail.startsWith('Validation: ')) return `last check ${detail.slice('Validation: '.length)}`;
-  if (detail.startsWith('Validation ')) return `last check ${detail.slice('Validation '.length)}`;
-  if (detail.startsWith('Spent ')) return `spent ${detail.slice('Spent '.length)}`;
+  if (detail.startsWith('Validation: ')) return `Last check ${detail.slice('Validation: '.length)}`;
+  if (detail.startsWith('Validation ')) return `Last check ${detail.slice('Validation '.length)}`;
+  if (detail.startsWith('Spent ')) return `Spent ${detail.slice('Spent '.length)}`;
   return detail;
 }
 
@@ -466,7 +512,7 @@ function formatWorkerLines(issue: RecoveryIssue): string[] {
   const contextLength = recoveryFactNumber(issue.facts, 'contextLength');
   return [
     contextLength === undefined
-      ? `worker ${worker}`
-      : `worker ${worker} · ${contextLength} context`,
+      ? `Worker ${worker}`
+      : `Worker ${worker} · ${contextLength} context`,
   ];
 }

@@ -43,6 +43,7 @@ interface StreamHandlerState {
 interface StreamHandlerCallbacks {
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
+  onSessionInit?: ((id: string) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   credentialValues?: readonly string[] | undefined;
@@ -184,6 +185,7 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
 
     if (parsed.sessionId) {
       const sessionId = redactCredential(parsed.sessionId);
+      if (parsed.isSessionInit) callbacks.onSessionInit?.(sessionId);
       // Every stream-json frame restates the id, and the callback persists
       // workflow state on each call, so only a change is news.
       if (sessionId !== state.sessionId) {

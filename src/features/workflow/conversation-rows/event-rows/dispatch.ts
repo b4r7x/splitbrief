@@ -30,6 +30,27 @@ import { plannerTextRowBlock } from './planner-text.js';
 import { isTranscriptRowlessEvent } from './visibility.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../../engine/events/workflow-cancel.js';
 import { stripRecoveryResetClause } from '../../recovery-prompt.js';
+import { recoveryActionLabel } from '../../recovery-prompt.js';
+
+function sentenceCaseIdentifier(value: string): string {
+  const words = value.replace(/[-_]+/gu, ' ').trim();
+  return words.length === 0 ? words : `${words[0]?.toUpperCase() ?? ''}${words.slice(1)}`;
+}
+
+function recoveryOutcomeLabel(value: string): string {
+  switch (value) {
+    case 'continued':
+      return 'Continued';
+    case 'retry-current-task':
+      return 'Tried again';
+    case 'skipped-current-task':
+      return 'Skipped current task';
+    case 'aborted':
+      return 'Ended run';
+    default:
+      return sentenceCaseIdentifier(value);
+  }
+}
 
 export function eventRowBlock(options: {
   event: EngineEvent;
@@ -67,7 +88,7 @@ export function eventRowBlock(options: {
     case 'recovery_prompted':
       return borderedCardRowsBlock({
         keyPrefix,
-        label: 'recovery',
+        label: 'Recovery',
         // The prompt panel below carries the clock; the card names what happened, once.
         value: stripRecoveryResetClause(event.headline),
         width: ctx.width,
@@ -77,16 +98,16 @@ export function eventRowBlock(options: {
     case 'recovery_action_selected':
       return borderedCardRowsBlock({
         keyPrefix,
-        label: 'recovery',
-        value: `selected ${event.action} for ${event.reason}`,
+        label: 'Recovery',
+        value: `Selected ${recoveryActionLabel(event.action)} for ${sentenceCaseIdentifier(event.reason)}`,
         width: ctx.width,
         labelTone: 'textDim',
       });
     case 'recovery_action_failed':
       return borderedCardRowsBlock({
         keyPrefix,
-        label: 'recovery',
-        value: `${event.action} blocked: ${event.message}`,
+        label: 'Recovery',
+        value: `${recoveryActionLabel(event.action)} blocked: ${event.message}`,
         width: ctx.width,
         labelTone: 'error',
         valueTone: 'textDim',
@@ -94,8 +115,8 @@ export function eventRowBlock(options: {
     case 'recovery_resolved':
       return borderedCardRowsBlock({
         keyPrefix,
-        label: 'recovery',
-        value: `${event.outcome} via ${event.action}${event.implementerProfile ? ` · ${event.implementerProfile}` : ''}`,
+        label: 'Recovery',
+        value: `${recoveryOutcomeLabel(event.outcome)} via ${recoveryActionLabel(event.action)}${event.implementerProfile ? ` · ${event.implementerProfile}` : ''}`,
         width: ctx.width,
         labelTone: recoveryResolvedTone(event.outcome),
         valueTone: recoveryResolvedTone(event.outcome),

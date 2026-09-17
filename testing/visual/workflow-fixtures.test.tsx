@@ -160,6 +160,7 @@ describe('workflow visual fixtures', () => {
         getWorkflowPromptRows({
           approvalState: approvalPromptStore.get(),
           questionHint,
+          questions: questionPromptStore.get().questions,
           cols: VIEWPORT.cols,
         }),
       );

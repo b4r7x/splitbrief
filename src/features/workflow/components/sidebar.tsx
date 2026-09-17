@@ -34,6 +34,11 @@ import { useAdvisory } from '../hooks/use-advisory.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { formatLocalSharePct, localShare } from '../display/local-share.js';
 import { Divider } from '../../../components/divider.js';
+import { useStores } from '../../../stores/use-stores.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 
 interface SidebarProps {
   width: number;
@@ -127,22 +132,38 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
 
 function SidebarWaiting() {
   const t = useTheme();
-  const phase = lifecycleStore.use((s) => s.phase);
-  const status = lifecycleStore.use((s) => s.status);
-  const startedAt = lifecycleStore.use((s) => s.startedAt);
-  const running = status === 'running';
-  const { frame } = useSpinnerFrame(running);
+  const [lifecycle, controls, approval, recovery] = useStores(
+    lifecycleStore,
+    controlsStore,
+    approvalPromptStore,
+    recoveryNoticeStore,
+  );
+  const display = deriveWorkflowDisplay({
+    status: lifecycle.status,
+    cancelled: lifecycle.cancelled,
+    pendingQuestion: controls.inputMode !== 'normal',
+    pendingRecovery: recovery.issue !== null,
+    pendingApproval: approval.status === 'pending',
+  });
+  const { frame } = useSpinnerFrame(display.animate);
 
-  if (status !== 'running' && status !== 'interrupted') {
+  if (recovery.issue !== null) {
+    return <Text color={t.warning}>{`${LIST_INDENT}Planning stopped`}</Text>;
+  }
+  if (display.kind === 'waiting') {
+    return <Text color={t.textDim}>{`${LIST_INDENT}Waiting for your answer`}</Text>;
+  }
+  if (lifecycle.status !== 'running' && lifecycle.status !== 'interrupted') {
     return <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>;
   }
 
-  const stage = getActiveRailStage(phase)?.stage ?? '';
-  const elapsed = startedAt !== null ? formatStageElapsed(Date.now() - startedAt) : '';
+  const stage = getActiveRailStage(lifecycle.phase)?.stage ?? '';
+  const elapsed =
+    lifecycle.startedAt !== null ? formatStageElapsed(Date.now() - lifecycle.startedAt) : '';
   return (
     <Box flexDirection="column">
       <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>
-      {status === 'interrupted' ? (
+      {lifecycle.status === 'interrupted' ? (
         <Text color={t.textDim}>{`${LIST_INDENT}Planner interrupted`}</Text>
       ) : (
         // The spinner row already says the planner is running and names the stage, so a separate

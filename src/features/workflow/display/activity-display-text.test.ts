@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { projectRunnerCallActivity } from '../../../engine/calls/activity.js';
+import { runnerActivityLedgerItem } from './runner-activity-display.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { fitCompactActivityDisplayLine } from './activity-display-text.js';
 
@@ -18,6 +20,52 @@ describe('fitCompactActivityDisplayLine', () => {
     expect(line.text).not.toContain('\n');
     expect(getTerminalCellWidth(`| ${line.text}`)).toBeLessThanOrEqual(rowCells);
   });
+
+  it.each(['src/long-command-path/'.repeat(6), '界🙂e\u0301/'.repeat(24)])(
+    'reveals the complete projected command after a narrow-to-wide resize: %s',
+    (path) => {
+      const command = `npm test ${path}activity.test.ts`;
+      const activity = projectRunnerCallActivity(
+        {
+          ts: 1,
+          callId: 'width-test',
+          role: 'implementer',
+          backendKind: 'cli',
+          runnerName: 'claude-code',
+          model: 'test',
+          attempt: 1,
+          type: 'call_tool_use_delta',
+          channel: 'tool',
+          toolUseId: 'command',
+          name: 'Bash',
+          inputDelta: JSON.stringify({ command }),
+        },
+        1,
+      );
+      expect(activity).not.toBeNull();
+      if (activity === null) return;
+      const item = runnerActivityLedgerItem(activity);
+      const prefix = '  └─ ';
+      const renderAtWidth = (rowCells: number) =>
+        fitCompactActivityDisplayLine({
+          label: item.label,
+          value: item.value,
+          valueFit: item.fitMode,
+          rowCells,
+          prefixCells: getTerminalCellWidth(prefix),
+        });
+      const narrow = renderAtWidth(60);
+      expect(narrow.text).toContain('…');
+      expect(narrow.text).not.toContain('\n');
+      expect(getTerminalCellWidth(prefix + narrow.text)).toBeLessThanOrEqual(60);
+      const fullText = `${item.label}  ${command}`;
+      const exactWidth = getTerminalCellWidth(prefix + fullText);
+      expect(renderAtWidth(exactWidth - 1).text).toContain('…');
+      expect(renderAtWidth(exactWidth).text).toBe(fullText);
+      expect(renderAtWidth(400).value).toBe(command);
+      expect(renderAtWidth(60)).toEqual(narrow);
+    },
+  );
 
   it('preserves the filename tail for file activity values', () => {
     const rowCells = 42;

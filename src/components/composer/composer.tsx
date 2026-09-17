@@ -88,8 +88,8 @@ function placeholderForMode(input: {
 }): string {
   if (input.hint) return input.hint;
   // The gate panel above owns approve, edit and reject; the composer only ever takes the comment.
-  if (input.mode === 'review') return 'type a comment…';
-  if (input.mode === 'question') return 'type your answer…';
+  if (input.mode === 'review') return 'Type a comment…';
+  if (input.mode === 'question') return 'Type your answer…';
   // A run being torn down takes no new work, and the legend row above already says so; repeating
   // an invitation to queue here would contradict it.
   if (input.stopping) return '';
@@ -123,6 +123,7 @@ interface ComposerProps {
   homeStatus?: string | undefined;
   boxHints?: ComposerBoxHints | undefined;
   onEmptySubmit?: (() => void) | undefined;
+  onTab?: (() => void) | undefined;
   onEditShortcut?: (() => void) | undefined;
   onReviewBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
   onReviewInteraction?: (() => void) | undefined;
@@ -150,6 +151,7 @@ export function Composer({
   homeStatus,
   boxHints,
   onEmptySubmit,
+  onTab,
   onEditShortcut,
   onReviewBoundaryNavigate,
   onReviewInteraction,
@@ -595,7 +597,7 @@ export function Composer({
       <Box flexDirection="column" width="100%" overflow="visible">
         <Box
           borderStyle={borderStyleFor('round')}
-          borderColor={theme.border}
+          borderColor={!disabled && !briefFocusHeld ? theme.accent : theme.border}
           paddingX={inputPaddingX}
           width="100%"
           minHeight={3}
@@ -625,6 +627,10 @@ export function Composer({
               focus={!disabled && !briefFocusHeld}
               isActive={!disabled && (!briefFocusHeld || mode === 'review')}
               shouldHandleInput={(input, key) => {
+                if (onTab !== undefined && (key.tab || (key.shift && key.tab))) {
+                  onTab();
+                  return false;
+                }
                 if (!shouldHandleComposerInput(input, key)) return false;
                 if (key.ctrl && input === 'v') {
                   handleImagePaste();

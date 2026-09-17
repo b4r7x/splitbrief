@@ -60,13 +60,11 @@ export function artifactWrittenRowBlock(
     unit: event.omittedUnit,
     pointer: sourcePointer(event),
     fitPointer: elidedPathLabel,
+    marker: '↳ ',
     width: bodyWidth,
   });
   if (footer !== null) {
-    rows.push(
-      segmentedRow(`${keyPrefix}-pad`, [{ text: '' }], 'card-body'),
-      segmentedRow(`${keyPrefix}-source`, [{ text: BODY_PREFIX }, ...footer], 'card-body'),
-    );
+    rows.push(segmentedRow(`${keyPrefix}-source`, [{ text: BODY_PREFIX }, ...footer], 'card-body'));
   }
 
   return {

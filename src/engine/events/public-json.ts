@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TaskIdSchema } from '../../core/schemas/task.js';
+import { ClarificationQuestionSchema } from '../../core/schemas/question.js';
 import {
   RecoveryActionSchema,
   RecoveryReasonSchema,
@@ -10,6 +11,14 @@ import { EngineEventSchema } from './schema.js';
 import { boundEngineEventForConsumer } from './bound.js';
 
 export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('input_required'),
+    sessionId: z.string(),
+    call: z.enum(['research', 'spec', 'plan', 'tasks']),
+    message: z.string(),
+    questions: z.array(ClarificationQuestionSchema),
+    resumeCommand: z.string(),
+  }),
   z.strictObject({
     type: z.literal('event'),
     data: EngineEventSchema,

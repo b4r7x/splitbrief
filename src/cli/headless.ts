@@ -19,6 +19,7 @@ import { cliError } from './errors.js';
 import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
 import type { Config } from '../core/schemas/config.js';
+import { createQuestionMarkerStripper } from '../engine/parsers/question.js';
 
 function buildNoopSinks() {
   return {
@@ -55,6 +56,39 @@ export function emitRecoveryAndFailIfPending({
   sessionId: string;
   writeRecord: RecordWriter;
 }): void {
+  const conversation = state?.pendingPlannerConversation;
+  if (
+    conversation !== undefined &&
+    !conversation.answered &&
+    state?.pendingRecovery === undefined
+  ) {
+    const resumeCommand = `splitbrief continue ${sessionId}`;
+    const stripper = createQuestionMarkerStripper();
+    const visibleText = (stripper.push(conversation.text) + stripper.flush()).trim();
+    const message =
+      visibleText ||
+      conversation.questions
+        .map((question) =>
+          question.type === 'choice'
+            ? `${question.text} (${question.options.join(' / ')})`
+            : question.type === 'confirm'
+              ? `${question.text} (yes / no)`
+              : question.text,
+        )
+        .join('\n');
+    writeRecord(
+      {
+        type: 'input_required',
+        sessionId,
+        call: conversation.call,
+        message,
+        questions: conversation.questions,
+        resumeCommand,
+      },
+      process.stdout,
+    );
+    throw cliError(`The planner needs your reply.\n${message}\nContinue with: ${resumeCommand}`, 1);
+  }
   const issue = state?.pendingRecovery;
   if (!issue) return;
   const resumeCommand = formatResumeCommand(sessionId, issue);
@@ -219,7 +253,6 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
       savedState: prepared.runtime.resumeState,
       callbacks: {
         onApprovalNeeded: async (_type, _input) => ({ approved: true }),
-        onQuestionAsked: async () => '',
         onComplete: () => undefined,
       },
     });

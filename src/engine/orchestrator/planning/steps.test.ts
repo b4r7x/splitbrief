@@ -2,7 +2,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import {
+  makePhaseCallResult,
+  PLANNER_DOCUMENT_FIXTURES,
+} from '#testing/helpers/factories/phase-call.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   makeBusRecorder,
@@ -36,6 +39,7 @@ import type {
   Planner,
   PlannerDocumentCall,
   RunPhaseInput,
+  PhaseCallResult,
 } from '../../planners/types.js';
 import { runPlanningSteps } from './steps.js';
 
@@ -274,7 +278,7 @@ describe('runPlanningSteps — skills context', () => {
 describe('runPlanningSteps — memoized steps', () => {
   it('skips a call whose artifact is already on disk', async () => {
     const project = setupProject('standard');
-    seed(project, { [RESEARCH_FILE]: '# Research\n\nAlready done.' });
+    seed(project, { [RESEARCH_FILE]: PLANNER_DOCUMENT_FIXTURES.research });
     const { planner, calls } = recordingPlanner();
 
     await runSteps({ mode: 'standard', planner, project });
@@ -284,7 +288,7 @@ describe('runPlanningSteps — memoized steps', () => {
 
   it('a run killed after research resumes at spec', async () => {
     const project = setupProject('standard');
-    seed(project, { [RESEARCH_FILE]: '# Research\n\nDone.' });
+    seed(project, { [RESEARCH_FILE]: PLANNER_DOCUMENT_FIXTURES.research });
     const { planner, calls } = recordingPlanner();
 
     await runSteps({
@@ -495,15 +499,15 @@ describe('runPlanningSteps — gates', () => {
 });
 
 describe('runPlanningSteps — clarifications', () => {
-  it('queued answers re-run the plan and the briefs once, with the answers in the prompt', async () => {
+  it('answers the conversational spec turn before producing artifacts', async () => {
     const project = setupProject('standard');
     const question: ClarificationQuestion = { id: 'q1', type: 'input', text: 'Which module?' };
     const calls: Recorded[] = [];
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call, inputs, callbacks }: RunPhaseInput) => {
+      runPhase: vi.fn(async ({ call, inputs }: RunPhaseInput): Promise<PhaseCallResult> => {
         calls.push({ call, inputs });
         if (call === 'spec' && calls.filter((entry) => entry.call === 'spec').length === 1) {
-          callbacks.onQuestion?.([question]);
+          return { kind: 'conversation', text: question.text, questions: [question], usage: null };
         }
         return makePhaseCallResult({
           call,
@@ -511,45 +515,45 @@ describe('runPlanningSteps — clarifications', () => {
         });
       }),
     });
-    const onQuestionAsked = vi.fn().mockResolvedValue('the auth module');
+    const onPlannerReply = vi.fn().mockResolvedValue('the auth module');
 
     await runSteps({
       mode: 'standard',
       planner,
       project,
-      callbacks: makeCallbacks({ onQuestionAsked }).callbacks,
+      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
     });
 
-    expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
-    expect(calls.map((entry) => entry.call)).toEqual(['research', 'spec', 'plan', 'tasks']);
-    const plan = calls.find((entry) => entry.call === 'plan');
-    expect(plan?.inputs.promptPrefix).toContain('the auth module');
+    expect(onPlannerReply).toHaveBeenCalledWith(expect.objectContaining({ questions: [question] }));
+    expect(calls.map((entry) => entry.call)).toEqual(['research', 'spec', 'spec', 'plan', 'tasks']);
+    expect(calls[2]?.inputs.promptSuffix).toContain('the auth module');
   });
 
-  it('answers that are all skipped re-run nothing', async () => {
+  it('an unanswered conversation parks without generating later documents', async () => {
     const question: ClarificationQuestion = { id: 'q1', type: 'confirm', text: 'Proceed?' };
     const calls: Recorded[] = [];
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call, inputs, callbacks }: RunPhaseInput) => {
+      runPhase: vi.fn(async ({ call, inputs }: RunPhaseInput): Promise<PhaseCallResult> => {
         calls.push({ call, inputs });
-        if (call === 'spec') callbacks.onQuestion?.([question]);
+        if (call === 'spec')
+          return { kind: 'conversation', text: question.text, questions: [question], usage: null };
         return makePhaseCallResult({
           call,
           ...(call === 'tasks' ? { tasks: [makePassingTask()] } : {}),
         });
       }),
     });
-    const onQuestionAsked = vi.fn().mockResolvedValue('skip');
+    const onPlannerReply = vi.fn().mockResolvedValue(undefined);
 
     const { result } = await runSteps({
       mode: 'standard',
       planner,
-      callbacks: makeCallbacks({ onQuestionAsked }).callbacks,
+      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
     });
 
-    expect(onQuestionAsked).toHaveBeenCalledTimes(1);
-    expect(calls.map((entry) => entry.call)).toEqual(['research', 'spec', 'plan', 'tasks']);
-    expect(result.disposition).toBe('tasks-ready');
+    expect(onPlannerReply).toHaveBeenCalledTimes(1);
+    expect(calls.map((entry) => entry.call)).toEqual(['research', 'spec']);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'input-required' });
   });
 });
 

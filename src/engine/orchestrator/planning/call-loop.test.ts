@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
   makePlanner,
   makeBusRecorder,
@@ -16,8 +15,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { SANDBOX_DIR } from '../../../core/paths.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
-import type { PlannerCallbacks } from '../../planners/types.js';
-import type { ClarificationQuestion } from '../../../core/schemas/question.js';
+import type { PhaseCallResult, PlannerCallbacks } from '../../planners/types.js';
 import { HEARTBEAT_THRESHOLD_MS, PLANNER_KEEPALIVE_INTERVAL_MS } from './heartbeat.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import { createContinuationHolder } from '../continuation.js';
@@ -34,7 +32,6 @@ afterEach(() => {
 function setupSession(): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('shared-planning-test');
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
   const sessionId = 'sess-shared-test';
   ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
@@ -80,6 +77,55 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
+
+  it.each(['question', 'pause'] as const)(
+    'stops heartbeats during a %s wait and restarts them with the next call',
+    async (waitKind) => {
+      const ref = setupSession();
+      const sinks = createTestSinks();
+      const { bus, events } = makeBusRecorder();
+      const answer = Promise.withResolvers<string>();
+      const waiting = vi.fn(() => answer.promise);
+      let calls = 0;
+      const planner = makePlanner({
+        runPhase: vi.fn(async (): Promise<PhaseCallResult> => {
+          if (++calls === 1) {
+            if (waitKind === 'pause') {
+              sinks.abortTurn();
+              throw new DOMException('Stopped', 'AbortError');
+            }
+            return { kind: 'conversation', text: 'Which module?', questions: [], usage: null };
+          }
+          await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_THRESHOLD_MS + 100));
+          return makePhaseCallResult({ call: 'tasks', tasks: [makeTask()] });
+        }),
+      });
+      const wctx = makeWctx(ref.projectDir, ref.sessionId, {
+        bus,
+        sinks,
+        callbacks: makeCallbacks({ onPlannerReply: waiting, onContinuationNeeded: waiting })
+          .callbacks,
+      });
+      const run = runPlannerCallInContinuationLoop({
+        wctx,
+        planner,
+        state: planningState(),
+        call: 'tasks',
+        inputs: phaseInputs({ feature: 'test' }),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(waiting).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_THRESHOLD_MS + PLANNER_KEEPALIVE_INTERVAL_MS * 3);
+      expect(events.filter((event) => event.type === 'planner_heartbeat')).toHaveLength(0);
+      answer.resolve('Refactor src/auth.ts.');
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_THRESHOLD_MS + 100);
+      await run;
+      const afterRun = events.filter((event) => event.type === 'planner_heartbeat').length;
+      expect(afterRun).toBeGreaterThan(0);
+      await vi.advanceTimersByTimeAsync(PLANNER_KEEPALIVE_INTERVAL_MS * 3);
+      expect(events.filter((event) => event.type === 'planner_heartbeat')).toHaveLength(afterRun);
+    },
+  );
 
   it('stops heartbeat timers even when the planner throws', async () => {
     const { projectDir, sessionId } = setupSession();
@@ -289,6 +335,7 @@ describe('runPlannerCallInContinuationLoop — zero-task result', () => {
     });
 
     expect(runPhase).toHaveBeenCalledTimes(1);
+    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
     expect(result.tasks).toHaveLength(0);
     expect(
       events.find(
@@ -359,80 +406,6 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
     expect(publishedText).not.toContain('<!--');
     expect(publishedText).toContain('before');
     expect(publishedText).toContain('after');
-  });
-
-  it('collects questions via the planner callback', async () => {
-    const { projectDir, sessionId } = setupSession();
-    const question: ClarificationQuestion = {
-      id: 'q1',
-      type: 'choice',
-      text: 'Pick',
-      options: ['a', 'b'],
-    };
-    const planner = makePlanner({
-      runPhase: vi
-        .fn()
-        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-          callbacks.onQuestion?.([question]);
-          return makePhaseCallResult({ call: 'tasks', tasks: [makeTask()] });
-        }),
-    });
-    const wctx = makeWctx(projectDir, sessionId);
-    const collectedQuestions: ClarificationQuestion[] = [];
-
-    await runPlannerCallInContinuationLoop({
-      wctx,
-      state: planningState(),
-      planner,
-      call: 'tasks',
-      inputs: phaseInputs({ feature: 'test feature' }),
-      collectedQuestions,
-    });
-
-    expect(collectedQuestions).toEqual([
-      { id: 'q1', type: 'choice', text: 'Pick', options: ['a', 'b'] },
-    ]);
-  });
-
-  it('deduplicates IDs across callbacks before applying the question cap', async () => {
-    const { projectDir, sessionId } = setupSession();
-    const firstQuestion: ClarificationQuestion = {
-      id: 'q1',
-      type: 'input',
-      text: 'First wording',
-    };
-    const duplicateQuestion: ClarificationQuestion = {
-      id: 'q1',
-      type: 'input',
-      text: 'Later wording must not replace the first question',
-    };
-    const distinctQuestions: ClarificationQuestion[] = ['q2', 'q3', 'q4', 'q5', 'q6'].map((id) => ({
-      id,
-      type: 'input',
-      text: id,
-    }));
-    const planner = makePlanner({
-      runPhase: vi
-        .fn()
-        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-          callbacks.onQuestion?.([firstQuestion, firstQuestion]);
-          callbacks.onQuestion?.([duplicateQuestion, ...distinctQuestions]);
-          return makePhaseCallResult({ call: 'tasks', tasks: [makeTask()] });
-        }),
-    });
-    const wctx = makeWctx(projectDir, sessionId);
-    const collectedQuestions: ClarificationQuestion[] = [];
-
-    await runPlannerCallInContinuationLoop({
-      wctx,
-      state: planningState(),
-      planner,
-      call: 'tasks',
-      inputs: phaseInputs({ feature: 'test feature' }),
-      collectedQuestions,
-    });
-
-    expect(collectedQuestions).toEqual([firstQuestion, ...distinctQuestions.slice(0, 4)]);
   });
 
   it('records raw marker text for continuation while publishing stripped text', async () => {

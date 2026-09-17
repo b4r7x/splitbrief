@@ -95,6 +95,7 @@ describe('runPlanningPhase — persistence', () => {
       const text = ARTIFACT_TEXT[call];
       if (text === undefined) return makePhaseCallResult({ call, tasks: [makePassingTask()] });
       return {
+        kind: 'artifact',
         text,
         usage: { inputTokens: 100, outputTokens: 50 },
         artifact: phaseResult(

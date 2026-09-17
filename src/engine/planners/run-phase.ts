@@ -6,6 +6,10 @@ import { toTokenDelta } from '../calls/projection.js';
 import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import { admitPlanningArtifact } from '../spec/planning-artifact-admission.js';
+import { isPlannerDocument } from '../../core/pipeline-spec/planner-documents.js';
+import { extractQuestionsFromStream } from '../parsers/question.js';
+import type { ClarificationQuestion } from '../../core/schemas/question.js';
+import { error } from '../../utils/error.js';
 import { buildPlanPrompt } from '../spec/prompts/plan.js';
 import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
@@ -321,6 +325,7 @@ export function createPhaseRunner(
     });
 
     const callContext = createPlannerCallContext(config, 'planner');
+    const streamedQuestions = new Map<string, ClarificationQuestion>();
     let result: PlannerInvokeResult;
     try {
       result = requireCompletedCall(
@@ -334,7 +339,10 @@ export function createPhaseRunner(
               callbacks.onOutput(text);
               buffer.append(text);
             },
-            onQuestion: callbacks.onQuestion,
+            onQuestion: (questions) => {
+              for (const question of questions) streamedQuestions.set(question.id, question);
+              callbacks.onQuestion?.(questions);
+            },
             onSessionId: callbacks.onSessionId,
             onSessionExpired: callbacks.onSessionExpired,
             sessionId: callbacks.sessionId,
@@ -356,15 +364,37 @@ export function createPhaseRunner(
     buffer.flush();
 
     const text = result.text;
+    for (const question of extractQuestionsFromStream(text))
+      streamedQuestions.set(question.id, question);
+    const questions = [...streamedQuestions.values()].slice(0, 5);
+    if (text.trim() === '' && questions.length === 0) {
+      if (call === 'spec' || call === 'plan') {
+        admitPlanningArtifact({ phase: CALL_PHASE[call], filename: logicalName, text });
+      }
+      throw error('planner-empty-output', 'The planner returned no text or questions.', { call });
+    }
+    const taskWarnings: string[] = [];
+    const tasks =
+      call === 'tasks'
+        ? parseTasksStrict(text, (message) => taskWarnings.push(message))
+        : undefined;
+    if (
+      questions.length > 0 ||
+      (call === 'tasks' ? tasks?.length === 0 : !isPlannerDocument(call, text))
+    ) {
+      return { kind: 'conversation', text, usage: toTokenDelta(result.usage), questions };
+    }
+    for (const warning of taskWarnings) callbacks.onWarning?.(warning);
     if (call === 'spec' || call === 'plan') {
       admitPlanningArtifact({ phase: CALL_PHASE[call], filename: logicalName, text });
     }
 
     return {
+      kind: 'artifact',
       text,
       usage: toTokenDelta(result.usage),
       artifact: normalizePlannerPhase({ result, callContext, logicalName, text }),
-      ...(call === 'tasks' ? { tasks: parseTasksStrict(text, callbacks.onWarning) } : {}),
+      ...(tasks === undefined ? {} : { tasks }),
     };
   };
 }

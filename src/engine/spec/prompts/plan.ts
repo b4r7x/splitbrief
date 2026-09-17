@@ -1,6 +1,12 @@
+import { PLANNER_DOCUMENT_SECTIONS } from '../../../core/pipeline-spec/planner-documents.js';
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
-import { buildPrompt, instructionsSection, requiredSectionsSection } from './builder.js';
+import {
+  plannerConversationSection,
+  buildPrompt,
+  instructionsSection,
+  requiredSectionsSection,
+} from './builder.js';
 import { error } from '../../../utils/error.js';
 import { PLAN_PROMPT_MAX_BYTES } from '../../../core/pipeline-spec/brief.js';
 
@@ -56,38 +62,38 @@ function fileStructureExample(ctx: LanguageContext): string {
 }
 
 function requiredSections(ctx: LanguageContext): string {
-  return `## Summary
+  return `## ${PLANNER_DOCUMENT_SECTIONS.plan[0]}
 One-paragraph summary of the implementation approach.
 
-## Architecture Decisions
+## ${PLANNER_DOCUMENT_SECTIONS.plan[1]}
 Key technical decisions with brief justifications:
 - What patterns/approaches to use and why
 - What libraries or APIs to leverage
 - What tradeoffs were made
 
-## File Structure
+## ${PLANNER_DOCUMENT_SECTIONS.plan[2]}
 List every project-relative file the change touches with one indented purpose line each;
 group the files of one slice together in the order a brief would write them.
 Include both subsections, even when one has no entries:
 ${fileStructureExample(ctx)}
 
-## Dependencies
+## ${PLANNER_DOCUMENT_SECTIONS.plan[3]}
 Any new packages or tools needed. For each, specify:
 - Package name and version constraint
 - Why it's needed
 - Any alternatives considered
 
-## Data Model
+## ${PLANNER_DOCUMENT_SECTIONS.plan[4]}
 If the feature involves new types, interfaces, structs, schemas, or data structures, define them here with ${ctx.typeAnnotationStyle}.
 
-## Key Implementation Details
+## ${PLANNER_DOCUMENT_SECTIONS.plan[5]}
 For each major component:
 - Function signatures with parameter and return types
 - Core logic description (algorithm, data flow)
 - How it integrates with existing code
 - Error handling approach
 
-## Testing Strategy
+## ${PLANNER_DOCUMENT_SECTIONS.plan[6]}
 - What to test (unit, integration, edge cases)
 - Test file locations
 - Key test scenarios with expected inputs/outputs`;
@@ -101,6 +107,7 @@ export function buildPlanPrompt(input: PlanPromptInput): string {
     intro:
       'You are writing a detailed implementation plan based on the specification below. The plan defines **how** to build the feature, and feeds the next phase: compiling Product Task Briefs the implementer model will execute against. Be concrete enough that brief compilation does not need to invent decisions.',
     sections: [
+      plannerConversationSection,
       { heading: 'Specification', body: input.spec.content },
       {
         heading: 'Project Context',
@@ -136,6 +143,7 @@ export function buildRegeneratePrompt(input: RegeneratePromptInput): string {
     title: `Regenerate ${label}`,
     intro: `The user reviewed the ${input.artifactType} and has feedback:`,
     sections: [
+      plannerConversationSection,
       { heading: `Current ${label}`, body: input.currentContent },
       { heading: 'User Feedback', body: input.feedback },
       instructionsSection(

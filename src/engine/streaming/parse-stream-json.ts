@@ -19,6 +19,7 @@ export interface StreamParseResult {
   textSemantics?: ParsedTextSemantics | undefined;
   sessionId?: string | undefined;
   isResult?: boolean | undefined;
+  isSessionInit?: boolean | undefined;
   isError?: boolean | undefined;
   usage?: TokenDelta | undefined;
   usageSemantics?: ParsedUsageSemantics | undefined;
@@ -187,7 +188,14 @@ function parseSystemProgress(event: Record<string, unknown>): StreamParseResult 
   const sessionId = firstString(event.session_id);
   if (type === 'system') {
     const subtype = firstString(event.subtype);
-    return subtype ? { text: subtype, channel: 'system', sessionId } : { sessionId };
+    return subtype
+      ? {
+          text: subtype,
+          channel: 'system',
+          sessionId,
+          ...(subtype === 'init' && { isSessionInit: true }),
+        }
+      : { sessionId };
   }
   if (type === 'api_error' || type === 'api_retry' || type === 'plugin_progress') {
     return {

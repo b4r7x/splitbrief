@@ -55,6 +55,9 @@ function applyProjection(projection: WorkflowFixtureProjection): void {
 
   if (projection.question !== undefined) {
     questionPromptStore.setHint(projection.question.prompt);
+    if (projection.question.questions !== undefined) {
+      questionPromptStore.setQuestions(projection.question.questions);
+    }
   }
 
   controlsStore.setSidebar(projection.sidebarVisible);
@@ -128,15 +131,19 @@ function activateFixtureInputMode(
   if (projection.review !== undefined) {
     void options.callbacks.onApprovalNeeded('briefs', getReviewFilePath(projection.review));
   }
-  // A halt is not a clarification question: the recovery driver sets question
-  // mode with the prompt itself, so the fixture leaves the counter callback to
-  // the scenario that really asks one.
+  // A halt is not a planner conversation: the recovery driver sets question mode with the prompt
+  // itself, so only the fixture's explicit question scenario needs this callback.
   if (projection.question !== undefined) {
-    void options.callbacks.onQuestionAsked?.(
-      { id: 'visual-question', type: 'input', text: projection.question.prompt },
-      1,
-      1,
-    );
+    void options.callbacks.onPlannerReply?.({
+      call: 'research',
+      text: '',
+      questions:
+        projection.question.questions === undefined
+          ? [{ id: 'visual-question', type: 'input', text: projection.question.prompt }]
+          : [...projection.question.questions],
+      answers: [],
+      answered: false,
+    });
   }
 }
 

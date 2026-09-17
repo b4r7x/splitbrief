@@ -9,7 +9,6 @@ import type {
   PlannerDocumentCall,
 } from '../../planners/types.js';
 import type { GateName, PlannerCall } from '../../../core/schemas/run-step.js';
-import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { ApproveLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
@@ -49,7 +48,13 @@ export type PlanningStepsOptions = PlanningPhaseOptions & {
  * `interrupted` an abort that parked the step, `halted` a recovery the operator
  * has to answer; only `failed` is an error nothing can resume from in place.
  */
-export type PlanningTerminalOutcome = 'cancelled' | 'closed' | 'failed' | 'interrupted' | 'halted';
+export type PlanningTerminalOutcome =
+  | 'cancelled'
+  | 'closed'
+  | 'failed'
+  | 'interrupted'
+  | 'halted'
+  | 'input-required';
 
 export type PlanningPhaseResult =
   | Readonly<{ disposition: 'ready-for-tasks'; state: WorkflowState; tasks: readonly Task[] }>
@@ -78,7 +83,6 @@ export type PlannerCallOptions = {
   planner: Planner;
   call: PlannerDocumentCall;
   inputs: PhaseInputs;
-  collectedQuestions?: ClarificationQuestion[] | undefined;
   phaseHint?: string | undefined;
 };
 

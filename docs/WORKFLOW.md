@@ -207,7 +207,7 @@ type RunStatus =
 
 `closed` is the only status nothing can pick up: `state.closed` written by an End run, or `complete` with `reviewStatus: 'passed'`. Everything else is `open` and carries two facts.
 
-**`stop`** — why it is not running, in first-match order: `halted` (a `pendingRecovery` is waiting on an answer) · `paused` (a park, `at: 'mid-step'` or `'boundary'`) · `waiting` (parked at the spec, plan or briefs gate) · `failed` (`lastFailure` names the error a turn died on) · `interrupted` (the process went away without recording anything).
+**`stop`** — why it is not running, in first-match order: `halted` (a `pendingRecovery` is waiting on an answer) · `input-required` (the planner is waiting for a reply) · `paused` (a park, `at: 'mid-step'` or `'boundary'`) · `waiting` (parked at the spec, plan or briefs gate) · `failed` (`lastFailure` names the error a turn died on) · `interrupted` (the process went away without recording anything).
 
 **`resumeAt`** — the step it picks up at, from `resumeStep(state, artifacts)`: the gate it is parked at, the brief it was building, the review it reached, or the first planner artifact its mode has not written yet. Artifacts shape `resumeAt` only; they never change the status kind.
 
@@ -221,7 +221,7 @@ type RunStatus =
 
 ## 3. Mode dispatch
 
-Mode dispatch: `src/engine/orchestrator/planning/run.ts`. A mode is an ordered list of **steps** — one planner call each — declared in `src/core/pipeline-spec/steps.ts` and run by `src/engine/orchestrator/planning/steps.ts`. Each step names the phase it runs in, the artifact that memoizes it, and the gate that opens once it has landed. All three modes stay in the product; the question a mode answers is how much ceremony precedes the briefs, not which features are available.
+Mode dispatch: `src/engine/orchestrator/planning/run.ts`. A mode is an ordered list of **steps**, each of which can include a conversation before producing its artifact, declared in `src/core/pipeline-spec/steps.ts` and run by `src/engine/orchestrator/planning/steps.ts`. Each step names the phase it runs in, the artifact that memoizes it, and the gate that opens once it has landed. All three modes stay in the product; the question a mode answers is how much ceremony precedes the briefs, not which features are available.
 
 | Mode | Steps, in order (artifact · phase · gate after) | Planner calls | Default approval |
 |------|---|:---:|:---:|
@@ -229,7 +229,7 @@ Mode dispatch: `src/engine/orchestrator/planning/run.ts`. A mode is an ordered l
 | `standard` | `research` (research.md · researching) → `spec` (spec.md · specifying · **spec gate**) → `plan` (plan.md · planning) → `tasks` (tasks.md · planning · **plan gate**) | 4 | `spec` |
 | `speckit` | `research` → `spec` → `clarify` (clarifications.md · clarifying) → `constitution` (constitution-check.json · constitution-check · **spec gate**) → `plan` → `tasks` → `analyze` (analyze.json · analyzing · **plan gate**) | 6-7 | `all` |
 
-The briefs gate is not a step: it opens after the brief quality pass, downstream of every planner call. The `clarify` step spends no planner call — inline questions are collected during the `spec` call and appended to `spec.md`, so its artifact is the pointer at them. A step whose artifact is already on disk is skipped, so `state.phase` always names the call actually running and a run picks up at the first artifact it has not written yet.
+The call counts assume each step completes in one turn. Clarification replies continue that same step before it writes an artifact. The briefs gate opens after the brief quality pass. The `clarify` step spends no planner call. Completed artifacts are reused on resume; a pending conversation takes precedence, and a legacy question-only `research.md` does not count as completed research.
 
 **The retired `instant` mode.** `instant` was merged into `quick`; it is no longer a mode you can select. The string still parses everywhere it was persisted — `WorkflowModeSchema` (`src/core/schemas/enums.ts`) preprocesses `instant` to `quick` — so old configs, old `--mode instant` invocations, and session state written before the merge all keep loading. Reading `instant` prints a deprecation notice: a config warning from `validateConfig`, a `--mode` warning on stderr from `resolveEffectiveConfig`, and a feedback line from the runtime `/mode` handler. One persisted wire format is retained for back-compatibility only, so pre-merge sessions still replay: the `instant_plan_received` event. Nothing produces it any more.
 
@@ -281,15 +281,19 @@ The advisor never auto-switches the mode. It publishes a `mode_advice` event and
 
 ### Clarification questions
 
-All three modes extract planner `<!-- Q:{...} -->` markers and show the interactive `QuestionPrompt` panel above the composer (`collectAndPersistClarifications` in `src/engine/orchestrator/clarifications.ts`); the marker itself never appears in the transcript, in any mode. Known CLI runners preserve explicit markers across stream chunks, so a marker split between chunks still invokes the question flow once. Arbitrary prose questions are not inferred. The five-question cap holds everywhere.
+A planner turn either completes the current document or continues the conversation. Research, spec and plan must contain the populated sections declared by their prompts; a heading alone does not make a reply an artifact. Task Briefs still pass the strict parser. Ordinary replies wait for the user before persistence or advancement, including in `quick` mode.
 
-Question IDs are unique for the planning run. The collector keeps the first question for an ID across planner callbacks and continuation turns, then applies the five-question cap to the distinct IDs. A later question with an ID already seen in that run is ignored.
+The planner can optionally attach up to five `<!-- Q:{...} -->` markers for structured questions. Markers never appear in the transcript; choice and input defaults are strings, while confirm defaults are booleans. Without markers, the user answers the ordinary reply in the composer.
 
-`standard` and `speckit` collect clarifications mid-plan, after the phase's planner call, and regenerate the affected planning artifacts with the answers before moving on — existing behavior, unchanged by this feature.
+SPLITBRIEF owns this exchange: the planner returns its question and finishes the CLI turn, then the host collects the answer. Shared planner instructions prohibit invoking or searching for native question tools; the Claude planner also denies `AskUserQuestion`. A reply continues the same step as a user answer, without describing it as an interruption. Heartbeats run only while an invocation is active.
 
-`quick` asks after its single planner call completes, once tasks are already drafted: each answer is persisted under `## Clarifications` in `spec.md` and queued as a `QueuedMessage` (`origin: 'clarification'`) for the next planner invocation, with a native-inject attempt against the live planner session where the runner supports it. There is no automatic re-plan — `quick` stays one planner call; the answers ride along as queued context rather than triggering a second call.
+`state.pendingPlannerConversation` records the originating call, reply, questions and answers before waiting. Answers are saved before the next planner call. Continuation uses the same native planner session where supported, or includes the prior reply and answer in the step's prompt. Reloading preserves the pending turn; completed artifacts and already recorded answers are not requested again. No placeholder `spec.md` is needed.
 
-Skipping, cancelling, or superseding a question lets the workflow proceed; no mode blocks on an answer that never comes.
+Accepted answers appear in the live transcript before the next invocation. Replay also restores older message-only answers, while keeping adjacent message/event pairs to one visible reply. A resumed Claude call streams as soon as its initialization confirms the expected session. Expired or mismatched sessions can fall back before that confirmation; a failure afterward is reported without silently repeating already-visible work.
+
+Cancellation or an empty answer leaves the step pending. Headless runs persist the conversation, emit `input_required` and exit non-zero instead of supplying an empty answer. A completed artifact clears the pending conversation and allows the next step to run.
+
+This durable conversation belongs to workflow `start` and `continue`. The standalone `splitbrief spec` command has no workflow state: it reports that input is required without saving the reply as a document. Use `start` when the request needs an interactive conversation.
 
 ---
 
@@ -443,7 +447,7 @@ Recovery actions:
 
 | Action | Effect |
 |--------|--------|
-| `retry-same-worker` | Clears recovery, resets task to `pending`, reruns in fresh context |
+| `retry-same-worker` | Retries the recorded PLAN/REVIEW step, or resets and reruns the matching BUILD task |
 | `route-bigger-worker` | Clears recovery, reruns task with named larger profile |
 | `switch-seat` | A seat that cannot run at all: moves it to another ready detected tool and re-prepares the session on it |
 | `revise` | Clears recovery and queues the operator's correction for the next planner turn |

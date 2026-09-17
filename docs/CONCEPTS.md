@@ -203,13 +203,9 @@ Implementation: `src/engine/orchestrator/approval/loop.ts` via `callbacks.onAppr
 
 ## Clarifying questions
 
-During `specifying`, a conversation-capable planner can emit inline questions to the user. These come through as `<!-- Q:{JSON} -->` markers in the planner's output and are parsed by `src/engine/parsers/question.ts`.
+Every planning document step can return a conversation reply before its artifact is complete. Ordinary prose stays in the conversation. Optional `<!-- Q:{JSON} -->` markers supply up to five structured questions per turn; `src/engine/parsers/question.ts` parses them.
 
-Up to 5 questions per run. User can answer each, type `skip` to skip one, or type `done` to stop accepting questions.
-
-Answered questions are appended to `spec.md` under a `## Clarifications` section when a supporting spec exists. On the next planner call (regenerate or plan phase), the planner sees them as part of the supporting-spec context.
-
-Since spec 008, clarification answers also route through the same queue as user-initiated interjections (see §Queue & Interjection). Planners that implement `injectUserTurn()` receive the answer immediately; other planners drain it at the next phase boundary.
+The pending call, reply and answers are persisted in `state.pendingPlannerConversation` before waiting or continuing. An answer continues the same step, using the planner's native session when available. No placeholder document is written, and stopping leaves the question pending. Completed documents incorporate the decisions; the session log keeps the conversation. See [WORKFLOW.md](./WORKFLOW.md#clarification-questions).
 
 ---
 
@@ -286,7 +282,7 @@ The engine publishes every observable step as an `EngineEvent` on a single `Even
 - **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract, so ordering is preserved and a slow sink can delay later sinks. Shipped sinks: `jsonlSink`, `loggerSink`, optional `tuiSink`, optional `stdoutJsonSink`, and optional hook sink.
 - **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'reviewing-briefs' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Phase-bearing `EngineEvent` variants carry the current `phase` so sinks (hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
 
-Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onUserEditConflict`, `onTieredApproval`, `onTaskReviewNeeded`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Use the bus for broadcast; use callbacks for gates.
+Gating callbacks (`onApprovalNeeded`, `onPlannerReply`, `onContinuationNeeded`, `onUserEditConflict`, `onTieredApproval`, `onTaskReviewNeeded`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Use the bus for broadcast; use callbacks for gates.
 
 ## Headless mode
 

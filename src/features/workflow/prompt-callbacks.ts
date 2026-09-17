@@ -6,6 +6,8 @@ import { isTaskCompleted } from '../../core/schemas/task.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
+import type { PlannerConversation } from '../../core/schemas/workflow.js';
+import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import {
   formatUserEditConflictPrompt,
   parseUserEditConflictAnswer,
@@ -86,8 +88,19 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       }
       return decision;
     },
-    onQuestionAsked: (question, num, total) =>
-      inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`),
+    onPlannerReply: async (reply: PlannerConversation) => {
+      if (controller.signal.aborted || abortedRef.current) return undefined;
+      // The planner's text is already in the transcript. Questions are metadata for this same
+      // turn, while answers records prior turns, so one composer submission answers the current
+      // response without replaying the planner text or pretending history is a question index.
+      const hint = reply.questions.length > 0 ? 'Type your answer…' : 'Reply to the planner…';
+      const answerPromise = inputMode.setQuestionMode(hint);
+      questionPromptStore.setQuestions(reply.questions);
+      const answer = await answerPromise;
+      if (controller.signal.aborted || abortedRef.current) return undefined;
+      const trimmed = answer.trim();
+      return trimmed === '' ? undefined : answer;
+    },
     // A finished run is the loop returning, and the screen settles itself there from the record it
     // re-reads. Nothing is left for this callback to say that the return does not already say.
     onComplete: () => {},

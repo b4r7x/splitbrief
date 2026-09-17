@@ -20,6 +20,9 @@ import { formatResetNote } from '../../../core/recovery/reset-clock.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
 import { measureRailCells, Rail } from './rail.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 
 interface HeaderProps {
   startedAt: string;
@@ -56,24 +59,25 @@ function ElapsedClock({
   lifecycleStartedAt,
   endedAt,
   durationMs,
+  animate,
 }: {
   mountedAt: string;
   lifecycleStartedAt: number | null;
   endedAt: number | null;
   durationMs: number | null;
+  animate: boolean;
 }) {
   const t = useTheme();
-  const status = lifecycleStore.use((s) => s.status);
   const mountedAtMs = Date.parse(mountedAt);
   const startedAt = lifecycleStartedAt ?? (Number.isFinite(mountedAtMs) ? mountedAtMs : Date.now());
   const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt, endedAt, durationMs));
 
   useEffect(() => {
     setElapsed(formatElapsed(startedAt, endedAt, durationMs));
-    if (endedAt != null || durationMs != null || status !== 'running') return;
+    if (endedAt != null || durationMs != null || !animate) return;
     const id = setInterval(() => setElapsed(formatElapsed(startedAt, null, null)), 1000);
     return () => clearInterval(id);
-  }, [startedAt, endedAt, durationMs, status]);
+  }, [startedAt, endedAt, durationMs, animate]);
 
   return <Text color={t.textDim}>{elapsed}</Text>;
 }
@@ -108,15 +112,25 @@ export function getHeaderLayout(input: {
 }
 
 export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }: HeaderProps) {
-  const [{ cols }, lifecycle, tasks, tokens, eventsState, recoveryNotice] = useStores(
-    terminalSizeStore,
-    lifecycleStore,
-    tasksStore,
-    tokensStore,
-    eventsStore,
-    recoveryNoticeStore,
-  );
+  const [{ cols }, lifecycle, tasks, tokens, eventsState, recoveryNotice, controls, approval] =
+    useStores(
+      terminalSizeStore,
+      lifecycleStore,
+      tasksStore,
+      tokensStore,
+      eventsStore,
+      recoveryNoticeStore,
+      controlsStore,
+      approvalPromptStore,
+    );
   const { startedAt: lifecycleStartedAt, endedAt, durationMs, phase, cancelled } = lifecycle;
+  const display = deriveWorkflowDisplay({
+    status: lifecycle.status,
+    cancelled,
+    pendingQuestion: controls.inputMode !== 'normal',
+    pendingRecovery: recoveryNotice.issue !== null,
+    pendingApproval: approval.status === 'pending',
+  });
   const config = configStore.use((s) => s.config);
   const displayNames = useCrewDisplayNames(config);
   const railCells = measureRailCells({
@@ -157,6 +171,7 @@ export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }:
           lifecycleStartedAt={lifecycleStartedAt}
           endedAt={endedAt}
           durationMs={durationMs}
+          animate={display.animate}
         />
       }
     />

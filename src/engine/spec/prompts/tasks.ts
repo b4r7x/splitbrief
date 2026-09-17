@@ -2,7 +2,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import { sliceRuleText } from '../../../core/pipeline-spec/brief.js';
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
-import { buildPrompt, instructionsSection } from './builder.js';
+import { plannerConversationSection, buildPrompt, instructionsSection } from './builder.js';
 import { buildTaskFormatExample } from './task-format-example.js';
 import { formatTasks } from '../formatter.js';
 import { TASK_BRIEF_HEADINGS } from '../headings.js';
@@ -60,6 +60,7 @@ export function buildTasksPrompt(input: TasksPromptInput): string {
     intro:
       'You are compiling a set of **Product Task Brief v1** records — the durable contract the implementer model will execute against. Each brief is sent independently to a small implementer model that has NO access to this prompt, the spec, the plan, or sibling briefs. Every brief must stand on its own. The `tasks.md` markdown file is the transport; the brief is the meaning.',
     sections: [
+      plannerConversationSection,
       { heading: 'Specification', body: input.spec },
       {
         heading: 'Implementation Plan',

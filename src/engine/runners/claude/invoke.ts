@@ -67,6 +67,7 @@ interface ClaudeCallRunOptions {
   sessionId: string | null;
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
+  onSessionInit?: ((id: string) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
@@ -102,6 +103,7 @@ async function runClaudeCall(
   const { state, handleLine } = createStreamHandler({
     onOutput: opts.onOutput,
     onSessionId: opts.onSessionId,
+    onSessionInit: opts.onSessionInit,
     onQuestion: opts.onQuestion,
     onCallEvent: opts.onCallEvent,
     credentialValues: claudeCredentialValues(opts.authChannel, opts.spawnEnv),
@@ -163,6 +165,7 @@ export interface ClaudePlannerStreamOpts {
   sessionId: string | null;
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
+  onSessionInit?: ((id: string) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
@@ -201,6 +204,7 @@ export async function runClaudePlannerStream(
     sessionId: opts.sessionId,
     onOutput: opts.onOutput,
     onSessionId: opts.onSessionId,
+    onSessionInit: opts.onSessionInit,
     onQuestion: opts.onQuestion,
     onCallEvent: opts.onCallEvent,
     model: opts.model,
@@ -223,6 +227,7 @@ export interface ClaudeOneShotOpts {
   mode: 'plan' | 'escalate';
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
+  onSessionInit?: ((id: string) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   authChannel?: CliAuthChannelId | undefined;
@@ -256,6 +261,7 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
     sessionId: null,
     onOutput: opts.onOutput,
     onSessionId: opts.onSessionId,
+    onSessionInit: opts.onSessionInit,
     onCallEvent: opts.onCallEvent,
     model: opts.model,
     authChannel: opts.authChannel,

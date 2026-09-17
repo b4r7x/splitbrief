@@ -1,0 +1,273 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { flushEffects, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { mountWorkflowScreen } from '#testing/helpers/workflow-screen.js';
+import type { PlannerConversation } from '../../../src/core/schemas/workflow.js';
+import type { Summary } from '../../../src/core/schemas/summary.js';
+import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
+import { controlsStore } from '../../../src/stores/ui/controls.js';
+import { routerStore } from '../../../src/stores/navigation/router.js';
+import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/phase-call.js';
+import { createTestSinks, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
+import { createClaudeCodePlanner } from '../../../src/engine/planners/claude-code.js';
+import { createEventBus } from '../../../src/engine/events/bus.js';
+import { createJsonlSink } from '../../../src/engine/events/sinks/jsonl.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
+import { runPlanningSteps } from '../../../src/engine/orchestrator/planning/steps.js';
+import { createInitialState, transition } from '../../../src/core/state/machine.js';
+import { eventsStore } from '../../../src/stores/workflow/events.js';
+
+let projectDir = '';
+let ui: ReturnType<typeof mountWorkflowScreen> | undefined;
+let restorePath: (() => void) | undefined;
+
+beforeEach(() => {
+  resetAllStores();
+  routerStore.init({ screen: 'home' });
+  projectDir = createTempDir('planner-conversation-screen');
+});
+
+afterEach(() => {
+  ui?.unmount();
+  ui = undefined;
+  restorePath?.();
+  restorePath = undefined;
+  resetAllStores();
+  routerStore.init({ screen: 'home' });
+  cleanupTempDir(projectDir);
+});
+
+describe('planner conversation in the full workflow screen', () => {
+  it('shows an accepted answer and resumed Claude activity while the real subprocess is still running', async () => {
+    const release = join(projectDir, 'release');
+    const completed = join(projectDir, 'completed');
+    const invocations = join(projectDir, 'invocations.json');
+    const shim = join(projectDir, 'claude');
+    const documents = [
+      'Which module should change?',
+      PLANNER_DOCUMENT_FIXTURES.research,
+      PLANNER_DOCUMENT_FIXTURES.spec,
+      PLANNER_DOCUMENT_FIXTURES.plan,
+      REAL_TASKS_MD,
+    ];
+    writeFileSync(
+      shim,
+      `#!${process.execPath}
+const fs = require('node:fs');
+const path = ${JSON.stringify(invocations)};
+const calls = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : [];
+const index = calls.length;
+calls.push({args: process.argv.slice(2), prompt: fs.readFileSync(0, 'utf8')});
+fs.writeFileSync(path, JSON.stringify(calls));
+const emit = (frame) => console.log(JSON.stringify({session_id: 'native-screen', ...frame}));
+const documents = ${JSON.stringify(documents)};
+emit({type: 'system', subtype: 'init'});
+if (index === 1) {
+  emit({type: 'assistant', message: {content: [
+    {type: 'text', text: 'Inspecting the authentication module now.'},
+    {type: 'tool_use', id: 'read-auth', name: 'Read', input: {file_path: 'src/auth.ts'}}
+  ]}});
+  const deadline = setTimeout(() => process.exit(3), 5000);
+  const timer = setInterval(() => {
+    if (!fs.existsSync(${JSON.stringify(release)})) return;
+    clearInterval(timer); clearTimeout(deadline);
+    fs.writeFileSync(${JSON.stringify(completed)}, 'done');
+    emit({type: 'result', result: documents[index]});
+  }, 10);
+} else {
+  emit({type: 'result', result: documents[index]});
+}
+`,
+    );
+    chmodSync(shim, 0o755);
+    restorePath = prependPath(projectDir);
+    const planner = createClaudeCodePlanner({
+      authChannel: undefined,
+      trustedCli: trustedShimGate({ dir: projectDir, tool: 'claude-code' }),
+    });
+    const finished = Promise.withResolvers<void>();
+    let sessionId = '';
+    const runWorkflow = async (options: RunWorkflowOptions): Promise<Summary> => {
+      const ref = options.prepared.session.ref;
+      sessionId = ref.sessionId;
+      const bus = createEventBus();
+      if (options.tuiSink) bus.subscribe(options.tuiSink);
+      bus.subscribe(createJsonlSink(ref));
+      const state = {
+        ...transition(createInitialState('Refactor the implementation'), { type: 'START' }),
+        mode: 'standard' as const,
+        approve: 'none' as const,
+      };
+      bus.publish({
+        type: 'planner_status',
+        ts: Date.now(),
+        phase: state.phase,
+        status: 'running',
+      });
+      try {
+        const result = await runPlanningSteps({
+          wctx: {
+            ...ref,
+            config: options.prepared.config,
+            bus,
+            callbacks: options.callbacks,
+            sinks: createTestSinks(),
+            metadata: { plannerTool: 'claude-code', implementerTool: 'test', mode: 'standard' },
+            signal: options.signal,
+          },
+          state,
+          planner,
+          feature: state.feature,
+          approveLevel: 'none',
+        });
+        expect(result.disposition).toBe('tasks-ready');
+        return makeSummary();
+      } finally {
+        finished.resolve();
+      }
+    };
+    ui = mountWorkflowScreen({ deps: { runWorkflow }, projectDir, rows: 40 });
+    const screen = ui;
+    try {
+      await vi.waitFor(
+        () => expect(stripAnsiStyles(screen.lastFrame())).toContain('Waiting for your answer'),
+        { timeout: 3000 },
+      );
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      screen.stdin.write('Refactor src/auth.ts; preserve the public API.');
+      await flushEffects();
+      screen.stdin.write('\r');
+      await vi.waitFor(
+        () => {
+          const frame = stripAnsiStyles(screen.lastFrame());
+          expect(frame).toContain('Refactor src/auth.ts; preserve the public API.');
+          expect(frame).toContain('Inspecting the authentication module now.');
+          expect(frame).toContain('src/auth.ts');
+          expect(frame.indexOf('Refactor src/auth.ts;')).toBeLessThan(
+            frame.indexOf('Inspecting the authentication'),
+          );
+        },
+        { timeout: 3000 },
+      );
+      expect(existsSync(completed)).toBe(false);
+      expect(
+        eventsStore.get().events.filter((event) => event.type === 'user_message'),
+      ).toHaveLength(1);
+      const calls: unknown = JSON.parse(readFileSync(invocations, 'utf8'));
+      expect(calls).toEqual([
+        expect.objectContaining({
+          prompt: expect.stringContaining('SPLITBRIEF handles all interaction'),
+        }),
+        expect.objectContaining({
+          args: expect.arrayContaining(['--resume', 'native-screen']),
+          prompt: expect.stringContaining('[User reply] Refactor src/auth.ts;'),
+        }),
+      ]);
+    } catch (cause) {
+      screen.unmount();
+      throw cause;
+    } finally {
+      writeFileSync(release, 'continue');
+      await finished.promise;
+    }
+    const replay = await readRunEvents({ projectDir, sessionId });
+    expect(
+      replay.events.filter((event) => event.type === 'user_message').map((event) => event.text),
+    ).toEqual(['Refactor src/auth.ts; preserve the public API.']);
+    expect(
+      replay.events
+        .filter((event) => event.type === 'artifact_written')
+        .map((event) => event.filename),
+    ).toEqual(['research.md', 'spec.md', 'plan.md', 'tasks.md']);
+  });
+
+  it.each(['ordinary', 'structured'] as const)(
+    'shows the %s reply and sends one composer answer to the waiting turn',
+    async (kind) => {
+      const received = vi.fn();
+      const reply: PlannerConversation = {
+        call: 'research',
+        text: kind === 'ordinary' ? 'Which module should change?' : '',
+        questions:
+          kind === 'ordinary'
+            ? []
+            : [
+                { id: 'module', type: 'input', text: 'Which module should change?' },
+                {
+                  id: 'compatibility',
+                  type: 'choice',
+                  text: 'Which behavior must remain?',
+                  options: ['CLI exit codes', 'Output format'],
+                  default: 'CLI exit codes',
+                },
+              ],
+        answers: [],
+        answered: false,
+      };
+      const runWorkflow = vi.fn(async (options: RunWorkflowOptions): Promise<Summary> => {
+        options.tuiSink?.({
+          type: 'planner_status',
+          ts: Date.now(),
+          phase: 'researching',
+          status: 'running',
+        });
+        if (reply.text !== '') {
+          options.tuiSink?.({
+            type: 'planner_text',
+            ts: Date.now(),
+            phase: 'researching',
+            role: 'planner',
+            content: 'plain',
+            text: reply.text,
+          });
+        }
+        const ask = options.callbacks.onPlannerReply;
+        if (ask === undefined)
+          throw new Error('Workflow did not install its planner reply callback');
+        received(await ask(reply));
+        return new Promise<Summary>(() => {});
+      });
+      ui = mountWorkflowScreen({ deps: { runWorkflow }, projectDir, rows: 40 });
+      const screen = ui;
+      await vi.waitFor(() => {
+        const frame = stripAnsiStyles(screen.lastFrame());
+        expect(frame).toContain('Which module should change?');
+        if (kind === 'structured') {
+          expect(frame).toContain('Which behavior must remain?');
+          expect(frame).toContain('CLI exit codes');
+          expect(frame).toContain('Output format');
+        } else {
+          expect(frame.match(/Which module should change\?/g)).toHaveLength(1);
+          expect(frame.match(/Reply to the planner…/g) ?? []).toHaveLength(1);
+          expect(frame).not.toContain('Answer the planner…');
+        }
+        expect(frame).toContain('Waiting for your answer');
+      });
+      expect(received).not.toHaveBeenCalled();
+      await flushEffects();
+      const waitingFrame = stripAnsiStyles(screen.lastFrame());
+      await tick(1100);
+      expect(stripAnsiStyles(screen.lastFrame())).toBe(waitingFrame);
+
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      await flushEffects();
+      screen.stdin.write('Refactor src/auth.ts; preserve CLI exit codes.');
+      await flushEffects();
+      screen.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(received).toHaveBeenCalledExactlyOnceWith(
+          'Refactor src/auth.ts; preserve CLI exit codes.',
+        );
+        expect(controlsStore.get().inputMode).toBe('normal');
+        expect(stripAnsiStyles(screen.lastFrame())).not.toContain('Waiting for your answer');
+      });
+    },
+  );
+});

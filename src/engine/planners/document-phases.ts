@@ -15,6 +15,7 @@ import type {
   PlannerDocumentCall,
 } from './types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
+import { error } from '../../utils/error.js';
 
 /**
  * Runs a mode's document calls back to back and returns what they produced. No
@@ -62,6 +63,13 @@ export async function runDocumentPhases(opts: {
           : {}),
       },
     });
+    if (result.kind === 'conversation') {
+      throw error('planner-input-required', `The planner needs your reply: ${result.text}`, {
+        call,
+        text: result.text,
+        questions: result.questions,
+      });
+    }
     texts[call] = result.text;
     phases.push(result.artifact);
     if (result.usage) usage = accumulateTokenUsage(usage, result.usage);

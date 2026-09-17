@@ -683,6 +683,7 @@ Create the session-output file.
         ...(operation === 'normal' ? { quickPlan: undefined } : {}),
       });
 
+      if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
       expect(result.tasks).toHaveLength(1);
       expect(result.tasks?.[0]?.id).toBe('T001');
       expect(result.artifact.artifact).toMatchObject({
@@ -804,6 +805,7 @@ Create the internal-state file.
 
     const result = await callPhase(planner, { feature: 'plan a change', projectDir, callbacks });
 
+    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
     expect(result.tasks).toHaveLength(1);
     expect(result.tasks?.[0]?.id).toBe('T001');
   });
@@ -925,9 +927,9 @@ Create the CLI-written file.
       callbacks: { onOutput: vi.fn() },
     });
 
-    expect(result.tasks).toHaveLength(0);
-    expect(result.artifact.artifact.text).toContain(`Wrote [${TASKS_FILE}]`);
-    expect(result.artifact.rawOutput).toBeUndefined();
+    expect(result.kind).toBe('conversation');
+    expect(result.text).toContain(`Wrote [${TASKS_FILE}]`);
+    expect(result).not.toHaveProperty('artifact');
   });
 
   it('does not ingest a root tasks.md that an agentic CLI only described in prose', async () => {
@@ -1052,8 +1054,9 @@ Create the subdirectory file.
       callbacks: { onOutput: vi.fn() },
     });
 
-    expect(result.tasks).toHaveLength(0);
-    expect(result.artifact.artifact.text).toBe('Created `docs/tasks.md` with one brief.');
+    expect(result.kind).toBe('conversation');
+    expect(result.text).toBe('Created `docs/tasks.md` with one brief.');
+    expect(result).not.toHaveProperty('artifact');
   });
 
   itUnix('does not read root tasks.md through a final symlink', async () => {
@@ -1087,8 +1090,8 @@ Outside task content.
         callbacks: { onOutput: vi.fn() },
       });
 
-      expect(result.tasks).toHaveLength(0);
-      expect(result.artifact.artifact.text).not.toContain('Symlinked secret task');
+      expect(result.kind).toBe('conversation');
+      expect(result.text).not.toContain('Symlinked secret task');
     } finally {
       cleanupTempDir(outside);
     }
@@ -1370,8 +1373,10 @@ Session artifact must be ignored.
       callbacks: { onOutput: vi.fn(), sessionId },
     });
 
-    expect(result.artifact.artifact.text).toBe(stdoutText);
-    expect(result.artifact.artifact.text).not.toContain('Session artifact must be ignored');
+    expect(result.kind).toBe('conversation');
+    expect(result.text).toBe(stdoutText);
+    expect(result.text).not.toContain('Session artifact must be ignored');
+    expect(result).not.toHaveProperty('artifact');
   });
 });
 

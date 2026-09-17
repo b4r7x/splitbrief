@@ -25,7 +25,7 @@ function sorted(values: Iterable<string>): string[] {
 /** Scenarios whose surface cannot mount at the default matrix and say so in the catalog. */
 const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new Map([
   ['home-cold-detecting', ['80x40']],
-  ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
 ]);
 
 afterEach(() => {

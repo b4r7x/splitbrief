@@ -17,7 +17,14 @@ export const GATE_NAMES = ['spec', 'plan', 'briefs'] as const;
 export const GateNameSchema = z.enum(GATE_NAMES);
 export type GateName = z.infer<typeof GateNameSchema>;
 
-export const STOP_KINDS = ['paused', 'waiting', 'halted', 'failed', 'interrupted'] as const;
+export const STOP_KINDS = [
+  'paused',
+  'waiting',
+  'halted',
+  'failed',
+  'interrupted',
+  'input-required',
+] as const;
 export const StopKindSchema = z.enum(STOP_KINDS);
 export type StopKind = z.infer<typeof StopKindSchema>;
 

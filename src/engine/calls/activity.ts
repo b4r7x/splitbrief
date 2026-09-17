@@ -1,14 +1,14 @@
 import type { z } from 'zod';
 import { redactSecretsWithMetadata } from '../../utils/redact.js';
-import { stripTerminalControls, truncateTerminalDisplayText } from '../../utils/display-text.js';
+import { stripTerminalControls } from '../../utils/display-text.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { isRecord } from '../../utils/type-guards.js';
 import type { RunnerCallActivityKindSchema, RunnerCallActivityStageSchema } from './schema.js';
 import type { RunnerCallEvent, RunnerCallWarning } from './types.js';
 import { normalizeRunnerCallWarning, showsRunnerCallWarningOnPrimarySurface } from './warnings.js';
 
-const RUNNER_ACTIVITY_MAX_CELLS = 80;
-const RUNNER_ACTIVITY_TARGET_MAX_CELLS = 120;
+const RUNNER_ACTIVITY_MAX_LENGTH = 512;
+const RUNNER_ACTIVITY_TARGET_MAX_LENGTH = 2048;
 const SESSION_ACTIVITY_LABEL = 'session captured';
 
 type RunnerCallActivityStage = z.infer<typeof RunnerCallActivityStageSchema>;
@@ -154,9 +154,9 @@ function warningActivity(
   if (!showsRunnerCallWarningOnPrimarySurface(warning)) return null;
   const kind = warning.severity === 'error' ? 'error' : 'warning';
   const labelPrefix = warning.severity === 'error' ? 'error' : 'warning';
-  const label = cleanActivityText(`${labelPrefix} ${warning.code}`, RUNNER_ACTIVITY_MAX_CELLS);
+  const label = cleanActivityText(`${labelPrefix} ${warning.code}`, RUNNER_ACTIVITY_MAX_LENGTH);
   if (label === null) return null;
-  const diagnosticPartial = cleanActivityText(warning.message, RUNNER_ACTIVITY_TARGET_MAX_CELLS);
+  const diagnosticPartial = cleanActivityText(warning.message, RUNNER_ACTIVITY_TARGET_MAX_LENGTH);
   const identity =
     warning.fingerprint || warningActivityIdentity(label.text, diagnosticPartial?.text ?? '');
 
@@ -186,21 +186,21 @@ function buildActivity(opts: {
   textPartial?: string | undefined;
   diagnosticPartial?: string | undefined;
 }): RunnerCallActivityProjection | null {
-  const label = cleanActivityText(opts.label, RUNNER_ACTIVITY_MAX_CELLS);
+  const label = cleanActivityText(opts.label, RUNNER_ACTIVITY_MAX_LENGTH);
   if (label === null) return null;
 
   const target =
     opts.target === undefined
       ? undefined
-      : cleanActivityText(opts.target, RUNNER_ACTIVITY_TARGET_MAX_CELLS);
+      : cleanActivityText(opts.target, RUNNER_ACTIVITY_TARGET_MAX_LENGTH);
   const textPartial =
     opts.textPartial === undefined
       ? undefined
-      : cleanActivityText(opts.textPartial, RUNNER_ACTIVITY_TARGET_MAX_CELLS);
+      : cleanActivityText(opts.textPartial, RUNNER_ACTIVITY_TARGET_MAX_LENGTH);
   const diagnosticPartial =
     opts.diagnosticPartial === undefined
       ? undefined
-      : cleanActivityText(opts.diagnosticPartial, RUNNER_ACTIVITY_TARGET_MAX_CELLS);
+      : cleanActivityText(opts.diagnosticPartial, RUNNER_ACTIVITY_TARGET_MAX_LENGTH);
   return {
     activityId: opts.activityId,
     stage: opts.stage,
@@ -382,12 +382,15 @@ function activityKindForExternalTool(name: string): RunnerCallActivityKind {
   return isMcpTool(name) ? 'mcp' : 'web';
 }
 
-function cleanActivityText(value: string, maxCells: number): ActivityText | null {
+function cleanActivityText(value: string, maxLength: number): ActivityText | null {
   const redacted = redactSecretsWithMetadata(stripTerminalControls(value));
   const clean = redacted.text.replace(/\s+/g, ' ').trim();
   if (clean.length === 0) return null;
   return {
-    text: truncateTerminalDisplayText(clean, maxCells),
+    text:
+      clean.length <= maxLength
+        ? clean
+        : `${clean.slice(0, maxLength - 1).replace(/[\uD800-\uDBFF]$/, '')}…`,
     redacted: redacted.redacted,
   };
 }

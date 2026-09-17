@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { plannerStepsFor, type PlannerStep } from '../../../core/pipeline-spec/steps.js';
+import { isPlannerDocument } from '../../../core/pipeline-spec/planner-documents.js';
+import { extractQuestionsFromStream } from '../../parsers/question.js';
 import {
   PLAN_FILE,
   RESEARCH_FILE,
@@ -9,7 +11,6 @@ import {
   sessionDir,
 } from '../../../core/paths.js';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
-import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { GateName, PlannerCall } from '../../../core/schemas/run-step.js';
 import type { MachineAction } from '../../../core/state/types.js';
@@ -28,7 +29,6 @@ import {
 import { formatTasks } from '../../spec/formatter.js';
 import { writeAndPublishArtifacts } from '../artifact-write.js';
 import { runApprovalLoop } from '../approval/loop.js';
-import { collectAndPersistClarifications } from '../clarifications.js';
 import { publishPlannerStatus, publishWarning } from '../events.js';
 import { buildPlannerNoBriefsRecoveryIssue } from '../recovery/builders/planner.js';
 import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
@@ -83,6 +83,8 @@ function enteringAction(from: Phase, to: Phase): MachineAction | null {
 
 function hasArtifact(ref: { projectDir: string; sessionId: string }, step: PlannerStep): boolean {
   if (step.artifact === null) return false;
+  if (step.call === 'research')
+    return isPlannerDocument('research', readSpecFileOrEmpty(ref, RESEARCH_FILE));
   return existsSync(join(sessionDir(ref.projectDir, ref.sessionId), step.artifact));
 }
 
@@ -93,6 +95,9 @@ function stepIndexFor(
   ref: { projectDir: string; sessionId: string },
 ): number {
   const at = (index: number): number => (index < 0 ? 0 : index);
+  if (state.pendingPlannerConversation !== undefined) {
+    return at(steps.findIndex((step) => step.call === state.pendingPlannerConversation?.call));
+  }
   if (startAt !== undefined) return at(steps.findIndex((step) => step.call === startAt));
   const resume = resumeStep(state, artifactPresence(ref));
   if (resume.kind === 'planner') return at(steps.findIndex((step) => step.call === resume.call));
@@ -119,8 +124,6 @@ export async function runPlanningSteps(
   const steps = plannerStepsFor(mode, approveLevel);
   const skillsContext = await buildPlanningSkillsContext(opts, state);
   const passedGates = new Set<GateName>(opts.passedGates ?? []);
-  const questions: ClarificationQuestion[] = [];
-  let asked = 0;
   let languageContext = buildProjectLanguageContext(
     projectDir,
     extractLanguageFromResearch(readSpecFileOrEmpty(ref, RESEARCH_FILE)) ??
@@ -136,6 +139,31 @@ export async function runPlanningSteps(
     return persisted.ok ? persisted.tasks : tasks;
   };
 
+  const legacyResearch = readSpecFileOrEmpty(ref, RESEARCH_FILE);
+  if (
+    mode !== 'quick' &&
+    state.pendingPlannerConversation === undefined &&
+    legacyResearch.trim() !== '' &&
+    !isPlannerDocument('research', legacyResearch) &&
+    !existsSync(join(sessionDir(projectDir, sessionId), SPEC_FILE))
+  ) {
+    const previousStep =
+      opts.startAt === undefined
+        ? resumeStep(state, artifactPresence(ref))
+        : { kind: 'planner' as const, call: opts.startAt };
+    const continuation = wctx.continuation?.take(previousStep);
+    wctx.continuation?.hold({ kind: 'planner', call: 'research' }, continuation?.steer);
+    state = transitionAndSave(ref, state, {
+      type: 'SET_PLANNER_CONVERSATION',
+      conversation: {
+        call: 'research',
+        text: legacyResearch,
+        questions: extractQuestionsFromStream(legacyResearch).slice(0, 5),
+        answers: [],
+        answered: false,
+      },
+    });
+  }
   const start = stepIndexFor(steps, opts.startAt, state, ref);
   let index = start;
 
@@ -147,6 +175,14 @@ export async function runPlanningSteps(
     while (index < steps.length) {
       const step = steps[index];
       if (step === undefined) break;
+
+      if (
+        hasArtifact(ref, step) &&
+        state.pendingPlannerConversation?.call === step.call &&
+        state.pendingPlannerConversation.answered
+      ) {
+        state = transitionAndSave(ref, state, { type: 'CLEAR_PLANNER_CONVERSATION' });
+      }
 
       if (!hasArtifact(ref, step)) {
         if (opts.beforeFirstCall && !(await opts.beforeFirstCall())) {
@@ -160,6 +196,27 @@ export async function runPlanningSteps(
           // Messages queued while the last call ran lead this call's prompt.
           const drained = drainAndFormat(projectDir, sessionId, state, bus);
           state = drained.state;
+          if (
+            drained.prefix !== '' &&
+            state.pendingPlannerConversation !== undefined &&
+            !state.pendingPlannerConversation.answered
+          ) {
+            const pending = state.pendingPlannerConversation;
+            state = transitionAndSave(ref, state, {
+              type: 'SET_PLANNER_CONVERSATION',
+              conversation: {
+                ...pending,
+                answers: [
+                  ...pending.answers,
+                  {
+                    reply: pending.text,
+                    answer: drained.messages.map((message) => message.text).join('\n\n'),
+                  },
+                ],
+                answered: true,
+              },
+            });
+          }
           const inputs: PhaseInputs = {
             feature: opts.feature,
             projectContext,
@@ -184,9 +241,11 @@ export async function runPlanningSteps(
             planner,
             call: step.call,
             inputs,
-            collectedQuestions: questions,
             phaseHint: PHASE_HINT[step.call],
           });
+          if (run.result.kind === 'conversation') {
+            return { disposition: 'terminal', state: run.state, outcome: 'input-required' };
+          }
           state = addUsageAndSave(wctx, run.state, 'planner', run.result.usage);
           priorMessages = undefined;
           attachments = undefined;
@@ -221,6 +280,9 @@ export async function runPlanningSteps(
               phase: state.phase,
             });
           }
+          if (state.pendingPlannerConversation !== undefined) {
+            state = transitionAndSave(ref, state, { type: 'CLEAR_PLANNER_CONVERSATION' });
+          }
         } else {
           const special = await runSpeckitCall(step.call, {
             opts,
@@ -238,36 +300,6 @@ export async function runPlanningSteps(
         // steps that wrote them run again against the document just produced.
         invalidateFrom(ref, step.call);
         if (step.call !== 'tasks') tasks = [];
-      }
-
-      // An answer is written into the spec, so a question waits for the document that hosts it:
-      // in quick, which has no spec call, the one call the mode makes writes it while the phase
-      // still names that call. Asking after the briefs settle would put the answer nowhere.
-      const clarificationsHosted =
-        mode === 'quick'
-          ? step.call === 'tasks'
-          : existsSync(join(sessionDir(projectDir, sessionId), SPEC_FILE));
-      if (clarificationsHosted && questions.length > asked && callbacks.onQuestionAsked) {
-        const pending = questions.slice(asked);
-        asked = questions.length;
-        const queuedBefore = state.messageQueue.length;
-        state = await collectAndPersistClarifications({
-          questions: pending,
-          projectDir,
-          sessionId,
-          state,
-          onQuestionAsked: callbacks.onQuestionAsked,
-          bus,
-          metadata,
-          planner,
-        });
-        // The spec keeps the answers, so it stays; everything it feeds is stale and runs again
-        // with the answers drained into its prompt. Quick has no call below the one that asked.
-        if (state.messageQueue.length > queuedBefore && mode !== 'quick') {
-          invalidateFrom(ref, 'spec');
-          index = start;
-          continue;
-        }
       }
 
       if (step.call === 'tasks') {

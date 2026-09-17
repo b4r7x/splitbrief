@@ -14,6 +14,7 @@ const STOP_HALT: Record<StopKind, RailHalt> = {
   interrupted: 'cancelled',
   halted: 'failed',
   failed: 'failed',
+  'input-required': 'cancelled',
 };
 
 /** The phase the record stands in: the saved state first, then what the summary recorded. */
@@ -53,6 +54,10 @@ export function atRestComposer(record: RunRecord): AtRestComposer {
   return {
     continuable,
     commandsOnly: !continuable,
-    placeholder: continuable ? AT_REST_PLACEHOLDER.open : AT_REST_PLACEHOLDER.closed,
+    placeholder: !continuable
+      ? AT_REST_PLACEHOLDER.closed
+      : record.status.kind === 'open' && record.status.stop.kind === 'input-required'
+        ? AT_REST_PLACEHOLDER.inputRequired
+        : AT_REST_PLACEHOLDER.open,
   };
 }

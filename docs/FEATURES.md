@@ -313,7 +313,7 @@ The second row appears only while a brief is running, and reads `Keep running` o
 
 | Action | Current behavior |
 |---|---|
-| `retry-same-worker` | Resets only the current task and reruns it in a fresh worker context. |
+| `retry-same-worker` | Retries the recorded PLAN/REVIEW step without requiring a task; BUILD resets and reruns only the matching current task. |
 | `continue` | Allowed only for safe unrelated user edits. |
 | `skip-current-task` | Marks the task skipped, records evidence, and leaves dependents for normal blocked-dependency recovery. |
 | `pause-run` | Leaves the active session resumable with the issue intact. |
@@ -584,7 +584,7 @@ hooks:
 
 ### `splitbrief start --json`
 
-**What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs workflow host callbacks: review gates approve, questions answer empty, and recovery exits non-zero. File-write tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. The normal `session.jsonl` log is still written for the run.
+**What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs workflow host callbacks: review gates approve; planner questions persist as pending input, emit `input_required`, and exit non-zero, as does recovery. File-write tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. The normal `session.jsonl` log is still written for the run.
 
 **How to use.**
 

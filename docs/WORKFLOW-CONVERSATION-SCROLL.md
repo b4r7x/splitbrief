@@ -81,6 +81,7 @@ Row projection is split from row materialization:
 - `getConversationRowsProjection()` computes total row count and renderable count once for the current input identity.
 - `getConversationRowsWindowProjection()` materializes only the visible window returned by `getScrollWindowState()`.
 - Activity batches dedupe with `Map`, pin the latest warning/error in collapsed mode, and allocate all deduped activity rows only when expanded.
+- Activity producers preserve sanitized text up to the payload limits (512 characters for labels, 2048 for targets and partials). The row formatter fits that text to the current terminal width, so widening the terminal reveals more of a command or path.
 - Markdown planner text uses `markdownConversationRowsProjection()` with a bounded cache keyed by event identity and width. Appends reuse unchanged chunks and relayout the suffix; width changes invalidate the projection.
 
 The performance regression harness is documented in [`TESTING.md`](./TESTING.md#performance-harnesses).

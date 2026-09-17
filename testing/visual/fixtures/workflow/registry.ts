@@ -85,6 +85,7 @@ const checkpointPredicates = [
   [checkpointId('approval-permission'), includesAll('allow this operation only')],
   [checkpointId('reviewing-briefs'), includesAll('Approve briefs', 'T001 modify')],
   [checkpointId('question'), includesAll(WORKFLOW_FIXTURE_TEXT.question)],
+  [checkpointId('planner-reply'), includesAll('Reply to the planner…', 'Waiting for your answer')],
   [checkpointId('task-review'), includesAll('[c]  continue', '[r]  redo task', '[a]  abort')],
   [checkpointId('paused-mid-brief'), includesAll('/resume')],
   [checkpointId('paused-boundary'), includesAll('briefs complete')],
@@ -102,7 +103,7 @@ const checkpointPredicates = [
   [checkpointId('replayed'), includesAll()],
   [checkpointId('failure'), includesAll(WORKFLOW_FIXTURE_TEXT.failure, 'Build failed')],
   [checkpointId('recovery'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
-  [checkpointId('api-context'), includesAll(WORKFLOW_FIXTURE_TEXT.apiContext, '[r]  retry PLAN')],
+  [checkpointId('api-context'), includesAll(WORKFLOW_FIXTURE_TEXT.apiContext, 'Try again')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 
 export const workflowCheckpointPredicates: ReadonlyMap<CheckpointId, CheckpointPredicate> = new Map(

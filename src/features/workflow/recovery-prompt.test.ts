@@ -156,11 +156,11 @@ describe('recovery prompt', () => {
     const prompt = formatRecoveryPrompt(baseIssue);
     const visible = await renderPromptBody(prompt);
 
-    expect(visible).toContain('recovery needed · T003 validation failed after 3 attempts');
-    expect(visible).toContain('task T003 · Patch auth validation');
-    expect(visible).toContain('files src/auth/session.ts · src/auth/session.test.ts');
+    expect(visible).toContain('Recovery needed · T003 validation failed after 3 attempts');
+    expect(visible).toContain('Task T003 · Patch auth validation');
+    expect(visible).toContain('Files src/auth/session.ts · src/auth/session.test.ts');
     expect(visible).toContain(
-      'last check test failed: npm test -- auth failed in src/auth/session.test.ts',
+      'Last check test failed: npm test -- auth failed in src/auth/session.test.ts',
     );
     expect(visible).toContain('[r]  retry same worker');
     expect(visible).toContain('[b]  route to bigger worker · cheap-cloud');
@@ -186,7 +186,7 @@ describe('recovery prompt', () => {
   it('serializes the rows into a flat prompt with the recommended accent marker', () => {
     const prompt = formatRecoveryPrompt(baseIssue);
 
-    expect(prompt).toContain('recovery needed · T003 validation failed after 3 attempts');
+    expect(prompt).toContain('Recovery needed · T003 validation failed after 3 attempts');
     expect(prompt).toContain('▌ [b]  route to bigger worker · cheap-cloud');
     expect(prompt).toContain('[r]  retry same worker');
     expect(prompt).not.toContain('[c]  continue');
@@ -198,7 +198,7 @@ describe('recovery prompt', () => {
     expect(row).toBe('[r]  retry same worker');
     expect(isActionRowLine(row)).toBe(true);
     expect(isActionRowLine(`${recommendedRowPrefix()}${row}`)).toBe(true);
-    expect(isActionRowLine('task T003 · Patch auth validation')).toBe(false);
+    expect(isActionRowLine('Task T003 · Patch auth validation')).toBe(false);
   });
 
   it('parses answers into typed recovery actions', () => {
@@ -275,7 +275,7 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('recovery needed · Context overflowed on T004');
+    expect(visible).toContain('Recovery needed · Context overflowed on T004');
     expect(visible).toContain('Blocked step: before T004');
     expect(visible).toContain('[space]  pause');
     expect(visible).toContain('[a]  end run');
@@ -460,7 +460,7 @@ describe('recovery prompt', () => {
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
     // No context diagnosis, so the halt keeps the ordinary headline — only the retry is seat-level.
-    expect(visible).toContain('recovery needed · The review call did not land: socket hang up');
+    expect(visible).toContain('Recovery needed · The review call did not land: socket hang up');
     expect(visible).toContain('[r]  retry REVIEW');
     expect(parseRecoveryActionAnswer('r', issue)).toBe('retry-same-worker');
     expect(parseRecoveryActionAnswer('retry', issue)).toBe('retry-same-worker');
@@ -501,7 +501,7 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('recovery needed · Final review failed with 2 blocking findings');
+    expect(visible).toContain('Recovery needed · Final review failed with 2 blocking findings');
     expect(visible).not.toContain('Nothing was sent');
     expect(visible).not.toContain('[r]  ');
   });

@@ -94,7 +94,7 @@ function parseAnalyze(text: string): AnalyzeResult {
 }
 
 function formatClarificationsPlaceholder(): string {
-  return '# Clarifications\n\n_Inline clarifications collected during the spec phase are appended to spec.md. See spec.md for the answered questions._\n';
+  return '# Clarifications\n\n_Clarification replies and answers are preserved in session.jsonl. Completed planning documents incorporate those answers._\n';
 }
 
 function readSpeckitConfig(opts: PlanningStepsOptions): { minCoverage: number } {
@@ -103,8 +103,8 @@ function readSpeckitConfig(opts: PlanningStepsOptions): { minCoverage: number } 
 }
 
 /**
- * The clarify step spends no planner call: inline questions are collected during
- * the spec call and appended to spec.md, so the artifact is the pointer at them.
+ * The clarify step spends no planner call: the conversation was answered before
+ * the spec completed, and its transcript already holds the questions and answers.
  */
 export function runClarifyCall(opts: PlanningStepsOptions, state: WorkflowState): WorkflowState {
   const { projectDir, sessionId } = opts.wctx;

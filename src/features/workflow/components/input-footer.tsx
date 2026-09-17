@@ -35,6 +35,10 @@ import {
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { formatSeatIdentity } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 
 export function InputFooter({
   width,
@@ -47,11 +51,14 @@ export function InputFooter({
   byline?: string | undefined;
 }) {
   const t = useTheme();
-  const [lifecycle, { cols }, tasks, operations] = useStores(
+  const [lifecycle, { cols }, tasks, operations, controls, approval, recovery] = useStores(
     lifecycleStore,
     terminalSizeStore,
     tasksStore,
     operationsStore,
+    controlsStore,
+    approvalPromptStore,
+    recoveryNoticeStore,
   );
   const worktreeName = routerStore.use((s) =>
     s.screen === 'workflow' && s.execution.kind === 'local'
@@ -81,22 +88,34 @@ export function InputFooter({
     state.kind === 'checking' ? state.stage : null,
   );
 
-  const liveStatus = waiting
-    ? null
-    : deriveLiveStatus({
-        phase: lifecycle.phase,
-        status: lifecycle.status,
-        cancelled: lifecycle.cancelled,
-        startedAt: lifecycle.startedAt,
-        phaseFirstSeenTs: lifecycle.phaseFirstSeenTs,
-        reviewerLabel: reviewerSeat === '' ? null : reviewerSeat,
-      });
-  const live = liveStatus !== null;
-  const { frame } = useSpinnerFrame(live || checkingStage !== null);
+  const display = deriveWorkflowDisplay({
+    status: lifecycle.status,
+    cancelled: lifecycle.cancelled,
+    pendingQuestion: waiting || controls.inputMode !== 'normal',
+    pendingRecovery: recovery.issue !== null,
+    pendingApproval: approval.status === 'pending',
+  });
+  const recoveryWaiting = recovery.issue !== null && controls.inputMode === 'question';
+  const recoveryStopped = recovery.issue !== null && !recoveryWaiting;
+  const liveStatus =
+    waiting || !display.animate
+      ? null
+      : deriveLiveStatus({
+          phase: lifecycle.phase,
+          status: lifecycle.status,
+          cancelled: lifecycle.cancelled,
+          startedAt: lifecycle.startedAt,
+          phaseFirstSeenTs: lifecycle.phaseFirstSeenTs,
+          reviewerLabel: reviewerSeat === '' ? null : reviewerSeat,
+        });
+  const { frame } = useSpinnerFrame(display.animate || checkingStage !== null);
 
   const stageCore = [stageText, fractionText].filter((part) => part.length > 0).join(' ');
   const stageLead = stageCore.length > 0 ? `${glyph('stageDone')} ${stageCore}` : '';
-  const waitingLead = joinBylineParts([`${glyph('statusPending')} Waiting for you`, stageCore]);
+  const waitingLead = joinBylineParts([
+    `${glyph('statusPending')} Waiting for your answer`,
+    stageCore,
+  ]);
   const elapsed =
     liveStatus !== null && liveStatus.stageStart > 0
       ? formatStageElapsed(Date.now() - liveStatus.stageStart)
@@ -126,6 +145,7 @@ export function InputFooter({
   const stoppedGlyph = glyph(userCancelled ? 'statusCancelled' : 'statusFailed');
   const stoppedWord = userCancelled ? 'Stopped by you' : 'Build failed';
   const stoppedLead = joinBylineParts([`${stoppedGlyph} ${stoppedWord}`, stageCore]);
+  const recoveryStoppedLead = `${glyph('statusFailed')} Run stopped`;
   const stall = lifecycle.status === 'running' ? lifecycle.stall : null;
   // stall.since is the warning time; silentMs is the silence already elapsed when
   // the warning fired, so the byline shows the full span since the last output.
@@ -134,29 +154,36 @@ export function InputFooter({
   const stalledLead =
     stall !== null ? `${glyph('statusWarning')} Still working — silent ${stalledFor}` : '';
 
-  // One derivation encodes the stop → cancelled → interrupted → waiting → stalled → live
-  // priority order so the lead text, its color, and its hint can never drift apart.
+  // An actionable prompt takes precedence over the lifecycle state it interrupted.
   // The stop's own keys are the legend row's job: crowding them onto this row would cost the
   // state its words at 80 columns and print half a key at 60.
-  const { lead, leadColor, hintText } = stopped
-    ? { lead: `${glyph('statusPending')} ${stopped.lead}`, leadColor: t.warning, hintText: null }
-    : lifecycle.status === 'cancelled'
-      ? { lead: stoppedLead, leadColor: userCancelled ? t.warning : t.error, hintText: null }
-      : interrupted
-        ? { lead: interruptedLead, leadColor: t.warning, hintText: null }
-        : paused
-          ? { lead: pausedLead, leadColor: null, hintText: null }
-          : waiting
-            ? { lead: waitingLead, leadColor: null, hintText: null }
-            : stall !== null
-              ? {
-                  lead: stalledLead,
-                  leadColor: t.warning,
-                  hintText: stallRunnerHint(stall.runnerName),
-                }
-              : liveStatus !== null
-                ? { lead: liveLead, leadColor: colorForTone(liveStatus.tone, t), hintText: null }
-                : { lead: stageLead, leadColor: null, hintText: null };
+  const { lead, leadColor, hintText } = recoveryWaiting
+    ? { lead: `${glyph('statusPending')} Choose how to continue`, leadColor: null, hintText: null }
+    : stopped
+      ? { lead: `${glyph('statusPending')} ${stopped.lead}`, leadColor: t.warning, hintText: null }
+      : recoveryStopped
+        ? { lead: recoveryStoppedLead, leadColor: t.error, hintText: null }
+        : waiting || approval.status === 'pending'
+          ? { lead: waitingLead, leadColor: null, hintText: null }
+          : lifecycle.status === 'cancelled'
+            ? { lead: stoppedLead, leadColor: userCancelled ? t.warning : t.error, hintText: null }
+            : interrupted
+              ? { lead: interruptedLead, leadColor: t.warning, hintText: null }
+              : paused
+                ? { lead: pausedLead, leadColor: null, hintText: null }
+                : stall !== null
+                  ? {
+                      lead: stalledLead,
+                      leadColor: t.warning,
+                      hintText: stallRunnerHint(stall.runnerName),
+                    }
+                  : liveStatus !== null
+                    ? {
+                        lead: liveLead,
+                        leadColor: colorForTone(liveStatus.tone, t),
+                        hintText: null,
+                      }
+                    : { lead: stageLead, leadColor: null, hintText: null };
 
   const queuedText = lifecycle.queueDepth > 0 ? `${lifecycle.queueDepth} queued` : null;
 

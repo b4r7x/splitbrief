@@ -123,6 +123,26 @@ describe('createRecoveryDriver', () => {
     expect(feedbackStore.get().message).toBe('Recovery paused. Resume with splitbrief resume.');
   });
 
+  it('keeps the halt menu open when an action cannot be applied', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'review-failed',
+      taskId: taskId('T999'),
+      taskTitle: 'Missing review task',
+      files: [],
+      affectedTaskIds: [],
+      availableActions: ['retry-same-worker', 'pause-run'],
+      recommendedAction: 'retry-same-worker',
+    });
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['retry-same-worker', 'pause']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(2);
+    expect(feedbackAtPrompt[1]?.isError).toBe(true);
+    expect(result.shouldRun).toBe(false);
+    expect(feedbackStore.get().message).toBe('Recovery paused. Resume with splitbrief resume.');
+  });
+
   it('resumes the run on a retry and carries the selected worker as the profile override', async () => {
     const { prepared, state } = setupSession();
     const { inputMode } = makeInputMode(['retry-same-worker']);

@@ -160,7 +160,7 @@ Two separate communication mechanisms serve different purposes.
 
 - `onApprovalNeeded(type, filePath)` — spec, plan, or briefs review
 - `onUserEditConflict(conflict)` — a user edit collides with in-flight work
-- `onQuestionAsked(question, num, total)` — planner asks a clarification question
+- `onPlannerReply(reply)` — planner returns conversation text and optional structured questions; the same step waits for an answer
 - `onContinuationNeeded(partialResponse)` — planner call was interrupted, should we continue?
 - `onTieredApproval(request)` — a declared implementer file write needs tiered approval
 - `onTaskReviewNeeded(request)` — task needs human review

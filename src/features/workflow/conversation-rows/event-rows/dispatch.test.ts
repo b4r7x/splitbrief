@@ -196,11 +196,11 @@ describe('event row dispatch', () => {
   });
 
   it.each([
-    ['continued', 'success'],
-    ['retry-current-task', 'success'],
-    ['skipped-current-task', 'textDim'],
-    ['aborted', 'error'],
-  ] as const)('tones recovery_resolved outcome %s as %s', (outcome, tone) => {
+    ['continued', 'Continued', 'success'],
+    ['retry-current-task', 'Tried again', 'success'],
+    ['skipped-current-task', 'Skipped current task', 'textDim'],
+    ['aborted', 'Ended run', 'error'],
+  ] as const)('tones recovery_resolved outcome %s as %s', (outcome, outcomeLabel, tone) => {
     const event: EngineEventOf<'recovery_resolved'> = {
       type: 'recovery_resolved',
       ts: 0,
@@ -224,7 +224,7 @@ describe('event row dispatch', () => {
     if (topRow !== undefined) {
       expect(rowText(topRow)).not.toContain('┌');
     }
-    expect(rows.map(rowText).join('\n')).toContain(`${outcome} via retry-same-worker`);
+    expect(rows.map(rowText).join('\n')).toContain(`${outcomeLabel} via Try again`);
   });
 
   it('redacts secrets in planner, warning, and user display rows', () => {
@@ -523,7 +523,7 @@ describe('event row dispatch', () => {
         action: 'retry-same-worker',
         message: 'worker unavailable',
       },
-      stateWord: 'recovery',
+      stateWord: 'Recovery',
       body: 'worker unavailable',
     },
     {

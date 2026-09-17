@@ -1,5 +1,5 @@
 import type { Task, TaskId } from '../schemas/task.js';
-import type { QueuedMessage, WorkflowState } from '../schemas/workflow.js';
+import type { QueuedMessage, WorkflowState, PlannerConversation } from '../schemas/workflow.js';
 import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { StepCut, StepRef } from '../schemas/run-step.js';
@@ -52,6 +52,8 @@ export type StateAction =
       partialRef?: { kind: 'session-log'; index: number };
     }
   | { type: 'RESUME_STEP' }
+  | { type: 'SET_PLANNER_CONVERSATION'; conversation: PlannerConversation }
+  | { type: 'CLEAR_PLANNER_CONVERSATION' }
   | { type: 'SET_PLANNER_SESSION_ID'; sessionId: string }
   | { type: 'REWIND_TO_SPEC'; comment?: string }
   | { type: 'REWIND_TO_PLAN'; comment?: string }

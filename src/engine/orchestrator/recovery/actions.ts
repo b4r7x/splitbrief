@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { phaseRole } from '../../../core/phases.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { allowedActionsForReason } from '../../../core/schemas/recovery/policy.js';
@@ -378,11 +379,11 @@ function applySkipCurrentTaskRecoveryAction(
  * corrected. Every other retry replays the brief it names.
  */
 function isSeatLevelRetry(issue: RecoveryIssue): boolean {
-  if (issue.taskId !== undefined) return false;
-  if (issue.seat !== 'plan' && issue.seat !== 'review') return false;
   return (
-    recoveryFactString(issue.facts, 'apiContextCode') === 'insufficient-context' ||
-    recoveryFactString(issue.facts, 'reviewFailureKind') === 'call-failed'
+    issue.taskId === undefined &&
+    (issue.seat === 'plan' ||
+      issue.seat === 'review' ||
+      (issue.seat === undefined && phaseRole(issue.phase) === 'planner'))
   );
 }
 
@@ -531,14 +532,13 @@ export function applySwitchSeatRecoveryAction(
   // A seat-level halt — a planner call that could not run at all — names no brief:
   // resolving it is the whole move, and the run re-issues its step on the new seat.
   // A halt that names a brief still replays that brief there.
-  const applied =
-    issue.taskId === undefined
-      ? resolveSeatIssueWithoutTask({ ...opts, action }, issue)
-      : applyRetryCurrentTaskRecoveryAction(
-          { ...opts, action },
-          issue,
-          'Switching a seat requires the pending recovery task to match the current task index.',
-        );
+  const applied = isSeatLevelRetry(issue)
+    ? resolveSeatIssueWithoutTask({ ...opts, action }, issue)
+    : applyRetryCurrentTaskRecoveryAction(
+        { ...opts, action },
+        issue,
+        'Switching a seat requires the pending recovery task to match the current task index.',
+      );
   if (!applied.ok) return applied;
   return {
     ...applied,
@@ -556,6 +556,20 @@ function resolveSeatIssueWithoutTask(
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
   let state = markRecoveryApplying(opts, issue);
+  if (opts.comment?.trim()) {
+    state = transitionAndSave(opts, state, {
+      type: 'ENQUEUE_USER_MSG',
+      message: {
+        id: randomUUID(),
+        text: opts.comment,
+        queuedAt: nowIso(),
+        phase: state.phase,
+        deliveredViaNative: false,
+        nativeDeliveryState: 'pending',
+        origin: 'user-input',
+      },
+    });
+  }
   state = transitionAndSave(
     opts,
     state,

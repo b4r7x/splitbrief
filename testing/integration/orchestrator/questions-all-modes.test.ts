@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SPEC_FILE, sessionDir } from '../../../src/core/paths.js';
+import { SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import type { WorkflowMode } from '../../../src/core/schemas/enums.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
@@ -99,9 +99,17 @@ function makeMarkerPlanner(opts: {
     planningInputs.push({
       call: input.call,
       feature: input.inputs.feature,
-      promptPrefix: input.inputs.promptPrefix ?? '',
+      promptPrefix: input.inputs.promptSuffix ?? input.inputs.promptPrefix ?? '',
     });
-    if (planningInputs.length === 1) stream(input.callbacks);
+    if (planningInputs.length === 1) {
+      stream(input.callbacks);
+      return {
+        kind: 'conversation',
+        text: narration,
+        questions: extractQuestionsFromStream(narration).slice(0, 5),
+        usage: null,
+      };
+    }
     return makePhaseCallResult({
       call: input.call,
       usage: { inputTokens: 100, outputTokens: 50 },
@@ -128,7 +136,7 @@ function entryState(feature: string): WorkflowState {
 async function runMode(opts: {
   mode: WorkflowMode;
   planner: Planner;
-  onQuestionAsked?: OrchestratorCallbacks['onQuestionAsked'];
+  onPlannerReply?: OrchestratorCallbacks['onPlannerReply'];
   project?: { projectDir: string; sessionId: string };
   state?: WorkflowState;
   feature?: string;
@@ -136,7 +144,7 @@ async function runMode(opts: {
   const project = opts.project ?? setupProject(dirs);
   const feature = opts.feature ?? 'add token auth';
   const { callbacks } = makeCallbacks(
-    opts.onQuestionAsked ? { onQuestionAsked: opts.onQuestionAsked } : undefined,
+    opts.onPlannerReply ? { onPlannerReply: opts.onPlannerReply } : undefined,
   );
   const { bus, events } = makeBusRecorder();
   const result = await runPlanningPhase({
@@ -176,23 +184,24 @@ function modeSuite(mode: WorkflowMode): void {
   it.each(FLAVORS)('%s planner: question prompt fires and pauses the workflow', async (flavor) => {
     const { planner } = makeMarkerPlanner({ flavor, markers: TWO_MARKERS });
     const resolvers: Array<(answer: string) => void> = [];
-    const onQuestionAsked = vi.fn(
+    const onPlannerReply = vi.fn(
       () =>
         new Promise<string>((resolve) => {
           resolvers.push(resolve);
         }),
     );
 
-    const pending = runMode({ mode, planner, onQuestionAsked });
-    await vi.waitFor(() => expect(onQuestionAsked).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    const pending = runMode({ mode, planner, onPlannerReply });
+    await vi.waitFor(() => expect(onPlannerReply).toHaveBeenCalledTimes(1), { timeout: 5000 });
     await expectStillPending(pending);
-    resolvers[0]?.('skip');
-    await vi.waitFor(() => expect(onQuestionAsked).toHaveBeenCalledTimes(2), { timeout: 5000 });
-    resolvers[1]?.('skip');
+    resolvers[0]?.('Use jwt in src/auth.');
     const { result, events } = await pending;
 
-    expect(onQuestionAsked).toHaveBeenNthCalledWith(1, expect.objectContaining({ id: 'q1' }), 1, 2);
-    expect(onQuestionAsked).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'q2' }), 2, 2);
+    expect(onPlannerReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        questions: [expect.objectContaining({ id: 'q1' }), expect.objectContaining({ id: 'q2' })],
+      }),
+    );
     expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expectMarkerFreePlannerText(events);
@@ -200,58 +209,50 @@ function modeSuite(mode: WorkflowMode): void {
 
   it('caps prompted questions at five when seven markers are emitted', async () => {
     const { planner } = makeMarkerPlanner({ flavor: 'command', markers: SEVEN_MARKERS });
-    const onQuestionAsked = vi.fn().mockResolvedValue('skip');
+    const onPlannerReply = vi.fn().mockResolvedValue('skip');
 
-    const { result, events } = await runMode({ mode, planner, onQuestionAsked });
+    const { result, events } = await runMode({ mode, planner, onPlannerReply });
 
-    expect(onQuestionAsked).toHaveBeenCalledTimes(5);
+    expect(onPlannerReply).toHaveBeenCalledTimes(1);
+    expect(onPlannerReply.mock.calls[0]?.[0].questions).toHaveLength(5);
     expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expectMarkerFreePlannerText(events);
   });
 
-  it('persists the answer under ## Clarifications and feeds it back inside the same turn', async () => {
-    const { planner, planningInputs, reviewPrompts } = makeMarkerPlanner({
+  it('persists the answer in the transcript and continues the same planner step', async () => {
+    const { planner, planningInputs } = makeMarkerPlanner({
       flavor: 'conversational',
       markers: TWO_MARKERS,
     });
-    const onQuestionAsked = vi.fn().mockResolvedValueOnce(ANSWER).mockResolvedValue('skip');
+    const onPlannerReply = vi.fn().mockResolvedValueOnce(ANSWER).mockResolvedValue('skip');
 
-    const first = await runMode({ mode, planner, onQuestionAsked });
+    const first = await runMode({ mode, planner, onPlannerReply });
 
     expect(first.result.disposition).toBe('ready-for-tasks');
     const specContent = readFileSync(
-      join(sessionDir(first.projectDir, first.sessionId), SPEC_FILE),
+      join(sessionDir(first.projectDir, first.sessionId), SESSION_LOG_FILE),
       'utf8',
     );
-    expect(specContent).toContain('## Clarifications');
     expect(specContent).toContain(ANSWER);
 
-    // The answer reaches the planner inside the same turn, and never as a re-run of the whole
-    // turn: every call still runs once and none is handed the answer as its feature. A mode with
-    // calls below the spec leads their prompt with it; quick has none, so the brief quality
-    // regeneration is where it lands.
     const calls = planningInputs.map((input) => input.call);
-    expect(new Set(calls).size, 'each call runs once').toBe(calls.length);
+    expect(calls[0]).toBe(calls[1]);
+    expect(new Set(calls).size).toBe(calls.length - 1);
     expect(planningInputs.every((input) => !input.feature.includes(ANSWER))).toBe(true);
-    if (mode === 'quick') {
-      expect(reviewPrompts.some((prompt) => prompt.includes(ANSWER))).toBe(true);
-    } else {
-      expect(planningInputs.some((input) => input.promptPrefix.includes(ANSWER))).toBe(true);
-    }
+    expect(planningInputs[1]?.promptPrefix).toContain(ANSWER);
     expectMarkerFreePlannerText(first.events);
   });
 
-  it('answering an empty string to every question reaches the terminal phase', async () => {
+  it('an empty answer parks the run without admitting a document', async () => {
     const answer = '';
     const { planner } = makeMarkerPlanner({ flavor: 'conversational', markers: TWO_MARKERS });
-    const onQuestionAsked = vi.fn().mockResolvedValue(answer);
+    const onPlannerReply = vi.fn().mockResolvedValue(answer);
 
-    const { result, events } = await runMode({ mode, planner, onQuestionAsked });
+    const { result, events } = await runMode({ mode, planner, onPlannerReply });
 
-    expect(onQuestionAsked).toHaveBeenCalledTimes(2);
-    expect(result.disposition).toBe('ready-for-tasks');
-    expect(result.state.phase).toBe('implementing');
+    expect(onPlannerReply).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'input-required' });
     expectMarkerFreePlannerText(events);
   });
 }

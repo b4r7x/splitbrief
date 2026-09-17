@@ -13,7 +13,6 @@ import type { Reviewer } from '../reviewers/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { SpecMetadata } from '../../core/paths-io.js';
 import type { Summary } from '../../core/schemas/summary.js';
-import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Validator } from './validation/types.js';
 import type { RunIsolation } from './isolation/types.js';
 import type { EventBus } from '../events/types.js';
@@ -33,16 +32,15 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StreamingSink } from './task/streaming-feed.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { ApprovalReviewInput } from '../runners/types.js';
+import type { PlannerConversation } from '../../core/schemas/workflow.js';
 export interface OrchestratorCallbacks {
+  onPlannerReply?: ((reply: PlannerConversation) => Promise<string | undefined>) | undefined;
   onApprovalNeeded: (
     type: BriefReviewPromptKind,
     input: ApprovalReviewInput,
   ) => Promise<ApprovalReviewResult>;
   onUserEditConflict?:
     | ((conflict: UserEditConflict) => Promise<UserEditConflictAction>)
-    | undefined;
-  onQuestionAsked?:
-    | ((question: ClarificationQuestion, num: number, total: number) => Promise<string>)
     | undefined;
   /**
    * Parks the run until the operator continues it, resolving with their steer.

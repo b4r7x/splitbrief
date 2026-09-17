@@ -46,6 +46,7 @@ export function getMethodDisplay(
 }
 
 const STOP_WORDS: Record<StopKind, string> = {
+  'input-required': 'waiting for answer',
   paused: 'paused',
   waiting: 'waiting',
   halted: 'halted',

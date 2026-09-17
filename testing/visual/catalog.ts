@@ -279,7 +279,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-implementation',
       title: 'Workflow · implementation activity',
       surface: screenSurface('workflow'),
-      viewports: WIDE_VIEWPORTS,
+      viewports: [...WIDE_VIEWPORTS, viewport({ cols: 220, rows: 45 })],
       checkpoint: {
         id: 'implementation',
         title: 'Implementation activity',
@@ -423,6 +423,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'transcript', title: 'Question transcript' },
         { id: 'question-panel', title: 'Question panel' },
         { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-planner-reply',
+      title: 'Workflow · ordinary planner reply',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'planner-reply',
+        title: 'Waiting for scope',
+        kind: 'question',
+        marker: 'Which module should change?',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planner reply' },
+        { id: 'composer', title: 'Reply composer' },
       ],
     }),
     defineScenario({
@@ -641,7 +657,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'recovery',
         title: 'Usage-limit recovery menu',
         kind: 'question',
-        marker: 'switch BUILD to OpenCode CLI',
+        marker: 'Change BUILD tool',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

@@ -96,7 +96,7 @@ describe('runClarifyCall', () => {
       'utf8',
     );
     expect(text).toContain('# Clarifications');
-    expect(text).toContain('spec.md');
+    expect(text).toContain('session.jsonl');
     expect(fixture.planner.review).not.toHaveBeenCalled();
   });
 });

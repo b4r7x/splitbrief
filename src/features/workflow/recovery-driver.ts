@@ -81,8 +81,8 @@ function openRecoveryNotice(issue: RecoveryIssue): void {
 /**
  * The one surface that resolves a halt in the TUI: it renders the pending
  * recovery as a question, parses the operator's answer into a recovery action
- * and applies it, so the workflow loop either resumes on the returned state or
- * stops with a reason.
+ * and applies it. A blocked action stays in this loop so the same halt remains
+ * actionable; a successful action either resumes on the returned state or stops.
  *
  * `switch-seat` is the exception it does not apply itself — taking that offer
  * re-prepares the session on another tool, which only `runWorkflow` can do, so
@@ -127,14 +127,16 @@ export function createRecoveryDriver(
       action: RecoveryAction,
       answer = '',
       comment = '',
-    ): PendingRecoveryResult => {
-      recoveryNoticeStore.clear();
+    ): PendingRecoveryResult | null => {
       if (action === 'switch-seat') {
         const candidate = switchSeatCandidateForAnswer(answer, issue.switchSeat);
         if (candidate === undefined) {
           feedbackStore.setError('No other tool is offered for this seat.');
-          return { shouldRun: false, state };
+          openRecoveryNotice(issue);
+          return null;
         }
+        recoveryNoticeStore.clear();
+        feedbackStore.reset();
         return {
           shouldRun: true,
           state,
@@ -158,10 +160,16 @@ export function createRecoveryDriver(
 
       if (!result.ok) {
         feedbackStore.setError(result.message);
-        return { shouldRun: false, state: result.state };
+        // The engine must stay parked on this halt. Returning shouldRun here re-enters the
+        // workflow with the same pending issue before the operator can choose another action.
+        openRecoveryNotice(issue);
+        return null;
       }
 
+      feedbackStore.reset();
+
       if (result.status === 'paused') {
+        recoveryNoticeStore.clear();
         markWorkflowPaused();
         feedbackStore.setMessage(
           `Recovery paused. Resume with ${SPLITBRIEF_IDENTITY.executable} resume.`,
@@ -170,6 +178,7 @@ export function createRecoveryDriver(
       }
 
       if (result.status === 'closed') {
+        recoveryNoticeStore.clear();
         // The close is on the state; the run loop finalizes the session from it —
         // one summary, one receipt release, through the same path every other
         // ending takes.
@@ -177,6 +186,7 @@ export function createRecoveryDriver(
         return { shouldRun: false, state: result.state };
       }
 
+      recoveryNoticeStore.clear();
       const retryProfileOverride = result.implementerProfile ?? issue.selectedImplementerProfile;
       if (retryProfileOverride === undefined || result.status !== 'retry-current-task') {
         return { shouldRun: true, state: result.state };
@@ -191,11 +201,12 @@ export function createRecoveryDriver(
 
     if (issue.status === 'applying') {
       const selected = issue.selectedAction;
-      if (selected === undefined) {
+      if (selected !== undefined) {
+        const applied = applyAction(selected);
+        if (applied !== null) return applied;
+      } else {
         feedbackStore.setError('Recovery is applying but no action is selected.');
-        return { shouldRun: false, state };
       }
-      return applyAction(selected);
     }
 
     if (republishPrompt) publishRecoveryPrompted(bus, sessionId, issue);
@@ -205,20 +216,34 @@ export function createRecoveryDriver(
     while (true) {
       const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));
       if (controller.signal.aborted || abortedRef.current) {
-        recoveryNoticeStore.clear();
         return { shouldRun: false, state };
       }
-      const action = parseRecoveryActionAnswer(answer, issue);
+      let action = parseRecoveryActionAnswer(answer, issue);
+      let correction = '';
+      if (action === null && answer.trim() !== '') {
+        const correctionAction =
+          issue.taskId === undefined && issue.availableActions.includes('retry-same-worker')
+            ? 'retry-same-worker'
+            : issue.availableActions.includes('revise')
+              ? 'revise'
+              : issue.availableActions.includes('revise-spec')
+                ? 'revise-spec'
+                : undefined;
+        if (correctionAction !== undefined) {
+          action = correctionAction;
+          correction = answer;
+        }
+      }
       if (action === null) {
         feedbackStore.setError('Unknown recovery action.');
         continue;
       }
-      const comment = await promptRecoveryComment(action);
+      const comment = correction === '' ? await promptRecoveryComment(action) : correction;
       if (controller.signal.aborted || abortedRef.current) {
-        recoveryNoticeStore.clear();
         return { shouldRun: false, state };
       }
-      return applyAction(action, answer, comment);
+      const applied = applyAction(action, answer, comment);
+      if (applied !== null) return applied;
     }
   };
 }
