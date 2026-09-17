@@ -594,27 +594,14 @@ Workflow mode set to: quick
 
 **When:** something is wrong and you want to stop without losing the partial transcript or the changes already written.
 
-**Run:** press `esc` on an empty composer and pick a row.
+**Run:** press `esc` and pick a row; or press `esc esc` to stop immediately.
 
-```
-╭──────────────────────────────────────────────────────────────────────╮
-│                                                                      │
-│  Stop options                                                        │
-│                                                                      │
-│  ▌ Stop now                                                          │
-│    stop execution; keep partial changes                              │
-│                                                                      │
-│    Pause after this brief                                            │
-│    finish T002 including checks and review; do not start T003        │
-│                                                                      │
-│    End run                                                           │
-│    stop execution; mark this run cancelled; keep changes             │
-│                                                                      │
-│  No option reverts files. Your draft is preserved.                   │
-│                                                                      │
-│  ↑↓ · ⏎ · esc                                                        │
-│                                                                      │
-╰──────────────────────────────────────────────────────────────────────╯
+```text
+Stop options · Changes and draft stay.
+▌ Stop now · stop execution; keep partial changes
+  Pause after this brief
+  End run
+↑↓ select · enter confirm · esc stop · tab back
 ```
 
 **You'll see** the byline report the stop while it happens, then the park:
@@ -630,7 +617,7 @@ Workflow mode set to: quick
 - **`End run`** stops the same way as Stop now and persists the session with status `cancelled`: `Cancelled by you at T002 · Changes kept`.
 - **`ctrl+q` / `/quit`** stops safely, saves the session, and then exits.
 
-No option reverts files: git is the layer that reverses a run, which is why SPLITBRIEF leaves the changes unstaged. `esc` with text in the composer touches neither the run nor the draft — the feedback row says `clear the draft or ctrl+c to stop now`.
+No option reverts files: git is the layer that reverses a run, which is why SPLITBRIEF leaves the changes unstaged. Opening the menu preserves the draft; `Tab` dismisses it and returns to writing.
 
 **Variations:** `/resume` restarts a parked run — typed instructions steer it, a blank Enter never resumes; `/end` cancels a parked one. From the shell, `splitbrief resume` re-enters the active saved phase and `splitbrief continue <session-id>` works when the active pointer is gone. Resumable phases are `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `validating-task`, `escalating` and `final-review`; a run killed during validation or escalation re-enters at the start of the brief it was on. `researching` and `specifying` refuse resume with a clear error.
 

@@ -172,11 +172,20 @@ interface PasteDrafts {
   insertImage: (attachment: Attachment, at: number) => number;
 }
 
-export function usePasteDrafts(): PasteDrafts {
+export function usePasteDrafts(options?: {
+  initialDocument: () => DraftDocument;
+  onDocumentChange: (document: DraftDocument) => void;
+}): PasteDrafts {
   const [state, setState] = useState<DraftState>(() => ({
-    document: createDraftDocument(''),
+    document: options?.initialDocument() ?? createDraftDocument(''),
     folds: [],
   }));
+  const currentState = useRef(state);
+  const updateState = (next: DraftState) => {
+    currentState.current = next;
+    options?.onDocumentChange(next.document);
+    setState(next);
+  };
   const foldIdRef = useRef(0);
   const view = buildDraftView(state.document, state.folds);
 
@@ -184,22 +193,21 @@ export function usePasteDrafts(): PasteDrafts {
     const inserted = Array.from(edit.text).length;
     const lineCount = pasteLineCount(edit.text);
     const foldId = lineCount >= PASTE_LINE_THRESHOLD ? `paste-${foldIdRef.current++}` : undefined;
-    setState((current) => {
-      const currentView = buildDraftView(current.document, current.folds);
-      const start = draftOffsetAt(currentView, edit.start);
-      const end = draftOffsetAt(currentView, edit.end);
-      const next = replaceDraftRange(
-        current.document,
-        { start, end },
-        edit.text === '' ? [] : [{ kind: 'text', text: edit.text }],
-      );
-      const folds = shiftFolds(current.folds, { start, end }, inserted - (end - start));
-      if (foldId !== undefined) {
-        folds.push({ id: foldId, start, end: start + inserted, lineCount });
-        folds.sort((a, b) => a.start - b.start);
-      }
-      return { document: next.document, folds };
-    });
+    const current = currentState.current;
+    const currentView = buildDraftView(current.document, current.folds);
+    const start = draftOffsetAt(currentView, edit.start);
+    const end = draftOffsetAt(currentView, edit.end);
+    const next = replaceDraftRange(
+      current.document,
+      { start, end },
+      edit.text === '' ? [] : [{ kind: 'text', text: edit.text }],
+    );
+    const folds = shiftFolds(current.folds, { start, end }, inserted - (end - start));
+    if (foldId !== undefined) {
+      folds.push({ id: foldId, start, end: start + inserted, lineCount });
+      folds.sort((a, b) => a.start - b.start);
+    }
+    updateState({ document: next.document, folds });
   };
 
   return {
@@ -208,12 +216,13 @@ export function usePasteDrafts(): PasteDrafts {
     applyEdit,
     setText: (value) =>
       applyEdit(expandEditOverAtoms(view.atoms, resolveInputEdit(view.text, value, value.length))),
-    replaceDocument: (document) => setState({ document, folds: [] }),
+    replaceDocument: (document) => updateState({ document, folds: [] }),
     insertImage: (attachment, at) => {
-      const offset = draftOffsetAt(view, at);
-      const next = insertDraftImage(state.document, offset, attachment);
-      const folds = shiftFolds(state.folds, { start: offset, end: offset }, 1);
-      setState({ document: next.document, folds });
+      const current = currentState.current;
+      const offset = draftOffsetAt(buildDraftView(current.document, current.folds), at);
+      const next = insertDraftImage(current.document, offset, attachment);
+      const folds = shiftFolds(current.folds, { start: offset, end: offset }, 1);
+      updateState({ document: next.document, folds });
       return viewOffsetOf(buildDraftView(next.document, folds), next.caret);
     },
   };

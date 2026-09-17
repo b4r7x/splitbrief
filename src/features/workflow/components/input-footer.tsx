@@ -208,7 +208,9 @@ export function InputFooter({
     // byline would be a prediction about work nobody is doing.
     etaText: stopped === null ? etaLabel : null,
     advisoryText:
-      advisory !== null && advisory.kind !== 'none' ? formatAdvisoryText(advisory) : null,
+      stopped === null && advisory !== null && advisory.kind !== 'none'
+        ? formatAdvisoryText(advisory)
+        : null,
     copyHint: copyResolvable ? 'y copy' : null,
     worktreeLabel: worktreeName ? sanitizeTerminalDisplayText(worktreeName) : null,
   });
@@ -223,7 +225,7 @@ export function InputFooter({
     );
   }
 
-  if (givenByline !== undefined) {
+  if (givenByline !== undefined && stopped === null) {
     return (
       <Box width="100%" paddingX={0} height={1} flexShrink={0}>
         <Text color={t.textDim} wrap="truncate-end">

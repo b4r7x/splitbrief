@@ -1,9 +1,10 @@
+import { useEffect, useRef } from 'react';
+import { stopStore } from '../stores/workflow/stop.js';
 import { useInput, type Key } from 'ink';
+import { feedbackStore } from '../stores/ui/feedback.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
-import { composerLiveStore } from '../stores/ui/composer-live.js';
-import { feedbackStore } from '../stores/ui/feedback.js';
 import { approvalPromptStore } from '../stores/approval-prompt/prompt.js';
 import { completionStore } from '../stores/ui/completion.js';
 import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin/active.js';
@@ -16,7 +17,7 @@ import { useFieldSessionOwned } from '../features/editor/use-field-session-owned
 import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
 import { SEAT_PICKER_OVERLAYS, type OverlayType } from '../core/navigation/types.js';
-import { requestQuit, requestStopNow } from '../features/workflow/handlers.js';
+import { requestQuit, requestStopNow, requestLeaveSession } from '../features/workflow/handlers.js';
 import { sessionSelectStore } from '../stores/navigation/session-select.js';
 import { refreshSkills } from './refresh-skills.js';
 
@@ -27,9 +28,6 @@ type AppKeyAction =
   | { type: 'open-overlay'; overlay: OverlayType };
 
 const NONE: AppKeyAction = { type: 'none' };
-
-/** What esc says when the composer holds text: the run is untouched and so is the draft. */
-export const DRAFT_ESCAPE_HINT = 'clear the draft or ctrl+c to stop now';
 
 // Help renders no Escape handler of its own and relies on this global close. Every other overlay
 // closes itself on Escape, so the global handler must stand down once one of them sits on a
@@ -49,7 +47,11 @@ export interface AppKeyDeps {
   refreshSkills: typeof refreshSkills;
 }
 
-const defaultAppKeyDeps: AppKeyDeps = { requestQuit, requestStopNow, refreshSkills };
+const defaultAppKeyDeps: AppKeyDeps = {
+  requestQuit,
+  requestStopNow,
+  refreshSkills,
+};
 
 interface UseAppKeysOptions {
   exit: () => void;
@@ -83,7 +85,7 @@ function applyAction(action: AppKeyAction, exit: () => void, deps: AppKeyDeps) {
 function stopSheetReachable(): boolean {
   const { cancelled, status } = lifecycleStore.get();
   if (cancelled) return false;
-  return status === 'running' || status === 'interrupted' || status === 'paused';
+  return status === 'running' || status === 'interrupted';
 }
 
 function openStopSheet(): void {
@@ -91,11 +93,21 @@ function openStopSheet(): void {
 }
 
 function goHome(): void {
-  routerStore.navigate({ to: 'home' });
+  requestLeaveSession();
+}
+
+function stoppedOrStopping(): boolean {
+  const { phase, intent } = stopStore.get();
+  return (
+    phase === 'parked' || phase === 'ended' || (intent !== 'none' && intent !== 'pause-after-brief')
+  );
 }
 
 function isSecondEscapePress(input: string): boolean {
-  return input === '\x1b' || isEscapeActionPending();
+  return (
+    (input.length > 0 && input.split('').every((char) => char === '\x1b')) ||
+    isEscapeActionPending()
+  );
 }
 
 function runDeferredEscape(input: string, immediate: () => void, deferred: () => void): void {
@@ -108,6 +120,27 @@ function runDeferredEscape(input: string, immediate: () => void, deferred: () =>
 }
 
 export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions) {
+  const quitUntil = useRef(0);
+  const quitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const exited = useRef(false);
+  const exitOnce = () => {
+    if (!exited.current) {
+      exited.current = true;
+      exit();
+    }
+  };
+  const clearQuitHint = () => {
+    quitUntil.current = 0;
+    clearTimeout(quitTimer.current);
+    if (feedbackStore.get().message === 'Press ctrl+c again to quit')
+      feedbackStore.setMessage(null);
+  };
+  const armQuit = () => {
+    clearTimeout(quitTimer.current);
+    quitUntil.current = Date.now() + 2000;
+    feedbackStore.setMessage('Press ctrl+c again to quit');
+    quitTimer.current = setTimeout(clearQuitHint, 2000);
+  };
   const [route, overlay, approval, completion, sessionSelection] = useStores(
     routerStore,
     overlayStore,
@@ -131,20 +164,46 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
   // globalKeysActive gate so exactly one useInput owns each key/mouse event (REQ-049 / CON-D).
   const fieldSessionOwned = useFieldSessionOwned();
 
+  const sessionProject = route.screen === 'workflow' ? route.run.ref.projectDir : null;
+  const sessionId = route.screen === 'workflow' ? route.run.ref.sessionId : null;
+  const localExecution =
+    route.screen === 'workflow' && route.execution.kind === 'local'
+      ? route.execution.prepared
+      : null;
+  useEffect(() => {
+    clearQuitHint();
+    return clearQuitHint;
+  }, [route.screen, sessionProject, sessionId]);
+  useEffect(() => {
+    if (localExecution !== null) clearQuitHint();
+  }, [localExecution]);
+  useEffect(
+    () =>
+      stopStore.subscribe(() => {
+        if (stopStore.get().intent === 'none') clearQuitHint();
+      }),
+    [],
+  );
+
   useInput((input, key) => {
-    if (!(key.ctrl && input === 'c')) return;
-    // Ctrl+C is Stop now on the workflow screen — one press, no armed window. Where there is no
-    // run left to stop it keeps its usual meaning and leaves.
-    // A run at rest has no process to stop, so the chord keeps its usual meaning and leaves.
-    if (
-      route.screen !== 'workflow' ||
-      route.execution.kind === 'at-rest' ||
-      lifecycleStore.get().cancelled
-    ) {
-      exit();
+    if (!(key.ctrl && input === 'c')) {
+      clearQuitHint();
       return;
     }
-    if (!deps.requestStopNow()) exit();
+    if (getActiveFilteredStdin()?.isPasteActive()) return;
+    const phase = stopStore.get().phase;
+    const stopping =
+      stoppedOrStopping() && phase !== 'parked' && phase !== 'ended' && phase !== 'failed';
+    if (quitUntil.current > Date.now() || stopping) {
+      clearQuitHint();
+      deps.requestQuit(exitOnce);
+      return;
+    }
+    armQuit();
+    if (route.screen === 'workflow' && route.execution.kind !== 'at-rest' && !stoppedOrStopping()) {
+      if (overlayStore.get().active === 'stop-sheet') overlayStore.close();
+      deps.requestStopNow();
+    }
   });
 
   useInput(
@@ -152,18 +211,24 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
       if (!key.escape) return;
       // A pasted blob can carry a raw `\x1b`; ignore it while a bracketed paste is in flight.
       if (getActiveFilteredStdin()?.isPasteActive()) return;
-      // Text in the composer is the user's, and so is the run behind it: the press spends neither.
-      if (!composerLiveStore.get().empty) {
-        feedbackStore.setMessage(DRAFT_ESCAPE_HINT);
-        return;
-      }
-      // Nothing is running on a run at rest: the press leaves rather than offering to stop it.
-      if (route.screen === 'workflow' && route.execution.kind === 'at-rest') {
+      if (
+        (route.screen === 'workflow' && route.execution.kind === 'at-rest') ||
+        stoppedOrStopping() ||
+        lifecycleStore.get().status === 'paused'
+      ) {
         runDeferredEscape(input, goHome, goHome);
         return;
       }
       if (stopSheetReachable()) {
-        runDeferredEscape(input, openStopSheet, openStopSheet);
+        runDeferredEscape(
+          input,
+          () => {
+            deps.requestStopNow();
+            if (input.length > 1 && input.split('').every((char) => char === '\x1b'))
+              requestLeaveSession();
+          },
+          openStopSheet,
+        );
         return;
       }
       if (!lifecycleStore.get().cancelled) return;
@@ -189,7 +254,18 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
 
   useInput(
     (_input, key) => {
-      if (key.escape) overlayStore.close();
+      if (!key.escape) return;
+      if (overlayActive === 'stop-sheet') {
+        overlayStore.close();
+        if (
+          stoppedOrStopping() ||
+          (route.screen === 'workflow' && route.execution.kind === 'at-rest')
+        )
+          requestLeaveSession();
+        else deps.requestStopNow();
+        return;
+      }
+      overlayStore.close();
     },
     { isActive: isOpen && !overlayExclusive && overlayClosesOnGlobalEscape },
   );
@@ -198,7 +274,7 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
     (input, key) => {
       const shortcut = handleShortcutKeys(input, key, route);
       if (shortcut.type !== 'none') {
-        applyAction(shortcut, exit, deps);
+        applyAction(shortcut, exitOnce, deps);
         return;
       }
     },

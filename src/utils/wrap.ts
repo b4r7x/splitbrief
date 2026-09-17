@@ -5,31 +5,6 @@ export function wrapHard(text: string, width: number): string {
   return wrapAnsi(text, width, { trim: false, hard: true });
 }
 
-const CLAUSE_SEPARATOR = '; ';
-
-// Consequence copy is a list of clauses. Breaking after a `;` keeps each clause whole, so a line
-// never ends on a bare negation the reader has to hold until the next one.
-export function wrapClauses(text: string, width: number): string {
-  const maxCells = Math.max(1, width);
-  const clauses = text.split(CLAUSE_SEPARATOR);
-  const lines: string[] = [];
-  let current = '';
-
-  for (const [index, clause] of clauses.entries()) {
-    const piece = index === clauses.length - 1 ? clause : `${clause};`;
-    const candidate = current === '' ? piece : `${current} ${piece}`;
-    if (current !== '' && getTerminalCellWidth(candidate) > maxCells) {
-      lines.push(current);
-      current = piece;
-      continue;
-    }
-    current = candidate;
-  }
-  lines.push(current);
-
-  return lines.map((line) => wrapHard(line, maxCells)).join('\n');
-}
-
 const PATH_SEGMENT = /[^/]*\/|[^/]+/gu;
 
 export function wrapPathAware(text: string, width: number): string {

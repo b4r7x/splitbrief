@@ -326,15 +326,17 @@ A user park keeps the worktree's partial edits and continues with that context. 
 
 **Queue scope.** Planner-only. Mid-task interjection at the implementer, validation, or escalation level is rejected instead of being queued or injected into the planner, because small local models lose coherence when their task prompt is perturbed mid-call.
 
-**Abort scope.** Live model-call phases only: `researching`, `specifying`, `planning`, `implementing`, `escalating`, and `final-review`. Validation is resumable from saved state, but it is not a live input phase.
+**Abort scope.** Stop aborts the outer workflow, including model/API calls, validation, planner questions, approval and recovery waits. The engine drains owned processes and persists the interrupted step before navigation or application exit. Queue availability still depends on the live phase.
 
 **Queue lifecycle.** `ENQUEUE_USER_MSG` appends. Native delivery moves through `MARK_INJECTING_NATIVE` to `MARK_DELIVERED_NATIVE`, or back to pending with `MARK_NATIVE_DELIVERY_FAILED`. `DRAIN_QUEUE` timestamps pending-undelivered messages. `CLEAR_QUEUE` removes pending or injecting undelivered messages. On the next safe-point the orchestrator reads pending-undelivered queue entries, folds contents into the next prompt as `[user also says: ...]`, and drains.
 
 Queue submissions return accepted/rejected results. Rejections include planner-unavailable phases and the 50-message cap; both publish a bounded warning. The UI shows feedback near the composer. `/queue show` reports pending-undelivered messages. `/queue clear` clears pending or injecting undelivered messages from the live workflow queue when a live clear handler is available, and otherwise reports unavailable.
 
-**Stopping a run (the stop sheet).** On the workflow screen `esc` on an empty composer opens the stop sheet (`src/app/overlays/stop.tsx`, rows from `stopSheetRows` in `src/features/workflow/stop/options.ts`); with text in the composer the press spends neither the draft nor the run and the feedback line reads `clear the draft or ctrl+c to stop now`. The sheet offers **Stop now** (stop execution; keep partial changes), **Pause after this brief** (finish the current brief including its checks and review; do not start the next one) — replaced by **Keep running** once a pause is already pending — and **End run** (stop execution; mark this run cancelled; keep changes). Its footer states the rule that covers all of them: *No option reverts files. Your draft is preserved.* `ctrl+c` is **Stop now** directly — one press, no armed window — and where there is no run left to stop it keeps its usual meaning and leaves. There is no letter accelerator and no two-press ladder.
+**Stopping a run.** `esc` opens the inline menu above the composer; another `esc` stops resumably. A third press requests home after cleanup and persistence, even when all three presses arrive together. After stopping, the menu offers **Resume / End run / Back to sessions**. Tab returns to the composer; `/stop` or the command palette reopens these options. End run remains an explicit action; no Escape or Ctrl+C sequence closes the saved run.
 
-While the stop is in flight the composer byline reports what the processes are doing rather than guessing: `Stopping <id> · Waiting for processes to exit · elapsed 3s`, then `Forcing remaining processes to exit` past the grace window (`stopByline`, `src/features/workflow/stop/copy.ts`). The run then parks in place: `Paused at <id> · Partial changes kept` after Stop now, or `Paused after <id> · N of M briefs complete` after a boundary pause. Both are held runs, not ended ones — the boundary park waits on the composer exactly as a mid-brief park does, and `/resume` starts the next brief. `/end` stops the run and closes it, and `esc` returns home. With an overlay open, `esc` closes the topmost overlay instead. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys for the full key map.
+`ctrl+c` stops active work and advertises the next press as quit. While stopping, Ctrl+C requests exit after cleanup. At rest or home, the first press shows `Press ctrl+c again to quit`; another within two seconds exits. Other input, navigation to another session, or resumed execution clears confirmation. Ctrl+Q and `/quit` use the same safe departure path.
+
+Stop status follows real work: `Waiting for processes to exit` only while owned processes remain, then `Finishing cleanup and saving`. Process termination uses the registry's existing SIGTERM/SIGKILL escalation. A failed cleanup or save reports its error and offers **Retry stop**, which retries cleanup/persistence without running another model call. There is no UI timer that declares success. A parked run returns home on Escape; unsent text, paste content and image references persist in its `draft.json` and return when it is reopened.
 
 ---
 
@@ -550,7 +552,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     for the named tasks instead, up to the review cycle cap.
 ```
 
-During live model-call phases, `ctrl+c` is Stop now and parks the run; `esc` on an empty composer opens the stop sheet. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. `/revise-spec` and `/revise-plan` rewind to the appropriate phase. `/redo-task` replays a single task.
+During live model-call phases, `ctrl+c` is Stop now and parks the run; `esc` opens the stop menu. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. `/revise-spec` and `/revise-plan` rewind to the appropriate phase. `/redo-task` replays a single task.
 
 ---
 

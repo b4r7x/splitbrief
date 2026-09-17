@@ -181,8 +181,8 @@ export function useCommandCompletion({
       // (unknown-command feedback, fuzzy suggestion) instead of silently running the fuzzy guess.
       const command = selected ? `${l.argPrefix ?? ''}${selected.name}` : l.value;
       inputHistoryStore.push(command);
-      onRuntimeCommand(command);
       setValue('');
+      onRuntimeCommand(command);
     },
     onSelect: () => {},
     onEscape: () => setValue(''),

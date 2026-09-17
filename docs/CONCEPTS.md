@@ -242,7 +242,7 @@ Flow:
 
 ## Stop sheet
 
-The **stop sheet** is the one place a run is stopped from: `esc` on an empty composer opens it, and it offers **Stop now** (keep partial changes), **Pause after this brief** (finish the current brief, start no other) and **End run** (close the run). `ctrl+c` is Stop now without the sheet. No option reverts files, and the composer draft survives all of them. A stopped run parks rather than ending: `/resume` carries it on (typed text is sent as steering instructions) and `/end` closes it out.
+The **stop menu** opens above the composer after `esc` during a live run, preserving the draft and visible transcript. It offers **Stop now**, **Pause after this brief** (or **Keep running** when requested), and **End run**. `↑↓` selects, `Enter` executes, a second `esc` stops now, and `Tab` dismisses. Stopping preserves partial changes and allows continuation; End run explicitly closes the run.
 
 ## Awaiting-continue
 

@@ -7,7 +7,6 @@ import { HelpOverlay } from './overlays/help.js';
 import { CommandPaletteOverlay } from './overlays/palette.js';
 import { SkillsPicker } from './overlays/skills.js';
 import { SessionsPicker } from './overlays/sessions.js';
-import { StopSheetOverlay } from './overlays/stop.js';
 import { EditorOverlay } from './overlays/editor.js';
 import { SettingsOverlay } from './overlays/settings.js';
 import { UsageOverlay } from './overlays/usage.js';
@@ -140,7 +139,8 @@ function renderOverlay({
     case 'reviewer-picker':
       return <ToolModelPicker role="reviewer" deps={interactionDeps?.picker} />;
     case 'stop-sheet':
-      return <StopSheetOverlay />;
+      // This focus owner is rendered above the workflow composer, without covering the page.
+      return null;
     case 'sessions':
       // `SessionsPicker.deps` is required-when-present, so an absent interaction object
       // passes no prop at all rather than an explicit `undefined`.

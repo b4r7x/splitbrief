@@ -50,6 +50,14 @@ import {
   readClipboardImage as readSystemClipboardImage,
   type ClipboardImageResult,
 } from '../../core/attachments/clipboard-image.js';
+import { routerStore } from '../../stores/navigation/router.js';
+import type { SessionRef } from '../../core/types/session-ref.js';
+import {
+  loadSessionDraft,
+  saveSessionDraft,
+  flushSessionDrafts,
+} from '../../stores/ui/session-drafts.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import type { listProjectFiles } from '../../lib/file-listing.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
@@ -111,6 +119,7 @@ interface ComposerProps {
   hint: string;
   currentScreen: Screen;
   width?: number;
+  maxRows?: number | undefined;
   disabled?: boolean;
   submitKeepsDraft?: boolean;
   /** A record of a finished run takes commands, not work: plain text is refused, not queued. */
@@ -134,7 +143,29 @@ interface ComposerProps {
   listProjectFiles?: typeof listProjectFiles | undefined;
 }
 
-export function Composer({
+export function Composer(props: ComposerProps) {
+  // The session draft belongs to the workflow's own composer. The review composer is a
+  // per-owner comment box: it neither restores the draft nor overwrites it with comment text,
+  // and the key keeps the two mounts apart so switching modes never carries text across.
+  const ownsSessionDraft = props.currentScreen === 'workflow' && props.mode !== 'review';
+  const ref = routerStore.use((route) =>
+    ownsSessionDraft && route.screen === 'workflow' ? route.run.ref : null,
+  );
+  return (
+    <ComposerInput
+      key={
+        ref === null
+          ? `${props.currentScreen}:${props.mode === 'review' ? 'review' : 'root'}`
+          : JSON.stringify([ref.projectDir, ref.sessionId])
+      }
+      {...props}
+      sessionRef={ref}
+    />
+  );
+}
+
+function ComposerInput({
+  sessionRef,
   onSubmit,
   onRuntimeCommand,
   commands,
@@ -143,6 +174,7 @@ export function Composer({
   currentScreen,
   keepPlaceholderWhileFocused,
   width,
+  maxRows = 6,
   disabled,
   submitKeepsDraft,
   commandsOnly,
@@ -160,7 +192,7 @@ export function Composer({
   inputPaddingX = 1,
   readClipboardImage = readSystemClipboardImage,
   listProjectFiles,
-}: ComposerProps) {
+}: ComposerProps & { sessionRef: SessionRef | null }) {
   const theme = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const [{ projectDir, config }] = useStores(configStore);
@@ -180,7 +212,39 @@ export function Composer({
   const briefFocusHeld =
     focusStore.use((focus) => focus?.region === 'brief') && currentScreen === 'workflow';
 
-  const draft = usePasteDrafts();
+  const [restoredDraft] = useState(() => {
+    try {
+      return {
+        document: sessionRef === null ? createDraftDocument('') : loadSessionDraft(sessionRef),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        document: createDraftDocument(''),
+        error: `Could not restore session draft: ${toErrorMessage(error)}`,
+      };
+    }
+  });
+  useEffect(() => {
+    if (restoredDraft.error !== null) feedbackStore.setError(restoredDraft.error);
+  }, [restoredDraft]);
+  const draft = usePasteDrafts({
+    initialDocument: () => restoredDraft.document,
+    onDocumentChange: (document) => {
+      if (sessionRef !== null) saveSessionDraft(sessionRef, document);
+    },
+  });
+  useEffect(
+    () => () => {
+      if (sessionRef === null) return;
+      try {
+        flushSessionDrafts();
+      } catch (error) {
+        feedbackStore.setError(`Could not save session draft: ${toErrorMessage(error)}`);
+      }
+    },
+    [sessionRef?.projectDir, sessionRef?.sessionId],
+  );
   const document = draft.document;
   const view = draft.view;
   const { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, noteEdit, historyActive } =
@@ -476,8 +540,8 @@ export function Composer({
 
     if (trimmedText.startsWith('/')) {
       inputHistoryStore.pushDocumentSubmission(trimmed, { currentScreen });
-      onRuntimeCommand(trimmedText);
       clearDraft();
+      onRuntimeCommand(trimmedText);
       return;
     }
 
@@ -647,7 +711,7 @@ export function Composer({
               })}
               keepPlaceholderWhileFocused={keepPlaceholderWhileFocused === true || lifecycleRunning}
               rows={1}
-              maxRows={6}
+              maxRows={maxRows}
               onVisibleRowsChange={setVisibleRows}
               keyBindings={{
                 submit: (key: { return: boolean; shift: boolean }) => key.return && !key.shift,

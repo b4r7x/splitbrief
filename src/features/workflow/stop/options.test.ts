@@ -48,7 +48,7 @@ describe('stopSheetRows', () => {
   });
 
   it('promises no revert and only the three navigation keys', () => {
-    expect(STOP_SHEET_FOOTER).toBe('No option reverts files. Your draft is preserved.');
-    expect(STOP_SHEET_LEGEND).toBe('↑↓ · ⏎ · esc');
+    expect(STOP_SHEET_FOOTER).toBe('Changes and draft stay.');
+    expect(STOP_SHEET_LEGEND).toBe('↑↓ select · enter confirm · esc stop · tab back');
   });
 });

@@ -37,6 +37,7 @@ import { projectFilesStore } from '../../src/stores/ui/project-files.js';
 import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js';
 import { operationsStore } from '../../src/stores/workflow/operations/state.js';
 import { recoveryNoticeStore } from '../../src/stores/workflow/recovery-notice.js';
+import { __testDiscardPending as discardPendingSessionDrafts } from '../../src/stores/ui/session-drafts.js';
 
 export function resetAllStores(): void {
   eventsStore.reset();
@@ -78,4 +79,5 @@ export function resetAllStores(): void {
   projectFilesStore.reset();
   questionPromptStore.reset();
   operationsStore.reset();
+  discardPendingSessionDrafts();
 }

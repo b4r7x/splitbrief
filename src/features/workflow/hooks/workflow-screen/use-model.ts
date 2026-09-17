@@ -1,3 +1,5 @@
+import { useEffect, useEffectEvent } from 'react';
+import { setResumeHandler } from '../../handlers.js';
 import { sessionDir } from '../../../../core/paths.js';
 import type { CopyResult, CopyTarget } from '../../../../core/runtime/commands/types.js';
 import type { Focus } from '../../../../stores/ui/focus.js';
@@ -141,6 +143,13 @@ export function useWorkflowScreen({
     });
     if (outcome.kind === 'refused') feedbackStore.setError(outcome.message);
   };
+
+  const resumeAtRest = useEffectEvent(continueAtRest);
+  useEffect(() => {
+    if (atRestRecord === undefined) return;
+    setResumeHandler((text) => resumeAtRest(text));
+    return () => setResumeHandler(null);
+  }, [atRestRecord]);
 
   // A parked brief and a run at rest continue the same way — one path, which settles the park or
   // re-enters the run and says so when it cannot.

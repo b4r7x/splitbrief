@@ -26,6 +26,9 @@ function sorted(values: Iterable<string>): string[] {
 const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new Map([
   ['home-cold-detecting', ['80x40']],
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
+  ['workflow-question', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-question-input', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-question-overflow', ['120x40', '80x24', '60x18', '160x45']],
 ]);
 
 afterEach(() => {

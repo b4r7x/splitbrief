@@ -1,5 +1,10 @@
 import { useLayoutEffect, useState } from 'react';
 import { Box } from 'ink';
+import { StopMenu } from '../../features/workflow/stop/menu.js';
+import { readStopMenuRows, stopMenuLayout } from '../../features/workflow/stop/options.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
+import { stopStore } from '../../stores/workflow/stop.js';
+import { tasksStore } from '../../stores/workflow/tasks.js';
 import type {
   RuntimeCommandDef,
   CopyResult,
@@ -74,6 +79,8 @@ export function WorkflowScreen({
   const theme = useTheme();
   const [input, terminal] = useStores(inputHeightStore, terminalSizeStore);
   const { cols, rows } = terminal;
+  useStores(stopStore, tasksStore);
+  const stopMenuOpen = overlayStore.use((state) => state.active === 'stop-sheet');
   const inputRows = input.rows;
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
   const [scrollAboveLabel, setScrollAboveLabel] = useState('');
@@ -193,16 +200,18 @@ export function WorkflowScreen({
       : true
     : false;
   const railForm = selectRailForm({ phase: model.phase, cols });
-  const requestedPromptRows = getWorkflowPromptRows({
-    approvalState: model.approvalPromptState,
-    questionHint,
-    reviewArtifact,
-    recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
-    questions: plannerQuestions,
-    questionIndex: questionState.index,
-    questionWriting: questionState.focus === 'answer',
-    cols,
-  });
+  const requestedPromptRows = stopMenuOpen
+    ? stopMenuLayout(readStopMenuRows(), cols).height
+    : getWorkflowPromptRows({
+        approvalState: model.approvalPromptState,
+        questionHint,
+        reviewArtifact,
+        recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
+        questions: plannerQuestions,
+        questionIndex: questionState.index,
+        questionWriting: questionState.focus === 'answer',
+        cols,
+      });
   // A gate on screen is the only thing to act on, and it needs every row it can get. The build
   // block stands down while one is open rather than clipping the panel that is waiting on an answer.
   const progressRows =
@@ -293,6 +302,8 @@ export function WorkflowScreen({
         <>
           <Divider width={cols} tone="textDim" label={scrollBelowLabel} />
           <WorkflowFooter
+            compactInput={stopMenuOpen}
+            beforeComposer={stopMenuOpen ? <StopMenu height={promptBoxRows} /> : undefined}
             handleInput={handleFooterInput}
             readClipboardImage={readClipboardImage}
             listProjectFiles={listProjectFiles}
@@ -350,8 +361,13 @@ export function WorkflowScreen({
         onScrollBelow={setScrollBelowLabel}
         {...(transcriptTail !== undefined && { transcriptTail })}
       />
-      <Box height={promptBoxRows} overflow="hidden" flexDirection="column" flexShrink={0}>
-        {(model.promptPending || reviewArtifact !== null) && (
+      <Box
+        height={stopMenuOpen ? 0 : promptBoxRows}
+        overflow="hidden"
+        flexDirection="column"
+        flexShrink={0}
+      >
+        {!stopMenuOpen && (model.promptPending || reviewArtifact !== null) && (
           <ApprovalPrompt
             clampedBoxRows={promptBoxRows}
             {...(reviewArtifact === null
@@ -365,7 +381,7 @@ export function WorkflowScreen({
                 })}
           />
         )}
-        {model.inputMode.mode === 'question' && (
+        {!stopMenuOpen && model.inputMode.mode === 'question' && (
           <QuestionPrompt
             key={recoveryFocusKey}
             hint={model.inputMode.hint}

@@ -1,3 +1,15 @@
+import { flushSessionDrafts } from '../../stores/ui/session-drafts.js';
+import { readActiveRecord } from '../../core/sessions/active-pointer.js';
+import { readRunRecord } from '../../core/sessions/run-record-io.js';
+import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
+import { finalizeEndedRun } from '../../engine/orchestrator/session-lifecycle/finalize.js';
+import { hydrateResume } from './resume-hydration.js';
+import { configStore } from '../../stores/project/config.js';
+import { sessionsStore } from '../../stores/project/sessions.js';
+import { routerStore } from '../../stores/navigation/router.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
 import { markWorkflowResumed } from '../../stores/workflow/actions/resume.js';
@@ -10,6 +22,7 @@ export type { RewindTarget };
 type AbortHandler = () => void;
 
 interface Handlers {
+  stop: () => void;
   cancel: () => void;
   resume: (text: string) => void;
   rewind: (request: RewindTarget) => void;
@@ -26,6 +39,8 @@ const handlers: Partial<Handlers> = {};
 let abortHandlers: AbortHandler[] = [];
 let pendingBoundaryInterrupt = false;
 let pendingBoundaryPause = false;
+let departure: { kind: 'home' | 'quit'; run: () => void } | null = null;
+let unsubscribeDeparture: (() => void) | undefined;
 
 function setHandler<K extends keyof Handlers>(k: K, h: Handlers[K] | null): void {
   if (h === null) delete handlers[k];
@@ -33,6 +48,9 @@ function setHandler<K extends keyof Handlers>(k: K, h: Handlers[K] | null): void
 }
 
 export function clearAllHandlers(): void {
+  unsubscribeDeparture?.();
+  unsubscribeDeparture = undefined;
+  departure = null;
   for (const k of Object.keys(handlers) as (keyof Handlers)[]) delete handlers[k];
   abortHandlers = [];
   pendingBoundaryInterrupt = false;
@@ -47,6 +65,7 @@ export function createAbortHandlerScope(): (h: AbortHandler | null) => void {
     else scope.push(h);
   };
 }
+export const setStopHandler = (h: Handlers['stop'] | null) => setHandler('stop', h);
 export const setCancelHandler = (h: Handlers['cancel'] | null) => setHandler('cancel', h);
 export const setResumeHandler = (h: Handlers['resume'] | null) => setHandler('resume', h);
 export const setRewindHandler = (h: Handlers['rewind'] | null) => setHandler('rewind', h);
@@ -99,16 +118,27 @@ export function cancelBoundaryPause(): void {
 // A stop that has nothing to stop is not announced: the byline would report a run terminating
 // while no process was ever asked to.
 export function requestStopNow(): boolean {
-  const abortedCall = abortTurn();
-  const boundaryFlagged = requestBoundaryInterrupt();
-  if (!abortedCall && !boundaryFlagged) return false;
-  stopStore.request('stop-now');
+  const state = stopStore.get();
+  if (state.phase === 'parked' || state.phase === 'ended') return false;
+  if (state.intent !== 'none' && state.intent !== 'pause-after-brief' && state.phase !== 'failed')
+    return true;
+  if (!handlers.stop && abortHandlers.length === 0 && !handlers.cancel) return false;
+  // Announce before calling a handler: an already-idle operation may settle synchronously.
+  stopStore.request(state.intent === 'end-run' ? 'end-run' : 'stop-now');
+  pendingBoundaryPause = false;
+  if (handlers.stop) handlers.stop();
+  else if (!abortTurn()) requestBoundaryInterrupt();
   return true;
 }
 
 // Continuing is one path, and the run owns it: the handler it installs settles a park
 // this process is holding or re-enters the run at rest, and decides which.
 export function requestResume(text: string): boolean {
+  const stop = stopStore.get();
+  if (stop.intent !== 'none' && stop.intent !== 'pause-after-brief' && stop.phase !== 'parked') {
+    feedbackStore.setMessage('Finish stopping before resuming.');
+    return false;
+  }
   if (!handlers.resume) return false;
   handlers.resume(text);
   return true;
@@ -123,24 +153,95 @@ export function resumeParkedRun(steer: string): boolean {
 }
 
 export function requestEndRun(): boolean {
+  const route = routerStore.get();
+  if (route.screen === 'workflow' && route.execution.kind === 'at-rest') {
+    const config = configStore.get().config;
+    if (config === null) return false;
+    try {
+      const record = readRunRecord(route.run.ref);
+      if (record.status.kind === 'running') return false;
+      const hydrated = hydrateResume(record.ref);
+      if (hydrated.kind !== 'loaded') return false;
+      const active = readActiveRecord(record.ref.projectDir);
+      const receipt =
+        active?.kind === 'v1' && active.receipt.sessionId === record.ref.sessionId
+          ? active.receipt
+          : undefined;
+      const state = transitionAndSave(record.ref, hydrated.state, { type: 'CLOSE_RUN' });
+      finalizeEndedRun({ ref: record.ref, active: receipt, config, state });
+      routerStore.updateRun({ run: readRunRecord(record.ref), execution: { kind: 'at-rest' } });
+      stopStore.end();
+      sessionsStore.refresh();
+      return true;
+    } catch (err) {
+      feedbackStore.setError(toErrorMessage(err));
+      return false;
+    }
+  }
   stopStore.request('end-run');
   return requestCancel();
 }
 
-// Quit is Stop now that also leaves: the exit waits for the run to park or end so the session is
-// on disk before the process goes.
-export function requestQuit(exit: () => void): void {
-  if (!requestStopNow()) {
-    exit();
-    return;
-  }
-  stopStore.request('quit');
-  const off = stopStore.subscribe(() => {
-    const { phase } = stopStore.get();
+function requestDeparture(kind: 'home' | 'quit', run: () => void): void {
+  if (departure?.kind === 'quit' || departure?.kind === kind) return;
+  const origin = routerStore.get();
+  departure = { kind, run };
+  unsubscribeDeparture?.();
+  const complete = () => {
+    const phase = stopStore.get().phase;
+    const route = routerStore.get();
+    const changedSession =
+      origin.screen === 'workflow' &&
+      (route.screen !== 'workflow' ||
+        route.run.ref.projectDir !== origin.run.ref.projectDir ||
+        route.run.ref.sessionId !== origin.run.ref.sessionId);
+    if (phase === 'failed' || changedSession) {
+      unsubscribeDeparture?.();
+      unsubscribeDeparture = undefined;
+      departure = null;
+      return;
+    }
     if (phase !== 'parked' && phase !== 'ended') return;
-    off();
-    exit();
+    unsubscribeDeparture?.();
+    unsubscribeDeparture = undefined;
+    const action = departure;
+    departure = null;
+    try {
+      flushSessionDrafts();
+      action?.run();
+    } catch (err) {
+      feedbackStore.setError(toErrorMessage(err));
+    }
+  };
+  unsubscribeDeparture = stopStore.subscribe(complete);
+  // A boundary pause can still hold an engine promise. Drain it before leaving its screen.
+  if (stopStore.get().phase === 'parked' && handlers.stop) {
+    stopStore.request('stop-now');
+    handlers.stop();
+  } else if (!requestStopNow()) {
+    unsubscribeDeparture?.();
+    unsubscribeDeparture = undefined;
+    const action = departure;
+    departure = null;
+    try {
+      flushSessionDrafts();
+      action?.run();
+    } catch (err) {
+      feedbackStore.setError(toErrorMessage(err));
+    }
+  }
+  complete();
+}
+
+export function requestLeaveSession(): void {
+  requestDeparture('home', () => {
+    overlayStore.close();
+    routerStore.navigate({ to: 'home' });
   });
+}
+
+export function requestQuit(exit: () => void): void {
+  requestDeparture('quit', exit);
 }
 
 export function requestRewind(request: RewindTarget): boolean {

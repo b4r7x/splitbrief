@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -14,7 +14,6 @@ import { StopSheet } from './sheet.js';
 import { stopSheetRows } from './options.js';
 
 const ARROW_DOWN = '\u001B[B';
-const ESC = '\u001B';
 
 const RUNNING_BRIEF = {
   currentTaskId: 'T002',
@@ -47,8 +46,8 @@ describe('StopSheet', () => {
     expect(frame).toContain('Stop now');
     expect(frame).toContain('Pause after this brief');
     expect(frame).toContain('End run');
-    expect(frame).toContain('No option reverts files. Your draft is preserved.');
-    expect(frame).toContain('↑↓ · ⏎ · esc');
+    expect(frame).toContain('Changes and draft stay.');
+    expect(frame).toContain('↑↓ select · enter confirm · esc stop · tab back');
     ui.unmount();
   });
 
@@ -56,11 +55,14 @@ describe('StopSheet', () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
     const ui = renderSheet();
     await tick();
+    await flushEffects();
+    ui.stdin.write(ARROW_DOWN);
+    await tick(30);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('start T003');
     expect(frame).not.toContain('\u2026');
-    expect(frame.split('\n')).toHaveLength(18);
+    expect(frame.split('\n').length).toBeLessThanOrEqual(10);
     ui.unmount();
   });
 
@@ -83,8 +85,9 @@ describe('StopSheet', () => {
     const ui = renderSheet();
     await tick();
 
+    await flushEffects();
     ui.stdin.write(ARROW_DOWN);
-    await tick();
+    await tick(30);
     ui.stdin.write('\r');
     await tick();
 
@@ -99,10 +102,12 @@ describe('StopSheet', () => {
     const ui = renderSheet();
     await tick();
 
+    await flushEffects();
     ui.stdin.write(ARROW_DOWN);
-    await tick();
+    await tick(30);
+    await flushEffects();
     ui.stdin.write(ARROW_DOWN);
-    await tick();
+    await tick(30);
     ui.stdin.write('\r');
     await tick();
 
@@ -119,8 +124,9 @@ describe('StopSheet', () => {
     const ui = renderSheet();
     await tick();
 
+    await flushEffects();
     ui.stdin.write(ARROW_DOWN);
-    await tick();
+    await tick(30);
 
     ui.rerender(
       <StopSheet
@@ -158,13 +164,13 @@ describe('StopSheet', () => {
     ui.unmount();
   });
 
-  it('esc closes the sheet with no effect on the run', async () => {
+  it('tab closes the menu with no effect on the run', async () => {
     const abort = vi.fn();
     createAbortHandlerScope()(abort);
     const ui = renderSheet();
     await tick();
 
-    ui.stdin.write(ESC);
+    ui.stdin.write('\t');
     await tick();
 
     expect(overlayStore.get().active).toBe('none');

@@ -57,7 +57,7 @@ describe('Composer blocking-question isolation', () => {
     ui.unmount();
   });
 
-  it('does not carry an unfinished question answer back into normal mode', async () => {
+  it('keeps an unfinished answer as the unsent draft when the mode flips back to normal', async () => {
     const submissions: string[] = [];
     const composer = (mode: 'normal' | 'question') => (
       <Composer
@@ -77,12 +77,15 @@ describe('Composer blocking-question isolation', () => {
 
     ui.rerender(composer('normal'));
     await flushEffects();
-    expect(ui.lastFrame()).not.toContain('unfinished answer');
+    // The flip neither clears the draft nor submits it as an answer: the text stays put, unsent.
+    expect(ui.lastFrame()).toContain('unfinished answer');
+    expect(submissions).toEqual([]);
 
-    await flushEffects();
+    // A bare Enter submits it once, as the normal instruction it now sits in — visibly, not silently.
     ui.stdin.write('\r');
     await flushEffects();
-    expect(submissions).not.toContain('unfinished answer');
+    expect(submissions).toEqual(['unfinished answer']);
+    expect(ui.lastFrame()).not.toContain('unfinished answer');
     ui.unmount();
   });
 });

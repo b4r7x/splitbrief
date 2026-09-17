@@ -25,6 +25,7 @@ import type { PreparedExecution } from '../../../engine/runners/prepared-executi
 import {
   createAbortHandlerScope,
   setCancelHandler,
+  setStopHandler,
   setClearQueueHandler,
   setQueueHandler,
   setResumeHandler,
@@ -33,10 +34,20 @@ import {
   consumeBoundaryInterrupt,
   consumeBoundaryPause,
 } from '../handlers.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
+import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
+import { transitionAndSave } from '../../../engine/orchestrator/state-ops.js';
+import { resumeStep } from '../../../core/sessions/run-status.js';
+import { artifactPresence } from '../../../core/sessions/run-record-io.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
-import { onProcessRegistryChange, SIGKILL_DELAY_MS } from '../../../lib/process/registry.js';
+import {
+  onProcessRegistryChange,
+  registeredProcessCount,
+  killAllProcesses,
+} from '../../../lib/process/registry.js';
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { error } from '../../../utils/error.js';
 import { nowIso } from '../../../utils/format-time.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import { buildPromptCallbacks } from '../prompt-callbacks.js';
@@ -146,9 +157,17 @@ export function useRunLoop({
       addTuiEvent(pendingRewind.event);
     }
     conversationScrollStore.reset();
-    setCancelHandler(() => {
+    setStopHandler(() => {
+      controller.abort();
       inputMode.resetMode();
+      closeApprovalPrompt();
+      stopStore.get().parked?.resolve?.('');
+    });
+    setCancelHandler(() => {
       controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+      inputMode.resetMode();
+      closeApprovalPrompt();
+      stopStore.get().parked?.resolve?.('');
     });
     setRewindHandler(
       buildRewindHandler({
@@ -164,6 +183,40 @@ export function useRunLoop({
         },
       }),
     );
+
+    const finishStoppedRun = async (): Promise<void> => {
+      await killAllProcesses();
+      const hydrated = hydrateResume(session.ref);
+      if (hydrated.kind !== 'loaded')
+        throw error(
+          'stop-state-unavailable',
+          'Cannot save stopped run: workflow state is unavailable',
+        );
+      const current = hydrated.state;
+      const next =
+        current.closed !== undefined || current.phase === 'complete'
+          ? current
+          : transitionAndSave(
+              session.ref,
+              current,
+              stopStore.get().intent === 'end-run'
+                ? { type: 'CLOSE_RUN' }
+                : {
+                    type: 'INTERRUPT_STEP',
+                    step: resumeStep(current, artifactPresence(session.ref)),
+                    source: 'user',
+                    cut: 'mid-step',
+                  },
+            );
+      finalizeEndedRun({
+        ref: session.ref,
+        active: session.active,
+        config: prepared.config,
+        state: next,
+        modelCache: modelCacheStore,
+      });
+      settleRun(session.ref);
+    };
 
     try {
       let retryProfileOverride: string | undefined;
@@ -186,7 +239,15 @@ export function useRunLoop({
             state: stateForRun,
             controller,
             republishPrompt: !recoveryPromptAlreadyPublished,
+          }).catch((err: unknown) => {
+            if (controller.signal.aborted && err === WORKFLOW_USER_CANCELLED_ABORT_REASON)
+              return { shouldRun: false as const, state: stateForRun };
+            throw err;
           });
+          if (controller.signal.aborted) {
+            if (!abortedRef.current) await finishStoppedRun();
+            return;
+          }
           recoveryPromptAlreadyPublished = false;
           if (!recovery.shouldRun) {
             // Ending a run from the recovery panel never re-enters the engine, so
@@ -244,7 +305,12 @@ export function useRunLoop({
         switchSeat = undefined;
         steerForRun = undefined;
 
-        if (isWorkflowAborted(controller, abortedRef)) return;
+        if (abortedRef.current) return;
+        if (controller.signal.aborted) {
+          if (stopStore.get().intent === 'end-run') await finishStoppedRun();
+          else settleRun(session.ref);
+          return;
+        }
 
         const hydrated = hydrateResume(session.ref);
         if (hydrated.kind === 'invalid') {
@@ -274,13 +340,24 @@ export function useRunLoop({
         recoveryPromptAlreadyPublished = true;
       }
     } catch (err) {
-      if (!isWorkflowAborted(controller, abortedRef) && !lifecycleStore.get().cancelled) {
-        addTuiEvent({
-          type: 'error',
-          ts: Date.now(),
-          phase: lifecycleStore.get().phase,
-          message: toErrorMessage(err),
+      if (abortedRef.current) return;
+      const message = toErrorMessage(err);
+      addTuiEvent({ type: 'error', ts: Date.now(), phase: lifecycleStore.get().phase, message });
+      if (stopStore.get().intent !== 'none') {
+        stopStore.fail(message);
+        // Retry only cleanup and persistence, never the interrupted model call.
+        setStopHandler(() => {
+          void (async () => {
+            try {
+              await finishStoppedRun();
+            } catch (retryError) {
+              stopStore.fail(toErrorMessage(retryError));
+            }
+          })();
         });
+        overlayStore.open('stop-sheet');
+      } else {
+        settleRun(session.ref);
       }
     }
   });
@@ -301,33 +378,27 @@ export function useRunLoop({
     };
   }, [prepared, runId]);
 
-  // The stop byline names what the processes are actually doing, so it follows the registry rather
-  // than a guess: alive after a request is terminating, still alive past the grace is forcing.
   useEffect(() => {
-    let forceTimer: ReturnType<typeof setTimeout> | null = null;
-    const clearForceTimer = () => {
-      if (forceTimer === null) return;
-      clearTimeout(forceTimer);
-      forceTimer = null;
-    };
-    const off = onProcessRegistryChange((count) => {
+    const update = () => {
       const { intent, phase } = stopStore.get();
-      if (intent === 'none') return;
-      if (count > 0) {
-        if (phase !== 'requested') return;
-        stopStore.markTerminating();
-        forceTimer = setTimeout(() => stopStore.markForcing(), SIGKILL_DELAY_MS);
+      if (
+        intent === 'none' ||
+        intent === 'pause-after-brief' ||
+        phase === 'parked' ||
+        phase === 'ended' ||
+        phase === 'failed'
+      )
         return;
-      }
-      clearForceTimer();
-      // Stop now and a boundary pause both end at a park the engine owns; only a run that was told
-      // to end is over the moment its processes are.
-      if (intent !== 'end-run' && intent !== 'quit') return;
-      if (phase === 'terminating' || phase === 'forcing') stopStore.end();
-    });
+      if (registeredProcessCount() > 0) {
+        if (phase !== 'terminating') stopStore.markTerminating();
+      } else if (phase !== 'settling') stopStore.markSettling();
+    };
+    const offProcesses = onProcessRegistryChange(update);
+    const offStop = stopStore.subscribe(update);
+    update();
     return () => {
-      clearForceTimer();
-      off();
+      offProcesses();
+      offStop();
     };
   }, []);
 
@@ -335,8 +406,23 @@ export function useRunLoop({
   // record is the whole hand-off — the screen paints open or closed from it, and the session list
   // shows what it shows everywhere else.
   const settleRun = (ref: PreparedExecution['session']['ref']): void => {
-    routerStore.updateRun({ run: readRunRecord(ref), execution: { kind: 'at-rest' } });
+    const record = readRunRecord(ref);
+    const wasStopping = stopStore.get().intent !== 'none';
+    setStopHandler(null);
+    setCancelHandler(null);
+    inputMode.resetMode();
+    routerStore.updateRun({ run: record, execution: { kind: 'at-rest' } });
     sessionsStore.refresh();
+    if (wasStopping) {
+      if (record.status.kind === 'closed') stopStore.end();
+      else {
+        markWorkflowPaused();
+        stopStore.park('mid-brief', null, null);
+      }
+      // A queued leave/quit is delivered by the stop observer before offering actions here.
+      if (routerStore.get().screen === 'workflow' && overlayStore.get().active === 'none')
+        overlayStore.open('stop-sheet');
+    }
   };
 
   return { startedAt, sessionId: prepared?.session.ref.sessionId };

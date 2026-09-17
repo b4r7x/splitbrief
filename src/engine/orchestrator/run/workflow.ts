@@ -164,39 +164,29 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   // the record reads `closed · ended` and nothing resumes it.
   const closeRun = (state: WorkflowState): WorkflowState => {
     if (state.closed !== undefined) return state;
-    try {
-      const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
-      return transitionAndSave({ projectDir, sessionId }, latest, { type: 'CLOSE_RUN' });
-    } catch (err) {
-      warnError('Failed to record the run close on the workflow state', err);
-      return state;
-    }
+    const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
+    return transitionAndSave({ projectDir, sessionId }, latest, { type: 'CLOSE_RUN' });
   };
 
   // Every other abort parks the step it cut, so the run reads `open · paused`.
   // A crash that never reached this point still reads `interrupted`, which is
   // the honest answer for a run that had no chance to say where it stopped.
   const parkRun = (state: WorkflowState): WorkflowState => {
-    try {
-      const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
-      if (
-        latest.closed !== undefined ||
-        latest.phase === 'complete' ||
-        latest.interruptedStep !== undefined ||
-        latest.pendingRecovery !== undefined
-      ) {
-        return latest;
-      }
-      return transitionAndSave({ projectDir, sessionId }, latest, {
-        type: 'INTERRUPT_STEP',
-        step: resumeStep(latest, artifactPresence({ projectDir, sessionId })),
-        source: 'user',
-        cut: 'mid-step',
-      });
-    } catch (err) {
-      warnError('Failed to record the run interruption on the workflow state', err);
-      return state;
+    const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
+    if (
+      latest.closed !== undefined ||
+      latest.phase === 'complete' ||
+      latest.interruptedStep !== undefined ||
+      latest.pendingRecovery !== undefined
+    ) {
+      return latest;
     }
+    return transitionAndSave({ projectDir, sessionId }, latest, {
+      type: 'INTERRUPT_STEP',
+      step: resumeStep(latest, artifactPresence({ projectDir, sessionId })),
+      source: 'user',
+      cut: 'mid-step',
+    });
   };
 
   const publishWorkflowCancellation = (reason: typeof WORKFLOW_CANCEL_REASON_USER): void => {

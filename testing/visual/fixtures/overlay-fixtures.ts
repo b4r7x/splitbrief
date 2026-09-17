@@ -41,6 +41,9 @@ import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
+import { stopStore } from '../../../src/stores/workflow/stop.js';
+import { markWorkflowPaused } from '../../../src/stores/workflow/actions/pause.js';
+import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore, type RouteData } from '../../../src/stores/navigation/router.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
@@ -1441,6 +1444,79 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
   [scenarioId('workflow-stop-sheet'), createStopSheetFixture],
+  [
+    scenarioId('workflow-stop-menu-parked'),
+    () =>
+      createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        seed: () => {
+          seedStopSheet();
+          stopStore.request('stop-now');
+          stopStore.park('mid-brief', 'T002', null);
+          markWorkflowPaused();
+        },
+      }),
+  ],
+  [
+    scenarioId('workflow-stop-menu-failed'),
+    () =>
+      createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        seed: () => {
+          seedStopSheet();
+          stopStore.request('stop-now');
+          stopStore.fail('Could not save session: disk full');
+        },
+      }),
+  ],
+  [
+    scenarioId('workflow-quit-hint'),
+    () => {
+      const base = createOverlayFixture({
+        overlay: 'none',
+        underlyingScreen: 'workflow',
+        seed: () => {
+          seedStopSheet();
+          stopStore.request('stop-now');
+          stopStore.park('mid-brief', 'T002', null);
+          markWorkflowPaused();
+        },
+      });
+      // The app's mount effects and the workflow's store reset both clear a quit hint seeded
+      // before mount, and the keys effect that clears it runs in the same commit as the reset —
+      // so the confirmation is armed one macrotask after the run settles into its parked state,
+      // past every mount effect, where nothing clears it until teardown.
+      let disarm: (() => void) | undefined;
+      return {
+        ...base,
+        setup: async (context) => {
+          await base.setup(context);
+          let armed = false;
+          const stop = stopStore.subscribe(() => {
+            if (armed || stopStore.get().phase !== 'parked') return;
+            armed = true;
+            stop();
+            setImmediate(() => feedbackStore.setMessage('Press ctrl+c again to quit'));
+          });
+          disarm = () => {
+            armed = true;
+            stop();
+          };
+        },
+        teardown: () => {
+          disarm?.();
+          disarm = undefined;
+          return base.teardown();
+        },
+      };
+    },
+  ],
+  [
+    scenarioId('workflow-stop-menu-pause'),
+    () => ({ ...createStopSheetFixture(), afterMount: (write) => write('\x1b[B') }),
+  ],
   [scenarioId('overlay-sessions'), createSessionsFixture],
   [scenarioId('overlay-usage-details'), createUsageDetailsFixture],
   [scenarioId('overlay-usage-details-legacy'), createUsageDetailsLegacyFixture],

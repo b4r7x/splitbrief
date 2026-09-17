@@ -91,7 +91,7 @@ const checkpointPredicates = [
   [checkpointId('task-review'), includesAll('[c]  continue', '[r]  redo task', '[a]  abort')],
   [checkpointId('paused-mid-brief'), includesAll('/resume')],
   [checkpointId('paused-boundary'), includesAll('briefs complete')],
-  [checkpointId('stopping'), includesAll('No new work will start')],
+  [checkpointId('stopping'), includesAll('esc back after stop')],
   [checkpointId('stopped'), includesAll('Changes kept')],
   // A run at rest carries its own name: the marker is the session the record names, which the
   // closed block states in full and the open byline carries. Nothing else is width-stable — the

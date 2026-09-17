@@ -12,8 +12,8 @@ export interface StopBylineInput {
   readonly total: number;
   /** Since the stop was asked for, so the wait is reported rather than guessed at. */
   readonly elapsedMs: number;
-  readonly sheetOpen: boolean;
   readonly questionPending: boolean;
+  readonly error?: string | undefined;
 }
 
 export interface StopByline {
@@ -29,29 +29,31 @@ function subject(input: StopBylineInput): string {
 export function stopByline(input: StopBylineInput): StopByline | null {
   const taskId = subject(input);
 
-  if (input.intent === 'none') {
-    // The sheet is a question, not a stop: the byline behind it says the run is untouched.
-    if (!input.sheetOpen) return null;
-    return { lead: `Building ${taskId} of ${input.total}`, hint: 'Still running' };
-  }
+  if (input.intent === 'none') return null;
+
+  if (input.phase === 'failed')
+    return {
+      lead: `Stop failed${SOFT_SEP}${input.error ?? 'Cleanup did not finish'}`,
+      hint: '/stop to retry',
+    };
 
   if (input.phase === 'parked') {
     if (input.parked?.kind === 'boundary') {
       return {
         lead: `Paused after ${taskId}${SOFT_SEP}${input.passed} of ${input.total} briefs complete`,
-        hint: `/resume to start ${input.nextTaskId ?? 'the next brief'}${SOFT_SEP}/end${SOFT_SEP}esc home`,
+        hint: `/resume${SOFT_SEP}/stop options${SOFT_SEP}esc back to sessions${SOFT_SEP}ctrl+c quit`,
       };
     }
     return {
       lead: `Paused at ${taskId}${SOFT_SEP}Partial changes kept`,
-      hint: `/resume${SOFT_SEP}type instructions, enter to send and resume${SOFT_SEP}/end${SOFT_SEP}esc home`,
+      hint: `/resume${SOFT_SEP}/stop options${SOFT_SEP}esc back to sessions${SOFT_SEP}ctrl+c quit`,
     };
   }
 
   if (input.phase === 'ended') {
     return {
       lead: `Cancelled by you at ${taskId}${SOFT_SEP}Changes kept`,
-      hint: `esc home${SOFT_SEP}/quit`,
+      hint: `esc back to sessions${SOFT_SEP}ctrl+c quit`,
     };
   }
 
@@ -72,8 +74,12 @@ export function stopByline(input: StopBylineInput): StopByline | null {
   if (input.phase === 'forcing') {
     return { lead: `${lead}${SOFT_SEP}Forcing remaining processes to exit`, hint: '' };
   }
+  const progress =
+    input.phase === 'terminating'
+      ? 'Waiting for processes to exit'
+      : 'Finishing cleanup and saving';
   return {
-    lead: `${lead}${SOFT_SEP}Waiting for processes to exit${SOFT_SEP}elapsed ${formatStageElapsed(input.elapsedMs)}`,
-    hint: 'No new work will start',
+    lead: `${lead}${SOFT_SEP}${progress}${SOFT_SEP}${formatStageElapsed(input.elapsedMs)}`,
+    hint: `esc back after stop${SOFT_SEP}ctrl+c quit after stop`,
   };
 }

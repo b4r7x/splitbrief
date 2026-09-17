@@ -412,6 +412,12 @@ export async function spawnAndCollect(
         });
       }
     }
+    // The redaction rewrap above erases the `AbortError` identity the caller aborted with, so
+    // every upstream classifier would read a user stop as a runner failure. Re-issue the abort
+    // under the code they match on, keeping the redacted message.
+    if (cancellation.source() === 'external') {
+      throw error('operation-aborted', redactCredential(toErrorMessage(redactedError)));
+    }
     throw redactedError;
   } finally {
     cancellation.cleanup();

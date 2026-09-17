@@ -8,7 +8,7 @@ import { Box, Text } from 'ink';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
+import { execFileSync } from 'node:child_process';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -139,7 +139,7 @@ let projectDir: string;
 
 beforeEach(() => {
   projectDir = createTempDir('workflow-runner-test');
-  createTestGitRepo(projectDir);
+  execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
   ensureSplitbriefDir(projectDir);
   resetWorkflow();
   controlsStore.reset();
@@ -409,7 +409,13 @@ describe('useRunLoop', () => {
 
   it('requestCancel marks the workflow cancelled and clears the review input mode', async () => {
     const prepared = preparedExecution({ projectDir, feature: 'add auth' });
-    const inst = renderHarness({ prepared });
+    const inst = renderHarness({
+      prepared,
+      runWorkflow: async (options) => {
+        await options.callbacks?.onApprovalNeeded?.('spec', 'spec.md');
+        return makeSummary();
+      },
+    });
     await flush();
 
     // Simulate a pending review mode (as if the engine had called onApprovalNeeded).

@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { addEvent } from '../../stores/workflow/actions/event.js';
-import { stopStore } from '../../stores/workflow/stop.js';
-import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { taskId } from '../../core/schemas/task.js';
-import { StopSheetOverlay } from './stop.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { taskId } from '../../../core/schemas/task.js';
+import { StopMenu } from './menu.js';
 
 function seedRunningBrief(): void {
   addEvent({
@@ -32,7 +32,7 @@ function seedRunningBrief(): void {
   });
 }
 
-describe('StopSheetOverlay', () => {
+describe('StopMenu', () => {
   beforeEach(() => {
     resetAllStores();
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
@@ -44,18 +44,22 @@ describe('StopSheetOverlay', () => {
 
   it('names the brief it would finish and the one it would not start', async () => {
     seedRunningBrief();
-    const ui = renderFeature(<StopSheetOverlay />);
+    const ui = renderFeature(<StopMenu />);
     await tick();
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Pause after this brief');
-    expect(frame).toContain('finish T002');
-    expect(frame).toContain('do not start T003');
+    await flushEffects();
+    ui.stdin.write('\x1b[B');
+    await tick(30);
+    const selected = ui.lastFrame() ?? '';
+    expect(selected).toContain('finish T002');
+    expect(selected).toContain('do not start T003');
     ui.unmount();
   });
 
   it('hides the pause row when no brief is running', async () => {
-    const ui = renderFeature(<StopSheetOverlay />);
+    const ui = renderFeature(<StopMenu />);
     await tick();
     const frame = ui.lastFrame() ?? '';
 
@@ -68,7 +72,7 @@ describe('StopSheetOverlay', () => {
   it('offers the way back while a pause is pending', async () => {
     seedRunningBrief();
     stopStore.request('pause-after-brief');
-    const ui = renderFeature(<StopSheetOverlay />);
+    const ui = renderFeature(<StopMenu />);
     await tick();
     const frame = ui.lastFrame() ?? '';
 

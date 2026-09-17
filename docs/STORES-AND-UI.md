@@ -91,7 +91,7 @@ Runtime state of the active workflow run.
 - **controlsStore** -- sidebar visibility, input mode echo.
 - **terminalSizeStore** -- reactive terminal cols/rows, subscribes to resize events.
 - **inputHeightStore** -- current composer height in rows.
-- **composerLiveStore** -- whether the composer is empty right now, so `src/app/keys.ts` can tell an `esc` that should open the stop sheet from one that would spend the user's draft.
+- **composerLiveStore** -- whether the composer is empty right now. Session draft persistence lives in `src/stores/ui/session-drafts.ts`, backed by each session’s `draft.json`; departure flushes pending writes before leaving or quitting.
 - **inputHistoryStore** -- command history with disk persistence.
 - **commandPaletteMruStore** -- most-recently-used entries for the command palette.
 - **projectFilesStore** -- refresh invalidation tick for project-file completion; the composer owns the async file read and local suggestion list.
@@ -226,7 +226,7 @@ introduce a second breakpoint or hidden bottom row.
 
 Overlay types: `help`, `command-palette`, `skills`, `settings`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `stop-sheet`, `sessions`, `editor` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`, which spreads `SEAT_PICKER_OVERLAYS` (one picker overlay per seat picker role). There is no `crew` overlay: crew is the first section of `settings`.
 
-The `stop-sheet` overlay (`src/app/overlays/stop.tsx`, panel in `src/features/workflow/stop/sheet.tsx`) is how a run is stopped: `esc` on an empty composer opens it while the run is still stoppable, its rows come from `stopSheetRows` (`stop/options.ts`), and choosing one writes the intent into `stopStore`. It carries no letter accelerators — `↑↓ · ⏎ · esc` — and its footer states the rule for every row: *No option reverts files. Your draft is preserved.*
+The `stop-sheet` navigation token owns keyboard focus for a compact menu above the workflow composer (`src/features/workflow/stop/menu.tsx`, view in `stop/sheet.tsx`). Unlike covering overlays, the router renders `null` for this token, leaving the transcript visible and updating. `esc` opens it with or without a draft; `↑↓` selects, `Enter` executes, a second `esc` performs Stop now, and `Tab` dismisses. End run is always an explicit selection. Rows come from `stopSheetRows`, and existing handlers write the intent into `stopStore`. Only the selected consequence expands; the shared layout reserves its maximum height. The composer temporarily displays one line without losing the draft. The menu replaces any question/review prompt visually while preserving its stored answers and focus. Once parked, the rows become Resume / End run / Back to sessions, and Esc leaves the session. Further Esc/Ctrl+C during stopping queue home/quit until cleanup and persistence complete. Ctrl+C at rest/home uses a two-second inline confirmation. `/stop` reopens the menu after Tab dismissal.
 
 Each type maps to a component in `renderOverlay()` in `src/app/router.tsx`. The three picker overlays all render the same component parameterised by role: `<ToolModelPicker role="planner" | "implementer" | "reviewer" />` (`src/app/overlays/runners.tsx`). `role` is `SeatPickerRole` — the three members of `SEAT_PICKER_ROLES` (`src/core/runners/seat-roles.ts`); confirming a `reviewer` selection writes the `reviewer` block in project config.
 

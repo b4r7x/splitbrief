@@ -285,7 +285,7 @@ Open `/usage` from a live or saved workflow to inspect reported counters and ava
 
 ### Stopping a run
 
-**What it does.** On the workflow screen with an empty composer, `esc` opens a modal **Stop options** sheet instead of acting on the run. The sheet is the only place a stop is chosen, and every row says what it leaves behind:
+**What it does.** During a live workflow, `esc` opens compact **Stop options** above the composer. The transcript stays visible and keeps updating; the draft is preserved. Select a row to see its consequence:
 
 | Row | Consequence |
 |---|---|
@@ -293,17 +293,17 @@ Open `/usage` from a live or saved workflow to inspect reported counters and ava
 | `Pause after this brief` | finish `T<id>` including checks and review; do not start `T<next>` |
 | `End run` | stop execution; close this run; keep changes |
 
-The second row appears only while a brief is running, and reads `Keep running` once a pause is already pending. The footer line is `No option reverts files. Your draft is preserved.`, the legend is `↑↓ · ⏎ · esc`, and there are no letter keys. `esc` on the sheet closes it with no effect on the run.
+The second row appears only while a brief is running, and reads `Keep running` once a pause is pending. `↑↓` selects, `Enter` executes, a second `esc` performs Stop now, and `Tab` dismisses without changing the run. No letter keys trigger an action.
 
 **How to use.**
 
-- `esc` (empty composer) — open the sheet. With text in the composer `esc` spends neither the draft nor the run; the feedback row reads `clear the draft or ctrl+c to stop now`.
-- `ctrl+c` — Stop now, immediately, with no armed window and no second press. Off the workflow screen it exits as usual.
+- `esc` — open the menu, including with a draft. `esc esc` stops resumably; another Esc returns home after cleanup and saving. Once parked, one Esc returns home.
+- `ctrl+c` — stop active work; another press quits after cleanup and saving. At rest/home, press twice within two seconds to quit.
 - `ctrl+q` or `/quit` — stop safely, save the session, then exit.
-- `/resume` — restart a parked run (`Stop now` resumes the parked brief, `Pause after this brief` starts the next one). A blank Enter never resumes; type instructions and Enter to steer the resumed run.
+- `/resume` — continue a parked run; the stopped menu also offers Resume, End run and Back to sessions. `/stop` reopens the menu. A run at rest accepts Enter to continue; typed instructions become its steer.
 - `/end` — close a parked run and keep its changes. After that nothing picks it up.
 
-**On-screen.** The byline reports the state and the legend row carries the keys: `Stopping T<id> · Waiting for processes to exit · elapsed <t>` (hint `No new work will start`), then `Forcing remaining processes to exit` after the 2-second grace, `Finishing T<id>` with `Pause requested; no next brief will start` for a boundary pause, and finally one of `Paused at T<id> · Partial changes kept`, `Paused after T<id> · <n> of <m> briefs complete`, or `Cancelled by you at T<id> · Changes kept`. No option reverts files: git is still the layer that reverses a run.
+**On-screen.** The byline reports the state and the legend row carries the keys: `Stopping T<id> · Waiting for processes to exit · <t>` (hint `esc back after stop · ctrl+c quit after stop`) while owned processes remain, then `Finishing cleanup and saving`; `Forcing remaining processes to exit` after the grace window; `Finishing T<id>` with `Pause requested; no next brief will start` for a boundary pause; and finally one of `Paused at T<id> · Partial changes kept` (hint `/resume · /stop options · esc back to sessions · ctrl+c quit`), `Paused after T<id> · <n> of <m> briefs complete`, or `Cancelled by you at T<id> · Changes kept`. No option reverts files: git is still the layer that reverses a run.
 
 ### Recovery stops
 
@@ -384,7 +384,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 26 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
+**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 27 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
 
 **Navigate**
 
@@ -515,7 +515,7 @@ The fraction counts briefs that **passed their checks** — a started brief is n
 
 - **Queue** — while a brief is building, the placeholder reads `Queue a message for after this brief…`; text you send waits for the next safe boundary. `/queue show` and `/queue clear` inspect and discard what is pending.
 - **Steer** — while the run is parked (`Stop now`, or an interrupted call), the hint reads `type instructions, enter to send and resume`; text you send steers the resumed run. A blank Enter never resumes.
-- **Interrupt** — `ctrl+c` stops the run at once, `esc` on an empty composer opens the stop sheet. Neither is reachable by typing.
+- **Interrupt** — `ctrl+c` stops the run at once, `esc` opens the stop menu. Neither is reachable by typing.
 
 ### Run screen at rest
 

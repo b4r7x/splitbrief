@@ -22,8 +22,8 @@ describe('createRuntimeCommands registry shape', () => {
 
   it('registers the commands the reference documents, once each', () => {
     const registered = commands.map((cmd) => cmd.name);
-    expect(registered).toHaveLength(26);
-    expect(new Set(registered).size).toBe(26);
+    expect(registered).toHaveLength(27);
+    expect(new Set(registered).size).toBe(27);
   });
 
   it('registers /usage once, on the workflow, under view', () => {

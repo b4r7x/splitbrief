@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Box, Text } from 'ink';
-import { DRAFT_ESCAPE_HINT, useAppKeys } from './keys.js';
+import { useAppKeys } from './keys.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -18,8 +18,8 @@ import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { stopStore } from '../stores/workflow/stop.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
-import { feedbackStore } from '../stores/ui/feedback.js';
 import { overlayStore } from '../stores/ui/overlay.js';
+import { feedbackStore } from '../stores/ui/feedback.js';
 import { completionStore } from '../stores/ui/completion.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { cancelEscapeAction } from '../lib/terminal/escape-debounce.js';
@@ -189,7 +189,7 @@ describe('useAppKeys: Ctrl+C', () => {
     ui.unmount();
   });
 
-  it('a second ctrl+c stops again instead of exiting', async () => {
+  it('a second ctrl+c waits for one stop to finish and exits once', async () => {
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
@@ -201,36 +201,149 @@ describe('useAppKeys: Ctrl+C', () => {
     await writeCtrlC(ui);
     await tick();
 
-    expect(abort).toHaveBeenCalledTimes(2);
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(exit).not.toHaveBeenCalled();
+    stopStore.markSettling();
+    expect(exit).not.toHaveBeenCalled();
+    stopStore.park('mid-brief', null, null);
+    await tick();
+    expect(exit).toHaveBeenCalledTimes(1);
+    await writeCtrlC(ui);
+    await tick();
+    expect(exit).toHaveBeenCalledTimes(1);
+    ui.unmount();
+  });
+
+  it.each(['home', 'idle', 'parked'] as const)(
+    'requires two Ctrl+C presses within two seconds when %s',
+    async (state) => {
+      if (state === 'home') routerStore.navigate({ to: 'home' });
+      if (state === 'idle')
+        routerStore.navigate({
+          to: 'workflow',
+          run: makeRunRecord(),
+          execution: { kind: 'at-rest' },
+        });
+      if (state === 'parked') stopStore.park('mid-brief', null, null);
+      const exit = vi.fn();
+      const ui = renderFeature(<Harness exit={exit} />);
+      await tick();
+      await writeCtrlC(ui);
+      await tick();
+      expect(exit).not.toHaveBeenCalled();
+      expect(feedbackStore.get().message).toBe('Press ctrl+c again to quit');
+      vi.advanceTimersByTime(1900);
+      await writeCtrlC(ui);
+      await tick();
+      expect(exit).toHaveBeenCalledTimes(1);
+      expect(stopStore.get().intent).not.toBe('end-run');
+      ui.unmount();
+    },
+  );
+
+  it('expires the idle quit hint after two seconds', async () => {
+    routerStore.navigate({ to: 'home' });
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+    await writeCtrlC(ui);
+    await tick();
+    vi.advanceTimersByTime(2001);
+    expect(feedbackStore.get().message).not.toBe('Press ctrl+c again to quit');
+    await writeCtrlC(ui);
+    await tick();
+    expect(exit).not.toHaveBeenCalled();
+    expect(feedbackStore.get().message).toBe('Press ctrl+c again to quit');
+    ui.unmount();
+  });
+
+  it('cancels the idle quit confirmation on other input', async () => {
+    routerStore.navigate({ to: 'home' });
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+    await writeCtrlC(ui);
+    await tick();
+    await writeKey(ui, 'x');
+    await tick();
+    expect(feedbackStore.get().message).not.toBe('Press ctrl+c again to quit');
+    await writeCtrlC(ui);
+    await tick();
     expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 
-  it('ctrl+c leaves once there is nothing left to stop', async () => {
+  it('preserves the second Ctrl+C confirmation when stopping settles at rest', async () => {
+    const abort = vi.fn();
+    handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} />);
     await tick();
-
     await writeCtrlC(ui);
     await tick();
-
+    stopStore.park('mid-brief', null, null);
+    const route = routerStore.get();
+    if (route.screen !== 'workflow') throw new Error('expected workflow');
+    routerStore.updateRun({ run: route.run, execution: { kind: 'at-rest' } });
+    await tick();
+    await writeCtrlC(ui);
+    await tick();
+    expect(abort).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledTimes(1);
-    expect(stopStore.get().intent).toBe('none');
     ui.unmount();
   });
 
-  it('Ctrl+C on the home screen exits immediately on the first press', async () => {
+  it.each(['another session', 'resumed work'] as const)(
+    'clears an armed confirmation on %s without changing screens',
+    async (transition) => {
+      routerStore.navigate({
+        to: 'workflow',
+        run: makeRunRecord(),
+        execution: { kind: 'at-rest' },
+      });
+      const exit = vi.fn();
+      const ui = renderFeature(<Harness exit={exit} />);
+      await tick();
+      await writeCtrlC(ui);
+      await tick();
+      const abort = vi.fn();
+      if (transition === 'resumed work') {
+        handlers.createAbortHandlerScope()(abort);
+        routerStore.navigate({
+          to: 'workflow',
+          run: makeRunRecord(),
+          execution: localExecution('resumed'),
+        });
+      } else {
+        routerStore.navigate({
+          to: 'workflow',
+          run: makeRunRecord({ ref: { projectDir: '/tmp/other-run', sessionId: 'other-run' } }),
+          execution: { kind: 'at-rest' },
+        });
+      }
+      await tick();
+      expect(feedbackStore.get().message).not.toBe('Press ctrl+c again to quit');
+      await writeCtrlC(ui);
+      await tick();
+      expect(exit).not.toHaveBeenCalled();
+      if (transition === 'resumed work') expect(abort).toHaveBeenCalledTimes(1);
+      ui.unmount();
+    },
+  );
+
+  it('clears the confirmation when navigation opens a run', async () => {
     routerStore.navigate({ to: 'home' });
-    handlers.createAbortHandlerScope()(vi.fn());
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} />);
     await tick();
-
     await writeCtrlC(ui);
     await tick();
-
-    expect(exit).toHaveBeenCalledTimes(1);
-    expect(stopStore.get().intent).toBe('none');
+    routerStore.navigate({ to: 'workflow', run: makeRunRecord(), execution: { kind: 'at-rest' } });
+    await tick();
+    expect(feedbackStore.get().message).not.toBe('Press ctrl+c again to quit');
+    await writeCtrlC(ui);
+    await tick();
+    expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 });
@@ -239,7 +352,7 @@ describe('useAppKeys: ESC stop ladder', () => {
   beforeEach(STOP_LADDER_SETUP);
   afterEach(STOP_LADDER_TEARDOWN);
 
-  it('esc with draft is inert on run and draft', async () => {
+  it('esc opens the menu without touching the run or draft', async () => {
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
     composerLiveStore.setEmpty(false);
@@ -251,11 +364,11 @@ describe('useAppKeys: ESC stop ladder', () => {
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
 
-    expect(overlayStore.get().active).toBe('none');
+    expect(overlayStore.get().active).toBe('stop-sheet');
     expect(abort).not.toHaveBeenCalled();
     expect(stopStore.get().intent).toBe('none');
     expect(lifecycleStore.get().cancelled).toBe(false);
-    expect(feedbackStore.get().message).toBe(DRAFT_ESCAPE_HINT);
+    expect(composerLiveStore.get().empty).toBe(false);
     ui.unmount();
   });
 
@@ -300,6 +413,49 @@ describe('useAppKeys: ESC stop ladder', () => {
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
 
     expect(overlayStore.get().active).toBe('stop-sheet');
+    ui.unmount();
+  });
+
+  it('parked Escape returns home even with an unsent draft', async () => {
+    stopStore.park('mid-brief', null, null);
+    composerLiveStore.setEmpty(false);
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+    await writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+    expect(routerStore.get().screen).toBe('home');
+    expect(composerLiveStore.get().empty).toBe(false);
+    expect(stopStore.get().intent).not.toBe('end-run');
+    expect(exit).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('queues home on a third Escape until the original stop settles', async () => {
+    const abort = vi.fn();
+    handlers.createAbortHandlerScope()(abort);
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+    await writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+    await tick();
+    await writeEsc(ui);
+    await tick();
+    await writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(routerStore.get().screen).toBe('workflow');
+    stopStore.markSettling();
+    expect(routerStore.get().screen).toBe('workflow');
+    stopStore.park('mid-brief', null, null);
+    await tick();
+    expect(routerStore.get().screen).toBe('home');
+    expect(stopStore.get().intent).toBe('stop-now');
+    expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 

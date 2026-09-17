@@ -15,6 +15,7 @@ import { routerStore } from '../../../src/stores/navigation/router.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
+import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { cancelEscapeAction } from '../../../src/lib/terminal/escape-debounce.js';
 import * as handlers from '../../../src/features/workflow/handlers.js';
@@ -23,8 +24,7 @@ import * as handlers from '../../../src/features/workflow/handlers.js';
 // FilteredStdin (mouse filter + bracketed-paste stripper) before reaching Ink — the path
 // src/cli/render/app.ts wires and the path src/app/keys.test.tsx bypasses. They pin the
 // user-visible ladder (one esc opens the stop sheet; ctrl+c stops now) so a future filter
-// change cannot silently swallow a leading control byte. The draft guard drives the
-// FeedbackRow hint copy, which is asserted once for its render integration below.
+// change cannot silently swallow a leading control byte. Drafts survive opening the menu.
 
 const ESC = '\x1b';
 const CTRL_C = '\x03';
@@ -34,8 +34,7 @@ const CTRL_C = '\x03';
 const AFTER_PRESS_MS = 200;
 
 function WorkflowApp({ exit = () => {} }: { exit?: () => void }) {
-  // Mirror the real workflow screen: both global app keys and the workflow-screen keys
-  // are mounted, because the ESC->home-when-cancelled hop lives in useWorkflowKeys.
+  // Mount both keyboard owners, as the real workflow does, to catch a press reaching both.
   useAppKeys({ exit });
   useWorkflowKeys({ isActive: true });
   return (
@@ -94,71 +93,104 @@ describe('ESC through the real FilteredStdin pipeline (live workflow)', () => {
     harness.unmount();
   });
 
-  it('renders the draft guard hint instead of opening the sheet while text is typed', async () => {
+  it('opens the menu while preserving a draft', async () => {
     composerLiveStore.setEmpty(false);
     const harness = renderThroughFilteredStdin(<WorkflowApp />);
     await tick(30);
-    const idleFrame = harness.lastFrame() ?? '';
-
     harness.pressBytes(ESC);
     await tick(AFTER_PRESS_MS);
-
-    expect(overlayStore.get().active).toBe('none');
-    expect(harness.lastFrame() ?? '').not.toBe(idleFrame);
-    expect(harness.lastFrame() ?? '').toContain('clear the draft');
-
+    expect(overlayStore.get().active).toBe('stop-sheet');
+    expect(composerLiveStore.get().empty).toBe(false);
+    expect(stopStore.get().intent).toBe('none');
     harness.unmount();
   });
 
-  it('a batched double ESC (\\x1b\\x1b in one chunk) opens the sheet and dismisses it', async () => {
+  it('a batched double ESC (\\x1b\\x1b in one chunk) stops once without ending the run', async () => {
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
     const harness = renderThroughFilteredStdin(<WorkflowApp />);
     await tick(30);
 
-    // Terminals can batch two fast ESC keystrokes into a single chunk; the filter passes both
-    // through (splitMouseChunk + stripPasteMarkers do not withhold the trailing ESC). Each press
-    // is one action now — the first opens the sheet and the second dismisses it, and neither
-    // touches the run.
     harness.pressBytes(ESC + ESC);
     await tick(AFTER_PRESS_MS);
 
     expect(overlayStore.get().active).toBe('none');
-    expect(abort).not.toHaveBeenCalled();
-    expect(stopStore.get().intent).toBe('none');
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(stopStore.get().intent).toBe('stop-now');
 
     harness.unmount();
   });
 
-  it('runs the stop ladder to completion: sheet -> end run -> home', async () => {
+  it('three separately delivered Escapes stop once, then leave after persistence finishes', async () => {
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     const harness = renderThroughFilteredStdin(<WorkflowApp exit={exit} />);
     await tick(30);
-
     harness.pressBytes(ESC);
     await tick(AFTER_PRESS_MS);
     expect(overlayStore.get().active).toBe('stop-sheet');
-
-    // The sheet's own esc closes it with no effect on the run.
     harness.pressBytes(ESC);
     await tick(AFTER_PRESS_MS);
-    expect(overlayStore.get().active).toBe('none');
+    expect(abort).toHaveBeenCalledTimes(1);
     expect(lifecycleStore.get().cancelled).toBe(false);
-
-    // Ending the run is what stops it; the press that stops must stay on the workflow screen.
-    handlers.setCancelHandler(() => handlers.requestCancel);
-    handlers.requestEndRun();
-    await tick(10);
-    expect(lifecycleStore.get().cancelled).toBe(true);
-    expect(routerStore.get().screen).toBe('workflow');
-
     harness.pressBytes(ESC);
     await tick(AFTER_PRESS_MS);
+    expect(routerStore.get().screen).toBe('workflow');
+    stopStore.markSettling();
+    expect(routerStore.get().screen).toBe('workflow');
+    stopStore.park('mid-brief', null, null);
+    await tick(30);
     expect(routerStore.get().screen).toBe('home');
-
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(stopStore.get().intent).toBe('stop-now');
     expect(exit).not.toHaveBeenCalled();
+    harness.unmount();
+  });
+
+  it.each([
+    { name: 'bare', sequence: ESC.repeat(3) },
+    { name: 'Kitty CSI-u', sequence: '\x1b[27u'.repeat(3) },
+  ])(
+    'coalesced $name triple Escape queues leave without waiting for the stop to finish',
+    async ({ sequence }) => {
+      const abort = vi.fn();
+      handlers.createAbortHandlerScope()(abort);
+      const exit = vi.fn();
+      const harness = renderThroughFilteredStdin(<WorkflowApp exit={exit} />);
+      await tick(30);
+      harness.pressBytes(sequence);
+      await tick(AFTER_PRESS_MS);
+      expect(abort).toHaveBeenCalledTimes(1);
+      expect(routerStore.get().screen).toBe('workflow');
+      expect(lifecycleStore.get().cancelled).toBe(false);
+      stopStore.park('mid-brief', null, null);
+      await tick(30);
+      expect(routerStore.get().screen).toBe('home');
+      expect(abort).toHaveBeenCalledTimes(1);
+      expect(stopStore.get().intent).toBe('stop-now');
+      expect(exit).not.toHaveBeenCalled();
+      harness.unmount();
+    },
+  );
+
+  it('Ctrl+C after a pending leave upgrades the single terminal action to quit', async () => {
+    const abort = vi.fn();
+    handlers.createAbortHandlerScope()(abort);
+    const exit = vi.fn();
+    const harness = renderThroughFilteredStdin(<WorkflowApp exit={exit} />);
+    await tick(30);
+    harness.pressBytes(ESC + ESC + ESC);
+    await tick(AFTER_PRESS_MS);
+    harness.pressBytes(CTRL_C);
+    await tick(30);
+    expect(exit).not.toHaveBeenCalled();
+    expect(routerStore.get().screen).toBe('workflow');
+    stopStore.park('mid-brief', null, null);
+    await tick(30);
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(routerStore.get().screen).toBe('workflow');
+    expect(abort).toHaveBeenCalledTimes(1);
     harness.unmount();
   });
 
@@ -201,6 +233,44 @@ describe('ESC through the real FilteredStdin pipeline (live workflow)', () => {
     expect(stopStore.get()).toMatchObject({ intent: 'stop-now', phase: 'requested' });
     expect(exit).not.toHaveBeenCalled();
 
+    harness.unmount();
+  });
+
+  it('a repeated Ctrl+C quits only after the original stop settles', async () => {
+    const abort = vi.fn();
+    handlers.createAbortHandlerScope()(abort);
+    const exit = vi.fn();
+    const harness = renderThroughFilteredStdin(<WorkflowApp exit={exit} />);
+    await tick(30);
+    harness.pressBytes(CTRL_C);
+    await tick(30);
+    expect(feedbackStore.get().message).toBe('Press ctrl+c again to quit');
+    harness.pressBytes(CTRL_C);
+    await tick(30);
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(exit).not.toHaveBeenCalled();
+    stopStore.markSettling();
+    expect(exit).not.toHaveBeenCalled();
+    stopStore.park('mid-brief', null, null);
+    await tick(30);
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(lifecycleStore.get().cancelled).toBe(false);
+    harness.unmount();
+  });
+
+  it('home Ctrl+C displays a confirmation and quits on the second press', async () => {
+    routerStore.navigate({ to: 'home' });
+    const exit = vi.fn();
+    const harness = renderThroughFilteredStdin(<WorkflowApp exit={exit} />);
+    await tick(30);
+    harness.pressBytes(CTRL_C);
+    await tick(30);
+    expect(exit).not.toHaveBeenCalled();
+    expect(feedbackStore.get().message).toBe('Press ctrl+c again to quit');
+    harness.pressBytes(CTRL_C);
+    await tick(30);
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(stopStore.get().intent).toBe('none');
     harness.unmount();
   });
 

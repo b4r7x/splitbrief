@@ -1001,7 +1001,7 @@ const stoppingProjection: WorkflowFixtureProjection = {
   inputMode: 'normal',
   sidebarVisible: false,
   events: STOPPED_RUN_EVENTS,
-  stop: { intent: 'stop-now', phase: 'terminating' },
+  stop: { intent: 'stop-now', phase: 'settling' },
 };
 
 const stoppedProjection: WorkflowFixtureProjection = {

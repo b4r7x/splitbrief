@@ -11,7 +11,6 @@ function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
     passed: 1,
     total: 5,
     elapsedMs: 3_000,
-    sheetOpen: false,
     questionPending: false,
     ...overrides,
   };
@@ -22,17 +21,10 @@ describe('stopByline', () => {
     expect(stopByline(input())).toBeNull();
   });
 
-  it('reports the run as still running behind the sheet', () => {
-    expect(stopByline(input({ sheetOpen: true }))).toEqual({
-      lead: 'Building T002 of 5',
-      hint: 'Still running',
-    });
-  });
-
   it('names the brief it is stopping and how long it has waited', () => {
     expect(stopByline(input({ intent: 'stop-now', phase: 'terminating' }))).toEqual({
-      lead: 'Stopping T002 · Waiting for processes to exit · elapsed 0:03',
-      hint: 'No new work will start',
+      lead: 'Stopping T002 · Waiting for processes to exit · 0:03',
+      hint: 'esc back after stop · ctrl+c quit after stop',
     });
   });
 
@@ -66,7 +58,7 @@ describe('stopByline', () => {
       ),
     ).toEqual({
       lead: 'Paused at T002 · Partial changes kept',
-      hint: '/resume · type instructions, enter to send and resume · /end · esc home',
+      hint: '/resume · /stop options · esc back to sessions · ctrl+c quit',
     });
   });
 
@@ -82,20 +74,20 @@ describe('stopByline', () => {
       ),
     ).toEqual({
       lead: 'Paused after T002 · 2 of 5 briefs complete',
-      hint: '/resume to start T003 · /end · esc home',
+      hint: '/resume · /stop options · esc back to sessions · ctrl+c quit',
     });
   });
 
   it('reports an ended run as cancelled with its changes kept', () => {
     expect(stopByline(input({ intent: 'end-run', phase: 'ended' }))).toEqual({
       lead: 'Cancelled by you at T002 · Changes kept',
-      hint: 'esc home · /quit',
+      hint: 'esc back to sessions · ctrl+c quit',
     });
   });
 
   it('names the wait while a run is ending', () => {
     expect(stopByline(input({ intent: 'end-run', phase: 'terminating' }))?.lead).toBe(
-      'Ending run · Waiting for processes to exit · elapsed 0:03',
+      'Ending run · Waiting for processes to exit · 0:03',
     );
   });
 
@@ -104,5 +96,18 @@ describe('stopByline', () => {
       lead: 'Quitting',
       hint: 'Stopping processes and saving session',
     });
+  });
+});
+
+it('does not claim a live process during cleanup or persistence', () => {
+  const byline = stopByline(input({ intent: 'stop-now', phase: 'settling' }));
+  expect(byline?.lead).toContain('Finishing cleanup and saving');
+  expect(byline?.lead).not.toContain('processes');
+});
+
+it('reports the actual cleanup failure and the retry action', () => {
+  expect(stopByline(input({ intent: 'stop-now', phase: 'failed', error: 'Disk full' }))).toEqual({
+    lead: 'Stop failed · Disk full',
+    hint: '/stop to retry',
   });
 });

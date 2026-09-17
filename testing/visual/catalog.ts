@@ -524,6 +524,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-quit-hint',
+      title: 'Workflow · quit confirmation',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'quit-hint',
+        title: 'Quit confirmation',
+        kind: 'ready',
+        marker: 'Press ctrl+c again to quit',
+      },
+      elements: [{ id: 'composer', title: 'Workflow composer' }],
+    }),
+    defineScenario({
       id: 'workflow-stopping',
       title: 'Workflow · stopping',
       surface: screenSurface('workflow'),
@@ -531,7 +543,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'stopping',
         title: 'Stopping the run',
         kind: 'implementation',
-        marker: 'Waiting for processes to exit',
+        marker: 'Finishing cleanup and saving',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1101,6 +1113,13 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     checkpointTitle: 'Stop sheet ready',
     scenarios: [
       { id: 'workflow-stop-sheet', title: 'Workflow · stop options', marker: 'Stop options' },
+      {
+        id: 'workflow-stop-menu-parked',
+        title: 'Workflow · parked options',
+        marker: 'Back to sessions',
+      },
+      { id: 'workflow-stop-menu-failed', title: 'Workflow · failed stop', marker: 'Retry stop' },
+      { id: 'workflow-stop-menu-pause', title: 'Workflow · pause option', marker: 'finish T002' },
     ],
   }),
   sessions: overlayGroup({

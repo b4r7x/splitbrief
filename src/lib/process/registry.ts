@@ -34,6 +34,10 @@ export function onProcessRegistryChange(listener: (count: number) => void): () =
   };
 }
 
+export function registeredProcessCount(): number {
+  return activeProcesses.size;
+}
+
 function notifyRegistryChange(): void {
   for (const listener of registryListeners) listener(activeProcesses.size);
 }

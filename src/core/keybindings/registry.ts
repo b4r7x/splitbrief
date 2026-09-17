@@ -13,13 +13,13 @@ const SHORTCUTS: ShortcutInfo[] = [
   {
     id: 'exit',
     key: 'ctrl+c',
-    description: 'Stop now',
+    description: 'Stop; press again to quit',
     screens: ['workflow'],
   },
   {
     id: 'exit',
     key: 'ctrl+c',
-    description: 'Exit',
+    description: 'Press twice to quit',
     screens: ['home', 'setup'],
   },
   { id: 'command-palette', key: 'ctrl+k', description: 'Command palette', screens: ALL_SCREENS },
@@ -28,7 +28,7 @@ const SHORTCUTS: ShortcutInfo[] = [
   {
     id: 'stop',
     key: 'esc',
-    description: 'Stop options (empty composer)',
+    description: 'Options → stop → back to sessions',
     screens: ['workflow'],
   },
   {

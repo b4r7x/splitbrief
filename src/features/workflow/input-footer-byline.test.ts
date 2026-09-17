@@ -299,14 +299,12 @@ describe('the stop byline through the footer', () => {
     passed: 1,
     total: 5,
     elapsedMs: 4_000,
-    sheetOpen: false,
     questionPending: false,
   };
 
   it('names the wait while processes are asked to exit', () => {
-    expect(stopLine(running)).toContain(
-      'Stopping T002 · Waiting for processes to exit · elapsed 0:04 · No new work will start',
-    );
+    expect(stopLine(running)).toContain('Stopping T002 · Waiting for processes to exit · 0:04');
+    expect(stopLine(running)).toContain('esc back after stop · ctrl+c quit after stop');
   });
 
   it('says it is forcing once the grace is spent', () => {
@@ -317,7 +315,7 @@ describe('the stop byline through the footer', () => {
 
   it('names the run, not the brief, while the run is ending', () => {
     expect(stopLine({ ...running, intent: 'end-run' })).toContain(
-      'Ending run · Waiting for processes to exit · elapsed 0:04',
+      'Ending run · Waiting for processes to exit · 0:04',
     );
   });
 

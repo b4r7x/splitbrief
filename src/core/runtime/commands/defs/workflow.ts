@@ -14,6 +14,15 @@ import { formatRejectRunMessage } from '../messages.js';
 export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
   return [
     {
+      kind: 'noarg',
+      name: '/stop',
+      label: 'session options',
+      description: 'Open stop and session options',
+      category: 'workflow',
+      validScreens: ['workflow'],
+      handler: () => ctx.openOverlay('stop-sheet'),
+    },
+    {
       kind: 'arg',
       name: '/revise-spec',
       label: 'revise spec',

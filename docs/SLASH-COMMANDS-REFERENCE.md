@@ -22,7 +22,7 @@ Each command may also declare a `guard`, which returns one true sentence when th
 
 Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, assembled by `createCommandContext` in `src/core/runtime/commands/context-factory.ts` — every config write goes through its `saveConfig` path; the TUI (`src/app/command-context.ts`) only supplies the callbacks. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
-The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 26 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
+The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 27 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
 
 ---
 
@@ -179,6 +179,16 @@ Commands that mutate the active run: rewind to an earlier phase, re-run a task, 
 - **Behavior**: On failure (no active workflow, missing ID, wrong phase) an error appears on the feedback line. On success the lifecycle store transitions and the existing implementer subprocess for that task is replaced on the next loop iteration.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; reset dispatched via `requestRewind({ target: 'task', taskId })` in `src/app/command-context.ts`.
 - **See also**: `/revise-plan`.
+
+### `/stop`
+
+- **Purpose**: Open the inline session-options menu immediately above the workflow composer — the same menu `Esc` opens on a live run.
+- **Screens**: `workflow`.
+- **Args**: none.
+- **Example**: `/stop`
+- **Behavior**: The rows follow the run's state: a live run offers `Stop now`, `Pause after this brief` (or `Keep running` when a pause is pending) and `End run`; a parked or stopped run offers `Resume`, `End run` and `Back to sessions`; a failed stop offers `Retry stop` alone. `↑↓` selects, `Enter` executes, `Tab` dismisses back to the composer without touching the run or the draft. Nothing stops, resumes or ends until a row is confirmed.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; rows from `readStopMenuRows` (`src/features/workflow/stop/options.ts`).
+- **See also**: `/resume`, `/end`.
 
 ### `/resume`
 
@@ -375,11 +385,11 @@ Most slash commands have no dedicated keybinding — open the command palette wi
 | `Ctrl+,` | Open settings overlay | `src/app/keys.ts` |
 | `Ctrl+Q` | Stop the run safely, save the session, exit | `src/app/keys.ts` |
 | `Ctrl+C` | Stop now (workflow screen) or exit otherwise — one press, always | `src/app/keys.ts` |
-| `Esc` | Open the stop sheet (workflow screen, empty composer, a run this process is driving); go home on a run at rest; otherwise close the topmost overlay | `src/app/keys.ts` |
+| `Esc` | Open the stop menu (live workflow); a second Escape stops now; go home on a run at rest; otherwise close the topmost overlay | `src/app/keys.ts` |
 
 `Ctrl+C` is one press with one meaning. Off the workflow screen, and on a run at rest, it exits immediately. On the workflow screen with a run left to stop it performs **Stop now** (`requestStopNow` in `src/features/workflow/handlers.ts`): the in-flight call aborts along with any retry, escalation or per-task review call, no new brief is scheduled, and the run parks as `Paused at T<id> · Partial changes kept`. There is no armed window and no second press to learn.
 
-`Esc` on the workflow screen opens the modal stop sheet (`src/app/overlays/stop.tsx`) whenever this process is driving a run that can still be stopped — on a run at rest there is no process to stop, so the press goes home — including while a question prompt, a review gate or a validation stage is live, none of which takes the press for itself. The sheet is `Stop options`: `Stop now`, `Pause after this brief` (hidden when no brief is running, `Keep running` once a pause is pending), `End run`, with the footer `No option reverts files. Your draft is preserved.` and the legend `↑↓ · ⏎ · esc`. No letter key is armed, the composer is hidden while it is open, and `esc` closes it with no effect on the run. With text in the composer the press spends neither the draft nor the run: the feedback row reads `clear the draft or ctrl+c to stop now`. Overlays and completion menus still take `esc` first, and a permission prompt keeps its own explicit esc-to-deny.
+`Esc` during a live workflow opens the **Stop options** menu immediately above the composer (`src/features/workflow/stop/menu.tsx`), with or without a draft. The transcript stays visible and updates. `↑↓` selects, `Enter` executes, a second `Esc` performs resumable **Stop now**, and `Tab` dismisses. **End run** stays an explicit selection. The pause row appears while a brief is running and becomes **Keep running** when a pause is pending. Changes and draft stay; the selected consequence is shown in full. `Ctrl+C` remains immediate Stop now. Completion, editor and permission dialogs retain their own Escape handling. On an inactive run, Escape goes home only with an empty composer.
 
 ### Home screen only
 
@@ -397,7 +407,7 @@ macOS terminals do not always forward physical `PageUp`, `PageDown`, `Home`, or 
 | Key | Action | Source |
 |---|---|---|
 | `Ctrl+D` | Toggle the most recent diff in the conversation | `keyboard.ts` `handleWorkflowCtrlChords` |
-| `Esc` | Open the stop sheet on an empty composer while a run is live; go home on a run at rest | `src/app/keys.ts` |
+| `Esc` | Open the stop menu while a run is live; go home on a run at rest | `src/app/keys.ts` |
 | `Shift+↑` | Scroll conversation up by one line | `keyboard.ts` `handleConversationScroll` |
 | `Shift+↓` | Scroll conversation down by one line | `keyboard.ts` `handleConversationScroll` |
 | `PageUp` | Scroll conversation up by one page | `keyboard.ts` `handleConversationScroll` |
@@ -495,12 +505,12 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 
 | ID | Key | Description | Screens |
 |---|---|---|---|
-| `exit` | `ctrl+c` | Stop now | workflow |
-| `exit` | `ctrl+c` | Exit | home, setup |
+| `exit` | `ctrl+c` | Stop; press again to quit | workflow |
+| `exit` | `ctrl+c` | Press twice to quit | home, setup |
 | `command-palette` | `ctrl+k` | Command palette | all |
 | `help` | `ctrl+/` | Help | all |
 | `quit` | `ctrl+q` | Quit | all |
-| `stop` | `esc` | Stop options (empty composer) | workflow |
+| `stop` | `esc` | Options → stop → back to sessions | workflow |
 | `recent-sessions` | `ctrl+r` | Focus recent sessions | home |
 | `skills` | `ctrl+s` | Skills picker | home |
 | `settings` | `ctrl+,` | Settings | all |
@@ -540,6 +550,7 @@ Alphabetical, for fast lookup.
 - [`/sessions`](#sessions) — browse past sessions.
 - [`/settings`](#settings) — open the settings overlay (Crew first).
 - [`/sidebar`](#sidebar) — show or hide the workflow sidebar.
+- [`/stop`](#stop) — open the inline session-options menu.
 - [`/skills`](#skills) — pick planner skills, bare or by id.
 - [`/tasks`](#tasks) — show the brief list.
 
@@ -553,3 +564,4 @@ Alphabetical, for fast lookup.
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — how the TUI, stores, engine, and runners are layered.
 - [`docs/STORES.md`](./STORES.md) — `configStore`, `overlayStore`, `feedbackStore`, `lifecycleStore`, `routerStore`, `attachmentsStore`.
 - [`src/core/runtime/commands/`](https://github.com/b4r7x/splitbrief/tree/main/src/core/runtime/commands) — `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (`registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`, `registry-session.test.ts`, `registry-snapshots.test.ts`, …) cover the phase / screen / arg matrix.
+

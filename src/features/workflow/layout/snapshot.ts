@@ -1,4 +1,6 @@
 import { getRailActiveIndex } from '../../../core/rail-stages.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
+import { readStopMenuRows, stopMenuLayout } from '../stop/options.js';
 import { getProgressRows, selectRailForm } from './chrome-rows.js';
 import {
   briefListTopOffset,
@@ -66,6 +68,8 @@ interface ConversationLayoutSnapshot {
 }
 
 function readWorkflowPromptRows(): number {
+  if (overlayStore.get().active === 'stop-sheet')
+    return stopMenuLayout(readStopMenuRows(), terminalSizeStore.get().cols).height;
   const controls = controlsStore.get();
   const approvalState = approvalPromptStore.get();
   const recoveryIssue = recoveryNoticeStore.get().issue;

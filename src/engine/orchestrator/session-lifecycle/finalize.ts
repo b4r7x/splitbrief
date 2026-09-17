@@ -12,7 +12,6 @@ import {
   NO_ARTIFACTS,
   type RunStatus,
 } from '../../../core/sessions/run-status.js';
-import { warnError } from '../../../lib/warn.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
@@ -22,7 +21,7 @@ import { buildSummary } from '../summary/build.js';
 export type SaveFinalSessionOpts = {
   projectDir: string;
   sessionId: string;
-  active: ActiveSessionReceipt;
+  active?: ActiveSessionReceipt | undefined;
   feature: string;
   startTime: number;
   summary: Summary;
@@ -81,7 +80,7 @@ function sessionFor(opts: SaveFinalSessionOpts, status: RunStatus): Session {
 export function finalizeEndedRun(
   input: Readonly<{
     ref: SessionRef;
-    active: ActiveSessionReceipt;
+    active?: ActiveSessionReceipt | undefined;
     config: Config;
     state: WorkflowState;
     modelCache?: ModelCacheAccessor | undefined;
@@ -117,14 +116,8 @@ export function finalizeEndedRun(
 }
 
 export function saveFinalSession(opts: SaveFinalSessionOpts): void {
-  try {
-    const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
-    const status = finalRunStatus(opts);
-    saveSummary(ref, sessionFor(opts, status));
-    if (status.kind === 'closed') {
-      clearActiveReceipt(ref, opts.active);
-    }
-  } catch (err) {
-    warnError('Failed to save final session', err);
-  }
+  const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
+  const status = finalRunStatus(opts);
+  saveSummary(ref, sessionFor(opts, status));
+  if (status.kind === 'closed' && opts.active !== undefined) clearActiveReceipt(ref, opts.active);
 }

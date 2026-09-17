@@ -2,7 +2,7 @@ import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
+import { execFileSync } from 'node:child_process';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
@@ -84,7 +84,7 @@ let projectDir: string;
 describe('useRunLoop abort race', () => {
   beforeEach(() => {
     projectDir = createTempDir('workflow-abort-race-test');
-    createTestGitRepo(projectDir);
+    execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
     ensureSplitbriefDir(projectDir);
     resetWorkflow();
     controlsStore.reset();

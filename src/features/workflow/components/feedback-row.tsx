@@ -46,9 +46,9 @@ export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined
   const stopHint =
     stopped === null || stopped.hint === '' ? '' : fitKeyLegend(stopped.hint, cols - 1);
   const displayMessage =
-    owned && !isError
+    owned && !isError && safeMessage !== 'Press ctrl+c again to quit'
       ? ''
-      : safeMessage || summarizeDisplayLine(inputHint) || stopHint || runningHint;
+      : safeMessage || stopHint || summarizeDisplayLine(inputHint) || runningHint;
   const severity = isError ? 'error' : displayMessage ? hintStateSeverity(displayMessage) : null;
   const wordColor = severity === 'error' ? t.error : severity === 'warning' ? t.warning : null;
 

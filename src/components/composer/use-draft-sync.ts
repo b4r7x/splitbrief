@@ -45,13 +45,17 @@ export function useDraftSync({ mode, questionEpoch, actions }: UseDraftSyncParam
   clearDraft: () => void;
 } {
   const [{ request: draftRequest }] = useStores(composerDraftStore);
-  const previousModeRef = useRef(mode);
+  // A mode change never clears: the composer holds one unsent session draft whether the run is
+  // asking a question or not. Only a new question replacing one that owned the composer clears,
+  // because text typed against the previous question is a stale answer, not a draft.
+  const previousRef = useRef({ mode, epoch: questionEpoch });
 
   useEffect(() => {
-    const leavingQuestion = previousModeRef.current === 'question' && mode !== 'question';
-    previousModeRef.current = mode;
-    if (mode !== 'question' && !leavingQuestion) return;
-    applyComposerDocument(createDraftDocument(''), actions);
+    const previous = previousRef.current;
+    previousRef.current = { mode, epoch: questionEpoch };
+    const staleAnswer =
+      mode === 'question' && previous.mode === 'question' && questionEpoch !== previous.epoch;
+    if (staleAnswer) applyComposerDocument(createDraftDocument(''), actions);
   }, [mode, questionEpoch]);
 
   useEffect(() => {

@@ -1,4 +1,3 @@
-import { overlayStore } from '../../../stores/ui/overlay.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
@@ -18,7 +17,6 @@ export function useStopByline(): StopByline | null {
   const tasks = tasksStore.use((s) => s);
   const view = selectTaskListView(tasks);
   const brief = selectRunningBrief(tasks);
-  const sheetOpen = overlayStore.use((s) => s.active === 'stop-sheet');
   const questionPending = controlsStore.use((s) => s.inputMode === 'question');
   // A boundary park has no running brief left, so the brief it is holding back is the one after
   // the brief it parked on.
@@ -34,7 +32,7 @@ export function useStopByline(): StopByline | null {
     passed: view.passed,
     total: view.total,
     elapsedMs: stop.requestedAt === null ? 0 : Date.now() - stop.requestedAt,
-    sheetOpen,
     questionPending,
+    error: stop.error,
   });
 }

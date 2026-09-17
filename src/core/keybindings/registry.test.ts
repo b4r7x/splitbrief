@@ -26,11 +26,11 @@ describe('workflow scroll shortcut', () => {
 
     expect(workflow.find((s) => s.id === 'stop')).toMatchObject({
       key: 'esc',
-      description: 'Stop options (empty composer)',
+      description: 'Options → stop → back to sessions',
     });
     expect(workflow.find((s) => s.id === 'exit')).toMatchObject({
       key: 'ctrl+c',
-      description: 'Stop now',
+      description: 'Stop; press again to quit',
     });
   });
 

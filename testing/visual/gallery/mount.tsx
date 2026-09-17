@@ -74,6 +74,10 @@ export async function mountGalleryScenario(
   };
 
   try {
+    // The capture stdin emits synchronously and buffers nothing, so a write that lands
+    // before Ink's useInput subscription settles is lost — the same contract
+    // flushEffects documents for every other stdin.write in the suite.
+    await flushEffects();
     await session.activate((input) => rendered.stdin.write(input));
     await flushEffects();
   } catch (error) {

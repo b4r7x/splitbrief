@@ -71,6 +71,8 @@ export function WorkflowFooter({
   commandsOnly,
   byline,
   disabled,
+  compactInput = false,
+  beforeComposer,
   onEditShortcut,
   onReviewBoundaryNavigate,
   onReviewInteraction,
@@ -98,6 +100,8 @@ export function WorkflowFooter({
   /** The byline of a run at rest, which has no live status to derive one from. */
   byline?: string | undefined;
   disabled: boolean;
+  compactInput?: boolean | undefined;
+  beforeComposer?: ReactNode;
   onEditShortcut?: (() => void) | undefined;
   onReviewBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
   onReviewInteraction?: (() => void) | undefined;
@@ -118,7 +122,9 @@ export function WorkflowFooter({
   const footer = (
     <>
       <FeedbackRow inputHint={feedbackHint ?? inputHint} />
+      {beforeComposer}
       <Composer
+        maxRows={compactInput ? 1 : 6}
         key={composerSession}
         onSubmit={handleInput}
         readClipboardImage={readClipboardImage}

@@ -9,6 +9,8 @@ import {
   requestBoundaryPause,
   requestEndRun,
   requestQuit,
+  requestLeaveSession,
+  setStopHandler,
   requestResume,
   requestStopNow,
   requestClearQueue,
@@ -19,6 +21,8 @@ import {
 } from './handlers.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../stores/workflow/events.js';
+import { routerStore } from '../../stores/navigation/router.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 
 describe('createAbortHandlerScope', () => {
@@ -300,5 +304,96 @@ describe('requestClearQueue', () => {
 
     expect(requestClearQueue()).toEqual({ status: 'cleared', count: 2 });
     expect(clear).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('safe departure', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.reset();
+    routerStore.reset();
+  });
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.reset();
+    routerStore.reset();
+  });
+
+  it('observes a synchronous stop and invokes exit exactly once', () => {
+    const stop = vi.fn(() => stopStore.park('mid-brief', null, null));
+    setStopHandler(stop);
+    const exit = vi.fn();
+    requestQuit(exit);
+    stopStore.end();
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps one stop request while quit supersedes pending home', () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    const exit = vi.fn();
+    const home = vi.spyOn(routerStore, 'navigate');
+    requestStopNow();
+    const requestedAt = stopStore.get().requestedAt;
+    requestLeaveSession();
+    requestQuit(exit);
+    requestQuit(exit);
+    requestLeaveSession();
+    expect(exit).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(stopStore.get().requestedAt).toBe(requestedAt);
+    stopStore.park('mid-brief', null, null);
+    expect(home).not.toHaveBeenCalled();
+    expect(exit).toHaveBeenCalledTimes(1);
+    home.mockRestore();
+  });
+
+  it('unwinds a boundary promise before delivering exit', () => {
+    stopStore.request('pause-after-brief');
+    const resolve = vi.fn();
+    stopStore.park('boundary', 'T001', resolve);
+    const stop = vi.fn(() => stopStore.get().parked?.resolve?.(''));
+    setStopHandler(stop);
+    const exit = vi.fn();
+    requestQuit(exit);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(exit).not.toHaveBeenCalled();
+    stopStore.park('boundary', 'T001', null);
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels departure on a failed save and retries the original explicit end intent', () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    stopStore.request('end-run');
+    const exit = vi.fn();
+    requestQuit(exit);
+    stopStore.fail('Disk full');
+    expect(exit).not.toHaveBeenCalled();
+    expect(requestStopNow()).toBe(true);
+    expect(stopStore.get()).toMatchObject({ intent: 'end-run', phase: 'requested' });
+    expect(stopStore.get().error).toBeUndefined();
+    stopStore.end();
+    expect(exit).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not deliver stale departure after changing sessions', () => {
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: { projectDir: '/tmp', sessionId: 'first' } }),
+      execution: { kind: 'at-rest' },
+    });
+    setStopHandler(vi.fn());
+    const exit = vi.fn();
+    requestQuit(exit);
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: { projectDir: '/tmp', sessionId: 'second' } }),
+      execution: { kind: 'at-rest' },
+    });
+    stopStore.park('mid-brief', null, null);
+    expect(exit).not.toHaveBeenCalled();
   });
 });
