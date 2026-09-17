@@ -12,6 +12,7 @@ import { validateCliArgs } from './validate-args.js';
 import {
   CLI_CONFORMANCE_CANDIDATES,
   COMMAND_CODE_PROTECTED_FLAGS,
+  COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS,
   commandCodeImplementerAdapter,
   commandCodePlannerAdapter,
   commandCodeProtocolEvents,
@@ -245,6 +246,52 @@ describe('Command Code role adapters', () => {
         promptTransport: 'argv',
       }),
     ).toEqual(refusal);
+  });
+
+  it('refuses worktree and mod options that take over adapter-owned authority in every supported form', () => {
+    for (const flag of ['--worktree', '-w', '--mod', '--mod-option']) {
+      expect(COMMAND_CODE_PROTECTED_FLAGS.has(flag)).toBe(true);
+    }
+    expect(COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS.has('-w')).toBe(true);
+
+    const base = plannerArgs('plan');
+    const implementerBase = implementerArgs();
+    const conflictingForms = [
+      { tail: ['--worktree', 'session'], conflict: '--worktree' },
+      { tail: ['--worktree=session'], conflict: '--worktree' },
+      { tail: ['-w', 'session'], conflict: '-w' },
+      { tail: ['-wsession'], conflict: '-w' },
+      { tail: ['--mod', 'security'], conflict: '--mod' },
+      { tail: ['--mod=security'], conflict: '--mod' },
+      { tail: ['--mod-option', 'sample=true'], conflict: '--mod-option' },
+      { tail: ['--mod-option=sample=true'], conflict: '--mod-option' },
+    ] as const;
+    for (const form of conflictingForms) {
+      expect(
+        commandCodePlannerAdapter.validateArgs({
+          invocationArgs: [...base, ...form.tail],
+          baseArgs: base,
+        }),
+      ).toEqual({ valid: false, conflicts: [form.conflict] });
+      expect(
+        commandCodeImplementerAdapter.validateArgs({
+          invocationArgs: [...implementerBase, ...form.tail],
+          baseArgs: implementerBase,
+        }),
+      ).toEqual({ valid: false, conflicts: [form.conflict] });
+    }
+    expect(
+      commandCodePlannerAdapter.validateArgs({
+        invocationArgs: [...base, '--verbose', '--max-turns', '5'],
+        baseArgs: base,
+      }),
+    ).toEqual({ valid: true });
+    expect(
+      commandCodeImplementerAdapter.validateArgs({
+        invocationArgs: [...implementerBase, '--verbose', '--max-turns', '5'],
+        baseArgs: implementerBase,
+      }),
+    ).toEqual({ valid: true });
   });
 
   it('maps the recorded NDJSON fixture to session, usage, and one terminal result', () => {

@@ -65,6 +65,7 @@ function makeActions(overrides: Partial<PickerActions> = {}): PickerActions {
   return {
     confirm: async () => {},
     confirmProviderSelection: async () => {},
+    confirmAuthMethod: async () => {},
     leftChange: () => {},
     deleteRight: async () => {},
     chooseContract: () => {},
@@ -207,10 +208,13 @@ describe('runner picker semantics integration', () => {
       expect(implementerZones).toContain('lm-studio');
       expect(implementerZones).toContain('cursor');
       expect(implementerZones).toContain('antigravity');
-      expect(plannerZones).not.toContain('ollama');
-      expect(plannerZones).not.toContain('lm-studio');
+      // Both local services are admitted in every seat, so the planner lane
+      // projects the same two rows the implementer lane does. Independence is
+      // the per-role projection above, not a difference in membership.
+      expect(plannerZones).toContain('ollama');
+      expect(plannerZones).toContain('lm-studio');
       expect(implementerCatalog.some((item) => item.id === 'ollama')).toBe(true);
-      expect(plannerCatalog.some((item) => item.id === 'ollama')).toBe(false);
+      expect(plannerCatalog.some((item) => item.id === 'ollama')).toBe(true);
       implementerUi.unmount();
     });
   });
@@ -288,10 +292,14 @@ describe('runner picker semantics integration', () => {
 
       const lmStudioFrame = await cursorOnto('lm-studio');
       expect(lmStudioFrame).toContain('Unavailable');
-      expect(lmStudioFrame).toContain('Start lm-studio and refresh detection.');
+      // A local server's row now opens its connection form, so its remedy is on that
+      // row's card: the instruction for starting the server, broken on words to the
+      // card's own width. The probe's own diagnostic waits in the form, under a check.
+      expect(lmStudioFrame).toContain('Start the LM Studio');
+      expect(lmStudioFrame).toContain('local server');
       const ollamaFrame = await cursorOnto('ollama');
       expect(ollamaFrame).toContain('Unavailable');
-      expect(ollamaFrame).toContain('Ollama is not running');
+      expect(ollamaFrame).toContain('Run `ollama serve`');
       ui.unmount();
     });
   });
@@ -774,9 +782,9 @@ describe('runner picker semantics integration', () => {
     it('renders every admitted CLI and API descriptor through shared semantic fields', async () => {
       seedReadyDetection();
       // The capability strip is the part of the byline truncation cuts first,
-      // so the billing posture is only on screen when the byline fits: a
-      // terminal at the widest overlay density, and a models.dev lane that has
-      // settled instead of spending that width on its own progress note.
+      // so the whole strip is only on screen when the byline fits: a terminal
+      // at the widest overlay density, and a models.dev lane that has settled
+      // instead of spending that width on its own progress note.
       modelCacheStore.hydrateModelsDevCatalog({ catalog: {}, fetchedAt: 1, validatedAt: 1 });
       terminalSizeStore.__testReset({ ...WIDE_VIEWPORT, isSmall: false });
       const ui = await renderPicker('implementer', WIDE_VIEWPORT);
@@ -799,7 +807,15 @@ describe('runner picker semantics integration', () => {
       await flushEffects();
       ui.stdin.write('\u001B[D');
       await flushEffects();
-      expect(frameText(ui)).toContain('subscription');
+      // A CLI's own login decides how it authenticates, so the byline ends on
+      // the capability strip: no billing word stands in for an unproven method.
+      const byline =
+        frameText(ui)
+          .split('\n')
+          .map((line) => line.trim())
+          .find((line) => line.startsWith('Claude Code CLI')) ?? '';
+      expect(byline).toContain('direct write · network · shell');
+      expect(byline.endsWith('auto approval')).toBe(true);
 
       expect(leftToolZoneIds(WIDE_VIEWPORT)).toHaveLength(
         buildPickerOptions(

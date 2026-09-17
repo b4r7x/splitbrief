@@ -19,9 +19,29 @@ function readPlannerContextFile(projectDir: string, relativePath: string): strin
 }
 
 const MAX_LISTED_ENTRIES = 500;
+const README_CONTEXT_LINES = 50;
+
+/**
+ * What the project context left out. An explicitly assembled packet reports
+ * these rather than letting a cut README or a capped listing read as the whole
+ * project.
+ */
+export type ProjectContextNote =
+  | Readonly<{ kind: 'readme-truncated'; path: string; includedLines: number; totalLines: number }>
+  | Readonly<{ kind: 'listing-truncated'; entries: number }>;
+
+export type ProjectContext = Readonly<{
+  markdown: string;
+  notes: readonly ProjectContextNote[];
+}>;
 
 export async function buildProjectContextMarkdown(projectDir: string): Promise<string> {
+  return (await buildProjectContext(projectDir)).markdown;
+}
+
+export async function buildProjectContext(projectDir: string): Promise<ProjectContext> {
   const parts: string[] = [];
+  const notes: ProjectContextNote[] = [];
 
   const pkgRaw = readPlannerContextFile(projectDir, 'package.json');
   if (pkgRaw !== null) {
@@ -51,9 +71,18 @@ export async function buildProjectContextMarkdown(projectDir: string): Promise<s
 
   const readme = readPlannerContextFile(projectDir, 'README.md');
   if (readme !== null) {
-    const first50 = readme.split('\n').slice(0, 50).join('\n');
-    parts.push('\n## README (first 50 lines)');
-    parts.push(first50);
+    const lines = readme.split('\n');
+    const included = lines.slice(0, README_CONTEXT_LINES);
+    parts.push(`\n## README (first ${README_CONTEXT_LINES} lines)`);
+    parts.push(included.join('\n'));
+    if (lines.length > included.length) {
+      notes.push({
+        kind: 'readme-truncated',
+        path: 'README.md',
+        includedLines: included.length,
+        totalLines: lines.length,
+      });
+    }
   }
 
   const srcDir = join(projectDir, 'src');
@@ -65,12 +94,13 @@ export async function buildProjectContextMarkdown(projectDir: string): Promise<s
     parts.push(listing);
     if (counter.count >= MAX_LISTED_ENTRIES) {
       parts.push(`[... listing truncated at ${MAX_LISTED_ENTRIES} entries]`);
+      notes.push({ kind: 'listing-truncated', entries: MAX_LISTED_ENTRIES });
     }
   } catch {
     /* no src/ directory */
   }
 
-  return parts.join('\n');
+  return { markdown: parts.join('\n'), notes };
 }
 
 async function listDir(

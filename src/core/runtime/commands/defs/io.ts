@@ -7,6 +7,7 @@ import {
   type RuntimeCommandContext,
 } from '../types.js';
 import { includes } from '../../../../utils/type-guards.js';
+import { formatAttachmentFailure } from '../../../attachments/resolve.js';
 
 function parseCopyTarget(args: string | undefined): CopyTarget | null {
   const target = args?.trim().toLowerCase();
@@ -74,9 +75,17 @@ export function ioCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
           }
           return;
         }
-        const result = ctx.attachImage(value);
+        const result = (ctx.insertImage ?? ctx.attachImage)(value);
         if (!result.ok) {
-          ctx.setFeedbackError(`Cannot attach: ${result.reason}`);
+          if (result.reason === 'no-vision') {
+            ctx.setFeedbackError(
+              'Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan.',
+            );
+          } else {
+            ctx.setFeedbackError(
+              formatAttachmentFailure({ action: 'attach', reason: result.reason }),
+            );
+          }
           return;
         }
         ctx.setFeedbackMessage(`Attached: ${result.path}`);

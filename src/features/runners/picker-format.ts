@@ -39,6 +39,30 @@ export type ModelCatalogDiagnostic =
   | Readonly<{ kind: 'unsupported' }>
   | Readonly<{ kind: 'probe-failed'; failure: Exclude<ProbeOutcomeKind, 'success'> }>;
 
+/**
+ * The launcher's card is a fixed-height read-only pane that truncates instead of wrapping, so its
+ * narrowest draw is what every line is written to: at 60 columns the overlay is 56 cells wide, the
+ * Models box takes 27 of them and its padding and border spend 4, leaving these.
+ */
+export const CUSTOM_COMMAND_PANE_CELLS = 23;
+
+/**
+ * What the launcher row promises: the action, the two contracts it chooses between, the two steps
+ * Enter opens and the fact that neither of them has written anything yet. The seat is not repeated
+ * here — the picker's title names it one row above the card — and neither is the configured
+ * command, which the row under the cursor already spells.
+ */
+export const CUSTOM_COMMAND_PANE_LINES: readonly string[] = [
+  'Run your own command.',
+  '',
+  `output${SOFT_SEP}reads stdout`,
+  `direct${SOFT_SEP}writes files`,
+  '',
+  '⏎ picks the contract,',
+  'then the command.',
+  'Nothing is saved yet.',
+];
+
 export function isPickerItemDisabled(item: PickerOption): boolean {
   if (item.kind === 'custom-command') return false;
   return !item.available;
@@ -100,12 +124,14 @@ export function formatCatalogDiagnostic(
       return `${toolName} sign-in was rejected. Sign in again`;
     case 'policy-denied':
       return `${toolName} denied model catalog access`;
+    // Unreachable is not unauthenticated: the network is what failed, so the remedy is the retry
+    // every other reachability failure offers, never a sign-in the tool never asked for.
     case 'offline':
-      return 'Model catalog request could not reach the network';
+      return 'Model detection could not reach the network. Press ctrl+r to retry';
     case 'timeout':
       return 'Model detection timed out. Press ctrl+r to retry';
     case 'malformed':
-      return `${toolName} printed output SplitBrief could not read — the format changed${SOFT_SEP}ctrl+r will not help, add a custom model or report the output`;
+      return `Unreadable model list${SOFT_SEP}ctrl+r will not help; add a custom model or report the output`;
     case 'cancelled':
       return 'Model detection was cancelled. Press ctrl+r to retry';
     case 'not-run':
@@ -274,7 +300,7 @@ export function formatRouteRemedy(input: {
     case 'exit-failure':
       return `ctrl+r to re-check${SOFT_SEP}${input.oracleCommand} exited with an error`;
     case 'parse-failure':
-      return `SplitBrief could not read ${binary}'s provider list (format changed) — ctrl+r will not help; report the output`;
+      return 'Unreadable provider list. ctrl+r will not help; report the output';
     case 'version-mismatch': {
       const { versions } = input;
       const gap = versions === undefined ? '' : ` (${versions.observed} < ${versions.required})`;

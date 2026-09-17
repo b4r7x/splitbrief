@@ -21,8 +21,6 @@ import { listRowLead } from '../../components/list-row.js';
 import { glyph } from '../../lib/glyphs.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { hydrateDetectionIntoStores } from '../../stores/discovery/detection-adapter.js';
-import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
-import { PICKER_ROLE_SEAT_IDS } from '../../core/runners/seat-roles.js';
 import { ToolModelPicker } from './runners.js';
 
 // The merged row is expanded only while both of its route rows are on screen,
@@ -40,10 +38,8 @@ const ARROW_UP = `${ESC}[A`;
 async function openContractChoice(ui: ReturnType<typeof renderFeature>) {
   await vi.waitFor(() => {
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain(
-      `Run your own command in the ${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS.planner].toLowerCase()} seat.`,
-    );
-    expect(frame).toContain('Nothing is saved until you confirm');
+    expect(frame).toContain('Run your own command.');
+    expect(frame).toContain('Nothing is saved yet.');
   });
   await flushEffects();
   ui.stdin.write('\r'); // Enter on the launcher opens the contract choice

@@ -13,6 +13,11 @@ import {
 } from '../../../../core/runners/cli-tool-catalog.js';
 import { runnerRoleForActiveRole } from '../../../../core/runners/seat-roles.js';
 import type { RunnerFailureOutcomeState } from '../../../runners/errors.js';
+import {
+  apiContextError,
+  apiContextRecoveryFacts,
+} from '../../../providers/api-context-diagnostic.js';
+import type { FinalReviewFailure } from '../../final-review.js';
 import { allowedActionsForReason } from '../../../../core/schemas/recovery/policy.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation/result.js';
@@ -725,13 +730,67 @@ export function buildSnapshotFailedRecoveryIssue(
 
 export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   phase?: Phase | undefined;
-  blocking: number;
+  /** Blocking findings the review reported. Absent when it reached no verdict at all. */
+  blocking?: number | undefined;
   detail?: string | undefined;
+  /** Why the review reached no verdict, when it reached none. */
+  failure?: FinalReviewFailure | undefined;
+}
+
+const REVIEW_SEAT_REMEDY =
+  'Adjust the review seat with /crew review or Settings, then /resume and choose retry.';
+
+/**
+ * A review that judged nothing is not a review that failed. It names no blocker
+ * count, sits on the review seat rather than the briefs it never read, and is
+ * re-issued once that seat has what it was missing — so it offers the retry the
+ * verdict path does not. The figures stay in facts: `details[]` renders inline
+ * and is truncated, and an estimate is for the details view, not the panel.
+ */
+function buildNoVerdictReviewIssue(
+  opts: ReviewFailedRecoveryOptions,
+  failure: FinalReviewFailure,
+): RecoveryIssue {
+  const actions = orderedActions(['retry-same-worker', 'pause-run', 'end-run']);
+  const diagnostic = failure.kind === 'insufficient-context' ? failure.diagnostic : undefined;
+  const missing = diagnostic?.missingSections ?? [];
+  return createRecoveryIssue({
+    id: opts.id,
+    seat: 'review',
+    reason: 'review-failed',
+    phase: opts.phase ?? 'final-review',
+    files: [],
+    affectedTaskIds: [],
+    // One spelling of the diagnosis: the boundary that raised it words it.
+    message:
+      failure.kind === 'insufficient-context'
+        ? apiContextError(failure.diagnostic).message
+        : failure.message,
+    details: [
+      ...(missing.length > 0 ? [`Missing: ${missing.join(', ')}`] : []),
+      ...(opts.detail === undefined ? [] : [opts.detail]),
+      REVIEW_SEAT_REMEDY,
+    ],
+    facts: compactFacts({
+      reviewFailureKind: failure.kind,
+      ...(diagnostic === undefined ? {} : apiContextRecoveryFacts(diagnostic)),
+    }),
+    availableActions: actions,
+    recommendedAction: chooseRecommended(
+      actions,
+      // A packet the seat cannot read refuses again unless the seat changes; a
+      // call that never landed is worth one more turn as it stands.
+      failure.kind === 'call-failed' ? ['retry-same-worker'] : ['pause-run'],
+    ),
+    createdAt: opts.createdAt,
+  });
 }
 
 /** The final review still reports blocking findings after the fix cycles ran out. */
 export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions): RecoveryIssue {
-  const actions = orderedActions(allowedActionsForReason('review-failed'));
+  if (opts.failure !== undefined) return buildNoVerdictReviewIssue(opts, opts.failure);
+  const blocking = opts.blocking ?? 0;
+  const actions = orderedActions(['pause-run', 'end-run']);
   return createRecoveryIssue({
     id: opts.id,
     seat: 'build',
@@ -739,9 +798,9 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
     phase: opts.phase ?? 'final-review',
     files: [],
     affectedTaskIds: [],
-    message: `Final review failed with ${opts.blocking} blocking finding${opts.blocking === 1 ? '' : 's'}`,
+    message: `Final review failed with ${blocking} blocking finding${blocking === 1 ? '' : 's'}`,
     details: [opts.detail].filter((detail): detail is string => detail !== undefined),
-    facts: compactFacts({ blocking: opts.blocking }),
+    facts: compactFacts({ blocking }),
     availableActions: actions,
     recommendedAction: 'pause-run',
     createdAt: opts.createdAt,

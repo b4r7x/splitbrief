@@ -352,11 +352,11 @@ describe('all-admitted-tools auth channels', () => {
               'kilo-code': 'authenticated',
               cursor: 'authenticated',
               'command-code': 'authenticated',
-              // The antigravity catalog entry declares a session channel but no
-              // allowlisted credential file (`agy` documents none), so nothing can
-              // be bridged into an isolated runner environment and the fact stays
+              // Antigravity's session is a macOS keychain item, so there `agy models`
+              // runs under the host account and its exit decides. Elsewhere `agy`
+              // documents no credential file to bridge, and the fact stays
               // unauthenticated no matter what `agy models` answers.
-              antigravity: 'unauthenticated',
+              antigravity: process.platform === 'darwin' ? 'authenticated' : 'unauthenticated',
             },
           );
           const copilot = result.cliTools.find((detection) => detection.tool === 'copilot');

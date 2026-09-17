@@ -368,7 +368,6 @@ describe('createPlanner', () => {
       const config = withPlanner({
         kind: 'cli',
         tool: 'claude-code',
-        authChannel: 'session',
         model: 'test',
         idleWarnMs: 30,
       });

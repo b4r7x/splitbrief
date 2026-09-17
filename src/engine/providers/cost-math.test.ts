@@ -16,6 +16,7 @@ function priced(rates: Partial<ResolvedPricing> & { name: string }): ResolvedPri
     isLocal: false,
     isPriced: true,
     pricingMode: 'api-priced',
+    provider: 'acme',
     source: 'models-dev',
     ...rates,
   };

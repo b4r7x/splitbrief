@@ -5,10 +5,6 @@ import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type { OperationRole, OperationsState } from '../../../stores/workflow/operations/state.js';
 import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
 import { inlineActiveVerb } from './phase-verb.js';
-import {
-  selectRunningAttemptImplementerTokens,
-  type TokensState,
-} from '../../../stores/workflow/tokens.js';
 
 /** How long a seat may say nothing before the block stops reporting freshness and reports silence. */
 export const UI_IDLE_WARN_MS = 60_000;
@@ -32,7 +28,6 @@ export interface BuildProgress {
 
 export interface DeriveBuildProgressInput {
   tasks: TasksState;
-  tokens: TokensState;
   lifecycle: LifecycleState;
   operations: OperationsState;
   config: Config | null;
@@ -48,10 +43,6 @@ const SIDE_CALL_ROLES: ReadonlySet<OperationRole> = new Set<OperationRole>([
   'summary',
   'compaction',
 ]);
-
-function runningTaskId(tasks: TasksState): string | null {
-  return tasks.tasks.find((task) => task.status === 'in_progress')?.id ?? null;
-}
 
 function etaFor(input: DeriveBuildProgressInput, remaining: number): BuildProgressEta {
   const { taskCompletionTimes } = input.tasks;
@@ -75,7 +66,9 @@ function etaFor(input: DeriveBuildProgressInput, remaining: number): BuildProgre
   return { kind: 'estimate', remainingMs: Math.round(average * Math.max(0, remaining)) };
 }
 
-function activityLine(input: DeriveBuildProgressInput, outputTokens: number): string {
+// What the run is doing, not what it has spent: usage is reported where a reader asks for it,
+// through `/usage`, and never as a rounded count that reads `0k` until the first report lands.
+function activityLine(input: DeriveBuildProgressInput): string {
   const stage = input.operations.validationStage ?? null;
   if (stage !== null) {
     const command = stage.command ?? stage.stage;
@@ -86,18 +79,17 @@ function activityLine(input: DeriveBuildProgressInput, outputTokens: number): st
       `no output for ${seconds(silentMs)}s`,
     ].join(SOFT_SEP);
   }
-  const tokens = `${Math.round(outputTokens / 1000)}k output tokens`;
   const operation = input.operations.active;
   // Between calls there is no seat and no operation to name, and printing the phase twice would
   // read as two facts. The phase alone is the whole truth at that moment.
-  if (operation === null) return [input.lifecycle.phase, tokens].join(SOFT_SEP);
+  if (operation === null) return input.lifecycle.phase;
   // The runner is named on this line already, so naming its seat too says it twice
   // ("implementer implementing"): the phase's own verb is what the seat is doing. A side call is
   // the exception — its role is the fact the phase cannot tell.
   const doing = SIDE_CALL_ROLES.has(operation.role)
     ? operation.role
     : inlineActiveVerb(operation.phase);
-  return [operation.runnerName ?? input.lifecycle.phase, doing, tokens]
+  return [operation.runnerName ?? input.lifecycle.phase, doing]
     .filter((part) => part !== '')
     .join(SOFT_SEP);
 }
@@ -115,10 +107,6 @@ function freshnessLine(input: DeriveBuildProgressInput): string {
 
 export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgress {
   const view = selectTaskListView(input.tasks);
-  const outputTokens = selectRunningAttemptImplementerTokens(
-    input.tokens,
-    runningTaskId(input.tasks),
-  );
   return {
     passed: view.passed,
     total: view.total,
@@ -129,7 +117,7 @@ export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgr
       max: 1 + (input.config?.workflow.maxRetries ?? 0),
     },
     eta: etaFor(input, view.total - view.finished - view.failed),
-    activity: activityLine(input, outputTokens),
+    activity: activityLine(input),
     freshness: freshnessLine(input),
   };
 }

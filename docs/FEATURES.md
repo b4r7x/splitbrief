@@ -108,7 +108,7 @@ splitbrief start --json "fix parser edge case"
 
 ### Validation pipeline + checkpoints
 
-**What it does.** After every implementer task, SPLITBRIEF runs typecheck → lint → test (in that order, stop on first failure). The commands are the ones the project's own stack uses, not a fixed TypeScript trio. On success it records evidence and can create checkpoints. Product-level git commits are optional when explicitly configured; checkpoint safety does not depend on commits.
+**What it does.** After every implementer task, SPLITBRIEF runs typecheck → lint → test (in that order, stop on first failure). The commands are the ones the project's own stack uses, not a fixed TypeScript trio. On success it records evidence. Filesystem snapshots remain available; SPLITBRIEF never stages, commits or creates index checkpoints.
 
 **Stack coverage.** The registry is `src/core/validation/stacks/`; `detectStack` picks the first row whose marker file exists, in this order:
 
@@ -124,23 +124,23 @@ A blank cell means the stack has no default for that stage, so the stage is skip
 
 **Resolution ladder.** Each stage resolves through `config → manifest → discovered → stack default → none`: an explicit `validation.{typecheck,lint,test}Command`, then a `package.json` script / `Makefile` / `justfile` target / `pyproject` section of that name, then the command the planner discovered while reading the repo, then the stack default. When every rung is empty the stage is recorded as `skipped` with the reason `no <stage> command for an unrecognised stack` — never as passed — and a run whose stages are all skipped that way prints `gates: NONE — review-only` once and leans on the review seat instead. SPLITBRIEF never falls back to `npm test` or `npx tsc --noEmit` on a project that is not a JavaScript or TypeScript one.
 
-**How to use.** Set `validation.{typecheck,lint,test}` on or off, pin the stack with `validation.stack` when the markers are ambiguous, override a single command with `validation.{typecheck,lint,test}Command`, and set `workflow.git.commitStrategy: none|checkpoint|per-task`. Optionally auto-create a branch with `workflow.git.createBranch: true` (writes to `splitbrief/<slug>`).
+**How to use.** Set `validation.{typecheck,lint,test}` on or off, pin the stack with `validation.stack` when the markers are ambiguous, override a single command with `validation.{typecheck,lint,test}Command`. Optionally auto-create a branch with `workflow.git.createBranch: true` (writes to `splitbrief/<slug>`).
 
-**When to use.** `none` for manual review and commits. `checkpoint` and `per-task` are optional product behaviors for teams that want SPLITBRIEF to create git history as part of the run.
+Review the changes and commit them manually.
 
-Leave `workflow.git.commitStrategy: none` (the default) if you want SPLITBRIEF to keep changes unstaged for manual review.
+Existing staged content, including partial staging, remains the user’s.
 
 ```yaml
 validation: { typecheck: true, lint: true, test: true, testCommand: "npm test" }
 workflow:
-  git: { commitStrategy: none, createBranch: false }
+  git: { createBranch: false }
 ```
 
-Events: `validate`, `git_commit`, `git_checkpoint`, `git_branch_created`.
+Events: `validate`, `git_branch_created`. Historical `git_commit` and `git_checkpoint` records remain replayable, but new runs never publish them.
 
 ### Retry + escalation logic
 
-**What it does.** A failing task retries up to `workflow.maxRetries` (default 2) before escalating. Escalation then runs three tiers in order: **tier 0 — intermediate** (a paid mid-tier API model retries, only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`), **tier 1 — hint** (planner suggests a fix that the implementer applies, for backends with `supportsHintEscalation`), then **tier 2 — full** (the planner writes the code itself).
+**What it does.** A failing task retries up to `workflow.maxRetries` (default 2) before escalating. Escalation then runs the supported help tiers in order: **tier 0 — intermediate** (a paid mid-tier API model retries, only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`), **tier 1 — hint** (planner suggests a fix that the implementer applies, for backends with `supportsHintEscalation`). Exhaustion enters recovery; the planner never automatically writes the implementation.
 
 **How to use.** Tune `workflow.maxRetries` and the optional intermediate tier:
 
@@ -153,7 +153,7 @@ escalation:
 
 **When to use.** Set `escalation.intermediateProvider` to add a mid-tier model between the implementer and the planner; it is active by default once configured. Set `escalation.enabled: false` to disable that intermediate tier without removing the provider config.
 
-Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`. Tokens consumed during escalation are tracked separately (`escalationInput` / `escalationOutput`) so you can see how much "rescue" cost.
+Outcome events include `task_retry`, `task_escalating` and `hint_failed`; the legacy-named `task_full_fail` still records exhaustion without dispatching a full-planner rung. Escalation usage remains recorded and can be inspected through `/usage`.
 
 ### Final review by the review seat
 
@@ -237,12 +237,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 The review surface includes a compact execution-readiness scorecard: `ready`, `routing pending`, `split/overflow`, `risky/tight`, `stale/conflict`, and `missing checks`. Unknown, stale, pending, or missing routing/context fit does not count as ready.
 
-**How to use.** The brief review gate uses the simple review surface. `simple` is the only accepted value: a legacy `workflow.briefReview: rich` fails config load. The view exposes approve/comment/reject/edit text commands. Approve reads `.splitbrief/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor, then return to the gate on parse or quality errors.
-
-```yaml
-workflow:
-  briefReview: simple
-```
+**How to use.** The brief approval gate runs independently of the ignored/deprecated `workflow.briefReview` compatibility field. Legacy `rich` fails config load. The view exposes approve/comment/reject/edit text commands. Approve reads `.splitbrief/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor, then return to the gate on parse or quality errors.
 
 ### Task Brief external editor handoff
 
@@ -256,16 +251,11 @@ After the editor exits successfully, SPLITBRIEF re-reads `.splitbrief/sessions/<
 
 ## Spend
 
-### Where spend appears
+### Where usage appears
 
-**What it does.** There is no persistent cost header. Spend surfaces in two places, each fed from the cost store on `cost_update`:
+Token usage and monetary estimates are available only in explicitly opened usage details.
 
-- **Sidebar footer** — on by default above the breakpoint (121 columns and wider) and unavailable at or below it; `/sidebar` toggles it and `/tasks` brings it back. Last line reads `Local NN%` — the share of tasks finished without escalating — followed by the run's spend when something priced ran: `Local 80% · $0.42`.
-- **Closed run** — one `Cost` row in the `Run` block at the transcript tail: `$0.42` when every seat is priced, `$0.42 + unknown` for a partly priced crew, the run's unmetered labels joined in first-seen order (`subscription-included`, `local`, `subscription-included · local`) when nothing was metered, and `not estimated` when no figure exists. Nothing sits beside it — no baseline, no comparison, no saving. A crew that booked no metered tokens reads `subscription-included`, never `$0.00`. It is a reported fact about the run, not a claim SPLITBRIEF makes up front — see [VISION.md](./VISION.md) for what the tool promises instead.
-
-**How to use.** No setup. `/copy cost` puts the sidebar string on your clipboard. Runners that expose no pricing are reported as unpriced, never as `$0.00`.
-
-**Turning it off.** Settings ▸ Workflow ▸ **Show spend** (`workflow.showSpend`, on by default) hides both: the sidebar keeps `Local NN%` and drops the figure beside it, a closed run's ledger drops the `Cost` row entirely, and `/copy cost` answers `spend display is off`. The toggle is display-only — token counts and the recorded cost breakdown are unaffected.
+Open `/usage` from a live or saved workflow to inspect reported counters and available estimates. Missing counters remain unknown; partial totals keep their coverage label. The main workflow, build progress, sidebar and closed-run ledger do not display token counts or monetary estimates. There is no Show spend setting. `/copy cost` is an explicit export and does not add a counter to the main screen.
 
 ### Pricing catalog
 
@@ -394,7 +384,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 25 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
+**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 26 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
 
 **Navigate**
 
@@ -494,6 +484,8 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 ### Seat pickers
 
+Start the local server yourself, configure its address, and use Retry to check the connection. Each PLAN, BUILD and REVIEW seat can use its own Ollama, LM Studio or llama.cpp endpoint and exact model. A server listing is not a promise that a model is loaded. Local authentication is optional; the connection editor retains endpoint-policy checks. CLI authentication stays host-configured unless the exact installed invocation has enforcement evidence, and the current matrix has none.
+
 **What it does.** A two-column picker for a seat's tool and model (Enter on a seat row in Settings ∋ Crew). Filtered to detected/available tools.
 
 **Model rows.** One authoritative lane per tool renders the model rows. models.dev is metadata-only enrichment (context window, pricing, release date, display name) and never creates a row for a tool that has an authoritative lane of its own. `codex`, `opencode`, `kilo-code`, `cursor` and `command-code` render their own `--list-models`-style native output as `Detected` rows; rows remembered from an earlier run keep rendering, flagged `Stale`. `claude-code` has no listing command, so it renders one row per shipped alias — `sonnet`, `opus`, `fable`, `haiku`, `opusplan`, `best`, `sonnet[1m]`, `opus[1m]`, `fable[1m]` — each labelled with Claude's own menu word (`Sonnet 5`, `Opus Plan Mode`, `Fable 5.1 (1M context)`); `default` is not one of them, it is the Auto row; the local `~/.claude.json` `additionalModelOptionsCache` folds in by a specific rule — an entry merges into the one alias row whose resolved catalog id plus that alias's own bracket suffix it equals, case-insensitively, and whose key is already among the shipped aliases, lending its `description` to that row as `detail`; otherwise it renders as its own row under the cache's own label or, failing that, its id; and an unknown id you type through is passed to the CLI unvalidated, because Claude Code does not validate it either. `copilot` lists its own models non-interactively, so the picker renders the quoted ids `copilot help config` prints under its `model` key (25 on 1.0.77), enriched from models.dev `github-copilot`, with the tools-column byline `not verified for your plan`; the bundled rows stand in only when that listing is unavailable. Confirmed rows keep the tool's own order and are not re-sorted by release date. Dedup is by a suffix-aware canonical id, so a `:free` catalog twin folds into its provider-qualified runtime row; a display name is never a dedup key, so two genuinely different ids are never collapsed for printing the same. Context windows are floored and never carry an empty decimal: a 1,048,576-token window reads `1M`, 1,100,000 reads `1.1M`, 262,144 reads `262K`. When the configured model is absent from the authoritative list the picker keeps a recovery row for it. The one explicit "Browse the full catalog" row is offered only where browsing actually widens the list — where the authoritative lane hid bundled rows, as for a local `api` provider with no inventory of its own — never beside a recovery row the escape cannot help; nothing speculative appears otherwise.
@@ -508,10 +500,10 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 ```
 3/7 briefs passed · 1 escalated · attempt 2 of 3 · ETA ~4m
-codex · implementer implementing · 12k output tokens · last event 3s ago
+codex · implementing · last activity 3s ago
 ```
 
-The fraction counts briefs that **passed their checks** — a started brief is not a settled one, and an escalated brief is never counted as settled. Attempts are stated as attempts (`attempt 2 of 3`, where the maximum is `1 + workflow.maxRetries`), never as retries. The ETA is an average of the briefs that finished, printed in whole minutes; with nothing to average from it reads `ETA unavailable: no brief finished yet`, and a seat swap retires it with `ETA unavailable: worker changed`. The activity line names the seat, the operation and the output tokens; while a gate command runs it names the command instead (`npm test · running 41s · no output for 8s`). After 60 seconds without a runner event the freshness line becomes `No update from <tool> for <n>s`. The same five facts regroup rather than disappear as the terminal narrows: two rows at 120 columns and wider, four at 80, five below that.
+The fraction counts briefs that **passed their checks** — a started brief is not a settled one, and an escalated brief is never counted as settled. Attempts are stated as attempts (`attempt 2 of 3`, where the maximum is `1 + workflow.maxRetries`), never as retries. The ETA is an average of the briefs that finished, printed in whole minutes; with nothing to average from it reads `ETA unavailable: no brief finished yet`, and a seat swap retires it with `ETA unavailable: worker changed`. The activity line names the seat, the operation and recent activity; while a gate command runs it names the command instead (`npm test · running 41s · no output for 8s`). After 60 seconds without a runner event the freshness line becomes `No update from <tool> for <n>s`. The same five facts regroup rather than disappear as the terminal narrows: two rows at 120 columns and wider, four at 80, five below that.
 
 ### Input footer
 
@@ -571,8 +563,6 @@ A closed run whose record was never written says so in one line rather than pain
 | `post_task` | After each successful task |
 | `pre_validation` | Before tsc/lint/test |
 | `post_validation` | After validation finishes |
-| `pre_commit` | Before optional product-level commit |
-| `post_commit` | After optional product-level commit |
 | `pre_escalation` | Before planner escalation |
 | `on_error` | Any unrecoverable engine error |
 | `on_halt` | A recovery issue is raised — carries `sessionId`, `taskId`, `reason`, `recommendedAction` and the `resumeCommand` to paste |
@@ -580,10 +570,6 @@ A closed run whose record was never written says so in one line rather than pain
 
 ```yaml
 hooks:
-  pre_commit:
-    - command: ".splitbrief/hooks/check-secrets.sh"
-      timeout_ms: 10000
-      on_failure: block
   post_task:
     - command: "npx"
       args: ["prettier", "--write", "${event.file}"]
@@ -658,9 +644,17 @@ codebase:
 
 The map rebuilds itself on each planning run when the cache is stale; there is no manual rebuild step. Full details: [REPOMAP.md](./REPOMAP.md).
 
+### Text selection and copying
+
+In fullscreen, drag with the mouse or touchpad to select visible text in the composer, transcript or workflow panels. Releasing the drag copies that text to the clipboard. Wheel scrolling and ordinary clicks remain available. Selection does not edit the draft.
+
+`Ctrl+C` copies while a selection is active; without a selection it retains its normal stop/exit action. On macOS, `Cmd+C` is usually handled by the terminal itself. The text is already copied on release, so the usual drag, `Cmd+C`, `Cmd+V` sequence works without a custom terminal keymap. Terminals that forward `Cmd+C` using the extended keyboard protocol can also request a copy directly.
+
+Incoming output cannot replace the text being selected: the display holds still during the drag while the workflow continues, then catches up on release. The highlight survives updates to other text and clears if the selected content changes. Typing, paste, `Esc`, scrolling or resizing clears it. `--no-mouse` leaves selection to the terminal instead.
+
 ### Image attachments
 
-**What it does.** Attach screenshots or images for the next planner call (multimodal-capable backends only). Tracked in the workflow store; displayed as chips in the composer.
+**What it does.** Attach screenshots or images for the next planner call (multimodal-capable backends only). A pasted or dropped image lands in the draft itself, as one atom at the caret shown as `[image #1]`, with editable text on either side; moving and deleting act on the whole atom. Submitting hands the draft's images to the workflow store in document order and sends the planner an `[image:<id>]` reference at each atom's position plus a legend binding those ids to the attachments. `/image <path>` also inserts an inline image.
 
 **How to use.**
 
@@ -670,7 +664,13 @@ The map rebuilds itself on each planning run when the cache is stale; there is n
 /image remove 1
 ```
 
-Dragging a file onto the terminal attaches it too. The home composer advertises this with a `drop an image` hint on its legend line; the workflow composer shows no hint because its byline is occupied by live status, but drops still work there. `Backspace` on an empty draft pops the last attachment chip.
+On macOS, copy an image and press `Cmd+V` in Zed's terminal. [Zed 1.20.2 forwards image paste as `Ctrl+V`](https://github.com/zed-industries/zed/blob/v1.20.2/crates/terminal_view/src/terminal_view.rs#L848-L895), which SPLITBRIEF handles by reading the image from the clipboard. When the clipboard also contains text, [Zed chooses the text representation](https://github.com/zed-industries/zed/blob/v1.20.2/crates/gpui_macos/src/pasteboard.rs#L47-L83); pressing `Ctrl+V` directly reads the image instead. Ordinary text paste stays text.
+
+The composer shows `Pasting image…` during the read and keeps text typed meanwhile after the image's insertion point. Wait for `[image #1]` before submitting. Empty, unreadable, oversized, or unsupported clipboard content produces feedback without changing the draft.
+
+Clipboard images are stored as private PNG files under `~/.splitbrief/clipboard/`, up to 10 MiB each. Identical image bytes share a file. These files remain after submission and exit so draft history and recorded attachments can still read them.
+
+Dragging a file onto the terminal also inserts it at the caret. The home composer advertises this with a `drop an image` hint on its legend line; the workflow composer shows no hint because its byline is occupied by live status, but image input works there too. `Backspace` beside an atom takes the whole reference, and that image with it. `/image list` and `/image remove` address attachments already pending for the planner, including command-line `--image` inputs; edit inline draft atoms in the composer.
 
 Offered only when the PLAN seat can receive images; on a seat without vision the command answers with the reason instead of dropping the attachment at call time.
 

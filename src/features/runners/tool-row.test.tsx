@@ -96,6 +96,26 @@ const readyPermissions = {
 };
 
 describe('runner row grammar', () => {
+  it.each([false, true])(
+    'keeps auth semantics whole at 23 cells, unproven=%s',
+    async (unproven) => {
+      const line = await rowLine(
+        {
+          kind: 'auth',
+          method: 'host-configured',
+          choices: [],
+          steps: false,
+          unproven,
+          last: true,
+          tree: { depth: 1, parentContinues: false },
+        },
+        23,
+      );
+      expect(line).toContain(unproven ? 'auth unproven' : 'auth CLI decides');
+      expect(line).not.toContain(ELLIPSIS);
+    },
+  );
+
   it('renders dim status suffixes without parens badges', async () => {
     const unavailable = pickerItem({
       id: 'deepseek',

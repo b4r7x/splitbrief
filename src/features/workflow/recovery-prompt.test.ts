@@ -360,4 +360,149 @@ describe('recovery prompt', () => {
     expect(visible).toContain('Ollama reported: quota exhausted');
     expect(visible.match(/resets/g)).toHaveLength(1);
   });
+  function apiContextIssue(overrides: Partial<RecoveryIssue> = {}): RecoveryIssue {
+    return {
+      id: 'rec_api_context',
+      reason: 'planner-call-failed',
+      seat: 'plan',
+      phase: 'planning',
+      status: 'awaiting-user',
+      files: [],
+      affectedTaskIds: [],
+      message:
+        'The planning seat was not given the context this call needs, so nothing was dispatched. Evidence this call requires is missing. Missing: evidence.json, drift-report.json',
+      details: [
+        'Missing: evidence.json, drift-report.json',
+        'Adjust the plan seat with /crew plan or Settings, then /resume and choose retry.',
+      ],
+      facts: {
+        apiContextCode: 'insufficient-context',
+        apiContextSeat: 'plan',
+        apiContextCause: 'missing-required',
+        apiContextMissingSectionsJson: '["evidence.json","drift-report.json"]',
+        apiContextModel: 'qwen3-coder-30b',
+        apiContextInputEstimate: 148_000,
+        apiContextRequiredTokens: 156_000,
+        apiContextAvailableTokens: 32_768,
+      },
+      availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+      createdAt: '2026-04-29T12:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  it('names the plan seat that was never called, and the sections it never got', async () => {
+    const visible = await renderPromptBody(formatRecoveryPrompt(apiContextIssue()));
+
+    expect(visible).toContain('Nothing was sent to PLAN · required evidence was missing');
+    expect(visible).toContain('Missing: evidence.json, drift-report.json');
+    expect(visible).toContain(
+      'Adjust the plan seat with /crew plan or Settings, then /resume and choose retry.',
+    );
+    expect(visible).toContain('[r]  retry PLAN');
+    expect(visible).toContain('[space]  pause');
+    expect(visible).toContain('[a]  end run');
+    // The figures are the details view's; the panel states the cause and nothing numeric.
+    expect(visible).not.toMatch(/148,?000|156,?000|32,?768/);
+    expect(visible).not.toMatch(/blocking|0 finding/i);
+    expect(visible).not.toContain('[s]  skip task');
+    expect(visible).not.toContain('route to bigger worker');
+    // The boundary's sentence repeats the list the detail row already carries.
+    expect(visible.match(/evidence\.json/g)).toHaveLength(1);
+  });
+
+  it('names the review seat, and calls it a call that was never made rather than a verdict', async () => {
+    const issue = apiContextIssue({
+      id: 'rec_api_context_review',
+      reason: 'review-failed',
+      seat: 'review',
+      phase: 'final-review',
+      message: 'The review seat was not given the context this call needs.',
+      details: [
+        'Adjust the review seat with /crew review or Settings, then /resume and choose retry.',
+      ],
+      facts: {
+        apiContextCode: 'insufficient-context',
+        apiContextSeat: 'review',
+        apiContextCause: 'input-budget',
+        apiContextMissingSectionsJson: '[]',
+        reviewFailureKind: 'insufficient-context',
+        apiContextRequiredTokens: 412_000,
+        apiContextAvailableTokens: 32_768,
+      },
+    });
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('Nothing was sent to REVIEW · larger than the context window');
+    expect(visible).toContain('[r]  retry REVIEW');
+    expect(visible).toContain('/crew review');
+    expect(visible).not.toMatch(/blocking/i);
+    expect(visible).not.toMatch(/412,?000|32,?768/);
+    expect(visible).not.toMatch(/review fix|repair/i);
+  });
+
+  it('names the seat on a review call that never landed, and keeps the retry key', async () => {
+    const issue = apiContextIssue({
+      id: 'rec_review_call_failed',
+      reason: 'review-failed',
+      seat: 'review',
+      phase: 'final-review',
+      message: 'The review call did not land: socket hang up',
+      details: [
+        'Adjust the review seat with /crew review or Settings, then /resume and choose retry.',
+      ],
+      facts: { reviewFailureKind: 'call-failed' },
+      recommendedAction: 'retry-same-worker',
+    });
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    // No context diagnosis, so the halt keeps the ordinary headline — only the retry is seat-level.
+    expect(visible).toContain('recovery needed · The review call did not land: socket hang up');
+    expect(visible).toContain('[r]  retry REVIEW');
+    expect(parseRecoveryActionAnswer('r', issue)).toBe('retry-same-worker');
+    expect(parseRecoveryActionAnswer('retry', issue)).toBe('retry-same-worker');
+  });
+
+  it('leaves a halt that names a brief calling its retry what it is: a replay of that brief', async () => {
+    const withBrief = apiContextIssue({
+      id: 'rec_api_context_brief',
+      taskId: taskId('T003'),
+      taskTitle: 'Patch auth validation',
+    });
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(withBrief));
+
+    expect(visible).toContain('[r]  retry same worker');
+    expect(visible).not.toContain('retry PLAN');
+    expect(await renderPromptBody(formatRecoveryPrompt(baseIssue))).toContain(
+      '[r]  retry same worker',
+    );
+  });
+
+  it('leaves a substantive review failure on the words it earned', async () => {
+    const issue: RecoveryIssue = {
+      id: 'rec_review_blocking',
+      reason: 'review-failed',
+      seat: 'build',
+      phase: 'final-review',
+      status: 'awaiting-user',
+      files: [],
+      affectedTaskIds: [],
+      message: 'Final review failed with 2 blocking findings',
+      details: ['See review.md'],
+      facts: { blocking: 2 },
+      availableActions: ['pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+      createdAt: '2026-04-29T12:00:00.000Z',
+    };
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('recovery needed · Final review failed with 2 blocking findings');
+    expect(visible).not.toContain('Nothing was sent');
+    expect(visible).not.toContain('[r]  ');
+  });
 });

@@ -24,15 +24,20 @@ describe('buildRunnerConfig', () => {
   });
 
   describe('Claude Code onboarding channel', () => {
-    it('persists the subscription channel for a newly selected Claude Code runner on every platform', () => {
+    it('persists no default channel for a newly selected Claude Code runner', () => {
+      const existing = {
+        kind: 'cli' as const,
+        tool: 'codex' as const,
+        authChannel: 'session' as const,
+      };
       const result = buildRunnerConfig('planner', {
         kind: 'cli',
         tool: 'claude-code',
+        existing,
       });
 
-      // Selecting Claude Code must never move the user onto metered billing for
-      // the subscription they already pay for.
-      expect(expectCli(result).authChannel).toBe('session');
+      // The host CLI's own login decides; a written default would pose as a user choice.
+      expect(result).toEqual({ kind: 'cli', tool: 'claude-code' });
     });
 
     it('keeps an explicit API-key choice for Claude Code', () => {
@@ -622,16 +627,32 @@ describe('buildRunnerConfig', () => {
       let message = '';
       try {
         buildRunnerConfig('reviewer', {
-          kind: 'api',
-          tool: 'ollama',
-          apiBase: 'http://127.0.0.1:11434/v1',
-          model: 'qwen3',
+          kind: 'shell',
+          command: './review',
+          model: 'local-reviewer',
+          capabilities: { supportsEffort: true },
         });
       } catch (thrown) {
         message = thrown instanceof Error ? thrown.message : String(thrown);
       }
       expect(message).toContain('reviewer');
       expect(message).not.toContain('planner');
+    });
+
+    it('builds a local API reviewer on its own endpoint', () => {
+      expect(
+        buildRunnerConfig('reviewer', {
+          kind: 'api',
+          tool: 'ollama',
+          apiBase: 'http://127.0.0.1:11434/v1',
+          model: 'qwen3',
+        }),
+      ).toMatchObject({
+        kind: 'api',
+        provider: 'ollama',
+        apiBase: 'http://127.0.0.1:11434/v1',
+        model: 'qwen3',
+      });
     });
   });
 });

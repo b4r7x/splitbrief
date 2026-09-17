@@ -15,6 +15,15 @@ import { parseTasksStrict } from '../spec/tasks/parse.js';
 import { createPlannerCallContext } from './call-context.js';
 import { normalizePlannerPhase } from './normalize.js';
 import { requireCompletedCall } from './require-completed-call.js';
+import { buildApiPlanningContext, type ApiPlanningArtifact } from './api-context.js';
+import { buildProjectContext } from './context.js';
+import { apiContextError } from '../providers/api-context-diagnostic.js';
+import {
+  apiBudgetError,
+  BASE_OUTPUT_RESERVE_TOKENS,
+  measureApiBudget,
+} from '../providers/api-budget.js';
+import type { ApiRuntimeContext } from '../providers/runtime-context.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type {
   PhaseCallResult,
@@ -30,6 +39,7 @@ import type {
 export type PhaseRunnerConfig = {
   invokePlan: (opts: {
     prompt: string;
+    apiContext?: ApiRuntimeContext | undefined;
     projectDir: string;
     callContext: RunnerCallContext;
     callbacks: Pick<
@@ -45,6 +55,14 @@ export type PhaseRunnerConfig = {
   runnerName?: string | undefined;
   model?: string | undefined;
   consumesPriorMessages?: boolean;
+  /**
+   * Input-token allocation for the explicitly assembled PLAN context packet.
+   * Set by a seat that has no filesystem of its own, so everything it may rely
+   * on has to be supplied in the prompt; absent leaves the phase prompt as the
+   * backend's own tools already build it.
+   */
+  planningContextBudget?: number | undefined;
+  resolvePlanningContext?: ((signal?: AbortSignal) => Promise<ApiRuntimeContext>) | undefined;
 };
 
 const CALL_PHASE = {
@@ -138,6 +156,112 @@ function buildPhasePrompt(call: PlannerDocumentCall, inputs: PhaseInputs): strin
 }
 
 /**
+ * The evidence a seat with no filesystem of its own is given for one call:
+ * project instructions, the artifacts the step declares, the current source of
+ * every path they name, and a named list of everything that was not read. An
+ * incomplete or oversized packet refuses here — before any call is dispatched —
+ * so the step stays where it is and the run's existing recovery answers it.
+ */
+async function supplyPlanningContext(opts: {
+  call: PlannerDocumentCall;
+  projectDir: string;
+  inputs: PhaseInputs;
+  priorMessages: PriorMessage[] | undefined;
+  budget: number;
+  model: string | undefined;
+  context?: ApiRuntimeContext | undefined;
+}): Promise<string> {
+  const { call, projectDir, inputs, model } = opts;
+  // A declared input the step did not receive is missing evidence, not absence:
+  // the key is present exactly when the step names the artifact.
+  const declared: [string, string | undefined][] = [
+    [RESEARCH_FILE, inputs.research],
+    [SPEC_FILE, inputs.spec],
+    [PLAN_FILE, inputs.plan],
+  ];
+  const artifacts: ApiPlanningArtifact[] = declared
+    .filter((entry): entry is [string, string] => entry[1] !== undefined)
+    .map(([name, text]) => ({ name, text, required: true }));
+
+  const steer = [inputs.promptPrefix, inputs.promptSuffix, inputs.continuationTurn]
+    .filter((part): part is string => part !== undefined && part !== '')
+    .join('\n');
+
+  const embeddedArtifacts: readonly string[] = {
+    research: [],
+    spec: [RESEARCH_FILE],
+    plan: [SPEC_FILE],
+    tasks: [SPEC_FILE, PLAN_FILE],
+  }[call];
+  const usesPhaseArtifacts =
+    inputs.continuationTurn === undefined && !(call === 'tasks' && inputs.quickPlan !== undefined);
+  const additionalArtifacts = artifacts
+    .filter(({ name }) => !usesPhaseArtifacts || !embeddedArtifacts.includes(name))
+    .map(({ name, text }) => `## Supplied ${name}\n${text}`)
+    .join('\n\n');
+  const phasePrompt = buildPhasePrompt(call, { ...inputs, projectContext: '' });
+  const embedsRequest =
+    inputs.continuationTurn === undefined &&
+    (call === 'research' ||
+      call === 'spec' ||
+      (call === 'tasks' && inputs.quickPlan !== undefined));
+  const request = embedsRequest ? '' : `## Original request\n${inputs.feature}`;
+  const promptWithPacket = (packet: string) =>
+    [phasePrompt, request, additionalArtifacts, packet].filter((part) => part !== '').join('\n\n');
+  const context = opts.context;
+  const measure =
+    context === undefined
+      ? undefined
+      : (packet: string) =>
+          measureApiBudget({
+            context,
+            messages: [
+              ...(opts.priorMessages ?? []),
+              { role: 'user', content: promptWithPacket(packet) },
+            ],
+            role: 'plan',
+          });
+  const minimum = measure?.('');
+  if (minimum?.kind === 'insufficient' && minimum.reason === 'output') {
+    throw apiBudgetError.contextInsufficient('planner', minimum, model, {
+      budgetSource: context?.budgetSource,
+    });
+  }
+
+  const packet = await buildApiPlanningContext({
+    projectDir,
+    project: await buildProjectContext(projectDir),
+    request: inputs.feature,
+    artifacts,
+    ...(steer !== '' && { steer }),
+    ...(opts.priorMessages !== undefined && { priorMessages: opts.priorMessages }),
+    ...(inputs.codebaseContext !== undefined && { repoMap: inputs.codebaseContext }),
+    repoMapInPrompt: call === 'research' || (call === 'tasks' && inputs.quickPlan !== undefined),
+    ...(inputs.skillsContext !== undefined && { skills: inputs.skillsContext }),
+    availableTokens: opts.budget,
+    ...(measure !== undefined && {
+      measureInput: (packet: string) => {
+        const measurement = measure(packet);
+        return measurement.inputEstimate + measurement.estimationMargin;
+      },
+    }),
+    ...(model !== undefined && { model }),
+  });
+  if (packet.kind === 'insufficient-context') {
+    throw apiContextError({
+      code: 'insufficient-context',
+      seat: 'plan',
+      cause: packet.cause,
+      missingSections: [...packet.missingSections],
+      ...(model !== undefined && { model }),
+      requiredTokens: packet.requiredTokens,
+      availableTokens: packet.availableTokens,
+    });
+  }
+  return promptWithPacket(packet.text);
+}
+
+/**
  * One planner call per invocation. The returned function is bound to a planner
  * instance, so the prior transcript and the attachments are injected into the
  * first call that instance makes and never repeated on the calls that follow.
@@ -171,8 +295,26 @@ export function createPhaseRunner(
       !imagesInjected && pendingImages && pendingImages.length > 0 ? pendingImages : undefined;
     imagesInjected = true;
 
+    const apiContext = await config.resolvePlanningContext?.(callbacks.signal);
+    const budget =
+      apiContext === undefined
+        ? config.planningContextBudget
+        : Math.max(0, apiContext.applicationContextTokens - BASE_OUTPUT_RESERVE_TOKENS);
+    const prompt =
+      budget === undefined
+        ? buildPhasePrompt(call, inputs)
+        : await supplyPlanningContext({
+            call,
+            projectDir,
+            inputs,
+            priorMessages,
+            budget,
+            context: apiContext,
+            model: config.model,
+          });
+
     const { effectivePrompt, extras } = prepareInvokeArgs({
-      prompt: buildPhasePrompt(call, inputs),
+      prompt,
       priorMessages,
       images,
       consumesPriorMessages: config.consumesPriorMessages,
@@ -184,6 +326,7 @@ export function createPhaseRunner(
       result = requireCompletedCall(
         await config.invokePlan({
           prompt: effectivePrompt,
+          apiContext,
           projectDir,
           callContext,
           callbacks: {

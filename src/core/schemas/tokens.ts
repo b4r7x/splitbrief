@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import {
+  RunnerCallCounterCoverageSchema,
+  type RunnerCallCounterCoverage,
+  type RunnerCallProviderTotals,
+} from '../runner-call-contract.js';
+import {
   CurrentCodeContextModeSchema,
   TaskCompletionMethodSchema,
   TaskContextFitSchema,
@@ -12,6 +17,8 @@ export interface TokenDelta {
   cacheReadTokens?: number;
   cacheCreateTokens?: number;
   reasoningTokens?: number;
+  counterCoverage?: RunnerCallCounterCoverage;
+  providerTotals?: RunnerCallProviderTotals;
 }
 
 export const TokenUsageSchema = z.object({
@@ -30,6 +37,20 @@ export const TokenUsageSchema = z.object({
   implementerCacheCreate: z.number().nonnegative().optional(),
   reviewerCacheRead: z.number().nonnegative().optional(),
   reviewerCacheCreate: z.number().nonnegative().optional(),
+  // Escalation runs on the planner runner but keeps its own cache buckets, so new evidence is
+  // attributable. A record written before these fields pooled escalation cache into the planner
+  // buckets; absent here means unknown, and that pooled amount is never re-read as escalation.
+  escalationCacheRead: z.number().nonnegative().optional(),
+  escalationCacheCreate: z.number().nonnegative().optional(),
+  // Reasoning is disjoint from the *Output counters. Absent means the provider never reported it.
+  plannerReasoning: z.number().nonnegative().optional(),
+  implementerReasoning: z.number().nonnegative().optional(),
+  escalationReasoning: z.number().nonnegative().optional(),
+  reviewerReasoning: z.number().nonnegative().optional(),
+  plannerCoverage: RunnerCallCounterCoverageSchema.optional(),
+  implementerCoverage: RunnerCallCounterCoverageSchema.optional(),
+  escalationCoverage: RunnerCallCounterCoverageSchema.optional(),
+  reviewerCoverage: RunnerCallCounterCoverageSchema.optional(),
 });
 
 export const TaskTokenUsageSchema = z.object({
@@ -42,6 +63,14 @@ export const TaskTokenUsageSchema = z.object({
   implementerCacheCreateTokens: z.number().nonnegative().optional(),
   escalationCacheReadTokens: z.number().nonnegative().optional(),
   escalationCacheCreateTokens: z.number().nonnegative().optional(),
+  // Directional and reasoning counters, written only from a delta the ledger actually knows.
+  // A historical record carries the combined *Tokens count alone; its split is unknown, not zero.
+  implementerInputTokens: z.number().nonnegative().optional(),
+  implementerOutputTokens: z.number().nonnegative().optional(),
+  implementerReasoningTokens: z.number().nonnegative().optional(),
+  escalationInputTokens: z.number().nonnegative().optional(),
+  escalationOutputTokens: z.number().nonnegative().optional(),
+  escalationReasoningTokens: z.number().nonnegative().optional(),
   retryCount: z.number().nonnegative(),
   cost: z.number().nonnegative().optional(),
   tool: z.string().optional(),
@@ -64,6 +93,12 @@ export const TASK_USAGE_METADATA_KEYS = [
   'implementerCacheCreateTokens',
   'escalationCacheReadTokens',
   'escalationCacheCreateTokens',
+  'implementerInputTokens',
+  'implementerOutputTokens',
+  'implementerReasoningTokens',
+  'escalationInputTokens',
+  'escalationOutputTokens',
+  'escalationReasoningTokens',
   'implementerProfile',
   'contextFit',
   'estimatedTokens',
@@ -105,6 +140,18 @@ export function totalInputTokens(u: TokenUsage): number {
   return u.plannerInput + u.implementerInput + u.escalationInput + u.reviewerInput;
 }
 
+// The *Output counters are ordinary output only. Generated tokens are output plus the reasoning
+// the provider reported, counted here exactly once; a seat that reported no reasoning adds nothing
+// rather than an invented zero.
 export function totalOutputTokens(u: TokenUsage): number {
-  return u.plannerOutput + u.implementerOutput + u.escalationOutput + u.reviewerOutput;
+  return (
+    u.plannerOutput +
+    u.implementerOutput +
+    u.escalationOutput +
+    u.reviewerOutput +
+    (u.plannerReasoning ?? 0) +
+    (u.implementerReasoning ?? 0) +
+    (u.escalationReasoning ?? 0) +
+    (u.reviewerReasoning ?? 0)
+  );
 }

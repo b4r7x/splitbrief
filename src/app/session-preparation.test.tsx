@@ -120,7 +120,7 @@ describe('SessionPreparation', () => {
     projectDir = '';
   });
 
-  it('shows generic preparation and Escape cancels the caller signal and restores its picker', async () => {
+  it('takes no page while checking, and Escape cancels the caller signal and restores its picker', async () => {
     const record = showAtRest(projectDir, 'resume-escape', 'resume with escape');
     const state = { ...createInitialState(record.feature), phase: 'implementing' as const };
     const pending = Promise.withResolvers<PreparationOutcome>();
@@ -138,8 +138,8 @@ describe('SessionPreparation', () => {
 
     const selection = continueRunInPlace({ record, state, deps });
     await flushEffects();
-    expect(ui.lastFrame() ?? '').toContain('Preparing your tools…');
-    expect(ui.lastFrame() ?? '').toContain('Checking your configured runners');
+    // The run stays on the screen it is already on; its composer byline states the check.
+    expect(ui.lastFrame() ?? '').toBe('');
     expect(overlayStore.get().active).toBe('none');
 
     ui.stdin.write(ESC);

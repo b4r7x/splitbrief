@@ -107,7 +107,7 @@ describe('SettingsOverlay', () => {
     await flushEffects();
     const lines = frameLines(ui);
 
-    const workflowRowIndex = indexOfLine(lines, 'Commit strategy');
+    const workflowRowIndex = indexOfLine(lines, 'Create branch');
     const validationRowIndex = indexOfLine(lines, 'Lint');
 
     expect(workflowRowIndex).toBeGreaterThan(-1);
@@ -427,6 +427,41 @@ describe('SettingsOverlay', () => {
     );
 
     expect(panelText(row ?? '')).toMatch(/auto$/);
+
+    ui.unmount();
+  });
+
+  // The commit strategy is no longer a value the config accepts, and spend is read in `/usage`
+  // rather than switched on for a main screen that shows no figure. Neither has a row to land on,
+  // by cursor or by click; the seats the user still chooses are untouched.
+  it('offers no row for the retired commit strategy or spend toggle', async () => {
+    _resetMouseZones();
+    overlayStore.open('settings', 'filter:workflow');
+    const ui = renderAt(120, 40);
+    await flushEffects();
+    const lines = frameLines(ui);
+    const zones = [...collectClickableZones({ cols: 120, rows: 40 }).keys()];
+
+    expect(lineWith(lines, 'Commit strategy')).toBeUndefined();
+    expect(lineWith(lines, 'Show spend')).toBeUndefined();
+    expect(zones).not.toContain('list-row:workflow.git.commitStrategy');
+    expect(zones).not.toContain('list-row:workflow.showSpend');
+
+    expect(lineWith(lines, 'Create branch')).toBeDefined();
+    expect(zones).toContain('list-row:workflow.git.createBranch');
+
+    ui.unmount();
+  });
+
+  it('keeps the build and review seats selectable beside the retired rows', async () => {
+    _resetMouseZones();
+    overlayStore.open('settings', 'seat:build');
+    const ui = renderAt(120, 40);
+    await flushEffects();
+    const zones = [...collectClickableZones({ cols: 120, rows: 40 }).keys()];
+
+    expect(zones).toContain('list-row:seat:build');
+    expect(zones).toContain('list-row:seat:review');
 
     ui.unmount();
   });

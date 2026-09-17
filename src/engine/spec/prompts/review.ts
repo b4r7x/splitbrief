@@ -49,12 +49,20 @@ export function buildFinalReviewPrompt(opts: {
   diff: string;
   driftReport?: string | undefined;
   validationEvidence?: string | undefined;
+  /**
+   * What the run changed and what the diff below covers. A seat that reads no
+   * files of its own is told the scope it is judging instead of inferring it.
+   */
+  changeCoverage?: string | undefined;
 }): string {
   const sections = [
     { heading: 'Specification', body: opts.spec },
     { heading: 'Task Briefs', body: opts.taskBriefs },
-    { heading: 'Implementation Diff', body: fenced(opts.diff, 'diff') },
   ];
+  if (opts.changeCoverage) {
+    sections.push({ heading: 'Changed Files', body: opts.changeCoverage });
+  }
+  sections.push({ heading: 'Implementation Diff', body: fenced(opts.diff, 'diff') });
   if (opts.driftReport) {
     sections.push({ heading: 'Deterministic Drift Report', body: opts.driftReport });
   }

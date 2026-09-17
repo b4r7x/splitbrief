@@ -75,6 +75,8 @@ describe('detectAvailableProviders', () => {
       .mockResolvedValueOnce(
         jsonResponse({ models: [{ name: 'qwen3-coder:30b', details: { family: 'qwen3' } }] }),
       )
+      // The populated listing also observes /api/ps for load state.
+      .mockResolvedValueOnce(jsonResponse({ models: [] }))
       .mockResolvedValueOnce(jsonResponse({ models: [] }));
 
     const populated = await detectProviderCatalog({ provider: 'ollama' });

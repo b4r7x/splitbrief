@@ -50,6 +50,14 @@ describe('copilot planner — parses the {type, data} JSON envelope', () => {
       inputTokens: 1200,
       outputTokens: 340,
       cacheReadTokens: 800,
+      counterCoverage: {
+        input: 'reported',
+        output: 'partial',
+        cacheRead: 'reported',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { output: 340 },
     });
   });
 
@@ -58,7 +66,17 @@ describe('copilot planner — parses the {type, data} JSON envelope', () => {
       type: 'assistant.usage',
       data: { usage: { inputTokens: 500, outputTokens: 120 } },
     });
-    expect(result.usage).toEqual({ inputTokens: 500, outputTokens: 120 });
+    expect(result.usage).toEqual({
+      inputTokens: 500,
+      outputTokens: 120,
+      counterCoverage: {
+        input: 'reported',
+        output: 'reported',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+    });
   });
 
   it('extracts cache token usage from assistant events', () => {
@@ -78,6 +96,13 @@ describe('copilot planner — parses the {type, data} JSON envelope', () => {
       outputTokens: 120,
       cacheReadTokens: 20,
       cacheCreateTokens: 30,
+      counterCoverage: {
+        input: 'reported',
+        output: 'reported',
+        cacheRead: 'reported',
+        cacheCreate: 'reported',
+        reasoning: 'missing',
+      },
     });
   });
 

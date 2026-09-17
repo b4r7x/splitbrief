@@ -4,13 +4,16 @@ import { act } from 'react';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { configStore } from '../../../stores/project/config.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { tokensStore } from '../../../stores/workflow/tokens.js';
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { Sidebar } from './sidebar.js';
 
@@ -664,6 +667,67 @@ describe('Sidebar — reviewer seat', () => {
     expect(frame).toContain('REVIEW');
     expect(frame).toContain('gpt-5-codex');
     expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
+    ui.unmount();
+  });
+});
+
+describe('Sidebar — usage lives in /usage', () => {
+  // The same priced fixture `useCostStats` uses: a run whose tokens do carry a price, so an amount
+  // would be painted if the footer still asked for one.
+  function seedPricedRun(): void {
+    tokensStore.__testReset({
+      localCount: 2,
+      tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
+    });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'custom-endpoint',
+          model: 'priced-model',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
+        },
+      }),
+    });
+    modelCacheStore.hydrateModelsDevCatalog({
+      catalog: {
+        vendor: {
+          id: 'vendor',
+          models: { 'priced-model': { id: 'priced-model', cost: { input: 1, output: 2 } } },
+        },
+      },
+      fetchedAt: 1,
+      validatedAt: 1,
+    });
+  }
+
+  it('keeps the local share and paints no money for a run whose usage is priced', async () => {
+    tasksStore.__testReset({ tasks: [task('1', 'done'), task('2', 'done')] });
+    seedPricedRun();
+
+    const ui = renderFeature(<Sidebar width={40} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('local 100%');
+    expect(frame).not.toContain('$');
+    expect(frame).not.toContain('3.00');
+    ui.unmount();
+  });
+
+  it('paints no token total for a run whose usage is priced', async () => {
+    tasksStore.__testReset({ tasks: [task('1', 'done'), task('2', 'done')] });
+    seedPricedRun();
+
+    const ui = renderFeature(<Sidebar width={40} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).not.toContain('1,000,000');
+    expect(frame).not.toContain('2000k');
+    expect(frame).not.toMatch(/\btokens?\b/i);
     ui.unmount();
   });
 });

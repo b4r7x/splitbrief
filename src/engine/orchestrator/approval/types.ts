@@ -8,6 +8,7 @@ import type { EventBus } from '../../events/types.js';
 
 export type GateActionInput = {
   actionDescription: string;
+  targetPath?: string | undefined;
   task: Task;
   dependsOnFiles: string[];
   projectDir: string;

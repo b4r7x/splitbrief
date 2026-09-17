@@ -1,5 +1,9 @@
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
-import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
+import {
+  readWorkflowStateHead,
+  rebaseOnPersistedWorkflowState,
+  transitionAndSave,
+} from '../state-ops.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { QueueStateMutationOptions } from './types.js';
@@ -71,21 +75,20 @@ export function commitQueueMessagesDrained({
   if (messages.length === 0) return { state, count: 0 };
 
   const ref = { projectDir, sessionId };
-  const base = rebaseOnPersistedWorkflowState(ref, state);
+  // The persisted queue, not a merge with the caller's copy: a message cleared
+  // while its prompt ran must not come back as drained.
+  const base = readWorkflowStateHead(ref)?.state ?? state;
   const ids = new Set(messages.map((message) => message.id));
-  const pending = base.messageQueue.filter(
-    (message) => isQueuedMessagePendingDelivery(message) && ownerFor(ref, message.id) !== 'native',
-  );
-  const drainable = pending.filter((message) => ids.has(message.id));
-
-  if (
-    drainable.length === 0 ||
-    pending.length !== drainable.length ||
-    base.messageQueue.some(
+  const drained = base.messageQueue
+    .filter(
       (message) =>
-        isQueuedMessagePendingDelivery(message) && ownerFor(ref, message.id) === 'native',
+        ids.has(message.id) &&
+        isQueuedMessagePendingDelivery(message) &&
+        ownerFor(ref, message.id) === 'prompt',
     )
-  ) {
+    .map((message) => message.id);
+
+  if (drained.length === 0) {
     releaseQueueMessagesForPrompt(ref, messages);
     return { state: base, count: 0 };
   }
@@ -94,17 +97,17 @@ export function commitQueueMessagesDrained({
     const next = transitionAndSave(
       ref,
       base,
-      { type: 'DRAIN_QUEUE' },
+      { type: 'DRAIN_QUEUE', ids: drained },
       { expectedRevision: base.stateRevision },
     );
     bus.publish({
       type: 'queue_drained',
       ts: Date.now(),
       phase: next.phase,
-      count: drainable.length,
-      ids: drainable.map((message) => message.id),
+      count: drained.length,
+      ids: drained,
     });
-    return { state: next, count: drainable.length };
+    return { state: next, count: drained.length };
   } finally {
     releaseQueueMessagesForPrompt(ref, messages);
   }

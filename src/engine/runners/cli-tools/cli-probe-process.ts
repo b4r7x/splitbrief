@@ -16,7 +16,7 @@ import {
 import { throwIfAborted } from '../../../utils/abort.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../../constants.js';
 import {
-  cliAuthChannelEnvKeys,
+  cliChannelStaging,
   cliPackageCacheEnv,
   createSandboxEnv,
   prependCliExecutableDirectory,
@@ -95,14 +95,8 @@ export async function probeEnvironment({
   tool: CliToolId;
   channel: CliAuthChannel | undefined;
 }>): Promise<ProbeEnvironment> {
-  const hostState = channel === undefined ? 'none' : cliAuthChannelHostStateAccess(channel);
-  const preserveEnvKeys = cliAuthChannelEnvKeys(channel);
-  const env = await createSandboxEnv({
-    projectDir: neutralDir,
-    preserveEnvKeys,
-    selectedCli: hostState === 'none' ? undefined : tool,
-    hostState,
-  });
+  const staging = cliChannelStaging(tool, channel);
+  const env = await createSandboxEnv({ projectDir: neutralDir, ...staging });
   return {
     env: {
       ...env,
@@ -115,7 +109,7 @@ export async function probeEnvironment({
         safeRuntimePath: probeRuntimePath(),
       }),
     },
-    credential: await credentialPresence(env, tool, channel, preserveEnvKeys),
+    credential: await credentialPresence(env, tool, channel, staging.preserveEnvKeys),
   };
 }
 

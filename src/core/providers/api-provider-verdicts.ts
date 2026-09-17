@@ -27,5 +27,4 @@ export const FORBIDDEN_API_PROVIDER_IDS = Object.freeze([
   'minimax',
   'moonshot',
   'dashscope',
-  'llama-cpp',
 ] as const);

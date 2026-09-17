@@ -60,13 +60,11 @@ function writeConfig(dir: string, overrides: Record<string, unknown> = {}): void
           kind: 'cli',
           tool: 'claude-code',
           model: AUTOMATIC_MODEL,
-          authChannel: 'api-key',
         },
         implementer: {
           kind: 'cli',
           tool: 'claude-code',
           model: AUTOMATIC_MODEL,
-          authChannel: 'api-key',
         },
         ...overrides,
       }),

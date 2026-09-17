@@ -32,11 +32,6 @@ export function formatKnownCost(amount: number, priceState: 'known' | 'partial')
   return amount > 0 ? `${formatCost(amount)} + unknown` : 'Unknown price';
 }
 
-export function formatTokensShort(tokens: number): string {
-  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;
-  return String(tokens);
-}
-
 export function formatTruncatedList(values: string[], max: number): string {
   const visible = values.slice(0, max).join(SOFT_SEP);
   const hidden = values.length - max;

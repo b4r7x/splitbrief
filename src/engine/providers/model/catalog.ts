@@ -77,8 +77,23 @@ function ownerFor(entry: DetectedModel, fallback: string): string {
   return entry.providerId ?? fallback;
 }
 
+/** The type facts a listing uses to say a model answers with vectors, not text. */
+const EMBEDDING_TYPE_FACTS = new Set([
+  'embedding',
+  'embeddings',
+  'type:embedding',
+  'type:embeddings',
+]);
+
+/**
+ * Only the model's own positive evidence disqualifies it: a type fact naming an embedding
+ * model, or output modalities that name no text. Tool-call training is not that evidence —
+ * a local text model that was never trained on tools still answers an API contract that
+ * sends none, and dropping it made a working LM Studio model unselectable (REQ-046).
+ */
 function isChatCapable(model: DetectedModel): boolean {
-  if (model.supportsToolCalls === false) return false;
+  const facts = model.capabilities ?? [];
+  if (facts.some((fact) => EMBEDDING_TYPE_FACTS.has(fact.trim().toLowerCase()))) return false;
   return model.outputModalities === undefined || model.outputModalities.includes('text');
 }
 
@@ -152,12 +167,25 @@ function metadataForBundledModel(
   });
 }
 
+/**
+ * External metadata enriches what a runtime row displays; it never states what is installed
+ * here. The catalog's own id, owner, load record and observed context stay behind, so a
+ * published row can neither rewrite the id the runner executes nor claim a model is loaded
+ * on this machine (REQ-045).
+ */
 function mergeRuntimeMetadata(
   runtime: DetectedModel,
   modelsDev: DetectedModel | null,
 ): DetectedModel {
   if (modelsDev === null) return runtime;
-  return { ...modelsDev, ...runtime };
+  const {
+    id: _id,
+    providerId: _providerId,
+    runtime: _runtime,
+    effectiveContextTokens: _effectiveContextTokens,
+    ...enrichment
+  } = modelsDev;
+  return { ...enrichment, ...runtime };
 }
 
 /**

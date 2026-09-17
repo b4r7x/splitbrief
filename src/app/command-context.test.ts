@@ -1,4 +1,5 @@
 import { createElement } from 'react';
+import { realpathSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   installClipboardExecFixture,
@@ -29,6 +30,8 @@ import {
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
 import { configStore } from '../stores/project/config.js';
+import { composerDraftStore } from '../stores/ui/composer-draft.js';
+import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { skillsStore } from '../stores/project/skills.js';
 import type { SkillMeta } from '../core/skills/types.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
@@ -93,6 +96,23 @@ function seedExpandableActivityBatch(): string {
 }
 
 describe('buildCommandContext', () => {
+  it('routes an image command into the composer draft instead of pending attachments', () => {
+    projectDir = createTempDir('app-command-context-image');
+    const imagePath = `${projectDir}/shot.png`;
+    writeFileSync(imagePath, 'png-bytes');
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+    configStore.__testReset({ projectDir, config, diskConfig: config });
+
+    const result = build().insertImage?.(imagePath);
+
+    expect(result).toEqual({ ok: true, path: realpathSync(imagePath) });
+    expect(composerDraftStore.get().request).toMatchObject({
+      kind: 'image',
+      attachment: { path: realpathSync(imagePath) },
+    });
+    expect(attachmentsStore.peek()).toEqual([]);
+  });
+
   it('delegates queue clearing to the live workflow handler', () => {
     setClearQueueHandler(() => ({ status: 'cleared', count: 2 }));
 

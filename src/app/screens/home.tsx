@@ -21,6 +21,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { preparationStore } from '../../stores/navigation/preparation.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
@@ -46,6 +47,8 @@ import { StartPreparationPanel } from '../../features/start-preparation/panel.js
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
+import type { listProjectFiles } from '../../lib/file-listing.js';
 
 const DEFAULT_HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+k commands`;
 const HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+r recent${SOFT_SEP}ctrl+k commands`;
@@ -60,6 +63,8 @@ interface HomeScreenProps {
   commands: RuntimeCommandDef[];
   onRuntimeCommand: (command: string) => void;
   deps?: HomeScreenDeps | undefined;
+  readClipboardImage?: typeof readClipboardImage | undefined;
+  listProjectFiles?: typeof listProjectFiles | undefined;
 }
 
 const defaultHomeScreenDeps: HomeScreenDeps = {
@@ -150,6 +155,8 @@ export function HomeScreen({
   commands,
   onRuntimeCommand,
   deps = defaultHomeScreenDeps,
+  readClipboardImage,
+  listProjectFiles,
 }: HomeScreenProps) {
   const theme = useTheme();
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
@@ -194,6 +201,11 @@ export function HomeScreen({
   const [sessionsFocused, setSessionsFocused] = useState(false);
   const preparationState = startPreparation.state;
   const isPreparing = preparationState.kind === 'preparing';
+  // The word is the submitted request's, not this screen's — a check launched by the CLI before
+  // the mount is the same wait, and Home is the screen it lands on.
+  const checkingStage = preparationStore.use((state) =>
+    state.kind === 'checking' ? state.stage : null,
+  );
   const showPreparationPanel =
     approvalPending || preparationState.kind === 'blocked' || preparationState.kind === 'failed';
   const preliminaryLayout = getHomeLayout({
@@ -225,7 +237,7 @@ export function HomeScreen({
   const hintNotice =
     discoveryNotice === 'warm' || (discoveryNotice === 'cold' && !discoveryPanelFits);
   const { frame: refreshFrame } = useSpinnerFrame(hintNotice);
-  const { frame: preparationFrame } = useSpinnerFrame(isPreparing);
+  const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
 
   useEffect(() => {
     if (!canFocus) setSessionsFocused(false);
@@ -263,7 +275,7 @@ export function HomeScreen({
     (_input, key) => {
       if (key.escape) startPreparation.cancel(closeApprovalPrompt);
     },
-    { isActive: isPreparing && !hasOverlay },
+    { isActive: isPreparing && !hasOverlay && !showPreparationPanel },
   );
 
   let homeHint: string | undefined;
@@ -280,80 +292,92 @@ export function HomeScreen({
     if (sessionsActive) homeHint = RECENT_SESSIONS_HINT;
   }
 
-  if (showPreparationPanel) {
-    return (
-      <StartPreparationPanel
-        state={startPreparation.state}
-        onRetry={() => observePreparationCleanup(startPreparation.retry())}
-        onBack={() => startPreparation.cancel(closeApprovalPrompt)}
-        onOpenSettings={() => overlayStore.open('settings')}
-        approvalPrompt={approvalPending ? <ApprovalPrompt /> : undefined}
-      />
-    );
-  }
+  // The check the user is waiting on borrows the same reserved row, so the status appears and goes
+  // without moving anything above or below it. Only an attempt this screen owns can be given up,
+  // so only that one advertises the key.
+  const preparationStatus =
+    checkingStage === null || interactionBlocked
+      ? undefined
+      : `${preparationFrame} ${checkingStage}${isPreparing ? `${SOFT_SEP}esc cancel` : ''}`;
 
   return (
-    <ScreenShell justifyContent="flex-start" alignItems="center">
-      <Box flexDirection="column" width={layout.width} height="100%">
-        <Box flexDirection="column" flexGrow={1} overflowY="hidden" alignItems="center">
-          <Box flexDirection="column" width={layout.width} gap={1} flexShrink={0}>
-            <Box flexDirection="column" alignItems="center" flexShrink={0}>
-              <Text color={theme.accent}>{getLogo(layout.logoTier)}</Text>
-            </Box>
+    <>
+      {showPreparationPanel && (
+        <StartPreparationPanel
+          state={startPreparation.state}
+          onRetry={() => observePreparationCleanup(startPreparation.retry())}
+          onBack={() => startPreparation.cancel(closeApprovalPrompt)}
+          onOpenSettings={() => overlayStore.open('settings')}
+          approvalPrompt={approvalPending ? <ApprovalPrompt /> : undefined}
+        />
+      )}
+      {/* The panel covers the screen rather than replacing it, so what is typed here outlives a
+          blocked or failed check and is still in the composer when the panel stands down. */}
+      <Box display={showPreparationPanel ? 'none' : 'flex'}>
+        <ScreenShell justifyContent="flex-start" alignItems="center">
+          <Box flexDirection="column" width={layout.width} height="100%">
+            <Box flexDirection="column" flexGrow={1} overflowY="hidden" alignItems="center">
+              <Box flexDirection="column" width={layout.width} gap={1} flexShrink={0}>
+                <Box flexDirection="column" alignItems="center" flexShrink={0}>
+                  <Text color={theme.accent}>{getLogo(layout.logoTier)}</Text>
+                </Box>
 
-            <HomeSeatBlock rows={rows} width={layout.width} />
+                <HomeSeatBlock rows={rows} width={layout.width} />
 
-            {hasRoomForSessions && (
-              <RecentSessions
-                limit={layout.recentSessionLimit}
-                showHiddenCount={layout.showHiddenCount}
-                focused={sessionsActive}
-                onSelect={(session: Session) =>
-                  handleSessionSelect(session, projectDir, deps.sessionSelect)
-                }
-                onClose={closeRecentSessions}
-                hasOverlay={interactionBlocked}
-              />
-            )}
-            {sessionsActive && (
-              <Box height={1} overflow="hidden">
-                {selectionError && (
-                  <Text color={theme.error} wrap="truncate-end">
-                    {selectionError}
-                  </Text>
+                {hasRoomForSessions && (
+                  <RecentSessions
+                    limit={layout.recentSessionLimit}
+                    showHiddenCount={layout.showHiddenCount}
+                    focused={sessionsActive}
+                    onSelect={(session: Session) =>
+                      handleSessionSelect(session, projectDir, deps.sessionSelect)
+                    }
+                    onClose={closeRecentSessions}
+                    hasOverlay={interactionBlocked}
+                  />
+                )}
+                {sessionsActive && (
+                  <Box height={1} overflow="hidden">
+                    {selectionError && (
+                      <Text color={theme.error} wrap="truncate-end">
+                        {selectionError}
+                      </Text>
+                    )}
+                  </Box>
                 )}
               </Box>
-            )}
-          </Box>
-          <Box
-            flexGrow={1}
-            flexDirection="column"
-            justifyContent="center"
-            alignItems="center"
-            overflow="hidden"
-          >
-            {discoveryPanelFits && <DiscoveryPanel width={layout.width} />}
-          </Box>
-        </Box>
+              <Box
+                flexGrow={1}
+                flexDirection="column"
+                justifyContent="center"
+                alignItems="center"
+                overflow="hidden"
+              >
+                {discoveryPanelFits && <DiscoveryPanel width={layout.width} />}
+              </Box>
+            </Box>
 
-        <Box flexDirection="column" marginBottom={layout.inputBottomMargin} flexShrink={0}>
-          <Composer
-            disabled={interactionBlocked || sessionsActive || isPreparing}
-            submitKeepsDraft
-            promptGlyph={isPreparing ? preparationFrame : undefined}
-            onSubmit={onStartWorkflow}
-            onRuntimeCommand={onRuntimeCommand}
-            commands={commands}
-            mode="normal"
-            hint="Describe your feature…"
-            currentScreen="home"
-            width={layout.width}
-            keepPlaceholderWhileFocused
-            homeHint={homeHint}
-            draftRestore={startPreparation.draftRestore}
-          />
-        </Box>
+            <Box flexDirection="column" marginBottom={layout.inputBottomMargin} flexShrink={0}>
+              <Composer
+                disabled={interactionBlocked || sessionsActive}
+                submitKeepsDraft
+                onSubmit={onStartWorkflow}
+                onRuntimeCommand={onRuntimeCommand}
+                commands={commands}
+                mode="normal"
+                hint="Describe your feature…"
+                currentScreen="home"
+                width={layout.width}
+                keepPlaceholderWhileFocused
+                homeHint={homeHint}
+                homeStatus={preparationStatus}
+                readClipboardImage={readClipboardImage}
+                listProjectFiles={listProjectFiles}
+              />
+            </Box>
+          </Box>
+        </ScreenShell>
       </Box>
-    </ScreenShell>
+    </>
   );
 }

@@ -14,6 +14,7 @@ import { assertCliStartGate, type CliStartGate } from '../runners/start-gate.js'
 import { matches } from '../../utils/error.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
 import { withOutputFormat } from '../runners/cli-tools/output-format.js';
+import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
 import { lookupCliImplementerAdapter } from '../runners/cli-tools/registry.js';
 import type { CliImplementerAdapter } from '../runners/cli-tools/contract.js';
 import type { RunnerCallResult } from '../calls/types.js';
@@ -194,7 +195,7 @@ export function createCliImplementer(
             signal: composedSignal,
           },
           prompt,
-          callContext,
+          callContext: withCliInvocationIdentity({ runner: config, callContext, executable }),
           onOutput,
           onCallEvent: opts.onCallEvent,
           idle: {

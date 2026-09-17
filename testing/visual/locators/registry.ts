@@ -79,6 +79,11 @@ const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
     rowsAbove: 1,
     rowsBelow: 3,
   },
+  'home:preparation-panel': {
+    kind: 'layout',
+    description: 'Preparation problem panel terminal bounds',
+    resolve: resolveFullFrame,
+  },
   'setup:header': {
     kind: 'marker',
     description: 'Setup step header at its checkpoint marker',

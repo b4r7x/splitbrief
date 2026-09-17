@@ -39,6 +39,12 @@ export function updateOperations(state: OperationsState, event: EngineEvent): Op
       return applyValidationStage(state, event);
     case 'runner_call_started':
       return startRunnerOperation(closePlannerStatusFallbacks(state, event.ts), event);
+    case 'runner_call_runtime_status':
+      return updateKnownOperation(state, event.callId, (operation) =>
+        operation.status === 'running' && operation.apiRuntimeStatus?.phase !== 'finished'
+          ? { ...operation, apiRuntimeStatus: event.runtimeStatus }
+          : operation,
+      );
     case 'runner_call_usage':
       return updateKnownOperation(state, event.callId, (operation) => ({
         ...operation,

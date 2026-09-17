@@ -27,7 +27,7 @@ export async function readRunEvents(ref: SessionRef): Promise<RunReplay> {
   for (const entry of entries) {
     if (entry.kind !== 'event') continue;
     eventEntries += 1;
-    const event = toEngineEvent(entry);
+    const event = engineEventFromLogEntry(entry);
     if (event === null) {
       if (!failedTypes.includes(entry.type)) failedTypes.push(entry.type);
       continue;
@@ -75,7 +75,8 @@ export async function readRunEvents(ref: SessionRef): Promise<RunReplay> {
   };
 }
 
-function toEngineEvent(entry: SessionLogEventEntry): EngineEvent | null {
+/** One logged line read back as the event that wrote it, timestamp quirks included. */
+export function engineEventFromLogEntry(entry: SessionLogEventEntry): EngineEvent | null {
   const ts = entryTimestamp(entry.ts);
   if (ts === null) return null;
   const data = isRecord(entry.data) ? entry.data : {};

@@ -64,6 +64,30 @@ describe('SETTINGS_DEFS dead settings', () => {
   it('does not expose the no-op sessions.scope setting', () => {
     expect(SETTINGS_DEFS.some((def) => def.id === 'sessions.scope')).toBe(false);
   });
+
+  // SPLITBRIEF no longer stages or commits, so a commit strategy is not a choice the config even
+  // accepts any more — offering the row would hand the user a value that fails on save. Spend is
+  // read in `/usage` on request, not toggled for a main screen that no longer shows a figure.
+  it.each(['workflow.git.commitStrategy', 'workflow.showSpend'])(
+    'offers no row for the retired %s',
+    (id) => {
+      expect(SETTINGS_DEFS.some((def) => def.id === id)).toBe(false);
+    },
+  );
+
+  it('keeps the branch the run still creates and the ordinary workflow rows', () => {
+    const workflowIds = SETTINGS_DEFS.filter((def) => def.section === 'Workflow').map(
+      (def) => def.id,
+    );
+
+    expect(workflowIds).toEqual([
+      'workflow.mode',
+      'workflow.approve',
+      'workflow.maxRetries',
+      'workflow.compactionFormat',
+      'workflow.git.createBranch',
+    ]);
+  });
 });
 
 describe('SETTINGS_DEFS workflow compaction', () => {

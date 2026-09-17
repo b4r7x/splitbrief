@@ -46,13 +46,13 @@ describe('composer in-box footer hints', () => {
     resetAllStores();
   });
 
-  it('renders override keys and the cost token inside the rounded box', async () => {
+  it('renders override keys inside the rounded box and nothing else beside them', async () => {
     const ui = renderDockedComposer({
       commands: COMMANDS,
       currentScreen: 'workflow',
       mode: 'normal',
       hint: '',
-      boxHints: { keys: 'Ctrl+D diff', cost: '$0.03', costTone: 'text' },
+      boxHints: { keys: 'Ctrl+D diff' },
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
@@ -61,46 +61,26 @@ describe('composer in-box footer hints', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Ctrl+D diff');
     expect(frame).not.toContain('tab');
-    expect(frame).toContain('$0.03');
+    expect(frame).not.toContain('$');
+    expectFrameUsesThemeColor(frame, getTheme().textDim, 'Ctrl+D diff');
     ui.unmount();
   });
 
-  it('renders warning-toned cost beside override keys in question mode', async () => {
-    const cost = '$0.41';
-    const ui = renderDockedComposer({
-      commands: COMMANDS,
-      currentScreen: 'workflow',
-      mode: 'question',
-      hint: '',
-      boxHints: { keys: 'Ctrl+D diff', cost, costTone: 'warning' },
-      onSubmit: () => {},
-      onRuntimeCommand: () => {},
-    });
-    await flushEffects();
-
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain(cost);
-    expectFrameUsesThemeColor(frame, getTheme().warning, cost);
-
-    ui.unmount();
-  });
-
-  it('drops the cost token rather than the keys when the box is too narrow for both', async () => {
+  it('stands the hint down rather than squeezing the input below its readable minimum', async () => {
     terminalSizeStore.__testReset({ cols: 36, rows: 20, isSmall: false });
     const ui = renderDockedComposer({
       commands: COMMANDS,
       currentScreen: 'workflow',
       mode: 'normal',
       hint: '',
-      boxHints: { keys: 'Ctrl+G', cost: '$0.41' },
+      boxHints: { keys: 'Ctrl+G' },
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Ctrl+G');
-    expect(frame).not.toContain('$0.41');
+    expect(frame).not.toContain('Ctrl+G');
     ui.unmount();
   });
 });

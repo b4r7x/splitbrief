@@ -1,7 +1,18 @@
 import type { RecoveryAction, RecoveryReason } from '../enums.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
-const PAUSE_OR_END_ACTIONS = ['pause-run', 'end-run'] as const satisfies readonly RecoveryAction[];
+/**
+ * A final review that reported blocking findings offers the run's two exits. A
+ * review that reached no verdict at all — the seat was handed an incomplete
+ * packet, or the call never landed — can also be re-issued once the seat is
+ * corrected, so `retry-same-worker` is legal here; the builder offers it only
+ * for that non-verdict case.
+ */
+const REVIEW_FAILED_ACTIONS = [
+  'retry-same-worker',
+  'pause-run',
+  'end-run',
+] as const satisfies readonly RecoveryAction[];
 const TASK_RECOVERY_ACTIONS = [
   'retry-same-worker',
   'route-bigger-worker',
@@ -110,7 +121,7 @@ export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[
     case 'snapshot-failed':
       return copyActions(SNAPSHOT_FAILED_ACTIONS);
     case 'review-failed':
-      return copyActions(PAUSE_OR_END_ACTIONS);
+      return copyActions(REVIEW_FAILED_ACTIONS);
     case 'planner-call-failed':
       return copyActions(PLANNER_CALL_ACTIONS);
     case 'planner-returned-no-briefs':

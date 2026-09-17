@@ -11,7 +11,7 @@ SPLITBRIEF is a CLI that splits AI coding work across two roles:
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and compiles the request into a Task Brief, with optional supporting spec/plan artifacts when the work needs more structure.
 - An **implementer** — a weaker **model**, reached either as a CLI tool running a cheap model or as an API model (Ollama, LM Studio, a custom endpoint) — does the *typing*: turns each task from the list into code, one task at a time. Both transports are first-class; SPLITBRIEF favours neither.
 
-The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Git commit strategies are optional and off by default; the default leaves changes unstaged for manual review.
+The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Git staging and commits belong to the user.
 
 The goal is a change that holds up: the tool that wrote the code never signs it off, and a deterministic pipeline — not the implementer's own opinion — decides whether the task passed. Lower total cost follows from the split; it is a reported outcome, not the promise.
 
@@ -30,7 +30,7 @@ The "smart" side. Its responsibilities, in order:
 3. **Write supporting docs when needed** — `spec.md` and `plan.md` for larger, riskier, or more ambiguous work.
 4. **Write `tasks.md`** — the transport format that carries one or more Task Briefs to the implementer.
 5. **Review** the entire diff at the end against the Task Brief and any supporting spec.
-6. **Escalate** — when the implementer fails a task 3× in a row, escalation runs through an optional paid intermediate model, then the planner either hints or takes over and fixes the task itself.
+6. **Escalate** — when the implementer fails a task 3× in a row, escalation runs through an optional paid intermediate model, then a planner hint helps the implementer retry. Exhaustion enters explicit recovery.
 
 The planner also supports **clarifying questions**: it can pause and ask the user questions before finalizing the Task Brief and any supporting spec (only for backends that support this — see `capabilities.supportsConversationalPlanning` on `Planner` in `src/engine/planners/types.ts`).
 
@@ -51,7 +51,7 @@ The middle layer. Zero React, zero Ink — pure logic in `src/engine/orchestrato
 - The state machine (see `docs/WORKFLOW.md`).
 - Disk writes (`tasks.md` as Task Brief transport, mode-dependent planning artifacts such as `research.md`, `spec.md`, and `plan.md`, `sessions/<id>/state.json`, `sessions/<id>/session.jsonl`).
 - Validation pipeline (`typecheck → lint → tests`).
-- Optional git checkpoint/commit strategy when explicitly configured.
+- Filesystem snapshots and manual Git review. An index checkpoint is a retired Git feature; filesystem snapshots remain supported.
 - Event emission through the EventBus to subscribed sinks: TUI, JSONL, logger, stdout JSON, and hooks.
 
 ---
@@ -101,7 +101,7 @@ idle
  │   └─► reviewing-plan   (waiting for user, speckit-only by default)
  ├─► implementing      (implementer is working on current task)
  │   └─► validating-task  (typecheck → lint → tests running)
- │       └─► escalating   (validation failed 3× → planner takes over)
+ │       └─► escalating   (retries exhausted → worker/help path, then recovery)
  ├─► final-review      (review seat reads whole diff vs Task Brief/supporting spec)
  └─► complete
 ```
@@ -172,11 +172,11 @@ Each step stops at the first failure *attributable to the task* and reports it b
 
 On validation failure:
 
-- **Local retries**: the implementer retries with the same entire context but a slightly higher temperature (+0.1 per attempt), up to `workflow.maxRetries` times (default 2). No planner involvement.
+- **Local retries**: the implementer retries with the same entire context with configured retry temperature changes only where the transport supports them, up to `workflow.maxRetries` times (default 2). No planner involvement.
 - **After the last retry**: escalate through the tiers in order.
   - **Tier 0 — intermediate model** (only when `escalation.intermediateProvider` is configured and `escalation.enabled` is not `false`): a paid mid-tier API model retries the task before the planner is involved.
   - **Tier 1 — hint escalation** (if the planner supports it — see `supportsHintEscalation`): planner reads the error, returns a short hint, implementer retries once with the hint.
-  - **Tier 2 — full escalation**: planner takes over and writes the code itself. The task is marked `escalated` (not `done`) in the summary so you can see cost impact.
+  - **Recovery** follows the exhausted worker/help path. Historical full-tier outcomes remain readable; the planner never automatically takes over code-writing implementation.
 
 Escalation logic: `src/engine/orchestrator/escalation/handle.ts`.
 
@@ -294,9 +294,9 @@ Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`,
 
 ## Hooks (workflow)
 
-Workflow lifecycle hooks let users run custom commands at well-known moments (pre/post task, pre/post commit, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.splitbrief/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
+Workflow lifecycle hooks let users run custom commands at well-known moments (pre/post task and validation, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.splitbrief/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
 
-- **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_commit' | 'post_commit' | 'pre_escalation' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
+- **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_escalation' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
 - **HookEntry** — one configured hook, `kind: 'command'`, carrying `{ command, args, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is bounded at 300_000 ms with a 30_000 ms default.
 - **HooksConfig** — the `hooks:` section of `.splitbrief/config.yaml`: a map from `HookEvent` to `HookEntry[]`.
 

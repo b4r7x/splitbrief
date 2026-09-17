@@ -56,6 +56,7 @@ export function makeActions(): PickerActions {
   return {
     confirm: async () => {},
     confirmProviderSelection: async () => {},
+    confirmAuthMethod: async () => {},
     leftChange: () => {},
     deleteRight: async () => {},
     chooseContract: () => {},

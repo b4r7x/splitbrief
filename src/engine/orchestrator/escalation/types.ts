@@ -11,6 +11,7 @@ import type { UsageCategory } from '../tokens.js';
 import type { IsolationRole } from '../isolation/types.js';
 import type { ValidationResult } from '../validation/result.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
+import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 
 export type RetryResult =
   | {
@@ -65,6 +66,7 @@ export type RetryInvokeArgs = {
   fileIgnoreProjectDir?: string | undefined;
   /** Baseline the acquired workspace declares; sniffed from the directory when absent. */
   changeDetection?: ChangeDetectionKind | undefined;
+  createdByThisTask?: readonly string[] | undefined;
 } & UndeclaredWritesPolicy;
 
 export type RetryInvokeResult = {
@@ -72,6 +74,7 @@ export type RetryInvokeResult = {
   error?: string | undefined;
   outcome?: RunnerFailureOutcomeState | undefined;
   usage?: TokenDelta | null | undefined;
+  applyResult?: BundleApplyResult | undefined;
   /** The runner config the invocation actually used; absent when it matches the step's config. */
   runner?: Config['implementer'] | undefined;
 };

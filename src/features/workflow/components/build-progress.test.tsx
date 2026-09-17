@@ -5,6 +5,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { configStore } from '../../../stores/project/config.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BuildProgressBlock } from './build-progress.js';
 
 beforeEach(() => {
@@ -21,6 +22,23 @@ beforeEach(() => {
     ],
   });
 });
+
+/** A brief on its second attempt, with a six-figure count the block would once have rounded. */
+function seedRunningAttemptTokens(): void {
+  tokensStore.__testReset({
+    localCount: 1,
+    perTask: {
+      T002: {
+        totalTokens: 148_000,
+        title: 'Two',
+        attempts: [
+          { method: 'local', retryCount: 0, implementerTokens: 24_000, escalationTokens: 0 },
+          { method: 'local', retryCount: 1, implementerTokens: 124_000, escalationTokens: 0 },
+        ],
+      },
+    },
+  });
+}
 
 afterEach(() => {
   resetAllStores();
@@ -45,5 +63,22 @@ describe('BuildProgressBlock', () => {
     expect(frame.split('\n').filter((line) => line.trim().length > 0)).toHaveLength(5);
 
     ui.unmount();
+  });
+
+  it('names no token count for a brief whose attempt booked one', () => {
+    seedRunningAttemptTokens();
+
+    for (const cols of [120, 80, 60]) {
+      const ui = renderFeature(<BuildProgressBlock cols={cols} />);
+      const frame = ui.lastFrame() ?? '';
+
+      expect(frame).toContain('1/3 briefs passed');
+      expect(frame).toContain('implementing');
+      expect(frame).not.toMatch(/token/i);
+      expect(frame).not.toContain('124k');
+      expect(frame).not.toContain('0k');
+
+      ui.unmount();
+    }
   });
 });

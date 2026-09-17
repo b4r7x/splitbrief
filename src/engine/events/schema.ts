@@ -26,6 +26,7 @@ import { TASK_REVIEW_COMMANDS } from './workflow-events.js';
 import { isRecord } from '../../utils/type-guards.js';
 import {
   RunnerCallArtifactSchema,
+  RunnerCallApiRuntimeStatusSchema,
   RunnerCallActivityKindSchema,
   RunnerCallActivityStageSchema,
   CallIdSchema,
@@ -109,7 +110,6 @@ function strictCallPhaseEvent<T extends string>(type: T) {
     type: z.literal(type),
     ts: z.number(),
     phase: PhaseSchema,
-    taskId: TaskIdSchema.optional(),
     ...runnerCallContextFields,
     sequence: z.number().int().nonnegative(),
   });
@@ -303,6 +303,9 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     phaseHint: z.string().optional(),
   }),
   strictCallPhaseEvent('runner_call_started'),
+  strictCallPhaseEvent('runner_call_runtime_status').extend({
+    runtimeStatus: RunnerCallApiRuntimeStatusSchema,
+  }),
   strictCallPhaseEvent('runner_call_text_delta').extend({
     channel: RunnerCallTextChannelSchema,
     text: z.string(),
@@ -494,6 +497,12 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     implementerCacheCreateTokens: z.number().nonnegative().optional(),
     escalationCacheReadTokens: z.number().nonnegative().optional(),
     escalationCacheCreateTokens: z.number().nonnegative().optional(),
+    implementerInputTokens: z.number().nonnegative().optional(),
+    implementerOutputTokens: z.number().nonnegative().optional(),
+    implementerReasoningTokens: z.number().nonnegative().optional(),
+    escalationInputTokens: z.number().nonnegative().optional(),
+    escalationOutputTokens: z.number().nonnegative().optional(),
+    escalationReasoningTokens: z.number().nonnegative().optional(),
     retryCount: z.number().int().nonnegative(),
     tool: z.string().optional(),
     model: z.string().optional(),

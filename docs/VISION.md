@@ -1,5 +1,7 @@
 # SPLITBRIEF — Vision & Strategic Direction
 
+SPLITBRIEF coordinates tools; users own Git staging and commits.
+
 ## What SPLITBRIEF IS
 
 An orchestrator for two coding tools. One plans, the other executes, the review seat reads the result, and SPLITBRIEF owns everything in between:
@@ -131,7 +133,7 @@ See `.specify/memory/constitution.md` for the 6 constitutional principles:
 2. **Spec-Driven Development** — Task Briefs first; specs only for larger or riskier work
 3. **Weaker-Model Implementation** — the implementer is a weaker model, not a weaker transport; a tool CLI and an API endpoint are equally supported and the user picks
 4. **Functional Purity** — zero runtime classes, pure functions, ESM, no unnecessary comments
-5. **Validate Before Checkpoint** — SPLITBRIEF owns the per-task validation pipeline; optional product commits only when configured; final review of the run diff (the planner's seat unless a reviewer is assigned)
+5. **Validate Before Checkpoint** — SPLITBRIEF owns the per-task validation pipeline; manual Git staging and commits; final review of the run diff (the planner's seat unless a reviewer is assigned)
 6. **Identity & Anti-Goals** — two roles across three fixed seats, not N agents; visible orchestration is product identity, not scope creep
 
 ## Version History

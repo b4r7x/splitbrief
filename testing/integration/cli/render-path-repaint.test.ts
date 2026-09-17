@@ -116,6 +116,7 @@ const LAST_DRAFT = CYCLES.reduce((draft, axis) => {
 const actions: PickerActions = {
   confirm: async () => {},
   confirmProviderSelection: async () => {},
+  confirmAuthMethod: async () => {},
   leftChange: () => {},
   deleteRight: async () => {},
   chooseContract: () => {},
@@ -207,6 +208,9 @@ async function renderOptionsFor(path: RenderPath): Promise<RenderOptions> {
   const unmount = new AbortController();
   unmount.abort();
   const restoreStdout = silenceRealStdout();
+  const { columns, rows } = process.stdout;
+  process.stdout.columns = 100;
+  process.stdout.rows = STDOUT_ROWS;
   try {
     await renderApp(createElement(Text, null, 'probe'), {
       fullscreen: path === 'fullscreen',
@@ -214,6 +218,8 @@ async function renderOptionsFor(path: RenderPath): Promise<RenderOptions> {
     });
   } finally {
     restoreStdout();
+    process.stdout.columns = columns;
+    process.stdout.rows = rows;
   }
   // Exactly one: a fullscreen mount that fails falls back to the inline seat, and a second
   // capture would silently turn the fullscreen rows into more inline rows.

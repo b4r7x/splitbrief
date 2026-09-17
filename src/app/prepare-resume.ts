@@ -1,5 +1,5 @@
 import { loadOwnerWorkflowState } from '../core/state/resume-hydration.js';
-import { hydrateRun } from '../features/workflow/run-history.js';
+import { hydrateRun, readRunHistory } from '../features/workflow/run-history.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { SessionRef } from '../core/types/session-ref.js';
 import { prepareExecution } from '../engine/runners/prepare-execution/prepare-execution.js';
@@ -56,5 +56,6 @@ export const sessionSelectDeps: SessionSelectDeps = {
   loadResumeState: loadOwnerWorkflowState,
   prepareResume: prepareSessionResume,
   hydrateRun,
+  readRunHistory,
   cancelPendingApproval: closeApprovalPrompt,
 };

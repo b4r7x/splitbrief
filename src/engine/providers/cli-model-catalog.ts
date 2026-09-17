@@ -328,6 +328,25 @@ export function parseCommandCodeNativeModelCatalog(stdout: string): NativeCliMod
   return entries.length === 0 ? null : catalogFromEntries({ tool: 'command-code', entries });
 }
 
+/** The native count and final footer prove the listing finished even if shutdown stalls. */
+export function parseCompleteCommandCodeNativeModelCatalog(
+  stdout: string,
+): NativeCliModelCatalog | null {
+  const lines = cleanCatalogLines(stdout);
+  const footer = lines.findLast((line) => line.length > 0);
+  const counts = lines.flatMap((line) => {
+    const match = /^Available models\s*·\s*(\d+) models$/i.exec(line);
+    return match === null ? [] : [Number(match[1])];
+  });
+  if (
+    counts.length !== 1 ||
+    !/^Docs:\s+https:\/\/commandcode\.ai\/docs\/reference\/cli\/models\/?$/.test(footer ?? '')
+  )
+    return null;
+  const catalog = parseCommandCodeNativeModelCatalog(stdout);
+  return catalog !== null && catalog.models.length === counts[0] ? catalog : null;
+}
+
 export function parseCopilotHelpConfigCatalog(stdout: string): NativeCliModelCatalog | null {
   const lines = cleanCatalogLines(stdout);
   const start = lines.findIndex((line) => COPILOT_MODEL_KEY_LINE.test(line));

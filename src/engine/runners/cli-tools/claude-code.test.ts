@@ -293,7 +293,18 @@ describe('Claude Code stream protocol adapter', () => {
     });
     expect(terminal).toContainEqual({
       type: 'usage',
-      usage: { inputTokens: 2, outputTokens: 1 },
+      usage: {
+        inputTokens: 2,
+        outputTokens: 1,
+        counterCoverage: {
+          input: 'reported',
+          output: 'partial',
+          cacheRead: 'missing',
+          cacheCreate: 'missing',
+          reasoning: 'missing',
+        },
+        providerTotals: { output: 1 },
+      },
       semantics: 'final',
     });
   });

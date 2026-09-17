@@ -391,7 +391,12 @@ describe('runHeadless — with a reviewer configured', () => {
       expect.objectContaining({ type: 'workflow_config', reviewerTool: 'shell' }),
     );
     expect(planner.review).not.toHaveBeenCalled();
-    expect(loadState({ projectDir, sessionId })?.reviewStatus).toBe('failed');
+    // The reviewer named no verdict, so nothing is settled: the run halts on the
+    // review seat at the phase it can be re-entered on, with no review status.
+    const halted = loadState({ projectDir, sessionId });
+    expect(halted?.reviewStatus).toBeUndefined();
+    expect(halted?.phase).toBe('final-review');
+    expect(halted?.pendingRecovery).toMatchObject({ reason: 'review-failed', seat: 'review' });
   }, 30_000);
 });
 

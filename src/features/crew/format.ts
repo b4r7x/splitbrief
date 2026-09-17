@@ -34,7 +34,10 @@ export function planSeatBlock(
     rowBudget: number;
   }>,
 ): SeatBlockLayout {
+  // A block where no seat can name its billing spends nothing on the column: a
+  // CLI seat states no posture, so the identities take the whole width.
   const posture =
+    input.rows.some((row) => billingWord(row.seat.posture) !== undefined) &&
     input.innerWidth - CREW_IDENTITY_COLUMN - CREW_POSTURE_COLUMN >= MIN_IDENTITY_WIDTH;
   const identityWidth =
     input.innerWidth - CREW_IDENTITY_COLUMN - (posture ? CREW_POSTURE_COLUMN : 0);

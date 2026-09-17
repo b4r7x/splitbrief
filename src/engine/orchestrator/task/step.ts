@@ -296,6 +296,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     acceptance,
     implementerProfile: wctx.implementerProfile,
     taskChangedFiles,
+    applyResult: implState.implResult.applyResult,
   });
   if (commitResult.completed) {
     state = commitResult.state;

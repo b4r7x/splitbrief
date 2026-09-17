@@ -92,12 +92,37 @@ const nonnegativeInteger = z.number().int().nonnegative();
 export const RunnerCallTextChannelSchema = z.enum(RUNNER_CALL_TEXT_CHANNELS);
 export type RunnerCallTextChannel = z.infer<typeof RunnerCallTextChannelSchema>;
 
+export const RUNNER_CALL_COUNTER_COVERAGE_STATES = ['reported', 'partial', 'missing'] as const;
+
+const counterCoverageState = z.enum(RUNNER_CALL_COUNTER_COVERAGE_STATES);
+
+export const RunnerCallCounterCoverageSchema = z.strictObject({
+  input: counterCoverageState,
+  output: counterCoverageState,
+  cacheRead: counterCoverageState,
+  cacheCreate: counterCoverageState,
+  reasoning: counterCoverageState,
+});
+
+// Inclusive totals exactly as the provider reported them. Metadata for pricing,
+// never counters to be summed into inputTokens/outputTokens.
+export const RunnerCallProviderTotalsSchema = z.strictObject({
+  input: nonnegativeInteger.optional(),
+  output: nonnegativeInteger.optional(),
+});
+
 export const runnerCallUsageFields = {
   inputTokens: nonnegativeInteger,
   outputTokens: nonnegativeInteger,
   cacheReadTokens: nonnegativeInteger.optional(),
   cacheCreateTokens: nonnegativeInteger.optional(),
   reasoningTokens: nonnegativeInteger.optional(),
+  counterCoverage: RunnerCallCounterCoverageSchema.optional(),
+  providerTotals: RunnerCallProviderTotalsSchema.optional(),
 } as const;
 
 export const RunnerCallUsageContractSchema = z.strictObject(runnerCallUsageFields);
+
+export type RunnerCallCounterCoverageState = z.infer<typeof counterCoverageState>;
+export type RunnerCallCounterCoverage = z.infer<typeof RunnerCallCounterCoverageSchema>;
+export type RunnerCallProviderTotals = z.infer<typeof RunnerCallProviderTotalsSchema>;

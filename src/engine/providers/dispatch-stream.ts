@@ -4,6 +4,8 @@ import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../ca
 import { streamCompletion } from './openai-stream/completion.js';
 import type { StreamClient } from './openai-stream/request.js';
 import type { StreamMessage } from './types.js';
+import type { ApiInvocationEvidence } from '../runners/invocation-identity.js';
+import type { ApiRuntimeObservation } from './api-runtime-status.js';
 
 export type { StreamMessage } from './types.js';
 
@@ -18,10 +20,13 @@ interface StreamDispatchOpts {
   onProgress: (text: string) => void;
   maxTokens?: number | undefined;
   signal?: AbortSignal | undefined;
+  timeoutMs?: number | undefined;
   effort?: EffortLevel | undefined;
   images?: Attachment[] | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   callContext?: RunnerCallContext | undefined;
+  invocationEvidence?: ApiInvocationEvidence | undefined;
+  runtimeObservation?: ApiRuntimeObservation | undefined;
 }
 
 export async function dispatchStreamCompletion(
@@ -38,10 +43,13 @@ export async function dispatchStreamCompletion(
     onProgress,
     maxTokens,
     signal,
+    timeoutMs,
     effort,
     images,
     onCallEvent,
     callContext,
+    invocationEvidence,
+    runtimeObservation,
   } = opts;
 
   return streamCompletion(client, model, messages, {
@@ -54,9 +62,12 @@ export async function dispatchStreamCompletion(
     credentialValues: apiKey.length > 0 ? [apiKey] : [],
     ...(maxTokens !== undefined && { maxTokens }),
     ...(signal !== undefined && { signal }),
+    ...(timeoutMs !== undefined && { timeoutMs }),
     ...(effort !== undefined && { effort }),
     ...(images && images.length > 0 ? { images } : {}),
     ...(onCallEvent !== undefined && { onCallEvent }),
     ...(callContext !== undefined && { callContext }),
+    ...(invocationEvidence !== undefined && { invocationEvidence }),
+    ...(runtimeObservation !== undefined && { runtimeObservation }),
   });
 }

@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type {
+  ApiDispatchAuthentication,
   ProviderDefWithMetadata,
   ProviderModelListOptions,
   ProviderOverrides,
@@ -133,6 +134,13 @@ export function createMetadataProvider<TRaw extends { id: string }>(
     return value;
   };
   const authentication = opts.authentication ?? (opts.isLocal ? 'none' : 'required');
+  // Mirrors `resolveCredential`: only a configured value proves an API key, and
+  // the `apiKeyDefault` placeholder proves nothing.
+  const dispatchAuthentication = (): ApiDispatchAuthentication => {
+    const configured = resolveConfiguredCredential();
+    if (configured !== undefined) return configured.length > 0 ? 'api-key' : 'none';
+    return opts.apiKeyDefault === undefined || opts.apiKeyDefault === '' ? 'none' : 'unknown';
+  };
 
   function getUrl(): string {
     return opts.modelsUrl ? opts.modelsUrl(baseURL) : `${baseURL}/models`;
@@ -196,6 +204,7 @@ export function createMetadataProvider<TRaw extends { id: string }>(
     baseURL,
     apiKey,
     isLocal: opts.isLocal,
+    dispatchAuthentication,
     getLastError: shell.getLastError,
 
     async listModels(options?: ProviderModelListOptions): Promise<string[]> {

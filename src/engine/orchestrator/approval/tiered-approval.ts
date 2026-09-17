@@ -44,6 +44,7 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
   const { actionClass, tier } = classifyAction(
     {
       actionDescription,
+      targetPath: input.targetPath,
       taskFiles: taskFiles(task),
       taskInBounds: taskDeclaredPatterns(task),
       dependsOnFiles,

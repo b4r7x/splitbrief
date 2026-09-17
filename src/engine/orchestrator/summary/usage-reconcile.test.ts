@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
+import { addUsage } from '../tokens.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { TokenUsageSchema } from '../../../core/schemas/tokens.js';
+import { toTokenDelta } from '../../calls/usage.js';
 import { buildSummary } from './build.js';
 import { reconcileTokenUsageWithSessionLog } from './usage-reconcile.js';
 
@@ -19,6 +23,7 @@ const REAL_FAILED_RUN_LOG = [
   '{"ts":"2026-08-06T19:05:21.537Z","kind":"event","type":"runner_call_error","phase":"researching","data":{"callId":"single-phase-2-attempt-1","role":"planner","backendKind":"cli","runnerName":"claude","attempt":1,"sequence":179,"status":"failed","error":{"code":"process-output","message":"claude exited with code 1: Error: Session ID 0a3443ac-432e-40c8-bdf9-29859130257f is already in use."},"partial":false,"startedAt":1786043121137,"endedAt":1786043121537,"durationMs":400,"usage":null,"nativeSessionId":"0a3443ac-432e-40c8-bdf9-29859130257f"}}',
 ] as const;
 
+// These historical records carry counters, but predate counter coverage.
 const REAL_PLANNER_TOTALS = {
   plannerInput: 6,
   plannerOutput: 3006,
@@ -130,9 +135,10 @@ describe('reconcileTokenUsageWithSessionLog', () => {
           implementerInput: 100,
           implementerOutput: 50,
           implementerCacheRead: 10,
+
           escalationInput: 40,
           escalationOutput: 20,
-          plannerCacheCreate: 7,
+          escalationCacheCreate: 7,
         }),
       );
     } finally {
@@ -175,7 +181,12 @@ describe('reconcileTokenUsageWithSessionLog', () => {
       });
 
       expect(reconciled).toEqual(
-        makeUsage({ ...booked, reviewerInput: 5000, reviewerOutput: 6000 }),
+        makeUsage({
+          ...booked,
+
+          reviewerInput: 5000,
+          reviewerOutput: 6000,
+        }),
       );
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
@@ -220,7 +231,9 @@ describe('reconcileTokenUsageWithSessionLog', () => {
         booked,
       });
 
-      expect(reconciled).toEqual(booked);
+      expect(reconciled).toEqual({
+        ...booked,
+      });
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }
@@ -273,6 +286,125 @@ describe('buildSummary token usage reconciliation', () => {
       });
 
       expect(summary.tokenUsage).toEqual(makeUsage({ plannerInput: 1100, plannerOutput: 2200 }));
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// One implementer call reported as two deltas, a final that restates the running total, and a
+// terminal record that repeats that final a second time.
+const REASONING_CALL_FINAL = {
+  inputTokens: 30,
+  outputTokens: 11,
+  reasoningTokens: 6,
+  cacheReadTokens: 8,
+  cacheCreateTokens: 3,
+};
+
+const REASONING_RUN_LOG = [
+  '{"ts":"2026-09-16T10:00:00.000Z","kind":"event","type":"runner_call_usage","phase":"implementing","data":{"callId":"impl-1","role":"implementer","backendKind":"api","sequence":1,"usage":{"inputTokens":10,"outputTokens":5,"reasoningTokens":2,"cacheReadTokens":3,"cacheCreateTokens":1},"semantics":"delta"}}',
+  '{"ts":"2026-09-16T10:00:01.000Z","kind":"event","type":"runner_call_usage","phase":"implementing","data":{"callId":"impl-1","role":"implementer","backendKind":"api","sequence":2,"usage":{"inputTokens":20,"outputTokens":6,"reasoningTokens":4,"cacheReadTokens":5,"cacheCreateTokens":2},"semantics":"delta"}}',
+  '{"ts":"2026-09-16T10:00:02.000Z","kind":"event","type":"runner_call_usage","phase":"implementing","data":{"callId":"impl-1","role":"implementer","backendKind":"api","sequence":3,"usage":{"inputTokens":30,"outputTokens":11,"reasoningTokens":6,"cacheReadTokens":8,"cacheCreateTokens":3},"semantics":"final"}}',
+  '{"ts":"2026-09-16T10:00:03.000Z","kind":"event","type":"runner_call_completed","phase":"implementing","data":{"callId":"impl-1","role":"implementer","backendKind":"api","sequence":4,"status":"completed","error":null,"partial":false,"startedAt":1,"endedAt":2,"durationMs":1,"usage":{"inputTokens":30,"outputTokens":11,"reasoningTokens":6,"cacheReadTokens":8,"cacheCreateTokens":3},"nativeSessionId":null}}',
+] as const;
+
+describe('reconcileTokenUsageWithSessionLog — reasoning and idempotence', () => {
+  it('replays delta, final and a duplicate terminal to exactly the live ledger, cache and reasoning included', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'usage-reconcile-'));
+    try {
+      const sessionId = 'reasoning-run';
+      writeSessionLog(projectDir, sessionId, REASONING_RUN_LOG);
+
+      // The live ledger books the same call through the path the orchestrator uses.
+      const live = addUsage(
+        createInitialState('feature'),
+        'implementer',
+        toTokenDelta(REASONING_CALL_FINAL),
+      ).tokenUsage;
+      expect(live.implementerOutput).toBe(11);
+      expect(live.implementerReasoning).toBe(6);
+
+      const reconciled = reconcileTokenUsageWithSessionLog({
+        ref: { projectDir, sessionId },
+        booked: makeUsage(),
+      });
+
+      expect(reconciled).toEqual(live);
+      // Reconciling the reconciled record changes nothing.
+      expect(
+        reconcileTokenUsageWithSessionLog({ ref: { projectDir, sessionId }, booked: reconciled }),
+      ).toEqual(reconciled);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('credits a lost reviewer reasoning count to the reviewer seat and stays idempotent', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'usage-reconcile-'));
+    try {
+      const sessionId = 'reviewer-reasoning-run';
+      writeSessionLog(projectDir, sessionId, [
+        ...PLANNING_REVIEW_LOG,
+        '{"ts":"2026-09-16T10:00:00.000Z","kind":"event","type":"runner_call_error","phase":"final-review","data":{"callId":"final-review-1","role":"review","backendKind":"api","sequence":9,"status":"failed","error":{"code":"process-output","message":"reviewer exited with code 1"},"partial":false,"startedAt":1,"endedAt":2,"durationMs":1,"usage":{"inputTokens":5000,"outputTokens":6000,"reasoningTokens":700},"nativeSessionId":null}}',
+      ]);
+      const booked = makeUsage({ plannerInput: 1100, plannerOutput: 2200 });
+
+      const first = reconcileTokenUsageWithSessionLog({
+        ref: { projectDir, sessionId },
+        booked,
+      });
+
+      expect(first).toMatchObject({
+        reviewerInput: 5000,
+        reviewerOutput: 6000,
+        reviewerReasoning: 700,
+      });
+      expect(first).not.toHaveProperty('plannerReasoning');
+      expect(
+        reconcileTokenUsageWithSessionLog({ ref: { projectDir, sessionId }, booked: first }),
+      ).toEqual(first);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('loads a pre-field state with its optional counters absent and never reads unknown as zero', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'usage-reconcile-'));
+    try {
+      const sessionId = 'legacy-state-run';
+      writeSessionLog(projectDir, sessionId, REAL_FAILED_RUN_LOG);
+      // A state.json written before reviewer accounting and before the reasoning counters.
+      const booked = TokenUsageSchema.parse({
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        escalationInput: 0,
+        escalationOutput: 0,
+      });
+      expect(booked.reviewerInput).toBe(0);
+      expect(booked).not.toHaveProperty('plannerReasoning');
+
+      const reconciled = reconcileTokenUsageWithSessionLog({
+        ref: { projectDir, sessionId },
+        booked,
+      });
+
+      // The log's claude records carry no reasoning counter: unknown stays absent on every seat.
+      for (const key of [
+        'plannerReasoning',
+        'implementerReasoning',
+        'escalationReasoning',
+        'reviewerReasoning',
+        'escalationCacheRead',
+        'escalationCacheCreate',
+      ]) {
+        expect(reconciled).not.toHaveProperty(key);
+      }
+      expect(reconciled).toEqual(makeUsage(REAL_PLANNER_TOTALS));
+      expect(reconciled.plannerCoverage).toBeUndefined();
+      expect(TokenUsageSchema.parse(reconciled)).toEqual(reconciled);
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }

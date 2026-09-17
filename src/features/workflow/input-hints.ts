@@ -15,7 +15,6 @@ export function resolveInputHint(input: InputHintInput): string {
 
 export interface ComposerBoxHintOverride {
   keys: string;
-  cost: boolean;
 }
 
 export type HintStateSeverity = 'error' | 'warning';

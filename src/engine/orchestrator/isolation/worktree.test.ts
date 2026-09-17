@@ -3,6 +3,7 @@ import {
   existsSync,
   lstatSync,
   readdirSync,
+  readFileSync,
   readlinkSync,
   realpathSync,
   rmSync,
@@ -29,6 +30,7 @@ import {
   getChangedFilesSnapshot,
 } from '../approval/file-snapshots/capture.js';
 import { promoteStagedChanges } from '../approval/staged-project.js';
+import { captureAcquisitionBaseline } from '../approval/file-snapshots/entry.js';
 import {
   ensureIsolationWorktree,
   parseIsolationMarker,
@@ -318,7 +320,7 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
     expect(second.kind).toBe('fallback');
   });
 
-  it('refuses a modified binary file instead of seeding corrupted content', async () => {
+  it('seeds modified binary bytes exactly', async () => {
     createTestGitRepo(repoDir, { 'README.md': '# test\n', 'blob.bin': 'text\n' });
     writeFileSync(join(repoDir, 'blob.bin'), Buffer.from([0x00, 0x01, 0xfe, 0xff, 0x80, 0x81]));
 
@@ -328,8 +330,11 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
       git: createGitClient(repoDir),
     });
 
-    expect(result.kind).toBe('fallback');
-    if (result.kind === 'fallback') expect(result.reason).toMatch(/binary/);
+    expect(result.kind).toBe('ready');
+    if (result.kind === 'ready')
+      expect(readFileSync(join(result.worktreePath, 'blob.bin'))).toEqual(
+        Buffer.from([0x00, 0x01, 0xfe, 0xff, 0x80, 0x81]),
+      );
   });
 
   it('throws when the source checkout contains a symlinked directory', async () => {
@@ -393,7 +398,7 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
       targetProjectDir: repoDir,
       stagedProjectDir: result.worktreePath,
       files: changed,
-      expectedCurrentContents: { '.gitignore': original },
+      targetBaseline: await captureAcquisitionBaseline(repoDir),
     });
 
     expect(promoted).toEqual({ promotedFiles: ['.gitignore'], conflictedFiles: [] });
@@ -420,7 +425,7 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
       targetProjectDir: repoDir,
       stagedProjectDir: result.worktreePath,
       files: changed,
-      expectedCurrentContents: { 'README.md': '# test\n' },
+      targetBaseline: await captureAcquisitionBaseline(repoDir),
     });
 
     expect(await readFile(join(repoDir, '.gitignore'), 'utf-8')).toBe('node_modules/\n');

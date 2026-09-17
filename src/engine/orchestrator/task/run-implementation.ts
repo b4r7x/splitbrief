@@ -9,10 +9,11 @@ import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
 import type { StreamingSink } from './streaming-feed.js';
 import { withContinuationLoop } from '../continuation.js';
 import { gateChangedFiles } from '../approval/gate-files.js';
-import { persistApprovalEvidence } from '../evidence/persistence.js';
+import { persistApiApplyEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { inferTaskAcceptedChangedFiles } from '../changed-files-baseline.js';
+import { recordedApiCreatedPaths } from '../evidence/task.js';
 
 /**
  * The brief's own declared files that already moved since it started. A restarted
@@ -75,6 +76,7 @@ export async function runImplementation(opts: {
 
   const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
   const seed = wctx.continuation?.take(step);
+  const createdByThisTask = recordedApiCreatedPaths({ projectDir, sessionId }, task);
 
   let loop: { state: WorkflowState; value: ImplementerResult };
   try {
@@ -130,6 +132,7 @@ export async function runImplementation(opts: {
           fileIgnoreProjectDir: workspace ? projectDir : undefined,
           changeDetection: workspace?.changeDetection,
           ...(continuation !== undefined && { continuation }),
+          ...(createdByThisTask.length > 0 && { createdByThisTask }),
           phase: state.phase,
           approveWrite: async (file) => {
             if (workspace) return { allow: true };
@@ -178,6 +181,19 @@ export async function runImplementation(opts: {
   }
 
   state = loop.state;
+
+  // The receipt lands before the caller decides what the attempt was, so a brief
+  // that stopped mid-application still names the prefix it already wrote.
+  const applyResult = loop.value.applyResult;
+  if (applyResult !== undefined) {
+    persistApiApplyEvidence({
+      wctx,
+      state,
+      task,
+      result: applyResult,
+      ...(workspace === undefined ? {} : { workspacePath: workspace.projectDir }),
+    });
+  }
 
   return {
     state,

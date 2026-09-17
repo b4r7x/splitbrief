@@ -1,4 +1,3 @@
-import { formatTokensShort } from '../../../core/formatting.js';
 import { NO_GATES_WARNING } from '../../../core/pipeline-spec/gates.js';
 import { VALIDATION_STAGES } from '../../../core/schemas/enums.js';
 import { boundEngineEventForConsumer } from '../bound.js';
@@ -13,19 +12,6 @@ function passedGates(event: Extract<EngineEvent, { type: 'validate' }>): string 
   return passed.length === 0 ? 'no gates' : passed.join(' ');
 }
 
-function totalTokens(usage: Extract<EngineEvent, { type: 'cost_update' }>['tokenUsage']): number {
-  return (
-    usage.plannerInput +
-    usage.plannerOutput +
-    usage.implementerInput +
-    usage.implementerOutput +
-    usage.escalationInput +
-    usage.escalationOutput +
-    usage.reviewerInput +
-    usage.reviewerOutput
-  );
-}
-
 /**
  * The `--plain` projection: four line shapes and nothing else, so a script can
  * read a run with `grep` and a human can read it without a JSON parser.
@@ -33,18 +19,13 @@ function totalTokens(usage: Extract<EngineEvent, { type: 'cost_update' }>['token
  *   phase: implementing
  *   task T001: done (typecheck lint test)
  *   review: passed
- *   done: 3 tasks, 128.4k tokens
- *
- * Cost is reported in tokens, not dollars: the event stream carries token
- * counts, and the dollar figure needs a live model-price catalog that a sink
- * has no business holding.
+ *   done: 3 tasks
  */
 export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSink {
   const output = opts.output ?? process.stdout;
   const gates = new Map<string, string>();
   let lastPhase: string | null = null;
   let completed = 0;
-  let tokens = 0;
   let gatelessRunAnnounced = false;
 
   function write(line: string): void {
@@ -92,9 +73,6 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
       case 'task_skipped':
         write(`task ${bounded.taskId}: failed (skipped)`);
         return;
-      case 'cost_update':
-        tokens = totalTokens(bounded.tokenUsage);
-        return;
       case 'workflow_complete': {
         const verdict = bounded.review ?? 'passed';
         write(
@@ -102,7 +80,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
             ? `review: ${verdict}`
             : `review: ${verdict} (${bounded.blocking} blocking)`,
         );
-        write(`done: ${completed} tasks, ${formatTokensShort(tokens)} tokens`);
+        write(`done: ${completed} tasks`);
         return;
       }
       default:

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { DetectedModel, DetectedModelInstance } from '../../core/discovery/detection.js';
 import { endpointPolicyFetch } from '../../core/providers/endpoint-policy.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { assertNever } from '../../utils/type-guards.js';
@@ -31,6 +31,7 @@ const LmStudioCapabilitiesSchema = z.looseObject({
 });
 
 const LmStudioLoadedInstanceSchema = z.looseObject({
+  id: z.string().min(1).optional(),
   context_length: z.number().int().positive().optional(),
   contextLength: z.number().int().positive().optional(),
   config: z
@@ -59,6 +60,7 @@ const LmStudioCompatibilitySchema = z.object({
 });
 
 type LmStudioNativeModel = z.infer<typeof LmStudioNativeModelSchema>;
+type LmStudioLoadedInstance = z.infer<typeof LmStudioLoadedInstanceSchema>;
 
 type LmStudioListResult<T> =
   | Readonly<{ kind: 'success'; models: readonly T[] }>
@@ -77,7 +79,7 @@ function compatibilityModelsFromPayload(data: unknown): readonly DetectedModel[]
   return result.data.data.map((model) => ({ id: model.id, providerId: 'lm-studio' }));
 }
 
-function effectiveContext(instance: z.infer<typeof LmStudioLoadedInstanceSchema>): number | null {
+function effectiveContext(instance: LmStudioLoadedInstance): number | null {
   return (
     instance.context_length ??
     instance.contextLength ??
@@ -85,6 +87,24 @@ function effectiveContext(instance: z.infer<typeof LmStudioLoadedInstanceSchema>
     instance.config?.contextLength ??
     null
   );
+}
+
+function nativeLoadState(
+  instances: readonly LmStudioLoadedInstance[] | undefined,
+): 'loaded' | 'not-loaded' | 'unknown' {
+  if (instances === undefined) return 'unknown';
+  return instances.length > 0 ? 'loaded' : 'not-loaded';
+}
+
+function identifiedInstances(
+  instances: readonly LmStudioLoadedInstance[],
+): readonly DetectedModelInstance[] | undefined {
+  const identified = instances.flatMap((instance) => {
+    if (instance.id === undefined) return [];
+    const context = effectiveContext(instance);
+    return [{ id: instance.id, ...(context === null ? {} : { effectiveContextTokens: context }) }];
+  });
+  return identified.length > 0 ? identified : undefined;
 }
 
 function nativeCapabilityFacts(model: LmStudioNativeModel): string[] {
@@ -99,13 +119,13 @@ function nativeCapabilityFacts(model: LmStudioNativeModel): string[] {
   if (capabilities?.reasoning?.default !== undefined) {
     facts.push(`reasoning:default:${capabilities.reasoning.default}`);
   }
-  const loadedInstances = model.loaded_instances ?? [];
-  facts.push(loadedInstances.length > 0 ? 'loaded' : 'not-loaded');
+  facts.push(nativeLoadState(model.loaded_instances));
   return facts;
 }
 
-function nativeModelToDetected(model: LmStudioNativeModel): DetectedModel {
-  const loadedContexts = (model.loaded_instances ?? [])
+function nativeModelToDetected(model: LmStudioNativeModel, observedAt: number): DetectedModel {
+  const instances = model.loaded_instances;
+  const loadedContexts = (instances ?? [])
     .map(effectiveContext)
     .filter((context): context is number => context !== null);
   const effectiveContextTokens =
@@ -114,6 +134,7 @@ function nativeModelToDetected(model: LmStudioNativeModel): DetectedModel {
   const contextLength = effectiveContextTokens ?? maximumContextTokens;
   const capabilities = model.capabilities ?? {};
   const reasoningOptions = capabilities.reasoning?.allowed_options;
+  const runtimeInstances = instances === undefined ? undefined : identifiedInstances(instances);
 
   return {
     id: model.key,
@@ -133,6 +154,11 @@ function nativeModelToDetected(model: LmStudioNativeModel): DetectedModel {
           supportsReasoning: reasoningOptions.length > 0,
           nativeReasoningEfforts: reasoningOptions,
         }),
+    runtime: {
+      loadState: nativeLoadState(instances),
+      observedAt,
+      ...(runtimeInstances === undefined ? {} : { instances: runtimeInstances }),
+    },
   };
 }
 
@@ -240,9 +266,10 @@ export function createLmStudioProvider(overrides?: ProviderOverrides): ProviderD
     });
     if (native.kind === 'success') {
       lastError = undefined;
+      const observedAt = Date.now();
       return native.models
         .filter((model) => model.type.toLowerCase() === 'llm')
-        .map(nativeModelToDetected);
+        .map((model) => nativeModelToDetected(model, observedAt));
     }
     if (!isExplicitlyUnsupported(native)) {
       lastError = resultDiagnostic(native);

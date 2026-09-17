@@ -32,8 +32,8 @@ const CUSTOM_ENDPOINT = {
 } as const;
 
 const DEEP_CREW = crewOf({ implementer: CUSTOM_ENDPOINT });
-/** Every row a crew can have. */
-const FULL_CREW = crewOf({ implementer: CUSTOM_ENDPOINT, reviewer: CUSTOM_ENDPOINT });
+/** Every row a crew can have: a CLI seat, a catalogued one, and a configured reviewer. */
+const FULL_CREW = crewOf({ reviewer: CUSTOM_ENDPOINT });
 
 function blockRows(
   rows: readonly CrewBlockRow[],
@@ -196,8 +196,8 @@ describe('formatCrewRow', () => {
   });
 
   it('renders a resolved posture as a non-empty lowercase word', () => {
-    const row = CATALOGUED_CREW.find((candidate) => candidate.id === 'plan');
-    if (row === undefined) throw new Error('no plan seat');
+    const row = CATALOGUED_CREW.find((candidate) => candidate.id === 'build');
+    if (row === undefined) throw new Error('no build seat');
     const layout = planSeatBlock({
       rows: CATALOGUED_CREW,
       verdict: undefined,

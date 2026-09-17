@@ -12,7 +12,7 @@ Everything between the two belongs to SPLITBRIEF: the [Task Brief contract](./do
 
 ## Why two tools instead of one
 
-A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff. Put the planner and the implementer on models from different labs and the reviewer no longer shares the author's failure modes. That is the reason to run two tools, and SPLITBRIEF is arranged so the tool that wrote the code is not the tool that signs it off. One path breaks that: when a task exhausts retries and the last escalation tier fires, the planner writes the code itself and then reviews its own work. Escalated tasks are the exception the blind-spot argument does not cover.
+A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff. Put the planner and the implementer on models from different labs and the reviewer no longer shares the author's failure modes. That is the reason to run two tools, and SPLITBRIEF is arranged so the tool that wrote the code is not the tool that signs it off. When retries and planner hints are exhausted, explicit recovery asks the user how to proceed. The planner never automatically takes over code-writing implementation; bounded repairs after review use the selected implementer.
 
 Same-lab still works — two instances of one tool are a valid configuration. You give up the blind-spot argument, not the pipeline.
 
@@ -55,7 +55,7 @@ You: "add user authentication with JWT"
             escalate, in order:
               mid-tier model (if configured)
               planner hint, implementer retries
-              planner takes the task over
+              explicit recovery asks you what to do
                 │
                 ▼
 ┌──────────────────────┐
@@ -65,7 +65,7 @@ You: "add user authentication with JWT"
 └──────────────────────┘
 ```
 
-How the changes land depends on which kind of implementer you picked. A tool that writes files itself (`writesFiles: direct` — the `cli` and `agent` kinds) works in an isolated directory; SPLITBRIEF promotes the result into your project and refuses to overwrite a file that changed while the task was running. A model that returns file contents (`writesFiles: extracted-code` — the `api` and `shell` kinds) never touches your working tree; SPLITBRIEF writes each file itself, one approval gate at a time. Isolation covers files only — same ports, same database, same hooks and config — so it is not a security boundary.
+How the changes land depends on which kind of implementer you picked. A tool that writes files itself (`writesFiles: direct` — the `cli` and `agent` kinds) works in an isolated directory; SPLITBRIEF promotes the result into your project and refuses to overwrite a file that changed while the task was running. A model that returns file contents (`writesFiles: extracted-code` — the `api` and `shell` kinds) never touches your working tree; SPLITBRIEF writes the returned content. API responses use declared text-file bundles with whole-response preflight and exact-path approval; shell extraction remains single-file. Isolation covers files only — same ports, same database, same hooks and config — so it is not a security boundary.
 
 The TUI shows planner and implementer working together as a conversation flow — event cards, inline diffs, live token counts.
 
@@ -204,13 +204,11 @@ validation:
 workflow:
   maxRetries: 2
   approve: default
-  git:
-    commitStrategy: none
 ```
 
-`contextLength` should match the model's effective window after the provider itself is configured. 25% is reserved for output. Minimum 8192. Optional implementer profiles still keep one implementer role: SPLITBRIEF selects the capable profile with the smallest sufficient context window for each Task Brief instead of becoming a multi-agent manager.
+`contextLength` sets the application budget without changing server capacity. API calls use configured context, observed active context or an 8192-token default; PLAN and REVIEW reserve 2048 output tokens plus a 15% input-estimation margin. BUILD reserves for the declared file bundle. Optional implementer profiles still keep one implementer role: SPLITBRIEF selects the capable profile with the smallest sufficient context window for each Task Brief instead of becoming a multi-agent manager.
 
-Git commit strategies are opt-in. The default (`commitStrategy: none`) leaves changes unstaged for manual review; set `checkpoint` or `per-task` only if you want SPLITBRIEF to create git history.
+SPLITBRIEF leaves Git staging and commits to you.
 
 ### Planner backends
 
@@ -229,7 +227,7 @@ Ten planner backends — seven CLI tools, plus `api`, `shell`, and `agent`:
 | `shell` | shell | configurable | Any stdin/stdout command, see below |
 | `agent` | agent | configurable | Subprocess that writes files directly |
 
-Any CLI tool above is valid as `--planner <tool>` or `--reviewer <tool>`, for example `splitbrief start "add tests" --planner codex --implementer ollama`. The built-in providers `ollama` and `lm-studio` are local-only and implementer-only.
+Any CLI tool above is valid as `--planner <tool>` or `--reviewer <tool>`, for example `splitbrief start "add tests" --planner codex --implementer ollama`. The built-in local providers `ollama`, `lm-studio` and `llama-cpp` support PLAN, BUILD and REVIEW, each with its own endpoint and exact model ID. Start the server externally; SPLITBRIEF checks the configured connection.
 
 #### Shell planner
 
@@ -385,7 +383,7 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 ## Extensibility
 
 - **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, and hooks subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/splitbrief/blob/main/docs/ARCHITECTURE.md#eventbus).
-- **Workflow hooks** — fire shell commands at workflow events (`pre_task`, `post_commit`, etc.). See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/splitbrief/blob/main/docs/HOOKS-CONFIG.md).
+- **Workflow hooks** — fire shell commands at workflow events (`pre_task`, `post_validation`, etc.). See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/splitbrief/blob/main/docs/HOOKS-CONFIG.md).
 - **Repo-map context** — ranked symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](https://github.com/b4r7x/splitbrief/blob/main/docs/REPOMAP.md).
 - **Headless mode** — `splitbrief start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
 

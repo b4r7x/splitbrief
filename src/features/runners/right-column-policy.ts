@@ -85,6 +85,10 @@ export function rightRowActivation(
     case 'route':
     case 'axis':
       return 'confirm';
+    // Nothing to choose: the row states who decides rather than taking a key that
+    // would only pretend to change it.
+    case 'auth':
+      return row.choices.length === 0 ? 'none' : 'confirm';
     case 'model': {
       if (row.expanded) return expansionDrafts(row.model) ? 'confirm' : 'collapse';
       // An option family's children are spellings of one route, never routes to
@@ -142,6 +146,12 @@ export function expandedRowHint(
 ): string | undefined {
   if (row === undefined || row.kind === 'route') return undefined;
   if (row.kind === 'action') return '⏎ browse';
+  // A row with nothing to choose drops its verb slot instead of promising a key it
+  // does not take; one that can step names the step the same way an axis does.
+  if (row.kind === 'auth') {
+    if (row.choices.length === 0) return '';
+    return row.steps ? `space cycle${SOFT_SEP}⏎ confirm` : '⏎ confirm';
+  }
   // A sparse variant grid leaves an axis with nowhere to step, and the byline
   // must not promise a key that cannot move; the row already carries that answer.
   if (row.kind === 'axis') return row.steps ? `space cycle${SOFT_SEP}⏎ confirm` : '⏎ confirm';
@@ -178,6 +188,12 @@ export function confirmRow(
   // Browsing widens the rows on screen; nothing is chosen, so nothing is saved.
   if (row.kind === 'action') {
     actions.browseCatalog();
+    return;
+  }
+  // The method binds the seat's own invocation, not the highlighted model, so it
+  // is saved on its own rather than through a model commit.
+  if (row.kind === 'auth') {
+    if (row.choices.length > 0) void actions.confirmAuthMethod(row.method);
     return;
   }
   const draftId = pickerViewStore.get().optionDraftId;
@@ -223,6 +239,10 @@ export function rightRowMatches(row: RightRow, query: string): boolean {
       return true;
     case 'route':
       return hits(row.variant.fullId) || hits(row.variant.tag) || hits(row.variant.displayName);
+    // An auth row lives inside an expansion, and a query closes that expansion
+    // before it can grow, so the row never has to answer for a filter.
+    case 'auth':
+      return true;
     // An axis row is a child of its model row, so it follows the parent
     // through the filter; a lone child would draw a tree that hangs off nothing.
     case 'axis':
@@ -240,6 +260,15 @@ export function rightRowMatches(row: RightRow, query: string): boolean {
  * parent holds the key rather than collapsing the family the user is steering.
  */
 export function cycleRightRow(row: RightRow): CycleOutcome {
+  // The method is a value control like an axis, so space steps it in place. A row
+  // with nowhere to go still holds the key rather than closing the expansion.
+  if (row.kind === 'auth') {
+    if (!row.steps) return 'held';
+    const next = row.choices[(row.choices.indexOf(row.method) + 1) % row.choices.length];
+    if (next === undefined) return 'held';
+    pickerViewStore.setAuthDraft(next);
+    return 'stepped';
+  }
   if (row.kind !== 'axis') {
     return row.kind === 'model' && row.expanded && expansionDrafts(row.model) ? 'held' : 'none';
   }

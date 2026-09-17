@@ -9,23 +9,22 @@ import { Divider } from '../../../components/divider.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useFieldSessionOwned } from '../../editor/use-field-session-owned.js';
-import { formatCostDisplay } from '../spend-text.js';
-import { useCostStats } from '../hooks/use-cost-stats.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { ComposerBoxHintOverride } from '../input-hints.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import type { RailForm } from '../layout/chrome-rows.js';
+import type { readClipboardImage as readSystemClipboardImage } from '../../../core/attachments/clipboard-image.js';
+import type { listProjectFiles as listFiles } from '../../../lib/file-listing.js';
 
+// The in-box hint is a key cluster and a done mark: what a run spent and how many tokens it took
+// is named in /usage, not beside the caret.
 function useComposerBoxHints(override?: ComposerBoxHintOverride | undefined): ComposerBoxHints {
   const complete = lifecycleStore.use((s) => s.phase === 'complete');
-  const { costBreakdown, pricingState, showSpend } = useCostStats();
   const baseKeys = override?.keys ?? '';
   const keys = complete
     ? [baseKeys, glyph('check')].filter((part) => part.length > 0).join('  ')
     : baseKeys;
-  const display = formatCostDisplay(costBreakdown, pricingState);
-  const cost = override?.cost && showSpend && display.hasSpend ? display.spentText : undefined;
-  return { keys, cost };
+  return { keys };
 }
 
 export function WorkflowHeader({
@@ -79,6 +78,8 @@ export function WorkflowFooter({
   reviewEpoch,
   questionEpoch,
   waitingForUser = false,
+  readClipboardImage,
+  listProjectFiles,
 }: {
   handleInput: (text: string) => void;
   onEmptySubmit?: (() => void) | undefined;
@@ -100,6 +101,8 @@ export function WorkflowFooter({
   reviewEpoch?: number | undefined;
   questionEpoch?: number | undefined;
   waitingForUser?: boolean | undefined;
+  readClipboardImage?: typeof readSystemClipboardImage | undefined;
+  listProjectFiles?: typeof listFiles | undefined;
 }) {
   const boxHints = useComposerBoxHints(boxHintOverride);
   const fieldEditorOpen = useFieldSessionOwned();
@@ -110,6 +113,8 @@ export function WorkflowFooter({
       <Composer
         key={composerSession}
         onSubmit={handleInput}
+        readClipboardImage={readClipboardImage}
+        listProjectFiles={listProjectFiles}
         onEmptySubmit={onEmptySubmit}
         onRuntimeCommand={onRuntimeCommand}
         commands={commands}

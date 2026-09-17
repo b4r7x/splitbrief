@@ -42,6 +42,12 @@ export const REMOVED_API_PROVIDER_IDS = Object.freeze([
   'together',
 ] as const);
 
+// Named from the catalog itself, so a newly admitted provider cannot leave the
+// diagnostic advertising a shorter built-in list than the schema accepts.
+const BUILT_IN_API_PROVIDER_LIST = Object.keys(API_PROVIDER_CATALOG)
+  .map((id) => `"${id}"`)
+  .join(', ');
+
 export const REMOVED_CLI_TOOL_IDS = Object.freeze(['aider'] as const);
 
 export const REMOVED_RUNNER_KINDS = Object.freeze(['agent-sdk'] as const);
@@ -224,7 +230,7 @@ function validateRemovedApiProvider(input: unknown, ctx: z.RefinementCtx): void 
   ctx.addIssue({
     code: 'custom',
     path: ['provider'],
-    message: `API provider "${runner.provider}" was removed; only "ollama" and "lm-studio" are built in. Configure it as a custom endpoint: set provider/service to your own name plus apiBase and an inline apiKey (docs/CONFIGURATION.md).`,
+    message: `API provider "${runner.provider}" was removed; only ${BUILT_IN_API_PROVIDER_LIST} are built in. Configure it as a custom endpoint: set provider/service to your own name plus apiBase and an inline apiKey (docs/CONFIGURATION.md).`,
   });
 }
 

@@ -9,12 +9,24 @@ import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
  * list, and what it spent. One read at the navigation event; the live bus appends from there.
  */
 export async function hydrateRun(record: RunRecord): Promise<void> {
+  const publish = await readRunHistory(record);
+  publish();
+}
+
+/**
+ * The read half of `hydrateRun`: the log comes off disk and no store is touched until the returned
+ * step runs, which lays the whole run on the stores in one synchronous turn. A selection that was
+ * superseded while it read simply never calls it.
+ */
+export async function readRunHistory(record: RunRecord): Promise<() => void> {
   const replay = await readRunEvents(record.ref);
-  loadEvents(replay.events);
-  if (record.hydration.kind !== 'loaded') return;
-  hydrateFromState(record.hydration.state, {
-    endedAt: lastRunEventTs(replay) ?? runRecordEnd(record),
-  });
+  return () => {
+    loadEvents(replay.events);
+    if (record.hydration.kind !== 'loaded') return;
+    hydrateFromState(record.hydration.state, {
+      endedAt: lastRunEventTs(replay) ?? runRecordEnd(record),
+    });
+  };
 }
 
 /**

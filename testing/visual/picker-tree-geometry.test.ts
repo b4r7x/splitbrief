@@ -1,5 +1,7 @@
+import { stripVTControlCharacters } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { glyph } from '../../src/lib/glyphs.js';
+import { getTerminalCellWidth } from '../../src/utils/display-text.js';
 import { findVisualScenario } from './catalog.js';
 import type { Cell } from './contracts/cells.js';
 import { viewport, type Viewport } from './contracts/geometry.js';
@@ -39,6 +41,11 @@ describe('picker tree geometry', () => {
 
       try {
         const frame = await handle.waitForCheckpoint();
+        const lines = stripVTControlCharacters(frame).split('\n');
+        expect(lines.length).toBeLessThanOrEqual(geometryCase.viewport.rows);
+        for (const line of lines) {
+          expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(geometryCase.viewport.cols);
+        }
         const provenance = ArtifactProvenanceSchema.parse({
           scenarioId: scenario.id,
           scenarioTitle: scenario.title,
@@ -136,7 +143,17 @@ describe('picker tree geometry', () => {
           throw new Error('trailing column missing');
         }
 
+        const authRows = classified.filter((entry) => lineOf(entry.row).includes('─ auth '));
+        expect(authRows).toHaveLength(1);
         for (const entry of classified) {
+          if (authRows.includes(entry)) {
+            // Auth has one left-aligned label and value, with no metadata or disclosure cell.
+            expect(lineOf(entry.row.slice(entry.column, trailingColumn + 3)).trim()).toBe(
+              `${branch}─ auth CLI decides`,
+            );
+            expect(disclosureEntries.some((item) => item.rowIndex === entry.rowIndex)).toBe(false);
+            continue;
+          }
           let modelAbove: (typeof disclosureEntries)[number] | undefined;
           for (const item of disclosureEntries) {
             if (item.rowIndex >= entry.rowIndex) break;

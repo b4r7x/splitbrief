@@ -1,5 +1,6 @@
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { Summary } from '../../../core/schemas/summary.js';
+import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
@@ -11,6 +12,7 @@ import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';
 import { loadSessionArtifactRollups } from './artifact-rollups.js';
+import { resolveCallUsageEvidence } from './call-evidence.js';
 import { reconcileTokenUsageWithSessionLog } from './usage-reconcile.js';
 import {
   applyTaskBreakdownCosts,
@@ -43,6 +45,12 @@ type BuildSummaryOptions = SummaryBase & {
   state: BuildSummaryState & Pick<WorkflowState, 'phase' | 'currentTaskIndex'>;
   taskBreakdowns?: TaskTokenUsage[];
   phaseTimings?: Record<string, number>;
+  /**
+   * The run's per-call usage records (`collectCallUsageEvidence`). A caller that
+   * holds the event stream can supply them; otherwise the run's own session
+   * supplies them, live or off its log.
+   */
+  callEvidence?: readonly CallUsageEvidence[];
 };
 
 function readReviewOutcome(projectDir: string, sessionId: string): Summary['review'] {
@@ -96,6 +104,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     projectDir,
     sessionId,
     pricingCache,
+    callEvidence,
   } = opts;
   const totalTasks = state.tasks.length;
   const completionCounts = countLocalAndEscalatedTasks(state, taskBreakdowns);
@@ -125,6 +134,13 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   const reviewerSpentTool = state.reviewerTool ?? reviewerTool;
   const reviewerSpentModel = state.reviewerTool === undefined ? reviewerModel : state.reviewerModel;
 
+  // Per-call evidence is the run's own, so the run supplies it: from the live
+  // recorder while this process owns the bus, and from the session log for a run
+  // read back off disk. A caller holding the stream itself may pass its own.
+  const callUsage =
+    callEvidence ??
+    (projectDir && sessionId ? resolveCallUsageEvidence({ projectDir, sessionId }) : undefined);
+
   const costBreakdown = calculateCostBreakdown(
     {
       tokenUsage,
@@ -135,18 +151,18 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
       ...(reviewerSpentTool !== undefined && { reviewerTool: reviewerSpentTool }),
       ...(reviewerSpentModel !== undefined && { reviewerModel: reviewerSpentModel }),
       taskBreakdowns,
+      ...(callUsage !== undefined && { callEvidence: callUsage }),
     },
     pricingCache,
   );
   const costedBreakdowns = applyTaskBreakdownCosts({
-    state,
     taskBreakdowns,
     plannerTool: plannerSpentTool,
     implementerTool: implementerSpentTool,
     ...(plannerSpentModel !== undefined && { plannerModel: plannerSpentModel }),
     ...(implementerSpentModel !== undefined && { implementerModel: implementerSpentModel }),
-    ...(reviewerSpentTool !== undefined && { reviewerTool: reviewerSpentTool }),
     pricingCache,
+    ...(callUsage !== undefined && { callEvidence: callUsage }),
   });
 
   let evidenceSummary: Summary['evidenceSummary'];

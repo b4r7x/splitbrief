@@ -189,6 +189,6 @@ task T001: done (typecheck lint test)
 task T002: failed (test)
 phase: complete
 review: failed
-done: 1 tasks, 128.4k tokens
+done: 1 tasks
 ```
 <!-- /generated -->

@@ -95,7 +95,7 @@ describe('assertNotMistypedCommand rejects a retired command', () => {
     { argv: ['handoff'], hint: '.splitbrief/sessions/<id>/' },
     { argv: ['export', 'html'], hint: '.splitbrief/sessions/<id>/' },
     { argv: ['export', 'the', 'ledger'], hint: '.splitbrief/sessions/<id>/' },
-    { argv: ['stats'], hint: 'per-run spend shows on the run screen' },
+    { argv: ['stats'], hint: 'run usage and cost details are available with `/usage`' },
     { argv: ['snapshot', 'list'], hint: '/run accept' },
     { argv: ['worktree'], hint: 'there is no worktree command' },
   ])('rejects $argv instead of starting a workflow', ({ argv, hint }) => {

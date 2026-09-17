@@ -355,12 +355,12 @@ describe('config roundtrip', () => {
     it('converts snake_case keys to camelCase', () => {
       const dir = join(TMP, 'snake-case');
       writeConfigYaml(dir, {
-        workflow: { max_retries: 5, git: { commit_strategy: 'checkpoint' } },
+        workflow: { max_retries: 5, git: { create_branch: true } },
       });
 
       const { config } = loadConfig(dir);
       expect(config.workflow.maxRetries).toBe(5);
-      expect(config.workflow.git?.commitStrategy).toBe('checkpoint');
+      expect(config.workflow.git?.createBranch).toBe(true);
 
       writeConfig(dir, config);
       const written = YAML.parse(
@@ -368,7 +368,7 @@ describe('config roundtrip', () => {
       ) as Record<string, unknown>;
       const workflow = written.workflow as Record<string, unknown>;
       expect(workflow.max_retries).toBe(5);
-      expect((workflow.git as Record<string, unknown>).commit_strategy).toBe('checkpoint');
+      expect((workflow.git as Record<string, unknown>).create_branch).toBe(true);
     });
   });
 });

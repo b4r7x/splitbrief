@@ -8,6 +8,8 @@ Each entry has:
 - Why it's deferred
 - Rough pointer to where implementation would start
 
+Automatic Git history management is outside the current product scope.
+
 ---
 
 ## Priority legend
@@ -53,18 +55,18 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 ## **[Could]** Git-backed per-run code snapshot undo
 
-**Why we want it.** File-level run accept/reject now exists through `/run accept` and `/run reject confirm`, using hash-guarded snapshots. A future git-backed variant could additionally manage optional commit history for workflows whose human owner explicitly opts into git commits.
+**Why we want it.** File-level run accept/reject now exists through `/run accept` and `/run reject confirm`, using hash-guarded snapshots. A future git-backed variant could additionally manage optional commit history for a separately designed future workflow; no such option exists today.
 
 **What it would look like.**
 
-- During the run, commits happen only when commit strategy explicitly enables them.
+- Current runs never stage or commit. Any future history-management design would require a separate product decision and explicit authorization.
 - At end-of-run or on user request, a git-backed reject could squash-delete the session's commits from branch history after the file-level safety check passes.
 - Accept would keep the current branch history.
 
 **Why deferred.**
 
 - Git semantics here are dangerous if the user has pushed generated commits. Need careful UX to detect pushed state and refuse revert.
-- Escalation must not depend on commits. Snapshot-revert has to preserve evidence, diffs, and task artifacts even when `git.commitStrategy` is `none`.
+- Escalation must not depend on commits. Snapshot-revert has to preserve evidence, diffs, and task artifacts without relying on the Git index or commits.
 - Non-git projects (we don't support them today, but might) can't use git stash; would need file-copy fallback.
 
 **Where to start when we do it.**

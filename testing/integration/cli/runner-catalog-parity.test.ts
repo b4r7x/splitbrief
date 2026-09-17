@@ -6,6 +6,7 @@ import {
   PLANNER_API_PROVIDER_IDS,
 } from '../../../src/core/providers/api-provider-catalog.js';
 import { FORBIDDEN_API_PROVIDER_IDS } from '../../../src/core/providers/api-provider-verdicts.js';
+import type { SeatPickerRole } from '../../../src/core/runners/seat-roles.js';
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
@@ -36,10 +37,8 @@ import {
 
 type RunnerRole = 'planner' | 'implementer';
 
-// CLI ids are written out rather than derived: a catalog `roles` edit must break
-// this file, which a filter over the same catalog could never do. The API sets
-// follow the catalog itself — every admitted provider is a local implementer-only
-// service, so a written-out list would only ever record that same fact twice.
+// Keep the admitted IDs independent of the catalogs so an accidental role or
+// provider change fails here. Local API providers support every workflow seat.
 const ADMITTED_IDS: Readonly<Record<RunnerRole, Readonly<{ cli: string[]; api: string[] }>>> = {
   planner: {
     cli: [
@@ -52,7 +51,7 @@ const ADMITTED_IDS: Readonly<Record<RunnerRole, Readonly<{ cli: string[]; api: s
       'command-code',
       'antigravity',
     ],
-    api: [],
+    api: ['ollama', 'lm-studio', 'llama-cpp'],
   },
   implementer: {
     cli: [
@@ -65,11 +64,11 @@ const ADMITTED_IDS: Readonly<Record<RunnerRole, Readonly<{ cli: string[]; api: s
       'command-code',
       'antigravity',
     ],
-    api: [...KNOWN_API_PROVIDER_IDS],
+    api: ['ollama', 'lm-studio', 'llama-cpp'],
   },
 };
 
-function pickerIdsForRole(role: RunnerRole): string[] {
+function pickerIdsForRole(role: SeatPickerRole): string[] {
   return buildPickerOptions(
     role,
     assemblePickerDescriptors(),
@@ -188,12 +187,13 @@ describe('runner catalog parity by role', () => {
     expect(new Set(descriptorCliIds).size).toBe(descriptorCliIds.length);
     expect(new Set(descriptorApiIds).size).toBe(descriptorApiIds.length);
 
-    for (const role of ['planner', 'implementer'] as const) {
+    for (const role of ['planner', 'implementer', 'reviewer'] as const) {
       const pickerIds = pickerIdsForRole(role);
       expect(new Set(pickerIds).size).toBe(pickerIds.length);
 
-      const expectedCliIds = ADMITTED_IDS[role].cli;
-      const expectedApiIds = ADMITTED_IDS[role].api;
+      const admissionRole = role === 'reviewer' ? 'planner' : role;
+      const expectedCliIds = ADMITTED_IDS[admissionRole].cli;
+      const expectedApiIds = ADMITTED_IDS[admissionRole].api;
       const expectedMetaIds = ['custom-command'];
 
       for (const id of expectedCliIds) {
@@ -216,7 +216,7 @@ describe('runner catalog parity by role', () => {
         (id) => !(PLANNER_API_PROVIDER_IDS as readonly string[]).includes(id),
       );
 
-      if (role === 'planner') {
+      if (role !== 'implementer') {
         for (const id of implementerOnlyCli) {
           expect(pickerIds).not.toContain(id);
         }

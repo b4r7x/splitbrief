@@ -73,7 +73,7 @@ src/
 │
 ├── cli/                      Non-React CLI logic
 │   ├── commands/             commander handlers (init, start, resume, spec, status)
-│   ├── init-stores.ts        Eager store bootstrap before React renders
+│   ├── init-stores.ts        Synchronous seed before render; discovery after mount
 │   └── render/               Ink / fullscreen-ink render setup (`app.ts` entry)
 │
 ├── core/                     Shared domain (no React, no engine-ness)
@@ -130,7 +130,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 
 1. Parse CLI flags via commander.
 2. Resolve project dir; load config from `.splitbrief/config.yaml`.
-3. `initStores()` — load config, sessions, skills into module-scoped stores before anything renders. This is the only place where `store.load()` runs. Doing it earlier (inside React hooks) caused infinite render loops, so it's lifted out.
+3. `initStoresForTuiMount()` seeds config, sessions and UI state synchronously, awaits hook trust, then starts asynchronous discovery. The TUI mounts before discovery finishes; the input remains editable during preparation. Explicit execution still waits for admission and ownership checks. Read-only discovery observations are distinct from current execution admission.
 4. Initialise the router store (`routerStore.init({ screen, feature?, resumeState? })`).
 5. Call `renderApp(<App/>)`, which hands off to Ink.
 
@@ -284,7 +284,7 @@ When a capability is missing, the orchestrator falls back:
 - **No session resume?** → Rebuild context from `session.jsonl` messages on resume. See `src/engine/orchestrator/transcript/rebuild.ts` — for api-kind backends the messages are injected as a `messages[]` array; for CLI backends without native resume, as a `<!-- prior conversation -->` prompt prefix.
 - **No `injectUserTurn`?** → Queue user messages, drain at next phase boundary (backends that implement `injectUserTurn` get them dispatched immediately as native user turns).
 - **No conversational planning?** → User answers only at approval gates; no inline Q&A.
-- **No hint escalation?** → Skip the hint tier: after local retries and the optional tier 0 intermediate model, go straight to full escalation on failure.
+- **No hint escalation?** → Skip the hint tier: after local retries and the optional tier 0 intermediate model, enter explicit recovery on failure.
 
 Adding a new capability means extending `PlannerCapabilities`, setting it per backend, and adding the fallback branch in the orchestrator. No backend-identity `if` chains.
 
@@ -461,7 +461,7 @@ src/
 │   ├── errors.ts                  CliError type + exit-code helpers
 │   ├── headless.ts                runHeadless: --json mode without Ink
 │   ├── hook-trust-prompt.ts       Interactive hook-trust gating
-│   ├── init-stores.ts             Eager store bootstrap before render
+│   ├── init-stores.ts             Synchronous seed, then asynchronous discovery
 │   ├── options.ts                 Shared commander option parsers
 │   ├── render/                    Ink / fullscreen-ink mount (`app.ts` entry)
 │   └── setup.ts                   resolveProjectDir + setup helpers
@@ -876,7 +876,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`
 
 **Validation / escalation / git (6):**
-`validate`, `validation_baseline`, `escalate`, `git_commit`, `git_checkpoint`, `git_branch_created`
+`validate`, `validation_baseline`, `escalate`, `git_branch_created`. Historical `git_commit` and `git_checkpoint` events remain readable; current execution never publishes them
 
 **Clarifications / queue / messages (7):**
 `clarifications_collected`, `clarification_answered`, `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`
@@ -1146,9 +1146,9 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 
 ---
 
-## 10. Runtime commands (full list, 25)
+## 10. Runtime commands (full list, 26)
 
-The registry holds 25 commands in five categories. Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
+The registry holds 26 commands in five categories. Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
 
 **Navigate**
 
@@ -1192,6 +1192,7 @@ The registry holds 25 commands in five categories. Defined in `src/core/runtime/
 | `/diff` | Expand or collapse the latest diff |
 | `/sidebar` | Show or hide the workflow sidebar |
 | `/tasks` | Show the brief list |
+| `/usage` | Open token usage and monetary estimates for the current workflow |
 
 **Input & output**
 
@@ -1209,8 +1210,6 @@ The registry holds 25 commands in five categories. Defined in `src/core/runtime/
 ```yaml
 workflow:
   driftChainThreshold: 0.6     # 0.0–1.0; default 0.6; emit drift_chain_detected at/above this score
-  briefReview: simple          # 'simple' is the only accepted value
-  showSpend: true              # default true; hide every spend figure when false
 
 palette:
   customActions:               # command-palette spec: add project-specific palette entries

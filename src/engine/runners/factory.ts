@@ -47,6 +47,7 @@ const loadConfiguredCustomImplementer = lazy(() => import('../implementers/comma
 
 async function loadPlanner(
   config: Config,
+  seat: 'planner' | 'reviewer',
   initialSessionId?: string | null,
   options?: PlannerFactoryOptions,
 ): Promise<Planner> {
@@ -72,7 +73,7 @@ async function loadPlanner(
     }
     case 'api': {
       const mod = await loadApiPlanner();
-      return mod.createApiPlanner(config);
+      return mod.createApiPlanner(config, seat);
     }
     case 'shell': {
       const mod = await loadShellPlanner();
@@ -106,7 +107,7 @@ export async function createPlanner(
     planner = mod.createConfiguredCustomPlanner(configured, runtime, invocation);
   } else {
     const admission = admitPlannerBackend({ config, authority, seat: 'planner' });
-    planner = await loadPlanner(config, options.initialSessionId, {
+    planner = await loadPlanner(config, 'planner', options.initialSessionId, {
       ...options,
       ...(admission.trustedCli !== undefined && { trustedCli: admission.trustedCli }),
     });
@@ -147,7 +148,7 @@ export async function createReviewer(
     // the planner backends as a config whose planner slot holds the reviewer.
     const reviewerConfig: Config = { ...config, planner: runner };
     const admission = admitPlannerBackend({ config: reviewerConfig, authority, seat: 'reviewer' });
-    reviewer = await loadPlanner(reviewerConfig, null, {
+    reviewer = await loadPlanner(reviewerConfig, 'reviewer', null, {
       ...options,
       ...(admission.trustedCli !== undefined && { trustedCli: admission.trustedCli }),
     });

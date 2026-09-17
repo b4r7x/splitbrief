@@ -18,6 +18,7 @@ import {
   markInterruptedClaudeStream,
 } from './stream.js';
 import { buildClaudeArgs } from './args.js';
+import { withCliInvocationIdentity } from '../invocation-identity.js';
 import {
   claudeCredentialValues,
   defaultClaudeEnv,
@@ -70,6 +71,8 @@ interface ClaudeCallRunOptions {
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   authChannel?: CliAuthChannelId | undefined;
+  /** The runner's raw `authChannel`, kept apart from the resolved default in `authChannel`. */
+  configuredAuthChannel?: CliAuthChannelId | undefined;
   executable?: CliExecutableIdentity | null | undefined;
   signal?: AbortSignal | undefined;
   callContext?: RunnerCallContext | undefined;
@@ -80,7 +83,22 @@ interface ClaudeCallRunOptions {
 async function runClaudeCall(
   opts: ClaudeCallRunOptions,
 ): Promise<{ result: RunnerCallResult; sessionId: string | null }> {
-  const context = opts.callContext ?? createClaudeCallContext(opts.model);
+  const callContext = opts.callContext ?? createClaudeCallContext(opts.model);
+  // Without a trusted executable nothing is spawned: resolution below refuses.
+  const context =
+    opts.executable === null || opts.executable === undefined
+      ? callContext
+      : withCliInvocationIdentity({
+          runner: {
+            kind: 'cli',
+            tool: 'claude-code',
+            ...(opts.configuredAuthChannel !== undefined && {
+              authChannel: opts.configuredAuthChannel,
+            }),
+          },
+          callContext,
+          executable: opts.executable,
+        });
   const { state, handleLine } = createStreamHandler({
     onOutput: opts.onOutput,
     onSessionId: opts.onSessionId,
@@ -149,6 +167,8 @@ export interface ClaudePlannerStreamOpts {
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   authChannel?: CliAuthChannelId | undefined;
+  /** The runner's raw `authChannel`, kept apart from the resolved default in `authChannel`. */
+  configuredAuthChannel?: CliAuthChannelId | undefined;
   env?: NodeJS.ProcessEnv | undefined;
   executable?: CliExecutableIdentity | null | undefined;
   effort?: EffortLevel | undefined;
@@ -185,6 +205,7 @@ export async function runClaudePlannerStream(
     onCallEvent: opts.onCallEvent,
     model: opts.model,
     authChannel: opts.authChannel,
+    configuredAuthChannel: opts.configuredAuthChannel,
     executable: opts.executable,
     signal: opts.signal,
     callContext: opts.callContext,
@@ -205,6 +226,8 @@ export interface ClaudeOneShotOpts {
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   authChannel?: CliAuthChannelId | undefined;
+  /** The runner's raw `authChannel`, kept apart from the resolved default in `authChannel`. */
+  configuredAuthChannel?: CliAuthChannelId | undefined;
   executable?: CliExecutableIdentity | null | undefined;
   effort?: EffortLevel | undefined;
   configuredArgs?: readonly string[] | undefined;
@@ -236,6 +259,7 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
     onCallEvent: opts.onCallEvent,
     model: opts.model,
     authChannel: opts.authChannel,
+    configuredAuthChannel: opts.configuredAuthChannel,
     executable: opts.executable,
     signal: opts.signal,
     callContext: opts.callContext,

@@ -1,6 +1,7 @@
 import type { ProjectContext, CodeContext } from '../../core/state/types.js';
 import { taskFiles, type Task } from '../../core/schemas/task.js';
 import type { ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
+import type { BuildOutputContract } from '../implementers/file-bundle.js';
 import { extractFunctionContext } from '../parsers/scope-extractor.js';
 import { DECLARATION_NAME_RE } from '../parsers/code-patterns.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
@@ -51,6 +52,7 @@ function buildTaskSections(
   task: Task,
   context: ProjectContext | undefined,
   writesFiles: ImplementerWriteMode,
+  outputContract: BuildOutputContract | undefined,
 ): string[] {
   const sections: string[] = [];
 
@@ -116,9 +118,11 @@ function buildTaskSections(
     ...allConstraints.map((c) => `- ${c}`),
   );
   const completionInstruction =
-    writesFiles === 'direct'
-      ? `Edit ${files.join(', ')} directly in the isolation directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
-      : `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`;
+    outputContract === 'file-bundle-v1'
+      ? `Answer with one JSON object: {"version":1,"files":[{"path":"...","action":"create"|"modify","content":"..."}]}. Carry the complete new contents of every file listed above that you change, and leave the rest out. No markdown fences. No explanations.`
+      : writesFiles === 'direct'
+        ? `Edit ${files.join(', ')} directly in the isolation directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
+        : `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`;
   sections.push('', completionInstruction);
 
   return sections;
@@ -223,12 +227,26 @@ export function formatTaskPrompt(opts: {
   contextLength?: number | undefined;
   languageContext?: LanguageContext | undefined;
   writesFiles?: ImplementerWriteMode | undefined;
+  outputContract?: BuildOutputContract | undefined;
 }): string {
-  const { task, context, contextLength, languageContext, writesFiles = 'extracted-code' } = opts;
+  const {
+    task,
+    context,
+    contextLength,
+    languageContext,
+    writesFiles = 'extracted-code',
+    outputContract,
+  } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
-  const sections = buildTaskSections(task, context, writesFiles);
+  const sections = buildTaskSections(task, context, writesFiles, outputContract);
 
-  if (task.action === 'modify' || task.currentCodeByFile) {
+  // A bundle answer carries complete files, so every captured target goes in
+  // whole: a formatter that cut one would ask for a rewrite of code the model
+  // never saw. A prompt that does not fit is refused by the call's own budget,
+  // with its figures, rather than trimmed to be admitted.
+  if (outputContract === 'file-bundle-v1') {
+    insertCodeContext(sections, task);
+  } else if (task.action === 'modify' || task.currentCodeByFile) {
     const budget = contextLength
       ? computeTokenBudget({
           system: formatImplementerSystemPreamble(ctx, writesFiles),
@@ -250,6 +268,7 @@ export function formatRetryPrompt(opts: {
   contextLength?: number | undefined;
   languageContext?: LanguageContext | undefined;
   writesFiles?: ImplementerWriteMode | undefined;
+  outputContract?: BuildOutputContract | undefined;
 }): string {
   const {
     task,
@@ -259,14 +278,17 @@ export function formatRetryPrompt(opts: {
     contextLength,
     languageContext,
     writesFiles = 'extracted-code',
+    outputContract,
   } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const framing = framingForAttempt(attempt);
-  const sections = buildTaskSections(task, context, writesFiles);
+  const sections = buildTaskSections(task, context, writesFiles, outputContract);
 
   sections.unshift(framing, '', 'Error from previous attempt:', error, '');
 
-  if (task.currentCode || task.currentCodeByFile) {
+  if (outputContract === 'file-bundle-v1') {
+    insertCodeContext(sections, task);
+  } else if (task.currentCode || task.currentCodeByFile) {
     const budget = contextLength
       ? computeTokenBudget({
           system: formatImplementerSystemPreamble(ctx, writesFiles),

@@ -64,16 +64,27 @@ function getHint(input: {
   nav: { isOnCustomItem: boolean; currentRightIsCustom: boolean };
   hasRefresh: boolean;
   maxVisible: number;
+  width: number;
   expandedHint?: string | undefined;
 }): string {
   const { kind, nav, hasRefresh, maxVisible } = input;
   if (maxVisible <= 0) {
     return `Terminal too short${SOFT_SEP}esc cancel`;
   }
-  const refreshHint = hasRefresh ? `${SOFT_SEP}ctrl+r refresh` : '';
+  const fitHint = (action: string, escapeHint: string, columns: boolean): string => {
+    const navigation = [...(columns ? ['←→ column'] : []), '↑↓ select'];
+    const extras = [
+      ...(nav.currentRightIsCustom ? ['ctrl+d delete'] : []),
+      ...(hasRefresh ? ['ctrl+r refresh'] : []),
+    ];
+    const compose = (navigationHints: string[], extraHints: string[]) =>
+      [...navigationHints, action, escapeHint, ...extraHints].filter(Boolean).join(SOFT_SEP);
+    const candidates = [compose(navigation, extras), compose([], extras), compose([], [])];
+    return candidates.find((hint) => getTerminalCellWidth(hint) <= input.width) ?? compose([], []);
+  };
   if (kind === 'terminal') {
     const verb = input.terminalVerb ?? 'select';
-    return `↑↓ select${SOFT_SEP}⏎ ${verb}${SOFT_SEP}esc cancel${refreshHint}`;
+    return fitHint(`⏎ ${verb}`, 'esc cancel', false);
   }
   if (kind === 'expanded') {
     // The launcher is pinned above the expansion and answers for itself, so the
@@ -81,16 +92,12 @@ function getHint(input: {
     const lead = nav.isOnCustomItem ? '⏎ add custom' : (input.expandedHint ?? '⏎ choose route');
     // An empty lead is a row with no verb of its own; it drops its slot rather
     // than opening the line with a separator that reads as a missing key.
-    const parts = ['←→ column', '↑↓ select', lead, 'esc collapse'].filter((part) => part !== '');
-    return `${parts.join(SOFT_SEP)}${refreshHint}`;
+    return fitHint(lead, 'esc collapse', true);
   }
   if (nav.isOnCustomItem) {
-    return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ add custom${SOFT_SEP}esc cancel${refreshHint}`;
+    return fitHint('⏎ add custom', 'esc cancel', true);
   }
-  if (nav.currentRightIsCustom) {
-    return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ confirm${SOFT_SEP}esc cancel${SOFT_SEP}ctrl+d delete${refreshHint}`;
-  }
-  return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ confirm${SOFT_SEP}esc cancel${refreshHint}`;
+  return fitHint('⏎ confirm', 'esc cancel', true);
 }
 
 /**
@@ -253,6 +260,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     nav,
     hasRefresh: !!onRefresh,
     maxVisible,
+    width: totalBoxWidth,
     expandedHint: rightProps.expandedHint?.(
       rightCurrent && isRealRightItem(rightCurrent) ? rightCurrent : undefined,
     ),
@@ -272,6 +280,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     rawPreview === undefined ? undefined : sanitizeTerminalDisplayText(rawPreview);
   const showPreview = previewText !== undefined && previewText !== '' && cols > PREVIEW_MIN_COLS;
   const leftEmptyText = `No ${(leftProps.label ?? 'items').toLowerCase()} match`;
+  const wheelStep = (direction: 'up' | 'down'): 1 | -1 => (direction === 'up' ? -1 : 1);
 
   return (
     <Box
@@ -301,6 +310,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
             contentMaxWidth={leftContentWidth}
             emptyText={leftEmptyText}
             onRowActivate={nav.activateLeft}
+            onWheel={(direction) => nav.moveLeft(wheelStep(direction))}
             rowZonePrefix="runner-left"
             rowZoneZ={ROW_ZONE_Z_OVERLAY}
             renderRow={(item, isCursor, maxWidth) => {
@@ -344,6 +354,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
                 if (nav.cycleRight(slot.navIndex) === 'stepped') return;
                 nav.activateRight(slot.navIndex);
               }}
+              onWheel={(direction) => nav.moveRight(wheelStep(direction))}
               rowZonePrefix="runner-right"
               rowZoneZ={ROW_ZONE_Z_OVERLAY}
               renderRow={(slot, isCursor, maxWidth) => {
@@ -373,12 +384,12 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           )}
         </Box>
       </Box>
-      <Box width={totalBoxWidth} marginTop={1}>
-        <Text color={t.textDim} wrap="truncate-end">
+      <Box width={totalBoxWidth} height={2} overflow="hidden" marginTop={1}>
+        <Text color={t.textDim} wrap="wrap">
           {showPreview ? previewText : ' '}
         </Text>
       </Box>
-      <Box width={totalBoxWidth} marginTop={1}>
+      <Box width={totalBoxWidth}>
         <Text color={t.textDim} wrap="truncate-end">
           {hint}
         </Text>

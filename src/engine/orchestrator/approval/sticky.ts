@@ -58,6 +58,7 @@ export async function gateStickyTier(args: StickyTierInput): Promise<GateDecisio
   const grants = input.grants ?? readApprovalsStore(projectDir).grants;
   const classifyContext = {
     actionDescription,
+    targetPath: input.targetPath,
     taskFiles: taskFiles(task),
     taskInBounds: taskDeclaredPatterns(task),
     dependsOnFiles,

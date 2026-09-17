@@ -3,6 +3,7 @@ import { apiKeyEnvReference } from './client/api-key.js';
 import { validateProviderBaseURL } from './client/connection.js';
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
+import { createLlamaCppProvider } from './llama-cpp.js';
 import { createOpenAICompatProvider } from './openai-compat.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
@@ -20,6 +21,7 @@ type ProviderFactory = (overrides?: ProviderOverrides) => ProviderDef;
 export const KNOWN_PROVIDERS: Readonly<Record<ApiProviderId, ProviderFactory>> = Object.freeze({
   ollama: createOllamaProvider,
   'lm-studio': createLmStudioProvider,
+  'llama-cpp': createLlamaCppProvider,
 });
 
 function defaultEndpointForPolicy(policy: EndpointPolicy): string | undefined {

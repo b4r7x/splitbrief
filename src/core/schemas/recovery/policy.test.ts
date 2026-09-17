@@ -71,8 +71,12 @@ describe('allowedActionsForReason', () => {
     ]);
   });
 
-  it('review-failed only pauses or ends the run', () => {
-    expect(allowedActionsForReason('review-failed')).toEqual(['pause-run', 'end-run']);
+  it('review-failed pauses, ends, or re-issues a review that reached no verdict', () => {
+    expect(allowedActionsForReason('review-failed')).toEqual([
+      'retry-same-worker',
+      'pause-run',
+      'end-run',
+    ]);
   });
 
   it('returns a non-empty fresh array for every reason', () => {

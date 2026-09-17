@@ -98,6 +98,8 @@ export interface TwoColumnNavState<L, R> {
   terminalPane: TerminalPane | undefined;
   isOnCustomItem: boolean;
   currentRightIsCustom: boolean;
+  moveLeft: (direction: 1 | -1) => void;
+  moveRight: (direction: 1 | -1) => void;
   activateLeft: (index: number) => void;
   activateRight: (index: number) => void;
   cycleRight: (index: number) => CycleOutcome;

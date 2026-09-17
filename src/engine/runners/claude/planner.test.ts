@@ -82,7 +82,18 @@ describe('runClaudePlannerStream', () => {
     });
 
     expect(result.sessionId).toBe('sess-abc');
-    expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 7 });
+    expect(result.usage).toEqual({
+      inputTokens: 42,
+      outputTokens: 7,
+      counterCoverage: {
+        input: 'reported',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { output: 7 },
+    });
     expect(chunks).toEqual(['Hello ', 'world']);
     expect(result.text).toBe('Hello world');
   });

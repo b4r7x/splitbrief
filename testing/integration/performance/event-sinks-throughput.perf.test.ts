@@ -5,12 +5,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../src/core/paths-io.js';
+import { SessionLogEventEntrySchema } from '../../../src/core/schemas/session-log.js';
 import type { EngineEvent, EngineEventOf } from '../../../src/engine/events/types.js';
 import { createJsonlSink } from '../../../src/engine/events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../../src/engine/events/sinks/stdout-json.js';
+import { HeadlessJsonRecordSchema } from '../../../src/engine/events/public-json.js';
 
 const sessionId = 'perf-session';
-const sentinel = 'sink-private-sentinel-74126';
+const sentinel = 'sk-sink-private-sentinel-74126';
 
 function withTempProject<T>(prefix: string, run: (projectDir: string) => T): T {
   const projectDir = mkdtempSync(join(tmpdir(), prefix));
@@ -87,7 +89,7 @@ function protectedPublicEvents(cycles: number): EngineEvent[] {
 }
 
 describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('event sinks throughput perf', () => {
-  it('writes protected JSONL events without retaining raw transcript fields', () => {
+  it('retains public JSONL events while redacting credentials at event-sink scale', () => {
     withTempProject('splitbrief-jsonl-perf-', (projectDir) => {
       const sink = createJsonlSink({ projectDir, sessionId });
       const events = protectedPublicEvents(700);
@@ -99,8 +101,15 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('event sinks throughput per
       forceGc();
 
       const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf8');
-      expect(log.split('\n').filter(Boolean).length).toBe(1_401);
+      const records = log
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => SessionLogEventEntrySchema.parse(JSON.parse(line)));
+      expect(records.map((record) => record.type)).toEqual(events.map((event) => event.type));
       expect(log).not.toContain(sentinel);
+      expect(log).not.toContain('sk-abcdefghijklmnopqrst');
+      expect(log).toContain('assistant sk-***REDACTED*** 0');
+      expect(log).toContain('running echo sk-***REDACTED***');
       expect(elapsedMs).toBeLessThan(4_000);
     });
   });
@@ -123,8 +132,14 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('event sinks throughput per
       forceGc();
 
       const output = writes.join('');
-      expect(writes).toHaveLength(1_401);
+      const records = writes.map((line) => HeadlessJsonRecordSchema.parse(JSON.parse(line)));
+      expect(records.map((record) => record.type === 'event' && record.data.type)).toEqual(
+        events.map((event) => event.type),
+      );
       expect(output).not.toContain(sentinel);
+      expect(output).not.toContain('sk-abcdefghijklmnopqrst');
+      expect(output).toContain('assistant sk-***REDACTED*** 0');
+      expect(output).toContain('running echo sk-***REDACTED***');
       expect(elapsedMs).toBeLessThan(3_000);
     } finally {
       spy.mockRestore();

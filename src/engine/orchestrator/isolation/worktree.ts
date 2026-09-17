@@ -13,6 +13,8 @@ import { createWorktree } from './create-worktree.js';
 import { assertIsolationDirReadable, resolveConfinedIsolationWorktreePath } from './path.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { writeCurrentFileContent } from '../approval/file-snapshots/contents.js';
+import { writeConfinedEntry } from '../approval/file-snapshots/entry.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 
 const MAX_SLUG_LENGTH = 64;
 
@@ -191,7 +193,18 @@ export async function removeNodeModulesExclude(file: string, sessionId: string):
 
 async function seedIsolationWorktree(sourceDir: string, wtPath: string): Promise<SeedResult> {
   const snapshot = await getChangedFilesSnapshot(sourceDir);
+  for (const [file, entry] of Object.entries(snapshot.dirtyFileEntries ?? {})) {
+    const bytes = entry === null ? undefined : Buffer.from(entry.base64, 'base64');
+    await writeConfinedEntry(
+      wtPath,
+      file,
+      entry === null || bytes === undefined
+        ? { kind: 'absent' }
+        : { kind: 'file', bytes, sha256: sha256Hex(bytes), mode: entry.mode },
+    );
+  }
   for (const [file, content] of Object.entries(snapshot.dirtyFileContents)) {
+    if (Object.hasOwn(snapshot.dirtyFileEntries ?? {}, file)) continue;
     assertPathConfined(file, sourceDir);
     if (await isSymlinkAt(join(sourceDir, file))) {
       throw isolationError.seedSymlink(file);

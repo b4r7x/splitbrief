@@ -54,6 +54,7 @@ const ENTER = '\r';
 const DEFAULT_HOME_HINT = '/help · /crew · /settings · /skills · ctrl+k commands';
 const HOME_HINT = '/help · /crew · /settings · /skills · ctrl+r recent · ctrl+k commands';
 const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
+const CHECKING_STATUS = 'Checking tools · esc cancel';
 const FOCUS_BAR = '▌';
 // Real session-file I/O (saveSummary + load/loadAll) can outlive vi.waitFor's 1s default
 // under full-suite load; filter-settle polls need more headroom.
@@ -598,7 +599,7 @@ describe('HomeScreen', () => {
     ui.stdin.write(ENTER);
 
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('Start is blocked');
+      expect(ui.lastFrame() ?? '').toContain('The configured planner could not be verified.');
     }, SESSION_FILTER_WAIT_MS);
     expect(prepareExecutionMock).toHaveBeenCalledOnce();
     expect(prepareExecutionMock.mock.calls[0]?.[0]).toMatchObject({
@@ -693,8 +694,8 @@ describe('HomeScreen', () => {
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('Tool preparation · Failed');
-      expect(frame).toContain('runners.blocker');
-      expect(frame).toContain('2 checks hidden');
+      expect(frame).toContain('A configured runner must be fixed');
+      expect(frame.indexOf('must be fixed')).toBeLessThan(frame.indexOf('Warnings'));
       expect(frame).toContain('r retry · esc back · s settings');
     }, SESSION_FILTER_WAIT_MS);
     expect(routerStore.get()).toEqual({ screen: 'home' });
@@ -722,12 +723,17 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('during preparation the submitted text stays in the composer with no byline', async () => {
+  it('states the check on the reserved row without moving the screen under it', async () => {
     const pending = Promise.withResolvers<PreparationOutcome>();
     prepareExecutionMock.mockReturnValue(pending.promise);
 
     const ui = renderHome();
     await flushEffects();
+    const idleFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const idleRows = idleFrame.split('\n');
+    const hintRow = idleRows.findIndex((row) => row.includes(DEFAULT_HOME_HINT));
+    expect(hintRow).toBeGreaterThan(0);
+
     ui.stdin.write('background preparation');
     await flushEffects();
     ui.stdin.write(ENTER);
@@ -737,16 +743,30 @@ describe('HomeScreen', () => {
       SESSION_FILTER_WAIT_MS,
     );
     await flushEffects();
-    const submittedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(submittedFrame).toContain('background preparation');
-    expect(submittedFrame).not.toContain('Waking your crew…');
+    const submittedRows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    expect(submittedRows.join('\n')).toContain('background preparation');
+    // The status borrows the hint's own row: same index, same row count, nothing else moves.
+    expect(submittedRows[hintRow]).toContain(CHECKING_STATUS);
+    expect(submittedRows[hintRow]).not.toContain('drop an image');
+    expect(submittedRows.length).toBe(idleRows.length);
+    // Only the status row and the line the draft sits on differ; every other row is byte-identical.
+    expect(submittedRows.flatMap((row, index) => (row === idleRows[index] ? [] : [index]))).toEqual(
+      [hintRow, idleRows.findIndex((row) => row.includes('Describe your feature…'))],
+    );
+    expect(submittedRows.join('\n')).not.toContain('Waking your crew…');
 
     await tick(500);
-    const settledFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(settledFrame).toContain('|____/| .__/');
-    expect(settledFrame).toContain('background preparation');
-    expect(settledFrame).toContain(DEFAULT_HOME_HINT);
-    expect(settledFrame).not.toContain('Waking your crew…');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[hintRow]).toContain(CHECKING_STATUS);
+
+    ui.stdin.write(ESC);
+    await vi.waitFor(() => {
+      const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+      expect(rows[hintRow]).toContain(DEFAULT_HOME_HINT);
+    }, SESSION_FILTER_WAIT_MS);
+    const settledRows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    expect(settledRows.join('\n')).toContain('|____/| .__/');
+    expect(settledRows.join('\n')).toContain('background preparation');
+    expect(settledRows.length).toBe(idleRows.length);
     ui.unmount();
   });
 

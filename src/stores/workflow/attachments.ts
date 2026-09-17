@@ -27,6 +27,10 @@ function remove(id: string): void {
   store.set((s) => ({ pending: s.pending.filter((a) => a.id !== id) }));
 }
 
+function replacePendingImages(images: readonly Attachment[]): void {
+  store.set({ pending: images.map(cloneAttachment) });
+}
+
 function drain(): Attachment[] {
   const out = store.get().pending;
   if (out.length === 0) return [];
@@ -42,6 +46,7 @@ export const attachmentsStore = {
   ...storeBase(store),
   add,
   remove,
+  replacePendingImages,
   drain,
   peek,
 };

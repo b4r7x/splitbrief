@@ -31,6 +31,7 @@ export const StreamUsageSchema = z
     prompt_tokens_details: z
       .looseObject({
         cached_tokens: z.number().nullable().optional(),
+        cache_write_tokens: z.number().nullable().optional(),
       })
       .nullable()
       .optional(),
@@ -95,6 +96,9 @@ export function toStreamChunk(chunk: ChatCompletionChunk): StreamChunk {
             prompt_tokens_details: {
               ...(chunk.usage.prompt_tokens_details.cached_tokens !== undefined && {
                 cached_tokens: chunk.usage.prompt_tokens_details.cached_tokens,
+              }),
+              ...(chunk.usage.prompt_tokens_details.cache_write_tokens !== undefined && {
+                cache_write_tokens: chunk.usage.prompt_tokens_details.cache_write_tokens,
               }),
             },
           }),

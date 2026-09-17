@@ -8,6 +8,12 @@ import {
   createRunnerConfigSchema,
 } from './runner-fields.js';
 
+const LOCAL_API_SEAT_SCHEMAS = [
+  createPlannerConfigSchema(GenerationCommonFields),
+  createPlannerConfigSchema(GenerationCommonFields, 'reviewer'),
+  createRunnerConfigSchema(GenerationCommonFields),
+] as const;
+
 describe('createRunnerConfigSchema', () => {
   it('accepts the runner config shapes users can put in config files', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
@@ -174,23 +180,30 @@ describe('createRunnerConfigSchema', () => {
     }
   });
 
-  it('enforces catalog role admission for API runners while retaining explicit custom providers', () => {
-    const plannerSchema = createPlannerConfigSchema(GenerationCommonFields);
-    const implementerSchema = createRunnerConfigSchema(GenerationCommonFields);
-
+  it('admits the local API providers in every configured seat, with each seat keeping its own endpoint', () => {
     for (const provider of ['ollama', 'lm-studio'] as const) {
+      const apiBase =
+        provider === 'ollama' ? 'http://127.0.0.1:11434/v1' : 'http://localhost:1234/v1';
       const localRunner = {
         kind: 'api' as const,
         provider,
         service: provider,
         offering: 'local' as const,
-        apiBase: provider === 'ollama' ? 'http://localhost:11434/v1' : 'http://localhost:1234/v1',
+        apiBase,
         model: 'local-model',
       };
 
-      expect(plannerSchema.safeParse(localRunner).success).toBe(false);
-      expect(implementerSchema.safeParse(localRunner).success).toBe(true);
+      for (const schema of LOCAL_API_SEAT_SCHEMAS) {
+        const result = schema.safeParse(localRunner);
+        expect(result.success).toBe(true);
+        expect(result.data).toMatchObject({ provider, apiBase, model: 'local-model' });
+      }
     }
+  });
+
+  it('enforces catalog role admission for API runners while retaining explicit custom providers', () => {
+    const plannerSchema = createPlannerConfigSchema(GenerationCommonFields);
+    const implementerSchema = createRunnerConfigSchema(GenerationCommonFields);
 
     const customRunner = {
       kind: 'api' as const,
@@ -202,6 +215,30 @@ describe('createRunnerConfigSchema', () => {
     };
     expect(plannerSchema.safeParse(customRunner).success).toBe(true);
     expect(implementerSchema.safeParse(customRunner).success).toBe(true);
+  });
+
+  it('keeps the model, credential and identity rules in every seat that admits a local provider', () => {
+    const localOllama = {
+      kind: 'api' as const,
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local' as const,
+      apiBase: 'http://localhost:11434/v1',
+      model: 'local-model',
+    };
+    const { model: _model, ...withoutModel } = localOllama;
+
+    for (const schema of LOCAL_API_SEAT_SCHEMAS) {
+      expect(schema.safeParse(withoutModel).success).toBe(false);
+      expect(schema.safeParse({ ...localOllama, model: '' }).success).toBe(false);
+      expect(schema.safeParse({ ...localOllama, apiKey: 'env:OLLAMA_API_KEY' }).success).toBe(
+        false,
+      );
+      expect(schema.safeParse({ ...localOllama, apiKey: 'env:OLLAMA_LOCAL_API_KEY' }).success).toBe(
+        true,
+      );
+      expect(schema.safeParse({ ...localOllama, offering: 'payg' }).success).toBe(false);
+    }
   });
 
   it('admits only the dedicated local credential reference for Ollama', () => {
@@ -302,6 +339,24 @@ describe('createRunnerConfigSchema', () => {
     });
     expect(unsupported.success).toBe(false);
     expect(unsupported.error?.issues[0]?.path).toEqual(['authChannel']);
+  });
+
+  it('keeps a historical authChannel editable without injecting a default one', () => {
+    const schema = createPlannerConfigSchema(GenerationCommonFields);
+
+    expect(schema.parse({ kind: 'cli', tool: 'claude-code' })).not.toHaveProperty('authChannel');
+    expect(schema.parse({ kind: 'cli', tool: 'claude-code', authChannel: 'session' })).toEqual({
+      kind: 'cli',
+      tool: 'claude-code',
+      authChannel: 'session',
+    });
+    for (const tool of ['opencode', 'kilo-code']) {
+      expect(
+        schema.safeParse({ kind: 'cli', tool, authChannel: 'provider-dependent' }).success,
+      ).toBe(true);
+      expect(schema.safeParse({ kind: 'cli', tool, authChannel: 'api-key' }).success).toBe(false);
+      expect(schema.safeParse({ kind: 'cli', tool, authChannel: 'session' }).success).toBe(false);
+    }
   });
 
   it('accepts the automatic model sentinel for a backend-default CLI tool', () => {

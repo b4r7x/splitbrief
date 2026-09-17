@@ -95,9 +95,9 @@ describe('session-state presence readiness', () => {
     vi.unstubAllEnvs();
   });
 
-  // On macOS the Claude Code and Cursor session credentials are keychain
-  // items, so no file in the staged environment can answer for them. The
-  // tool's own status command is the only authority — in both directions.
+  // On macOS the Claude Code, Cursor and Antigravity session credentials are
+  // keychain items, so no file in the staged environment can answer for them.
+  // The tool's own status command is the only authority — in both directions.
   //
   // Those channels are host-account on darwin alone, so the platform is forced
   // rather than the block skipped: the probe target is a node fixture and the
@@ -116,7 +116,7 @@ describe('session-state presence readiness', () => {
       setPlatform(hostPlatform);
     });
 
-    it.each(['claude-code', 'cursor'] as const)(
+    it.each(['claude-code', 'cursor', 'antigravity'] as const)(
       'asks %s itself, under the host account its keychain resolves through',
       async (tool) => {
         await withTempDir(`readiness-session-keychain-verified-${tool}`, async (hostHome) => {

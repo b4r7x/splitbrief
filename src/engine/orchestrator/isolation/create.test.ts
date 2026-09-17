@@ -274,7 +274,7 @@ describe('createRunIsolation', () => {
     }
   });
 
-  it('falls back instead of seeding a modified binary file', { timeout: 60_000 }, async () => {
+  it('seeds modified binary bytes without falling back', { timeout: 60_000 }, async () => {
     const dir = createTempDir('isolation-binary');
     try {
       createTestGitRepo(dir, { 'README.md': '# test\n', 'blob.bin': 'text\n' });
@@ -290,8 +290,10 @@ describe('createRunIsolation', () => {
       });
 
       const ws = await acquireDirect(handle);
-      expect(reasons).toHaveLength(1);
-      expect(reasons[0]).toMatch(/binary/);
+      expect(reasons).toHaveLength(0);
+      expect(readFileSync(join(ws.projectDir, 'blob.bin'))).toEqual(
+        Buffer.from([0x00, 0x01, 0xfe, 0xff, 0x80, 0x81]),
+      );
       expect(ws.projectDir).not.toBe(dir);
     } finally {
       cleanupTempDir(dir);

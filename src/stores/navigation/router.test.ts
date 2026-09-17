@@ -151,6 +151,18 @@ describe('routerStore', () => {
     expect(routerStore.get().screen).toBe('home');
   });
 
+  it('ignores an older run update after another run was selected', () => {
+    routerStore.navigate(localWorkflow('current run'));
+    const current = routerStore.get();
+
+    routerStore.updateRun({
+      run: makeRunRecord({ ref: { projectDir: '/other-project', sessionId: 'other-run' } }),
+      execution: { kind: 'at-rest' },
+    });
+
+    expect(routerStore.get()).toBe(current);
+  });
+
   it('represents only prepared local workflow routes', () => {
     const prepared = preparedExecution('resume');
     routerStore.init({

@@ -7,9 +7,11 @@ import {
 } from './build-progress.js';
 import { createDefaultConfig } from '../../../core/config/load/defaults.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
-import type { OperationsState } from '../../../stores/workflow/operations/state.js';
+import type {
+  OperationsState,
+  RunningOperation,
+} from '../../../stores/workflow/operations/state.js';
 import type { TasksState, WorkflowTask } from '../../../stores/workflow/tasks.js';
-import type { TokensState } from '../../../stores/workflow/tokens.js';
 
 const NOW = 1_000_000;
 
@@ -48,15 +50,22 @@ function operationsState(overrides: Partial<OperationsState> = {}): OperationsSt
   return { active: null, last: null, byCallId: new Map(), validationStage: null, ...overrides };
 }
 
-function tokensState(): TokensState {
+function runningOperation(overrides: Partial<RunningOperation> = {}): RunningOperation {
   return {
-    localCount: 0,
-    escalatedCount: 0,
-    tokenUsage: null,
-    perPhase: {},
-    perTask: {},
-    completedTaskCount: 0,
-    pricingContext: null,
+    callId: 'call-1',
+    role: 'implementer',
+    phase: 'implementing',
+    label: 'implementer',
+    runnerName: 'codex',
+    startedAt: NOW,
+    status: 'running',
+    endedAt: null,
+    durationMs: null,
+    partial: false,
+    reason: null,
+    usage: null,
+    warnings: [],
+    ...overrides,
   };
 }
 
@@ -66,7 +75,6 @@ function input(overrides: Partial<DeriveBuildProgressInput> = {}): DeriveBuildPr
       { id: 'T001', title: 'One', status: 'done' },
       { id: 'T002', title: 'Two', status: 'in_progress' },
     ]),
-    tokens: tokensState(),
     lifecycle: lifecycleState(),
     operations: operationsState(),
     config: createDefaultConfig(),
@@ -142,6 +150,26 @@ describe('deriveBuildProgress', () => {
     expect(buildProgressLines(quick, 120)[0]).toContain('ETA under a minute');
   });
 
+  it('names the seat and what it is doing, and no usage beside them', () => {
+    const progress = deriveBuildProgress(
+      input({ operations: operationsState({ active: runningOperation() }) }),
+    );
+
+    expect(progress.activity).toBe('codex · implementing');
+  });
+
+  it('names the phase alone between calls', () => {
+    expect(deriveBuildProgress(input()).activity).toBe('implementing');
+  });
+
+  it('names the side call the phase cannot tell, and still no usage', () => {
+    const progress = deriveBuildProgress(
+      input({ operations: operationsState({ active: runningOperation({ role: 'summary' }) }) }),
+    );
+
+    expect(progress.activity).toBe('codex · summary');
+  });
+
   it('names the running gate command instead of the seat', () => {
     const progress = deriveBuildProgress(
       input({
@@ -169,6 +197,25 @@ describe('buildProgressLines', () => {
 
   it('5 lines at 60 columns', () => {
     expect(buildProgressLines(deriveBuildProgress(input()), 60)).toHaveLength(5);
+  });
+
+  it('keeps the phase and both clocks at every width, and names a token count at none', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({ active: runningOperation() }),
+        lifecycle: lifecycleState({ lastRunnerEventTs: NOW - 5_000 }),
+      }),
+    );
+
+    for (const width of [120, 80, 60]) {
+      const block = buildProgressLines(progress, width).join('\n');
+      expect(block).toContain('codex · implementing');
+      expect(block).toContain('last event 5s ago');
+      expect(block).toContain('1/2 briefs passed');
+      expect(block).toContain('attempt 1 of');
+      expect(block).not.toMatch(/token/i);
+      expect(block).not.toMatch(/\d+k\b/);
+    }
   });
 
   it('counts escalated and failed briefs apart from the ones that passed', () => {

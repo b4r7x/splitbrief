@@ -21,8 +21,8 @@ const DOWNSTREAM: Partial<Record<PlannerCall, readonly PlannerStepArtifact[]>> =
     TASKS_FILE,
     ANALYZE_FILE,
   ],
-  spec: [PLAN_FILE, TASKS_FILE],
-  plan: [TASKS_FILE],
+  spec: [CLARIFICATIONS_FILE, CONSTITUTION_CHECK_FILE, PLAN_FILE, TASKS_FILE, ANALYZE_FILE],
+  plan: [TASKS_FILE, ANALYZE_FILE],
   tasks: [ANALYZE_FILE],
 };
 

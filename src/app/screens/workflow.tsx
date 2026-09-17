@@ -21,6 +21,7 @@ import { closedTranscriptBlock } from '../../features/workflow/closed/block.js';
 import { closedHeader } from '../../features/workflow/closed/header.js';
 import { bylineText, legendText, openRunByline } from '../../features/workflow/closed/byline.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { preparationStore } from '../../stores/navigation/preparation.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { focusStore } from '../../stores/ui/focus.js';
@@ -44,6 +45,8 @@ import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { REVIEW_COMMENT_DRAFT } from '../../core/keybindings/review.js';
 import { clamp } from '../../utils/math.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
+import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
+import type { listProjectFiles } from '../../lib/file-listing.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
@@ -51,6 +54,8 @@ interface WorkflowScreenProps {
   copyTarget?: ((target: CopyTarget) => Promise<CopyResult>) | undefined;
   canCopyFocused?: ((focus: Focus | null) => boolean) | undefined;
   deps?: WorkflowScreenDeps | undefined;
+  readClipboardImage?: typeof readClipboardImage | undefined;
+  listProjectFiles?: typeof listProjectFiles | undefined;
 }
 
 export function WorkflowScreen({
@@ -59,6 +64,8 @@ export function WorkflowScreen({
   copyTarget,
   canCopyFocused,
   deps,
+  readClipboardImage,
+  listProjectFiles,
 }: WorkflowScreenProps) {
   const theme = useTheme();
   const [input, terminal] = useStores(inputHeightStore, terminalSizeStore);
@@ -188,12 +195,21 @@ export function WorkflowScreen({
             continuable: model.continuable,
             width: bylineWidth,
           });
+  // A check running for this run owns Escape and says so on the byline, so the legend above the
+  // composer does not offer it for going home at the same time.
+  const checking = preparationStore.use((state) => state.kind === 'checking');
+  // A check that stopped covers this screen with the problem panel. The composer under it keeps its
+  // draft but takes no keys, so the panel's own retry, back and scroll keys mean one thing each.
+  const covered = preparationStore.use(
+    (state) => state.kind === 'blocked' || state.kind === 'failed',
+  );
   const legend =
     model.atRestRecord === undefined
       ? model.inputHint
       : legendText({
           overflow: scrollAboveLabel !== '' || scrollBelowLabel !== '',
           width: contentWidth,
+          canGoHome: !checking,
         });
 
   return (
@@ -214,6 +230,8 @@ export function WorkflowScreen({
           <Divider width={cols} tone="textDim" label={scrollBelowLabel} />
           <WorkflowFooter
             handleInput={handleFooterInput}
+            readClipboardImage={readClipboardImage}
+            listProjectFiles={listProjectFiles}
             onEmptySubmit={model.onEmptySubmit}
             onRuntimeCommand={model.handleRuntimeCommand}
             commands={commands}
@@ -234,7 +252,7 @@ export function WorkflowScreen({
               : {})}
             reviewYankActive={reviewYankActive}
             reviewEpoch={model.inputMode.mode === 'review' ? reviewOwnerToken : undefined}
-            disabled={model.hasOverlay || model.promptPending}
+            disabled={model.hasOverlay || model.promptPending || covered}
           />
         </>
       }

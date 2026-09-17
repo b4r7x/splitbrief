@@ -93,7 +93,7 @@ export function fauxPlanner(opts?: {
     },
 
     async injectUserTurn() {
-      return null;
+      return { status: 'delivered', usage: null };
     },
 
     async isAvailable() {

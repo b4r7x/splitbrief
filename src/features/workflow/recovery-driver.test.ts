@@ -15,7 +15,10 @@ import { reactivateExistingSession } from '../../core/sessions/active-pointer.js
 import { loadState, saveState } from '../../core/state/persistence.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
+import {
+  recoveryNoticeStore,
+  type RecoveryNoticeState,
+} from '../../stores/workflow/recovery-notice.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { createRecoveryDriver } from './recovery-driver.js';
 import { addTuiEvent } from './tui-sink.js';
@@ -206,7 +209,7 @@ describe('createRecoveryDriver', () => {
     if (result.shouldRun) {
       expect(result.switchSeat?.candidate).toEqual({ tool: 'opencode' });
     }
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null });
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
   });
 
   it('marks the halted seat for the header while the operator is answering', async () => {
@@ -218,7 +221,8 @@ describe('createRecoveryDriver', () => {
       resetAt: '2026-07-13T17:00:00.000Z',
       switchSeat: { seat: 'build', candidates: [{ tool: 'opencode' }] },
     });
-    const noticeAtPrompt: Array<{ seat: string | null; resetAt: number | null }> = [];
+    const noticeAtPrompt: Array<{ seat: string | null; resetAt: number | null; issue: unknown }> =
+      [];
     const { inputMode } = makeInputMode(['a']);
     const observed: UseInputModeResult = {
       ...inputMode,
@@ -231,9 +235,52 @@ describe('createRecoveryDriver', () => {
     await runDriver(prepared, state, observed);
 
     expect(noticeAtPrompt).toEqual([
-      { seat: 'build', resetAt: Date.parse('2026-07-13T17:00:00.000Z') },
+      {
+        seat: 'build',
+        resetAt: Date.parse('2026-07-13T17:00:00.000Z'),
+        issue: state.pendingRecovery,
+      },
     ]);
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null });
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
+  });
+
+  it('publishes a halt that offers no other tool, with no seat for the bar to mark', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'review-failed',
+      taskId: undefined,
+      taskTitle: undefined,
+      seat: 'review',
+      files: [],
+      affectedTaskIds: [],
+      attempts: undefined,
+      maxAttempts: undefined,
+      message: 'The review seat was not given the context this call needs.',
+      facts: {
+        apiContextCode: 'insufficient-context',
+        apiContextSeat: 'review',
+        apiContextCause: 'input-budget',
+        apiContextRequiredTokens: 412_096,
+        apiContextAvailableTokens: 32_768,
+      },
+      availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+    });
+    const noticeAtPrompt: RecoveryNoticeState[] = [];
+    const { inputMode } = makeInputMode(['pause']);
+    const observed: UseInputModeResult = {
+      ...inputMode,
+      setQuestionMode: async (hint: string) => {
+        noticeAtPrompt.push({ ...recoveryNoticeStore.get() });
+        return inputMode.setQuestionMode(hint);
+      },
+    };
+
+    await runDriver(prepared, state, observed);
+
+    // No swap offer, so the header bar has no seat to annotate — but the halt itself is published,
+    // which is what the details surface reads while this process still holds it.
+    expect(noticeAtPrompt).toEqual([{ seat: null, resetAt: null, issue: state.pendingRecovery }]);
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
   });
 
   it('end run closes the run on the state and stops the loop', async () => {

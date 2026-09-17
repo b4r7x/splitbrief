@@ -45,5 +45,10 @@
       "trailingCommas": "all",
       "arrowParentheses": "always"
     }
+  },
+  "html": {
+    "parser": {
+      "interpolation": true
+    }
   }
 }

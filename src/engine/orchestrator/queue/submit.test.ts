@@ -88,7 +88,7 @@ describe('enqueue', () => {
       },
       injectUserTurn: async (injection) => {
         injectedTurns.push({ text: injection.text, dir: injection.projectDir });
-        return null;
+        return { status: 'delivered', usage: null };
       },
     });
 
@@ -126,7 +126,7 @@ describe('enqueue', () => {
         supportsImages: false,
         supportsSelfSummarisation: false,
       },
-      injectUserTurn: async () => null,
+      injectUserTurn: async () => ({ status: 'delivered', usage: null }),
     });
     let writtenState: WorkflowState | undefined;
     const setState = (s: WorkflowState) => {
@@ -243,7 +243,7 @@ describe('enqueue', () => {
       injectUserTurn: async () => {
         injectionCount += 1;
         if (injectionCount === 1) await firstInjection;
-        return null;
+        return { status: 'delivered', usage: null };
       },
     });
 

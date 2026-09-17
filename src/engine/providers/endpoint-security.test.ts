@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  API_PROVIDER_CATALOG,
-  type ApiProviderDescriptor,
-} from '../../core/providers/api-provider-catalog.js';
+import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
 import {
   endpointPolicyError,
   endpointPolicyFetch,
@@ -10,7 +7,7 @@ import {
   type EndpointPolicy,
 } from '../../core/providers/endpoint-policy.js';
 import { assertRedirectOrigin, createEndpointPolicyFetch } from '../../lib/http/policy-fetch.js';
-import { createClientFromProvider, createProviderConnection } from './client/connection.js';
+import { assertCredentialPrefix, createClientFromProvider } from './client/connection.js';
 import { getProvider } from './registry.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
@@ -45,10 +42,6 @@ function recordRequest(input: RequestInfo | URL, init?: RequestInit): RequestRec
     url: request.url,
     authorization: request.headers.get('authorization') ?? undefined,
   };
-}
-
-function catalogDescriptor(id: keyof typeof API_PROVIDER_CATALOG): ApiProviderDescriptor {
-  return API_PROVIDER_CATALOG[id];
 }
 
 function assertZeroAttackerHostCredentialObservations(
@@ -159,23 +152,18 @@ describe('redirect credential canary matrix', () => {
       });
     });
 
-    const connection = createProviderConnection({
-      requestedBaseURL: fixedOriginPolicy.baseURL,
-      endpointPolicy: fixedOriginPolicy,
-      credentialOverride: credential,
-      credentialPrefix: catalogDescriptor('lm-studio').credentialPrefix,
+    const provider = getProvider('lm-studio', {
+      apiBase: 'http://127.0.0.1:1234/v1',
+      apiKey: credential,
     });
-
-    await expect(
-      connection[endpointPolicyFetch]('https://api.example.com/v1/models', {
-        headers: { Authorization: `Bearer ${credential}` },
-      }),
-    ).rejects.toMatchObject({ kind: 'provider-endpoint-invalid' });
+    await expect(createClientFromProvider(provider).models.list()).rejects.toMatchObject({
+      cause: { kind: 'provider-endpoint-invalid' },
+    });
 
     expect(requests).toEqual([
       {
         method: 'GET',
-        url: 'https://api.example.com/v1/models',
+        url: 'http://127.0.0.1:1234/v1/models',
         authorization: `Bearer ${credential}`,
       },
     ]);
@@ -210,28 +198,9 @@ describe('credential prefix canary matrix', () => {
     ['tp-', 'sk-canary-endpoint-prefix-mismatch-6a7b'],
     ['sk-cp-', 'sk-canary-endpoint-prefix-mismatch-7b8c'],
   ])('rejects a %s credential family before network access', (prefix, credential) => {
-    expect(() =>
-      createProviderConnection({
-        requestedBaseURL: 'https://api.example.com/v1',
-        endpointPolicy: fixedOriginPolicy,
-        credentialOverride: credential,
-        credentialPrefix: prefix,
-      }),
-    ).toThrow(expect.objectContaining({ kind: 'provider-credential-prefix-mismatch' }));
-  });
-
-  it('never selects offering from credential presence or prefix', () => {
-    vi.stubEnv('CUSTOM_ENDPOINT_API_KEY', 'sk-cp-canary-endpoint-offering-9d0e');
-
-    const connection = createProviderConnection({
-      requestedBaseURL: 'https://api.example.com/v1',
-      endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://api.example.com/v1' },
-      offering: 'payg',
-      envKeyName: 'CUSTOM_ENDPOINT_API_KEY',
-      credentialPrefix: 'sk-',
-    });
-
-    expect(connection.offering).toBe('payg');
+    expect(() => assertCredentialPrefix(credential, prefix)).toThrow(
+      expect.objectContaining({ kind: 'provider-credential-prefix-mismatch' }),
+    );
   });
 });
 

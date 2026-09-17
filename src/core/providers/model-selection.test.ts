@@ -42,8 +42,10 @@ describe('resolveCliModel', () => {
 });
 
 describe('hasAutomaticModelDefault', () => {
-  it.each(KNOWN_API_PROVIDER_IDS)('reports a default for %s', (providerId) => {
-    expect(hasAutomaticModelDefault(providerId)).toBe(true);
+  it.each(KNOWN_API_PROVIDER_IDS)('reports whether %s ships a catalog default', (providerId) => {
+    // llama.cpp ships no bundled model row: its ids belong to the server the
+    // operator started, so `auto` has nothing to resolve to.
+    expect(hasAutomaticModelDefault(providerId)).toBe(providerId !== 'llama-cpp');
   });
 
   it('reports no default for a custom provider', () => {

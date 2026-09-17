@@ -4,7 +4,7 @@ import type { Focus } from '../../../../stores/ui/focus.js';
 import { useInputMode } from '../use-input-mode.js';
 import { useRunContinue } from '../use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from '../use-run-loop.js';
-import { createReviewInputHandler } from '../../review-parser.js';
+import { createReviewInputHandler, type ReviewInputEffects } from '../../review-parser.js';
 import { useWorkflowKeys } from '../use-keys.js';
 import { useBriefReviewKeys } from '../use-brief-review-keys.js';
 import { resolveInputHint } from '../../input-hints.js';
@@ -36,6 +36,12 @@ export interface WorkflowScreenDeps {
   runWorkflow?: RunWorkflowFn | undefined;
   /** The app's preparation composition root; continuing a run at rest re-prepares its tools. */
   sessionSelect?: SessionSelectDeps | undefined;
+  /**
+   * The editor process and the planner queue. One port serves both routes into an editor —
+   * the `edit-file` review command and the external-edit request the raw editor's ctrl+o
+   * files — so neither can start a process the screen's owner did not supply.
+   */
+  reviewInput?: ReviewInputEffects | undefined;
 }
 
 interface UseWorkflowScreenOptions {
@@ -65,7 +71,7 @@ export function useWorkflowScreen({
   const projectDir = record?.ref.projectDir ?? configuredProjectDir;
 
   const inputMode = useInputMode();
-  const review = createReviewInputHandler(inputMode);
+  const review = createReviewInputHandler(inputMode, deps?.reviewInput);
 
   const [{ cancelled, phase }, { filePath: reviewFilePath }] = useStores(
     lifecycleStore,
@@ -93,6 +99,7 @@ export function useWorkflowScreen({
     promptPending,
     inputMode,
     sessionDirPath,
+    openExternalEditor: deps?.reviewInput?.openExternalEditor,
   });
 
   const globalKeysActive = !promptPending && !fieldSessionOwned;

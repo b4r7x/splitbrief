@@ -1,11 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SETTINGS_DEFS } from '../../src/core/settings/catalog.js';
 import { createRuntimeCommands } from '../../src/core/runtime/commands/registry.js';
-import { COPY_TARGETS } from '../../src/core/runtime/commands/types.js';
 import { makeCtx } from '#testing/helpers/runtime-commands.js';
-import { getWorkflowSidebarWidth } from '../../src/features/workflow/layout/rect.js';
 
 const projectRoot = join(import.meta.dirname, '../..');
 const gettingStarted = readFileSync(join(projectRoot, 'docs/GETTING-STARTED.md'), 'utf8');
@@ -22,7 +19,7 @@ function section(doc: string, heading: string): string {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
-const costSection = section(gettingStarted, '\n## 8. Spend\n');
+const usageSection = section(gettingStarted, '\n## 8. Usage details\n');
 
 // A reader who meets the product through either of these two files has to
 // learn what it is before they are told how to run it. The audited state was
@@ -64,32 +61,25 @@ describe('install story', () => {
   });
 });
 
-// §8 documented a top status line reading `spent … proj … budget … cache …`
-// that no component renders. Every surface it now names is checked against the
-// registry or constant that produces it.
-describe('spend section', () => {
-  it('describes no always-visible cost header', () => {
-    expect(costSection).not.toMatch(/top status line/i);
-    expect(costSection).not.toMatch(/always visible/i);
-    expect(costSection).toMatch(/no persistent cost header/i);
+describe('usage details section', () => {
+  it('keeps counters out of the main workflow and closed-run ledger', () => {
+    expect(usageSection).toContain(
+      'Main workflow screens and the closed-run ledger do not show these counters',
+    );
+    expect(usageSection).toContain('There is no Show spend control');
   });
 
-  it('names the sidebar toggle and the width below which it paints nothing', () => {
+  it('names the workflow command for opening live and saved usage details', () => {
     const commands = createRuntimeCommands(makeCtx());
-    expect(commands.some((command) => command.name === '/sidebar')).toBe(true);
-    expect(getWorkflowSidebarWidth({ cols: 119, sidebarVisible: true })).toBe(0);
-    expect(getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true })).toBe(0);
-    expect(costSection).toContain('`/sidebar`');
-    expect(costSection).toContain('at or below 120 columns');
+    const usageCommand = commands.find((command) => command.name === '/usage');
+    expect(usageCommand?.validScreens).toEqual(['workflow']);
+    expect(usageSection).toContain('`/usage`');
+    expect(usageSection).toContain('live and saved runs');
   });
 
-  it('names the Settings toggle that hides every spend figure', () => {
-    expect(SETTINGS_DEFS.some((def) => def.id === 'workflow.showSpend')).toBe(true);
-    expect(costSection).toContain('workflow.showSpend');
-  });
-
-  it('names a copy target the command actually accepts', () => {
-    expect(COPY_TARGETS).toContain('cost');
-    expect(costSection).toContain('`/copy cost`');
+  it('distinguishes missing evidence from zero usage or zero cost', () => {
+    expect(usageSection).toContain('reported token counters and monetary estimates');
+    expect(usageSection).toContain('Unknown usage stays unknown');
+    expect(usageSection).toContain('an unpriced run is not a zero-cost run');
   });
 });

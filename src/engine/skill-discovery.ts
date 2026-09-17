@@ -8,7 +8,7 @@ import { GLOBAL_SKILL_SCAN_PATHS, PROJECT_SKILL_SCAN_PATHS } from '../core/skill
 import { extractFrontmatter } from '../utils/frontmatter.js';
 
 import { isENOENT } from '../lib/process/errors.js';
-import { warnError } from '../lib/warn.js';
+import { warnError, warnStderr } from '../lib/warn.js';
 import { readProjectFileConfined } from '../lib/fs.js';
 
 const MAX_SKILL_CHARS = 16_000;
@@ -60,7 +60,7 @@ function parseFrontmatter(raw: string, path: string): SkillFrontmatter | null {
   if (body === raw) return null;
   if (!warnedMalformed.has(path)) {
     warnedMalformed.add(path);
-    warnError(`Skill frontmatter is not valid YAML, recovered by line scan: ${path}`);
+    warnStderr(`Skill frontmatter is not valid YAML, recovered by line scan: ${path}`, 'log-only');
   }
   return scanFrontmatterFields(raw.slice(0, raw.length - body.length));
 }

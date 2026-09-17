@@ -9,12 +9,36 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { cliProviderAuthFacts } from '../../core/discovery/detection.js';
 import { formatModelName } from '../../core/model-display.js';
 import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
-import { clearReviewerSeat } from '../../core/config/accessors/active-runner.js';
-import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
+
+import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
-import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import { getKnownProviderBaseURL, getProviderDisplayName } from '../../core/providers/catalog.js';
+import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import {
+  clearReviewerSeat,
+  readActiveRunner,
+  updateActiveRunner,
+} from '../../core/config/accessors/active-runner.js';
+import { updateDefaultImplementerConfig } from '../../core/config/accessors/implementer-profiles.js';
+import { detectProviderCatalog } from '../../engine/providers/catalog-detection.js';
+import type { PlannerConfig } from '../../core/schemas/planner-config.js';
+import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
+import {
+  localConnectionProvider,
+  type LocalConnectionProbe,
+  type LocalConnectionSave,
+  type LocalConnectionSeat,
+} from './local-connection-form.js';
+import { applyCliAuthChoice } from '../../core/runners/cli-auth-selection.js';
+import {
+  CLI_TOOL_CATALOG,
+  CLI_TOOL_IDS,
+  type CliAuthMethod,
+} from '../../core/runners/cli-tool-catalog.js';
+import {
+  PICKER_ROLE_SEAT_IDS,
   seatPickerLane,
   type ActiveRunnerRole,
   type SeatPickerRole,
@@ -30,8 +54,9 @@ import {
 } from './model-catalog/provider-axis.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import { formatNeedsSignInSaveFeedback, gatewayAccountName } from './picker-format.js';
+import { refreshPickerDetection } from './refresh-detection.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
-import { effortLadderFor, type RightRow } from './model-catalog/rows.js';
+import { AUTH_METHOD_WORDS, effortLadderFor, type RightRow } from './model-catalog/rows.js';
 import {
   commitPlannerTierSelection,
   commitImplementerSelection,
@@ -46,6 +71,8 @@ import { pickerViewStore, type PickerSubView } from '../../stores/ui/picker-view
 export interface PickerActions {
   confirm(selection: PickerOption, model: ModelOption | null): Promise<void>;
   confirmProviderSelection(fullId: string, effort?: string | null | undefined): Promise<void>;
+  /** Binds the seat's own invocations to one method, or hands them back to the tool's login. */
+  confirmAuthMethod(method: CliAuthMethod | 'host-configured'): Promise<void>;
   leftChange(item: PickerOption): void;
   browseCatalog(): void;
   deleteRight(item: ModelOption): Promise<void>;
@@ -54,6 +81,118 @@ export interface PickerActions {
   customModel(modelName: string): Promise<void>;
   openCustomModel(item: PickerOption): void;
   closeOverlay(): void;
+}
+
+/**
+ * The three effects the picker spends outside itself: the detection refresh Ctrl+R runs,
+ * the read-only probe Check and Retry spend, and the config write a confirmation commits.
+ * Every picker surface takes them as one object so a gallery preview can hand the picker
+ * its own without any layer reaching for the production function.
+ */
+export interface PickerEffectDeps {
+  refresh: typeof refreshPickerDetection;
+  checkConnection: LocalConnectionProbe;
+  saveConfig: typeof configStore.save;
+}
+
+/** The three functions the local-server form is driven by, and nothing else. */
+export interface LocalConnectionActions {
+  /** The seat's own connection; a review seat never reads the planner's. */
+  seat(provider: ApiProviderId): LocalConnectionSeat;
+  /** The read-only catalog probe Check and Retry spend; it runs no model. */
+  check: LocalConnectionProbe;
+  save(input: LocalConnectionSave): Promise<void>;
+}
+
+/**
+ * Check and Retry list one connection's catalog and nothing else: no generation, no
+ * pull, no load. The form receives it as a function so a test — and T-137's App — can
+ * pass its own without the picker reaching for a client.
+ */
+const probeLocalConnection: LocalConnectionProbe = (input) =>
+  detectProviderCatalog({
+    provider: input.provider,
+    configOverrides: {
+      apiBase: input.apiBase,
+      ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
+    },
+  });
+
+/** The production ports, in one place: no other layer names these three functions. */
+export const defaultPickerEffectDeps: PickerEffectDeps = {
+  refresh: refreshPickerDetection,
+  checkConnection: probeLocalConnection,
+  saveConfig: configStore.save,
+};
+
+/**
+ * The block the seat owns, never the one it falls back to: an unconfigured review seat
+ * resolves to the planner's runner, and reading that here would prefill REVIEW with
+ * PLAN's address.
+ */
+function seatOwnRunner(
+  config: Config,
+  role: ActiveRunnerRole,
+): PlannerConfig | ImplementerConfig | undefined {
+  if (role === 'planner') return config.planner;
+  if (role === 'reviewer') return config.reviewer;
+  return readActiveRunner({ config, role: 'implementer' });
+}
+
+/**
+ * A cleared token reference is a removal, and `buildRunnerConfig` would inherit the old
+ * one instead: the seat's own block decides, so the drop happens after it is built.
+ */
+function dropClearedPlannerToken(runner: PlannerConfig, apiKey: string | undefined): PlannerConfig {
+  if (apiKey !== undefined || runner.kind !== 'api' || runner.apiKey === undefined) return runner;
+  const { apiKey: _cleared, ...rest } = runner;
+  return rest;
+}
+
+function dropClearedImplementerToken(
+  runner: ImplementerConfig,
+  apiKey: string | undefined,
+): ImplementerConfig {
+  if (apiKey !== undefined || runner.kind !== 'api' || runner.apiKey === undefined) return runner;
+  const { apiKey: _cleared, ...rest } = runner;
+  return rest;
+}
+
+/**
+ * The seat's own channel, written through the core choice so host configuration
+ * removes the field rather than persisting the tool's default as a user's choice.
+ * A seat that runs no CLI has no invocation to bind a method to.
+ */
+function writeSeatAuthChannel(
+  config: Config,
+  role: ActiveRunnerRole,
+  method: CliAuthMethod | 'host-configured',
+): Config {
+  switch (role) {
+    case 'planner':
+      return updateActiveRunner({
+        config,
+        role: 'planner',
+        updater: (existing) =>
+          existing.kind === 'cli' ? applyCliAuthChoice(existing, method) : existing,
+      });
+    case 'reviewer':
+      return updateActiveRunner({
+        config,
+        role: 'reviewer',
+        updater: (existing) =>
+          existing.kind === 'cli' ? applyCliAuthChoice(existing, method) : existing,
+      });
+    case 'implementer':
+      return updateActiveRunner({
+        config,
+        role: 'implementer',
+        updater: (existing) =>
+          existing.kind === 'cli' ? applyCliAuthChoice(existing, method) : existing,
+      });
+    default:
+      return assertNever(role);
+  }
 }
 
 /** A picker action runs unawaited; its failure has to reach the user here. */
@@ -104,7 +243,7 @@ function needsSignInVariantNote(item: RunnerPickerOption, fullId: string): strin
 /** The ladder the row published for this id; an empty one is unknown, never a reason to clear. */
 function rowEffortLadder(rows: readonly RightRow[], fullId: string): readonly string[] | undefined {
   for (const row of rows) {
-    if (row.kind === 'action') continue;
+    if (row.kind === 'action' || row.kind === 'auth') continue;
     const owns =
       row.model.id === fullId ||
       (row.model.variants ?? []).some((variant) => variant.fullId === fullId);
@@ -118,8 +257,9 @@ function rowEffortLadder(rows: readonly RightRow[], fullId: string): readonly st
 export function usePickerActions(opts: {
   role: SeatPickerRole;
   catalog: PickerCatalog;
+  deps?: PickerEffectDeps | undefined;
 }): PickerActions {
-  const { role, catalog } = opts;
+  const { role, catalog, deps = defaultPickerEffectDeps } = opts;
   const seatRole: ActiveRunnerRole = seatPickerLane(role);
   const config = configStore.useConfig();
   const view = pickerViewStore.use((s) => s.view);
@@ -132,7 +272,7 @@ export function usePickerActions(opts: {
   };
 
   const commit = async (updated: Config, message: string) => {
-    const result = await configStore.save(updated);
+    const result = await deps.saveConfig(updated);
     if (reportConfigSaveFailure(result)) return;
     feedbackStore.setMessage(message);
     overlayStore.close();
@@ -216,6 +356,11 @@ export function usePickerActions(opts: {
   return {
     confirm(selection: PickerOption, model: ModelOption | null) {
       return reportFailure(async () => {
+        const localProvider = localConnectionProvider(selection);
+        if (localProvider !== undefined) {
+          openSubView({ kind: 'local-connection', provider: localProvider }, selection);
+          return;
+        }
         if (selection.kind === 'custom-command') {
           const selectionIndex = catalog.items.findIndex((item) => item.id === selection.id);
           pickerViewStore.open(
@@ -251,11 +396,20 @@ export function usePickerActions(opts: {
         rowEffortLadder(catalog.rightRows, fullId),
       );
     },
+    confirmAuthMethod(method: CliAuthMethod | 'host-configured') {
+      return reportFailure(async () => {
+        await commit(
+          writeSeatAuthChannel(config, seatRole, method),
+          `${catalog.roleLabel} auth set to: ${AUTH_METHOD_WORDS[method]}`,
+        );
+      });
+    },
     leftChange(item: PickerOption) {
       // A catalog opened for one tool must not follow the cursor onto the next, and
-      // neither may a preset drafted from the tool the cursor left.
+      // neither may a preset or a method drafted from the tool the cursor left.
       pickerViewStore.setBrowseCatalog(false);
       pickerViewStore.setEffortDraft(null);
+      pickerViewStore.setAuthDraft(null);
       catalog.setCurrentItem(item);
     },
     browseCatalog() {
@@ -268,7 +422,7 @@ export function usePickerActions(opts: {
           return;
         }
         const updated = removeCustomModel(config, seatRole, item.id);
-        const result = await configStore.save(updated);
+        const result = await deps.saveConfig(updated);
         if (reportConfigSaveFailure(result)) return;
         feedbackStore.setMessage(`Removed custom model: ${item.id}`);
       });
@@ -321,6 +475,68 @@ export function usePickerActions(opts: {
     },
     closeOverlay() {
       pickerViewStore.close();
+    },
+  };
+}
+
+/**
+ * The local-server form's own ports. They sit beside `usePickerActions` rather than
+ * inside it: the form is the only caller, and every other picker surface would have to
+ * carry three members it never spends.
+ */
+export function useLocalConnectionActions(
+  role: SeatPickerRole,
+  deps: PickerEffectDeps = defaultPickerEffectDeps,
+): LocalConnectionActions {
+  const seatRole: ActiveRunnerRole = seatPickerLane(role);
+  const config = configStore.useConfig();
+  const roleLabel = CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]];
+
+  return {
+    seat(provider: ApiProviderId): LocalConnectionSeat {
+      const own = seatOwnRunner(config, seatRole);
+      const configured = own?.kind === 'api' && own.provider === provider ? own : undefined;
+      return {
+        apiBase: configured?.apiBase ?? getKnownProviderBaseURL(provider),
+        ...(configured?.apiKey === undefined ? {} : { apiKey: configured.apiKey }),
+        ...(configured?.model === undefined ? {} : { model: configured.model }),
+      };
+    },
+    check: deps.checkConnection,
+    save(input: LocalConnectionSave) {
+      return reportFailure(async () => {
+        const opts = {
+          kind: 'api' as const,
+          tool: input.provider,
+          apiBase: input.apiBase,
+          ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
+          model: input.model,
+        };
+        // The seat's own block, so a saved REVIEW address never lands on the planner.
+        const updated =
+          seatRole === 'implementer'
+            ? updateDefaultImplementerConfig(config, (existing) =>
+                dropClearedImplementerToken(
+                  buildRunnerConfig('implementer', { ...opts, existing }),
+                  input.apiKey,
+                ),
+              )
+            : updateActiveRunner({
+                config,
+                role: seatRole,
+                updater: (existing) =>
+                  dropClearedPlannerToken(
+                    buildRunnerConfig(seatRole, { ...opts, existing }),
+                    input.apiKey,
+                  ),
+              });
+        const result = await deps.saveConfig(updated);
+        if (reportConfigSaveFailure(result)) return;
+        feedbackStore.setMessage(
+          `${roleLabel} set to: ${getProviderDisplayName(input.provider)}${SOFT_SEP}${formatModelName(input.model)}`,
+        );
+        overlayStore.close();
+      });
     },
   };
 }

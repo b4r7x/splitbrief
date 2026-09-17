@@ -11,6 +11,7 @@ import {
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { selectTaskListView, taskTargetLabel, tasksStore } from '../../../stores/workflow/tasks.js';
+import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
@@ -30,10 +31,8 @@ import {
   getSidebarStatusColumnCells,
 } from '../layout/rect.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
-import { useCostStats } from '../hooks/use-cost-stats.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
-import { formatCostDisplay } from '../spend-text.js';
-import { formatLocalSharePct } from '../display/local-share.js';
+import { formatLocalSharePct, localShare } from '../display/local-share.js';
 import { Divider } from '../../../components/divider.js';
 
 interface SidebarProps {
@@ -250,13 +249,19 @@ export function Sidebar({ width, height }: SidebarProps) {
   const mode = config?.workflow?.mode;
   const seats: readonly CrewSeat[] = config ? deriveCrewSeats({ config, displayNames }) : [];
   const advisory = useAdvisory();
-  const cost = useCostStats();
+  // The footer reports how much of the build the local seat carried, which is a routing fact. The
+  // run's tokens and money are not read here at all: /usage is where they are named.
+  const localCount = tokensStore.use((s) => s.localCount);
+  const escalatedRoutes = tokensStore.use((s) => s.escalatedCount);
+  const { rate: localRate, routedTasks } = localShare({
+    localCount,
+    escalatedCount: escalatedRoutes,
+  });
   const tasks = view.items;
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
   const innerWidth = Math.max(0, width - 5);
 
-  const costFmt = formatCostDisplay(cost.costBreakdown, cost.pricingState);
   // The local-share row is unconditional; mode and the done/escalated split are not.
   const footerRows = seats.length + 1 + (mode ? 1 : 0) + (escalatedCount > 0 ? 1 : 0);
   // Without a height the caller is not budgeting rows, so the list never windows.
@@ -354,15 +359,9 @@ export function Sidebar({ width, height }: SidebarProps) {
           ))}
           <Text color={t.textDim}>
             local{' '}
-            <Text color={rateColor(cost.localRate, cost.routedTasks, t)}>
-              {formatLocalSharePct(cost.localRate)}
+            <Text color={rateColor(localRate, routedTasks, t)}>
+              {formatLocalSharePct(localRate)}
             </Text>
-            {cost.showSpend && costFmt.hasSpend && (
-              <Text>
-                {SOFT_SEP}
-                {costFmt.spentText}
-              </Text>
-            )}
           </Text>
         </Box>
       </Box>

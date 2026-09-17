@@ -40,6 +40,12 @@ export type TaskAttemptTokens = Pick<
   | 'implementerCacheCreateTokens'
   | 'escalationCacheReadTokens'
   | 'escalationCacheCreateTokens'
+  | 'implementerInputTokens'
+  | 'implementerOutputTokens'
+  | 'implementerReasoningTokens'
+  | 'escalationInputTokens'
+  | 'escalationOutputTokens'
+  | 'escalationReasoningTokens'
   | 'retryCount'
   | 'tool'
   | 'model'
@@ -121,19 +127,6 @@ function makeEmptyPhaseTokens(): PhaseTokens {
 }
 
 type TaskTokensEvent = Extract<EngineEvent, { type: 'task_tokens' }>;
-
-/**
- * What the attempt now running has spent. The heartbeat reports the live attempt rather than the
- * brief's total, so a retry does not read as though the first attempt were still growing.
- */
-export function selectRunningAttemptImplementerTokens(
-  state: TokensState,
-  taskId: string | null,
-): number {
-  if (taskId === null) return 0;
-  const latest = state.perTask[taskId]?.attempts?.at(-1);
-  return latest === undefined ? 0 : latest.implementerTokens;
-}
 
 export function taskAttemptTotalTokens(attempt: TaskAttemptTokens): number {
   return (
@@ -300,6 +293,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'runner_call_completed':
     case 'runner_call_stalled':
     case 'runner_call_stall_cleared':
+    case 'runner_call_runtime_status':
     case 'artifact_written':
     case 'spec_rejected':
     case 'spec_regenerated':

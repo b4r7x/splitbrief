@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
@@ -9,6 +8,7 @@ import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
+import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -68,7 +68,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        run: makeRunRecord(),
+        run: readRunRecord(prepared.session.ref),
         execution: { kind: 'local', prepared },
       });
 
@@ -118,7 +118,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        run: makeRunRecord(),
+        run: readRunRecord(prepared.session.ref),
         execution: { kind: 'local', prepared },
       });
 
@@ -160,7 +160,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        run: makeRunRecord(),
+        run: readRunRecord(prepared.session.ref),
         execution: { kind: 'local', prepared },
       });
 
@@ -209,7 +209,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        run: makeRunRecord(),
+        run: readRunRecord(prepared.session.ref),
         execution: { kind: 'local', prepared },
       });
 

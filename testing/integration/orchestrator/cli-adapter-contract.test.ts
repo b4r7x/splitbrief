@@ -272,7 +272,6 @@ function implementerConfig(
   return {
     kind: 'cli' as const,
     tool: toolId,
-    authChannel: AUTH_CHANNELS[toolId],
     contextLength: 8192,
     temperature: 0.2,
     ...overrides,

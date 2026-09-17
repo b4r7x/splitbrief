@@ -15,7 +15,6 @@ export interface InputFooterBylineInput {
   hintText?: string | null;
   queuedText: string | null;
   etaText: string | null;
-  gitLabel: string;
   advisoryText: string | null;
   copyHint?: string | null;
   worktreeLabel?: string | null;
@@ -44,9 +43,8 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
   const hintPart = input.hintText && input.hintText.length > 0 ? input.hintText : null;
 
   const candidates: Array<{ hint: boolean; queued: boolean; tail: (string | null)[] }> = [
-    { hint: true, queued: true, tail: [input.etaText, input.gitLabel, input.advisoryText] },
-    { hint: true, queued: true, tail: [input.etaText, input.gitLabel] },
-    { hint: true, queued: true, tail: [input.gitLabel] },
+    { hint: true, queued: true, tail: [input.etaText, input.advisoryText] },
+    { hint: true, queued: true, tail: [input.etaText] },
     { hint: true, queued: true, tail: [] },
     { hint: false, queued: true, tail: [] },
     { hint: false, queued: false, tail: [] },

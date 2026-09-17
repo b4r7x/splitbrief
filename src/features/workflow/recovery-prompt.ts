@@ -15,6 +15,11 @@ import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recov
 import { countNoun } from '../../utils/pluralize.js';
 import { glyph } from '../../lib/glyphs.js';
 import { formatResetNote } from '../../core/recovery/reset-clock.js';
+import {
+  readRecoveryContext,
+  recoveryContextCauseWords,
+  recoveryContextSeatLabel,
+} from './usage-details-model.js';
 
 const ACTION_ORDER = PROMPTABLE_RECOVERY_ACTIONS;
 
@@ -87,6 +92,8 @@ export interface RecoveryActionChoiceContext {
   reason?: RecoveryReason | undefined;
   facts?: Record<string, RecoveryFact> | undefined;
   switchSeat?: SwitchSeatOffer | undefined;
+  /** The seat a retry re-issues when the halt names no brief; absent when it replays one. */
+  seatRetry?: CrewSeatId | undefined;
 }
 
 export function getRecoveryPromptActions(issue: RecoveryIssue): RecoveryAction[] {
@@ -100,7 +107,9 @@ function formatRecoveryActionText(
 ): string {
   switch (action) {
     case 'retry-same-worker':
-      return 'retry same worker';
+      return context.seatRetry === undefined
+        ? 'retry same worker'
+        : `retry ${CREW_SEAT_LABELS[context.seatRetry]}`;
     case 'route-bigger-worker': {
       const profile = recoveryFactString(context.facts, 'routeBiggerProfile');
       return profile ? `route to bigger worker · ${profile}` : 'route to bigger worker';
@@ -239,12 +248,29 @@ export function formatRecoveryActionLines(
   );
 }
 
+/**
+ * A halt that names no brief is about the seat, not a task: PLAN and REVIEW have nothing to reset,
+ * so their retry re-issues the same step once the seat is corrected. Mirrors `isSeatLevelRetry`
+ * (`src/engine/orchestrator/recovery/actions.ts`), which decides what the retry actually does;
+ * both are keyed on the same two facts, so a row never offers a replay the applier will not run.
+ */
+function seatLevelRetrySeat(issue: RecoveryIssue): CrewSeatId | undefined {
+  if (issue.taskId !== undefined) return undefined;
+  if (issue.seat !== 'plan' && issue.seat !== 'review') return undefined;
+  const contextCode = recoveryFactString(issue.facts, 'apiContextCode');
+  const reviewFailure = recoveryFactString(issue.facts, 'reviewFailureKind');
+  return contextCode === 'insufficient-context' || reviewFailure === 'call-failed'
+    ? issue.seat
+    : undefined;
+}
+
 function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
   const actions = getRecoveryPromptActions(issue);
   const context: RecoveryActionChoiceContext = {
     reason: issue.reason,
     facts: issue.facts,
     switchSeat: issue.switchSeat,
+    seatRetry: seatLevelRetrySeat(issue),
   };
   const recommended = resolveRecommendedAction(issue, actions);
   const facts = [
@@ -351,6 +377,8 @@ function resolveRecommendedAction(
 }
 
 function formatRecoveryHeader(issue: RecoveryIssue): string {
+  const context = formatApiContextHeadline(issue);
+  if (context !== undefined) return context;
   const usageLimit = formatUsageLimitHeadline(issue);
   if (usageLimit !== undefined) return usageLimit;
   // "T003 validation failed" takes "after 3 attempts"; a message that already
@@ -369,6 +397,19 @@ function resetNote(issue: RecoveryIssue): string | undefined {
   if (issue.resetAt === undefined) return undefined;
   const resetAt = Date.parse(issue.resetAt);
   return Number.isFinite(resetAt) ? formatResetNote(resetAt) : undefined;
+}
+
+/**
+ * A packet the seat was never given states two things: that no call was made, and why. The seat is
+ * named in the word the crew uses for it, so the row is not read as a review that found nothing or
+ * a brief that needs repairing. Every figure the refusal compared stays in `/usage`; the message
+ * the boundary wrote repeats the missing sections the details already carry, so the panel states
+ * the cause once and lets the detail row hold the list.
+ */
+function formatApiContextHeadline(issue: RecoveryIssue): string | undefined {
+  const context = readRecoveryContext(issue);
+  if (context === null) return undefined;
+  return `Nothing was sent to ${recoveryContextSeatLabel(context)} · ${recoveryContextCauseWords(context)}`;
 }
 
 /**

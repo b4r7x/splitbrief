@@ -1,12 +1,15 @@
-export interface InputHistoryNavigationState {
+import { createDraftDocument } from '../../core/composer/document.js';
+import type { DraftDocument } from '../../core/schemas/draft-document.js';
+
+export interface InputHistoryNavigationState<T = string> {
   historyIndex: number | null;
-  draftValue: string;
+  draftValue: T;
 }
 
-export interface InputHistoryNavigationResult {
+export interface InputHistoryNavigationResult<T = string> {
   changed: boolean;
-  nextValue: string;
-  nextState: InputHistoryNavigationState;
+  nextValue: T;
+  nextState: InputHistoryNavigationState<T>;
 }
 
 export const INITIAL_INPUT_HISTORY_NAVIGATION_STATE: InputHistoryNavigationState = {
@@ -14,14 +17,28 @@ export const INITIAL_INPUT_HISTORY_NAVIGATION_STATE: InputHistoryNavigationState
   draftValue: '',
 };
 
-export interface StepInputHistoryInput {
-  entries: string[];
-  state: InputHistoryNavigationState;
+export const INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE: InputHistoryNavigationState<DraftDocument> =
+  {
+    historyIndex: null,
+    draftValue: createDraftDocument(''),
+  };
+
+export interface StepInputHistoryInput<T = string> {
+  entries: readonly T[];
+  state: InputHistoryNavigationState<T>;
   direction: 'up' | 'down';
-  currentValue: string;
+  currentValue: T;
 }
 
-export function stepInputHistory(input: StepInputHistoryInput): InputHistoryNavigationResult {
+export function stepDocumentHistory(
+  input: StepInputHistoryInput<DraftDocument>,
+): InputHistoryNavigationResult<DraftDocument> {
+  return stepInputHistory(input);
+}
+
+export function stepInputHistory<T>(
+  input: StepInputHistoryInput<T>,
+): InputHistoryNavigationResult<T> {
   const { entries, state, direction, currentValue } = input;
   if (entries.length === 0) {
     return { changed: false, nextValue: currentValue, nextState: state };
@@ -53,7 +70,7 @@ export function stepInputHistory(input: StepInputHistoryInput): InputHistoryNavi
     return {
       changed: true,
       nextValue: state.draftValue,
-      nextState: INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
+      nextState: { historyIndex: null, draftValue: state.draftValue },
     };
   }
 

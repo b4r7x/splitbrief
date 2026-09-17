@@ -22,6 +22,7 @@ interface SingleColumnPickerProps<T> {
   customFilterPrompt?: ReactNode;
   emptyText?: string;
   onRowActivate?: ((globalIndex: number) => void) | undefined;
+  onWheel?: ((direction: 'up' | 'down') => void) | undefined;
   rowZonePrefix?: string | undefined;
   rowZoneZ?: number | undefined;
   lineCountOf?: ((item: T) => number) | undefined;
@@ -89,6 +90,7 @@ type PickerRowsProps<T> = Pick<
   | 'contentMaxWidth'
   | 'placeholderWhenEmpty'
   | 'onRowActivate'
+  | 'onWheel'
   | 'lineCountOf'
 > & {
   emptyText: string;
@@ -107,6 +109,7 @@ function PickerRows<T>({
   placeholderWhenEmpty,
   emptyText,
   onRowActivate,
+  onWheel,
   rowZonePrefix,
   rowZoneZ,
   lineCountOf,
@@ -172,6 +175,7 @@ function PickerRows<T>({
             zoneId={`${rowZonePrefix}:${itemKey}`}
             z={rowZoneZ}
             onActivate={() => onRowActivate(itemIndex)}
+            onWheel={onWheel}
           >
             {rowNode}
           </RowZone>
@@ -202,6 +206,7 @@ export function SingleColumnPicker<T>({
   customFilterPrompt,
   emptyText = 'No items',
   onRowActivate,
+  onWheel,
   rowZonePrefix = 'single-column-row',
   rowZoneZ = ROW_ZONE_Z_OVERLAY,
   lineCountOf,
@@ -236,6 +241,7 @@ export function SingleColumnPicker<T>({
         placeholderWhenEmpty={placeholderWhenEmpty}
         emptyText={emptyText}
         onRowActivate={onRowActivate}
+        onWheel={onWheel}
         rowZonePrefix={rowZonePrefix}
         rowZoneZ={rowZoneZ}
         lineCountOf={lineCountOf}

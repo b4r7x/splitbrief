@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { seedPricedRuntimeCost } from '#testing/helpers/seed-priced-cost.js';
+import { makeCostBreakdown } from '#testing/helpers/factories/cost-breakdown.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
@@ -8,7 +10,7 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { focusStore } from '../../../stores/ui/focus.js';
-import { formatCost } from '../../../core/formatting.js';
+import { routerStore } from '../../../stores/navigation/router.js';
 import { focusHasResolvableCopy, resolveCopyValue } from './resolve.js';
 
 beforeEach(() => {
@@ -19,6 +21,7 @@ beforeEach(() => {
   configStore.__testReset();
   reviewStore.reset();
   focusStore.clear();
+  routerStore.reset();
 });
 
 function seedVisibleBriefs(sources: string[], visibleCount = sources.length) {
@@ -44,10 +47,16 @@ describe('resolveCopyValue', () => {
     expect(resolveCopyValue('message')).toBeNull();
   });
 
-  it('resolves the cost target to the canonical sidebar spend once pricing is known', () => {
-    seedPricedRuntimeCost();
+  it('resolves the cost target from the canonical frozen-run evidence', () => {
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({
+        summary: makeSummary({ costBreakdown: makeCostBreakdown({ totalActualCost: 3 }) }),
+      }),
+      execution: { kind: 'at-rest' },
+    });
 
-    expect(resolveCopyValue('cost')).toBe(formatCost(3));
+    expect(resolveCopyValue('cost')).toBe('$3.00 (legacy estimate; rates not recorded)');
   });
 
   it('returns null for the cost target while no priced usage has accrued', () => {

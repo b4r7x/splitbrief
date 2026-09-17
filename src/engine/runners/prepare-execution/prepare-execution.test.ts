@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -14,6 +14,9 @@ import {
   reactivateExistingSession,
   writeActive,
 } from '../../../core/sessions/active-pointer.js';
+import { LOCKFILE, sessionDir, STATE_FILE } from '../../../core/paths.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { runnerDiscoveryContextKey } from '../../detection/runner-evidence.js';
 import { resolveCustomRunnerTrustFile } from '../custom-trust.js';
 import { prepareCustomRunnerAdmission } from '../custom-admission.js';
@@ -197,7 +200,20 @@ function reviewerChecks(report: ReadinessReport): ReadinessReport['sections'][nu
   );
 }
 
-async function resumeActivation(prior: 'absent' | 'legacy' | 'v1' | 'different') {
+function writeDeadRun(project: string, sessionId: string): void {
+  const dir = sessionDir(project, sessionId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, STATE_FILE),
+    JSON.stringify({ ...createInitialState('feature'), phase: 'implementing' }),
+  );
+  writeFileSync(
+    join(dir, LOCKFILE),
+    JSON.stringify(makeSessionLockfile(sessionId, { pid: 99999999 })),
+  );
+}
+
+async function resumeActivation(prior: 'absent' | 'legacy' | 'v1' | 'different' | 'dead-other') {
   const project = projectDir();
   const config = makeConfig({
     planner: { kind: 'cli', tool: 'codex' },
@@ -212,6 +228,10 @@ async function resumeActivation(prior: 'absent' | 'legacy' | 'v1' | 'different')
   if (prior === 'legacy') writeActive(existingSession);
   if (prior === 'v1') reactivateExistingSession(existingSession);
   if (prior === 'different') writeActive({ projectDir: project, sessionId: 'another-session' });
+  if (prior === 'dead-other') {
+    writeDeadRun(project, 'dead-session');
+    writeActive({ projectDir: project, sessionId: 'dead-session' });
+  }
   const before = readActiveRecord(project);
 
   const outcome = await prepareExecution({
@@ -579,8 +599,24 @@ describe('prepareExecution', () => {
   it('refuses to reactivate when another session owns the active record', async () => {
     const { project, before, outcome } = await resumeActivation('different');
 
-    expect(outcome.kind).toBe('failed');
+    expect(outcome).toMatchObject({
+      kind: 'failed',
+      error: { kind: 'session-still-active' },
+      report: { status: 'ready', counts: { blocker: 0 } },
+    });
     expect(readActiveRecord(project)).toEqual(before);
+  });
+
+  it('takes over the active record from a run whose owner is dead', async () => {
+    const { project, existingSession, outcome } = await resumeActivation('dead-other');
+
+    expect(outcome.kind).toBe('prepared');
+    if (outcome.kind !== 'prepared') return;
+    expect(outcome.execution.session.active.sessionId).toBe(existingSession.sessionId);
+    expect(readActiveRecord(project)).toEqual({
+      kind: 'v1',
+      receipt: outcome.execution.session.active,
+    });
   });
 
   it('prepares only the planner for spec execution', async () => {

@@ -2,7 +2,6 @@ import { CONFIG_VERSION, type Config } from '../../schemas/config.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
 import { getKnownProviderBaseURL } from '../../providers/catalog.js';
 import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
-import { defaultCliAuthChannel } from '../../runners/cli-tool-catalog.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../pipeline-spec/retries.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 
@@ -13,7 +12,6 @@ export function createDefaultConfig(): Config {
     planner: {
       kind: 'cli',
       tool: 'claude-code',
-      authChannel: defaultCliAuthChannel('claude-code').id,
     },
     implementer: {
       kind: 'api',
@@ -32,7 +30,6 @@ export function createDefaultConfig(): Config {
     workflow: {
       approve: 'default',
       maxRetries: DEFAULT_LOCAL_RETRIES,
-      git: { commitStrategy: 'none' },
       isolation: 'worktree',
       compactionFormat: 'auto',
       mode: 'standard',

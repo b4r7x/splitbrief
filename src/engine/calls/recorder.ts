@@ -1,4 +1,8 @@
 import { collectRunnerCallResult } from './collector.js';
+import {
+  InvocationIdentitySchema,
+  type InvocationIdentity,
+} from '../../core/schemas/invocation-identity.js';
 import { RunnerCallEventSchema, RunnerCallResultSchema } from './schema.js';
 import {
   boundedRunnerCallMessage,
@@ -54,6 +58,9 @@ export interface RunnerCallRecorder {
   readonly context: RunnerCallContext;
   readonly startedAt: number;
   hasTerminal: () => boolean;
+  runtimeStatus: (
+    status: Extract<RunnerCallEvent, { type: 'call_runtime_status' }>['runtimeStatus'],
+  ) => void;
   text: (opts: {
     channel: RunnerCallTextChannel;
     text: string;
@@ -107,6 +114,7 @@ export function createRunnerCallRecorder(opts: {
   startedAt?: number | undefined;
   credentialValues?: readonly string[] | undefined;
 }): RunnerCallRecorder {
+  const context = snapshotRunnerCallContext(opts.context);
   const startedAt = opts.startedAt ?? Date.now();
   const redactCredential = createRunnerCallCredentialRedactor(opts.credentialValues ?? []);
   const events: RunnerCallEvent[] = [];
@@ -183,7 +191,7 @@ export function createRunnerCallRecorder(opts: {
       });
     }
     emit(
-      runnerCallCompletedEvent(opts.context, {
+      runnerCallCompletedEvent(context, {
         startedAt,
         endedAt: finishOpts.endedAt ?? Date.now(),
         usage: defaults.usage,
@@ -209,7 +217,7 @@ export function createRunnerCallRecorder(opts: {
     };
     emitStderrFailureWarning();
     emit(
-      runnerCallErrorEvent(opts.context, {
+      runnerCallErrorEvent(context, {
         startedAt,
         endedAt: finishOpts.endedAt ?? Date.now(),
         status: finishOpts.status,
@@ -252,7 +260,7 @@ export function createRunnerCallRecorder(opts: {
     const parsed = RunnerCallResultSchema.safeParse(result);
     if (parsed.success) return parsed.data;
     throw error('runner-call-result-invalid', 'Runner call result failed schema validation', {
-      callId: opts.context.callId,
+      callId: context.callId,
       issues: formatZodIssues(parsed.error.issues),
     });
   }
@@ -265,21 +273,21 @@ export function createRunnerCallRecorder(opts: {
     return {
       type: 'call_unknown_upstream',
       ts: nowOrTimestamp(input),
-      ...opts.context,
+      ...context,
       rawPreview: runnerCallUnknownUpstreamPreview({
         label: 'Invalid runner call event',
         value: input,
         issues,
       }),
       backendMetadata: {
-        backendKind: opts.context.backendKind,
+        backendKind: context.backendKind,
         source: 'recorder',
         ...(upstreamType !== undefined && { upstreamType }),
       },
     };
   }
 
-  emit({ type: 'call_started', ts: startedAt, ...opts.context });
+  emit({ type: 'call_started', ts: startedAt, ...context });
 
   function noteLimit(
     limit: RunnerCallOutputLimit,
@@ -291,7 +299,7 @@ export function createRunnerCallRecorder(opts: {
     emit({
       type: 'call_warning',
       ts: Date.now(),
-      ...opts.context,
+      ...context,
       warning: runnerCallLimitWarning(limit),
     });
   }
@@ -327,7 +335,7 @@ export function createRunnerCallRecorder(opts: {
     emit({
       type: 'call_warning',
       ts: Date.now(),
-      ...opts.context,
+      ...context,
       warning: {
         code,
         severity: 'warning',
@@ -345,7 +353,7 @@ export function createRunnerCallRecorder(opts: {
   }
 
   return {
-    context: opts.context,
+    context,
     startedAt,
     hasTerminal: () => hasTerminalEvent,
     text: (eventOpts) => {
@@ -359,7 +367,7 @@ export function createRunnerCallRecorder(opts: {
         emit({
           type: 'call_text_delta',
           ts: eventOpts.ts ?? Date.now(),
-          ...opts.context,
+          ...context,
           channel: eventOpts.channel,
           text: eventText,
           ...(eventOpts.semantics !== undefined && { semantics: eventOpts.semantics }),
@@ -377,7 +385,7 @@ export function createRunnerCallRecorder(opts: {
         emit({
           type: 'call_stderr_delta',
           ts: eventOpts.ts ?? Date.now(),
-          ...opts.context,
+          ...context,
           channel: 'stderr',
           text: accepted.text,
         });
@@ -392,7 +400,7 @@ export function createRunnerCallRecorder(opts: {
         emit({
           type: 'call_tool_use_delta',
           ts: eventOpts.ts ?? Date.now(),
-          ...opts.context,
+          ...context,
           channel: 'tool',
           toolUseId: eventOpts.toolUseId,
           name: eventOpts.name,
@@ -422,7 +430,7 @@ export function createRunnerCallRecorder(opts: {
       emit({
         type: 'call_tool_use_done',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         channel: 'tool',
         toolUse: bounded.value,
       });
@@ -431,7 +439,7 @@ export function createRunnerCallRecorder(opts: {
       emit({
         type: 'call_usage',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         usage: eventOpts.usage,
         semantics: eventOpts.semantics,
       }),
@@ -444,7 +452,7 @@ export function createRunnerCallRecorder(opts: {
       emit({
         type: 'call_session_id',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         nativeSessionId: eventOpts.nativeSessionId,
       });
     },
@@ -477,7 +485,7 @@ export function createRunnerCallRecorder(opts: {
       emit({
         type: 'call_artifact',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         artifact: bounded.value,
       });
     },
@@ -502,7 +510,7 @@ export function createRunnerCallRecorder(opts: {
       emit({
         type: 'call_warning',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         warning,
       });
     },
@@ -524,16 +532,19 @@ export function createRunnerCallRecorder(opts: {
       emit({
         type: 'call_unknown_upstream',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         rawPreview,
         backendMetadata: eventOpts.backendMetadata,
       });
+    },
+    runtimeStatus: (runtimeStatus) => {
+      emit({ type: 'call_runtime_status', ts: Date.now(), ...context, runtimeStatus });
     },
     stalled: (eventOpts) => {
       emit({
         type: 'call_stalled',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         silentMs: eventOpts.silentMs,
       });
     },
@@ -541,7 +552,7 @@ export function createRunnerCallRecorder(opts: {
       emit({
         type: 'call_stall_cleared',
         ts: eventOpts?.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
       }),
     finishCompleted,
     finishFailed,
@@ -549,6 +560,27 @@ export function createRunnerCallRecorder(opts: {
     finalResult: () => (hasTerminalEvent ? snapshot() : finishIncomplete()),
     snapshot,
   };
+}
+
+// The identity is fixed before `call_started`: every event and result of the
+// call carries this one frozen copy, whatever the producer does with its own.
+function snapshotRunnerCallContext(context: RunnerCallContext): RunnerCallContext {
+  if (context.invocationIdentity === undefined) return context;
+  const parsed = InvocationIdentitySchema.safeParse(context.invocationIdentity);
+  if (!parsed.success) {
+    throw error('runner-call-identity-invalid', 'Runner call invocation identity is invalid', {
+      callId: context.callId,
+      issues: formatZodIssues(parsed.error.issues),
+    });
+  }
+  return { ...context, invocationIdentity: freezeInvocationIdentity(parsed.data) };
+}
+
+function freezeInvocationIdentity(identity: InvocationIdentity): InvocationIdentity {
+  for (const value of Object.values(identity)) {
+    if (typeof value === 'object') Object.freeze(value);
+  }
+  return Object.freeze(identity);
 }
 
 function nowOrTimestamp(input: RunnerCallEventInput): number {

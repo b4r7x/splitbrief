@@ -1,5 +1,6 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { calculateTaskUsageCost, isTaskUsageCostKnown } from '../../providers/cost/task-usage.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
@@ -49,55 +50,89 @@ export function countLocalAndEscalatedTasks(
 }
 
 type CostBreakdownInput = {
-  state: BuildSummaryState;
   taskBreakdowns: TaskTokenUsage[] | undefined;
   plannerTool: string;
   implementerTool: string;
   plannerModel?: string;
   implementerModel?: string;
-  reviewerTool?: string | undefined;
   pricingCache?: ModelCacheAccessor | undefined;
+  callEvidence?: readonly CallUsageEvidence[] | undefined;
 };
 
+const DIRECTIONAL_COUNTERS = [
+  'implementerInputTokens',
+  'implementerOutputTokens',
+  'implementerReasoningTokens',
+  'implementerCacheReadTokens',
+  'implementerCacheCreateTokens',
+  'escalationInputTokens',
+  'escalationOutputTokens',
+  'escalationReasoningTokens',
+  'escalationCacheReadTokens',
+  'escalationCacheCreateTokens',
+] as const satisfies readonly (keyof TaskTokenUsage)[];
+
+// A redo can finish the same task again. Its calls price one task total, so the
+// summary carries one row with all executions and the latest completion method.
+function aggregateTaskExecutions(tasks: readonly TaskTokenUsage[]): TaskTokenUsage[] {
+  const totals = new Map<string, TaskTokenUsage>();
+  for (const task of tasks) {
+    const previous = totals.get(task.taskId);
+    if (previous === undefined) {
+      totals.set(task.taskId, task);
+      continue;
+    }
+    const combined: TaskTokenUsage = {
+      ...task,
+      implementerTokens: previous.implementerTokens + task.implementerTokens,
+      escalationTokens: previous.escalationTokens + task.escalationTokens,
+      retryCount: previous.retryCount + task.retryCount,
+    };
+    for (const key of DIRECTIONAL_COUNTERS) {
+      const left = previous[key];
+      const right = task[key];
+      if (left === undefined || right === undefined) delete combined[key];
+      else combined[key] = left + right;
+    }
+    totals.set(task.taskId, combined);
+  }
+  return [...totals.values()];
+}
+
+/**
+ * A task is costed from what it was observed to spend — its own directional
+ * counters, or the calls that named it — never from a share of the run's
+ * totals. A record that carries neither keeps its combined count and reports no
+ * cost at all.
+ */
 export function applyTaskBreakdownCosts(input: CostBreakdownInput): TaskTokenUsage[] | undefined {
   const {
-    state,
     taskBreakdowns,
     plannerTool,
     implementerTool,
     plannerModel,
     implementerModel,
-    reviewerTool,
     pricingCache,
+    callEvidence,
   } = input;
-  return taskBreakdowns?.map((task) => {
-    const isCostKnown = isTaskUsageCostKnown({
+  const tasks =
+    callEvidence === undefined || taskBreakdowns === undefined
+      ? taskBreakdowns
+      : aggregateTaskExecutions(taskBreakdowns);
+  return tasks?.map((task) => {
+    const usage = {
       task,
-      tokenUsage: state.tokenUsage,
       implementerTool,
       plannerTool,
       implementerModel,
       plannerModel,
       cache: pricingCache,
-      ...(reviewerTool !== undefined && { reviewerTool }),
-    });
+      ...(callEvidence !== undefined && { callEvidence }),
+    };
     const { cost: _cost, ...rest } = task;
     return {
       ...rest,
-      ...(isCostKnown
-        ? {
-            cost: calculateTaskUsageCost({
-              task: task,
-              tokenUsage: state.tokenUsage,
-              implementerTool: implementerTool,
-              plannerTool: plannerTool,
-              implementerModel: implementerModel,
-              plannerModel: plannerModel,
-              cache: pricingCache,
-              ...(reviewerTool !== undefined && { reviewerTool }),
-            }),
-          }
-        : {}),
+      ...(isTaskUsageCostKnown(usage) ? { cost: calculateTaskUsageCost(usage) } : {}),
     };
   });
 }

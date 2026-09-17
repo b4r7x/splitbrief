@@ -400,7 +400,8 @@ describe('useAppKeys: ESC stop ladder', () => {
     await tick();
 
     expect(sessionSelectStore.get().preparation.kind).toBe('preparing');
-    expect(ui.lastFrame() ?? '').toContain('Preparing your tools');
+    // The routine check takes no page: the run stays on its screen and this owner paints nothing.
+    expect(ui.lastFrame() ?? '').toBe('');
 
     await writeKey(ui, '\x0b');
     await tick();

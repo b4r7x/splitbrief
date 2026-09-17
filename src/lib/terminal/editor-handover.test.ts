@@ -90,7 +90,7 @@ describe('terminal handover for $EDITOR', () => {
     );
 
     expect(resumeWrites).toContain(terminalSequences.enterAltBuffer);
-    expect(resumeWrites).toContain(terminalSequences.enableMouseTracking);
+    expect(resumeWrites).toContain(terminalSequences.enableButtonEventMouse);
     expect(resumeWrites).not.toContain(terminalSequences.showCursor);
     expect(resumeWrites.indexOf(terminalSequences.hideCursor)).toBeGreaterThan(
       resumeWrites.indexOf(terminalSequences.enterAltBuffer),
@@ -131,7 +131,7 @@ describe('terminal handover for $EDITOR', () => {
     const resumeWrites = written.slice(afterSuspend);
 
     expect(resumeWrites).toContain(terminalSequences.enableAnyMotionMouse);
-    expect(resumeWrites).not.toContain(terminalSequences.enableMouseTracking);
+    expect(resumeWrites).not.toContain(terminalSequences.enableButtonEventMouse);
   });
 
   it('brackets paste mode without mouse tracking when mouse is disabled', () => {
@@ -154,7 +154,7 @@ describe('terminal handover for $EDITOR', () => {
     expect(suspendWrites).toContain(terminalSequences.disableBracketedPaste);
     expect(suspendWrites).not.toContain(terminalSequences.disableMouseTracking);
     expect(resumeWrites).toContain(terminalSequences.enableBracketedPaste);
-    expect(resumeWrites).not.toContain(terminalSequences.enableMouseTracking);
+    expect(resumeWrites).not.toContain(terminalSequences.enableButtonEventMouse);
     expect(calls).toEqual(['pause', 'resume']);
   });
 

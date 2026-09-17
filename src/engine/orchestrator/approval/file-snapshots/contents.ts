@@ -5,7 +5,6 @@ import {
   assertPathConfined,
   assertWritablePathConfined,
 } from '../../../../lib/path-confinement.js';
-import type { FileContentSnapshot } from './types.js';
 
 const PATH_CONFINEMENT_ERROR_KINDS = new Set([
   'path-confined-escape',
@@ -60,21 +59,6 @@ export async function writeCurrentFileContent(
   await mkdir(dirname(filePath), { recursive: true });
   assertWritablePathConfined(file, projectDir);
   await writeFile(filePath, content, 'utf-8');
-}
-
-export async function captureCurrentFileContents(
-  projectDir: string,
-  files: string[],
-): Promise<FileContentSnapshot> {
-  const entries = await Promise.all(
-    files.map(
-      async (file): Promise<[string, string | null]> => [
-        file,
-        await readCurrentFileContent(projectDir, file),
-      ],
-    ),
-  );
-  return Object.fromEntries(entries);
 }
 
 export { isPathConfinementError };

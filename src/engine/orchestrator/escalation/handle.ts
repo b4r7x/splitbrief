@@ -3,7 +3,7 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runLocalRetries } from './local-retries.js';
-import { FULL_TIER, HINT_TIER, INTERMEDIATE_TIER, runEscalationTier } from './tier.js';
+import { HINT_TIER, INTERMEDIATE_TIER, runEscalationTier } from './tier.js';
 import type { EscalationContext, RetryResult, RetryStepOutcome } from './types.js';
 import { failedRetry } from './types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
@@ -34,9 +34,9 @@ type HandleRetryOptions = {
 };
 
 /**
- * A signed-out runner halts the ladder: the next tier would silently hand
- * the task to the planner, which is exactly the outcome an expired login must
- * not cause. Raise the login recovery and stop.
+ * A signed-out runner halts the ladder: the next rung would spend a planner
+ * call on a brief no retry can land until the login is fixed. Raise the login
+ * recovery and stop.
  */
 function unauthenticatedHalt(
   ctx: EscalationContext,
@@ -67,9 +67,9 @@ function unauthenticatedHalt(
 
 /**
  * A quota-exhausted runner halts the ladder for the same reason a signed-out
- * one does — the next tier would silently do implementer work at planner
- * prices. The recovery names the reset time when the tool reported one and
- * offers the profile switch instead of a pointless re-login.
+ * one does — the next rung would spend a planner call on a retry the quota
+ * blocks anyway. The recovery names the reset time when the tool reported one
+ * and offers the profile switch instead of a pointless re-login.
  */
 async function usageLimitHalt(
   ctx: EscalationContext,
@@ -108,8 +108,8 @@ async function usageLimitHalt(
 
 /**
  * An outcome the recovery builders recognise as a runner defect halts the
- * ladder for the same reason the auth and quota halts do — the next tier would
- * hand the same defect to the planner.
+ * ladder for the same reason the auth and quota halts do — the next rung would
+ * pay a planner call to hint around the same defect.
  */
 async function runnerDefectHalt(
   ctx: EscalationContext,
@@ -278,15 +278,8 @@ export async function handleRetryAndEscalation(
   const tier1Halt = await runnerHalt(ctx, tier1.task, tier1);
   if (tier1Halt) return tier1Halt;
 
-  const tier2 = await runEscalationTier(FULL_TIER, {
-    ctx,
-    task: tier1.task,
-    state: tier1.state,
-    lastError: tier1.lastError,
-    priorAttempts: tier1.attempts,
-  });
-  return {
-    state: tier2.state,
-    result: tier2.result ?? failedRetry(tier2.attempts),
-  };
+  // The hint rung is the last one: the planner advises, it never takes the
+  // brief over and writes the code itself. Exhaustion hands the brief to the
+  // retry-exhausted recovery with the attempts the implementer actually spent.
+  return { state: tier1.state, result: failedRetry(tier1.attempts) };
 }

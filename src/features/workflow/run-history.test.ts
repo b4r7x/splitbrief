@@ -16,7 +16,7 @@ import { eventsStore } from '../../stores/workflow/events.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
-import { hydrateRun } from './run-history.js';
+import { hydrateRun, readRunHistory } from './run-history.js';
 
 let projectDir = '';
 const SESSION_ID = 'run-history-session';
@@ -170,5 +170,34 @@ describe('hydrateRun', () => {
     expect(tasksStore.get().taskMap.get('T001')?.status).toBe('done');
     expect(tasksStore.get().taskMap.get('T002')).toBeUndefined();
     expect(tokensStore.get().tokenUsage).toBeNull();
+  });
+});
+
+describe('readRunHistory', () => {
+  it('reads without touching a store, and the run lands only when it is published', async () => {
+    addEvent({ type: 'workflow_started', ts: 500, phase: 'planning', feature: 'the other run' });
+    writeLog(RUN);
+    const stores = [eventsStore, tasksStore, lifecycleStore, tokensStore];
+    const before = stores.map((store) => store.get());
+
+    const publish = await readRunHistory(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: savedState() },
+      }),
+    );
+
+    stores.forEach((store, index) => {
+      expect(store.get()).toBe(before[index]);
+    });
+
+    publish();
+
+    const texts = JSON.stringify(eventsStore.get().events);
+    expect(texts).not.toContain('the other run');
+    expect(texts).toContain('replay me');
+    expect(tasksStore.get().totalTasks).toBe(2);
+    expect(tokensStore.get().tokenUsage?.plannerInput).toBe(400);
+    expect(lifecycleStore.get().status).toBe('paused');
   });
 });

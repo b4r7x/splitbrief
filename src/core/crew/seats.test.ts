@@ -36,7 +36,7 @@ describe('deriveCrewSeats', () => {
     expect(review.runner).toEqual(config.reviewer);
     expect(review.model).toContain('OpenAI Codex CLI');
     expect(review.model).toContain('gpt-5-codex');
-    expect(review.posture).toBe('subscription-included');
+    expect(review.posture).toBe('unknown');
   });
 
   it('resolves the build seat from the default implementer profile', () => {
@@ -57,13 +57,13 @@ describe('deriveCrewSeats', () => {
     expect(build).toEqual(seatOf(deriveCrewSeats({ config: makeConfig() }), 'build'));
   });
 
-  it('reports the billing posture of the configured auth channel', () => {
+  it('states no posture for an auth channel no adapter can enforce', () => {
     const config = makeConfig({
       reviewer: { kind: 'cli', tool: 'claude-code', authChannel: 'api-key' },
     });
     const review = seatOf(deriveCrewSeats({ config }), 'review');
 
-    expect(review.posture).toBe('api-metered');
+    expect(review.posture).toBe('unknown');
   });
 
   it('says the automatic word when the runner names no model', () => {

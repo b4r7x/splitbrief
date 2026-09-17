@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SCOPE_ENTRY_CASES } from '#testing/helpers/scope-entries.js';
-import { classifyAction } from './action-classifier.js';
+import { classifyAction, extractActionPattern } from './action-classifier.js';
 import type { ClassifyInput } from './action-classifier.js';
 
 const baseInput: ClassifyInput = {
@@ -221,6 +221,133 @@ describe('classifyAction — allowedPaths', () => {
       { write_in_scope: 'sticky' },
     );
     expect(result).toEqual({ actionClass: 'write_in_scope', tier: 'sticky' });
+  });
+});
+
+describe('classifyAction — exact target path', () => {
+  const declared = { taskFiles: ['src/app.ts'], taskInBounds: ['src/app.ts'], dependsOnFiles: [] };
+
+  it.each([
+    { targetPath: 'src/app.ts', actionClass: 'write_in_scope', tier: 'auto' },
+    { targetPath: './src/app.ts', actionClass: 'write_in_scope', tier: 'auto' },
+    { targetPath: '/project/src/app.ts', actionClass: 'write_in_scope', tier: 'auto' },
+    { targetPath: 'src/app.ts.backup', actionClass: 'write_out_of_scope', tier: 'sticky' },
+    { targetPath: 'other/src/app.ts', actionClass: 'write_out_of_scope', tier: 'sticky' },
+    { targetPath: '/elsewhere/src/app.ts', actionClass: 'write_out_of_scope', tier: 'sticky' },
+    {
+      targetPath: '../project/src/app.ts.backup',
+      actionClass: 'write_out_of_scope',
+      tier: 'sticky',
+    },
+  ])('$targetPath → $actionClass/$tier', ({ targetPath, actionClass, tier }) => {
+    const result = classifyAction(make(`write ${targetPath}`, { ...declared, targetPath }));
+    expect(result).toEqual({ actionClass, tier });
+  });
+
+  it('a path containing a declared name is in scope only when independently declared', () => {
+    expect(
+      classifyAction(
+        make('write src/app.ts.backup', {
+          ...declared,
+          taskInBounds: ['src/app.ts', 'src/app.ts.backup'],
+          targetPath: 'src/app.ts.backup',
+        }),
+      ),
+    ).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
+    expect(
+      classifyAction(
+        make('write other/src/app.ts', {
+          ...declared,
+          allowedPaths: ['other/**'],
+          targetPath: 'other/src/app.ts',
+        }),
+      ),
+    ).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
+  });
+
+  it('keeps an exact path with spaces whole', () => {
+    expect(
+      classifyAction(
+        make('write src/my app.ts', {
+          taskFiles: ['src/my app.ts'],
+          taskInBounds: [],
+          dependsOnFiles: [],
+          targetPath: 'src/my app.ts',
+        }),
+      ),
+    ).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
+  });
+
+  it('package and control-plane policy still win over declared scope', () => {
+    expect(
+      classifyAction(
+        make('write package.json', {
+          taskFiles: ['package.json'],
+          taskInBounds: ['package.json'],
+          targetPath: 'package.json',
+        }),
+      ),
+    ).toEqual({ actionClass: 'package_change', tier: 'confirm' });
+    expect(
+      classifyAction(
+        make('write .git/config', {
+          taskFiles: ['src/feature/foo.ts'],
+          allowedPaths: ['.git/**'],
+          targetPath: './.git/config',
+        }),
+      ),
+    ).toEqual({ actionClass: 'destructive', tier: 'confirm' });
+  });
+
+  it('the target path, not the prose, decides the class', () => {
+    expect(
+      classifyAction(make('write src/feature/foo.ts', { targetPath: 'src/unrelated/other.ts' })),
+    ).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
+  });
+
+  it('the sticky grant pattern is the exact target path', () => {
+    expect(
+      extractActionPattern(
+        make('write src/app.ts.backup', { ...declared, targetPath: './src/app.ts.backup' }),
+      ),
+    ).toBe('src/app.ts.backup');
+  });
+});
+
+describe('classifyAction — prose paths match whole tokens only', () => {
+  const declared = { taskFiles: ['src/app.ts'], taskInBounds: [], dependsOnFiles: [] };
+
+  it.each(['edit src/app.ts.backup', 'edit other/src/app.ts', 'edit `src/app.ts.backup`'])(
+    '%s is not approved by the declared src/app.ts',
+    (desc) => {
+      expect(classifyAction(make(desc, declared))).toEqual({
+        actionClass: 'write_out_of_scope',
+        tier: 'sticky',
+      });
+    },
+  );
+
+  it('every path in the prose must be in scope', () => {
+    expect(classifyAction(make('modify src/app.ts, src/unrelated/other.ts', declared))).toEqual({
+      actionClass: 'write_out_of_scope',
+      tier: 'sticky',
+    });
+    expect(
+      classifyAction(
+        make('modify src/app.ts, src/feature/foo.ts', {
+          taskFiles: ['src/app.ts', 'src/feature/foo.ts'],
+        }),
+      ),
+    ).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
+  });
+
+  it('a prose grant pattern is one whole path, or else the whole prose', () => {
+    expect(extractActionPattern(make('edit src/app.ts.backup', declared))).toBe(
+      'src/app.ts.backup',
+    );
+    expect(extractActionPattern(make('modify src/app.ts, src/other.ts', declared))).toBe(
+      'modify src/app.ts, src/other.ts',
+    );
   });
 });
 

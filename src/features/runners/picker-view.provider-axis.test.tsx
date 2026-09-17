@@ -9,6 +9,7 @@ import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
 import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
+import type { CliAuthEnforcementEvidence } from '../../core/runners/cli-tool-catalog.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
@@ -17,7 +18,15 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inheritPlannerOption, type PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelOption, ModelVariant } from './model-catalog/recency.js';
-import { buildRightRows, type RightRow } from './model-catalog/rows.js';
+import {
+  AUTH_METHOD_WORDS,
+  AUTH_UNPROVEN_WORD,
+  authMethodOffer,
+  buildRightRows,
+  type AuthMethodChoice,
+  type AuthMethodOffer,
+  type RightRow,
+} from './model-catalog/rows.js';
 import { PickerView } from './picker-view.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
@@ -110,6 +119,7 @@ function makeActions(): PickerActions {
   return {
     confirm: async () => {},
     confirmProviderSelection: async () => {},
+    confirmAuthMethod: async () => {},
     leftChange: () => {},
     deleteRight: async () => {},
     chooseContract: () => {},
@@ -179,7 +189,9 @@ describe('PickerView terminal panes', () => {
 
     expect(frame).toContain(PLANNER_INHERITANCE.sentence);
     expect(frame).toContain('Claude Code CLI · Claude Sonnet 4');
-    expect(frame).toContain('subscription · network · shell');
+    // A CLI names no billing, so the inherited posture line is its trust alone.
+    expect(frame).toContain('network · shell');
+    expect(frame).not.toContain('subscription');
     const hintRow = frame.split('\n').find((row) => row.includes('↑↓ select')) ?? '';
     expect(hintRow.trim().startsWith('↑↓ select')).toBe(true);
     expect(hintRow).toContain(PLANNER_INHERITANCE.sentence);
@@ -681,7 +693,7 @@ describe('PickerView option-axis confirm and cycle', () => {
     ui.unmount();
   });
 
-  it('lets space through to the query on a row outside the family', async () => {
+  it('leaves space inert on a row outside the family', async () => {
     pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high');
     const ui = renderAxisPicker({
       actions: makeActions(),
@@ -692,8 +704,12 @@ describe('PickerView option-axis confirm and cycle', () => {
     ui.stdin.write(' ');
     await flushEffects();
 
-    expect(pickerViewStore.get().expandedModelId).toBeNull();
-    expect(frameText(ui).match(/Type to filter…/g)).toHaveLength(1);
+    // A bare space is not the start of a query, wherever the cursor sits: with the
+    // focused column's query empty it filters nothing and closes nothing, so the
+    // family the user opened is still open and still drafted.
+    expect(pickerViewStore.get().expandedModelId).toBe('gpt-5.6-luna-high');
+    expect(pickerViewStore.get().optionDraftId).toBe('gpt-5.6-luna-high');
+    expect(frameText(ui).match(/Type to filter…/g)).toHaveLength(2);
     ui.unmount();
   });
 
@@ -748,10 +764,10 @@ describe('PickerView option-axis confirm and cycle', () => {
     await flushEffects();
 
     expect(frameText(ui)).toContain('Terminal too short');
-    // The key falls through the way it did before axis rows existed: nothing steps,
-    // and the expansion the user cannot see closes instead.
-    expect(pickerViewStore.get().optionDraftId).toBeNull();
-    expect(pickerViewStore.get().expandedModelId).toBeNull();
+    // No row is drawn, so nothing steps — and a bare space over an empty query is
+    // inert, so it does not reach past the rows to close the expansion either.
+    expect(pickerViewStore.get().optionDraftId).toBe('gpt-5.6-luna-high');
+    expect(pickerViewStore.get().expandedModelId).toBe('gpt-5.6-luna-high');
     ui.unmount();
   });
 });
@@ -922,5 +938,322 @@ describe('PickerView hybrid route and axis expansion', () => {
       'opencode-go/gpt-5.6-luna',
       'opencode-go/gpt-5.6-luna-fast',
     ]);
+  });
+});
+
+describe('PickerView authentication method rows', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    _resetMouseZones();
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6' } }),
+    });
+    detectionStore.setDetection({ providers: [], cliTools: [] });
+  });
+
+  const routed: ModelOption = {
+    id: 'openai/gpt-5.6',
+    displayName: 'GPT-5.6',
+    variants: [
+      { fullId: 'openai/gpt-5.6', providerPrefix: 'openai', tag: 'openai' },
+      { fullId: 'opencode-go/gpt-5.6', providerPrefix: 'opencode-go', tag: 'opencode-go' },
+    ],
+  };
+  const enforced: AuthMethodOffer = {
+    methods: ['session', 'api-key'],
+    selected: 'host-configured',
+  };
+  const hostOwned: AuthMethodOffer = { methods: [], selected: 'host-configured' };
+
+  // Production rows, so the order and the shape under test are the ones the picker
+  // paints rather than a fixture's opinion of them.
+  function authRows(offer: AuthMethodOffer): RightRow[] {
+    return buildRightRows({
+      models: [routed],
+      expandedModelId: routed.id,
+      providerAuth: undefined,
+      hasOracle: false,
+      catalogLane: 'ready',
+      persistedModel: undefined,
+      customModels: [],
+      browseCatalog: false,
+      authMethod: offer,
+      authDraft: pickerViewStore.get().authDraft,
+    });
+  }
+
+  function renderAuth(input: { actions: PickerActions; offer: AuthMethodOffer }) {
+    const opencode = cliTool('opencode', 'OpenCode CLI');
+    return mount(
+      <PickerView
+        role="planner"
+        catalog={makeCatalog({
+          items: [opencode],
+          currentItem: opencode,
+          rightRows: authRows(input.offer),
+          roleLabel: 'Planner',
+          focusModels: true,
+          // The row under the model the expansion opened.
+          initialRightIndex: 1,
+        })}
+        actions={input.actions}
+      />,
+    );
+  }
+
+  function authLine(ui: ReturnType<typeof renderFeature>): string {
+    return (
+      frameText(ui)
+        .split('\n')
+        .find((line) => line.includes('auth')) ?? ''
+    );
+  }
+
+  /** The row's own cells, without the panel chrome the frame draws around them. */
+  function authCells(ui: ReturnType<typeof renderFeature>): string {
+    const line = authLine(ui);
+    const start = line.indexOf('├─');
+    return line.slice(start, line.lastIndexOf('│')).replace(/\s+/g, ' ').trim();
+  }
+
+  it('offers one switch over the enforceable methods, above the routes it applies to', async () => {
+    expect(authRows(enforced).filter((row) => row.kind === 'auth')).toEqual([
+      {
+        kind: 'auth',
+        method: 'host-configured',
+        choices: ['session', 'api-key', 'host-configured'],
+        steps: true,
+        unproven: false,
+        last: false,
+        tree: { depth: 1, parentContinues: false },
+      },
+    ]);
+
+    const ui = renderAuth({ actions: makeActions(), offer: enforced });
+    await flushEffects();
+    const lines = frameText(ui).split('\n');
+    const parent = lines.findIndex((line) => line.includes('GPT-5.6'));
+
+    expect(parent).toBeGreaterThanOrEqual(0);
+    expect(lines[parent + 1]).toContain('auth');
+    expect(lines[parent + 1]).toContain(AUTH_METHOD_WORDS['host-configured']);
+    expect(lines[parent + 2]).toContain('openai');
+    expect(lines[parent + 3]).toContain('opencode-go');
+    // The byline names the step, the way every other value control does.
+    const hint = lines.find((line) => line.includes('esc collapse')) ?? '';
+    expect(hint).toContain('space cycle');
+    expect(hint).toContain('⏎ confirm');
+    ui.unmount();
+  });
+
+  it('cycles the switch through every method and confirms the one it reads', async () => {
+    const chosen: AuthMethodChoice[] = [];
+    const actions = makeActions();
+    actions.confirmAuthMethod = async (method) => {
+      chosen.push(method);
+    };
+    const read: string[] = [];
+
+    for (let step = 0; step < 4; step++) {
+      const ui = renderAuth({ actions, offer: enforced });
+      await flushEffects();
+      read.push(authCells(ui));
+      ui.stdin.write('\r');
+      await flushEffects();
+      ui.stdin.write(' ');
+      await flushEffects();
+      ui.unmount();
+    }
+
+    expect(chosen).toEqual(['host-configured', 'session', 'api-key', 'host-configured']);
+    // Every rung is reachable and each reads as its own word, never as a billing posture.
+    expect(read).toEqual([
+      '├─ auth CLI decides',
+      '├─ auth session',
+      '├─ auth api key',
+      '├─ auth CLI decides',
+    ]);
+  });
+
+  it('exposes no selectable method where nothing is enforceable', async () => {
+    const rows = authRows(hostOwned).filter((row) => row.kind === 'auth');
+    expect(rows).toEqual([
+      {
+        kind: 'auth',
+        method: 'host-configured',
+        choices: [],
+        steps: false,
+        unproven: false,
+        last: false,
+        tree: { depth: 1, parentContinues: false },
+      },
+    ]);
+
+    const chosen: AuthMethodChoice[] = [];
+    const actions = makeActions();
+    actions.confirmAuthMethod = async (method) => {
+      chosen.push(method);
+    };
+    const ui = renderAuth({ actions, offer: hostOwned });
+    await flushEffects();
+    const row = authLine(ui);
+
+    expect(row).toContain(AUTH_METHOD_WORDS['host-configured']);
+    // No check, no chevron: nothing on the row reads as something to steer.
+    expect(row).not.toContain('✓');
+    expect(row).not.toContain('▸');
+    expect(row).not.toContain('▾');
+    // And the byline promises no key it will not take.
+    const hint =
+      frameText(ui)
+        .split('\n')
+        .find((line) => line.includes('esc collapse')) ?? '';
+    expect(hint).not.toContain('⏎');
+    expect(hint).not.toContain('space cycle');
+
+    ui.stdin.write('\r');
+    await flushEffects();
+    ui.stdin.write(' ');
+    await flushEffects();
+    expect(chosen).toEqual([]);
+    // Space is held by the row, so the family the user opened is still open.
+    expect(authLine(ui)).toContain(AUTH_METHOD_WORDS['host-configured']);
+    ui.unmount();
+  });
+
+  it('names a configured method no adapter can enforce, and keeps the way out of it', async () => {
+    const stranded: AuthMethodOffer = { methods: [], selected: 'session' };
+    expect(authRows(stranded).filter((row) => row.kind === 'auth')).toEqual([
+      {
+        kind: 'auth',
+        method: 'session',
+        choices: ['host-configured'],
+        steps: true,
+        unproven: true,
+        last: false,
+        tree: { depth: 1, parentContinues: false },
+      },
+    ]);
+
+    // The same holds where the matrix proves a different method for this adapter:
+    // what is refused is the method the seat carries, not the absence of a matrix.
+    expect(
+      authRows({ methods: ['api-key'], selected: 'session' }).filter((row) => row.kind === 'auth'),
+    ).toMatchObject([
+      { method: 'session', choices: ['api-key', 'host-configured'], unproven: true },
+    ]);
+
+    const chosen: AuthMethodChoice[] = [];
+    const actions = makeActions();
+    actions.confirmAuthMethod = async (method) => {
+      chosen.push(method);
+    };
+    const ui = renderAuth({ actions, offer: stranded });
+    await flushEffects();
+    // Dispatch refuses this run, so the row says so rather than reading as settled.
+    expect(authLine(ui)).toContain(AUTH_UNPROVEN_WORD);
+    ui.stdin.write(' ');
+    await flushEffects();
+    ui.unmount();
+
+    const back = renderAuth({ actions, offer: stranded });
+    await flushEffects();
+    expect(authLine(back)).toContain(AUTH_METHOD_WORDS['host-configured']);
+    expect(authLine(back)).not.toContain(AUTH_UNPROVEN_WORD);
+    back.stdin.write('\r');
+    await flushEffects();
+    expect(chosen).toEqual(['host-configured']);
+    back.unmount();
+  });
+
+  it('offers a method only for the tool the seat runs', () => {
+    const claude = { ...cliTool('claude-code', 'Claude Code CLI'), version: '2.1.0' };
+    const runner = { kind: 'cli', tool: 'claude-code' } as const;
+
+    expect(authMethodOffer({ item: { ...claude, isCurrent: true }, runner })).toEqual({
+      methods: [],
+      selected: 'host-configured',
+    });
+    // A tool the cursor is only visiting has no seat to bind a method to, and
+    // neither does a seat that runs something else.
+    expect(authMethodOffer({ item: claude, runner })).toBeUndefined();
+    expect(
+      authMethodOffer({
+        item: { ...claude, isCurrent: true },
+        runner: { kind: 'cli', tool: 'codex' },
+      }),
+    ).toBeUndefined();
+    expect(
+      authMethodOffer({
+        item: { ...cliTool('opencode', 'OpenCode CLI'), isCurrent: true },
+        runner: {
+          kind: 'api',
+          provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
+          model: 'qwen',
+          apiBase: 'http://localhost:11434/v1',
+        },
+      }),
+    ).toBeUndefined();
+  });
+
+  it('reads a declaration as the host login or a route, never as a chosen method', () => {
+    const claude = { ...cliTool('claude-code', 'Claude Code CLI'), isCurrent: true as const };
+    const offerFor = (authChannel?: 'session' | 'api-key' | 'provider-dependent') =>
+      authMethodOffer({
+        item: claude,
+        runner: {
+          kind: 'cli',
+          tool: 'claude-code',
+          ...(authChannel === undefined ? {} : { authChannel }),
+        },
+      })?.selected;
+
+    expect(offerFor()).toBe('host-configured');
+    expect(offerFor('provider-dependent')).toBe('host-configured');
+    expect(offerFor('session')).toBe('session');
+    expect(offerFor('api-key')).toBe('api-key');
+  });
+
+  it('turns a proven adapter into a switch, and proves nothing from the shipped matrix', () => {
+    const claude = {
+      ...cliTool('claude-code', 'Claude Code CLI'),
+      isCurrent: true as const,
+      version: '2.1.0',
+    };
+    const runner = { kind: 'cli', tool: 'claude-code' } as const;
+    // A matrix row is a fixture here and only here: `authMethodOffer` reads the
+    // shipped matrix by default, so no test can make a tool read as supported.
+    const evidence: readonly CliAuthEnforcementEvidence[] = [
+      {
+        id: 'claude-code-darwin-2.1.0',
+        tool: 'claude-code',
+        platform: 'darwin',
+        installedVersion: '2.1.0',
+        channels: ['session', 'api-key'],
+      },
+    ];
+
+    expect(authMethodOffer({ item: claude, runner, platform: 'darwin', evidence })).toEqual({
+      methods: ['session', 'api-key'],
+      selected: 'host-configured',
+    });
+    // The same adapter on another platform, or at another version, is unproven.
+    expect(authMethodOffer({ item: claude, runner, platform: 'linux', evidence })?.methods).toEqual(
+      [],
+    );
+    expect(
+      authMethodOffer({
+        item: { ...claude, version: '2.1.1' },
+        runner,
+        platform: 'darwin',
+        evidence,
+      })?.methods,
+    ).toEqual([]);
+    expect(authMethodOffer({ item: claude, runner, platform: 'darwin' })?.methods).toEqual([]);
   });
 });

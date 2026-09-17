@@ -2,6 +2,7 @@ import {
   runnerRoleForSlot,
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
+import { contentIdentityId } from '../../../core/config/accessors/content-identity.js';
 import { findConfiguredCustomCommand } from '../../../core/config/custom-command-catalog.js';
 import { inlineRunnerCommand } from '../../../core/config/custom-commands.js';
 import {
@@ -55,7 +56,10 @@ async function evaluateCli(
     ...(candidate.runner.model !== undefined && { model: candidate.runner.model }),
     authChannel,
     credentialPresent: false,
-    configGeneration: context.preparationId,
+    // The observation names the configuration being checked, not this
+    // preparation: two concurrent preparations of the same config ask the
+    // runner one question. The receipt below is still minted per preparation.
+    configGeneration: contentIdentityId('config', context.config),
   };
   const expectedContextKey = runnerDiscoveryContextKey(discoveryContext);
   const evidence = await context.deps.detectRunnerEvidence({

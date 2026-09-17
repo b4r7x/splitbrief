@@ -3,7 +3,7 @@ import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeCostBreakdown } from '#testing/helpers/factories/cost-breakdown.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { Summary } from '../../../core/schemas/summary.js';
+import type { RequestEstimate, Summary } from '../../../core/schemas/summary.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
@@ -71,6 +71,18 @@ function derive(summary: Summary, overrides: DeriveOverrides = {}): SummaryView 
 }
 
 const ENDED = { kind: 'closed', as: 'ended' } as const;
+
+function unmeteredEstimate(items: RequestEstimate['items']): RequestEstimate {
+  return {
+    amount: null,
+    currency: 'USD',
+    basis: 'unavailable',
+    completeness: 'unavailable',
+    knownSubtotal: 0,
+    reasons: ['unpriced-model'],
+    items,
+  };
+}
 
 function readySummary(overrides: Partial<Summary> = {}): Summary {
   return makeSummary({
@@ -391,18 +403,18 @@ describe('cost', () => {
     const view = derive(
       makeSummary({
         costBreakdown: makeCostBreakdown({
-          providerRunMetadata: {
-            'claude-code': {
-              service: 'anthropic',
-              offering: 'coding-subscription',
-              normalizedEndpoint: '',
-              billing: 'subscription-included',
-              asOf: '2026-09-14',
+          requestEstimate: unmeteredEstimate([
+            {
+              callId: 'planner-call',
+              role: 'planner',
+              usageBoundary: 'single-request',
+              amount: null,
+              knownSubtotal: 0,
+              completeness: 'unavailable',
+              reasons: ['unpriced-model'],
+              billing: { posture: 'subscription-included', basis: 'observed-invocation' },
             },
-          },
-          offeringPresentations: {
-            'claude-code': { costLabel: 'subscription-included', billingLabel: 'subscription' },
-          },
+          ]),
         }),
       }),
     );
@@ -414,28 +426,28 @@ describe('cost', () => {
       makeSummary({
         tokenUsage: makeUsage(),
         costBreakdown: makeCostBreakdown({
-          hasPricedUsage: true,
-          totalActualCost: 0,
-          providerRunMetadata: {
-            'claude-code': {
-              service: 'anthropic',
-              offering: 'coding-subscription',
-              normalizedEndpoint: '',
-              billing: 'subscription-included',
-              asOf: '2026-09-14',
+          requestEstimate: unmeteredEstimate([
+            {
+              callId: 'planner-call',
+              role: 'planner',
+              usageBoundary: 'single-request',
+              amount: null,
+              knownSubtotal: 0,
+              completeness: 'unavailable',
+              reasons: ['unpriced-model'],
+              billing: { posture: 'subscription-included', basis: 'observed-invocation' },
             },
-            ollama: {
-              service: 'ollama',
-              offering: 'local',
-              normalizedEndpoint: '',
-              billing: 'local',
-              asOf: '2026-09-14',
+            {
+              callId: 'implementer-call',
+              role: 'implementer',
+              usageBoundary: 'single-request',
+              amount: null,
+              knownSubtotal: 0,
+              completeness: 'unavailable',
+              reasons: ['unpriced-model'],
+              billing: { posture: 'local', basis: 'local-transport' },
             },
-          },
-          offeringPresentations: {
-            'claude-code': { costLabel: 'subscription-included', billingLabel: 'subscription' },
-            ollama: { costLabel: 'local', billingLabel: 'local' },
-          },
+          ]),
         }),
       }),
     );

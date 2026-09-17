@@ -3,7 +3,11 @@ import type { EffortLevel } from '../../../core/schemas/enums.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
-import { parseStreamLine } from '../../streaming/parse-stream-json.js';
+import {
+  createStreamParser,
+  parseStreamLine,
+  type StreamParseResult,
+} from '../../streaming/parse-stream-json.js';
 import { error } from '../../../utils/error.js';
 
 const CLAUDE_COMMAND = 'claude' as const;
@@ -94,7 +98,10 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
 }
 
 function toProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  const parsed = parseStreamLine(line);
+  return protocolEvents(parseStreamLine(line));
+}
+
+function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] {
   const events: CliProtocolEvent[] = [];
   if (parsed.sessionId !== undefined) {
     events.push({ type: 'session', nativeSessionId: parsed.sessionId });
@@ -182,6 +189,10 @@ function createAdapter(
     environment: {},
     outputContract: { kind: 'structured-terminal', terminalEvent: 'required' } as const,
     parse: toProtocolEvents,
+    createParser: () => {
+      const parse = createStreamParser();
+      return (line: string) => protocolEvents(parse(line));
+    },
     terminal: ({ events }: { events: readonly CliProtocolEvent[] }) => {
       const terminal = events.findLast((event) => event.type === 'result');
       if (terminal === undefined || terminal.type !== 'result') {

@@ -34,6 +34,7 @@ import { assertCliStartGate } from '../runners/start-gate.js';
 import { processError } from '../../lib/process/errors.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
 import { createQuestionAccumulator } from '../parsers/question.js';
+import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
 import { TIMEOUTS } from '../../core/pipeline-spec/timeouts.js';
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
@@ -148,7 +149,7 @@ export function createCliPlanner(
         signal: effectiveSignal,
       },
       prompt,
-      callContext,
+      callContext: withCliInvocationIdentity({ runner: plannerCfg, callContext, executable }),
       onOutput,
       onCallEvent,
       onSessionId:

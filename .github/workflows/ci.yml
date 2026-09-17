@@ -66,6 +66,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run tui-shots -- --scenario home-empty --viewport 80x24 --output .test-artifacts/ui/ci-smoke
+      - run: npm run tui-shots:pty
+        env:
+          SPLITBRIEF_REQUIRE_PTY: '1'
 
   website:
     runs-on: ubuntu-latest

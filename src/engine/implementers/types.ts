@@ -11,6 +11,7 @@ import type { CliStartGate } from '../runners/start-gate.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type * as ImplementerConfig from '../../core/schemas/implementer-config.js';
 import type { RunnerSlot } from '../runners/prepared-execution.js';
+import type { BundleApplyResult } from './file-bundle.js';
 
 export interface ImplementerResult {
   success: boolean;
@@ -19,6 +20,8 @@ export interface ImplementerResult {
   /** Machine outcome behind a failure; the message is for humans, this is not. */
   outcome?: RunnerFailureOutcomeState | undefined;
   usage?: TokenDelta | undefined;
+  /** What a `file-bundle-v1` response actually did on disk; absent for every other grammar. */
+  applyResult?: BundleApplyResult | undefined;
 }
 
 export interface ImplementerPublisher {
@@ -82,6 +85,12 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy {
     | undefined;
   languageContext?: LanguageContext | undefined;
   phase?: Phase | undefined;
+  /**
+   * Paths an earlier attempt of this same task is recorded to have created. A
+   * retry rewrites them instead of refusing to create them twice; what this
+   * seat created in its own process counts alongside them.
+   */
+  createdByThisTask?: readonly string[] | undefined;
   approveWrite?:
     | ((file: string) => Promise<{ allow: boolean; reason?: string | undefined }>)
     | undefined;

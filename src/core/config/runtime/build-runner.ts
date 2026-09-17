@@ -9,7 +9,6 @@ import {
   CLI_TOOL_IDS,
   cliModelPolicyViolations,
   getCliModelPolicy,
-  defaultCliAuthChannel,
   type CliAuthChannelId,
 } from '../../runners/cli-tool-catalog.js';
 import {
@@ -290,8 +289,7 @@ function buildCliConfig(
   const state = targetState(opts, target);
   const authChannel =
     opts.authChannel ??
-    (state === 'same' && existing?.kind === 'cli' ? existing.authChannel : undefined) ??
-    (state !== 'same' && tool === 'claude-code' ? defaultCliAuthChannel(tool).id : undefined);
+    (state === 'same' && existing?.kind === 'cli' ? existing.authChannel : undefined);
   const config: Record<string, unknown> = {
     kind: 'cli',
     tool,

@@ -1,21 +1,10 @@
 import { App } from '../../../src/app/root.js';
 import type { AppProps } from '../../../src/app/root.js';
-import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import * as React from 'react';
-import {
-  CheckpointDefinitionSchema,
-  ScenarioDefinitionSchema,
-  type CheckpointDefinition,
-  type ScenarioDefinition,
-} from '../contracts/catalog.js';
+import type { CheckpointDefinition, ScenarioDefinition } from '../contracts/catalog.js';
 import { ViewportSchema, type Viewport } from '../contracts/geometry.js';
 import type { TerminalProfile } from '../contracts/manifest-fields.js';
-import type { CheckpointPredicate, FixtureFactory, FixtureLifecycle } from '../fixtures/common.js';
-import { overlayFixtureRegistry } from '../fixtures/overlay-fixtures.js';
-import { screenFixtureRegistry } from '../fixtures/screen-fixtures.js';
-import { createWorkflowFixtureAppDeps } from '../fixtures/workflow/setup.js';
-import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
-import { workflowFixtureRegistry } from '../fixtures/workflow/registry.js';
+import type { CheckpointPredicate } from '../fixtures/common.js';
 import {
   flushEffects,
   renderFeature,
@@ -24,6 +13,7 @@ import {
 } from '../../helpers/ink.js';
 import { enterCaptureEnvironment } from './environment.js';
 import { waitForCheckpoint } from './checkpoints.js';
+import { createFixtureSession, type FixtureSession } from './fixture-session.js';
 
 export interface MountGalleryScenarioOptions {
   readonly scenario: ScenarioDefinition;
@@ -48,31 +38,47 @@ export interface GalleryCaptureHandle {
   readonly unmount: () => Promise<void>;
 }
 
+/**
+ * A capture is the shared fixture session plus the two things only a capture has: the
+ * deterministic environment its frames are compared under, and its own off-screen renderer.
+ */
 export async function mountGalleryScenario(
   options: MountGalleryScenarioOptions,
 ): Promise<GalleryCaptureHandle> {
-  const scenario = ScenarioDefinitionSchema.parse(options.scenario);
-  const requestedCheckpoint = CheckpointDefinitionSchema.parse(options.checkpoint);
-  const checkpoint = resolveCheckpoint(scenario, requestedCheckpoint);
   const viewport = ViewportSchema.parse(options.viewport);
-  assertSupportedViewport(scenario, viewport);
-
-  const fixture = resolveFixtureFactory(scenario)();
   const environment = enterCaptureEnvironment({ viewport, profile: options.profile });
-  const rendered = await setupAndRender({
-    scenario,
-    checkpoint,
-    viewport,
-    fixture,
-    restoreEnvironment: environment.restore,
-  });
+  let session: FixtureSession;
+  try {
+    session = await createFixtureSession({
+      scenario: options.scenario,
+      checkpoint: options.checkpoint,
+      viewport,
+    });
+  } catch (error) {
+    environment.restore();
+    throw error;
+  }
+
+  const { scenario, checkpoint } = session;
+  let rendered: RenderFeatureResult;
+  try {
+    rendered = await render(session.props, viewport);
+  } catch (error) {
+    return cleanupFailedMount(session, environment.restore, error);
+  }
 
   let unmountPromise: Promise<void> | undefined;
   const unmount = (): Promise<void> => {
-    if (unmountPromise !== undefined) return unmountPromise;
-    unmountPromise = unmountCapture({ rendered, fixture, restoreEnvironment: environment.restore });
+    unmountPromise ??= unmountCapture(rendered, session, environment.restore);
     return unmountPromise;
   };
+
+  try {
+    await session.activate((input) => rendered.stdin.write(input));
+    await flushEffects();
+  } catch (error) {
+    return unmountAfterFailure(unmount, error);
+  }
 
   return {
     scenario,
@@ -99,111 +105,42 @@ export async function mountGalleryScenario(
   };
 }
 
-function resolveFixtureFactory(scenario: ScenarioDefinition): FixtureFactory {
-  const factory =
-    workflowFixtureRegistry.get(scenario.id) ??
-    screenFixtureRegistry.get(scenario.id) ??
-    overlayFixtureRegistry.get(scenario.id);
-  if (factory === undefined) throw new Error(`No visual fixture registered for ${scenario.id}`);
-  return factory;
+async function render(props: AppProps, viewport: Viewport): Promise<RenderFeatureResult> {
+  const renderViewport: RenderViewport = { cols: viewport.cols, rows: viewport.rows };
+  const rendered = renderFeature(React.createElement<AppProps>(App, props), renderViewport);
+  await flushEffects();
+  return rendered;
 }
 
-function resolveCheckpoint(
-  scenario: ScenarioDefinition,
-  requested: CheckpointDefinition,
-): CheckpointDefinition {
-  const checkpoint = scenario.checkpoints.find((candidate) => candidate.id === requested.id);
-  if (
-    checkpoint === undefined ||
-    checkpoint.kind !== requested.kind ||
-    checkpoint.marker !== requested.marker ||
-    checkpoint.timeoutMs !== requested.timeoutMs
-  ) {
-    throw new Error(`Checkpoint ${requested.id} does not belong to scenario ${scenario.id}`);
-  }
-  return checkpoint;
-}
-
-function assertSupportedViewport(scenario: ScenarioDefinition, viewport: Viewport): void {
-  const isSupported = scenario.viewports.some(
-    (candidate) => candidate.cols === viewport.cols && candidate.rows === viewport.rows,
-  );
-  if (!isSupported) {
-    throw new Error(
-      `Viewport ${viewport.cols}x${viewport.rows} is not supported by ${scenario.id}`,
-    );
-  }
-}
-
-async function setupAndRender(options: {
-  readonly scenario: ScenarioDefinition;
-  readonly checkpoint: CheckpointDefinition;
-  readonly viewport: Viewport;
-  readonly fixture: FixtureLifecycle;
-  readonly restoreEnvironment: () => void;
-}): Promise<RenderFeatureResult> {
+async function unmountCapture(
+  rendered: RenderFeatureResult,
+  session: FixtureSession,
+  restoreEnvironment: () => void,
+): Promise<void> {
   try {
-    await options.fixture.setup({
-      scenario: options.scenario,
-      checkpoint: options.checkpoint,
-      viewport: options.viewport,
-    });
-    terminalSizeStore.__testReset({
-      cols: options.viewport.cols,
-      rows: options.viewport.rows,
-      isSmall: options.viewport.cols < 120,
-    });
-    const projection = workflowFixtureProjections.get(options.scenario.id);
-    const renderViewport: RenderViewport = {
-      cols: options.viewport.cols,
-      rows: options.viewport.rows,
-    };
-    const rendered = renderFeature(
-      React.createElement<AppProps>(App, {
-        workflowDeps: createWorkflowFixtureAppDeps(projection),
-      }),
-      renderViewport,
-    );
-    await flushEffects();
-    return rendered;
-  } catch (error) {
-    return cleanupFailedMount({
-      fixture: options.fixture,
-      restoreEnvironment: options.restoreEnvironment,
-      error,
-    });
-  }
-}
-
-async function unmountCapture(options: {
-  readonly rendered: RenderFeatureResult;
-  readonly fixture: FixtureLifecycle;
-  readonly restoreEnvironment: () => void;
-}): Promise<void> {
-  try {
-    options.rendered.unmount();
+    rendered.unmount();
   } finally {
     try {
-      await options.fixture.teardown();
+      await session.dispose();
     } finally {
-      options.restoreEnvironment();
+      restoreEnvironment();
     }
   }
 }
 
-async function cleanupFailedMount(options: {
-  readonly fixture: FixtureLifecycle;
-  readonly restoreEnvironment: () => void;
-  readonly error: unknown;
-}): Promise<never> {
+async function cleanupFailedMount(
+  session: FixtureSession,
+  restoreEnvironment: () => void,
+  error: unknown,
+): Promise<never> {
   try {
-    await options.fixture.teardown();
+    await session.dispose();
   } catch (cleanupError) {
-    throw new AggregateError([options.error, cleanupError], 'Gallery mount and cleanup failed');
+    throw new AggregateError([error, cleanupError], 'Gallery mount and cleanup failed');
   } finally {
-    options.restoreEnvironment();
+    restoreEnvironment();
   }
-  throw options.error;
+  throw error;
 }
 
 async function unmountAfterFailure(unmount: () => Promise<void>, error: unknown): Promise<never> {

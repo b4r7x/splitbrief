@@ -37,6 +37,30 @@ import { formatDrainedMessages } from './queue/prompt.js';
 import { withContinuationLoop } from './continuation.js';
 import { composeContinuation } from '../spec/prompts/continuation.js';
 import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
+import { buildApiReviewContext } from './api-review-context.js';
+import {
+  apiContextError,
+  readApiContextDiagnostic,
+  type ApiContextDiagnostic,
+} from '../providers/api-context-diagnostic.js';
+import { resolveMode } from '../../core/config/runtime/resolve.js';
+import { isRecord } from '../../utils/type-guards.js';
+
+/** The code a failed review carries when the failure names none of its own. */
+export const REVIEW_UNAVAILABLE = 'review-unavailable';
+
+/**
+ * Why a review reached no verdict. `insufficient-context` is the packet refusing
+ * before anything was dispatched; `call-failed` is a transport or protocol
+ * failure, summarized — never a fabricated blocker count.
+ */
+export type FinalReviewFailure =
+  | Readonly<{ kind: 'insufficient-context'; diagnostic: ApiContextDiagnostic }>
+  | Readonly<{ kind: 'call-failed'; code: string; message: string }>;
+
+function errorKind(err: unknown): string | undefined {
+  return isRecord(err) && typeof err.kind === 'string' ? err.kind : undefined;
+}
 
 export type FinalReviewResult = {
   state: WorkflowState;
@@ -44,6 +68,11 @@ export type FinalReviewResult = {
   verdict: ParsedFinalReview | null;
   reviewText: string;
   reviewStatus: ReviewPhaseStatus;
+  /**
+   * Why this review reached no verdict, when it reached none. Additive: a
+   * caller that does not read it sees the status it always saw.
+   */
+  failure?: FinalReviewFailure;
 };
 
 export const finalReviewError = {
@@ -106,12 +135,12 @@ export async function runFinalReviewPhase(opts: {
   let writeStatus: 'written' | 'failed' = 'written';
   let reviewText = '';
   let verdict: ParsedFinalReview | null = null;
+  let failure: FinalReviewResult['failure'];
   try {
     const baseline = state.changedFilesBaseline;
     if (baseline?.runStartChangedFiles === undefined) throw finalReviewError.missingRunBaseline();
     const universe = await resolveRunUniverse(projectDir, baseline);
     const fullDiff = universe.fullDiff;
-    const promptDiff = truncateDiffForPrompt(fullDiff);
     const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
     const taskBriefs =
       readSpecFileOrEmpty({ projectDir, sessionId }, TASKS_FILE) || formatTasks(state.tasks);
@@ -148,14 +177,47 @@ export async function runFinalReviewPhase(opts: {
     state = drain.state;
     const queueText = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
 
-    const basePrompt = buildFinalReviewPrompt({
-      spec,
-      taskBriefs,
-      diff: promptDiff,
-      driftReport: driftPromptSection,
-      validationEvidence: validationPromptSection,
-    });
-    const fullPrompt = queueText ? queueText + basePrompt : basePrompt;
+    // An API seat reads no file of its own, so it is dispatched only once the
+    // packet it is handed carries every required source, whole and untruncated.
+    const seat = resolveReviewerRunner(config).runner;
+    let fullPrompt: string;
+    if (seat.kind === 'api') {
+      const packet = buildApiReviewContext({
+        mode: resolveMode({ config, savedMode: state.mode }),
+        feature: state.feature,
+        spec,
+        taskBriefs,
+        fullDiff,
+        changedFiles: universe.changedFiles,
+        baseline: { head: baseline.head, runStartChangedFiles: baseline.runStartChangedFiles },
+        driftSection: driftPromptSection,
+        validation: { recorded: ledger !== null, evidence: validationPromptSection },
+        queueText,
+        ...(seat.contextLength !== undefined && { contextLength: seat.contextLength }),
+        ...(seat.model !== undefined && { model: seat.model }),
+      });
+      if (packet.kind === 'insufficient-context') {
+        throw apiContextError({
+          code: 'insufficient-context',
+          seat: 'review',
+          cause: packet.cause,
+          missingSections: [...packet.missingSections],
+          ...(seat.model !== undefined && { model: seat.model }),
+          requiredTokens: packet.requiredTokens,
+          availableTokens: packet.availableTokens,
+        });
+      }
+      fullPrompt = packet.text;
+    } else {
+      const basePrompt = buildFinalReviewPrompt({
+        spec,
+        taskBriefs,
+        diff: truncateDiffForPrompt(fullDiff),
+        driftReport: driftPromptSection,
+        validationEvidence: validationPromptSection,
+      });
+      fullPrompt = queueText ? queueText + basePrompt : basePrompt;
+    }
 
     const reviewStep = { kind: 'review' as const, cycle: state.reviewFixes?.cycle ?? 0 };
     // One continuation, one call: the verdict re-ask is a fresh question, not a
@@ -231,11 +293,15 @@ export async function runFinalReviewPhase(opts: {
       seat.source === 'configured'
         ? `Final review failed (reviewer: ${getRunnerCatalogDisplayName(seat.runner)})`
         : 'Final review failed';
-    publishError({
-      bus: bus,
-      phase: state.phase,
-      message: labelError(label, err),
-    });
+    const message = labelError(label, err);
+    // The diagnosis is read off the error's own data, never off its wording, so
+    // recovery keeps every missing section this review was refused for.
+    const diagnostic = readApiContextDiagnostic(err);
+    failure =
+      diagnostic === null
+        ? { kind: 'call-failed', code: errorKind(err) ?? REVIEW_UNAVAILABLE, message }
+        : { kind: 'insufficient-context', diagnostic };
+    publishError({ bus: bus, phase: state.phase, message });
     writeStatus = 'failed';
   }
   if (opts.signal?.aborted) return interrupted();
@@ -288,5 +354,5 @@ export async function runFinalReviewPhase(opts: {
       : (verdict?.verdict ?? null) === null
         ? 'unparseable'
         : 'written';
-  return { state, summaryBase, verdict, reviewText, reviewStatus };
+  return { state, summaryBase, verdict, reviewText, reviewStatus, ...(failure && { failure }) };
 }

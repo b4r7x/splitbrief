@@ -15,7 +15,7 @@ import { prependPath, trustedShimGate, writeCommandShim } from '#testing/helpers
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
-import { SANDBOX_DIR, TASKS_FILE } from '../../core/paths.js';
+import { TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES } from '../runners/cli-tools/process-invoke.js';
 import { CLI_NO_DEADLINE_MS } from '../runners/invoke-cli-adapter.js';
@@ -159,7 +159,7 @@ describe('createCliPlanner', () => {
     expect(await planner.isAvailable()).toBe(true);
   });
 
-  it('passes only the explicitly selected API-key channel to a normal planner process', async () => {
+  it('refuses an explicitly selected unproven API-key channel before spawning a planner process', async () => {
     const envFile = join(shimDir, 'env.txt');
     const shimPath = join(shimDir, 'codex');
     writeFileSync(
@@ -184,11 +184,10 @@ describe('createCliPlanner', () => {
         }),
       );
 
-      await planner.review('prompt', projectDir, { onOutput: vi.fn() });
-
-      expect(readFileSync(envFile, 'utf8')).toBe(
-        `sk-openai||${join(projectDir, SANDBOX_DIR, 'planner', 'codex', 'home')}`,
-      );
+      await expect(
+        planner.review('prompt', projectDir, { onOutput: vi.fn() }),
+      ).rejects.toMatchObject({ kind: 'runner-auth-channel-unenforced' });
+      expect(existsSync(envFile)).toBe(false);
     } finally {
       if (originalOpenAi === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = originalOpenAi;

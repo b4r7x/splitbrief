@@ -13,6 +13,7 @@ describe('pickerViewStore', () => {
       expandedModelId: null,
       optionDraftId: null,
       effortDraft: null,
+      authDraft: null,
       draft: null,
       browseCatalog: false,
     });
@@ -142,6 +143,7 @@ describe('pickerViewStore', () => {
       expandedModelId: null,
       optionDraftId: null,
       effortDraft: null,
+      authDraft: null,
       draft: null,
       browseCatalog: false,
     });

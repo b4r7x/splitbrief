@@ -340,10 +340,6 @@ export function publishGitBranchCreated(ctx: BusContext, name: string): void {
   ctx.bus.publish({ type: 'git_branch_created', ts: Date.now(), phase: ctx.phase, name });
 }
 
-export function publishGitCheckpoint(ctx: BusContext, taskId: TaskId, tag: string): void {
-  ctx.bus.publish({ type: 'git_checkpoint', ts: Date.now(), phase: ctx.phase, taskId, tag });
-}
-
 export function publishRetry(
   opts: BusContext & { taskId: TaskId; attempt: number; maxRetries: number; error: string },
 ): void {

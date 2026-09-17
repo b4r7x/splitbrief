@@ -4,6 +4,7 @@ import { configStore } from '../../src/stores/project/config.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
 import {
   listVisualScenarios,
+  findVisualScenario,
   REQUIRED_VIEWPORTS,
   REQUIRED_WORKFLOW_CHECKPOINT_IDS,
   REQUIRED_WORKFLOW_CHECKPOINT_KINDS,
@@ -15,6 +16,7 @@ import { formatViewport } from './contracts/geometry.js';
 import { overlayFixtureRegistry } from './fixtures/overlay-fixtures.js';
 import { screenFixtureRegistry } from './fixtures/screen-fixtures.js';
 import { workflowFixtureRegistry } from './fixtures/workflow/registry.js';
+import { mountGalleryScenario } from './gallery/mount.js';
 
 function sorted(values: Iterable<string>): string[] {
   return [...values].sort();
@@ -31,6 +33,77 @@ afterEach(() => {
 });
 
 describe('visual catalog', () => {
+  it('retains fixtures for the changed composer, preparation, usage and local-server surfaces', () => {
+    for (const id of [
+      'home-preparing',
+      'home-preparation-failed',
+      'home-preparation-blocked',
+      'workflow-continuing',
+      'workflow-task-review',
+      'home-draft-image',
+      'overlay-usage-details',
+      'overlay-usage-details-legacy',
+      'overlay-usage-context-insufficient',
+      'overlay-local-connection-ollama',
+      'overlay-local-connection-lmstudio',
+      'overlay-local-connection-llamacpp',
+      'overlay-picker-auth-config-owned',
+      'overlay-picker-auth-unsupported',
+    ]) {
+      expect(findVisualScenario(id), id).toBeDefined();
+    }
+  });
+
+  it('keeps nonzero usage out of the mounted automatic task review', async () => {
+    const scenario = findVisualScenario('workflow-task-review');
+    const checkpoint = scenario?.checkpoints[0];
+    if (scenario === undefined || checkpoint === undefined)
+      throw new Error('Missing task review fixture');
+    for (const viewport of REQUIRED_VIEWPORTS) {
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = await handle.waitForCheckpoint();
+        expect(frame).toContain('ready for review');
+        expect(frame).toContain('[c]  continue');
+        expect(frame).toContain('[r]  redo task');
+        expect(frame).toContain('[a]  abort');
+        if (viewport.rows > 18) {
+          expect(frame).toContain('worker ollama / qwen');
+          expect(frame).toContain('route tight');
+        }
+        expect(frame).not.toMatch(/tokens|12345|23456|32768|Selected worker/);
+      } finally {
+        await handle.unmount();
+      }
+    }
+  });
+
+  it.each([
+    ['offline', 'Ollama is not reachable'],
+    ['timeout', 'Ollama did not answer'],
+    ['unauthorized', 'LM Studio rejected the token'],
+    ['empty', 'no models installed'],
+    ['missing', 'not in this catalog'],
+    ['loaded', 'loaded'],
+    ['not-loaded', 'not loaded'],
+    ['listed', 'listed'],
+  ])('renders the %s server outcome through the mounted connection check', async (state, text) => {
+    const scenario = findVisualScenario(`overlay-local-connection-${state}`);
+    if (scenario === undefined) throw new Error(`Missing local fixture: ${state}`);
+    const checkpoint = scenario.checkpoints[0];
+    if (checkpoint === undefined) throw new Error('Missing checkpoint');
+    for (const viewport of REQUIRED_VIEWPORTS) {
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = await handle.waitForCheckpoint();
+        expect(frame).toContain(text);
+        expect(frame).toContain('retry');
+        if (state !== 'unauthorized') expect(frame).not.toContain('rejected the token');
+      } finally {
+        await handle.unmount();
+      }
+    }
+  });
   it('covers the exact router screen and overlay unions with unique versioned scenarios', () => {
     const screens = VISUAL_CATALOG.flatMap((scenario) =>
       scenario.surface.kind === 'screen' ? [scenario.surface.screen] : [],

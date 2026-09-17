@@ -4,11 +4,14 @@ import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import { makeTask } from '../../../helpers/factories/task.js';
-import { makeImplState } from '../../../helpers/factories/workflow-state.js';
+import { makeUsage } from '../../../helpers/factories/summary.js';
+import { makeImplState, makeWorkflowState } from '../../../helpers/factories/workflow-state.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
+import type { TaskReviewRequest } from '../../../../src/engine/events/workflow-events.js';
 import type { ReviewArtifact } from '../../../../src/features/workflow/prompt-rows/approval.js';
 import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-rows/workflow.js';
 import { formatRecoveryPrompt } from '../../../../src/features/workflow/recovery-prompt.js';
+import { formatTaskReviewPrompt } from '../../../../src/features/workflow/task-review-prompt.js';
 import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt/prompt.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores/workflow/stop.js';
 import type { ScenarioId } from '../../contracts/identifiers.js';
@@ -57,6 +60,7 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   success: 'Visual fixture workflow complete',
   failure: 'Synthetic runner failure: bounded fixture',
   recovery: 'switch BUILD to OpenCode CLI',
+  apiContext: 'Nothing was sent to PLAN',
 });
 
 interface FixtureQuestion {
@@ -134,6 +138,7 @@ const WORKFLOW_STOPPING_ID = scenarioId('workflow-stopping');
 const WORKFLOW_STOPPED_ID = scenarioId('workflow-stopped');
 const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
 const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
+const WORKFLOW_API_CONTEXT_ID = scenarioId('workflow-api-context-insufficient');
 
 const idleProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IDLE_ID,
@@ -553,6 +558,50 @@ const questionProjection: WorkflowFixtureProjection = {
   },
 };
 
+const taskReviewRequest: TaskReviewRequest = {
+  taskId: WORKFLOW_FIXTURE_TASK_ID,
+  taskTitle: 'Update fixture',
+  status: 'done',
+  filesTouched: ['src/fixture.ts'],
+  validation: { passed: true, summary: 'tests passed', stages: [{ stage: 'test', passed: true }] },
+  evidence: {
+    summary: 'behavior verified',
+    expected: ['fixture works'],
+    observed: ['fixture works'],
+  },
+  cost: {
+    tokenUsage: makeUsage({ implementerInput: 12345, implementerOutput: 23456 }),
+    tool: 'ollama',
+    model: 'qwen',
+  },
+  routing: {
+    fit: 'tight',
+    estimatedTokens: 12345,
+    untruncatedEstimatedTokens: 23456,
+    contextLength: 32768,
+    currentCodeTruncated: false,
+    currentCodeContextMode: 'whole-file',
+    reason: 'Selected worker (tight, estimated 12345/32768 tokens)',
+  },
+  availableCommands: ['continue', 'redo-task', 'abort'],
+};
+
+const taskReviewProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-task-review'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+  ],
+  question: {
+    get prompt() {
+      return formatTaskReviewPrompt(taskReviewRequest);
+    },
+    answer: 'c',
+  },
+};
+
 const failureProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_FAILURE_ID,
   feature: WORKFLOW_FEATURE,
@@ -684,6 +733,49 @@ const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
   resumeState: haltedResumeState(usageLimitRecoveryIssue),
 };
 
+/**
+ * A plan packet the seat was never given: the halt the engine persists carries the cause, the
+ * sections and the figures, and the panel shows only the first two. The run is still in planning,
+ * so there is no brief to replay and the retry re-issues the seat's own step.
+ */
+const apiContextRecoveryIssue: RecoveryIssue = {
+  id: 'rec_visual_api_context',
+  reason: 'planner-call-failed',
+  seat: 'plan',
+  phase: 'planning',
+  status: 'awaiting-user',
+  files: [],
+  affectedTaskIds: [],
+  message: 'The planning seat was not given the context this call needs.',
+  details: [
+    'Missing: evidence.json, drift-report.json',
+    'Adjust the plan seat with /crew plan or Settings, then /resume and choose retry.',
+  ],
+  facts: {
+    apiContextCode: 'insufficient-context',
+    apiContextSeat: 'plan',
+    apiContextCause: 'missing-required',
+    apiContextModel: 'qwen3-coder-30b',
+    apiContextMissingSectionsJson: '["evidence.json","drift-report.json"]',
+  },
+  availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+  recommendedAction: 'pause-run',
+  createdAt: new Date(FIXED_TS).toISOString(),
+};
+
+const apiContextRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_API_CONTEXT_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  resumeState: makeWorkflowState({
+    feature: WORKFLOW_FEATURE,
+    phase: 'planning',
+    pendingRecovery: apiContextRecoveryIssue,
+  }),
+};
+
 const STOPPED_RUN_EVENTS: readonly EngineEvent[] = [
   {
     type: 'workflow_started',
@@ -784,12 +876,14 @@ const projections = [
   approvalPermissionProjection,
   reviewingBriefsProjection,
   questionProjection,
+  taskReviewProjection,
   pausedMidBriefProjection,
   pausedBoundaryProjection,
   stoppingProjection,
   stoppedProjection,
   failureProjection,
   usageLimitRecoveryProjection,
+  apiContextRecoveryProjection,
 ] as const;
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =
@@ -843,7 +937,10 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     throw new Error(`Workflow fixture ${projection.scenarioId} exceeds the event bound`);
   }
   const oversized = projectionStrings(projection).find(
-    (value) => value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength,
+    // The production formatter joins bounded facts and commands into one multiline prompt.
+    (value) =>
+      value !== formatTaskReviewPrompt(taskReviewRequest) &&
+      value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength,
   );
   if (oversized !== undefined) {
     throw new Error(`Workflow fixture ${projection.scenarioId} exceeds the string bound`);

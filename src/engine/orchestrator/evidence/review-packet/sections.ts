@@ -1,4 +1,4 @@
-import type { Summary } from '../../../../core/schemas/summary.js';
+import { costAmountBasis, type Summary } from '../../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../../core/schemas/evidence.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
@@ -268,8 +268,15 @@ export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket
           ...(summary.costBreakdown.isTotalActualCostKnown !== undefined && {
             isTotalActualCostKnown: summary.costBreakdown.isTotalActualCostKnown,
           }),
+          ...(summary.costBreakdown.requestEstimate !== undefined && {
+            requestEstimate: summary.costBreakdown.requestEstimate,
+          }),
+          ...(summary.costBreakdown.providerRunMetadata !== undefined && {
+            providerRunMetadata: summary.costBreakdown.providerRunMetadata,
+          }),
         }
       : null,
+    amountBasis: costAmountBasis(summary.costBreakdown),
     taskRouting: summary.taskBreakdown ?? [],
     routingWarnings: events
       .filter(

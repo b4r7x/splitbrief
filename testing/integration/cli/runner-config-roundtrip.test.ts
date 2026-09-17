@@ -146,7 +146,6 @@ const crossTargetCases: readonly CrossTargetCase[] = [
     expected: {
       kind: 'cli',
       tool: 'claude-code',
-      authChannel: 'session',
       model: 'claude-sonnet-4-6',
       effort: 'high',
     },

@@ -1,4 +1,6 @@
 import { afterEach, describe, it, expect } from 'vitest';
+import { chmodSync, existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { dispatchNativeInjection } from './native-injection.js';
 import { createEventBus } from '../../events/bus.js';
 import { saveState, loadState } from '../../../core/state/persistence.js';
@@ -11,8 +13,12 @@ import { fauxPlanner } from '#testing/helpers/faux/planner.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { readQueueForPrompt, releaseQueueMessagesForPrompt } from './drain.js';
 import { addUsageAndSave } from '../state-ops.js';
-import { setupProject } from '#testing/helpers/queue.js';
-import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { makeResearchingState, setupProject } from '#testing/helpers/queue.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { trustedShimGate } from '#testing/helpers/command-shim.js';
+import { createClaudeCodePlanner } from '../../planners/claude-code.js';
+import { withPlannerCallPublishing } from '../run/call-publishing.js';
+import { drainAndFormat } from '../planning/queue-drain.js';
 
 const message: QueuedMessage = {
   id: 'msg-1',
@@ -31,6 +37,117 @@ afterEach(() => {
 });
 
 describe('dispatchNativeInjection', () => {
+  it('keeps a correction pending for the next prompt when a fresh Claude seat has no native session', async () => {
+    const shimDir = createTempDir('native-injection-claude-shim');
+    dirs.push(shimDir);
+    const marker = join(shimDir, 'spawned');
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(shimPath, ['#!/bin/bash', `touch '${marker}'`, ''].join('\n'), 'utf8');
+    chmodSync(shimPath, 0o755);
+
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+    const { projectDir, sessionId } = setupProject(dirs);
+    const correction: QueuedMessage = { ...message, text: 'use JWT instead', phase: 'researching' };
+    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [correction] };
+    const planner = withPlannerCallPublishing(
+      createClaudeCodePlanner({
+        authChannel: 'session',
+        trustedCli: trustedShimGate({ dir: shimDir, tool: 'claude-code' }),
+      }),
+      { bus, getPhase: () => state.phase },
+    );
+
+    const result = await dispatchNativeInjection({
+      message: correction,
+      planner,
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState: (next) => {
+        state = next;
+      },
+      bus,
+    });
+
+    expect(result).toEqual({ status: 'not-delivered', reason: 'not-ready' });
+    expect(existsSync(marker)).toBe(false);
+    expect(loadState({ projectDir, sessionId })?.messageQueue).toEqual([correction]);
+    expect(events.some((event) => event.type.startsWith('runner_call_'))).toBe(false);
+    expect(events.some((event) => event.type === 'message_injected_native')).toBe(false);
+    expect(events.some((event) => event.type === 'cost_update')).toBe(false);
+
+    const next = drainAndFormat(projectDir, sessionId, state, bus);
+    expect(next.prefix).toContain('use JWT instead');
+    expect(next.state.messageQueue[0]?.drainedAt).toBeDefined();
+    expect(events.filter((event) => event.type === 'queue_drained')).toHaveLength(1);
+  });
+
+  it('acknowledges a delivered turn without usage exactly once and books nothing', async () => {
+    const { planner: faux } = fauxPlanner();
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+    const { projectDir, sessionId } = setupProject(dirs);
+    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    const planner = withPlannerCallPublishing(faux, { bus, getPhase: () => state.phase });
+    const dispatch = () =>
+      dispatchNativeInjection({
+        message,
+        planner,
+        projectDir,
+        sessionId,
+        getState: () => state,
+        setState: (next) => {
+          state = next;
+        },
+        bus,
+      });
+
+    await expect(dispatch()).resolves.toEqual({ status: 'delivered' });
+    await expect(dispatch()).resolves.toEqual({ status: 'not-delivered', reason: 'already-owned' });
+
+    expect(state.tokenUsage.plannerInput).toBe(0);
+    expect(state.tokenUsage.plannerOutput).toBe(0);
+    expect(loadState({ projectDir, sessionId })?.messageQueue[0]?.nativeDeliveryState).toBe(
+      'delivered',
+    );
+    expect(events.filter((event) => event.type === 'message_injected_native')).toHaveLength(1);
+    expect(events.some((event) => event.type === 'cost_update')).toBe(false);
+    expect(readQueueForPrompt({ projectDir, sessionId, state }).messages).toEqual([]);
+  });
+
+  it('does not resurrect a message cleared while the seat reported not ready', async () => {
+    const { planner } = fauxPlanner();
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+    const { projectDir, sessionId } = setupProject(dirs);
+    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    planner.injectUserTurn = async () => {
+      saveState({ projectDir, sessionId }, { ...state, messageQueue: [] });
+      return { status: 'not-delivered', reason: 'not-ready' };
+    };
+
+    const result = await dispatchNativeInjection({
+      message,
+      planner,
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState: (next) => {
+        state = next;
+      },
+      bus,
+    });
+
+    expect(result).toEqual({ status: 'not-delivered', reason: 'cleared' });
+    expect(loadState({ projectDir, sessionId })?.messageQueue).toEqual([]);
+    expect(readQueueForPrompt({ projectDir, sessionId, state }).messages).toEqual([]);
+    expect(events.some((event) => event.type === 'message_injected_native')).toBe(false);
+  });
+
   it('publishes a warning instead of silently swallowing an injection failure', async () => {
     const { planner } = fauxPlanner();
     planner.injectUserTurn = async () => {
@@ -86,7 +203,7 @@ describe('dispatchNativeInjection', () => {
         usage: { inputTokens: 120, outputTokens: 40 },
         nativeSessionId: null,
       });
-      return { inputTokens: 120, outputTokens: 40 };
+      return { status: 'delivered', usage: { inputTokens: 120, outputTokens: 40 } };
     };
 
     const events: EngineEvent[] = [];
@@ -110,10 +227,23 @@ describe('dispatchNativeInjection', () => {
     });
 
     expect(result).toEqual({ status: 'delivered' });
+    await expect(
+      dispatchNativeInjection({
+        message,
+        planner,
+        projectDir,
+        sessionId,
+        getState: () => state,
+        setState: (s) => {
+          state = s;
+        },
+        bus,
+      }),
+    ).resolves.toEqual({ status: 'not-delivered', reason: 'already-owned' });
     expect(state.tokenUsage.plannerInput).toBe(before + 120);
     expect(state.tokenUsage.plannerOutput).toBe(40);
-    expect(events.some((e) => e.type === 'cost_update')).toBe(true);
-    expect(events.some((e) => e.type === 'message_injected_native')).toBe(true);
+    expect(events.filter((e) => e.type === 'cost_update')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'message_injected_native')).toHaveLength(1);
     expect(
       events.filter((event) => event.type.startsWith('runner_call_')).map((event) => event.type),
     ).toEqual(['runner_call_started', 'runner_call_completed', 'runner_call_activity']);
@@ -127,7 +257,7 @@ describe('dispatchNativeInjection', () => {
 
   it('publishes a redacted preview for injected messages', async () => {
     const { planner } = fauxPlanner();
-    planner.injectUserTurn = async () => null;
+    planner.injectUserTurn = async () => ({ status: 'delivered', usage: null });
 
     const events: EngineEvent[] = [];
     const bus = createEventBus();
@@ -164,7 +294,7 @@ describe('dispatchNativeInjection', () => {
     let injected = false;
     planner.injectUserTurn = async () => {
       injected = true;
-      return null;
+      return { status: 'delivered', usage: null };
     };
 
     const events: EngineEvent[] = [];
@@ -196,7 +326,7 @@ describe('dispatchNativeInjection', () => {
     const controller = new AbortController();
     planner.injectUserTurn = async () => {
       controller.abort(new Error('cancelled'));
-      return { inputTokens: 500, outputTokens: 100 };
+      return { status: 'delivered', usage: { inputTokens: 500, outputTokens: 100 } };
     };
 
     const events: EngineEvent[] = [];
@@ -235,7 +365,7 @@ describe('dispatchNativeInjection', () => {
     const beforeInput = state.tokenUsage.plannerInput;
     planner.injectUserTurn = async () => {
       saveState({ projectDir, sessionId }, { ...state, messageQueue: [] });
-      return { inputTokens: 25, outputTokens: 5 };
+      return { status: 'delivered', usage: { inputTokens: 25, outputTokens: 5 } };
     };
 
     const result = await dispatchNativeInjection({
@@ -270,7 +400,7 @@ describe('dispatchNativeInjection', () => {
         { projectDir, sessionId },
         transition(state, { type: 'REWIND_TO_PLAN', comment: 'change architecture' }),
       );
-      return null;
+      return { status: 'delivered', usage: null };
     };
 
     const result = await dispatchNativeInjection({
@@ -302,8 +432,8 @@ describe('dispatchNativeInjection', () => {
       throw new Error('native injection was not started');
     };
     planner.injectUserTurn = async () =>
-      new Promise<TokenDelta>((resolve) => {
-        finishInjection = resolve;
+      new Promise((resolve) => {
+        finishInjection = (usage) => resolve({ status: 'delivered', usage });
       });
 
     const events: EngineEvent[] = [];
@@ -344,7 +474,10 @@ describe('dispatchNativeInjection', () => {
 
   it('does not inject a message after a prompt reader has claimed it', async () => {
     const { planner } = fauxPlanner();
-    planner.injectUserTurn = async () => ({ inputTokens: 99, outputTokens: 9 });
+    planner.injectUserTurn = async () => ({
+      status: 'delivered',
+      usage: { inputTokens: 99, outputTokens: 9 },
+    });
     const events: EngineEvent[] = [];
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));

@@ -118,7 +118,6 @@ export async function runPlanningSteps(
   const approveLevel = opts.approveLevel ?? state.approve ?? 'default';
   const steps = plannerStepsFor(mode, approveLevel);
   const skillsContext = await buildPlanningSkillsContext(opts, state);
-  const projectContext = await buildProjectContextMarkdown(projectDir);
   const passedGates = new Set<GateName>(opts.passedGates ?? []);
   const questions: ClarificationQuestion[] = [];
   let asked = 0;
@@ -141,6 +140,10 @@ export async function runPlanningSteps(
   let index = start;
 
   try {
+    // Assembling what the plan seat is given is part of the call, not a preamble
+    // to it: a context this step cannot be handed halts the step it was for,
+    // under the recovery every other planning failure already goes through.
+    const projectContext = await buildProjectContextMarkdown(projectDir);
     while (index < steps.length) {
       const step = steps[index];
       if (step === undefined) break;

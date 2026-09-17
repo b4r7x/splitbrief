@@ -13,5 +13,15 @@ export function cloneDetectedModel(model: DetectedModel): DetectedModel {
       ? { pricingTiers: model.pricingTiers.map((tier) => ({ ...tier })) }
       : {}),
     ...(model.pricingProvenance ? { pricingProvenance: { ...model.pricingProvenance } } : {}),
+    ...(model.runtime
+      ? {
+          runtime: {
+            ...model.runtime,
+            ...(model.runtime.instances
+              ? { instances: model.runtime.instances.map((instance) => ({ ...instance })) }
+              : {}),
+          },
+        }
+      : {}),
   };
 }

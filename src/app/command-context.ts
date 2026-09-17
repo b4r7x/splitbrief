@@ -29,6 +29,7 @@ import { projectFilesStore } from '../stores/ui/project-files.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { refreshSkills } from './refresh-skills.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
+import { resolveAttachment } from '../core/attachments/resolve.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
@@ -36,6 +37,7 @@ import { detectionStore } from '../stores/project/detection.js';
 import { readActive } from '../core/sessions/active-pointer.js';
 import type { RewindTarget } from '../core/state/build-rewind-action.js';
 import type {
+  AttachImageResult,
   CopyResult,
   CopyTarget,
   QueueClearCommandResult,
@@ -99,6 +101,14 @@ function plannerSupportsImages(config: Config | null): boolean {
     runner: config.planner,
     detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
   });
+}
+
+function insertImageIntoComposer(input: Parameters<typeof attachImage>[0]): AttachImageResult {
+  if (!input.supportsImages) return { ok: false, reason: 'no-vision' };
+  const result = resolveAttachment({ input: input.path, projectDir: input.projectDir });
+  if (!result.ok) return { ok: false, reason: result.reason };
+  composerDraftStore.requestImage(result.attachment);
+  return { ok: true, path: result.attachment.path };
 }
 
 function conversationPageStep(viewportHeight: number): number {
@@ -271,6 +281,7 @@ export function buildCommandContext({
     endRun: requestEndRun,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: workflow.requestClearQueue,
+    insertImage: insertImageIntoComposer,
     attachImage,
     plannerSupportsImages: () => plannerSupportsImages(configStore.get().config),
     detachImage,
@@ -326,18 +337,30 @@ export function buildCommandContext({
 
 type Phase = ReturnType<typeof lifecycleStore.get>['phase'];
 
-export function useRuntimeCommands({ exit, phase }: { exit: () => void; phase: Phase }) {
-  const ctx = buildCommandContext({
-    exit,
-    workflow: {
-      requestRewind,
-      requestClearQueue,
-      findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
-      findLatestDiffKey: () => findLatestRenderableDiffKey(getSections()),
-      readScrollMetrics: readConversationScrollSnapshot,
-      resolveCopyValue,
-    },
-  });
+export function useRuntimeCommands({
+  exit,
+  phase,
+  createContext,
+}: {
+  exit: () => void;
+  phase: Phase;
+  /** A supplied context replaces the production one outright; the registry is unchanged. */
+  createContext?: (() => RuntimeCommandContext) | undefined;
+}) {
+  const ctx =
+    createContext === undefined
+      ? buildCommandContext({
+          exit,
+          workflow: {
+            requestRewind,
+            requestClearQueue,
+            findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
+            findLatestDiffKey: () => findLatestRenderableDiffKey(getSections()),
+            readScrollMetrics: readConversationScrollSnapshot,
+            resolveCopyValue,
+          },
+        })
+      : createContext();
   // The command list embeds the skill id set as `/skills`'s closed options and the current mode as
   // `/mode`'s `current` hint, so it has to be rebuilt whenever either store changes.
   skillsStore.use((s) => s);

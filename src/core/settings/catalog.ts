@@ -1,8 +1,7 @@
 import type { Config } from '../schemas/config.js';
-import { APPROVE_LEVELS, COMMIT_STRATEGIES, WORKFLOW_MODES } from '../schemas/enums.js';
+import { APPROVE_LEVELS, WORKFLOW_MODES } from '../schemas/enums.js';
 import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
-import { getShowSpend } from '../config/accessors/values.js';
 import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
 
 const MAX_RETRIES_LIMIT = 10;
@@ -108,25 +107,6 @@ export const SETTINGS_DEFS: SettingDef[] = [
     description: 'Summary format for transcript compaction',
     kind: 'enum',
     options: [...CompactionFormatSchema.options],
-  },
-  {
-    id: 'workflow.showSpend',
-    label: 'Show spend',
-    section: 'Workflow',
-    description: 'Show what the run spent when pricing is known',
-    kind: 'boolean',
-    readValue: (config) => getShowSpend(config),
-  },
-  {
-    id: 'workflow.git.commitStrategy',
-    label: 'Commit strategy',
-    section: 'Workflow',
-    description:
-      'How a run records its progress in git: a tag per checkpoint, or one commit per task',
-    kind: 'enum',
-    options: [...COMMIT_STRATEGIES],
-    unsetLabel: 'none',
-    readValue: (config) => config.workflow.git?.commitStrategy,
   },
   {
     id: 'workflow.git.createBranch',

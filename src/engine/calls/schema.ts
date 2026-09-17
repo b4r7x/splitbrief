@@ -19,6 +19,9 @@ import {
   PlannerArtifactTransportSchema,
   PlannerSessionScopeSchema,
 } from '../../core/schemas/planner-artifact.js';
+import { InvocationIdentitySchema } from '../../core/schemas/invocation-identity.js';
+import { TaskIdSchema } from '../../core/schemas/task.js';
+import { UsageBoundarySchema } from '../../core/schemas/usage-evidence.js';
 
 export const UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH = 4096;
 export const RUNNER_CALL_MESSAGE_MAX_LENGTH = 8192;
@@ -55,11 +58,20 @@ export const runnerCallContextFields = {
   attempt: nonnegativeInteger.optional(),
   transport: PlannerArtifactTransportSchema.optional(),
   sessionScope: PlannerSessionScopeSchema.optional(),
+  invocationIdentity: InvocationIdentitySchema.optional(),
+  taskId: TaskIdSchema.optional(),
+  usageBoundary: UsageBoundarySchema.optional(),
 } as const;
 
 export const RunnerCallContextSchema = z.strictObject(runnerCallContextFields);
 
 export const RunnerCallUsageSchema = RunnerCallUsageContractSchema;
+
+export const RunnerCallApiRuntimeStatusSchema = z.strictObject({
+  phase: z.enum(['waiting-first-response', 'streaming', 'finished']),
+  loadState: z.enum(['loaded', 'not-loaded', 'unknown']),
+  observedAt: timestampMillis.optional(),
+});
 
 export const RunnerCallToolUseSchema = z.strictObject({
   id: boundedId.nullable(),
@@ -134,6 +146,7 @@ function callEvent<T extends string, S extends z.ZodRawShape>(type: T, shape: S)
 
 export const RunnerCallEventSchema = z.discriminatedUnion('type', [
   callEvent('call_started', {}),
+  callEvent('call_runtime_status', { runtimeStatus: RunnerCallApiRuntimeStatusSchema }),
   callEvent('call_text_delta', {
     channel: RunnerCallTextChannelSchema,
     text: z.string(),

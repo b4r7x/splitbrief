@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { isInternalGitStatusPath } from '../../../../core/paths.js';
 import { isProcessOutputSink } from '../../../../lib/process/stdio-sinks.js';
@@ -14,13 +13,20 @@ import { GIT_EMPTY_TREE_HASH, getCurrentCommitSha } from '../../../../lib/git/re
 import { hasCommits } from '../../../../lib/git/repository.js';
 import { collectTrackedFiles, type CollectTrackedFilesOptions } from '../../../snapshots/files.js';
 import { hashFiles } from '../../../change-detection.js';
+import { error } from '../../../../utils/error.js';
 import { readConfinedProjectFile } from './contents.js';
 import { uniqueProjectFiles } from './types.js';
+import { readConfinedEntry } from './entry.js';
 
 type ExpandedChangedFiles = {
   files: string[];
   opaqueDirs: string[];
 };
+
+const captureError = {
+  unreadable: (file: string) =>
+    error('approval-snapshot-unreadable', `Cannot fingerprint project file: ${file}`, { file }),
+} as const;
 
 async function expandChangedDirEntries(
   projectDir: string,
@@ -45,16 +51,15 @@ async function expandChangedDirEntries(
   };
 }
 
-function hasGitMetadata(projectDir: string): boolean {
-  return existsSync(join(projectDir, '.git'));
-}
-
 export async function captureProjectFileHashes(
   projectDir: string,
   opts: CollectTrackedFilesOptions = {},
 ): Promise<Record<string, string | null>> {
   const files = uniqueProjectFiles(await collectTrackedFiles(projectDir, opts));
-  return hashFiles(projectDir, files);
+  const hashes = await hashFiles(projectDir, files);
+  const unreadable = files.find((file) => hashes[file] == null);
+  if (unreadable !== undefined) throw captureError.unreadable(unreadable);
+  return hashes;
 }
 
 export async function getChangedFilesSnapshot(
@@ -74,21 +79,27 @@ export async function getChangedFilesSnapshot(
   const entries = await Promise.all(
     files
       .filter((file) => !gitlinkSet.has(file))
-      .map(
-        async (file): Promise<[string, string | null]> => [
+      .map(async (file) => {
+        const entry = await readConfinedEntry(projectDir, file);
+        return [
           file,
-          await readConfinedProjectFile(projectDir, file),
-        ],
-      ),
+          entry.kind === 'absent'
+            ? null
+            : {
+                base64: entry.bytes.toString('base64'),
+                mode: entry.mode,
+              },
+        ] as const;
+      }),
   );
-  const dirtyFileContents: Record<string, string | null> = Object.fromEntries(entries);
   const head = (await hasCommits(projectDir))
     ? await getCurrentCommitSha(projectDir)
     : GIT_EMPTY_TREE_HASH;
   return {
     head,
     files,
-    dirtyFileContents,
+    dirtyFileContents: {},
+    dirtyFileEntries: Object.fromEntries(entries),
     ...(gitlinks.length > 0 ? { gitlinks } : {}),
   };
 }
@@ -122,7 +133,7 @@ export async function getChangedFilesSinceSnapshot(
   projectDir: string,
   snapshot: ChangedFilesSnapshot,
 ): Promise<string[]> {
-  if (snapshot.baselineFileHashes !== undefined && !hasGitMetadata(projectDir)) {
+  if (snapshot.baselineFileHashes !== undefined) {
     return withoutProcessOutputSinks(
       projectDir,
       await getChangedFilesSinceBaselineHashes(projectDir, snapshot.baselineFileHashes, {
@@ -140,10 +151,30 @@ export async function getChangedFilesSinceSnapshot(
 
   const newChanges = currentFiles.filter((file) => !baseline.has(file));
 
+  // A file that was dirty at acquisition can leave git status altogether: an
+  // untracked one the worker deleted is simply gone, and a tracked one restored
+  // to HEAD is clean again. Both still differ from the baseline, so the content
+  // comparison runs over the union of the current status and the baseline rather
+  // than over the status alone. Gitlinks carry no captured content and drop out
+  // with the same guard as before.
   const modifiedDirtyResults = await Promise.all(
-    currentFiles
-      .filter((file) => baseline.has(file) && snapshot.dirtyFileContents[file] !== undefined)
+    snapshot.files
+      .filter(
+        (file) =>
+          snapshot.dirtyFileEntries?.[file] !== undefined ||
+          snapshot.dirtyFileContents[file] !== undefined,
+      )
       .map(async (file): Promise<string | null> => {
+        const storedEntry = snapshot.dirtyFileEntries?.[file];
+        if (storedEntry !== undefined) {
+          const current = await readConfinedEntry(projectDir, file);
+          if (storedEntry === null) return current.kind === 'absent' ? null : file;
+          return current.kind === 'file' &&
+            current.mode === storedEntry.mode &&
+            current.bytes.equals(Buffer.from(storedEntry.base64, 'base64'))
+            ? null
+            : file;
+        }
         const storedContent = snapshot.dirtyFileContents[file];
         try {
           const current = await readConfinedProjectFile(projectDir, file);

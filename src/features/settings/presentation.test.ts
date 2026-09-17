@@ -49,9 +49,8 @@ describe('displayValue', () => {
     expect(displayValue(getDef('validation.testCommand'), undefined)).toBe('auto');
   });
 
-  it('reads the policy meaning of an unset gate level and commit strategy off the def', () => {
+  it('reads the policy meaning of an unset gate level off the def', () => {
     expect(displayValue(getDef('workflow.approve'), undefined)).toBe('follows mode');
-    expect(displayValue(getDef('workflow.git.commitStrategy'), undefined)).toBe('none');
   });
 });
 

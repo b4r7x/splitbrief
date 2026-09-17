@@ -167,6 +167,64 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'completion', title: 'Skills completion menu' },
       ],
     }),
+    // A check running behind a live composer: the status borrows the hint's row and the draft the
+    // operator submitted is still theirs to edit.
+    defineScenario({
+      id: 'home-preparing',
+      title: 'Home · checking tools beside a live draft',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Check running beside the composer',
+        kind: 'ready',
+        marker: 'Checking tools',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
+    // The panel appears only when preparation needs an answer.
+    defineScenario({
+      id: 'home-preparation-failed',
+      title: 'Home · preparation failed with no blocker',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'failure',
+        title: 'Failed with warnings only',
+        kind: 'failure',
+        marker: 'Session ownership could not be taken over',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+    }),
+    // The composer carrying images inside its text: no separate attachment row, no extra height.
+    defineScenario({
+      id: 'home-preparation-blocked',
+      title: 'Home · preparation needs a local server',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'failure',
+        title: 'Offline server prevents start',
+        kind: 'failure',
+        marker: 'Ollama is not reachable',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+    }),
+    defineScenario({
+      id: 'home-draft-image',
+      title: 'Home · a draft with images at the caret',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Draft holding two images',
+        kind: 'ready',
+        marker: '[image #2]',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
     defineScenario({
       id: 'home-mode-completion',
       title: 'Home · /mode completion menu',
@@ -364,6 +422,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Question transcript' },
         { id: 'question-panel', title: 'Question panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-task-review',
+      title: 'Workflow · task review without usage counts',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'task-review',
+        title: 'Task ready for review',
+        kind: 'question',
+        marker: 'ready for review',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Task review panel' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -572,6 +646,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-api-context-insufficient',
+      title: 'Workflow · a packet the plan seat was never given',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'api-context',
+        title: 'Insufficient-context recovery menu',
+        kind: 'question',
+        marker: 'Nothing was sent to PLAN',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // Re-entering a run at rest: the run keeps the screen and its byline row states the check.
+    defineScenario({
+      id: 'workflow-continuing',
+      title: 'Workflow · checking tools to continue a run',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Check running beside the composer',
+        kind: 'ready',
+        marker: 'Checking tools',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -841,6 +947,46 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-picker-custom-launcher',
+        title: 'Overlay · planner picker · add a custom command',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-local-server',
+        title: 'Overlay · planner picker · a local server that is not running',
+        marker: PICKER_TITLE_MARKER,
+      },
+      ...(
+        [
+          ['ollama', 'Ollama connection editor', 'Not checked yet'],
+          ['offline', 'server offline', 'Ollama is not reachable'],
+          ['timeout', 'catalog timeout', 'Ollama did not answer'],
+          ['unauthorized', 'token refused', 'LM Studio rejected the token'],
+          ['invalid', 'invalid endpoint', 'Ollama does not accept this address'],
+          ['unknown', 'unknown failure', 'Ollama did not say what failed'],
+          ['malformed', 'unreadable catalog', 'Ollama returned an unreadable catalog'],
+          ['empty', 'empty catalog', 'no models installed'],
+          ['missing', 'selected model absent', 'does not serve'],
+          ['loaded', 'model loaded', 'LM Studio answered'],
+          ['not-loaded', 'model not loaded', 'not loaded'],
+          ['listed', 'model listed, loading unknown', 'Ollama answered'],
+        ] as const
+      ).map(([id, title, marker]) => ({
+        id: `overlay-local-connection-${id}`,
+        title: `Overlay · local connection · ${title}`,
+        marker,
+      })),
+      {
+        id: 'overlay-picker-auth-config-owned',
+        title: 'Overlay · authentication owned by CLI configuration',
+        marker: 'CLI decides',
+      },
+      {
+        id: 'overlay-picker-auth-unsupported',
+        title: 'Overlay · configured authentication method without enforcement proof',
+        marker: 'unproven',
+      },
+      {
         id: 'overlay-picker-contract-choice',
         title: 'Overlay · planner picker · custom command contract',
         marker: 'Custom command',
@@ -864,6 +1010,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     checkpointTitle: 'Implementer picker ready',
     scenarios: [
       {
+        id: 'overlay-local-connection-lmstudio',
+        title: 'Overlay · BUILD · LM Studio connection editor',
+        marker: 'Not checked yet',
+      },
+      {
         id: 'overlay-implementer-picker',
         title: 'Overlay · implementer picker',
         marker: 'Add custom model',
@@ -876,6 +1027,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     panelTitle: 'Reviewer picker panel',
     checkpointTitle: 'Reviewer picker ready',
     scenarios: [
+      {
+        id: 'overlay-local-connection-llamacpp',
+        title: 'Overlay · REVIEW · llama.cpp connection editor',
+        marker: 'Not checked yet',
+      },
       {
         id: 'overlay-reviewer-picker-inherited',
         title: 'Overlay · reviewer picker · inherited from the planner',
@@ -903,6 +1059,29 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     panelTitle: 'Sessions panel',
     checkpointTitle: 'Sessions ready',
     scenarios: [{ id: 'overlay-sessions', title: 'Overlay · sessions', marker: 'Sessions' }],
+  }),
+  'usage-details': overlayGroup({
+    overlay: 'usage-details',
+    underlyingScreen: 'workflow',
+    panelTitle: 'Usage details panel',
+    checkpointTitle: 'Usage details ready',
+    scenarios: [
+      {
+        id: 'overlay-usage-details',
+        title: 'Overlay · usage details · priced run',
+        marker: 'Usage details',
+      },
+      {
+        id: 'overlay-usage-details-legacy',
+        title: 'Overlay · usage details · sum recorded before per-request pricing',
+        marker: 'Usage details',
+      },
+      {
+        id: 'overlay-usage-context-insufficient',
+        title: 'Overlay · usage details · the context a halted review never had',
+        marker: 'Usage details',
+      },
+    ],
   }),
   editor: overlayGroup({
     overlay: 'editor',

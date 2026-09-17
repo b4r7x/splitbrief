@@ -417,6 +417,86 @@ describe('detection schemas', () => {
     expect(cloned.nativeReasoningEfforts).not.toBe(roundTripped.nativeReasoningEfforts);
   });
 
+  it('reads a model without runtime metadata as unknown load state and keeps ceilings apart from active context', () => {
+    const legacy = {
+      id: 'qwen3-coder',
+      maximumContextTokens: 262_144,
+      maximumOutputTokens: 32_768,
+    };
+
+    const parsed = DetectedModelSchema.parse(legacy);
+    const cloned = cloneDetectedModel(parsed);
+
+    expect(parsed).toEqual(legacy);
+    expect(parsed.runtime).toBeUndefined();
+    expect(parsed.effectiveContextTokens).toBeUndefined();
+    expect(cloned).toEqual(legacy);
+    expect(cloned.effectiveContextTokens).toBeUndefined();
+  });
+
+  it('round-trips runtime load state with exact instance identifiers', () => {
+    const model = {
+      id: 'qwen/qwen3-coder-30b',
+      maximumContextTokens: 262_144,
+      effectiveContextTokens: 32_768,
+      runtime: {
+        loadState: 'loaded',
+        observedAt: 1_786_000_000_000,
+        instances: [
+          { id: 'qwen/qwen3-coder-30b', effectiveContextTokens: 32_768 },
+          { id: 'qwen/qwen3-coder-30b:2' },
+        ],
+      },
+    } as const;
+
+    expect(DetectedModelSchema.parse(JSON.parse(JSON.stringify(model)) as unknown)).toEqual(model);
+    for (const loadState of ['not-loaded', 'unknown'] as const) {
+      expect(
+        DetectedModelSchema.safeParse({ id: 'm', runtime: { loadState, observedAt: 0 } }).success,
+      ).toBe(true);
+    }
+  });
+
+  it.each([
+    ['an unknown load state', { loadState: 'warming', observedAt: 0 }],
+    ['a negative observation time', { loadState: 'loaded', observedAt: -1 }],
+    ['a missing observation time', { loadState: 'loaded' }],
+    ['an empty instance id', { loadState: 'loaded', observedAt: 0, instances: [{ id: '' }] }],
+    [
+      'a zero instance context',
+      { loadState: 'loaded', observedAt: 0, instances: [{ id: 'a', effectiveContextTokens: 0 }] },
+    ],
+    [
+      'a fractional instance context',
+      { loadState: 'loaded', observedAt: 0, instances: [{ id: 'a', effectiveContextTokens: 1.5 }] },
+    ],
+    ['an unknown runtime key', { loadState: 'loaded', observedAt: 0, extra: true }],
+    [
+      'an unknown instance key',
+      { loadState: 'loaded', observedAt: 0, instances: [{ id: 'a', extra: true }] },
+    ],
+  ])('rejects runtime metadata with %s', (_label, runtime) => {
+    expect(DetectedModelSchema.safeParse({ id: 'model-1', runtime }).success).toBe(false);
+  });
+
+  it('clones runtime metadata without sharing nested instances', () => {
+    const original = DetectedModelSchema.parse({
+      id: 'model-1',
+      runtime: {
+        loadState: 'loaded',
+        observedAt: 1,
+        instances: [{ id: 'model-1:1', effectiveContextTokens: 8_192 }],
+      },
+    });
+
+    const cloned = cloneDetectedModel(original);
+
+    expect(cloned).toEqual(original);
+    expect(cloned.runtime).not.toBe(original.runtime);
+    expect(cloned.runtime?.instances).not.toBe(original.runtime?.instances);
+    expect(cloned.runtime?.instances?.[0]).not.toBe(original.runtime?.instances?.[0]);
+  });
+
   it('requires absolute executable identity and actionable non-ready diagnostics', () => {
     expect(
       CliToolDetectionSchema.safeParse({

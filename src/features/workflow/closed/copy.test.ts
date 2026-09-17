@@ -52,7 +52,6 @@ describe('runRows', () => {
     const view = endedInPlanning();
     expect(valueFor(view, 'Review')).toBe('not run');
     expect(valueFor(view, 'Scope')).toBe('not checked');
-    expect(valueFor(makeView({ cost: { kind: 'unpriced' } }), 'Cost')).toBe('not estimated');
   });
 
   it('warns on a scope check that did not pass', () => {
@@ -71,53 +70,34 @@ describe('runRows', () => {
     expect(valueFor(view, 'Briefs')).toBe('quality 0.92 · 1 warning');
   });
 
-  it.each<[string, CostView, string]>([
-    ['a fully priced run', { kind: 'priced', actual: 0.42, partial: false }, '$0.42'],
-    ['a partly priced run', { kind: 'priced', actual: 0.42, partial: true }, '$0.42 + unknown'],
-    [
-      'a subscription crew',
-      { kind: 'unmetered', label: 'subscription-included' },
-      'subscription-included',
-    ],
-    [
-      'a mixed unmetered crew',
-      { kind: 'unmetered', label: 'subscription-included · local' },
-      'subscription-included · local',
-    ],
-    ['a run nobody priced', { kind: 'unpriced' }, 'not estimated'],
-  ])('states the cost of %s', (_label, cost, expected) => {
-    expect(valueFor(makeView({ cost }), 'Cost')).toBe(expected);
+  it.each<[string, CostView]>([
+    ['a fully priced run', { kind: 'priced', actual: 0.42, partial: false }],
+    ['a partly priced run', { kind: 'priced', actual: 0.42, partial: true }],
+    ['a subscription crew', { kind: 'unmetered', label: 'subscription-included' }],
+    ['a mixed unmetered crew', { kind: 'unmetered', label: 'subscription-included · local' }],
+    ['a run nobody priced', { kind: 'unpriced' }],
+  ])('names no cost row for %s, whatever the record priced', (_label, cost) => {
+    const view = makeView({ cost });
+    expect(runRows(view).some((row) => row.label === 'Cost')).toBe(false);
+    for (const row of runRows(view)) expect(runRowValue(row)).not.toContain('$');
+    // The record keeps what `/usage` reports; only the ledger stopped saying it.
+    expect(view.cost).toEqual(cost);
   });
 
-  it('never prints a dollar figure for an unmetered run', () => {
-    const value = valueFor(makeView({ cost: { kind: 'unmetered', label: 'local' } }), 'Cost');
-    expect(value).not.toContain('$');
-  });
-
-  it('states the spend and nothing beside it — no baseline, no saving', () => {
-    const value = valueFor(
-      makeView({ cost: { kind: 'priced', actual: 0.42, partial: false } }),
-      'Cost',
-    );
-    expect(value).toBe('$0.42');
-    expect(value).not.toContain('all-planner');
-    expect(value).not.toContain('saved');
-    expect(value).not.toContain('baseline');
-  });
-
-  it('drops the Cost row entirely when the spend display is off', () => {
-    expect(runRows(makeView({ cost: null })).some((row) => row.label === 'Cost')).toBe(false);
-  });
-
-  it('names only the seats that booked tokens', () => {
-    expect(valueFor(makeView(), 'Tokens')).toBe('plan 31.2k · build 204.5k · review 18.7k');
-    expect(valueFor(endedInPlanning(), 'Tokens')).toBe('plan 12.3k');
-  });
-
-  it('drops the token row when no seat booked anything', () => {
-    const view = makeView({ tokens: { plan: 0, build: 0, review: 0 } });
-    expect(view.tokens.plan).toBe(0);
+  it('names no token row for the seats that booked tokens', () => {
+    const view = makeView();
     expect(runRows(view).some((row) => row.label === 'Tokens')).toBe(false);
+    const values = runRows(view).map(runRowValue).join('\n');
+    expect(values).not.toContain('31.2k');
+    expect(values).not.toContain('204.5k');
+    expect(values).not.toContain('18.7k');
+    expect(values).not.toMatch(/token/i);
+    expect(view.tokens).toEqual({ plan: 31_200, build: 204_500, review: 18_700 });
+  });
+
+  it('reads the same with the spend display off as with it on', () => {
+    const labels = (view: SummaryView) => runRows(view).map((row) => row.label);
+    expect(labels(makeView({ cost: null }))).toEqual(labels(makeView()));
   });
 
   it('shows phase times only when more than one phase booked time', () => {
@@ -145,8 +125,6 @@ describe('runRows', () => {
       'Packet',
       'Scope',
       'Briefs',
-      'Cost',
-      'Tokens',
       'Phases',
       'Session',
     ]);

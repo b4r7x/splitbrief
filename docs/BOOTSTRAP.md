@@ -13,16 +13,17 @@ src/cli.ts                      # commander registers subcommands + top-level er
   → registerXCommand(program)   # each subcommand adds its .action() handler
   → program.parseAsync()        # dispatches to the matched action handler
 
-# Inside a subcommand action (start, resume, spec, ...)
-  → setupWorkflow(opts)         # git check, config presence, TTY/fullscreen detection
-  → initStores(projectDir, opts) # hydrate stores from disk + external world
-  → routerStore.init(route)     # set initial screen (conditional — only when a feature is known)
-  → renderApp({ useFullscreen, useMouse })  # Ink render — React starts here
+# Interactive start
+  → setupWorkflow(opts)          # project/config and terminal setup
+  → initStoresForTuiMount(...)   # synchronous seed, hook trust, start discovery
+  → renderApp(...)              # first Ink frame before discovery completes
+  ↳ awaitDiscovery              # settles alongside the mounted TUI
+  ↳ preparationStore.submit(...) # explicit start/continue, fresh execution checks
 ```
 
 Two things about this flow are load-bearing:
 
-1. **Stores are populated before React renders.** Components always see initialized data. No `loading: boolean` flags, no conditional rendering for "config not ready yet".
+1. The TUI mounts after synchronous project/store seeding; asynchronous discovery continues after the first render. Config, sessions and UI chrome are seeded first; discovery and preparation may remain pending. Hook trust is resolved before discovery can spawn subprocesses.
 2. **Cross-store orchestration lives in `initStores()`, not in individual stores.** When loading A requires reading B, the wiring goes in `initStores()`. Stores do not know about each other.
 
 ---
@@ -31,7 +32,7 @@ Two things about this flow are load-bearing:
 
 **File:** `src/cli/init-stores.ts`
 
-The function is one sequential async procedure with four internal phases. Each phase is either a helper in the same file or a small block of direct calls. The file stays small on purpose — the structure of startup is visible at a glance.
+`bootstrapStoresSync()` initializes UI chrome and project state. `initStoresForTuiMount()` then awaits `bootstrapStoresHooks()` and returns the `awaitDiscovery` promise without awaiting it. `runInteractiveStart()` mounts Ink while discovery continues. The separate `initStores()` entry awaits discovery for callers that require it.
 
 ```
 initStores(projectDir, opts)
@@ -53,6 +54,16 @@ initStores(projectDir, opts)
 `detectCapabilities → setContextLength` is the canonical example of **cross-store orchestration**: reads from `configStore`, awaits a provider probe (`src/engine/providers/capabilities.ts`), writes back to `configStore`. This wiring has no natural home inside any single store — it lives in `initStores()`.
 
 ---
+
+## Preparation and continuation
+
+The draft remains editable during preparation; start and continue wait for current admission and ownership checks.
+
+`preparationStore.submit()` in `src/stores/navigation/preparation.ts` owns explicit starts and continuations. A newer attempt supersedes the earlier one; stale success or failure cannot replace the new route. Failure preserves the current draft and reports the actual preparation problem. A user-action problem may open a panel; ordinary checking stays beside the editable input.
+
+`prepareExecution()` rechecks execution admission and session ownership for each attempt. A zero-blocker discovery report cannot authorize takeover of a live or unknown session owner. `createInFlightProbeSharing()` in `src/engine/detection/runner-evidence.ts` shares only compatible observations while they are pending, keyed by current config, executable and authentication context. It retains no completed readiness result; unspecified CLI auth context is not shared. Remembered discovery is presentation data, never authority to execute.
+
+`awaitDiscovery` covers the discovery promise returned at mount; model-catalog and live detection work also have separately tracked background promises. `awaitBackgroundDiscovery()` settles those for callers such as cleanup. Initial render does not wait for them.
 
 ## Rules for adding bootstrap steps
 
@@ -118,25 +129,9 @@ When step A writes to store X after reading from store Y, or when the result of 
 
 Canonical example: `detectCapabilities()` reads `configStore.get().config`, probes the provider, and writes back via `configStore.setContextLength()`. This is not a `configStore` responsibility — the provider subsystem is an external dependency, and `configStore` stays ignorant of it.
 
-### 6. One composed Promise.all for independent async work
+### 6. Track asynchronous discovery without blocking mount
 
-At the end of `initStores()`:
-
-```ts
-await Promise.all([
-  discoverSkills(projectDir).then(skills => {
-    skillsStore.setAvailable(skills);
-  }),
-  loadDetectionIntoStores(
-    getDefaultDetectionService(),
-    { detectAll, fetchModelsDevCatalog, discoverAllCliTools },
-    detectionStore,
-    projectDir,
-  ),
-]);
-```
-
-Independent async steps fan out here. If you add a third, it joins this `Promise.all` — do not introduce a second one. Serialize only when there is a real data dependency.
+`loadDiscovery()` first detects provider capabilities and reads remembered presentation data. It starts the model-catalog seed and live detection refresh through `trackDiscovery()`, with failure reporting on each promise, then discovers skills. `awaitBackgroundDiscovery()` waits for tracked work when cleanup needs it. A new independent discovery step belongs in this existing lifecycle; a step with a real data dependency waits for that dependency. Neither remembered results nor completion of this background work replace explicit execution preparation.
 
 ---
 
@@ -157,7 +152,7 @@ It does **not** touch stores. Stores know nothing about TTY flags or the git che
 
 ## Render handoff
 
-After `initStores()` returns, the subcommand handler calls `renderApp()` (from `src/cli/render/app.ts`). `renderApp()` does **not** know about stores — it sets up Ink's fullscreen rendering and mounts `<App />`. Components inside `<App />` subscribe via `store.use()` and see fully-populated state on first render.
+After `initStoresForTuiMount()` returns, the interactive handler calls `renderApp()` (from `src/cli/render/app.ts`) while `awaitDiscovery` is still pending. `renderApp()` sets up Ink's fullscreen rendering and mounts `<App />`. Components subscribe via `store.use()` and see seeded project state and UI chrome on the first render; discovery results arrive through store updates.
 
 If a component calls `store.use()` on a field that was never set by `initStores()`, that is a contract violation: either the store has a sensible default, or `initStores()` populates the field.
 
@@ -172,7 +167,7 @@ If a component calls `store.use()` on a field that was never set by `initStores(
 | Put cross-store orchestration inside a store method | The store gains a dependency on the other store — forms a cycle |
 | Create `src/cli/bootstrap/` for <150 LOC of init | Folder indirection without deep modules — just keep `init-stores.ts` flat |
 | Put disk I/O for a store in `src/cli/` | Colocation violation — the I/O is a store concern; see §4 |
-| Add `loaded: boolean` to a store | Init guarantees population before render. Flag is a smell that the contract isn't being honored |
+| Add a second readiness cache for asynchronous preparation | Read the shared preparation coordinator; config seed is synchronous, discovery is not. |
 
 ---
 

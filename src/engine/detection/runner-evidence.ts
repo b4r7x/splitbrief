@@ -17,7 +17,7 @@ import {
 import { classifyCliAdmittedVersion } from '../../core/runners/cli-version.js';
 import type { CliReadinessResult } from '../../core/schemas/readiness.js';
 import { matches } from '../../utils/error.js';
-import { throwIfAborted } from '../../utils/abort.js';
+import { abortError, throwIfAborted } from '../../utils/abort.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
 import {
   resolveCliExecutable,
@@ -31,6 +31,7 @@ import {
 import {
   probeCliReadiness,
   probeDeclaredCliReadinessEvidence,
+  type AuthProbeRun,
 } from '../runners/cli-tools/readiness-probe.js';
 import { isDeclaredCliProbeContract } from '../runners/cli-tools/contract.js';
 import { probeContextCatalog } from './catalog-probe.js';
@@ -70,6 +71,10 @@ export interface DetectRunnerEvidenceOptions {
 /**
  * Binds evidence to one active selection without serializing credential values.
  * Start derives this from config instead of trusting a returned evidence key.
+ * The seat that asked and the complete endpoint are part of that selection:
+ * reviewer and planner share an admission role but never an identity, and a
+ * second base path on the same origin is a second endpoint. A legacy context
+ * carries neither and keys on its admission role alone.
  */
 export function runnerDiscoveryContextKey(context: RunnerDiscoveryContext): string {
   const credentialDomain = context.credentialDomain;
@@ -86,16 +91,21 @@ export function runnerDiscoveryContextKey(context: RunnerDiscoveryContext): stri
           credentialDomain.credentialSource.kind === 'env'
             ? credentialDomain.credentialSource.name
             : credentialDomain.credentialSource.configNodeId,
+          credentialDomain.credentialSource.kind === 'env'
+            ? (credentialDomain.credentialSource.valueIdentity ?? 'unknown')
+            : 'inline',
           credentialDomain.configGeneration,
         ];
   return [
-    'runner-evidence-v1',
+    'runner-evidence-v2',
     context.role,
+    context.seatRole ?? context.role,
     context.kind,
     context.id,
     context.model ?? 'unselected',
     context.authChannel ?? 'not-selected',
     context.endpointOrigin ?? 'none',
+    context.endpointIdentity ?? 'none',
     context.credentialPresent ? 'credential-present' : 'credential-absent',
     ...credentialDomainParts,
     context.configGeneration,
@@ -103,6 +113,88 @@ export function runnerDiscoveryContextKey(context: RunnerDiscoveryContext): stri
     .map((part) => encodeURIComponent(part))
     .join('|');
 }
+
+interface SharedProbe<Value> {
+  readonly controller: AbortController;
+  readonly promise: Promise<Value>;
+  subscribers: number;
+}
+
+export interface InFlightProbeSharing<Value> {
+  share(
+    input: Readonly<{
+      key: string | undefined;
+      signal?: AbortSignal | undefined;
+      run: (signal: AbortSignal | undefined) => Promise<Value>;
+    }>,
+  ): Promise<Value>;
+}
+
+function awaitSharedProbe<Value>(
+  entry: SharedProbe<Value>,
+  signal: AbortSignal | undefined,
+): Promise<Value> {
+  if (signal === undefined) return entry.promise;
+  const release = new AbortController();
+  const cancelled = new Promise<never>((_, reject) => {
+    signal.addEventListener('abort', () => reject(abortError(signal)), {
+      once: true,
+      signal: release.signal,
+    });
+  });
+  return Promise.race([entry.promise, cancelled]).finally(() => release.abort());
+}
+
+/**
+ * One read-only probe may serve every caller asking the identical question at
+ * the same moment, and nothing else: the key names the observation, never a
+ * caller's preparation receipt, and settlement — resolution or rejection —
+ * evicts the entry, so the next caller probes afresh instead of inheriting
+ * remembered authority. An observation with no shareable identity passes
+ * `key: undefined` and always probes alone. Each subscriber cancels only its
+ * own wait; the shared work is aborted once the last subscriber has left.
+ */
+export function createInFlightProbeSharing<Value>(): InFlightProbeSharing<Value> {
+  const entries = new Map<string | symbol, SharedProbe<Value>>();
+
+  function start(
+    key: string | symbol,
+    run: (signal: AbortSignal | undefined) => Promise<Value>,
+  ): SharedProbe<Value> {
+    const controller = new AbortController();
+    const entry: SharedProbe<Value> = {
+      controller,
+      promise: run(controller.signal),
+      subscribers: 0,
+    };
+    entries.set(key, entry);
+    const evict = (): void => {
+      if (entries.get(key) === entry) entries.delete(key);
+    };
+    entry.promise.then(evict, evict);
+    return entry;
+  }
+
+  return {
+    async share(input) {
+      const key = input.key ?? Symbol();
+      throwIfAborted(input.signal);
+      const entry = entries.get(key) ?? start(key, input.run);
+      entry.subscribers += 1;
+      try {
+        return await awaitSharedProbe(entry, input.signal);
+      } finally {
+        entry.subscribers -= 1;
+        if (entry.subscribers === 0 && entries.get(key) === entry) {
+          entries.delete(key);
+          entry.controller.abort();
+        }
+      }
+    },
+  };
+}
+
+const cliEvidenceProbes = createInFlightProbeSharing<RunnerEvidence>();
 
 function runnerEvidenceBase(
   context: RunnerDiscoveryContext,
@@ -425,36 +517,21 @@ function unsupportedCatalogEvidence(
 }
 
 /**
- * Probes exactly one sanitized active-runner context. It never chooses an auth
- * channel, runs a catalog unless requested, or returns probe output.
+ * The probe work behind one resolved executable: version, auth and — only when
+ * asked — the catalog. Each call owns its cancellation boundary.
  */
-export async function detectRunnerEvidence(
+async function probeResolvedCliEvidence(
   options: DetectRunnerEvidenceOptions,
+  input: Readonly<{
+    context: CliRunnerDiscoveryContext;
+    observedAt: number;
+    executable: CliExecutableIdentity;
+    signal: AbortSignal | undefined;
+  }>,
 ): Promise<RunnerEvidence> {
-  throwIfAborted(options.signal);
+  const { context, observedAt, executable, signal } = input;
   const now = options.now ?? Date.now;
-  const observedAt = now();
-  if (!isCliContext(options.context)) return nonCliRunnerEvidence(options.context, observedAt);
-
-  const context = snapshotCliContext(options.context);
-  if (!isCredentialFreeCliContext(context)) return nonCliRunnerEvidence(context, observedAt);
   const catalogRequested = options.includeCatalog === true;
-  const resolveExecutable = options.resolveExecutable ?? resolveCliExecutable;
-  let executable: CliExecutableIdentity;
-  try {
-    const resolvedExecutable = (
-      await resolveCliExecutableAliases({
-        commands: CLI_TOOL_CATALOG[context.id].executableAliases,
-        projectDir: options.projectDir ?? process.cwd(),
-        resolveExecutable,
-      })
-    ).executable;
-    executable = immutableCliExecutableIdentity(resolvedExecutable);
-  } catch (cause) {
-    throwIfAborted(options.signal);
-    return unresolvedCliEvidence(context, observedAt, cause);
-  }
-  options.onResolvedCliExecutable?.(executable);
 
   const probe = (
     catalogRequested ? lookupCliReadinessProbe : (options.lookupProbe ?? lookupCliReadinessProbe)
@@ -480,7 +557,7 @@ export async function detectRunnerEvidence(
         executable,
         probe,
         ...(context.authChannel !== undefined ? { authChannel: context.authChannel } : {}),
-        ...(options.signal !== undefined ? { signal: options.signal } : {}),
+        ...(signal !== undefined ? { signal } : {}),
         now: () => observedAt,
         classifyVersion: ({ installedVersion }) =>
           classifyCliAdmittedVersion({
@@ -492,17 +569,26 @@ export async function detectRunnerEvidence(
       });
       return evidenceFromLegacyReadiness(context, observedAt, readiness);
     } catch {
-      throwIfAborted(options.signal);
+      throwIfAborted(signal);
       return probeFailureEvidence(context, observedAt, executable);
     }
   }
 
+  let authProbeRun: AuthProbeRun | undefined;
   const declaredProbeOptions = {
     tool: context.id,
     executable,
     probe: probe.declared,
     ...(context.authChannel !== undefined ? { authChannel: context.authChannel } : {}),
-    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    ...(signal !== undefined ? { signal } : {}),
+    // A tool whose auth oracle is its model listing (`agy models`) is spawned once per pass.
+    ...(catalogRequested
+      ? {
+          onAuthProbeRun: (run: AuthProbeRun) => {
+            authProbeRun = run;
+          },
+        }
+      : {}),
   };
   const declaredReadiness = catalogRequested
     ? probeDeclaredCliReadinessEvidence
@@ -511,7 +597,7 @@ export async function detectRunnerEvidence(
   try {
     declaredEvidence = await declaredReadiness(declaredProbeOptions);
   } catch {
-    throwIfAborted(options.signal);
+    throwIfAborted(signal);
     return probeFailureEvidence(context, observedAt, executable);
   }
 
@@ -551,10 +637,11 @@ export async function detectRunnerEvidence(
         refresh: options.catalogRefresh ?? 'automatic',
         projectDir: options.projectDir ?? process.cwd(),
         now,
-        signal: options.signal,
+        signal,
+        authProbeRun,
       });
     } catch {
-      throwIfAborted(options.signal);
+      throwIfAborted(signal);
       return probeFailureEvidence(context, observedAt, executable);
     }
   }
@@ -569,4 +656,48 @@ export async function detectRunnerEvidence(
     catalog,
     modelRun: modelRunFromCatalog(context, base, catalog),
   };
+}
+
+/**
+ * Probes exactly one sanitized active-runner context. It never chooses an auth
+ * channel, runs a catalog unless requested, or returns probe output. Resolving
+ * and attributing the executable happens per caller. Native auth has no reliable
+ * freshness identity, so concurrent calls each obtain their own observation.
+ */
+export async function detectRunnerEvidence(
+  options: DetectRunnerEvidenceOptions,
+): Promise<RunnerEvidence> {
+  throwIfAborted(options.signal);
+  const now = options.now ?? Date.now;
+  const observedAt = now();
+  if (!isCliContext(options.context)) return nonCliRunnerEvidence(options.context, observedAt);
+
+  const context = snapshotCliContext(options.context);
+  if (!isCredentialFreeCliContext(context)) return nonCliRunnerEvidence(context, observedAt);
+  const projectDir = options.projectDir ?? process.cwd();
+  const resolveExecutable = options.resolveExecutable ?? resolveCliExecutable;
+  let executable: CliExecutableIdentity;
+  try {
+    const resolvedExecutable = (
+      await resolveCliExecutableAliases({
+        commands: CLI_TOOL_CATALOG[context.id].executableAliases,
+        projectDir,
+        resolveExecutable,
+      })
+    ).executable;
+    executable = immutableCliExecutableIdentity(resolvedExecutable);
+  } catch (cause) {
+    throwIfAborted(options.signal);
+    return unresolvedCliEvidence(context, observedAt, cause);
+  }
+  options.onResolvedCliExecutable?.(executable);
+
+  return cliEvidenceProbes.share({
+    // Selecting a native auth channel does not identify the account/session
+    // currently behind it. Keep its cancellation boundary, but never reuse it.
+    key: undefined,
+    signal: options.signal,
+    run: (probeSignal) =>
+      probeResolvedCliEvidence(options, { context, observedAt, executable, signal: probeSignal }),
+  });
 }

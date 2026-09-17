@@ -189,6 +189,9 @@ describe('runner selection help', () => {
       'cursor',
       'command-code',
       'antigravity',
+      'ollama',
+      'lm-studio',
+      'llama-cpp',
       'shell',
       'agent',
     ]);
@@ -203,6 +206,7 @@ describe('runner selection help', () => {
       'antigravity',
       'ollama',
       'lm-studio',
+      'llama-cpp',
       'shell',
       'agent',
     ]);

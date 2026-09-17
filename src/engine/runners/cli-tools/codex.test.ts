@@ -360,7 +360,18 @@ describe('Codex JSONL protocol adapter', () => {
     expect(events).toContainEqual({ type: 'text', channel: 'assistant', text: 'hello' });
     expect(events).toContainEqual({
       type: 'usage',
-      usage: { inputTokens: 2, outputTokens: 1 },
+      usage: {
+        inputTokens: 2,
+        outputTokens: 1,
+        counterCoverage: {
+          input: 'reported',
+          output: 'partial',
+          cacheRead: 'missing',
+          cacheCreate: 'missing',
+          reasoning: 'missing',
+        },
+        providerTotals: { output: 1 },
+      },
       semantics: 'final',
     });
     expect(terminalInput(codexPlannerAdapter, events)).toMatchObject({

@@ -120,6 +120,34 @@ export function cliAuthChannelEnvKeys(
   return [...new Set([...declared, ...passthrough])];
 }
 
+export type CliChannelStaging = Readonly<{
+  selectedCli: CliToolId | undefined;
+  hostState: CliHostStateAccess;
+  preserveEnvKeys: string[];
+}>;
+
+/**
+ * How a child of `tool` is staged for an auth channel — the single selection
+ * readiness, the catalog probe and dispatch all build their environment from,
+ * so what a probe verified is what the runner is handed. A channel keeps only
+ * its own credential path: the environment variables it declares and the host
+ * state it reaches, so an API-key channel gets a private `HOME` with no bridged
+ * session. No channel (the version probe) stages no tool state at all.
+ */
+export function cliChannelStaging(
+  tool: CliToolId,
+  channel: CliAuthChannel | undefined,
+): CliChannelStaging {
+  if (channel === undefined) {
+    return { selectedCli: undefined, hostState: 'none', preserveEnvKeys: [] };
+  }
+  return {
+    selectedCli: tool,
+    hostState: cliAuthChannelHostStateAccess(channel),
+    preserveEnvKeys: cliAuthChannelEnvKeys(channel),
+  };
+}
+
 export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
   const keys = new Set<string>();
   if ('apiKey' in runner) {
@@ -329,9 +357,7 @@ export async function createRunnerSandboxEnv(
   }
   return createSandboxEnv({
     projectDir,
-    preserveEnvKeys: runnerAuthEnvKeys(runner),
-    selectedCli: runner.tool,
-    hostState: cliAuthChannelHostStateAccess(resolveCliRunnerAuth(runner)),
+    ...cliChannelStaging(runner.tool, resolveCliRunnerAuth(runner)),
     role,
   });
 }

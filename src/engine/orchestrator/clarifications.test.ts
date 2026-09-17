@@ -45,7 +45,7 @@ describe('clarifications', () => {
       },
       injectUserTurn: async (injection) => {
         injectedTurns.push({ text: injection.text, dir: injection.projectDir });
-        return null;
+        return { status: 'delivered', usage: null };
       },
     });
     const questions = [{ id: 'q1', type: 'input' as const, text: 'Use JWT?' }];

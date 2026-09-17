@@ -27,6 +27,32 @@ export const DetectedPricingTierSchema = z
   .strict();
 export type DetectedPricingTier = z.infer<typeof DetectedPricingTierSchema>;
 
+/** One loaded instance, keyed by the exact identifier the server reports for it. */
+export const DetectedModelInstanceSchema = z
+  .object({
+    id: z.string().min(1),
+    effectiveContextTokens: z.number().int().positive().optional(),
+  })
+  .strict();
+/** @public */
+export type DetectedModelInstance = z.infer<typeof DetectedModelInstanceSchema>;
+
+/** What the server said about loading at `observedAt`. An absent record means unknown. */
+export const DetectedModelRuntimeSchema = z
+  .object({
+    loadState: z.enum(['loaded', 'not-loaded', 'unknown']),
+    observedAt: z.number().finite().nonnegative(),
+    instances: z.array(DetectedModelInstanceSchema).readonly().optional(),
+  })
+  .strict();
+/** @public */
+export type DetectedModelRuntime = z.infer<typeof DetectedModelRuntimeSchema>;
+
+/**
+ * `effectiveContextTokens` is the observed active context, `maximumContextTokens`
+ * the architectural ceiling and `maximumOutputTokens` the output ceiling; a
+ * ceiling never stands in for the active context.
+ */
 export const DetectedModelSchema = z
   .object({
     id: z.string().min(1),
@@ -63,6 +89,7 @@ export const DetectedModelSchema = z
     nativeHidden: z.boolean().optional(),
     nativeReasoningEfforts: z.array(z.string().trim().min(1)).readonly().optional(),
     nativeDefaultReasoningEffort: z.string().trim().min(1).optional(),
+    runtime: DetectedModelRuntimeSchema.optional(),
   })
   .strict();
 export type DetectedModel = z.infer<typeof DetectedModelSchema>;

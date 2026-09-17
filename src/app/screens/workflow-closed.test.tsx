@@ -367,7 +367,7 @@ describe('the workflow screen showing a closed run', () => {
     ui.unmount();
   });
 
-  it('states an unpriced run once and never as a dollar figure', () => {
+  it('states an unpriced run nowhere, neither as a figure nor as an absence word', () => {
     showClosedRun({
       summary: makeSummary({
         totalTasks: 0,
@@ -391,13 +391,18 @@ describe('the workflow screen showing a closed run', () => {
     const ui = mount(120, 40);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect((frame.match(/not estimated/g) ?? []).length).toBe(1);
+    // The ledger paints, and the facts it does account for still spell absence as a word.
+    expect(frame).toMatch(/^Run /m);
+    expect(frame).toMatch(/^Review\s+not run\b/m);
+    // Money is not one of those facts any more: `/usage` is where an unpriced run is reported.
+    expect(frame).not.toContain('not estimated');
     expect(frame).not.toContain('$0.00');
+    expect(frame).not.toContain('$');
 
     ui.unmount();
   });
 
-  it('states the spend as one figure, with no baseline or saving beside it', () => {
+  it('states no spend for a priced run, and nothing that used to sit beside it', () => {
     showClosedRun({
       summary: makeSummary({
         costBreakdown: {
@@ -415,38 +420,47 @@ describe('the workflow screen showing a closed run', () => {
     const ui = mount(160, 40);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('$0.15');
+    // The record priced every seat; the ledger still reads, and still says nothing about money.
+    expect(frame).toMatch(/^Run /m);
+    expect(frame).toMatch(/^Session\s+2026-09-14-test-feature\b/m);
+    expect(frame).not.toContain('$');
+    expect(frame).not.toContain('0.15');
     expect(frame).not.toContain('all-planner');
     expect(frame).not.toContain('saved');
 
     ui.unmount();
   });
 
-  it('drops the Cost row when the spend display is turned off', () => {
-    configStore.__testReset({
-      config: makeConfig({ workflow: { showSpend: false } }),
-    });
-    showClosedRun({
-      summary: makeSummary({
-        costBreakdown: {
-          actualPlannerCost: 0.05,
-          actualImplementerCost: 0.1,
-          totalActualCost: 0.15,
-          hasPricedUsage: true,
-          isActualPlannerCostKnown: true,
-          isActualImplementerCostKnown: true,
-          isTotalActualCostKnown: true,
-        },
-      }),
-    });
+  it('reads the same with the spend display turned off as with it on', () => {
+    const pricedCrew = {
+      costBreakdown: {
+        actualPlannerCost: 0.05,
+        actualImplementerCost: 0.1,
+        totalActualCost: 0.15,
+        hasPricedUsage: true,
+        isActualPlannerCostKnown: true,
+        isActualImplementerCostKnown: true,
+        isTotalActualCostKnown: true,
+      },
+    } as const;
 
-    const ui = mount(160, 40);
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    showClosedRun({ summary: makeSummary(pricedCrew) });
+    const shown = mount(160, 40);
+    const withSpendOn = stripAnsiStyles(shown.lastFrame() ?? '');
+    shown.unmount();
 
-    expect(frame).not.toContain('$0.15');
-    expect(frame).not.toMatch(/^Cost/m);
+    resetAllStores();
+    configStore.__testReset({ config: makeConfig({ workflow: { showSpend: false } }) });
+    showClosedRun({ summary: makeSummary(pricedCrew) });
+    const hidden = mount(160, 40);
+    const withSpendOff = stripAnsiStyles(hidden.lastFrame() ?? '');
+    hidden.unmount();
 
-    ui.unmount();
+    // The setting governs the surfaces that paint an amount, and this is no longer one of them,
+    // so it has nothing left to turn off here.
+    expect(withSpendOff).toBe(withSpendOn);
+    expect(withSpendOff).not.toMatch(/^Cost/m);
+    expect(withSpendOff).not.toContain('$0.15');
   });
 
   it('does not label an old summary with the mode the live config is set to', () => {

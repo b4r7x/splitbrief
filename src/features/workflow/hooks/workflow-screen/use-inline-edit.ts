@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useInlineEditTrigger } from '../../../editor/use-inline-edit-trigger.js';
 import { useFieldSessionOwned } from '../../../editor/use-field-session-owned.js';
-import { openReviewFileExternally } from '../../review-parser.js';
+import { openReviewFileExternally, type ReviewInputEffects } from '../../review-parser.js';
 import type { UseInputModeResult } from '../use-input-mode.js';
 import { editorStore } from '../../../../stores/ui/editor.js';
 import { externalEditRequestStore } from '../../../../stores/ui/external-edit-request.js';
@@ -11,8 +11,10 @@ export function useWorkflowInlineEdit(opts: {
   promptPending: boolean;
   inputMode: UseInputModeResult;
   sessionDirPath: string | undefined;
+  /** Absent leaves the production editor in place; the owner check runs either way. */
+  openExternalEditor?: ReviewInputEffects['openExternalEditor'] | undefined;
 }): { fieldSessionOwned: boolean } {
-  const { promptPending, inputMode, sessionDirPath } = opts;
+  const { promptPending, inputMode, sessionDirPath, openExternalEditor } = opts;
 
   const fieldSessionOpen = editorStore.use((s) => s.status === 'open' && s.surface === 'field');
   const fieldSessionOwned = useFieldSessionOwned();
@@ -30,8 +32,8 @@ export function useWorkflowInlineEdit(opts: {
     if (externalEditToken === null) return;
     externalEditRequestStore.consume();
     if (reviewStore.get().ownerToken !== externalEditToken) return;
-    void openReviewFileExternally(inputMode);
-  }, [externalEditToken, inputMode.resolve]);
+    void (openExternalEditor ?? openReviewFileExternally)(inputMode);
+  }, [externalEditToken, inputMode.resolve, openExternalEditor]);
 
   return { fieldSessionOwned };
 }

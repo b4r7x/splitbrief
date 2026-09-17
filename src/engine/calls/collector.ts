@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { error } from '../../utils/error.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { isRunnerCallTerminalEvent } from './status.js';
@@ -135,6 +136,16 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     ...(state.context.runnerName !== undefined && { runnerName: state.context.runnerName }),
     ...(state.context.model !== undefined && { model: state.context.model }),
     ...(state.context.attempt !== undefined && { attempt: state.context.attempt }),
+    ...(state.context.attemptId !== undefined && { attemptId: state.context.attemptId }),
+    ...(state.context.transport !== undefined && { transport: state.context.transport }),
+    ...(state.context.sessionScope !== undefined && { sessionScope: state.context.sessionScope }),
+    ...(state.context.invocationIdentity !== undefined && {
+      invocationIdentity: state.context.invocationIdentity,
+    }),
+    ...(state.context.taskId !== undefined && { taskId: state.context.taskId }),
+    ...(state.context.usageBoundary !== undefined && {
+      usageBoundary: state.context.usageBoundary,
+    }),
     status,
     startedAt,
     endedAt,
@@ -177,6 +188,14 @@ function eventContext(event: RunnerCallEvent): RunnerCallContext {
     ...(event.runnerName !== undefined && { runnerName: event.runnerName }),
     ...(event.model !== undefined && { model: event.model }),
     ...(event.attempt !== undefined && { attempt: event.attempt }),
+    ...(event.attemptId !== undefined && { attemptId: event.attemptId }),
+    ...(event.transport !== undefined && { transport: event.transport }),
+    ...(event.sessionScope !== undefined && { sessionScope: event.sessionScope }),
+    ...(event.invocationIdentity !== undefined && {
+      invocationIdentity: event.invocationIdentity,
+    }),
+    ...(event.taskId !== undefined && { taskId: event.taskId }),
+    ...(event.usageBoundary !== undefined && { usageBoundary: event.usageBoundary }),
   };
 }
 
@@ -186,6 +205,7 @@ function assertSameCall(context: RunnerCallContext, event: RunnerCallEvent): voi
     context.role === event.role &&
     context.backendKind === event.backendKind
   ) {
+    assertSameInvocationIdentity(context, event);
     return;
   }
 
@@ -196,6 +216,22 @@ function assertSameCall(context: RunnerCallContext, event: RunnerCallEvent): voi
       expectedCallId: context.callId,
       actualCallId: event.callId,
     },
+  );
+}
+
+// An event without an identity (a legacy line, a buffered overflow warning)
+// neither conflicts with nor erases the one the call was recorded with.
+function assertSameInvocationIdentity(context: RunnerCallContext, event: RunnerCallEvent): void {
+  if (event.invocationIdentity === undefined) return;
+  if (context.invocationIdentity === undefined) {
+    context.invocationIdentity = event.invocationIdentity;
+    return;
+  }
+  if (isDeepStrictEqual(context.invocationIdentity, event.invocationIdentity)) return;
+  throw error(
+    'runner-call-identity-conflict',
+    'Runner call collector received two invocation identities for one call',
+    { callId: context.callId },
   );
 }
 
@@ -337,6 +373,7 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
         message: sanitizeRunnerCallRawPreview(event.rawPreview),
       });
       return;
+    case 'call_runtime_status':
     case 'call_stalled':
     case 'call_stall_cleared':
       return;

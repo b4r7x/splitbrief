@@ -371,10 +371,26 @@ function applySkipCurrentTaskRecoveryAction(
   return { ok: true, action: opts.action, issue, state, status: 'skipped-current-task' };
 }
 
+/**
+ * A halt that names no brief is about the seat, not a task. PLAN and REVIEW have
+ * nothing to reset: a packet the seat was never given, and a review call that
+ * never landed, are answered by re-issuing the same step once the seat is
+ * corrected. Every other retry replays the brief it names.
+ */
+function isSeatLevelRetry(issue: RecoveryIssue): boolean {
+  if (issue.taskId !== undefined) return false;
+  if (issue.seat !== 'plan' && issue.seat !== 'review') return false;
+  return (
+    recoveryFactString(issue.facts, 'apiContextCode') === 'insufficient-context' ||
+    recoveryFactString(issue.facts, 'reviewFailureKind') === 'call-failed'
+  );
+}
+
 function applyRetrySameWorkerRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
+  if (isSeatLevelRetry(issue)) return resolveSeatIssueWithoutTask(opts, issue);
   return applyRetryCurrentTaskRecoveryAction(
     opts,
     issue,
@@ -481,7 +497,26 @@ export function applySwitchSeatRecoveryAction(
     });
   }
 
-  const switchedConfig = configWithSwitchedSeat(opts.config, offer.seat, chosen);
+  // A build halt names the profile that failed; the swap lands on that profile,
+  // and a name the profile table no longer carries changes nothing.
+  const failingProfile = offer.seat === 'build' ? issue.selectedImplementerProfile : undefined;
+  if (
+    failingProfile !== undefined &&
+    opts.config.implementerProfiles !== undefined &&
+    !hasImplementerProfile(opts.config, failingProfile)
+  ) {
+    return blockRecoveryAction({
+      ...opts,
+      action,
+      issue,
+      code: 'profile-not-found',
+      message: `Profile '${failingProfile}' not found in config.`,
+      implementerProfile: failingProfile,
+      publishSelected: true,
+    });
+  }
+
+  const switchedConfig = configWithSwitchedSeat(opts.config, offer.seat, chosen, failingProfile);
   if (switchedConfig === null) {
     return blockRecoveryAction({
       ...opts,
@@ -498,7 +533,7 @@ export function applySwitchSeatRecoveryAction(
   // A halt that names a brief still replays that brief there.
   const applied =
     issue.taskId === undefined
-      ? resolveSeatSwapWithoutTask({ ...opts, action }, issue)
+      ? resolveSeatIssueWithoutTask({ ...opts, action }, issue)
       : applyRetryCurrentTaskRecoveryAction(
           { ...opts, action },
           issue,
@@ -512,7 +547,11 @@ export function applySwitchSeatRecoveryAction(
   };
 }
 
-function resolveSeatSwapWithoutTask(
+/**
+ * Resolve a halt that names no brief: the pending recovery clears and the run
+ * re-enters the same step, with no `RESET_TASK` and no current task required.
+ */
+function resolveSeatIssueWithoutTask(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {

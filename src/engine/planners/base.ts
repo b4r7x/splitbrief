@@ -17,11 +17,13 @@ import type {
   PlannerStructuredSummaryOptions,
   PlannerSummaryOptions,
   PlannerUserTurnOptions,
+  PlannerUserTurnResult,
   PlannerInvokeResult,
 } from './types.js';
 import { DEFAULT_AVAILABILITY } from '../availability.js';
 import { escalateFull, escalateHint } from './escalation.js';
-import { createPhaseRunner } from './run-phase.js';
+import { createPhaseRunner, type PhaseRunnerConfig } from './run-phase.js';
+import type { ApiRuntimeContext } from '../providers/runtime-context.js';
 import { createPlannerCallContext } from './call-context.js';
 import { summarize, summarizeStructured } from './summary.js';
 import { toTokenDelta } from '../calls/projection.js';
@@ -30,6 +32,7 @@ import { requireCompletedCall } from './require-completed-call.js';
 
 type InternalInvokeOptions = {
   prompt: string;
+  apiContext?: ApiRuntimeContext | undefined;
   projectDir: string;
   callContext: RunnerCallContext;
   callbacks: Pick<
@@ -88,7 +91,13 @@ export interface PlannerBaseConfig {
    * block to the prompt for the first planning phase.
    */
   consumesPriorMessages?: boolean;
-  injectUserTurn?: (opts: PlannerUserTurnOptions) => Promise<TokenDelta | null>;
+  /**
+   * Input-token allocation for the explicitly assembled PLAN context packet.
+   * Set by seats that read no files of their own; see `run-phase.ts`.
+   */
+  planningContextBudget?: number | undefined;
+  resolvePlanningContext?: PhaseRunnerConfig['resolvePlanningContext'];
+  injectUserTurn?: (opts: PlannerUserTurnOptions) => Promise<PlannerUserTurnResult>;
 }
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
   const capabilities = config.capabilities;

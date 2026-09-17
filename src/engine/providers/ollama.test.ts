@@ -75,6 +75,10 @@ describe('createOllamaProvider native inventory', () => {
           sendJson(response, 200, { parameters: 'num_ctx 32768\ntemperature 0.7' });
           return;
         }
+        if (request.url === '/api/ps') {
+          sendJson(response, 200, { models: [] });
+          return;
+        }
         sendJson(response, 500, { unexpected: request.url });
       },
       async ({ apiBase, requests }) => {
@@ -94,11 +98,13 @@ describe('createOllamaProvider native inventory', () => {
         ]);
         expect(requests).toEqual([
           { method: 'GET', pathname: '/api/tags', authorization: undefined },
+          { method: 'GET', pathname: '/api/ps', authorization: undefined },
         ]);
 
         expect(await provider.detectContextLength('acme/coder:latest')).toBe(32_768);
         expect(requests).toEqual([
           { method: 'GET', pathname: '/api/tags', authorization: undefined },
+          { method: 'GET', pathname: '/api/ps', authorization: undefined },
           { method: 'POST', pathname: '/api/show', authorization: undefined },
         ]);
         expect(JSON.stringify(requests)).not.toContain(cloudKeyCanary);
@@ -197,6 +203,181 @@ describe('createOllamaProvider native inventory', () => {
         expect(requests).toEqual([
           { method: 'GET', pathname: '/api/tags', authorization: undefined },
         ]);
+      },
+    );
+  });
+});
+
+const MUTATING_PATHS = ['/api/generate', '/api/chat', '/api/pull', '/api/create', '/api/copy'];
+
+function servedInventory(): unknown {
+  return { models: [{ name: 'qwen3:8b' }, { name: 'llama3:8b' }] };
+}
+
+describe('createOllamaProvider load state', () => {
+  it('keeps both exact tag IDs and marks only the model /api/ps reports as loaded', async () => {
+    await withLoopbackOllama(
+      (request, response) => {
+        if (request.url === '/api/tags') {
+          sendJson(response, 200, servedInventory());
+          return;
+        }
+        if (request.url === '/api/ps') {
+          sendJson(response, 200, {
+            models: [{ name: 'qwen3:8b', model: 'qwen3:8b', context_length: 16384 }],
+          });
+          return;
+        }
+        sendJson(response, 500, { unexpected: request.url });
+      },
+      async ({ apiBase, requests }) => {
+        const models = await createOllamaProvider({ apiBase }).listModelsWithMetadata();
+
+        expect(models.map((model) => model.id)).toEqual(['qwen3:8b', 'llama3:8b']);
+        expect(models[0]?.runtime).toEqual({
+          loadState: 'loaded',
+          observedAt: expect.any(Number),
+          instances: [{ id: 'qwen3:8b', effectiveContextTokens: 16384 }],
+        });
+        expect(models[0]?.effectiveContextTokens).toBe(16384);
+        expect(models[1]?.runtime).toEqual({
+          loadState: 'not-loaded',
+          observedAt: expect.any(Number),
+        });
+        expect(models[1]?.effectiveContextTokens).toBeUndefined();
+        expect(requests.map((entry) => `${entry.method} ${entry.pathname}`)).toEqual([
+          'GET /api/tags',
+          'GET /api/ps',
+        ]);
+        for (const entry of requests) expect(MUTATING_PATHS).not.toContain(entry.pathname);
+      },
+    );
+  });
+
+  it('reads an empty /api/ps as not-loaded without emptying the inventory', async () => {
+    await withLoopbackOllama(
+      (request, response) => {
+        if (request.url === '/api/tags') {
+          sendJson(response, 200, servedInventory());
+          return;
+        }
+        if (request.url === '/api/ps') {
+          sendJson(response, 200, { models: [] });
+          return;
+        }
+        sendJson(response, 500, { unexpected: request.url });
+      },
+      async ({ apiBase }) => {
+        const models = await createOllamaProvider({ apiBase }).listModelsWithMetadata();
+
+        expect(models.map((model) => model.id)).toEqual(['qwen3:8b', 'llama3:8b']);
+        expect(models.map((model) => model.runtime?.loadState)).toEqual([
+          'not-loaded',
+          'not-loaded',
+        ]);
+      },
+    );
+  });
+
+  it.each([
+    ['unsupported', (response: http.ServerResponse) => sendJson(response, 404, { error: 'ps' })],
+    ['malformed', (response: http.ServerResponse) => sendJson(response, 200, { models: 'many' })],
+  ])('leaves load state unknown when /api/ps is %s, keeping the inventory', async (_label, ps) => {
+    await withLoopbackOllama(
+      (request, response) => {
+        if (request.url === '/api/tags') {
+          sendJson(response, 200, servedInventory());
+          return;
+        }
+        if (request.url === '/api/ps') {
+          ps(response);
+          return;
+        }
+        sendJson(response, 500, { unexpected: request.url });
+      },
+      async ({ apiBase }) => {
+        const models = await createOllamaProvider({ apiBase }).listModelsWithMetadata();
+
+        expect(models.map((model) => model.id)).toEqual(['qwen3:8b', 'llama3:8b']);
+        expect(models.map((model) => model.runtime?.loadState)).toEqual(['unknown', 'unknown']);
+        expect(models.every((model) => model.effectiveContextTokens === undefined)).toBe(true);
+      },
+    );
+  });
+
+  it('never observes /api/ps for an empty inventory', async () => {
+    await withLoopbackOllama(
+      (request, response) => {
+        if (request.url === '/api/tags') {
+          sendJson(response, 200, { models: [] });
+          return;
+        }
+        sendJson(response, 500, { unexpected: request.url });
+      },
+      async ({ apiBase, requests }) => {
+        expect(await createOllamaProvider({ apiBase }).listModelsWithMetadata()).toEqual([]);
+        expect(requests.map((entry) => entry.pathname)).toEqual(['/api/tags']);
+      },
+    );
+  });
+
+  it('reads the architectural maximum from /api/show without calling it per inventory row', async () => {
+    await withLoopbackOllama(
+      (request, response) => {
+        if (request.url === '/api/tags') {
+          sendJson(response, 200, servedInventory());
+          return;
+        }
+        if (request.url === '/api/ps') {
+          sendJson(response, 200, {
+            models: [{ name: 'qwen3:8b', model: 'qwen3:8b', context_length: 8192 }],
+          });
+          return;
+        }
+        if (request.url === '/api/show' && request.method === 'POST') {
+          sendJson(response, 200, {
+            parameters: 'num_ctx 4096',
+            model_info: { 'general.architecture': 'qwen3', 'qwen3.context_length': 262144 },
+          });
+          return;
+        }
+        sendJson(response, 500, { unexpected: request.url });
+      },
+      async ({ apiBase, requests }) => {
+        const provider = createOllamaProvider({ apiBase });
+        const models = await provider.listModelsWithMetadata();
+
+        expect(models.map((model) => model.effectiveContextTokens)).toEqual([8192, undefined]);
+        expect(models.every((model) => model.maximumContextTokens === undefined)).toBe(true);
+        expect(requests.map((entry) => entry.pathname)).toEqual(['/api/tags', '/api/ps']);
+
+        expect(await provider.detectContextLength('qwen3:8b')).toBe(262_144);
+        expect(requests.map((entry) => entry.pathname)).toEqual([
+          '/api/tags',
+          '/api/ps',
+          '/api/show',
+        ]);
+      },
+    );
+  });
+
+  it('aborts the listing on the caller signal without observing load state', async () => {
+    await withLoopbackOllama(
+      (request, response) => {
+        if (request.url === '/api/tags') {
+          sendJson(response, 200, servedInventory());
+          return;
+        }
+        sendJson(response, 500, { unexpected: request.url });
+      },
+      async ({ apiBase, requests }) => {
+        const controller = new AbortController();
+        const provider = createOllamaProvider({ apiBase });
+        const pending = provider.listModelsWithMetadata({ signal: controller.signal });
+        controller.abort();
+
+        await expect(pending).rejects.toThrow(/abort/i);
+        expect(requests.map((entry) => entry.pathname)).not.toContain('/api/ps');
       },
     );
   });

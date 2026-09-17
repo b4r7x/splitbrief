@@ -61,7 +61,7 @@ export type StateAction =
   | { type: 'MARK_INJECTING_NATIVE'; id: string; attempt?: number }
   | { type: 'MARK_DELIVERED_NATIVE'; id: string }
   | { type: 'MARK_NATIVE_DELIVERY_FAILED'; id: string }
-  | { type: 'DRAIN_QUEUE' }
+  | { type: 'DRAIN_QUEUE'; ids?: string[] }
   | { type: 'CLEAR_QUEUE' }
   | { type: 'SET_PENDING_RECOVERY'; issue: RecoveryIssue }
   | { type: 'PAUSE_PENDING_RECOVERY' }

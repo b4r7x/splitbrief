@@ -44,6 +44,7 @@ describe('makeImplementerRetryInvoker', () => {
       sandboxEnv: { FOO: 'bar' },
       fileIgnoreProjectDir: '/project',
       changeDetection: 'file-hashes',
+      createdByThisTask: ['src/owned.ts'],
     });
 
     expect(result).toEqual({
@@ -68,6 +69,7 @@ describe('makeImplementerRetryInvoker', () => {
       sandboxEnv: { FOO: 'bar' },
       fileIgnoreProjectDir: '/project',
       changeDetection: 'file-hashes',
+      createdByThisTask: ['src/owned.ts'],
     });
   });
 

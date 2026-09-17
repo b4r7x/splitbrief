@@ -11,6 +11,32 @@ import { operationsStore } from './state.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeValidate } from '#testing/helpers/events/task.js';
 
+it('retains admitted load metadata when cancellation finishes API waiting and ignores late status', () => {
+  resetWorkflow();
+  const started = runnerStarted({ backendKind: 'api', runnerName: 'lm-studio' });
+  addEvent(started);
+  const runtime = {
+    ...started,
+    type: 'runner_call_runtime_status',
+    runtimeStatus: { phase: 'waiting-first-response', loadState: 'loaded', observedAt: 900 },
+  } satisfies EngineEventOf<'runner_call_runtime_status'>;
+  addEvent(runtime);
+  expect(operationsStore.get().active?.apiRuntimeStatus).toEqual(runtime.runtimeStatus);
+  markCancellationRequested({ ts: 1_200, reason: 'user_cancelled' });
+  addEvent({
+    ...runtime,
+    ts: 1_300,
+    runtimeStatus: { ...runtime.runtimeStatus, phase: 'streaming' },
+  });
+  expect(operationsStore.get().active).toBeNull();
+  expect(operationsStore.get().last?.apiRuntimeStatus).toEqual({
+    phase: 'finished',
+    loadState: 'loaded',
+    observedAt: 900,
+  });
+  resetWorkflow();
+});
+
 type RunnerCallFailureStatus = EngineEventOf<'runner_call_error'>['status'];
 
 const runnerCallFailureStatuses: readonly RunnerCallFailureStatus[] = [

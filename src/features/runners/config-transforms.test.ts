@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import YAML from 'yaml';
 import { fromYaml } from '../../core/config/load/transform.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
-import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { ConfigSchema } from '../../core/schemas/config.js';
 import type { Config } from '../../core/schemas/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -341,7 +340,6 @@ describe('runner selection commits', () => {
     expect(updated.planner).toEqual({
       kind: 'cli',
       tool: 'claude-code',
-      authChannel: defaultCliAuthChannel('claude-code').id,
       model: 'sonnet',
     });
   });

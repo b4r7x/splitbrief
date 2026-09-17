@@ -91,7 +91,18 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     });
 
     expect(result.text).toBe('reply');
-    expect(result.usage).toEqual({ inputTokens: 3, outputTokens: 1 });
+    expect(result.usage).toEqual({
+      inputTokens: 3,
+      outputTokens: 1,
+      counterCoverage: {
+        input: 'reported',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { output: 1 },
+    });
   });
 
   it('passes effort as an --effort argv flag and leaves stdin as the raw prompt', async () => {

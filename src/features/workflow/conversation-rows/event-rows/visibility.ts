@@ -38,6 +38,7 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'clarification_answered',
   'runner_call_stalled',
   'runner_call_stall_cleared',
+  'runner_call_runtime_status',
 ] as const satisfies readonly EngineEvent['type'][];
 
 type TranscriptRowlessEventType = (typeof TRANSCRIPT_ROWLESS_EVENT_TYPES)[number];

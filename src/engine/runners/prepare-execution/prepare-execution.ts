@@ -13,6 +13,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionOwnershipReceipt } from '../../../core/sessions/active-pointer.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
+import { inspectSessionLiveness } from '../../../core/sessions/liveness.js';
 import { prepareNewSession } from '../../../core/sessions/prepare.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { isAbortError, throwIfAborted } from '../../../utils/abort.js';
@@ -94,7 +95,8 @@ const DEFAULT_DEPENDENCIES: PrepareExecutionDependencies = {
   prepareCustomRunnerAdmission,
   resolveCliExecutableAliases,
   prepareNewSession,
-  reactivateExistingSession,
+  reactivateExistingSession: (ref) =>
+    reactivateExistingSession(ref, { inspectOwner: inspectSessionLiveness }),
   newPreparationId: randomUUID,
 };
 

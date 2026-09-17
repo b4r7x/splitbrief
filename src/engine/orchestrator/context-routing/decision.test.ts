@@ -63,10 +63,21 @@ describe('compareProfileRouteRank', () => {
 });
 
 describe('requiredWriteModeForTask', () => {
-  it('files.length > 1 forces direct', () => {
+  it.each([
+    ['src/hello.ts', 'src/**'],
+    ['src/hello.ts', 'src/'],
+    ['src/hello.ts', '../outside.ts'],
+    ['src/hello.ts', 'src/hello.ts'],
+    ['src/hello.ts', 'src/hello.ts/nested.ts'],
+    Array.from({ length: 33 }, (_, i) => `src/file${i}.ts`),
+  ])('requires direct writes for unsupported targets %j', (...files) => {
+    expect(requiredWriteModeForTask(makeTask({ files }))).toBe('direct');
+  });
+
+  it('allows explicit multi-file bundles', () => {
     expect(
       requiredWriteModeForTask(makeTask({ files: ['src/hello.ts', 'src/hello.test.ts'] })),
-    ).toBe('direct');
+    ).toBe('extracted-code');
     expect(requiredWriteModeForTask(makeTask())).toBe('extracted-code');
   });
 });

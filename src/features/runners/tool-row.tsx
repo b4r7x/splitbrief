@@ -10,7 +10,14 @@ import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { isOptionFamily, routePrefixesOf } from './model-catalog/option-axis.js';
 import { stripModelNamespace } from './model-catalog/provider-axis.js';
-import { AUTO_ROW_METADATA, type RightRow, type TreeLead } from './model-catalog/rows.js';
+import {
+  AUTH_METHOD_WORDS,
+  AUTH_ROW_LABEL,
+  AUTH_UNPROVEN_WORD,
+  AUTO_ROW_METADATA,
+  type RightRow,
+  type TreeLead,
+} from './model-catalog/rows.js';
 import { formatPickerStatusLabel, formatRouteAuth } from './picker-format.js';
 import { isExpandableRow, type RouteAuthContext } from './right-column-policy.js';
 
@@ -158,6 +165,20 @@ export function renderModelRow({
         metadataColor={dim ? undefined : getTheme().text}
         trailing={' '}
         selected={currentModel !== undefined && row.variant.fullId === currentModel}
+        width={maxWidth}
+      />
+    );
+  }
+  if (row.kind === 'auth') {
+    // The value is the state, so the row carries no check; a row with nothing to
+    // choose also carries no disclosure, and so says nothing about being steerable.
+    const word = AUTH_METHOD_WORDS[row.method];
+    return (
+      <ListRow
+        treeLead={treeLead(row.tree, row.last)}
+        label={`${AUTH_ROW_LABEL} ${row.unproven ? AUTH_UNPROVEN_WORD : word}`}
+        state={isCursor ? 'active' : 'default'}
+        defaultLead="blank"
         width={maxWidth}
       />
     );

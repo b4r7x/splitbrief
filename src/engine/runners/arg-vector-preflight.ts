@@ -15,6 +15,7 @@ import { createSanitizedChildEnv } from '../../lib/process/spawn/child-env.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
 import { CLI_PROMPT_SENTINEL } from './cli-tools/candidate-contract.js';
+import type { CliArgumentValidation } from './cli-tools/validate-args.js';
 import { lookupCliImplementerAdapter, lookupCliPlannerAdapter } from './cli-tools/registry.js';
 import { resolveCliExecutableAliases, sanitizedRuntimePath } from './resolve-cli-executable.js';
 
@@ -372,7 +373,12 @@ async function buildPreflightCheck(
 ): Promise<ReadinessCheck> {
   const semantic = semanticConfiguredArgViolations(runner.args ?? []);
   if (semantic.length > 0) return semanticOverrideCheck(runner, semantic);
-  const argVectors = emittedArgVectors(runner);
+  const vectors = emittedArgVectors(runner);
+  const conflicts = vectors.flatMap(({ validation }) =>
+    validation.valid ? [] : validation.conflicts,
+  );
+  if (conflicts.length > 0) return semanticOverrideCheck(runner, [...new Set(conflicts)]);
+  const argVectors = vectors.map(({ argv }) => argv);
   const unsupported = new Set<string>();
   const deprecated = new Set<string>();
   let compared = false;
@@ -444,11 +450,31 @@ async function buildPreflightCheck(
  * branch — a read-only call, which the CLI planner maps to plan mode, with no
  * session to resume — so escalate-mode and resume argv are not its to compare.
  */
-function emittedArgVectors(runner: PreflightRunner): readonly (readonly string[])[] {
+type PreflightVector = Readonly<{ argv: readonly string[]; validation: CliArgumentValidation }>;
+
+function checkedVector<Input>(
+  adapter: Readonly<{
+    buildArgs: (input: Input) => readonly string[];
+    baseArgs: (input: Input) => readonly string[];
+    validateArgs: (input: {
+      invocationArgs: readonly string[];
+      baseArgs: readonly string[];
+    }) => CliArgumentValidation;
+  }>,
+  input: Input,
+): PreflightVector {
+  const argv = adapter.buildArgs(input);
+  return {
+    argv,
+    validation: adapter.validateArgs({ invocationArgs: argv, baseArgs: adapter.baseArgs(input) }),
+  };
+}
+
+function emittedArgVectors(runner: PreflightRunner): readonly PreflightVector[] {
   switch (runner.role) {
     case 'implementer':
       return [
-        lookupCliImplementerAdapter(runner.tool).buildArgs({
+        checkedVector(lookupCliImplementerAdapter(runner.tool), {
           prompt: CLI_PROMPT_SENTINEL,
           model: runner.model,
           projectDir: '.',
@@ -460,23 +486,27 @@ function emittedArgVectors(runner: PreflightRunner): readonly (readonly string[]
     case 'reviewer': {
       const adapter = lookupCliPlannerAdapter(runner.tool);
       return [
-        adapter.buildArgs({ ...plannerCommonArgs(runner, adapter), mode: 'plan', sessionId: null }),
+        checkedVector(adapter, {
+          ...plannerCommonArgs(runner, adapter),
+          mode: 'plan',
+          sessionId: null,
+        }),
       ];
     }
     case 'planner': {
       const adapter = lookupCliPlannerAdapter(runner.tool);
       const common = plannerCommonArgs(runner, adapter);
       const variants = [
-        adapter.buildArgs({ ...common, mode: 'plan', sessionId: null }),
-        adapter.buildArgs({ ...common, mode: 'escalate', sessionId: null }),
+        checkedVector(adapter, { ...common, mode: 'plan', sessionId: null }),
+        checkedVector(adapter, { ...common, mode: 'escalate', sessionId: null }),
       ];
       if (adapter.supportsSessionResume) {
         variants.push(
-          adapter.buildArgs({ ...common, mode: 'plan', sessionId: PREFLIGHT_SESSION_ID }),
+          checkedVector(adapter, { ...common, mode: 'plan', sessionId: PREFLIGHT_SESSION_ID }),
         );
       }
       const seen = new Set<string>();
-      return variants.filter((argv) => {
+      return variants.filter(({ argv }) => {
         const key = argv.join(' ');
         if (seen.has(key)) return false;
         seen.add(key);

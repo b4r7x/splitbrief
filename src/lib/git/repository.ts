@@ -38,15 +38,6 @@ export async function getRepoToplevel(dir: string): Promise<string | null> {
   }
 }
 
-export async function hasCommitterIdentity(dir: string): Promise<boolean> {
-  try {
-    const ident = (await getGitForDir(dir).raw(['var', 'GIT_COMMITTER_IDENT'])).trim();
-    return ident.length > 0;
-  } catch {
-    return false;
-  }
-}
-
 export async function getInProgressGitOp(dir: string): Promise<InProgressGitOp | null> {
   let gitDir: string;
   try {

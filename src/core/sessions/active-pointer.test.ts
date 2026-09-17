@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   readActive,
@@ -11,7 +11,12 @@ import {
   withSessionMutationLock,
   writeActiveReceiptLocked,
 } from './active-pointer.js';
+import { inspectSessionLiveness } from './liveness.js';
+import { HEARTBEAT_STALENESS_MS } from './lockfile-status.js';
+import { LOCKFILE, sessionDir, STATE_FILE } from '../paths.js';
+import { createInitialState } from '../state/machine.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 
 let tmp: string;
 
@@ -98,6 +103,27 @@ describe('readActive', () => {
   });
 });
 
+function writeOwner(
+  projectDir: string,
+  sessionId: string,
+  lock: Parameters<typeof makeSessionLockfile>[1],
+): void {
+  const dir = sessionDir(projectDir, sessionId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, STATE_FILE),
+    JSON.stringify({ ...createInitialState('feature'), phase: 'implementing' }),
+  );
+  writeFileSync(join(dir, LOCKFILE), JSON.stringify(makeSessionLockfile(sessionId, lock)));
+}
+
+function writeCompetingPointer(projectDir: string, sessionId: string, kind: 'legacy' | 'v1'): void {
+  if (kind === 'legacy') writeActive({ projectDir, sessionId });
+  else reactivateExistingSession({ projectDir, sessionId });
+}
+
+const resumeOptions = { inspectOwner: inspectSessionLiveness };
+
 describe('reactivateExistingSession', () => {
   it('replaces same-session legacy and v1 state with a fresh active generation', () => {
     const dir = makeTmp();
@@ -122,6 +148,89 @@ describe('reactivateExistingSession', () => {
       reactivateExistingSession({ projectDir: dir, sessionId: '2026-04-14-resume' }),
     ).toThrowError(expect.objectContaining({ kind: 'active-mutation-conflict' }));
     expect(readActive(dir)).toBe(active.sessionId);
+  });
+
+  it.each(['legacy', 'v1'] as const)(
+    'takes over a %s pointer whose owner process is dead',
+    (kind) => {
+      const dir = makeTmp();
+      const owner = '2026-04-14-dead-owner';
+      writeOwner(dir, owner, { pid: 99999999 });
+      writeCompetingPointer(dir, owner, kind);
+
+      const receipt = reactivateExistingSession(
+        { projectDir: dir, sessionId: '2026-04-14-resume' },
+        resumeOptions,
+      );
+
+      expect(receipt.sessionId).toBe('2026-04-14-resume');
+      expect(readActiveRecord(dir)).toEqual({ kind: 'v1', receipt });
+    },
+  );
+
+  it.each([
+    ['live', {}],
+    ['stale', { lastAliveMs: Date.now() - HEARTBEAT_STALENESS_MS - 1 }],
+    ['unknown', null],
+  ] as const)('refuses to take over a pointer whose owner is %s', (_label, lock) => {
+    const dir = makeTmp();
+    const ownerId = '2026-04-14-owner';
+    if (lock !== null) writeOwner(dir, ownerId, lock);
+    for (const kind of ['legacy', 'v1'] as const) {
+      rmSync(join(dir, '.splitbrief', 'active'), { force: true });
+      writeCompetingPointer(dir, ownerId, kind);
+      const before = readActiveRecord(dir);
+
+      expect(() =>
+        reactivateExistingSession(
+          { projectDir: dir, sessionId: '2026-04-14-resume' },
+          resumeOptions,
+        ),
+      ).toThrowError(expect.objectContaining({ kind: 'session-still-active' }));
+      expect(readActiveRecord(dir)).toEqual(before);
+    }
+  });
+
+  it('refuses when the competing receipt is replaced between inspection and mutation', () => {
+    const dir = makeTmp();
+    const owner = { projectDir: dir, sessionId: '2026-04-14-dead-owner' };
+    writeOwner(dir, owner.sessionId, { pid: 99999999 });
+    reactivateExistingSession(owner);
+    const newer = {
+      version: 1 as const,
+      sessionId: owner.sessionId,
+      generation: '33333333-3333-4333-8333-333333333333',
+    };
+
+    expect(() =>
+      reactivateExistingSession(
+        { projectDir: dir, sessionId: '2026-04-14-resume' },
+        {
+          inspectOwner: (ref) => {
+            const result = inspectSessionLiveness(ref);
+            writeFileSync(join(dir, '.splitbrief', 'active'), `${JSON.stringify(newer)}\n`);
+            return result;
+          },
+        },
+      ),
+    ).toThrowError(expect.objectContaining({ kind: 'active-mutation-conflict' }));
+    expect(readActiveRecord(dir)).toEqual({ kind: 'v1', receipt: newer });
+  });
+
+  it('keeps stale generations from clearing the ownership that replaced them', () => {
+    const dir = makeTmp();
+    const owner = { projectDir: dir, sessionId: '2026-04-14-dead-owner' };
+    const resume = { projectDir: dir, sessionId: '2026-04-14-resume' };
+    writeOwner(dir, owner.sessionId, { pid: 99999999 });
+    const displaced = reactivateExistingSession(owner);
+
+    const first = reactivateExistingSession(resume, resumeOptions);
+    const current = reactivateExistingSession(resume, resumeOptions);
+
+    expect(clearActiveReceipt(owner, displaced)).toBe(false);
+    expect(clearActiveReceipt(resume, first)).toBe(false);
+    expect(readActiveRecord(dir)).toEqual({ kind: 'v1', receipt: current });
+    expect(clearActiveReceipt(resume, current)).toBe(true);
   });
 });
 

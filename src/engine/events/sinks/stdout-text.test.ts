@@ -63,7 +63,7 @@ describe('createStdoutTextSink', () => {
       'task T001: done (typecheck lint)',
       'phase: complete',
       'review: passed',
-      'done: 1 tasks, 2.0k tokens',
+      'done: 1 tasks',
     ]);
   });
 
@@ -86,7 +86,7 @@ describe('createStdoutTextSink', () => {
       'phase: final-review',
       'phase: complete',
       'review: failed (2 blocking)',
-      'done: 0 tasks, 0 tokens',
+      'done: 0 tasks',
     ]);
   });
 

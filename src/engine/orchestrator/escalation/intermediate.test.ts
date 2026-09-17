@@ -21,6 +21,7 @@ import {
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
+import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { RunnerGate } from '../../runners/prepared-execution.js';
 import { INTERMEDIATE_TIER, runEscalationTier } from './tier.js';
@@ -182,14 +183,25 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
     });
     const originalConfig = structuredClone(config);
     const originalProfiles = config.implementerProfiles;
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
+    const fetchMock = vi.fn(
+      withLocalCatalog(['x-ai/grok-4-fast'], () =>
         makeOpenAiSseResponse([
-          { content: '```ts\nexport const intermediate = true;\n```' },
+          {
+            content: JSON.stringify({
+              version: 1,
+              files: [
+                {
+                  path: 'src/intermediate.ts',
+                  action: 'create',
+                  content: 'export const intermediate = true;\n',
+                },
+              ],
+            }),
+          },
           { usage: { prompt_tokens: 40, completion_tokens: 20 } },
         ]),
-      );
+      ),
+    );
     vi.stubGlobal('fetch', fetchMock);
     const preparationId = 'intermediate-preparation';
     const gates: RunnerGate[] = [

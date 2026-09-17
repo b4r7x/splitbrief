@@ -76,10 +76,12 @@ describe('gates', () => {
   });
 });
 
+// The `takeover` rung has no entry: the planner advises the implementer, it
+// never takes the brief over as a code writer, so no escalating tier answers
+// for that rung.
 const ESCALATION_TIERS: Partial<Record<LadderRungId, number>> = {
   intermediate: 0,
   hint: 1,
-  takeover: 2,
 };
 
 describe('retry ladder', () => {

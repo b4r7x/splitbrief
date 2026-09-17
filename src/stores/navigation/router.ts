@@ -45,6 +45,18 @@ const initial: RouteData = { screen: 'home' };
 
 const store = createStore<RouteData>(initial);
 
+/**
+ * Which change of the screen's owner is the latest. A history read captures it before touching the
+ * disk and publishes only if nothing newer — a select, start, continue, navigation or reset — has
+ * taken the screen while it was reading.
+ */
+let selection = 0;
+
+function supersede(): number {
+  selection += 1;
+  return selection;
+}
+
 export type NavigateArgs =
   | { to: 'home' }
   | ({ to: 'workflow' } & WorkflowPayload)
@@ -59,6 +71,7 @@ function navigate(args: NavigateArgs) {
   }
 
   publishFeedbackReset();
+  supersede();
 
   switch (args.to) {
     case 'home':
@@ -92,7 +105,12 @@ function navigate(args: NavigateArgs) {
  */
 function updateRun(input: Readonly<{ run: RunRecord; execution?: WorkflowExecution | undefined }>) {
   const current = store.get();
-  if (current.screen !== 'workflow') return;
+  if (
+    current.screen !== 'workflow' ||
+    current.run.ref.projectDir !== input.run.ref.projectDir ||
+    current.run.ref.sessionId !== input.run.ref.sessionId
+  )
+    return;
   store.set({
     screen: 'workflow',
     run: input.run,
@@ -102,7 +120,16 @@ function updateRun(input: Readonly<{ run: RunRecord; execution?: WorkflowExecuti
 
 export const routerStore = {
   ...storeBase(store),
+  reset: () => {
+    supersede();
+    store.reset();
+  },
   navigate,
   updateRun,
-  init: (route: RouteData) => store.set(route),
+  supersede,
+  isCurrentSelection: (generation: number) => generation === selection,
+  init: (route: RouteData) => {
+    supersede();
+    store.set(route);
+  },
 };

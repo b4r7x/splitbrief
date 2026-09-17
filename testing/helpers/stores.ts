@@ -16,6 +16,7 @@ import { hoverStore } from '../../src/stores/ui/hover.js';
 import { inputHistoryStore } from '../../src/stores/ui/input-history.js';
 import { inputHeightStore } from '../../src/stores/ui/input-height.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
+import { preparationStore } from '../../src/stores/navigation/preparation.js';
 import { sessionSelectStore } from '../../src/stores/navigation/session-select.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { sessionsStore } from '../../src/stores/project/sessions.js';
@@ -57,6 +58,7 @@ export function resetAllStores(): void {
   inputHistoryStore.reset();
   inputHeightStore.reset();
   routerStore.reset();
+  preparationStore.reset();
   sessionSelectStore.reset();
   configStore.reset();
   sessionsStore.reset();

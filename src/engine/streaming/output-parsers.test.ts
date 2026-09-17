@@ -160,7 +160,18 @@ describe('getLineParser stream-json wrap integration', () => {
       {
         text: 'done',
         channel: 'result',
-        usage: { inputTokens: 10, outputTokens: 5 },
+        usage: {
+          inputTokens: 10,
+          outputTokens: 5,
+          counterCoverage: {
+            input: 'reported',
+            output: 'partial',
+            cacheRead: 'missing',
+            cacheCreate: 'missing',
+            reasoning: 'missing',
+          },
+          providerTotals: { output: 5 },
+        },
         usageSemantics: 'final',
         isResult: true,
       },

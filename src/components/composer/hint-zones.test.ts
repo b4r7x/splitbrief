@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  compactComposerHints,
-  computeComposerHintBudget,
-  renderComposerHint,
-} from './hint-zones.js';
+import { computeComposerHintBudget, fitComposerHintKeys } from './hint-zones.js';
 
 describe('composer in-box hints', () => {
   it('budget shrinks linearly with box width', () => {
@@ -19,18 +15,19 @@ describe('composer in-box hints', () => {
     );
   });
 
-  it('compacts the hint ladder: full → drop cost', () => {
-    const hints = { keys: 'Ctrl+D detach', cost: '$0.03' };
-
-    expect(compactComposerHints(hints, 20)).toEqual({ keys: 'Ctrl+D detach', cost: '$0.03' });
-    expect(compactComposerHints(hints, 19)).toEqual({ keys: 'Ctrl+D detach', cost: undefined });
+  it('reserves the chrome and the input floor, and no column beyond them', () => {
+    // 2 border + 2 padding + 2 prompt + 2 margin + 24 input floor = 30 cells, and nothing else:
+    // a money or token column would show up here as a wider reserve.
+    expect(computeComposerHintBudget({ boxWidth: 100 })).toBe(100 - 32);
+    expect(computeComposerHintBudget({ boxWidth: 100, paddingX: 0 })).toBe(100 - 30);
   });
 
-  it('renders the right-aligned hint with the cost trailing the keys', () => {
-    expect(renderComposerHint({ keys: 'Ctrl+D detach', cost: '$0.03' })).toBe(
-      'Ctrl+D detach  $0.03',
-    );
-    expect(renderComposerHint({ keys: '', cost: '$0.03' })).toBe('$0.03');
-    expect(renderComposerHint({ keys: 'Ctrl+D detach', cost: undefined })).toBe('Ctrl+D detach');
+  it('keeps the whole keys hint when it fits the budget', () => {
+    expect(fitComposerHintKeys('Ctrl+D detach', 13)).toBe('Ctrl+D detach');
+    expect(fitComposerHintKeys('', 0)).toBe('');
+  });
+
+  it('stands the keys hint down rather than squeezing the input', () => {
+    expect(fitComposerHintKeys('Ctrl+D detach', 12)).toBe('');
   });
 });

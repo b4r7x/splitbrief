@@ -6,10 +6,13 @@ import { projectFilesStore } from '../../stores/ui/project-files.js';
 const SESSIONS_REL_DIR = `${SPLITBRIEF_DIR}/${SESSIONS_DIR}`;
 const SESSIONS_EXCLUDE = new RegExp(`(?:^|/)${SESSIONS_REL_DIR.replace(/[.]/g, '\\$&')}/`);
 
-async function readProjectFiles(projectDir: string): Promise<string[]> {
+async function readProjectFiles(
+  projectDir: string,
+  listFiles: typeof listProjectFiles,
+): Promise<string[]> {
   if (!projectDir) return [];
   try {
-    return await listProjectFiles(projectDir, {
+    return await listFiles(projectDir, {
       excludePatterns: [SESSIONS_EXCLUDE],
       skipRelativeDirs: [SESSIONS_REL_DIR],
     });
@@ -18,19 +21,19 @@ async function readProjectFiles(projectDir: string): Promise<string[]> {
   }
 }
 
-export function useProjectFiles(projectDir: string): string[] {
+export function useProjectFiles(projectDir: string, listFiles = listProjectFiles): string[] {
   const refreshEpoch = projectFilesStore.use((s) => s.refreshEpoch);
   const [projectFiles, setProjectFiles] = useState<string[]>([]);
 
   useEffect(() => {
     let active = true;
-    void readProjectFiles(projectDir).then((files) => {
+    void readProjectFiles(projectDir, listFiles).then((files) => {
       if (active) setProjectFiles(files);
     });
     return () => {
       active = false;
     };
-  }, [projectDir, refreshEpoch]);
+  }, [projectDir, refreshEpoch, listFiles]);
 
   return projectFiles;
 }

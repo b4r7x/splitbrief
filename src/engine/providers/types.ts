@@ -5,11 +5,20 @@ export interface ProviderModelListOptions {
   readonly signal?: AbortSignal | undefined;
 }
 
+/**
+ * What the credential this provider hands its client proves about the request:
+ * a configured credential, no credential at all, or nothing (a placeholder
+ * default, or a provider that cannot tell).
+ */
+export type ApiDispatchAuthentication = 'api-key' | 'none' | 'unknown';
+
 export interface ProviderDef {
   readonly name: string;
   readonly baseURL: string;
   readonly apiKey: () => string;
   readonly isLocal: boolean;
+  /** Omitted by providers that cannot tell, which means `unknown`. */
+  dispatchAuthentication?(): ApiDispatchAuthentication;
   listModels(options?: ProviderModelListOptions): Promise<string[]>;
   listModelsWithMetadata?(options?: ProviderModelListOptions): Promise<DetectedModel[]>;
   detectContextLength?(model: string): Promise<number | null>;

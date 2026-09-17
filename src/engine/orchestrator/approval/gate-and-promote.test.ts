@@ -1,4 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -40,6 +41,29 @@ function runGate(args: GateArgs) {
     onApproved: () => {},
     ...args,
   });
+}
+
+// An empty repository, never staged and never committed: the files below stay
+// untracked, which is all the changed-file scan needs.
+function initEmptyRepo(dir: string): void {
+  const git = (args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' });
+  git(['init', '-b', 'main']);
+  git(['config', 'user.email', 'test@test.com']);
+  git(['config', 'user.name', 'Test']);
+}
+
+async function acquiredProject(name: string) {
+  const projectDir = createTempDir(name);
+  dirs.push(projectDir);
+  initEmptyRepo(projectDir);
+  mkdirSync(join(projectDir, 'src'), { recursive: true });
+  writeFileSync(join(projectDir, 'src', 'app.ts'), 'original\n');
+
+  const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+  const workspace = await createStagedProject(projectDir);
+  dirs.push(workspace.projectDir);
+  writeFileSync(join(workspace.projectDir, 'src', 'app.ts'), 'worker\n');
+  return { projectDir, workspace, taskStartSnapshot };
 }
 
 describe('gateAndPromoteChangedFiles', () => {
@@ -165,6 +189,85 @@ describe('gateAndPromoteChangedFiles', () => {
     expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe(
       'export const app = 1;\n',
     );
+  });
+
+  it('conflicts on a post-acquisition user edit with approval disabled', async () => {
+    const { projectDir, workspace, taskStartSnapshot } = await acquiredProject('gate-baseline');
+    writeFileSync(join(projectDir, 'src', 'app.ts'), 'user edit\n');
+
+    const task = makeTask({ id: 'T010', file: 'src/app.ts' });
+    const outcome = await runGate({
+      task,
+      state: makeImplState([task]),
+      projectDir,
+      workspace,
+      taskStartSnapshot,
+    });
+
+    expect(outcome.outcome).toBe('promote-conflict');
+    expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('user edit\n');
+  });
+
+  it('promotes an approved deletion of an untracked acquisition file to the target', async () => {
+    const { projectDir, workspace, taskStartSnapshot } = await acquiredProject('gate-baseline');
+    // The worker deletes the file instead of editing it. It was untracked at
+    // acquisition, so nothing but the baseline still records that it existed.
+    rmSync(join(workspace.projectDir, 'src', 'app.ts'));
+
+    const task = makeTask({ id: 'T010', file: 'src/app.ts' });
+    const outcome = await runGate({
+      task,
+      state: makeImplState([task]),
+      projectDir,
+      workspace,
+      taskStartSnapshot,
+    });
+
+    expect(outcome.outcome).toBe('allow');
+    expect(outcome.outcome === 'allow' ? outcome.changedFiles : []).toEqual(['src/app.ts']);
+    expect(existsSync(join(projectDir, 'src', 'app.ts'))).toBe(false);
+  });
+
+  it('conflicts on a post-acquisition user edit with approval enabled', async () => {
+    const { projectDir, workspace, taskStartSnapshot } = await acquiredProject('gate-baseline');
+    writeFileSync(join(projectDir, 'src', 'app.ts'), 'user edit\n');
+
+    const task = makeTask({ id: 'T010', file: 'src/app.ts' });
+    const outcome = await runGate({
+      task,
+      state: makeImplState([task]),
+      projectDir,
+      workspace,
+      taskStartSnapshot,
+      callbacks: makeCallbacks({
+        onTieredApproval: vi.fn().mockResolvedValue({ decision: 'approve' }),
+      }).callbacks,
+      config: makeNoValidationConfig({
+        approval: { enabled: true, feedRejectionsToPlanner: false },
+      }),
+    });
+
+    expect(outcome.outcome).toBe('promote-conflict');
+    expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('user edit\n');
+  });
+
+  it('promotes nothing when the workspace carries no acquisition baseline', async () => {
+    const { projectDir, workspace, taskStartSnapshot } = await acquiredProject('gate-baseline');
+
+    const task = makeTask({ id: 'T010', file: 'src/app.ts' });
+    const outcome = await runGate({
+      task,
+      state: makeImplState([task]),
+      projectDir,
+      workspace: { ...workspace, targetBaseline: undefined },
+      taskStartSnapshot,
+    });
+
+    expect(outcome.outcome).toBe('promote-conflict');
+    expect(outcome.outcome === 'promote-conflict' ? outcome.conflictedFiles : []).toEqual([
+      'src/app.ts',
+    ]);
+    expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('original\n');
   });
 
   it('leaves user edits alone when a project-discovered changed set is denied', async () => {

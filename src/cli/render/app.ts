@@ -1,7 +1,11 @@
 import { type Instance, render } from 'ink';
 import { withFullScreen } from 'fullscreen-ink';
 import type { createElement } from 'react';
-import { warnError } from '../../lib/warn.js';
+import { installDiagnosticSink, warnError, warnStderr } from '../../lib/warn.js';
+import { createLogger } from '../../lib/logger.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { copyToClipboard } from '../../lib/clipboard/clipboard.js';
+import { installTerminalSelection } from '../../lib/terminal/selection.js';
 import { createFilteredStdin } from '../../lib/terminal/filtered-stdin/create.js';
 import type { FilteredStdin } from '../../lib/terminal/filtered-stdin/types.js';
 import { setActiveFilteredStdin } from '../../lib/terminal/filtered-stdin/active.js';
@@ -51,6 +55,8 @@ interface RenderOptions {
 
 type TerminationSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP';
 
+const diagnosticLog = createLogger('diagnostics');
+
 function createSettledProcessListener<T>(deps: {
   handle: (value: T) => Promise<void>;
   reportFailure: (value: T, error: unknown) => void;
@@ -90,13 +96,21 @@ export function createCrashListener(deps: {
   });
 }
 
-function unmountWhenSignalled(instance: Instance, signal: AbortSignal | undefined): void {
+function unmountWhenSignalled(
+  instance: Instance,
+  signal: AbortSignal | undefined,
+  beforeUnmount?: () => void,
+): void {
   if (!signal) return;
-  if (signal.aborted) {
+  const unmount = () => {
+    beforeUnmount?.();
     instance.unmount();
+  };
+  if (signal.aborted) {
+    unmount();
     return;
   }
-  signal.addEventListener('abort', () => instance.unmount(), { once: true });
+  signal.addEventListener('abort', unmount, { once: true });
 }
 
 export async function renderApp(
@@ -116,6 +130,14 @@ export async function renderApp(
   });
   let filteredStdin: FilteredStdin | undefined;
   let filteredDisabled = false;
+  const selection =
+    fullscreen && useMouse && process.stdout.isTTY
+      ? installTerminalSelection({
+          stdout: process.stdout,
+          copy: copyToClipboard,
+          reportError: (message) => feedbackStore.setError(message),
+        })
+      : undefined;
 
   const rawKeyTap = isConfiguredKeyDebugEnabled()
     ? (chunk: Buffer) => logSplitbriefRawKeyChunk(chunk)
@@ -129,24 +151,57 @@ export async function renderApp(
       activate: false,
       mouse: useMouse,
       hover: useHover,
+      handleMouse: selection?.handleMouse,
+      filterInput: selection?.filterInput,
+      onPaste: selection?.clear,
     });
   }
 
   const disableFilteredStdin = () => {
     if (filteredDisabled) return;
     filteredDisabled = true;
+    selection?.dispose();
     filteredStdin?.disable();
   };
 
+  // While the TUI owns the terminal a recoverable diagnostic goes to the debug log and the
+  // feedback line unless marked log-only, never as raw stderr into the frame. A feedback
+  // diagnostic raised during teardown or rejected is written after the terminal is restored.
+  const deferredDiagnostics: string[] = [];
+  let tearingDown = false;
+  const releaseDiagnosticSink = installDiagnosticSink((message, presentation) => {
+    diagnosticLog.warn(message);
+    if (presentation === 'log-only') return;
+    if (tearingDown) {
+      deferredDiagnostics.push(message);
+      return;
+    }
+    try {
+      feedbackStore.setError(message);
+    } catch {
+      deferredDiagnostics.push(message);
+    }
+  });
+
   const cleanupTerminal = () => {
-    setActiveTerminalHandover(undefined);
-    setActiveFilteredStdin(undefined);
-    disableFilteredStdin();
-    if (rawKeyTap) process.stdin.off('data', rawKeyTap);
-    restoreTerminal({ fullscreen, stdin: process.stdin });
+    try {
+      setActiveTerminalHandover(undefined);
+      setActiveFilteredStdin(undefined);
+      disableFilteredStdin();
+      if (rawKeyTap) process.stdin.off('data', rawKeyTap);
+      restoreTerminal({ fullscreen, stdin: process.stdin });
+    } finally {
+      releaseDiagnosticSink();
+      for (const message of deferredDiagnostics.splice(0)) warnStderr(message);
+    }
   };
 
-  const cleanup = createTuiCleanup({ restore: cleanupTerminal });
+  const cleanupTui = createTuiCleanup({ restore: cleanupTerminal });
+  const cleanup = () => {
+    tearingDown = true;
+    selection?.suspend();
+    return cleanupTui();
+  };
 
   // A fullscreen `kill` reaches this handler at the same time as the in-flight workflow's
   // own signal-driven shutdown; exiting the process here would race it to completion and
@@ -255,6 +310,8 @@ export async function renderApp(
             paste: usePaste,
             hover: useHover,
             sourceStdin: process.stdin,
+            beforeSuspend: selection?.suspend,
+            beforeResume: selection?.resume,
           },
           setHandover: setActiveTerminalHandover,
         });
@@ -277,7 +334,7 @@ export async function renderApp(
         return;
       }
       if (!ink) return;
-      unmountWhenSignalled(ink.instance, unmountSignal);
+      unmountWhenSignalled(ink.instance, unmountSignal, selection?.suspend);
       try {
         await ink.waitUntilExit();
       } catch (err) {

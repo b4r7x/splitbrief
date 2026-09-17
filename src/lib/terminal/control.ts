@@ -5,7 +5,7 @@ export const terminalSequences = {
   exitAltBuffer: '\u001b[?1049l',
   hideCursor: '\u001b[?25l',
   showCursor: '\u001b[?25h',
-  enableMouseTracking: '\u001b[?1000h',
+  enableButtonEventMouse: '\u001b[?1002h',
   disableMouseTracking: '\u001b[?1000l',
   disableButtonEventMouse: '\u001b[?1002l',
   enableAnyMotionMouse: '\u001b[?1003h',
@@ -73,7 +73,7 @@ export function setTerminalInputModes(
   if (mouse) {
     if (enabled) {
       writeTerminalSequence(
-        hover ? terminalSequences.enableAnyMotionMouse : terminalSequences.enableMouseTracking,
+        hover ? terminalSequences.enableAnyMotionMouse : terminalSequences.enableButtonEventMouse,
       );
       writeTerminalSequence(terminalSequences.enableSgrMouse);
     } else {

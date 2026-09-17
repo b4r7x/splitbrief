@@ -120,7 +120,7 @@ Cost-aware implementer routing, user-edit conflict handling, and the brief revie
 
 **Hooks and wrappers.** No new `renderHook` tests for trivial wrappers, selector hooks, or `useState` / `useEffect` plumbing. Extract behavior-bearing logic into a public pure helper and test that helper, or cover the hook through the feature/component that uses it. Thin wrappers that only call an already-tested helper should not receive dedicated tests.
 
-**Recovery flow.** Recovery tests should assert persisted `pendingRecovery`, emitted recovery events, headless JSON, prompt text/parser behavior, and file/evidence effects. In a dirty or shared checkout, do not run broad orchestration suites that exercise product git behavior (`git add`/commit/checkpoint helpers). Prefer the focused recovery files:
+**Recovery flow.** Recovery tests should assert persisted `pendingRecovery`, emitted recovery events, headless JSON, prompt text/parser behavior, and file/evidence effects. In a dirty or shared checkout, do not run broad orchestration suites that exercise legacy Git-writing test fixtures. Prefer the focused recovery files:
 
 ```bash
 npm test -- src/core/schemas/recovery.test.ts
@@ -557,6 +557,34 @@ The visual gallery renders the production `App`, router, screens, and overlays a
 
 Use it when changing Ink layout, copy, color, terminal controls, responsive behavior, or a semantic crop. The ordinary test suite checks the contracts under `testing/visual/`. The gallery command writes artifacts that a person or Codex can inspect.
 
+### Interactive preview
+
+Open the gallery chooser in an interactive terminal, or open a scenario directly:
+
+```bash
+npm run tui-preview
+npm run tui-preview -- --scenario home-empty
+npm run tui-preview -- --list
+```
+
+`--list` prints each scenario's ID, title, declared viewports and element IDs without mounting Ink. Interactive mode requires both stdin and stdout to be TTYs. The chooser uses the same catalog and fixture session as image capture, then mounts the production `App` so you can type, open overlays and exercise the screen's supported interactions.
+
+| Key | Action |
+|---|---|
+| `↑` / `↓`, then `Enter` | Choose and open a scenario. |
+| `F2` | Leave the scenario and return to the chooser. |
+| `F5` | Recreate the selected fixture at the current declared viewport, discarding preview changes. |
+| `F6` | Cycle the scenario's declared viewports. In the chooser, `←` / `→` also cycle them. |
+| `Ctrl+Q` | Quit the preview and release its terminal and fixture resources. |
+
+These controls are reserved by the preview. Other input reaches the rendered screen; `Esc`, `q` and `/quit` are not substitutes for the preview's return or exit controls. `F6` resizes an open scenario in place when the next declared size fits; use `F5` when you also need fresh fixture state.
+
+The selected catalog viewport determines application layout. Your terminal must be at least that wide and tall; a larger host does not enlarge the declared viewport. If the selected size does not fit, the preview stays in the chooser with a size warning. Shrinking the host below an open viewport closes that fixture and returns to the chooser. Enlarge the terminal or choose a smaller declared viewport, then press `Enter` to reopen it.
+
+Preview interaction ports in `testing/visual/gallery/fixture-session.ts` keep configuration edits in fixture state, simulate preparation and connection checks, and confine run reads to the fixture project. Connection Retry returns synthetic catalog data; it does not contact a server. Operations without a fixture implementation report `Unavailable in preview` or decline the action instead of invoking real execution. Clipboard export, image attachment, discovery refresh and run snapshot actions are among those restricted operations. The preview does not call a model, log in, start a server or authorize Git writes. It is a UI exercise, not evidence that a live runner or server works.
+
+Use `tui-shots` below for saved PNGs and cell diagnostics. Interactive preview does not replace capture review or the separate manual real-terminal selection check.
+
 ### Commands and selection
 
 List the catalog without mounting the app:
@@ -679,7 +707,7 @@ The harness spawns at fixed `100x30` dimensions and mounts the production `App` 
 
 PTY teardown awaits child reaping before listeners, timers, and temporary roots are disposed.
 
-`node-pty@1.1.0` is a tooling-only optional dependency in `optionalDependencies`. An ordinary `npm install` or `npm ci` may attempt to install its native binary. Use `npm ci --omit=optional` when that native tool is not wanted.
+`node-pty@1.1.0` is a tooling-only development dependency. An ordinary `npm install` or `npm ci` may install its native binary. Runtime-only installations can omit development dependencies with `npm ci --omit=dev`; running this test requires the development dependencies.
 
 The command loads `node-pty` dynamically. In optional mode, only setup failures (`module-unavailable`, pre-spawn `api-incompatible`, or `spawn-failed`) print `PTY behavior SKIP` and exit `0`. Once a process boundary exists, every failure is fatal. A complete run prints `PTY behavior PASS`; fatal failures print `PTY behavior failed` and exit nonzero. Node 22 is required. Some platforms may also need a working native toolchain or a compatible prebuilt `node-pty` binary.
 
@@ -695,9 +723,24 @@ Ask Codex to read the manifest before comparing files. The manifest distinguishe
 
 `npm run test-ci` covers the vast majority of the surface. `npm run release-check` is the fast pre-PR gate — `format:check → typecheck → lint → vitest (no coverage) → e2e replay → invariants → skills:check` — and `npm run test-ci` is the exhaustive form that additionally runs `test:coverage`, whose thresholds now also run nightly in `.github/workflows/nightly-coverage.yml`. A handful of flows need a real TTY, a fresh checkout, or an external process and therefore live outside the automated suite. Run the checks below after a fresh install or any change that touches the CLI entry point, the TUI mount, or hook dispatch.
 
+### Headless terminal interaction
+
+`npm run test:terminal` starts the app through `/bin/zsh` in a real PTY connected to xterm.js in headless Chromium. Playwright drives the terminal's virtual pointer, so the test does not move the desktop cursor, open an editor window or require macOS Accessibility/Screen Recording. Install its browser once with `npx --no-install playwright install chromium` if Chromium is unavailable.
+
+The test uses the production fullscreen renderer for both App and Composer. It checks visible drag highlighting, exact copied text, composer draft selection, updates during a live workflow drag, wheel scrolling, and a Unicode copy/paste round trip. The production clipboard adapter invokes a private test executable on `PATH`, which captures its input without changing the system clipboard. A separate native-selection control uses xterm's copy-event handler. Reports and screenshots are saved under `.test-artifacts/terminal-browser/`. Exit codes are `0` for success, `1` for a product failure, and `2` for a setup or harness failure. A failing product interaction stays a failure even when the control passes. This harness proves xterm.js behavior through zsh; it does not certify native macOS shortcut dispatch or other terminal applications by changing `TERM`.
+
+The run also saves `tracking-selected.ansi`, the real production output up to a selected workflow frame. Replay it in actual Ghostty/Kitty engines without opening a window:
+
+```bash
+node testing/integration/cli/terminal-browser/terminal-engine-compat.mjs ghostty /path/to/ghostty-vt.wasm /path/to/tracking-selected.ansi
+node testing/integration/cli/terminal-browser/terminal-engine-compat.mjs kitty /path/to/kitty /path/to/tracking-selected.ansi
+```
+
+Use official artifacts: the probe was checked against Ghostty's `tip` VT WASM and Kitty 0.48.2's macOS executable. The Ghostty probe verifies rendered text and its selection API; Kitty feeds the recording through its VT parser and checks forwarded Cmd+C/Ctrl+C encodings. These engine checks complement the application E2E. Native window shortcut dispatch and the OS clipboard remain a separate boundary.
+
 ### M1. TUI smoke (full interactive render)
 
-Ink needs a real TTY; the agent test runner cannot drive it. Manual steps:
+Ink needs a real TTY; automated terminal tests provide one through a PTY. The following manual smoke additionally checks the installed terminal and a full workflow:
 
 ```bash
 mkdir /tmp/smoke-tui && cd /tmp/smoke-tui
@@ -727,15 +770,17 @@ node dist/cli.js start --json --mode quick "smoke feature"
 
 Verify: NDJSON on stdout, first line is `readiness_report`, the first model-backed workflow event is `workflow_started`, last workflow event is `workflow_complete`, and the process exits `0`. If `--json` is unrecognized, run `npm run build` — stale `dist/` is the most common cause.
 
-### M3. Pre-commit hook denial
+### M3. Completion leaves Git untouched
 
-Enable `commitStrategy: per-task` and declare a `pre_commit` command hook that exits non-zero when the staged diff contains `AKIAIOSFODNN7EXAMPLE`, then have the implementer write that string into the target file:
+The M3 completion fixture asserts that no staging, commit, or index-checkpoint operation is requested.
+
+`src/engine/orchestrator/task/commit.test.ts` replaces `simple-git` with a recording mock. Accepted completion advances the task and records its outcome; rejected completion does not advance. The fixture asserts that neither path calls Git or emits `git_commit`/`git_checkpoint`. Its temporary directories contain state files, not committed repositories.
 
 ```bash
-node dist/cli.js start --json --mode quick "add secret file"
+npx --no-install vitest run src/engine/orchestrator/task/commit.test.ts
 ```
 
-Verify: a `warning` event naming the denied `pre_commit` hook fires, no `git_commit` event is emitted, HEAD is unchanged, and `task_completed` still advances (non-fatal skip).
+Inspect test setup and transitive imports before running any recipe. The full `release-check`, `test-ci`, e2e and broad orchestration suites still include fixtures that stage or commit temporary repositories. They are not permitted under a no-Git-mutations instruction, even in a fresh checkout; run only inspected, explicitly selected safe tests in that environment. The full gate remains unverified until an authorized operator runs it.
 
 ### M4. Fresh checkout + install
 

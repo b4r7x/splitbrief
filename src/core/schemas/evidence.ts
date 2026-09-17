@@ -46,6 +46,53 @@ const EvidenceValidationEntrySchema = z.object({
 });
 export type EvidenceValidationEntry = z.infer<typeof EvidenceValidationEntrySchema>;
 
+const EvidencePromotedFileSchema = z.object({
+  path: z.string(),
+  /** Digest of the target after the write; null when it is absent or unreadable. */
+  sha256: z.string().nullable(),
+  mode: z.number().nonnegative().nullable(),
+});
+export type EvidencePromotedFile = z.infer<typeof EvidencePromotedFileSchema>;
+
+const EvidencePromotionAttemptSchema = z.object({
+  ts: z.string(),
+  /** The exact prefix promotion applied to the target before it stopped. */
+  appliedFiles: z.array(EvidencePromotedFileSchema),
+  failedFile: z.string(),
+  error: z.string(),
+});
+export type EvidencePromotionAttempt = z.infer<typeof EvidencePromotionAttemptSchema>;
+
+const EvidenceApiAppliedFileSchema = z.object({
+  path: z.string(),
+  action: z.enum(['create', 'modify']),
+  /** Digest the target held before the write; null when it did not exist. */
+  beforeSha256: z.string().nullable(),
+  afterSha256: z.string(),
+});
+
+/**
+ * What one `file-bundle-v1` response did to the confined filesystem. Digests and
+ * paths only: the ledger records which content a target held, never the content
+ * itself. A task entry without this receipt says nothing was recorded, which is
+ * unknown rather than a claim that nothing was applied.
+ */
+const EvidenceApiApplySchema = z.object({
+  /** The call whose response this applied; null when refused before any call. */
+  callId: z.string().nullable(),
+  grammar: z.literal('file-bundle-v1'),
+  /** Present for worker-only effects, which have not been attributed to the target. */
+  workspacePath: z.string().optional(),
+  status: z.enum(['applied', 'rejected', 'partial', 'failed']),
+  candidatePaths: z.array(z.string()),
+  applied: z.array(EvidenceApiAppliedFileSchema),
+  noops: z.array(z.string()),
+  untouched: z.array(z.string()),
+  failedPath: z.string().optional(),
+  code: z.string().optional(),
+});
+export type EvidenceApiApply = z.infer<typeof EvidenceApiApplySchema>;
+
 const EvidenceTaskSchema = z.object({
   id: TaskIdSchema,
   title: z.string(),
@@ -60,6 +107,10 @@ const EvidenceTaskSchema = z.object({
   observedEvidence: z.array(z.string()),
   escalated: z.boolean(),
   briefHash: z.string().nullable().optional(),
+  promotionAttempts: z.array(EvidencePromotionAttemptSchema).optional(),
+  apiApply: EvidenceApiApplySchema.optional(),
+  /** Proven target creations accumulated across this task's application receipts. */
+  apiCreatedPaths: z.array(z.string().min(1)).optional(),
 });
 export type EvidenceTask = z.infer<typeof EvidenceTaskSchema>;
 

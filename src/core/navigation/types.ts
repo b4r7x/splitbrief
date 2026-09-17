@@ -41,6 +41,7 @@ export const ACTIVE_OVERLAYS = [
   ...SEAT_PICKER_OVERLAYS,
   'stop-sheet',
   'sessions',
+  'usage-details',
   'editor',
 ] as const;
 export type OverlayType = 'none' | (typeof ACTIVE_OVERLAYS)[number];

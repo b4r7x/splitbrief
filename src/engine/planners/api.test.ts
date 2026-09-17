@@ -195,7 +195,18 @@ describe('createApiPlanner', () => {
     });
 
     expect(result.text).toBe('Hello world');
-    expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 17 });
+    expect(result.usage).toEqual({
+      inputTokens: 42,
+      outputTokens: 17,
+      counterCoverage: {
+        input: 'partial',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { input: 42, output: 17 },
+    });
     expect(collected.join('')).toBe('Hello world');
 
     expect(receivedBodies).toHaveLength(1);
@@ -257,7 +268,18 @@ describe('createApiPlanner', () => {
     });
 
     expect(receivedBodies).toHaveLength(4);
-    expect(result.usage).toEqual({ inputTokens: 42 * 4, outputTokens: 17 * 4 });
+    expect(result.usage).toEqual({
+      inputTokens: 42 * 4,
+      outputTokens: 17 * 4,
+      counterCoverage: {
+        input: 'partial',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { input: 42, output: 17 },
+    });
   });
 
   it('injects priorMessages into the first call of the planner only (FR-007 api-kind)', async () => {
@@ -353,7 +375,7 @@ describe('createApiPlanner', () => {
         callbacks: { onOutput: () => {} },
       }),
     ).rejects.toMatchObject({
-      kind: 'provider-prompt-exceeds-context',
+      kind: 'api-insufficient-context',
     });
     expect(receivedBodies).toEqual([]);
   });

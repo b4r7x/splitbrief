@@ -130,3 +130,39 @@ export function updateDefaultImplementerConfig(
     },
   };
 }
+
+/**
+ * Updates one named profile of the table; the `implementer` mirror follows only
+ * when that profile is the default. A config without a profile table has only
+ * the single implementer, which is updated whatever the name. `null` when the
+ * table has no profile of that name.
+ */
+export function updateNamedImplementerConfig(
+  config: Config,
+  profileName: string,
+  updater: (existing: ImplementerConfig) => ImplementerConfig,
+): Config | null {
+  const profiles = config.implementerProfiles;
+  const defaultName = profiles === undefined ? undefined : pickDefaultProfileName(profiles);
+  if (profiles === undefined || defaultName === undefined) {
+    return { ...config, implementer: updater(config.implementer) };
+  }
+
+  const profile = Object.hasOwn(profiles.profiles, profileName)
+    ? profiles.profiles[profileName]
+    : undefined;
+  if (profile === undefined) return null;
+
+  const updated = updater(stripProfileMetadata(profile));
+  return {
+    ...config,
+    ...(profileName === defaultName && { implementer: updated }),
+    implementerProfiles: {
+      ...profiles,
+      profiles: {
+        ...profiles.profiles,
+        [profileName]: mergeImplementerProfileMetadata(profile, updated),
+      },
+    },
+  };
+}

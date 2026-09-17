@@ -12,6 +12,7 @@ import {
   CLI_AUTH_CHANNEL_IDS,
   CLI_TOOL_CATALOG,
   cliAuthChannelHostStateAccess,
+  cliAuthChannelPlatformSupported,
 } from '../runners/cli-tool-catalog.js';
 import { CliToolIdSchema } from './enums.js';
 
@@ -205,6 +206,10 @@ export function cliAuthRemediation(
   if (channel === undefined) {
     return `Select an authentication channel for ${runner.tool}, then run \`splitbrief doctor\` again.`;
   }
+  if (!cliAuthChannelPlatformSupported(channel)) {
+    const supported = channel.supportedPlatforms?.map(platformName).join(', ');
+    return `SPLITBRIEF cannot access the ${runner.tool} ${channel.id} credential on ${platformName(process.platform)}. This adapter's credential bridge is supported on ${supported}; signing in again cannot enable it on this platform. Choose another runner or use a supported platform.`;
+  }
   const credentialEnv = channel.env[0];
   if (credentialEnv !== undefined) {
     return `Export ${credentialEnv} for the ${runner.tool} ${channel.id} channel, then run \`splitbrief doctor\` again.`;
@@ -233,6 +238,13 @@ function cliReadinessRemediation(
       if (facts.installedVersion === null || facts.compatibility !== 'compatible') {
         return `Verify ${facts.tool} against tested version ${facts.testedVersion}, then run runner readiness again.`;
       }
+      if (
+        CLI_TOOL_CATALOG[facts.tool].auth.channels.some(
+          (channel) =>
+            channel.id === facts.authChannel && !cliAuthChannelPlatformSupported(channel),
+        )
+      )
+        return cliAuthRemediation(facts);
       // Honest about the ceiling of a cheap check: stored credentials prove
       // presence, never a working session, and re-running readiness cannot
       // change that — only a real call can.

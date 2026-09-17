@@ -41,10 +41,23 @@ const EscalationConfigSchema = z
     }
   });
 
-const GitWorkflowConfigSchema = z.strictObject({
+const GitWorkflowFieldsSchema = z.strictObject({
   commitStrategy: CommitStrategySchema.optional(),
   createBranch: z.boolean().optional(),
 });
+
+// `none` is what the removed automation already did, so it loads and is dropped; `checkpoint` and
+// `per-task` asked SPLITBRIEF to write the git index, which it no longer does, so they fail the load.
+const GitWorkflowConfigSchema = GitWorkflowFieldsSchema.superRefine((git, ctx) => {
+  if (git.commitStrategy === undefined || git.commitStrategy === 'none') return;
+  ctx.addIssue({
+    code: 'custom',
+    message: `commitStrategy "${git.commitStrategy}" was removed — SPLITBRIEF no longer stages, commits or checkpoints; delete workflow.git.commit_strategy and commit your changes yourself.`,
+    path: ['commitStrategy'],
+  });
+}).transform(
+  ({ commitStrategy: _retired, ...git }): z.infer<typeof GitWorkflowFieldsSchema> => git,
+);
 
 export const TaskReviewModeSchema = z.enum(['none', 'failed', 'every']);
 export type TaskReviewMode = z.infer<typeof TaskReviewModeSchema>;

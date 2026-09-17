@@ -253,11 +253,24 @@ describe('KNOWN_MODELS recommendation metadata', () => {
     }
   });
 
-  it('gives every admitted API provider exactly one default model', () => {
-    for (const providerId of KNOWN_API_PROVIDER_IDS) {
-      const defaults = (KNOWN_MODELS[providerId] ?? []).filter((model) => model.isDefault);
-      expect(defaults).toHaveLength(1);
-    }
+  // llama.cpp serves whatever gguf or alias its operator started it with, so
+  // the catalog ships no row for it and an `auto` seat is refused by name
+  // instead of inventing a model the server does not serve.
+  it('gives each admitted API provider that ships a catalog row its single default', () => {
+    expect(
+      Object.fromEntries(
+        KNOWN_API_PROVIDER_IDS.map((providerId) => [
+          providerId,
+          (KNOWN_MODELS[providerId] ?? [])
+            .filter((model) => model.isDefault)
+            .map((model) => model.name),
+        ]),
+      ),
+    ).toEqual({
+      ollama: ['qwen3-coder:30b'],
+      'lm-studio': ['qwen2.5-coder-7b'],
+      'llama-cpp': [],
+    });
   });
 
   it('does not expose retirement-date DashScope Coder models as selectable defaults', () => {
@@ -315,11 +328,11 @@ describe('automatic-selection sentinel coherence', () => {
   });
 
   it.each([...ADMITTED_API_PROVIDER_IDS])(
-    'ships a default model %s can be configured with',
+    'configures %s with the exact model its own connection serves',
     (providerId) => {
       const descriptor = API_PROVIDER_CATALOG[providerId];
       const defaultModel = (KNOWN_MODELS[providerId] ?? []).find(({ isDefault }) => isDefault);
-      expect(defaultModel?.name, providerId).toBeTypeOf('string');
+      const model = defaultModel?.name ?? 'operator-started-model.gguf';
 
       const runner = {
         kind: 'api',
@@ -327,10 +340,23 @@ describe('automatic-selection sentinel coherence', () => {
         service: descriptor.service,
         offering: descriptor.offering,
         apiBase: resolveDefaultApiBase(providerId),
-        model: defaultModel?.name,
+        model,
       };
-      expect(descriptor.roles).toEqual(['implementer']);
+      expect(descriptor.roles).toEqual(['planner', 'implementer']);
       expect(ImplementerConfigSchema.safeParse(runner).success, providerId).toBe(true);
+
+      // Without a catalog default the sentinel has nothing to resolve to, so
+      // the seat is refused by name rather than filled with another model.
+      const automatic = ImplementerConfigSchema.safeParse({ ...runner, model: AUTOMATIC_MODEL });
+      expect(automatic.success, providerId).toBe(defaultModel !== undefined);
+      if (!automatic.success) {
+        expect(automatic.error.issues).toContainEqual(
+          expect.objectContaining({
+            path: ['model'],
+            message: `model "auto" cannot be resolved for API provider "${providerId}" — it has no catalog default; set an explicit model ID`,
+          }),
+        );
+      }
     },
   );
 });

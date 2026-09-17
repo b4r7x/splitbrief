@@ -305,6 +305,31 @@ describe('wireAppMouse', () => {
     dispose();
   });
 
+  it('routes overlay wheel input to the topmost overlay zone without activating it', () => {
+    overlayStore.open('planner-picker');
+    const activate = vi.fn();
+    const wheel = vi.fn();
+    registerMouseZone({
+      id: 'picker-row',
+      left: 1,
+      right: 20,
+      top: 3,
+      bottom: 3,
+      z: ROW_ZONE_Z_OVERLAY,
+      onClick: activate,
+      onWheel: wheel,
+    });
+    const mock = createMockFilteredStdin();
+    const dispose = wireAppMouse(mock.filtered);
+
+    mock.emit(pointerEvent('wheel-down', 8, 3));
+    mock.emit(pointerEvent('wheel-up', 8, 3));
+
+    expect(wheel.mock.calls.map(([direction]) => direction)).toEqual(['down', 'up']);
+    expect(activate).not.toHaveBeenCalled();
+    dispose();
+  });
+
   it('scrolls the raw editor overlay by one step per wheel event and clamps at the top', () => {
     editorStore.openRaw({
       filePath: 'spec.md',

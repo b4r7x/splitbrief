@@ -59,7 +59,7 @@ describe('terminal control', () => {
     setTerminalInputModes('disable');
 
     expect(written).toEqual([
-      terminalSequences.enableMouseTracking,
+      terminalSequences.enableButtonEventMouse,
       terminalSequences.enableSgrMouse,
       terminalSequences.enableBracketedPaste,
       terminalSequences.disableMouseTracking,

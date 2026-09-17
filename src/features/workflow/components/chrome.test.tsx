@@ -5,12 +5,15 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { configStore } from '../../../stores/project/config.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
+import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { WorkflowFooter, WorkflowHeader } from './chrome.js';
@@ -126,6 +129,75 @@ describe('WorkflowFooter', () => {
       { cols, rows },
     );
   }
+
+  // A run whose tokens carry a price: before /usage the footer painted `$3.00` next to the keys
+  // from exactly this fixture.
+  function seedPricedRun(): void {
+    tokensStore.__testReset({
+      localCount: 2,
+      tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
+    });
+    configStore.__testReset({
+      projectDir: '/tmp/splitbrief-test',
+      config: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'custom-endpoint',
+          model: 'priced-model',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
+        },
+      }),
+    });
+    modelCacheStore.hydrateModelsDevCatalog({
+      catalog: {
+        vendor: {
+          id: 'vendor',
+          models: { 'priced-model': { id: 'priced-model', cost: { input: 1, output: 2 } } },
+        },
+      },
+      fetchedAt: 1,
+      validatedAt: 1,
+    });
+  }
+
+  it('paints no money or token total for a priced run, with or without override keys', async () => {
+    seedPricedRun();
+    const { cols, rows } = terminalSizeStore.get();
+    const ui = renderFeature(
+      <WorkflowFooter
+        handleInput={() => {}}
+        onRuntimeCommand={() => {}}
+        commands={[]}
+        mode="normal"
+        inputHint=""
+        boxHintOverride={{ keys: 'ctrl+d diff' }}
+        disabled={false}
+      />,
+      { cols, rows },
+    );
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('ctrl+d diff');
+    expect(frame).not.toContain('$');
+    expect(frame).not.toContain('3.00');
+    expect(frame).not.toContain('1,000,000');
+    expect(frame).not.toMatch(/\btokens?\b/i);
+    ui.unmount();
+  });
+
+  it('keeps the done mark on a complete priced run and still names no amount', async () => {
+    seedPricedRun();
+    lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0, endedAt: 1 });
+    const ui = renderFooter();
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(glyph('check'));
+    expect(frame).not.toContain('$');
+    ui.unmount();
+  });
 
   it('appends a done token to the footer key cluster when the phase is complete', async () => {
     lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0, endedAt: 1 });

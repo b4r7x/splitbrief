@@ -1,5 +1,5 @@
 import type { Phase, RecoveryReason } from '../../../../core/schemas/enums.js';
-import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
+import type { RecoveryFact, RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { RecoveryBuilderBase } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
 import { chooseRecommended, orderedActions } from './actions.js';
@@ -23,6 +23,12 @@ export interface PlannerCallFailureRecoveryOptions extends RecoveryBuilderBase {
   /** ISO instant the tool's own diagnostic named as its quota reset, when it named one. */
   resetAt?: string | undefined;
   seatSwap?: SeatSwapContext | undefined;
+  /**
+   * Scalar diagnosis the halt carries beyond its prose — the insufficient-context
+   * figures, which belong in facts because `details[]` renders inline and is
+   * truncated. Merged over the builder's own facts, never replacing them.
+   */
+  facts?: Record<string, RecoveryFact> | undefined;
 }
 
 /**
@@ -54,7 +60,7 @@ export function buildPlannerCallFailedRecoveryIssue(
     details: opts.details ?? [],
     ...(opts.resetAt !== undefined && { resetAt: opts.resetAt }),
     ...(offer !== undefined && { switchSeat: offer }),
-    facts: compactFacts({ tool: opts.tool }),
+    facts: compactFacts({ tool: opts.tool, ...opts.facts }),
     availableActions: actions,
     recommendedAction: chooseRecommended(
       actions,

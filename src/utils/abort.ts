@@ -6,7 +6,7 @@ export function isAbortError(err: unknown): boolean {
   return matches('operation-aborted')(err);
 }
 
-function abortError(signal: AbortSignal | undefined): Error {
+export function abortError(signal: AbortSignal | undefined): Error {
   const reason = signal?.reason;
   if (reason instanceof Error) return reason;
   return error(

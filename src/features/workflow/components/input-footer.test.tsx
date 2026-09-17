@@ -91,6 +91,7 @@ describe('InputFooter', () => {
     eventsStore.__testReset();
     configStore.__testReset();
     routerStore.init({ screen: 'home' });
+    stopStore.__testReset();
     conversationScrollStore.__testReset();
     lifecycleStore.__testReset();
     tasksStore.__testReset();
@@ -151,6 +152,48 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
+  it('shows neutral API waiting beside the input until the first response, and honors cancellation', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    const operation = runningOn('lm-studio');
+    operationsStore.__testReset({
+      active: {
+        ...operation,
+        apiRuntimeStatus: {
+          phase: 'waiting-first-response',
+          loadState: 'not-loaded',
+          observedAt: 1000,
+        },
+      },
+    });
+    const waiting = renderFeature(<InputFooter />);
+    expect(waiting.lastFrame()).toContain('Waiting for response');
+    expect(waiting.lastFrame()).not.toMatch(/loading|not-loaded|unloaded/i);
+    waiting.unmount();
+
+    operationsStore.__testReset({
+      active: {
+        ...operation,
+        apiRuntimeStatus: { phase: 'streaming', loadState: 'not-loaded', observedAt: 1000 },
+      },
+    });
+    const streaming = renderFeature(<InputFooter />);
+    expect(streaming.lastFrame()).toContain('Implementing');
+    expect(streaming.lastFrame()).not.toContain('Waiting for response');
+    streaming.unmount();
+
+    lifecycleStore.__testReset({
+      status: 'cancelled',
+      phase: 'implementing',
+      reason: 'user_cancelled',
+    });
+    const cancelled = renderFeature(<InputFooter />);
+    expect(cancelled.lastFrame()).toContain('Stopped by you');
+    expect(cancelled.lastFrame()).not.toMatch(/Waiting for response|unloaded/);
+    cancelled.unmount();
+    terminalSizeStore.reset();
+  });
+
   it('leads with the animated live status instead of the stage marker while running', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({
@@ -164,7 +207,6 @@ describe('InputFooter', () => {
 
     expect(frame).toMatch(/Researching… \d+:\d\d/);
     expect(frame).not.toContain(`${glyph('stageDone')} Spec`);
-    expect(frame).toContain('git:none');
 
     ui.unmount();
     terminalSizeStore.reset();
@@ -213,8 +255,74 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain(`${glyph('stageDone')} Spec · git:none`);
+    expect(frame).toContain(`${glyph('stageDone')} Spec`);
     expect(frame).not.toContain('Researching…');
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  // SPLITBRIEF no longer stages, commits or tags a checkpoint, so the byline has no strategy to
+  // report and nothing to call `git:none`. What survives is the progress the run made and the way
+  // it parked.
+  it('names no retired git automation while running or at rest, and keeps progress and pause', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    tasksStore.__testReset({
+      currentTask: 2,
+      totalTasks: 3,
+      tasks: [
+        { id: 'T001', title: 'T1', status: 'done' as const },
+        { id: 'T002', title: 'T2', status: 'in_progress' as const },
+        { id: 'T003', title: 'T3', status: 'pending' as const },
+      ],
+    });
+
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing', startedAt: Date.now() });
+    const running = renderFeature(<InputFooter />);
+    const runningFrame = stripAnsiStyles(running.lastFrame() ?? '');
+    expect(runningFrame).toMatch(/Implementing…/);
+    running.unmount();
+
+    lifecycleStore.__testReset({ status: 'complete', phase: 'implementing' });
+    const atRest = renderFeature(<InputFooter />);
+    const atRestFrame = stripAnsiStyles(atRest.lastFrame() ?? '');
+    expect(atRestFrame).toContain('1/3');
+    atRest.unmount();
+
+    lifecycleStore.__testReset({ status: 'paused', phase: 'implementing' });
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', 'T002', null);
+    const parked = renderFeature(<InputFooter />);
+    const parkedFrame = stripAnsiStyles(parked.lastFrame() ?? '');
+    expect(parkedFrame).toContain('Paused at T002');
+    parked.unmount();
+
+    for (const frame of [runningFrame, atRestFrame, parkedFrame]) {
+      expect(frame).not.toContain('git:');
+      expect(frame).not.toContain('checkpoint');
+      expect(frame).not.toContain('per-task');
+    }
+
+    terminalSizeStore.reset();
+  });
+
+  // The branch a run creates is announced by name in the transcript, where the name is real. The
+  // byline does not mirror the setting beside the worktree marker, where a reader would take the
+  // worktree's name for the branch's.
+  it('mirrors no git setting on the byline when createBranch is on', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    configStore.__testReset({
+      config: makeConfig({ workflow: { git: { createBranch: true } } }),
+      projectDir: '/tmp/splitbrief-test',
+    });
+    lifecycleStore.__testReset({ phase: 'researching', status: 'complete' });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${glyph('stageDone')} Spec`);
+    expect(frame).not.toContain('git:');
+    expect(frame).not.toContain('branch');
 
     ui.unmount();
     terminalSizeStore.reset();
@@ -408,7 +516,6 @@ describe('InputFooter', () => {
     expect(BRAILLE_SPINNER_FRAMES.some((spinnerFrame) => frame.includes(spinnerFrame))).toBe(false);
 
     ui.unmount();
-    stopStore.__testReset();
     terminalSizeStore.reset();
   });
 
@@ -429,7 +536,6 @@ describe('InputFooter', () => {
     const parked = renderFeature(<InputFooter />);
     expect(stripAnsiStyles(parked.lastFrame() ?? '')).toContain('Paused at T002');
     parked.unmount();
-    stopStore.__testReset();
     terminalSizeStore.reset();
   });
 

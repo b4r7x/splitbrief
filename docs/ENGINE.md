@@ -6,6 +6,8 @@ How the orchestrator runs, how events flow, and how the engine talks to the UI w
 
 ## The orchestrator
 
+Preparation does not reuse completed execution-admission or session-ownership checks. Discovery can share compatible observations that are still in flight; each start or continue validates current execution authority.
+
 Entry point: `runWorkflow()` in `src/engine/orchestrator/run/workflow.ts`. It builds a `WorkflowContext`, runs the planner, runs the implementer on each task, reviews the result, and writes a summary. The top-level sequence:
 
 1. `initializeWorkflow()` (`run/init.ts`) — creates the EventBus, subscribes all sinks, spawns the planner and implementer, bootstraps initial state or loads saved state for resume.
@@ -31,9 +33,9 @@ flowchart TD
 The orchestrator is split by concern under `src/engine/orchestrator/`:
 
 - **`planning/`** — The planner step loop. `steps.ts` runs one call per step of `plannerStepsFor(mode, approveLevel)`, memoized by the artifact each step writes; `speckit.ts` holds the three calls only speckit makes (clarify, constitution, analyze); `invalidate.ts` drops what a revised artifact invalidated; `regen.ts` regenerates briefs from feedback and `rewind.ts` handles `/revise-spec` and `/revise-plan`.
-- **`task/`** — The task loop. `loop.ts` iterates tasks, `step.ts` runs a single task (call implementer, validate, retry), `commit.ts` handles per-task git commits, `pre-task.ts` runs pre-task setup.
+- **`task/`** — The task loop. `loop.ts` iterates tasks, `step.ts` runs a single task (call implementer, validate, retry), `commit.ts` advances validated tasks without Git writes, `pre-task.ts` runs pre-task setup.
 - **`run/`** — The run's own entry and exit. `workflow.ts` is `runWorkflow`, `init.ts` builds the context, `phases.ts` decides what a re-entry runs, and `continue.ts` is `continueRun` — the one path that picks a run up: it settles a park this process holds, re-enters a run at rest on its saved state with the operator's steer, or refuses a run that is missing, unreadable or closed, with the reason.
-- **`escalation/`** — Tiered escalation when the implementer fails. Local retries (`local-retries.ts`) come first, then `tier.ts` dispatches the tiers (`intermediate.ts` / `INTERMEDIATE_TIER` retries with a paid mid-tier API model from `escalation.intermediateProvider`, `hint.ts` / `HINT_TIER` has the planner write a hint that the implementer applies, `full.ts` / `FULL_TIER` hands the task to the planner to write the code itself).
+- **`escalation/`** — Tiered escalation when the implementer fails. Local retries (`local-retries.ts`) come first, then `tier.ts` dispatches the configured intermediate API implementer (`intermediate.ts` / `INTERMEDIATE_TIER`) and a planner hint that the implementer applies (`hint.ts` / `HINT_TIER`). Exhausting the ladder opens recovery; the planner does not take over writing the code.
 - **`recovery/`** — User-facing recovery flow for anything a turn cannot decide alone: the escalation ladder running out, and the planner-seat halts in `builders/planner.ts`. Presents the user with choices: retry same worker, route to a bigger worker, switch the seat, revise, skip, pause, or end the run. `bus.ts` builds the bus a recovery answered between two turns publishes on, so a host that holds no live orchestrator still records the prompt and the decision.
 - **`approval/`** — Tiered approval system for declared file writes. Classifies changed paths by risk (in-scope, out-of-scope, control-plane, package change) and gates those writes at auto/sticky/confirm tiers.
 - **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
@@ -133,7 +135,7 @@ Several sinks can subscribe to the bus. The JSONL and logger sinks are unconditi
 
 **Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`.
 
-**Hook sink** (`src/engine/hooks/sink.ts`) — maps events to workflow hook triggers and dispatches matching hooks fire-and-forget. Only six event types trigger hooks: `task_completed` maps to `post_task`, `validate` (when done) maps to `post_validation`, `git_commit` maps to `post_commit`, `recovery_prompted` maps to `on_halt`, `workflow_complete` maps to `on_complete`, `error` maps to `on_error`. All other events are ignored.
+**Hook sink** (`src/engine/hooks/sink.ts`) — maps events to workflow hook triggers and dispatches matching hooks fire-and-forget. Only five event types trigger hooks: `task_completed` maps to `post_task`, `validate` (when done) maps to `post_validation`, `recovery_prompted` maps to `on_halt`, `workflow_complete` maps to `on_complete`, `error` maps to `on_error`. All other events are ignored.
 
 **Logger sink** (`src/engine/events/sinks/logger.ts`) — mirrors bounded events into the debug log at a level per event type. Writes nothing when the logger is disabled.
 
@@ -265,11 +267,13 @@ Queue submission is planner-only. The shared enqueue boundary rejects messages o
 
 At safe points — end of the current planner call — the orchestrator calls `drainQueue()`, which marks pending-undelivered messages as drained and publishes `queue_drained`. The drained messages get formatted into the next planner prompt as `[user also says during <phase>]` blocks.
 
-**Native injection.** For backends that support `injectUserTurn` (e.g., Claude Code's conversation API), messages bypass the queue entirely. `dispatchNativeInjection()` in `src/engine/orchestrator/queue/native-injection.ts` calls `planner.injectUserTurn()` to push the message as a real user turn into the active conversation. If injection succeeds, the message is marked `deliveredViaNative` in state. If it fails, the message stays in the queue for the next drain — no message is ever lost.
+**Native injection.** For backends that support `injectUserTurn` (e.g., Claude Code's conversation API), messages bypass the queue entirely. `dispatchNativeInjection()` in `src/engine/orchestrator/queue/native-injection.ts` calls `planner.injectUserTurn()` to push the message as a real user turn into the active conversation. Only confirmed native delivery marks `deliveredViaNative`; a not-ready session leaves the message pending independently of whether usage counters were returned. Prompt acknowledgement drains only the supplied message IDs, so a correction arriving during regeneration stays pending without replaying the delivered correction.
 
 ---
 
 ## Summary shape
+
+Summary usage data remains persisted for explicitly opened `/usage` details. It is not a main-screen cost counter.
 
 Source: `src/core/schemas/summary.ts`. Written to `summary.json` at workflow end by `saveFinalSession()`.
 

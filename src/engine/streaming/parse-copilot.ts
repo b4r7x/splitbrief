@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ParsedLine } from '../runners/types.js';
-import { BackendTokenUsageSchema, toTokenDelta } from '../calls/usage.js';
+import { BackendTokenUsageSchema, toProviderTokenDelta } from '../calls/usage.js';
 import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
 
 const TextBlock = z.object({
@@ -85,7 +85,7 @@ export function parseCopilotLine(line: string): ParsedLine {
   const message = AssistantMessageEvent.safeParse(event);
   if (message.success) {
     const text = extractText(message.data.data);
-    const usage = message.data.data.usage ? toTokenDelta(message.data.data.usage) : null;
+    const usage = message.data.data.usage ? toProviderTokenDelta(message.data.data.usage) : null;
     if (text !== undefined && usage) return { text, channel: 'assistant', usage };
     if (text !== undefined) return { text, channel: 'assistant' };
     if (usage) return { usage };
@@ -93,7 +93,7 @@ export function parseCopilotLine(line: string): ParsedLine {
 
   const usageEvent = AssistantUsageEvent.safeParse(event);
   if (usageEvent.success && usageEvent.data.data.usage) {
-    const usage = toTokenDelta(usageEvent.data.data.usage);
+    const usage = toProviderTokenDelta(usageEvent.data.data.usage);
     if (usage) return { usage };
   }
 

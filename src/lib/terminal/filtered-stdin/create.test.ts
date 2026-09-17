@@ -89,14 +89,44 @@ describe('createFilteredStdin input filtering', () => {
 
     fakeStdin.emit('data', Buffer.from('before'));
     expect(await readFiltered(filtered.stdin, 'before'.length, 20)).toBe('');
-    expect(written).not.toContain(terminalSequences.enableMouseTracking);
+    expect(written).not.toContain(terminalSequences.enableButtonEventMouse);
 
     filtered.activate();
     fakeStdin.emit('data', Buffer.from('after'));
 
     expect(await readFiltered(filtered.stdin, 'after'.length)).toBe('after');
-    expect(written).toContain(terminalSequences.enableMouseTracking);
+    expect(written).toContain(terminalSequences.enableButtonEventMouse);
 
+    filtered.disable();
+  });
+
+  it('delivers complete copy keys to the input filter while keeping paste and mouse separate', async () => {
+    const fakeStdin = makeFakeStdin();
+    const inputs: string[] = [];
+    const ordering: string[] = [];
+    const mouse: MouseEvent[] = [];
+    const filtered = createFilteredStdin(fakeStdin, {
+      filterInput: (text) => {
+        inputs.push(text);
+        return text === '\u001b[99;9u' ? '' : text;
+      },
+      onPaste: () => ordering.push('clear selection'),
+      handleMouse: (event, dispatch) => {
+        if (event.type.startsWith('wheel')) dispatch(event);
+      },
+    });
+    filtered.stdin.on('paste', (text: string) => ordering.push(text));
+    filtered.onMouse((event) => mouse.push(event));
+    const clean = readFiltered(filtered.stdin, 'ab\u001bOA'.length);
+
+    fakeStdin.emit('data', Buffer.from('a\u001b[99;'));
+    fakeStdin.emit('data', Buffer.from('9u\u001b[<0;2;3M\u001b[<64;2;3Mb\u001bO'));
+    fakeStdin.emit('data', Buffer.from('A\u001b[200~pasted\u001b[201~'));
+
+    expect(await clean).toBe('ab\u001bOA');
+    expect(inputs).toEqual(['a', '\u001b[99;9u', 'b', '\u001bOA']);
+    expect(ordering).toEqual(['clear selection', 'pasted']);
+    expect(mouse.map((event) => event.type)).toEqual(['wheel-up']);
     filtered.disable();
   });
 
@@ -495,7 +525,7 @@ describe('createFilteredStdin input filtering', () => {
     filtered.disable();
 
     expect(written).toEqual([
-      terminalSequences.enableMouseTracking,
+      terminalSequences.enableButtonEventMouse,
       terminalSequences.enableSgrMouse,
       terminalSequences.enableBracketedPaste,
       terminalSequences.disableMouseTracking,
@@ -522,7 +552,7 @@ describe('createFilteredStdin input filtering', () => {
       terminalSequences.disableSgrMouse,
       terminalSequences.disableBracketedPaste,
     ]);
-    expect(written).not.toContain(terminalSequences.enableMouseTracking);
+    expect(written).not.toContain(terminalSequences.enableButtonEventMouse);
   });
 
   it('can enable paste filtering without mouse tracking or mouse dispatch', async () => {
@@ -638,7 +668,8 @@ describe('createFilteredStdin bracketed paste handling', () => {
     fakeStdin.emit('data', Buffer.from('\u001b[200~line one\n'));
     await new Promise((r) => setTimeout(r, 10));
     expect(filtered.isPasteActive()).toBe(true);
-    expect(collected.join('')).toBe('line one\n');
+    // An open paste is buffered, so nothing reaches the key stream before its end marker.
+    expect(collected.join('')).toBe('');
 
     fakeStdin.emit('data', Buffer.from('line two\u001b[201~'));
     await new Promise((r) => setTimeout(r, 10));
@@ -693,14 +724,14 @@ describe('createFilteredStdin bracketed paste handling', () => {
     fakeStdin.emit('data', Buffer.from('\u001b[200~typed'));
     await new Promise((r) => setTimeout(r, 10));
     expect(filtered.isPasteActive()).toBe(true);
-    expect(collected.join('')).toBe('typed');
+    expect(collected.join('')).toBe('');
 
     // The end marker's leading ESC arrives alone. While a paste is open the Escape key is
     // suppressed, so a bare ESC here can only head the split `\x1b[201~` end marker: it is
     // withheld one chunk rather than leaking out and leaving pasteActive stuck true.
     fakeStdin.emit('data', Buffer.from('\u001b'));
     await new Promise((r) => setTimeout(r, 10));
-    expect(collected.join('')).toBe('typed');
+    expect(collected.join('')).toBe('');
     expect(filtered.isPasteActive()).toBe(true);
 
     fakeStdin.emit('data', Buffer.from('[201~'));
@@ -822,7 +853,7 @@ describe('createFilteredStdin bracketed paste handling', () => {
     expect(collected.join('')).toBe('\uFFFD');
   });
 
-  it('drops a paste-held escape prefix on disable after emitting paste body text', async () => {
+  it('discards an unterminated paste and its held escape prefix on disable', async () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const collected: string[] = [];
@@ -832,7 +863,7 @@ describe('createFilteredStdin bracketed paste handling', () => {
     await new Promise((r) => setTimeout(r, 10));
     filtered.disable();
 
-    expect(collected.join('')).toBe('abc');
+    expect(collected.join('')).toBe('');
     expect(collected.join('')).not.toContain('\u001b');
     expect(filtered.isPasteActive()).toBe(false);
   });

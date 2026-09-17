@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   bylineDiagnostic,
+  CUSTOM_COMMAND_PANE_CELLS,
+  CUSTOM_COMMAND_PANE_LINES,
   formatCatalogDiagnostic,
   formatModelCatalogGuidance,
   formatModelsByline,
@@ -179,7 +181,7 @@ describe('formatCatalogDiagnostic', () => {
     [{ kind: 'probe-failed', failure: 'policy-denied' }, 'OpenCode denied model catalog access'],
     [
       { kind: 'probe-failed', failure: 'offline' },
-      'Model catalog request could not reach the network',
+      'Model detection could not reach the network. Press ctrl+r to retry',
     ],
     [
       { kind: 'probe-failed', failure: 'timeout' },
@@ -199,6 +201,34 @@ describe('formatCatalogDiagnostic', () => {
       expect(formatCatalogDiagnostic(diagnostic, 'OpenCode')).toBe(copy);
     },
   );
+
+  /**
+   * The four states an operator most often confuses. Each one has to name its own next step, and an
+   * unreachable network must never be answered with a sign-in the tool did not ask for.
+   */
+  it('keeps offline, unauthorized and a detection in progress distinct and separately actionable', () => {
+    const offline = formatCatalogDiagnostic(
+      { kind: 'probe-failed', failure: 'offline' },
+      'OpenCode',
+    );
+    const missingCredential = formatCatalogDiagnostic(
+      { kind: 'probe-failed', failure: 'missing-credential' },
+      'OpenCode',
+    );
+    const invalidCredential = formatCatalogDiagnostic(
+      { kind: 'probe-failed', failure: 'invalid-credential' },
+      'OpenCode',
+    );
+    const loading = formatModelCatalogGuidance(readyCliTool(), zeroCounts, undefined, true);
+
+    expect(offline).toContain('ctrl+r');
+    expect(offline).not.toMatch(/sign in/i);
+    expect(missingCredential).toMatch(/sign in/i);
+    expect(invalidCredential).toMatch(/sign in again/i);
+    expect(loading).toEqual({ headline: 'Detecting models…', detail: undefined });
+
+    expect(new Set([offline, missingCredential, invalidCredential, loading.headline]).size).toBe(4);
+  });
 });
 
 describe('formatRouteAuth', () => {
@@ -655,5 +685,34 @@ describe('modelBylineAxes', () => {
     expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: 'high' })).toEqual(['high']);
     expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: null })).toEqual([]);
     expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: 'ultra' })).toEqual([]);
+  });
+});
+
+describe('CUSTOM_COMMAND_PANE_LINES', () => {
+  it('writes every line to the narrowest card the picker draws', () => {
+    for (const line of CUSTOM_COMMAND_PANE_LINES) {
+      expect(getTerminalCellWidth(line), line).toBeLessThanOrEqual(CUSTOM_COMMAND_PANE_CELLS);
+    }
+  });
+
+  it('names the action, both contracts, both steps and the save rule', () => {
+    const card = CUSTOM_COMMAND_PANE_LINES.join('\n');
+    expect(card).toContain('Run your own command.');
+    expect(card).toContain(`output${SOFT_SEP}reads stdout`);
+    expect(card).toContain(`direct${SOFT_SEP}writes files`);
+    expect(card).toContain('⏎ picks the contract,');
+    expect(card).toContain('then the command.');
+    expect(card).toContain('Nothing is saved yet.');
+  });
+
+  it('repeats neither the seat the title names nor the command the row spells', () => {
+    const card = CUSTOM_COMMAND_PANE_LINES.join('\n');
+    expect(card).not.toMatch(/seat/i);
+    expect(card).not.toMatch(/current/i);
+  });
+
+  it('spends at most the rows the card has at its shortest supported height', () => {
+    // 60x18 leaves the card 8 interior rows under its label and the blank below it.
+    expect(CUSTOM_COMMAND_PANE_LINES).toHaveLength(8);
   });
 });

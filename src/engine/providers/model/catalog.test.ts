@@ -201,7 +201,11 @@ describe('runner-owned catalog resolution', () => {
     const cache = makeModelCacheAccessor({
       providerModels: {
         'kilo-code': [
-          { id: 'openai/text-embedding-3-large', supportsToolCalls: false },
+          {
+            id: 'openai/text-embedding-3-large',
+            supportsToolCalls: false,
+            capabilities: ['type:embedding'],
+          },
           { id: 'openai/gpt-image-2', outputModalities: [] },
           { id: 'zai-org/glm-5.3', supportsToolCalls: true, outputModalities: ['text'] },
           { id: 'openai/gpt-5.4' },

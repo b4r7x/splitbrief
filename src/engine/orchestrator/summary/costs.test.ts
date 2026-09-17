@@ -73,6 +73,8 @@ describe('buildSummary task costs', () => {
         taskTitle: 'task 1',
         method: 'local' as const,
         implementerTokens: 150_000,
+        implementerInputTokens: 100_000,
+        implementerOutputTokens: 50_000,
         escalationTokens: 0,
         retryCount: 0,
       },
@@ -81,6 +83,8 @@ describe('buildSummary task costs', () => {
         taskTitle: 'task 2',
         method: 'local' as const,
         implementerTokens: 150_000,
+        implementerInputTokens: 100_000,
+        implementerOutputTokens: 50_000,
         escalationTokens: 0,
         retryCount: 0,
       },
@@ -115,6 +119,8 @@ describe('buildSummary task costs', () => {
         taskTitle: 'task 1',
         method: 'local' as const,
         implementerTokens: 150_000,
+        implementerInputTokens: 100_000,
+        implementerOutputTokens: 50_000,
         escalationTokens: 0,
         retryCount: 0,
       },
@@ -146,6 +152,8 @@ describe('buildSummary task costs', () => {
         method: 'escalated-full' as const,
         implementerTokens: 0,
         escalationTokens: 150_000,
+        escalationInputTokens: 100_000,
+        escalationOutputTokens: 50_000,
         retryCount: 0,
       },
     ];
@@ -177,6 +185,8 @@ describe('buildSummary task costs', () => {
         taskTitle: 'local task',
         method: 'local' as const,
         implementerTokens: 1_000_000,
+        implementerInputTokens: 500_000,
+        implementerOutputTokens: 500_000,
         escalationTokens: 0,
         retryCount: 0,
         tool: 'ollama',
@@ -188,6 +198,8 @@ describe('buildSummary task costs', () => {
         taskTitle: 'paid task',
         method: 'local' as const,
         implementerTokens: 1_000_000,
+        implementerInputTokens: 500_000,
+        implementerOutputTokens: 500_000,
         escalationTokens: 0,
         retryCount: 0,
         tool: 'custom-worker-api',
@@ -247,7 +259,7 @@ describe('buildSummary offering presentation', () => {
     expect(unmeteredRunCostLabel(parsed)).toBeNull();
   });
 
-  it('labels a subscription-only run without a metered figure', () => {
+  it('does not infer a subscription paid for historical calls without evidence', () => {
     const usage = makeUsage({
       plannerInput: 100_000,
       plannerOutput: 50_000,
@@ -265,10 +277,10 @@ describe('buildSummary offering presentation', () => {
 
     const parsed = SummarySchema.parse(summary).costBreakdown;
     if (!parsed) throw new Error('expected cost breakdown');
-    expect(unmeteredRunCostLabel(parsed)).toBe('subscription-included');
+    expect(unmeteredRunCostLabel(parsed)).toBeNull();
   });
 
-  it('keeps a configured reviewer cache out of per-task escalation cost', () => {
+  it('never charges a per-task escalation leg for cache the run pooled elsewhere', () => {
     const breakdowns = [
       {
         taskId: taskId('T001'),
@@ -276,6 +288,10 @@ describe('buildSummary offering presentation', () => {
         method: 'escalated-full' as const,
         implementerTokens: 0,
         escalationTokens: 38_000,
+        escalationInputTokens: 30_000,
+        escalationOutputTokens: 8_000,
+        escalationCacheReadTokens: 0,
+        escalationCacheCreateTokens: 0,
         retryCount: 0,
       },
     ];
@@ -309,7 +325,11 @@ describe('buildSummary offering presentation', () => {
 
     const configured = { tool: 'custom-worker-api', model: 'deepseek-v4-flash' };
 
+    // The task recorded no escalation cache, so neither the planner's 100k pool
+    // nor a reviewer's 900k can reach it — configured as a seat or folded in.
     expect(buildWith(900_000, configured)).toBe(buildWith(0, configured));
-    expect(buildWith(900_000)).not.toBe(buildWith(0));
+    expect(buildWith(900_000)).toBe(buildWith(0));
+    // 30k input @ $2/MTok + 8k output @ $10/MTok, and no cache dollars.
+    expect(buildWith(900_000)).toBeCloseTo(0.14, 10);
   });
 });

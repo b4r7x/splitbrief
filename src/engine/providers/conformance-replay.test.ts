@@ -474,9 +474,10 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
     }),
     capturedContractSha256: 'db64cb827ba96c32a65dc2292f1a992709ca0794dfea94bd973396256e3180d0',
     evidencePath: 'testing/fixtures/provider-conformance/llama-cpp.json',
-    candidateSource: 'src/engine/providers/llama-cpp.ts',
-    candidateTest: 'src/engine/providers/llama-cpp.test.ts',
-    omitFromCatalog: true,
+    // The recorded verdict stays OMIT — no generation conformance was ever
+    // captured for llama.cpp — and the profile is admitted as `beta` on the
+    // shared transport rather than as a conformance-proved backend.
+    omitFromCatalog: false,
   },
 ];
 

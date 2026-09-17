@@ -265,6 +265,43 @@ describe('semanticConfiguredArgViolations (REQ-018)', () => {
 });
 
 describe('collectArgVectorPreflightChecks', () => {
+  it.each([
+    ['--worktree', 'other'],
+    ['--worktree=other'],
+    ['-w', 'other'],
+    ['-wother'],
+    ['-w=other'],
+    ['--mod', 'plugin'],
+    ['--mod=plugin'],
+    ['--mod-option', 'key=value'],
+    ['--mod-option=key=value'],
+  ])('rejects Command Code adapter conflicts before probing help: %j', async (...args) => {
+    const help = vi.fn(async () => 'Usage: cmd --worktree --mod --mod-option -w');
+    const checks = await collectArgVectorPreflightChecks({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'command-code', args },
+        implementer: { kind: 'cli', tool: 'command-code', args },
+      }),
+      projectDir: '/project',
+      roles: ['planner', 'implementer'],
+      runHelp: help,
+    });
+    expect(checks).toHaveLength(2);
+    expect(checks.every((check) => check.severity === 'blocker')).toBe(true);
+    expect(help).not.toHaveBeenCalled();
+  });
+
+  it('keeps an ordinary Command Code argument eligible for help comparison', async () => {
+    const help = vi.fn(async () => null);
+    const checks = await collectArgVectorPreflightChecks({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'command-code', args: ['--verbose'] } }),
+      projectDir: '/project',
+      roles: ['planner'],
+      runHelp: help,
+    });
+    expect(checks[0]?.severity).toBe('ok');
+    expect(help).toHaveBeenCalled();
+  });
   const runHelp = (helpText: string) => async () => helpText;
   const unavailableHelp = async () => null;
 

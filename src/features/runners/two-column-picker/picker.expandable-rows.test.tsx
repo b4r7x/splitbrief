@@ -463,7 +463,7 @@ describe('TwoColumnPicker rows that cycle in place', () => {
     expect(ui.lastFrame()).toContain('GPT-5.6 Luna');
   });
 
-  it('lets space through to the query on a row that does not cycle', async () => {
+  it('keeps a bare space inert on a right row that does not cycle', async () => {
     const cycled: string[] = [];
     const collapses: string[] = [];
     const ui = renderLadder({ initialIndex: 0, cycled, collapses });
@@ -473,7 +473,51 @@ describe('TwoColumnPicker rows that cycle in place', () => {
     await flushEffects();
 
     expect(cycled).toEqual([]);
-    expect(collapses).toEqual(['collapse']);
+    expect(collapses).toEqual([]);
+    expect(ui.lastFrame()).toContain('>GPT-5.6 Luna');
+    expect(ui.lastFrame()).toContain('effort High');
+  });
+
+  it('accepts a space inside a query that already holds text', async () => {
+    // An id holding the space the query needs to survive: `gpt 5` matches it,
+    // `gpt5` — the swallowed key — matches nothing.
+    const SPACED: Ladder[] = [
+      ...LADDER,
+      { id: 'gpt 5 turbo', displayName: 'GPT-5.6 Turbo', cycle: 'none' },
+    ];
+    const cycled: string[] = [];
+    const collapses: string[] = [];
+    const ui = mount(
+      <TwoColumnPicker<Tool, Ladder>
+        title="Planner"
+        initialColumn="right"
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: SPACED,
+          getKey: (m) => m.id,
+          renderRow: (m, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>,
+          onCycle: (m) => {
+            if (m.cycle === 'stepped') cycled.push(m.id);
+            return m.cycle;
+          },
+          onCollapse: () => collapses.push('collapse'),
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await flushEffects();
+
+    ui.stdin.write('gpt 5');
+    await flushEffects();
+
+    expect(cycled).toEqual([]);
+    expect(collapses).toEqual([]);
+    expect(ui.lastFrame()).toContain('GPT-5.6 Turbo');
     expect(ui.lastFrame()).not.toContain('GPT-5.6 Luna');
   });
 
@@ -491,7 +535,7 @@ describe('TwoColumnPicker rows that cycle in place', () => {
     expect(cycled).toEqual([]);
   });
 
-  it('leaves space to the tool query while the Models column is unfocused', async () => {
+  it('keeps a bare space inert while the left column is focused', async () => {
     const cycled: string[] = [];
     const collapses: string[] = [];
     const ui = renderLadder({ initialIndex: 1, cycled, collapses });
@@ -503,8 +547,9 @@ describe('TwoColumnPicker rows that cycle in place', () => {
     await flushEffects();
 
     expect(cycled).toEqual([]);
-    expect(collapses).toEqual(['collapse']);
-    expect(ui.lastFrame()).toContain('No items match');
+    expect(collapses).toEqual([]);
+    expect(ui.lastFrame()).toContain('>Alpha');
+    expect(ui.lastFrame()).not.toContain('No items match');
   });
 
   it('takes focus back to the Models column when a click steps a row there', async () => {

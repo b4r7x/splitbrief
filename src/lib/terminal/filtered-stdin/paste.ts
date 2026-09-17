@@ -17,20 +17,30 @@ export function sanitizePasteBody(body: string): string {
     .replace(PASTE_BODY_UNSAFE_CONTROL_RE, '');
 }
 
-export function sanitizePasteBytes(body: Buffer): Buffer {
+export interface PasteScan {
+  bytes: Buffer;
+  pendingCr: boolean;
+}
+
+export function sanitizePasteBytes(body: Buffer, pendingCr = false): PasteScan {
   const clean: number[] = [];
-  let i = 0;
-  while (i < body.length) {
+  let carriedCr = pendingCr;
+  for (let i = 0; i < body.length; i++) {
     const byte = body.readUInt8(i);
     if (byte === 0x0d) {
-      if (i + 1 < body.length && body.readUInt8(i + 1) === 0x0a) i++;
       clean.push(0x0a);
-    } else if (byte === 0x09 || byte === 0x0a || (byte >= 0x20 && byte !== 0x7f)) {
-      clean.push(byte);
+      carriedCr = true;
+      continue;
     }
-    i++;
+    if (byte === 0x0a) {
+      if (!carriedCr) clean.push(0x0a);
+      carriedCr = false;
+      continue;
+    }
+    carriedCr = false;
+    if (byte === 0x09 || (byte >= 0x20 && byte !== 0x7f)) clean.push(byte);
   }
-  return Buffer.from(clean);
+  return { bytes: Buffer.from(clean), pendingCr: carriedCr };
 }
 
 function isPrefixOfBytes(source: Buffer, expected: Buffer): boolean {

@@ -37,6 +37,11 @@ interface CommandContextFactoryOptions {
   endRun: () => boolean;
   getQueueDepth: () => number;
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
+  insertImage?: (input: {
+    path: string;
+    projectDir: string;
+    supportsImages: boolean;
+  }) => ReturnType<RuntimeCommandContext['attachImage']>;
   attachImage: (input: {
     path: string;
     projectDir: string;
@@ -110,6 +115,11 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     endRun: opts.endRun,
     getQueueDepth: opts.getQueueDepth,
     clearQueue: opts.clearQueue,
+    insertImage: (path) => {
+      const supportsImages = opts.plannerSupportsImages();
+      const insertImage = opts.insertImage ?? opts.attachImage;
+      return insertImage({ path, projectDir: opts.projectDir(), supportsImages });
+    },
     attachImage: (path) => {
       const supportsImages = opts.plannerSupportsImages();
       return opts.attachImage({ path, projectDir: opts.projectDir(), supportsImages });

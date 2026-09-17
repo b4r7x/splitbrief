@@ -52,6 +52,18 @@ export const ChangedFilesSnapshotSchema = z.object({
   head: z.string(),
   files: z.array(z.string()),
   dirtyFileContents: z.record(z.string(), z.string().nullable()),
+  // Fresh snapshots retain exact bytes and modes; legacy text snapshots still load.
+  dirtyFileEntries: z
+    .record(
+      z.string(),
+      z
+        .object({
+          base64: z.string(),
+          mode: z.number().int().min(0).max(0o777),
+        })
+        .nullable(),
+    )
+    .optional(),
   gitlinks: z.array(z.string()).optional(),
   baselineFileHashes: z.record(z.string(), z.string().nullable()).optional(),
   ignoreProjectDir: z.string().optional(),

@@ -6,6 +6,8 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 Stable `stateId` and runner `state` values with copyable remediations are indexed under [Run readiness and doctor diagnostics](#run-readiness-and-doctor-diagnostics). Use `splitbrief doctor --json` for automation.
 
+Use the reported preparation error; a zero-blocker readiness count does not explain a session-ownership failure. Start and continue must acquire current ownership independently of discovery. A live or unknown competing owner is not permission to take over.
+
 ---
 
 ## Run readiness and doctor diagnostics
@@ -557,7 +559,7 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 
 ### Symptom: Code does not typecheck after a task; workflow blocked
 
-**Likely cause:** The validation step (typecheck / lint / test) ran against the implementer's output and failed. The orchestrator refuses to advance the task until validation passes. If optional product-level commits are enabled, those are blocked too.
+**Likely cause:** The validation step (typecheck / lint / test) ran against the implementer's output and failed. The orchestrator refuses to advance the task until validation passes. SPLITBRIEF never stages or commits the result.
 
 **Fix:**
 1. Open `evidence.json` for the task; the `validation` section lists the exact failing command and stderr.
@@ -573,7 +575,7 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 
 ### Symptom: Every task fails validation because the tree was already red
 
-**Likely cause:** A validation stage (typecheck, lint, or test) was already failing in the repository before the run started — a pre-existing error in a file no task touches. Acceptance is baseline-relative: a stage that was already red at baseline is exempt when its failure evidence names none of the task's changed files, and the task commits anyway. A stage that was green at baseline always blocks.
+**Likely cause:** A validation stage (typecheck, lint, or test) was already failing in the repository before the run started — a pre-existing error in a file no task touches. Acceptance is baseline-relative: a stage that was already red at baseline is exempt when its failure evidence names none of the task's changed files, and the task may advance without any Git write. A stage that was green at baseline always blocks.
 
 **Fix:**
 1. Check the baseline probe row at the start of the run — it names the stages that were already failing before the first task.
@@ -941,6 +943,16 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ## TUI
 
+### Symptom: copying an image and pressing `Cmd+V` does not insert an image
+
+On macOS, Zed 1.20.2 forwards a clipboard image to the terminal application as `Ctrl+V`; SPLITBRIEF reads the image and inserts `[image #1]` at the composer caret. A custom paste keybinding or an older terminal version can prevent that event from reaching the application. Check Zed's default `terminal::Paste` binding and [terminal paste behavior](https://github.com/zed-industries/zed/blob/v1.20.2/crates/terminal_view/src/terminal_view.rs#L848-L895).
+
+If the clipboard offers both text and an image, [Zed pastes the text](https://github.com/zed-industries/zed/blob/v1.20.2/crates/gpui_macos/src/pasteboard.rs#L47-L83). Press `Ctrl+V` directly to read the image representation.
+
+`Pasting image…` means the read is pending. `Clipboard has no image` means the clipboard contains no readable bitmap; `Cannot read clipboard image` means the system reader or image storage failed. Clipboard images must fit the 10 MiB attachment limit. A PLAN seat without vision reports that it cannot see images; choose a vision-capable seat with `/crew plan`.
+
+Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain readable attachments. See [Image attachments](./FEATURES.md#image-attachments) for paste, drop, and removal behavior.
+
 ### Symptom: TUI layout is broken — overlapping panes, truncated text
 
 **Likely cause:** Terminal width below 60 columns. Ink can render but SPLITBRIEF's layout assumes a minimum width.
@@ -1059,7 +1071,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: `git commit` is blocked when running under SPLITBRIEF
 
-**Likely cause:** This repository's agent workflow blocks staging and commits so the human owner reviews the final diff manually. Product-level `commitStrategy` settings may create checkpoints in user projects, but agents working in this repo must not stage or commit. A pre-tool-use hook (`.claude/hooks/block-git-commits.sh`) enforces the repo rule.
+**Likely cause:** This repository's agent workflow blocks staging and commits so the human owner reviews the final diff manually. The product also leaves staging and commits to the user; retired `commitStrategy` values do not enable checkpoints. A pre-tool-use hook (`.claude/hooks/block-git-commits.sh`) enforces the repo rule.
 
 **Fix:**
 1. Exit the SPLITBRIEF session.

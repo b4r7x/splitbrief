@@ -22,7 +22,7 @@ Each command may also declare a `guard`, which returns one true sentence when th
 
 Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, assembled by `createCommandContext` in `src/core/runtime/commands/context-factory.ts` — every config write goes through its `saveConfig` path; the TUI (`src/app/command-context.ts`) only supplies the callbacks. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
-The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 25 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
+The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 26 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
 
 ---
 
@@ -80,7 +80,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Args**: none.
 - **Shortcut**: `Ctrl+,` (`src/core/keybindings/registry.ts`).
 - **Example**: `/settings`
-- **Behavior**: Opens the `settings` overlay. **Crew is the first section**: the three seats (`PLAN`, `BUILD`, `REVIEW`) live there as read-only rows, not in separate per-seat sections; `Enter` on a seat opens that seat's picker, which is where its tool, model and effort are chosen. Everything below it is the ordinary settings list, grouped Crew → Tuning → Workflow → Validation; the Workflow group carries Mode, Spec/plan gates, Max retries, Compaction format, **Show spend** (`workflow.showSpend` — the spend figure in the sidebar footer and a closed run's `Cost` row, on by default), Commit strategy and Create branch. Mutations are persisted to project config on save.
+- **Behavior**: Opens the `settings` overlay. **Crew is the first section**: the three seats (`PLAN`, `BUILD`, `REVIEW`) live there as read-only rows, not in separate per-seat sections; `Enter` on a seat opens that seat's picker, which is where its tool, model and effort are chosen. Everything below it is the ordinary settings list, grouped Crew → Tuning → Workflow → Validation; the Workflow group carries Mode, Spec/plan gates, Max retries, Compaction format and Create branch. Show spend and Commit strategy controls have been removed. Mutations are persisted to project config on save.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens the overlay via `overlayStore.open`; a focus of `seat:<id>` or `filter:<text>` is parsed by `parseSettingsFocus` (`src/features/settings/focus.ts`).
 - **See also**: `/crew`, `/mode`, `/skills`.
 
@@ -281,6 +281,16 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`; toggles `controlsStore.sidebarVisible` through the command context, and reads the briefs from `tasksStore` through the context's `listBriefs` port.
 - **See also**: `/sidebar`, `/scroll`.
 
+### `/usage`
+
+- **Purpose**: Open reported token usage and monetary estimates explicitly.
+- **Screens**: `workflow`, live or at rest.
+- **Args**: none.
+- **Example**: `/usage`
+- **Behavior**: Opens the `usage-details` overlay for the current run. Missing or partial usage remains labelled; unknown pricing is not zero cost. Closing the details returns to a workflow without token or cost counters.
+- **Implementation**: `src/core/runtime/commands/defs/view.ts`, `src/app/overlays/usage.tsx`.
+- **See also**: `/sessions`, `/copy`.
+
 ### `/diff`
 
 - **Purpose**: Expand or collapse the latest diff block in the workflow conversation — the command mirror of `Ctrl+D`.
@@ -307,7 +317,7 @@ Commands that move data in or out: clipboard copies and image attachments. `cate
   - `brief` — the focused (or top-of-window) Task Brief's source text.
   - `path` — the focused brief's file path, relative to the project directory.
   - `command` — the configured planner runner command.
-  - `cost` — the sidebar's spend figure, or `spend display is off` while the **Show spend** setting is off.
+  - `cost` — an explicit export of available cost details; the legacy config value `workflow.showSpend: false` makes it answer `spend display is off`. There is no Settings toggle or main-screen counter.
 - **Example**: `/copy`, `/copy brief`, `/copy path`, `/copy cost`
 - **Behavior**: Resolves the raw value (never the sanitized display copy) and writes it to the clipboard. When the target has no value the feedback line reads `"Nothing to copy"`. A confirmed native or tmux copy reads `"Copied (native)"` / `"Copied (tmux-buffer)"`; an OSC-52 escape the terminal may silently drop reads `"Copy escape sent; verify your clipboard (some terminals block it)"`; a failure reads `"Could not copy"`.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/io.ts`; value resolution in `src/features/workflow/copy/resolve.ts`; clipboard delivery in `src/lib/clipboard/clipboard.ts`.

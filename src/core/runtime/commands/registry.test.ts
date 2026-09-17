@@ -22,8 +22,18 @@ describe('createRuntimeCommands registry shape', () => {
 
   it('registers the commands the reference documents, once each', () => {
     const registered = commands.map((cmd) => cmd.name);
-    expect(registered).toHaveLength(25);
-    expect(new Set(registered).size).toBe(25);
+    expect(registered).toHaveLength(26);
+    expect(new Set(registered).size).toBe(26);
+  });
+
+  it('registers /usage once, on the workflow, under view', () => {
+    const usage = commands.filter((cmd) => cmd.name === '/usage');
+
+    expect(usage).toHaveLength(1);
+    expect(usage[0]?.kind).toBe('noarg');
+    expect(usage[0]?.category).toBe('view');
+    expect(usage[0]?.validScreens).toEqual(['workflow']);
+    expect(usage[0]?.hidden).toBeUndefined();
   });
 
   it('files every command under the category its module owns, in category order', () => {

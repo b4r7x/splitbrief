@@ -1,24 +1,34 @@
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
+import { parseApiKeyEnvRef } from '../../core/config/credentials.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
-import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
+import {
+  getApiProviderDescriptor,
+  isApiProviderId,
+} from '../../core/providers/api-provider-catalog.js';
 import type {
   RunnerAvailabilityFact,
   RunnerAvailabilitySlot,
   RunnerAvailabilityVerdict,
 } from '../../core/readiness/checks/availability.js';
 import type { Config } from '../../core/schemas/config.js';
+import { createInFlightProbeSharing } from '../detection/runner-evidence.js';
 import { sanitizeProviderDiagnostic } from '../providers/client/request.js';
 import { getProvider } from '../providers/registry.js';
+import {
+  apiConnectionContextKey,
+  probeSelectedProviderModel,
+  type SelectedProviderModelProbe,
+} from '../providers/selected-model.js';
 import type { ProviderDef } from '../providers/types.js';
-import { composeAbortSignal } from '../../utils/abort.js';
+import { isAbortError } from '../../utils/abort.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 /**
  * Readiness runs before every start, so the budget is what a person will wait
- * for, not what a slow endpoint may take. A probe that overruns it is cancelled
- * and reported as `not-probed` — never as available, and never as a blocker on
- * evidence readiness does not have.
+ * for, not what a slow endpoint may take. Overrunning it is evidence of its own
+ * — the connection timed out — while a caller that stops waiting leaves no
+ * evidence at all and stays `not-probed`.
  */
 export const RUNNER_AVAILABILITY_PROBE_TIMEOUT_MS = 2_000;
 
@@ -95,6 +105,77 @@ function catalogVerdict(lastError: string | undefined): RunnerAvailabilityVerdic
     : { state: 'unavailable', diagnostic: lastError };
 }
 
+/**
+ * Catalog membership is the whole admission test: a listed model the server has
+ * not loaded stays available, because the server loads it when execution asks.
+ */
+function selectedModelVerdict(
+  probe: SelectedProviderModelProbe,
+  runner: ProbeableRunner,
+): RunnerAvailabilityVerdict {
+  if (probe.kind === 'found') return { state: 'available' };
+  switch (probe.failure) {
+    case 'empty-catalog':
+      return { state: 'no-models' };
+    case 'missing-model':
+      return { state: 'missing-model', selectionId: probe.selectionId };
+    case 'timeout':
+      return { state: 'timeout', diagnostic: probe.diagnostic };
+    case 'invalid-credential':
+      // Only an actual rejection earns the label; a reachable server does not.
+      return { state: 'unauthorized', diagnostic: probe.diagnostic };
+    case 'missing-credential':
+      return missingCredentialVerdict(runner.provider);
+    case 'endpoint-invalid':
+      // The probe never left the process, so there is nothing to report about
+      // the server itself.
+      return { state: 'not-probed', diagnostic: probe.diagnostic };
+    case 'policy-denied':
+    case 'privacy-filtered':
+    case 'guardrail-filtered':
+    case 'offline':
+    case 'malformed':
+    case 'request-failed':
+      return { state: 'unavailable', diagnostic: probe.diagnostic };
+    default:
+      return assertNever(probe.failure);
+  }
+}
+
+type ProbeDeadline = Readonly<{ signal: AbortSignal; expired: () => boolean }>;
+
+/** Keeps the readiness budget distinguishable from the caller's own abort. */
+function probeDeadline(signal: AbortSignal | undefined): ProbeDeadline {
+  const deadline = AbortSignal.timeout(RUNNER_AVAILABILITY_PROBE_TIMEOUT_MS);
+  return {
+    signal: signal === undefined ? deadline : AbortSignal.any([signal, deadline]),
+    expired: () => deadline.aborted,
+  };
+}
+
+async function catalogAdmission(
+  runner: ProbeableRunner,
+  provider: ProviderDef,
+  signal: AbortSignal,
+): Promise<RunnerAvailabilityVerdict> {
+  const selectionId = runner.model;
+  if (isApiProviderId(runner.provider) && selectionId !== undefined && selectionId.length > 0) {
+    const probe = await probeSelectedProviderModel({
+      provider: runner.provider,
+      overrides: {
+        apiBase: runner.apiBase,
+        ...(runner.apiKey !== undefined && { apiKey: runner.apiKey }),
+      },
+      contextKey: apiConnectionContextKey(runner.provider, runner.apiBase),
+      selectionId,
+      signal,
+    });
+    return selectedModelVerdict(probe, runner);
+  }
+  const models = await provider.listModels({ signal });
+  return models.length > 0 ? { state: 'available' } : catalogVerdict(provider.getLastError?.());
+}
+
 async function probeApiRunner(
   runner: Extract<RunnerConfig, { kind: 'api' }>,
   signal: AbortSignal | undefined,
@@ -128,31 +209,98 @@ async function probeApiRunner(
     };
   }
 
+  const deadline = probeDeadline(signal);
   try {
-    const models = await provider.listModels({
-      signal: composeAbortSignal(signal, RUNNER_AVAILABILITY_PROBE_TIMEOUT_MS),
-    });
     return {
       provider: runner.provider,
       endpoint,
-      verdict:
-        models.length > 0 ? { state: 'available' } : catalogVerdict(provider.getLastError?.()),
+      verdict: await catalogAdmission(runner, provider, deadline.signal),
     };
   } catch (cause) {
+    // Our own budget running out is an observation about the connection; the
+    // caller's abort is the absence of one.
+    const timedOut = deadline.expired() && signal?.aborted !== true;
     return {
       provider: runner.provider,
       endpoint,
-      verdict: { state: 'not-probed', diagnostic: diagnose(cause) },
+      verdict: timedOut
+        ? { state: 'timeout', diagnostic: diagnose(cause) }
+        : { state: 'not-probed', diagnostic: diagnose(cause) },
     };
   }
+}
+
+const availabilityProbes = createInFlightProbeSharing<ProbedRunner>();
+
+const envCredentialIdentities = new Map<
+  string,
+  { readonly value: string | undefined; readonly identity: string }
+>();
+let nextEnvCredentialIdentity = 0;
+
+function envCredentialIdentity(name: string): string {
+  const value = process.env[name];
+  const previous = envCredentialIdentities.get(name);
+  if (previous !== undefined && previous.value === value) return previous.identity;
+  const identity = `value-${++nextEnvCredentialIdentity}`;
+  envCredentialIdentities.set(name, { value, identity });
+  return identity;
+}
+
+function credentialObservationIdentity(apiKey: string | undefined): string | undefined {
+  const envName = parseApiKeyEnvRef(apiKey);
+  if (envName !== undefined) return `env:${envName}:${envCredentialIdentity(envName)}`;
+  if (apiKey === undefined || apiKey.length === 0) return 'no-credential';
+  return undefined;
+}
+
+/** The identity of the observation: which seat asks which endpoint for which model, as whom. */
+function availabilityObservationKey(target: ProbeTarget): string | undefined {
+  // Inline credentials never share;
+  // an env reference shares only while its process-local value identity stays
+  // the same, so a rotation cannot inherit the old observation.
+  const credentialIdentity = credentialObservationIdentity(target.runner.apiKey);
+  if (credentialIdentity === undefined) return undefined;
+  if (getApiProviderDescriptor(target.runner.provider)?.offering !== 'local') return undefined;
+  return [
+    'runner-availability-v1',
+    target.slot.role,
+    target.slot.role === 'implementer' ? target.slot.profile : 'single',
+    target.runner.provider,
+    target.runner.apiBase,
+    target.runner.model ?? 'unselected',
+    credentialIdentity,
+  ]
+    .map((part) => encodeURIComponent(part))
+    .join('|');
 }
 
 async function probeTarget(
   target: ProbeTarget,
   signal: AbortSignal | undefined,
 ): Promise<RunnerAvailabilityFact> {
-  const probed = await probeApiRunner(target.runner, signal);
-  return { slot: target.slot, ...probed };
+  try {
+    const probed = await availabilityProbes.share({
+      key: availabilityObservationKey(target),
+      signal,
+      run: (probeSignal) => probeApiRunner(target.runner, probeSignal),
+    });
+    return { slot: target.slot, ...probed };
+  } catch (cause) {
+    if (!isAbortError(cause)) throw cause;
+    // A caller that stopped waiting has no evidence, which readiness reports
+    // as `not-probed` — never as available, and never as a blocker.
+    return {
+      slot: target.slot,
+      provider: target.runner.provider,
+      verdict: {
+        state: 'not-probed',
+        diagnostic: sanitizeProviderDiagnostic(cause, {
+          credentialValues: [target.runner.apiKey],
+        }),
+      },
+    };
+  }
 }
 
 /**

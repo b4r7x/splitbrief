@@ -119,6 +119,8 @@ The block is advisory evidence. A `READINESS BLOCKED` report must be re-evaluate
 
 ## Escalation
 
+File approval classifies the exact normalized `targetPath`; a declared `src/app.ts` does not authorize `src/app.ts.backup`. Promotion compares each target against the acquisition-time byte/hash and permission baseline, including edits made while the worker runs. Binary bytes and ordinary execute bits survive promotion. Conflicts preserve the user’s current file. A partial failure records the applied paths and failed file in `promotionAttempts`, retains the workspace, and prevents the brief from passing. It does not roll back the applied prefix.
+
 When the implementer writes code and validation fails, the escalation system tries progressively more capable approaches before involving the user. The orchestrator calls these tiers in sequence. If any tier succeeds, the task is done.
 
 **Pre-existing failures do not enter the ladder.** Acceptance is judged against the run's validation baseline: a stage that was already red before the first task ran, and whose failure evidence names none of the task's changed files, is exempt. An exempt stage never produces a retry prompt, so retry and escalation no longer fire for pre-existing failures — a task that introduces no new failure is accepted even when the tree was already red. The review packet keeps the raw `passed`/`total` validation figures for the task and names the exempt stages alongside them, so a shipped-over-red-stage task reads as what it is instead of a partial failure.
@@ -133,15 +135,15 @@ Tier 0 is configured in YAML only. The TUI does not expose an escalation row or 
 
 **Tier 1: hint escalation** (`HINT_TIER` in `src/engine/orchestrator/escalation/tier.ts`; implementation in `hint.ts`). The planner analyzes the error and produces a short hint. The hint is appended to the error context (truncated to 4000 chars), and the implementer retries once more with the enriched error. Publishes `escalate` with tier 1.
 
-**Tier 2: full escalation** (`FULL_TIER` in `src/engine/orchestrator/escalation/tier.ts`; implementation in `full.ts`). The full task context — brief, all prior attempts, all errors — goes to the planner. The planner writes the code itself instead of hinting. Publishes `escalate` with tier 2.
+The planner may provide hints; it never automatically takes over code-writing implementation.
 
-If tier 2 fails, the task publishes `task_full_fail` and enters recovery.
+After the supported worker/help path is exhausted, the run enters recovery. Historical tier 2 and `escalated-full` records remain readable but are never newly dispatched.
 
 **Review-packet warnings list.** The final review packet (`review-packet.json`) collects every operational `warning` event into its escalation warnings list (`escalations.warnings`, built by `src/engine/orchestrator/evidence/review-packet/sections.ts`). Warnings published with `safety: { category, code }` keep their message. The most common one is an implementer that ran and wrote nothing: the pipeline publishes exactly one warning with `category: 'implementer'` and `code: 'implementer_wrote_nothing'`, naming the runner and the task. The task itself still fails with the `no-staged-change` outcome — retry, escalation, and recovery behaviour are unchanged; the warning only makes the outcome legible in the transcript, `session.jsonl`, and the review packet. A second coded warning uses `category: 'usage'` and `code: 'implementer_usage_not_reported'`: it fires when a task completed but the runner's protocol carried no usage, so a run whose runner reported nothing is distinguishable from a run that did no work. It is published once per affected task, names the runner and the task, and does not change the task's outcome or the recorded zero token counts.
 
 **The scope-violation rung comes before the prompt.** A `direct` implementer that wrote outside the brief's declared set does not go straight to a permission prompt or a halt. The attempt fails with `implementer-effect-invalid`, the undeclared paths are restored from the task-start snapshot, one warning names them, and the next attempt's error block opens with the revert instruction — `Revert your changes to <paths>; only <declared files> may change` (`SCOPE_RULE.revertInstruction`, `src/core/pipeline-spec/scope.ts`, applied in `src/engine/orchestrator/task/implementation-failure.ts`). That retry runs with `undeclaredWrites: 'gate'`, so a second violation reaches the approval gate; a gate denial classed `write_out_of_scope` then raises the `scope-violation` recovery (`src/engine/orchestrator/escalation/step.ts`). One stray write costs a retry with an exact instruction, not the operator's attention.
 
-Every retry step (`src/engine/orchestrator/escalation/step.ts`) follows the same sequence: refresh the task's code from disk, run the retry in a staged project (a temporary copy), gate the changed files through tiered approval, promote the staged changes back, then validate and commit. If any approval gate denies the changes, the staged project is cleaned up and the retry counts as failed.
+Every retry step (`src/engine/orchestrator/escalation/step.ts`) follows the same sequence: refresh the task's code from disk, run the retry in a staged project (a temporary copy), gate the changed files through tiered approval, promote the staged changes back, then validate and record the outcome. If any approval gate denies the changes, the staged project is cleaned up and the retry counts as failed.
 
 ```mermaid
 flowchart TD
@@ -151,9 +153,7 @@ flowchart TD
     T0 -->|skipped or fail| T1[Tier 1: hint escalation<br/>planner writes hint, implementer retries]
     T0 -->|success| DONE0[task_completed<br/>method: escalated-intermediate]
     T1 -->|success| DONE1[task_completed<br/>method: escalated-hint]
-    T1 -->|fail| T2[Tier 2: full escalation<br/>planner writes code directly]
-    T2 -->|success| DONE2[task_completed<br/>method: escalated-full]
-    T2 -->|fail| REC{Recovery}
+    T1 -->|fail| REC{Recovery}
     REC --> PROMPT[pendingRecovery persisted<br/>recovery_prompted published]
     PROMPT --> USER{User picks action}
     USER -->|retry-same-worker| RESET[Reset task, retry from scratch]
@@ -167,6 +167,8 @@ flowchart TD
 ---
 
 ## Recovery
+
+Replacing a BUILD worker after a usage limit updates the failing named profile, including a non-default profile. Other profiles keep their configuration; the retry uses the chosen replacement.
 
 Recovery takes over when escalation is exhausted or when a workflow-level failure occurs that automation cannot resolve. The system lives in `src/engine/orchestrator/recovery/`.
 
@@ -254,7 +256,7 @@ The recovery state tracks the issue lifecycle:
 
 Before final review, `src/engine/orchestrator/final-review.ts` calls `analyzeBriefDrift()` from `src/engine/orchestrator/drift/analyze.ts` against the current diff, tasks, and evidence ledger.
 
-Drift analyzes the full untruncated diff; only the planner-facing review copy is bounded to 100,000 characters.
+Drift analyzes the full untruncated diff. The CLI review prompt limits its diff copy to 100,000 characters. An API reviewer receives the full required review packet, including the untruncated diff; if that packet does not fit the configured context window, review stops with an insufficient-context diagnostic before dispatch.
 
 Primary task files remain required outputs; `task.file`, `scope.inBounds`, and `scope.approvedOutOfBounds` are accepted change patterns.
 

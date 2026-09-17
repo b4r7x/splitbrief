@@ -84,7 +84,7 @@ const rememberedCliTool: CliToolDetection = {
 };
 
 function configuredOutcome(input: {
-  role: 'planner' | 'implementer';
+  role: 'planner' | 'implementer' | 'reviewer';
   contextKey: string;
   models?: readonly string[];
   failure?: 'privacy-filtered' | 'guardrail-filtered' | 'offline';
@@ -768,7 +768,7 @@ describe('modelCacheStore', () => {
     expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
   });
 
-  it('answers the reviewer seat from the planner-tier inventory it shares', () => {
+  it('answers the reviewer seat from its own published outcome, never from the planner row', () => {
     publishConfigured(
       [configuredOutcome({ role: 'planner', contextKey: 'planner-a', models: ['planner-model'] })],
       1,
@@ -776,7 +776,27 @@ describe('modelCacheStore', () => {
 
     expect(
       modelCacheStore.getScopedProviderRuntime({ role: 'reviewer', provider: 'ollama' }),
-    ).toMatchObject({ state: 'fresh', models: [{ id: 'planner-model' }] });
+    ).toBeNull();
+
+    publishConfigured(
+      [
+        configuredOutcome({ role: 'planner', contextKey: 'planner-a', models: ['planner-model'] }),
+        configuredOutcome({
+          role: 'reviewer',
+          contextKey: 'reviewer-a',
+          models: ['planner-model'],
+        }),
+      ],
+      2,
+    );
+
+    expect(
+      modelCacheStore.getScopedProviderRuntime({ role: 'reviewer', provider: 'ollama' }),
+    ).toMatchObject({
+      connection: { role: 'reviewer', contextKey: 'reviewer-a' },
+      state: 'fresh',
+      models: [{ id: 'planner-model' }],
+    });
   });
 
   it('keeps CLI catalog failures and authoritative empty results isolated by exact tool/context', () => {

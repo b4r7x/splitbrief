@@ -7,8 +7,18 @@ import type { Summary } from '../../../../core/schemas/summary.js';
 import { terminalTheme } from '../../../../components/theme.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import type { RunnerCallCounterCoverage } from '../../../../core/runner-call-contract.js';
+import { deriveUsageDetails, formatUsageMoney } from '../../usage-details-model.js';
 import { deriveSummaryView } from '../view-model.js';
 import { runSectionRows } from './run.js';
+
+const FULL_COVERAGE: RunnerCallCounterCoverage = {
+  input: 'reported',
+  output: 'reported',
+  cacheRead: 'reported',
+  cacheCreate: 'reported',
+  reasoning: 'reported',
+};
 
 function renderRun(input: { summary: Summary; width: number; crewNamed: boolean }) {
   const view = deriveSummaryView({
@@ -47,6 +57,9 @@ const priced = makeSummary({
     plannerInput: 31_200,
     implementerInput: 204_500,
     reviewerInput: 18_700,
+    plannerCoverage: FULL_COVERAGE,
+    implementerCoverage: FULL_COVERAGE,
+    reviewerCoverage: FULL_COVERAGE,
   }),
   costBreakdown: {
     actualPlannerCost: 0.2,
@@ -68,12 +81,35 @@ describe('runSectionRows', () => {
     const labelled = lines.filter((line) => /^[A-Z][a-z]+ {2,}/.test(line));
     expect(labelled.length).toBeGreaterThan(2);
     for (const line of labelled) expect(line.slice(8, 10)).toBe('  ');
-    expect(lines.some((line) => line.startsWith('Cost'))).toBe(true);
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('$0.42');
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('saved');
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('2026-09-14-add-email-validation');
 
     ui.unmount();
+  });
+
+  it('names neither the money nor the tokens the run recorded', () => {
+    const ui = renderRun({ summary: priced, width: 100, crewNamed: true });
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame.split('\n').some((line) => line.startsWith('Cost'))).toBe(false);
+    expect(frame.split('\n').some((line) => line.startsWith('Tokens'))).toBe(false);
+    expect(frame).not.toContain('$');
+    expect(frame).not.toContain('0.42');
+    expect(frame).not.toContain('31.2k');
+    expect(frame).not.toMatch(/token/i);
+
+    ui.unmount();
+  });
+
+  it('keeps both on the record, where /usage reads them', () => {
+    const usage = deriveUsageDetails({
+      tokenUsage: priced.tokenUsage,
+      costBreakdown: priced.costBreakdown ?? null,
+    });
+
+    expect(formatUsageMoney(usage.money)).toBe('$0.42');
+    const input = usage.counters.find((row) => row.counter === 'input');
+    expect(input?.amount).toEqual({ kind: 'reported', tokens: 254_400 });
   });
 
   it('states the crew only when the header could not', () => {
@@ -99,9 +135,9 @@ describe('runSectionRows', () => {
       renderRun({ summary: priced, width: 34, crewNamed: true }).lastFrame() ?? '',
     );
 
-    expect(wide).toContain('plan 31.2k · build 204.5k · review 18.7k');
-    expect(narrow).toContain('plan 31.2k');
-    expect(narrow).not.toContain('review 18.7k');
+    expect(wide).toContain('2026-09-14-add-email-validation · standard');
+    expect(narrow).not.toContain('standard');
+    expect(narrow).toContain('2026-09-14-…l-validation');
     for (const line of narrow.split('\n')) expect(line.length).toBeLessThanOrEqual(34);
   });
 });

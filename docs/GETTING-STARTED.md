@@ -103,7 +103,7 @@ Here is what happens, step by step:
 2. `splitbrief start` opens a fullscreen TUI. The planner thinks for a few seconds, looks at your repo, and writes a Task Brief to `.splitbrief/sessions/<date>-fix-the-typo/tasks.md`.
 3. The brief is **scored for quality** automatically. Weak briefs (missing scope, missing validation, vague tests) are blocked before any code is written.
 4. The implementer picks up the first task, generates code, and the orchestrator runs the resolved validation pipeline from config, planner discovery, or project heuristics. On failure, it retries twice by default, then escalates back to the planner.
-5. Each successful task records evidence and can create a checkpoint. Git commits are optional and only happen when `workflow.git.commitStrategy` is explicitly configured; the default leaves changes unstaged for manual review.
+5. Each successful task records evidence without changing Git staging or commits. Review the changes and commit them manually.
 6. After all tasks complete, the review seat does a final review — the planner unless you assigned a reviewer: it diffs the actual changes against the brief and writes `review.md`. A deterministic drift report flags anything the agent touched outside the planned scope.
 
 Use `/quit` or `Ctrl-Q` to exit. State is on disk. Resume later with `splitbrief resume`. Press `Ctrl+K` inside the TUI at any time to open the command palette — a searchable list of all slash commands.
@@ -219,8 +219,6 @@ validation:
 workflow:
   mode: standard
   maxRetries: 2
-  git:
-    commitStrategy: none
 ```
 
 After each implementer task, the orchestrator runs the resolved typecheck, lint, and test pipeline — this config first, then a `package.json` script or `Makefile`/`justfile` target of that name, then planner discovery, then the detected stack's own defaults. On failure it retries up to `maxRetries` (default 2), then escalates to the planner.
@@ -237,29 +235,17 @@ For every other planner/implementer combination, swap tools and models via the c
 
 ---
 
-## 8. Spend
+## 8. Usage details
 
-Spend is not painted across the top of the screen. There is no persistent cost header; these are the two places a number actually appears, and Settings ▸ Workflow ▸ **Show spend** (`workflow.showSpend`, on by default) turns both off.
-
-**Sidebar footer** — the workflow sidebar is on by default above 120 columns and paints nothing at or below 120 columns; `/sidebar` toggles it and `/tasks` brings it back. Its last line reads `Local NN%`, the share of tasks the implementer finished without escalating, followed by the run's spend when there is something priced to report:
-
-```
-Local 80% · $0.42
-```
-
-The spend token is omitted entirely when nothing in the run is priced, rather than showing `$0.00`. A mixed run reads `$0.42 + unpriced`; a run whose priced total is incomplete reads `$0.42 + unknown`; a subscription runner shows its billing label instead of a dollar figure. `/copy cost` puts the same string on your clipboard, and answers `spend display is off` while the toggle is off.
-
-**Closed run** — one `Cost` row in the `Run` block at the tail of a finished run’s transcript: `$0.42` when every seat is priced, `$0.42 + unknown` when the priced total is incomplete. A run with nothing metered shows the offering label instead of a figure (`subscription-included`, `local`, or both joined), and a run with no figure at all reads `not estimated`. Never `$0.00`. With **Show spend** off the row is not rendered at all.
-
-Local and subscription runners that expose no pricing are reported as unpriced, never as `$0.00`.
+Open `/usage` from the workflow to inspect reported token counters and monetary estimates. These details are available for live and saved runs. Unknown usage stays unknown; an unpriced run is not a zero-cost run. Main workflow screens and the closed-run ledger do not show these counters. There is no Show spend control.
 
 ---
 
 ## 9. Safety
 
-**Checkpoints protect your work; commits are optional.**
+**Filesystem snapshots preserve records; you own commits.**
 
-The orchestrator records evidence, and `/run accept` records the tree you accepted. Git commits are available only when `workflow.git.commitStrategy` is explicitly configured; they are not required for safety, and the default leaves changes unstaged for you to review and commit manually. There is no `auto-push`, no `auto-merge`, no surprise branches.
+The orchestrator records evidence, and `/run accept` records the tree you accepted. Review the changes and commit them manually. SPLITBRIEF preserves the Git index, including partial staging.
 
 Three additional safety nets:
 

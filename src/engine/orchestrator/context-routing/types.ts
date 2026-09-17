@@ -1,3 +1,4 @@
+import type { BuildOutputContract } from '../../implementers/file-bundle.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
@@ -13,6 +14,7 @@ export interface TaskPromptEstimateOptions {
   languageContext?: LanguageContext | undefined;
   /** Write mode of the implementer the estimate is for; picks the prompt and preamble it will actually send. */
   writesFiles?: ImplementerWriteMode | undefined;
+  outputContract?: BuildOutputContract | undefined;
 }
 
 export interface ContextFitOptions {

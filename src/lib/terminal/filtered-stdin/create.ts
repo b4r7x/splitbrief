@@ -46,6 +46,9 @@ export function createFilteredStdin(
     activate?: boolean | undefined;
     mouse?: boolean | undefined;
     hover?: boolean | undefined;
+    handleMouse?: ((event: MouseEvent, dispatch: MouseListener) => void) | undefined;
+    filterInput?: ((text: string) => string) | undefined;
+    onPaste?: (() => void) | undefined;
   },
 ): FilteredStdin {
   const filtered = bridgeTty(new PassThrough(), stdin);
@@ -55,6 +58,8 @@ export function createFilteredStdin(
   let mouseListeners: MouseListener[] = [];
   let heldPrefix = EMPTY_BUFFER;
   let pasteActive = false;
+  let pasteChunks: Buffer[] = [];
+  let pastePendingCr = false;
   let active = false;
   let disabled = false;
   let heldPrefixTimer: ReturnType<typeof setTimeout> | null = null;
@@ -65,20 +70,63 @@ export function createFilteredStdin(
     heldPrefixTimer = null;
   };
 
-  const writeText = (text: string, paste: boolean) => {
-    const output = paste ? sanitizePasteBody(text) : text;
-    if (output.length > 0) filtered.write(output, 'utf8');
+  const emitText = (text: string) => {
+    if (text.length === 0) return;
+    filtered.write(text, 'utf8');
+    // Ink consumes stdin through its `readable` listener. Flush each wire
+    // segment before a following paste event can be emitted; otherwise Node's
+    // readable buffer joins bytes on both sides of a paste and loses their
+    // insertion order at the editor boundary.
+    filtered.emit('readable');
   };
 
-  const writeBytes = (bytes: Buffer, paste: boolean) => {
-    const clean = paste ? sanitizePasteBytes(bytes) : bytes;
-    if (clean.length === 0) return;
-    writeText(decoder.write(clean), paste);
+  const writeKeyBytes = (bytes: Buffer) => {
+    if (bytes.length === 0) return;
+    const text = decoder.write(bytes);
+    emitText(opts?.filterInput ? opts.filterInput(text) : text);
+  };
+
+  const resetPaste = () => {
+    pasteChunks = [];
+    pastePendingCr = false;
+  };
+
+  const appendPaste = (bytes: Buffer) => {
+    const scan = sanitizePasteBytes(bytes, pastePendingCr);
+    pastePendingCr = scan.pendingCr;
+    if (scan.bytes.length > 0) pasteChunks.push(scan.bytes);
+  };
+
+  const appendPasteNewline = () => {
+    pastePendingCr = false;
+    pasteChunks.push(NEWLINE_BYTES);
+  };
+
+  const flushPaste = () => {
+    const body = Buffer.concat(pasteChunks);
+    resetPaste();
+    const text = sanitizePasteBody(body.toString('utf8'));
+    opts?.onPaste?.();
+    // A focused text field consumes the paste before Ink can interpret a lone
+    // newline or tab as a key. Other views retain their plain-text fallback.
+    if (!filtered.emit('paste', text)) emitText(text);
+  };
+
+  const writeSegment = (bytes: Buffer) => {
+    if (pasteActive) {
+      appendPaste(bytes);
+      return;
+    }
+    writeKeyBytes(bytes);
   };
 
   const dispatchMouse = (event: MouseEvent | undefined) => {
     if (!event) return;
-    for (const listener of mouseListeners) listener(event);
+    const dispatch: MouseListener = (next) => {
+      for (const listener of mouseListeners) listener(next);
+    };
+    if (opts?.handleMouse) opts.handleMouse(event, dispatch);
+    else dispatch(event);
   };
 
   const processBytes = (source: Buffer) => {
@@ -91,7 +139,7 @@ export function createFilteredStdin(
         continue;
       }
 
-      if (cursor > textStart) writeBytes(source.subarray(textStart, cursor), pasteActive);
+      if (cursor > textStart) writeSegment(source.subarray(textStart, cursor));
 
       const tail = source.subarray(cursor);
       const decision = readEscape(tail, pasteActive, mouseEnabled);
@@ -101,10 +149,12 @@ export function createFilteredStdin(
           return;
         case 'paste-start':
           pasteActive = true;
+          resetPaste();
           cursor += decision.length;
           break;
         case 'paste-end':
           pasteActive = false;
+          flushPaste();
           cursor += decision.length;
           break;
         case 'mouse':
@@ -115,18 +165,18 @@ export function createFilteredStdin(
           cursor += decision.length;
           break;
         case 'paste-newline':
-          writeBytes(NEWLINE_BYTES, true);
+          appendPasteNewline();
           cursor += decision.length;
           break;
         case 'text':
-          writeBytes(source.subarray(cursor, cursor + decision.length), false);
+          writeKeyBytes(source.subarray(cursor, cursor + decision.length));
           cursor += decision.length;
           break;
       }
       textStart = cursor;
     }
 
-    if (textStart < source.length) writeBytes(source.subarray(textStart), pasteActive);
+    if (textStart < source.length) writeSegment(source.subarray(textStart));
   };
 
   const flushHeldPrefix = () => {
@@ -134,7 +184,7 @@ export function createFilteredStdin(
     const held = heldPrefix;
     heldPrefix = EMPTY_BUFFER;
     if (pasteActive) return;
-    writeBytes(held, false);
+    writeKeyBytes(held);
   };
 
   const scheduleHeldPrefixFlush = () => {
@@ -189,9 +239,10 @@ export function createFilteredStdin(
         setTerminalInputModes('disable', { mouse: mouseEnabled, paste: true });
       }
       flushHeldPrefix();
-      writeText(decoder.end(), pasteActive);
+      emitText(decoder.end());
       heldPrefix = EMPTY_BUFFER;
       pasteActive = false;
+      resetPaste();
       filtered.end();
     },
   };

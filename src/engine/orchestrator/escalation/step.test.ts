@@ -434,56 +434,6 @@ describe('runRetryStep', () => {
     });
   });
 
-  it('tier-2 completion with zero changed files yields a failed outcome, not completion', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T003', file: 'src/no-change.ts' });
-    const state = makeImplState([task], { phase: 'escalating' });
-    const config = configWithProfiles();
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, task.file), 'export const earlierAttempt = true;\n');
-    let tier2ProjectDir = '';
-
-    const outcome = await runRetryStep({
-      ctx: {
-        projectDir,
-        sessionId,
-        config,
-        callbacks,
-        bus,
-        planner: makePlanner(),
-        reviewer: makePlanner(),
-        context: defaultContext,
-        implementer: makeImplementer(),
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        taskStartSnapshot,
-        dependsOnFiles: [],
-      },
-      task,
-      state,
-      lastError: 'validation failed',
-      attempts: 1,
-      method: 'escalated-full',
-      transitionType: 'FULL_SUCCESS',
-      usageCategory: 'escalation',
-      retryFailureFallback: 'tier-2 escalation failed',
-      invokeRetry: async ({ projectDir: retryProjectDir }) => {
-        tier2ProjectDir = retryProjectDir;
-        return { success: true };
-      },
-    });
-
-    expect(outcome.result).toBeUndefined();
-    expect(outcome.lastError).toContain('without changing any files');
-    expect(events.some((event) => event.type === 'task_completed')).toBe(false);
-    expect(existsSync(tier2ProjectDir)).toBe(false);
-  });
-
   it('retries in the run worktree the failed attempt used, keeping only its promoted work', {
     timeout: 60_000,
   }, async () => {

@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { renderFeature, type RenderFeatureResult, tick } from '#testing/helpers/ink.js';
-import { App } from '../../src/app/root.js';
 import { getWorkflowPromptRows } from '../../src/features/workflow/prompt-rows/workflow.js';
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
 import { configStore } from '../../src/stores/project/config.js';
@@ -21,11 +19,8 @@ import {
   workflowFixtureProjections,
   type WorkflowFixtureProjection,
 } from './fixtures/workflow/projections.js';
-import { createWorkflowFixtureAppDeps } from './fixtures/workflow/setup.js';
-import {
-  workflowCheckpointPredicates,
-  workflowFixtureRegistry,
-} from './fixtures/workflow/registry.js';
+import { workflowFixtureRegistry } from './fixtures/workflow/registry.js';
+import { mountGalleryScenario, type GalleryCaptureHandle } from './gallery/mount.js';
 
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
 
@@ -50,21 +45,10 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
   if (!scenario) throw new Error(`Missing workflow scenario ${projection.scenarioId}`);
   const checkpoint = scenario.checkpoints[0];
   if (!checkpoint) throw new Error(`Missing workflow checkpoint ${projection.scenarioId}`);
-  const lifecycle = lifecycleFor(projection.scenarioId);
-  let ui: RenderFeatureResult | null = null;
+  let ui: GalleryCaptureHandle | null = null;
   try {
-    await lifecycle.setup({ scenario, checkpoint, viewport: VIEWPORT });
-    ui = renderFeature(<App workflowDeps={createWorkflowFixtureAppDeps(projection)} />);
-    await tick(20);
-    const frame = ui.lastFrame() ?? '';
-    const predicate = workflowCheckpointPredicates.get(checkpoint.id);
-    if (predicate === undefined) {
-      throw new Error(`Missing workflow checkpoint predicate ${checkpoint.id}`);
-    }
-    expect(
-      predicate({ output: frame, scenario, checkpoint }),
-      `${projection.scenarioId}: ${checkpoint.marker}`,
-    ).toBe(true);
+    ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
+    const frame = await ui.waitForCheckpoint();
     expect(controlsStore.get().inputMode).toBe(projection.inputMode);
     expect(controlsStore.get().sidebarVisible).toBe(projection.sidebarVisible);
     if (projection.atRest === undefined) {
@@ -92,8 +76,7 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
     }
     return frame;
   } finally {
-    ui?.unmount();
-    await lifecycle.teardown();
+    await ui?.unmount();
   }
 }
 

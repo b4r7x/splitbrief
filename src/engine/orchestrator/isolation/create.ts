@@ -22,6 +22,11 @@ import {
   getChangedFilesSnapshot,
 } from '../approval/file-snapshots/capture.js';
 import { readCurrentFileContent } from '../approval/file-snapshots/contents.js';
+import {
+  captureAcquisitionBaseline,
+  readConfinedEntry,
+  sameFileEntry,
+} from '../approval/file-snapshots/entry.js';
 import { restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots/restore.js';
 import { createStagedProject, stripGitignoreBookkeeping } from '../approval/staged-project.js';
 import type { IsolationRole, IsolatedWorkspace, RunIsolation } from './types.js';
@@ -172,10 +177,15 @@ export function createRunIsolation(opts: {
   async function isUnpromoted(worktreePath: string, file: string): Promise<boolean> {
     if (file.endsWith('/')) return false;
     if (isInternalGitStatusPath(file)) return false;
-    const worktreeContent = await readCurrentFileContent(worktreePath, file);
-    const projectContent = await readCurrentFileContent(projectDir, file);
-    if (file === '.gitignore') return !gitignoresMatch(worktreeContent, projectContent);
-    return worktreeContent !== projectContent;
+    if (file === '.gitignore')
+      return !gitignoresMatch(
+        await readCurrentFileContent(worktreePath, file),
+        await readCurrentFileContent(projectDir, file),
+      );
+    return !sameFileEntry(
+      await readConfinedEntry(worktreePath, file),
+      await readConfinedEntry(projectDir, file),
+    );
   }
 
   // Every task in the run shares one worktree, so a cleanup reverts only what
@@ -214,11 +224,15 @@ export function createRunIsolation(opts: {
       };
     }
     await pendingCleanup;
+    // Captured per acquisition, so a worktree reused by the next task is handed
+    // out against the target as it stands now, never against a stale baseline.
+    const targetBaseline = await captureAcquisitionBaseline(projectDir);
     const snapshot = await getChangedFilesSnapshot(dir);
     return {
       projectDir: dir,
       sandboxEnv: await workspaceSandboxEnv(dir, role, config),
       snapshot,
+      targetBaseline,
       changeDetection: 'file-hashes',
       cleanup: () => queueWorktreeCleanup(dir, snapshot),
     };

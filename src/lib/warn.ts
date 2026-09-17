@@ -1,8 +1,32 @@
 import { toErrorMessage } from '../utils/format-errors.js';
 import { sanitizeTerminalDiagnosticText } from '../utils/display-text.js';
 
-export function warnStderr(message: string): void {
-  process.stderr.write(`\x1b[2m${sanitizeTerminalDiagnosticText(message)}\x1b[0m\n`);
+type DiagnosticPresentation = 'feedback' | 'log-only';
+type DiagnosticSink = (message: string, presentation: DiagnosticPresentation) => void;
+
+// The last installed sink owns recoverable diagnostics; stderr owns them when none is installed.
+const diagnosticOwners: { sink: DiagnosticSink }[] = [];
+
+export function installDiagnosticSink(sink: DiagnosticSink): () => void {
+  const owner = { sink };
+  diagnosticOwners.push(owner);
+  return () => {
+    const index = diagnosticOwners.lastIndexOf(owner);
+    if (index !== -1) diagnosticOwners.splice(index, 1);
+  };
+}
+
+export function warnStderr(
+  message: string,
+  presentation: DiagnosticPresentation = 'feedback',
+): void {
+  const text = sanitizeTerminalDiagnosticText(message);
+  const owner = diagnosticOwners.at(-1);
+  if (owner) {
+    owner.sink(text, presentation);
+    return;
+  }
+  process.stderr.write(`\x1b[2m${text}\x1b[0m\n`);
 }
 
 export function warnError(context: string, err?: unknown): void {

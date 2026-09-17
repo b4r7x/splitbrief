@@ -116,6 +116,11 @@ export type PlannerUserTurnOptions = {
   callContext?: RunnerCallContext | undefined;
 };
 
+/** Delivery is decided by the seat's session, never by whether the turn reported usage. */
+export type PlannerUserTurnResult =
+  | { status: 'delivered'; usage: TokenDelta | null }
+  | { status: 'not-delivered'; reason: 'not-ready' };
+
 export interface PlannerCallbacks {
   onOutput: (text: string) => void;
   onPhase?: ((phase: Phase) => void) | undefined;
@@ -323,7 +328,7 @@ export interface Planner extends RunnerRuntime {
     opts?: PlannerStructuredSummaryOptions | undefined,
   ): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }>;
 
-  injectUserTurn?: (opts: PlannerUserTurnOptions) => Promise<TokenDelta | null>;
+  injectUserTurn?: (opts: PlannerUserTurnOptions) => Promise<PlannerUserTurnResult>;
 
   /**
    * Human-readable cause for the most recent `isAvailable()` returning false

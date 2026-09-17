@@ -3,13 +3,14 @@ import { Box, Text } from 'ink';
 import type { Key } from 'ink';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
-import { MultilineInput } from './multiline-input.js';
+import { MultilineInput, type InputAtom, type InputEdit } from './multiline-input.js';
 
 const CTRL_R = '\x12';
 const CTRL_U = '\x15';
 const CTRL_B = '\x02';
 const CTRL_E = '\x05';
 const CTRL_F = '\x06';
+const CTRL_W = '\x17';
 const ALT_A = '\x1ba';
 // Ctrl+/ as the legacy control byte on terminals without the kitty protocol.
 const CTRL_SLASH_LEGACY = '\x1f';
@@ -429,6 +430,194 @@ describe('MultilineInput astral-plane editing', () => {
       () => {
         expect(shortcut).toHaveBeenCalledTimes(1);
         expect(ui.lastFrame() ?? '').toContain('value:ab!');
+      },
+      { timeout: 5000 },
+    );
+  });
+});
+
+// The atom is the input's half of the draft contract: the parent says where the indivisible spans
+// are, the input never reads their text. This harness is the parent in miniature — one atom that is
+// either whole or gone, never partly edited.
+interface AtomModel {
+  before: string;
+  label: string;
+  after: string;
+}
+
+const ATOM_LABEL = '[image #1]';
+const PASTE_LABEL = '[paste #1 +5 lines]';
+
+function atomValue(model: AtomModel): string {
+  return model.before + model.label + model.after;
+}
+
+function atomSpans(model: AtomModel): InputAtom[] {
+  if (model.label === '') return [];
+  return [{ start: model.before.length, end: model.before.length + model.label.length }];
+}
+
+function applyAtomEdit(model: AtomModel, edit: InputEdit): AtomModel {
+  const value = atomValue(model);
+  const start = model.before.length;
+  const end = start + model.label.length;
+  if (model.label !== '' && edit.start <= start && edit.end >= end) {
+    return {
+      before: value.slice(0, edit.start) + edit.text + value.slice(edit.end),
+      label: '',
+      after: '',
+    };
+  }
+  if (edit.end <= start) {
+    return {
+      ...model,
+      before: model.before.slice(0, edit.start) + edit.text + model.before.slice(edit.end),
+    };
+  }
+  return {
+    ...model,
+    after: model.after.slice(0, edit.start - end) + edit.text + model.after.slice(edit.end - end),
+  };
+}
+
+function AtomHarness({ initial, columns }: { initial: AtomModel; columns?: number }) {
+  const [model, setModel] = useState(initial);
+  return (
+    <Box flexDirection="column">
+      <Text>
+        parts:[{model.before}|{model.label}|{model.after}]
+      </Text>
+      <MultilineInput
+        value={atomValue(model)}
+        atoms={atomSpans(model)}
+        onChange={(_value, edit) => setModel(applyAtomEdit(model, edit))}
+        {...(columns === undefined ? {} : { columns })}
+        showCursor={true}
+        rows={1}
+        maxRows={6}
+      />
+    </Box>
+  );
+}
+
+describe('MultilineInput image atoms', () => {
+  let unmount: (() => void) | undefined;
+
+  afterEach(() => {
+    unmount?.();
+    unmount = undefined;
+  });
+
+  it('steps the caret over the whole label in one press, around emoji and combining marks', async () => {
+    const ui = renderFeature(
+      <AtomHarness initial={{ before: `e\u0301${EMOJI}`, label: ATOM_LABEL, after: 'x' }} />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+
+    // end → before `x` → before the atom → before the emoji → before the combining pair.
+    for (let press = 0; press < 4; press += 1) {
+      ui.stdin.write(LEFT);
+      await flushEffects();
+    }
+    ui.stdin.write('Z');
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain(`parts:[Ze\u0301${EMOJI}|${ATOM_LABEL}|x]`);
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  it('takes the whole atom on backspace instead of leaving a shortened label', async () => {
+    const ui = renderFeature(
+      <AtomHarness initial={{ before: 'a', label: ATOM_LABEL, after: 'b' }} />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+
+    ui.stdin.write(LEFT);
+    await flushEffects();
+    ui.stdin.write(BACKSPACE);
+    await vi.waitFor(
+      () => {
+        // Not `Image`, not `Image1` minus a digit: the span went whole and the text closed over it.
+        expect(ui.lastFrame() ?? '').toContain('parts:[ab||]');
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  it('takes the whole atom on a forward delete from the text before it', async () => {
+    const ui = renderFeature(
+      <AtomHarness initial={{ before: 'a', label: ATOM_LABEL, after: 'b' }} />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+
+    for (let press = 0; press < 2; press += 1) {
+      ui.stdin.write(LEFT);
+      await flushEffects();
+    }
+    ui.stdin.write(DELETE);
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain('parts:[ab||]');
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  // A word delete stops at a space, and the collapsed-paste label has spaces in it — so without the
+  // atom this key would cut the marker in half and leave `[paste #1 +5` standing as a label.
+  it('takes the whole atom when a word delete stops inside its label', async () => {
+    const ui = renderFeature(
+      <AtomHarness initial={{ before: 'see ', label: PASTE_LABEL, after: '' }} />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+
+    ui.stdin.write(CTRL_W);
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain('parts:[see ||]');
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  it('keeps the label whole when the line wraps around it', async () => {
+    const ui = renderFeature(
+      <AtomHarness
+        initial={{ before: 'hello there ', label: ATOM_LABEL, after: ' and more' }}
+        columns={14}
+      />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+
+    const rows = (ui.lastFrame() ?? '').split('\n');
+    expect(rows.some((row) => row.includes(ATOM_LABEL))).toBe(true);
+    // No row carries a fragment of the label without carrying all of it.
+    for (const row of rows) {
+      if (row.includes('parts:')) continue;
+      if (!row.includes(ATOM_LABEL)) expect(row).not.toContain('image #');
+    }
+  });
+
+  // Ctrl+U works on the row the terminal paints, and a hard wrap can fall in the middle of a label.
+  // The row start is inside the atom here, so the delete has to grow out to the atom's own edge.
+  it('takes the whole atom when a wrap puts the row start inside its label', async () => {
+    const ui = renderFeature(
+      <AtomHarness initial={{ before: 'helloworld', label: ATOM_LABEL, after: '' }} columns={12} />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+
+    ui.stdin.write(CTRL_U);
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain('parts:[helloworld||]');
       },
       { timeout: 5000 },
     );

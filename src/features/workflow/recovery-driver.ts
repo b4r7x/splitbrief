@@ -64,16 +64,18 @@ function seatSwapPolicy(prepared: PreparedExecution): SeatSwapChoice['policy'] {
 }
 
 /**
- * What the chrome keeps saying while the operator reads the panel: the halted
- * seat and, when the runner named one, the clock its quota comes back on. Only
- * a halt that names its seat can annotate one — the swap offer is what names
- * it — so a halt without an offer leaves the header alone.
+ * The open halt, published for the rest of the screen while the operator reads the panel: the
+ * issue itself, plus the two things the header annotates the bar with — the halted seat and, when
+ * the runner named one, the clock its quota comes back on. Only the swap offer names a seat the
+ * header can mark, so a halt without an offer still publishes itself and leaves the bar alone.
  */
 function openRecoveryNotice(issue: RecoveryIssue): void {
-  const seat = issue.switchSeat?.seat;
-  if (seat === undefined) return;
   const resetAt = issue.resetAt === undefined ? Number.NaN : Date.parse(issue.resetAt);
-  recoveryNoticeStore.open({ seat, resetAt: Number.isFinite(resetAt) ? resetAt : null });
+  recoveryNoticeStore.open({
+    seat: issue.switchSeat?.seat ?? null,
+    resetAt: Number.isFinite(resetAt) ? resetAt : null,
+    issue,
+  });
 }
 
 /**

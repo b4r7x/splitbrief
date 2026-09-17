@@ -11,6 +11,7 @@ import {
 import { DriftSeveritySchema, DriftCodeSchema } from './drift.js';
 import { EvidenceValidationStageSchema, EvidenceFinalReviewStatusSchema } from './evidence.js';
 import {
+  CostAmountBasisSchema,
   CostBreakdownSchema,
   ReviewFinalReviewStatusSchema,
   ReviewFindingCountsSchema,
@@ -331,7 +332,15 @@ const ReviewPacketCostSchema = z.object({
     hasUnpricedUsage: true,
     isActualReviewerCostKnown: true,
     isTotalActualCostKnown: true,
+    // The rates and identities the run was priced against travel with the
+    // export, so a reader of the packet reads what it was priced at instead of
+    // recosting it against whatever the catalog says by then.
+    requestEstimate: true,
+    providerRunMetadata: true,
   }).nullable(),
+  /** What the amounts above are: a catalog estimate, unavailable, or a sum from
+   * a run that recorded no provenance. Never an invoice. */
+  amountBasis: CostAmountBasisSchema.default('legacy-unattributed'),
   taskRouting: z.array(TaskTokenUsageSchema),
   routingWarnings: z.array(ReviewPacketEventSchema),
 });

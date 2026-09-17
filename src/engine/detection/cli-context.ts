@@ -36,11 +36,15 @@ export function snapshotCliContext(context: CliRunnerDiscoveryContext): CliRunne
   const credentialDomain = snapshotCredentialDomain(context.credentialDomain);
   return Object.freeze({
     role: context.role,
+    ...(context.seatRole === undefined ? {} : { seatRole: context.seatRole }),
     kind: 'cli' as const,
     id: context.id,
     ...(context.model === undefined ? {} : { model: context.model }),
     ...(context.authChannel === undefined ? {} : { authChannel: context.authChannel }),
     ...(context.endpointOrigin === undefined ? {} : { endpointOrigin: context.endpointOrigin }),
+    ...(context.endpointIdentity === undefined
+      ? {}
+      : { endpointIdentity: context.endpointIdentity }),
     credentialPresent: context.credentialPresent,
     ...(credentialDomain === undefined ? {} : { credentialDomain }),
     configGeneration: context.configGeneration,

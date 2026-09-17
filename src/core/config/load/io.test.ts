@@ -136,14 +136,15 @@ describe('config loading', () => {
       });
     });
 
-    it('reads git.commitStrategy from YAML', () => {
+    it('rejects a retired git.commitStrategy from YAML at its nested path', () => {
       const dir = join(TMP, 'git-commit-strategy');
       writeConfigYaml(dir, {
         workflow: { max_retries: 3, git: { commit_strategy: 'per-task' } },
       });
 
-      const { config } = loadConfig(dir);
-      expect(config.workflow.git?.commitStrategy).toBe('per-task');
+      expect(() => loadConfig(dir)).toThrow(
+        'workflow.git.commitStrategy: commitStrategy "per-task" was removed',
+      );
     });
 
     it.each([
@@ -269,7 +270,7 @@ describe('config loading', () => {
     it('names the nested path when workflow.git carries an unknown key', () => {
       const dir = join(TMP, 'unknown-workflow-git-key');
       writeConfigYaml(dir, {
-        workflow: { git: { commit_strategy: 'per-task', auto_push: true } },
+        workflow: { git: { commit_strategy: 'none', auto_push: true } },
       });
 
       expect(() => loadConfig(dir)).toThrow('workflow.git.autoPush: Unknown config key');
@@ -281,7 +282,7 @@ describe('config loading', () => {
         workflow: {
           approve: 'all',
           max_retries: 2,
-          git: { commit_strategy: 'per-task', create_branch: true },
+          git: { create_branch: true },
           speckit: { min_coverage: 0.8 },
           mode: 'speckit',
           brief_review: 'simple',
@@ -295,7 +296,7 @@ describe('config loading', () => {
       expect(loadConfig(dir).config.workflow).toEqual({
         approve: 'all',
         maxRetries: 2,
-        git: { commitStrategy: 'per-task', createBranch: true },
+        git: { createBranch: true },
         isolation: 'worktree',
         speckit: { minCoverage: 0.8 },
         mode: 'speckit',

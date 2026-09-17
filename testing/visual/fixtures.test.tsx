@@ -78,7 +78,7 @@ async function renderFixture(fixtureCase: FixtureCase): Promise<string> {
   let ui: RenderFeatureResult | null = null;
   try {
     await lifecycle.setup(context);
-    ui = renderFeature(<App workflowDeps={WORKFLOW_DEPS} />);
+    ui = renderFeature(<App workflowDeps={WORKFLOW_DEPS} />, context.viewport);
     await tick(20);
     const frame = ui.lastFrame() ?? '';
     expect(frame, fixtureCase.scenarioId).toContain(context.checkpoint.marker);

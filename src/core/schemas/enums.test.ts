@@ -70,12 +70,18 @@ describe('runner role enums', () => {
   });
 
   it('builds API schemas from catalog-owned identities and roles', () => {
-    const descriptor = { id: 'ollama', roles: ['implementer'] } as const;
-
     expect(PlannerApiProviderIdSchema.options).toEqual(PLANNER_API_PROVIDER_IDS);
     expect(ImplementerApiProviderIdSchema.options).toEqual(IMPLEMENTER_API_PROVIDER_IDS);
-    expect(PlannerApiProviderIdSchema.safeParse(descriptor.id).success).toBe(false);
-    expect(ImplementerApiProviderIdSchema.safeParse(descriptor.id).success).toBe(true);
+
+    for (const id of KNOWN_API_PROVIDER_IDS) {
+      const roles: readonly string[] = API_PROVIDER_CATALOG[id].roles;
+      expect(PlannerApiProviderIdSchema.safeParse(id).success).toBe(roles.includes('planner'));
+      expect(ImplementerApiProviderIdSchema.safeParse(id).success).toBe(
+        roles.includes('implementer'),
+      );
+    }
+    expect(PlannerApiProviderIdSchema.safeParse('unknown-provider').success).toBe(false);
+    expect(ImplementerApiProviderIdSchema.safeParse('unknown-provider').success).toBe(false);
   });
 
   it('derives planner and provider tuples from catalog role admission', () => {

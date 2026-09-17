@@ -43,9 +43,9 @@ describe('getIsolationStrategy', () => {
 
 describe('applyEdits', () => {
   it('sets nested values immutably', () => {
-    const updated = applyEdits(mockConfig, { 'workflow.git.commitStrategy': 'per-task' });
-    expect(updated.workflow.git?.commitStrategy).toBe('per-task');
-    expect(mockConfig.workflow.git?.commitStrategy).toBeUndefined();
+    const updated = applyEdits(mockConfig, { 'workflow.git.createBranch': true });
+    expect(updated.workflow.git?.createBranch).toBe(true);
+    expect(mockConfig.workflow.git?.createBranch).toBeUndefined();
   });
 
   it('applies multiple edits at once', () => {

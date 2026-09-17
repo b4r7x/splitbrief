@@ -1,6 +1,5 @@
 import { pluralize } from '../../../utils/pluralize.js';
 import type { InProgressGitOp } from '../../../lib/git/repository.js';
-import type { CommitStrategy } from '../../schemas/enums.js';
 import type { ReadinessCheck } from '../types.js';
 
 export interface RepoReadinessInput {
@@ -12,8 +11,6 @@ export interface RepoReadinessInput {
   inProgressGitOp?: InProgressGitOp | null | undefined;
   activeSession?: string | undefined;
   activeSessionLive?: boolean | undefined;
-  committerIdentityConfigured?: boolean | undefined;
-  commitStrategy?: CommitStrategy | undefined;
 }
 
 export const ACTIVE_SESSION_LIVE_CHECK = 'repo.active-session-live';
@@ -71,22 +68,10 @@ export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
       id: 'repo.detached-head',
       severity: 'warning',
       summary: 'Repository is in a detached HEAD state.',
-      details: ['Per-task commits will not be on any branch and can be lost.'],
-      fix: 'Check out a branch (e.g. `git switch -c splitbrief/work`) before starting a workflow.',
-    });
-  }
-
-  if (
-    repo.committerIdentityConfigured === false &&
-    repo.commitStrategy !== undefined &&
-    repo.commitStrategy !== 'none'
-  ) {
-    checks.push({
-      id: 'repo.git-identity-missing',
-      severity: 'warning',
-      summary: 'Git identity not configured — per-task commits/checkpoints will fail.',
-      fix: 'Set a git identity (e.g. `git config user.name "you"` and `git config user.email "you@example.com"`) before starting a workflow.',
-      metadata: { commitStrategy: repo.commitStrategy },
+      details: [
+        'The run leaves its changes uncommitted in your working tree; a commit you make on a detached HEAD belongs to no branch and is easy to lose.',
+      ],
+      fix: 'Check out a branch (e.g. `git switch -c splitbrief/work`) before you commit the changes.',
     });
   }
 

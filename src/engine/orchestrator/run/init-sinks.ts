@@ -4,6 +4,7 @@ import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
 import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
 import { createLoggerSink } from '../../events/sinks/logger.js';
+import { createCallEvidenceSink } from '../summary/call-evidence.js';
 import type { EventBus } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
 import type { RunWorkflowOptions } from './init.js';
@@ -37,6 +38,9 @@ export function attachRunSinks(input: AttachRunSinksInput): EventBus {
     ),
   );
   unsubs.push(bus.subscribe(createLoggerSink()));
+  // The run's own per-call usage record, kept in memory so the summary reads what
+  // the run observed rather than what reached the log in time.
+  unsubs.push(bus.subscribe(createCallEvidenceSink({ projectDir, sessionId })));
   // `--plain` renders the same stream as text on the same stdout, so exactly one
   // of the two stdout sinks is ever installed.
   if (opts.headless) {

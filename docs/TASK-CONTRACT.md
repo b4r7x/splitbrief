@@ -3,6 +3,8 @@
 > **Status:** stable (state/config v4).
 > **Audience:** implementer runners, reviewers, and advanced read-only integrations inspecting Task Brief state.
 
+Historical full-planner escalation values remain readable; new execution does not dispatch that rung.
+
 ## v4 contract boundary
 
 `state.json` is a versioned contract. The current persisted `stateVersion` is
@@ -95,7 +97,7 @@ type TaskStatus =
   | 'pending'        // not yet attempted
   | 'in_progress'    // implementer is generating code
   | 'done'           // validation passed
-  | 'escalated'      // full escalation path succeeded
+  | 'escalated'      // supported worker/help path succeeded
   | 'failed'         // all retry / escalation tiers exhausted
   | 'skipped';       // task denied by a pre_task hook or programmatic skip
 ```
@@ -295,6 +297,27 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 ```
 
 `score` ranges from 0–1: `1 - (errorCount × 0.2) - (warningCount × 0.05)`, clamped to `[0, 1]`. A score never authorizes a quality override: any error keeps the brief out of implementation.
+
+## API BUILD file bundles
+
+API file bundles support at most 32 declared text targets, 1 MiB UTF-8 per file, and 4 MiB of raw response.
+
+The backend selects `file-bundle-v1` before every API BUILD call, including one-file tasks, retries and continuation. The entire completed response must parse as strict JSON with `version: 1` and a nonempty `files` array. Each entry has exactly `path`, `action` (`create` or `modify`) and complete `content`. A single enclosing JSON code fence is accepted by the parser; surrounding prose, mixed fragments, duplicate paths and unknown fields are refused. Other extracted-output backends keep their legacy grammar.
+
+```json
+{
+  "version": 1,
+  "files": [
+    {"path": "src/example.ts", "action": "modify", "content": "export const answer = 42;\n"}
+  ]
+}
+```
+
+Targets must be declared, confined relative paths and regular UTF-8 text files or explicitly new files. API bundles do not support delete, rename, chmod or binary operations. Omitted declared targets stay untouched; unchanged entries are no-ops. An empty effective change is not successful implementation.
+
+The application captures target baselines before dispatch, parses and preflights the full response and approval set before mutation, then rechecks each baseline before writing. It preserves concurrent user edits by refusing conflicts. If a later write fails or cancellation interrupts application, earlier writes remain; there is no rollback claim. Validation runs once after the whole bundle succeeds, with aggregate diffs and line counts for actual changed paths. A partial result cannot publish successful completion or advance the brief. The ordinary isolation/promotion path, where applicable, still receives actual changed paths rather than a second promotion mechanism.
+
+The existing task evidence entry has optional `apiApply` with `callId`, `grammar: 'file-bundle-v1'`, `status`, `candidatePaths`, `applied`, `noops`, `untouched`, optional `failedPath` and `code`. Each applied entry records `path`, `action`, nullable `beforeSha256` and `afterSha256`, without storing baseline contents. Status is `applied`, `rejected`, `partial` or `failed`; a pre-dispatch refusal has a null call ID. Persisted partial effects remain available to retry and recovery. Older evidence without this field means unknown, not applied. If a process crashes before the receipt is persisted, existing task snapshots and disk state support reconciliation, but attribution may remain unknown and require recovery.
 
 ## Evidence ledger
 

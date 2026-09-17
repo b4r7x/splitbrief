@@ -21,6 +21,7 @@ import { handleApprovalTimeUserEditConflict } from '../escalation/approval-confl
 import { retryAndRecord } from './retry.js';
 import { runChainAnalysisSafe } from './analyze-drift.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
+import { raiseApiApplyRecovery } from '../evidence/persistence.js';
 
 export async function handleFailedImplementation(opts: {
   wctx: WorkflowContext;
@@ -45,10 +46,31 @@ export async function handleFailedImplementation(opts: {
   } = opts;
   let state = opts.state;
 
-  implState.workspace?.cleanup();
   if (implState.preApplyApprovalDenied) {
+    implState.workspace?.cleanup();
     return state;
   }
+  // A bundle that stopped mid-application already changed the target. Retrying
+  // would write over a prefix nobody has reviewed, and a later user edit is not
+  // something to undo, so the brief parks on what the receipt already names.
+  const applyResult = implState.implResult.applyResult;
+  if (
+    applyResult?.status === 'partial' ||
+    (applyResult?.status === 'failed' && applyResult.code === 'write-uncertain')
+  ) {
+    state = raiseApiApplyRecovery({
+      wctx,
+      state,
+      task,
+      result: applyResult,
+      ...(implState.workspace === undefined
+        ? {}
+        : { workspacePath: implState.workspace.projectDir }),
+    });
+    setTrackedState(state);
+    return state;
+  }
+  implState.workspace?.cleanup();
   // A signed-out implementer never recovers by retrying, and escalating
   // would silently turn the run into planner-priced work — halt loudly
   // with the login command instead.

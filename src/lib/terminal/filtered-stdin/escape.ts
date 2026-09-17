@@ -30,6 +30,7 @@ function readCsiSequenceLength(source: Buffer): number | 'incomplete' | undefine
   for (let i = 2; i < source.length; i++) {
     const byte = source.readUInt8(i);
     if (byte >= 0x40 && byte <= 0x7e) return i + 1;
+    if (byte < 0x20 || byte > 0x3f) return undefined;
   }
   return 'incomplete';
 }
@@ -97,6 +98,10 @@ export function readEscape(
       return { kind: 'mouse', length: sgr.length, event: sgr.event };
     }
   }
+
+  const keyLength = readCsiSequenceLength(source) ?? readSs3SequenceLength(source);
+  if (keyLength === 'incomplete') return { kind: 'hold' };
+  if (typeof keyLength === 'number') return { kind: 'text', length: keyLength };
 
   return { kind: 'text', length: 1 };
 }

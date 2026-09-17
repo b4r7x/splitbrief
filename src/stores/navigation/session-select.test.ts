@@ -3,8 +3,15 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { createInitialState } from '../../core/state/machine.js';
-import { readActive, reactivateExistingSession } from '../../core/sessions/active-pointer.js';
+import {
+  clearActiveReceipt,
+  readActive,
+  readActiveRecord,
+  reactivateExistingSession,
+} from '../../core/sessions/active-pointer.js';
 import { saveState } from '../../core/state/persistence.js';
 import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
@@ -15,11 +22,21 @@ import type {
 } from '../../engine/runners/prepared-execution.js';
 import { parsePreparedConfig } from '../../engine/runners/prepared-execution.js';
 import { overlayStore } from '../ui/overlay.js';
+import { hydrateFromState } from '../workflow/actions/hydrate.js';
+import { loadEvents } from '../workflow/actions/load.js';
+import { resetWorkflow } from '../workflow/actions/reset.js';
+import { eventsStore } from '../workflow/events.js';
+import { lifecycleStore } from '../workflow/lifecycle.js';
+import { operationsStore } from '../workflow/operations/state.js';
+import { tasksStore } from '../workflow/tasks.js';
+import { tokensStore } from '../workflow/tokens.js';
 import { routerStore } from './router.js';
+import { preparationStore } from './preparation.js';
 import {
   cancelSessionPreparation,
   continueRunInPlace,
   handleSessionSelect,
+  retrySessionPreparation,
   sessionSelectStore,
   type SessionSelectDeps,
 } from './session-select.js';
@@ -86,18 +103,78 @@ function openRecord(sessionId: string): RunRecord {
   });
 }
 
+/** A replay the test holds open, finished per session once the test says so. */
+function heldHistory() {
+  const reads = new Map<string, PromiseWithResolvers<() => void>>();
+  const readRunHistory = vi.fn((record: RunRecord) => {
+    const read = Promise.withResolvers<() => void>();
+    reads.set(record.ref.sessionId, read);
+    return read.promise;
+  });
+  const finish = (sessionId: string, publish: () => void) => reads.get(sessionId)?.resolve(publish);
+  return { readRunHistory, finish };
+}
+
+/** The publish step of a real replay: transcript, briefs, lifecycle and spend, all written. */
+function publishRun(feature: string) {
+  return vi.fn(() => {
+    loadEvents([{ type: 'workflow_started', ts: 1_000, phase: 'planning', feature }]);
+    hydrateFromState({
+      ...createInitialState(feature),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', title: feature })],
+      tokenUsage: makeUsage({ plannerInput: feature.length }),
+    });
+  });
+}
+
+function onScreen() {
+  return {
+    route: routerStore.get(),
+    events: eventsStore.get(),
+    tasks: tasksStore.get(),
+    lifecycle: lifecycleStore.get(),
+    tokens: tokensStore.get(),
+    operations: operationsStore.get(),
+  };
+}
+
+let unsubscribers: (() => void)[] = [];
+
+function countWrites(): () => number {
+  let writes = 0;
+  const count = () => {
+    writes += 1;
+  };
+  unsubscribers = [
+    routerStore,
+    eventsStore,
+    tasksStore,
+    lifecycleStore,
+    tokensStore,
+    operationsStore,
+  ].map((store) => store.subscribe(count));
+  return () => writes;
+}
+
 beforeEach(() => {
   tmp = createTempDir('session-select-test');
+  resetWorkflow();
   overlayStore.reset();
   routerStore.reset();
   sessionSelectStore.reset();
+  preparationStore.reset();
 });
 
 afterEach(() => {
+  for (const unsubscribe of unsubscribers) unsubscribe();
+  unsubscribers = [];
+  resetWorkflow();
   if (tmp) cleanupTempDir(tmp);
   overlayStore.reset();
   routerStore.reset();
   sessionSelectStore.reset();
+  preparationStore.reset();
 });
 
 describe('handleSessionSelect', () => {
@@ -173,7 +250,204 @@ describe('handleSessionSelect', () => {
   });
 });
 
+describe('handleSessionSelect with a history read in flight', () => {
+  it('publishes the newer run once and drops the older replay that lands after it', async () => {
+    const history = heldHistory();
+    const deps = sessionSelectDeps({ readRunHistory: history.readRunHistory });
+    const publishA = publishRun('run A');
+    const publishB = publishRun('run B');
+
+    const selectA = handleSessionSelect(makeSession({ id: 'sess-a', feature: 'run A' }), tmp, deps);
+    const selectB = handleSessionSelect(makeSession({ id: 'sess-b', feature: 'run B' }), tmp, deps);
+    history.finish('sess-b', publishB);
+    await selectB;
+    const shown = onScreen();
+    const writes = countWrites();
+    history.finish('sess-a', publishA);
+    await selectA;
+
+    expect(publishB).toHaveBeenCalledOnce();
+    expect(publishA).not.toHaveBeenCalled();
+    expect(writes()).toBe(0);
+    for (const [name, value] of Object.entries(onScreen())) {
+      expect(value, name).toBe(shown[name as keyof typeof shown]);
+    }
+    const route = routerStore.get();
+    expect(route.screen === 'workflow' && route.run.ref.sessionId).toBe('sess-b');
+    expect(JSON.stringify(eventsStore.get().events)).toContain('run B');
+    expect(tasksStore.get().taskMap.get('T001')?.title).toBe('run B');
+    expect(tokensStore.get().tokenUsage?.plannerInput).toBe('run B'.length);
+    expect(lifecycleStore.get().phase).toBe('implementing');
+  });
+
+  it.each([
+    {
+      superseded: 'a new start checking tools on Home',
+      supersede: () => {
+        preparationStore.submit({
+          origin: 'start',
+          stage: 'Checking tools',
+          prepare: () => new Promise(() => {}),
+          onPrepared: () => {
+            throw new Error('The pending start must not hand off');
+          },
+        });
+      },
+    },
+    {
+      superseded: 'a local run started on screen',
+      supersede: () => {
+        const state = { ...createInitialState('local run'), phase: 'implementing' as const };
+        const prepared = preparedResumeExecution(tmp, 'sess-local', state);
+        routerStore.navigate({
+          to: 'workflow',
+          run: makeRunRecord({ ref: prepared.session.ref }),
+          execution: { kind: 'local', prepared },
+        });
+      },
+    },
+    {
+      superseded: 'a continuation of the run on screen',
+      before: () =>
+        routerStore.navigate({
+          to: 'workflow',
+          run: openRecord('sess-x'),
+          execution: { kind: 'at-rest' },
+        }),
+      supersede: () => {
+        void continueRunInPlace({
+          record: openRecord('sess-x'),
+          state: { ...createInitialState('continue x'), phase: 'implementing' as const },
+          deps: sessionSelectDeps({ prepareResume: () => new Promise(() => {}) }),
+        });
+      },
+    },
+    { superseded: 'cancelling the selection', supersede: () => cancelSessionPreparation() },
+    {
+      superseded: 'navigating home',
+      before: () =>
+        routerStore.navigate({
+          to: 'workflow',
+          run: openRecord('sess-x'),
+          execution: { kind: 'at-rest' },
+        }),
+      supersede: () => routerStore.navigate({ to: 'home' }),
+    },
+  ])('writes nothing when the replay lands after $superseded', async ({ before, supersede }) => {
+    before?.();
+    const history = heldHistory();
+    const publishA = publishRun('run A');
+
+    const selectA = handleSessionSelect(
+      makeSession({ id: 'sess-a', feature: 'run A' }),
+      tmp,
+      sessionSelectDeps({ readRunHistory: history.readRunHistory }),
+    );
+    supersede();
+    const shown = onScreen();
+    const writes = countWrites();
+    history.finish('sess-a', publishA);
+    await selectA;
+
+    expect(publishA).not.toHaveBeenCalled();
+    expect(writes()).toBe(0);
+    for (const [name, value] of Object.entries(onScreen())) {
+      expect(value, name).toBe(shown[name as keyof typeof shown]);
+    }
+  });
+});
+
 describe('continueRunInPlace', () => {
+  it('does not cancel a newer start or restore an old overlay when an older continuation cancels', async () => {
+    const savedState = { ...createInitialState('run A'), phase: 'implementing' as const };
+    const record = openRecord('sess-a');
+    overlayStore.open('sessions');
+    const pendingContinue = Promise.withResolvers<PreparationOutcome>();
+    const continuing = continueRunInPlace({
+      record,
+      state: savedState,
+      deps: sessionSelectDeps({ prepareResume: () => pendingContinue.promise }),
+    });
+    const pendingStart = Promise.withResolvers<PreparationOutcome>();
+    let started = false;
+    const start = preparationStore.submit({
+      origin: 'start',
+      stage: 'Checking tools',
+      prepare: () => pendingStart.promise,
+      onPrepared: () => {
+        started = true;
+      },
+    });
+
+    cancelSessionPreparation();
+    expect(overlayStore.get().active).toBe('none');
+    expect(preparationStore.get()).toMatchObject({ kind: 'checking', attempt: start.attempt });
+    pendingContinue.resolve({ kind: 'aborted' });
+    await continuing;
+    pendingStart.resolve({
+      kind: 'prepared',
+      execution: preparedResumeExecution(tmp, 'sess-start', savedState),
+    });
+    await start.promise;
+    expect(started).toBe(true);
+  });
+
+  it.each(['prepared', 'blocked', 'failed', 'rejected'] as const)(
+    'keeps the newly selected run and its replay after the old continuation is %s',
+    async (outcome) => {
+      const savedState = { ...createInitialState('run A'), phase: 'implementing' as const };
+      const record = openRecord('sess-a');
+      routerStore.navigate({ to: 'workflow', run: record, execution: { kind: 'at-rest' } });
+      overlayStore.open('sessions');
+      const pending = Promise.withResolvers<PreparationOutcome>();
+      let signal: AbortSignal | undefined;
+      const deps = sessionSelectDeps({
+        prepareResume: (_input, attemptSignal) => {
+          signal = attemptSignal;
+          return pending.promise;
+        },
+        readRunHistory: async () => publishRun('run B'),
+      });
+      const continuing = continueRunInPlace({ record, state: savedState, deps });
+      await Promise.resolve();
+      await handleSessionSelect(makeSession({ id: 'sess-b', feature: 'run B' }), tmp, deps);
+      expect(signal?.aborted).toBe(true);
+      expect(overlayStore.get().active).toBe('none');
+      const shown = onScreen();
+      const writes = countWrites();
+      const stale = reactivateExistingSession(record.ref);
+      clearActiveReceipt(record.ref, stale);
+      const current = reactivateExistingSession({ projectDir: tmp, sessionId: 'sess-b' });
+      const execution = {
+        ...preparedResumeExecution(tmp, record.ref.sessionId, savedState),
+        session: { kind: 'existing' as const, ref: record.ref, active: stale },
+      };
+      switch (outcome) {
+        case 'prepared':
+          pending.resolve({ kind: 'prepared', execution });
+          break;
+        case 'blocked':
+          pending.resolve({ kind: 'blocked', report: execution.report });
+          break;
+        case 'failed':
+          pending.resolve({ kind: 'failed', error: new Error('late failure') });
+          break;
+        case 'rejected':
+          pending.reject(new Error('late rejection'));
+          break;
+      }
+      await continuing;
+      await retrySessionPreparation();
+
+      expect(preparationStore.get().kind).toBe('idle');
+      expect(readActiveRecord(tmp)).toMatchObject({ kind: 'v1', receipt: current });
+      expect(writes()).toBe(0);
+      for (const [name, value] of Object.entries(onScreen())) {
+        expect(value, name).toBe(shown[name as keyof typeof shown]);
+      }
+    },
+  );
+
   it('flips the execution in place once the tools are prepared, carrying the steer', async () => {
     const savedState = { ...createInitialState('continue me'), phase: 'implementing' as const };
     const record = openRecord('sess-continue');

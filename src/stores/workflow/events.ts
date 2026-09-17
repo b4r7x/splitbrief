@@ -36,6 +36,7 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
     case 'runner_call_activity':
       return projectRunnerActivityForTuiEventLog(event);
     case 'runner_call_started':
+    case 'runner_call_runtime_status':
     case 'runner_call_text_delta':
     case 'runner_call_usage':
     case 'runner_call_tool_use':

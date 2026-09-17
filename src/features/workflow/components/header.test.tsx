@@ -14,6 +14,7 @@ import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import { getHeaderLayout, Header } from './header.js';
@@ -25,6 +26,14 @@ const RESET_AT = (() => {
   at.setHours(17, 0, 0, 0);
   return at.getTime();
 })();
+
+/** The halt behind the bar's note; the header reads only the seat and the clock beside it. */
+const QUOTA_HALT = makeRecoveryIssue({
+  reason: 'runner-usage-limit',
+  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+  recommendedAction: 'switch-seat',
+  switchSeat: { seat: 'build', candidates: [{ tool: 'opencode' }] },
+});
 
 function resetStores(): void {
   recoveryNoticeStore.reset();
@@ -155,7 +164,7 @@ describe('Header — seat line', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT });
+    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
 
     const instance = render(<Header startedAt={STARTED_AT} />);
     await tick();
@@ -170,7 +179,7 @@ describe('Header — seat line', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT });
+    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
 
     const instance = render(<Header startedAt={STARTED_AT} />);
     await tick();
@@ -189,7 +198,7 @@ describe('Header — seat line', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT });
+    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
 
     const instance = render(<Header startedAt={STARTED_AT} />);
     await tick();

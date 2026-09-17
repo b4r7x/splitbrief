@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SkillMeta } from '../core/skills/types.js';
 import { SPLITBRIEF_DIR } from '../core/paths.js';
+import { installDiagnosticSink } from '../lib/warn.js';
 
 const TMP = join(import.meta.dirname, '.tmp-skills-test');
 const FAKE_HOME = join(TMP, '__home__');
@@ -199,8 +200,11 @@ describe('discoverSkills', () => {
     expect(skills.map((s: SkillMeta) => s.id)).toEqual(['good']);
   });
 
-  it('keeps a skill whose frontmatter is not valid YAML, warning about the fallback', async () => {
-    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+  it('keeps a skill whose frontmatter is not valid YAML and logs the fallback once', async () => {
+    const diagnostics: { message: string; presentation: string }[] = [];
+    const release = installDiagnosticSink((message, presentation) => {
+      diagnostics.push({ message, presentation });
+    });
     try {
       writeSkillDir(
         projectRoot('.claude'),
@@ -214,9 +218,15 @@ describe('discoverSkills', () => {
       expect(skills[0]?.description).toBe(
         'Use when auditing prose. Triggers: "jargon", "buzzword"',
       );
-      expect(stderr).toHaveBeenCalled();
+      await discoverSkills(TMP);
+      expect(diagnostics).toEqual([
+        {
+          message: expect.stringContaining('recovered by line scan'),
+          presentation: 'log-only',
+        },
+      ]);
     } finally {
-      stderr.mockRestore();
+      release();
     }
   });
 

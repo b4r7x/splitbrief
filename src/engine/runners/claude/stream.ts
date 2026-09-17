@@ -1,6 +1,6 @@
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import { parseStreamLine } from '../../streaming/parse-stream-json.js';
+import { createStreamParser } from '../../streaming/parse-stream-json.js';
 import { reconcileFinalText } from '../../streaming/final-text.js';
 import { createQuestionAccumulator } from '../../parsers/question.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
@@ -55,6 +55,7 @@ interface ContentBlockTool {
 }
 
 export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
+  const parseStreamLine = createStreamParser();
   const recorder = createRunnerCallRecorder({
     context: callbacks.context,
     credentialValues: callbacks.credentialValues,
@@ -258,7 +259,7 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
       state.usage = parsed.usage;
       state.recorder.usage({
         usage: parsed.usage,
-        semantics: parsed.isResult ? 'final' : 'delta',
+        semantics: parsed.usageSemantics ?? 'cumulative',
       });
     }
 

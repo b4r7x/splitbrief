@@ -24,6 +24,9 @@ const TOOLS: Tool[] = [
   { id: 'gamma', displayName: 'Gamma' },
 ];
 
+/** The one name holding a space, so a query that keeps one narrows to it and nothing else. */
+const SPACED_TOOL: Tool = { id: 'alpha-two', displayName: 'Alpha Two' };
+
 const ALPHA_MODELS: Model[] = [
   { id: 'a-1', displayName: 'alpha-1' },
   { id: 'a-2', displayName: 'alpha-2' },
@@ -335,6 +338,142 @@ describe('TwoColumnPicker type-anywhere filtering', () => {
     await tick(20);
 
     expect(confirms).toEqual(['a-2']);
+    ui.unmount();
+  });
+});
+
+const EFFORT_LEVELS = ['low', 'medium', 'high'] as const;
+
+/**
+ * The real picker with a value row in the right column: `onCycle` reports `stepped` for it and
+ * `none` for an ordinary model, which is the contract `cycleRightRow` meets in the runner picker.
+ */
+function effortPicker(opts: { onCycle?: (id: string) => void }) {
+  function Consumer() {
+    const [level, setLevel] = useState(0);
+    return (
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          isDisabled: (t) => !!t.disabled,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: [
+            { id: 'a-1', displayName: 'alpha-1' },
+            { id: 'effort', displayName: 'effort' },
+          ],
+          getKey: (m) => m.id,
+          renderRow: (m) => (
+            <Text>{m.id === 'effort' ? `effort ${EFFORT_LEVELS[level]}` : m.displayName}</Text>
+          ),
+          onCycle: (m) => {
+            if (m.id !== 'effort') return 'none';
+            opts.onCycle?.(m.id);
+            setLevel((prev) => (prev + 1) % EFFORT_LEVELS.length);
+            return 'stepped';
+          },
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    );
+  }
+  return <Consumer />;
+}
+
+// REQ-011: one key, three meanings, each pinned against the picker the user actually drives.
+describe('TwoColumnPicker space policy', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    _resetMouseZones();
+  });
+
+  it('leaves an ordinary row alone when space is the first thing typed', async () => {
+    const ui = renderFeature(launcherPicker({ initialIndex: 0 }));
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('>Alpha');
+
+    await flushEffects();
+    ui.stdin.write(' ');
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    // No query was started: both columns still invite one and nothing was filtered out.
+    expect(frame.split('Type to filter…').length - 1).toBe(2);
+    expect(frame).toContain('Beta');
+    expect(frame).toContain('Gamma');
+    // The cursor did not move, and no row was selected on the way past.
+    expect(frame).toContain('>Alpha');
+    ui.unmount();
+  });
+
+  it('keeps a space inside a query that already has text', async () => {
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        leftProps={{
+          items: [...TOOLS, SPACED_TOOL],
+          getKey: (t) => t.id,
+          isDisabled: (t) => !!t.disabled,
+          filterBy: (t, query) => filterByFields(t, query, ['id', 'displayName']),
+          renderRow: (t, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>,
+        }}
+        rightProps={{
+          items: [],
+          getKey: (m) => m.id,
+          renderRow: (m) => <Text>{m.displayName}</Text>,
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await flushEffects();
+
+    ui.stdin.write('a');
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('Gamma');
+
+    await flushEffects();
+    ui.stdin.write(' ');
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    // 'a ' is a narrower query than 'a', not the same one: only the spaced name survives it.
+    expect(frame).toContain('>Alpha Two');
+    expect(frame).not.toContain('Beta');
+    expect(frame).not.toContain('Gamma');
+    ui.unmount();
+  });
+
+  it('steps the value row when space lands on it, and starts no query in that column', async () => {
+    const cycled: string[] = [];
+    const ui = renderFeature(effortPicker({ onCycle: (id) => cycled.push(id) }));
+    await flushEffects();
+
+    ui.stdin.write('\r'); // focus the right column on alpha-1
+    await flushEffects();
+    ui.stdin.write(DOWN); // onto the value row
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('effort low');
+
+    await flushEffects();
+    ui.stdin.write(' ');
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('effort medium');
+
+    await flushEffects();
+    ui.stdin.write(' ');
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('effort high');
+    expect(cycled).toEqual(['effort', 'effort']);
+    // The row took the key, so the right column never saw it as a query character.
+    expect(frame).toContain('alpha-1');
     ui.unmount();
   });
 });

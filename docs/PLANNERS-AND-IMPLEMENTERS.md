@@ -48,18 +48,20 @@ interface Planner extends RunnerRuntime {
   runPhase({ call, projectDir, inputs, callbacks }): Promise<PhaseCallResult>
   regenerate(prompt, artifactType, projectDir, callbacks): Promise<RegenerateResult>
   escalateHint(task, error, projectDir, callbacks, languageContext?): Promise<EscalationResult>
-  escalateFull(task, error, projectDir, callbacks, languageContext?): Promise<EscalationResult>
+  escalateFull(task, error, projectDir, callbacks, languageContext?): Promise<EscalationResult> // legacy interface; never dispatched by escalation
   review(prompt, projectDir, callbacks): Promise<{ text: string; usage: TokenDelta | null }>
   summarize(messages, projectDir?): Promise<string>
   summarizeStructured?(messages, previousSummary?, projectDir?): Promise<{ text: string; structured: StructuredSummary | null }>
-  injectUserTurn?(text, projectDir): Promise<void>
+  injectUserTurn?(options): Promise<PlannerUserTurnResult>
   readonly capabilities: PlannerCapabilities
 }
 ```
 
 `runPhase()` is **one** planner call: one prompt, one document, one owned artifact. `call` is `research | spec | plan | tasks`; the orchestrator's step loop (`src/engine/orchestrator/planning/steps.ts`) decides which calls a mode makes and in what order, persists each artifact as it lands, and hands the next call whatever it needs through `inputs`. A planner never sequences a mode for itself, so a run that stops between two calls loses nothing.
 
-`escalateHint()` and `escalateFull()` handle tiered escalation when the implementer fails. Both prompt builders include a **Similar Issues** section with language-matched few-shot examples selected by keyword scoring against the error text (`src/engine/spec/prompts/escalation-examples.ts`). `regenerate()` re-runs spec or plan after user comments. `review()` does the final review pass.
+`escalateHint()` supplies assistance for an implementer retry. Its prompt includes language-matched Similar Issues examples. The legacy `escalateFull()` interface remains available to old integrations, but new workflow execution never dispatches that rung. `regenerate()` revises artifacts after user comments, and `review()` performs the final review.
+
+`PlannerUserTurnResult` distinguishes `{ status: 'delivered', usage }` from `{ status: 'not-delivered', reason: 'not-ready' }`. Usage may be null after successful delivery. The queue retains a not-ready correction for a later prompt and acknowledges only the IDs that prompt actually carried; arrivals during regeneration stay pending.
 
 `PhaseInputs` is everything one call reads — `feature`, the `research` / `spec` / `plan` text the caller read back from disk, `projectContext`, `languageContext`, the optional `skillsContext` / `codebaseContext`, a `promptPrefix` (drained queue, recorded rejections), a `promptSuffix` (the continuation block a stateless seat needs), a `continuationTurn` that replaces the built prompt for a seat already holding this step's session, `priorMessages` and `attachments` for the first call of the process, and `quickPlan: { trivial }` when the `tasks` call is compiling briefs straight from the feature.
 
@@ -102,7 +104,9 @@ The port carries no identity fields on purpose. No runner backend knows its own 
 
 ### Which calls the reviewer makes
 
-Exactly one: the final review of the run diff, dispatched from `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`) through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). Every other strong-side call stays on the planner — the planning phases, `regenerate`, `escalateHint`, `escalateFull`, `summarize` / `summarizeStructured`, and `injectUserTurn`. `runPlannerReview` is still the planner's own review helper and still serves the speckit analysis and planning-regeneration call sites; the reviewer has its own call path rather than changing that one.
+BUILD repair cycles after final review use the selected implementer. These bounded repairs are distinct from planner takeover.
+
+Exactly one: the final review of the run diff, dispatched from `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`) through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). Every other strong-side call stays on the planner — the planning phases, `regenerate`, `escalateHint`, `summarize` / `summarizeStructured`, and `injectUserTurn`. `runPlannerReview` is still the planner's own review helper and still serves the speckit analysis and planning-regeneration call sites; the reviewer has its own call path rather than changing that one.
 
 A reviewer that fails mid-call is reported, not replaced: `reviewStatus: 'failed'`, the reviewer's display name in the error, final-review evidence recorded, summary still produced. There is deliberately no automatic fallback to the planner.
 
@@ -115,7 +119,7 @@ The orchestrator reads capabilities, not backend identity, to decide what's poss
 | Capability | What it gates |
 |---|---|
 | `supportsConversationalPlanning` | Planner can emit inline clarification questions during planning |
-| `supportsHintEscalation` | Planner can produce a short hint before full escalation |
+| `supportsHintEscalation` | Planner can produce a short hint for an implementer retry |
 | `supportsSessionResume` | Backend exposes a reusable thread handle it reports itself (Claude `--resume`, Codex exec resume) |
 | `supportsEffort` | Backend honors effort/reasoning hints (thinking budget, `reasoning_effort`) — narrowly, that it accepts the `effort: EffortLevel` field on the wire. It is not the seat's effort channel: a tool that carries effort as an opencode `--variant` preset or inside its model id has a real channel while this capability stays false. `seatEffortChannel` (`src/core/runners/capabilities.ts`) is what answers the wider question; see [CONFIGURATION.md](./CONFIGURATION.md) common generation fields. |
 | `supportsImages` | Backend can accept image attachments (vision models) |
@@ -260,7 +264,7 @@ interface Implementer extends RunnerRuntime {
 }
 ```
 
-`implement()` executes a single task. `retry()` re-executes with error context and escalating temperature. `unavailabilityReason()` -- optional, mirroring the Planner interface -- returns a human-readable cause for the most recent `isAvailable()` returning false (e.g. "the endpoint is unreachable"), which the unavailable-implementer recovery carries when the runner can state one.
+`implement()` executes a single task. `retry()` re-executes with error context; configured temperature changes apply only when the transport supports them. `unavailabilityReason()` -- optional, mirroring the Planner interface -- returns a human-readable cause for the most recent `isAvailable()` returning false (e.g. "the endpoint is unreachable"), which the unavailable-implementer recovery carries when the runner can state one.
 
 The implementer seat carries both effort channels to the wire, not just the flag one. `src/engine/implementers/cli.ts` hands the seat's `effort` and `variant` to the adapter's build-args input. Six adapters emit: `claude-code`, `copilot` and `command-code` emit `--effort <level>`; `codex` emits `-c model_reasoning_effort=<level>`; `opencode` and `kilo-code` emit `--variant <name>` after the `--model` pair. An adapter without a given channel ignores that field, so the caller never branches on tool. The full channel matrix lives in [CONFIGURATION.md](./CONFIGURATION.md) under the `effort` field.
 
@@ -278,16 +282,16 @@ type ImplementerCapabilities = {
 
 It records **who holds the pen**, not which path is preferred.
 
-A brief **requires** a direct-write implementer when it declares more than one file (`files.length > 1`), and otherwise only when its `scope.inBounds` / `scope.approvedOutOfBounds` bullets name a concrete path token beyond the task's own `file` — a token carrying a directory separator or a glob, extracted by `scopePathPatterns` in `src/utils/path-patterns.ts` (`requiredWriteModeForTask`, `src/engine/orchestrator/context-routing/decision.ts`). Scope bullets are prose: a bullet that only re-names the task file, or names no path token at all, does not widen the write scope, and the brief routes to an `extracted-code` implementer. The same module ranks profile routes: `compareProfileRouteRank` orders the capable profiles by context window, smallest sufficient window first, then by name.
+API profiles can receive a bounded explicit set of up to 32 declared text targets for `create` or `modify`. `requiredWriteModeForTask` rejects unsafe, duplicate, ancestor-overlapping or wildcard targets and requires every scope path to name an explicit target. Wider directory/glob scope, extra undeclared paths and unsupported actions still require a direct writer. `assessProfile` distinguishes backend output contracts: API uses `file-bundle-v1`, while legacy shell extraction remains single-file-only. API routing estimates the actual bundle prompt with whole contents of all supplied target baselines and a bundle output reserve; it does not reduce files to function excerpts to force a fit. Runtime capture and dispatch still check actual file kinds, baseline safety, model capacity and response limits.
 
 | | `extracted-code` | `direct` |
 |---|---|---|
 | Writes the file | SPLITBRIEF | the implementer |
 | Kinds | `api`, `shell` | `cli`, `agent` |
-| Model answers with | the complete file contents as text | edits already made on disk |
-| Change detection | the extracted text is compared against the file it replaces | `detectChanges()` against a baseline captured before the call |
-| Works in | the project directory, the brief's one declared file | the run's isolation directory, the brief's `files` (see below) |
-| Approval applies | per write, before it lands (`approveWrite`) | at promotion, over the whole changed set |
+| Model answers with | API: strict text-file bundle; shell: complete single-file contents | edits already made on disk |
+| Change detection | returned text is compared against captured target baselines | `detectChanges()` against a baseline captured before the call |
+| Works in | project directory; API bundle targets or one legacy shell target | the run's isolation directory, the brief's `files` (see below) |
+| Approval applies | exact target paths before writes; API preflights the whole candidate set | at promotion, over the whole changed set |
 | Empty result | extraction error | `no-staged-change` outcome + `implementer_wrote_nothing` warning |
 
 ### Isolation and promotion
@@ -308,7 +312,7 @@ Whichever mode ran, validation happens in the real project directory after promo
 
 ### Prompt contract per mode
 
-`formatImplementerSystemPreamble(languageContext, writesFiles)` (`src/engine/spec/prompts/system.ts`) selects a preamble per write mode. The Task Brief body underneath it is the same in both modes -- description, signature, type definitions, pattern, implementation steps, tests, scope, escalation, evidence, constraints (`buildTaskSections`, `src/engine/spec/prompt-formatter.ts`).
+`formatImplementerSystemPreamble(languageContext, writesFiles, outputContract)` (`src/engine/spec/prompts/system.ts`) selects the backend’s output contract. API `file-bundle-v1` gets a strict JSON-bundle preamble; the comparison below describes legacy extraction and direct writing. The Task Brief body underneath it is the same in both modes -- description, signature, type definitions, pattern, implementation steps, tests, scope, escalation, evidence, constraints (`buildTaskSections`, `src/engine/spec/prompt-formatter.ts`).
 
 | Preamble carries | `extracted-code` | `direct` |
 |---|---|---|
@@ -334,11 +338,12 @@ Wraps a backend-specific `invoke()` with:
 2. **Prepend system preamble** -- `formatImplementerSystemPreamble(languageContext, writesFiles)`; the mode-specific preamble described above. API backends send it as a separate system message instead of prepending (`prependSystemPreamble: false`).
 3. **Call backend `invoke()`** -- the actual model call. `InvokeOpts.callContext` identifies the runner call for adapters that can emit typed events directly. `InvokeOpts.sandboxEnv` carries the isolation directory's environment when the run is isolated.
 4. **Process output:**
-   - `extracted-code` (`extractsCode: true`): extract code from response via `extractCode()`, run through tiered approval (`approveWrite`), apply to disk via `applyCode()`, compute diff. Between approval and apply, a plausibility guard (`src/engine/implementers/pipeline/extracted-code.ts`) refuses a marker-less modify response that would keep less than half of a baseline file of at least five non-empty lines: the file is left untouched and the task fails with the kept-of-had line counts plus a literal SEARCH/REPLACE template, so the retry has an exact-patch escape hatch.
+   - API `file-bundle-v1`: parse the entire completed response, approve and baseline-check declared candidates, apply text files, then publish aggregate metrics only after whole-bundle success. Partial application retains its exact effects in task evidence and fails the attempt.
+   - Legacy `extracted-code` for shell/command backends: extract code from response via `extractCode()`, run through tiered approval (`approveWrite`), apply to disk via `applyCode()`, compute diff. Between approval and apply, a plausibility guard (`src/engine/implementers/pipeline/extracted-code.ts`) refuses a marker-less modify response that would keep less than half of a baseline file of at least five non-empty lines: the file is left untouched and the task fails with the kept-of-had line counts plus a literal SEARCH/REPLACE template, so the retry has an exact-patch escape hatch.
    - `direct` (`extractsCode: false`): detect file changes via `detectChanges()` against the baseline captured before the call. The isolated workspace declares which baseline that is rather than letting the detector sniff the directory: a linked worktree carries git metadata but is seeded with your uncommitted work, so it is compared by file-content hashes, and a retry that rewrites the file the previous attempt already wrote is seen as a change. No change at all is a `no-staged-change` failure, not a silent success: the detector's negative result carries the distinct `reason: 'no-files-changed'`, and the pipeline publishes one coded warning (`category: implementer`, `code: implementer_wrote_nothing`) naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list, while the retry and escalation behaviour stays exactly as before — the task still fails.
 5. **Publish result** -- `publishDone` with diff metrics (lines added/removed, duration) or `publishFailed`.
 
-For retries, `buildRetryPrompt()` prepends the error message with escalating framing -- attempt 1 says "fix it", attempt 2 says "rephrase", attempt 3 says "try a completely different approach". Temperature increases by `retryTemperatureStep` per attempt.
+For retries, `buildRetryPrompt()` prepends the error message with escalating framing -- attempt 1 says "fix it", attempt 2 says "rephrase", attempt 3 says "try a completely different approach". Configured temperature increases by `retryTemperatureStep` per attempt only affect transports that support the field; current API requests omit it.
 
 The implementer base normalizes backend output into `RunnerCallResult` before processing files. A non-completed status returns a failed `ImplementerResult` with partial output and usage preserved; user aborts, timeouts, truncation, refusals, unsupported tools, and incomplete streams are not collapsed into generic success/failure strings.
 
@@ -356,30 +361,51 @@ type TokenDelta = {
   outputTokens: number
   cacheReadTokens?: number
   cacheCreateTokens?: number
+  reasoningTokens?: number
+  counterCoverage?: RunnerCallCounterCoverage
+  providerTotals?: { input?: number; output?: number }
 }
 ```
 
 Deltas are normalized in `src/engine/calls/usage.ts`, which handles delta, cumulative, and final samples consistently. Accumulated usage is published through `cost_update` events.
 
-Session totals (`TokenUsage`) carry four categories, not three: `planner*`, `implementer*`, `escalation*`, and `reviewer*` (`reviewerInput`, `reviewerOutput`, and the optional `reviewerCacheRead` / `reviewerCacheCreate`). `usageCategoryForRunnerCallRole()` (`src/engine/orchestrator/tokens.ts`) routes the `'review'` call role into the `reviewer` bucket; `'planner'`, `'summary'`, and `'compaction'` stay on the planner. Session state written before the reviewer bucket existed loads with those fields at `0`.
+### Unknown is not zero
+
+The five counters are disjoint where the provider reports all of them: `inputTokens` is ordinary input without cache, `outputTokens` is ordinary output without reasoning. `counterCoverage` (`src/core/runner-call-contract.ts`) says which of the five the provider actually reported — `reported`, `partial` or `missing` per category — and `providerTotals` keeps the inclusive totals the provider sent (`prompt_tokens`, `completion_tokens`) as metadata, never as further counters to add up.
+
+An absent optional counter means the provider never reported it. It is not a zero, and nothing in the pipeline turns it into one: a missing reasoning count leaves the seat's `*Reasoning` field absent, while a reported `0` creates that field at `0`. An absent `counterCoverage` on a historical record means legacy-unknown, not "nothing reported". Pricing may still know the cost of generation from `providerTotals.output` without a reasoning breakdown, because one output rate covers the whole total; a missing cache split, where the cache rates differ, is incomplete pricing rather than a rate to guess.
+
+### Session totals
+
+Session totals (`TokenUsage`) carry four categories, not three: `planner*`, `implementer*`, `escalation*`, and `reviewer*`. Each category owns the same five counters — `Input`, `Output`, the optional `CacheRead` / `CacheCreate` / `Reasoning` — plus an optional `*Coverage`, the same five-category coverage object per role. `usageCategoryForRunnerCallRole()` (`src/engine/orchestrator/tokens.ts`) routes the `'review'` call role into the `reviewer` bucket; `'planner'`, `'summary'`, and `'compaction'` stay on the planner.
+
+The `*Output` fields stay ordinary output. `totalOutputTokens()` and the seat's billing projection (`SeatTokenTotals.output`, `src/core/providers/seat-totals.ts`) add the known reasoning to it **exactly once**; `SeatTokenTotals.reasoning` repeats that known part for display, and a caller that adds it to `output` bills those tokens twice.
+
+Escalation runs on the planner's runner but keeps its own `escalationCacheRead` / `escalationCacheCreate` / `escalationReasoning`, so new evidence stays attributable to the escalator. `splitSeatTokenTotals` folds the two back onto one planner seat for pricing. A record written before those fields pooled escalation cache into the planner buckets; there the escalation fields are simply absent, and that pooled amount is never counted a second time as escalation.
+
+Live booking (`addUsage`) and the replay of recorded calls (`addRunnerCallUsageToTokenUsage`) run the same category rules, so a reconciled run cannot drift from the run that produced it. Seat coverage is set by the first evidence on an empty seat and degrades to `partial` where later evidence disagrees; a seat that already carries counters but no coverage is a legacy record and stays unknown rather than borrowing a new call's word.
+
+All of these fields are **additive within state v4** (`WORKFLOW_STATE_VERSION = 4`): they are optional, so a `state.json` or `summary.json` written before them parses unchanged and no migration runs. The one non-optional back-compatibility rule predates them — `reviewerInput` / `reviewerOutput` default to `0` for state written before reviewer accounting existed. New optional fields deliberately do **not** default, because a default would be exactly the reported zero they must stay distinguishable from.
+
+`reconcileTokenUsageWithSessionLog` (`src/engine/orchestrator/summary/usage-reconcile.ts`) replays `session.jsonl` when the ledger lost a call: a seat the ledger books alone takes the higher of booked and observed, the planner/reviewer pool takes only the shortfall the log shows, and coverage takes the log's word where it has one. Reconciling an already-reconciled record changes nothing.
 
 Pricing follows the seat: with a `reviewer` block, the reviewer's tokens are priced at the reviewer runner's rates and shown as their own line in the run summary; without one, they are priced at the planner's rates and folded into the planner line, exactly as before.
 
 CLI runners report usage through their protocol terminal: codex through its `turn.completed` record, claude-code and opencode through their streamed terminal events. Codex's `input_tokens` counts cached input, so the normalizer excludes `cached_input_tokens` from the reported input total and surfaces it as `cacheReadTokens`; claude-code's terminal `result` line takes precedence over mid-stream deltas. A CLI runner that completes without reporting usage records zero implementer tokens — by design for structurally unpriced runners, and never fabricated.
 
-Per-task usage is recorded as `TaskTokenUsage`, which tracks: implementer tokens, escalation tokens, retry count, cost, model used, context fit classification (`fits` / `tight` / `overflow`), and the `currentCodeContextMode` that was selected.
+Per-task usage is recorded as `TaskTokenUsage`, which tracks: implementer tokens, escalation tokens, retry count, cost, model used, context fit classification (`fits` / `tight` / `overflow`), and the `currentCodeContextMode` that was selected. Alongside the combined `implementerTokens` / `escalationTokens` it carries the optional directional counters `implementerInputTokens` / `implementerOutputTokens` / `escalationInputTokens` / `escalationOutputTokens` and the optional `*ReasoningTokens`. These come only from a delta the ledger actually knows — the difference between the run totals before and after the task — never from a share of the run. A record written before them keeps its combined count alone: its split is unknown, not zero, and is not imputed.
 
 A runner completing a task without reporting usage is recorded as zero tokens and surfaced, not hidden: `recordTaskUsage` (`src/engine/orchestrator/tokens.ts`) publishes exactly one warning with `category: 'usage'` and `code: 'implementer_usage_not_reported'`, naming the runner and the task, when neither the implementer nor the escalation delta is non-zero. The warning lands in `session.jsonl` and in the review packet's warnings list. An escalated task that spent planner tokens does not warn. SPLITBRIEF never invents a price or synthesises token counts for a runner that reported none — a CLI runner staying structurally unpriced is by design, and this warning is what makes a run that did real work distinguishable from a run whose runner reported nothing.
 
-**Token budget for implementer prompts** (`src/engine/spec/token-budget.ts`):
+**Legacy prompt allocation** (`src/engine/spec/token-budget.ts`):
 
 ```
 budget = contextLength - systemPromptTokens - taskBodyTokens - (contextLength * 0.25)
 ```
 
-An omitted `contextLength` resolves to a single documented default for every runner kind — `DEFAULT_UNKNOWN_CONTEXT_LENGTH = 32768` in `src/core/tokens/context-length.ts` — never to a per-consumer guess.
+The legacy fallback is `DEFAULT_UNKNOWN_CONTEXT_LENGTH = 32768` in `src/core/tokens/context-length.ts`. API bundle routing retains full supplied file contents and reserves bundle output instead of shrinking them through this allocation. API dispatch separately resolves configured context, observed active context or the 8192 application default, then applies the measured input margin and output reserve described in [CONFIGURATION.md](./CONFIGURATION.md).
 
-A boot-probed window applies only to the default implementer profile — the profile the probe ran for. A sibling profile that declares no `contextLength` still routes at the shared default.
+A boot-probed window applies only to the default implementer profile — the profile the probe ran for. A sibling profile uses its own model/configuration metadata; an API profile without known active or configured capacity uses the API application fallback.
 
 A CLI runner under `model: auto` — or with the model omitted — resolves to no model id, so its window is the smallest the bundled catalog guarantees for that tool (`resolveRunnerContextWindow`, `src/engine/providers/model/context-window.ts`); automatic selection never adds a `--model` flag.
 
@@ -445,6 +471,8 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 
 ##### Posture, trust, and auth
 
+The auth-channel column describes catalog staging capabilities, not selectable methods proven for an installed invocation. The enforcement matrix is currently empty: explicit `session` or `api-key` is refused, while an omitted selection uses host CLI configuration. See [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md).
+
 | `tool` | direct write (planner / implementer) | shell | network | automatic approval (implementer) | sandbox (planner / implementer) | auth channels | credential env |
 |---|---|---|---|---|---|---|---|
 | `claude-code` | no / yes | yes / yes | yes / yes | `--permission-mode acceptEdits` | none / none | session (host account on macOS, see below), api-key | `ANTHROPIC_API_KEY` (api-key channel) |
@@ -458,7 +486,7 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 
 Session channels use `host-cli-state` bridging where noted in the catalog. SPLITBRIEF never copies credentials into argv. Subscription-included tools bill through the vendor login; provider-dependent tools inherit the upstream model provider's billing posture.
 
-The bridge copies files, so a channel whose credential is an OS keychain item reaches a staged runner another way. A channel declares those platforms in `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), which today names macOS for the Claude Code and Cursor Agent CLI `session` channels: the subscription session lives in the login keychain, whose search list resolves through `HOME` and whose item is keyed on `USER`. `cliAuthChannelHostStateAccess()` maps that to `host-account`, and `createSandboxEnv()` then leaves `HOME`/`USER` at their host values and bridges no file — every other redirect stays. Readiness never infers such a credential from files: it runs the tool's own status command and reports what the child answers. See [docs/API-KEYS.md](./API-KEYS.md).
+The bridge copies files, so a channel whose credential is an OS keychain item reaches a staged runner another way. A channel declares those platforms in `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), which today names macOS for the Claude Code, Cursor Agent CLI and Antigravity `session` channels: the subscription session lives in the login keychain, whose search list resolves through `HOME` and whose item is keyed on `USER`. `cliAuthChannelHostStateAccess()` maps that to `host-account`, and `createSandboxEnv()` then leaves `HOME`/`USER` at their host values and bridges no file — every other redirect stays. Readiness never infers such a credential from files: it runs the tool's own status command and reports what the child answers. See [docs/API-KEYS.md](./API-KEYS.md).
 
 ##### Readiness states
 
@@ -525,11 +553,19 @@ These candidates have **dated blocked verdicts** — no first-class ID, descript
 
 `src/engine/planners/api.ts`, `src/engine/implementers/api.ts`
 
-REST call to an OpenAI-compatible HTTP endpoint. Works with: Ollama, LM Studio, and any custom endpoint you declare with `apiBase`, `service`, and `offering`.
+REST call to an OpenAI-compatible HTTP endpoint. Ollama, LM Studio and llama.cpp can fill PLAN, BUILD and REVIEW independently, as can an admitted custom endpoint. Every seat retains its own address and exact model ID.
+
+Local server connections do not require a provider executable on PATH. Start the server externally and use Retry after correcting the connection. Discovery and admission never implicitly load or download models. Observed active context, maximum context and the configured application budget are separate values.
 
 The planner uses `dispatchStreamCompletion()`, which streams the OpenAI-compatible chat-completions protocol. Prior messages are passed as a proper messages array (`consumesPriorMessages: true`). Token usage comes from the API response.
 
-The implementer extracts code from the response text (`writesFiles: 'extracted-code'`). System preamble is sent as a separate system message. Token budget calculation determines `maxTokens`. Temperature increases on retry (`retryTemperatureStep: 0.1`). This is the other canonical implementer setup -- a smaller model reached over HTTP, with SPLITBRIEF holding the pen.
+Every newly dispatched API BUILD call uses file-bundle-v1, including single-file tasks, retries, and continuation.
+
+The API implementer retains `writesFiles: 'extracted-code'` because SPLITBRIEF applies the returned text. The backend selects the grammar before dispatch; response text never selects a fallback. Shell/command extracted output keeps `legacy-code-v1`, and direct writers keep `direct`. See [TASK-CONTRACT.md](./TASK-CONTRACT.md#api-build-file-bundles) for limits and partial-apply evidence. Application budgets and effective request options are described in [CONFIGURATION.md](./CONFIGURATION.md). Current API transport omits configured temperature and effort controls, including retry temperature increments.
+
+PLAN receives an explicit packet of instructions, project metadata, required artifacts and supplied source text. Its manifest names included, excerpted, omitted, missing and unsupported sections. A path alone does not grant filesystem access. Missing, unsupported or oversized required context refuses the call; optional context may be visibly omitted. This is a text transport with no shell, search or autonomous tool loop.
+
+REVIEW uses one complete packet and one stateless call. Required current diff, task/evidence and drift inputs must fit without silently dropping files. A missing drift artifact may be replaced by a complete fresh deterministic recomputation. Insufficient context or a transport/protocol failure enters non-verdict recovery; it is neither zero-blocker success nor a BUILD repair cycle. Adjust `/crew plan` or `/crew review` as indicated, resume and choose retry. Recovery preserves the diagnosis, with token estimates confined to explicitly opened details.
 
 Availability is probed, not assumed. An api-kind implementer's `isAvailable()` contacts the provider's model list (`createProviderAvailability`, the same helper the api planner uses) and reports unavailable when the endpoint refuses the connection or returns an empty list. A local endpoint is not assumed reachable just because it is local. The probe fires once per task iteration at the task-loop availability gate, and the verdict is never cached across tasks, so a daemon started between task N and task N+1 is picked up on N+1.
 
@@ -547,7 +583,7 @@ The implementer extracts code from stdout (`writesFiles: 'extracted-code'`). The
 
 Like shell, but the subprocess writes files to disk directly instead of returning code in stdout. Change detection via `createChangeDetector()` (git diff before/after).
 
-The planner reads phase artifacts from the session directory. Full escalation also uses git-based change detection instead of code extraction.
+The planner reads phase artifacts from the session directory. Historical full-escalation records remain readable; the workflow no longer dispatches planner code-writing takeover.
 
 The implementer uses `writesFiles: 'direct'` with git-based change detection.
 
@@ -646,7 +682,7 @@ type Config = {
     approve?: ApproveLevel       // none | spec | plan | all | default
     maxRetries: number
     compactionThreshold?: number
-    git?: { commitStrategy?: CommitStrategy; createBranch?: boolean }
+    git?: { createBranch?: boolean } // retired commitStrategy input is stripped
     // ... plus taskReview, briefReview, driftChainThreshold
   }
   escalation?: { intermediateProvider?: string; intermediateModel?: string; enabled?: boolean }

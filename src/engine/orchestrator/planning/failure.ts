@@ -26,6 +26,10 @@ import {
   type PlannerSeatFailure,
 } from '../recovery/builders/planner.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
+import {
+  apiContextRecoveryFacts,
+  readApiContextDiagnostic,
+} from '../../providers/api-context-diagnostic.js';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
@@ -54,6 +58,40 @@ export async function handlePlanningFailure(opts: {
         cut: 'mid-step',
       }),
       outcome: 'interrupted',
+    };
+  }
+
+  // A packet the seat was never given is read off the error's own data before
+  // any wording is inspected: an auth or quota heuristic run over this sentence
+  // would answer a call that was never dispatched with a login command.
+  const contextDiagnostic = readApiContextDiagnostic(err);
+  if (contextDiagnostic !== null) {
+    const message = labelError('Planning failed', err);
+    publishError({ bus: wctx.bus, phase: latest.phase, message });
+    const seatSwap = await loadSeatSwapContext({
+      projectDir,
+      seat: 'plan',
+      runner: wctx.config.planner,
+    });
+    const issue = buildPlannerCallFailedRecoveryIssue({
+      failure: 'call-failed',
+      phase: latest.phase,
+      message,
+      details: [
+        ...(contextDiagnostic.missingSections.length > 0
+          ? [`Missing: ${contextDiagnostic.missingSections.join(', ')}`]
+          : []),
+        'Adjust the plan seat with /crew plan or Settings, then /resume and choose retry.',
+      ],
+      ...(seatSwap !== undefined && { seatSwap }),
+      // The estimates stay in facts: `details[]` renders inline and truncates.
+      facts: apiContextRecoveryFacts(contextDiagnostic),
+      createdAt: nowIso(),
+    });
+    return {
+      disposition: 'terminal',
+      state: raisePendingRecovery({ ...ref, bus: wctx.bus }, latest, issue),
+      outcome: 'halted',
     };
   }
 

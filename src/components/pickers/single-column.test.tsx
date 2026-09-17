@@ -6,7 +6,7 @@ import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { glyph } from '../../lib/glyphs.js';
-import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
+import { _resetMouseZones, hitTopmostZone } from '../../lib/terminal/mouse-zones.js';
 import { ListRow } from '../list-row.js';
 import { getTheme, ThemeProvider } from '../theme.js';
 import { SingleColumnPicker } from './single-column.js';
@@ -16,6 +16,42 @@ beforeEach(() => {
 });
 
 describe('SingleColumnPicker row zones', () => {
+  it('keeps wheel navigation on the row zone without activating the row', async () => {
+    const activated: number[] = [];
+    const directions: string[] = [];
+    const ui = renderFeature(
+      <SingleColumnPicker
+        label="items"
+        items={['item-0', 'item-1']}
+        filter=""
+        selectedIndex={0}
+        isActive
+        height={6}
+        visibleRows={2}
+        getKey={(item) => item}
+        contentMaxWidth={20}
+        onRowActivate={(index) => activated.push(index)}
+        onWheel={(direction) => directions.push(direction)}
+        renderRow={(item) => <Text>{item}</Text>}
+      />,
+    );
+    await tick();
+
+    let wheelZone: ReturnType<typeof hitTopmostZone>;
+    for (let y = 1; y <= 20 && !wheelZone; y += 1) {
+      for (let x = 1; x <= 30 && !wheelZone; x += 1) {
+        const zone = hitTopmostZone(x, y);
+        if (zone?.onWheel) wheelZone = zone;
+      }
+    }
+    expect(wheelZone).toBeDefined();
+    wheelZone?.onWheel?.('down');
+
+    expect(directions).toEqual(['down']);
+    expect(activated).toEqual([]);
+    ui.unmount();
+  });
+
   it('registers scrolled visible rows, activates with global indices, and clears zones when onRowActivate is removed', async () => {
     const activated: number[] = [];
     const items = Array.from({ length: 6 }, (_, i) => `item-${i}`);

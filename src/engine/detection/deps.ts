@@ -1,10 +1,11 @@
 import type { Config } from '../../core/schemas/config.js';
 import { readActiveRunnerLens } from '../../core/config/accessors/active-runner.js';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import {
   projectRunnerDiscoveryContext,
   type RunnerDiscoveryContext,
 } from '../../core/config/accessors/runner-discovery-context.js';
-import { isApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import { isApiProviderId, type ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 import {
   CLI_TOOL_IDS,
   defaultCliAuthChannel,
@@ -12,13 +13,14 @@ import {
   type CliAuthChannelId,
   type CliToolId,
 } from '../../core/runners/cli-tool-catalog.js';
-import type { RunnerRole, ActiveRunnerRole } from '../../core/runners/seat-roles.js';
+import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { includes } from '../../utils/type-guards.js';
 import { detectAll } from './detect.js';
 import { runnerDiscoveryContextKey } from './runner-evidence.js';
-import type {
-  ConfiguredProviderConnection,
-  ConfiguredProviderOutcome,
+import {
+  cloneConfiguredProviderOutcome,
+  type ConfiguredProviderConnection,
+  type ConfiguredProviderOutcome,
 } from './provider-outcomes.js';
 import { detectionContextKey } from './types.js';
 import type {
@@ -34,10 +36,13 @@ import type { ProviderOverrides } from '../providers/types.js';
 interface ActiveRunnerContexts {
   readonly planner: RunnerDiscoveryContext;
   readonly implementer: RunnerDiscoveryContext;
+  readonly reviewer: RunnerDiscoveryContext;
 }
 
 interface ConfiguredProviderProbe {
-  readonly connection: ConfiguredProviderConnection;
+  /** Every seat that publishes this one request's result under its own identity. */
+  readonly connections: readonly ConfiguredProviderConnection[];
+  readonly provider: ApiProviderId;
   /** Closure-local values only. Never return, publish, or serialize these. */
   readonly overrides: ProviderOverrides;
 }
@@ -49,6 +54,7 @@ function activeRunnerContexts(config: Config): ActiveRunnerContexts {
   return {
     planner: projectRunnerDiscoveryContext({ config, role: 'planner' }),
     implementer: projectRunnerDiscoveryContext({ config, role: 'implementer' }),
+    reviewer: projectRunnerDiscoveryContext({ config, role: 'reviewer' }),
   };
 }
 
@@ -56,14 +62,25 @@ function connectionFor(
   context: RunnerDiscoveryContext,
   provider: ConfiguredProviderConnection['provider'],
 ): ConfiguredProviderConnection {
+  // Catalog membership belongs to this connection. An unrelated seat or UI
+  // setting may change the overall generation without changing its catalog.
+  const catalogContext: RunnerDiscoveryContext = {
+    ...context,
+    configGeneration: 'connection',
+    ...(context.credentialDomain === undefined
+      ? {}
+      : { credentialDomain: { ...context.credentialDomain, configGeneration: 'connection' } }),
+  };
   return {
-    role: context.role,
+    // The seat that asked, not its admission tier: a reviewer outcome is never
+    // published as the planner's.
+    role: context.seatRole ?? context.role,
     provider,
-    contextKey: runnerDiscoveryContextKey(context),
+    contextKey: runnerDiscoveryContextKey(catalogContext),
   };
 }
 
-function apiProbeForRole(
+function apiProbeForSeat(
   input: Readonly<{
     config: Config;
     role: ActiveRunnerRole;
@@ -76,18 +93,45 @@ function apiProbeForRole(
   const runner = readActiveRunnerLens({ config: input.config, role: input.role }).runner;
   if (runner.kind !== 'api' || !isApiProviderId(runner.provider)) return null;
   return {
-    connection: connectionFor(input.context, runner.provider),
-    overrides: { apiBase: runner.apiBase, apiKey: runner.apiKey ?? '' },
+    connections: [connectionFor(input.context, runner.provider)],
+    provider: runner.provider,
+    // An unset credential stays unset: an empty string is a configured
+    // keyless connection, which a local provider rejects as a bad reference.
+    overrides: {
+      apiBase: runner.apiBase,
+      ...(runner.apiKey === undefined ? {} : { apiKey: runner.apiKey }),
+    },
   };
 }
 
+/**
+ * One request per distinct seat connection. A configured reviewer is its own
+ * connection and gets its own probe. When no reviewer is configured the review
+ * seat runs on the planner's connection: it publishes its own seat-exact
+ * outcome from the planner's single request instead of asking the same
+ * endpoint twice.
+ */
 function configuredProviderProbes(
   input: Readonly<{ config: Config; contexts: ActiveRunnerContexts }>,
 ): readonly ConfiguredProviderProbe[] {
-  const roles: readonly RunnerRole[] = ['planner', 'implementer'];
-  return roles
-    .map((role) => apiProbeForRole({ config: input.config, role, context: input.contexts[role] }))
-    .filter((probe): probe is ConfiguredProviderProbe => probe !== null);
+  const seatProbe = (role: ActiveRunnerRole): ConfiguredProviderProbe | null =>
+    apiProbeForSeat({ config: input.config, role, context: input.contexts[role] });
+  const planner = seatProbe('planner');
+  const implementer = seatProbe('implementer');
+  const reviewer = seatProbe('reviewer');
+  const reviewerSharesPlanner = resolveReviewerRunner(input.config).source === 'planner';
+
+  const probes: ConfiguredProviderProbe[] = [];
+  if (planner !== null) {
+    probes.push(
+      reviewerSharesPlanner && reviewer !== null
+        ? { ...planner, connections: [...planner.connections, ...reviewer.connections] }
+        : planner,
+    );
+  }
+  if (implementer !== null) probes.push(implementer);
+  if (reviewer !== null && !reviewerSharesPlanner) probes.push(reviewer);
+  return probes;
 }
 
 function configuredProviderDetection(
@@ -95,17 +139,23 @@ function configuredProviderDetection(
 ): (
   input: Readonly<{ signal?: AbortSignal | undefined }>,
 ) => Promise<readonly ConfiguredProviderOutcome[]> {
-  return ({ signal }) =>
-    Promise.all(
+  return async ({ signal }) => {
+    const results = await Promise.all(
       probes.map(async (probe) => ({
-        connection: probe.connection,
+        probe,
         outcome: await detectProviderCatalog({
-          provider: probe.connection.provider,
+          provider: probe.provider,
           configOverrides: probe.overrides,
           signal,
         }),
       })),
     );
+    return results.flatMap(({ probe, outcome }) =>
+      probe.connections.map((connection) =>
+        cloneConfiguredProviderOutcome({ connection, outcome }),
+      ),
+    );
+  };
 }
 
 /**
@@ -167,11 +217,13 @@ function sourceContext(
     source: keyof DetectionSourceContexts;
   }>,
 ): string {
-  const { planner, implementer } = input.contexts;
+  const { planner, implementer, reviewer } = input.contexts;
+  const seats = [planner, implementer, reviewer] as const;
   // The salts key pre-change disk snapshots out of the lanes: readiness gained
   // all-admitted-tools auth probing, cliModels moved from role-scoped to
-  // per-tool catalog contexts; a stale TTL-valid snapshot from before either
-  // change must never hydrate into the new semantics.
+  // per-tool catalog contexts, and every lane gained the review seat — a stale
+  // TTL-valid snapshot from before any of those must never hydrate into the
+  // new semantics.
   const sourceLabel =
     input.source === 'readiness'
       ? 'readiness:all-tools'
@@ -180,18 +232,11 @@ function sourceContext(
         : input.source;
   return detectionContextKey({
     platform: process.platform,
-    runner: `${sourceLabel}:${planner.kind}:${planner.id}:${implementer.kind}:${implementer.id}`,
-    authChannel: `${planner.authChannel ?? 'none'}:${implementer.authChannel ?? 'none'}`,
-    endpointOrigin: `${planner.endpointOrigin ?? 'none'}:${implementer.endpointOrigin ?? 'none'}`,
-    credentialDomain: [
-      runnerDiscoveryContextKey(planner),
-      runnerDiscoveryContextKey(implementer),
-    ].join(':'),
-    configGeneration: [
-      input.projectDir,
-      planner.configGeneration,
-      implementer.configGeneration,
-    ].join(':'),
+    runner: [sourceLabel, ...seats.map((seat) => `${seat.kind}:${seat.id}`)].join(':'),
+    authChannel: seats.map((seat) => seat.authChannel ?? 'none').join(':'),
+    endpointOrigin: seats.map((seat) => seat.endpointOrigin ?? 'none').join(':'),
+    credentialDomain: seats.map(runnerDiscoveryContextKey).join(':'),
+    configGeneration: [input.projectDir, ...seats.map((seat) => seat.configGeneration)].join(':'),
   });
 }
 
@@ -219,6 +264,7 @@ export function createProductionDetectionDeps(
       readiness: sourceContext({ contexts, projectDir: input.projectDir, source: 'readiness' }),
       modelsDev: sourceContext({ contexts, projectDir: input.projectDir, source: 'modelsDev' }),
       cliModels: sourceContext({ contexts, projectDir: input.projectDir, source: 'cliModels' }),
+      configuredProviders: providerProbes.flatMap((probe) => probe.connections),
     },
   };
 }

@@ -42,11 +42,21 @@ const GLOBAL_ESC_OVERLAYS = new Set<OverlayType>(['help']);
 // down for them even on an empty stack, or one press would fire both handlers.
 const SELF_ESC_OVERLAYS = new Set<OverlayType>(SEAT_PICKER_OVERLAYS);
 
-interface UseAppKeysOptions {
-  exit: () => void;
+/** The three effects an app-level key spends: two run controls and the skill rescan. */
+export interface AppKeyDeps {
+  requestQuit: typeof requestQuit;
+  requestStopNow: typeof requestStopNow;
+  refreshSkills: typeof refreshSkills;
 }
 
-function applyAction(action: AppKeyAction, exit: () => void) {
+const defaultAppKeyDeps: AppKeyDeps = { requestQuit, requestStopNow, refreshSkills };
+
+interface UseAppKeysOptions {
+  exit: () => void;
+  deps?: AppKeyDeps | undefined;
+}
+
+function applyAction(action: AppKeyAction, exit: () => void, deps: AppKeyDeps) {
   switch (action.type) {
     case 'none':
       return;
@@ -54,13 +64,13 @@ function applyAction(action: AppKeyAction, exit: () => void) {
       exit();
       return;
     case 'quit':
-      requestQuit(exit);
+      deps.requestQuit(exit);
       return;
     case 'open-overlay':
       // Discovery otherwise runs only at startup, so a skill directory added mid-session would
       // stay invisible until a restart. Rescanning here rather than on the picker's mount keeps
       // the scan off the render path the visual fixtures drive.
-      if (action.overlay === 'skills') void refreshSkills();
+      if (action.overlay === 'skills') void deps.refreshSkills();
       overlayStore.open(action.overlay);
       return;
     default:
@@ -97,7 +107,7 @@ function runDeferredEscape(input: string, immediate: () => void, deferred: () =>
   scheduleEscapeAction(deferred);
 }
 
-export function useAppKeys({ exit }: UseAppKeysOptions) {
+export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions) {
   const [route, overlay, approval, completion, sessionSelection] = useStores(
     routerStore,
     overlayStore,
@@ -134,7 +144,7 @@ export function useAppKeys({ exit }: UseAppKeysOptions) {
       exit();
       return;
     }
-    if (!requestStopNow()) exit();
+    if (!deps.requestStopNow()) exit();
   });
 
   useInput(
@@ -188,7 +198,7 @@ export function useAppKeys({ exit }: UseAppKeysOptions) {
     (input, key) => {
       const shortcut = handleShortcutKeys(input, key, route);
       if (shortcut.type !== 'none') {
-        applyAction(shortcut, exit);
+        applyAction(shortcut, exit, deps);
         return;
       }
     },

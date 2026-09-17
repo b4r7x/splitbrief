@@ -92,6 +92,15 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   planner_text: { phase: 'researching', text: 'Reading the log format.' },
   planner_heartbeat: { phase: 'researching', elapsedMs: 500, accumulatedTokens: 12 },
   runner_call_started: { phase: 'implementing', ...callContext },
+  runner_call_runtime_status: {
+    phase: 'implementing',
+    ...callContext,
+    runtimeStatus: {
+      phase: 'waiting-first-response',
+      loadState: 'unknown',
+      observedAt: TS,
+    },
+  },
   runner_call_text_delta: {
     phase: 'implementing',
     ...callContext,

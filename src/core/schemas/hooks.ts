@@ -120,6 +120,26 @@ const hookEventConfigShape = Object.fromEntries(
   HOOK_EVENTS.map((event) => [event, z.array(HookEntrySchema).optional()]),
 );
 
-export const HooksConfigSchema: z.ZodType<HooksConfig> = z.strictObject({
-  ...hookEventConfigShape,
-});
+// Nothing commits any more, so the commit events never fire: an empty legacy list loads and is
+// dropped, a populated one fails the load instead of looking like an active hook.
+const RETIRED_HOOK_EVENTS = ['pre_commit', 'post_commit'] as const;
+
+export const HooksConfigSchema: z.ZodType<HooksConfig> = z
+  .strictObject({
+    ...hookEventConfigShape,
+  })
+  .superRefine((hooks, ctx) => {
+    for (const event of RETIRED_HOOK_EVENTS) {
+      if ((hooks[event]?.length ?? 0) === 0) continue;
+      ctx.addIssue({
+        code: 'custom',
+        message: `${event} hooks were removed — SPLITBRIEF no longer commits, so they never run; delete hooks.${event}.`,
+        path: [event],
+      });
+    }
+  })
+  .transform((hooks) => {
+    const active: HooksConfig = { ...hooks };
+    for (const event of RETIRED_HOOK_EVENTS) delete active[event];
+    return active;
+  });

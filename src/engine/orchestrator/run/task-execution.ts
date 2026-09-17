@@ -8,7 +8,12 @@ import type { WorkflowContext } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary/build.js';
 import { publishError } from '../events.js';
 import { runTaskLoop } from '../task/loop.js';
-import { runFinalReviewPhase } from '../final-review.js';
+import {
+  REVIEW_UNAVAILABLE,
+  runFinalReviewPhase,
+  type FinalReviewFailure,
+  type FinalReviewResult,
+} from '../final-review.js';
 import { decideReviewOutcome } from '../review-fix.js';
 import { REVIEW_CYCLE_CAP } from '../../../core/pipeline-spec/review.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
@@ -27,6 +32,21 @@ export type RunTasksAndReviewOptions = {
   setTrackedState: (s: WorkflowState) => void;
   setCurrentTask: (t: Pick<Task, 'file' | 'files' | 'action'> | undefined) => void;
 };
+
+/**
+ * Why this review reached no verdict, when it reached none. A result from before
+ * the typed failure existed says only that nothing was written; that is a call
+ * that did not land, carried under the one stable code rather than guessed at.
+ */
+function noVerdictFailure(review: FinalReviewResult): FinalReviewFailure | undefined {
+  if (review.failure !== undefined) return review.failure;
+  if (review.reviewStatus === 'written') return undefined;
+  return {
+    kind: 'call-failed',
+    code: REVIEW_UNAVAILABLE,
+    message: 'The final review reached no verdict, so nothing was judged.',
+  };
+}
 
 export const APPROVAL_PARKED_ARTIFACT: Partial<Record<Phase, string>> = {
   'reviewing-spec': SPEC_FILE,
@@ -176,7 +196,9 @@ export async function runTasksAndReview(
 
   // The review owns the run's exit: a `fail` it can attribute to briefs sends
   // those briefs back through implementation and asks again, up to the cap.
-  for (let cycle = 0; ; cycle++) {
+  // The budget is durable: a resumed final review restarts from the cycles its
+  // earlier invocations already spent, so continuing never mints new ones.
+  for (let cycle = state.reviewFixes?.cycle ?? 0; ; cycle++) {
     const review = await runFinalReviewPhase({
       projectDir: wctx.projectDir,
       sessionId: wctx.sessionId,
@@ -195,6 +217,27 @@ export async function runTasksAndReview(
     });
     state = review.state;
     if (wctx.signal?.aborted) {
+      return { summary: summaryNow(), completed: false, cancelled: false, state };
+    }
+
+    // A review that judged nothing is not a review that failed: it has no
+    // blocker count to report, no brief to send back and no repair cycle to
+    // spend. The run stays on this phase, halted on the review seat, until that
+    // seat is answered — a fabricated `0 blocking findings` would close it.
+    const failure = noVerdictFailure(review);
+    if (failure !== undefined) {
+      const issue = buildReviewFailedRecoveryIssue({
+        phase: state.phase,
+        failure,
+        createdAt: nowIso(),
+      });
+      publishError({
+        bus: wctx.bus,
+        phase: state.phase,
+        message: issue.message,
+        safety: { category: 'recovery', code: 'review_failed' },
+      });
+      state = raisePendingRecovery({ ...ref, bus: wctx.bus }, state, issue, setTrackedState);
       return { summary: summaryNow(), completed: false, cancelled: false, state };
     }
 
@@ -242,23 +285,35 @@ export async function runTasksAndReview(
       return { summary: summaryNow(), completed: false, cancelled: false, state };
     }
 
+    const nextCycle = cycle + 1;
     state = transitionAndSave(ref, state, {
       type: 'REVIEW_FIX_START',
       fixes: decision.fixes,
-      cycle: cycle + 1,
+      cycle: nextCycle,
     });
     setTrackedState(state);
     wctx.bus.publish({
       type: 'review_fix_started',
       ts: Date.now(),
       phase: state.phase,
-      cycle,
+      cycle: nextCycle,
       taskIds: state.tasks.filter((t) => decision.fixes[t.id] !== undefined).map((t) => t.id),
     });
 
-    const rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
+    let rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
     state = rerun.state;
     taskBreakdowns = rerun.taskBreakdowns;
+    // A boundary pause inside a repair parks the run exactly like the main
+    // loop: the park keeps the next brief or review step and the cycles
+    // already spent, and continuing re-enters this same repair.
+    while (rerun.status === 'paused') {
+      const parked = await parkAtBoundary({ wctx, state, setTrackedState });
+      state = parked.state;
+      if (!parked.continued) break;
+      rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
+      state = rerun.state;
+      taskBreakdowns = rerun.taskBreakdowns;
+    }
     if (rerun.status !== 'complete') {
       return {
         summary: summaryNow(),

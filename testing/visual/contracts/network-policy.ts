@@ -23,6 +23,13 @@ const URI_ONLY_SCHEMES = new Set([
   'wss',
 ]);
 const MAX_NESTED_URL_DEPTH = 4;
+// Public configuration examples used by the synthetic local-server fixtures. These
+// exact defaults identify no operator machine; other private URLs remain forbidden.
+const FIXTURE_SERVER_DEFAULTS = new Set([
+  'http://localhost:11434/v1',
+  'http://localhost:1234/v1',
+  'http://localhost:8080/v1',
+]);
 
 export interface NetworkReferenceScanOptions {
   readonly value: string;
@@ -91,6 +98,7 @@ function isSafeHttpUrl(options: {
   readonly depth: number;
 }): boolean {
   const { value, requireCanonical, depth } = options;
+  if (FIXTURE_SERVER_DEFAULTS.has(value)) return true;
   let url: URL;
   try {
     url = new URL(value);

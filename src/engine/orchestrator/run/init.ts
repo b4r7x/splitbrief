@@ -29,6 +29,7 @@ import {
 import { readPackageJson } from '../../../core/project-meta.js';
 import type { EventBus, EventSink } from '../../events/types.js';
 import { createBranch } from '../../../lib/git/refs.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { initLogger } from '../../../core/logger.js';
 import { slugify } from '../../../utils/slugify.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
@@ -496,7 +497,13 @@ async function restartInterruptedTask(args: {
   const task = state.tasks[state.currentTaskIndex];
   if (task === undefined) return state;
   const snapshot = state.changedFilesBaseline?.activeTaskSnapshot;
-  if (snapshot !== undefined) {
+  // Older runs recorded partial promotion without parking recovery. Its target
+  // writes and later user edits are already authoritative; restart on top of a
+  // fresh acquisition instead of restoring the abandoned pre-task snapshot.
+  const priorPromotion = readEvidenceLedger({ projectDir, sessionId })?.tasks.find(
+    (entry) => entry.id === task.id,
+  )?.promotionAttempts?.length;
+  if (snapshot !== undefined && !priorPromotion) {
     await restoreInterruptedTaskFiles({
       wctx: { projectDir, bus },
       phase: state.phase,

@@ -6,6 +6,8 @@ If you're new to SPLITBRIEF, read this in order: recipes 1–5 cover the basic w
 
 > **Conventions.** Commands assume you're in the project root. Long YAML examples elide unrelated config; the loader fills in defaults. The TUI snippets below ("You'll see") use the same line shapes the workflow renders today; exact spacing and color may vary by terminal.
 
+These examples do not configure automatic staging, commits, or index checkpoints.
+
 ---
 
 ## Basic flows
@@ -248,29 +250,15 @@ The planner bills through your Claude Code subscription, so its usage reads `unp
 
 **Run:**
 
-In the TUI, the sidebar footer carries the running figure and a closed run's `Cost` row carries
-the final one. Both are hidden while Settings ▸ Workflow ▸ **Show spend** is off. Post-hoc:
+Open `/usage` from the workflow, including a saved run. The details show reported usage, missing or partial coverage, and available monetary estimates. The sidebar and closed-run ledger do not display spend; there is no Show spend control.
+
+For a recorded event-level export:
 
 ```bash
 jq 'select(.type == "cost_update")' .splitbrief/sessions/<id>/session.jsonl | tail -20
 ```
 
-**You'll see:**
-
-A closed run's `Run` block:
-
-```
-Cost      $0.90
-```
-
-`$0.90 + unknown` when part of the run had no price, the crew's billing labels
-(`subscription-included`, `local`) when nothing was metered, and `not estimated` when no figure
-exists. The final figure is recorded in `summary.json`; the per-event trail is the `cost_update`
-records in `session.jsonl`.
-
-**Variations:** `splitbrief status` prints the active workflow phase, task, and provider status.
-
-**See also:** [docs/DEBUGGING.md](./DEBUGGING.md) §Event log.
+Unknown or unpriced usage is not zero cost. Estimates in the explicit details view do not prove the vendor’s invoice or the CLI’s authentication method.
 
 ---
 
@@ -479,7 +467,7 @@ A non-empty `comment <text>` regenerates. `reject` ends the workflow.
 
 ```yaml
 workflow:
-  briefReview: simple    # the only accepted value; 'rich' fails the load
+  briefReview: simple    # deprecated compatibility input; ignored
 ```
 
 **Run:**
@@ -502,7 +490,7 @@ phase: reviewing-briefs
 
 `e` on an empty composer, plus `Ctrl+E`, `edit`, `E`, and `edit-file`, open `.splitbrief/sessions/<id>/tasks.md` in the external editor. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; SPLITBRIEF re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
-**Variations:** Dropping the key entirely works too — `briefReview` falls back to `simple` in every mode when it is not set.
+**Variations:** Dropping the key entirely works too — the field is ignored and deprecated. Removing it does not disable the existing brief approval gate.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) `workflow.briefReview`.
 
@@ -897,7 +885,7 @@ hooks:
       args: ["biome", "check", "--write", "${event.file}"]
       timeout_ms: 10000
       on_failure: warn
-  pre_commit:
+  pre_task:
     - command: ".splitbrief/hooks/scan.sh"
       args: ["${event.file}"]
       on_failure: block

@@ -6,8 +6,14 @@ import { configStore } from '../../../src/stores/project/config.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
+import {
+  CHECKING_TOOLS_STAGE,
+  preparationStore,
+} from '../../../src/stores/navigation/preparation.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
+import type { ReadinessCheck, ReadinessReport } from '../../../src/core/readiness/types.js';
+import type { PreparationOutcome } from '../../../src/engine/runners/prepared-execution.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection.js';
 import type { ClaudeCodeModelOption } from '../../../src/core/providers/claude-code-options.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
@@ -15,6 +21,7 @@ import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/mode
 import type { Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { SkillMeta } from '../../../src/core/skills/types.js';
+import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import { scenarioId } from '../contracts/identifiers.js';
@@ -446,6 +453,143 @@ const SKILLS_COMPLETION_FIXTURE: SkillMeta[] = [
   },
 ];
 
+/**
+ * The check a start or a continuation is waiting on, held open for the capture. It is submitted
+ * through the coordinator every screen already submits to, so the frame shows the real wiring.
+ */
+function submitHeldCheck(origin: 'start' | 'continue'): void {
+  preparationStore.submit({
+    origin,
+    stage: CHECKING_TOOLS_STAGE,
+    prepare: () => new Promise(() => {}),
+    onPrepared: () => {},
+  });
+}
+
+/** A cold start: the CLI submitted the check before the mount, so Home has nothing to cancel. */
+function createHomePreparingFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      submitHeldCheck('start');
+    },
+    teardown: home.teardown,
+  };
+}
+
+/**
+ * A check that has already answered, so the panel that needs answering is on screen. The checks are
+ * built by the readiness builders themselves, so the copy in the capture is the copy an operator
+ * really reads rather than a fixture's paraphrase of it.
+ */
+function submitSettledCheck(outcome: PreparationOutcome): void {
+  preparationStore.submit({
+    origin: 'continue',
+    stage: CHECKING_TOOLS_STAGE,
+    prepare: () => Promise.resolve(outcome),
+    onPrepared: () => {},
+  });
+}
+
+const TRUST_BOUNDARY_CHECK: ReadinessCheck = {
+  id: 'runners.planner.trust-boundary',
+  severity: 'warning',
+  summary: 'Planner claude-code can execute commands on this machine.',
+  details: [
+    'Spec/plan approval level: gates.',
+    'File-write approval prompts: enabled.',
+    'SPLITBRIEF approval gates review spec/plan documents and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
+  ],
+};
+
+function preparationReport(checks: readonly ReadinessCheck[]): ReadinessReport {
+  const blocker = checks.filter((check) => check.severity === 'blocker').length;
+  const warning = checks.filter((check) => check.severity === 'warning').length;
+  return {
+    generatedAt: '2026-08-04T00:00:00.000Z',
+    projectDir: VISUAL_FIXTURE_PROJECT_DIR,
+    status: blocker > 0 ? 'blocked' : 'ready-with-warnings',
+    counts: { ok: 4, info: 0, warning, blocker },
+    nextAction: {
+      kind: blocker > 0 ? 'prepare-runner' : 'continue',
+      label: blocker > 0 ? 'Prepare the runner' : 'Continue',
+      reason: blocker > 0 ? 'Resolve the blockers.' : 'Tools are ready.',
+    },
+    sections: [{ id: 'runners', title: 'Runners', checks: [...checks] }],
+    metadata: {},
+  };
+}
+
+/** The contradiction this panel exists to prevent: an execution error with no blocker at all. */
+function createHomePreparationFailedFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      submitSettledCheck({
+        kind: 'failed',
+        report: preparationReport([TRUST_BOUNDARY_CHECK]),
+        error: new Error(
+          'Session ownership could not be taken over: 20260804-a91f is held by another SPLITBRIEF process.',
+        ),
+      });
+    },
+    teardown: home.teardown,
+  };
+}
+
+function createHomePreparationBlockedFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      submitSettledCheck({
+        kind: 'blocked',
+        report: preparationReport([
+          {
+            id: 'runners.planner.available',
+            severity: 'blocker',
+            summary: 'Ollama is not reachable at http://localhost:11434/v1',
+            details: ['Start Ollama with: ollama serve', 'Then retry this connection.'],
+          },
+        ]),
+      });
+    },
+    teardown: home.teardown,
+  };
+}
+
+const CONTINUING_FEATURE = 'Refine terminal navigation';
+
+function createWorkflowContinuingFixture(): FixtureLifecycle {
+  const state = { ...createInitialState(CONTINUING_FEATURE), phase: 'implementing' as const };
+  const workflow = createRouteFixture(() => ({
+    screen: 'workflow',
+    run: makeRunRecord({
+      ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: 'visual-continuing' },
+      feature: CONTINUING_FEATURE,
+      hydration: { kind: 'loaded', state },
+      status: {
+        kind: 'open',
+        stop: { kind: 'interrupted' },
+        resumeAt: { kind: 'planner', call: 'tasks' },
+      },
+    }),
+    execution: { kind: 'at-rest' },
+  }));
+  return {
+    setup: async (context) => {
+      await workflow.setup(context);
+      submitHeldCheck('continue');
+      // The composer beside the status is live: a correction typed during the check is still there
+      // when it lands.
+      composerDraftStore.request('and keep the parser out of the brief header');
+    },
+    teardown: workflow.teardown,
+  };
+}
+
 function createCommandArgumentFixture(): FixtureLifecycle {
   const workflow = createWorkflowBaseFixture();
   return {
@@ -466,6 +610,46 @@ function createSkillsCompletionFixture(): FixtureLifecycle {
       await home.setup(context);
       skillsStore.setAvailable(SKILLS_COMPLETION_FIXTURE);
       composerDraftStore.request('/skills ');
+    },
+    teardown: home.teardown,
+  };
+}
+
+// A draft that is not only text: the image sits where the caret put it, between the words that
+// explain it, and nothing is parked in a row of its own above the box.
+function createDraftImageFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      composerDraftStore.requestDocument({
+        version: 1,
+        parts: [
+          { kind: 'text', text: 'the legend overlaps the axis here ' },
+          {
+            kind: 'image',
+            attachment: {
+              id: 'att-visual-1',
+              kind: 'image',
+              path: `${VISUAL_FIXTURE_PROJECT_DIR}/docs/usage-panel.png`,
+              mimeType: 'image/png',
+              sizeBytes: 48_120,
+            },
+          },
+          { kind: 'text', text: ' and again after the first paint ' },
+          {
+            kind: 'image',
+            attachment: {
+              id: 'att-visual-2',
+              kind: 'image',
+              path: `${VISUAL_FIXTURE_PROJECT_DIR}/docs/usage-panel-wide.png`,
+              mimeType: 'image/png',
+              sizeBytes: 51_904,
+            },
+          },
+          { kind: 'text', text: ' — keep the ticks, move the legend.' },
+        ],
+      });
     },
     teardown: home.teardown,
   };
@@ -504,8 +688,13 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('home-cold'), () => createHomeFixture({ cold: true })],
   [scenarioId('home-cold-detecting'), () => createHomeFixture({ cold: true, detecting: true })],
+  [scenarioId('home-preparing'), createHomePreparingFixture],
+  [scenarioId('home-preparation-failed'), createHomePreparationFailedFixture],
+  [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
   [scenarioId('home-mode-completion'), createModeCompletionFixture],
+  [scenarioId('home-draft-image'), createDraftImageFixture],
+  [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
   [scenarioId('setup-initial'), createSetupFixture],
 ]);

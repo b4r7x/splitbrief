@@ -240,11 +240,12 @@ export async function invokeProcessCli(
     }
   };
 
+  const parse = adapter.createParser?.() ?? adapter.parse;
   const lineBuffer = createLineBuffer(
     (line) => {
       let parsed: readonly CliProtocolEvent[];
       try {
-        parsed = adapter.parse(line);
+        parsed = parse(line);
       } catch {
         throw fatal('protocol-failure', 'CLI output did not match its structured protocol');
       }

@@ -398,10 +398,13 @@ export function transition(
 
     case 'DRAIN_QUEUE': {
       const ts = now.toISOString();
+      const ids = action.ids === undefined ? undefined : new Set(action.ids);
       return {
         ...state,
         messageQueue: state.messageQueue.map((m) =>
-          isQueuedMessagePendingDelivery(m) ? { ...m, drainedAt: ts } : m,
+          isQueuedMessagePendingDelivery(m) && (ids === undefined || ids.has(m.id))
+            ? { ...m, drainedAt: ts }
+            : m,
         ),
       };
     }

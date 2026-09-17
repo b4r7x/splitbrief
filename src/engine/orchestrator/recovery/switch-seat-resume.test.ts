@@ -6,7 +6,7 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { PreparationPolicy } from '../../runners/prepare-execution/types.js';
 import type { prepareExecution } from '../../runners/prepare-execution/prepare-execution.js';
 import { switchSeatAndPrepareResume } from './switch-seat-resume.js';
@@ -26,7 +26,7 @@ const RESUME_POLICY: Extract<PreparationPolicy, { purpose: 'resume' }> = {
   unverifiedAuth: 'denied',
 };
 
-function setup(name: string, offered: boolean) {
+function setup(name: string, offered: boolean, selectedImplementerProfile?: string) {
   const projectDir = createTempDir(name);
   dirs.push(projectDir);
   const sessionId = `sess-${name}`;
@@ -44,10 +44,24 @@ function setup(name: string, offered: boolean) {
       ...(offered && {
         switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code', model: 'sonnet' }] },
       }),
+      ...(selectedImplementerProfile !== undefined && { selectedImplementerProfile }),
     }),
   });
   saveState({ projectDir, sessionId }, state);
   return { projectDir, sessionId, state };
+}
+
+function profileTableConfig() {
+  return makeConfig({
+    implementer: { kind: 'cli', tool: 'opencode' },
+    implementerProfiles: {
+      default: 'small',
+      profiles: {
+        small: { kind: 'cli', tool: 'opencode' },
+        big: { kind: 'cli', tool: 'codex' },
+      },
+    },
+  });
 }
 
 describe('switchSeatAndPrepareResume', () => {
@@ -107,5 +121,71 @@ describe('switchSeatAndPrepareResume', () => {
 
     expect(result).toMatchObject({ kind: 'blocked', code: 'seat-swap-unavailable' });
     expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it('prepares the resume on the profile that failed, leaving the default alone', async () => {
+    const { projectDir, sessionId, state } = setup('seat-swap-resume-profile', true, 'big');
+    const { bus } = makeBusRecorder();
+    const config = profileTableConfig();
+    const prepare = vi.fn(
+      async () => ({ kind: 'failed', error: new Error('not admitted') }) as const,
+    ) as unknown as typeof prepareExecution;
+
+    const result = await switchSeatAndPrepareResume({
+      projectDir,
+      sessionId,
+      state,
+      bus,
+      config,
+      candidate: { tool: 'claude-code', model: 'sonnet' },
+      policy: RESUME_POLICY,
+      signal: new AbortController().signal,
+      prepare,
+    });
+
+    expect(result.kind).toBe('switched');
+    expect(vi.mocked(prepare).mock.calls[0]?.[0]).toMatchObject({
+      effectiveConfig: {
+        implementer: { tool: 'opencode' },
+        implementerProfiles: {
+          profiles: {
+            small: { tool: 'opencode' },
+            big: { tool: 'claude-code', model: 'sonnet' },
+          },
+        },
+      },
+    });
+    // A swap that is not admitted leaves the run's own config on the worker it had.
+    expect(config).toEqual(profileTableConfig());
+  });
+
+  it('blocks — and changes neither config nor state — when the failing profile is gone', async () => {
+    const { projectDir, sessionId, state } = setup(
+      'seat-swap-resume-missing-profile',
+      true,
+      'huge',
+    );
+    const { bus } = makeBusRecorder();
+    const config = profileTableConfig();
+    const prepare = vi.fn(
+      async () => ({ kind: 'aborted' }) as const,
+    ) as unknown as typeof prepareExecution;
+
+    const result = await switchSeatAndPrepareResume({
+      projectDir,
+      sessionId,
+      state,
+      bus,
+      config,
+      candidate: { tool: 'claude-code', model: 'sonnet' },
+      policy: RESUME_POLICY,
+      signal: new AbortController().signal,
+      prepare,
+    });
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'profile-not-found', state });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(config).toEqual(profileTableConfig());
+    expect(loadState({ projectDir, sessionId })).toEqual(state);
   });
 });

@@ -93,7 +93,6 @@ function installRecordingCodexShim(
 const cliClaudeImplementer: CliImplementerConfig = {
   kind: 'cli',
   tool: 'claude-code',
-  authChannel: 'session',
   contextLength: 8192,
   temperature: 0.3,
 };
@@ -105,7 +104,6 @@ function makeClaudeConfig(): Config {
 const cliCodexImplementer: CliImplementerConfig = {
   kind: 'cli',
   tool: 'codex',
-  authChannel: 'session',
   contextLength: 8192,
   temperature: 0.3,
 };
@@ -186,7 +184,7 @@ describe('createCliImplementer (claude-code)', () => {
     expect(readFileSync(join(projectDir, 'src/hello.ts'), 'utf8')).toBe('generated');
   });
 
-  it('passes only the selected API-key channel to the implementer process', async () => {
+  it('refuses an explicit unproven API-key channel before spawning the implementer process', async () => {
     const envFile = join(shimDir, 'env.txt');
     const target = join(projectDir, 'src/hello.ts');
     const shimPath = join(shimDir, 'claude');
@@ -221,10 +219,9 @@ describe('createCliImplementer (claude-code)', () => {
         onOutput: () => {},
       });
 
-      expect(result.success).toBe(true);
-      expect(readFileSync(envFile, 'utf8')).toBe(
-        `sk-anthropic||${join(projectDir, '.splitbrief', 'sandbox', 'implementer', 'claude-code', 'home')}`,
-      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Remove authChannel from this runner');
+      expect(existsSync(envFile)).toBe(false);
     } finally {
       if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
       else process.env.ANTHROPIC_API_KEY = originalAnthropic;
@@ -373,7 +370,18 @@ describe('createCliImplementer (claude-code)', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.usage).toEqual({ inputTokens: 5, outputTokens: 2 });
+    expect(result.usage).toEqual({
+      inputTokens: 5,
+      outputTokens: 2,
+      counterCoverage: {
+        input: 'reported',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { output: 2 },
+    });
   });
 
   it('prefers terminal usage over mid-stream usage samples', async () => {
@@ -393,7 +401,18 @@ describe('createCliImplementer (claude-code)', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 40 });
+    expect(result.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 40,
+      counterCoverage: {
+        input: 'reported',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { output: 40 },
+    });
   });
 
   it('keeps mid-stream usage when the terminal result carries none', async () => {
@@ -413,7 +432,18 @@ describe('createCliImplementer (claude-code)', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.usage).toEqual({ inputTokens: 5, outputTokens: 2 });
+    expect(result.usage).toEqual({
+      inputTokens: 5,
+      outputTokens: 2,
+      counterCoverage: {
+        input: 'reported',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { output: 2 },
+    });
   });
 });
 
@@ -608,7 +638,19 @@ describe('createCliImplementer (codex usage capture)', () => {
 
     expect(result.success).toBe(true);
     expect(readArgv(argvFile).at(-1)).toContain('src/hello.ts');
-    expect(result.usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 });
+    expect(result.usage).toEqual({
+      inputTokens: 4,
+      outputTokens: 4,
+      cacheReadTokens: 6,
+      counterCoverage: {
+        input: 'reported',
+        output: 'partial',
+        cacheRead: 'reported',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { input: 10, output: 4 },
+    });
   });
 
   it('succeeds and reports no usage when the turn carries no usage key', async () => {

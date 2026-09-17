@@ -254,6 +254,7 @@ export interface RuntimeCommandContext {
   endRun: () => boolean;
   getQueueDepth: () => number;
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
+  insertImage?: (input: string) => AttachImageResult;
   attachImage: (input: string) => AttachImageResult;
   detachImage: (idOrIndex: string) => boolean;
   listAttachments: () => Array<{ id: string; path: string }>;

@@ -154,8 +154,15 @@ function attentionByline(view: SummaryView): string {
 const LEGEND_KEYS = ['esc home', 'ctrl+k commands', '/sessions', '/help'] as const;
 const SCROLL_KEY = 'shift+↑↓ scroll';
 
-export function legendText(input: Readonly<{ overflow: boolean; width: number }>): string {
+/**
+ * `canGoHome` is false while something else on the screen owns Escape — a tool check beside the
+ * composer, say. The key leaves the legend rather than promising an exit it would not take.
+ */
+export function legendText(
+  input: Readonly<{ overflow: boolean; width: number; canGoHome?: boolean | undefined }>,
+): string {
   const [home, ...rest] = LEGEND_KEYS;
-  const keys = input.overflow ? [home, SCROLL_KEY, ...rest] : [...LEGEND_KEYS];
+  const lead = input.canGoHome === false ? [] : [home];
+  const keys = input.overflow ? [...lead, SCROLL_KEY, ...rest] : [...lead, ...rest];
   return fitKeyLegend(keys.join(SOFT_SEP), input.width);
 }

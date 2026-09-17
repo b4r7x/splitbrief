@@ -28,7 +28,7 @@ export type NativeInjectionResult =
   | { status: 'delivered' }
   | {
       status: 'not-delivered';
-      reason: 'unsupported' | 'aborted' | 'failed' | 'cleared' | 'already-owned';
+      reason: 'unsupported' | 'not-ready' | 'aborted' | 'failed' | 'cleared' | 'already-owned';
     };
 
 function findQueuedMessage(
@@ -74,7 +74,7 @@ export async function dispatchNativeInjection(
       id: message.id,
     });
     setState(injecting);
-    const usage = await planner.injectUserTurn({
+    const injection = await planner.injectUserTurn({
       text: injectionText,
       projectDir,
       ...(signal !== undefined && { signal }),
@@ -91,7 +91,20 @@ export async function dispatchNativeInjection(
     if (!latestMessage) {
       return { status: 'not-delivered', reason: 'cleared' };
     }
-    const booked = addUsageAndSave({ projectDir, sessionId, bus }, latest, 'planner', usage);
+    if (injection.status === 'not-delivered') {
+      const pending = transitionAndSave(ref, latest, {
+        type: 'MARK_NATIVE_DELIVERY_FAILED',
+        id: message.id,
+      });
+      setState(pending);
+      return { status: 'not-delivered', reason: injection.reason };
+    }
+    const booked = addUsageAndSave(
+      { projectDir, sessionId, bus },
+      latest,
+      'planner',
+      injection.usage,
+    );
     const next = transitionAndSave(ref, booked, {
       type: 'MARK_DELIVERED_NATIVE',
       id: message.id,

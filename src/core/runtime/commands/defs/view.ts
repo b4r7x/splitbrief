@@ -138,5 +138,14 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
         ctx.setFeedbackMessage(result.expanded ? 'Expanded latest diff' : 'Collapsed latest diff');
       },
     },
+    {
+      kind: 'noarg',
+      name: '/usage',
+      label: 'usage',
+      description: 'Show tokens, estimate and rates',
+      category: 'view',
+      validScreens: ['workflow'],
+      handler: () => ctx.openOverlay('usage-details'),
+    },
   ];
 }

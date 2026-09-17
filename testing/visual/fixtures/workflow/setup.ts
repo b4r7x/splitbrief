@@ -2,6 +2,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { WorkflowScreenDeps } from '../../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-run-loop.js';
+import type { ReviewInputEffects } from '../../../../src/features/workflow/review-parser.js';
+import type { SessionSelectDeps } from '../../../../src/stores/navigation/session-select.js';
+import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import {
   closeApprovalPrompt,
   openApprovalPrompt,
@@ -14,7 +17,7 @@ import { reviewStore } from '../../../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
-import type { FixtureContext, FixtureFactory } from '../common.js';
+import { PREVIEW_UNAVAILABLE, type FixtureContext, type FixtureFactory } from '../common.js';
 import {
   createWorkflowBaseFixture,
   teardownVisualFixture,
@@ -148,8 +151,25 @@ function waitForFixtureAbort(signal?: AbortSignal): Promise<never> {
   });
 }
 
+/**
+ * The two effects live review input spends outside the stores. Neither can reach a process: the
+ * editor route answers on the feedback line the operator is already reading, and there is no
+ * planner behind a fixture to queue a message into.
+ */
+const fixtureReviewInput: ReviewInputEffects = {
+  openExternalEditor: async () => feedbackStore.setMessage(PREVIEW_UNAVAILABLE),
+  enqueue: async () => null,
+};
+
+/**
+ * Every effect the run screen can reach: the run itself, the continuation a run at rest prepares
+ * and the two live-input effects. A caller that has one supplies its own `sessionSelect` so home,
+ * the sessions overlay and the screen all continue a run through the same object; without one the
+ * screen keeps the production composition root it already fell back to.
+ */
 export function createWorkflowFixtureAppDeps(
   projection?: WorkflowFixtureProjection,
+  sessionSelect?: SessionSelectDeps,
 ): WorkflowScreenDeps {
   const runWorkflow: RunWorkflowFn = (options) => {
     if (projection !== undefined) {
@@ -158,7 +178,11 @@ export function createWorkflowFixtureAppDeps(
     }
     return waitForFixtureAbort(options.signal);
   };
-  return { runWorkflow };
+  return {
+    runWorkflow,
+    reviewInput: fixtureReviewInput,
+    ...(sessionSelect !== undefined && { sessionSelect }),
+  };
 }
 
 export function createWorkflowFixtureFactory(

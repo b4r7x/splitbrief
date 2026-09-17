@@ -36,6 +36,7 @@ interface OperationBase {
   reason: string | null;
   usage: unknown | null;
   warnings: readonly OperationWarningGroup[];
+  apiRuntimeStatus?: EngineEventOf<'runner_call_runtime_status'>['runtimeStatus'];
 }
 
 export interface RunningOperation extends OperationBase {

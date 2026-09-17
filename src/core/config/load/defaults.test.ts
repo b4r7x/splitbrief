@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
-import { initConfig, loadConfig } from './io.js';
+import { initConfig, loadConfig, writeConfig } from './io.js';
 import { createDefaultConfig, mergeWithDefaults } from './defaults.js';
 import { SPLITBRIEF_DIR } from '../../paths.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
@@ -104,15 +104,16 @@ describe('config defaults', () => {
       expect(config).not.toHaveProperty('shikiTheme');
     });
 
-    it('emits no retired keys, but does emit approve and git.commitStrategy, in a fresh default config', () => {
+    it('emits no retired keys, but does emit approve, in a fresh default config', () => {
       const config = createDefaultConfig();
       expect(config).not.toHaveProperty('shikiTheme');
       expect(config).not.toHaveProperty('sessions');
+      expect(config).not.toHaveProperty('hooks');
       expect(config.workflow).not.toHaveProperty('autoApproveSpec');
       expect(config.workflow).not.toHaveProperty('autoApprovePlan');
       expect(config.workflow).not.toHaveProperty('commitStrategy');
+      expect(config.workflow).not.toHaveProperty('git');
       expect(config.workflow.approve).toBe('default');
-      expect(config.workflow.git?.commitStrategy).toBe('none');
     });
 
     it('does not serialize removed workflow fields when writing a new config', async () => {
@@ -127,8 +128,61 @@ describe('config defaults', () => {
       expect(workflow.auto_approve_spec).toBeUndefined();
       expect(workflow.auto_approve_plan).toBeUndefined();
       expect(workflow.commit_strategy).toBeUndefined();
+      expect(workflow.git).toBeUndefined();
       expect(workflow.approve).toBe('default');
-      expect((workflow.git as Record<string, unknown>).commit_strategy).toBe('none');
+    });
+
+    it.each(['checkpoint', 'per-task'])(
+      'rejects workflow.git.commit_strategy %s at load, naming the key to delete',
+      (strategy) => {
+        const dir = join(TMP, `retired-commit-strategy-${strategy}`);
+        writeConfigYaml(dir, { workflow: { git: { commit_strategy: strategy } } });
+
+        expect(() => loadConfig(dir)).toThrow(
+          `workflow.git.commitStrategy: commitStrategy "${strategy}" was removed`,
+        );
+      },
+    );
+
+    it('loads commit_strategy none as inert, keeps create_branch, and omits it on rewrite', () => {
+      const dir = join(TMP, 'legacy-commit-strategy-none');
+      writeConfigYaml(dir, { workflow: { git: { commit_strategy: 'none', create_branch: true } } });
+
+      const { config } = loadConfig(dir);
+      expect(config.workflow.git).toEqual({ createBranch: true });
+
+      const rewritten = YAML.parse(writeConfig(dir, config)) as Record<string, unknown>;
+      expect((rewritten.workflow as Record<string, unknown>).git).toEqual({ create_branch: true });
+      expect(loadConfig(dir).config).toEqual(config);
+    });
+
+    it.each(['pre_commit', 'post_commit'])(
+      'rejects a populated hooks.%s list at load, naming the key to delete',
+      (event) => {
+        const dir = join(TMP, `retired-hook-${event}`);
+        writeConfigYaml(dir, { hooks: { [event]: [{ command: './scripts/commit.sh' }] } });
+
+        expect(() => loadConfig(dir)).toThrow(`hooks.${event}: ${event} hooks were removed`);
+      },
+    );
+
+    it('drops empty legacy commit hook lists on load and rewrite, keeping other hooks', () => {
+      const dir = join(TMP, 'legacy-empty-commit-hooks');
+      writeConfigYaml(dir, {
+        hooks: {
+          pre_task: [{ command: './scripts/pre-task.sh' }],
+          pre_commit: [],
+          post_commit: [],
+        },
+      });
+
+      const { config } = loadConfig(dir);
+      expect(Object.keys(config.hooks ?? {})).toEqual(['pre_task']);
+      expect(config.hooks?.pre_task?.[0]?.command).toBe('./scripts/pre-task.sh');
+
+      const rewritten = YAML.parse(writeConfig(dir, config)) as Record<string, unknown>;
+      expect(Object.keys(rewritten.hooks as Record<string, unknown>)).toEqual(['pre_task']);
+      expect(loadConfig(dir).config).toEqual(config);
     });
 
     it('serializes the default API identity and loads it unchanged', async () => {
@@ -147,27 +201,18 @@ describe('config defaults', () => {
       expect(loadConfig(dir).config).toEqual(createDefaultConfig());
     });
 
-    it('persists the subscription Claude channel in a new default config on every platform', async () => {
+    it('leaves the Claude auth channel to the host configuration in a new default config', async () => {
       const dir = join(TMP, 'default-claude-auth-channel');
       mkdirSync(dir, { recursive: true });
       await initConfig(dir);
-      // A fresh config must never bill the user per token for a subscription
-      // they already pay for. macOS reaches the login keychain through the host
-      // account instead of the file bridge, so `session` works there too.
+      // No admitted CLI can enforce a method (docs/AUTH-METHOD-MATRIX.md), so a
+      // persisted default `session` would read as a user choice and be refused.
 
       const written = YAML.parse(
         readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
       ) as Record<string, unknown>;
-      expect(written.planner).toEqual({
-        kind: 'cli',
-        tool: 'claude-code',
-        auth_channel: 'session',
-      });
-      expect(loadConfig(dir).config.planner).toEqual({
-        kind: 'cli',
-        tool: 'claude-code',
-        authChannel: 'session',
-      });
+      expect(written.planner).toEqual({ kind: 'cli', tool: 'claude-code' });
+      expect(loadConfig(dir).config.planner).toEqual({ kind: 'cli', tool: 'claude-code' });
     });
 
     it('creates a missing config, preserves an existing config, and force-resets it', async () => {

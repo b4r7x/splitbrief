@@ -5,7 +5,7 @@ import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
-import { _resetMouseZones } from '../../../lib/terminal/mouse-zones.js';
+import { _resetMouseZones, hitTopmostZone } from '../../../lib/terminal/mouse-zones.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { ListRow } from '../../../components/list-row.js';
 import { glyph } from '../../../lib/glyphs.js';
@@ -46,6 +46,50 @@ describe('TwoColumnPicker', () => {
     resetAllStores();
     _resetMouseZones();
   });
+
+  it.each([
+    { cols: 60, rows: 18 },
+    { cols: 80, rows: 24 },
+  ])(
+    'keeps cycle, confirm, escape and the complete recovery at $cols columns',
+    async ({ cols, rows }) => {
+      terminalSizeStore.__testReset({ cols, rows, isSmall: true });
+      const ui = renderFeature(
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          initialColumn="right"
+          leftProps={{
+            items: TOOLS,
+            getKey: (tool) => tool.id,
+            renderRow: (tool) => <Text>{tool.displayName}</Text>,
+          }}
+          rightProps={{
+            items: MODELS_BY_TOOL.alpha ?? [],
+            getKey: (model) => model.id,
+            renderRow: (model) => <Text>{model.displayName}</Text>,
+            isExpanded: true,
+            expandedHint: () => 'space cycle · ⏎ confirm',
+          }}
+          preview={() =>
+            'Unreadable model list · ctrl+r will not help; add a custom model or report the output'
+          }
+          onConfirm={() => {}}
+          onCancel={() => {}}
+          onRefresh={() => {}}
+        />,
+        { cols, rows },
+      );
+      await flushEffects();
+      const frame = ui.lastFrame() ?? '';
+      const hint = frame.split('\n').find((line) => line.includes('space cycle')) ?? '';
+      expect(hint).toContain('⏎ confirm');
+      expect(hint).toContain('esc collapse');
+      expect(hint).not.toContain('…');
+      expect(frame.replace(/\s+/g, ' ')).toContain('add a custom model or report the output');
+      expect(frame.split('\n').length).toBeLessThanOrEqual(rows);
+      ui.unmount();
+    },
+  );
 
   it('arrow nav emits onLeftChange; Enter on a disabled left is a no-op', async () => {
     const leftChanges: string[] = [];
@@ -411,6 +455,52 @@ describe('TwoColumnPicker', () => {
     await tick(20);
 
     expect(confirms).toEqual([{ l: 'alpha', r: 'a-2' }]);
+    ui.unmount();
+  });
+
+  it('applies every wheel report from one input burst before confirming', async () => {
+    const models = Array.from({ length: 10 }, (_, index) => ({
+      id: `model-${index}`,
+      displayName: `Model ${index}`,
+    }));
+    const confirms: string[] = [];
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        initialColumn="right"
+        leftProps={{
+          items: TOOLS,
+          getKey: (tool) => tool.id,
+          renderRow: (tool) => <Text>{tool.displayName}</Text>,
+        }}
+        rightProps={{
+          items: models,
+          getKey: (model) => model.id,
+          renderRow: (model) => <Text>{model.displayName}</Text>,
+        }}
+        onConfirm={(_, model) => {
+          if (model) confirms.push(model.id);
+        }}
+        onCancel={() => {}}
+      />,
+    );
+    await flushEffects();
+
+    let wheelZone: ReturnType<typeof hitTopmostZone>;
+    for (let y = 1; y <= 40 && !wheelZone; y += 1) {
+      for (let x = 1; x <= 140 && !wheelZone; x += 1) {
+        const zone = hitTopmostZone(x, y);
+        if (zone?.id === 'runner-right:model-0') wheelZone = zone;
+      }
+    }
+    expect(wheelZone?.onWheel).toBeDefined();
+    for (let index = 0; index < 6; index += 1) wheelZone?.onWheel?.('down');
+
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(confirms).toEqual(['model-6']);
     ui.unmount();
   });
 

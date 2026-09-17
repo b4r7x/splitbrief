@@ -21,6 +21,8 @@ export interface TerminalHandoverConfig {
   paste?: boolean | undefined;
   hover?: boolean | undefined;
   sourceStdin: TerminalHandoverStdin;
+  beforeSuspend?: (() => void) | undefined;
+  beforeResume?: (() => void) | undefined;
 }
 
 interface SignalSnapshot {
@@ -106,6 +108,7 @@ export function suspendTerminalForEditor(config?: TerminalHandoverConfig): void 
   const stdin = handover?.sourceStdin ?? process.stdin;
   beginHandover(stdin);
   try {
+    if (handoverSnapshots.length === 1) handover?.beforeSuspend?.();
     stdin.pause();
     if (handover) {
       const paste = handover.paste ?? handover.mouse;
@@ -122,6 +125,7 @@ export function suspendTerminalForEditor(config?: TerminalHandoverConfig): void 
     writeTerminalSequence(terminalSequences.showCursor);
   } catch (err) {
     const snapshot = endHandover();
+    if (handoverSnapshots.length === 0) handover?.beforeResume?.();
     writeTerminalSequence(terminalSequences.hideCursor);
     try {
       (snapshot?.stdin ?? stdin).resume();
@@ -135,6 +139,7 @@ export function suspendTerminalForEditor(config?: TerminalHandoverConfig): void 
 export function resumeTerminalAfterEditor(config?: TerminalHandoverConfig): void {
   const handover = config ?? activeHandover;
   try {
+    if (handoverSnapshots.length <= 1) handover?.beforeResume?.();
     if (handover?.fullscreen) writeTerminalSequence(terminalSequences.enterAltBuffer);
     // Unconditional counterpart to the suspend-side showCursor: whatever the editor did —
     // clean exit, SIGINT death, spawn failure — the TUI takes the screen back cursor-hidden.

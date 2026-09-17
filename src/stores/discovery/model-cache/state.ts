@@ -17,10 +17,7 @@ import {
   type ClaudeCodeModelOption,
 } from '../../../core/providers/claude-code-options.js';
 import { CLI_TOOL_IDS, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
-import {
-  runnerRoleForActiveRole,
-  type ActiveRunnerRole,
-} from '../../../core/runners/seat-roles.js';
+import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { DetectionLanePublication } from '../../../engine/detection/lane-channel.js';
 import type { DetectionServiceResult } from '../../../engine/detection/service.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
@@ -178,7 +175,9 @@ export const modelCacheStore = {
     const id = nextPublicationId + 1;
     nextPublicationId = id;
     const current = store.get();
-    const base = contextChanged ? demotedForContextChange(current, Date.now()) : current;
+    const base = contextChanged
+      ? demotedForContextChange(current, Date.now(), contexts.configuredProviders)
+      : current;
     const refresh: DiscoveryRefreshState = {
       ...base.refresh,
       publicationId: id,
@@ -350,14 +349,19 @@ export const modelCacheStore = {
     provider: ApiProviderId;
   }): ConfiguredProviderRuntime | null | undefined {
     const current = store.get();
-    if (Object.keys(current.configuredProviders).length === 0) return undefined;
+    // Keyed by the seat that actually asked. The reviewer shares the planner's
+    // admission tier but never its connection, so it answers from its own row
+    // or from nothing — when no `reviewer:` block is configured, discovery
+    // publishes an explicit planner-derived reviewer outcome to fill it.
     const match =
       current.configuredProviders[
-        configuredProviderRoleKey({
-          role: runnerRoleForActiveRole(input.role),
-          provider: input.provider,
-        })
+        configuredProviderRoleKey({ role: input.role, provider: input.provider })
       ];
+    const expected = activeContexts?.configuredProviders?.find(
+      (connection) => connection.role === input.role && connection.provider === input.provider,
+    );
+    if (expected !== undefined && match?.connection.contextKey !== expected.contextKey) return null;
+    if (Object.keys(current.configuredProviders).length === 0) return undefined;
     // Mirrors the CLI axis: a demoted row still answers, but until a live
     // readiness lane runs under this context absence stays unknown rather than
     // authoritative, so a role the new context has not probed keeps its

@@ -8,6 +8,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { focusHasResolvableCopy } from '../copy/resolve.js';
 import { getActiveRailStage } from '../../../core/rail-stages.js';
 import {
@@ -19,7 +20,6 @@ import {
 import { colorForTone } from '../display/tone-color.js';
 import { deriveBuildProgress, etaText } from '../display/build-progress.js';
 import { selectTaskListView, tasksStore } from '../../../stores/workflow/tasks.js';
-import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
@@ -47,11 +47,10 @@ export function InputFooter({
   byline?: string | undefined;
 }) {
   const t = useTheme();
-  const [lifecycle, { cols }, tasks, tokens, operations] = useStores(
+  const [lifecycle, { cols }, tasks, operations] = useStores(
     lifecycleStore,
     terminalSizeStore,
     tasksStore,
-    tokensStore,
     operationsStore,
   );
   const worktreeName = routerStore.use((s) =>
@@ -64,14 +63,10 @@ export function InputFooter({
   const advisory = useAdvisory();
   const config = configStore.useConfig();
   const displayNames = useCrewDisplayNames(config);
-  const workflow = config.workflow;
   const reviewer = configuredReviewerRunner(config);
   const reviewerSeat = reviewer
     ? formatSeatIdentity(reviewer, displayNames.review ?? displayNames.plan)
     : '';
-  const commitStrategy = workflow.git?.commitStrategy ?? 'none';
-  const createBranchEnabled = workflow.git?.createBranch ?? false;
-  const gitLabel = createBranchEnabled ? `git:branch+${commitStrategy}` : `git:${commitStrategy}`;
   const activeStage = getActiveRailStage(lifecycle.phase);
   const stageText = activeStage ? formatStageLabel(activeStage.stage) : '';
   const fractionText = stageFractionText(taskListView);
@@ -79,6 +74,12 @@ export function InputFooter({
   // never promises a yank that would toast "Nothing to copy".
   const focus = focusStore.use((f) => f);
   const copyResolvable = focusHasResolvableCopy(focus);
+
+  // Re-entering a run at rest checks its tools first. That wait belongs on this row — the run
+  // itself stays on screen, the composer beside it stays live, and the word is the request's own.
+  const checkingStage = preparationStore.use((state) =>
+    state.kind === 'checking' ? state.stage : null,
+  );
 
   const liveStatus = waiting
     ? null
@@ -91,7 +92,7 @@ export function InputFooter({
         reviewerLabel: reviewerSeat === '' ? null : reviewerSeat,
       });
   const live = liveStatus !== null;
-  const { frame } = useSpinnerFrame(live);
+  const { frame } = useSpinnerFrame(live || checkingStage !== null);
 
   const stageCore = [stageText, fractionText].filter((part) => part.length > 0).join(' ');
   const stageLead = stageCore.length > 0 ? `${glyph('stageDone')} ${stageCore}` : '';
@@ -102,7 +103,16 @@ export function InputFooter({
       : '';
   const liveLead =
     liveStatus !== null
-      ? [`${frame} ${liveStatus.verb}`, elapsed].filter((part) => part.length > 0).join(' ')
+      ? [
+          `${frame} ${
+            operations.active?.apiRuntimeStatus?.phase === 'waiting-first-response'
+              ? 'Waiting for response'
+              : liveStatus.verb
+          }`,
+          elapsed,
+        ]
+          .filter((part) => part.length > 0)
+          .join(' ')
       : '';
 
   const interrupted = lifecycle.status === 'interrupted';
@@ -155,7 +165,6 @@ export function InputFooter({
   // is the block's job, and this row drops its tail before it drops the lead.
   const buildEta = deriveBuildProgress({
     tasks,
-    tokens,
     lifecycle,
     operations,
     config,
@@ -171,12 +180,21 @@ export function InputFooter({
     // A run that is stopping or parked is not on its way to finishing: an estimate beside that
     // byline would be a prediction about work nobody is doing.
     etaText: stopped === null ? etaLabel : null,
-    gitLabel,
     advisoryText:
       advisory !== null && advisory.kind !== 'none' ? formatAdvisoryText(advisory) : null,
     copyHint: copyResolvable ? 'y copy' : null,
     worktreeLabel: worktreeName ? sanitizeTerminalDisplayText(worktreeName) : null,
   });
+
+  if (checkingStage !== null) {
+    return (
+      <Box width="100%" paddingX={0} height={1} flexShrink={0}>
+        <Text color={t.textDim} wrap="truncate-end">
+          {joinBylineParts([`${frame} ${checkingStage}`, 'esc cancel'])}
+        </Text>
+      </Box>
+    );
+  }
 
   if (givenByline !== undefined) {
     return (

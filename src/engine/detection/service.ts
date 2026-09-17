@@ -20,7 +20,10 @@ import {
   cloneProviderDetection,
 } from '../../core/discovery/clone-detection.js';
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
-import { cloneConfiguredProviderOutcome } from './provider-outcomes.js';
+import {
+  cloneConfiguredProviderOutcome,
+  type ConfiguredProviderConnection,
+} from './provider-outcomes.js';
 import { cloneScopedCliCatalogAttempt } from './cli-catalog-outcomes.js';
 import { createLaneChannel, type DetectionLaneListener, type LaneChannel } from './lane-channel.js';
 import {
@@ -46,6 +49,8 @@ export interface ResolvedDetectionSourceContexts {
   readonly readiness: string;
   readonly modelsDev: string;
   readonly cliModels: string;
+  /** Current seat connections, so a refresh cannot show another endpoint's rows. */
+  readonly configuredProviders?: readonly ConfiguredProviderConnection[] | undefined;
 }
 
 export interface DetectionLaneRequest {

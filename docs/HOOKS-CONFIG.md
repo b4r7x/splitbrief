@@ -2,7 +2,9 @@
 
 > **Different from `docs/HOOKS.md`!** That doc covers React hooks. This doc covers user-extensible **workflow lifecycle hooks** — shell commands that fire at well-known moments during a SPLITBRIEF workflow. Lifecycle hooks are not React hooks.
 
-User-extensible hook system inspired by Claude Code. Declare commands in `.splitbrief/config.yaml` to fire at workflow events (pre/post task, pre/post validation, optional pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning, Slack notifications, custom validators — anything you can run from a script.
+User-extensible hook system inspired by Claude Code. Declare commands in `.splitbrief/config.yaml` to fire at workflow events (pre/post task and pre/post validation, etc.). Used for `prettier --write` after each task, secret scanning, Slack notifications, custom validators — anything you can run from a script.
+
+The pre_commit and post_commit hooks are retired; nonempty configuration is rejected.
 
 ## Quick start
 
@@ -13,10 +15,6 @@ hooks:
     - command: "npx"
       args: ["prettier", "--write", "${event.file}"]
       on_failure: warn
-  pre_commit:
-    - command: ".splitbrief/hooks/check-secrets.sh"
-      timeout_ms: 10000
-      on_failure: block
 ```
 
 ```bash
@@ -36,8 +34,6 @@ Lifecycle events fire during a workflow. Each can have multiple hooks declared.
 | `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `file`, `retries`, `duration`           |
 | `pre_validation` | Before tsc/lint/test runs                   | `taskId`                                                            |
 | `post_validation`| After validation finishes                   | `taskId`, `passed`, `stages` (`{typecheck,lint,test}`), `error?`     |
-| `pre_commit`     | Before optional product-level git commit    | `taskId`, `file`, `files`                                            |
-| `post_commit`    | After optional product-level git commit succeeds | `taskId`, `message`                                             |
 | `pre_escalation` | Before planner escalation runs              | `taskId`                                                             |
 | `on_error`       | Any unrecoverable engine error              | `message`                                                            |
 | `on_halt`        | `recovery_prompted` event — the run stopped and is waiting for a decision | `reason`, `taskId`, `headline`, `recommendedAction`, `resumeCommand` (`sessionId` rides in `context`) |
@@ -77,7 +73,7 @@ To run a shell pipeline, put it in a script file:
 
 ```yaml
 hooks:
-  pre_commit:
+  post_task:
     - command: ".splitbrief/hooks/scan.sh"
       args: ["${event.file}"]
 ```
@@ -94,12 +90,12 @@ args: ["${event.file}", "--task=${event.taskId}"]
 
 | Placeholder          | Available in events with that field    | Resolution                               |
 |----------------------|----------------------------------------|------------------------------------------|
-| `${event.file}`      | task_*, pre_commit                     | Project-relative anchor path string      |
-| `${event.files}`     | pre_task, pre_commit                   | JSON-stringified array of the brief's declared paths |
-| `${event.taskId}`    | task_*, validate, escalate, git_commit | Branded TaskId string                    |
+| `${event.file}`      | task_*                     | Project-relative anchor path string      |
+| `${event.files}`     | pre_task                   | JSON-stringified array of the brief's declared paths |
+| `${event.taskId}`    | task_*, validate, escalate | Branded TaskId string                    |
 | `${event.title}`     | task_started, task_completed           | Task description                         |
 | `${event.action}`    | task_started                           | `'create'` or `'modify'`                 |
-| `${event.message}`   | error, warning, git_commit             | String                                   |
+| `${event.message}`   | error, warning             | String                                   |
 | `${event.stages}`    | validate                               | JSON-stringified `{typecheck, lint, test}` |
 | `${event.feature}`   | workflow_started                       | The user's feature prompt                |
 | `${event.duration}`  | task_completed, validate               | Number (ms)                              |
@@ -126,8 +122,6 @@ Which placeholders resolve depends on the event type. Missing fields collapse to
 | `post_task`       | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.method}`, `${event.retries}`, `${event.duration}` |
 | `pre_validation`  | `${event.taskId}`                                                                 |
 | `post_validation` | `${event.taskId}`, `${event.stages}`, `${event.passed}`, `${event.error}`         |
-| `pre_commit`      | `${event.taskId}`, `${event.file}`, `${event.files}`                              |
-| `post_commit`     | `${event.taskId}`, `${event.file}`, `${event.message}`                            |
 | `pre_escalation`  | `${event.taskId}`                                                                 |
 | `on_error`        | `${event.message}`                                                                |
 | `on_halt`         | `${event.reason}`, `${event.taskId}`, `${event.headline}`, `${event.recommendedAction}`, `${event.resumeCommand}` |
@@ -195,7 +189,7 @@ Anything written to stderr is surfaced as a `warning` event regardless of exit c
 
 ### `decision` on `post_*` hooks
 
-Post hooks fire after the action has already happened. A `deny` returned from `post_task` / `post_commit` / `post_validation` is **ignored** for flow purposes (logged informationally). Use `pre_*` hooks when you need to block.
+Post hooks fire after the action has already happened. A `deny` returned from `post_task` / `post_validation` is **ignored** for flow purposes (logged informationally). Use `pre_*` hooks when you need to block.
 
 ## Execution order
 
@@ -213,13 +207,13 @@ If a `pre_*` hook returns `decision: "deny"` (or fails with `on_failure: block`)
 
 | `on_failure`       | On crash / timeout / non-zero exit | Effect on workflow                                        |
 |--------------------|-------------------------------------|-----------------------------------------------------------|
-| `block`            | Treated as failure                  | Aborts the upcoming action (skip task, skip optional commit, etc.) |
+| `block`            | Treated as failure                  | Aborts the upcoming action (skip task, etc.) |
 | `warn` (default)   | Logs a warning event                | Workflow continues                                        |
 | `ignore`           | Treated as success                  | No log                                                    |
 
 `block` only meaningful on `pre_*` hooks. On `post_*` hooks, `block` is logged informationally — the action already happened.
 
-The aborted action is event-specific: `pre_task` and `pre_validation` mark the current task `skipped` (recording skipped evidence) and continue with the next task; `pre_commit` skips the optional commit but still completes the task; `pre_planning` aborts the planner run; `pre_escalation` surfaces a recovery prompt named after the hook (reason `retry-exhausted`) instead of silently giving up.
+The aborted action is event-specific: `pre_task` and `pre_validation` mark the current task `skipped` (recording skipped evidence) and continue with the next task; `pre_planning` aborts the planner run; `pre_escalation` surfaces a recovery prompt named after the hook (reason `retry-exhausted`) instead of silently giving up.
 
 ### Per-scenario behavior
 
@@ -310,6 +304,6 @@ Schema: `src/core/schemas/hooks.ts`.
 Alternatives that were considered and rejected when the hook system was designed:
 
 - **JS modules only (no shell).** Type-safe and in-process, but excludes users who want to wire up `prettier`, a secret scanner, or a Slack notifier without writing TypeScript against a not-yet-public SDK. Shell / script hooks cover the common case.
-- **Reuse Claude Code's hooks file format.** Their schema (`~/.claude/settings.json`, `PreToolUse(tool_name)` matchers) is shaped around tool-call lifecycles, not a workflow lifecycle. Forcing the same shape would lie about what SPLITBRIEF exposes — our events are workflow-shaped (`pre_task`, `post_validation`, optional `pre_commit`). Tool calls belong to the configured planner or implementer runner, while SPLITBRIEF hooks stay at deterministic workflow boundaries.
+- **Reuse Claude Code's hooks file format.** Their schema (`~/.claude/settings.json`, `PreToolUse(tool_name)` matchers) is shaped around tool-call lifecycles, not a workflow lifecycle. Forcing the same shape would lie about what SPLITBRIEF exposes — our events are workflow-shaped (`pre_task`, `post_validation`, `on_complete`). Tool calls belong to the configured planner or implementer runner, while SPLITBRIEF hooks stay at deterministic workflow boundaries.
 - **Auto-trust hook config (no `--allow-hooks` prompt).** Simpler UX, but a malicious diff that adds a hook becomes RCE on the next `splitbrief start`. Unacceptable. Explicit trust (hash + prompt) is the cost of safety.
 - **Parallel / async fan-out within an event.** Lower latency, but deny short-circuiting is order-dependent — a later hook should never run after an earlier one has already aborted the action. The latency win is hypothetical; five hooks on one event is already pathological.

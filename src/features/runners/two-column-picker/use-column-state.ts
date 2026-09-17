@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { clampIndex } from '../../../utils/indexing.js';
+import { clampIndex, rotateIndex } from '../../../utils/indexing.js';
 
 export interface ColumnStateHook<T> {
   filter: string;
@@ -9,6 +9,7 @@ export interface ColumnStateHook<T> {
   currentItem: T | undefined;
   setFilter: (update: (prev: string) => string) => void;
   setIndex: (index: number) => T | undefined;
+  moveBy: (direction: 1 | -1) => T | undefined;
   reset: (initialIndex: number) => void;
 }
 
@@ -87,6 +88,14 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
     return landed;
   };
 
+  const moveBy = (direction: 1 | -1) => {
+    const nextItems = getItems(filterRef.current);
+    const length = nextItems.length + virtualCount;
+    if (length === 0) return undefined;
+    const next = rotateIndex(clampIndex(indexRef.current, length), length, direction);
+    return setIndex(next);
+  };
+
   const setFilter = (update: (prev: string) => string) => {
     const nextFilter = update(filterRef.current);
     if (nextFilter === filterRef.current) return;
@@ -104,6 +113,7 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
     currentItem,
     setFilter,
     setIndex,
+    moveBy,
     reset: (next) => {
       filterRef.current = '';
       indexRef.current = next;

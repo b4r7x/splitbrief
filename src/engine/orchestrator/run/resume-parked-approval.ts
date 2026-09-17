@@ -32,7 +32,7 @@ export async function continueApprovedArtifact(opts: {
     planner,
     state,
     feature: state.feature,
-    startAt: gate === 'spec' ? 'plan' : 'tasks',
+    startAt: regenerated ? gate : gate === 'spec' ? 'plan' : 'tasks',
     passedGates: gate === 'spec' ? ['spec'] : ['spec', 'plan'],
   });
   setTrackedState(steps.state);

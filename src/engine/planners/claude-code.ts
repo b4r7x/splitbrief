@@ -1,5 +1,4 @@
-import type { Planner, EscalationResult } from './types.js';
-import type { TokenDelta } from '../../core/schemas/tokens.js';
+import type { Planner, EscalationResult, PlannerUserTurnResult } from './types.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
@@ -43,7 +42,8 @@ export function createClaudeCodePlanner(opts: {
     opts;
   // The resolved channel — not the configured one — decides which credential the
   // child receives, so the stream invocations must see the same identity the
-  // sandbox environment was built from.
+  // sandbox environment was built from. Only the configured one is admitted at
+  // dispatch, so a resolved default never poses as an explicit choice.
   const authChannel = resolveCliRunnerAuth({
     kind: 'cli',
     tool: CLAUDE_TOOL,
@@ -68,6 +68,7 @@ export function createClaudeCodePlanner(opts: {
   }): Readonly<{
     model: string | undefined;
     authChannel: CliAuthChannelId;
+    configuredAuthChannel: CliAuthChannelId | undefined;
     env: NodeJS.ProcessEnv;
     executable?: CliExecutableIdentity | undefined;
     effort?: EffortLevel | undefined;
@@ -79,6 +80,7 @@ export function createClaudeCodePlanner(opts: {
     return {
       model: resolvedModel,
       authChannel,
+      configuredAuthChannel: opts.authChannel,
       env: input.env,
       ...(trustedCli !== undefined && { executable: trustedCli.executable }),
       ...(effort !== undefined && { effort }),
@@ -185,9 +187,9 @@ export function createClaudeCodePlanner(opts: {
     runnerName: 'claude',
     ...(resolvedModel !== undefined && { model: resolvedModel }),
 
-    async injectUserTurn(injection): Promise<TokenDelta | null> {
+    async injectUserTurn(injection): Promise<PlannerUserTurnResult> {
       const sessionId = session.getResumeId();
-      if (!sessionId) return null;
+      if (!sessionId) return { status: 'not-delivered', reason: 'not-ready' };
       const effectiveSignal = composeAbortSignal(injection.signal, timeout);
       const callbackBuffer = createRunnerAttemptCallbackBuffer({
         onOutput: () => {},
@@ -212,7 +214,7 @@ export function createClaudeCodePlanner(opts: {
         }
         session.capture(returnedSessionId);
         callbackBuffer.flush();
-        return toTokenDelta(result.usage);
+        return { status: 'delivered', usage: toTokenDelta(result.usage) };
       } catch (err) {
         if (flushCallbacks && !isSessionExpiredError(err)) callbackBuffer.flush();
         throw err;

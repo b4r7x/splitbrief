@@ -1,3 +1,4 @@
+import type { TaskId } from '../../../core/schemas/task.js';
 import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
 import {
   runnerOutcome,
@@ -38,15 +39,21 @@ export function createImplementerCallContext(opts: {
   config: ImplementerOptions['config'];
   backendKind?: RunnerCallContext['backendKind'] | undefined;
   attempt: number;
+  taskId: TaskId;
 }): RunnerCallContext {
   const implementer = opts.config.implementer;
+  const backendKind = opts.backendKind ?? implementer.kind;
   return {
     callId: `implementer-${++implementerCallSequence}`,
     role: 'implementer',
-    backendKind: opts.backendKind ?? implementer.kind,
+    backendKind,
     runnerName: implementerRunnerName(implementer),
     model: implementer.model,
     attempt: opts.attempt,
+    taskId: opts.taskId,
+    // An API call's boundary is recorded by the completion that owns its one
+    // HTTP request; a subprocess may make any number of provider requests.
+    ...(backendKind !== 'api' && { usageBoundary: 'aggregate' as const }),
   };
 }
 

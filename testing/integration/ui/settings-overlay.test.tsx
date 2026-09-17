@@ -283,11 +283,11 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Show spend');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Create branch');
       // The page lands inside the next section with the whole of it on screen — its first row
       // included — so no row was stepped over unseen.
       expect(frame).toContain('Mode');
-      expect(frame).toContain('Create branch');
+      expect(frame).toContain('Compaction format');
     });
     ui.unmount();
   });

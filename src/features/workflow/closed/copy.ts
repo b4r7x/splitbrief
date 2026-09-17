@@ -3,7 +3,6 @@ import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type {
   BriefRow,
   BriefRowState,
-  CostView,
   ReviewView,
   ScopeView,
   SeatView,
@@ -13,11 +12,7 @@ import {
   PLANNER_INHERITANCE,
   formatCollapsedSeatLineFromIdentities,
 } from '../../../core/crew/identity.js';
-import {
-  formatKnownCost,
-  formatScoreSummary,
-  formatTokensShort,
-} from '../../../core/formatting.js';
+import { formatScoreSummary } from '../../../core/formatting.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { formatTime } from '../../../utils/format-time.js';
@@ -65,6 +60,11 @@ export function findingCounts(counts: Readonly<{ critical: number; warning: numb
   return `${counts.critical} blocking, ${counts.warning} advisory`;
 }
 
+/**
+ * What the run did, and never what it cost. The record keeps the money and the token counts
+ * (`view.cost`, `view.tokens`) for the reader who opens `/usage`; a ledger nobody asked for a price
+ * from states the work instead.
+ */
 export function runRows(view: SummaryView): RunRow[] {
   const rows: RunRow[] = [{ label: 'Review', segments: reviewSegments(view.review) }];
   const packet = packetPath(view);
@@ -82,9 +82,6 @@ export function runRows(view: SummaryView): RunRow[] {
       ],
     });
   }
-  if (view.cost !== null) rows.push({ label: 'Cost', segments: costSegments(view.cost) });
-  const tokens = tokenSegments(view.tokens);
-  if (tokens.length > 0) rows.push({ label: 'Tokens', segments: tokens });
   const phases = phaseSegments(view.phases);
   if (phases.length > 0) rows.push({ label: 'Phases', segments: phases });
   rows.push({ label: 'Session', segments: sessionSegments(view.run) });
@@ -144,31 +141,6 @@ function scopeSegments(scope: ScopeView): CopySegment[] {
       tone: scope.passed ? 'text' : 'warning',
     },
   ];
-}
-
-/**
- * What the run spent, and nothing beside it. A run nobody was billed per token for has no dollar
- * figure; `$0.00` would state a charge.
- */
-function costSegments(cost: CostView): CopySegment[] {
-  if (cost.kind === 'unmetered') return [{ text: cost.label, tone: 'text' }];
-  if (cost.kind === 'unpriced') return [{ text: 'not estimated', tone: 'textDim' }];
-  return [{ text: formatKnownCost(cost.actual, cost.partial ? 'partial' : 'known'), tone: 'text' }];
-}
-
-const TOKEN_SEATS = [
-  ['plan', 'plan'],
-  ['build', 'build'],
-  ['review', 'review'],
-] as const satisfies readonly (readonly [keyof SummaryView['tokens'], string])[];
-
-function tokenSegments(tokens: SummaryView['tokens']): CopySegment[] {
-  const segments: CopySegment[] = [];
-  for (const [seat, word] of TOKEN_SEATS) {
-    const count = tokens[seat];
-    if (count > 0) segments.push({ text: `${word} ${formatTokensShort(count)}`, tone: 'text' });
-  }
-  return segments;
 }
 
 /** One phase would only restate the run clock the header already shows. */

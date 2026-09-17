@@ -1,19 +1,56 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { useTrustHome } from '#testing/helpers/trust-home.js';
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
-import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import {
   cleanupCommitTestProjects,
   firstCommitTask,
   makeCommitState,
-  setupCommitProject,
+  makeLegacyCommitConfig,
+  registerCommitTestDir,
 } from '#testing/helpers/orchestrator-commit.js';
+import { createTempDir } from '#testing/helpers/temp-dir.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
 import { validateCommitAndAdvance } from './commit.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
+
+const spawned = vi.hoisted(() => ({ commands: [] as string[] }));
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  const record =
+    (name: string, fn: (...args: never[]) => unknown) =>
+    (...args: unknown[]) => {
+      spawned.commands.push(`${name} ${String(args[0])}`);
+      return Reflect.apply(fn, undefined, args);
+    };
+  return {
+    ...actual,
+    spawn: record('spawn', actual.spawn),
+    spawnSync: record('spawnSync', actual.spawnSync),
+    exec: record('exec', actual.exec),
+    execSync: record('execSync', actual.execSync),
+    execFile: record('execFile', actual.execFile),
+    execFileSync: record('execFileSync', actual.execFileSync),
+  };
+});
+
+const git = vi.hoisted(() => ({ calls: [] as string[] }));
+vi.mock('simple-git', () => ({
+  simpleGit: () =>
+    new Proxy(
+      {},
+      {
+        get: (_target, method) =>
+          method === 'then'
+            ? undefined
+            : async () => {
+                git.calls.push(String(method));
+                return '';
+              },
+      },
+    ),
+}));
 
 const acceptedAcceptance: ValidationAcceptance = {
   accepted: true,
@@ -21,77 +58,52 @@ const acceptedAcceptance: ValidationAcceptance = {
   blockingStages: [],
 };
 
-let trustHome: ReturnType<typeof useTrustHome>;
-
-beforeEach(() => {
-  trustHome = useTrustHome('commit-hooks-trust-home');
-});
-
 afterEach(() => {
   cleanupCommitTestProjects();
-  trustHome.restore();
+  spawned.commands.length = 0;
+  git.calls.length = 0;
 });
 
-describe('validateCommitAndAdvance — commit hooks', () => {
-  it('stages only the attributed set before the pre_commit hook, leaving unrelated dirty files unstaged', async () => {
-    const { projectDir, sessionId } = setupCommitProject();
-    const state = makeCommitState();
-    const taskFile = firstCommitTask(state).file;
-    mkdirSync(dirname(join(projectDir, taskFile)), { recursive: true });
-    writeFileSync(join(projectDir, taskFile), 'task output');
-    writeFileSync(join(projectDir, 'extra-a.txt'), 'a');
-    writeFileSync(join(projectDir, 'extra-b.txt'), 'b');
-    const sentinel = join(projectDir, 'hook-seen.json');
-    writeFileSync(
-      join(projectDir, 'capture-hook.mjs'),
-      [
-        "import { readFileSync, writeFileSync } from 'node:fs';",
-        "import { execSync } from 'node:child_process';",
-        "const { context } = JSON.parse(readFileSync(0, 'utf-8'));",
-        "const staged = execSync('git diff --cached --name-only', { cwd: context.projectDir, encoding: 'utf-8' })",
-        "  .split('\\n').filter(Boolean);",
-        `writeFileSync(${JSON.stringify(sentinel)}, JSON.stringify({ files: context.files ?? [], staged }));`,
-      ].join('\n'),
-    );
+describe('validateCommitAndAdvance — legacy commit hooks', () => {
+  it('per-task with pre_commit hooks configured runs no hook and requests no git command', async () => {
+    const projectDir = createTempDir('task-commit-hooks');
+    registerCommitTestDir(projectDir);
+    const sessionId = 'sess-commit';
+    ensureSessionDir(projectDir, sessionId);
+    const sentinel = join(projectDir, 'hook-ran');
     const hooks: HooksConfig = {
       pre_commit: [
         {
           kind: 'command',
-          command: 'node',
-          args: ['capture-hook.mjs'],
+          command: 'touch',
+          args: [sentinel],
           timeout_ms: 30_000,
           on_failure: 'warn',
         },
       ],
     };
-    markHooksConfigTrusted(projectDir, hooks);
-    const { bus } = makeBusRecorder();
+    const state = makeCommitState();
+    const task = firstCommitTask(state);
+    const { bus, events } = makeBusRecorder();
 
     const result = await validateCommitAndAdvance({
-      task: firstCommitTask(state),
+      task,
       acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
-      config: makeConfig({
-        workflow: { git: { commitStrategy: 'per-task' } },
-        hooks,
-      }),
+      config: makeLegacyCommitConfig({ commitStrategy: 'per-task', hooks }),
       state,
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      taskChangedFiles: [taskFile],
+      taskChangedFiles: [task.file],
     });
 
     expect(result.completed).toBe(true);
-    expect(existsSync(sentinel)).toBe(true);
-    const seen = JSON.parse(readFileSync(sentinel, 'utf-8')) as {
-      files: string[];
-      staged: string[];
-    };
-    expect(seen.files).toEqual([taskFile]);
-    expect(seen.staged).toEqual([taskFile]);
-    expect(seen.staged).not.toContain('extra-a.txt');
-    expect(seen.staged).not.toContain('extra-b.txt');
+    expect(existsSync(sentinel)).toBe(false);
+    expect(spawned.commands).toEqual([]);
+    expect(git.calls).toEqual([]);
+    expect(events.find((e) => e.type === 'git_commit')).toBeUndefined();
+    expect(events.filter((e) => e.type === 'task_completed')).toHaveLength(1);
   });
 });

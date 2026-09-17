@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, type Dirent } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { checkIgnoredPaths } from '../../lib/git/files.js';
@@ -22,12 +22,7 @@ export async function hashFile(filePath: string): Promise<string | null> {
 export const ALWAYS_EXCLUDED = INTERNAL_SKIP_DIRS;
 
 async function readdirRecursive(dir: string, base: string): Promise<string[]> {
-  let entries: Dirent[];
-  try {
-    entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' });
-  } catch {
-    return [];
-  }
+  const entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' });
   const results: string[] = [];
   for (const entry of entries) {
     const name = entry.name as string;

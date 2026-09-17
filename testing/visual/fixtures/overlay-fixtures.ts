@@ -1,6 +1,15 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OverlayType } from '../../../src/core/navigation/types.js';
+import {
+  API_PROVIDER_CATALOG,
+  type ApiProviderId,
+} from '../../../src/core/providers/api-provider-catalog.js';
+import type {
+  ProviderCatalogFailureKind,
+  ProviderCatalogOutcome,
+} from '../../../src/engine/providers/types.js';
+import type { SeatPickerRole } from '../../../src/core/runners/seat-roles.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import type {
   CliProviderAuth,
@@ -15,6 +24,9 @@ import {
   parseOpenCodeNativeModelCatalog,
 } from '../../../src/engine/providers/cli-model-catalog.js';
 import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js';
+import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
+import type { CostBreakdown } from '../../../src/core/schemas/summary.js';
+import { ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
 import { seatAxisFocus } from '../../../src/core/navigation/types.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
@@ -524,6 +536,8 @@ function createOverlayFixture(options: {
   readonly overlay: OverlayType;
   readonly seed?: OverlaySeed;
   readonly underlyingScreen?: OverlayUnderlyingScreen;
+  /** The workflow route to open on, when the ordinary live run is not the one the frame is about. */
+  readonly workflowRoute?: () => RouteData;
   readonly focus?: string;
   readonly effortDraftAfterMount?: string;
 }): FixtureLifecycle {
@@ -531,6 +545,7 @@ function createOverlayFixture(options: {
     overlay,
     seed = EMPTY_SEED,
     underlyingScreen = 'home',
+    workflowRoute = overlayWorkflowRoute,
     focus,
     effortDraftAfterMount,
   } = options;
@@ -539,7 +554,7 @@ function createOverlayFixture(options: {
     setup: (context) => {
       setupVisualFixture(context);
       routerStore.init(
-        underlyingScreen === 'workflow' ? overlayWorkflowRoute() : { screen: underlyingScreen },
+        underlyingScreen === 'workflow' ? workflowRoute() : { screen: underlyingScreen },
       );
       seedRunnerCatalog();
       seed();
@@ -836,6 +851,134 @@ const createPlannerPickerAntigravityFixture: FixtureFactory = () =>
     focus: 'tool:antigravity',
     effortDraftAfterMount: 'medium',
   });
+// The launcher's read-only card is what the cursor opens on this row, so the
+// fixture parks there with nothing configured — the state the card guides.
+const createCustomCommandLauncherFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'planner-picker', focus: 'tool:custom-command' });
+/** Nothing is listening on the loopback port, so the seat has no catalog to choose from. */
+function seedStoppedOllama(): void {
+  const cliTools = [...detectionStore.get().cliTools];
+  // The catalog and the detection share one store, so the remembered models go first.
+  modelCacheStore.reset();
+  detectionStore.setDetection({
+    cliTools,
+    providers: [
+      {
+        provider: 'ollama',
+        available: false,
+        isLocal: true,
+        hasKey: false,
+        failure: 'offline',
+        error: 'connect ECONNREFUSED 127.0.0.1:11434',
+      },
+    ],
+  });
+}
+
+// Offline servers keep a reachable entry, followed by the editable connection form.
+const createLocalServerFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedStoppedOllama,
+    focus: 'tool:ollama',
+  });
+
+function localConnectionFixture(
+  input: {
+    provider?: ApiProviderId;
+    role?: SeatPickerRole;
+    failure?: Extract<
+      ProviderCatalogFailureKind,
+      | 'offline'
+      | 'timeout'
+      | 'invalid-credential'
+      | 'malformed'
+      | 'endpoint-invalid'
+      | 'request-failed'
+    >;
+    models?: readonly DetectedModel[];
+    selectedModel?: string;
+  } = {},
+): FixtureLifecycle {
+  const provider = input.provider ?? 'ollama';
+  const role = input.role ?? 'planner';
+  const policy = API_PROVIDER_CATALOG[provider].endpointPolicy;
+  if (policy.kind !== 'loopback') throw new Error('Local fixture requires a loopback profile');
+  const fixture = createOverlayFixture({
+    overlay: `${role}-picker`,
+    focus: `tool:${provider}`,
+    seed: () => {
+      seedVisualConfig({
+        [role]: {
+          kind: 'api',
+          provider,
+          apiBase: policy.defaultBaseURL,
+          model: input.selectedModel ?? 'qwen2.5-coder:7b',
+          contextLength: 32_768,
+        },
+      });
+      pickerViewStore.open({ kind: 'local-connection', provider });
+    },
+  });
+  if (input.failure === undefined && input.models === undefined) return fixture;
+  const outcome: ProviderCatalogOutcome =
+    input.failure !== undefined
+      ? {
+          kind: 'failed',
+          source: 'provider-runtime',
+          provider,
+          isLocal: true,
+          credential: 'not-required',
+          failure: input.failure,
+          diagnostic:
+            {
+              offline: 'The server is not running.',
+              timeout: 'The catalog request timed out.',
+              'invalid-credential': 'The configured token was refused.',
+              malformed: 'The server returned an unreadable catalog.',
+              'endpoint-invalid': 'The server refused this endpoint.',
+              'request-failed': 'The request failed without a more specific diagnosis.',
+            }[input.failure] ?? 'The catalog check failed.',
+        }
+      : {
+          kind: 'success',
+          source: 'provider-runtime',
+          provider,
+          isLocal: true,
+          credential: 'not-required',
+          catalog: input.models?.length === 0 ? 'empty' : 'populated',
+          models: input.models ?? [],
+        };
+  return { ...fixture, connectionOutcome: outcome, afterMount: (write) => write('\r') };
+}
+
+const createAuthConfigOwnedFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    focus: OPENCODE_FOCUS,
+    seed: () => {
+      seedProviderAuth('read');
+      pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
+    },
+  });
+
+const createAuthUnsupportedFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    focus: 'tool:claude-code',
+    seed: () => {
+      seedClaudeAliasRows();
+      seedVisualConfig({
+        planner: {
+          kind: 'cli',
+          tool: 'claude-code',
+          model: 'opus',
+          authChannel: 'api-key',
+        },
+      });
+      pickerViewStore.expand('opus');
+    },
+  });
 const createContractChoiceFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -926,6 +1069,258 @@ const createStopSheetFixture: FixtureFactory = () =>
   });
 const createSessionsFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'sessions', seed: seedSessions });
+const USAGE_TS = 1_783_958_400_000;
+
+/**
+ * A run read back from disk, so its money is the breakdown the engine recorded at the rates the
+ * calls actually ran at — the only place a per-request estimate and its rate provenance exist.
+ */
+function usageRoute(costBreakdown: CostBreakdown): () => RouteData {
+  return () => ({
+    screen: 'workflow',
+    run: makeRunRecord({
+      ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: '2026-09-14-usage' },
+      feature: 'Report what each seat spent',
+      status: {
+        kind: 'open',
+        stop: { kind: 'paused', at: 'boundary' },
+        resumeAt: { kind: 'planner', call: 'tasks' },
+      },
+      summary: makeSummary({ feature: 'Report what each seat spent', costBreakdown }),
+    }),
+    execution: { kind: 'at-rest' },
+  });
+}
+
+/**
+ * A review packet the seat could not hold, persisted with the halt and read back off the run's own
+ * record — the diagnosis a reopened run still has. Every figure the refusal compared is here; the
+ * panel that raised it carries none of them.
+ */
+const USAGE_CONTEXT_HALT: RecoveryIssue = {
+  id: 'rec_visual_api_context',
+  reason: 'review-failed',
+  seat: 'review',
+  phase: 'final-review',
+  status: 'awaiting-user',
+  files: [],
+  affectedTaskIds: [],
+  message: 'The review seat was not given the context this call needs.',
+  details: ['Adjust the review seat with /crew review or Settings, then /resume and choose retry.'],
+  facts: {
+    apiContextCode: 'insufficient-context',
+    apiContextSeat: 'review',
+    apiContextCause: 'input-budget',
+    apiContextModel: 'qwen3-coder-30b',
+    apiContextMissingSectionsJson: '[]',
+    reviewFailureKind: 'insufficient-context',
+    apiContextInputEstimate: 404_000,
+    apiContextEstimationMargin: 4_000,
+    apiContextRequiredOutputTokens: 4_096,
+    apiContextRequiredTokens: 412_096,
+    apiContextAvailableTokens: 32_768,
+    apiContextOutputCap: 8_192,
+  },
+  availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+  recommendedAction: 'pause-run',
+  createdAt: '2026-09-14T00:00:00.000Z',
+};
+
+/** The same run, stopped on that halt: `deriveRunStatus` is what carries the issue to the page. */
+function usageContextRoute(): RouteData {
+  return {
+    screen: 'workflow',
+    run: makeRunRecord({
+      ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: '2026-09-14-usage' },
+      feature: 'Review the bounded fixture branch',
+      status: {
+        kind: 'open',
+        stop: { kind: 'halted', issue: USAGE_CONTEXT_HALT },
+        resumeAt: { kind: 'review', cycle: 0 },
+      },
+      summary: makeSummary({
+        feature: 'Review the bounded fixture branch',
+        costBreakdown: USAGE_PRICED_BREAKDOWN,
+      }),
+    }),
+    execution: { kind: 'at-rest' },
+  };
+}
+
+/** The crew the recorded breakdown was priced for, so the run on screen and its record agree. */
+const USAGE_CREW: VisualConfigOverrides = {
+  planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-5' },
+  implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.1-codex' },
+};
+
+/** The same crew with the local review seat the halt names, so the diagnosis and the run agree. */
+const USAGE_CONTEXT_CREW: VisualConfigOverrides = {
+  ...USAGE_CREW,
+  reviewer: {
+    kind: 'api',
+    provider: 'ollama',
+    model: 'qwen3-coder-30b',
+    apiBase: 'http://127.0.0.1:11434/v1',
+    contextLength: 32_768,
+  },
+};
+
+function seedUsageContextCounters(): void {
+  seedUsageCounters();
+  seedVisualConfig(USAGE_CONTEXT_CREW);
+}
+
+/** Two seats that reported different amounts of what they spent: neither is filled out for it. */
+function seedUsageCounters(): void {
+  seedVisualConfig(USAGE_CREW);
+  addEvent({
+    type: 'cost_update',
+    ts: USAGE_TS,
+    phase: 'implementing',
+    tokenUsage: {
+      ...ZERO_TOKEN_USAGE,
+      plannerInput: 124_000,
+      plannerOutput: 32_000,
+      plannerCacheRead: 90_400,
+      plannerReasoning: 8_100,
+      plannerCoverage: {
+        input: 'reported',
+        output: 'reported',
+        cacheRead: 'reported',
+        cacheCreate: 'missing',
+        reasoning: 'reported',
+      },
+      implementerInput: 812_000,
+      implementerOutput: 190_500,
+      implementerCoverage: {
+        input: 'reported',
+        output: 'reported',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+    },
+  });
+}
+
+function seedLegacyUsageCounters(): void {
+  seedVisualConfig(USAGE_CREW);
+  addEvent({
+    type: 'cost_update',
+    ts: USAGE_TS,
+    phase: 'implementing',
+    tokenUsage: { ...ZERO_TOKEN_USAGE, plannerInput: 9_800, plannerOutput: 1_200 },
+  });
+}
+
+/** One priced request, one the missing cache rate left incomplete, and two billing postures. */
+const USAGE_PRICED_BREAKDOWN: CostBreakdown = {
+  actualPlannerCost: 0.42,
+  actualImplementerCost: 1.18,
+  totalActualCost: 1.6,
+  hasPricedUsage: true,
+  requestEstimate: {
+    amount: null,
+    currency: 'USD',
+    basis: 'catalog-estimate',
+    completeness: 'partial',
+    knownSubtotal: 1.6,
+    reasons: ['reasoning-not-reported', 'missing-cache-rate'],
+    items: [
+      {
+        callId: 'call-planner-1',
+        role: 'planner',
+        usageBoundary: 'single-request',
+        amount: 0.42,
+        knownSubtotal: 0.42,
+        completeness: 'complete',
+        reasons: [],
+        billing: { posture: 'api-metered', basis: 'enforced-channel' },
+        rates: {
+          source: 'models-dev',
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-5',
+          inputPer1M: 3,
+          outputPer1M: 15,
+          cacheReadPer1M: 0.3,
+          capturedAt: VISUAL_PUBLISHED_AT,
+          rateAsOf: '2026-06-01',
+        },
+      },
+      {
+        callId: 'call-implementer-1',
+        role: 'implementer',
+        usageBoundary: 'single-request',
+        amount: null,
+        knownSubtotal: 1.18,
+        completeness: 'partial',
+        reasons: ['missing-cache-rate'],
+        billing: { posture: 'api-metered', basis: 'observed-invocation' },
+        rates: {
+          source: 'bundled-fallback',
+          provider: 'openai',
+          model: 'gpt-5.1-codex',
+          inputPer1M: 1.25,
+          outputPer1M: 10,
+          selectedThresholdTokens: 200_000,
+          capturedAt: VISUAL_PUBLISHED_AT,
+        },
+      },
+    ],
+  },
+  providerRunMetadata: {
+    'claude-code': {
+      service: 'claude-code',
+      offering: 'payg',
+      normalizedEndpoint: 'cli://claude-code',
+      billing: 'api-metered',
+      asOf: '2026-01-01',
+      billingAttribution: {
+        posture: 'api-metered',
+        basis: 'enforced-channel',
+        evidenceId: 'cli.claude-code.api-key',
+      },
+    },
+    codex: {
+      service: 'codex',
+      offering: 'coding-subscription',
+      normalizedEndpoint: 'cli://codex',
+      billing: 'subscription-included',
+      asOf: '2026-01-01',
+      billingAttribution: { posture: 'unknown', basis: 'unknown' },
+    },
+  },
+};
+
+/** A sum kept before per-request pricing existed: an amount with no rates and no provenance. */
+const USAGE_LEGACY_BREAKDOWN: CostBreakdown = {
+  actualPlannerCost: 0.3,
+  actualImplementerCost: 0,
+  totalActualCost: 0.3,
+  hasPricedUsage: true,
+};
+
+const createUsageDetailsFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'usage-details',
+    seed: seedUsageCounters,
+    underlyingScreen: 'workflow',
+    workflowRoute: usageRoute(USAGE_PRICED_BREAKDOWN),
+  });
+const createUsageDetailsLegacyFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'usage-details',
+    seed: seedLegacyUsageCounters,
+    underlyingScreen: 'workflow',
+    workflowRoute: usageRoute(USAGE_LEGACY_BREAKDOWN),
+  });
+const createUsageContextFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'usage-details',
+    seed: seedUsageContextCounters,
+    underlyingScreen: 'workflow',
+    workflowRoute: usageContextRoute,
+  });
 const createEditorFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'editor', seed: seedEditor, underlyingScreen: 'workflow' });
 
@@ -966,6 +1361,78 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-antigravity'), createPlannerPickerAntigravityFixture],
   [scenarioId('overlay-planner-picker-cursor'), createPlannerPickerCursorFixture],
   [scenarioId('overlay-picker-cursor-expanded'), createCursorExpandedFixture],
+  [scenarioId('overlay-picker-custom-launcher'), createCustomCommandLauncherFixture],
+  [scenarioId('overlay-picker-local-server'), createLocalServerFixture],
+  [scenarioId('overlay-local-connection-ollama'), () => localConnectionFixture()],
+  [
+    scenarioId('overlay-local-connection-lmstudio'),
+    () => localConnectionFixture({ provider: 'lm-studio', role: 'implementer' }),
+  ],
+  [
+    scenarioId('overlay-local-connection-llamacpp'),
+    () => localConnectionFixture({ provider: 'llama-cpp', role: 'reviewer' }),
+  ],
+  [
+    scenarioId('overlay-local-connection-offline'),
+    () => localConnectionFixture({ failure: 'offline' }),
+  ],
+  [
+    scenarioId('overlay-local-connection-timeout'),
+    () => localConnectionFixture({ failure: 'timeout' }),
+  ],
+  [
+    scenarioId('overlay-local-connection-unauthorized'),
+    () => localConnectionFixture({ provider: 'lm-studio', failure: 'invalid-credential' }),
+  ],
+  [
+    scenarioId('overlay-local-connection-invalid'),
+    () => localConnectionFixture({ failure: 'endpoint-invalid' }),
+  ],
+  [
+    scenarioId('overlay-local-connection-unknown'),
+    () => localConnectionFixture({ failure: 'request-failed' }),
+  ],
+  [
+    scenarioId('overlay-local-connection-malformed'),
+    () => localConnectionFixture({ failure: 'malformed' }),
+  ],
+  [scenarioId('overlay-local-connection-empty'), () => localConnectionFixture({ models: [] })],
+  [
+    scenarioId('overlay-local-connection-missing'),
+    () => localConnectionFixture({ models: [{ id: 'gemma3:27b' }] }),
+  ],
+  [
+    scenarioId('overlay-local-connection-loaded'),
+    () =>
+      localConnectionFixture({
+        provider: 'lm-studio',
+        models: [
+          {
+            id: 'qwen2.5-coder:7b',
+            runtime: { loadState: 'loaded', observedAt: VISUAL_PUBLISHED_AT },
+          },
+        ],
+      }),
+  ],
+  [
+    scenarioId('overlay-local-connection-not-loaded'),
+    () =>
+      localConnectionFixture({
+        provider: 'lm-studio',
+        models: [
+          {
+            id: 'qwen2.5-coder:7b',
+            runtime: { loadState: 'not-loaded', observedAt: VISUAL_PUBLISHED_AT },
+          },
+        ],
+      }),
+  ],
+  [
+    scenarioId('overlay-local-connection-listed'),
+    () => localConnectionFixture({ models: [{ id: 'qwen2.5-coder:7b' }] }),
+  ],
+  [scenarioId('overlay-picker-auth-config-owned'), createAuthConfigOwnedFixture],
+  [scenarioId('overlay-picker-auth-unsupported'), createAuthUnsupportedFixture],
   [scenarioId('overlay-picker-contract-choice'), createContractChoiceFixture],
   [scenarioId('overlay-picker-custom-command'), createCustomCommandFixture],
   [scenarioId('overlay-picker-custom-model'), createCustomModelFixture],
@@ -975,5 +1442,8 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
   [scenarioId('workflow-stop-sheet'), createStopSheetFixture],
   [scenarioId('overlay-sessions'), createSessionsFixture],
+  [scenarioId('overlay-usage-details'), createUsageDetailsFixture],
+  [scenarioId('overlay-usage-details-legacy'), createUsageDetailsLegacyFixture],
+  [scenarioId('overlay-usage-context-insufficient'), createUsageContextFixture],
   [scenarioId('overlay-editor'), createEditorFixture],
 ]);

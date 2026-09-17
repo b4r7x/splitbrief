@@ -52,12 +52,14 @@ export type CliAuthChannel = Readonly<{
   /**
    * Platforms where this channel's credential is an OS keychain item rather
    * than a file, so the file-copying state bridge has nothing to carry. macOS
-   * keeps the Claude Code and Cursor Agent CLI sessions in the login keychain,
+   * keeps the Claude Code, Cursor Agent CLI and Antigravity sessions in the login keychain,
    * whose default search list resolves through `HOME` and whose item is keyed
    * on the account name in `USER`; a staged child reaches it only when both
    * keep their host values.
    */
   hostKeychainPlatforms: readonly NodeJS.Platform[];
+  /** Platforms with an admitted credential bridge; omitted when no restriction is known. */
+  supportedPlatforms?: readonly NodeJS.Platform[];
 }>;
 
 /**
@@ -79,6 +81,38 @@ export function cliAuthChannelHostStateAccess(
   if (channel.stateBridge !== 'host-cli-state') return 'none';
   return channel.hostKeychainPlatforms.includes(platform) ? 'host-account' : 'bridged-files';
 }
+
+export function cliAuthChannelPlatformSupported(
+  channel: CliAuthChannel,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return channel.supportedPlatforms?.includes(platform) ?? true;
+}
+
+/** A channel that names an authentication method; `provider-dependent` is a route, not a method. */
+export type CliAuthMethod = Exclude<CliAuthChannelId, 'provider-dependent'>;
+
+/**
+ * A positive row of `docs/AUTH-METHOD-MATRIX.md`: on this exact platform and
+ * installed version the adapter forces each listed method for one invocation,
+ * and the invocation fails rather than falling back when that method's
+ * credential is absent. `id` is the bounded matrix identifier a receipt cites.
+ */
+export type CliAuthEnforcementEvidence = Readonly<{
+  id: string;
+  tool: CliToolId;
+  platform: NodeJS.Platform;
+  installedVersion: string;
+  channels: readonly CliAuthMethod[];
+}>;
+
+/**
+ * Empty because the matrix proves no admitted CLI enforceable: every one is
+ * host-configured, so no surface may offer a method as enforced.
+ */
+export const CLI_AUTH_ENFORCEMENT_EVIDENCE: readonly CliAuthEnforcementEvidence[] = Object.freeze(
+  [],
+);
 
 export type CliAuthSelection = Readonly<{ channel: CliAuthChannelId }>;
 
@@ -262,6 +296,7 @@ function authChannel(
     stateBridge: CliAuthChannel['stateBridge'];
     billing: RunnerBillingPosture;
     hostKeychainPlatforms?: readonly NodeJS.Platform[];
+    supportedPlatforms?: readonly NodeJS.Platform[];
   }>,
 ): CliAuthChannel {
   return Object.freeze({
@@ -270,6 +305,9 @@ function authChannel(
     stateBridge: input.stateBridge,
     billing: input.billing,
     hostKeychainPlatforms: Object.freeze([...(input.hostKeychainPlatforms ?? [])]),
+    ...(input.supportedPlatforms === undefined
+      ? {}
+      : { supportedPlatforms: Object.freeze([...input.supportedPlatforms]) }),
   });
 }
 
@@ -607,6 +645,8 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
         env: [],
         stateBridge: 'host-cli-state',
         billing: 'subscription-included',
+        hostKeychainPlatforms: ['darwin'],
+        supportedPlatforms: ['darwin'],
       }),
     ]),
     billing: 'subscription-included',

@@ -55,7 +55,7 @@ function buildTaskReviewPromptRows(request: TaskReviewRequest): PromptRow[] {
     `status ${request.status}`,
     `files ${formatList(request.filesTouched)}`,
     `checks ${request.validation.summary}`,
-    ...formatCostLines(request),
+    ...formatWorkerLines(request),
     ...formatEvidenceLines(request),
     ...formatRoutingLines(request),
     ...formatRecoveryLines(request),
@@ -122,25 +122,17 @@ function formatEvidenceLines(request: TaskReviewRequest): string[] {
   return lines;
 }
 
-function formatCostLines(request: TaskReviewRequest): string[] {
-  const taskTokens = request.cost.taskTokens;
-  const tokenText = taskTokens
-    ? `${taskTokens.implementerTokens} implementer, ${taskTokens.escalationTokens} escalation`
-    : `${request.cost.tokenUsage.implementerInput + request.cost.tokenUsage.implementerOutput} implementer total`;
+function formatWorkerLines(request: TaskReviewRequest): string[] {
   const worker = [request.cost.tool, request.cost.model, request.cost.implementerProfile]
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .join(' / ');
-  return [`cost ${tokenText}${worker ? ` · ${worker}` : ''}`];
+  return worker ? [`worker ${worker}`] : [];
 }
 
 function formatRoutingLines(request: TaskReviewRequest): string[] {
   const routing = request.routing;
   if (!routing) return [];
-  const context =
-    routing.contextLength === undefined
-      ? `${routing.estimatedTokens} tokens`
-      : `${routing.estimatedTokens}/${routing.contextLength} tokens`;
-  return [`route ${routing.fit} ${context} · ${routing.reason}`];
+  return [`route ${routing.fit}`];
 }
 
 function formatRecoveryLines(request: TaskReviewRequest): string[] {

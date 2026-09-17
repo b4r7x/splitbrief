@@ -291,4 +291,45 @@ describe('createHookSink', () => {
     expect(warnings[0]).toContain('changed after trust');
     expect(existsSync(marker)).toBe(false);
   });
+
+  it('runs nothing for a historical git_commit event, and still runs post_task and on_complete once', async () => {
+    const commitMarker = join(projectDir, 'commit-hook-ran.txt');
+    const hooks = trust({
+      post_commit: [
+        makeCommandHookEntry({
+          command: 'node',
+          args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(commitMarker)}, 'ran')`],
+          name: 'legacy-commit',
+        }),
+      ],
+      post_task: [
+        makeCommandHookEntry({ command: 'false', name: 'task-marker', on_failure: 'warn' }),
+      ],
+      on_complete: [
+        makeCommandHookEntry({ command: 'false', name: 'complete-marker', on_failure: 'warn' }),
+      ],
+    });
+    const { bus, warnings, all } = makeBus();
+    const sink = createHookSink(hooks, ctx(), bus);
+
+    const gitCommitEvent: EngineEvent = {
+      type: 'git_commit',
+      ts: 1,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      message: 'feat(splitbrief): T001',
+    };
+    sink(gitCommitEvent);
+    await waitForNoActivity(all);
+    expect(existsSync(commitMarker)).toBe(false);
+    expect(warnings).toHaveLength(0);
+    expect(all).toHaveLength(0);
+
+    sink(taskCompletedEvent);
+    sink({ type: 'workflow_complete', ts: 2, phase: 'idle' });
+    await waitForWarnings(warnings, 2);
+    expect(warnings.filter((w) => w.includes('task-marker'))).toHaveLength(1);
+    expect(warnings.filter((w) => w.includes('complete-marker'))).toHaveLength(1);
+    expect(existsSync(commitMarker)).toBe(false);
+  });
 });

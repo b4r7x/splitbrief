@@ -3,7 +3,7 @@ import { readApprovalsStore } from '../../../core/approval/store.js';
 import { gateAction } from './tiered-approval.js';
 import type { GateDecision, GateActionInput } from './types.js';
 
-export type GateChangedFilesInput = Omit<GateActionInput, 'actionDescription'> & {
+export type GateChangedFilesInput = Omit<GateActionInput, 'actionDescription' | 'targetPath'> & {
   changedFiles: string[];
 };
 
@@ -23,6 +23,7 @@ export async function gateChangedFiles(
     const decision = await gateAction({
       ...input,
       actionDescription,
+      targetPath: file,
       grants,
     });
     if (!decision.allow) {

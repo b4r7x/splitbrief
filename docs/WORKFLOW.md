@@ -6,6 +6,8 @@ Source of truth: `src/core/state/machine.ts` (reducer), `src/core/phases.ts` (ph
 
 For terminology (planner, implementer, runner kinds, runs, run status, stop reason, step, queue), read `docs/CONCEPTS.md` first.
 
+Continuing a final review preserves the number of repair cycles already started. The persisted `reviewFixes.cycle` counts starts; an ordinary continuation never grants another repair budget. Boundary pauses in BUILD repairs durably park the run and continue from the retained cycle and next step. Revising an approved speckit spec invalidates its dependent constitution check before plan or tasks use the revised contents.
+
 ---
 
 ## Batching, admission, and disposition
@@ -120,10 +122,10 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `validating-task` | `VALIDATION_FAIL` (attempt < maxRetries) | `implementing` | Increments `attempt` |
 | `validating-task` | `VALIDATION_FAIL` (attempt >= maxRetries) | `escalating` | — |
 | `validating-task` | `ESCALATE` | `escalating` | — |
-| `implementing` | `HINT_SUCCESS` | `implementing` | Marks task `escalated`, advances index. Used by successful intermediate-model retry while still in the implementing phase. |
-| `escalating` | `HINT_SUCCESS` | `implementing` | Marks task `escalated`, advances index |
-| `escalating` | `HINT_FAIL` | `escalating` | Falls through to full escalation |
-| `escalating` | `FULL_SUCCESS` | `implementing` | Marks task `escalated`, advances index |
+| `implementing` | `HINT_SUCCESS` | `implementing` | Advances a supported intermediate-worker success; legacy full-planner transitions remain readable. Used by successful intermediate-model retry while still in the implementing phase. |
+| `escalating` | `HINT_SUCCESS` | `implementing` | Advances a supported intermediate-worker success; legacy full-planner transitions remain readable |
+| `escalating` | `HINT_FAIL` | `escalating` | Exhausts the supported help path and enters recovery |
+| `escalating` | `FULL_SUCCESS` | `implementing` | Advances a supported intermediate-worker success; legacy full-planner transitions remain readable |
 | `implementing` / `validating-task` / `escalating` | `SKIP_TASK` | *(same)* | Marks task `skipped`, advances `currentTaskIndex` |
 | `implementing` / `validating-task` / `escalating` | `RESET_TASK` | `implementing` | Sets task to `pending`, rewinds `currentTaskIndex` to that task's index, resets `attempt`. Tasks after it keep their status. |
 | `implementing` | `ALL_DONE` | `final-review` | — |
@@ -431,8 +433,7 @@ When a task fails validation `maxRetries` times:
 
 0. **Intermediate tier** — only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`: a paid mid-tier API model retries the task. Success → task `done`.
 1. **Hint escalation** — if planner has `supportsHintEscalation`: short hint to implementer, one retry. Success → task `done`.
-2. **Full escalation** — planner writes the code directly. Success → task `escalated`.
-3. **Recovery** — if all tiers fail, `pendingRecovery` is set. The phase stays where the stop occurred.
+2. **Recovery** follows exhausted worker retries and hints: `pendingRecovery` is set and the phase stays where the stop occurred. The planner never automatically writes the implementation. Historical full-tier outcomes remain readable.
 
 Recovery is not only the task loop's. A planner-seat turn that cannot decide alone raises one too, and the issue carries a `seat` (`plan` | `build` | `review`) so the panel and the swap offer name the seat that is actually stuck: `planner-call-failed` (the call died and the diagnosis is already on the bus), `planner-returned-no-briefs` (the `tasks` call parsed none), `constitution-check-failed` (a hard violation; the phase stays at `constitution-check`), `brief-review-no-progress` (the briefs gate looped without settling) and `brief-quality-unrepaired` (the repair pass failed where no gate exists to decide). `runner-unauthenticated` and `runner-usage-limit` are seat-blocked halts and can fire on the plan seat as readily as the build seat.
 

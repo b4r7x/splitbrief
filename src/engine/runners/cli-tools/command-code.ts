@@ -35,12 +35,20 @@ export const COMMAND_CODE_PROTECTED_FLAGS = new Set([
   '--session',
   '--fork-session',
   '--config',
+  // Native options the adapter never emits, refused because they take over
+  // adapter-owned authority: `-w`/`--worktree` moves the run out of the stage
+  // directory SPLITBRIEF owns, and `--mod`/`--mod-option` load extension
+  // configuration SPLITBRIEF never sees.
+  '--worktree',
+  '-w',
+  '--mod',
+  '--mod-option',
   '--effort',
   '--no-auto-update',
   '-v',
   '--version',
 ]);
-export const COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-p', '-m', '-r']);
+export const COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-p', '-m', '-r', '-w']);
 
 type CommandCodePlannerBuildInput = Parameters<CliPlannerAdapter<'command-code'>['buildArgs']>[0];
 type CommandCodeImplementerBuildInput = Parameters<

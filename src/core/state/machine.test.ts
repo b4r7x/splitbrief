@@ -290,6 +290,48 @@ describe('transition', () => {
     expect(next.messageQueue.map((message) => message.id)).toEqual(['msg-native', 'msg-drained']);
   });
 
+  it('DRAIN_QUEUE with ids acknowledges only the listed messages still pending delivery', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      messageQueue: [
+        makeQueuedMessage({ id: 'msg-a' }),
+        makeQueuedMessage({ id: 'msg-b' }),
+        makeQueuedMessage({ id: 'msg-injecting', nativeDeliveryState: 'injecting' }),
+      ],
+    };
+
+    const next = transition(state, { type: 'DRAIN_QUEUE', ids: ['msg-a', 'msg-injecting'] });
+
+    expect(
+      next.messageQueue.map((message) => [message.id, message.drainedAt !== undefined]),
+    ).toEqual([
+      ['msg-a', true],
+      ['msg-b', false],
+      ['msg-injecting', false],
+    ]);
+  });
+
+  it('DRAIN_QUEUE without ids acknowledges every message still pending delivery', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      messageQueue: [
+        makeQueuedMessage({ id: 'msg-a' }),
+        makeQueuedMessage({ id: 'msg-b' }),
+        makeQueuedMessage({ id: 'msg-injecting', nativeDeliveryState: 'injecting' }),
+      ],
+    };
+
+    const next = transition(state, { type: 'DRAIN_QUEUE' });
+
+    expect(
+      next.messageQueue.map((message) => [message.id, message.drainedAt !== undefined]),
+    ).toEqual([
+      ['msg-a', true],
+      ['msg-b', true],
+      ['msg-injecting', false],
+    ]);
+  });
+
   it('HINT_FAIL -> stays in escalating', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),

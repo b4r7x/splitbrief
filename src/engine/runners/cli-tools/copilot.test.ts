@@ -347,7 +347,18 @@ describe('Copilot JSON and text protocol adapters', () => {
     expect(events).toContainEqual({ type: 'text', channel: 'assistant', text: 'compiled brief' });
     expect(events).toContainEqual({
       type: 'usage',
-      usage: { inputTokens: 3, outputTokens: 2 },
+      usage: {
+        inputTokens: 3,
+        outputTokens: 2,
+        counterCoverage: {
+          input: 'reported',
+          output: 'partial',
+          cacheRead: 'missing',
+          cacheCreate: 'missing',
+          reasoning: 'missing',
+        },
+        providerTotals: { output: 2 },
+      },
       semantics: 'delta',
     });
     expect(events).toContainEqual({

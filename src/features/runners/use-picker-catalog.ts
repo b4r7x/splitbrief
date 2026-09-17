@@ -37,7 +37,12 @@ import {
   inheritPlannerOption,
   type PickerOption,
 } from './model-catalog/options.js';
-import { buildRightRows, type CatalogLane, type RightRow } from './model-catalog/rows.js';
+import {
+  authMethodOffer,
+  buildRightRows,
+  type CatalogLane,
+  type RightRow,
+} from './model-catalog/rows.js';
 import { inheritsPlannerSeat } from './config-transforms.js';
 import type { Config } from '../../core/schemas/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -170,6 +175,7 @@ export function usePickerCatalog(
   const expandedModelId = pickerViewStore.use((s) => s.expandedModelId);
   const optionDraftId = pickerViewStore.use((s) => s.optionDraftId);
   const effortDraft = pickerViewStore.use((s) => s.effortDraft);
+  const authDraft = pickerViewStore.use((s) => s.authDraft);
   const browseCatalog = pickerViewStore.use((s) => s.browseCatalog);
 
   const [{ cliTools, providers, providerOutcomes, cliCatalogOutcomes, refresh }] =
@@ -264,6 +270,8 @@ export function usePickerCatalog(
         browseCatalog,
         optionDraftId,
         effortDraft,
+        authMethod: authMethodOffer({ item, runner: runnerConfig }),
+        authDraft,
       }),
     };
   };

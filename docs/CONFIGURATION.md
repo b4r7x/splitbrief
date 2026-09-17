@@ -71,9 +71,9 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 |---|---|---|---|
 | `model` | string | — | Model identifier, or `auto`. Planner: optional. Implementer: required for `api`, `shell`, and `agent`; optional for `cli`, where omitting `model` and writing `model: auto` are equivalent — both delegate to the tool's own default. |
 | `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. Pricing remains unknown unless models.dev, runtime provider metadata, or the bundled catalog supplies rates. |
-| `contextLength` | int > 0 | detected, else `32768` | Override the detected context window. Useful for self-hosted Ollama/LM Studio whose `/api/show` reports the wrong number. When neither configured nor detected, SPLITBRIEF assumes the single documented default `DEFAULT_UNKNOWN_CONTEXT_LENGTH` (32768, `src/core/tokens/context-length.ts`) for routing and budget sizing alike. |
+| `contextLength` | int > 0 | kind-dependent | Application budget override. Built-in local API calls use configured context, observed active context, then 8192; maximum model capacity is separate. CLI/legacy routing can use the 32768 conservative fallback. This field never changes the server. |
 | `temperature` | 0..2 | provider default | Sampling temperature. Honored only by the `api` kind (planner, reviewer, and implementer); the `cli`, `shell`, and `agent` kinds cannot pass it to their backend and drop it with a stderr warning. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
-| `timeout` | ms (≤ 1200000) | 20 min on a `cli` implementer call, 10 min on a `cli` review call, otherwise unset → no total-call cap (output silence is guarded separately: the 60s `api` stream-idle guard or `idleWarnMs`/`idleKillMs` below — see Troubleshooting) | Total wall-clock budget for a single planner, reviewer, or implementer call; aborts the call when exceeded. The defaults are `TIMEOUTS.implementerMs` / `TIMEOUTS.reviewerMs` (`src/core/pipeline-spec/timeouts.ts`), and the cap is the implementer deadline. Two consecutive timeouts on one brief stop the run with an `runner-timeout-repeated` recovery instead of escalating. Raise for long planner thinks; lower for quick probe calls. |
+| `timeout` | ms (≤ 1200000) | API BUILD: 20 min; API PLAN/REVIEW: 10 min. CLI BUILD: 20 min; CLI REVIEW: 10 min; other CLI planning calls have no total-call default. | Total wall-clock budget for a call. API first-response and stream-idle deadlines also apply, each bounded by this total. Defaults come from `TIMEOUTS.implementerMs` / `TIMEOUTS.reviewerMs` (`src/core/pipeline-spec/timeouts.ts`). Two consecutive brief timeouts enter recovery. |
 | `idleWarnMs` | ms (≤ 3600000) | `300000` | Inactivity watchdog warn threshold: after this much output silence on a running call, the byline shows a "still working" warning; any stdout/stderr output clears it and resets the timer. |
 | `idleKillMs` | ms (≤ 3600000) | `1800000` | Inactivity watchdog kill threshold: at this much output silence the runner's process group is terminated (SIGTERM, then SIGKILL after a grace window) and the call is marked failed. For planner calls a retry prompt is offered; a failed implementer call feeds the task's retry/escalation ladder instead, whose retry prompts rebuild the full Task Brief per attempt. |
 | `effort` | `none\|minimal\|low\|medium\|high\|xhigh\|max` | unset | Reasoning-effort hint. The union above is what config accepts; the levels a seat may actually use are the selected model's own ladder, not a fixed list per tool — the seat's tool accepts a subset and reports what it rejects. How a seat's effort intent reaches its tool is the seat's channel — `CliEffortChannel` (`src/core/runners/effort-channel.ts`), resolved by `seatEffortChannel` (`src/core/runners/capabilities.ts`) — and only one of the four channels carries this field. `cli` `claude-code`, `codex`, `copilot` and `command-code` are channel `effort-flag`: they deliver this `EffortLevel` verbatim on the tool's own effort argument, on the planner, reviewer, and implementer seats — `claude-code`, `copilot` and `command-code` emit `--effort <level>`, `codex` emits `-c model_reasoning_effort=<level>`. `cli` `opencode` and `kilo-code` are channel `variant`: they have a real effort channel, but it is a named preset delivered through the separate `variant` field on `--variant`, not through `effort`. `cli` `cursor` is channel `model-id`: effort is encoded in the selected model id's suffix, so there is no separate field to set — choose it in the model picker. Only the `api`, `shell`, and `agent` kinds are channel `none`. `seatSupportsEffort` is now `seatEffortChannel(...) !== 'none'`; a caller that means "takes the `effort` field" tests for `effort-flag`. An undeliverable value is not sent: changing a seat in the TUI clears it and says so (`Effort <level> cleared: <tool> has no effort channel`) on every seat whose channel is not `effort-flag`, and a headless run drops it, with a `planner-effort`/`reviewer-effort: dropped` stderr warning on the planner and review seats, silently on the implementer seat. The same clearing and dropping applies to `variant` on a seat whose channel is not `variant`. |
@@ -141,9 +141,9 @@ OpenAI-compatible HTTP endpoint.
 | `service` | non-empty string | yes | Billing/identity service behind the provider. Never inferred — write it out. For an admitted provider ID it must equal that ID's `API_PROVIDER_CATALOG` service (see the provider matrix in §18); a mismatch is a validation error. |
 | `offering` | enum | yes | `payg` \| `free-quota` \| `coding-subscription` \| `local`. Never inferred — write it out. For an admitted provider ID it must equal that ID's catalog offering. |
 | `apiBase` | non-empty string | yes | Base URL. For known providers, see "Default API base URLs" below. |
-| `apiKey` | string | no | Omit it for the loopback providers, which take no credential — local `ollama` accepts exactly one reference, `apiKey: env:OLLAMA_LOCAL_API_KEY`, when its daemon requires authentication. A custom provider must carry an **inline** key: an `apiKey: env:VAR` reference is refused for a provider the catalog does not know (see [API-KEYS.md](./API-KEYS.md)). |
+| `apiKey` | string | no | Optional for local providers. When authentication is enabled, `ollama` accepts only `env:OLLAMA_LOCAL_API_KEY`; `lm-studio` and `llama-cpp` accept an environment-variable reference such as `env:MY_TOKEN`. The local connection form stores references, not secret values. A custom provider must carry an **inline** key: an `apiKey: env:VAR` reference is refused for a provider the catalog does not know (see [API-KEYS.md](./API-KEYS.md)). |
 
-Both admitted provider IDs (`ollama`, `lm-studio`) are implementer-only local daemons, so an `api` planner or reviewer is always a custom endpoint: pick your own `provider`/`service` name, declare `offering` and `apiBase`, and carry an inline `apiKey` (§18).
+Ollama and LM Studio support PLAN, BUILD, and REVIEW with independent configured endpoints and exact model IDs. The built-in `llama-cpp` connection profile supports the same seats. Each API block declares `provider`, `service`, `offering`, `apiBase` and its exact `model`; local authentication is optional.
 
 YAML — minimal (custom endpoint):
 
@@ -262,7 +262,7 @@ Same discriminated union as `planner` — the four kinds, the same [common gener
 | `kind` | Write the same fields as | Notes |
 |---|---|---|
 | `cli` | [`kind: cli`](#kind-cli) | `tool` must be a planner-side CLI: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`. |
-| `api` | [`kind: api`](#kind-api) | `provider` must be admitted for the planner role. Both catalog IDs (`ollama`, `lm-studio`) are implementer-only, so this seat takes a custom provider. The identity triple `service` / `offering` / `apiBase` is required here too, plus an inline `apiKey`. |
+| `api` | [`kind: api`](#kind-api) | Built-in local providers support the review seat through the planner role. Declare `service`, `offering`, `apiBase` and the exact model independently for this seat. Custom remote providers require their own inline credential. |
 | `shell` | [`kind: shell`](#kind-shell) | Needs the same [runner command trust](#runner-command-trust) grant as a `shell` planner. |
 | `agent` | [`kind: agent`](#kind-agent) | Same trust grant. |
 
@@ -347,7 +347,13 @@ implementer:
   timeout: 240000
 ```
 
-`contextLength` is SPLITBRIEF's assumed input context window, used to size the prompt budget. When neither configured nor detected, every consumer — routing and the prompt and request budgets alike — resolves to the single documented default `DEFAULT_UNKNOWN_CONTEXT_LENGTH` (32768) in `src/core/tokens/context-length.ts`, so an omitted window never means "unlimited" to one consumer and a different number to another. A boot-probed window applies only to the default implementer profile; a sibling profile that declares no `contextLength` routes at the shared default. When no window is known, the model-resolution ladder in `src/engine/providers/model/context-window.ts` answers: for an `api` runner, the models.dev cache when hydrated, else the runtime snapshot, else the bundled catalog row for the pinned model; for a CLI tool, its own listing, else the bundled catalog row — and for a CLI tool under `model: auto`, which resolves to no model id, the smallest window the bundled catalog guarantees for that tool (automatic selection never adds a `--model` flag). It does **not** change a provider's real model context. For Ollama, configure the model/server `num_ctx` first; use `contextLength` or `SPLITBRIEF_CONTEXT_LENGTH` only to match or override SPLITBRIEF's detection. It is also **not** the per-response output cap — SPLITBRIEF clamps `max_tokens` to the model's max-output limit independently, so a large context window never produces an over-large output request.
+`contextLength` is an application budgeting input, not a server setting. The application context budget does not reconfigure the server or prove its active context capacity. For built-in local API seats, `resolveApplicationContextTokens` selects configured context, otherwise observed active context, otherwise the application default of 8192 tokens, then clamps that result to observed active and maximum context when known. The model's maximum context is a separate architectural ceiling and never substitutes for unknown active capacity. CLI and legacy routing metadata have their own conservative fallback (`DEFAULT_UNKNOWN_CONTEXT_LENGTH`); that does not replace the API dispatch budget.
+
+For PLAN and REVIEW, reserve 2048 output tokens and add an input-estimation margin of ceil(inputEstimate * 0.15). `measureApiBudget` includes message/request overhead, requires input plus the 15% margin plus output reserve to fit, and refuses before dispatch if it does not. BUILD reserves output for the complete declared text bundle, including modify baselines and new targets. The output cap is independently bounded; an absent maximum-output report uses the 8192-token application fallback. Each dispatch rechecks the seat's own endpoint and exact model.
+
+The first-response deadline defaults to 120000 ms and stream-idle to 60000 ms. `resolveApiDeadlinePolicy` clamps each to the total role timeout, which remains authoritative. First response means the first stream chunk; subsequent chunks reset idle timing. Cancellation closes the application request, but does not prove remote generation has stopped. SPLITBRIEF never reconfigures or unloads the server in response.
+
+`resolveEffectiveRequestOptions` records whether controls were sent, not configured, or omitted as unsupported. Current OpenAI-compatible policy sends the budgeted `max_tokens` but omits temperature, effort/reasoning controls and stream-usage requests. A configured value or retry temperature increment is not evidence that the server received it.
 
 **When to use:**
 - *Coding-agent CLI on a smaller model* — you already pay for a Claude Code / Codex / Copilot subscription and want the implementer step to run there on a smaller model than the planner uses.
@@ -407,7 +413,7 @@ implementerProfiles:
 | Field | Type | Description |
 |---|---|---|
 | `label` | string | Optional display label for TUI/events. |
-| `capabilities.writesFiles` | `extracted-code\|direct` | Optional routing metadata. Defaults from runner kind: `api`/`shell` extract one file from stdout; `cli`/`agent` write directly. Explicit values must match the runner kind. |
+| `capabilities.writesFiles` | `extracted-code\|direct` | Optional routing metadata. Defaults from runner kind: `api` applies text file bundles, `shell` extracts legacy single-file output, and `cli`/`agent` write directly. Explicit values must match the runner kind. |
 
 If `implementerProfiles.default` is omitted, SPLITBRIEF resolves the default profile deterministically from the first profile name in sorted order. If `default` is set, it must name an existing profile.
 
@@ -503,6 +509,11 @@ A task's validation is judged against the run's baseline, not absolute repositor
 
 ## 5. `workflow`
 
+Automatic staging, commits, and index checkpoints are not supported; commit changes manually.
+
+workflow.briefReview is currently ignored and deprecated; it does not enable an extra review step.
+
+
 Mode, spec/plan document gates, retries, git strategy, and brief-review style.
 
 ### Schema
@@ -517,7 +528,7 @@ workflow: {
 
   // Git
   git?: {
-    commitStrategy?:      'none' | 'checkpoint' | 'per-task';
+    commitStrategy?:      'none'; // deprecated input, stripped on load
     createBranch?:        boolean;
   };
 
@@ -538,7 +549,7 @@ workflow: {
   compactionThreshold?:   number;  // int >= 10
   compactionFormat:       'auto' | 'freeform' | 'structured'; // default auto
 
-  // Display
+  // Compatibility only; no rendered effect
   showSpend?:             boolean; // default true
 }
 ```
@@ -550,30 +561,30 @@ workflow: {
 | `mode` | enum | `standard` | `quick` \| `standard` \| `speckit`. The retired `instant` still loads as `quick` with a deprecation warning; any other value fails validation. |
 | `approve` | enum | `default` | Spec/plan document gates: `none` (skip spec/plan gates; briefs review still runs in standard/speckit), `spec` (gate spec only), `plan` (gate plan only), `all` (gate both), `default` (per-mode default). |
 | `maxRetries` | int >= 0 | `2` | Per-task local retries before escalation kicks in, so a brief gets `1 + maxRetries` attempts. The default is `DEFAULT_LOCAL_RETRIES` (`src/core/pipeline-spec/retries.ts`), the same constant the Build progress block reads for `attempt <a> of <max>`. |
-| `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (a session-scoped tagged stash per task — `splitbrief/<sessionId>/<taskId>` — no commits), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
+| `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
 | `isolation` | enum | `worktree` | Where an implementer that writes files itself does its work before changes are promoted into the project: `worktree` (one linked git worktree per run) or `staged-copy` (a temporary copy of the project per task). Unused when the implementer returns file contents (`writesFiles: extracted-code`) — SPLITBRIEF writes those files into the project itself. |
-| `briefReview` | enum | `simple` | `simple` is the only accepted value. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` in the external editor. |
+| `briefReview` | deprecated | ignored | Compatibility input accepts only `simple`; `rich` is rejected. It does not control the existing brief approval gate or external editor. |
 | `taskReview` | enum | `none` | Per-task review gate after implementation: `none` (never pause), `failed` (pause only when a task fails, hits recovery, or its validation fails), `every` (pause after every advancing task). **Requires an interactive TUI run** — any value other than `none` is rejected at startup in headless mode (`src/cli/headless.ts`), so leave it `none` for CI. |
 | `driftChainThreshold` | 0..1 | `0.6` | Threshold used when omitted; higher = fewer drift-chain events. |
 | `speckit.minCoverage` | 0..1 | `0.9` | Speckit-mode spec/plan→task traceability threshold. The analyze phase emits a `warning` event when measured `specTaskCoverage` or `planTaskCoverage` falls below this value. Not a test-coverage gate. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
-| `showSpend` (`show_spend`) | boolean | `true` | Whether the run's spend figure is shown when pricing is known: the sidebar footer's `· $0.42` and the `Cost` row in a closed run's ledger. Off hides both (the sidebar keeps `Local NN%`) and makes `/copy cost` answer `spend display is off`. Display only — token accounting and the recorded cost breakdown are unchanged. Toggle it in Settings ▸ Workflow ▸ **Show spend**. |
+| `showSpend` (`show_spend`) | compatibility boolean | `true` | Retained in config, with no main-screen rendered effect. The legacy `/copy cost` export returns `spend display is off` when false. Open `/usage` for usage details; there is no Show spend setting. |
 
 ### Per-mode defaults
 
-| Mode | Planner calls | Default `approve` | Default `briefReview` | Best for |
-|---|:---:|:---:|:---:|---|
-| `quick` | 1 | `none` | `simple` | Trivial edits and small tasks that still want a brief |
-| `standard` (default) | 4 | `spec` | `simple` | Ordinary feature work |
-| `speckit` | 6–7 | `all` | `simple` | Large, risky, externally visible |
+| Mode | Planner calls | Default `approve` | Best for |
+|---|:---:|:---:|---|
+| `quick` | 1 | `none` | Trivial edits and small tasks that still want a brief |
+| `standard` (default) | 4 | `spec` | Ordinary feature work |
+| `speckit` | 6–7 | `all` | Large, risky, externally visible |
 
 `approve: default` resolves to the table above via `resolveApproveLevel()` (`src/core/config/runtime/resolve.ts`).
 
 **Deprecated: `workflow.mode: instant`.** The `instant` mode was merged into `quick`. The string still parses — `WorkflowModeSchema` (`src/core/schemas/enums.ts`) preprocesses it to `quick` — so an existing config keeps loading unchanged, and `validateConfig` pushes a deprecation warning telling you to update the value. `--mode instant` behaves the same way and warns on stderr. Nothing writes `instant` any more; update the file to `quick` to silence the notice.
 
-`briefReview` has no per-mode default — it falls back to `simple` in every mode unless set explicitly (`config.workflow.briefReview ?? 'simple'`). Use the external editor commands for text edits.
+`briefReview` remains a compatibility field; omit it from new configurations. The existing brief gate and external editor are independent of this field.
 
 ### Implementer isolation
 
@@ -612,10 +623,8 @@ workflow:
   mode: speckit
   approve: all
   maxRetries: 2
-  briefReview: simple
   driftChainThreshold: 0.6
   git:
-    commitStrategy: none
     createBranch: false
   speckit:
     minCoverage: 0.8
@@ -628,14 +637,11 @@ workflow:
   mode: quick
   approve: none
   maxRetries: 2
-  git: { commitStrategy: none }
 ```
 
 **When to use what:**
 - `git.createBranch: true` — when running SPLITBRIEF in CI or against `main` and you don't want the changes landing on the current branch.
-- `git.commitStrategy: none` — the default and recommended setting for manual review; SPLITBRIEF leaves changes unstaged so you can review and commit them yourself.
 - `isolation: worktree` — the default, and the only strategy where the implementer can run the project's own typecheck, lint, and tests before handing work back. Choose `staged-copy` only when a linked git worktree is not workable for your setup.
-- `briefReview: simple` — the only accepted brief review mode. Use `Ctrl+E`, `e`, `edit`, `E`, or `edit-file` to edit the persisted Task Brief in the external editor.
 
 **See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) (`/mode` runtime override). Workflow approval level is set with `--approve` or `workflow.approve`.
 
@@ -643,7 +649,7 @@ workflow:
 
 ## 6. `escalation`
 
-When a task fails locally past `maxRetries`, SPLITBRIEF escalates through a tier ladder: **tier 0** retries with the "intermediate" mid-tier model configured here, then **tier 1** has the planner write a hint, then **tier 2** hands the task to the planner ("full escalation"). The intermediate tier runs only when `intermediateProvider` is set.
+After `maxRetries`, the optional tier 0 intermediate worker retries, then tier 1 asks the planner for a hint and retries with the implementer. Exhaustion enters explicit recovery. The planner never automatically takes over code-writing implementation.
 
 ### Schema
 
@@ -736,8 +742,8 @@ hooks: {
   post_task?:       HookEntry[];
   pre_validation?:  HookEntry[];
   post_validation?: HookEntry[];
-  pre_commit?:      HookEntry[];
-  post_commit?:     HookEntry[];
+  pre_commit?:      []; // retired; nonempty entries rejected
+  post_commit?:     []; // retired; nonempty entries rejected
   pre_escalation?:  HookEntry[];
   on_error?:        HookEntry[];
   on_halt?:         HookEntry[];
@@ -952,15 +958,17 @@ Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/engine/provide
 
 ### Provider authentication
 
+CLI method selection requires exact tool/platform/version invocation-enforcement evidence. The current matrix is empty: an explicit `session` or `api-key` selection is refused; omit `authChannel` and configure authentication through the host CLI. Provider and model routes do not select or prove a billing method.
+
 | Variable | Provider | Notes |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | `cli` `claude-code` | Feeds the tool's `api-key` auth channel; unset it to run on the tool's own session credentials. |
-| `OPENAI_API_KEY` | `cli` `codex` | Feeds the tool's `api-key` auth channel. |
-| `GH_TOKEN` / `GITHUB_TOKEN` | `cli` `copilot` | Feeds the tool's `api-key` auth channel. |
-| `CURSOR_API_KEY` | `cli` `cursor` | Feeds the tool's `api-key` auth channel. |
+| `ANTHROPIC_API_KEY` | `cli` `claude-code` | A credential the host CLI may use. Its own configuration determines the method; this does not prove API billing. |
+| `OPENAI_API_KEY` | `cli` `codex` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
+| `GH_TOKEN` / `GITHUB_TOKEN` | `cli` `copilot` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
+| `CURSOR_API_KEY` | `cli` `cursor` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
 | `OLLAMA_LOCAL_API_KEY` | local `ollama` daemon | Optional. Only use it through `apiKey: env:OLLAMA_LOCAL_API_KEY` when your loopback daemon requires authentication. |
 
-Neither admitted `api` provider has a credential env var: both are loopback daemons. A custom provider has no inferable env var name either, so it must set `service`, `offering`, `apiBase`, and an inline `apiKey` in YAML — an `apiKey: env:VAR` reference is refused for a provider the catalog does not know. `cli` `command-code` has no credential environment variable — its published CLI documentation names none, so it authenticates only through its own `cmd login` session, which the sandbox bridges as files.
+The three admitted local providers have no default credential environment variable; they are loopback connections with optional explicit authentication. A custom provider has no inferable env var name either, so it must set `service`, `offering`, `apiBase`, and an inline `apiKey` in YAML — an `apiKey: env:VAR` reference is refused for a provider the catalog does not know. `cli` `command-code` has no credential environment variable — its published CLI documentation names none, so it authenticates only through its own `cmd login` session, which the sandbox bridges as files.
 
 ### Runtime overrides
 
@@ -1051,7 +1059,7 @@ Unknown top-level keys are tolerated, apart from the five removed ones named in 
 
 `version: 3` is the only accepted schema version. A config carrying any other version — or none at all — is rejected at load with `Unsupported config version: <value>. Supported: 3.` Run `splitbrief init --reconfigure` to write a current config; there is no in-memory upgrade path.
 
-Fields that older shapes used are gone rather than aliased — `workflow.autoApproveSpec` / `workflow.autoApprovePlan` are replaced by `workflow.approve`, top-level `workflow.commitStrategy` by `workflow.git.commitStrategy`, and `workflow.mode: full` by `workflow.mode: speckit`. Configs still carrying the old spellings fail validation with the offending path named.
+Fields that older shapes used are gone rather than aliased — `workflow.autoApproveSpec` / `workflow.autoApprovePlan` are replaced by `workflow.approve`, `workflow.commitStrategy` and `workflow.git.commitStrategy` by manual commits, and `workflow.mode: full` by `workflow.mode: speckit`. These old fields and values fail validation with the offending path named, except `workflow.git.commitStrategy: none`: it loads with a deprecation warning and is removed from the resolved config. Delete the retired field when updating your config.
 
 ### Removed identities
 
@@ -1060,7 +1068,7 @@ Runner identities that a `version: 3` config once accepted are rejected by name,
 | You had | Load error | Migration |
 |---|---|---|
 | `kind: agent-sdk` | `Runner kind "agent-sdk" was removed; use kind cli, api, shell, or agent.` | `kind: api` against your own endpoint — set `provider`/`service` to your own name, plus `offering`, `apiBase`, and an inline `apiKey`. |
-| `provider:` `anthropic`, `deepseek`, `groq`, `ollama-cloud`, `openai`, `openrouter`, `together` | `API provider "<id>" was removed; only "ollama" and "lm-studio" are built in. Configure it as a custom endpoint: set provider/service to your own name plus apiBase and an inline apiKey (docs/CONFIGURATION.md).` | Same custom-endpoint shape as above — see [`kind: api`](#kind-api). The removed id is refused even though custom names are otherwise free, so pick a new one. |
+| `provider:` `anthropic`, `deepseek`, `groq`, `ollama-cloud`, `openai`, `openrouter`, `together` | `API provider "<id>" was removed; only "ollama", "lm-studio", "llama-cpp" are built in. Configure it as a custom endpoint: set provider/service to your own name plus apiBase and an inline apiKey (docs/CONFIGURATION.md).` | Same custom-endpoint shape as above — see [`kind: api`](#kind-api). The removed id is refused even though custom names are otherwise free, so pick a new one. |
 | `tool: aider` | `CLI tool "aider" was removed; supported tools are <the tools that seat accepts>.` | No replacement — choose another `cli` tool, or drive Aider as a `shell` runner. |
 
 ### Removed config keys
@@ -1080,7 +1088,7 @@ key.
 | You had | On load | Replacement |
 |---|---|---|
 | `workflow.persistTranscript` | rejected — `workflow.persistTranscript: Unknown config key …` | None. The transcript and `session.jsonl` are always written; persistence is no longer a policy. |
-| `workflow.briefReview: rich` | rejected — `Invalid input: expected "simple"` | `briefReview: simple`, the only brief-review shape. |
+| `workflow.briefReview: rich` | rejected — `Invalid input: expected "simple"` | Omit the field; `simple` is accepted only for compatibility and ignored. |
 | `hooks.builtin` | rejected — `hooks.builtin: Unknown config key …` | None. The built-in hook bundle is gone; write the check as an ordinary `kind: command` hook (§8). |
 | `hooks.pre_compact` | rejected — `hooks.pre_compact: Unknown config key …` | None. Transcript compaction is automatic and fires no hook; `HOOK_EVENTS` is the eleven events in §8. |
 | hook entry `kind: module` | rejected — `Invalid input: expected "command"` | `kind: command` — an executable and argv, the only hook kind. |
@@ -1111,7 +1119,7 @@ A representative config: Claude Code subscription as planner, a small local LM S
 ```yaml
 version: 3
 
-# ---------- Planner: Claude Code subscription (no API billing) ----------
+# ---------- Planner: host-configured Claude Code ----------
 planner:
   kind: cli
   tool: claude-code
@@ -1145,11 +1153,9 @@ validation:
 workflow:
   mode: speckit
   approve: all
-  briefReview: simple
   maxRetries: 2
   driftChainThreshold: 0.6
   git:
-    commitStrategy: none
     createBranch: false
   isolation: worktree
   speckit:
@@ -1221,7 +1227,7 @@ sessions:
 
 What this run needs locally (never commit credential values):
 - A running LM Studio daemon on `localhost:1234` (implementer) and a running Ollama daemon on `localhost:11434` (escalation) — neither takes a credential
-- `ANTHROPIC_API_KEY` only if you drive Claude Code through its `api-key` auth channel instead of its own session credentials
+- CLI credentials according to the host tool’s configuration; explicit unproven method selection is refused
 
 Then:
 
@@ -1254,10 +1260,11 @@ Credential prefix or env presence validates the configured offering but **never 
 <!-- api-provider-matrix -->
 | Provider | Service | Offering | Normalized endpoint | Credential env | Prefix validation | Roles | Billing |
 |---|---|---|---|---|---|---|---|
-| ollama | ollama | local | `http://localhost:11434/v1` | — | — | implementer | local |
-| lm-studio | lm-studio | local | `http://localhost:1234/v1` | — | — | implementer | local |
+| ollama | ollama | local | `http://localhost:11434/v1` | — | — | planner, implementer | local |
+| lm-studio | lm-studio | local | `http://localhost:1234/v1` | — | — | planner, implementer | local |
+| llama-cpp | llama-cpp | local | `http://localhost:8080/v1` | — | — | planner, implementer | local |
 
-**Role restriction:** both admitted providers are implementer-only. Configuring either as `planner` or `reviewer` fails schema validation; a planner-side `kind: api` seat is a custom endpoint (see below).
+**Roles:** every admitted provider is available to PLAN, BUILD and REVIEW (the reviewer is a planner-tier seat), each seat keeping its own `apiBase` and exact model. `llama-cpp` is a **beta** connection profile on the shared OpenAI-compatible transport: it reads the catalog your `llama-server` already serves and ships no bundled model row, so its `model` is always explicit.
 
 Local `ollama` talks only to a loopback daemon and normally omits `apiKey`; if that daemon requires authentication, the only accepted reference is `apiKey: env:OLLAMA_LOCAL_API_KEY`. `OLLAMA_API_KEY` is never resolved or sent to local Ollama.
 
@@ -1275,9 +1282,41 @@ Recommendation labels mirror `src/core/providers/known-models.ts`. A row becomes
 | ollama | qwen3-coder:30b | compatible-only | Local default; context limit discovered from the daemon — not hard-coded. T-080: OMIT-NOT-APPLICABLE. |
 | lm-studio | qwen2.5-coder-7b | compatible-only | Local default; context limit discovered from the daemon. T-080: OMIT-NOT-APPLICABLE. |
 
+### Independent local seats
+
+Start each server externally. No provider executable needs to be installed on the SPLITBRIEF host. Use the configured loopback address, choose the exact model ID returned by that server, and use Retry to check again after fixing the connection. SPLITBRIEF does not start, download, load, unload or silently replace a model. A listed model and an observed loaded model are separate facts; unknown load or context state remains unknown.
+
+This example uses three independent servers and model IDs. Replace each model with an exact ID that its own server reports. The reviewer is optional; omitting it uses the planner's runner.
+
+<!-- config-api-three-seats: local -->
+```yaml
+version: 3
+planner:
+  kind: api
+  provider: ollama
+  service: ollama
+  offering: local
+  apiBase: http://localhost:11434/v1
+  model: qwen3-coder:30b
+implementer:
+  kind: api
+  provider: lm-studio
+  service: lm-studio
+  offering: local
+  apiBase: http://localhost:1234/v1
+  model: qwen2.5-coder-7b
+reviewer:
+  kind: api
+  provider: llama-cpp
+  service: llama-cpp
+  offering: local
+  apiBase: http://localhost:8080/v1
+  model: Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
+```
+
 ### Minimal YAML per admitted provider
 
-Both admitted providers are loopback daemons that take no credential: omit `apiKey` entirely. Local `ollama` accepts exactly one reference when its daemon requires authentication (`apiKey: env:OLLAMA_LOCAL_API_KEY`). Anything remote is a custom provider with an inline key — see [Generic remote OpenAI-compatible endpoint](#generic-remote-openai-compatible-endpoint) below.
+Every admitted provider is a loopback server that takes no credential by default: omit `apiKey` entirely. A `llama-server` started with an API key accepts an explicit `apiKey`, still only on its loopback endpoint. Local `ollama` accepts exactly one reference when its daemon requires authentication (`apiKey: env:OLLAMA_LOCAL_API_KEY`). Anything remote is a custom provider with an inline key — see [Generic remote OpenAI-compatible endpoint](#generic-remote-openai-compatible-endpoint) below.
 
 <!-- config-api-minimal: ollama -->
 ```yaml
@@ -1300,6 +1339,19 @@ implementer:
   apiBase: http://localhost:1234/v1
   model: qwen2.5-coder-7b
 ```
+
+<!-- config-api-minimal: llama-cpp -->
+```yaml
+implementer:
+  kind: api
+  provider: llama-cpp
+  service: llama-cpp
+  offering: local
+  apiBase: http://localhost:8080/v1
+  model: Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
+```
+
+The `model` is the exact id your server reports at `GET /v1/models` — the alias of a single-model server, or one entry of a router's list. There is no bundled default and `model: auto` is refused by name.
 
 ### Generic remote OpenAI-compatible endpoint
 

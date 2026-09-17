@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
-import { Box, Text, useInput, type Key } from 'ink';
-import { MultilineInput } from '../input/multiline-input.js';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { Box, Text, type Key } from 'ink';
+import { MultilineInput, type InputEdit } from '../input/multiline-input.js';
 import { CommandCompletionMenu } from './completion/command/menu.js';
 import { ReferenceCompletionMenu } from './completion/reference/menu.js';
-import { AttachmentChips, attachmentChipRows, expandPastes } from './attachments.js';
 import { useCommandCompletion } from './completion/command/hook.js';
 import { useReferenceCompletion } from './completion/reference/hook.js';
 import { useTheme, type Theme } from '../theme.js';
@@ -21,7 +20,17 @@ import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useHistory } from './use-history.js';
-import { attachImage, attachmentsStore, detachImage } from '../../stores/workflow/attachments.js';
+import { attachmentsStore } from '../../stores/workflow/attachments.js';
+import {
+  attachmentShortName,
+  formatAttachmentFailure,
+  resolveAttachment,
+} from '../../core/attachments/resolve.js';
+import { createDraftDocument, draftLength } from '../../core/composer/document.js';
+import type { Attachment } from '../../core/schemas/attachment.js';
+import type { DraftDocument } from '../../core/schemas/draft-document.js';
+import { prepareDraftSubmission } from '../../core/composer/submission.js';
+import { draftDocumentText, getInputHistoryDocuments } from '../../stores/ui/input-history.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { formatSeatIdentity } from '../../core/crew/identity.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
@@ -30,17 +39,37 @@ import { computeCompletionOverlayRows, computeCompletionCap } from './completion
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { deriveHomeHintLines, noVisionFeedbackMessage } from './home-hint.js';
 import { useProjectFiles } from './use-project-files.js';
-import { usePasteDrafts } from './use-paste-drafts.js';
-import { compactComposerHints, computeComposerHintBudget } from './hint-zones.js';
+import { trimDraftDocument, usePasteDrafts } from './use-paste-drafts.js';
+import { computeComposerHintBudget, fitComposerHintKeys } from './hint-zones.js';
 import { useReviewKeys } from './use-review-keys.js';
 import { useDraftSync } from './use-draft-sync.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { stopStore } from '../../stores/workflow/stop.js';
+import {
+  readClipboardImage as readSystemClipboardImage,
+  type ClipboardImageResult,
+} from '../../core/attachments/clipboard-image.js';
+import type { listProjectFiles } from '../../lib/file-listing.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
 
 export const COMMANDS_ONLY_NOTICE = `Only /commands here${SOFT_SEP}⏎ on an empty line goes home`;
+
+interface ImagePaste {
+  controller: AbortController;
+  epoch: number;
+  mode: InputMode;
+  questionEpoch: number | undefined;
+  matchingText?: string | undefined;
+}
+
+const CLIPBOARD_IMAGE_ERRORS = {
+  'no-image': 'Clipboard has no image',
+  'too-large': 'Cannot paste image: larger than 10 MiB',
+  'unsupported-platform': 'Clipboard image paste requires macOS',
+  unavailable: 'Cannot read clipboard image',
+} as const;
 
 // The prompt glyph is structure: it marks where typing goes, it does not name a category. Weight
 // and position carry it, never hue — so normal and review draw the same mark. Question mode keeps
@@ -72,8 +101,6 @@ function placeholderForMode(input: {
 
 export interface ComposerBoxHints {
   keys: string;
-  cost?: string | undefined;
-  costTone?: 'text' | 'warning' | 'error' | undefined;
 }
 
 interface ComposerProps {
@@ -92,6 +119,8 @@ interface ComposerProps {
   keepPlaceholderWhileFocused?: boolean | undefined;
   promptGlyph?: string | undefined;
   homeHint?: string | undefined;
+  /** What the screen is waiting on. It takes the reserved row for as long as it lasts. */
+  homeStatus?: string | undefined;
   boxHints?: ComposerBoxHints | undefined;
   onEmptySubmit?: (() => void) | undefined;
   onEditShortcut?: (() => void) | undefined;
@@ -100,16 +129,8 @@ interface ComposerProps {
   reviewYankActive?: boolean | undefined;
   questionEpoch?: number | undefined;
   inputPaddingX?: number | undefined;
-  draftRestore?: Readonly<{ epoch: number; value: string }> | undefined;
-}
-
-function boxHintCostColor(
-  tone: ComposerBoxHints['costTone'],
-  theme: Pick<Theme, 'text' | 'warning' | 'error'>,
-): string {
-  if (tone === 'error') return theme.error;
-  if (tone === 'warning') return theme.warning;
-  return theme.text;
+  readClipboardImage?: typeof readSystemClipboardImage | undefined;
+  listProjectFiles?: typeof listProjectFiles | undefined;
 }
 
 export function Composer({
@@ -126,6 +147,7 @@ export function Composer({
   commandsOnly,
   promptGlyph,
   homeHint,
+  homeStatus,
   boxHints,
   onEmptySubmit,
   onEditShortcut,
@@ -134,51 +156,82 @@ export function Composer({
   reviewYankActive = false,
   questionEpoch,
   inputPaddingX = 1,
-  draftRestore,
+  readClipboardImage = readSystemClipboardImage,
+  listProjectFiles,
 }: ComposerProps) {
   const theme = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const [{ projectDir, config }] = useStores(configStore);
   const [{ message: feedbackMessage, isError: feedbackIsError }] = useStores(feedbackStore);
-  const [{ pending: pendingAttachments }] = useStores(attachmentsStore);
   const inputColumns = Math.max(1, (width ?? cols) - 4 - inputPaddingX * 2);
-  const [value, setValue] = useState('');
+  const [caretSeed, setCaretSeed] = useState<{ epoch: number; index: number } | null>(null);
+  const caretRef = useRef(0);
   const [visibleRows, setVisibleRows] = useState(1);
+  const [imagePaste, setImagePaste] = useState<ImagePaste | null>(null);
+  const [imagePasteResult, setImagePasteResult] = useState<{
+    request: ImagePaste;
+    result: ClipboardImageResult;
+  } | null>(null);
+  const pasteQueueRef = useRef<Array<{ request: ImagePaste; at: number }>>([]);
+  const submittedImageIdsRef = useRef<readonly string[]>([]);
 
   const briefFocusHeld =
     focusStore.use((focus) => focus?.region === 'brief') && currentScreen === 'workflow';
 
-  const { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, onChange, historyActive } =
+  const draft = usePasteDrafts();
+  const document = draft.document;
+  const view = draft.view;
+  const { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, noteEdit, historyActive } =
     useHistory({
       disabled,
-      value,
-      setValue,
+      document,
+      setDocument: draft.replaceDocument,
       currentScreen,
     });
 
-  const handleDraftChange = (next: string) => {
-    onReviewInteraction?.();
-    onChange(next);
+  const insertDraftImage = (attachment: Attachment, at = caretRef.current) => {
+    const index = draft.insertImage(attachment, at);
+    const nextCaret = caretRef.current < at ? caretRef.current : caretRef.current + index - at;
+    setCaretSeed({ epoch: inputEpoch + 1, index: nextCaret });
+    return index - at;
   };
-  const { pastes, handleChange, clearPastes } = usePasteDrafts({
-    value,
-    onChange: handleDraftChange,
-  });
+
+  const handleChange = (_value: string, edit: InputEdit) => {
+    onReviewInteraction?.();
+    noteEdit();
+    for (const paste of pasteQueueRef.current) {
+      if (edit.start < paste.at) {
+        paste.at =
+          edit.end <= paste.at ? paste.at + edit.text.length - (edit.end - edit.start) : edit.start;
+      }
+    }
+    draft.applyEdit(edit);
+  };
+  const setText = (next: string) => {
+    for (const paste of pasteQueueRef.current) paste.request.controller.abort();
+    pasteQueueRef.current = [];
+    setImagePaste(null);
+    noteEdit();
+    draft.setText(next);
+  };
   const { clearDraft } = useDraftSync({
     mode,
     questionEpoch,
-    draftRestore,
-    actions: { setValue, clearPastes, resetHistory, bumpEpoch },
+    actions: {
+      setDocument: draft.replaceDocument,
+      insertImage: insertDraftImage,
+      resetHistory,
+      bumpEpoch,
+    },
   });
-  const chipRows = attachmentChipRows(pastes, pendingAttachments, cols);
-  const projectFiles = useProjectFiles(projectDir);
+  const projectFiles = useProjectFiles(projectDir, listProjectFiles);
 
-  const completionValue = mode === 'normal' ? value : '';
+  const completionValue = mode === 'normal' ? view.text : '';
   const command = useCommandCompletion({
     commands,
     currentScreen,
     value: completionValue,
-    setValue: onChange,
+    setValue: setText,
     onRuntimeCommand,
     disabled,
     suppressed: historyActive,
@@ -187,7 +240,7 @@ export function Composer({
   const reference = useReferenceCompletion({
     files: projectFiles,
     value: completionValue,
-    setValue: onChange,
+    setValue: setText,
     disabled,
     suppressed: historyActive,
   });
@@ -203,55 +256,233 @@ export function Composer({
       detected: detectedModelFact(detectionProviders, config.planner),
     });
 
-  const handleFileDrop = (path: string) => {
-    const result = attachImage({ path, projectDir, supportsImages: plannerSupportsImages });
-    if (result.ok) {
-      onReviewInteraction?.();
-      feedbackStore.setMessage(`Attached: ${result.path}`);
-      return;
-    }
-    if (result.reason === 'no-vision' && config !== null) {
+  const canAttachImage = (): boolean => {
+    if (!plannerSupportsImages) {
+      if (config === null) {
+        feedbackStore.setError(
+          'Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan.',
+        );
+        return false;
+      }
       const displayName = resolveSeatDisplayName(config.planner, 'planner', modelCacheStore);
       feedbackStore.setError(
         noVisionFeedbackMessage(formatSeatIdentity(config.planner, displayName)),
       );
-      return;
+      return false;
     }
-    feedbackStore.setError(`Cannot attach: ${result.reason}`);
+    return true;
   };
 
-  const handleSubmit = (text: string) => {
+  const handleFileDrop = (path: string, at = caretRef.current) => {
+    if (!canAttachImage()) return null;
+    const result = resolveAttachment({ input: path, projectDir });
+    if (!result.ok) {
+      feedbackStore.setError(formatAttachmentFailure({ action: 'attach', reason: result.reason }));
+      return null;
+    }
+    onReviewInteraction?.();
+    // The image is a part of the draft at the caret, so the caret has to land after it on remount.
+    // The seed is spent by the epoch it was made for; a later remount starts at the end as usual.
+    noteEdit();
+    const inserted = insertDraftImage(result.attachment, at);
+    bumpEpoch();
+    // The box already says where the image went; this row says which file it was, in a name that
+    // survives the narrow widths an absolute path is truncated to nothing at.
+    feedbackStore.setMessage(`Attached: ${attachmentShortName(result.attachment.path)}`);
+    return inserted;
+  };
+
+  const finishImagePaste = useEffectEvent((request: ImagePaste, result: ClipboardImageResult) => {
+    if (
+      request.controller.signal.aborted ||
+      request !== imagePaste ||
+      request.epoch !== inputEpoch ||
+      request.mode !== mode ||
+      request.questionEpoch !== questionEpoch ||
+      disabled ||
+      commandsOnly === true
+    )
+      return;
+    const paste = pasteQueueRef.current.shift();
+    if (paste === undefined || paste.request !== request) return;
+    let inserted = result.ok ? handleFileDrop(result.path, paste.at) : null;
+    if (inserted === null && request.matchingText !== undefined) {
+      const text = request.matchingText.normalize('NFC');
+      noteEdit();
+      draft.applyEdit({ start: paste.at, end: paste.at, text });
+      inserted = text.length;
+      setCaretSeed({
+        epoch: inputEpoch + 1,
+        index: caretRef.current < paste.at ? caretRef.current : caretRef.current + inserted,
+      });
+      bumpEpoch();
+      if (!result.ok && result.reason !== 'too-large') feedbackStore.setMessage(null);
+    }
+    if (
+      !result.ok &&
+      result.reason !== 'cancelled' &&
+      (request.matchingText === undefined || result.reason === 'too-large')
+    ) {
+      feedbackStore.setError(CLIPBOARD_IMAGE_ERRORS[result.reason]);
+    }
+    if (inserted !== null) {
+      const delta = inserted;
+      pasteQueueRef.current = pasteQueueRef.current.map((pending) => ({
+        request: { ...pending.request, epoch: inputEpoch + 1 },
+        at: pending.at < paste.at ? pending.at : pending.at + delta,
+      }));
+    }
+    setImagePaste(pasteQueueRef.current[0]?.request ?? null);
+  });
+
+  useEffect(() => {
+    if (imagePaste === null) return;
+    if (
+      imagePaste.controller.signal.aborted ||
+      imagePaste.epoch !== inputEpoch ||
+      imagePaste.mode !== mode ||
+      imagePaste.questionEpoch !== questionEpoch ||
+      disabled ||
+      commandsOnly === true
+    ) {
+      for (const paste of pasteQueueRef.current) paste.request.controller.abort();
+      pasteQueueRef.current = [];
+      setImagePaste(null);
+      return;
+    }
+    void readClipboardImage({
+      signal: imagePaste.controller.signal,
+      matchingText: imagePaste.matchingText,
+    }).then(
+      (result) => {
+        if (!imagePaste.controller.signal.aborted)
+          setImagePasteResult({ request: imagePaste, result });
+      },
+      () => {
+        if (!imagePaste.controller.signal.aborted) {
+          setImagePasteResult({
+            request: imagePaste,
+            result: { ok: false, reason: 'unavailable' },
+          });
+        }
+      },
+    );
+    return () => imagePaste.controller.abort();
+  }, [imagePaste, inputEpoch, disabled, commandsOnly, mode, questionEpoch, readClipboardImage]);
+
+  useEffect(() => {
+    if (imagePasteResult === null) return;
+    // Commit concurrent keystrokes before inserting, so a read finishing in the same turn
+    // cannot overwrite text that React has not rendered yet.
+    finishImagePaste(imagePasteResult.request, imagePasteResult.result);
+    setImagePasteResult(null);
+  }, [imagePasteResult]);
+
+  const enqueueImagePaste = (at: number, matchingText?: string): void => {
+    const request = {
+      controller: new AbortController(),
+      epoch: inputEpoch,
+      mode,
+      questionEpoch,
+      matchingText,
+    };
+    pasteQueueRef.current.push({ request, at });
+    if (pasteQueueRef.current.length === 1) setImagePaste(request);
+    feedbackStore.setMessage(matchingText === undefined ? 'Pasting image…' : 'Pasting…');
+  };
+
+  const handleImagePaste = (): void => {
+    if (commandsOnly === true) {
+      feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
+      return;
+    }
+    if (!canAttachImage()) return;
+    enqueueImagePaste(caretRef.current);
+  };
+
+  // One send path for every mode: the serializer decides what the runner reads, and the images it
+  // validated are the ones parked for the call. Only the gates in front of it differ.
+  const send = (candidate: DraftDocument, record: boolean): boolean => {
+    const submission = prepareDraftSubmission(candidate, {
+      projectDir,
+      supportsImages: plannerSupportsImages,
+    });
+    if (!submission.ok) {
+      // The draft outlives the refusal: the operator still has every word and every image.
+      feedbackStore.setError(
+        submission.reason === 'no-vision' && config !== null
+          ? noVisionFeedbackMessage(
+              formatSeatIdentity(
+                config.planner,
+                resolveSeatDisplayName(config.planner, 'planner', modelCacheStore),
+              ),
+            )
+          : submission.reason === 'no-vision'
+            ? 'Cannot send image: the planner cannot see images. Choose a vision model with /crew plan.'
+            : formatAttachmentFailure({
+                action: 'send',
+                reason: submission.reason,
+                imageId: submission.imageId,
+              }),
+      );
+      return false;
+    }
+    const currentImageIds = new Set(submission.images.map((image) => image.id));
+    const historicalImageIds = new Set(
+      getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen }).flatMap((entry) =>
+        entry.parts.flatMap((part) => (part.kind === 'image' ? [part.attachment.id] : [])),
+      ),
+    );
+    if (submission.images.length > 0) {
+      attachmentsStore.replacePendingImages(submission.images);
+    } else {
+      const staleSubmittedIds = new Set([...submittedImageIdsRef.current, ...historicalImageIds]);
+      for (const id of staleSubmittedIds) {
+        if (!currentImageIds.has(id)) attachmentsStore.remove(id);
+      }
+    }
+    submittedImageIdsRef.current = submission.images.map((image) => image.id);
+    if (record) inputHistoryStore.pushDocumentSubmission(submission.document, { currentScreen });
+    onSubmit?.(submission.text);
+    return true;
+  };
+
+  const handleSubmit = () => {
+    if (pasteQueueRef.current.length > 0) {
+      feedbackStore.setMessage(
+        imagePaste?.matchingText === undefined ? 'Pasting image…' : 'Pasting…',
+      );
+      return;
+    }
     if (mode !== 'normal') {
-      onSubmit?.(expandPastes(text, pastes));
-      if (!submitKeepsDraft) clearDraft();
+      if (send(document, false) && !submitKeepsDraft) clearDraft();
       return;
     }
 
     if (showCommandSuggestions || showReferenceSuggestions) return;
-    const trimmed = text.trim();
-    if (!trimmed && pastes.length === 0) {
+    const trimmed = trimDraftDocument(document);
+    const trimmedText = draftDocumentText(trimmed);
+    if (trimmed.parts.length === 0) {
       onEmptySubmit?.();
       return;
     }
 
-    if (commandsOnly === true && !trimmed.startsWith('/')) {
+    if (commandsOnly === true && !trimmedText.startsWith('/')) {
       feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
       return;
     }
 
-    if (trimmed) inputHistoryStore.pushSubmission(trimmed, { currentScreen });
-
-    if (trimmed.startsWith('/')) {
-      onRuntimeCommand(trimmed);
+    if (trimmedText.startsWith('/')) {
+      inputHistoryStore.pushDocumentSubmission(trimmed, { currentScreen });
+      onRuntimeCommand(trimmedText);
       clearDraft();
       return;
     }
 
-    onSubmit?.(expandPastes(trimmed, pastes));
-    if (!submitKeepsDraft) clearDraft();
+    if (send(document, true) && !submitKeepsDraft) clearDraft();
   };
 
-  const textDraftEmpty = value.length === 0 && pastes.length === 0;
+  const textDraftEmpty = draftLength(document) === 0;
 
   // Only the first character of a draft decides this: once a line is under way the keys are text
   // again, so editing a command never has to pass the gate a second time.
@@ -266,33 +497,15 @@ export function Composer({
     mode,
     disabled,
     briefFocusHeld,
-    draftEmpty: textDraftEmpty && pendingAttachments.length === 0,
+    draftEmpty: textDraftEmpty,
     reviewYankActive,
     onDraft: (text) => {
-      handleDraftChange(text);
+      onReviewInteraction?.();
+      draft.replaceDocument(createDraftDocument(text));
       bumpEpoch();
     },
     onCommand: onSubmit ?? (() => undefined),
   });
-
-  // Same discipline as the review keys: the chip pop only owns Backspace while there is
-  // nothing typed for it to delete, so the moment the user types the key is text again.
-  const attachmentPopArmed =
-    mode === 'normal' &&
-    !disabled &&
-    !briefFocusHeld &&
-    textDraftEmpty &&
-    pendingAttachments.length > 0;
-
-  useInput(
-    (_input, key) => {
-      if (!key.backspace && !key.delete) return;
-      const last = pendingAttachments.at(-1);
-      if (last === undefined || !detachImage()) return;
-      feedbackStore.setMessage(`Detached: ${last.path}`);
-    },
-    { isActive: attachmentPopArmed },
-  );
 
   const isEditShortcut = (input: string, key: Key): boolean =>
     mode === 'review' && key.ctrl && input === 'e';
@@ -300,7 +513,7 @@ export function Composer({
   const handleInputBoundaryNavigate = (direction: 'up' | 'down') => {
     if (showCommandSuggestions || showReferenceSuggestions) return true;
     if (mode !== 'normal') {
-      if (mode === 'review' && value.length === 0) onReviewBoundaryNavigate?.(direction);
+      if (mode === 'review' && textDraftEmpty) onReviewBoundaryNavigate?.(direction);
       return true;
     }
     return handleBoundaryNavigate(direction);
@@ -311,12 +524,10 @@ export function Composer({
   };
 
   const hintBoxWidth = width ?? cols;
-  const hintDisplay = boxHints
-    ? compactComposerHints(
-        { keys: boxHints.keys, cost: boxHints.cost },
-        computeComposerHintBudget({ boxWidth: hintBoxWidth, paddingX: inputPaddingX }),
-      )
-    : null;
+  const hintKeys = fitComposerHintKeys(
+    boxHints?.keys ?? '',
+    computeComposerHintBudget({ boxWidth: hintBoxWidth, paddingX: inputPaddingX }),
+  );
 
   const completionCap = computeCompletionCap(rows, visibleRows);
   const referenceSuggestionsCap = Math.min(MAX_REFERENCE_SUGGESTIONS, completionCap);
@@ -337,17 +548,20 @@ export function Composer({
   const lifecycleRunning = lifecycleStore.use((state) => state.status === 'running');
   const stopping = stopStore.use((state) => state.intent !== 'none');
   const reserveHomeHint = currentScreen === 'home';
+  // A check the screen is waiting on owns the row while it runs. An affordance never rides a
+  // status, so the drop invitation stands down until the row is a hint again.
   const { feedbackLine, homeHintLine } = deriveHomeHintLines({
     active: reserveHomeHint && !showCommandSuggestions && !showReferenceSuggestions,
-    homeHint,
+    homeHint: homeStatus ?? homeHint,
     feedbackMessage,
     width: width ?? cols,
-    dropEnabled: !disabled && plannerSupportsImages && commandsOnly !== true,
+    dropEnabled:
+      homeStatus === undefined && !disabled && plannerSupportsImages && commandsOnly !== true,
   });
 
   useEffect(() => {
-    inputHeightStore.setRows(visibleRows + 2 + chipRows);
-  }, [visibleRows, chipRows]);
+    inputHeightStore.setRows(visibleRows + 2);
+  }, [visibleRows]);
 
   // The app-level esc ladder decides between the stop sheet and a protected draft, and it reads
   // keys outside this component, so what is typed here has to be published.
@@ -378,7 +592,6 @@ export function Composer({
           )}
         </Box>
       )}
-      <AttachmentChips pastes={pastes} />
       <Box flexDirection="column" width="100%" overflow="visible">
         <Box
           borderStyle={borderStyleFor('round')}
@@ -394,16 +607,31 @@ export function Composer({
           <Box flexGrow={1} overflow="hidden">
             <MultilineInput
               key={`${command.inputKey}:${reference.inputKey}:${inputEpoch}`}
-              value={value}
+              value={view.text}
+              atoms={view.atoms}
+              {...(caretSeed?.epoch === inputEpoch ? { initialCursorIndex: caretSeed.index } : {})}
+              onCursorChange={(index) => {
+                caretRef.current = index;
+              }}
               onChange={handleChange}
               onSubmit={handleSubmit}
+              onPaste={(text, at) => {
+                if (!plannerSupportsImages || commandsOnly === true) return false;
+                enqueueImagePaste(at, text);
+                return true;
+              }}
               {...(commandsOnly === true ? {} : { onFileDrop: handleFileDrop })}
               columns={inputColumns}
               focus={!disabled && !briefFocusHeld}
               isActive={!disabled && (!briefFocusHeld || mode === 'review')}
-              shouldHandleInput={(input, key) =>
-                shouldHandleComposerInput(input, key) && commandsOnlyGate(input, key)
-              }
+              shouldHandleInput={(input, key) => {
+                if (!shouldHandleComposerInput(input, key)) return false;
+                if (key.ctrl && input === 'v') {
+                  handleImagePaste();
+                  return false;
+                }
+                return commandsOnlyGate(input, key);
+              }}
               onInputAccepted={handleComposerInputAccepted}
               placeholder={placeholderForMode({
                 mode,
@@ -424,14 +652,9 @@ export function Composer({
               onBoundaryNavigate={handleInputBoundaryNavigate}
             />
           </Box>
-          {hintDisplay && (hintDisplay.keys.length > 0 || hintDisplay.cost !== undefined) && (
+          {hintKeys.length > 0 && (
             <Box flexShrink={0} marginLeft={2}>
-              {hintDisplay.keys.length > 0 && <Text color={theme.textDim}>{hintDisplay.keys}</Text>}
-              {hintDisplay.cost !== undefined && (
-                <Text color={boxHintCostColor(boxHints?.costTone, theme)}>
-                  {hintDisplay.keys.length > 0 ? `  ${hintDisplay.cost}` : hintDisplay.cost}
-                </Text>
-              )}
+              <Text color={theme.textDim}>{hintKeys}</Text>
             </Box>
           )}
         </Box>

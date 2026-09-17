@@ -6,18 +6,13 @@ import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { OverlayType } from '../../core/navigation/types.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
-import type {
-  PreparationOutcome,
-  PreparedExecution,
-} from '../../engine/runners/prepared-execution.js';
-import { clearActiveReceipt } from '../../core/sessions/active-pointer.js';
-import { rollbackPreparedSession } from '../../core/sessions/prepare.js';
+import type { PreparationOutcome } from '../../engine/runners/prepared-execution.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
-import { assertNever } from '../../utils/type-guards.js';
 import { createStore, storeBase } from '../create-store.js';
 import { feedbackStore } from '../ui/feedback.js';
 import { overlayStore } from '../ui/overlay.js';
+import { CHECKING_TOOLS_STAGE, preparationStore, type PreparationState } from './preparation.js';
 import { routerStore } from './router.js';
 
 type SessionResumePreparationState =
@@ -47,17 +42,34 @@ type PreparationRequest = Readonly<{
   returnOverlay: OverlayType;
 }>;
 
-type ActiveAttempt = Readonly<{
-  id: number;
-  key: string;
-  controller: AbortController;
-  request: PreparationRequest;
-  promise: Promise<void>;
-}>;
-
-let attemptId = 0;
-let activeAttempt: ActiveAttempt | undefined;
+let continuing: Readonly<{ attempt: number; promise: Promise<void> }> | undefined;
 let lastRequest: PreparationRequest | undefined;
+
+const IDLE: SessionResumePreparationState = { kind: 'idle' };
+
+/** The picker's view of the shared coordinator: only a continuation is this store's to show. */
+function resumePreparation(state: PreparationState): SessionResumePreparationState {
+  if (state.kind === 'idle' || state.origin !== 'continue') return IDLE;
+  switch (state.kind) {
+    case 'checking':
+      return { kind: 'preparing' };
+    case 'blocked':
+      return { kind: 'blocked', report: state.report };
+    case 'failed':
+      return {
+        kind: 'failed',
+        ...(state.report !== undefined && { report: state.report }),
+        error: state.error,
+      };
+  }
+}
+
+preparationStore.subscribe(() => {
+  const preparation = resumePreparation(preparationStore.get());
+  store.set((state) =>
+    state.preparation.kind === 'idle' && preparation === IDLE ? state : { ...state, preparation },
+  );
+});
 
 function setSelectionError(error: string) {
   store.set((state) => ({ ...state, error }));
@@ -86,11 +98,13 @@ export interface SessionSelectDeps {
   ) => Promise<PreparationOutcome>;
   /** Replays a run's history into the workflow stores; the feature layer owns the replay itself. */
   hydrateRun: (record: RunRecord) => Promise<void>;
+  /**
+   * Reads a run's history without touching a store and returns the step that publishes it, so a
+   * selection superseded while it read writes nothing. Without it a selection falls back to
+   * `hydrateRun`.
+   */
+  readRunHistory?: ((record: RunRecord) => Promise<() => void>) | undefined;
   cancelPendingApproval?: (() => void) | undefined;
-}
-
-function preparationError(cause: unknown): Error {
-  return cause instanceof Error ? cause : new Error('Tool preparation failed.');
 }
 
 function dismissOverlays(): void {
@@ -99,34 +113,6 @@ function dismissOverlays(): void {
 
 function reportCleanupFailure(cause: unknown): void {
   feedbackStore.setError(`Could not clean up tool preparation: ${toErrorMessage(cause)}`);
-}
-
-function discardPreparedResume(execution: PreparedExecution): void {
-  try {
-    if (execution.session.kind === 'existing') {
-      clearActiveReceipt(execution.session.ref, execution.session.active);
-      return;
-    }
-    rollbackPreparedSession({
-      ref: execution.session.ref,
-      ownership: execution.session.ownership,
-    });
-  } catch (cause) {
-    reportCleanupFailure(cause);
-  }
-}
-
-function isCurrentAttempt(id: number, controller: AbortController): boolean {
-  return (
-    attemptId === id &&
-    activeAttempt?.id === id &&
-    activeAttempt.controller === controller &&
-    !controller.signal.aborted
-  );
-}
-
-function finishAttempt(id: number): void {
-  if (activeAttempt?.id === id) activeAttempt = undefined;
 }
 
 /**
@@ -153,90 +139,58 @@ export function continueRunInPlace(
 
 function beginPreparation(request: PreparationRequest): Promise<void> {
   const { projectDir, sessionId } = request.record.ref;
-  const key = `${projectDir}\0${sessionId}`;
-  if (activeAttempt?.key === key) return activeAttempt.promise;
-
-  activeAttempt?.controller.abort();
-  activeAttempt?.request.deps.cancelPendingApproval?.();
-  const controller = new AbortController();
-  const id = attemptId + 1;
-  attemptId = id;
-  lastRequest = request;
-  dismissOverlays();
-  store.set({ error: null, preparation: { kind: 'preparing' } });
-
   const ref = { projectDir, sessionId };
-  const promise = Promise.resolve()
-    .then(() => request.deps.prepareResume({ ref, state: request.state }, controller.signal))
-    .then(
-      (outcome) => {
-        if (!isCurrentAttempt(id, controller)) {
-          if (outcome.kind === 'prepared') discardPreparedResume(outcome.execution);
-          return;
-        }
+  const handle = preparationStore.submit({
+    origin: 'continue',
+    stage: CHECKING_TOOLS_STAGE,
+    key: `${projectDir}\0${sessionId}`,
+    prepare: (signal) => request.deps.prepareResume({ ref, state: request.state }, signal),
+    onPrepared: (execution) => {
+      routerStore.updateRun({
+        run: request.record,
+        execution: {
+          kind: 'local',
+          prepared: execution,
+          ...(request.steer !== undefined && { steer: request.steer }),
+        },
+      });
+      lastRequest = undefined;
+    },
+    onAbandoned: request.deps.cancelPendingApproval,
+  });
+  if (handle.joined && continuing?.attempt === handle.attempt) return continuing.promise;
 
-        switch (outcome.kind) {
-          case 'prepared':
-            routerStore.updateRun({
-              run: request.record,
-              execution: {
-                kind: 'local',
-                prepared: outcome.execution,
-                ...(request.steer !== undefined && { steer: request.steer }),
-              },
-            });
-            lastRequest = undefined;
-            store.set({ error: null, preparation: { kind: 'idle' } });
-            return;
-          case 'blocked':
-            store.set({ error: null, preparation: { kind: 'blocked', report: outcome.report } });
-            return;
-          case 'failed':
-            store.set({
-              error: null,
-              preparation: {
-                kind: 'failed',
-                ...(outcome.report !== undefined && { report: outcome.report }),
-                error: outcome.error,
-              },
-            });
-            return;
-          case 'aborted':
-            store.set({ error: null, preparation: { kind: 'idle' } });
-            return;
-          default:
-            return assertNever(outcome);
-        }
-      },
-      (cause: unknown) => {
-        if (!isCurrentAttempt(id, controller)) return;
-        store.set({
-          error: null,
-          preparation: { kind: 'failed', error: preparationError(cause) },
-        });
-      },
-    )
-    .finally(() => finishAttempt(id));
-
-  activeAttempt = { id, key, controller, request, promise };
+  lastRequest = request;
+  clearSelectionError();
+  dismissOverlays();
+  const promise = handle.promise.catch(reportCleanupFailure);
+  continuing = { attempt: handle.attempt, promise };
   return promise;
 }
 
 export function retrySessionPreparation(): Promise<void> {
-  if (activeAttempt) return activeAttempt.promise;
+  const state = preparationStore.get();
+  if (continuing && state.kind === 'checking' && state.attempt === continuing.attempt) {
+    return continuing.promise;
+  }
   if (!lastRequest) return Promise.resolve();
   return beginPreparation(lastRequest);
 }
 
 export function cancelSessionPreparation(options: { restoreOrigin?: boolean } = {}): void {
-  const request = activeAttempt?.request ?? lastRequest;
-  attemptId += 1;
-  activeAttempt?.controller.abort();
-  activeAttempt?.request.deps.cancelPendingApproval?.();
-  activeAttempt = undefined;
+  const request = lastRequest;
+  const current = preparationStore.get();
+  const ownsCurrent = current.kind === 'idle' || current.attempt === continuing?.attempt;
+  if (ownsCurrent) routerStore.supersede();
+  if (continuing) preparationStore.cancel(continuing.attempt);
+  continuing = undefined;
   lastRequest = undefined;
-  store.set({ error: null, preparation: { kind: 'idle' } });
-  if (options.restoreOrigin !== false && request && request.returnOverlay !== 'none') {
+  if (
+    ownsCurrent &&
+    options.restoreOrigin !== false &&
+    request &&
+    request.returnOverlay !== 'none'
+  ) {
     dismissOverlays();
     overlayStore.open(request.returnOverlay);
   }
@@ -250,7 +204,8 @@ function resetSessionSelection(): void {
 /**
  * Opening a run is one thing whatever the run did: read its record, replay its history, and show it
  * on the workflow screen at rest. Only a run this process is already driving refuses — two local
- * runs cannot share one screen.
+ * runs cannot share one screen. The history is published only if this is still the latest selection
+ * once the read lands, so a slow older run never paints over a newer one.
  */
 export async function handleSessionSelect(
   session: Session,
@@ -265,8 +220,17 @@ export async function handleSessionSelect(
   }
 
   const record = readRunRecord({ projectDir, sessionId: session.id });
+  cancelSessionPreparation({ restoreOrigin: false });
+  preparationStore.reset();
+  const generation = routerStore.supersede();
   clearSelectionError();
   dismissOverlays();
-  await deps.hydrateRun(record);
+  let publish = () => {};
+  if (deps.readRunHistory) publish = await deps.readRunHistory(record);
+  else await deps.hydrateRun(record);
+  if (!routerStore.isCurrentSelection(generation)) return;
+  const current = routerStore.get();
+  if (current.screen === 'workflow' && current.execution.kind === 'local') return;
+  publish();
   routerStore.navigate({ to: 'workflow', run: record, execution: { kind: 'at-rest' } });
 }

@@ -359,6 +359,28 @@ describe('SetupScreen', () => {
     expect(lines).toHaveLength(18);
   });
 
+  // Setup is where a first run is told what SPLITBRIEF will do on its behalf. It no longer stages,
+  // commits or tags a checkpoint, and it never hands a brief to the planner to write, so none of
+  // that may be promised here. What the screen does still decide is the crew.
+  it('promises no retired automation and keeps the build and review seats', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    const request = beginDiscovery();
+    freshDiscovery(request, 1);
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
+      cols: 120,
+      rows: 40,
+    });
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '').toLowerCase();
+    ui.unmount();
+
+    for (const retired of ['commit', 'checkpoint', 'per-task', 'show spend', 'takes over']) {
+      expect(frame).not.toContain(retired);
+    }
+    for (const seat of ['build', 'review']) expect(frame).toContain(seat);
+  });
+
   it('says what escape does and does it', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24 });
     const request = beginDiscovery();
@@ -684,10 +706,12 @@ describe('SetupScreen', () => {
       await flushEffects();
       await continueSetup(ui);
 
-      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Start is blocked'));
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('The primary blocker.'));
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('2 checks hidden');
-      expect(frame.indexOf('blocker.first')).toBeLessThan(frame.indexOf('warning.first'));
+      expect(frame).toContain('Another hidden warning.');
+      expect(frame.indexOf('The primary blocker.')).toBeLessThan(
+        frame.indexOf('A lower-priority warning.'),
+      );
       expect(frame).toContain('r retry');
       expect(frame).toContain('esc back');
       expect(frame).toContain('s settings');
@@ -731,11 +755,14 @@ describe('SetupScreen', () => {
 
         await continueSetup(ui);
         await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
-        await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Preparing your tools'));
+        await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Checking tools'));
+        expect(ui.lastFrame() ?? '').toContain(CREW_TITLE);
 
         if (exitMode === 'Escape') {
+          // The crew panel never left, so the cancelled attempt is what this waits on.
           ui.stdin.write(ESC);
-          await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
+          await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+          expect(ui.lastFrame() ?? '').toContain(CREW_TITLE);
         } else {
           ui.unmount();
         }
@@ -785,10 +812,14 @@ describe('SetupScreen', () => {
       await flushEffects();
       await continueSetup(ui);
 
-      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Preparation failed'));
+      await vi.waitFor(() =>
+        expect(ui.lastFrame() ?? '').toContain('The runner check did not complete.'),
+      );
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('The runner check did not complete.');
-      expect(frame.indexOf('blocker.first')).toBeLessThan(frame.indexOf('warning.first'));
+      expect(frame).toContain('Tool preparation · Failed');
+      expect(frame.indexOf('The primary blocker.')).toBeLessThan(
+        frame.indexOf('A lower-priority warning.'),
+      );
       expect(frame).toContain('r retry');
       expect(frame).toContain('esc back');
       expect(frame).toContain('s settings');

@@ -1,169 +1,80 @@
-import { tokensStore, type PerTaskTokens, type TokensState } from '../../stores/workflow/tokens.js';
+import { tokensStore, type TokensState } from '../../stores/workflow/tokens.js';
 import { configStore } from '../../stores/project/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { routerStore, type RouteData } from '../../stores/navigation/router.js';
 import { calculateCostBreakdown } from '../../engine/providers/cost/breakdown.js';
-import { resolvePricing, type PricingMode } from '../../engine/providers/pricing-resolver.js';
+import { resolveCallUsageEvidence } from '../../engine/orchestrator/summary/call-evidence.js';
+import { reconcileTokenUsage } from '../../engine/orchestrator/summary/usage-reconcile.js';
+import { addRunnerCallUsageToTokenUsage } from '../../engine/orchestrator/tokens.js';
+import { isReviewSeatCall } from '../../engine/calls/review-seat.js';
+import type { CallUsageEvidence } from '../../core/schemas/usage-evidence.js';
 import type { ModelCacheAccessor } from '../../engine/providers/model/resolution.js';
 import { runSeatIdentity } from '../../core/providers/seat-identity.js';
-import { formatCost } from '../../core/formatting.js';
-import { getShowSpend } from '../../core/config/accessors/values.js';
 import type { Config } from '../../core/schemas/config.js';
-import { unmeteredRunCostLabel, type CostBreakdown } from '../../core/schemas/summary.js';
-import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
-import { taskId } from '../../core/schemas/task.js';
+import { ZERO_TOKEN_USAGE } from '../../core/schemas/tokens.js';
+import type { UsageDetailsInput } from './usage-details-model.js';
+import { deriveUsageDetails, formatUsageMoney } from './usage-details-model.js';
 
-/** How much of a run's usage carries a price: the vocabulary every spend surface reads. */
-export type PricingState = 'priced' | 'mixed' | 'local' | 'unpriced' | 'n/a';
-
-interface CostDisplay {
-  /** Whether the run has a spend fact worth painting — a priced total or an unmetered label. */
-  hasSpend: boolean;
-  spentText: string;
-}
-
-export function asReactiveModelCache(
-  snapshot: Pick<
-    ReturnType<typeof modelCacheStore.get>,
-    'modelsDevCatalog' | 'modelsDevFetchedAt' | 'providers'
-  >,
-): ModelCacheAccessor {
-  return {
-    getModelsDevCatalog: () => {
-      if (snapshot.modelsDevCatalog === null || snapshot.modelsDevFetchedAt === null) return null;
-      return modelCacheStore.getModelsDevCatalog();
-    },
-    getProviderModels: (providerId) => {
-      if (!snapshot.providers[providerId]) return null;
-      return modelCacheStore.getProviderModels(providerId);
-    },
-  };
-}
-
-function resolvePricingState(
-  costBreakdown: CostBreakdown | null,
-  seatModes: readonly PricingMode[],
-): PricingState {
-  if (costBreakdown === null) return 'n/a';
-  if (costBreakdown.hasPricedUsage && costBreakdown.hasUnpricedUsage) return 'mixed';
-  if (costBreakdown.hasPricedUsage) return 'priced';
-  if (seatModes.every((mode) => mode === 'unpriced-local')) return 'local';
-  if (seatModes.some((mode) => mode === 'unpriced-unknown')) return 'n/a';
-  return 'unpriced';
-}
-
-export function formatSpentText(
-  costBreakdown: CostBreakdown | null,
-  pricingState: PricingState,
-): string {
-  const unmetered = costBreakdown === null ? null : unmeteredRunCostLabel(costBreakdown);
-  if (unmetered !== null) return unmetered;
-  if (pricingState === 'priced') {
-    const cost = formatCost(costBreakdown?.totalActualCost ?? 0);
-    return costBreakdown?.isTotalActualCostKnown === false ? `${cost} + unknown` : cost;
+/** Saved runs keep their saved rates; live runs price the calls they actually recorded. */
+export function usageDetailsForRun(input: {
+  route: RouteData;
+  tokens: Pick<TokensState, 'tokenUsage' | 'pricingContext'>;
+  config: Config | null;
+  modelCache: ModelCacheAccessor;
+}): UsageDetailsInput {
+  const { route, tokens, config, modelCache } = input;
+  if (route.screen !== 'workflow') return { tokenUsage: null, costBreakdown: null };
+  if (route.execution.kind === 'at-rest') {
+    return {
+      tokenUsage: route.run.summary?.tokenUsage ?? tokens.tokenUsage,
+      costBreakdown: route.run.summary?.costBreakdown ?? null,
+    };
   }
-  if (pricingState === 'mixed')
-    return `${formatCost(costBreakdown?.totalActualCost ?? 0)} + unpriced`;
-  return pricingState;
-}
-
-export function formatCostDisplay(
-  costBreakdown: CostBreakdown | null,
-  pricingState: PricingState,
-): CostDisplay {
-  const isUnmetered = costBreakdown !== null && unmeteredRunCostLabel(costBreakdown) !== null;
-  return {
-    hasSpend: isUnmetered || (costBreakdown?.hasPricedUsage ?? false),
-    spentText: formatSpentText(costBreakdown, pricingState),
-  };
-}
-
-function reconstructTaskBreakdowns(perTask: Record<string, PerTaskTokens>): TaskTokenUsage[] {
-  const breakdowns: TaskTokenUsage[] = [];
-  for (const [id, record] of Object.entries(perTask)) {
-    for (const attempt of record.attempts ?? []) {
-      breakdowns.push({
-        taskId: taskId(id),
-        taskTitle: record.title,
-        ...attempt,
-      });
+  const evidence = resolveCallUsageEvidence(route.run.ref) ?? [];
+  const observed = { ...ZERO_TOKEN_USAGE };
+  for (const call of evidence) {
+    if (call.usage !== null) {
+      addRunnerCallUsageToTokenUsage(observed, liveSeatRole(call), call.usage);
     }
   }
-  return breakdowns;
-}
-
-interface CostBreakdownInputs {
-  config: Config;
-  pricingContext: TokensState['pricingContext'];
-  perTask: Record<string, PerTaskTokens>;
-  tokenUsage: TokenUsage | null;
-  modelCache: ModelCacheAccessor;
-}
-
-interface CostBreakdownStats {
-  costBreakdown: CostBreakdown | null;
-  pricingState: PricingState;
-}
-
-export function computeCostBreakdownStats(inputs: CostBreakdownInputs): CostBreakdownStats {
-  const { config, pricingContext, perTask, tokenUsage } = inputs;
-
-  const sessionIdentity = pricingContext ?? runSeatIdentity(config);
-  const {
-    plannerTool,
-    implementerTool,
-    plannerModel,
-    implementerModel,
-    reviewerTool,
-    reviewerModel,
-  } = sessionIdentity;
-
-  const taskBreakdowns = reconstructTaskBreakdowns(perTask);
-  const costBreakdown = tokenUsage
-    ? calculateCostBreakdown(
-        {
-          tokenUsage,
-          plannerTool,
-          implementerTool,
-          plannerModel,
-          implementerModel,
-          ...(taskBreakdowns.length > 0 && { taskBreakdowns }),
-          reviewerTool,
-          reviewerModel,
-        },
-        inputs.modelCache,
-      )
-    : null;
-  const plannerPricing = resolvePricing(plannerTool, inputs.modelCache, plannerModel);
-  const implementerPricing = resolvePricing(implementerTool, inputs.modelCache, implementerModel);
-  const reviewerPricing =
-    reviewerTool === undefined
+  const tokenUsage =
+    evidence.length === 0
+      ? tokens.tokenUsage
+      : reconcileTokenUsage(tokens.tokenUsage ?? ZERO_TOKEN_USAGE, observed);
+  const identity = tokens.pricingContext ?? (config === null ? null : runSeatIdentity(config));
+  const costBreakdown =
+    identity === null
       ? null
-      : resolvePricing(reviewerTool, inputs.modelCache, reviewerModel);
-  const pricingState = resolvePricingState(costBreakdown, [
-    plannerPricing.pricingMode,
-    implementerPricing.pricingMode,
-    ...(reviewerPricing === null ? [] : [reviewerPricing.pricingMode]),
-  ]);
-
-  return { costBreakdown, pricingState };
+      : calculateCostBreakdown(
+          {
+            ...identity,
+            tokenUsage: tokenUsage ?? ZERO_TOKEN_USAGE,
+            callEvidence: evidence,
+          },
+          modelCache,
+        );
+  return { tokenUsage, costBreakdown };
 }
 
-// Non-reactive read of the cost figure shown in the sidebar footer (`formatSpentText`), for copy
-// affordances that run outside React (the `/copy cost` command and the `y` yank). Returns null when
-// the sidebar itself paints nothing — no priced usage and no unmetered billing label to report —
-// and says so in words when the reader turned the spend display off.
+function liveSeatRole(call: CallUsageEvidence): CallUsageEvidence['role'] {
+  if (call.role !== 'review') return call.role;
+  return isReviewSeatCall({ role: call.role, phase: call.phase }) ? 'review' : 'planner';
+}
+
+/** The explicit copy command uses the same evidence and qualification as /usage. */
 export function readCostText(): string | null {
-  const config = configStore.get().config;
-  if (!config) return null;
-  if (!getShowSpend(config)) return 'spend display is off';
-  const tokens = tokensStore.get();
-  const { costBreakdown, pricingState } = computeCostBreakdownStats({
-    config,
-    pricingContext: tokens.pricingContext,
-    perTask: tokens.perTask,
-    tokenUsage: tokens.tokenUsage,
-    modelCache: asReactiveModelCache(modelCacheStore.get()),
-  });
-  const display = formatCostDisplay(costBreakdown, pricingState);
-  return display.hasSpend ? display.spentText : null;
+  const route = routerStore.get();
+  if (route.screen !== 'workflow') return null;
+  const view = deriveUsageDetails(
+    usageDetailsForRun({
+      route,
+      tokens: tokensStore.get(),
+      config: configStore.get().config,
+      modelCache: modelCacheStore,
+    }),
+  );
+  const amount = formatUsageMoney(view.money);
+  if (view.money.kind === 'estimate') return `${amount} (catalog estimate)`;
+  if (view.money.kind === 'legacy') return `${amount} (legacy estimate; rates not recorded)`;
+  return amount;
 }

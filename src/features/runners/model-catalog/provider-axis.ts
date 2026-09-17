@@ -69,17 +69,29 @@ function envVarStem(envVar: string): string {
   return slugifyProviderName(envVar.replace(/_(API_KEY|KEY|TOKEN)$/i, ''));
 }
 
+/**
+ * Display-name slugs the oracles report under a name whose slug is not the
+ * model-id segment, mapped to the segment they genuinely back. Documented
+ * aliases only, each backed by a captured listing: Kilo's credential listing
+ * reports the plan as "Alibaba Coding Plan" while the ids segment as
+ * `alibaba`. "GitHub Copilot" needs no entry — its slug is exactly
+ * `github-copilot`. OpenCode and OpenCode Go are distinct identities and
+ * deliberately carry no entry in either direction.
+ */
+const PROVIDER_ALIASES: Record<string, string> = { 'alibaba-coding-plan': 'alibaba' };
+
+/** Exact normalized identity: the slug itself, or one explicit documented alias. */
 function slugMatchesKey(slug: string, key: string): boolean {
-  return slug === key || slug.startsWith(`${key}-`) || key.startsWith(`${slug}-`);
+  return slug === key || PROVIDER_ALIASES[slug] === key;
 }
 
 /**
  * Whether a credential fact from the tool's own auth listing backs the given
  * model-id segment. Oracle display names ("GitHub Copilot") reach id segments
- * through slugification plus dash-boundary containment ("Alibaba Coding Plan"
- * backs `alibaba/*`); env facts also match through the env var stem. A fact
- * that resolves to nothing simply does not contribute — it never manufactures
- * a claim about another provider.
+ * through exact slugification plus the explicit alias map ("Alibaba Coding
+ * Plan" backs `alibaba/*`); env facts also match through the env var stem. A
+ * fact that resolves to nothing simply does not contribute — it never
+ * manufactures a claim about another provider.
  */
 export function providerFactMatchesAuthKey(fact: CliProviderAuthFact, authKey: string): boolean {
   if (slugMatchesKey(slugifyProviderName(fact.provider), authKey)) return true;
