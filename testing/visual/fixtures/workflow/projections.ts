@@ -26,6 +26,7 @@ export const WORKFLOW_FIXTURE_BOUNDS = Object.freeze({
   version: WORKFLOW_FIXTURE_VERSION,
   maxEventsPerFixture: 8,
   maxStringLength: 160,
+  maxQuestionOptionLength: 640,
 });
 
 const FIXED_TS = 1_783_958_400_000;
@@ -57,8 +58,8 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   validationSkipReason: 'no affected test file found',
   review: 'Apply bounded visual fixture patch',
   reviewAnswer: 'Approve once',
-  question: 'Which fixture answer should be used?',
-  questionAnswer: 'Use the bounded synthetic answer.',
+  question: 'Which seat performs the per-slice review?',
+  questionAnswer: 'Reviewer/planner seat',
   success: 'Visual fixture workflow complete',
   failure: 'Synthetic runner failure: bounded fixture',
   recovery: 'Change BUILD tool',
@@ -108,6 +109,8 @@ export interface WorkflowFixtureProjection {
   readonly inputMode: 'normal' | 'review' | 'question';
   readonly sidebarVisible: boolean;
   readonly question?: FixtureQuestion;
+  readonly questionPreview?: 'overflow-back';
+  readonly taskReview?: TaskReviewRequest;
   readonly approval?: FixtureApproval;
   readonly review?: FixtureReview;
   /** The artifact the document review panel names, when the projection opens that gate. */
@@ -621,17 +624,67 @@ const questionProjection: WorkflowFixtureProjection = {
     answer: WORKFLOW_FIXTURE_TEXT.questionAnswer,
     questions: [
       {
-        id: 'fixture-answer',
+        id: 'review-seat',
         type: 'choice',
         text: WORKFLOW_FIXTURE_TEXT.question,
-        options: ['Use the bounded answer', 'Use a live answer'],
-        default: 'Use the bounded answer',
+        options: [
+          'Reviewer/planner seat (review-only tool, per existing split-review design)',
+          'Implementer seat reviewing its own diff slices',
+        ],
+        default: 'Reviewer/planner seat (review-only tool, per existing split-review design)',
       },
       {
-        id: 'fixture-deterministic',
-        type: 'confirm',
-        text: 'Should the capture remain deterministic?',
-        default: true,
+        id: 'review-slice',
+        type: 'choice',
+        text: 'What should a ‘slice’ be when one Task Brief changes several files, including shared types and their callers?',
+        options: [
+          'One slice per changed file',
+          'One slice per Task Brief/task',
+          'Size-bounded chunks of the diff, keeping each function with its callers where possible. Include the original Task Brief, the surrounding unchanged lines, and validation results with every chunk so the reviewer can judge the change independently. If a function exceeds the limit, split it at a statement boundary and carry its signature into the next chunk. Keep Unicode paths such as src/レビュー.ts intact. Report findings against original file and line numbers, then merge duplicates before the final review.',
+        ],
+        default: 'One slice per changed file',
+      },
+      {
+        id: 'review-location',
+        type: 'choice',
+        text: "Where should sliced review live so users can inspect a local diff and reuse the same review behavior in a workflow's final review step?",
+        options: [
+          'New option on the existing review CLI command',
+          'New standalone CLI command',
+          "Change to the workflow's final-review step",
+          'All of the above, sharing one core',
+        ],
+        default: 'New option on the existing review CLI command',
+      },
+    ],
+  },
+};
+
+const questionOverflowProjection: WorkflowFixtureProjection = {
+  ...questionProjection,
+  scenarioId: scenarioId('workflow-question-overflow'),
+  questionPreview: 'overflow-back',
+};
+
+const questionInputProjection: WorkflowFixtureProjection = {
+  ...questionProjection,
+  scenarioId: scenarioId('workflow-question-input'),
+  question: {
+    prompt: 'Type your answer…',
+    answer: 'Review the current diff',
+    questions: [
+      {
+        id: 'target',
+        type: 'input',
+        text: 'Which file or module do you want refactored?',
+        default: 'src/features/workflow',
+      },
+      {
+        id: 'goal',
+        type: 'choice',
+        text: 'What is the refactor goal?',
+        options: ['Simplify/reduce complexity', 'Fix a specific bug', 'Just general cleanup'],
+        default: 'Just general cleanup',
       },
     ],
   },
@@ -689,6 +742,7 @@ const taskReviewProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'question',
   sidebarVisible: false,
+  taskReview: taskReviewRequest,
   events: [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
   ],
@@ -979,6 +1033,8 @@ const projections = [
   approvalPermissionProjection,
   reviewingBriefsProjection,
   questionProjection,
+  questionOverflowProjection,
+  questionInputProjection,
   plannerReplyProjection,
   taskReviewProjection,
   pausedMidBriefProjection,
@@ -1045,7 +1101,13 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     // The production formatter joins bounded facts and commands into one multiline prompt.
     (value) =>
       value !== formatTaskReviewPrompt(taskReviewRequest) &&
-      value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength,
+      value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
+      !projection.question?.questions?.some(
+        (question) =>
+          question.type === 'choice' &&
+          question.options.includes(value) &&
+          value.length <= WORKFLOW_FIXTURE_BOUNDS.maxQuestionOptionLength,
+      ),
   );
   if (oversized !== undefined) {
     throw new Error(`Workflow fixture ${projection.scenarioId} exceeds the string bound`);

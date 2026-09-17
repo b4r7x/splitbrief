@@ -9,7 +9,8 @@ import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { eventsStore, projectEventForTuiEventLog } from '../../src/stores/workflow/events.js';
 import { reviewStore } from '../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
-import { findVisualScenario } from './catalog.js';
+import { stripTerminalControls } from '../../src/utils/display-text.js';
+import { findVisualScenario, WIDE_VIEWPORTS } from './catalog.js';
 import { viewport } from './contracts/geometry.js';
 import { scenarioId, type ScenarioId } from './contracts/identifiers.js';
 import type { FixtureLifecycle } from './fixtures/common.js';
@@ -140,6 +141,29 @@ describe('workflow visual fixtures', () => {
     await questionSetup.teardown();
     await idleSetup.teardown();
   });
+
+  it.each(WIDE_VIEWPORTS)(
+    'keeps the current question and action hint inside $cols x $rows',
+    async (renderViewport) => {
+      const scenario = findVisualScenario('workflow-question');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing question gallery checkpoint');
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+          preserveLineBreaks: true,
+        });
+        expect(frame).toContain('Question 1 of 3');
+        expect(frame).toContain('Which seat performs the per-slice review?');
+        expect(frame).not.toContain('What should a');
+        expect(frame).not.toContain('Where should sliced review live');
+        expect(frame).toContain('tab');
+        expect(frame.trimEnd().split('\n').length).toBeLessThanOrEqual(renderViewport.rows);
+      } finally {
+        await ui.unmount();
+      }
+    },
+  );
 
   it('projects prompt rows from the same state rendered by the workflow fixture', async () => {
     const review = workflowFixtureProjections.get(scenarioId('workflow-review'));

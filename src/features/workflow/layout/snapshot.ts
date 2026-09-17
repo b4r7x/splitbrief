@@ -82,6 +82,8 @@ function readWorkflowPromptRows(): number {
     reviewArtifact: documentReview ? reviewArtifactForPhase(lifecycleStore.get().phase) : null,
     recoveryIssue: recoveryPrompt ? recoveryIssue : null,
     questions: questionPromptStore.get().questions,
+    questionIndex: questionPromptStore.get().index,
+    questionWriting: questionPromptStore.get().focus === 'answer',
     cols: terminalSizeStore.get().cols,
   });
 }

@@ -1,4 +1,5 @@
 import { useInput, type Key } from 'ink';
+import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { completionStore } from '../../../stores/ui/completion.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
@@ -119,6 +120,8 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
 
   useInput(
     (input, key) => {
+      const question = questionPromptStore.get();
+      if (question.questions?.length && question.focus !== 'composer') return;
       const sections = getSections();
       const inputMode = controlsStore.get().inputMode;
       const composerFocus = inputMode === 'normal' || inputMode === 'question';

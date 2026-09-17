@@ -16,6 +16,8 @@ export interface WorkflowPromptRowsInput {
   reviewArtifact?: ReviewArtifact | null | undefined;
   recoveryIssue?: RecoveryIssue | null | undefined;
   questions?: readonly ClarificationQuestion[] | undefined;
+  questionIndex?: number | undefined;
+  questionWriting?: boolean | undefined;
   cols: number;
 }
 
@@ -28,6 +30,12 @@ export function getWorkflowPromptRows(input: WorkflowPromptRowsInput): number {
       ? getRecoveryPromptRows(recoveryIssue, cols)
       : questionHint === null || questions?.length === 0
         ? 0
-        : getQuestionPromptRows(questionHint, cols, questions))
+        : getQuestionPromptRows(
+            questionHint,
+            cols,
+            questions,
+            input.questionIndex,
+            input.questionWriting,
+          ))
   );
 }

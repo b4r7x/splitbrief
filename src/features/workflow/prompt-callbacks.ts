@@ -90,9 +90,7 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
     },
     onPlannerReply: async (reply: PlannerConversation) => {
       if (controller.signal.aborted || abortedRef.current) return undefined;
-      // The planner's text is already in the transcript. Questions are metadata for this same
-      // turn, while answers records prior turns, so one composer submission answers the current
-      // response without replaying the planner text or pretending history is a question index.
+      // One promise owns this turn, including the whole batch of structured answers.
       const hint = reply.questions.length > 0 ? 'Type your answer…' : 'Reply to the planner…';
       const answerPromise = inputMode.setQuestionMode(hint);
       questionPromptStore.setQuestions(reply.questions);

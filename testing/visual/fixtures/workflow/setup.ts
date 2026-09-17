@@ -131,6 +131,10 @@ function activateFixtureInputMode(
   if (projection.review !== undefined) {
     void options.callbacks.onApprovalNeeded('briefs', getReviewFilePath(projection.review));
   }
+  if (projection.taskReview !== undefined) {
+    void options.callbacks.onTaskReviewNeeded?.(projection.taskReview);
+    return;
+  }
   // A halt is not a planner conversation: the recovery driver sets question mode with the prompt
   // itself, so only the fixture's explicit question scenario needs this callback.
   if (projection.question !== undefined) {
@@ -198,5 +202,24 @@ export function createWorkflowFixtureFactory(
   return () => ({
     setup: (context) => setupProjection(projection, context),
     teardown: teardownWorkflowFixture,
+    ...(projection.questionPreview === 'overflow-back' && {
+      afterMount: () => {
+        const questions = projection.question?.questions;
+        const first = questions?.[0];
+        const second = questions?.[1];
+        if (first?.type !== 'choice' || second?.type !== 'choice') {
+          throw new Error('Question overflow fixture requires two choices');
+        }
+        const firstAnswer = first.options[0];
+        const longAnswer = second.options[2];
+        if (firstAnswer === undefined || longAnswer === undefined) {
+          throw new Error('Question overflow fixture is missing its answers');
+        }
+        questionPromptStore.answer(firstAnswer);
+        questionPromptStore.select(2);
+        questionPromptStore.answer(longAnswer);
+        questionPromptStore.previous();
+      },
+    }),
   });
 }

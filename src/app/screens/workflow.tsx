@@ -43,9 +43,10 @@ import {
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
-import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
+import { questionOptions, questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import { formatRecoveryPrompt } from '../../features/workflow/recovery-prompt.js';
 import { REVIEW_COMMENT_DRAFT } from '../../core/keybindings/review.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { clamp } from '../../utils/math.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
@@ -82,7 +83,8 @@ export function WorkflowScreen({
   const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
   const briefFocus = focusStore.use((focus) => focus);
   const recoveryIssue = recoveryNoticeStore.use((state) => state.issue);
-  const plannerQuestions = questionPromptStore.use((state) => state.questions ?? []);
+  const questionState = questionPromptStore.use((state) => state);
+  const plannerQuestions = questionState.questions;
 
   const model = useWorkflowScreen({
     onRuntimeCommand,
@@ -116,7 +118,36 @@ export function WorkflowScreen({
     return true;
   };
 
+  const structuredQuestion =
+    model.inputMode.mode === 'question' && (plannerQuestions?.length ?? 0) > 0;
+
+  const answerQuestion = (text: string): void => {
+    const state = questionPromptStore.get();
+    if (Date.now() - state.openedAt < PROMPT_TYPEAHEAD_GRACE_MS) return;
+    const answer = questionPromptStore.answer(text);
+    if (answer !== undefined) void model.handleInput(answer);
+  };
+  const composeAnswer = (): void => {
+    const state = questionPromptStore.get();
+    const question = state.questions?.[state.index];
+    if (question) questionPromptStore.select(questionOptions(question).length);
+    questionPromptStore.setFocus('answer');
+  };
+  const returnToQuestion = (): void => {
+    const state = questionPromptStore.get();
+    const question = state.questions?.[state.index];
+    const options = question ? questionOptions(question) : [];
+    questionPromptStore.setFocus(
+      options.length === 0 || state.drafts[state.index]?.selected === options.length
+        ? 'answer'
+        : 'menu',
+    );
+  };
   const handleFooterInput = (text: string): void => {
+    if (structuredQuestion) {
+      if (text.trim() !== '') void model.handleInput(text);
+      return;
+    }
     if (reviewArtifact !== null && text.trim() === '') {
       const row = reviewDocumentOptions(reviewArtifact)[reviewSelected];
       // The comment row hands the keyboard to the composer the same way the `c` accelerator does:
@@ -168,6 +199,8 @@ export function WorkflowScreen({
     reviewArtifact,
     recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
     questions: plannerQuestions,
+    questionIndex: questionState.index,
+    questionWriting: questionState.focus === 'answer',
     cols,
   });
   // A gate on screen is the only thing to act on, and it needs every row it can get. The build
@@ -270,10 +303,14 @@ export function WorkflowScreen({
             inputHint={
               recoveryPromptOpen
                 ? 'Type a correction, or tab to choose an action…'
-                : plannerQuestions !== undefined
-                  ? model.inputMode.hint
-                  : model.inputHint
+                : structuredQuestion
+                  ? 'New instruction — replaces these questions…'
+                  : plannerQuestions !== undefined
+                    ? model.inputMode.hint
+                    : model.inputHint
             }
+            questionPanelFocused={structuredQuestion && questionState.focus !== 'composer'}
+            onReturnToQuestion={structuredQuestion ? returnToQuestion : undefined}
             questionEpoch={model.questionEpoch}
             feedbackHint={legend}
             commandsOnly={model.commandsOnly}
@@ -341,6 +378,16 @@ export function WorkflowScreen({
             }}
             onRecoveryResolve={(answer) => model.inputMode.resolve(answer)}
             questions={plannerQuestions}
+            planner={
+              structuredQuestion
+                ? {
+                    disabled: model.hasOverlay || model.promptPending || covered,
+                    onAnswer: answerQuestion,
+                    onCompose: composeAnswer,
+                    onPrevious: () => questionPromptStore.previous(),
+                  }
+                : undefined
+            }
           />
         )}
       </Box>

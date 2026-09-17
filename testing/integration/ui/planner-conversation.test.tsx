@@ -10,6 +10,7 @@ import type { PlannerConversation } from '../../../src/core/schemas/workflow.js'
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
+import { questionPromptStore } from '../../../src/stores/question-prompt/prompt.js';
 import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
@@ -240,9 +241,8 @@ if (index === 1) {
         const frame = stripAnsiStyles(screen.lastFrame());
         expect(frame).toContain('Which module should change?');
         if (kind === 'structured') {
-          expect(frame).toContain('Which behavior must remain?');
-          expect(frame).toContain('CLI exit codes');
-          expect(frame).toContain('Output format');
+          expect(frame).toContain('Question 1 of 2');
+          expect(frame).not.toContain('Which behavior must remain?');
         } else {
           expect(frame.match(/Which module should change\?/g)).toHaveLength(1);
           expect(frame.match(/Reply to the planner…/g) ?? []).toHaveLength(1);
@@ -261,13 +261,142 @@ if (index === 1) {
       screen.stdin.write('Refactor src/auth.ts; preserve CLI exit codes.');
       await flushEffects();
       screen.stdin.write('\r');
+      if (kind === 'structured') {
+        await vi.waitFor(() =>
+          expect(stripAnsiStyles(screen.lastFrame())).toContain('Question 2 of 2'),
+        );
+        expect(received).not.toHaveBeenCalled();
+        screen.stdin.write('\r');
+      }
       await vi.waitFor(() => {
         expect(received).toHaveBeenCalledExactlyOnceWith(
-          'Refactor src/auth.ts; preserve CLI exit codes.',
+          kind === 'ordinary'
+            ? 'Refactor src/auth.ts; preserve CLI exit codes.'
+            : '1. Which module should change?\nRefactor src/auth.ts; preserve CLI exit codes.\n\n2. Which behavior must remain?\nCLI exit codes',
         );
         expect(controlsStore.get().inputMode).toBe('normal');
         expect(stripAnsiStyles(screen.lastFrame())).not.toContain('Waiting for your answer');
       });
     },
   );
+  it('preserves custom drafts when going back and submits the edited batch once', async () => {
+    const received = vi.fn();
+    const runWorkflow = vi.fn(async (options: RunWorkflowOptions): Promise<Summary> => {
+      received(
+        await options.callbacks.onPlannerReply?.({
+          call: 'research',
+          text: '',
+          answers: [],
+          answered: false,
+          questions: [
+            { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+            { id: 'files', type: 'input', text: 'Which files?', default: 'src/' },
+            { id: 'ready', type: 'confirm', text: 'Proceed?', default: false },
+          ],
+        }),
+      );
+      return new Promise<Summary>(() => {});
+    });
+    ui = mountWorkflowScreen({ deps: { runWorkflow }, projectDir, rows: 24 });
+    const screen = ui;
+    const key = async (value: string) => {
+      screen.stdin.write(value);
+      await flushEffects();
+    };
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(screen.lastFrame())).toContain('Question 1 of 3'),
+    );
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    // Tab opens the answer field inside the question panel.
+    await key('\t');
+    expect(questionPromptStore.get().focus).toBe('answer');
+    await key('Separate reviewer');
+    await key('\t');
+    expect(questionPromptStore.get().focus).toBe('menu');
+    await key('\t');
+    expect(stripAnsiStyles(screen.lastFrame())).toContain('Separate reviewer');
+    await key('\r');
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(screen.lastFrame())).toContain('Question 2 of 3'),
+    );
+    expect(stripAnsiStyles(screen.lastFrame())).toContain('src/');
+    await key('auth.ts');
+    await key('\t');
+    await key('\r');
+    expect(questionPromptStore.get().index).toBe(0);
+    await key('\u001b[A'); // Replace custom answer with Builder.
+    await key('\r');
+    expect(questionPromptStore.get().index).toBe(1);
+    expect(stripAnsiStyles(screen.lastFrame())).toContain('src/auth.ts');
+    await key('\r');
+    expect(questionPromptStore.get().index).toBe(2);
+    expect(received).not.toHaveBeenCalled();
+    await key('\r'); // Explicitly accept the false default.
+    await vi.waitFor(() =>
+      expect(received).toHaveBeenCalledExactlyOnceWith(
+        '1. Which seat?\nBuilder\n\n2. Which files?\nsrc/auth.ts\n\n3. Proceed?\nNo',
+      ),
+    );
+    expect(controlsStore.get().inputMode).toBe('normal');
+  });
+  it('answers inside the box and sends a separate instruction instead of the question batch', async () => {
+    const received = vi.fn();
+    const runWorkflow = vi.fn(async (options: RunWorkflowOptions): Promise<Summary> => {
+      received(
+        await options.callbacks.onPlannerReply?.({
+          call: 'research',
+          text: '',
+          answers: [],
+          answered: false,
+          questions: [
+            { id: 'target', type: 'input', text: 'Which module?' },
+            {
+              id: 'goal',
+              type: 'choice',
+              text: 'Which goal?',
+              options: ['Simplify', 'Fix', 'Cleanup'],
+              default: 'Cleanup',
+            },
+          ],
+        }),
+      );
+      await options.callbacks.onPlannerReply?.({
+        call: 'research',
+        text: '',
+        answers: [],
+        answered: false,
+        questions: [{ id: 'target', type: 'input', text: 'Which diff should I review?' }],
+      });
+      return new Promise<Summary>(() => {});
+    });
+    ui = mountWorkflowScreen({ deps: { runWorkflow }, projectDir, rows: 24 });
+    const screen = ui;
+    const key = async (value: string) => {
+      screen.stdin.write(value);
+      await flushEffects();
+    };
+    await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Which module?'));
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await key('src/auth.ts');
+    const answering = stripAnsiStyles(screen.lastFrame());
+    expect(answering.indexOf('src/auth.ts')).toBeLessThan(answering.indexOf('New instruction'));
+    expect(answering).not.toContain('Write an answer');
+    await key('\u001b[B');
+    expect(questionPromptStore.get().focus).toBe('composer');
+    await key('Review the current diff instead');
+    expect(received).not.toHaveBeenCalled();
+    await key('\t');
+    expect(questionPromptStore.get().focus).toBe('answer');
+    expect(questionPromptStore.get().drafts[0]?.text).toBe('src/auth.ts');
+    await key('\u001b[B');
+    await key('\r');
+    await vi.waitFor(() =>
+      expect(received).toHaveBeenCalledExactlyOnceWith('Review the current diff instead'),
+    );
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(screen.lastFrame())).toContain('Which diff should I review?'),
+    );
+    expect(questionPromptStore.get().drafts[0]?.text).toBe('');
+    expect(questionPromptStore.get().answers).toEqual([]);
+  });
 });

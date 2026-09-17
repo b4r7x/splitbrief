@@ -85,6 +85,8 @@ const checkpointPredicates = [
   [checkpointId('approval-permission'), includesAll('allow this operation only')],
   [checkpointId('reviewing-briefs'), includesAll('Approve briefs', 'T001 modify')],
   [checkpointId('question'), includesAll(WORKFLOW_FIXTURE_TEXT.question)],
+  [checkpointId('question-overflow'), includesAll('Question 2 of 3')],
+  [checkpointId('question-input'), includesAll('Question 1 of 2', 'New instruction')],
   [checkpointId('planner-reply'), includesAll('Reply to the planner…', 'Waiting for your answer')],
   [checkpointId('task-review'), includesAll('[c]  continue', '[r]  redo task', '[a]  abort')],
   [checkpointId('paused-mid-brief'), includesAll('/resume')],

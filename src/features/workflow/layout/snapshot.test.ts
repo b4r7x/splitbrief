@@ -643,3 +643,30 @@ describe('readBriefListSnapshot phantom-hotspot clamp', () => {
     ).toBeNull();
   });
 });
+
+it('remeasures the active structured question after advancing and going back', () => {
+  terminalSizeStore.__testReset({ cols: 80, rows: 40, isSmall: true });
+  inputHeightStore.__testReset({ rows: 3 });
+  const withoutPrompt = readConversationScrollSnapshot().viewportHeight;
+  questionPromptStore.setHint('Type your answer…');
+  questionPromptStore.setQuestions([
+    { id: 'first', type: 'input', text: 'Short question?' },
+    {
+      id: 'second',
+      type: 'choice',
+      text: 'A longer question with choices?',
+      options: ['First choice', 'Second choice', 'Third choice'],
+    },
+  ]);
+  controlsStore.setInputMode('question');
+  const firstHeight = readConversationScrollSnapshot().viewportHeight;
+  questionPromptStore.answer('answer');
+  const current = questionPromptStore.get();
+  const secondHeight = readConversationScrollSnapshot().viewportHeight;
+  expect(secondHeight).toBe(
+    withoutPrompt - getQuestionPromptRows('Type your answer…', 80, current.questions, 1),
+  );
+  expect(secondHeight).toBeLessThan(firstHeight);
+  questionPromptStore.previous();
+  expect(readConversationScrollSnapshot().viewportHeight).toBe(firstHeight);
+});
