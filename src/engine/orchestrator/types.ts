@@ -33,8 +33,11 @@ import type { StreamingSink } from './task/streaming-feed.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { ApprovalReviewInput } from '../runners/types.js';
 import type { PlannerConversation } from '../../core/schemas/workflow.js';
+import type { PlannerReplyAnswer } from '../../core/schemas/question.js';
 export interface OrchestratorCallbacks {
-  onPlannerReply?: ((reply: PlannerConversation) => Promise<string | undefined>) | undefined;
+  onPlannerReply?:
+    | ((reply: PlannerConversation) => Promise<string | PlannerReplyAnswer | undefined>)
+    | undefined;
   onApprovalNeeded: (
     type: BriefReviewPromptKind,
     input: ApprovalReviewInput,

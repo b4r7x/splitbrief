@@ -1,5 +1,8 @@
 import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/rect.js';
-import { getProgressRows } from '../../../src/features/workflow/layout/chrome-rows.js';
+import {
+  getProgressRows,
+  WORKFLOW_FRAME_X,
+} from '../../../src/features/workflow/layout/chrome-rows.js';
 import { getHomeLayout, homeConfigBlockRows } from '../../../src/features/home/layout.js';
 import { getLogoHeight } from '../../../src/features/home/logo.js';
 import {
@@ -186,10 +189,12 @@ function resolveWorkflowTranscript(context: LocatorContext): CellRect {
 
 function resolveWorkflowComposer(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
+  // The workflow composer renders inside the screen frame: its box starts one cell in and stops
+  // one cell short, so the card the completion locator walks shares those edge columns.
   return CellRectSchema.parse({
-    x: 0,
+    x: WORKFLOW_FRAME_X,
     y: rows - DEFAULT_INPUT_ROWS - 1,
-    width: cols,
+    width: Math.max(1, cols - WORKFLOW_FRAME_X * 2),
     height: DEFAULT_INPUT_ROWS,
   });
 }

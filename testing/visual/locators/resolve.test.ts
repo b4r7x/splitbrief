@@ -185,7 +185,8 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
     expect(sidebar.rect.x).toBe(0);
     expect(composer).toMatchObject({
       kind: 'layout',
-      rect: { x: 0, y: 36, width: 120, height: 3 },
+      // The workflow composer renders inside the screen frame: one cell in from each edge.
+      rect: { x: 1, y: 36, width: 118, height: 3 },
     });
     expect(approval).toMatchObject({
       kind: 'marker',

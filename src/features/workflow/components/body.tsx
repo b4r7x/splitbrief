@@ -5,12 +5,8 @@ import { ConversationFlow } from './conversation-flow/flow.js';
 import { Sidebar } from './sidebar.js';
 import { ReviewView } from './review-view.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
-import {
-  getReviewColumnWidth,
-  REVIEW_MIN_ROWS,
-  WORKFLOW_CONTENT_PADDING_X,
-  WORKFLOW_SIDEBAR_GAP,
-} from '../layout/rect.js';
+import { getReviewColumnWidth, REVIEW_MIN_ROWS, WORKFLOW_SIDEBAR_GAP } from '../layout/rect.js';
+import { WORKFLOW_FRAME_X } from '../layout/chrome-rows.js';
 
 export function WorkflowBody({
   showSidebar,
@@ -49,16 +45,10 @@ export function WorkflowBody({
   }, [isConversationMode, onScrollAbove, onScrollBelow]);
 
   return (
-    <Box flexDirection="row" flexGrow={1}>
+    <Box flexDirection="row" flexGrow={1} paddingX={WORKFLOW_FRAME_X}>
       {showSidebar && <Sidebar width={sidebarWidth} height={contentHeight} />}
       {showSidebar && <Box width={WORKFLOW_SIDEBAR_GAP} flexShrink={0} />}
-      <Box
-        flexDirection="column"
-        flexGrow={1}
-        minWidth={0}
-        overflow="hidden"
-        paddingX={WORKFLOW_CONTENT_PADDING_X}
-      >
+      <Box flexDirection="column" flexGrow={1} minWidth={0} overflow="hidden">
         {showReview ? (
           <ReviewView height={contentHeight} width={reviewWidth} />
         ) : (

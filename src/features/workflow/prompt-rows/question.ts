@@ -3,6 +3,7 @@ import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { questionOptions } from '../../../stores/question-prompt/prompt.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { wrapHard } from '../../../utils/wrap.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
 
 export const QUESTION_PROMPT_HORIZONTAL_CHROME = 4;
 export const QUESTION_ANSWER_ROWS = 2;
@@ -61,7 +62,9 @@ export function getQuestionPromptRows(
   index = 0,
   writing = false,
 ): number {
-  const width = Math.max(1, cols - QUESTION_PROMPT_HORIZONTAL_CHROME);
+  // The question box renders inside the screen frame; its text measure is the framed width minus
+  // the box's own border and padding, matching what the panel actually paints.
+  const width = Math.max(1, getChromeContentWidth(cols) - QUESTION_PROMPT_HORIZONTAL_CHROME);
   const question = questions[index];
   // Borders, progress, overflow status and key legend remain outside the scrolling body.
   return question

@@ -1,7 +1,7 @@
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
-import { getChromeContentWidth } from './layout/chrome-rows.js';
+import { getChromeTextWidth } from './layout/chrome-rows.js';
 
 // The rail's fraction counts briefs that passed their checks, never the index of the one running:
 // a run on its last brief must not read as finished.
@@ -38,7 +38,8 @@ export interface InputFooterByline {
 }
 
 export function buildInputFooterByline(input: InputFooterBylineInput): InputFooterByline {
-  const width = getChromeContentWidth(input.cols);
+  // The byline renders from the rail's text column, so its one measure is the framed text width.
+  const width = getChromeTextWidth(input.cols);
   const queuedPart = input.queuedText && input.queuedText.length > 0 ? input.queuedText : null;
   const hintPart = input.hintText && input.hintText.length > 0 ? input.hintText : null;
 

@@ -1,7 +1,6 @@
 import { clamp } from '../../../utils/math.js';
-import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
+import { getChromeHeight, getContentTopRow, WORKFLOW_FRAME_X } from './chrome-rows.js';
 
-export const WORKFLOW_CONTENT_PADDING_X = 0;
 export const WORKFLOW_SIDEBAR_GAP = 2;
 
 export const SIDEBAR_BREAKPOINT_COLS = 120;
@@ -143,7 +142,7 @@ export function getWorkflowContentWidth(input: SidebarWidthInput): number {
     input.cols -
       getWorkflowSidebarWidth(input) -
       getWorkflowSidebarGap(input) -
-      WORKFLOW_CONTENT_PADDING_X * 2,
+      WORKFLOW_FRAME_X * 2,
   );
 }
 
@@ -213,8 +212,9 @@ export function getWorkflowContentRect(input: WorkflowContentRectInput): Workflo
   const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible });
   const width = getWorkflowContentWidth({ cols, sidebarVisible });
   const height = getWorkflowViewportHeight({ rows, inputRows, promptRows, progressRows });
-  const left =
-    sidebarWidth + getWorkflowSidebarGap({ cols, sidebarVisible }) + WORKFLOW_CONTENT_PADDING_X + 1;
+  // The pane's first painted column: frame cell in, past the sidebar and its gap. The rect is the
+  // hit-test truth, so it must agree with the column the body actually renders at.
+  const left = sidebarWidth + getWorkflowSidebarGap({ cols, sidebarVisible }) + WORKFLOW_FRAME_X;
   const top = getContentTopRow() + progressRows;
   const right = width > 0 ? left + width - 1 : left;
   const bottom = getWorkflowBodyBottom({ contentTop: top, contentHeight: height });

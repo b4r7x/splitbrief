@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { ClarificationQuestion } from '../../core/schemas/question.js';
+import type { ClarificationQuestion, PlannerReplyAnswer } from '../../core/schemas/question.js';
 
 export interface QuestionAnswerDraft {
   text: string;
@@ -57,11 +57,17 @@ const initial: QuestionPromptState = {
 };
 const store = createStore<QuestionPromptState>(initial);
 
+// The pairs a completed batch was flattened from. resolve() resets the store before the waiting
+// reply callback resumes, so the batch survives outside it; every new prompt opener clears it.
+let answeredBatch: PlannerReplyAnswer | undefined;
+
 function setHint(hint: string): void {
+  answeredBatch = undefined;
   store.set({ ...initial, hint });
 }
 
 function setQuestions(questions: readonly ClarificationQuestion[]): void {
+  answeredBatch = undefined;
   store.set((state) => ({
     ...initial,
     hint: state.hint,
@@ -104,7 +110,7 @@ function previous(): void {
 }
 
 /** Only the completed batch crosses the existing planner-reply boundary. */
-function answer(text: string): string | undefined {
+function answer(text: string): PlannerReplyAnswer | undefined {
   const state = store.get();
   if (state.complete || !state.questions?.length || text.trim() === '') return undefined;
   const answers = [...state.answers];
@@ -112,6 +118,17 @@ function answer(text: string): string | undefined {
   const complete = state.index === state.questions.length - 1;
   const index = complete ? state.index : state.index + 1;
   const next = state.questions[index];
+  const qa: PlannerReplyAnswer | undefined = complete
+    ? {
+        text: state.questions
+          .map((question, i) => `${i + 1}. ${question.text}\n${answers[i] ?? ''}`)
+          .join('\n\n'),
+        qa: state.questions.map((question, i) => ({
+          question: question.text,
+          answer: answers[i] ?? '',
+        })),
+      }
+    : undefined;
   store.set({
     ...state,
     answers,
@@ -119,11 +136,15 @@ function answer(text: string): string | undefined {
     index,
     focus: next && questionOptions(next).length > 0 ? 'menu' : 'answer',
   });
-  return complete
-    ? state.questions
-        .map((question, i) => `${i + 1}. ${question.text}\n${answers[i] ?? ''}`)
-        .join('\n\n')
-    : undefined;
+  answeredBatch = qa;
+  return qa;
+}
+
+/** The pairs of the batch that just completed, once; every later prompt opens with a clear slate. */
+function takeAnswerBatch(): PlannerReplyAnswer | undefined {
+  const batch = answeredBatch;
+  answeredBatch = undefined;
+  return batch;
 }
 
 export const questionPromptStore = {
@@ -134,5 +155,6 @@ export const questionPromptStore = {
   setFocus,
   previous,
   answer,
+  takeAnswerBatch,
   clearHint: (): void => store.set(initial),
 };

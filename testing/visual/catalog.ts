@@ -476,6 +476,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-question-answered',
+      title: 'Workflow · answered structured questions',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'question-answered',
+        title: 'Answered structured questions',
+        kind: 'question',
+        marker: 'Simplify/clean up existing code',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Answered questions transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-task-review',
       title: 'Workflow · task review without usage counts',
       surface: screenSurface('workflow'),

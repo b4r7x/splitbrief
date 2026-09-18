@@ -96,8 +96,9 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       questionPromptStore.setQuestions(reply.questions);
       const answer = await answerPromise;
       if (controller.signal.aborted || abortedRef.current) return undefined;
-      const trimmed = answer.trim();
-      return trimmed === '' ? undefined : answer;
+      const batch = questionPromptStore.takeAnswerBatch();
+      if (answer.trim() === '') return undefined;
+      return batch ?? answer;
     },
     // A finished run is the loop returning, and the screen settles itself there from the record it
     // re-reads. Nothing is left for this callback to say that the return does not already say.

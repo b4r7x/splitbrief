@@ -153,11 +153,14 @@ function assertChromeRowWidth(
     rowIndex,
     `${label} row not found at ${renderViewport.cols}x${renderViewport.rows}`,
   ).not.toBeUndefined();
-  const measured = rowCellWidth(rows[rowIndex ?? -1] ?? '');
+  const row = rows[rowIndex ?? -1] ?? '';
+  const measured = rowCellWidth(row);
   expect(
     measured,
-    `${label} row measures ${measured} cells at ${renderViewport.cols}x${renderViewport.rows}, expected ${renderViewport.cols}`,
-  ).toBe(renderViewport.cols);
+    `${label} row measures ${measured} cells at ${renderViewport.cols}x${renderViewport.rows}, expected ${renderViewport.cols - 1}`,
+  ).toBe(renderViewport.cols - 1);
+  // The frame: column 0 stays empty and the rule spans the rail at column 1.
+  expect(row[0]).toBe(' ');
 }
 
 const BOX_DRAWING_START_CODE = 0x2500;
@@ -176,12 +179,16 @@ function rowCellWidth(row: string): number {
   return row.trimEnd().length;
 }
 
+// The chrome rows render inside the screen frame: one empty cell on each edge, the rule spanning
+// the rail between them. A framed rule row trims to a leading frame cell plus cols-2 rule cells.
 function isFullWidthRuleRow(row: string, cols: number): boolean {
   const cells = row.trimEnd();
-  if (cells.length !== cols) return false;
-  const first = cells[0];
+  if (cells.length !== cols - 1) return false;
+  if (!cells.startsWith(' ')) return false;
+  const rule = cells.slice(1);
+  const first = rule[0];
   if (first === undefined || first === ' ') return false;
-  for (const cell of cells) {
+  for (const cell of rule) {
     if (cell !== first) return false;
   }
   return true;

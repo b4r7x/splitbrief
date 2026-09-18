@@ -260,7 +260,7 @@ const wideCommandActivity = projectRunnerCallActivity(
         'npm exec vitest run src/engine/calls/activity.test.ts src/features/workflow/display/activity-display-text.test.ts --reporter=verbose',
     }),
   },
-  2,
+  4,
 );
 if (wideCommandActivity === null) throw new Error('Missing wide command fixture activity');
 
@@ -292,14 +292,6 @@ const implementationProjection: WorkflowFixtureProjection = {
       model: FIXED_RUNNER_MODEL,
     },
     {
-      type: 'planner_text',
-      ts: FIXED_TS + 150,
-      phase: 'implementing',
-      role: 'implementer',
-      content: 'plain',
-      text: WORKFLOW_FIXTURE_TEXT.implementation,
-    },
-    {
       type: 'runner_call_started',
       ts: FIXED_TS + 200,
       phase: 'implementing',
@@ -314,7 +306,7 @@ const implementationProjection: WorkflowFixtureProjection = {
     },
     {
       type: 'runner_call_activity',
-      ts: FIXED_TS + 300,
+      ts: FIXED_TS + 290,
       phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       callId: FIXED_CALL_ID,
@@ -324,11 +316,49 @@ const implementationProjection: WorkflowFixtureProjection = {
       model: FIXED_RUNNER_MODEL,
       attempt: 1,
       sequence: 1,
+      activityId: 'visual-call-001:warn:1',
+      stage: 'warning',
+      kind: 'warning',
+      label: 'warning fixture drift detected',
+      redacted: false,
+      rawAvailable: false,
+    },
+    {
+      type: 'runner_call_activity',
+      ts: FIXED_TS + 300,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      callId: FIXED_CALL_ID,
+      role: 'implementer',
+      backendKind: 'api',
+      runnerName: FIXED_RUNNER_NAME,
+      model: FIXED_RUNNER_MODEL,
+      attempt: 1,
+      sequence: 2,
       activityId: 'visual-call-001:read:1',
       stage: 'completed',
       kind: 'read',
       label: WORKFLOW_FIXTURE_TEXT.implementation,
       target: WORKFLOW_FIXTURE_REVIEW_FILE,
+      redacted: false,
+      rawAvailable: false,
+    },
+    {
+      type: 'runner_call_activity',
+      ts: FIXED_TS + 320,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      callId: FIXED_CALL_ID,
+      role: 'implementer',
+      backendKind: 'api',
+      runnerName: FIXED_RUNNER_NAME,
+      model: FIXED_RUNNER_MODEL,
+      attempt: 1,
+      sequence: 3,
+      activityId: 'visual-call-001:read:2',
+      stage: 'completed',
+      kind: 'read',
+      label: WORKFLOW_FIXTURE_TEXT.implementation,
       redacted: false,
       rawAvailable: false,
     },
@@ -343,7 +373,7 @@ const implementationProjection: WorkflowFixtureProjection = {
       runnerName: FIXED_RUNNER_NAME,
       model: FIXED_RUNNER_MODEL,
       attempt: 1,
-      sequence: 2,
+      sequence: 4,
       ...wideCommandActivity,
     },
   ],
@@ -709,6 +739,44 @@ const plannerReplyProjection: WorkflowFixtureProjection = {
   question: { prompt: 'Reply to the planner…', answer: 'Refactor src/auth.ts.', questions: [] },
 };
 
+// The flat numbered blob the planner prompt consumes. It is the qa pairs below joined, so only
+// the pairs are content; the join is exempted from the string bound like the task-review prompt.
+const ANSWERED_QUESTIONS_TEXT =
+  '1. What should be refactored? Give a file/module/feature name or area of the codebase.\nI want you to first review the changes and then after review make tasks of fixes for implementer\n\n2. What kind of refactor?\nSimplify/clean up existing code';
+
+const answeredQuestionsProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-question-answered'),
+  feature: 'Refactor my code',
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'clarifying', feature: 'Refactor my code' },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 100,
+      phase: 'clarifying',
+      role: 'planner',
+      content: 'plain',
+      text: 'A few questions before I write the plan.',
+    },
+    {
+      type: 'user_message',
+      ts: FIXED_TS + 200,
+      phase: 'clarifying',
+      text: ANSWERED_QUESTIONS_TEXT,
+      qa: [
+        {
+          question:
+            'What should be refactored? Give a file/module/feature name or area of the codebase.',
+          answer:
+            'I want you to first review the changes and then after review make tasks of fixes for implementer',
+        },
+        { question: 'What kind of refactor?', answer: 'Simplify/clean up existing code' },
+      ],
+    },
+  ],
+};
+
 const taskReviewRequest: TaskReviewRequest = {
   taskId: WORKFLOW_FIXTURE_TASK_ID,
   taskTitle: 'Update fixture',
@@ -1036,6 +1104,7 @@ const projections = [
   questionOverflowProjection,
   questionInputProjection,
   plannerReplyProjection,
+  answeredQuestionsProjection,
   taskReviewProjection,
   pausedMidBriefProjection,
   pausedBoundaryProjection,
@@ -1098,9 +1167,11 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     throw new Error(`Workflow fixture ${projection.scenarioId} exceeds the event bound`);
   }
   const oversized = projectionStrings(projection).find(
-    // The production formatter joins bounded facts and commands into one multiline prompt.
+    // The production formatter joins bounded facts and commands into one multiline prompt, and
+    // the answered card's flat text joins its bounded qa pairs; neither is independent content.
     (value) =>
       value !== formatTaskReviewPrompt(taskReviewRequest) &&
+      value !== ANSWERED_QUESTIONS_TEXT &&
       value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
       !projection.question?.questions?.some(
         (question) =>

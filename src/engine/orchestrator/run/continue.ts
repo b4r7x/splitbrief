@@ -29,7 +29,8 @@ export type ContinueRunDeps = Readonly<{
  * The one way a run is continued. A run this process is still holding resumes
  * through its park; a run at rest is re-entered on its saved state. Either way
  * the operator's words travel as a steer the next step composes into its own
- * prompt — never as a message queued behind the run.
+ * prompt — never as a message queued behind the run — and they are also
+ * recorded as the user message they are, in the transcript and session log.
  */
 export function continueRun(
   input: Readonly<{ ref: SessionRef; steer?: string | undefined; deps: ContinueRunDeps }>,

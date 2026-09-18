@@ -32,10 +32,34 @@ describe('planner question batch', () => {
     expect(store.get().drafts[1]?.text).toBe('src/auth.ts');
     expect(store.answer('src/auth.ts')).toBeUndefined();
     expect(store.get().drafts[2]?.selected).toBe(0);
-    expect(store.answer('No')).toBe(
+    expect(store.answer('No')).toEqual({
+      text: '1. Which seat?\nPlanner\n\n2. Which files?\nsrc/auth.ts\n\n3. Proceed?\nNo',
+      qa: [
+        { question: 'Which seat?', answer: 'Planner' },
+        { question: 'Which files?', answer: 'src/auth.ts' },
+        { question: 'Proceed?', answer: 'No' },
+      ],
+    });
+    expect(store.answer('Yes')).toBeUndefined();
+  });
+
+  it('hands the completed batch over once and clears it when the next prompt opens', () => {
+    store.setQuestions(questions);
+    for (const answer of ['Planner', 'src/auth.ts', 'No']) store.answer(answer);
+    const batch = store.takeAnswerBatch();
+    expect(batch?.text).toBe(
       '1. Which seat?\nPlanner\n\n2. Which files?\nsrc/auth.ts\n\n3. Proceed?\nNo',
     );
-    expect(store.answer('Yes')).toBeUndefined();
+    expect(batch?.qa).toEqual([
+      { question: 'Which seat?', answer: 'Planner' },
+      { question: 'Which files?', answer: 'src/auth.ts' },
+      { question: 'Proceed?', answer: 'No' },
+    ]);
+    expect(store.takeAnswerBatch()).toBeUndefined();
+    store.setQuestions(questions);
+    store.answer('Planner');
+    store.setHint('Which database?');
+    expect(store.takeAnswerBatch()).toBeUndefined();
   });
 
   it('discards drafts and answers on cancellation or replacement with reused IDs', () => {

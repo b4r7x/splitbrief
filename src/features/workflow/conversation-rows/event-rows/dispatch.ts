@@ -17,6 +17,7 @@ import {
   wrappedTextBlock,
 } from '../row-block-compose.js';
 import { artifactWrittenRowBlock } from './artifact-card.js';
+import { answeredQuestionsRowBlock } from './answered-questions.js';
 import { taskStartedMetadata, taskStartedRowBlock } from '../task-started-row-block.js';
 import { isRunnerCallTranscriptRowSuppressed } from '../runner-call-classification.js';
 import {
@@ -328,7 +329,9 @@ export function eventRowBlock(options: {
         labelTone: 'textDim',
       });
     case 'user_message':
-      return promptTextBlock({ keyPrefix, text: event.text, width: ctx.width });
+      return event.qa !== undefined && event.qa.length > 0
+        ? answeredQuestionsRowBlock({ keyPrefix, qa: event.qa, width: ctx.width })
+        : promptTextBlock({ keyPrefix, text: event.text, width: ctx.width });
     case 'planner_attachments_dropped':
       return cardRowsBlock({
         keyPrefix,

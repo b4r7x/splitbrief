@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
+import { getChromeHeight, getContentTopRow, WORKFLOW_FRAME_X } from './chrome-rows.js';
 import {
   clampWorkflowPromptRows,
   getReviewContentLayout,
@@ -22,21 +22,25 @@ describe('workflow viewport layout', () => {
     expect(getSidebarStatusColumnCells({ hasStatusTail: true })).toBeGreaterThan(0);
   });
 
-  it('splits width between sidebar, gap, and content exactly, only when the sidebar is visible above the breakpoint', () => {
+  it('splits width between sidebar, gap, and frame exactly, only when the sidebar is visible above the breakpoint', () => {
     const cols = 121;
 
     expect(getWorkflowSidebarWidth({ cols, sidebarVisible: false })).toBe(0);
-    expect(getWorkflowContentWidth({ cols, sidebarVisible: false })).toBe(cols);
+    expect(getWorkflowContentWidth({ cols, sidebarVisible: false })).toBe(
+      cols - WORKFLOW_FRAME_X * 2,
+    );
 
     expect(getWorkflowSidebarWidth({ cols: 100, sidebarVisible: true })).toBe(0);
-    expect(getWorkflowContentWidth({ cols: 100, sidebarVisible: true })).toBe(100);
+    expect(getWorkflowContentWidth({ cols: 100, sidebarVisible: true })).toBe(
+      100 - WORKFLOW_FRAME_X * 2,
+    );
 
     const sidebar = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
     const content = getWorkflowContentWidth({ cols, sidebarVisible: true });
     expect(sidebar).toBeGreaterThan(0);
     expect(content).toBeGreaterThan(0);
     expect(WORKFLOW_SIDEBAR_GAP).toBe(2);
-    expect(sidebar + WORKFLOW_SIDEBAR_GAP + content).toBe(cols);
+    expect(sidebar + WORKFLOW_SIDEBAR_GAP + content).toBe(cols - WORKFLOW_FRAME_X * 2);
   });
 
   it('hides the sidebar below the workflow breakpoint and clamps its share between a floor and a ceiling above it', () => {
@@ -117,7 +121,9 @@ describe('workflow viewport layout', () => {
 
       expect(sidebarWidth > 0).toBe(expectedSidebar);
       expect(getWorkflowContentWidth({ cols, sidebarVisible: true })).toBe(
-        expectedSidebar ? cols - sidebarWidth - WORKFLOW_SIDEBAR_GAP : cols,
+        expectedSidebar
+          ? cols - sidebarWidth - WORKFLOW_SIDEBAR_GAP - WORKFLOW_FRAME_X * 2
+          : cols - WORKFLOW_FRAME_X * 2,
       );
       expect(getWorkflowContentRect({ cols, rows, inputRows, sidebarVisible: true }).bottom).toBe(
         getContentTopRow() + contentHeight - 1,
@@ -168,18 +174,19 @@ describe('getWorkflowContentRect', () => {
     expect(rect.bottom).toBe(rect.top + rect.height - 1);
 
     const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible });
-    expect(rect.left).toBe(sidebarWidth + WORKFLOW_SIDEBAR_GAP + 1);
+    expect(rect.left).toBe(sidebarWidth + WORKFLOW_SIDEBAR_GAP + WORKFLOW_FRAME_X);
   });
 
-  it('when the sidebar is hidden the flush rect starts at the terminal edge and takes full width', () => {
+  it('when the sidebar is hidden the framed rect starts one cell in and keeps the last cell empty', () => {
     const rect = getWorkflowContentRect({
       cols: 100,
       rows: 30,
       inputRows: 2,
       sidebarVisible: false,
     });
-    expect(rect.left).toBe(1);
-    expect(rect.width).toBe(100);
+    expect(rect.left).toBe(WORKFLOW_FRAME_X);
+    expect(rect.width).toBe(100 - WORKFLOW_FRAME_X * 2);
+    expect(rect.right).toBe(100 - 1 - WORKFLOW_FRAME_X);
   });
 
   it('keeps edges non-inverted when the terminal has no usable content area', () => {

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Box } from 'ink';
 import type { RuntimeCommandDef } from '../../../core/runtime/commands/types.js';
 import type { InputMode } from '../../../core/navigation/types.js';
 import { Composer, type ComposerBoxHints } from '../../../components/composer/composer.js';
@@ -12,7 +13,7 @@ import { useFieldSessionOwned } from '../../editor/use-field-session-owned.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { ComposerBoxHintOverride } from '../input-hints.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
-import type { RailForm } from '../layout/chrome-rows.js';
+import { getChromeContentWidth, WORKFLOW_FRAME_X, type RailForm } from '../layout/chrome-rows.js';
 import type { readClipboardImage as readSystemClipboardImage } from '../../../core/attachments/clipboard-image.js';
 import type { listProjectFiles as listFiles } from '../../../lib/file-listing.js';
 
@@ -46,7 +47,7 @@ export function WorkflowHeader({
 }) {
   const cols = terminalSizeStore.use((s) => s.cols);
   return (
-    <>
+    <Box flexDirection="column" width="100%" paddingX={WORKFLOW_FRAME_X}>
       <Header
         startedAt={startedAt}
         railForm={railForm}
@@ -54,8 +55,8 @@ export function WorkflowHeader({
         {...(seatLine !== undefined && { seatLine })}
       />
       {children}
-      <Divider width={cols} label={scrollAboveLabel} tone="textDim" />
-    </>
+      <Divider width={getChromeContentWidth(cols)} label={scrollAboveLabel} tone="textDim" />
+    </Box>
   );
 }
 
@@ -119,6 +120,9 @@ export function WorkflowFooter({
   const boxHints = useComposerBoxHints(boxHintOverride);
   const fieldEditorOpen = useFieldSessionOwned();
   const composerSession = mode === 'review' ? `review:${reviewEpoch ?? 0}` : 'non-review';
+  // The framed width the box actually renders at, so the input's own wrap math never budgets the
+  // two frame cells the box no longer spans.
+  const composerWidth = getChromeContentWidth(terminalSizeStore.use((s) => s.cols));
   const footer = (
     <>
       <FeedbackRow inputHint={feedbackHint ?? inputHint} />
@@ -126,6 +130,7 @@ export function WorkflowFooter({
       <Composer
         maxRows={compactInput ? 1 : 6}
         key={composerSession}
+        width={composerWidth}
         onSubmit={handleInput}
         readClipboardImage={readClipboardImage}
         listProjectFiles={listProjectFiles}

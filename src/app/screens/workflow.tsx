@@ -38,7 +38,13 @@ import {
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
 } from '../../features/workflow/layout/rect.js';
-import { getProgressRows, selectRailForm } from '../../features/workflow/layout/chrome-rows.js';
+import {
+  getChromeContentWidth,
+  getChromeTextWidth,
+  getProgressRows,
+  selectRailForm,
+  WORKFLOW_FRAME_X,
+} from '../../features/workflow/layout/chrome-rows.js';
 import { BuildProgressBlock } from '../../features/workflow/components/build-progress.js';
 import { getWorkflowPromptRows } from '../../features/workflow/prompt-rows/workflow.js';
 import {
@@ -131,8 +137,8 @@ export function WorkflowScreen({
   const answerQuestion = (text: string): void => {
     const state = questionPromptStore.get();
     if (Date.now() - state.openedAt < PROMPT_TYPEAHEAD_GRACE_MS) return;
-    const answer = questionPromptStore.answer(text);
-    if (answer !== undefined) void model.handleInput(answer);
+    const answered = questionPromptStore.answer(text);
+    if (answered !== undefined) void model.handleInput(answered.text);
   };
   const composeAnswer = (): void => {
     const state = questionPromptStore.get();
@@ -257,7 +263,8 @@ export function WorkflowScreen({
         ]
       : undefined;
 
-  const bylineWidth = cols;
+  // The byline renders from the rail's text column, so its budget is the framed text width.
+  const bylineWidth = getChromeTextWidth(cols);
   const byline =
     model.atRestRecord === undefined
       ? undefined
@@ -281,7 +288,7 @@ export function WorkflowScreen({
       ? model.inputHint
       : legendText({
           overflow: scrollAboveLabel !== '' || scrollBelowLabel !== '',
-          width: contentWidth,
+          width: getChromeTextWidth(cols),
           canGoHome: !checking,
         });
 
@@ -299,8 +306,8 @@ export function WorkflowScreen({
         </WorkflowHeader>
       }
       footer={
-        <>
-          <Divider width={cols} tone="textDim" label={scrollBelowLabel} />
+        <Box flexDirection="column" width="100%" paddingX={WORKFLOW_FRAME_X} flexShrink={0}>
+          <Divider width={getChromeContentWidth(cols)} tone="textDim" label={scrollBelowLabel} />
           <WorkflowFooter
             compactInput={stopMenuOpen}
             beforeComposer={stopMenuOpen ? <StopMenu height={promptBoxRows} /> : undefined}
@@ -347,7 +354,7 @@ export function WorkflowScreen({
             reviewEpoch={model.inputMode.mode === 'review' ? reviewOwnerToken : undefined}
             disabled={model.hasOverlay || model.promptPending || covered}
           />
-        </>
+        </Box>
       }
     >
       <WorkflowBody
@@ -366,6 +373,7 @@ export function WorkflowScreen({
         overflow="hidden"
         flexDirection="column"
         flexShrink={0}
+        paddingX={WORKFLOW_FRAME_X}
       >
         {!stopMenuOpen && (model.promptPending || reviewArtifact !== null) && (
           <ApprovalPrompt
@@ -385,7 +393,7 @@ export function WorkflowScreen({
           <QuestionPrompt
             key={recoveryFocusKey}
             hint={model.inputMode.hint}
-            width={cols}
+            width={getChromeContentWidth(cols)}
             clampedBoxRows={promptBoxRows}
             recoveryIssue={recoveryPromptOpen ? recoveryIssue : null}
             recoveryMenuFocused={recoveryMenuFocused}

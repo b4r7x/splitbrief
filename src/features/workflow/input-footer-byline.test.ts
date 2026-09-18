@@ -2,12 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
-import { getChromeContentWidth } from './layout/chrome-rows.js';
+import { getChromeTextWidth } from './layout/chrome-rows.js';
 import { buildInputFooterByline, stageFractionText } from './input-footer-byline.js';
 import { stopByline } from './stop/copy.js';
 
 function fullByline(byline: { lead: string; hint: string; queued: string; rest: string }): string {
   return `${byline.lead}${byline.hint}${byline.queued}${byline.rest}`;
+}
+
+// The byline builds against the framed text width, so a line of W cells needs W + 4 terminal
+// columns: the two frame cells and the two the text column sits in from the rail.
+function colsForLine(target: string): number {
+  return getTerminalCellWidth(target) + (120 - getChromeTextWidth(120));
 }
 
 describe('buildInputFooterByline', () => {
@@ -59,19 +65,18 @@ describe('buildInputFooterByline', () => {
       etaText: '~2m left',
       advisoryText: 'use --quick for trivial edits',
     } as const;
-    const colsFor = (target: string) => getTerminalCellWidth(target);
 
     const noAdvisory = `${stageLead} · ~2m left`;
     const noEta = stageLead;
 
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(noAdvisory) }))).toBe(
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(noAdvisory) }))).toBe(
       noAdvisory,
     );
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(noEta) }))).toBe(noEta);
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(noEta) }))).toBe(noEta);
 
-    const crampedWidth = colsFor(stageLead) - 2;
+    const crampedWidth = getTerminalCellWidth(stageLead);
     const cramped = fullByline(buildInputFooterByline({ ...base, cols: crampedWidth }));
-    expect(getTerminalCellWidth(cramped)).toBeLessThanOrEqual(crampedWidth);
+    expect(getTerminalCellWidth(cramped)).toBeLessThanOrEqual(getChromeTextWidth(crampedWidth));
   });
 
   it('includes the y copy token only when a focus exists, reserved at the tail', () => {
@@ -97,16 +102,17 @@ describe('buildInputFooterByline', () => {
       advisoryText: null,
       copyHint: 'y copy',
     } as const;
-    const colsFor = (width: number) => width;
+    const withCopy = `${stageLead} · y copy`;
+    const withBareY = `${stageLead} · y`;
 
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(31) }))).toBe(
-      `${marker} build 3/7 · y copy`,
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(withCopy) }))).toBe(
+      withCopy,
     );
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(19) }))).toBe(
-      `${marker} build 3/7 · y`,
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(withBareY) }))).toBe(
+      withBareY,
     );
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(14) }))).toBe(
-      `${marker} build 3/7`,
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(stageLead) }))).toBe(
+      stageLead,
     );
   });
 
@@ -148,9 +154,8 @@ describe('buildInputFooterByline', () => {
       worktreeLabel: 'my-feature',
     } as const;
     const core = `${marker} build 3/7`;
-    const cols = getTerminalCellWidth(core);
 
-    expect(fullByline(buildInputFooterByline({ ...base, cols }))).toBe(core);
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(core) }))).toBe(core);
   });
 
   it('truncates the worktree name to the room that remains', () => {
@@ -170,10 +175,10 @@ describe('buildInputFooterByline', () => {
 
     expect(byline.startsWith(`${core} · ${glyph('cursor')}`)).toBe(true);
     expect(byline).not.toContain(worktreeLabel);
-    expect(getTerminalCellWidth(byline)).toBeLessThanOrEqual(getChromeContentWidth(width));
+    expect(getTerminalCellWidth(byline)).toBeLessThanOrEqual(getChromeTextWidth(width));
   });
 
-  it('stays within the chrome content width', () => {
+  it('stays within the framed text width', () => {
     const cols = 64;
     const byline = fullByline(
       buildInputFooterByline({
@@ -185,7 +190,7 @@ describe('buildInputFooterByline', () => {
       }),
     );
 
-    expect(getTerminalCellWidth(byline)).toBeLessThanOrEqual(getChromeContentWidth(cols));
+    expect(getTerminalCellWidth(byline)).toBeLessThanOrEqual(getChromeTextWidth(cols));
   });
 
   it('renders the queued segment as its own tone-carrying part, separate from the lead', () => {
@@ -242,12 +247,12 @@ describe('buildInputFooterByline', () => {
     const withoutHint = `${stageLead} · 2 queued`;
 
     expect(fullByline(buildInputFooterByline({ ...base, cols: 120 }))).toBe(withHint);
-    expect(
-      fullByline(buildInputFooterByline({ ...base, cols: getTerminalCellWidth(withHint) })),
-    ).toBe(withHint);
-    expect(
-      fullByline(buildInputFooterByline({ ...base, cols: getTerminalCellWidth(withoutHint) })),
-    ).toBe(withoutHint);
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(withHint) }))).toBe(
+      withHint,
+    );
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(withoutHint) }))).toBe(
+      withoutHint,
+    );
   });
 
   it('the queued segment carries no leading separator when the lead is empty', () => {

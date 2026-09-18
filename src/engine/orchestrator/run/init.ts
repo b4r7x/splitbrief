@@ -276,6 +276,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   }
   const hasPendingRecovery = savedState?.pendingRecovery !== undefined;
   const continuation = await resumeContinuation({ projectDir, sessionId }, savedState, opts.steer);
+  publishResumedSteer({ bus, projectDir, sessionId, state: savedState, steer: opts.steer });
 
   // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
@@ -442,6 +443,27 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   };
 
   return { ok: true, state, wctx, prepared };
+}
+
+/**
+ * The words that restart a run are the user turn they are: recorded once in the
+ * transcript and the session log. Not when the run has a question still pending —
+ * the steer is that question's answer, and the call loop records it when it
+ * consumes the seed.
+ */
+function publishResumedSteer(input: {
+  bus: EventBus;
+  projectDir: string;
+  sessionId: string;
+  state: WorkflowState | undefined;
+  steer: string | undefined;
+}): void {
+  const { bus, projectDir, sessionId, state } = input;
+  const steer = input.steer?.trim();
+  if (state === undefined || steer === undefined || steer === '') return;
+  if (state.pendingPlannerConversation?.answered === false) return;
+  appendMessage({ projectDir, sessionId }, { role: 'user', phase: state.phase, text: steer });
+  publishUserMessage({ bus, phase: state.phase }, steer);
 }
 
 /**

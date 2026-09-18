@@ -6,7 +6,7 @@ import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
-import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
+import { COMPOSER_EDGE_PADDING_X, getChromeTextWidth } from '../layout/chrome-rows.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
@@ -33,7 +33,9 @@ export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined
   const approvalPending = approvalPromptStore.use((s) => s.status === 'pending');
   const running = lifecycleStore.use((s) => s.status === 'running');
   const stopped = useStopByline();
-  const cols = terminalSizeStore.use((s) => s.cols) - WORKFLOW_CONTENT_PADDING_X * 2;
+  // The row renders from the rail's text column inside the frame, so its budget is the framed
+  // text width — the two edge cells are not the legend's to spend.
+  const cols = getChromeTextWidth(terminalSizeStore.use((s) => s.cols));
   const t = useTheme();
 
   // A panel that is on screen owns the legend. Anything this row could add beside it would either
@@ -53,7 +55,7 @@ export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined
   const wordColor = severity === 'error' ? t.error : severity === 'warning' ? t.warning : null;
 
   return (
-    <Box height={1} paddingX={WORKFLOW_CONTENT_PADDING_X} flexShrink={0}>
+    <Box height={1} paddingX={COMPOSER_EDGE_PADDING_X} flexShrink={0}>
       {displayMessage &&
         (wordColor !== null ? (
           <StateWordVoice text={displayMessage} color={wordColor} />

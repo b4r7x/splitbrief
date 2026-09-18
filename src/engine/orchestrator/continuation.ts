@@ -5,6 +5,8 @@ import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { EventBus } from '../events/types.js';
 import { withPerCallAbort } from './cancellable-call.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from './state-ops.js';
+import { appendMessage } from '../../core/sessions/log-writer.js';
+import { publishUserMessage } from './events.js';
 import { readMessages } from '../../core/sessions/log-reader.js';
 import { processError } from '../../lib/process/errors.js';
 import { throwIfAborted } from '../../utils/abort.js';
@@ -108,6 +110,24 @@ export interface WithContinuationLoopOpts<T> {
   body: (args: ContinuationLoopBodyArgs) => Promise<T>;
 }
 
+/**
+ * The words the operator sent into a cut call are the user turn they are:
+ * recorded once in the transcript and the session log. They still travel on as
+ * the steer the retried call composes into its own prompt.
+ */
+function recordSteer(
+  ctx: ContinuationLoopCtx,
+  phase: WorkflowState['phase'],
+  text: string | undefined,
+): void {
+  if (text === undefined || text.trim() === '') return;
+  appendMessage(
+    { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
+    { role: 'user', phase, text },
+  );
+  publishUserMessage({ bus: ctx.bus, phase }, text);
+}
+
 export async function withContinuationLoop<T>(
   opts: WithContinuationLoopOpts<T>,
 ): Promise<{ state: WorkflowState; value: T }> {
@@ -151,6 +171,7 @@ export async function withContinuationLoop<T>(
     const userText = await onContinuationNeeded(partialOutput, 'mid-step');
     throwIfAborted(ctx.signal);
     applyState(transitionAndSave(persistRef, state, { type: 'RESUME_STEP' }));
+    recordSteer(ctx, state.phase, userText);
     return userText;
   };
 

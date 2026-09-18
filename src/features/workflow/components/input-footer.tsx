@@ -32,6 +32,7 @@ import {
   joinBylineParts,
   stageFractionText,
 } from '../input-footer-byline.js';
+import { COMPOSER_EDGE_PADDING_X } from '../layout/chrome-rows.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { formatSeatIdentity } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
@@ -200,7 +201,8 @@ export function InputFooter({
   const etaLabel = buildEta.kind === 'estimate' ? etaText(buildEta) : null;
 
   const byline = buildInputFooterByline({
-    cols: width ?? cols,
+    // Raw width in; the builder owns the framed text measure.
+    cols: Math.max(1, width ?? cols),
     lead,
     hintText,
     queuedText,
@@ -217,7 +219,7 @@ export function InputFooter({
 
   if (checkingStage !== null) {
     return (
-      <Box width="100%" paddingX={0} height={1} flexShrink={0}>
+      <Box width="100%" paddingX={COMPOSER_EDGE_PADDING_X} height={1} flexShrink={0}>
         <Text color={t.textDim} wrap="truncate-end">
           {joinBylineParts([`${frame} ${checkingStage}`, 'esc cancel'])}
         </Text>
@@ -227,7 +229,7 @@ export function InputFooter({
 
   if (givenByline !== undefined && stopped === null) {
     return (
-      <Box width="100%" paddingX={0} height={1} flexShrink={0}>
+      <Box width="100%" paddingX={COMPOSER_EDGE_PADDING_X} height={1} flexShrink={0}>
         <Text color={t.textDim} wrap="truncate-end">
           {givenByline}
         </Text>
@@ -236,7 +238,7 @@ export function InputFooter({
   }
 
   return (
-    <Box width="100%" paddingX={0} height={1} flexShrink={0}>
+    <Box width="100%" paddingX={COMPOSER_EDGE_PADDING_X} height={1} flexShrink={0}>
       <Text color={t.textDim} wrap="truncate-end">
         {leadColor !== null ? <Text color={leadColor}>{byline.lead}</Text> : byline.lead}
         {byline.hint}

@@ -21,6 +21,7 @@ import type { ConversationRowBlock } from '../../conversation-rows/types.js';
 import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../../conversation-rows/viewport.js';
 import { row } from '../../conversation-rows/row-format/rows.js';
+import { rowLeadingCells } from '../../conversation-rows/row-markers.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { ConversationRowView } from './row-view.js';
@@ -208,7 +209,13 @@ export function ConversationFlow({
         >
           {(focusedSummaryIndex) => (
             <>
-              <Box height={1} width={conversationWidth} overflow="hidden" flexShrink={0}>
+              <Box
+                height={1}
+                width={conversationWidth}
+                overflow="hidden"
+                flexShrink={0}
+                marginLeft={rowLeadingCells('message')}
+              >
                 <Text color={t.textDim}>{taskListLabel(taskListView)}</Text>
               </Box>
               {visibleCompletedItems.map((item, position) => (
@@ -244,7 +251,11 @@ export function ConversationFlow({
         flexShrink={0}
       >
         <Box width="100%" flexDirection="column" flexShrink={0}>
-          {showsEmptyState && <Text color={t.textDim}>no events yet</Text>}
+          {showsEmptyState && (
+            <Box marginLeft={rowLeadingCells('message')}>
+              <Text color={t.textDim}>no events yet</Text>
+            </Box>
+          )}
           <ConversationTranscriptRows
             rows={rows}
             stickyLeadingLines={stickyLeadingLines}
@@ -258,7 +269,13 @@ export function ConversationFlow({
               its chrome. A bare run of circles under a stretch of blank rows announces nothing;
               the air belongs above the label and the label belongs against its rows. */}
           <Box height={1} width={conversationWidth} flexShrink={0} />
-          <Box height={1} width={conversationWidth} overflow="hidden" flexShrink={0}>
+          <Box
+            height={1}
+            width={conversationWidth}
+            overflow="hidden"
+            flexShrink={0}
+            marginLeft={rowLeadingCells('message')}
+          >
             <Text color={t.textDim}>{`Queued ${pendingTasks.length}`}</Text>
           </Box>
           {queuedRows.map((queuedRow) => (

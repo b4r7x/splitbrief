@@ -23,3 +23,14 @@ export const ClarificationQuestionSchema = z.discriminatedUnion('type', [
 ]);
 
 export type ClarificationQuestion = z.infer<typeof ClarificationQuestionSchema>;
+
+export const AnsweredQuestionSchema = z.object({
+  question: z.string(),
+  answer: z.string(),
+});
+export type AnsweredQuestion = z.infer<typeof AnsweredQuestionSchema>;
+
+export interface PlannerReplyAnswer {
+  text: string;
+  qa: AnsweredQuestion[];
+}

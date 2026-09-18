@@ -135,6 +135,17 @@ async function flush(ms = 60) {
   await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
+function userMessageEvents() {
+  return eventsStore.get().events.filter((event) => event.type === 'user_message');
+}
+
+function loggedMessageRows(log: string, text: string): number {
+  return log
+    .split('\n')
+    .filter((line) => line.includes('"kind":"message"') && line.includes(JSON.stringify(text)))
+    .length;
+}
+
 let projectDir: string;
 
 beforeEach(() => {
@@ -674,20 +685,26 @@ describe('useRunLoop', () => {
       text: 'carry this into implementation',
     },
   ] as const)(
-    'carries the typed continuation into the re-entered run as a steer, not a queued message',
+    'carries the typed continuation into the re-entered run as a steer and records it as a user message',
     async ({ phase, sessionId, text }) => {
-      ensureSessionDir(projectDir, sessionId);
-      saveState({ projectDir, sessionId }, { ...createInitialState('add auth'), phase });
+      const resume: WorkflowState = { ...createInitialState('add auth'), phase };
+      saveState({ projectDir, sessionId }, resume);
 
       const captureRunner: HarnessProps['captureRunner'] = { current: null };
-      const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
-      const seen: (string | undefined)[] = [];
-      const runWorkflowStub: RunWorkflowFn = vi.fn(async (opts) => {
-        seen.push(opts.steer);
-        return makeSummary();
+      const prepared = preparedExecution({
+        projectDir,
+        feature: 'add auth',
+        sessionId,
+        resumeState: resume,
       });
-      const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowStub });
+      const seen: (string | undefined)[] = [];
+      const runWorkflowSpy: RunWorkflowFn = async (options) => {
+        seen.push(options.steer);
+        return runWorkflow(options);
+      };
+      const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowSpy });
       await flush();
+      expect(userMessageEvents()).toHaveLength(0);
 
       const runner = captureRunner.current;
       if (!runner) throw new Error('expected captureRunner.current to be populated');
@@ -695,6 +712,11 @@ describe('useRunLoop', () => {
       await flush();
 
       expect(seen.at(-1)).toBe(text);
+      const userMessages = userMessageEvents();
+      expect(userMessages).toHaveLength(1);
+      expect(userMessages[0]).toMatchObject({ type: 'user_message', phase, text });
+      const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf-8');
+      expect(loggedMessageRows(log, text)).toBe(1);
       const persisted = loadState({ projectDir, sessionId });
       if (!persisted) throw new Error('expected persisted state on disk');
       expect(persisted.messageQueue).toHaveLength(0);
@@ -704,20 +726,26 @@ describe('useRunLoop', () => {
     },
   );
 
-  it('re-enters with no steer when no text was typed', async () => {
+  it('re-enters with no steer and no new row when no text was typed', async () => {
     const sessionId = '2024-01-01-empty-continue';
-    ensureSessionDir(projectDir, sessionId);
-    saveState({ projectDir, sessionId }, { ...createInitialState('add auth'), phase: 'planning' });
+    const resume: WorkflowState = { ...createInitialState('add auth'), phase: 'planning' };
+    saveState({ projectDir, sessionId }, resume);
 
     const captureRunner: HarnessProps['captureRunner'] = { current: null };
-    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
-    const seen: (string | undefined)[] = [];
-    const runWorkflowStub: RunWorkflowFn = vi.fn(async (opts) => {
-      seen.push(opts.steer);
-      return makeSummary();
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: resume,
     });
-    const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowStub });
+    const seen: (string | undefined)[] = [];
+    const runWorkflowSpy: RunWorkflowFn = async (options) => {
+      seen.push(options.steer);
+      return runWorkflow(options);
+    };
+    const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowSpy });
     await flush();
+    expect(userMessageEvents()).toHaveLength(0);
 
     const runner = captureRunner.current;
     if (!runner) throw new Error('expected captureRunner.current to be populated');
@@ -725,9 +753,54 @@ describe('useRunLoop', () => {
     await flush();
 
     expect(seen.at(-1)).toBeUndefined();
+    expect(userMessageEvents()).toHaveLength(0);
     const persisted = loadState({ projectDir, sessionId });
     if (!persisted) throw new Error('expected persisted state on disk');
     expect(persisted.messageQueue).toHaveLength(0);
+
+    inst.unmount();
+  });
+
+  it('leaves the steer unrecorded when it answers a planner question still pending', async () => {
+    const sessionId = '2024-01-01-pending-answer';
+    const answer = 'change src/auth.ts instead';
+    const resume: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'planning',
+      pendingPlannerConversation: {
+        call: 'research',
+        text: 'Which module should change?',
+        questions: [],
+        answers: [],
+        answered: false,
+      },
+    };
+    saveState({ projectDir, sessionId }, resume);
+
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: resume,
+    });
+    const inst = renderHarness({
+      prepared,
+      captureRunner,
+      runWorkflow: async (options) => runWorkflow(options),
+    });
+    await flush();
+
+    const runner = captureRunner.current;
+    if (!runner) throw new Error('expected captureRunner.current to be populated');
+    runner.handleResume(answer);
+    await flush();
+
+    // The pending question owns the answer: the call loop records it when it consumes
+    // the seed, so the re-entry itself publishes nothing.
+    expect(userMessageEvents()).toHaveLength(0);
+    const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf-8');
+    expect(log).not.toContain(answer);
 
     inst.unmount();
   });

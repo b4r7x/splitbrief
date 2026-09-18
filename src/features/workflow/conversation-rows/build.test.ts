@@ -273,6 +273,38 @@ describe('buildConversationRows', () => {
     expect(text).toContain(activityLine('READ', 'd.ts'));
     expect(text).not.toContain(activityLine('READ', 'a.ts'));
     expect(text).not.toContain(activityLine('READ', 'b.ts'));
+
+    const warnLine = activityLine('WARN', 'stderr');
+    expect(text.indexOf(warnLine)).toBeLessThan(text.indexOf(activityLine('READ', 'c.ts')));
+    expect(text.indexOf(activityLine('READ', 'c.ts'))).toBeLessThan(
+      text.indexOf(activityLine('READ', 'd.ts')),
+    );
+
+    const expanded = buildConversationRows({
+      sections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set([activityBatchKey(0, 'call-1')]),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    });
+    const expandedText = expanded.rows.map(rowText).join('\n');
+
+    expect(expandedText).toContain('collapse');
+    expect(expandedText).toContain(activityLine('READ', 'a.ts'));
+    expect(expandedText).toContain(activityLine('READ', 'b.ts'));
+    expect(expandedText.indexOf(warnLine)).toBeLessThan(
+      expandedText.indexOf(activityLine('READ', 'a.ts')),
+    );
+    expect(expandedText.indexOf(activityLine('READ', 'a.ts'))).toBeLessThan(
+      expandedText.indexOf(activityLine('READ', 'b.ts')),
+    );
+    expect(expandedText.indexOf(activityLine('READ', 'b.ts'))).toBeLessThan(
+      expandedText.indexOf(activityLine('READ', 'c.ts')),
+    );
+    expect(expandedText.indexOf(activityLine('READ', 'c.ts'))).toBeLessThan(
+      expandedText.indexOf(activityLine('READ', 'd.ts')),
+    );
   });
 
   it('sanitizes runner metadata in compact activity batch headers', () => {

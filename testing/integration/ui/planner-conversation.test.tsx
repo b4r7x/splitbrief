@@ -21,6 +21,7 @@ import { createClaudeCodePlanner } from '../../../src/engine/planners/claude-cod
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { createJsonlSink } from '../../../src/engine/events/sinks/jsonl.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import { eventRowBlock } from '../../../src/features/workflow/conversation-rows/event-rows/dispatch.js';
 import { runPlanningSteps } from '../../../src/engine/orchestrator/planning/steps.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { eventsStore } from '../../../src/stores/workflow/events.js';
@@ -189,6 +190,148 @@ if (index === 1) {
     ).toEqual(['research.md', 'spec.md', 'plan.md', 'tasks.md']);
   });
 
+  it('records a structured batch as a qa payload and renders it styled after replay', async () => {
+    const invocations = join(projectDir, 'invocations.json');
+    const shim = join(projectDir, 'claude');
+    const question = { id: 'module', type: 'input', text: 'Which module should change?' };
+    const documents = [
+      `Scoping first. <!-- Q:${JSON.stringify(question)} -->`,
+      PLANNER_DOCUMENT_FIXTURES.research,
+      PLANNER_DOCUMENT_FIXTURES.spec,
+      PLANNER_DOCUMENT_FIXTURES.plan,
+      REAL_TASKS_MD,
+    ];
+    writeFileSync(
+      shim,
+      `#!${process.execPath}
+const fs = require('node:fs');
+const path = ${JSON.stringify(invocations)};
+const calls = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : [];
+calls.push({args: process.argv.slice(2), prompt: fs.readFileSync(0, 'utf8')});
+fs.writeFileSync(path, JSON.stringify(calls));
+const emit = (frame) => console.log(JSON.stringify({session_id: 'native-screen', ...frame}));
+const documents = ${JSON.stringify(documents)};
+emit({type: 'system', subtype: 'init'});
+emit({type: 'result', result: documents[calls.length - 1]});
+`,
+    );
+    chmodSync(shim, 0o755);
+    restorePath = prependPath(projectDir);
+    const planner = createClaudeCodePlanner({
+      authChannel: undefined,
+      trustedCli: trustedShimGate({ dir: projectDir, tool: 'claude-code' }),
+    });
+    const finished = Promise.withResolvers<void>();
+    let sessionId = '';
+    const runWorkflow = async (options: RunWorkflowOptions): Promise<Summary> => {
+      const ref = options.prepared.session.ref;
+      sessionId = ref.sessionId;
+      const bus = createEventBus();
+      if (options.tuiSink) bus.subscribe(options.tuiSink);
+      bus.subscribe(createJsonlSink(ref));
+      const state = {
+        ...transition(createInitialState('Refactor the implementation'), { type: 'START' }),
+        mode: 'standard' as const,
+        approve: 'none' as const,
+      };
+      try {
+        const result = await runPlanningSteps({
+          wctx: {
+            ...ref,
+            config: options.prepared.config,
+            bus,
+            callbacks: options.callbacks,
+            sinks: createTestSinks(),
+            metadata: { plannerTool: 'claude-code', implementerTool: 'test', mode: 'standard' },
+            signal: options.signal,
+          },
+          state,
+          planner,
+          feature: state.feature,
+          approveLevel: 'none',
+        });
+        expect(result.disposition).toBe('tasks-ready');
+        return makeSummary();
+      } finally {
+        finished.resolve();
+      }
+    };
+    ui = mountWorkflowScreen({ deps: { runWorkflow }, projectDir, rows: 40 });
+    const screen = ui;
+    try {
+      await vi.waitFor(
+        () => expect(stripAnsiStyles(screen.lastFrame())).toContain('Question 1 of 1'),
+        { timeout: 3000 },
+      );
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      screen.stdin.write('Refactor src/auth.ts; preserve the public API.');
+      await flushEffects();
+      screen.stdin.write('\r');
+      await vi.waitFor(
+        () => {
+          const frame = stripAnsiStyles(screen.lastFrame());
+          expect(frame).toContain('Answered · 1 question');
+          expect(frame).toContain('1. Which module should change?');
+          expect(frame).toContain('Refactor src/auth.ts; preserve the public API.');
+        },
+        { timeout: 3000 },
+      );
+      const userMessages = eventsStore
+        .get()
+        .events.filter((event) => event.type === 'user_message');
+      expect(userMessages).toHaveLength(1);
+      expect(userMessages[0]).toMatchObject({
+        text: '1. Which module should change?\nRefactor src/auth.ts; preserve the public API.',
+        qa: [
+          {
+            question: 'Which module should change?',
+            answer: 'Refactor src/auth.ts; preserve the public API.',
+          },
+        ],
+      });
+      await vi.waitFor(() => {
+        const calls: unknown = JSON.parse(readFileSync(invocations, 'utf8'));
+        expect(calls).toEqual([
+          expect.anything(),
+          expect.objectContaining({
+            args: expect.arrayContaining(['--resume', 'native-screen']),
+            prompt: expect.stringContaining('[User reply]'),
+          }),
+        ]);
+      });
+    } catch (cause) {
+      screen.unmount();
+      throw cause;
+    } finally {
+      await finished.promise;
+    }
+    const replay = await readRunEvents({ projectDir, sessionId });
+    const replayedUserMessage = replay.events.find((event) => event.type === 'user_message');
+    expect(replayedUserMessage).toMatchObject({
+      qa: [
+        {
+          question: 'Which module should change?',
+          answer: 'Refactor src/auth.ts; preserve the public API.',
+        },
+      ],
+    });
+    if (replayedUserMessage?.type !== 'user_message') throw new Error('no replayed user message');
+    const block = eventRowBlock({
+      event: replayedUserMessage,
+      globalIndex: 0,
+      ctx: { width: 80, viewportRows: 20, streaming: { taskId: null, lines: [], active: false } },
+      expanded: false,
+    });
+    const rows = block?.createRows(0, block.rowCount) ?? [];
+    expect(rows.map((row) => row.kind)[0]).toBe('prompt');
+    expect(rows.map((row) => row.segments.map((segment) => segment.text).join(''))).toEqual([
+      'Answered · 1 question',
+      '',
+      '1. Which module should change?',
+      '   Refactor src/auth.ts; preserve the public API.',
+    ]);
+  });
+
   it.each(['ordinary', 'structured'] as const)(
     'shows the %s reply and sends one composer answer to the waiting turn',
     async (kind) => {
@@ -272,7 +415,16 @@ if (index === 1) {
         expect(received).toHaveBeenCalledExactlyOnceWith(
           kind === 'ordinary'
             ? 'Refactor src/auth.ts; preserve CLI exit codes.'
-            : '1. Which module should change?\nRefactor src/auth.ts; preserve CLI exit codes.\n\n2. Which behavior must remain?\nCLI exit codes',
+            : {
+                text: '1. Which module should change?\nRefactor src/auth.ts; preserve CLI exit codes.\n\n2. Which behavior must remain?\nCLI exit codes',
+                qa: [
+                  {
+                    question: 'Which module should change?',
+                    answer: 'Refactor src/auth.ts; preserve CLI exit codes.',
+                  },
+                  { question: 'Which behavior must remain?', answer: 'CLI exit codes' },
+                ],
+              },
         );
         expect(controlsStore.get().inputMode).toBe('normal');
         expect(stripAnsiStyles(screen.lastFrame())).not.toContain('Waiting for your answer');
@@ -333,9 +485,14 @@ if (index === 1) {
     expect(received).not.toHaveBeenCalled();
     await key('\r'); // Explicitly accept the false default.
     await vi.waitFor(() =>
-      expect(received).toHaveBeenCalledExactlyOnceWith(
-        '1. Which seat?\nBuilder\n\n2. Which files?\nsrc/auth.ts\n\n3. Proceed?\nNo',
-      ),
+      expect(received).toHaveBeenCalledExactlyOnceWith({
+        text: '1. Which seat?\nBuilder\n\n2. Which files?\nsrc/auth.ts\n\n3. Proceed?\nNo',
+        qa: [
+          { question: 'Which seat?', answer: 'Builder' },
+          { question: 'Which files?', answer: 'src/auth.ts' },
+          { question: 'Proceed?', answer: 'No' },
+        ],
+      }),
     );
     expect(controlsStore.get().inputMode).toBe('normal');
   });

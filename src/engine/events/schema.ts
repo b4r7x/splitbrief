@@ -16,6 +16,7 @@ import {
 } from '../../core/schemas/enums.js';
 import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
+import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
 import { StepCutSchema } from '../../core/schemas/run-step.js';
 import { TaskReviewRecoverySchema } from '../../core/schemas/recovery/schemas.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
@@ -596,7 +597,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     ids: z.array(z.string()).optional(),
   }),
   phaseEvent('queue_cleared').extend({ count: z.number().int().nonnegative() }),
-  phaseEvent('user_message').extend({ text: z.string() }),
+  phaseEvent('user_message').extend({
+    text: z.string(),
+    qa: z.array(AnsweredQuestionSchema).optional(),
+  }),
   phaseEvent('planner_attachments_dropped').extend({
     count: z.number(),
     reason: z.enum(['unsupported-backend', 'capability-degraded']),

@@ -101,8 +101,8 @@ describe('readConversationScrollSnapshot', () => {
       promptRows: 0,
     });
 
-    expect(snap.contentRect.width).toBe(160);
-    expect(snap.conversationWidth).toBe(160);
+    expect(snap.contentRect.width).toBe(158);
+    expect(snap.conversationWidth).toBe(158);
     expect(snap.viewportHeight).toBe(fullBodyHeight);
     expect(snap.viewportHeight).toBeLessThan(40);
     expect(snap.contentRect.height).toBe(snap.viewportHeight);
@@ -142,7 +142,7 @@ describe('readConversationScrollSnapshot', () => {
     const progressRows = getProgressRows({ phase: 'implementing', cols: 80 });
     const snap = readConversationScrollSnapshot();
 
-    expect(progressRows).toBe(4);
+    expect(progressRows).toBe(5);
     // The block rides above the transcript, so its rows leave the body and push its top row down.
     expect(snap.viewportHeight).toBe(
       getWorkflowViewportHeight({ rows: 30, inputRows: 3, progressRows }),
@@ -291,9 +291,10 @@ describe('readConversationScrollSnapshot', () => {
 
     const snap = readConversationScrollSnapshot();
 
-    expect(snap.contentRect.width).toBe(120);
-    expect(snap.conversationWidth).toBe(120);
-    expect(snap.contentRect.right).toBe(snap.contentRect.left + 119);
+    // The framed content width: the two edge cells belong to the frame, not the transcript.
+    expect(snap.contentRect.width).toBe(118);
+    expect(snap.conversationWidth).toBe(118);
+    expect(snap.contentRect.right).toBe(snap.contentRect.left + 117);
   });
 
   it('sidebar presence narrows content width', () => {
@@ -466,7 +467,7 @@ describe('readReviewContentHeight', () => {
     const progressRows = getProgressRows({ phase: 'final-review', cols: 80 });
     const bodyHeight = getWorkflowViewportHeight({ rows: 40, inputRows: 3, progressRows });
 
-    expect(progressRows).toBe(4);
+    expect(progressRows).toBe(5);
     // Both panes are handed the screen's one content height, so the review frame is measured
     // around the block exactly as the transcript is.
     expect(readConversationScrollSnapshot().contentRect.height).toBe(bodyHeight);

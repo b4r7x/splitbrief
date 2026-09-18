@@ -1,4 +1,5 @@
 import { wrapHard, wrapPathAware } from '../../../utils/wrap.js';
+import { WORKFLOW_FRAME_X } from '../layout/chrome-rows.js';
 
 export const MIN_TEXT_WIDTH = 1;
 
@@ -19,6 +20,8 @@ export function pathAwareRows(text: string, width: number): number {
 
 export const APPROVAL_HORIZONTAL_CHROME = 4;
 
+// The panel renders inside the screen frame, so its text budget is the framed width minus the
+// panel's own border and padding — never the raw terminal width.
 export function approvalTextWidth(cols: number): number {
-  return Math.max(MIN_TEXT_WIDTH, cols - APPROVAL_HORIZONTAL_CHROME);
+  return Math.max(MIN_TEXT_WIDTH, cols - WORKFLOW_FRAME_X * 2 - APPROVAL_HORIZONTAL_CHROME);
 }

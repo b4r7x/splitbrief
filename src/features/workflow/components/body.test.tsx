@@ -13,6 +13,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
 import { REVIEW_MIN_ROWS } from '../layout/rect.js';
+import { WORKFLOW_FRAME_X } from '../layout/chrome-rows.js';
 import { WorkflowBody } from './body.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 
@@ -152,7 +153,7 @@ describe('WorkflowBody brief review rendering', () => {
   it('lets the conversation, document, and brief panes reach the same body bottom', async () => {
     const contentHeight = 8;
     const sidebarWidth = 34;
-    const contentStartColumn = sidebarWidth + 2;
+    const contentStartColumn = WORKFLOW_FRAME_X + sidebarWidth + 2;
     eventsStore.__testReset({
       events: [
         makePlannerText({
@@ -221,7 +222,7 @@ describe('WorkflowBody brief review rendering', () => {
     ui.unmount();
   });
 
-  it('renders conversation content flush against the terminal edge inside the main workflow body', () => {
+  it('renders conversation content one frame cell in from the terminal edge', () => {
     const ui = renderFeature(
       <WorkflowBody
         showSidebar={false}
@@ -239,8 +240,10 @@ describe('WorkflowBody brief review rendering', () => {
 
     // No top-gap row: the body starts on its first line, directly under the header divider.
     expect(lines[0]).toContain('no events yet');
-    // Flush layout (WORKFLOW_CONTENT_PADDING_X = 0): the transcript text sits at column 0, no inset.
-    expect(row.startsWith('no events yet')).toBe(true);
+    // Framed layout: the empty state sits in the transcript's prose column — frame cell, then the
+    // two-cell leading every message row carries.
+    expect(row.startsWith('no events yet')).toBe(false);
+    expect(row.indexOf('no events yet')).toBe(WORKFLOW_FRAME_X + 2);
 
     ui.unmount();
   });
@@ -293,7 +296,7 @@ describe('WorkflowBody brief review rendering', () => {
     const bottomBorderRow = contentHeight - 1;
 
     expect(lines).toHaveLength(contentHeight);
-    expect(lines[bottomBorderRow]?.[0]).toMatch(/[+└]/);
+    expect(lines[bottomBorderRow]?.[WORKFLOW_FRAME_X]).toMatch(/[+└]/);
     expect(lastTranscriptLine).toBe(bottomBorderRow);
     expect(lines[lastTranscriptLine]).toContain('transcript-20');
 

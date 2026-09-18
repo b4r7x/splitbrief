@@ -10,6 +10,7 @@ import type {
   Phase,
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import type { AnsweredQuestion } from '../../core/schemas/question.js';
 import type {
   EngineEvent,
   EngineEventOf,
@@ -412,8 +413,14 @@ export function publishWarningFromError(ctx: BusContext, label: string, err: unk
   publishWarning({ ...ctx, message: labelError(label, err) });
 }
 
-export function publishUserMessage(ctx: BusContext, text: string): void {
-  ctx.bus.publish({ type: 'user_message', ts: Date.now(), phase: ctx.phase, text });
+export function publishUserMessage(ctx: BusContext, text: string, qa?: AnsweredQuestion[]): void {
+  ctx.bus.publish({
+    type: 'user_message',
+    ts: Date.now(),
+    phase: ctx.phase,
+    text,
+    ...(qa !== undefined && qa.length > 0 ? { qa } : {}),
+  });
 }
 
 export function publishUserEditConflict(

@@ -23,6 +23,7 @@ import { focusStore } from '../../../stores/ui/focus.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BRAILLE_SPINNER_FRAMES, glyph } from '../../../lib/glyphs.js';
+import { COMPOSER_EDGE_PADDING_X } from '../layout/chrome-rows.js';
 import { InputFooter } from './input-footer.js';
 
 import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
@@ -97,6 +98,17 @@ describe('InputFooter', () => {
     tasksStore.__testReset();
     tokensStore.__testReset();
     operationsStore.__testReset();
+  });
+
+  it('aligns the byline with the composer input edge', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+
+    const ui = renderFeature(<InputFooter byline="Paused at T002 — stopped by you" />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame.indexOf('Paused at T002')).toBe(COMPOSER_EDGE_PADDING_X);
+
+    ui.unmount();
   });
 
   it('renders the y copy affordance only while a focused row resolves a copy value', () => {
@@ -623,10 +635,19 @@ describe('InputFooter', () => {
     expect(stripAnsiStyles(wide.lastFrame() ?? '')).toContain('2 queued');
     wide.unmount();
 
-    terminalSizeStore.__testReset({ cols: 20, rows: 24, isSmall: false });
+    terminalSizeStore.__testReset({ cols: 24, rows: 24, isSmall: false });
     const narrow = renderFeature(<InputFooter />);
     expect(stripAnsiStyles(narrow.lastFrame() ?? '')).toContain('2 queued');
     narrow.unmount();
+
+    // The frame costs the two edge cells, so a 20-column terminal cannot seat the queued
+    // segment too; the ladder drops it and the lead stands alone rather than clipping.
+    terminalSizeStore.__testReset({ cols: 20, rows: 24, isSmall: false });
+    const cramped = renderFeature(<InputFooter />);
+    const crampedFrame = stripAnsiStyles(cramped.lastFrame() ?? '');
+    expect(crampedFrame).toContain('Build');
+    expect(crampedFrame).not.toContain('2 queued');
+    cramped.unmount();
 
     terminalSizeStore.reset();
   });

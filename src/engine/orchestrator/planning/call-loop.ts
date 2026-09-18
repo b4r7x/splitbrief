@@ -92,7 +92,9 @@ export async function runPlannerCallInContinuationLoop(
               }
             },
           }));
-        if (answer === undefined || answer.trim() === '') {
+        // A structured reply keeps the flat blob as its text, so every consumer below is unchanged.
+        const replyText = typeof answer === 'string' ? answer : answer?.text;
+        if (replyText === undefined || replyText.trim() === '') {
           return {
             state,
             result: {
@@ -103,9 +105,10 @@ export async function runPlannerCallInContinuationLoop(
             },
           };
         }
+        const qa = typeof answer === 'string' ? undefined : answer?.qa;
         pending = {
           ...pending,
-          answers: [...pending.answers, { reply: pending.text, answer }],
+          answers: [...pending.answers, { reply: pending.text, answer: replyText }],
           answered: true,
         };
         state = transitionAndSave({ projectDir, sessionId }, state, {
@@ -114,9 +117,14 @@ export async function runPlannerCallInContinuationLoop(
         });
         appendMessage(
           { projectDir, sessionId },
-          { role: 'user', phase: state.phase, text: answer },
+          {
+            role: 'user',
+            phase: state.phase,
+            text: replyText,
+            ...(qa !== undefined && qa.length > 0 ? { qa } : {}),
+          },
         );
-        publishUserMessage({ bus: wctx.bus, phase: state.phase }, answer);
+        publishUserMessage({ bus: wctx.bus, phase: state.phase }, replyText, qa);
         answeringQuestion = true;
       }
       if (seed === undefined || answeringQuestion) {

@@ -52,6 +52,7 @@ export async function readRunEvents(ref: SessionRef): Promise<RunReplay> {
           ts,
           phase: entry.phase ?? 'idle',
           text: entry.text,
+          ...(entry.qa !== undefined && { qa: entry.qa }),
         });
         restoredMessages += 1;
       }

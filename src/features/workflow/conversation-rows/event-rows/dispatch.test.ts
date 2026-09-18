@@ -624,6 +624,145 @@ describe('event row dispatch', () => {
     for (const row of rows.slice(1)) expect(row.kind).toBe('message');
   });
 
+  it('renders answered structured questions as voice-coded q/a pairs', () => {
+    const block = eventRowBlock({
+      event: {
+        type: 'user_message',
+        ts: 1,
+        phase: 'clarifying',
+        text: '1. What should be refactored? Give a file/module/feature name or area of the codebase.\nI want you to first review the changes and then after review make tasks of fixes for implementer\n\n2. What kind of refactor?\nSimplify/clean up existing code',
+        qa: [
+          {
+            question:
+              'What should be refactored? Give a file/module/feature name or area of the codebase.',
+            answer:
+              'I want you to first review the changes and then after review make tasks of fixes for implementer',
+          },
+          { question: 'What kind of refactor?', answer: 'Simplify/clean up existing code' },
+        ],
+      },
+      globalIndex: 4,
+      ctx: { width: 60, viewportRows: 40, streaming },
+      expanded: false,
+    });
+    const rows = block?.createRows(0, block.rowCount) ?? [];
+    const texts = rows.map(rowText);
+
+    expect(texts).toEqual([
+      'Answered · 2 questions',
+      '',
+      '1. What should be refactored? Give a file/module/feature ',
+      '   name or area of the codebase.',
+      '   I want you to first review the changes and then after ',
+      '   review make tasks of fixes for implementer',
+      '2. What kind of refactor?',
+      '   Simplify/clean up existing code',
+    ]);
+    expect(rows[0]?.kind).toBe('prompt');
+    expect(rows[0]?.segments[0]?.tone).toBe('textDim');
+    expect(rows[0]?.segments[0]?.bold).toBe(true);
+    expect(rows[0]?.segments[1]?.tone).toBe('planner');
+    expect(rows[0]?.segments[1]?.bold).toBe(true);
+    expect(rows[2]?.segments[0]?.text).toBe('1.');
+    expect(rows[2]?.segments[0]?.tone).toBe('planner');
+    expect(rows[2]?.segments[0]?.bold).toBe(true);
+    expect(rows[2]?.segments[1]?.tone).toBeUndefined();
+    expect(rows[2]?.segments[2]?.tone).toBe('planner');
+    expect(rows[2]?.segments[2]?.bold).not.toBe(true);
+    expect(rows[3]?.segments[0]?.tone).toBe('planner');
+    expect(rows.slice(2, 4).every((rowValue) => rowValue.segments[0]?.tone === 'planner')).toBe(
+      true,
+    );
+    expect(rows.slice(4, 6).every((rowValue) => rowValue.segments[0]?.tone === 'text')).toBe(true);
+    expect(rows.slice(4, 6).every((rowValue) => rowValue.segments[0]?.bold === false)).toBe(true);
+
+    expect(rows.filter((rowValue) => rowValue.kind === 'prompt')).toHaveLength(1);
+    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 60)).toBe(true);
+  });
+
+  it('labels a single answered question in the singular', () => {
+    const rows = eventRows({
+      event: {
+        type: 'user_message',
+        ts: 0,
+        phase: 'clarifying',
+        text: '1. Which module?\nsrc/auth.ts',
+        qa: [{ question: 'Which module?', answer: 'src/auth.ts' }],
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual([
+      'Answered · 1 question',
+      '',
+      '1. Which module?',
+      '   src/auth.ts',
+    ]);
+  });
+
+  it('pulls a stranded wrap word down so no line ends the block as one lone word', () => {
+    const rows = eventRows({
+      event: {
+        type: 'user_message',
+        ts: 0,
+        phase: 'clarifying',
+        text: '1. What should be refactored? Give a file/module/feature name or area of the codebase.\nReview',
+        qa: [
+          {
+            question:
+              'What should be refactored? Give a file/module/feature name or area of the codebase.',
+            answer: 'Review',
+          },
+        ],
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual([
+      'Answered · 1 question',
+      '',
+      '1. What should be refactored? Give a file/module/feature name or area of',
+      '   the codebase.',
+      '   Review',
+    ]);
+  });
+
+  it('aligns every number to the widest label so all question text shares one column', () => {
+    const rows = eventRows({
+      event: {
+        type: 'user_message',
+        ts: 0,
+        phase: 'clarifying',
+        text: 'x',
+        qa: Array.from({ length: 11 }, (_, index) => ({
+          question: `Question ${index + 1}?`,
+          answer: `Answer ${index + 1}`,
+        })),
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 40, streaming },
+    });
+
+    // `11.` is the widest label, so every number pads to its width plus one space and every
+    // answer shares the column the question text starts at. The bold numbers alone separate
+    // the pairs — no blank rows between them.
+    const expected = [
+      'Answered · 11 questions',
+      '',
+      ...Array.from({ length: 11 }, (_, index) =>
+        index === 0
+          ? ['1.  Question 1?', '    Answer 1']
+          : [`${`${index + 1}.`.padEnd(4)}Question ${index + 1}?`, `    Answer ${index + 1}`],
+      ).flat(),
+    ];
+    expect(rows.map(rowText)).toEqual(expected);
+  });
+
   it('renders user_message rows without the heavy-angle prompt marker', () => {
     const text = eventRows({
       event: {

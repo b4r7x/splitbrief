@@ -50,8 +50,8 @@ function plannerText(phase: Phase, ts = 1): EngineEvent {
 }
 
 describe('getChromeContentWidth', () => {
-  it('spans the full terminal width and clamps to one column', () => {
-    expect(getChromeContentWidth(120)).toBe(120);
+  it('spans the width inside the frame and clamps to one column', () => {
+    expect(getChromeContentWidth(120)).toBe(118);
     expect(getChromeContentWidth(0)).toBe(1);
   });
 });
@@ -239,9 +239,10 @@ describe('selectRailForm', () => {
     forceUnicodeGlyphs();
     const stages = getRailStages('implementing');
     const min = measureFormB(stages, { short: true }, 'unicode');
-    // contentWidth = cols; at exactly `min` it fits (B), one cell under it does not (C).
-    expect(selectRailForm({ phase: 'implementing', cols: min })).toBe('B');
-    expect(selectRailForm({ phase: 'implementing', cols: min - 1 })).toBe('C');
+    // The rail renders inside the frame, so Form B holds while the framed width seats the line
+    // and drops one cell below it. `min` framed cells needs `min` + 2 terminal columns.
+    expect(selectRailForm({ phase: 'implementing', cols: min + 2 })).toBe('B');
+    expect(selectRailForm({ phase: 'implementing', cols: min + 1 })).toBe('C');
   });
 
   it('stays horizontal (Form B) on a wide terminal in every phase', () => {
@@ -307,9 +308,11 @@ describe('getProgressRows', () => {
     expect(getProgressRows({ phase: 'idle', cols: 120 })).toBe(0);
   });
 
-  it('collapses with the width while a brief is building', () => {
-    expect(getProgressRows({ phase: 'implementing', cols: 120 })).toBe(2);
-    expect(getProgressRows({ phase: 'validating-task', cols: 80 })).toBe(4);
+  it('collapses with the framed width while a brief is building', () => {
+    expect(getProgressRows({ phase: 'implementing', cols: 122 })).toBe(2);
+    expect(getProgressRows({ phase: 'implementing', cols: 120 })).toBe(4);
+    expect(getProgressRows({ phase: 'validating-task', cols: 82 })).toBe(4);
+    expect(getProgressRows({ phase: 'validating-task', cols: 80 })).toBe(5);
     expect(getProgressRows({ phase: 'final-review', cols: 60 })).toBe(5);
   });
 

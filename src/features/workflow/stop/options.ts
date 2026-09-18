@@ -2,6 +2,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { wrapHard } from '../../../utils/wrap.js';
 import { selectRunningBrief, tasksStore } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
 
 export type StopRowId =
   | 'stop-now'
@@ -24,7 +25,8 @@ export const STOP_SHEET_FOOTER = 'Changes and draft stay.';
 export const STOP_SHEET_LEGEND = '↑↓ select · enter confirm · esc stop · tab back';
 
 export function stopMenuLayout(rows: readonly StopRow[], cols: number) {
-  const width = Math.min(cols, 96);
+  // The sheet renders inside the screen frame, so its cap is the framed width.
+  const width = Math.min(getChromeContentWidth(cols), 96);
   const innerWidth = Math.max(1, width - 6);
   const options = rows.map((row) => ({
     row,

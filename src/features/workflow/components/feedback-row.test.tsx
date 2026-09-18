@@ -6,7 +6,7 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
-import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
+import { COMPOSER_EDGE_PADDING_X } from '../layout/chrome-rows.js';
 import { REVIEW_HINT } from '../review-commands.js';
 import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
 
@@ -19,13 +19,13 @@ describe('FeedbackRow', () => {
     resetAllStores();
   });
 
-  it('aligns feedback with the workflow content inset', () => {
+  it('aligns feedback with the composer input edge', () => {
     feedbackStore.setMessage('Message queued for the next planner turn.');
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame.indexOf('Message queued')).toBe(WORKFLOW_CONTENT_PADDING_X);
+    expect(frame.indexOf('Message queued')).toBe(COMPOSER_EDGE_PADDING_X);
 
     ui.unmount();
   });
