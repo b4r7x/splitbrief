@@ -2,7 +2,7 @@ import type { AnsweredQuestion } from '../../../../core/schemas/question.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import { rowsBlock } from '../row-block-compose.js';
 import { wrapWidthFor } from '../row-markers.js';
-import { blankRow, row, segmentedRow } from '../row-format/rows.js';
+import { row, segmentedRow } from '../row-format/rows.js';
 import { wrappedRowTexts } from '../row-format/text.js';
 import type { ConversationRow, ConversationRowBlock } from '../types.js';
 
@@ -23,7 +23,9 @@ function wrappedLines(text: string, width: number): string[] {
 
 // The last pair carries the widest number label, so its width plus one space is the column every
 // question body starts at; answers share that column, the change of voice carried by tone alone.
-// Pairs carry their own separation: the bold number labels, not blank rows between them.
+// Separation is carried by weight, not blank rows: the bold header sits directly on the first
+// pair — the way an activity header sits on its children — and the bold number labels separate
+// the pairs.
 export function answeredQuestionsRowBlock(input: {
   keyPrefix: string;
   qa: readonly AnsweredQuestion[];
@@ -42,7 +44,6 @@ export function answeredQuestionsRowBlock(input: {
       ],
       'prompt',
     ),
-    blankRow(`${input.keyPrefix}-gap`),
   ];
   input.qa.forEach((pair, index) => {
     const label = `${index + 1}.`;

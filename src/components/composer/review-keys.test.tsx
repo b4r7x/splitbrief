@@ -180,9 +180,9 @@ describe('Composer review action keys', () => {
     ui.stdin.write('\r');
     await flushEffects();
 
-    // Review mode submits the draft verbatim — the leading space is the seed, not a trim bug —
-    // and the parser is what settles it, exactly as it does for text arriving over IPC.
-    expect(submissions).toEqual([` ${typed}`]);
+    // The seed keeps the keys in text mode while it lives in the draft; send strips it as typing
+    // residue, and the parser settles the word — exactly as it does for text arriving over IPC.
+    expect(submissions).toEqual([typed]);
     expect(parseReviewCommand(submissions[0] ?? '')).toEqual(parsed);
     ui.unmount();
   });

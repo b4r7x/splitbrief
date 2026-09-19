@@ -469,7 +469,9 @@ function ComposerInput({
   // One send path for every mode: the serializer decides what the runner reads, and the images it
   // validated are the ones parked for the call. Only the gates in front of it differ.
   const send = (candidate: DraftDocument, record: boolean): boolean => {
-    const submission = prepareDraftSubmission(candidate, {
+    // Submitted text crosses this boundary exactly once, so this is where typing residue comes
+    // off; the draft itself keeps what was typed, whitespace included.
+    const submission = prepareDraftSubmission(trimDraftDocument(candidate), {
       projectDir,
       supportsImages: plannerSupportsImages,
     });

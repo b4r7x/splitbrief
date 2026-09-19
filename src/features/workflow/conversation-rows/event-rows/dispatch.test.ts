@@ -650,7 +650,6 @@ describe('event row dispatch', () => {
 
     expect(texts).toEqual([
       'Answered · 2 questions',
-      '',
       '1. What should be refactored? Give a file/module/feature ',
       '   name or area of the codebase.',
       '   I want you to first review the changes and then after ',
@@ -663,18 +662,18 @@ describe('event row dispatch', () => {
     expect(rows[0]?.segments[0]?.bold).toBe(true);
     expect(rows[0]?.segments[1]?.tone).toBe('planner');
     expect(rows[0]?.segments[1]?.bold).toBe(true);
-    expect(rows[2]?.segments[0]?.text).toBe('1.');
+    expect(rows[1]?.segments[0]?.text).toBe('1.');
+    expect(rows[1]?.segments[0]?.tone).toBe('planner');
+    expect(rows[1]?.segments[0]?.bold).toBe(true);
+    expect(rows[1]?.segments[1]?.tone).toBeUndefined();
+    expect(rows[1]?.segments[2]?.tone).toBe('planner');
+    expect(rows[1]?.segments[2]?.bold).not.toBe(true);
     expect(rows[2]?.segments[0]?.tone).toBe('planner');
-    expect(rows[2]?.segments[0]?.bold).toBe(true);
-    expect(rows[2]?.segments[1]?.tone).toBeUndefined();
-    expect(rows[2]?.segments[2]?.tone).toBe('planner');
-    expect(rows[2]?.segments[2]?.bold).not.toBe(true);
-    expect(rows[3]?.segments[0]?.tone).toBe('planner');
-    expect(rows.slice(2, 4).every((rowValue) => rowValue.segments[0]?.tone === 'planner')).toBe(
+    expect(rows.slice(1, 3).every((rowValue) => rowValue.segments[0]?.tone === 'planner')).toBe(
       true,
     );
-    expect(rows.slice(4, 6).every((rowValue) => rowValue.segments[0]?.tone === 'text')).toBe(true);
-    expect(rows.slice(4, 6).every((rowValue) => rowValue.segments[0]?.bold === false)).toBe(true);
+    expect(rows.slice(3, 5).every((rowValue) => rowValue.segments[0]?.tone === 'text')).toBe(true);
+    expect(rows.slice(3, 5).every((rowValue) => rowValue.segments[0]?.bold === false)).toBe(true);
 
     expect(rows.filter((rowValue) => rowValue.kind === 'prompt')).toHaveLength(1);
     expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 60)).toBe(true);
@@ -696,7 +695,6 @@ describe('event row dispatch', () => {
 
     expect(rows.map(rowText)).toEqual([
       'Answered · 1 question',
-      '',
       '1. Which module?',
       '   src/auth.ts',
     ]);
@@ -724,7 +722,6 @@ describe('event row dispatch', () => {
 
     expect(rows.map(rowText)).toEqual([
       'Answered · 1 question',
-      '',
       '1. What should be refactored? Give a file/module/feature name or area of',
       '   the codebase.',
       '   Review',
@@ -753,7 +750,6 @@ describe('event row dispatch', () => {
     // the pairs — no blank rows between them.
     const expected = [
       'Answered · 11 questions',
-      '',
       ...Array.from({ length: 11 }, (_, index) =>
         index === 0
           ? ['1.  Question 1?', '    Answer 1']

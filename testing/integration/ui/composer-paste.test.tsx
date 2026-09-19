@@ -64,7 +64,7 @@ describe('composer paste capture', () => {
     ui.unmount();
   });
 
-  it('preserves leading spaces and trailing newlines through send and history recall', async () => {
+  it('keeps the pasted lines intact, trimming only the edges at send and history recall', async () => {
     const submissions: string[] = [];
     const text = '  alpha\nbeta\ngamma\ndelta\n';
     const ui = renderDockedComposer({
@@ -85,7 +85,9 @@ describe('composer paste capture', () => {
       await flushEffects();
       ui.stdin.write(ENTER);
       await flushEffects();
-      expect(submissions).toEqual([text, text]);
+      // The paste itself is untouched — every interior line break survives — while the leading
+      // spaces and the trailing newline come off at send; history recalls the same trimmed text.
+      expect(submissions).toEqual(['alpha\nbeta\ngamma\ndelta', 'alpha\nbeta\ngamma\ndelta']);
     } finally {
       ui.unmount();
     }

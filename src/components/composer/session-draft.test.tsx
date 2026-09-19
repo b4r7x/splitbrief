@@ -152,6 +152,33 @@ describe('unsent session composer draft', () => {
     ui.unmount();
   });
 
+  it('keeps a whitespace-padded draft verbatim on disk when the submit trims it', async () => {
+    const ref = { projectDir, sessionId: 'one' };
+    open('one');
+    const onSubmit = vi.fn();
+    const ui = renderFeature(
+      <Composer
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        submitKeepsDraft
+        commands={[]}
+        onSubmit={onSubmit}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('  keep my spacing  ');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    flushSessionDrafts();
+
+    expect(onSubmit).toHaveBeenCalledWith('keep my spacing');
+    expect(readSessionDraft(ref)).toEqual(createDraftDocument('  keep my spacing  '));
+    ui.unmount();
+  });
+
   it('flushes a consumed quit command as an empty draft before its handler exits', async () => {
     const ref = { projectDir, sessionId: 'one' };
     writeSessionDraft(ref, createDraftDocument('/quit'));

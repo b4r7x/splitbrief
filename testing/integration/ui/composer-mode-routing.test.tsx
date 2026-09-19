@@ -148,7 +148,7 @@ describe('composer mode routing', () => {
     ui.stdin.write(ENTER);
     await flushEffects();
 
-    expect(submits).toEqual(['   ']);
+    expect(submits).toEqual(['']);
     expect(emptySubmits).toEqual([]);
 
     ui.unmount();

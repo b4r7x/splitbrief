@@ -14,8 +14,9 @@ import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { glyph } from '../../lib/glyphs.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
+import { createDraftDocument } from '../../core/composer/document.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
-import { inputHistoryStore } from '../../stores/ui/input-history.js';
+import { getInputHistoryDocuments, inputHistoryStore } from '../../stores/ui/input-history.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
@@ -218,6 +219,84 @@ describe('Composer submit draft retention', () => {
     await flushEffects();
 
     expect(ui.lastFrame()).toContain('⠋');
+    ui.unmount();
+  });
+});
+
+describe('Composer submit trimming', () => {
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+  });
+
+  it('trims leading and trailing whitespace from a submitted draft', async () => {
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('  padded feature  ');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(submissions).toEqual(['padded feature']);
+    expect(getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'home' })).toEqual([
+      createDraftDocument('padded feature'),
+    ]);
+    ui.unmount();
+  });
+
+  it('trims a question answer at the submit boundary', async () => {
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="question"
+        hint="Blocking question"
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('  spaced answer  ');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(submissions).toEqual(['spaced answer']);
+    ui.unmount();
+  });
+
+  it('keeps interior blank lines while trimming the ends', async () => {
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    composerDraftStore.requestDocument(
+      createDraftDocument('  fix the parser\n\nthen the tests\n\n'),
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(submissions).toEqual(['fix the parser\n\nthen the tests']);
     ui.unmount();
   });
 });

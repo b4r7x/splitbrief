@@ -326,7 +326,6 @@ emit({type: 'result', result: documents[calls.length - 1]});
     expect(rows.map((row) => row.kind)[0]).toBe('prompt');
     expect(rows.map((row) => row.segments.map((segment) => segment.text).join(''))).toEqual([
       'Answered · 1 question',
-      '',
       '1. Which module should change?',
       '   Refactor src/auth.ts; preserve the public API.',
     ]);
