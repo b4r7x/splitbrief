@@ -5,8 +5,8 @@ import { ConversationFlow } from './conversation-flow/flow.js';
 import { Sidebar } from './sidebar.js';
 import { ReviewView } from './review-view.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
-import { getReviewColumnWidth, REVIEW_MIN_ROWS, WORKFLOW_SIDEBAR_GAP } from '../layout/rect.js';
-import { WORKFLOW_FRAME_X } from '../layout/chrome-rows.js';
+import { REVIEW_MIN_ROWS, WORKFLOW_SIDEBAR_GAP } from '../layout/rect.js';
+import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 
 export function WorkflowBody({
   showSidebar,
@@ -37,20 +37,26 @@ export function WorkflowBody({
     (reviewFilePath ?? '') !== '' &&
     contentHeight >= REVIEW_MIN_ROWS;
   const isConversationMode = !showReview;
-  const reviewWidth = getReviewColumnWidth(contentWidth);
   useEffect(() => {
     if (isConversationMode) return;
     onScrollAbove?.('');
     onScrollBelow?.('');
   }, [isConversationMode, onScrollAbove, onScrollBelow]);
 
+  // The transcript spends the gutter as its own lead, so the pane starts at column 0; the sidebar is
+  // a box, and it stands on the gutter line the transcript's marks do.
   return (
-    <Box flexDirection="row" flexGrow={1} paddingX={WORKFLOW_FRAME_X}>
+    <Box
+      flexDirection="row"
+      flexGrow={1}
+      paddingLeft={showSidebar ? WORKFLOW_GUTTER_X : 0}
+      paddingRight={WORKFLOW_GUTTER_X}
+    >
       {showSidebar && <Sidebar width={sidebarWidth} height={contentHeight} />}
       {showSidebar && <Box width={WORKFLOW_SIDEBAR_GAP} flexShrink={0} />}
       <Box flexDirection="column" flexGrow={1} minWidth={0} overflow="hidden">
         {showReview ? (
-          <ReviewView height={contentHeight} width={reviewWidth} />
+          <ReviewView height={contentHeight} width={contentWidth} />
         ) : (
           <ConversationFlow
             height={contentHeight}

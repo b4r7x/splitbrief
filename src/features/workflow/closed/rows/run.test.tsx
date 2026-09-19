@@ -77,10 +77,10 @@ describe('runSectionRows', () => {
     const ui = renderRun({ summary: priced, width: 100, crewNamed: true });
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
 
-    expect(lines[0]).toContain(`Run ${glyph('divider')}`);
-    const labelled = lines.filter((line) => /^[A-Z][a-z]+ {2,}/.test(line));
+    expect(lines[0]).toContain(`   Run ${glyph('divider')}`);
+    const labelled = lines.filter((line) => /^ {3}[A-Z][a-z]+ {2,}/.test(line));
     expect(labelled.length).toBeGreaterThan(2);
-    for (const line of labelled) expect(line.slice(8, 10)).toBe('  ');
+    for (const line of labelled) expect(line.slice(11, 13)).toBe('  ');
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('saved');
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('2026-09-14-add-email-validation');
 
@@ -121,7 +121,7 @@ describe('runSectionRows', () => {
     const crewLine =
       stripAnsiStyles(unnamed.lastFrame() ?? '')
         .split('\n')
-        .find((line) => line.startsWith('Crew')) ?? '';
+        .find((line) => line.startsWith('   Crew')) ?? '';
     expect(crewLine).toContain('PLAN OpenAI Codex CLI');
     expect(crewLine).toContain('BUILD qwen-small');
     unnamed.unmount();
@@ -137,7 +137,7 @@ describe('runSectionRows', () => {
 
     expect(wide).toContain('2026-09-14-add-email-validation · standard');
     expect(narrow).not.toContain('standard');
-    expect(narrow).toContain('2026-09-14-…l-validation');
+    expect(narrow).toContain('2026-09-14…validation');
     for (const line of narrow.split('\n')) expect(line.length).toBeLessThanOrEqual(34);
   });
 });

@@ -15,6 +15,7 @@ import {
   getChromeContentWidth,
   railConnectorWidth,
   railFormBSegmentWidth,
+  WORKFLOW_GUTTER_X,
   type RailForm,
 } from './chrome-rows.js';
 import type { WorkflowContentRect } from './rect.js';
@@ -97,9 +98,10 @@ export function hitBriefTaskRow(
 
 // The phase rail shares the header row, so the first stage line is the 1st 1-based screen row.
 export const RAIL_STAGE_FIRST_ROW = 1;
-// The header row is flush to the terminal edge (no paddingX), so the first rail stage's marker
-// glyph renders in the 1st 1-based column.
-export const RAIL_CONTENT_LEFT_COL = 1;
+// The rail row sits inside the header's WORKFLOW_GUTTER_X padding, so the first rail stage's marker
+// glyph renders on that gutter column. Derived from the padding the renderer applies so the zones
+// and the paint cannot drift apart.
+export const RAIL_CONTENT_LEFT_COL = WORKFLOW_GUTTER_X;
 // Marker plus trailing space prefixes the active label in the Form-C line.
 const RAIL_GLYPH_PREFIX_WIDTH = 2;
 const RAIL_FORM_C_FRACTION_PREFIX = '  task ';

@@ -5,7 +5,8 @@ import {
   endedInPlanning,
   makeView,
 } from '#testing/helpers/factories/summary-view.js';
-import { outcomeLine, outcomeMarker } from './outcome.js';
+import { glyph } from '../../../lib/glyphs.js';
+import { outcomeLeading, outcomeLine, outcomeMarker, OUTCOME_LEADING_CELLS } from './outcome.js';
 
 describe('outcomeLine', () => {
   it('states a ready run in one sentence', () => {
@@ -88,9 +89,20 @@ describe('outcomeLine', () => {
     expect(outcomeLine(none, WIDE)).toContain('nothing built');
   });
 
+  // The transcript's leading, pinned by value: one empty cell the hover bar paints into, then the
+  // mark and its trailing space. Nothing else in the suite pins it, so stated here as a literal
+  // rather than derived from the same call the width budget is measured against.
+  it('leads the outcome with one empty cell and the mark, three cells all told', () => {
+    expect(outcomeLeading(glyph('statusCancelled'))).toBe(` ${glyph('statusCancelled')} `);
+    expect(OUTCOME_LEADING_CELLS).toBe(3);
+  });
+
   it.each([120, 80, 60])('sheds whole facts from the tail at %i columns', (width) => {
     const line = outcomeLine(makeView(), width);
-    expect(line.length).toBeLessThanOrEqual(width - 2);
+    // A pinned literal, not width - OUTCOME_LEADING_CELLS: outcomeLine truncates to exactly its own
+    // budget, so deriving this bound from the same constant moved both sides and let a leading that
+    // changed width pass unnoticed.
+    expect(line.length).toBeLessThanOrEqual(width - 3);
     expect(line.startsWith('Ready · 3/3 briefs passed')).toBe(true);
     for (const token of line.split(' · ')) {
       expect(

@@ -13,8 +13,15 @@ import {
 } from '../utils/display-text.js';
 import { countNoun } from '../utils/pluralize.js';
 import { glyph, type GlyphName } from '../lib/glyphs.js';
+import { ROW_LEADING } from './row-leading.js';
 
-const MARKER_CELLS = 2;
+// The transcript's leading: the shared one-cell pad the hover bar paints into, then the marker and
+// its trailing space. A brief's mark lands on column 1 with its title on column 3, the same shape a
+// live row's header wears; the budget pays for every cell, measured off the leading itself.
+function leadingWith(mark: string): string {
+  return `${ROW_LEADING}${mark} `;
+}
+const LEADING_CELLS = getTerminalCellWidth(leadingWith(glyph('check')));
 // Two spaces divide the title from the detail run, `·` divides the run's own parts — the same two
 // levels a running task header uses, so a settled row and a live row read the same way.
 const TITLE_SEP = '  ';
@@ -29,7 +36,7 @@ interface FittedDetailRun {
 // models-dev.ts or models-detect.ts. Whole segments come off the tail instead, and the last one
 // standing is fitted from the middle so a path keeps both of its ends.
 export function fitDetailRun(head: string, tail: string[], width: number): FittedDetailRun {
-  const budget = Math.max(0, width - MARKER_CELLS);
+  const budget = Math.max(0, width - LEADING_CELLS);
   const segments = [...tail];
   const cells = (parts: string[]): number =>
     getTerminalCellWidth(parts.length === 0 ? head : `${head}${TITLE_SEP}${parts.join(SOFT_SEP)}`);
@@ -114,19 +121,25 @@ export function TaskSummary({
   const safeNote = note === undefined ? undefined : sanitizeTerminalDisplayText(note);
   const head = `${id} ${safeTitle}`;
   const marker = markerSpec(state, t);
-  // One two-cell marker slot for every row kind, so a settled brief and a pending one line their
-  // markers up in the same column instead of sitting two apart.
+  // One leading for every row kind — the transcript's padding then the marker slot — so a settled
+  // brief and a pending one line their marks up in the same column, and that column is the one the
+  // live transcript uses.
   //
-  // The focus bar is `text`, not `accent`: this glyph also marks the live row in the sidebar and
-  // the focused row in the transcript, and one glyph wearing three colours across three panes
-  // reads as three different affordances.
+  // Focus paints the bar into the padding cell and keeps the mark, the way a focused transcript row
+  // does, so the mark never leaves the line. The bar is `text`, not `accent`: this glyph also marks
+  // the live row in the sidebar and the focused row in the transcript, and one glyph wearing three
+  // colours across three panes reads as three different affordances.
+  const leading = leadingWith(glyph(marker.name));
   const markerSlot =
     focused === true ? (
-      <Text color={t.text} bold>
-        {`${glyph('liveBar')} `}
+      <Text>
+        <Text color={t.text} bold>
+          {glyph('liveBar')}
+        </Text>
+        <Text color={marker.color}>{leading.slice(1)}</Text>
       </Text>
     ) : (
-      <Text color={marker.color}>{`${glyph(marker.name)} `}</Text>
+      <Text color={marker.color}>{leading}</Text>
     );
 
   if (state.kind === 'settled' && state.method === 'failed') {

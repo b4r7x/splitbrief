@@ -652,10 +652,10 @@ describe('event row dispatch', () => {
       'Answered · 2 questions',
       '1. What should be refactored? Give a file/module/feature ',
       '   name or area of the codebase.',
-      '   I want you to first review the changes and then after ',
-      '   review make tasks of fixes for implementer',
+      'I want you to first review the changes and then after ',
+      'review make tasks of fixes for implementer',
       '2. What kind of refactor?',
-      '   Simplify/clean up existing code',
+      'Simplify/clean up existing code',
     ]);
     expect(rows[0]?.kind).toBe('prompt');
     expect(rows[0]?.segments[0]?.tone).toBe('textDim');
@@ -679,6 +679,42 @@ describe('event row dispatch', () => {
     expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 60)).toBe(true);
   });
 
+  it('starts a wrapped continuation on the column of the line it continues', () => {
+    // At 59 columns the `trim: false` wrapper wedges its break space onto the head of the
+    // continuation line, one cell past the line above. The block trims it back so the question's
+    // continuation keeps the gutter column and the answer's continuation keeps the content column.
+    const rows = eventRows({
+      event: {
+        type: 'user_message',
+        ts: 0,
+        phase: 'clarifying',
+        text: 'x',
+        qa: [
+          {
+            question:
+              'What should be refactored? Give a file/module/feature name or area of the codebase.',
+            answer:
+              'I want you to first review the changes and then after review make tasks of fixes for implementer',
+          },
+          { question: 'What kind of refactor?', answer: 'Simplify/clean up existing code' },
+        ],
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 59, viewportRows: 40, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual([
+      'Answered · 2 questions',
+      '1. What should be refactored? Give a file/module/feature',
+      '   name or area of the codebase.',
+      'I want you to first review the changes and then after',
+      'review make tasks of fixes for implementer',
+      '2. What kind of refactor?',
+      'Simplify/clean up existing code',
+    ]);
+  });
+
   it('labels a single answered question in the singular', () => {
     const rows = eventRows({
       event: {
@@ -693,11 +729,7 @@ describe('event row dispatch', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText)).toEqual([
-      'Answered · 1 question',
-      '1. Which module?',
-      '   src/auth.ts',
-    ]);
+    expect(rows.map(rowText)).toEqual(['Answered · 1 question', '1. Which module?', 'src/auth.ts']);
   });
 
   it('pulls a stranded wrap word down so no line ends the block as one lone word', () => {
@@ -724,11 +756,11 @@ describe('event row dispatch', () => {
       'Answered · 1 question',
       '1. What should be refactored? Give a file/module/feature name or area of',
       '   the codebase.',
-      '   Review',
+      'Review',
     ]);
   });
 
-  it('aligns every number to the widest label so all question text shares one column', () => {
+  it('aligns every number to the widest label so questions share one column, and starts every answer on the content column', () => {
     const rows = eventRows({
       event: {
         type: 'user_message',
@@ -746,14 +778,15 @@ describe('event row dispatch', () => {
     });
 
     // `11.` is the widest label, so every number pads to its width plus one space and every
-    // answer shares the column the question text starts at. The bold numbers alone separate
-    // the pairs — no blank rows between them.
+    // question hangs at that shared column. Each answer carries no mark, so it starts on the
+    // content column with no leading indent. The bold numbers alone separate the pairs — no blank
+    // rows between them.
     const expected = [
       'Answered · 11 questions',
       ...Array.from({ length: 11 }, (_, index) =>
         index === 0
-          ? ['1.  Question 1?', '    Answer 1']
-          : [`${`${index + 1}.`.padEnd(4)}Question ${index + 1}?`, `    Answer ${index + 1}`],
+          ? ['1.  Question 1?', 'Answer 1']
+          : [`${`${index + 1}.`.padEnd(4)}Question ${index + 1}?`, `Answer ${index + 1}`],
       ).flat(),
     ];
     expect(rows.map(rowText)).toEqual(expected);

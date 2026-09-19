@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { configStore } from '../../src/stores/project/config.js';
+import { WORKFLOW_GUTTER_X } from '../../src/features/workflow/layout/chrome-rows.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
 import { findVisualScenario, REQUIRED_VIEWPORTS } from './catalog.js';
@@ -135,7 +136,7 @@ describe('workflow chrome spans the declared viewport', () => {
 
         assertChromeRowWidth('header divider', rows, headerDivider, renderViewport);
         assertChromeRowWidth('footer divider', rows, footerDivider, renderViewport);
-        assertChromeRowWidth('composer frame', rows, composerFrame, renderViewport);
+        assertGutterBoxRow('composer frame', rows, composerFrame, renderViewport);
       } finally {
         await handle.unmount();
       }
@@ -157,10 +158,32 @@ function assertChromeRowWidth(
   const measured = rowCellWidth(row);
   expect(
     measured,
-    `${label} row measures ${measured} cells at ${renderViewport.cols}x${renderViewport.rows}, expected ${renderViewport.cols - 1}`,
-  ).toBe(renderViewport.cols - 1);
-  // The frame: column 0 stays empty and the rule spans the rail at column 1.
-  expect(row[0]).toBe(' ');
+    `${label} row measures ${measured} cells at ${renderViewport.cols}x${renderViewport.rows}, expected ${renderViewport.cols}`,
+  ).toBe(renderViewport.cols);
+  // The rule bleeds: its first cell is painted, not a frame cell.
+  expect(row[0]).not.toBe(' ');
+}
+
+// A box stands on the gutter line and keeps the same gap from the right edge.
+function assertGutterBoxRow(
+  label: string,
+  rows: readonly string[],
+  rowIndex: number | undefined,
+  renderViewport: Viewport,
+): void {
+  expect(
+    rowIndex,
+    `${label} row not found at ${renderViewport.cols}x${renderViewport.rows}`,
+  ).not.toBeUndefined();
+  const row = rows[rowIndex ?? -1] ?? '';
+  const expected = renderViewport.cols - WORKFLOW_GUTTER_X;
+  expect(row.search(/\S/), `${label} row leaves the gutter line at ${renderViewport.cols}`).toBe(
+    WORKFLOW_GUTTER_X,
+  );
+  expect(
+    rowCellWidth(row),
+    `${label} row ends at ${rowCellWidth(row)} cells at ${renderViewport.cols}x${renderViewport.rows}, expected ${expected}`,
+  ).toBe(expected);
 }
 
 const BOX_DRAWING_START_CODE = 0x2500;
@@ -179,16 +202,14 @@ function rowCellWidth(row: string): number {
   return row.trimEnd().length;
 }
 
-// The chrome rows render inside the screen frame: one empty cell on each edge, the rule spanning
-// the rail between them. A framed rule row trims to a leading frame cell plus cols-2 rule cells.
+// The chrome rules bleed edge to edge: a rule row trims to exactly cols cells, every one the rule
+// glyph, with no frame cell in front of it.
 function isFullWidthRuleRow(row: string, cols: number): boolean {
   const cells = row.trimEnd();
-  if (cells.length !== cols - 1) return false;
-  if (!cells.startsWith(' ')) return false;
-  const rule = cells.slice(1);
-  const first = rule[0];
+  if (cells.length !== cols) return false;
+  const first = cells[0];
   if (first === undefined || first === ' ') return false;
-  for (const cell of rule) {
+  for (const cell of cells) {
     if (cell !== first) return false;
   }
   return true;

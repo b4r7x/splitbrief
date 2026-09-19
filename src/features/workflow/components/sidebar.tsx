@@ -65,8 +65,9 @@ const TASK_STATUS_GLYPH_NAME: Record<WorkflowTask['status'], GlyphName> = {
 
 // Bar, marker, and the space after it — the cells a task row paints before its title.
 const LIST_INDENT = '   ';
-// 2 border cells + 2 paddingX cells + the indent a marker row shares with the title column.
-const SIDEBAR_MARKER_ROW_OVERHEAD = 4 + LIST_INDENT.length;
+// 2 border cells + the 1-cell right padding + the indent a marker row shares with the title column;
+// the bar sits in the cell the left padding would take.
+const SIDEBAR_MARKER_ROW_OVERHEAD = 3 + LIST_INDENT.length;
 
 function statusGlyph(status: WorkflowTask['status']): string {
   return glyph(TASK_STATUS_GLYPH_NAME[status]);
@@ -281,7 +282,7 @@ export function Sidebar({ width, height }: SidebarProps) {
   const tasks = view.items;
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
-  const innerWidth = Math.max(0, width - 5);
+  const innerWidth = Math.max(0, width - 4);
 
   // The local-share row is unconditional; mode and the done/escalated split are not.
   const footerRows = seats.length + 1 + (mode ? 1 : 0) + (escalatedCount > 0 ? 1 : 0);
@@ -325,7 +326,7 @@ export function Sidebar({ width, height }: SidebarProps) {
       borderDimColor
     >
       {/* The header shares the footer's left edge so the panel reads on one column, not four. */}
-      <Box paddingLeft={2} paddingRight={1} flexShrink={0}>
+      <Box paddingX={1} flexShrink={0}>
         <Text color={t.textDim}>
           {view.total === 0 ? 'Tasks' : `Tasks ${view.passed}/${view.total}`}
         </Text>
@@ -333,7 +334,7 @@ export function Sidebar({ width, height }: SidebarProps) {
 
       <Box
         flexDirection="column"
-        paddingX={1}
+        paddingRight={1}
         marginTop={1}
         flexGrow={1}
         flexShrink={1}
@@ -348,10 +349,10 @@ export function Sidebar({ width, height }: SidebarProps) {
       </Box>
 
       <Box flexDirection="column" flexShrink={0}>
-        <Box paddingLeft={2} paddingRight={1}>
+        <Box paddingX={1}>
           <Divider width={innerWidth} />
         </Box>
-        <Box flexDirection="column" paddingLeft={2} paddingRight={1}>
+        <Box flexDirection="column" paddingX={1}>
           {mode && (
             <Text color={t.textDim}>
               {mode}

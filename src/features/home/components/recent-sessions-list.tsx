@@ -10,6 +10,7 @@ import { ROW_ZONE_Z_SCREEN } from '../../../components/pickers/row-zone.js';
 import { useFilterableList } from '../../../hooks/use-filterable-list.js';
 import { filterSession } from '../../../core/sessions/search.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { copyToClipboard } from '../../../lib/clipboard/clipboard.js';
 import { isUnmodifiedYInput } from '../../../lib/terminal/text-entry.js';
 
@@ -54,7 +55,10 @@ export function RecentSessionsList({
 
   return (
     <RecentSessionsShell>
+      {/* The shell insets its text by the mark slot; a frame belongs on the column the composer's
+          own box stands on, so the filter takes that inset back. */}
       <Box
+        marginLeft={-MARK_SLOT_CELLS}
         borderStyle={borderStyleFor('round')}
         borderColor={theme.border}
         paddingX={1}

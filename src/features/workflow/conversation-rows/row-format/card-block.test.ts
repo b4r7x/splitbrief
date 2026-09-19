@@ -97,7 +97,7 @@ describe('prepareCardRows', () => {
       label: 'output',
       bodyPrefix: '        ',
       bodyLines: [{ text: '界👩‍💻e\u0301x' }],
-      width: 12,
+      width: 13,
     });
     const bodyRows = card.createRows(1, card.rowCount);
     const bodyText = bodyRows.map((row) => row.segments.at(-1)?.text ?? '');
@@ -112,7 +112,7 @@ describe('prepareCardRows', () => {
       label: 'output',
       bodyPrefix: '        ',
       bodyLines: [{ text: '界\n👩‍💻' }],
-      width: 12,
+      width: 13,
     });
     const bodyRows = card.createRows(1, card.rowCount);
 

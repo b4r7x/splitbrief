@@ -1,5 +1,5 @@
 import { clamp } from '../../../utils/math.js';
-import { getChromeHeight, getContentTopRow, WORKFLOW_FRAME_X } from './chrome-rows.js';
+import { getChromeHeight, getContentTopRow, WORKFLOW_GUTTER_X } from './chrome-rows.js';
 
 export const WORKFLOW_SIDEBAR_GAP = 2;
 
@@ -7,8 +7,9 @@ export const SIDEBAR_BREAKPOINT_COLS = 120;
 const WORKFLOW_SIDEBAR_SHARE = 0.25;
 const WORKFLOW_SIDEBAR_MIN_WIDTH = 34;
 const WORKFLOW_SIDEBAR_MAX_WIDTH = 48;
-// 2 border cells + 2 paddingX cells + the 3-cell bar/marker/space prefix each row paints.
-const SIDEBAR_TASK_ROW_OVERHEAD = 7;
+// 2 border cells + the 1-cell right padding + the 3-cell bar/marker/space prefix each row paints;
+// the bar sits in the cell the left padding would take.
+const SIDEBAR_TASK_ROW_OVERHEAD = 6;
 const SIDEBAR_TASK_TITLE_MIN = 10;
 // `escalated` is the longest status word, plus the two cells of gap before it.
 const SIDEBAR_TASK_TAIL_CELLS = 11;
@@ -131,23 +132,23 @@ export function getSidebarTaskWindow(input: {
   return { start, end, hiddenAbove, hiddenBelow, showAbove, showBelow, combine };
 }
 
-// The gap exists only while the sidebar actually renders, so a hidden sidebar keeps the full width.
-function getWorkflowSidebarGap(input: SidebarWidthInput): number {
-  return getWorkflowSidebarWidth(input) > 0 ? WORKFLOW_SIDEBAR_GAP : 0;
+// The cells in front of the content pane. A visible sidebar stands on the gutter line with its gap
+// after it; without one the pane starts at column 0, because the transcript spends the gutter as
+// its own lead ahead of every row. A hidden sidebar costs neither the gutter nor the gap.
+function getWorkflowContentLeft(input: SidebarWidthInput): number {
+  const sidebarWidth = getWorkflowSidebarWidth(input);
+  return sidebarWidth > 0 ? WORKFLOW_GUTTER_X + sidebarWidth + WORKFLOW_SIDEBAR_GAP : 0;
 }
 
+// The pane stops one gutter short of the right edge, the gap the left edge keeps.
 export function getWorkflowContentWidth(input: SidebarWidthInput): number {
-  return Math.max(
-    0,
-    input.cols -
-      getWorkflowSidebarWidth(input) -
-      getWorkflowSidebarGap(input) -
-      WORKFLOW_FRAME_X * 2,
-  );
+  return Math.max(0, input.cols - getWorkflowContentLeft(input) - WORKFLOW_GUTTER_X);
 }
 
+// The review frame is a box, so its border stands on the transcript's mark column: one gutter in
+// from the pane's own left edge.
 export function getReviewColumnWidth(contentWidth: number): number {
-  return Math.max(0, contentWidth);
+  return Math.max(0, contentWidth - WORKFLOW_GUTTER_X);
 }
 
 export interface WorkflowContentRect {
@@ -209,12 +210,11 @@ export function getWorkflowViewportHeight(input: {
 
 export function getWorkflowContentRect(input: WorkflowContentRectInput): WorkflowContentRect {
   const { cols, rows, inputRows, sidebarVisible, promptRows = 0, progressRows = 0 } = input;
-  const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible });
   const width = getWorkflowContentWidth({ cols, sidebarVisible });
   const height = getWorkflowViewportHeight({ rows, inputRows, promptRows, progressRows });
-  // The pane's first painted column: frame cell in, past the sidebar and its gap. The rect is the
-  // hit-test truth, so it must agree with the column the body actually renders at.
-  const left = sidebarWidth + getWorkflowSidebarGap({ cols, sidebarVisible }) + WORKFLOW_FRAME_X;
+  // The pane's first painted column, past the sidebar and its gap. The rect is the hit-test truth,
+  // so it must agree with the column the body actually renders at.
+  const left = getWorkflowContentLeft({ cols, sidebarVisible });
   const top = getContentTopRow() + progressRows;
   const right = width > 0 ? left + width - 1 : left;
   const bottom = getWorkflowBodyBottom({ contentTop: top, contentHeight: height });

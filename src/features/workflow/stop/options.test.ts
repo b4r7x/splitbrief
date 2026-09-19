@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { STOP_SHEET_FOOTER, STOP_SHEET_LEGEND, stopSheetRows } from './options.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
+import { STOP_SHEET_FOOTER, STOP_SHEET_LEGEND, stopMenuLayout, stopSheetRows } from './options.js';
 
 describe('stopSheetRows', () => {
   it('names the brief it would finish and the one it would not start', () => {
@@ -50,5 +51,19 @@ describe('stopSheetRows', () => {
   it('promises no revert and only the three navigation keys', () => {
     expect(STOP_SHEET_FOOTER).toBe('Changes and draft stay.');
     expect(STOP_SHEET_LEGEND).toBe('↑↓ select · enter confirm · esc stop · tab back');
+  });
+});
+
+describe('stopMenuLayout', () => {
+  it('takes the composer width at every terminal width, so the two stacked boxes share both edges', () => {
+    const rows = stopSheetRows({
+      currentTaskId: 'T002',
+      nextTaskId: 'T003',
+      boundaryPauseRequested: false,
+    });
+
+    for (const cols of [60, 120, 220]) {
+      expect(stopMenuLayout(rows, cols).width).toBe(getChromeContentWidth(cols));
+    }
   });
 });

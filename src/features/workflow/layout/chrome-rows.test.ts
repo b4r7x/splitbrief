@@ -31,6 +31,7 @@ import {
   railFormBLabel,
   railFormBSegmentWidth,
   selectRailForm,
+  WORKFLOW_GUTTER_X,
 } from './chrome-rows.js';
 
 function driftReport(passed: boolean, ts = 1): EngineEvent {
@@ -50,7 +51,11 @@ function plannerText(phase: Phase, ts = 1): EngineEvent {
 }
 
 describe('getChromeContentWidth', () => {
-  it('spans the width inside the frame and clamps to one column', () => {
+  it('keeps the one-cell transcript lead as the gutter on both edges', () => {
+    expect(WORKFLOW_GUTTER_X).toBe(1);
+  });
+
+  it('spans the width inside the gutter and clamps to one column', () => {
     expect(getChromeContentWidth(120)).toBe(118);
     expect(getChromeContentWidth(0)).toBe(1);
   });
@@ -239,8 +244,8 @@ describe('selectRailForm', () => {
     forceUnicodeGlyphs();
     const stages = getRailStages('implementing');
     const min = measureFormB(stages, { short: true }, 'unicode');
-    // The rail renders inside the frame, so Form B holds while the framed width seats the line
-    // and drops one cell below it. `min` framed cells needs `min` + 2 terminal columns.
+    // The rail renders inside the gutter, so Form B holds while the width inside it seats the line
+    // and drops one cell below it. `min` cells inside the gutter need `min` + 2 terminal columns.
     expect(selectRailForm({ phase: 'implementing', cols: min + 2 })).toBe('B');
     expect(selectRailForm({ phase: 'implementing', cols: min + 1 })).toBe('C');
   });
@@ -308,7 +313,7 @@ describe('getProgressRows', () => {
     expect(getProgressRows({ phase: 'idle', cols: 120 })).toBe(0);
   });
 
-  it('collapses with the framed width while a brief is building', () => {
+  it('collapses with the width inside the gutter while a brief is building', () => {
     expect(getProgressRows({ phase: 'implementing', cols: 122 })).toBe(2);
     expect(getProgressRows({ phase: 'implementing', cols: 120 })).toBe(4);
     expect(getProgressRows({ phase: 'validating-task', cols: 82 })).toBe(4);

@@ -1,7 +1,7 @@
 import { getRailActiveIndex } from '../../../core/rail-stages.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readStopMenuRows, stopMenuLayout } from '../stop/options.js';
-import { getProgressRows, selectRailForm } from './chrome-rows.js';
+import { getProgressRows, selectRailForm, WORKFLOW_GUTTER_X } from './chrome-rows.js';
 import {
   briefListTopOffset,
   getRailStageZones,
@@ -182,14 +182,17 @@ export function readBriefListSnapshot(): BriefListSnapshot | null {
     promptRows,
     progressRows: readProgressRows(promptRows),
   });
-  // The brief column spans the full content pane (no width cap). Routing the width through
-  // getReviewColumnWidth keeps a single source of truth for the rendered column geometry so the
-  // hit-test rect can never drift from what the renderer paints.
+  // The brief column is the review frame: one gutter in from the pane, as wide as
+  // getReviewColumnWidth says. Routing both through the renderer's own measures keeps a single
+  // source of truth for the rendered column geometry, so the hit-test rect can never drift from
+  // what the renderer paints.
   const reviewWidth = getReviewColumnWidth(contentRect.width);
+  const left = contentRect.left + WORKFLOW_GUTTER_X;
   const rect = {
     ...contentRect,
+    left,
     width: reviewWidth,
-    right: reviewWidth > 0 ? contentRect.left + reviewWidth - 1 : contentRect.left,
+    right: reviewWidth > 0 ? left + reviewWidth - 1 : left,
   };
   const hasLoadError = hasReviewLoadError();
   const rowBudget = getSimpleBriefTaskRowBudget({

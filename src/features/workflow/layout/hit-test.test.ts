@@ -12,6 +12,7 @@ import {
   type RailStageZone,
 } from './hit-test.js';
 import type { WorkflowContentRect } from './rect.js';
+import { WORKFLOW_GUTTER_X } from './chrome-rows.js';
 
 function zoneByIndex(zones: RailStageZone[], index: number): RailStageZone {
   const zone = zones.find((z) => z.index === index);
@@ -165,6 +166,10 @@ describe('hitBriefTaskRow', () => {
 });
 
 describe('rail stage hit zones', () => {
+  it('derives the rail content origin from the gutter the rail row sits in', () => {
+    expect(RAIL_CONTENT_LEFT_COL).toBe(WORKFLOW_GUTTER_X);
+  });
+
   it('lays Form B stages left-to-right on the first rail row from the content edge', () => {
     const zones = getRailStageZones({
       form: 'B',

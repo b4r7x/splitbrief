@@ -4,6 +4,7 @@ import {
   BRAILLE_SPINNER_FRAMES,
   GLYPH_NAMES,
   LINE_SPINNER_FRAMES,
+  borderStyleFor,
   glyph,
   prefersBrailleSpinner,
   resolveGlyphTier,
@@ -65,5 +66,19 @@ describe('spinner frames', () => {
   it('falls back to the line spinner on the ascii tier', () => {
     expect(prefersBrailleSpinner({ TERM: 'dumb' })).toBe(false);
     expect(spinnerFrames({ TERM: 'dumb' })).toBe(LINE_SPINNER_FRAMES);
+  });
+});
+
+describe('borderStyleFor', () => {
+  it('keeps the named box-drawing frames on a unicode host', () => {
+    expect(borderStyleFor('round', 'unicode')).toBe('round');
+    expect(borderStyleFor('single', 'unicode')).toBe('single');
+    expect(borderStyleFor('bold', 'unicode')).toBe('bold');
+  });
+
+  it('falls back to the ascii frame at the ascii tier, every kind included', () => {
+    expect(borderStyleFor('round', 'ascii')).toBe('classic');
+    expect(borderStyleFor('single', 'ascii')).toBe('classic');
+    expect(borderStyleFor('bold', 'ascii')).toBe('classic');
   });
 });

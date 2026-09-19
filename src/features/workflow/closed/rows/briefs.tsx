@@ -1,8 +1,8 @@
 import type { ScrollableDocumentRow } from '../../../../components/scrollable-document.js';
 import type { SummaryView } from '../view-model.js';
-import { RuleHeader } from '../../../../components/rule-header.js';
 import { TaskSummary } from '../../../../components/task-summary.js';
 import { briefRowParts } from '../copy.js';
+import { LedgerRule } from './lead.js';
 
 /**
  * The ledger, in plan order: one row per brief the planner compiled, settled or not. It is the
@@ -13,7 +13,7 @@ export function briefsSectionRows(
 ): ScrollableDocumentRow[] {
   const { view, width } = input;
   const rows: ScrollableDocumentRow[] = [
-    { key: 'briefs-heading', node: <RuleHeader label="Briefs" width={width} /> },
+    { key: 'briefs-heading', node: <LedgerRule label="Briefs" width={width} /> },
   ];
   for (const row of view.briefs.rows) {
     rows.push({

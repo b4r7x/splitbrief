@@ -1,4 +1,5 @@
-import type { GlyphName } from '../../../lib/glyphs.js';
+import { glyph, type GlyphName } from '../../../lib/glyphs.js';
+import { ROW_LEADING } from '../../../components/row-leading.js';
 import type { ReviewView, ScopeView, SummaryView } from './view-model.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { isRailCurrent } from '../../../core/rail-stages.js';
@@ -7,8 +8,14 @@ import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../util
 import { countNoun } from '../../../utils/pluralize.js';
 import { findingCounts, type CopyTone } from './copy.js';
 
-/** The glyph slot every ledger row and the outcome line open with: marker plus its trailing space. */
-const MARKER_CELLS = 2;
+// The transcript's leading: the shared one-cell pad the hover bar paints into, then the outcome mark
+// and its trailing space. The mark lands on column 1 with the sentence on column 3, matching a
+// brief's own row, and the `width` a caller passes is the whole row, marker slot included.
+export function outcomeLeading(mark: string): string {
+  return `${ROW_LEADING}${mark} `;
+}
+
+export const OUTCOME_LEADING_CELLS = getTerminalCellWidth(outcomeLeading(glyph('statusCancelled')));
 
 export function outcomeMarker(view: SummaryView): Readonly<{ glyph: GlyphName; tone: CopyTone }> {
   switch (view.outcome.kind) {
@@ -26,7 +33,7 @@ export function outcomeMarker(view: SummaryView): Readonly<{ glyph: GlyphName; t
  * narrow for every fact drops whole ` · ` tokens from the tail: half a fact states another fact.
  */
 export function outcomeLine(view: SummaryView, width: number): string {
-  const budget = Math.max(0, width - MARKER_CELLS);
+  const budget = Math.max(0, width - OUTCOME_LEADING_CELLS);
   const segments = outcomeSegments(view);
   let kept = segments.length;
   while (kept > 1 && getTerminalCellWidth(joinSoft(segments, kept)) > budget) kept -= 1;

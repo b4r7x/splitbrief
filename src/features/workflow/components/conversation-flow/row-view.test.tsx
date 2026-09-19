@@ -128,7 +128,9 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     unfocused.unmount();
   });
 
-  it('never shows the ▌ focus bar and the live ◉ on the same row', () => {
+  // A focused task header does wear both marks (▌ ◉). This row is a live activity, where the
+  // pulsing-dot branch preempts the focused branch, so the ◉ keeps the marker cell and the ▌ yields.
+  it('keeps the pulsing live ◉ on its cell for a focused live activity row instead of the ▌ focus bar', () => {
     const row = makeActivityRow('activity-batch:0:call-1');
 
     const ui = renderFeature(<ConversationRowView row={row} lifecycle="live" focused={true} />);
@@ -171,16 +173,19 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     }
   });
 
-  it('overlays the ▌ focus bar onto the marker cell of a focused task header', () => {
+  it('paints the ▌ focus bar into the lead cell and keeps the header ◉ on the line beside it', () => {
     const row = makeTaskHeaderRow('task-header:T001');
 
     const ui = renderFeature(<ConversationRowView row={row} focused={true} />);
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain(FOCUS_MARK);
-    expect(frame).not.toContain(DONE_MARK);
-    expect(frame).not.toContain(LIVE_MARK);
-    expect(frame).toContain('T001 No-op task');
+    const text = stripAnsiStyles(ui.lastFrame() ?? '');
     ui.unmount();
+
+    const bar = text.indexOf(FOCUS_MARK);
+    const marker = text.indexOf(LIVE_MARK);
+    expect(bar).toBe(0);
+    expect(marker).toBe(bar + 1);
+    expect(text).not.toContain(DONE_MARK);
+    expect(text).toContain('T001 No-op task');
   });
 
   it('keeps task-header row text aligned across focus changes', () => {

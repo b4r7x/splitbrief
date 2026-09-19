@@ -1,16 +1,16 @@
 import { Text } from 'ink';
 import type { Theme } from '../../../components/theme.js';
 import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
-import { RuleHeader } from '../../../components/rule-header.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { ConversationRowBlock } from '../conversation-rows/types.js';
 import type { SummaryView } from './view-model.js';
 import { NO_RECORD_LINE } from './byline.js';
 import { filesRows } from './copy.js';
-import { outcomeLine, outcomeMarker } from './outcome.js';
+import { outcomeLeading, outcomeLine, outcomeMarker } from './outcome.js';
 import { briefsSectionRows } from './rows/briefs.js';
 import { filesSectionRows } from './rows/files.js';
+import { LEDGER_LEAD, LedgerRule } from './rows/lead.js';
 import { runSectionRows } from './rows/run.js';
 import { summaryToneColor } from './tone.js';
 
@@ -31,7 +31,7 @@ export interface ClosedBlockInput {
 export function closedBlockRows(input: ClosedBlockInput): ScrollableDocumentRow[] {
   const { view, width, theme, crewNamed } = input;
   const rows: ScrollableDocumentRow[] = [
-    { key: 'closed:heading', node: <RuleHeader label="Closed" width={width} /> },
+    { key: 'closed:heading', node: <LedgerRule label="Closed" width={width} /> },
   ];
   // A run opened from the list arrives with no transcript to read it from, so the block that
   // accounts for it says what it was asked to do before it says how that ended.
@@ -40,7 +40,7 @@ export function closedBlockRows(input: ClosedBlockInput): ScrollableDocumentRow[
       key: 'closed:feature',
       node: (
         <Text color={theme.text} wrap="truncate-end">
-          {view.run.feature}
+          {`${LEDGER_LEAD}${view.run.feature}`}
         </Text>
       ),
     });
@@ -80,7 +80,7 @@ function OutcomeLine({
   if (view === null) {
     return (
       <Text color={summaryToneColor('warning', theme)} wrap="truncate-end">
-        {`${glyph('statusCancelled')} ${NO_RECORD_LINE}`}
+        {`${outcomeLeading(glyph('statusCancelled'))}${NO_RECORD_LINE}`}
       </Text>
     );
   }
@@ -92,7 +92,7 @@ function OutcomeLine({
     <Text wrap="truncate-end">
       <Text
         color={summaryToneColor(marker.tone, theme)}
-      >{`${glyph(marker.glyph)} ${verdict}`}</Text>
+      >{`${outcomeLeading(glyph(marker.glyph))}${verdict}`}</Text>
       {at !== -1 && <Text color={theme.text}>{line.slice(at)}</Text>}
     </Text>
   );

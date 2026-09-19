@@ -48,6 +48,25 @@ describe('cell-grid SVG rendering', () => {
     expect(svg).toContain('data-source-kind="crop"');
   });
 
+  it('draws Block Elements as exact cell fractions rather than font glyphs', async () => {
+    // A terminal paints these itself, so a column of them is one unbroken line; a font's own glyphs
+    // fall short of the row and would show a whole border as a dashed one.
+    const svg = renderCellGridSvg(await createFrameGrid('▏▕▁▔█A'));
+
+    // left eighth at the cell's left edge, right eighth at its right edge
+    expect(svg).toContain(`<rect x="0" y="0" width="1" height="${SVG_CELL_HEIGHT_PX}"`);
+    expect(svg).toContain(`<rect x="15" y="0" width="1" height="${SVG_CELL_HEIGHT_PX}"`);
+    // lower eighth on the row's bottom edge, upper eighth on its top edge
+    expect(svg).toContain(`<rect x="16" y="14" width="${SVG_CELL_WIDTH_PX}" height="2"`);
+    expect(svg).toContain(`<rect x="24" y="0" width="${SVG_CELL_WIDTH_PX}" height="2"`);
+    // the full block covers its whole cell
+    expect(svg).toContain(
+      `<rect x="32" y="0" width="${SVG_CELL_WIDTH_PX}" height="${SVG_CELL_HEIGHT_PX}"`,
+    );
+    // an ordinary glyph still goes through the font
+    expect(svg).toContain('>A</text>');
+  });
+
   it('is byte-deterministic for the same cell grid', async () => {
     const grid = await createFrameGrid(`${ESC}[36mStable${ESC}[0m output`);
 

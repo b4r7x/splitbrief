@@ -7,7 +7,7 @@ import {
   readReviewContentHeight,
 } from './snapshot.js';
 import { briefListTopOffset, hitBriefTaskRow, hitTranscriptRow } from './hit-test.js';
-import { getContentTopRow, getProgressRows } from './chrome-rows.js';
+import { getContentTopRow, getProgressRows, WORKFLOW_GUTTER_X } from './chrome-rows.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -101,8 +101,8 @@ describe('readConversationScrollSnapshot', () => {
       promptRows: 0,
     });
 
-    expect(snap.contentRect.width).toBe(158);
-    expect(snap.conversationWidth).toBe(158);
+    expect(snap.contentRect.width).toBe(159);
+    expect(snap.conversationWidth).toBe(159);
     expect(snap.viewportHeight).toBe(fullBodyHeight);
     expect(snap.viewportHeight).toBeLessThan(40);
     expect(snap.contentRect.height).toBe(snap.viewportHeight);
@@ -291,10 +291,10 @@ describe('readConversationScrollSnapshot', () => {
 
     const snap = readConversationScrollSnapshot();
 
-    // The framed content width: the two edge cells belong to the frame, not the transcript.
-    expect(snap.contentRect.width).toBe(118);
-    expect(snap.conversationWidth).toBe(118);
-    expect(snap.contentRect.right).toBe(snap.contentRect.left + 117);
+    // The transcript spends the left gutter as its own lead, so only the right gutter is out.
+    expect(snap.contentRect.width).toBe(119);
+    expect(snap.conversationWidth).toBe(119);
+    expect(snap.contentRect.right).toBe(snap.contentRect.left + 118);
   });
 
   it('sidebar presence narrows content width', () => {
@@ -567,14 +567,16 @@ describe('readBriefListSnapshot phantom-hotspot clamp', () => {
     const snap = readBriefListSnapshot();
     if (!snap) throw new Error('expected a brief list snapshot while reviewing briefs');
 
-    // The review column is uncapped, so the brief card fills the whole content pane.
+    // The review column is uncapped, so the brief card fills the content pane past the gutter its
+    // frame stands in.
     const fullContentWidth = getWorkflowContentWidth({
       cols: 300,
       sidebarVisible: false,
     });
     expect(fullContentWidth).toBeGreaterThan(120);
-    expect(snap.rect.width).toBe(fullContentWidth);
-    expect(snap.rect.right).toBe(snap.rect.left + fullContentWidth - 1);
+    expect(snap.rect.left).toBe(WORKFLOW_GUTTER_X);
+    expect(snap.rect.width).toBe(fullContentWidth - WORKFLOW_GUTTER_X);
+    expect(snap.rect.right).toBe(snap.rect.left + snap.rect.width - 1);
 
     const listTop = snap.rect.top + briefListTopOffset({ hasLoadError: false });
 

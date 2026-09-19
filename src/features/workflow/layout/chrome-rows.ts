@@ -5,6 +5,7 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { ROW_LEADING } from '../../../components/row-leading.js';
 import {
   getRailStages,
   railIsHandoff,
@@ -12,16 +13,10 @@ import {
   type RailStageState,
 } from '../../../core/rail-stages.js';
 
-// One empty cell on each edge of every workflow-screen row: the breathing frame. Column 0 and the
-// last column are always empty, and every width and inset below is derived from this single
-// number — markers, box borders and the divider start at the rail (col WORKFLOW_FRAME_X), text
-// starts one edge-padding cell inside it, and nothing ever paints the last column.
-export const WORKFLOW_FRAME_X = 1;
-
-// The cells between a box border and its own text — the composer's `›`, the question body. The
-// chrome rows that flank the composer (keys row above, byline below) align to the same column so
-// every glyph edge sits on one line with the input's `›`.
-export const COMPOSER_EDGE_PADDING_X = 1;
+// The workflow screen's one left line: the column the transcript's marks land on past its own
+// lead, where the rail marker, every box border and the rows flanking the composer start too. The
+// right edge keeps the same gap, and only the header and footer rules bleed to both edges.
+export const WORKFLOW_GUTTER_X = ROW_LEADING.length;
 
 // The header row (which carries the phase rail inline) + the divider (1). The divider alone
 // separates the chrome from the body — no gap row below it — and the live status rides inline, so
@@ -88,17 +83,12 @@ export function getProgressRows(input: {
   return buildProgressRowCount(getChromeContentWidth(input.cols));
 }
 
-// The one measure for chrome rows: the terminal minus the frame, so header, rail, divider and the
-// progress block all stop one cell short of each edge.
+// The one measure for chrome rows: the terminal minus the gutter on both sides — the width the rail
+// row, the build block, the boxes and the rows flanking the composer all paint into.
 export function getChromeContentWidth(cols: number): number {
-  return Number.isFinite(cols) ? Math.max(1, Math.floor(cols) - WORKFLOW_FRAME_X * 2) : 1;
+  return Number.isFinite(cols) ? Math.max(1, Math.floor(cols) - WORKFLOW_GUTTER_X * 2) : 1;
 }
 
-// The measure for chrome rows whose text starts one edge-padding cell inside the frame: the
-// framed width minus the text inset on both sides.
-export function getChromeTextWidth(cols: number): number {
-  return Math.max(1, getChromeContentWidth(cols) - COMPOSER_EDGE_PADDING_X * 2);
-}
 
 export function getChromeHeight(inputRows: number, progressRows = 0): number {
   return FIXED_CHROME_ROWS + normalizeInputRows(inputRows) + normalizeInputRows(progressRows);

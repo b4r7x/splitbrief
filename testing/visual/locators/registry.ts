@@ -1,7 +1,7 @@
 import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/rect.js';
 import {
   getProgressRows,
-  WORKFLOW_FRAME_X,
+  WORKFLOW_GUTTER_X,
 } from '../../../src/features/workflow/layout/chrome-rows.js';
 import { getHomeLayout, homeConfigBlockRows } from '../../../src/features/home/layout.js';
 import { getLogoHeight } from '../../../src/features/home/logo.js';
@@ -168,7 +168,13 @@ function resolveWorkflowSidebar(context: LocatorContext): CellRect {
   const width = sidebarWidthFor(context);
   if (width === 0) return resolveWorkflowHeader(context);
   const y = bodyTopRow(context);
-  return CellRectSchema.parse({ x: 0, y, width, height: rows - y - DEFAULT_INPUT_ROWS - 3 });
+  // The sidebar is a box, so it stands on the gutter line rather than the terminal's first column.
+  return CellRectSchema.parse({
+    x: WORKFLOW_GUTTER_X,
+    y,
+    width,
+    height: rows - y - DEFAULT_INPUT_ROWS - 3,
+  });
 }
 
 function resolveWorkflowHeader(context: LocatorContext): CellRect {
@@ -189,12 +195,12 @@ function resolveWorkflowTranscript(context: LocatorContext): CellRect {
 
 function resolveWorkflowComposer(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
-  // The workflow composer renders inside the screen frame: its box starts one cell in and stops
-  // one cell short, so the card the completion locator walks shares those edge columns.
+  // The workflow composer renders inside the gutter: its box spans the terminal minus one gutter on
+  // each side, so the card the completion locator walks shares those edge columns.
   return CellRectSchema.parse({
-    x: WORKFLOW_FRAME_X,
+    x: WORKFLOW_GUTTER_X,
     y: rows - DEFAULT_INPUT_ROWS - 1,
-    width: Math.max(1, cols - WORKFLOW_FRAME_X * 2),
+    width: Math.max(1, cols - WORKFLOW_GUTTER_X * 2),
     height: DEFAULT_INPUT_ROWS,
   });
 }

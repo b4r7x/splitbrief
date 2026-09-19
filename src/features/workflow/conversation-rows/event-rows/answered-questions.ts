@@ -21,8 +21,17 @@ function wrappedLines(text: string, width: number): string[] {
   return [...lines.slice(0, last - 1), previous.slice(0, cut), `${moved} ${lone}`];
 }
 
-// The last pair carries the widest number label, so its width plus one space is the column every
-// question body starts at; answers share that column, the change of voice carried by tone alone.
+// The wrapper keeps the space it broke on (`trim: false`): usually it trails the line above, but at
+// some widths it wedges onto the head of the continuation, which would start that line one cell
+// deeper than the line it continues. Trimming the head puts every continuation back on its own
+// row's column, and a continuation the trim leaves empty is dropped rather than painted blank.
+function continuationHead(line: string): string {
+  return line.trimStart();
+}
+
+// The last pair carries the widest number label, so its width plus one space is the column the
+// question hangs at; an answer starts on the content column with every other row that carries no
+// mark, the change of voice carried by tone alone.
 // Separation is carried by weight, not blank rows: the bold header sits directly on the first
 // pair — the way an activity header sits on its children — and the bold number labels separate
 // the pairs.
@@ -49,10 +58,12 @@ export function answeredQuestionsRowBlock(input: {
     const label = `${index + 1}.`;
     wrappedLines(pair.question, bodyWidth).forEach((line, offset) => {
       if (offset > 0) {
+        const continued = continuationHead(line);
+        if (continued === '') return;
         rows.push(
           row({
             key: `${input.keyPrefix}-q-${index}-${offset}`,
-            text: `${indent}${line}`,
+            text: `${indent}${continued}`,
             tone: 'planner',
           }),
         );
@@ -73,12 +84,19 @@ export function answeredQuestionsRowBlock(input: {
     if (pair.answer.trim() === '') return;
     pair.answer
       .split('\n')
-      .flatMap((answerLine) => wrappedLines(answerLine, bodyWidth))
-      .forEach((line, offset) => {
+      .flatMap((answerLine) =>
+        wrappedLines(answerLine, bodyWidth).map((line, lineOffset) => ({
+          line,
+          continuation: lineOffset > 0,
+        })),
+      )
+      .forEach(({ line, continuation }, offset) => {
+        const text = continuation ? continuationHead(line) : line;
+        if (continuation && text === '') return;
         rows.push(
           row({
             key: `${input.keyPrefix}-a-${index}-${offset}`,
-            text: `${indent}${line}`,
+            text,
             tone: 'text',
           }),
         );

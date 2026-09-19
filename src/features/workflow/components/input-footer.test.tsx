@@ -23,7 +23,6 @@ import { focusStore } from '../../../stores/ui/focus.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BRAILLE_SPINNER_FRAMES, glyph } from '../../../lib/glyphs.js';
-import { COMPOSER_EDGE_PADDING_X } from '../layout/chrome-rows.js';
 import { InputFooter } from './input-footer.js';
 
 import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
@@ -100,13 +99,15 @@ describe('InputFooter', () => {
     operationsStore.__testReset();
   });
 
-  it('aligns the byline with the composer input edge', () => {
+  it('renders flush, leaving the gutter to the footer that wraps it', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
 
     const ui = renderFeature(<InputFooter byline="Paused at T002 — stopped by you" />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame.indexOf('Paused at T002')).toBe(COMPOSER_EDGE_PADDING_X);
+    // A live byline opens with its pip on the mark column; this one has none, so it starts on the
+    // text column instead of putting a letter where the pip would be.
+    expect(frame.indexOf('Paused at T002')).toBe(0);
 
     ui.unmount();
   });

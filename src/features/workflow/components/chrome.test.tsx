@@ -16,11 +16,15 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js'
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { WorkflowFooter, WorkflowHeader } from './chrome.js';
 import { ConversationFlow } from './conversation-flow/flow.js';
 import type { RouteData } from '../../../stores/navigation/router.js';
 
 const RAIL_STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Review'];
+// The workflow composer wears the round frame; its top-left corner is what marks the box's left
+// edge.
+const COMPOSER_TOP_LEFT = '╭';
 const WORKFLOW_ROUTE = {
   screen: 'workflow',
   run: makeRunRecord(),
@@ -232,7 +236,7 @@ describe('WorkflowFooter', () => {
     ui.unmount();
   });
 
-  it('keeps the review composer at the full terminal width', async () => {
+  it('keeps the review composer at the full width inside the gutter', async () => {
     const cols = 160;
     terminalSizeStore.__testReset({ cols, rows: 30, isSmall: false });
     const ui = renderFooter({ mode: 'review', inputHint: 'y approve · c comment · q reject' });
@@ -240,10 +244,29 @@ describe('WorkflowFooter', () => {
 
     const topBorder = stripAnsiStyles(ui.lastFrame() ?? '')
       .split('\n')
-      .find((line) => line.startsWith('╭'));
+      .find((line) => line.trimStart().startsWith(COMPOSER_TOP_LEFT));
 
     expect(topBorder).toBeDefined();
-    expect(getTerminalCellWidth(topBorder ?? '')).toBe(cols);
+    // The box stands on the gutter line and stops one gutter short of the right edge.
+    expect(topBorder?.indexOf(COMPOSER_TOP_LEFT)).toBe(WORKFLOW_GUTTER_X);
+    expect(getTerminalCellWidth((topBorder ?? '').trimStart())).toBe(cols - WORKFLOW_GUTTER_X * 2);
+    ui.unmount();
+  });
+
+  it('puts the composer border and the live pip on the mark column, the legend on the text one', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    const ui = renderFooter();
+    await tick();
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const legend = lines.find((line) => line.includes('esc stop options')) ?? '';
+    const topBorder = lines.find((line) => line.includes(COMPOSER_TOP_LEFT)) ?? '';
+    const byline = lines.at(-1) ?? '';
+
+    expect(legend.search(/\S/)).toBe(WORKFLOW_GUTTER_X);
+    expect(topBorder.indexOf(COMPOSER_TOP_LEFT)).toBe(WORKFLOW_GUTTER_X);
+    // A live byline opens with its pip, so it keeps the mark column the border stands on.
+    expect(byline.search(/\S/)).toBe(WORKFLOW_GUTTER_X);
     ui.unmount();
   });
 

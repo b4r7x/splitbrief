@@ -32,7 +32,6 @@ import {
   joinBylineParts,
   stageFractionText,
 } from '../input-footer-byline.js';
-import { COMPOSER_EDGE_PADDING_X } from '../layout/chrome-rows.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { formatSeatIdentity } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
@@ -219,7 +218,7 @@ export function InputFooter({
 
   if (checkingStage !== null) {
     return (
-      <Box width="100%" paddingX={COMPOSER_EDGE_PADDING_X} height={1} flexShrink={0}>
+      <Box width="100%" height={1} flexShrink={0}>
         <Text color={t.textDim} wrap="truncate-end">
           {joinBylineParts([`${frame} ${checkingStage}`, 'esc cancel'])}
         </Text>
@@ -227,9 +226,11 @@ export function InputFooter({
     );
   }
 
+  // The only byline with no pip of its own, so it opens on the text column rather than in the
+  // column the live bylines put their mark in.
   if (givenByline !== undefined && stopped === null) {
     return (
-      <Box width="100%" paddingX={COMPOSER_EDGE_PADDING_X} height={1} flexShrink={0}>
+      <Box width="100%" height={1} flexShrink={0}>
         <Text color={t.textDim} wrap="truncate-end">
           {givenByline}
         </Text>
@@ -238,7 +239,7 @@ export function InputFooter({
   }
 
   return (
-    <Box width="100%" paddingX={COMPOSER_EDGE_PADDING_X} height={1} flexShrink={0}>
+    <Box width="100%" height={1} flexShrink={0}>
       <Text color={t.textDim} wrap="truncate-end">
         {leadColor !== null ? <Text color={leadColor}>{byline.lead}</Text> : byline.lead}
         {byline.hint}

@@ -18,7 +18,8 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { COMMANDS_ONLY_NOTICE } from '../../components/composer/composer.js';
-import { WORKFLOW_FRAME_X } from '../../features/workflow/layout/chrome-rows.js';
+import { WORKFLOW_GUTTER_X } from '../../features/workflow/layout/chrome-rows.js';
+import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
 import { WorkflowScreen } from './workflow.js';
 
 const ESC = String.fromCharCode(27);
@@ -73,12 +74,12 @@ function maxLineLength(frame: string): number {
     .reduce((max, line) => Math.max(max, line.length), 0);
 }
 
-/** The screen's whole body sits inside its frame, inset WORKFLOW_FRAME_X each side; anchored
- *  assertions read the transcript from its own column 0, not the terminal's. */
-function withoutFrameInset(frame: string): string {
+/** A ledger row's text starts on the transcript's text column, past the gutter and the blank mark
+ *  slot; anchored assertions read the ledger from that column, not from the terminal's column 0. */
+function withoutTextLead(frame: string): string {
   return frame
     .split('\n')
-    .map((line) => line.slice(WORKFLOW_FRAME_X))
+    .map((line) => line.slice(WORKFLOW_GUTTER_X + MARK_SLOT_CELLS))
     .join('\n');
 }
 
@@ -287,7 +288,7 @@ describe('the workflow screen showing a closed run', () => {
     });
 
     const ui = mount(160, 40);
-    const lines = withoutFrameInset(stripAnsiStyles(ui.lastFrame() ?? '')).split('\n');
+    const lines = withoutTextLead(stripAnsiStyles(ui.lastFrame() ?? '')).split('\n');
 
     expect(lines.filter((line) => line.startsWith('Crew'))).toEqual([]);
     expect(lines[0]).toContain('qwen-small');
@@ -305,7 +306,7 @@ describe('the workflow screen showing a closed run', () => {
     });
 
     const ui = mount(80, 40);
-    const lines = withoutFrameInset(stripAnsiStyles(ui.lastFrame() ?? '')).split('\n');
+    const lines = withoutTextLead(stripAnsiStyles(ui.lastFrame() ?? '')).split('\n');
     const crewRow = lines.find((line) => line.startsWith('Crew')) ?? '';
 
     expect(crewRow).toContain('OpenAI Codex CLI');
@@ -368,8 +369,8 @@ describe('the workflow screen showing a closed run', () => {
     const ui = mount(120, 40);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).not.toMatch(/^Briefs /m);
-    expect(frame).not.toMatch(/^Files /m);
+    expect(withoutTextLead(frame)).not.toMatch(/^Briefs /m);
+    expect(withoutTextLead(frame)).not.toMatch(/^Files /m);
     expect(frame).toContain('no briefs compiled');
     expect(frame).toContain('nothing built');
     expect(frame).toContain('esc home');
@@ -399,7 +400,7 @@ describe('the workflow screen showing a closed run', () => {
     });
 
     const ui = mount(120, 40);
-    const frame = withoutFrameInset(stripAnsiStyles(ui.lastFrame() ?? ''));
+    const frame = withoutTextLead(stripAnsiStyles(ui.lastFrame() ?? ''));
 
     // The ledger paints, and the facts it does account for still spell absence as a word.
     expect(frame).toMatch(/^Run /m);
@@ -428,7 +429,7 @@ describe('the workflow screen showing a closed run', () => {
     });
 
     const ui = mount(160, 40);
-    const frame = withoutFrameInset(stripAnsiStyles(ui.lastFrame() ?? ''));
+    const frame = withoutTextLead(stripAnsiStyles(ui.lastFrame() ?? ''));
 
     // The record priced every seat; the ledger still reads, and still says nothing about money.
     expect(frame).toMatch(/^Run /m);
@@ -469,7 +470,7 @@ describe('the workflow screen showing a closed run', () => {
     // The setting governs the surfaces that paint an amount, and this is no longer one of them,
     // so it has nothing left to turn off here.
     expect(withSpendOff).toBe(withSpendOn);
-    expect(withSpendOff).not.toMatch(/^Cost/m);
+    expect(withoutTextLead(withSpendOff)).not.toMatch(/^Cost/m);
     expect(withSpendOff).not.toContain('$0.15');
   });
 

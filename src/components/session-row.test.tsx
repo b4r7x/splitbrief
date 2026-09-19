@@ -247,7 +247,7 @@ describe('SessionRow', () => {
     expect(stripAnsiStyles(rawFrame)).toContain('beforeafter');
   });
 
-  it('leads an outdented row with the ▌ accent bar, never the ▸ cursor, without shifting the feature', () => {
+  it('puts the ▌ bar in the slot beside the row, never the ▸ cursor, without shifting the feature', () => {
     const session = makeSession({ feature: 'alpha', startedAt: Date.now() });
     const plain = frameOf(
       <Box marginLeft={4} width={72}>
@@ -264,6 +264,7 @@ describe('SessionRow', () => {
     const outdentedLine = lineContaining(outdented, 'alpha');
     expect(outdented).not.toContain(CURSOR_GLYPH);
     expect(outdentedLine.indexOf('alpha')).toBe(plainAlpha);
-    expect(outdentedLine.indexOf('▌')).toBeLessThan(outdentedLine.indexOf('◌ alpha'));
+    // One cell out, not two: two would stand the bar on the column the list's own frame uses.
+    expect(outdentedLine.indexOf('▌')).toBe(outdentedLine.indexOf('◌ alpha') - 1);
   });
 });

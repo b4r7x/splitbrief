@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
+import { Box } from 'ink';
 import { render } from 'ink-testing-library';
-import { tick } from '#testing/helpers/ink.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
@@ -17,6 +18,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
+import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { getHeaderLayout, Header } from './header.js';
 
 const STARTED_AT = new Date(0).toISOString();
@@ -91,6 +93,16 @@ describe('Header — layout', () => {
 
   it('omits the seat line entirely when a wide rail leaves no room', () => {
     expect(getHeaderLayout({ cols: 60, railCells: 50, seatCells: 44 }).showSeats).toBe(false);
+  });
+
+  it('keeps the rail its measured width when a long seat line shares the row', () => {
+    // The row cannot hand the rail a box narrower than its own measure: a squeezed rail blanks the
+    // label its cells were budgeted for, and at 120 columns a 60-cell seat line is the tightest
+    // tail that still shows.
+    const layout = getHeaderLayout({ cols: 120, railCells: 47, seatCells: 60 });
+
+    expect(layout.showSeats).toBe(true);
+    expect(layout.railWidth).toBeGreaterThanOrEqual(47);
   });
 });
 
@@ -238,6 +250,37 @@ describe('Header — rail and elapsed', () => {
     expect(frame).toContain('Build');
     expect(frame).not.toContain('planning');
     instance.unmount();
+  });
+
+  it('paints the first stage label even when the seat line shares the row', async () => {
+    resetStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
+    lifecycleStore.__testReset({
+      phase: 'specifying',
+      status: 'running',
+      startedAt: Date.now(),
+    });
+
+    // The library's fixed 100-column stdout would lay the bar out at a width its store never
+    // named, so the exact-geometry probe mounts through the viewport-aware harness, inside the
+    // gutter the workflow header wraps the row in.
+    const ui = renderFeature(
+      <Box paddingX={WORKFLOW_GUTTER_X}>
+        <Header startedAt={new Date().toISOString()} />
+      </Box>,
+      { cols: 120, rows: 40 },
+    );
+    await tick();
+    const row = (stripAnsiStyles(ui.lastFrame()).split('\n')[0] ?? '').trimEnd();
+    ui.unmount();
+
+    // The active marker opens the rail on the gutter column the hit-test zones use, and its label
+    // follows one marker slot in. A budget error blanks `Spec` while keeping its cells.
+    expect(row.indexOf(glyph('stageActive'))).toBe(WORKFLOW_GUTTER_X);
+    expect(row).toContain(`${glyph('stageActive')} Spec`);
+    // The seat line and the clock stop short of the right gutter.
+    expect(row.length).toBeLessThanOrEqual(120 - WORKFLOW_GUTTER_X);
   });
 
   it('does not repeat the cancelled status word that the rail already owns', async () => {

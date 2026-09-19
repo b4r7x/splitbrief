@@ -25,8 +25,9 @@ export const STOP_SHEET_FOOTER = 'Changes and draft stay.';
 export const STOP_SHEET_LEGEND = '↑↓ select · enter confirm · esc stop · tab back';
 
 export function stopMenuLayout(rows: readonly StopRow[], cols: number) {
-  // The sheet renders inside the screen frame, so its cap is the framed width.
-  const width = Math.min(getChromeContentWidth(cols), 96);
+  // The sheet stacks on the composer inside the gutter, so it takes the composer's width and the
+  // two boxes share both edges.
+  const width = getChromeContentWidth(cols);
   const innerWidth = Math.max(1, width - 6);
   const options = rows.map((row) => ({
     row,

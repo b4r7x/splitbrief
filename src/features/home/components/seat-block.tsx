@@ -19,6 +19,7 @@ import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { homeConfigBlockRows } from '../layout.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 
 const CREW_HINT = '/crew to change';
 const LABEL_GAP = '  ';
@@ -74,26 +75,29 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
     review: theme.reviewer,
   };
 
-  // The hint is the point of the row, so it is the last thing to go: drop the
-  // skills count, then the detection notice, until the line fits `width`.
   const mode = getWorkflowMode(config);
+  // The block is bare text, so it opens two cells inside the composer's column — where the
+  // composer's own caret sits — and its lines have that much less of `width` to spend.
+  const textWidth = Math.max(1, width - MARK_SLOT_CELLS);
+  // The hint is the point of the row, so it is the last thing to go: drop the
+  // skills count, then the detection notice, until the line fits.
   const optional = shedToFit({
     lead: [mode],
     optional: [selectedSkillsText(skills), ...(coldDiscovery ? [DETECTING_TOOLS_STATUS] : [])],
     tail: [CREW_HINT],
-    width,
+    width: textWidth,
   });
   const status = [mode, ...optional, CREW_HINT].join(SOFT_SEP);
 
   return (
-    <Box flexDirection="column" width={width} flexShrink={0}>
+    <Box flexDirection="column" width={width} flexShrink={0} paddingLeft={MARK_SLOT_CELLS}>
       {homeConfigBlockRows(rows) < seats.length + 1 ? (
         <Text color={coldDiscovery ? theme.textDim : theme.text} wrap="truncate-end">
           {formatCollapsedSeatLine({
             planner: config.planner,
             build: resolveImplementerProfiles(config).defaultProfile.config,
             reviewer: configuredReviewerRunner(config),
-            budget: width,
+            budget: textWidth,
             displayNames,
           })}
         </Text>

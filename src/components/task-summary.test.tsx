@@ -66,7 +66,27 @@ describe('TaskSummary', () => {
     ui.unmount();
   });
 
-  it('keeps the focused accent bar adjacent to the row title without an extra gutter', () => {
+  it('opens with the transcript one-cell lead so the mark lands on column 1', () => {
+    const ui = renderFeature(
+      <TaskSummary
+        width={100}
+        id="T1"
+        title="hash passwords"
+        state={{ kind: 'settled', method: 'local' }}
+      />,
+    );
+    const line =
+      stripAnsiStyles(ui.lastFrame() ?? '')
+        .split('\n')
+        .find((candidate) => candidate.includes('T1 hash passwords')) ?? '';
+
+    expect(line.startsWith(` ${glyph('check')} `)).toBe(true);
+    expect(line[1]).toBe(glyph('check'));
+
+    ui.unmount();
+  });
+
+  it('paints the focus bar into the lead cell and keeps the mark on the line', () => {
     const ui = renderFeature(
       <TaskSummary
         width={100}
@@ -76,11 +96,16 @@ describe('TaskSummary', () => {
         focused={true}
       />,
     );
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const line =
+      stripAnsiStyles(ui.lastFrame() ?? '')
+        .split('\n')
+        .find((candidate) => candidate.includes('T3 wire login route')) ?? '';
 
-    const focus = glyph('liveBar');
-    expect(frame).toContain(`${focus} T3 wire login route`);
-    expect(frame).not.toContain(`${focus}   T3`);
+    // The same shape a focused transcript row wears: the bar where the lead was, the mark on
+    // column 1, the title on column 3.
+    expect(line.startsWith(`${glyph('liveBar')}${glyph('statusFailed')} T3 wire login route`)).toBe(
+      true,
+    );
 
     ui.unmount();
   });

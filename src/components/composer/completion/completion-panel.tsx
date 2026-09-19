@@ -130,12 +130,13 @@ export function CompletionPanel<T>({
 // Opaque space-fill behind the entire bordered footprint (outer width times all rows plus the two border
 // lines). Background color alone is dropped under NO_COLOR/FORCE_COLOR=0, which would let the
 // transcript bleed through the popup; literal spaces occlude on every host. Painted first so the
-// bordered card renders on top.
+// bordered card renders on top. It starts one cell left of the card, as it already runs past the
+// right border, so a rule the card covers stops short of both borders instead of butting into one.
 function OcclusionBackplate({ rows, width }: { rows: number; width: number }) {
-  const line = ' '.repeat(width);
+  const line = ' '.repeat(width + 1);
   const block = Array.from({ length: rows }, () => line).join('\n');
   return (
-    <Box position="absolute" width={width} height={rows}>
+    <Box position="absolute" marginLeft={-1} width={width + 1} height={rows}>
       <Text>{block}</Text>
     </Box>
   );

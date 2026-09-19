@@ -6,7 +6,6 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
-import { COMPOSER_EDGE_PADDING_X } from '../layout/chrome-rows.js';
 import { REVIEW_HINT } from '../review-commands.js';
 import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
 
@@ -19,13 +18,15 @@ describe('FeedbackRow', () => {
     resetAllStores();
   });
 
-  it('aligns feedback with the composer input edge', () => {
+  it('renders flush, leaving the gutter to the footer that wraps it', () => {
     feedbackStore.setMessage('Message queued for the next planner turn.');
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame.indexOf('Message queued')).toBe(COMPOSER_EDGE_PADDING_X);
+    // The row is bare text: the footer's gutter puts it on column 1, and the mark slot it insets
+    // itself by carries it the rest of the way to the text column.
+    expect(frame.indexOf('Message queued')).toBe(0);
 
     ui.unmount();
   });

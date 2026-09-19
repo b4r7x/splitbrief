@@ -2,7 +2,6 @@ import { Text } from 'ink';
 import type { Theme } from '../../../../components/theme.js';
 import type { ScrollableDocumentRow } from '../../../../components/scrollable-document.js';
 import type { SummaryView } from '../view-model.js';
-import { RuleHeader } from '../../../../components/rule-header.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { osc8Hyperlink, terminalSupportsHyperlinks } from '../../../../lib/terminal/hyperlinks.js';
@@ -13,6 +12,7 @@ import {
 import { filePathUrl } from '../../../../utils/path-links.js';
 import { filesRows } from '../copy.js';
 import { summaryToneColor } from '../tone.js';
+import { LEDGER_LEAD, LEDGER_LEAD_CELLS, LedgerRule } from './lead.js';
 
 const PARTIAL = `${SOFT_SEP}partial`;
 
@@ -27,15 +27,19 @@ export function filesSectionRows(
   const { view, width, theme } = input;
   const projectDir = configStore.get().projectDir;
   const rows: ScrollableDocumentRow[] = [
-    { key: 'files-heading', node: <RuleHeader label="Files" width={width} /> },
+    { key: 'files-heading', node: <LedgerRule label="Files" width={width} /> },
   ];
   for (const file of filesRows(view)) {
-    const budget = Math.max(0, width - (file.partial ? getTerminalCellWidth(PARTIAL) : 0));
+    const budget = Math.max(
+      0,
+      width - LEDGER_LEAD_CELLS - (file.partial ? getTerminalCellWidth(PARTIAL) : 0),
+    );
     const label = truncateTerminalDisplayTextMiddle(file.path, budget);
     rows.push({
       key: `file:${file.path}`,
       node: (
         <Text wrap="truncate-end">
+          {LEDGER_LEAD}
           <Text color={summaryToneColor('link', theme)}>
             {linkText({ label, path: file.path, projectDir })}
           </Text>

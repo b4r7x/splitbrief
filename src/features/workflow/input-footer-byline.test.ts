@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
-import { getChromeTextWidth } from './layout/chrome-rows.js';
+import { getChromeContentWidth } from './layout/chrome-rows.js';
 import { buildInputFooterByline, stageFractionText } from './input-footer-byline.js';
 import { stopByline } from './stop/copy.js';
 
@@ -10,10 +10,10 @@ function fullByline(byline: { lead: string; hint: string; queued: string; rest: 
   return `${byline.lead}${byline.hint}${byline.queued}${byline.rest}`;
 }
 
-// The byline builds against the framed text width, so a line of W cells needs W + 4 terminal
-// columns: the two frame cells and the two the text column sits in from the rail.
+// The byline builds against the width inside the gutter, so a line of W cells needs W + 2 terminal
+// columns: one gutter cell on each side.
 function colsForLine(target: string): number {
-  return getTerminalCellWidth(target) + (120 - getChromeTextWidth(120));
+  return getTerminalCellWidth(target) + (120 - getChromeContentWidth(120));
 }
 
 describe('buildInputFooterByline', () => {
@@ -76,7 +76,7 @@ describe('buildInputFooterByline', () => {
 
     const crampedWidth = getTerminalCellWidth(stageLead);
     const cramped = fullByline(buildInputFooterByline({ ...base, cols: crampedWidth }));
-    expect(getTerminalCellWidth(cramped)).toBeLessThanOrEqual(getChromeTextWidth(crampedWidth));
+    expect(getTerminalCellWidth(cramped)).toBeLessThanOrEqual(getChromeContentWidth(crampedWidth));
   });
 
   it('includes the y copy token only when a focus exists, reserved at the tail', () => {
@@ -175,10 +175,10 @@ describe('buildInputFooterByline', () => {
 
     expect(byline.startsWith(`${core} · ${glyph('cursor')}`)).toBe(true);
     expect(byline).not.toContain(worktreeLabel);
-    expect(getTerminalCellWidth(byline)).toBeLessThanOrEqual(getChromeTextWidth(width));
+    expect(getTerminalCellWidth(byline)).toBeLessThanOrEqual(getChromeContentWidth(width));
   });
 
-  it('stays within the framed text width', () => {
+  it('stays within the width inside the gutter', () => {
     const cols = 64;
     const byline = fullByline(
       buildInputFooterByline({
@@ -190,7 +190,7 @@ describe('buildInputFooterByline', () => {
       }),
     );
 
-    expect(getTerminalCellWidth(byline)).toBeLessThanOrEqual(getChromeTextWidth(cols));
+    expect(getTerminalCellWidth(byline)).toBeLessThanOrEqual(getChromeContentWidth(cols));
   });
 
   it('renders the queued segment as its own tone-carrying part, separate from the lead', () => {

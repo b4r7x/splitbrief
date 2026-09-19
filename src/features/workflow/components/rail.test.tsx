@@ -11,7 +11,11 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { getRailStages } from '../../../core/rail-stages.js';
-import { RAIL_MARKER_SLOT_WIDTH, railConnectorString } from '../layout/chrome-rows.js';
+import {
+  RAIL_MARKER_SLOT_WIDTH,
+  railConnectorString,
+  WORKFLOW_GUTTER_X,
+} from '../layout/chrome-rows.js';
 import {
   buildRailFraction,
   getRailStageZones,
@@ -30,13 +34,14 @@ function countActiveMarkers(frame: string): number {
   return stripAnsiStyles(frame).split(ACTIVE).length - 1;
 }
 
-// 1-based column of a stage label as actually painted, to compare against hit-test zones.
+// 0-based column of a stage label as actually painted, to compare against the hit-test zones (which
+// are laid out in the same space, from RAIL_CONTENT_LEFT_COL onward).
 function renderedStageCol(frame: string, label: string): number {
   const line = stripAnsiStyles(frame)
     .split('\n')
     .find((row) => row.includes(label));
   if (line === undefined) throw new Error(`label ${label} not in frame`);
-  return line.indexOf(label) + 1;
+  return line.indexOf(label);
 }
 
 function lineContaining(frame: string, needle: string): string {
@@ -47,12 +52,12 @@ function lineContaining(frame: string, needle: string): string {
   return line;
 }
 
-// The rail renders inline inside the header row, now flush to the terminal edge (no paddingX), so
-// its first stage marker sits at screen column 1 (RAIL_CONTENT_LEFT_COL). Standalone renders keep
-// that flush layout so the hit-test geometry stays honest.
+// The rail renders inline inside the header row, which sits in the WORKFLOW_GUTTER_X gutter, so its
+// first stage marker sits on the gutter column. A standalone render mirrors the same inset so the
+// hit-test geometry stays honest.
 function renderRail(form: 'B' | 'C') {
   return renderFeature(
-    <Box>
+    <Box paddingLeft={WORKFLOW_GUTTER_X}>
       <Rail form={form} />
     </Box>,
   );
@@ -333,8 +338,8 @@ describe('Rail — Form C (narrow floor)', () => {
     });
     const buildZone = zones.find((zone) => zone.stage === 'build');
     const buildLine = frame.split('\n').find((line) => line.includes('Build')) ?? '';
-    const cancelledEnd = buildLine.indexOf('cancelled') + 'cancelled'.length;
-    expect(cancelledEnd).toBeLessThanOrEqual(buildZone?.right ?? 0);
+    const cancelledEndCol = buildLine.indexOf('cancelled') + 'cancelled'.length - 1;
+    expect(cancelledEndCol).toBeLessThanOrEqual(buildZone?.right ?? 0);
     ui.unmount();
   });
 });

@@ -133,7 +133,7 @@ describe('artifactWrittenRowBlock', () => {
 
     for (const width of [40, 78, 110]) {
       for (const row of rowsFor(artifactEvent(), width)) {
-        expect(getTerminalCellWidth(rowText(row))).toBeLessThanOrEqual(width - 2);
+        expect(getTerminalCellWidth(rowText(row))).toBeLessThanOrEqual(width - 1);
       }
     }
   });

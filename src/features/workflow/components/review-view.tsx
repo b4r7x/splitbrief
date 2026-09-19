@@ -15,6 +15,7 @@ import { Divider } from '../../../components/divider.js';
 import { FramePanel } from './frame-panel.js';
 import { useTheme } from '../../../components/theme.js';
 import { getReviewColumnWidth, getReviewContentLayout, REVIEW_FRAME_ROWS } from '../layout/rect.js';
+import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { normalizeScrollRows } from '../layout/scroll-window.js';
 import { useReviewContent } from '../hooks/use-review-content.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -72,8 +73,15 @@ export function ReviewView({ height, width }: ReviewViewProps) {
     getTerminalCellWidth(scrollIndicatorText) + getTerminalCellWidth(scrollHint) + 2 <=
       frameInnerWidth;
 
+  // The frame is a box, so its border stands on the gutter line the transcript's marks do.
   return (
-    <Box flexDirection="column" height={containerHeight} width={width} overflow="hidden">
+    <Box
+      flexDirection="column"
+      height={containerHeight}
+      width={width}
+      paddingLeft={WORKFLOW_GUTTER_X}
+      overflow="hidden"
+    >
       <FramePanel filePath={reviewLabel} width={documentWidth} height={containerHeight}>
         {contentHeight > 0 && (
           <ScrollableDocument

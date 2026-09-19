@@ -15,6 +15,7 @@ import {
 } from '../../prompt-rows/approval.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { fitKeyLegend } from '../../../../core/key-legend.js';
+import { MARK_SLOT_CELLS } from '../../../../components/row-leading.js';
 
 export interface DocumentReviewPromptProps {
   artifact: ReviewArtifact;
@@ -65,9 +66,16 @@ export function DocumentReviewPrompt({
         </Text>
       ))}
       {compact ? null : <Text> </Text>}
-      <Text color={t.textDim}>
-        {fitKeyLegend(commenting ? REVIEW_COMMENT_HINTS : REVIEW_DOCUMENT_HINTS, width)}
-      </Text>
+      {/* Stripped of its frame the legend is bare text, so it opens on the text column rather than
+          in the column the option cursors above it take. */}
+      <Box paddingLeft={compact ? MARK_SLOT_CELLS : 0}>
+        <Text color={t.textDim}>
+          {fitKeyLegend(
+            commenting ? REVIEW_COMMENT_HINTS : REVIEW_DOCUMENT_HINTS,
+            compact ? Math.max(1, width - MARK_SLOT_CELLS) : width,
+          )}
+        </Text>
+      </Box>
     </Box>
   );
 }

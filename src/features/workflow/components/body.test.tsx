@@ -13,7 +13,8 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
 import { REVIEW_MIN_ROWS } from '../layout/rect.js';
-import { WORKFLOW_FRAME_X } from '../layout/chrome-rows.js';
+import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { WorkflowBody } from './body.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 
@@ -153,7 +154,9 @@ describe('WorkflowBody brief review rendering', () => {
   it('lets the conversation, document, and brief panes reach the same body bottom', async () => {
     const contentHeight = 8;
     const sidebarWidth = 34;
-    const contentStartColumn = WORKFLOW_FRAME_X + sidebarWidth + 2;
+    // The sidebar stands on the gutter line with its two-cell gap after it, and the review frame
+    // stands one gutter into the pane that follows.
+    const contentStartColumn = WORKFLOW_GUTTER_X + sidebarWidth + 2 + WORKFLOW_GUTTER_X;
     eventsStore.__testReset({
       events: [
         makePlannerText({
@@ -222,7 +225,7 @@ describe('WorkflowBody brief review rendering', () => {
     ui.unmount();
   });
 
-  it('renders conversation content one frame cell in from the terminal edge', () => {
+  it('renders conversation content on the gutter line, one lead cell in from the terminal edge', () => {
     const ui = renderFeature(
       <WorkflowBody
         showSidebar={false}
@@ -240,10 +243,10 @@ describe('WorkflowBody brief review rendering', () => {
 
     // No top-gap row: the body starts on its first line, directly under the header divider.
     expect(lines[0]).toContain('no events yet');
-    // Framed layout: the empty state sits in the transcript's prose column — frame cell, then the
-    // two-cell leading every message row carries.
+    // The empty state sits in the transcript's prose column: the gutter the chrome's boxes stand
+    // on, plus the mark slot every unmarked message row leaves blank ahead of its text.
     expect(row.startsWith('no events yet')).toBe(false);
-    expect(row.indexOf('no events yet')).toBe(WORKFLOW_FRAME_X + 2);
+    expect(row.indexOf('no events yet')).toBe(WORKFLOW_GUTTER_X + MARK_SLOT_CELLS);
 
     ui.unmount();
   });
@@ -296,7 +299,7 @@ describe('WorkflowBody brief review rendering', () => {
     const bottomBorderRow = contentHeight - 1;
 
     expect(lines).toHaveLength(contentHeight);
-    expect(lines[bottomBorderRow]?.[WORKFLOW_FRAME_X]).toMatch(/[+└]/);
+    expect(lines[bottomBorderRow]?.[WORKFLOW_GUTTER_X]).toMatch(/[+└]/);
     expect(lastTranscriptLine).toBe(bottomBorderRow);
     expect(lines[lastTranscriptLine]).toContain('transcript-20');
 

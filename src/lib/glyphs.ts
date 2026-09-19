@@ -170,6 +170,9 @@ export function markdownLayoutGlyphs(tier: GlyphTier = resolveGlyphTier()): Mark
   };
 }
 
+// A frame stands in the mark column, where every glyph is centred in its cell, so it is box drawing
+// at every tier that can draw it. Its shape carries the tier — round for the input, single for a
+// panel, bold for a gate — which is the emphasis a colourless terminal is left with.
 export function borderStyleFor(
   kind: CardKind,
   tier: GlyphTier = resolveGlyphTier(),

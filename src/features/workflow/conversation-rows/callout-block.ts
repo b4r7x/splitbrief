@@ -1,15 +1,7 @@
 import { prepareCardRows } from './row-format/card-block.js';
-import type { ConversationRow, ConversationRowBlock, ConversationRowTone } from './types.js';
+import type { ConversationRowBlock, ConversationRowTone } from './types.js';
 
 export type CalloutSeverity = 'error' | 'warning' | 'info';
-
-// A frameless event callout: the colored left rule lives in the row leading (rowLeading maps
-// callout kinds to `│ `), so structure and color carry the signal without a box frame.
-function toCalloutRow(row: ConversationRow, tone: ConversationRowTone): ConversationRow {
-  if (row.kind === 'card-top') return { ...row, kind: 'callout-top', markerTone: tone };
-  if (row.kind === 'card-body') return { ...row, kind: 'callout-body', markerTone: tone };
-  return row;
-}
 
 export function calloutRowsBlock(input: {
   keyPrefix: string;
@@ -26,6 +18,9 @@ export function calloutRowsBlock(input: {
           text: string;
           tone: ConversationRowTone;
         }[]);
+  // The callout rows lead with the colored rule (`rowLeading` maps the callout kinds to `│ `), so
+  // their kinds go in: `prepareCardRows` sizes the header and body from the leading those kinds
+  // render with, and a card's budget would overrun the row by the rule's two cells.
   const card = prepareCardRows({
     keyPrefix: input.keyPrefix,
     label: input.label,
@@ -33,6 +28,8 @@ export function calloutRowsBlock(input: {
     bodyLines,
     width: Math.max(1, input.width),
     bodyPrefix: '',
+    topKind: 'callout-top',
+    bodyKind: 'callout-body',
   });
   if (card.rowCount === 0) return null;
 
@@ -41,6 +38,6 @@ export function calloutRowsBlock(input: {
     rowCount: card.rowCount,
     renderableUnits: 1,
     createRows: (windowStart, windowEnd) =>
-      card.createRows(windowStart, windowEnd).map((row) => toCalloutRow(row, tone)),
+      card.createRows(windowStart, windowEnd).map((row) => ({ ...row, markerTone: tone })),
   };
 }

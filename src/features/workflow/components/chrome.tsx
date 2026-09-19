@@ -13,7 +13,7 @@ import { useFieldSessionOwned } from '../../editor/use-field-session-owned.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { ComposerBoxHintOverride } from '../input-hints.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
-import { getChromeContentWidth, WORKFLOW_FRAME_X, type RailForm } from '../layout/chrome-rows.js';
+import { getChromeContentWidth, WORKFLOW_GUTTER_X, type RailForm } from '../layout/chrome-rows.js';
 import type { readClipboardImage as readSystemClipboardImage } from '../../../core/attachments/clipboard-image.js';
 import type { listProjectFiles as listFiles } from '../../../lib/file-listing.js';
 
@@ -46,16 +46,20 @@ export function WorkflowHeader({
   children?: ReactNode;
 }) {
   const cols = terminalSizeStore.use((s) => s.cols);
+  // The rail row and the build block sit inside the gutter; the divider under them bleeds edge to
+  // edge.
   return (
-    <Box flexDirection="column" width="100%" paddingX={WORKFLOW_FRAME_X}>
-      <Header
-        startedAt={startedAt}
-        railForm={railForm}
-        {...(stages !== undefined && { stages })}
-        {...(seatLine !== undefined && { seatLine })}
-      />
-      {children}
-      <Divider width={getChromeContentWidth(cols)} label={scrollAboveLabel} tone="textDim" />
+    <Box flexDirection="column" width="100%">
+      <Box flexDirection="column" paddingX={WORKFLOW_GUTTER_X}>
+        <Header
+          startedAt={startedAt}
+          railForm={railForm}
+          {...(stages !== undefined && { stages })}
+          {...(seatLine !== undefined && { seatLine })}
+        />
+        {children}
+      </Box>
+      <Divider width={cols} label={scrollAboveLabel} tone="textDim" />
     </Box>
   );
 }
@@ -120,11 +124,11 @@ export function WorkflowFooter({
   const boxHints = useComposerBoxHints(boxHintOverride);
   const fieldEditorOpen = useFieldSessionOwned();
   const composerSession = mode === 'review' ? `review:${reviewEpoch ?? 0}` : 'non-review';
-  // The framed width the box actually renders at, so the input's own wrap math never budgets the
-  // two frame cells the box no longer spans.
+  // The width the composer box actually renders at — the terminal inside the gutter — so the
+  // input's own wrap math budgets the same cells the box paints.
   const composerWidth = getChromeContentWidth(terminalSizeStore.use((s) => s.cols));
   const footer = (
-    <>
+    <Box flexDirection="column" paddingX={WORKFLOW_GUTTER_X}>
       <FeedbackRow inputHint={feedbackHint ?? inputHint} />
       {beforeComposer}
       <Composer
@@ -147,14 +151,14 @@ export function WorkflowFooter({
           : {})}
         boxHints={boxHints}
         questionEpoch={questionEpoch}
-        inputPaddingX={0}
+        inputPaddingX={1}
         {...(onEditShortcut ? { onEditShortcut } : {})}
         {...(onReviewBoundaryNavigate ? { onReviewBoundaryNavigate } : {})}
         {...(onReviewInteraction ? { onReviewInteraction } : {})}
         reviewYankActive={reviewYankActive}
       />
       <InputFooter waiting={waitingForUser} {...(byline !== undefined && { byline })} />
-    </>
+    </Box>
   );
   return footer;
 }

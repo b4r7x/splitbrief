@@ -40,10 +40,9 @@ import {
 } from '../../features/workflow/layout/rect.js';
 import {
   getChromeContentWidth,
-  getChromeTextWidth,
   getProgressRows,
   selectRailForm,
-  WORKFLOW_FRAME_X,
+  WORKFLOW_GUTTER_X,
 } from '../../features/workflow/layout/chrome-rows.js';
 import { BuildProgressBlock } from '../../features/workflow/components/build-progress.js';
 import { getWorkflowPromptRows } from '../../features/workflow/prompt-rows/workflow.js';
@@ -263,8 +262,9 @@ export function WorkflowScreen({
         ]
       : undefined;
 
-  // The byline renders from the rail's text column, so its budget is the framed text width.
-  const bylineWidth = getChromeTextWidth(cols);
+  // The at-rest byline carries no pip, so it opens on the text column and its budget is what is
+  // left of the chrome row past the mark slot.
+  const bylineWidth = getChromeContentWidth(cols);
   const byline =
     model.atRestRecord === undefined
       ? undefined
@@ -288,7 +288,7 @@ export function WorkflowScreen({
       ? model.inputHint
       : legendText({
           overflow: scrollAboveLabel !== '' || scrollBelowLabel !== '',
-          width: getChromeTextWidth(cols),
+          width: getChromeContentWidth(cols),
           canGoHome: !checking,
         });
 
@@ -306,8 +306,8 @@ export function WorkflowScreen({
         </WorkflowHeader>
       }
       footer={
-        <Box flexDirection="column" width="100%" paddingX={WORKFLOW_FRAME_X} flexShrink={0}>
-          <Divider width={getChromeContentWidth(cols)} tone="textDim" label={scrollBelowLabel} />
+        <Box flexDirection="column" width="100%" flexShrink={0}>
+          <Divider width={cols} tone="textDim" label={scrollBelowLabel} />
           <WorkflowFooter
             compactInput={stopMenuOpen}
             beforeComposer={stopMenuOpen ? <StopMenu height={promptBoxRows} /> : undefined}
@@ -373,7 +373,7 @@ export function WorkflowScreen({
         overflow="hidden"
         flexDirection="column"
         flexShrink={0}
-        paddingX={WORKFLOW_FRAME_X}
+        paddingX={WORKFLOW_GUTTER_X}
       >
         {!stopMenuOpen && (model.promptPending || reviewArtifact !== null) && (
           <ApprovalPrompt

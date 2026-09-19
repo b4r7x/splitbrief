@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from './theme.js';
 import { listRowLead } from './list-row.js';
+import { glyph } from '../lib/glyphs.js';
 import { SOFT_SEP } from '../core/separators.js';
 import type { Session } from '../core/schemas/session.js';
 import { getSessionStatusDisplay } from '../core/sessions/display.js';
@@ -94,10 +95,12 @@ export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps)
 
   return (
     <Box width="100%" backgroundColor={bg}>
+      {/* The bar takes the slot cell beside the row, the way the sidebar's live row wears it — one
+          cell out, not two, which is where the list's own frame stands. */}
       {cursor.isCursor && (
-        <Box position="absolute" marginLeft={-2} backgroundColor={bg}>
+        <Box position="absolute" marginLeft={-1} backgroundColor={bg}>
           <Text color={t.accent} bold>
-            {listRowLead('active')}
+            {glyph('liveBar')}
           </Text>
         </Box>
       )}

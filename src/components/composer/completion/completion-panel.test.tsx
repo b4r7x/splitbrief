@@ -92,6 +92,39 @@ describe('CompletionPanel', () => {
     ui.unmount();
   });
 
+  // The workflow composer stands one gutter in from a rule that runs edge to edge. Covering the
+  // rule from the card's own border left its first cell butting into the border as `─│`.
+  it('blanks the cell left of the card, so a rule it covers stops short of the border', () => {
+    terminalSizeStore.__testReset({ cols: 40 });
+    const rule = glyph('divider').repeat(40);
+    const ui = render(
+      <Box height={8} width={40} overflow="visible">
+        <Box flexDirection="column">
+          {Array.from({ length: 8 }, (_, index) => (
+            <Text key={index}>{rule}</Text>
+          ))}
+        </Box>
+        <Box position="absolute" marginLeft={1} marginTop={1} width={38}>
+          <CompletionPanel
+            items={ITEMS.slice(0, 3)}
+            selectedIndex={0}
+            maxVisible={3}
+            footer="select · esc close"
+            itemKey={(item) => item}
+            renderRow={({ item }) => <Text>{item}</Text>}
+          />
+        </Box>
+      </Box>,
+    );
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const footerIndex = lines.findIndex((line) => line.includes('select'));
+    expect(footerIndex).toBeGreaterThan(0);
+    expect(lines[footerIndex]?.[0]).toBe(' ');
+    expect(lines[footerIndex]?.[1]).toMatch(/[│|]/);
+    ui.unmount();
+  });
+
   it('keeps narrow panels to a single visible row plus the footer', () => {
     const ui = render(
       <Box width={24}>

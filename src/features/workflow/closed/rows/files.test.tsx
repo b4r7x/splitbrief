@@ -58,10 +58,11 @@ describe('filesSectionRows', () => {
     const ui = renderFiles(changed, 60);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain(`Files ${glyph('divider')}`);
+    expect(frame).toContain(`   Files ${glyph('divider')}`);
     expect(frame).toContain('src/routes/signup.ts · partial');
-    expect(frame).toContain('src/validate.ts');
-    expect(frame.split('\n').find((line) => line.includes('validate.ts'))).not.toContain('partial');
+    const validateLine = frame.split('\n').find((line) => line.includes('validate.ts')) ?? '';
+    expect(validateLine.startsWith('   src/validate.ts')).toBe(true);
+    expect(validateLine).not.toContain('partial');
 
     ui.unmount();
   });
