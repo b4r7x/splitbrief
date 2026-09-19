@@ -14,13 +14,24 @@ import { hasCommits } from '../../../../lib/git/repository.js';
 import { collectTrackedFiles, type CollectTrackedFilesOptions } from '../../../snapshots/files.js';
 import { hashFiles } from '../../../change-detection.js';
 import { error } from '../../../../utils/error.js';
+import { pathConfinementError } from '../../../../lib/path-confinement.js';
 import { readConfinedProjectFile } from './contents.js';
 import { uniqueProjectFiles } from './types.js';
-import { readConfinedEntry } from './entry.js';
+import { readConfinedEntry, type FileSnapshotEntry } from './entry.js';
 
 type ExpandedChangedFiles = {
   files: string[];
   opaqueDirs: string[];
+};
+
+export type CaptureSnapshotOptions = {
+  /**
+   * Records a changed entry whose final component is a symlink as absent
+   * instead of refusing the capture. Only for workspaces whose tree omits
+   * symlinks by construction (the staged copy skips them); every other caller
+   * keeps the refusal so a symlink is never silently mis-snapshotted.
+   */
+  symlinkedEntriesAsAbsent?: boolean;
 };
 
 const captureError = {
@@ -65,6 +76,7 @@ export async function captureProjectFileHashes(
 export async function getChangedFilesSnapshot(
   projectDir: string,
   onEmbeddedRepo?: (dir: string) => void,
+  opts: CaptureSnapshotOptions = {},
 ): Promise<ChangedFilesSnapshot> {
   const changed = await getCurrentChangedFiles(projectDir);
   const { files: expandedChanged, opaqueDirs } = await expandChangedDirEntries(projectDir, changed);
@@ -80,7 +92,15 @@ export async function getChangedFilesSnapshot(
     files
       .filter((file) => !gitlinkSet.has(file))
       .map(async (file) => {
-        const entry = await readConfinedEntry(projectDir, file);
+        let entry: FileSnapshotEntry;
+        try {
+          entry = await readConfinedEntry(projectDir, file);
+        } catch (err) {
+          if (opts.symlinkedEntriesAsAbsent === true && pathConfinementError.isSymlinkRead(err)) {
+            return [file, null] as const;
+          }
+          throw err;
+        }
         return [
           file,
           entry.kind === 'absent'

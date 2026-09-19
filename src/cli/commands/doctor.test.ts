@@ -203,6 +203,8 @@ const CLAUDE_HELP_WITHOUT_PARTIAL_MESSAGES = [
   '  --verbose                  Override verbose mode',
   '  -r, --resume [sessionId]   Resume a conversation by session ID',
   '  --permission-mode <mode>   Permission mode for the session',
+  '  --disallowedTools <tools...>',
+  '                             Tools to block in this session',
   '  -h, --help                 Display help for command',
 ].join('\n');
 

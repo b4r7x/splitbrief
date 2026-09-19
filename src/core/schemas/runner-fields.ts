@@ -237,8 +237,7 @@ function validateRemovedApiProvider(input: unknown, ctx: z.RefinementCtx): void 
 function validateApiIdentity(input: unknown, ctx: z.RefinementCtx): void {
   const runner = narrowRecord(input);
   if (
-    !runner ||
-    runner.kind !== 'api' ||
+    runner?.kind !== 'api' ||
     typeof runner.provider !== 'string' ||
     typeof runner.service !== 'string' ||
     typeof runner.offering !== 'string'
@@ -278,7 +277,7 @@ function validateApiIdentity(input: unknown, ctx: z.RefinementCtx): void {
 
 function validateCliModelPolicy(role: RunnerRole, input: unknown, ctx: z.RefinementCtx): void {
   const runner = narrowRecord(input);
-  if (!runner || runner.kind !== 'cli' || typeof runner.tool !== 'string') return;
+  if (runner?.kind !== 'cli' || typeof runner.tool !== 'string') return;
 
   const descriptor = Object.values(CLI_TOOL_CATALOG).find(({ id }) => id === runner.tool);
   if (descriptor === undefined) return;
@@ -301,8 +300,7 @@ function validateCliModelPolicy(role: RunnerRole, input: unknown, ctx: z.Refinem
 function validateCliAuthChannel(input: unknown, ctx: z.RefinementCtx): void {
   const runner = narrowRecord(input);
   if (
-    !runner ||
-    runner.kind !== 'cli' ||
+    runner?.kind !== 'cli' ||
     typeof runner.tool !== 'string' ||
     typeof runner.authChannel !== 'string'
   ) {

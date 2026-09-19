@@ -1,5 +1,5 @@
 import XtermHeadless from '@xterm/headless';
-import UnicodeGraphemes from '@xterm/addon-unicode-graphemes';
+import { UnicodeGraphemesAddon } from './grapheme-addon.js';
 import type { CopyOutcome } from '../clipboard/clipboard.js';
 import type { MouseEvent, MouseListener } from './filtered-stdin/types.js';
 import {
@@ -44,7 +44,7 @@ export function installTerminalSelection(options: {
     logLevel: 'off',
     disableStdin: true,
   });
-  terminal.loadAddon(new UnicodeGraphemes.UnicodeGraphemesAddon());
+  terminal.loadAddon(new UnicodeGraphemesAddon());
   const originalWrite = stdout.write;
   const writeOriginal = originalWrite.bind(stdout);
   let gesture: SelectionGesture | undefined;

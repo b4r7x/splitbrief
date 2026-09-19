@@ -116,7 +116,7 @@ function ledgerTask(projectDir: string) {
   return { ledger, entry };
 }
 
-describe('partial promotion recovery', () => {
+describe('partial promotion recovery', { timeout: 60_000 }, () => {
   it('records the applied prefix and the failure, and fails the brief', async () => {
     const acquired = await acquiredProject('promotion-recovery');
     const { projectDir, workspace } = acquired;

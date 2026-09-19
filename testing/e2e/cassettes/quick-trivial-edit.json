@@ -126,7 +126,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"```markdown\\n# SPLITBRIEF\\n\\nA small fixture project for e2e replay.\\n```\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":410,\"completion_tokens\":24}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"version\\\":1,\\\"files\\\":[{\\\"path\\\":\\\"README.md\\\",\\\"action\\\":\\\"create\\\",\\\"content\\\":\\\"# SPLITBRIEF\\\\n\\\\nA small fixture project for e2e replay.\\\"}]}\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":410,\"completion_tokens\":24}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 850
@@ -148,7 +148,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":260,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\\n\\n### Verdict\\npass\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":260,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 640

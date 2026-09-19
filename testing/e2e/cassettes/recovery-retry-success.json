@@ -148,7 +148,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"```typescript\\nexport type FormInput = {\\n  email?: string;\\n};\\n\\nexport type FormValidationResult = {\\n  valid: boolean;\\n  errors: string[];\\n};\\n\\nexport function validateForm(input: FormInput): FormValidationResult {\\n  const errors: string[] = [];\\n  if (!input.email || !input.email.includes('@')) {\\n    errors.push('A valid email is required.');\\n  }\\n  return { valid: errors.length === 0, errors };\\n}\\n```\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":560,\"completion_tokens\":94}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"version\\\":1,\\\"files\\\":[{\\\"path\\\":\\\"src/form-validation.ts\\\",\\\"action\\\":\\\"create\\\",\\\"content\\\":\\\"export type FormInput = {\\\\n  email?: string;\\\\n};\\\\n\\\\nexport type FormValidationResult = {\\\\n  valid: boolean;\\\\n  errors: string[];\\\\n};\\\\n\\\\nexport function validateForm(input: FormInput): FormValidationResult {\\\\n  const errors: string[] = [];\\\\n  if (!input.email || !input.email.includes('@')) {\\\\n    errors.push('A valid email is required.');\\\\n  }\\\\n  return { valid: errors.length === 0, errors };\\\\n}\\\\n\\\"}]}\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":560,\"completion_tokens\":94}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 980
@@ -170,7 +170,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":310,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\\n\\n### Verdict\\npass\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":310,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 670

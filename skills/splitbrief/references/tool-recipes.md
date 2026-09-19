@@ -27,8 +27,8 @@ Timeouts:
 <!-- generated: recipe:claude-code -->
 - implementer: `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --model $M --effort $E --permission-mode acceptEdits < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - implementer (no model): `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --permission-mode acceptEdits < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --model $M --effort $E --permission-mode plan < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --permission-mode plan < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --model $M --effort $E --permission-mode plan --disallowedTools AskUserQuestion < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --permission-mode plan --disallowedTools AskUserQuestion < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - terminal record: a line containing `"type":"result"`; its `result` field is the final text.
 

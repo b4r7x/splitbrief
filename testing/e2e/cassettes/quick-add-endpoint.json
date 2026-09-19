@@ -126,7 +126,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"```typescript\\nexport function getHealth() {\\n  return { status: 'ok' };\\n}\\n```\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":460,\"completion_tokens\":28}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"version\\\":1,\\\"files\\\":[{\\\"path\\\":\\\"src/health.ts\\\",\\\"action\\\":\\\"create\\\",\\\"content\\\":\\\"export function getHealth() {\\\\n  return { status: 'ok' };\\\\n}\\\\n\\\"}]}\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":460,\"completion_tokens\":28}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 780
@@ -148,7 +148,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":280,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\\n\\n### Verdict\\npass\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":280,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 610

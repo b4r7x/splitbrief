@@ -197,10 +197,11 @@ describe('restoreDirtyFilesFromSnapshot', () => {
       rmSync(join(dir, 'src', 'added.ts'));
       symlinkSync(join(outside, 'victim.txt'), join(dir, 'src', 'added.ts'));
 
-      // A confinement escape is a non-recoverable boundary violation: it must
-      // propagate as a hard failure, not be downgraded to an ordinary conflict.
+      // A confinement escape is a non-recoverable boundary violation: the restore
+      // refuses to read through the symlink before resolving it and propagates
+      // the refusal as a hard failure, never downgrading it to a conflict.
       await expect(restoreDirtyFilesFromSnapshot(dir, snapshot, ['src/added.ts'])).rejects.toThrow(
-        /unsafe path/,
+        /refusing to read through symlink/,
       );
       expect(existsSync(join(outside, 'victim.txt'))).toBe(true);
     } finally {
@@ -223,10 +224,12 @@ describe('restore confined deletes', () => {
       writeFileSync(join(outside, 'victim.txt'), 'must-not-delete');
       symlinkSync(join(outside, 'victim.txt'), join(dir, 'src', 'temp.ts'));
 
+      // The delete refuses to read through the symlinked path rather than
+      // removing its target, and the refusal escapes as a hard failure.
       await expect(restoreDirtyFilesFromSnapshot(dir, snapshot, ['src/temp.ts'])).rejects.toThrow(
-        /unsafe path/,
+        /refusing to read through symlink/,
       );
-      expect(readFileSync(join(outside, 'victim.txt'), 'utf8')).toBe('must-not-delete');
+      expect(readFileSync(join(outside, 'victim.txt'), 'utf-8')).toBe('must-not-delete');
     } finally {
       cleanupTempDir(outside);
       cleanupTempDir(dir);

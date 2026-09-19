@@ -34,6 +34,9 @@ export const EMPTY_RESULT: StreamParseResult = Object.freeze({});
 type MessageUsage = z.infer<typeof BackendTokenUsageSchema>;
 type CollectMessageUsage = (event: Record<string, unknown>) => TokenDelta | undefined;
 
+/** A delta with no message_start behind it still reports real usage. */
+const ORPHAN_MESSAGE_DELTA_ID = 'message-delta-without-message-start';
+
 /** One parser per invocation: message snapshots replace, distinct messages add. */
 export function createStreamParser(): (line: string) => StreamParseResult {
   const messages = new Map<string, MessageUsage>();
@@ -60,7 +63,10 @@ export function createStreamParser(): (line: string) => StreamParseResult {
       const { output_tokens: _placeholder, ...inputUsage } = message.usage;
       raw = inputUsage;
     } else if (stream?.type === 'message_delta') {
-      id = activeMessage;
+      // Dropping a delta no message_start opened would erase the only usage
+      // evidence a terminal result without usage ever sees, so it stands in
+      // as a message of its own and the aggregate keeps it.
+      id = activeMessage ?? ORPHAN_MESSAGE_DELTA_ID;
       raw = stream.usage;
     } else {
       if (stream?.type === 'message_stop') activeMessage = undefined;

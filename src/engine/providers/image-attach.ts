@@ -29,7 +29,7 @@ export async function attachImagesToLastUserMessage<
 
   for (let i = out.length - 1; i >= 0; i--) {
     const msg = out[i];
-    if (!msg || msg.role !== 'user') continue;
+    if (msg?.role !== 'user') continue;
     const existing = typeof msg.content === 'string' ? [opts.mapText(msg.content)] : msg.content;
     msg.content =
       opts.imagePlacement === 'before-existing'

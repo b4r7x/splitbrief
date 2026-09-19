@@ -175,7 +175,9 @@ describe('PTY behavior child', () => {
                 {
                   onApprovalNeeded: async () => ({ approved: true }),
                   onContinuationNeeded: async (_partial, at) => {
-                    expect(at).toBe('boundary');
+                    // The approval gate runs inside the step's continuation loop now, so a user
+                    // interrupt there cuts mid-step while the pickup point stays the spec gate.
+                    expect(at).toBe('mid-step');
                     const interrupted = loadState({
                       projectDir,
                       sessionId: PTY_REVIEW_SESSION_ID,
@@ -184,6 +186,7 @@ describe('PTY behavior child', () => {
                       kind: 'gate',
                       gate: 'spec',
                     });
+                    expect(interrupted?.interruptedStep?.cut).toBe('mid-step');
                     expect(interrupted?.interruptedStep?.source).toBe('user');
                     expect(interrupted?.awaitingContinue).toBe(true);
                     expect(interrupted?.closed).toBeUndefined();
@@ -219,7 +222,7 @@ describe('PTY behavior child', () => {
       stopStore.resume('');
       await expect(pending).resolves.toEqual({ approved: true });
 
-      expect(events[1]).toMatchObject({ type: 'turn_interrupted', source: 'user', at: 'boundary' });
+      expect(events[1]).toMatchObject({ type: 'turn_interrupted', source: 'user', at: 'mid-step' });
       expect(output.filter((chunk) => chunk.includes(PTY_APPROVED_MARKER))).toHaveLength(1);
       expect(abortTurn()).toBe(false);
       expect(process.listenerCount('exit')).toBe(exitListeners);

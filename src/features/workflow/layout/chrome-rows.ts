@@ -15,17 +15,13 @@ import {
 // One empty cell on each edge of every workflow-screen row: the breathing frame. Column 0 and the
 // last column are always empty, and every width and inset below is derived from this single
 // number — markers, box borders and the divider start at the rail (col WORKFLOW_FRAME_X), text
-// starts at WORKFLOW_TEXT_X, and nothing ever paints the last column.
+// starts one edge-padding cell inside it, and nothing ever paints the last column.
 export const WORKFLOW_FRAME_X = 1;
 
 // The cells between a box border and its own text — the composer's `›`, the question body. The
 // chrome rows that flank the composer (keys row above, byline below) align to the same column so
 // every glyph edge sits on one line with the input's `›`.
 export const COMPOSER_EDGE_PADDING_X = 1;
-
-// The screen's one text column: every block-leading row's first text cell, every child tree glyph,
-// and every text-only chrome row start here.
-export const WORKFLOW_TEXT_X = WORKFLOW_FRAME_X + COMPOSER_EDGE_PADDING_X;
 
 // The header row (which carries the phase rail inline) + the divider (1). The divider alone
 // separates the chrome from the body — no gap row below it — and the live status rides inline, so
@@ -98,8 +94,8 @@ export function getChromeContentWidth(cols: number): number {
   return Number.isFinite(cols) ? Math.max(1, Math.floor(cols) - WORKFLOW_FRAME_X * 2) : 1;
 }
 
-// The measure for chrome rows whose text starts at WORKFLOW_TEXT_X: the framed width minus the
-// text inset on both sides.
+// The measure for chrome rows whose text starts one edge-padding cell inside the frame: the
+// framed width minus the text inset on both sides.
 export function getChromeTextWidth(cols: number): number {
   return Math.max(1, getChromeContentWidth(cols) - COMPOSER_EDGE_PADDING_X * 2);
 }

@@ -49,7 +49,6 @@ export async function executeRuntimeCommand(
     return;
   }
   try {
-    // biome-ignore lint/nursery/noFloatingPromises: the handler result is awaited here; the rule mis-reads the void | Promise<void> union
     await (cmd.kind === 'arg' ? cmd.handler(typed || undefined) : cmd.handler());
   } catch (err) {
     options.onError(toErrorMessage(err));

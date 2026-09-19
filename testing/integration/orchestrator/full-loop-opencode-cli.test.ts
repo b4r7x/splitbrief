@@ -134,7 +134,7 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
         }),
       ),
       review: vi.fn().mockResolvedValue({
-        text: '# Final review\n\nOpenCode CLI implementer passed validation.',
+        text: '# Final review\n\nOpenCode CLI implementer passed validation.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },
       }),
     });

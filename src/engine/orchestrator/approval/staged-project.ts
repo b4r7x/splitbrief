@@ -122,7 +122,12 @@ export async function createStagedProject(
   // Before the copy, so an edit racing the copy lands on the worker's side of
   // the baseline and is reported as a conflict rather than silently overwritten.
   const targetBaseline = await captureAcquisitionBaseline(projectDir);
-  const snapshot = await getChangedFilesSnapshot(projectDir);
+  // The staged copy skips symlinked entries, so the snapshot describes the tree
+  // the worker receives: a source symlink is recorded as absent, not refused —
+  // this strategy is the fallback for exactly those sources.
+  const snapshot = await getChangedFilesSnapshot(projectDir, undefined, {
+    symlinkedEntriesAsAbsent: true,
+  });
   const stagedRoot = await mkdtemp(join(tmpdir(), `${SPLITBRIEF_IDENTITY.slug}-stage-`));
   try {
     const stagedProjectDir = join(stagedRoot, basename(projectDir));

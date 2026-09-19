@@ -66,10 +66,10 @@ const LIMIT_EPOCH = /limit reached\|(\d{10,13})\b/i;
 const RESETS_AT =
   /resets (?:at )?(?:(sun|mon|tue|wed|thu|fri|sat)[a-z]* )?(\d{1,2})(?::(\d{2}))?\s?(am|pm)(?:\s*\(([A-Za-z]+(?:\/[A-Za-z0-9_+-]+)+|UTC|GMT)\))?/i;
 
-const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+const WEEKDAYS: readonly string[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 function weekdayIndex(name: string): number | null {
-  const index = WEEKDAYS.findIndex((day) => day === name);
+  const index = WEEKDAYS.indexOf(name);
   return index === -1 ? null : index;
 }
 

@@ -149,7 +149,7 @@ async function runCodexLoop(opts: {
       }),
     ),
     review: vi.fn().mockResolvedValue({
-      text: '# Final review\n\nCodex CLI implementer passed validation.',
+      text: '# Final review\n\nCodex CLI implementer passed validation.\n\n### Verdict\npass',
       usage: { inputTokens: 60, outputTokens: 30 },
     }),
   });

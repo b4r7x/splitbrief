@@ -18,6 +18,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { COMMANDS_ONLY_NOTICE } from '../../components/composer/composer.js';
+import { WORKFLOW_FRAME_X } from '../../features/workflow/layout/chrome-rows.js';
 import { WorkflowScreen } from './workflow.js';
 
 const ESC = String.fromCharCode(27);
@@ -70,6 +71,15 @@ function maxLineLength(frame: string): number {
   return stripAnsiStyles(frame)
     .split('\n')
     .reduce((max, line) => Math.max(max, line.length), 0);
+}
+
+/** The screen's whole body sits inside its frame, inset WORKFLOW_FRAME_X each side; anchored
+ *  assertions read the transcript from its own column 0, not the terminal's. */
+function withoutFrameInset(frame: string): string {
+  return frame
+    .split('\n')
+    .map((line) => line.slice(WORKFLOW_FRAME_X))
+    .join('\n');
 }
 
 function briefBreakdown(count: number): NonNullable<Summary['taskBreakdown']> {
@@ -277,7 +287,7 @@ describe('the workflow screen showing a closed run', () => {
     });
 
     const ui = mount(160, 40);
-    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const lines = withoutFrameInset(stripAnsiStyles(ui.lastFrame() ?? '')).split('\n');
 
     expect(lines.filter((line) => line.startsWith('Crew'))).toEqual([]);
     expect(lines[0]).toContain('qwen-small');
@@ -295,7 +305,7 @@ describe('the workflow screen showing a closed run', () => {
     });
 
     const ui = mount(80, 40);
-    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const lines = withoutFrameInset(stripAnsiStyles(ui.lastFrame() ?? '')).split('\n');
     const crewRow = lines.find((line) => line.startsWith('Crew')) ?? '';
 
     expect(crewRow).toContain('OpenAI Codex CLI');
@@ -389,7 +399,7 @@ describe('the workflow screen showing a closed run', () => {
     });
 
     const ui = mount(120, 40);
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const frame = withoutFrameInset(stripAnsiStyles(ui.lastFrame() ?? ''));
 
     // The ledger paints, and the facts it does account for still spell absence as a word.
     expect(frame).toMatch(/^Run /m);
@@ -418,7 +428,7 @@ describe('the workflow screen showing a closed run', () => {
     });
 
     const ui = mount(160, 40);
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const frame = withoutFrameInset(stripAnsiStyles(ui.lastFrame() ?? ''));
 
     // The record priced every seat; the ledger still reads, and still says nothing about money.
     expect(frame).toMatch(/^Run /m);

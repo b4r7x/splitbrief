@@ -56,7 +56,14 @@ describe('full workflow custom-endpoint API implementer', { timeout: 90_000 }, (
       }
       return Promise.resolve(
         makeOpenAiSseResponse([
-          { content: `\`\`\`ts\n${implementation}\`\`\`` },
+          // API BUILD calls answer with the strict file-bundle-v1 grammar, not a
+          // fenced code block: the whole response is one JSON bundle.
+          {
+            content: JSON.stringify({
+              version: 1,
+              files: [{ path: targetFile, action: 'create', content: implementation }],
+            }),
+          },
           { usage: { prompt_tokens: 123, completion_tokens: 45 } },
         ]),
       );
@@ -85,7 +92,7 @@ describe('full workflow custom-endpoint API implementer', { timeout: 90_000 }, (
         }),
       ),
       review: vi.fn().mockResolvedValue({
-        text: '# Final review\n\nCustom-endpoint API implementer passed validation.',
+        text: '# Final review\n\nCustom-endpoint API implementer passed validation.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },
       }),
     });

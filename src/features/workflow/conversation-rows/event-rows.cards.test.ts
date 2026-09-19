@@ -161,7 +161,7 @@ describe('eventRows colored left-rule callouts', () => {
     expect(hasLabelRow(rows)).toBe(true);
     expect(hasLeftRule(rows)).toBe(false);
     const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-top');
-    expect(rowText(topRow)).toContain('recovery');
+    expect(rowText(topRow)).toContain('Recovery');
     expect(topRow.segments[0]?.tone).toBe('textDim');
 
     // The card says what happened in the words the prompt uses, not the enum names behind them.

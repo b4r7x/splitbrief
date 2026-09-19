@@ -39,6 +39,15 @@ vi.mock('../../../../lib/git/diff.js', async (importOriginal) => {
   };
 });
 
+// Fresh captures carry exact bytes and modes in dirtyFileEntries; the legacy
+// text field dirtyFileContents stays empty and only loads old snapshots.
+function capturedText(snapshot: ChangedFilesSnapshot, file: string): string | undefined {
+  const entry = snapshot.dirtyFileEntries?.[file];
+  return entry === undefined || entry === null
+    ? undefined
+    : Buffer.from(entry.base64, 'base64').toString('utf-8');
+}
+
 describe('uniqueProjectFiles', () => {
   it('removes duplicates and sorts', () => {
     expect(uniqueProjectFiles(['b.ts', 'a.ts', 'b.ts'])).toEqual(['a.ts', 'b.ts']);
@@ -125,8 +134,9 @@ describe('getChangedFilesSnapshot', () => {
     expect(snapshot.files).toContain('newdir/a.ts');
     expect(snapshot.files).toContain('newdir/sub/b.ts');
     expect(snapshot.files).not.toContain('newdir/');
-    expect(snapshot.dirtyFileContents['newdir/a.ts']).toBe('export const a = 1;');
-    expect(snapshot.dirtyFileContents['newdir/sub/b.ts']).toBe('export const b = 2;');
+    expect(capturedText(snapshot, 'newdir/a.ts')).toBe('export const a = 1;');
+    expect(capturedText(snapshot, 'newdir/sub/b.ts')).toBe('export const b = 2;');
+    expect(snapshot.dirtyFileContents).toEqual({});
     expect(ignored).not.toContain('newdir/');
     cleanupTempDir(dir);
   });
@@ -232,7 +242,7 @@ describe('getChangedFilesSinceSnapshot — baseline files that leave git status'
       'src/gone.ts': 'export const gone = 1;\n',
       'src/keep.ts': 'export const keep = 1;\n',
     });
-    expect(snapshot.dirtyFileContents['src/gone.ts']).toBe('export const gone = 1;\n');
+    expect(capturedText(snapshot, 'src/gone.ts')).toBe('export const gone = 1;\n');
 
     // The worker deletes it. It was never tracked, so git status simply stops
     // mentioning it and only the acquisition baseline still knows it existed.

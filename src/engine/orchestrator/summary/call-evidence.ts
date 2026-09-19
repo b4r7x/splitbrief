@@ -58,7 +58,10 @@ export function createCallEvidenceSink(ref: SessionRef): EventSink {
  */
 export function resolveCallUsageEvidence(ref: SessionRef): CallUsageEvidence[] | undefined {
   const events = liveRunCalls.get(sessionKey(ref)) ?? readLoggedCallEvents(ref);
-  return events === null ? undefined : collectCallUsageEvidence(events);
+  // The sink seeds an empty recorder when the session has no log, so an absent record and a
+  // silent one both read as zero events here — either way the evidence predates attribution.
+  if (events === null || events.length === 0) return undefined;
+  return collectCallUsageEvidence(events);
 }
 
 function readLoggedCallEvents(ref: SessionRef): EngineEvent[] | null {

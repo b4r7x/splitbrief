@@ -82,8 +82,7 @@ export function readBriefQuality(
 
   const record = narrowRecord(raw);
   if (
-    !record ||
-    record.version !== 1 ||
+    record?.version !== 1 ||
     typeof record.passed !== 'boolean' ||
     typeof record.score !== 'number'
   ) {

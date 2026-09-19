@@ -66,7 +66,14 @@ describe('selectRoutingProfile context cache', () => {
       getModelsDevCatalog: () => null,
       getProviderModels: (providerId) =>
         providerId === 'ollama'
-          ? [{ id: 'runtime-only-model', contextLength: 64_000, pricingInput: 1, pricingOutput: 2 }]
+          ? [
+              {
+                id: 'runtime-only-model',
+                effectiveContextTokens: 64_000,
+                pricingInput: 1,
+                pricingOutput: 2,
+              },
+            ]
           : null,
     };
     const wctx = makeTaskWorkflowContext({ modelCache });

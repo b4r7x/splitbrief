@@ -67,44 +67,49 @@ async function acquiredProject(name: string) {
 }
 
 describe('gateAndPromoteChangedFiles', () => {
-  itUnix('returns a handled error outcome and runs cleanup when promotion throws', async () => {
-    const projectDir = createTempDir('gate-promote-project');
-    const outsideDir = createTempDir('gate-promote-outside');
-    dirs.push(projectDir, outsideDir);
+  itUnix(
+    'returns a handled error outcome and retains the workspace when promotion throws',
+    async () => {
+      const projectDir = createTempDir('gate-promote-project');
+      const outsideDir = createTempDir('gate-promote-outside');
+      dirs.push(projectDir, outsideDir);
 
-    createTestGitRepo(projectDir);
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, 'src', 'app.ts'), 'export const app = true;\n');
+      createTestGitRepo(projectDir);
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      writeFileSync(join(projectDir, 'src', 'app.ts'), 'export const app = true;\n');
 
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const workspace = await createStagedProject(projectDir);
+      const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+      const workspace = await createStagedProject(projectDir);
 
-    // Make the staged copy diverge so the gate sees a changed file to promote.
-    writeFileSync(join(workspace.projectDir, 'src', 'app.ts'), 'export const app = false;\n');
+      // Make the staged copy diverge so the gate sees a changed file to promote.
+      writeFileSync(join(workspace.projectDir, 'src', 'app.ts'), 'export const app = false;\n');
 
-    // Replace the real target's parent with a symlink escaping the project, so the
-    // post-mkdir path-confinement re-check inside promoteStagedChanges throws.
-    rmSync(join(projectDir, 'src'), { recursive: true, force: true });
-    symlinkSync(outsideDir, join(projectDir, 'src'));
+      // Replace the real target's parent with a symlink escaping the project, so the
+      // post-mkdir path-confinement re-check inside promoteStagedChanges throws.
+      rmSync(join(projectDir, 'src'), { recursive: true, force: true });
+      symlinkSync(outsideDir, join(projectDir, 'src'));
 
-    const task = makeTask({ id: 'T010', file: 'src/app.ts' });
-    const state = makeImplState([task]);
-    const cleanup = vi.fn(workspace.cleanup);
+      const task = makeTask({ id: 'T010', file: 'src/app.ts' });
+      const state = makeImplState([task]);
+      const cleanup = vi.fn(workspace.cleanup);
 
-    const outcome = await runGate({
-      task,
-      state,
-      projectDir,
-      workspace,
-      taskStartSnapshot,
-      cleanup,
-    });
+      const outcome = await runGate({
+        task,
+        state,
+        projectDir,
+        workspace,
+        taskStartSnapshot,
+        cleanup,
+      });
 
-    expect(outcome.outcome).toBe('error');
-    expect(cleanup).toHaveBeenCalled();
-    expect(existsSync(workspace.projectDir)).toBe(false);
-    expect(existsSync(join(outsideDir, 'app.ts'))).toBe(false);
-  });
+      expect(outcome.outcome).toBe('error');
+      // A throw cannot say how far the promotion got, so the workspace keeps the
+      // worker's output instead of being disposed: cleanup must not run.
+      expect(cleanup).not.toHaveBeenCalled();
+      expect(existsSync(workspace.projectDir)).toBe(true);
+      expect(existsSync(join(outsideDir, 'app.ts'))).toBe(false);
+    },
+  );
 
   it('does not promote or delete a project change discovered outside isolation', async () => {
     const projectDir = createTempDir('gate-promote-project');

@@ -1,18 +1,18 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { lstat, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join } from 'node:path';
+import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { ensureConfigGitignore } from '../../../core/config/load/document.js';
 import { isolationMarkerPath, SPLITBRIEF_DIR } from '../../../core/paths.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import type { GitClient } from '../../../lib/git/client.js';
 import { checkIgnoredPaths, getCurrentChangedFiles } from '../../../lib/git/files.js';
 import { getGitCommonDir } from '../../../lib/git/repository.js';
 import { lockSibling, withFileLock } from '../../../lib/file-lock.js';
-import { assertPathConfined } from '../../../lib/path-confinement.js';
-import { error } from '../../../utils/error.js';
+import { pathConfinementError } from '../../../lib/path-confinement.js';
+import { error, type AppError } from '../../../utils/error.js';
 import { createWorktree } from './create-worktree.js';
 import { assertIsolationDirReadable, resolveConfinedIsolationWorktreePath } from './path.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
-import { writeCurrentFileContent } from '../approval/file-snapshots/contents.js';
 import { writeConfinedEntry } from '../approval/file-snapshots/entry.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 
@@ -90,18 +90,6 @@ async function writeIsolationMarker(opts: {
     JSON.stringify({ sessionId: opts.sessionId, projectDir: opts.projectDir }),
     'utf-8',
   );
-}
-
-function roundTripsUtf8(raw: Buffer): boolean {
-  return Buffer.from(raw.toString('utf8'), 'utf8').equals(raw);
-}
-
-async function isSymlinkAt(path: string): Promise<boolean> {
-  try {
-    return (await lstat(path)).isSymbolicLink();
-  } catch {
-    return false;
-  }
 }
 
 type SeedResult = { kind: 'ok' } | { kind: 'fallback'; reason: string };
@@ -191,8 +179,31 @@ export async function removeNodeModulesExclude(file: string, sessionId: string):
   }
 }
 
+function symlinkedSourceFile(err: AppError<'path-symlink-read'>, sourceDir: string): string {
+  const { data } = err;
+  const filePath =
+    typeof data === 'object' &&
+    data !== null &&
+    'filePath' in data &&
+    typeof data.filePath === 'string'
+      ? data.filePath
+      : err.message;
+  return relative(sourceDir, filePath) || filePath;
+}
+
 async function seedIsolationWorktree(sourceDir: string, wtPath: string): Promise<SeedResult> {
-  const snapshot = await getChangedFilesSnapshot(sourceDir);
+  // A symlink in the source's changed set is refused by the capture itself; the
+  // refusal is rethrown under the isolation error so the run falls back over a
+  // named symlink reason instead of a raw confinement message.
+  let snapshot: ChangedFilesSnapshot;
+  try {
+    snapshot = await getChangedFilesSnapshot(sourceDir);
+  } catch (err) {
+    if (pathConfinementError.isSymlinkRead(err)) {
+      throw isolationError.seedSymlink(symlinkedSourceFile(err, sourceDir));
+    }
+    throw err;
+  }
   for (const [file, entry] of Object.entries(snapshot.dirtyFileEntries ?? {})) {
     const bytes = entry === null ? undefined : Buffer.from(entry.base64, 'base64');
     await writeConfinedEntry(
@@ -202,25 +213,6 @@ async function seedIsolationWorktree(sourceDir: string, wtPath: string): Promise
         ? { kind: 'absent' }
         : { kind: 'file', bytes, sha256: sha256Hex(bytes), mode: entry.mode },
     );
-  }
-  for (const [file, content] of Object.entries(snapshot.dirtyFileContents)) {
-    if (Object.hasOwn(snapshot.dirtyFileEntries ?? {}, file)) continue;
-    assertPathConfined(file, sourceDir);
-    if (await isSymlinkAt(join(sourceDir, file))) {
-      throw isolationError.seedSymlink(file);
-    }
-    if (content === null) {
-      await writeCurrentFileContent(wtPath, file, null);
-      continue;
-    }
-    const raw = await readFile(join(sourceDir, file));
-    if (!roundTripsUtf8(raw)) {
-      return {
-        kind: 'fallback',
-        reason: `source file "${file}" cannot be seeded byte-identically (binary content)`,
-      };
-    }
-    await writeCurrentFileContent(wtPath, file, raw.toString('utf8'));
   }
   return { kind: 'ok' };
 }

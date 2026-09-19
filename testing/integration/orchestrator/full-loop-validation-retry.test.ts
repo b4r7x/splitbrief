@@ -93,7 +93,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         }),
       ),
       review: vi.fn().mockResolvedValue({
-        text: '# Final review\n\nValidation passed after one local retry.',
+        text: '# Final review\n\nValidation passed after one local retry.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },
       }),
     });
@@ -226,7 +226,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         usage: { inputTokens: 50, outputTokens: 20 },
       }),
       review: vi.fn().mockResolvedValue({
-        text: '# Final review\n\nHint escalation produced a passing implementation.',
+        text: '# Final review\n\nHint escalation produced a passing implementation.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },
       }),
     });

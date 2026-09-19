@@ -302,11 +302,15 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     expect(result.completed).toBe(false);
     expect(callbacks.onComplete).not.toHaveBeenCalled();
     expect(events.find((event) => event.type === 'all_tasks_done')).toBeDefined();
-    expect(events.find((event) => event.type === 'workflow_complete')).toMatchObject({
-      review: 'failed',
-      blocking: 0,
+    // A review call that did not land judged nothing, so no fabricated
+    // `workflow_complete` with zero blockers closes the run: it halts on the
+    // review seat with a recovery the operator answers.
+    expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('final-review');
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'review-failed',
+      seat: 'review',
     });
-    expect(loadState({ projectDir, sessionId })?.phase).toBe('complete');
     expect(
       events.find((event) => event.type === 'error' && event.code === 'review_failed'),
     ).toBeDefined();

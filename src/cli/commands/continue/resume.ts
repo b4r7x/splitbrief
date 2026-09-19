@@ -1,7 +1,6 @@
 import { createElement } from 'react';
 import { App } from '../../../app/root.js';
 import { initStores } from '../../init-stores.js';
-import { renderApp } from '../../render/app.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
@@ -34,9 +33,18 @@ export type ResumeTailDeps = Pick<
   'initStores' | 'renderApp' | 'runHeadless' | 'setupWorkflow' | 'prepareExecution'
 >;
 
+/**
+ * The render stack — Ink, fullscreen, the xterm-backed terminal selection — is
+ * part of the call, not the import: a headless resume (`--json`, `--plain`)
+ * never mounts the TUI, so loading it at module scope would make every importer
+ * pay for terminal state it never uses.
+ */
+const renderAppOnDemand: ResumeTailDeps['renderApp'] = (appElement, options) =>
+  import('../../render/app.js').then(({ renderApp }) => renderApp(appElement, options));
+
 const defaultResumeTailDeps: ResumeTailDeps = {
   initStores,
-  renderApp,
+  renderApp: renderAppOnDemand,
   runHeadless,
   setupWorkflow,
   prepareExecution,

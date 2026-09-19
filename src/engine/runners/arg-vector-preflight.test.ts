@@ -488,7 +488,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     expect(checks[0]).toMatchObject({
       id: 'runners.cli.claude-code.arg-vector.planner',
       severity: 'blocker',
-      metadata: { unsupported: ['--effort', '--resume'] },
+      metadata: { unsupported: ['--effort', '--disallowedtools', '--resume'] },
     });
   });
 
@@ -497,6 +497,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       claudeHelp(
         '  --effort <level>               Effort level for the session',
         '  -r, --resume [sessionId]       Resume a conversation by session ID',
+        '  --disallowedTools <tools...>   Tools to block in this session',
       ),
     );
 
@@ -507,7 +508,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       }),
     ]);
     expect(checks[0]?.details).toContain(
-      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan',
+      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan --disallowedTools AskUserQuestion',
     );
   });
 
@@ -530,6 +531,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
         claudeHelp(
           '  --effort <level>               Effort level for the session',
           '  -r, --resume [sessionId]       Resume a conversation by session ID',
+          '  --disallowedTools <tools...>   Tools to block in this session',
         ),
     });
 
@@ -538,7 +540,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan',
+      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan --disallowedTools AskUserQuestion',
     ]);
   });
 

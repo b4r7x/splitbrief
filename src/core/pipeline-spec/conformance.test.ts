@@ -48,6 +48,7 @@ import { CAPTURE_LIMITS, GATE_ORDER } from './gates.js';
 import { HALT_SIGNATURES } from './halts.js';
 import { LADDER, MAX_HINT_ERROR_LENGTH, RETRY_FRAMINGS, type LadderRungId } from './ladder.js';
 import { MODES, type ModeGate } from './modes.js';
+import { PLANNER_DOCUMENT_SECTIONS } from './planner-documents.js';
 import { DEFAULT_LOCAL_RETRIES } from './retries.js';
 import { VERDICT_RULES } from './review.js';
 import { TIMEOUTS } from './timeouts.js';
@@ -160,10 +161,18 @@ describe('review verdicts', () => {
   });
 });
 
+/** A completed document for a document-producing call: every section the pipeline spec declares, each carrying body text. */
+function completePlannerDocument(call: keyof typeof PLANNER_DOCUMENT_SECTIONS): string {
+  const sections = PLANNER_DOCUMENT_SECTIONS[call]
+    .map((heading) => `## ${heading}\n\n${heading} notes.`)
+    .join('\n\n');
+  return `# ${call}\n\n${sections}\n`;
+}
+
 const PHASE_OUTPUTS = [
-  '# Research\n\nFindings.',
-  '# Spec\n\nRequirements.',
-  '# Plan\n\n## File Structure\n### New Files\n- `src/auth.ts`\n  Purpose: the module.',
+  completePlannerDocument('research'),
+  completePlannerDocument('spec'),
+  completePlannerDocument('plan'),
 ];
 
 const ANALYZE_JSON = `\`\`\`json

@@ -177,8 +177,15 @@ describe('partial evidence and resume', () => {
     });
 
     expect(implementer.retry).not.toHaveBeenCalled();
-    // Open, not halted: the brief simply did not advance.
-    expect(parked.pendingRecovery).toBeUndefined();
+    // The applied prefix nobody reviewed must not be retried over: the brief
+    // parks open on a recovery that carries the receipt, and never advances.
+    expect(parked.pendingRecovery).toMatchObject({
+      reason: 'implementation-error',
+      seat: 'build',
+      taskId: 'T001',
+      files: [ANCHOR, SECOND],
+      facts: { apiApplyIncomplete: true },
+    });
     expect(parked.currentTaskIndex).toBe(implState.state.currentTaskIndex);
     expect(
       events.some(
