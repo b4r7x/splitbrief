@@ -30,3 +30,7 @@ A release is cut only from a run whose manifest is attached to the changelog ent
 A failing or skipping row is a blocker unless its tool is explicitly allow-listed for that release and the reason is recorded in the entry. The matrix is re-run before any tag.
 
 The live fixture row (`npm run test:e2e:live:fixture`, [TESTING.md](./TESTING.md) § "Fixture loop row") is outside that rule for now: it writes into the same manifest, but it becomes a release gate only after two recorded manifests show it green on a real toolbox. Until then it is drift evidence — a red fixture row is investigated, not a blocker.
+
+## Pre-publish smoke
+
+`npm run test:e2e:publish` runs one row with the shipped crew pinned in code (`testing/e2e/scenarios/live/publish-smoke.test.ts`, [TESTING.md](./TESTING.md) § "Publish smoke"): `claude-code` · `opus` plans and reviews, `claude-code` · `sonnet` builds, `quick` mode, real calls. It passes only when the implementer's file validates, `summary.json` is `complete` and `review.md` carries a passing verdict, and it writes its manifest and artifacts to `.test-artifacts/live/publish-smoke-claude-code/`. Run it before every publish; it is cheaper than the matrix and proves the three seats on the current code, but it does not replace the matrix for a tagged release.

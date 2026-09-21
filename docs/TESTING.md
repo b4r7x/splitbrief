@@ -154,7 +154,7 @@ Above that single smoke sits a paid tier that drives whole workflows through rea
 
 Two switches gate it. `SPLITBRIEF_REAL_CLI_E2E=1` is the master switch; nothing live runs without it. `SPLITBRIEF_REAL_CLI_TIER` selects `easy` (the default when unset), `heavy`, or `all`.
 
-The separation from replay e2e is physical, not conventional: the live scenarios and the real-CLI smoke are excluded from `testing/e2e/vitest.e2e.config.ts` and collected only by `testing/e2e/vitest.live.config.ts`. `npm run test:e2e` — the step `test-ci`, `release-check`, and the ci.yml `e2e-replay` job run — cannot collect a billable case even with `SPLITBRIEF_REAL_CLI_E2E=1` ambient in the environment. Reaching the tier takes the live config, which only `npm run test:e2e:live`, `npm run test:e2e:live:heavy`, `npm run test:e2e:live:smoke`, and `npm run test:e2e:release` pass.
+The separation from replay e2e is physical, not conventional: the live scenarios and the real-CLI smoke are excluded from `testing/e2e/vitest.e2e.config.ts` and collected only by `testing/e2e/vitest.live.config.ts`. `npm run test:e2e` — the step `test-ci`, `release-check`, and the ci.yml `e2e-replay` job run — cannot collect a billable case even with `SPLITBRIEF_REAL_CLI_E2E=1` ambient in the environment. Reaching the tier takes the live config, which only `npm run test:e2e:live`, `npm run test:e2e:live:heavy`, `npm run test:e2e:live:smoke`, `npm run test:e2e:release`, and `npm run test:e2e:publish` pass.
 
 Skipping is two-layered. With the env unset every case reports skipped and the run exits `0`. With it set, a tool whose readiness detection is not `ready` — binary missing from `PATH`, not logged in — skips with a reason instead of failing, so a partial toolbox still runs what it can.
 
@@ -179,6 +179,10 @@ Above the easy/heavy pairs sits the release matrix: `testing/e2e/scenarios/live/
 Its switch is `SPLITBRIEF_RELEASE_LIVE=1` (the npm script `test:e2e:release` sets `SPLITBRIEF_REAL_CLI_E2E=1` itself); unset, the file prints `skipped: SPLITBRIEF_RELEASE_LIVE not set` and every row exits skipped. Readiness is stricter here than in the tier below: a tool that is missing or not `ready` fails its row unless its id is listed in the comma-separated `SPLITBRIEF_LIVE_SKIP` allow-list, in which case the row skips with a reason.
 
 Every row — pass, fail, or skip — is appended to `.test-artifacts/live/manifest.json` with its resolved seats, outcome, reason, totals, and duration, and each row's `summary.json` and `session.jsonl` are copied to `.test-artifacts/live/<row-id>/`. [RELEASING.md](./RELEASING.md) defines when a release may be cut from that manifest.
+
+### Publish smoke
+
+`testing/e2e/scenarios/live/publish-smoke.test.ts` is the one-row pre-publish check: the shipped crew pinned in code — `claude-code` · `opus` plans and reviews, `claude-code` · `sonnet` builds — through `runReleaseMatrixRow` on the `quick` tier task, so the row is gated, configured, asserted and recorded exactly like a release-matrix row, plus two assertions read back from the copied artifacts: `summary.json` status `complete` and a `pass` / `pass_with_notes` verdict in `review.md`. Its switch is `SPLITBRIEF_PUBLISH_LIVE=1`, set by `npm run test:e2e:publish` together with `SPLITBRIEF_REAL_CLI_E2E=1`; unset, the file prints `skipped: SPLITBRIEF_PUBLISH_LIVE not set` and exits `0`. The pins sit above the live cost ceiling on purpose, which is why the row bypasses `liveModelPin` and never runs under the easy, heavy or release switches. One `quick` run under the 300 s ceiling.
 
 ## How to add an integration test
 

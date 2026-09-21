@@ -179,6 +179,39 @@ describe('runFinalReviewPhase continuation', () => {
 });
 
 describe('runFinalReviewPhase', () => {
+  it('tracks the final-review phase before the reviewer is called', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
+    let tracked: WorkflowState | undefined;
+    let phaseAtReview: WorkflowState['phase'] | undefined;
+    const reviewer = makePlanner({
+      review: async () => {
+        phaseAtReview = tracked?.phase;
+        return { text: '### Verdict\npass\n', usage: null };
+      },
+    });
+    const { bus } = makeBusRecorder();
+    const { callbacks } = makeCallbacks();
+
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      setTrackedState: (state) => {
+        tracked = state;
+      },
+      summaryBase: { ...SUMMARY_BASE, projectDir, sessionId },
+      taskBreakdowns: [],
+    });
+
+    expect(phaseAtReview).toBe('final-review');
+  });
+
   it('runs the reviewer, writes review.md, and returns the parsed verdict', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     // A non-trivial spec so the review prompt is well-formed.

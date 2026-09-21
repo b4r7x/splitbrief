@@ -228,7 +228,12 @@ function displayPath(cwd: string, path: string): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const messages: string[] = [];
+  for (let current = error; current !== undefined && messages.length < 8; ) {
+    messages.push(current instanceof Error ? current.message : String(current));
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return messages.join('\n  cause: ');
 }
 
 function isMainModule(): boolean {

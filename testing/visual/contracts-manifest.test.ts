@@ -325,31 +325,32 @@ describe('visual manifest contracts', () => {
 
   it('accepts derived output immediately below the aggregate pixel cap and rejects above it', () => {
     const manifest = makeManifest({ includeDerived: true });
+    const derivedCells = manifest.artifacts.reduce(
+      (sum, artifact) =>
+        sum +
+        artifact.dimensions.cols *
+          artifact.dimensions.rows *
+          (Number(artifact.files.svg !== null) + Number(artifact.files.png !== null)),
+      0,
+    );
+    // The largest square cell metric whose derived area still fits the cap; one more pixel per cell exceeds it.
+    const belowMetric = Math.floor(Math.sqrt(MAX_MANIFEST_DERIVED_PIXEL_AREA / derivedCells));
     const belowRenderer = RendererMetadataSchema.parse({
       name: 'sharp',
       version: '1.0.0',
       fontFamily: 'monospace',
-      cellWidthPx: 161,
-      cellHeightPx: 161,
+      cellWidthPx: belowMetric,
+      cellHeightPx: belowMetric,
     });
     const aboveRenderer = RendererMetadataSchema.parse({
       name: 'sharp',
       version: '1.0.0',
       fontFamily: 'monospace',
-      cellWidthPx: 162,
-      cellHeightPx: 162,
+      cellWidthPx: belowMetric + 1,
+      cellHeightPx: belowMetric + 1,
     });
     const derivedArea = (renderer: RendererMetadata) =>
-      manifest.artifacts.reduce(
-        (sum, artifact) =>
-          sum +
-          artifact.dimensions.cols *
-            renderer.cellWidthPx *
-            artifact.dimensions.rows *
-            renderer.cellHeightPx *
-            (Number(artifact.files.svg !== null) + Number(artifact.files.png !== null)),
-        0,
-      );
+      derivedCells * renderer.cellWidthPx * renderer.cellHeightPx;
 
     const belowTotal = derivedArea(belowRenderer);
     const aboveTotal = derivedArea(aboveRenderer);

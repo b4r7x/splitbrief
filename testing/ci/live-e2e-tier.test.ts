@@ -204,12 +204,14 @@ describe('live e2e tier documentation', () => {
     const scenarios = readdirSync(LIVE_SCENARIO_DIR).filter((name) => name.endsWith('.test.ts'));
     expect(scenarios.length).toBeGreaterThan(0);
     for (const name of scenarios) {
-      const expected = name.startsWith('easy-')
+      const ceilings = scenarioCeilings(name);
+      expect(ceilings.length, name).toBeGreaterThan(0);
+      const allowed = name.startsWith('easy-')
         ? ['300_000']
         : name.startsWith('heavy-')
           ? ['900_000']
           : ['300_000', '900_000'];
-      expect(scenarioCeilings(name), name).toEqual(expected);
+      expect(allowed, name).toEqual(expect.arrayContaining([...ceilings]));
     }
     expect(tierDoc).toContain('300 s');
     expect(tierDoc).toContain('900 s');

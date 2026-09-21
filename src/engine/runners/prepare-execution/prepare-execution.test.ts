@@ -265,7 +265,7 @@ describe('prepareExecution', () => {
   it('checks planner and every configured profile and derives report and gates from each result', async () => {
     const project = projectDir();
     const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      planner: { kind: 'cli', tool: 'codex' },
       implementerProfiles: {
         default: 'api',
         profiles: {
@@ -372,6 +372,42 @@ describe('prepareExecution', () => {
 
     expect(withoutStub.kind).toBe('prepared');
     expect(withStub).toEqual(withoutStub);
+  });
+
+  it('blocks an explicit auth channel the enforcement matrix cannot guarantee', async () => {
+    const project = projectDir();
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+    });
+    const prepareSession = vi.fn();
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'explicit auth channel',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: policy('new-workflow'),
+      deps: {
+        collectArgVectorPreflightChecks: async () => [],
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
+        resolveCliExecutableAliases: async () => ({
+          command: 'codex',
+          executable,
+          usedFallback: false,
+        }),
+        prepareNewSession: prepareSession,
+      },
+    });
+
+    expect(outcome.kind).toBe('blocked');
+    if (outcome.kind !== 'blocked') return;
+    const check = outcome.report.sections
+      .find((section) => section.id === 'runners')
+      ?.checks.find((entry) => entry.id === 'runners.preparation.planner');
+    expect(check?.severity).toBe('blocker');
+    expect(check?.fix).toContain('auth_channel');
+    expect(prepareSession).not.toHaveBeenCalled();
   });
 
   it('leaves the arg-vector preflight unrun when the trust ladder refuses the executable', async () => {
@@ -499,7 +535,7 @@ describe('prepareExecution', () => {
   it('reauthorizes the exact resume ref without creating a session', async () => {
     const project = projectDir();
     const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      planner: { kind: 'cli', tool: 'codex' },
       implementer: {
         kind: 'api',
         provider: 'ollama',
@@ -1460,7 +1496,7 @@ describe('prepareReviewExecution', () => {
 
   const reviewConfig = () =>
     makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      planner: { kind: 'cli', tool: 'codex' },
       implementer: {
         kind: 'api',
         provider: 'ollama',

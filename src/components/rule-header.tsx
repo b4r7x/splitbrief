@@ -9,7 +9,8 @@ export function RuleHeader({ label, width }: { label: string; width: number }) {
   const dashes = Math.max(0, width - getTerminalCellWidth(label) - 1);
   return (
     <Box height={1} overflow="hidden" flexShrink={0} width={width}>
-      <Text color={t.textDim}>{`${label} ${glyph('divider').repeat(dashes)}`}</Text>
+      <Text color={t.text}>{label}</Text>
+      <Text color={t.textDim}>{` ${glyph('divider').repeat(dashes)}`}</Text>
     </Box>
   );
 }

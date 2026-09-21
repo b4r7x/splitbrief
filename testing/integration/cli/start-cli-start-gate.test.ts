@@ -48,7 +48,6 @@ beforeEach(() => {
           kind: 'cli',
           tool: 'codex',
           model: AUTOMATIC_MODEL,
-          authChannel: 'api-key',
         },
       }),
     ),
@@ -75,7 +74,7 @@ function activateCodexShim(version: string, authProbe?: 'verified' | 'unverified
   const shim = installCompatibleCliShim({
     directory: binDir,
     tool: 'codex',
-    authChannel: 'api-key',
+    authChannel: 'session',
     version,
     ...(authProbe === undefined ? {} : { authProbe }),
   });

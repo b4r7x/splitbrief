@@ -10,6 +10,7 @@ import {
   type CliAuthChannelId,
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
+import { admitCliAuthChannel } from '../../../core/runners/cli-auth-selection.js';
 import { cliAuthRemediation } from '../../../core/schemas/readiness.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -95,6 +96,25 @@ async function evaluateCli(
         candidate.runner.kind,
         `Fresh CLI evidence denied admission: ${admission.reason.kind}.`,
         cliAdmissionFix(admission.reason, candidate.runner.tool, authChannel),
+      ),
+    };
+  }
+  // The invocation gate binds no installed version yet, so an explicit method
+  // the matrix cannot enforce is refused here, before the planner spends a token.
+  const authAdmission = admitCliAuthChannel({
+    tool: candidate.runner.tool,
+    platform: process.platform,
+    installedVersion: undefined,
+    authChannel: candidate.runner.authChannel,
+  });
+  if (authAdmission.kind === 'refused') {
+    return {
+      kind: 'blocked',
+      check: blockedCheck(
+        candidate.slot,
+        candidate.runner.kind,
+        authAdmission.message,
+        'Remove auth_channel from this runner in .splitbrief/config.yaml, then retry.',
       ),
     };
   }

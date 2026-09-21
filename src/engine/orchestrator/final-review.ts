@@ -98,6 +98,7 @@ export async function runFinalReviewPhase(opts: {
   summaryBase: SummaryBase;
   taskBreakdowns: TaskTokenUsage[];
   phaseTimings?: Record<string, number>;
+  setTrackedState?: ((state: WorkflowState) => void) | undefined;
 }): Promise<FinalReviewResult> {
   let { state } = opts;
   const {
@@ -117,6 +118,9 @@ export async function runFinalReviewPhase(opts: {
   // gate); only dispatch ALL_DONE from 'implementing' on a fresh forward run.
   if (state.phase === 'implementing') {
     state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ALL_DONE' });
+    // The call publisher stamps runner events with the tracked phase; the
+    // reviewer's own call must read as final-review, not the last brief's.
+    opts.setTrackedState?.(state);
   }
 
   const finalReviewStart = Date.now();

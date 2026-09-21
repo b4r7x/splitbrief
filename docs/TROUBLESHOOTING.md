@@ -271,7 +271,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 **Fix:**
 1. `claude /login` (or `claude setup-token`), then `claude auth status` to confirm `"loggedIn": true`.
 2. Re-run `splitbrief doctor`.
-3. If you would rather not let a planner child see your home directory at all, set `auth_channel: api-key` for that runner in `.splitbrief/config.yaml` and `export ANTHROPIC_API_KEY=...` — that channel is metered and exposes nothing.
+3. Do not set an explicit `auth_channel` to work around it: readiness refuses any explicit method until [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md) records an enforceable row for the tool, so the child runs on the login `claude` itself holds.
 
 **Prevention:** Trust `splitbrief doctor` — including its refusals to overclaim. Readiness never reads a login off directory contents alone. For session-channel tools such as Codex, a positive `codex login status` proves a credential is present, not that the token is still live — the first real call settles liveness, and a dead token fails there with its own remediation (measured 2026-08-06: a host whose refresh token had already been rotated away server-side still printed `Logged in using ChatGPT` while every real call returned 401). A definitive negative — no credential, or the tool answering signed-out — still blocks, because that run really would have failed.
 

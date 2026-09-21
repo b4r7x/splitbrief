@@ -214,8 +214,10 @@ export async function runTasksAndReview(
       summaryBase,
       taskBreakdowns,
       phaseTimings,
+      setTrackedState,
     });
     state = review.state;
+    setTrackedState(state);
     if (wctx.signal?.aborted) {
       return { summary: summaryNow(), completed: false, cancelled: false, state };
     }

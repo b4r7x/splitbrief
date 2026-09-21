@@ -88,7 +88,7 @@ function cliEvidence(context: Parameters<typeof runnerDiscoveryContextKey>[0]): 
 describe('start preparation', () => {
   it('uses one fresh evidence set for readiness and CLI admission', async () => {
     const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      planner: { kind: 'cli', tool: 'codex' },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
     });
     const projectDir = projectWithConfig(config);

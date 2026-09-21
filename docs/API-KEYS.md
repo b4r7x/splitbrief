@@ -26,12 +26,14 @@ Environment variables are not committed to git, are not stored on disk in projec
 
 Every credential environment variable SPLITBRIEF reads. The first four describe credentials understood by host CLIs, not API providers or proven method switches. An environment variable alone does not establish the authentication or billing method actually used.
 
+The `api-key` channel rows describe what that channel stages. Selecting it explicitly (`auth_channel: api-key`) is refused at readiness until [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md) records an enforceable row for the tool; until then the host CLI's own login decides.
+
 | Credential | Environment variable | Prefix validation | Notes |
 |----------|---------------------|-------------------|-------|
-| Claude Code CLI (`auth_channel: api-key`) | `ANTHROPIC_API_KEY` | — | Passed to the `claude` subprocess; nothing else in the environment is copied |
-| Codex CLI (`auth_channel: api-key`) | `OPENAI_API_KEY` | — | Passed to the `codex` subprocess |
+| Claude Code CLI (`api-key` channel) | `ANTHROPIC_API_KEY` | — | Passed to the `claude` subprocess; nothing else in the environment is copied |
+| Codex CLI (`api-key` channel) | `OPENAI_API_KEY` | — | Passed to the `codex` subprocess |
 | Copilot CLI (`session`, its only channel) | `GH_TOKEN` / `GITHUB_TOKEN` | — | Passed to the `copilot` subprocess, whichever variable is set; with neither, the bridged `copilot` login is used |
-| Cursor Agent CLI (`auth_channel: api-key`) | `CURSOR_API_KEY` | — | Passed to the `cursor-agent` subprocess |
+| Cursor Agent CLI (`api-key` channel) | `CURSOR_API_KEY` | — | Passed to the `cursor-agent` subprocess |
 | Local Ollama | `OLLAMA_LOCAL_API_KEY` | — | Optional only for a secured loopback daemon; configure `apiKey: env:OLLAMA_LOCAL_API_KEY`. `OLLAMA_API_KEY` is never accepted or sent locally. |
 | LM Studio | Not inferred | — | Local provider; no key required. A daemon you put behind one takes it inline or as `apiKey: env:YOUR_VAR` |
 | Custom remote provider | Not inferred | — | Carries an inline `apiKey`, accepted only when you accept **normalized-origin trust** for the declared `apiBase` |
