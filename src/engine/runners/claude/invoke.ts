@@ -7,6 +7,7 @@ import { resolveCliExecutable } from '../resolve-cli-executable.js';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
 import { runnerCallLineOutputLimit } from '../../calls/output-limit.js';
+import { CLI_RAW_OUTPUT_MAX_BYTES } from '../cli-tools/process-invoke.js';
 import { error } from '../../../utils/error.js';
 import {
   buildClaudeIdleOptions,
@@ -135,6 +136,13 @@ async function runClaudeCall(
         );
       },
       errorDetail: () => state.resultText ?? undefined,
+      // Every line is consumed as it arrives and the recorder bounds what it keeps,
+      // so the raw stdout volume must not tear the call down: under
+      // --include-partial-messages a ~10-character text delta rides in a ~300-byte
+      // envelope, and a long brief list alone passes the 1 MB retention bound.
+      // The shared CLI ceiling still ends a runaway process.
+      outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
+      abortOnByteLimit: false,
       signal: opts.signal,
       idle: buildClaudeIdleOptions(state, {
         idleWarnMs: opts.idleWarnMs,

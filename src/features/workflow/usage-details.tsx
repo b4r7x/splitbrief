@@ -117,6 +117,7 @@ export function UsageDetails({ view, onClose }: UsageDetailsProps) {
         rows={documentRows}
         height={height}
         width={rect.innerWidth}
+        barColumn="padding"
         lineKeys="plain"
         showScrollbar
       />

@@ -399,7 +399,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'unexpected' }) + 
     });
   });
 
-  it('reports an oversized terminal result line as an output-budget breach', async () => {
+  it('reports an oversized terminal result line as a truncated call', async () => {
     installClaudeNodeShim(
       shimDir,
       `
@@ -418,8 +418,8 @@ process.stdout.write(JSON.stringify({ type: "result", result }) + "\\n");
         onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({
-      state: 'output-budget-breach',
-      remediation: expect.stringContaining('output budget'),
+      kind: 'runner-call-failed',
+      message: expect.stringContaining('stdout line exceeded'),
     });
 
     const errors = runnerCallErrors(events);

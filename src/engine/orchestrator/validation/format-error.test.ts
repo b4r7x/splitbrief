@@ -35,12 +35,32 @@ describe('formatValidationError', () => {
     expect(error).toContain('Unexpected token');
   });
 
-  it('truncates error to 20 lines', () => {
-    const longError = Array.from({ length: 30 }, (_, i) => `Error line ${i + 1}`).join('\n');
+  it('keeps the head and the tail of a long typecheck failure', () => {
+    const longError = Array.from({ length: 60 }, (_, i) => `Error line ${i + 1}`).join('\n');
     const results: ValidationResult[] = [{ passed: false, stage: 'typecheck', error: longError }];
     const error = formatValidationError(results, acceptance([], ['typecheck']));
-    expect(error).not.toContain('Error line 21');
     expect(error).toContain('Error line 20');
+    expect(error).not.toContain('Error line 21');
+    expect(error).not.toContain('Error line 40');
+    expect(error).toContain('Error line 41');
+    expect(error).toContain('Error line 60');
+  });
+
+  it('lets a lint diagnostic survive a long config preamble', () => {
+    const lintOutput = [
+      'biome.json:38:13 deserialize  DEPRECATED  ━━━━━━━━',
+      ...Array.from({ length: 24 }, (_, i) => `  notice line ${i + 1}`),
+      'src/components/rule-header.test.tsx format ━━━━━━━━',
+      '  × Formatter would have printed the following content:',
+      '    67 │ - expect(a).toBe(b);',
+      '    67 │ + expect(a).toBe(',
+      'Found 1 error.',
+    ].join('\n');
+    const results: ValidationResult[] = [{ passed: false, stage: 'lint', error: lintOutput }];
+    const error = formatValidationError(results, acceptance([], ['lint']));
+    expect(error).toContain('Formatter would have printed');
+    expect(error).toContain('rule-header.test.tsx');
+    expect(error).toContain('Found 1 error.');
   });
 
   it('keeps the tail of a long test failure so vitest FAIL summary survives', () => {

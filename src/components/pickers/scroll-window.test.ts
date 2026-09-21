@@ -159,6 +159,80 @@ describe('computeListDisplayWindow', () => {
   });
 });
 
+describe('totalSlots', () => {
+  it('counts only items for a plain list', () => {
+    const window = computeListDisplayWindow({
+      items: ['a', 'b', 'c'],
+      selectedIndex: 0,
+      rowBudget: 10,
+    });
+
+    expect(window.totalSlots).toBe(3);
+  });
+
+  it('counts items plus section headers', () => {
+    const list = Array.from({ length: 9 }, (_, index) => ({
+      id: `i${index}`,
+      scope: `s${Math.floor(index / 3)}`,
+    }));
+    const window = computeListDisplayWindow({
+      items: list,
+      selectedIndex: 0,
+      rowBudget: 20,
+      section: { by: (item) => item.scope },
+    });
+
+    expect(window.totalSlots).toBe(12);
+  });
+
+  it('counts items plus section headers plus inter-section gaps', () => {
+    const list = Array.from({ length: 9 }, (_, index) => ({
+      id: `i${index}`,
+      scope: `s${Math.floor(index / 3)}`,
+    }));
+    const window = computeListDisplayWindow({
+      items: list,
+      selectedIndex: 0,
+      rowBudget: 20,
+      section: { by: (item) => item.scope, gapBetweenSections: true },
+    });
+
+    expect(window.totalSlots).toBe(14);
+  });
+
+  it('counts items plus decoration rows', () => {
+    const window = computeListDisplayWindow({
+      items: ['a', 'b', 'c', 'd'],
+      selectedIndex: 0,
+      rowBudget: 10,
+      decorations: { after: (_item, index) => index === 1 },
+    });
+
+    expect(window.totalSlots).toBe(5);
+  });
+
+  it('is 0 for an empty list', () => {
+    const window = computeListDisplayWindow({
+      items: [],
+      selectedIndex: 0,
+      rowBudget: 10,
+    });
+
+    expect(window.totalSlots).toBe(0);
+    expect(window.visibleSlots).toEqual([]);
+  });
+
+  it('is 0 when the row budget is zero', () => {
+    const window = computeListDisplayWindow({
+      items: ['a', 'b'],
+      selectedIndex: 0,
+      rowBudget: 0,
+    });
+
+    expect(window.totalSlots).toBe(0);
+  });
+});
+
 describe('isItemIndexVisible', () => {
   it('returns false when the row budget is zero', () => {
     expect(

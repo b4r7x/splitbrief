@@ -29,6 +29,13 @@ export type RunIsolation = {
     role: IsolationRole;
     config: Config;
     writesFiles: 'direct' | 'extracted-code';
+    /**
+     * A brief's first attempt starts from the project as promoted: whatever an
+     * earlier attempt left in the shared worktree that the project never received
+     * is discarded before the hand-out, or the worker reads its own leftovers as
+     * finished work. A retry keeps them: it iterates on the previous attempt.
+     */
+    fresh?: boolean | undefined;
   }) => Promise<IsolatedWorkspace>;
   dispose: () => Promise<void>;
 };

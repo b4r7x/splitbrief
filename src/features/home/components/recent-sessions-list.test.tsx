@@ -73,6 +73,7 @@ describe('RecentSessionsList', () => {
       hasOverlay?: boolean | undefined;
       maxVisible?: number | undefined;
       onSelect?: ((session: Session) => void) | undefined;
+      width?: number | undefined;
     } = {},
   ) => (
     <Box marginLeft={2}>
@@ -82,6 +83,7 @@ describe('RecentSessionsList', () => {
         onSelect={options.onSelect ?? onSelect}
         onClose={onClose}
         maxVisible={options.maxVisible}
+        width={options.width ?? 60}
       />
     </Box>
   );
@@ -119,6 +121,7 @@ describe('RecentSessionsList', () => {
           hasOverlay={false}
           onSelect={onSelect}
           onClose={onClose}
+          width={72}
         />
       </Box>,
     );

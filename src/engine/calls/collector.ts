@@ -243,7 +243,9 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
     case 'call_text_delta':
       if (contributesToResultText(event.channel)) {
         const limiter = event.semantics === 'final' ? createTextLimiter() : state.textLimiter;
-        const accepted = limiter.accept(event.text);
+        // An explicit `delta` is a partial slice of one record: the byte budget
+        // bounds it, the event budget counts records.
+        const accepted = limiter.accept(event.text, { countEvent: event.semantics !== 'delta' });
         if (event.semantics === 'final') {
           state.text = accepted.text;
           state.textLimiter = limiter;

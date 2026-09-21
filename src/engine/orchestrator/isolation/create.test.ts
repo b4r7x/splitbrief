@@ -157,6 +157,45 @@ describe('createRunIsolation', () => {
     }
   });
 
+  it('a fresh acquisition discards leftovers the project never received', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-fresh');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n', 'src.txt': 'v1\n' });
+      const warnings: string[] = [];
+      const handle = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'worktree',
+        onFallback: () => {},
+        onRetained: () => {},
+        warningPublisher: (message) => warnings.push(message),
+      });
+
+      const first = await acquireDirect(handle);
+      writeFileSync(join(first.projectDir, 'src.txt'), 'v2\n');
+      writeFileSync(join(first.projectDir, 'new.txt'), 'N\n');
+
+      const retry = await acquireDirect(handle);
+      expect(readFileSync(join(retry.projectDir, 'src.txt'), 'utf8')).toBe('v2\n');
+
+      const fresh = await handle.acquire({
+        role: 'implementer',
+        config,
+        writesFiles: 'direct',
+        fresh: true,
+      });
+      expect(readFileSync(join(fresh.projectDir, 'src.txt'), 'utf8')).toBe('v1\n');
+      expect(existsSync(join(fresh.projectDir, 'new.txt'))).toBe(false);
+      expect(warnings).toEqual([
+        'Discarded 2 unpromoted change(s) an earlier attempt left in the isolation worktree: new.txt, src.txt',
+      ]);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
   it('hands an extracted-code implementer a temporary copy even when the strategy is worktree', {
     timeout: 60_000,
   }, async () => {

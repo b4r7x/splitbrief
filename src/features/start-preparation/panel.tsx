@@ -305,7 +305,9 @@ export function StartPreparationPanel({
   // known not to fit, and taking it back would re-wrap every line under the cause.
   const full = panelLines(model, rect.innerWidth);
   const overflows = full.length > capacity;
-  const contentWidth = overflows ? getScrollViewportContentWidth(rect.innerWidth) : rect.innerWidth;
+  const contentWidth = overflows
+    ? getScrollViewportContentWidth(rect.innerWidth, 'padding')
+    : rect.innerWidth;
   const lines = overflows ? panelLines(model, contentWidth) : full;
   const documentRows: ScrollableDocumentRow[] = lines.map((line) => ({
     key: line.key,
@@ -336,6 +338,7 @@ export function StartPreparationPanel({
         width={rect.innerWidth}
         showScrollIndicators={false}
         showScrollbar
+        barColumn="padding"
       />
     </OverlayPanel>
   );

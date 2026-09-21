@@ -269,6 +269,7 @@ export function computeListDisplayWindow<T>(opts: ListDisplayWindowInput<T>) {
     return {
       rowBudget,
       scrollOffset: 0,
+      totalSlots: 0,
       visibleSlots: [],
       showScrollUp: false,
       showScrollDown: false,
@@ -291,6 +292,7 @@ export function computeListDisplayWindow<T>(opts: ListDisplayWindowInput<T>) {
   return {
     rowBudget,
     scrollOffset,
+    totalSlots: slots.length,
     visibleSlots,
     showScrollUp,
     showScrollDown,

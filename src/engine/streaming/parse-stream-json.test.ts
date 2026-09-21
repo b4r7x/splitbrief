@@ -162,7 +162,7 @@ describe('parseStreamLine', () => {
         type: 'stream_event',
         event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'live' } },
       }),
-      { text: 'live', channel: 'assistant' },
+      { text: 'live', channel: 'assistant', textSemantics: 'delta' },
     ],
     [
       'stream_event tool start',
@@ -213,6 +213,7 @@ describe('parseStreamLine', () => {
     expect(parseStreamLine(line)).toEqual({
       text,
       channel: 'assistant',
+      textSemantics: 'delta',
       sessionId: 'sess-verbatim',
     });
   });

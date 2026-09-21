@@ -55,6 +55,36 @@ function runClaudeOneShot(
 }
 
 describe('runClaudeOneShot', () => {
+  it('keeps streaming past the 1 MB raw stdout retention bound', async () => {
+    // A ~13-character text delta rides in a ~200-byte stream_event envelope, so
+    // this 104 KB reply is ~1.6 MB of stdout — the volume that used to end the call.
+    installClaudeNodeShim(
+      shimDir,
+      `const chunk = 'brief-text-13';
+const write = (record) => process.stdout.write(JSON.stringify(record) + '\\n');
+for (let i = 0; i < 8000; i += 1) {
+  write({
+    type: 'stream_event',
+    event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: chunk } },
+    session_id: 'sess',
+    parent_tool_use_id: null,
+    uuid: 'uuid-' + i,
+  });
+}
+write({ type: 'result', result: chunk.repeat(8000), usage: { input_tokens: 1, output_tokens: 8000 } });`,
+    );
+
+    const result = await runClaudeOneShot({
+      prompt: 'p',
+      projectDir,
+      mode: 'escalate',
+      onOutput: () => {},
+    });
+
+    expect(result.status).toBe('completed');
+    expect(result.text).toHaveLength(13 * 8000);
+  });
+
   it('does not inherit ambient credentials when no spawn environment is supplied', async () => {
     const envFile = `${shimDir}/auth-env.txt`;
     installClaudeNodeShim(

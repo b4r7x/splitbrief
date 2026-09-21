@@ -162,12 +162,9 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
   // Skill rows section with the commands, so one column serves both: the registry's widest command
   // name widened to the widest discovered skill label. A skill name past the cap is cut there
   // rather than opening a description column of its own.
-  const labelWidth = Math.min(
-    sources.skillItems.reduce(
-      (widest, skill) => Math.max(widest, getTerminalCellWidth(skill.label)),
-      commandLabelWidth(commands),
-    ),
-    Math.floor(innerWidth * LABEL_COLUMN_SHARE),
+  const labelCeiling = sources.skillItems.reduce(
+    (widest, skill) => Math.max(widest, getTerminalCellWidth(skill.label)),
+    commandLabelWidth(commands),
   );
   const hint = canActOnIndex(cursor)
     ? ['↑↓ navigate', '⏎ run or fill in', 'esc close'].join(SOFT_SEP)
@@ -181,10 +178,12 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
 
       <Box flexDirection="column" height={listBudget}>
         <ListViewport
+          barColumn="padding"
           items={results}
           selectedIndex={cursor}
           getKey={(result) => result.id}
           rowBudget={listBudget}
+          width={innerWidth}
           rowZonePrefix="palette"
           showRemainingCount
           onRowActivate={(index) => {
@@ -199,12 +198,16 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
             // Everything sectioned by category — commands and skills — shares one column so the
             // description edge holds still down a section and across screens. A session or task
             // title is the whole row, so it widens its own label instead of being cut to that width.
+            const labelWidth = Math.min(
+              labelCeiling,
+              Math.floor(ctx.contentWidth * LABEL_COLUMN_SHARE),
+            );
             const rowLabelWidth =
               result.category !== null
                 ? labelWidth
                 : Math.max(
                     labelWidth,
-                    Math.min(getTerminalCellWidth(result.label), innerWidth - STATUS_RESERVE),
+                    Math.min(getTerminalCellWidth(result.label), ctx.contentWidth - STATUS_RESERVE),
                   );
             return (
               <ListRow
@@ -214,7 +217,7 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
                   description: result.description,
                   hint: result.hint,
                   shortcut: result.shortcut,
-                  innerWidth,
+                  innerWidth: ctx.contentWidth,
                   labelWidth: rowLabelWidth,
                 })}
                 {...(result.shortcut ? { trailing: result.shortcut } : {})}

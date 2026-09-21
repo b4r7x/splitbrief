@@ -99,8 +99,8 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     }
   }
 
-  function acceptTextDelta(text: string): RunnerCallDeltaLimitResult {
-    const accepted = textLimiter.accept(text);
+  function acceptTextDelta(text: string, countEvent = true): RunnerCallDeltaLimitResult {
+    const accepted = textLimiter.accept(text, { countEvent });
     return { ...accepted, text: redactCredential(accepted.text) };
   }
 
@@ -113,10 +113,15 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   function applyStreamText(
     channel: NonNullable<ReturnType<typeof parseStreamLine>['channel']>,
     text: string,
+    partial = false,
   ): boolean {
-    const accepted = acceptTextDelta(text);
+    const accepted = acceptTextDelta(text, !partial);
     if (accepted.text.length > 0) {
-      state.recorder.text({ channel, text: accepted.text });
+      state.recorder.text({
+        channel,
+        text: accepted.text,
+        ...(partial && { semantics: 'delta' as const }),
+      });
       if (channel === 'assistant' || channel === 'stdout') {
         state.text += accepted.text;
         blockText += accepted.text;
@@ -240,7 +245,9 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
         if (applyAssistantMessage(parsed.text)) return;
       } else {
         const channel = parsed.channel ?? 'assistant';
-        if (applyStreamText(channel, parsed.text)) return;
+        // A partial-message delta carries ~10 characters; the event budget
+        // counts records, and the byte budget bounds the text either way.
+        if (applyStreamText(channel, parsed.text, parsed.textSemantics === 'delta')) return;
       }
     }
 

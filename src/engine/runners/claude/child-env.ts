@@ -1,5 +1,8 @@
 import { createSanitizedChildEnv } from '../../../lib/process/spawn/child-env.js';
 import { processError } from '../../../lib/process/errors.js';
+import { isFatalSignal } from '../../../lib/process/spawn/lifecycle.js';
+import { error } from '../../../utils/error.js';
+import { runnerOutcome } from '../errors.js';
 import type { CliAuthChannelId } from '../../../core/runners/cli-tool-catalog.js';
 import { sanitizedRuntimePath } from '../resolve-cli-executable.js';
 import { sandboxCredentialValues } from '../sandbox-credential-values.js';
@@ -32,6 +35,10 @@ export function normalizeClaudeProcessOutputError(
   executablePath: string | undefined,
   redactCredential?: (value: string) => string,
 ): unknown {
+  if (isFatalSignal(err)) {
+    const outcome = runnerOutcome.failure(err.state, err.remediation);
+    return error(outcome.state, outcome.remediation);
+  }
   if (!processError.isExitCode(err)) return err;
 
   const knownPaths = [err.data.command, executablePath].filter(

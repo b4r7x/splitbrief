@@ -85,10 +85,12 @@ export function FilterableList<T>({
         />
       </Box>
       <ListViewport
+        barColumn="padding"
+        width={innerWidth}
         items={filtered}
         selectedIndex={selectedIndex}
         getKey={getKey}
-        renderItem={(item, ctx) => renderItem(item, { ...ctx, innerWidth })}
+        renderItem={(item, ctx) => renderItem(item, { ...ctx, innerWidth: ctx.contentWidth })}
         rowBudget={rowBudget}
         {...(onActivate || onConfirm
           ? {

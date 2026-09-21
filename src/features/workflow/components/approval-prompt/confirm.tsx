@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
+import { RuleHeader } from '../../../../components/rule-header.js';
 import { borderStyleFor, glyph } from '../../../../lib/glyphs.js';
 import { NO_CURSOR, cursorGlyph } from '../../../../components/pickers/cursor-glyph.js';
 import { closeApprovalPrompt } from '../../../../stores/approval-prompt/prompt.js';
@@ -38,21 +39,6 @@ type PromptIdentity = ((response: TieredApprovalResponse) => void) | null;
 
 function confirmWith(reason: string): void {
   closeApprovalPrompt({ decision: 'confirm', phrase: CONFIRM_PHRASE, reason });
-}
-
-// Every gate wears the same heavy rule, so weight alone cannot tell an irreversible one apart —
-// and it has to be told apart, because `y` is the primary key on one panel and a refused key on
-// the other. The banded warning is the silhouette no other gate has, and it is shape, not hue, so
-// it survives a terminal with the colour stripped out.
-function IrreversibleRule({ cols }: { cols: number }) {
-  const t = useTheme();
-  const rule = Math.max(0, approvalTextWidth(cols) - IRREVERSIBLE_NOTE.length - 1);
-  return (
-    <Box height={1} overflow="hidden">
-      <Text color={t.error}>{IRREVERSIBLE_NOTE}</Text>
-      <Text color={t.textDim}>{` ${glyph('divider').repeat(rule)}`}</Text>
-    </Box>
-  );
 }
 
 interface ConfirmApprovalPromptProps {
@@ -192,7 +178,17 @@ export function ConfirmApprovalPrompt({
       <Text> </Text>
       <Text>{getApprovalConfirmLabel(request.actionClass)}</Text>
       <Text bold>{approvalSubjectText(request.actionDescription, cols)}</Text>
-      {irreversible ? <IrreversibleRule cols={cols} /> : null}
+      {/* Every gate wears the same heavy rule, so weight alone cannot tell an irreversible one apart —
+          and it has to be told apart, because `y` is the primary key on one panel and a refused key on
+          the other. The banded warning is the silhouette no other gate has, and it is shape, not hue, so
+          it survives a terminal with the colour stripped out. */}
+      {irreversible ? (
+        <RuleHeader
+          label={IRREVERSIBLE_NOTE}
+          width={approvalTextWidth(cols)}
+          labelColor={t.error}
+        />
+      ) : null}
       <Text> </Text>
       {confirmStep === 'choose' ? (
         <>

@@ -358,7 +358,11 @@ export function createRunnerCallRecorder(opts: {
     hasTerminal: () => hasTerminalEvent,
     text: (eventOpts) => {
       if (eventOpts.semantics === 'final') textLimiter = createTextLimiter();
-      const accepted = textLimiter.accept(redactCredential(eventOpts.text));
+      // An explicit `delta` is a partial slice of one record: the byte budget
+      // bounds it, the event budget counts records.
+      const accepted = textLimiter.accept(redactCredential(eventOpts.text), {
+        countEvent: eventOpts.semantics !== 'delta',
+      });
       const eventText = accepted.text;
       if (accepted.limit === null && resultLimit?.code === 'runner_call_text_limit') {
         resultLimit = null;

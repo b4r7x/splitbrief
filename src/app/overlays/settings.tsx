@@ -153,6 +153,8 @@ export function SettingsOverlay() {
   const listBody = (
     <>
       <ListViewport
+        barColumn="padding"
+        width={rect.innerWidth}
         items={filtered}
         selectedIndex={effectiveIndex}
         getKey={(item) => item.key}
@@ -167,14 +169,14 @@ export function SettingsOverlay() {
           hasAfter: decorations.after,
           renderAfter: () => verdictLine,
         }}
-        renderItem={(item, { isCursor }) => {
+        renderItem={(item, { isCursor, contentWidth }) => {
           if (item.kind === 'crew') {
             return (
               <CrewRowView
                 row={item.row}
                 layout={layout}
                 isCursor={isCursor}
-                width={rect.innerWidth}
+                width={contentWidth}
               />
             );
           }
@@ -185,7 +187,7 @@ export function SettingsOverlay() {
 
           if (editingId === def.id) {
             return (
-              <Box width={rect.innerWidth} height={1} overflow="hidden">
+              <Box width={contentWidth} height={1} overflow="hidden">
                 <Text color={t.textDim}>{'  '}</Text>
                 <Box flexGrow={1} minWidth={0} overflow="hidden">
                   <Text color={t.text} wrap="truncate-end">
@@ -209,7 +211,7 @@ export function SettingsOverlay() {
               metadata={boolTrue ? undefined : displayValue(def, value, { detectedContextLength })}
               metadataColor={t.text}
               selected={boolTrue ? true : undefined}
-              width={rect.innerWidth}
+              width={contentWidth}
             />
           );
         }}

@@ -22,6 +22,7 @@ interface RecentSessionsListProps {
   onSelect: (session: Session) => void;
   onClose: () => void;
   maxVisible?: number | undefined;
+  width: number;
 }
 
 export function RecentSessionsList({
@@ -30,6 +31,7 @@ export function RecentSessionsList({
   onSelect,
   onClose,
   maxVisible,
+  width,
 }: RecentSessionsListProps) {
   const theme = useTheme();
   const pageSize = maxVisible === undefined ? sessions.length : Math.max(0, maxVisible);
@@ -72,6 +74,7 @@ export function RecentSessionsList({
           selectedIndex={selectedIndex}
           getKey={(session) => session.id}
           rowBudget={pageSize}
+          width={width}
           showRemainingCount
           rowZonePrefix="recent-session"
           rowZoneZ={ROW_ZONE_Z_SCREEN}

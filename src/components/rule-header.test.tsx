@@ -59,4 +59,27 @@ describe('RuleHeader', () => {
 
     ui.unmount();
   });
+
+  it('paints the label in labelColor when provided', () => {
+    const ui = render(<RuleHeader label="danger" width={20} labelColor="#ff0000" />);
+    const raw = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(raw);
+
+    expect(frame).toBe(`danger ${'─'.repeat(13)}`);
+    expect(lastAnsiBefore(raw, 'danger')).not.toBe(lastAnsiBefore(raw, '─'));
+
+    ui.unmount();
+  });
+
+  it('renders the same as the default when labelColor is undefined', () => {
+    const withoutProp = render(<RuleHeader label="Mode" width={20} />);
+    const withUndefined = render(<RuleHeader label="Mode" width={20} labelColor={undefined} />);
+
+    expect(stripAnsiStyles(withoutProp.lastFrame() ?? '')).toBe(
+      stripAnsiStyles(withUndefined.lastFrame() ?? ''),
+    );
+
+    withoutProp.unmount();
+    withUndefined.unmount();
+  });
 });

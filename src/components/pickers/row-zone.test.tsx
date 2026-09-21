@@ -37,6 +37,7 @@ describe('ListViewport row zones (integration)', () => {
       <ListViewport
         items={['a', 'b', 'c']}
         selectedIndex={0}
+        width={40}
         getKey={(item) => item}
         rowBudget={5}
         onRowActivate={onRowActivate}
@@ -64,6 +65,7 @@ describe('ListViewport row zones (integration)', () => {
       <ListViewport
         items={['a', 'b']}
         selectedIndex={0}
+        width={40}
         getKey={(item) => item}
         rowBudget={5}
         renderItem={(item) => <Text>{item}</Text>}

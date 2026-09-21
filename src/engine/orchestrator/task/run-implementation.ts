@@ -81,7 +81,12 @@ export async function runImplementation(opts: {
   let loop: { state: WorkflowState; value: ImplementerResult };
   try {
     workspace = usesIsolation
-      ? await wctx.isolation.acquire({ role: 'implementer', writesFiles: 'direct', config })
+      ? await wctx.isolation.acquire({
+          role: 'implementer',
+          writesFiles: 'direct',
+          config,
+          fresh: state.attempt === 0 && seed === undefined,
+        })
       : undefined;
     loop = await withContinuationLoop<ImplementerResult>({
       ctx: {

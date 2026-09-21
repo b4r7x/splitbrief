@@ -334,6 +334,7 @@ export function HomeScreen({
                     }
                     onClose={closeRecentSessions}
                     hasOverlay={interactionBlocked}
+                    width={layout.width}
                   />
                 )}
                 {sessionsActive && (

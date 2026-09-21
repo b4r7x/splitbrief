@@ -285,6 +285,8 @@ function CrewStep({ note, hint, inert = false, onContinue, onExit }: CrewStepPro
         </Box>
       )}
       <ListViewport
+        barColumn="padding"
+        width={innerWidth}
         items={list.filtered}
         selectedIndex={list.selectedIndex}
         getKey={(item) => item.key}
@@ -298,8 +300,10 @@ function CrewStep({ note, hint, inert = false, onContinue, onExit }: CrewStepPro
         decorations={{
           hasAfter: (item, index) =>
             layout.verdict && item.kind === 'crew' && list.filtered[index + 1]?.kind !== 'crew',
-          renderAfter: () =>
-            verdict === undefined ? null : <CrewVerdictLine verdict={verdict} width={innerWidth} />,
+          renderAfter: (_item, ctx) =>
+            verdict === undefined ? null : (
+              <CrewVerdictLine verdict={verdict} width={ctx.contentWidth} />
+            ),
         }}
         renderItem={(item, ctx) => {
           switch (item.kind) {
@@ -308,7 +312,7 @@ function CrewStep({ note, hint, inert = false, onContinue, onExit }: CrewStepPro
                 <PresetRowView
                   preset={item.preset}
                   isCursor={ctx.isCursor}
-                  width={innerWidth}
+                  width={ctx.contentWidth}
                   labelWidth={presetLabelWidth}
                 />
               );
@@ -318,7 +322,7 @@ function CrewStep({ note, hint, inert = false, onContinue, onExit }: CrewStepPro
                   row={item.row}
                   layout={layout}
                   isCursor={ctx.isCursor}
-                  width={innerWidth}
+                  width={ctx.contentWidth}
                 />
               );
             case 'continue':

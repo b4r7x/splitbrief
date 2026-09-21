@@ -55,7 +55,7 @@ describe('RecentSessions', () => {
       { id: 'r-bravo', feature: 'bravo', startedAt: 1_700_000_002 },
     ]);
 
-    const ui = renderFeature(<RecentSessions />);
+    const ui = renderFeature(<RecentSessions width={120} />);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
@@ -78,7 +78,7 @@ describe('RecentSessions', () => {
       })),
     );
 
-    const ui = renderFeature(<RecentSessions limit={5} />);
+    const ui = renderFeature(<RecentSessions limit={5} width={120} />);
     await tick(20);
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -89,7 +89,7 @@ describe('RecentSessions', () => {
   it('renders nothing at all when there are no sessions to list', async () => {
     sessionsStore.load(projectDir);
 
-    const ui = renderFeature(<RecentSessions />);
+    const ui = renderFeature(<RecentSessions width={120} />);
     await tick(20);
 
     expect(stripAnsiStyles(ui.lastFrame() ?? '').trim()).toBe('');
@@ -105,7 +105,7 @@ describe('RecentSessions', () => {
       { id: 's-4', feature: 'newest-row', startedAt: 1_700_000_004 },
     ]);
 
-    const capped = renderFeature(<RecentSessions limit={2} />);
+    const capped = renderFeature(<RecentSessions limit={2} width={120} />);
     await tick(20);
 
     const cappedFrame = stripAnsiStyles(capped.lastFrame() ?? '');
@@ -118,7 +118,7 @@ describe('RecentSessions', () => {
     expect(cappedFrame).not.toContain('ctrl+r');
     capped.unmount();
 
-    const full = renderFeature(<RecentSessions limit={10} />);
+    const full = renderFeature(<RecentSessions limit={10} width={120} />);
     await tick(20);
 
     const fullFrame = stripAnsiStyles(full.lastFrame() ?? '');
@@ -132,7 +132,7 @@ describe('RecentSessions', () => {
   it('a resize that changes limit but keeps it positive does not re-read the sessions directory', async () => {
     seed([{ id: 'rs-first', feature: 'first', startedAt: 1_700_000_000 }]);
 
-    const ui = renderFeature(<RecentSessions limit={5} />);
+    const ui = renderFeature(<RecentSessions limit={5} width={120} />);
     await tick(20);
     expect(sessionsStore.get().sessions.map((s) => s.id)).toEqual(['rs-first']);
 
@@ -141,7 +141,7 @@ describe('RecentSessions', () => {
       makeSession({ id: 'rs-second', feature: 'second', startedAt: 1_700_000_001 }),
     );
 
-    ui.rerender(<RecentSessions limit={4} />);
+    ui.rerender(<RecentSessions limit={4} width={120} />);
     await tick(20);
 
     expect(sessionsStore.get().sessions.map((s) => s.id)).toEqual(['rs-first']);
@@ -152,7 +152,7 @@ describe('RecentSessions', () => {
     seed([{ id: 'hidden-one', feature: 'should-not-load', startedAt: 1_700_000_000 }]);
     sessionsStore.reset();
 
-    const ui = renderFeature(<RecentSessions limit={0} />);
+    const ui = renderFeature(<RecentSessions limit={0} width={120} />);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
@@ -180,6 +180,7 @@ describe('RecentSessions', () => {
           onSelect={() => {}}
           onClose={() => {}}
           hasOverlay={false}
+          width={120}
         />
       </Box>,
     );
@@ -219,7 +220,11 @@ describe('RecentSessions', () => {
     });
 
     const ui = renderFeature(
-      <RecentSessions limit={layout.recentSessionLimit} showHiddenCount={layout.showHiddenCount} />,
+      <RecentSessions
+        limit={layout.recentSessionLimit}
+        showHiddenCount={layout.showHiddenCount}
+        width={layout.width}
+      />,
     );
     await tick(20);
 
@@ -258,6 +263,7 @@ describe('RecentSessions', () => {
           onSelect={() => {}}
           onClose={() => {}}
           hasOverlay={false}
+          width={layout.width}
         />
         <Box height={1} overflow="hidden">
           <Text>selection failed</Text>
@@ -283,7 +289,7 @@ describe('RecentSessions', () => {
       { id: 'g-bravo', feature: 'bravo', startedAt: 1_700_000_002 },
     ]);
 
-    const ui = renderFeature(<RecentSessions focused />);
+    const ui = renderFeature(<RecentSessions focused width={120} />);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';

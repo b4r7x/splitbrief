@@ -26,6 +26,7 @@ import {
   captureAcquisitionBaseline,
   readConfinedEntry,
   sameFileEntry,
+  writeConfinedEntry,
 } from '../approval/file-snapshots/entry.js';
 import { restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots/restore.js';
 import { createStagedProject, stripGitignoreBookkeeping } from '../approval/staged-project.js';
@@ -207,10 +208,25 @@ export function createRunIsolation(opts: {
       });
   }
 
+  async function discardUnpromotedWork(dir: string): Promise<string[]> {
+    const changed =
+      seedSnapshot === null
+        ? await getCurrentChangedFiles(dir)
+        : await getChangedFilesSinceSnapshot(dir, seedSnapshot);
+    const discarded: string[] = [];
+    for (const file of changed) {
+      if (file === '.gitignore' || !(await isUnpromoted(dir, file))) continue;
+      await writeConfinedEntry(dir, file, await readConfinedEntry(projectDir, file));
+      discarded.push(file);
+    }
+    return discarded;
+  }
+
   async function acquire(opts: {
     role: IsolationRole;
     config: Config;
     writesFiles: 'direct' | 'extracted-code';
+    fresh?: boolean | undefined;
   }): Promise<IsolatedWorkspace> {
     const { role, config, writesFiles } = opts;
     const dir =
@@ -224,6 +240,14 @@ export function createRunIsolation(opts: {
       };
     }
     await pendingCleanup;
+    if (opts.fresh === true) {
+      const discarded = await discardUnpromotedWork(dir);
+      if (discarded.length > 0) {
+        warningPublisher?.(
+          `Discarded ${discarded.length} unpromoted change(s) an earlier attempt left in the isolation worktree: ${discarded.join(', ')}`,
+        );
+      }
+    }
     // Captured per acquisition, so a worktree reused by the next task is handed
     // out against the target as it stands now, never against a stale baseline.
     const targetBaseline = await captureAcquisitionBaseline(projectDir);

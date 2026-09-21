@@ -225,8 +225,9 @@ function ActionList({
       selectedIndex={selectedIndex}
       getKey={(item) => item.action}
       rowBudget={rowBudget}
+      width={width}
       renderItem={(item, ctx) =>
-        renderAction(item, ctx.isCursor && focused, item.action === recommended, width)
+        renderAction(item, ctx.isCursor && focused, item.action === recommended, ctx.contentWidth)
       }
     />
   );
@@ -253,8 +254,9 @@ function ToolList({
       selectedIndex={selectedIndex}
       getKey={(candidate) => `${candidate.tool}:${candidate.model ?? ''}`}
       rowBudget={rowBudget}
+      width={width}
       renderItem={(candidate, ctx) =>
-        renderCandidate(candidate, ctx.isCursor && focused, width, issue)
+        renderCandidate(candidate, ctx.isCursor && focused, ctx.contentWidth, issue)
       }
     />
   );

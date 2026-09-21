@@ -150,17 +150,19 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
     >
       <Box flexDirection="column" height={listBudget}>
         <ListViewport
+          barColumn="padding"
           items={helpRows}
           selectedIndex={cursor}
           getKey={(row) => row.key}
           rowBudget={listBudget}
+          width={innerWidth}
           showRemainingCount
           section={{
             by: (row) => row.section,
             headerFor: () => listBudget >= SECTION_HEADER_MIN_ROWS,
             renderHeader: (label) => <ListGroupHeader label={label} />,
           }}
-          renderItem={(row) => {
+          renderItem={(row, ctx) => {
             // Command names all fit the column, so it never moves for them. A keyboard chord is
             // spelled out (`shift+↑/↓, pgup/pgdn, home/end`) and teaching it is the whole point of
             // the row, so a chord past the column pushes its own description right instead of
@@ -173,7 +175,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
                   description: row.description,
                   hint: row.hint,
                   shortcut: row.shortcut,
-                  innerWidth,
+                  innerWidth: ctx.contentWidth,
                   labelWidth: rowLabelWidth,
                 })}
                 {...(row.shortcut ? { trailing: row.shortcut } : {})}

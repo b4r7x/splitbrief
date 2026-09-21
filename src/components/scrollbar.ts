@@ -40,6 +40,20 @@ export function scrollbarCell(rowIndex: number, thumb: ScrollbarThumb): boolean 
   return rowIndex >= thumb.thumbStart && rowIndex < thumb.thumbStart + thumb.thumbSize;
 }
 
-export function getScrollViewportContentWidth(outerWidth: number): number {
-  return Math.max(0, normalizeCount(outerWidth) - 4);
+/** A scroll gutter is one blank separator column plus the one-cell bar. */
+const SCROLL_GUTTER_CELLS = 2;
+
+/**
+ * Where the bar column sits. `inside` keeps the whole gutter within the width;
+ * `padding` draws the bar one cell past it, in a frame's padding column, so it
+ * stands one cell off the border exactly like the composer dropdown's bar.
+ */
+export type ScrollbarColumn = 'inside' | 'padding';
+
+export function getScrollViewportContentWidth(
+  outerWidth: number,
+  barColumn: ScrollbarColumn = 'inside',
+): number {
+  const gutter = barColumn === 'padding' ? SCROLL_GUTTER_CELLS - 1 : SCROLL_GUTTER_CELLS;
+  return Math.max(0, normalizeCount(outerWidth) - gutter);
 }

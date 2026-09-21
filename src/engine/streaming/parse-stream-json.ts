@@ -145,7 +145,9 @@ function parseStreamEvent(event: Record<string, unknown>): StreamParseResult | n
       // silently corrupts a message whose slices break on a space or a
       // paragraph gap.
       const text = typeof delta.text === 'string' ? delta.text : undefined;
-      return text ? { text, channel: 'assistant', sessionId } : { sessionId };
+      return text
+        ? { text, channel: 'assistant', textSemantics: 'delta', sessionId }
+        : { sessionId };
     }
     if (delta.type === 'input_json_delta') {
       const inputDelta = firstString(delta.partial_json) ?? '';

@@ -13,6 +13,7 @@ import {
   getScrollViewportContentWidth,
   hasScrollbarOverflow,
   scrollbarCell,
+  type ScrollbarColumn,
 } from './scrollbar.js';
 import { useTheme } from './theme.js';
 import { ScrollIndicator } from './scroll-indicator.js';
@@ -35,6 +36,7 @@ interface ScrollableDocumentProps {
   showScrollIndicators?: boolean | undefined;
   showScrollbar?: boolean | undefined;
   width?: number | undefined;
+  barColumn?: ScrollbarColumn | undefined;
 }
 
 function rowLineCount(row: ScrollableDocumentRow): number {
@@ -155,6 +157,7 @@ export function ScrollableDocument({
   placeholder,
   showScrollIndicators = true,
   showScrollbar = false,
+  barColumn = 'inside',
   width,
 }: ScrollableDocumentProps) {
   const t = useTheme();
@@ -205,7 +208,7 @@ export function ScrollableDocument({
   // width, so a section rule inside it ends where the chrome rule above it does.
   const contentWidth =
     showScrollbar && width !== undefined
-      ? Math.max(1, showGutter ? getScrollViewportContentWidth(width) : width)
+      ? Math.max(1, showGutter ? getScrollViewportContentWidth(width, barColumn) : width)
       : undefined;
   const thumb = getScrollbarThumb({
     offset: windowState.offset,
@@ -218,6 +221,7 @@ export function ScrollableDocument({
       flexDirection="column"
       height={windowState.visibleHeight}
       width={contentWidth}
+      flexShrink={0}
       overflow="hidden"
     >
       {windowState.visibleRows.map(({ row, skipLines, visibleLines }) => {
@@ -245,7 +249,14 @@ export function ScrollableDocument({
         </Box>
       )}
       {showScrollbar ? (
-        <Box flexDirection="row" height={windowState.visibleHeight} overflow="hidden">
+        <Box
+          flexDirection="row"
+          height={windowState.visibleHeight}
+          width={
+            showGutter && barColumn === 'padding' && width !== undefined ? width + 1 : undefined
+          }
+          overflow="hidden"
+        >
           {viewport}
           {showGutter && (
             <Box flexDirection="column" flexShrink={0} marginLeft={1}>

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { Box, Text } from 'ink';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { glyph } from '../lib/glyphs.js';
+import { getTerminalCellWidth } from '../utils/display-text.js';
 import { ScrollableDocument } from './scrollable-document.js';
 
 const HOME = '\u001b[H';
@@ -220,6 +223,51 @@ describe('ScrollableDocument', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).not.toContain(glyph('scrollThumb'));
     expect(frame).not.toContain(glyph('scrollTrack'));
+
+    ui.unmount();
+  });
+
+  it('fills the full width with the scrollbar in the last column when overflowing', async () => {
+    forceUnicodeGlyphs();
+    const ui = renderFeature(
+      <ScrollableDocument
+        rows={makeRows(10)}
+        height={3}
+        width={40}
+        showScrollbar
+        showScrollIndicators={false}
+      />,
+    );
+    await tick(20);
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    for (const line of lines) {
+      expect(getTerminalCellWidth(line)).toBe(40);
+      const lastChar = line.at(-1) ?? '';
+      expect([glyph('scrollThumb'), glyph('scrollTrack')]).toContain(lastChar);
+    }
+
+    ui.unmount();
+  });
+
+  it('leaves content unclipped and bar-free when the document fits the viewport', async () => {
+    forceUnicodeGlyphs();
+    const ui = renderFeature(
+      <ScrollableDocument
+        rows={makeRows(3)}
+        height={10}
+        width={40}
+        showScrollbar
+        showScrollIndicators={false}
+      />,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).not.toContain(glyph('scrollThumb'));
+    expect(frame).not.toContain(glyph('scrollTrack'));
+    expect(frame).toContain('line-0');
+    expect(frame).toContain('line-2');
 
     ui.unmount();
   });

@@ -5,6 +5,7 @@ import { SessionRow } from '../../../components/session-row.js';
 import type { Session } from '../../../core/schemas/session.js';
 import { RecentSessionsList } from './recent-sessions-list.js';
 import { RecentSessionsShell } from './recent-sessions-shell.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 
 interface RecentSessionsProps {
   limit?: number | undefined;
@@ -13,6 +14,7 @@ interface RecentSessionsProps {
   onSelect?: ((session: Session) => void) | undefined;
   onClose?: (() => void) | undefined;
   hasOverlay?: boolean | undefined;
+  width: number;
 }
 
 export function RecentSessions({
@@ -22,6 +24,7 @@ export function RecentSessions({
   onSelect,
   onClose,
   hasOverlay,
+  width,
 }: RecentSessionsProps) {
   const sessions = sessionsStore.use((s) => s.sessions);
   const totalCount = sessionsStore.use((s) => s.totalCount);
@@ -44,6 +47,8 @@ export function RecentSessions({
         onSelect={onSelect}
         onClose={onClose}
         maxVisible={limit}
+        // The shell insets by MARK_SLOT_CELLS on both sides, so the list gets what is left.
+        width={Math.max(1, width - 2 * MARK_SLOT_CELLS)}
       />
     );
   }
