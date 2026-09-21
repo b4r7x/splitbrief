@@ -49,6 +49,14 @@ const OPENAI_QUOTA =
   '429 You exceeded your current quota, please check your plan and billing details.';
 const GROQ_RATE_LIMIT =
   'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_x` on tokens per minute (TPM). Please try again in 7.66s.';
+// Captured live from `agy -p` (antigravity 1.2.7) on 2026-09-21: the line lands
+// on stderr, first beside exit 0 with "(response may be truncated)" appended,
+// then beside exit 3 on the retry.
+const ANTIGRAVITY_QUOTA =
+  'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s. (response may be truncated)';
+// The documented Gemini API 429 body.
+const GEMINI_RESOURCE_EXHAUSTED =
+  '{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details.","status":"RESOURCE_EXHAUSTED"}}';
 
 describe('isUsageLimitDiagnostic', () => {
   it.each([
@@ -65,6 +73,9 @@ describe('isUsageLimitDiagnostic', () => {
     OPENAI_QUOTA,
     GROQ_RATE_LIMIT,
     'APIError: Rate limit exceeded',
+    ANTIGRAVITY_QUOTA,
+    GEMINI_RESOURCE_EXHAUSTED,
+    'You have exhausted your capacity on this model.',
   ])('recognizes %j', (message) => {
     expect(isUsageLimitDiagnostic(message)).toBe(true);
   });
@@ -100,6 +111,7 @@ describe('isUsageLimitDiagnostic', () => {
       CLAUDE_SESSION_LIMIT,
       CLAUDE_MODEL_LIMIT,
       'Credit balance is too low',
+      ANTIGRAVITY_QUOTA,
     ]) {
       expect(isAuthFailureDiagnostic(message)).toBe(false);
     }
@@ -174,6 +186,11 @@ describe('parseUsageLimitReset', () => {
   it('parses the legacy Claude epoch suffix', () => {
     const resetsAt = parseUsageLimitReset('Claude AI usage limit reached|1754642820', now);
     expect(resetsAt?.getTime()).toBe(1754642820_000);
+  });
+
+  it('parses the antigravity compact reset duration', () => {
+    const resetsAt = parseUsageLimitReset(ANTIGRAVITY_QUOTA, now);
+    expect(resetsAt?.getTime()).toBe(now.getTime() + ((2 * 60 + 6) * 60 + 30) * 1000);
   });
 
   it('parses the Groq fractional-seconds retry hint', () => {
@@ -320,5 +337,26 @@ describe('end-to-end classification of the live codex limit records', () => {
       expect(terminal.error?.message).toBe('APIError: Rate limit exceeded');
       expect(isUsageLimitDiagnostic(terminal.error?.message ?? '')).toBe(true);
     }
+  });
+
+  it('classifies the flat OpenCode 2.0.12 quota envelope as usage-limit', () => {
+    // Captured live from `opencode run --standalone --format json` on 2026-09-21
+    // (OpenCode Go at its limit); on a live run the fallback message hid it and
+    // the ladder burned every retry on `opencode-error`.
+    const line =
+      '{"type":"error","timestamp":1790016994502,"sessionID":"ses_f3aac4834ffexQ7jY8OG1Vw3Ox","error":{"type":"provider.quota","message":"Go usage limit exceeded","status":429}}';
+    const terminal = opencodeProtocolEvents(line).find((event) => event.type === 'result');
+    expect(terminal?.type).toBe('result');
+    if (terminal?.type !== 'result') return;
+    expect(terminal.error?.message).toBe('provider.quota: Go usage limit exceeded');
+    const outcome = runnerCallOutcome(
+      makeRunnerCallResult({
+        status: 'failed',
+        text: terminal.text,
+        error: terminal.error ?? { code: 'opencode-error', message: 'OpenCode reported an error' },
+        backendKind: 'cli',
+      }),
+    );
+    expect(outcome.state).toBe('usage-limit');
   });
 });

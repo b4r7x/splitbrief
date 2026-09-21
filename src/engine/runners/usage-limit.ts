@@ -22,8 +22,14 @@ import { isRecord } from '../../utils/type-guards.js';
  * API providers surface HTTP 429 bodies: Anthropic `rate_limit_error` ("This
  * request would exceed your account's rate limit."), OpenAI
  * `insufficient_quota` ("You exceeded your current quota, ..."), Groq/
- * OpenRouter/Together "Rate limit ..." prose. OpenCode error envelopes carry
- * "Rate limit exceeded" with `statusCode: 429`.
+ * OpenRouter/Together "Rate limit ..." prose. OpenCode 1.x error envelopes
+ * carry "Rate limit exceeded" with `statusCode: 429`; 2.0.12 emits a flat
+ * `{"type":"error","error":{"type":"provider.quota","message":"Go usage limit
+ * exceeded","status":429}}` (captured live 2026-09-21). Antigravity (`agy -p`) prints
+ * its limit on stderr — "error: Individual quota reached. Please upgrade your
+ * subscription to increase your limits. Resets in 2h6m30s." (captured live
+ * 2026-09-21) — once beside exit 0 with "(response may be truncated)" appended,
+ * then beside exit 3; the Gemini API body behind it says `RESOURCE_EXHAUSTED`.
  */
 const USAGE_LIMIT_STRONG_PATTERNS: readonly RegExp[] = [
   /you'?ve (?:hit|reached) your[^.!\n]{0,40}\blimit\b/,
@@ -59,6 +65,7 @@ const TRY_AGAIN_AT_BARE_CLOCK = /try again at (\d{1,2}):(\d{2})\s?(am|pm)/i;
 const TRY_AGAIN_IN_SECONDS = /try again in ([\d.]+)\s*s(?:econds?)?\b/i;
 const TRY_AGAIN_IN_PARTS =
   /try again in (?:(\d+) days?)?\s*(?:(\d+) hours?)?\s*(?:(\d+) minutes?)?/i;
+const RESETS_IN_COMPACT = /resets in (?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?(?![\w:])/i;
 const RETRY_AFTER_SECONDS = /retry-after:\s*(\d+(?:\.\d+)?)\s*(?:s(?:ec(?:onds?)?)?)?(?![\w:])/i;
 const RETRY_AFTER_HTTP_DATE =
   /retry-after:\s*([a-z]{3},\s*\d{1,2}\s+[a-z]{3}\s+\d{4}\s+\d{1,2}:\d{2}:\d{2}\s+gmt)/i;
@@ -198,6 +205,13 @@ function parseRelative(text: string, now: Date): Date | null {
   if (seconds?.[1] !== undefined) {
     return new Date(now.getTime() + Math.ceil(Number.parseFloat(seconds[1]) * 1000));
   }
+  const compact = RESETS_IN_COMPACT.exec(text);
+  if (compact && (compact[1] ?? compact[2] ?? compact[3]) !== undefined) {
+    const hours = compact[1] === undefined ? 0 : Number.parseInt(compact[1], 10);
+    const minutes = compact[2] === undefined ? 0 : Number.parseInt(compact[2], 10);
+    const seconds = compact[3] === undefined ? 0 : Number.parseInt(compact[3], 10);
+    return new Date(now.getTime() + ((hours * 60 + minutes) * 60 + seconds) * 1000);
+  }
   const parts = TRY_AGAIN_IN_PARTS.exec(text);
   if (!parts || (parts[1] === undefined && parts[2] === undefined && parts[3] === undefined)) {
     return null;
@@ -268,8 +282,8 @@ function parseResetsAt(text: string, now: Date): Date | null {
  * N hours N minutes",
  * Claude Code "resets 3:45pm" / "resets Mon 12:00am" / "resets 4pm
  * (Europe/Warsaw)" — a named IANA zone is read in that zone, not locally —
- * and the legacy "|<epoch>" suffix, Groq "try again in 7.66s", and an HTTP
- * Retry-After in either of its wire forms, "retry-after: 120" (delay
+ * and the legacy "|<epoch>" suffix, Groq "try again in 7.66s", antigravity
+ * "Resets in 2h6m30s", and an HTTP Retry-After in either of its wire forms, "retry-after: 120" (delay
  * seconds) or "retry-after: Wed, 21 Oct 2026 07:28:00 GMT". Returns null
  * when the message carries no parseable reset — classification never
  * depends on this.

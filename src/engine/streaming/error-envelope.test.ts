@@ -22,4 +22,17 @@ describe('envelopeErrorDetail', () => {
       'runner error',
     );
   });
+
+  it('reads the flat envelope opencode 2.x emits, typed by `type` instead of `name`', () => {
+    // Captured live from `opencode run --standalone --format json` 2.0.12 on 2026-09-21.
+    expect(
+      envelopeErrorDetail(
+        { error: { type: 'provider.quota', message: 'Go usage limit exceeded', status: 429 } },
+        'runner error',
+      ),
+    ).toBe('provider.quota: Go usage limit exceeded');
+    expect(envelopeErrorDetail({ error: { message: 'Signed out' } }, 'runner error')).toBe(
+      'Signed out',
+    );
+  });
 });

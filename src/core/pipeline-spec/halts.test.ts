@@ -12,6 +12,15 @@ describe('classifyHaltSignature', () => {
 
   it('classifies usage, missing-model and spawn phrases', () => {
     expect(classifyHaltSignature(['Error: quota exceeded'])).toBe('usage');
+    // Captured live from `agy -p` (antigravity 1.2.7) on 2026-09-21.
+    expect(
+      classifyHaltSignature([
+        'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s.',
+      ]),
+    ).toBe('usage');
+    expect(classifyHaltSignature(['{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}'])).toBe(
+      'usage',
+    );
     expect(classifyHaltSignature(['unknown model: gpt-9'])).toBe('missing-model');
     expect(classifyHaltSignature(['error: unknown flag --yolo'])).toBe('spawn');
   });

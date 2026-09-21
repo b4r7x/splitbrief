@@ -40,12 +40,17 @@ export type ContinuationHolder = {
   hold: (step: StepRef, steer: string | undefined) => void;
 };
 
-/** Two steps are the same work; the attempt or cycle number is which try it is. */
+/**
+ * Two step refs name the same parked work. A brief also compares its attempt: a
+ * mid-step partial belongs to the try that produced it, so a seed an earlier
+ * attempt left must not resume a later one — a reset attempt starts clean.
+ */
 function sameStep(a: StepRef, b: StepRef): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === 'planner') return b.kind === 'planner' && a.call === b.call;
   if (a.kind === 'gate') return b.kind === 'gate' && a.gate === b.gate;
-  if (a.kind === 'brief') return b.kind === 'brief' && a.taskId === b.taskId;
+  if (a.kind === 'brief')
+    return b.kind === 'brief' && a.taskId === b.taskId && a.attempt === b.attempt;
   return true;
 }
 

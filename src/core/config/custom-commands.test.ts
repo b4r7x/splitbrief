@@ -250,6 +250,17 @@ describe('custom command catalog schema', () => {
       }).success,
     ).toBe(true);
   });
+
+  it('accepts idleWarnMs and idleKillMs beyond one hour', () => {
+    const definition = {
+      ...safeDefinition,
+      idleWarnMs: 600_000,
+      idleKillMs: 7_200_000,
+    };
+    expect(CustomCommandDefinitionSchema.safeParse(definition).success).toBe(true);
+    const normalized = normalizeCustomCommand('review', definition);
+    expect(NormalizedCustomCommandSchema.safeParse(normalized).success).toBe(true);
+  });
 });
 
 describe('legacy custom command projection', () => {

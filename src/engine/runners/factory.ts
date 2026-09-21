@@ -199,7 +199,13 @@ export async function createImplementer(
   );
   const adapterOptions: ImplementerFactoryOptions = {
     ...options,
-    ...(gate.kind === 'cli' && { trustedCli: { tool: gate.tool, executable: gate.executable } }),
+    ...(gate.kind === 'cli' && {
+      trustedCli: {
+        tool: gate.tool,
+        executable: gate.executable,
+        installedVersion: gate.installedVersion,
+      },
+    }),
   };
   switch (kind) {
     case 'cli': {

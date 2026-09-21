@@ -27,7 +27,14 @@ type RunnerGateBase = Readonly<{
 }>;
 
 export type RunnerGate =
-  | (RunnerGateBase & Readonly<{ kind: 'cli'; tool: CliToolId; executable: CliExecutableReceipt }>)
+  | (RunnerGateBase &
+      Readonly<{
+        kind: 'cli';
+        tool: CliToolId;
+        executable: CliExecutableReceipt;
+        /** Absent when the gate was not built from readiness evidence (conformance harness). */
+        installedVersion?: string | undefined;
+      }>)
   | (RunnerGateBase & Readonly<{ kind: 'api'; provider: string; endpointOrigin: string }>)
   | (RunnerGateBase & Readonly<{ kind: 'shell'; command: CommandGate }>)
   | (RunnerGateBase & Readonly<{ kind: 'agent'; command: CommandGate }>);

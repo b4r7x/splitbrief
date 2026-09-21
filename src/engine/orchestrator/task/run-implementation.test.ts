@@ -6,9 +6,16 @@ import { normalizeCustomCommand } from '../../../core/config/custom-commands.js'
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makeImplementer,
+  makeWctx,
+} from '#testing/helpers/orchestrator-factories.js';
+import { createContinuationHolder } from '../continuation.js';
+import type { RunIsolation } from '../isolation/types.js';
 import {
   customRunnerSecurityPosture,
   type ConfiguredCustomRunner,
@@ -298,5 +305,78 @@ describe('runImplementation configured custom contracts', () => {
 
   it('discards a rejected direct custom-runner outer-stage diff', { timeout: 30_000 }, async () => {
     await runIsolatedDirectScenario('rejected');
+  });
+});
+
+describe('runImplementation worktree freshness', () => {
+  async function capturedFresh(
+    seed: { partial?: string; steer?: string; attempt?: number } | undefined,
+    stateOverrides?: Partial<WorkflowState>,
+  ): Promise<boolean | undefined> {
+    const { projectDir } = setupProject('reseed');
+    const task = makeTask({ id: 'T040', file: 'src/reseed.ts', action: 'create' });
+    const state = makeImplState([task], stateOverrides);
+    const freshArgs: Array<boolean | undefined> = [];
+    const isolation: RunIsolation = {
+      acquire: async (opts) => {
+        freshArgs.push(opts.fresh);
+        return {
+          projectDir,
+          sandboxEnv: {},
+          snapshot: await getChangedFilesSnapshot(projectDir),
+          targetBaseline: undefined,
+          changeDetection: 'file-hashes',
+          cleanup: () => {},
+        };
+      },
+      dispose: async () => {},
+    };
+    const continuation =
+      seed === undefined
+        ? undefined
+        : createContinuationHolder({
+            step: { kind: 'brief', taskId: task.id, attempt: seed.attempt ?? 0 },
+            ...(seed.partial !== undefined && { partial: seed.partial }),
+            ...(seed.steer !== undefined && { steer: seed.steer }),
+          });
+    const wctx = makeWctx({
+      projectDir,
+      sessionId: 'reseed-session',
+      implementer: makeImplementer({ capabilities: { writesFiles: 'direct' } }),
+      isolation,
+      ...(continuation !== undefined && { continuation }),
+    });
+
+    await runImplementation({
+      wctx,
+      task,
+      state,
+      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+
+    expect(freshArgs).toHaveLength(1);
+    return freshArgs[0];
+  }
+
+  it('reseeds a first attempt that carries no continuation seed', async () => {
+    expect(await capturedFresh(undefined)).toBe(true);
+  });
+
+  it('reseeds when a correction alone continues the brief', async () => {
+    // A retry-exhausted brief restored its files in the project tree; a typed
+    // correction is guidance, not a mid-step resume, so the worktree must reseed.
+    expect(await capturedFresh({ steer: 'use the smaller helper' })).toBe(true);
+  });
+
+  it('keeps the worktree for a genuine mid-step park continuation', async () => {
+    expect(await capturedFresh({ partial: 'half a brief' })).toBe(false);
+  });
+
+  it("reseeds when a prior attempt's partial no longer matches the reset attempt", async () => {
+    // The park left a partial at attempt 2; the ladder reset the brief to attempt
+    // 0, so the stale partial does not resume it and the worktree reseeds clean.
+    expect(await capturedFresh({ partial: 'half a brief', attempt: 2 })).toBe(true);
   });
 });

@@ -59,8 +59,8 @@ Omit a heading whose section the brief does not have; never invent one. `### Tes
 ## 3. Closing line
 
 <!-- generated: closing-line -->
-- one file: `Edit <file> directly in the working directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
-- more than one file: `Edit <file>, <second file> directly in the working directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
+- one file: `Edit <file> directly in the working directory. Before finishing, run the brief's typecheck command and only the tests of the files you changed, never the whole suite: the orchestrator runs the full validation after you hand back. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
+- more than one file: `Edit <file>, <second file> directly in the working directory. Before finishing, run the brief's typecheck command and only the tests of the files you changed, never the whole suite: the orchestrator runs the full validation after you hand back. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
 <!-- /generated -->
 
 ## 4. Retry rendering

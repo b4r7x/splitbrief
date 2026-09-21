@@ -140,7 +140,21 @@ function appendPrefix(previous: string, chunk: string, maxBytes: number): string
 function appendTail(previous: string, chunk: string, maxBytes: number): string {
   const chunkBytes = Buffer.byteLength(chunk, 'utf8');
   if (chunkBytes >= maxBytes) return takeUtf8TailBytes(chunk, maxBytes);
-  return takeUtf8TailBytes(previous + chunk, maxBytes);
+  const excess = Buffer.byteLength(previous, 'utf8') + chunkBytes - maxBytes;
+  if (excess <= 0) return previous + chunk;
+  return dropUtf8PrefixBytes(previous, excess) + chunk;
+}
+
+function dropUtf8PrefixBytes(text: string, atLeastBytes: number): string {
+  let bytes = 0;
+  let index = 0;
+  while (index < text.length && bytes < atLeastBytes) {
+    const unit = text.charCodeAt(index);
+    const pair = unit >= 0xd800 && unit <= 0xdbff && index + 1 < text.length;
+    bytes += pair ? 4 : unit < 0x80 ? 1 : unit < 0x800 ? 2 : 3;
+    index += pair ? 2 : 1;
+  }
+  return text.slice(index);
 }
 
 function takeUtf8PrefixBytes(text: string, maxBytes: number): string {

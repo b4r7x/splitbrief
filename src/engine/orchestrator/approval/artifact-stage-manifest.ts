@@ -36,8 +36,6 @@ import {
   type ArtifactStageManifest,
 } from './artifact-stage-capture.js';
 
-export const DECLARED_ARTIFACT_STAGE_MAX_BYTES = 1024 * 1024;
-
 const ARTIFACT_PARENT_SEGMENTS = ['.splitbrief-runner', 'output'] as const;
 const ARTIFACT_SENTINEL = Buffer.from([0xff]);
 const DEFAULT_DECLARED_ARTIFACT_BOUND = MAX_DECLARED_ARTIFACT_BYTES;

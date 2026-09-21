@@ -14,9 +14,8 @@ import type { RunnerCallCredentialRedactor } from '../../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
 import {
   createRunnerCallDeltaLimiter,
-  finishRunnerCallOutputLimit,
+  runnerCallLimitWarning,
   type RunnerCallDeltaLimitResult,
-  type RunnerCallOutputLimit,
 } from '../../calls/output-limit.js';
 import { processError } from '../../../lib/process/errors.js';
 import type { SpawnIdleOptions } from '../../../lib/process/spawn/lifecycle.js';
@@ -86,6 +85,13 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     code: 'runner_output_text_limit',
     label: 'runner output text',
   });
+  let limitWarned = false;
+
+  function noteLimitWarning(result: RunnerCallDeltaLimitResult): void {
+    if (result.limit === null || limitWarned) return;
+    limitWarned = true;
+    state.recorder.warning({ warning: runnerCallLimitWarning(result.limit) });
+  }
 
   function emitAssistantOutput(text: string): void {
     const safeText = redactCredential(text);
@@ -99,23 +105,17 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     }
   }
 
-  function acceptTextDelta(text: string, countEvent = true): RunnerCallDeltaLimitResult {
-    const accepted = textLimiter.accept(text, { countEvent });
+  function acceptTextDelta(text: string): RunnerCallDeltaLimitResult {
+    const accepted = textLimiter.accept(text);
     return { ...accepted, text: redactCredential(accepted.text) };
-  }
-
-  function finishLimitIfNeeded(result: RunnerCallDeltaLimitResult): boolean {
-    if (result.limit === null) return false;
-    finishClaudeOutputLimit(state, result.limit);
-    return true;
   }
 
   function applyStreamText(
     channel: NonNullable<ReturnType<typeof parseStreamLine>['channel']>,
     text: string,
     partial = false,
-  ): boolean {
-    const accepted = acceptTextDelta(text, !partial);
+  ): void {
+    const accepted = acceptTextDelta(text);
     if (accepted.text.length > 0) {
       state.recorder.text({
         channel,
@@ -128,7 +128,7 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
         emitAssistantOutput(accepted.text);
       }
     }
-    return finishLimitIfNeeded(accepted);
+    noteLimitWarning(accepted);
   }
 
   /**
@@ -139,22 +139,23 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
    * streamed, so it is dropped deliberately and `applyResultText` reconciles the
    * divergence once against the terminal `result` record.
    */
-  function applyAssistantMessage(text: string): boolean {
+  function applyAssistantMessage(text: string): void {
     const reconciliation = reconcileFinalText(blockText, redactCredential(text));
     const missing =
       reconciliation.kind === 'full' || reconciliation.kind === 'suffix' ? reconciliation.text : '';
-    const limited = missing.length > 0 ? applyStreamText('assistant', missing) : false;
+    if (missing.length > 0) {
+      applyStreamText('assistant', missing);
+    }
     blockText = '';
-    return limited;
   }
 
-  function applyResultText(text: string): boolean {
+  function applyResultText(text: string): void {
     const safeText = redactCredential(text);
     state.resultText = safeText;
     // Only a terminal `result` record carrying text can complete the call.
     state.sawResultText = true;
     const reconciliation = reconcileFinalText(state.text, safeText);
-    if (reconciliation.kind === 'none') return false;
+    if (reconciliation.kind === 'none') return;
 
     const accepted = acceptTextDelta(reconciliation.text);
     if (reconciliation.kind === 'full') {
@@ -175,7 +176,7 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
       }
       state.text = accepted.text;
     }
-    return finishLimitIfNeeded(accepted);
+    noteLimitWarning(accepted);
   }
 
   function handleLine(line: string): void {
@@ -242,12 +243,12 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
       // `final` text restates a block the partial-message deltas already
       // streamed, so it replaces the accumulated text instead of extending it.
       if (parsed.textSemantics === 'final') {
-        if (applyAssistantMessage(parsed.text)) return;
+        applyAssistantMessage(parsed.text);
       } else {
         const channel = parsed.channel ?? 'assistant';
         // A partial-message delta carries ~10 characters; the event budget
         // counts records, and the byte budget bounds the text either way.
-        if (applyStreamText(channel, parsed.text, parsed.textSemantics === 'delta')) return;
+        applyStreamText(channel, parsed.text, parsed.textSemantics === 'delta');
       }
     }
 
@@ -260,7 +261,7 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     if (parsed.isResult) {
       state.sawResult = true;
       if (parsed.text) {
-        if (applyResultText(parsed.text)) return;
+        applyResultText(parsed.text);
       }
     }
 
@@ -300,16 +301,6 @@ export function buildClaudeIdleOptions(
     onWarn: (silentMs) => state.recorder.stalled({ silentMs }),
     onClear: () => state.recorder.stallCleared(),
   };
-}
-
-export function finishClaudeOutputLimit(
-  state: ClaudeStreamState,
-  limit: RunnerCallOutputLimit,
-): void {
-  finishRunnerCallOutputLimit(state.recorder, limit, {
-    usage: state.usage,
-    nativeSessionId: state.sessionId,
-  });
 }
 
 function parseContentBlockToolStart(

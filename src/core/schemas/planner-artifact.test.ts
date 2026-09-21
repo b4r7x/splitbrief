@@ -73,9 +73,11 @@ describe('OwnedPlannerArtifactSchema', () => {
     ).toBe(false);
   });
 
-  it('rejects text past the declared artifact byte bound', () => {
+  it('parses text past the declared artifact byte bound', () => {
+    expect(MAX_DECLARED_ARTIFACT_BYTES).toBe(1_048_576);
     const text = 'a'.repeat(MAX_DECLARED_ARTIFACT_BYTES + 1);
-    const result = OwnedPlannerArtifactSchema.safeParse({
+    const byteLength = Buffer.byteLength(text, 'utf8');
+    const parsed = OwnedPlannerArtifactSchema.parse({
       semanticId: 'batch-ordinal-0',
       programId,
       batchId,
@@ -83,15 +85,12 @@ describe('OwnedPlannerArtifactSchema', () => {
       logicalName: 'tasks.md',
       transport: 'stdout-final',
       text,
-      byteLength: Buffer.byteLength(text, 'utf8'),
+      byteLength,
       sha256: 'artifact-digest',
       runtimeReceipt: 'runtime-receipt',
       terminal: { status: 'completed', recordId: 'record-1', protocolDigest: 'protocol-digest' },
       sourceReceipt: { kind: 'stdout-final', resultDigest: 'result-digest' },
     });
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toBe(
-      'artifact exceeds the declared artifact byte bound',
-    );
+    expect(parsed.byteLength).toBe(byteLength);
   });
 });

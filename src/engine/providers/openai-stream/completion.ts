@@ -115,9 +115,7 @@ function emitToolUseDeltas(
   let accepted: RunnerCallDeltaLimitResult = { text: '', limit: null };
 
   for (const toolCall of delta.tool_calls ?? []) {
-    accepted = limiter.accept(toolCall.function?.arguments ?? '', {
-      countEvent: true,
-    });
+    accepted = limiter.accept(toolCall.function?.arguments ?? '');
     if (accepted.text.length > 0 || accepted.limit === null) {
       recorder.toolUseDelta({
         toolUseId: toolCall.id === undefined ? null : redactCredential(toolCall.id),
@@ -130,9 +128,7 @@ function emitToolUseDeltas(
   }
 
   if (delta.function_call !== undefined) {
-    accepted = limiter.accept(delta.function_call.arguments ?? '', {
-      countEvent: true,
-    });
+    accepted = limiter.accept(delta.function_call.arguments ?? '');
     if (accepted.text.length > 0 || accepted.limit === null) {
       recorder.toolUseDelta({
         toolUseId: null,

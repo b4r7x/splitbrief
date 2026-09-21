@@ -1,6 +1,10 @@
 import type { ChildProcess } from 'node:child_process';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
-import { RUNNER_CALL_STDERR_MAX_BYTES } from '../../calls/output-limit.js';
+import {
+  RUNNER_CALL_STDERR_MAX_BYTES,
+  runnerCallLimitWarning,
+  runnerCallLineOutputLimit,
+} from '../../calls/output-limit.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../../calls/status.js';
 import {
   classifyHaltSignature,
@@ -41,7 +45,6 @@ import type {
  * its own `RUNNER_CALL_OUTPUT_*` limits, which truncate instead of killing.
  */
 export const CLI_RAW_OUTPUT_MAX_BYTES = 64 * 1024 * 1024;
-export const CLI_RAW_PROTOCOL_MAX_EVENTS = 262_144;
 
 type CliAdapter = CliProcessAdapter;
 
@@ -175,7 +178,6 @@ export async function invokeProcessCli(
   let stdoutLastLine = '';
   let stdoutTailCarry = '';
   let stderr = '';
-  let eventCount = 0;
   let terminalSeen = false;
   timeoutController = new AbortController();
   const timeout = setTimeout(
@@ -194,10 +196,6 @@ export async function invokeProcessCli(
     // after a terminal result is still a protocol failure.
     if (terminalSeen && event.type !== 'result') {
       throw fatal('protocol-failure', 'CLI emitted output after its terminal result');
-    }
-    eventCount += 1;
-    if (eventCount > CLI_RAW_PROTOCOL_MAX_EVENTS) {
-      throw fatal('output-budget-breach', 'CLI protocol event budget was exceeded');
     }
     protocolEvents.push(event);
     switch (event.type) {
@@ -253,8 +251,18 @@ export async function invokeProcessCli(
     },
     {
       maxLineBytes: DEFAULT_PROCESS_LINE_MAX_BYTES,
-      onOverflow: () => {
-        throw fatal('output-budget-breach', 'CLI output line exceeded the line byte budget');
+      onOverflow: (overflow) => {
+        recorder.warning({
+          warning: runnerCallLimitWarning(
+            runnerCallLineOutputLimit({
+              code: 'stdout_line_overflow',
+              label: 'stdout line',
+              lineBytes: overflow.lineBytes,
+              maxLineBytes: overflow.maxLineBytes,
+            }),
+          ),
+        });
+        return undefined;
       },
     },
   );

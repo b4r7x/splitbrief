@@ -127,6 +127,7 @@ async function evaluateCli(
       preparationId: context.preparationId,
       tool: candidate.runner.tool,
       executable: admission.gate.executable,
+      installedVersion: admission.gate.installedVersion,
     },
   };
 }

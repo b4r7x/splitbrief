@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { CliProviderAuthFact } from '../../../core/discovery/detection.js';
 import type { AuthFact } from '../../../core/discovery/runner-evidence.js';
 import {
@@ -5,21 +6,30 @@ import {
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
-import type { CliProbeCommand, CliProbeOutput } from './contract.js';
+import type { CliAuthProbeLegacy, CliProbeCommand, CliProbeOutput } from './contract.js';
 
 type ProviderOracleToolId = (typeof PROVIDER_ORACLE_TOOL_IDS)[number];
 
 /**
  * OpenCode and its Kilo fork ship a read-only per-provider credential listing
- * (`opencode providers list` is an alias of `opencode auth list`). Its output
- * names each stored credential (`oauth` / `api`) and each recognized
- * environment variable; it never prints credential values.
+ * that names each stored credential and each recognized environment variable;
+ * it never prints credential values. opencode 2 answers through a private
+ * server (`--standalone`): its managed background service binds one fixed
+ * port, so a sandboxed HOME can neither reach the host's service nor start
+ * its own. Releases below 2.0.0 reject that flag and print the boxed
+ * `Credentials` / `Environment` sections that `kilo auth list` still prints.
  */
 const PROVIDER_ORACLE_COMMANDS: Readonly<
   Record<ProviderOracleToolId, readonly [string, ...string[]]>
 > = {
-  opencode: ['opencode', 'providers', 'list'],
+  opencode: ['opencode', 'auth', 'list', '--standalone', '--format', 'json'],
   'kilo-code': ['kilo', 'auth', 'list'],
+};
+
+const PROVIDER_ORACLE_LEGACY_COMMANDS: Readonly<
+  Partial<Record<ProviderOracleToolId, CliAuthProbeLegacy>>
+> = {
+  opencode: { belowVersion: '2.0.0', command: ['opencode', 'auth', 'list'] },
 };
 
 function isProviderOracleTool(tool: CliToolId): tool is ProviderOracleToolId {
@@ -28,6 +38,10 @@ function isProviderOracleTool(tool: CliToolId): tool is ProviderOracleToolId {
 
 export function providerOracleCommand(tool: CliToolId): readonly [string, ...string[]] | undefined {
   return isProviderOracleTool(tool) ? PROVIDER_ORACLE_COMMANDS[tool] : undefined;
+}
+
+export function providerOracleLegacyCommand(tool: CliToolId): CliAuthProbeLegacy | undefined {
+  return isProviderOracleTool(tool) ? PROVIDER_ORACLE_LEGACY_COMMANDS[tool] : undefined;
 }
 
 export function isProviderOracleProbe(
@@ -56,14 +70,50 @@ const ENVIRONMENT_FOOTER_PATTERN = /^(\d+) environment variables?$/;
 const CREDENTIAL_ENTRY_PATTERN = /^(.+?) +(oauth|api)$/;
 const ENVIRONMENT_ENTRY_PATTERN = /^(.+?) +([A-Z][A-Z0-9_]*)$/;
 
+// `opencode auth list --format json` (2.0.12): one object per provider, whose
+// connections are stored credentials (the kind is not reported) or env vars.
+const JsonListingSchema = z.array(
+  z.object({
+    name: z.string().trim().min(1),
+    connections: z.array(
+      z.discriminatedUnion('type', [
+        z.object({ type: z.literal('credential') }),
+        z.object({ type: z.literal('env'), name: z.string().trim().min(1) }),
+      ]),
+    ),
+  }),
+);
+
+function parseJsonListing(text: string): ProviderOracleParse {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return PARSE_FAILURE;
+  }
+  const listing = JsonListingSchema.safeParse(value);
+  if (!listing.success) return PARSE_FAILURE;
+  const entries = listing.data.flatMap((provider) =>
+    provider.connections.map(
+      (connection): CliProviderAuthFact =>
+        connection.type === 'env'
+          ? { provider: provider.name, source: 'env', envVar: connection.name }
+          : { provider: provider.name, source: 'stored' },
+    ),
+  );
+  return entries.length > MAX_ORACLE_ENTRIES ? PARSE_FAILURE : { kind: 'success', entries };
+}
+
 /**
- * Parses the auth-list shape shared by both CLIs, tolerating ANSI styling,
+ * Parses either listing shape: the JSON array opencode 2 prints, or the boxed
+ * sections shared by opencode 1 and kilo, tolerating ANSI styling,
  * box-drawing glyphs, and section reordering. Every unrecognized line and
  * every count mismatch resolves to a parse failure — never a throw — so the
  * caller can fall back instead of trusting a misread listing. Only provider
  * display names, source kinds, and env var names are captured.
  */
 export function parseProviderOracleOutput(text: string): ProviderOracleParse {
+  if (text.trimStart().startsWith('[')) return parseJsonListing(text);
   const entries: CliProviderAuthFact[] = [];
   let section: 'credentials' | 'environment' | undefined;
   let sawHeader = false;

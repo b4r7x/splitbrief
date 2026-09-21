@@ -28,7 +28,11 @@ import { copilotImplementerAdapter, copilotPlannerAdapter } from './copilot.js';
 import { cursorImplementerAdapter, cursorPlannerAdapter } from './cursor.js';
 import { kiloImplementerAdapter, kiloPlannerAdapter } from './kilo-code.js';
 import { opencodeImplementerAdapter, opencodePlannerAdapter } from './opencode.js';
-import { providerOracleAuthFact, providerOracleCommand } from './provider-oracle.js';
+import {
+  providerOracleAuthFact,
+  providerOracleCommand,
+  providerOracleLegacyCommand,
+} from './provider-oracle.js';
 import type {
   CliAuthProbe,
   CliCatalogProbe,
@@ -58,6 +62,7 @@ type VersionOutputFormat =
       labels: readonly string[];
       bareDescriptorSuffix?: string | undefined;
       allowTrailingPeriod?: boolean | undefined;
+      allowBare?: boolean | undefined;
     }>;
 
 function escapeRegularExpression(value: string): string {
@@ -70,9 +75,12 @@ function versionOutputFormat(tool: CliToolId, command: string): VersionOutputFor
     // releases reported `codex <version>`; both are descriptor-owned forms.
     case 'codex':
       return { kind: 'labeled', labels: [command, 'codex-cli'] };
+    // opencode 2 reports `opencode v<version>`; releases below 2.0.0 print
+    // the bare version.
+    case 'opencode':
+      return { kind: 'labeled', labels: [command], allowBare: true };
     // These CLIs deliberately expose a bare version as their documented
     // version contract. The whole line must be the one semver token.
-    case 'opencode':
     case 'kilo-code':
     case 'command-code':
       return { kind: 'bare' };
@@ -117,9 +125,10 @@ function parseVersion(tool: CliToolId, command: string, output: CliProbeOutput) 
     return parseCalverVersion(output);
   }
   const format = versionOutputFormat(tool, command);
+  const bareLine = new RegExp(`^v?(${SEMVER_PATTERN})$`, 'i');
   const matchers =
     format.kind === 'bare'
-      ? [new RegExp(`^v?(${SEMVER_PATTERN})$`, 'i')]
+      ? [bareLine]
       : [
           new RegExp(
             `^(?:${format.labels.map(escapeRegularExpression).join('|')})\\s+(?:version\\s+)?v?(${SEMVER_PATTERN})${format.allowTrailingPeriod ? '\\.?' : ''}$`,
@@ -133,6 +142,7 @@ function parseVersion(tool: CliToolId, command: string, output: CliProbeOutput) 
                   'i',
                 ),
               ]),
+          ...(format.allowBare ? [bareLine] : []),
         ];
   const outputText = `${output.stdout}\n${output.stderr}`;
   const candidates = outputText
@@ -264,6 +274,7 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
     case 'kilo-code': {
       const oracle = providerOracleCommand(tool);
       if (oracle === undefined) return { kind: 'not-run' };
+      const legacy = providerOracleLegacyCommand(tool);
       return {
         kind: 'auth-status',
         command: oracle,
@@ -271,6 +282,7 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         timeoutMs: PROVIDER_ORACLE_TIMEOUT_MS,
         maxOutputBytes: PROVIDER_ORACLE_OUTPUT_MAX_BYTES,
         parse: providerOracleAuthFact,
+        ...(legacy === undefined ? {} : { legacy }),
       };
     }
     case 'cursor':
@@ -341,6 +353,14 @@ function frozenAuthProbe(probe: CliAuthProbe): CliAuthProbe {
   return Object.freeze({
     ...probe,
     command: ownedProbeCommand(probe.command),
+    ...(probe.legacy === undefined
+      ? {}
+      : {
+          legacy: Object.freeze({
+            ...probe.legacy,
+            command: ownedProbeCommand(probe.legacy.command),
+          }),
+        }),
     parse: frozenParser(probe.parse),
   });
 }

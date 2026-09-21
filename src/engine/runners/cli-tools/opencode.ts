@@ -1,4 +1,5 @@
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
@@ -23,6 +24,7 @@ const OPENCODE_PROTECTED_FLAGS = new Set([
   '--format',
   '--model',
   '--prompt',
+  '--standalone',
   '--variant',
   '-m',
   'plan',
@@ -132,8 +134,21 @@ function createProbe() {
   } as const;
 }
 
+/**
+ * opencode 2 runs a one-off call on a private server: the background service
+ * it otherwise pairs with binds one fixed port, unreachable from a sandboxed
+ * HOME. Releases below 2.0.0 reject the flag, as does an unknown release.
+ */
+function runArgs(installedVersion: string | undefined): string[] {
+  const standalone =
+    installedVersion !== undefined &&
+    classifyCliAdmittedVersion({ installedVersion, minimumAdmittedVersion: '2.0.0' }) ===
+      'compatible';
+  return standalone ? ['run', '--standalone'] : ['run'];
+}
+
 function plannerBaseArgs(input: OpenCodePlannerBuildInput): string[] {
-  const args = ['run'];
+  const args = runArgs(input.installedVersion);
   if (input.model !== undefined) args.push('--model', input.model);
   if (input.variant !== undefined) args.push('--variant', input.variant);
   args.push('--format', 'json');
@@ -143,7 +158,7 @@ function plannerBaseArgs(input: OpenCodePlannerBuildInput): string[] {
 }
 
 function implementerBaseArgs(input: OpenCodeImplementerBuildInput): string[] {
-  const args = ['run'];
+  const args = runArgs(input.installedVersion);
   if (input.model !== undefined) args.push('--model', input.model);
   if (input.variant !== undefined) args.push('--variant', input.variant);
   args.push('--format', 'json', '--agent', 'build', input.prompt);

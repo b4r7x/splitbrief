@@ -72,8 +72,8 @@ export const CustomCommandDefinitionSchema = z
     }),
     argv: z.array(LiteralStringSchema).max(MAX_ARGV_LENGTH).optional(),
     outputFormat: OutputFormatSchema.optional(),
-    idleWarnMs: z.number().int().positive().max(3_600_000).optional(),
-    idleKillMs: z.number().int().positive().max(3_600_000).optional(),
+    idleWarnMs: z.number().int().positive().optional(),
+    idleKillMs: z.number().int().positive().optional(),
     env: z.array(EnvironmentReferenceNameSchema).max(64).optional(),
   })
   .superRefine((definition, ctx) => {
@@ -149,8 +149,8 @@ const CustomCommandShape = {
   executable: LiteralStringSchema,
   argv: z.array(LiteralStringSchema).max(MAX_ARGV_LENGTH).readonly(),
   outputFormat: OutputFormatSchema,
-  idleWarnMs: z.number().int().positive().max(3_600_000),
-  idleKillMs: z.number().int().positive().max(3_600_000),
+  idleWarnMs: z.number().int().positive(),
+  idleKillMs: z.number().int().positive(),
   env: z.array(EnvironmentReferenceNameSchema).max(64).readonly(),
 } as const;
 

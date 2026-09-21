@@ -9,6 +9,7 @@ If you are adding a new startup step — reading a file, hydrating a store, prob
 ## Entry flow
 
 ```
+src/node-env.ts                 # first import: NODE_ENV=production before React/Ink load (the dev build leaks a performance.measure per render)
 src/cli.ts                      # commander registers subcommands + top-level error handler
   → registerXCommand(program)   # each subcommand adds its .action() handler
   → program.parseAsync()        # dispatches to the matched action handler

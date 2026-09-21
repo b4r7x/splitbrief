@@ -23,11 +23,7 @@ import type {
   CliPromptTransport,
   CliProtocolEvent,
 } from './contract.js';
-import {
-  CLI_RAW_OUTPUT_MAX_BYTES,
-  CLI_RAW_PROTOCOL_MAX_EVENTS,
-  invokeProcessCli,
-} from './process-invoke.js';
+import { CLI_RAW_OUTPUT_MAX_BYTES, invokeProcessCli } from './process-invoke.js';
 import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
 import { codexImplementerAdapter } from './codex.js';
 import { opencodeImplementerAdapter, opencodeProtocolEvents } from './opencode.js';
@@ -726,20 +722,40 @@ describe('invokeProcessCli', () => {
     );
   }, 20_000);
 
-  it('terminates a protocol stream that exceeds the raw event budget', async () => {
+  it('completes a long protocol session emitting 300 000 small protocol records', async () => {
     const script = [
-      `const line='TEXT:'+Buffer.from('d').toString('base64')+'\\n'`,
-      `const block=line.repeat(1_000)`,
-      `for(let i=0;i<${CLI_RAW_PROTOCOL_MAX_EVENTS / 1_000 + 1};i++)process.stdout.write(block)`,
+      "const line='TEXT:'+Buffer.from('d').toString('base64')+'\\n'",
+      'const block=line.repeat(1_000)',
+      'for(let i=0;i<300;i++)process.stdout.write(block)',
+      "process.stdout.write('RESULT:'+Buffer.from('final answer').toString('base64')+'\\n')",
     ].join(';');
 
     const result = await run(adapter({ kind: 'stdin' }), invocation({ script, timeoutMs: 60_000 }));
 
     expect(result).toMatchObject({
-      status: 'truncated',
-      error: { code: 'output-budget-breach', message: 'CLI protocol event budget was exceeded' },
+      status: 'completed',
+      text: 'final answer',
     });
+    expect(result.error).toBeNull();
   }, 60_000);
+
+  it('skips a 2 MB stdout line with a warning and completes on a valid terminal', async () => {
+    const script = [
+      "process.stdout.write('x'.repeat(2 * 1024 * 1024) + '\\n')",
+      "process.stdout.write('RESULT:'+Buffer.from('final answer').toString('base64')+'\\n')",
+    ].join(';');
+
+    const result = await run(adapter({ kind: 'stdin' }), invocation({ script }));
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      text: 'final answer',
+    });
+    expect(
+      result.warnings.filter((warning) => warning.code === 'stdout_line_overflow'),
+    ).toHaveLength(1);
+    expect(result.warnings).toHaveLength(1);
+  });
 
   it.skipIf(process.platform === 'win32')(
     'reports fatal output-budget breach only after reaping the producer group',

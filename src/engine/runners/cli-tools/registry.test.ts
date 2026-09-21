@@ -207,6 +207,12 @@ describe('admitted readiness probe contracts', () => {
 
     expect(Reflect.set(manualCatalog.manualCommand, 0, 'attacker')).toBe(false);
     expect(manualCatalog.manualCommand).toEqual(['opencode', 'models', '--verbose', '--refresh']);
+
+    const manualAuth = manualProbe.declared.auth;
+    if (manualAuth.kind === 'not-run' || manualAuth.legacy === undefined) return;
+    expect(Reflect.set(manualAuth.legacy.command, 0, 'attacker')).toBe(false);
+    expect(Reflect.set(manualAuth, 'legacy', undefined)).toBe(false);
+    expect(manualAuth.legacy.command).toEqual(['opencode', 'auth', 'list']);
   });
 
   it('binds the selected role to an admitted declared Codex status probe', () => {
@@ -275,6 +281,8 @@ describe('admitted readiness probe contracts', () => {
     ['claude-code', '2.1.220 (Claude Code)', { kind: 'success', value: '2.1.220' }],
     ['copilot', 'GitHub Copilot CLI 1.0.77.', { kind: 'success', value: '1.0.77' }],
     ['opencode', '0.5.0', { kind: 'success', value: '0.5.0' }],
+    ['opencode', 'opencode v2.0.12', { kind: 'success', value: '2.0.12' }],
+    ['opencode', 'kilo v2.0.12', { kind: 'malformed' }],
     ['kilo-code', '0.1.0', { kind: 'success', value: '0.1.0' }],
     ['codex', 'node 0.40.0', { kind: 'malformed' }],
     ['opencode', 'node 0.5.0', { kind: 'malformed' }],
@@ -356,9 +364,12 @@ describe('admitted readiness probe contracts', () => {
     ).toEqual({ kind: 'success', value: [{ id: 'gpt-5.6-sol', nativeOrder: 0 }] });
     // OpenCode and Kilo declare their native per-provider credential listing
     // as the auth probe; unparseable output falls back to bridged presence.
+    // opencode releases below 2.0.0 reject the private-server flag and keep
+    // the boxed listing.
     expect(opencode.declared.auth).toMatchObject({
       kind: 'auth-status',
-      command: ['opencode', 'providers', 'list'],
+      command: ['opencode', 'auth', 'list', '--standalone', '--format', 'json'],
+      legacy: { belowVersion: '2.0.0', command: ['opencode', 'auth', 'list'] },
       cwd: 'neutral',
     });
     expect(kilo.declared.auth).toMatchObject({

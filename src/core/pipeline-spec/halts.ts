@@ -43,6 +43,9 @@ export const HALT_SIGNATURES = {
     'status 429',
     '"status":429',
     'insufficient credits',
+    'quota reached',
+    'resource_exhausted',
+    'exhausted your',
   ],
   missingModel: ['unknown model', 'model not found', 'invalid model'],
   spawnFailure: [

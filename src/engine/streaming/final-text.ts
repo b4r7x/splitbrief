@@ -10,6 +10,9 @@ export function reconcileFinalText(
 ): FinalTextReconciliation {
   if (streamedText.length === 0) return { kind: 'full', text: finalText };
   if (streamedText === finalText) return { kind: 'none' };
+  // A tool that splits a long reply across messages reports only the last one as
+  // its final text; the streamed text already holds the whole document.
+  if (streamedText.endsWith(finalText)) return { kind: 'none' };
   if (finalText.startsWith(streamedText)) {
     return { kind: 'suffix', text: finalText.slice(streamedText.length) };
   }

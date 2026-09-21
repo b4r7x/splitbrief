@@ -38,6 +38,7 @@ Read these to learn how SPLITBRIEF works. Each doc builds on the previous one.
 | Fix something | [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
 | See recipes and examples | [USAGE-EXAMPLES.md](./USAGE-EXAMPLES.md) |
 | Write or run tests | [TESTING.md](./TESTING.md) |
+| Develop SPLITBRIEF with SPLITBRIEF itself | [DOGFOODING.md](./DOGFOODING.md) |
 | Cut a release | [RELEASING.md](./RELEASING.md) |
 
 ## Rules and conventions

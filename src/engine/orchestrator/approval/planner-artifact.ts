@@ -12,10 +12,9 @@ import { confinedEnsureDir } from '../../../lib/confined-fs.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { error } from '../../../utils/error.js';
 import { validateSafeIdentifier } from '../../../utils/validate-identifier.js';
-import {
-  PLANNER_ARTIFACT_MAX_BYTES,
-  type ArtifactApprovalReview,
-  type BeginDeclaredArtifactReviewInput,
+import type {
+  ArtifactApprovalReview,
+  BeginDeclaredArtifactReviewInput,
 } from '../../runners/types.js';
 import type * as RunnerTypes from '../../runners/types.js';
 import {
@@ -111,7 +110,6 @@ export async function beginDeclaredArtifactReview(
         declaredRedactionValues: input.declaredRedactionValues,
       });
       reviewedRead = reviewed;
-      assertArtifactTextBound(reviewed.text);
       const approval = await input.onApprovalNeeded(
         'artifact',
         immutableArtifactReview(reviewed.text),
@@ -141,12 +139,6 @@ export async function beginDeclaredArtifactReview(
 
 function immutableArtifactReview(text: string): ArtifactApprovalReview {
   return Object.freeze({ label: ARTIFACT_REVIEW_LABEL, text });
-}
-
-function assertArtifactTextBound(text: string): void {
-  if (Buffer.byteLength(text, 'utf8') > PLANNER_ARTIFACT_MAX_BYTES) {
-    throw plannerArtifactError.invalidArtifact('declared artifact exceeds the maximum size');
-  }
 }
 
 function assertSafeCallId(callId: string): void {

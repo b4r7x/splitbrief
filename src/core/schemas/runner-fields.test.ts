@@ -699,12 +699,66 @@ describe('createRunnerConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('timeout accepts 1_200_000 and rejects 1_200_001', () => {
+  it('parses a CLI implementer config with timeout: 3_600_000', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
-    const parse = (timeout: number) =>
-      schema.safeParse({ kind: 'shell', command: './run', model: 'local-shell', timeout }).success;
+    const result = schema.safeParse({
+      kind: 'cli',
+      tool: 'codex',
+      timeout: 3_600_000,
+    });
 
-    expect(parse(1_200_000)).toBe(true);
-    expect(parse(1_200_001)).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.timeout).toBe(3_600_000);
+    }
+  });
+
+  it('parses a runner config with large idle thresholds', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+    const result = schema.safeParse({
+      kind: 'shell',
+      command: './run',
+      model: 'local-shell',
+      idleWarnMs: 600_000,
+      idleKillMs: 7_200_000,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects misordered idle thresholds with issue at path idleKillMs', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+    const result = schema.safeParse({
+      kind: 'cli',
+      tool: 'codex',
+      model: 'gpt-5',
+      idleWarnMs: 600_000,
+      idleKillMs: 300_000,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(['idleKillMs']);
+  });
+
+  it('rejects non-positive timeout and idleKillMs', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+
+    expect(
+      schema.safeParse({
+        kind: 'shell',
+        command: './run',
+        model: 'local-shell',
+        timeout: 0,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      schema.safeParse({
+        kind: 'shell',
+        command: './run',
+        model: 'local-shell',
+        idleKillMs: -1,
+      }).success,
+    ).toBe(false);
   });
 });

@@ -168,7 +168,7 @@ describe('agent implementer', () => {
     const prompt = readFileSync(outFile, 'utf-8');
     expect(prompt).toContain('test prompt content');
     expect(prompt).toContain(
-      `Edit ${task.file} directly in the isolation directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`,
+      `Edit ${task.file} directly in the isolation directory. Before finishing, run the brief's typecheck command and only the tests of the files you changed, never the whole suite: the orchestrator runs the full validation after you hand back. End with a completion report stating which files you wrote and whether the brief's steps were completed.`,
     );
     expect(prompt).not.toContain('{prompt}');
   });

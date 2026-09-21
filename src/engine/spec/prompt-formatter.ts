@@ -121,7 +121,7 @@ function buildTaskSections(
     outputContract === 'file-bundle-v1'
       ? `Answer with one JSON object: {"version":1,"files":[{"path":"...","action":"create"|"modify","content":"..."}]}. Carry the complete new contents of every file listed above that you change, and leave the rest out. No markdown fences. No explanations.`
       : writesFiles === 'direct'
-        ? `Edit ${files.join(', ')} directly in the isolation directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
+        ? `Edit ${files.join(', ')} directly in the isolation directory. Before finishing, run the brief's typecheck command and only the tests of the files you changed, never the whole suite: the orchestrator runs the full validation after you hand back. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
         : `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`;
   sections.push('', completionInstruction);
 
@@ -243,10 +243,11 @@ export function formatTaskPrompt(opts: {
   // A bundle answer carries complete files, so every captured target goes in
   // whole: a formatter that cut one would ask for a rewrite of code the model
   // never saw. A prompt that does not fit is refused by the call's own budget,
-  // with its figures, rather than trimmed to be admitted.
+  // with its figures, rather than trimmed to be admitted. A direct writer edits
+  // the files where they live and reads them itself, so it gets none.
   if (outputContract === 'file-bundle-v1') {
     insertCodeContext(sections, task);
-  } else if (task.action === 'modify' || task.currentCodeByFile) {
+  } else if (writesFiles !== 'direct' && (task.action === 'modify' || task.currentCodeByFile)) {
     const budget = contextLength
       ? computeTokenBudget({
           system: formatImplementerSystemPreamble(ctx, writesFiles),
@@ -288,7 +289,7 @@ export function formatRetryPrompt(opts: {
 
   if (outputContract === 'file-bundle-v1') {
     insertCodeContext(sections, task);
-  } else if (task.currentCode || task.currentCodeByFile) {
+  } else if (writesFiles !== 'direct' && (task.currentCode || task.currentCodeByFile)) {
     const budget = contextLength
       ? computeTokenBudget({
           system: formatImplementerSystemPreamble(ctx, writesFiles),

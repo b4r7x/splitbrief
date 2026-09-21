@@ -686,10 +686,11 @@ function subcommandCandidate(
 
 /**
  * clap prints `  exec  Run Codex non-interactively`, yargs prints
- * `  opencode run [message..]  run opencode with a message`. A leading token
- * that repeats the tool's own command name is the binary, not the subcommand,
- * so the name is the token after it — and only when that token is a plain word
- * rather than a `[positional]` placeholder.
+ * `  opencode run [message..]  run opencode with a message`, and opencode 2
+ * heads its bare names `SUBCOMMANDS`. A leading token that repeats the tool's
+ * own command name is the binary, not the subcommand, so the name is the token
+ * after it — and only when that token is a plain word rather than a
+ * `[positional]` placeholder.
  */
 function commandNames(input: Readonly<{ helpText: string; command: string }>): Set<string> {
   const { helpText, command } = input;
@@ -697,7 +698,7 @@ function commandNames(input: Readonly<{ helpText: string; command: string }>): S
   let inCommands = false;
   for (const line of helpText.split(/\r?\n/)) {
     const trimmed = line.trim();
-    if (/^commands?:?$/i.test(trimmed)) {
+    if (/^(?:sub)?commands?:?$/i.test(trimmed)) {
       inCommands = true;
       continue;
     }

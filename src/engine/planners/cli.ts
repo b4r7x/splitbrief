@@ -132,6 +132,7 @@ export function createCliPlanner(
       sessionId: supportsSessionResume ? resumeId : null,
       effort: supportsEffort ? effort : undefined,
       variant,
+      installedVersion: trustedCli?.installedVersion,
     });
     const result = await invokeCliAdapter({
       adapter,

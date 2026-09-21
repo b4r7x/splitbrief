@@ -245,7 +245,7 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
         const limiter = event.semantics === 'final' ? createTextLimiter() : state.textLimiter;
         // An explicit `delta` is a partial slice of one record: the byte budget
         // bounds it, the event budget counts records.
-        const accepted = limiter.accept(event.text, { countEvent: event.semantics !== 'delta' });
+        const accepted = limiter.accept(event.text);
         if (event.semantics === 'final') {
           state.text = accepted.text;
           state.textLimiter = limiter;
@@ -274,7 +274,7 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
             maxItems: RUNNER_CALL_TOOL_USE_MAX_ITEMS,
             nextItemCount: state.toolUseDoneCount + 1,
           }),
-          true,
+          false,
         );
         return;
       }
@@ -282,7 +282,7 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       {
         const bounded = boundRunnerCallToolUse(event.toolUse);
         state.toolUses.push(bounded.value);
-        if (bounded.limit !== null) noteLimit(state, bounded.limit, true);
+        if (bounded.limit !== null) noteLimit(state, bounded.limit, false);
       }
       return;
     case 'call_usage':
@@ -431,8 +431,6 @@ function itemLimit(opts: {
   return {
     code: opts.code,
     message: `${opts.label} exceeded ${opts.maxItems} items and was truncated`,
-    eventsSeen: opts.nextItemCount,
-    maxEvents: opts.maxItems,
   };
 }
 
@@ -444,7 +442,7 @@ function createTextLimiter(): ReturnType<typeof createRunnerCallDeltaLimiter> {
 }
 
 function applyToolDeltaEvent(state: RunnerCallCollectionState, inputDelta: string): void {
-  const accepted = state.toolDeltaLimiter.accept(inputDelta, { countEvent: true });
+  const accepted = state.toolDeltaLimiter.accept(inputDelta);
   if (accepted.limit !== null) noteLimit(state, accepted.limit, true);
 }
 

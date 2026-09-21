@@ -2,6 +2,7 @@ import { chmod, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promi
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliProbeContract } from './contract.js';
 import { providerOracleAuthFact } from './provider-oracle.js';
@@ -320,11 +321,11 @@ describe('session-state presence readiness', () => {
 
 const ORACLE_TOOLS = {
   opencode: {
-    argv: ['opencode', 'providers', 'list'],
+    argv: ['opencode', 'auth', 'list', '--standalone', '--format', 'json'],
     stateFile: join('.local', 'share', 'opencode', 'auth.json'),
     report:
-      '┌  Credentials \u001b[90m~/.local/share/opencode/auth.json\n│\n◝  OpenAI \u001b[90moauth\n│\n└  1 credentials\n',
-    facts: [{ provider: 'OpenAI', source: 'oauth' }],
+      '[{"id":"openai","name":"OpenAI","connections":[{"type":"credential","id":"cred_0001","label":"default"}]}]\n',
+    facts: [{ provider: 'OpenAI', source: 'stored' }],
   },
   'kilo-code': {
     argv: ['kilo', 'auth', 'list'],
@@ -349,7 +350,7 @@ async function oracleShim(dir: string, tool: OracleToolId, body: string) {
   const path = join(dir, ORACLE_TOOLS[tool].argv[0]);
   await writeFile(
     path,
-    `#!/bin/sh\nif [ "$1" = "--version" ]; then\n  printf '0.5.0\\n'\n  exit 0\nfi\n${body}\n`,
+    `#!/bin/sh\nif [ "$1" = "--version" ]; then\n  printf '${CLI_TOOL_CATALOG[tool].compatibility.testedVersion}\\n'\n  exit 0\nfi\n${body}\n`,
   );
   await chmod(path, 0o755);
   const real = await realpath(path);
@@ -386,7 +387,10 @@ function oracleContract(tool: OracleToolId): CliProbeContract {
       version: {
         ...version,
         kind: 'version',
-        parse: () => ({ kind: 'success', value: '0.5.0' }),
+        parse: () => ({
+          kind: 'success',
+          value: CLI_TOOL_CATALOG[tool].compatibility.testedVersion,
+        }),
       },
       auth: { ...auth, kind: 'auth-status', parse: providerOracleAuthFact },
       catalog: { kind: 'not-run' },

@@ -2,10 +2,6 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
-import {
-  createPlannerArtifactAttemptId,
-  PlannerArtifactSemanticIdSchema,
-} from '../../core/schemas/planner-artifact.js';
 import { beginDeclaredArtifactReview } from '../orchestrator/approval/planner-artifact.js';
 import { createStagedProject } from '../orchestrator/approval/staged-project.js';
 import {
@@ -21,10 +17,6 @@ import {
   reviewCandidateRoot,
   runtimeFor,
 } from '#testing/helpers/planner-command-invoke.js';
-import {
-  admittedCustomRunner,
-  observeCustomInvocation,
-} from '#testing/helpers/custom-command-based.js';
 
 const { testProject } = createCommandInvokeTestFixtures();
 
@@ -213,7 +205,7 @@ describe('configured direct planner terminal cleanup', () => {
     {
       name: 'output-limit',
       script:
-        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'would be valid');process.stdout.write('x'.repeat(1_310_721));",
+        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'would be valid');for (let i = 0; i < 1100; i++) process.stdout.write('x'.repeat(65_536));",
     },
     {
       name: 'parser-failure',
@@ -271,77 +263,5 @@ describe('configured direct planner terminal cleanup', () => {
     expect(approvalRequests).toBe(1);
     expect(observed.output).toEqual([]);
     expect(observed.failure).toMatchObject({ kind: 'custom-planner-artifact-rejected' });
-  });
-
-  it('permits lease and stage cleanup after a real child exceeds the hard deadline', async () => {
-    const { projectDir } = testProject('configured-direct-terminal-hard-timeout');
-    const stage = await createStagedProject(projectDir);
-    const attemptId = createPlannerArtifactAttemptId();
-    const relativePath = `.splitbrief-runner/output/${attemptId}/result`;
-    let approvalRequests = 0;
-    const review = await beginDeclaredArtifactReview({
-      stagedProjectDir: stage.projectDir,
-      callId: 'hard-timeout',
-      declaredRedactionValues: [],
-      provenance: {
-        semanticId: PlannerArtifactSemanticIdSchema.parse('terminal-timeout-test'),
-        programId: null,
-        batchId: null,
-        attemptId,
-        transport: {
-          kind: 'declared-file',
-          lease: {
-            leaseId: attemptId,
-            attemptId,
-            relativePath,
-          },
-        },
-        maxBytes: 96 * 1_024,
-        relativePath,
-      },
-      onApprovalNeeded: async () => {
-        approvalRequests += 1;
-        return { approved: true };
-      },
-    });
-
-    try {
-      const observation = await observeCustomInvocation(
-        {
-          admission: await admittedCustomRunner(
-            projectDir,
-            terminalRunner(
-              'hard-timeout',
-              [
-                "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'would be valid');",
-                'setInterval(() => {}, 1_000);',
-              ].join(''),
-            ),
-          ),
-          prompt: 'review this',
-          authorizationProjectDir: projectDir,
-          cwd: stage.projectDir,
-          sourceEnv: { SPLITBRIEF_DECLARED_ARTIFACT_PATH: relativePath },
-          preserveEnvironmentKeys: ['SPLITBRIEF_DECLARED_ARTIFACT_PATH'],
-        },
-        undefined,
-        { hardDeadlineMs: 50 },
-      );
-
-      expect(observation.result).toBeUndefined();
-      expect(observation.failure).toMatchObject({ kind: 'command-timeout' });
-      expect(observation.callbacks).toEqual({ output: [], stderr: [], session: [] });
-      expect(approvalRequests).toBe(0);
-      await review.dispose();
-      await expect(review.reviewAfterChild()).rejects.toMatchObject({
-        kind: 'custom-planner-artifact-review-disposed',
-      });
-    } finally {
-      await review.dispose();
-      stage.cleanup();
-    }
-
-    expect(existsSync(stage.projectDir)).toBe(false);
-    expect(existsSync(reviewCandidateRoot(projectDir))).toBe(false);
   });
 });

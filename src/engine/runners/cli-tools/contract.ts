@@ -108,12 +108,19 @@ export type CliVersionProbe = CliProbeCommand &
     parse: CliProbeParser<string>;
   }>;
 
+/** The argv releases below `belowVersion` take instead of the declared one; `parse` reads both listings. */
+export type CliAuthProbeLegacy = Readonly<{
+  belowVersion: string;
+  command: readonly [string, ...string[]];
+}>;
+
 export type CliAuthProbe =
   | Readonly<{ kind: 'not-run' }>
   | (CliProbeCommand &
       Readonly<{
         kind: 'auth-status';
         parse: (input: CliProbeOutput) => AuthFact;
+        legacy?: CliAuthProbeLegacy | undefined;
       }>);
 
 export type CliCatalogProbe =
@@ -224,6 +231,8 @@ export type CliPlannerBuildArgsInput = Readonly<{
   sessionId: string | null;
   effort: EffortLevel | undefined;
   variant?: string | undefined;
+  /** The release the start gate admitted; absent when no gate ran (preflight, harness). */
+  installedVersion?: string | undefined;
 }>;
 
 export type CliImplementerBuildArgsInput = Readonly<{
@@ -233,6 +242,7 @@ export type CliImplementerBuildArgsInput = Readonly<{
   configuredArgs: readonly string[];
   effort?: EffortLevel | undefined;
   variant?: string | undefined;
+  installedVersion?: string | undefined;
 }>;
 
 export type CliPlannerAdapter<Tool extends CliToolId = CliToolId> = CliAdapterContract<

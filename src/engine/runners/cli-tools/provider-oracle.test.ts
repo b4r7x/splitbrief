@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { CliProbeCommand } from './contract.js';
 import {
@@ -5,7 +7,15 @@ import {
   parseProviderOracleOutput,
   providerOracleAuthFact,
   providerOracleCommand,
+  providerOracleLegacyCommand,
 } from './provider-oracle.js';
+
+// Captured from `opencode auth list --standalone --format json` on opencode
+// 2.0.12, 2026-09-21; credential record ids replaced with placeholders.
+const OPENCODE_V2_AUTH_LIST_JSON = readFileSync(
+  join(import.meta.dirname, '../../../../testing/fixtures/opencode/auth-list-v2.json'),
+  'utf8',
+);
 
 // Captured verbatim from `kilo auth list` (Kilo Code CLI) on 2026-08-03.
 const KILO_AUTH_LIST_OUTPUT =
@@ -48,6 +58,22 @@ describe('provider oracle parser', () => {
     });
   });
 
+  it('parses the opencode 2 JSON listing, reporting a stored credential without its kind', () => {
+    expect(parseProviderOracleOutput(OPENCODE_V2_AUTH_LIST_JSON)).toEqual({
+      kind: 'success',
+      entries: [
+        { provider: 'OpenCode Go', source: 'stored' },
+        { provider: 'OpenCode Go', source: 'stored' },
+        { provider: 'Kimi For Coding (kimi.ai)', source: 'env', envVar: 'KIMI_API_KEY' },
+        { provider: 'Kimi For Coding (kimi.com)', source: 'env', envVar: 'KIMI_API_KEY' },
+        { provider: 'Ollama Cloud', source: 'env', envVar: 'OLLAMA_API_KEY' },
+        { provider: 'OpenAI', source: 'stored' },
+        { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
+      ],
+    });
+    expect(parseProviderOracleOutput('[]\n')).toEqual({ kind: 'success', entries: [] });
+  });
+
   it('tolerates section reordering, ASCII glyphs, and missing footers', () => {
     const reordered = [
       '| Environment',
@@ -78,6 +104,11 @@ describe('provider oracle parser', () => {
     ['plain error text', 'kilo: unknown command "auth"'],
     ['empty output', ''],
     ['json output', '{"credentials":[{"provider":"OpenAI","apiKey":"sk-secret"}]}'],
+    ['truncated json listing', '[{"name":"OpenAI","connections":[{"type":"env","name":"OPENAI'],
+    [
+      'json connection of an unknown type',
+      '[{"name":"OpenAI","connections":[{"type":"wellknown","apiKey":"sk-secret"}]}]',
+    ],
     [
       'entry before any section header',
       '●  GitHub Copilot oauth\n┌  Credentials\n└  1 credentials',
@@ -135,9 +166,25 @@ describe('providerOracleAuthFact', () => {
 
 describe('provider oracle probe identity', () => {
   it('declares the documented read-only listing argv for both forks', () => {
-    expect(providerOracleCommand('opencode')).toEqual(['opencode', 'providers', 'list']);
+    expect(providerOracleCommand('opencode')).toEqual([
+      'opencode',
+      'auth',
+      'list',
+      '--standalone',
+      '--format',
+      'json',
+    ]);
     expect(providerOracleCommand('kilo-code')).toEqual(['kilo', 'auth', 'list']);
     expect(providerOracleCommand('codex')).toBeUndefined();
+  });
+
+  it('keeps the boxed listing argv for opencode releases below 2.0.0 only', () => {
+    expect(providerOracleLegacyCommand('opencode')).toEqual({
+      belowVersion: '2.0.0',
+      command: ['opencode', 'auth', 'list'],
+    });
+    expect(providerOracleLegacyCommand('kilo-code')).toBeUndefined();
+    expect(providerOracleLegacyCommand('codex')).toBeUndefined();
   });
 
   it('matches only the exact declared argv', () => {
@@ -150,7 +197,7 @@ describe('provider oracle probe identity', () => {
     expect(
       isProviderOracleProbe({
         tool: 'opencode',
-        command: probeCommand(['opencode', 'providers', 'list']),
+        command: probeCommand(['opencode', 'auth', 'list', '--standalone', '--format', 'json']),
       }),
     ).toBe(true);
     expect(

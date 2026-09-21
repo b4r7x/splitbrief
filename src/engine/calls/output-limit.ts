@@ -11,7 +11,6 @@ import type {
 } from './types.js';
 
 export const RUNNER_CALL_OUTPUT_MAX_BYTES = 1024 * 1024;
-export const RUNNER_CALL_OUTPUT_MAX_EVENTS = 4096;
 export const RUNNER_CALL_STDERR_MAX_BYTES = 64 * 1024;
 export const RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES = 256 * 1024;
 export const RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES = 256 * 1024;
@@ -26,8 +25,6 @@ export interface RunnerCallOutputLimit {
   message: string;
   bytesSeen?: number | undefined;
   maxBytes?: number | undefined;
-  eventsSeen?: number | undefined;
-  maxEvents?: number | undefined;
 }
 
 export interface RunnerCallDeltaLimitResult {
@@ -47,18 +44,12 @@ export function createRunnerCallDeltaLimiter(opts: {
   code: string;
   label: string;
   maxBytes?: number | undefined;
-  maxEvents?: number | undefined;
 }): {
-  accept: (
-    text: string,
-    acceptOpts?: { countEvent?: boolean | undefined },
-  ) => RunnerCallDeltaLimitResult;
+  accept: (text: string) => RunnerCallDeltaLimitResult;
   readonly limit: RunnerCallOutputLimit | null;
 } {
   const maxBytes = normalizeLimit(opts.maxBytes ?? RUNNER_CALL_OUTPUT_MAX_BYTES);
-  const maxEvents = normalizeLimit(opts.maxEvents ?? RUNNER_CALL_OUTPUT_MAX_EVENTS);
   let bytesStored = 0;
-  let eventsStored = 0;
   let limit: RunnerCallOutputLimit | null = null;
 
   function setLimit(next: RunnerCallOutputLimit): RunnerCallOutputLimit {
@@ -67,28 +58,13 @@ export function createRunnerCallDeltaLimiter(opts: {
   }
 
   return {
-    accept(text, acceptOpts = {}) {
+    accept(text) {
       if (limit !== null) return { text: '', limit };
-
-      const shouldCountEvent = acceptOpts.countEvent ?? text.length > 0;
-      if (shouldCountEvent && eventsStored >= maxEvents) {
-        return {
-          text: '',
-          limit: setLimit({
-            code: opts.code,
-            message: `${opts.label} exceeded ${maxEvents} events and was truncated`,
-            eventsSeen: eventsStored + 1,
-            maxEvents,
-          }),
-        };
-      }
-
       const textBytes = Buffer.byteLength(text, 'utf8');
       if (bytesStored + textBytes > maxBytes) {
         const remainingBytes = Math.max(0, maxBytes - bytesStored);
         const prefix = takeUtf8PrefixBytes(text, remainingBytes);
         bytesStored += Buffer.byteLength(prefix, 'utf8');
-        if (shouldCountEvent && prefix.length > 0) eventsStored += 1;
         return {
           text: prefix,
           limit: setLimit({
@@ -99,9 +75,7 @@ export function createRunnerCallDeltaLimiter(opts: {
           }),
         };
       }
-
       bytesStored += textBytes;
-      if (shouldCountEvent) eventsStored += 1;
       return { text, limit: null };
     },
     get limit() {

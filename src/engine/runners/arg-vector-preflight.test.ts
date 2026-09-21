@@ -865,6 +865,32 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
     expect(helpInvocations(log)).toEqual(['--help', 'run --help']);
   });
 
+  it('descends into an opencode 2 SUBCOMMANDS entry, whose help alone advertises the run flags', async () => {
+    const project = tempDir('preflight-project');
+    const toolDir = tempDir('preflight-tools');
+    const log = join(toolDir, 'invocations');
+    writeHelpStub(join(toolDir, 'opencode'), log, {
+      '--help': 'opencode-v2-help.txt',
+      run: 'opencode-v2-run-help.txt',
+    });
+    vi.stubEnv('PATH', `${toolDir}${delimiter}${process.env.PATH ?? ''}`);
+
+    const topLevel = readFileSync(join(CLI_HELP_FIXTURES, 'opencode-v2-help.txt'), 'utf8');
+    expect(topLevel).toContain('SUBCOMMANDS');
+    expect(topLevel).not.toContain('--model');
+
+    const checks = await plannerChecks(project, { tool: 'opencode' });
+
+    expect(checks).toEqual([
+      expect.objectContaining({
+        id: 'runners.cli.opencode.arg-vector.planner',
+        severity: 'ok',
+        metadata: expect.objectContaining({ checked: 'help' }),
+      }),
+    ]);
+    expect(helpInvocations(log)).toEqual(['--help', 'run --help']);
+  });
+
   // Command Code is the other tool whose emitted vector carries short flags — `-p` at index 0
   // and `-m` before the model — so widening the comparison to short flags put its whole
   // invocation at risk of a fabricated blocker. This is its real vector against its own help.

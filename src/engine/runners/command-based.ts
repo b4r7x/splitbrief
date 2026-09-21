@@ -15,11 +15,10 @@ import {
   revalidateCustomRunnerInvocation,
   type AdmittedCustomRunnerInvocation,
 } from './custom-launchability.js';
+import { CLI_RAW_OUTPUT_MAX_BYTES } from './cli-tools/process-invoke.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
 const CUSTOM_RUNNER_PROMPT_MAX_BYTES = 1024 * 1024;
-const CUSTOM_RUNNER_PROCESS_OUTPUT_MAX_BYTES = 1_310_720;
-const CUSTOM_RUNNER_HARD_DEADLINE_MS = 3_600_000;
 
 export const commandBasedInvocationError = {
   promptPlaceholderInCommand: (command: string) =>
@@ -77,10 +76,6 @@ export interface CustomCommandBasedOptions {
   signal?: AbortSignal | undefined;
 }
 
-export type CustomCommandBasedTestSeam = Readonly<{
-  hardDeadlineMs?: number | undefined;
-}>;
-
 export type CustomCommandBasedResult = Awaited<ReturnType<typeof spawnAndCollect>>;
 
 let commandCallSequence = 0;
@@ -135,9 +130,9 @@ function substitutePromptPlaceholder(
   };
 }
 
-async function invokeCustomCommandBasedRunnerWithDeadline(
+/** Runs the already-admitted custom command through the no-shell process path. */
+export async function invokeCustomCommandBasedRunner(
   opts: CustomCommandBasedOptions,
-  hardDeadlineMs: number,
 ): Promise<CustomCommandBasedResult> {
   const admission = parseAdmittedCustomRunnerInvocation(opts.admission);
   if (admission === null) {
@@ -176,28 +171,10 @@ async function invokeCustomCommandBasedRunnerWithDeadline(
       warnMs: admission.runner.command.idleWarnMs,
       killMs: admission.runner.command.idleKillMs,
     },
-    outputBudgetBytes: CUSTOM_RUNNER_PROCESS_OUTPUT_MAX_BYTES,
-    timeoutMs: hardDeadlineMs,
+    outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
     credentialValues: environment.redactionValues,
     redact,
   });
-}
-
-/** Runs the already-admitted custom command through the no-shell process path. */
-export function invokeCustomCommandBasedRunner(
-  opts: CustomCommandBasedOptions,
-): Promise<CustomCommandBasedResult> {
-  return invokeCustomCommandBasedRunnerWithDeadline(opts, CUSTOM_RUNNER_HARD_DEADLINE_MS);
-}
-
-export function invokeCustomCommandBasedRunnerForTest(
-  opts: CustomCommandBasedOptions,
-  testSeam: CustomCommandBasedTestSeam,
-): Promise<CustomCommandBasedResult> {
-  return invokeCustomCommandBasedRunnerWithDeadline(
-    opts,
-    testSeam.hardDeadlineMs ?? CUSTOM_RUNNER_HARD_DEADLINE_MS,
-  );
 }
 
 export async function invokeCommandBasedRunner(
@@ -256,6 +233,7 @@ export async function invokeCommandBasedRunner(
     signal,
     timeoutMs: opts.timeout,
     idle: { warnMs: idleWarnMs, killMs: idleKillMs },
+    outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
     onStderr: (chunk) => {
       stderrOutput.append(chunk);
     },

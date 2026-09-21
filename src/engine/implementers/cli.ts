@@ -28,7 +28,7 @@ import { getCurrentChangedFiles } from '../../lib/git/files.js';
 import { isInternalGitStatusPath } from '../../core/paths.js';
 import { taskFiles, type Task } from '../../core/schemas/task.js';
 import { undeclaredFiles } from '../../core/scope/declared-set.js';
-import { TIMEOUTS } from '../../core/pipeline-spec/timeouts.js';
+import { isUsageLimitDiagnostic } from '../runners/usage-limit.js';
 
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
@@ -76,12 +76,16 @@ async function changedFilesSince(
  * declared set — its `files` plus the paths its Scope names under In bounds or
  * Approved out of bounds. Nothing changed is a no-staged-change failure; a
  * write outside the set is an effect failure unless the caller gates those
- * elsewhere. The failure keeps the completed call's evidence (text, usage,
- * session) while carrying the stable effect code.
+ * elsewhere. A child that changed nothing after printing a usage limit on
+ * stderr is out of quota, not idle — antigravity exits 0 with "(response may
+ * be truncated)" the first time its quota trips — so the limit outranks the
+ * empty effect and the ladder halts instead of retrying into it. The failure
+ * keeps the completed call's evidence (text, usage, session) while carrying
+ * the stable code.
  */
 function declaredEffectFailure(
   result: RunnerCallResult,
-  code: 'no-staged-change' | 'implementer-effect-invalid',
+  code: 'no-staged-change' | 'implementer-effect-invalid' | 'usage-limit',
   message: string,
 ): RunnerCallResult {
   return { ...result, status: 'failed', error: { code, message }, partial: true };
@@ -95,6 +99,12 @@ function assertDeclaredEffect(input: {
   undeclaredWrites: 'reject' | 'gate';
 }): RunnerCallResult {
   if (input.changed.length === 0) {
+    const limit = input.result.warnings.find(
+      (warning) => warning.source === 'stderr' && isUsageLimitDiagnostic(warning.message),
+    );
+    if (limit !== undefined) {
+      return declaredEffectFailure(input.result, 'usage-limit', limit.message);
+    }
     return declaredEffectFailure(
       input.result,
       'no-staged-change',
@@ -135,7 +145,7 @@ export function createCliImplementer(
     descriptor.displayName,
     descriptor.compatibility.installUrl,
   );
-  const deadlineMs = config.timeout ?? TIMEOUTS.implementerMs;
+  const deadlineMs = config.timeout;
   const runnerLabel = `Tool implementer (${toolName})`;
 
   return createImplementerBase({
@@ -146,8 +156,14 @@ export function createCliImplementer(
     async invoke(opts: InvokeOpts) {
       const { prompt, projectDir, onOutput, signal, callContext } = opts;
       const effectiveModel = resolveCliModel(config.model, toolName);
-      const timeoutSignal = AbortSignal.timeout(deadlineMs);
-      const composedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+      const timeoutSignal: AbortSignal | undefined =
+        deadlineMs === undefined ? undefined : AbortSignal.timeout(deadlineMs);
+      const composedSignal =
+        timeoutSignal === undefined
+          ? signal
+          : signal
+            ? AbortSignal.any([signal, timeoutSignal])
+            : timeoutSignal;
       const env =
         opts.sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, config, 'implementer'));
       const adapter = resolveImplementerAdapter(toolName, config.outputFormat);
@@ -180,6 +196,7 @@ export function createCliImplementer(
           configuredArgs,
           effort: config.effort,
           variant: config.variant,
+          installedVersion: trustedCli?.installedVersion,
         });
 
         const result = await invokeCliAdapter({
@@ -191,7 +208,7 @@ export function createCliImplementer(
             promptTransport: adapter.promptTransport,
             environment: toCliEnvironment(env),
             cwd: projectDir,
-            timeoutMs: deadlineMs,
+            ...(deadlineMs !== undefined && { timeoutMs: deadlineMs }),
             signal: composedSignal,
           },
           prompt,
@@ -203,7 +220,7 @@ export function createCliImplementer(
             killMs: config.idleKillMs,
           },
         });
-        if (timeoutSignal.aborted && !signal?.aborted) {
+        if (timeoutSignal?.aborted === true && !signal?.aborted && deadlineMs !== undefined) {
           throw processError.timeout({
             command: runnerLabel,
             label: runnerLabel,
@@ -226,7 +243,7 @@ export function createCliImplementer(
         }
         return result;
       } catch (err: unknown) {
-        if (timeoutSignal.aborted && !signal?.aborted) {
+        if (timeoutSignal?.aborted === true && !signal?.aborted && deadlineMs !== undefined) {
           throw processError.timeout({
             command: runnerLabel,
             label: runnerLabel,

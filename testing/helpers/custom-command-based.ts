@@ -8,9 +8,7 @@ import {
 } from '../../src/engine/runners/custom-trust.js';
 import {
   invokeCustomCommandBasedRunner,
-  invokeCustomCommandBasedRunnerForTest,
   type CustomCommandBasedOptions,
-  type CustomCommandBasedTestSeam,
 } from '../../src/engine/runners/command-based.js';
 import type { RunnerCallEvent } from '../../src/engine/calls/types.js';
 import type { AdmittedCustomRunnerInvocation } from '../../src/engine/runners/custom-launchability.js';
@@ -113,7 +111,6 @@ export function observableFailure(failure: unknown): unknown {
 export async function observeCustomInvocation(
   input: CustomInvocationInput,
   onCallback?: ((kind: 'output' | 'stderr' | 'session', value: string) => void) | undefined,
-  testSeam?: CustomCommandBasedTestSeam | undefined,
 ): Promise<CustomInvocationObservation> {
   const callbacks: { output: string[]; stderr: string[]; session: string[] } = {
     output: [],
@@ -137,9 +134,7 @@ export async function observeCustomInvocation(
   } satisfies CustomCommandBasedOptions;
 
   try {
-    result = await (testSeam === undefined
-      ? invokeCustomCommandBasedRunner(invocation)
-      : invokeCustomCommandBasedRunnerForTest(invocation, testSeam));
+    result = await invokeCustomCommandBasedRunner(invocation);
   } catch (error) {
     failure = error;
   }

@@ -11,7 +11,6 @@ import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
-import { TIMEOUTS } from '../../core/pipeline-spec/timeouts.js';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
@@ -257,6 +256,32 @@ describe('createCliImplementer (claude-code)', () => {
     expect(result.error).toContain('without changing any files');
   });
 
+  it('a child that changed nothing after a usage limit on stderr is usage-limit', async () => {
+    const shimPath = join(shimDir, 'claude');
+    // Captured live from `agy -p` on 2026-09-21: the first limit hit exits 0.
+    const script = [
+      '#!/bin/bash',
+      'cat > /dev/null',
+      `printf '%s\\n' 'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s. (response may be truncated)' >&2`,
+      `printf '%s\\n' '{"type":"result","result":"nothing to do"}'`,
+    ].join('\n');
+    writeFileSync(shimPath, `${script}\n`, 'utf8');
+    chmodSync(shimPath, 0o755);
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeClaudeConfig(),
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.outcome).toBe('usage-limit');
+    expect(result.error).toContain('Individual quota reached');
+  });
+
   it('refuses a configured outputFormat that would replace the structured-terminal parser', async () => {
     installRecordingShim('claude', 'src/hello.ts');
     const implementerConfig: CliImplementerConfig = {
@@ -333,7 +358,7 @@ describe('createCliImplementer (claude-code)', () => {
     expect(result.success).toBe(true);
   });
 
-  it('default timeout is 20 min', async () => {
+  it('applies no deadline when timeout is unset', async () => {
     installRecordingClaudeShim('src/hello.ts');
     const config = makeClaudeConfig();
     const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
@@ -350,7 +375,33 @@ describe('createCliImplementer (claude-code)', () => {
 
       expect(result.success).toBe(true);
       expect(cliClaudeImplementer.timeout).toBeUndefined();
-      expect(timeoutSpy).toHaveBeenCalledWith(TIMEOUTS.implementerMs);
+      expect(timeoutSpy).not.toHaveBeenCalled();
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  it('applies a configured deadline when timeout is set', async () => {
+    installRecordingClaudeShim('src/hello.ts');
+    const customClaudeImplementer: CliImplementerConfig = {
+      ...cliClaudeImplementer,
+      timeout: 5_000,
+    };
+    const config = makeConfig({ implementer: customClaudeImplementer });
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+
+    try {
+      const implementer = createCliImplementer(customClaudeImplementer);
+      const result = await implementer.implement({
+        task: makeTask(),
+        projectDir,
+        config,
+        context: { ...defaultContext, dir: projectDir },
+        onOutput: () => {},
+      });
+
+      expect(result.success).toBe(true);
+      expect(timeoutSpy).toHaveBeenCalledWith(5_000);
     } finally {
       timeoutSpy.mockRestore();
     }

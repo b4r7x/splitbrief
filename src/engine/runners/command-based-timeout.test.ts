@@ -1,15 +1,7 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { invokeCommandBasedRunner } from './command-based.js';
-import {
-  admittedCustomRunner,
-  customRunner,
-  observeCustomInvocation,
-} from '#testing/helpers/custom-command-based.js';
-import { withTempDir } from '#testing/helpers/temp-dir.js';
 
 describe('invokeCommandBasedRunner with timeout', () => {
   it('records stderr activity on the timeout branch', async () => {
@@ -286,7 +278,7 @@ describe('invokeCommandBasedRunner with timeout', () => {
     expect(events.some((event) => event.type === 'call_tool_use_done')).toBe(true);
   });
 
-  it('bounds timeout-branch live stdout lines before parsing', async () => {
+  it('recovers from an unterminated oversized stdout line on the timeout branch', async () => {
     const chunks: string[] = [];
     const result = await invokeCommandBasedRunner({
       command: 'node',
@@ -300,91 +292,12 @@ describe('invokeCommandBasedRunner with timeout', () => {
 
     expect(result.stdout).toBe('');
     expect(chunks).toEqual([]);
-    expect(result.callResult).toMatchObject({
-      status: 'truncated',
-      error: { code: 'stdout_line_overflow' },
-    });
+    expect(result.callResult).toMatchObject({ status: 'completed' });
     expect(result.callResult.warnings).toEqual([
       expect.objectContaining({
         code: 'stdout_line_overflow',
         message: expect.stringContaining('stdout line exceeded'),
       }),
     ]);
-  });
-});
-
-describe('custom runner hard deadline', () => {
-  it('enforces a short hard deadline through the typed test seam', {
-    timeout: 30_000,
-  }, async () => {
-    const output: string[] = [];
-    const observation = await observeCustomInvocation(
-      {
-        admission: await admittedCustomRunner(
-          process.cwd(),
-          customRunner({
-            argv: [
-              '-e',
-              'process.stdout.write("started\\n");setInterval(() => process.stdout.write("chatty\\n"), 10);',
-            ],
-          }),
-        ),
-        prompt: '',
-        authorizationProjectDir: process.cwd(),
-        cwd: process.cwd(),
-        sourceEnv: {},
-      },
-      (kind, value) => {
-        if (kind === 'output') output.push(value);
-      },
-      { hardDeadlineMs: 10_000 },
-    );
-
-    expect(output.join('')).toContain('started');
-    expect(observation.result).toBeUndefined();
-    expect(observation.failure).toMatchObject({ kind: 'command-timeout' });
-    expect(observation.events).toContainEqual(
-      expect.objectContaining({
-        type: 'call_error',
-        status: 'timeout',
-        error: expect.objectContaining({ code: 'command-timeout' }),
-      }),
-    );
-  });
-
-  it('terminates a timed-out custom child before its delayed side effect can run', {
-    timeout: 30_000,
-  }, async () => {
-    await withTempDir('custom runner deadline cleanup', async (projectDir) => {
-      const delayedEffect = join(projectDir, 'late-child-effect');
-      const observation = await observeCustomInvocation(
-        {
-          admission: await admittedCustomRunner(
-            projectDir,
-            customRunner({
-              argv: [
-                '-e',
-                [
-                  'const fs = require("node:fs");',
-                  'process.stdout.write("started\\n");',
-                  `setTimeout(() => fs.writeFileSync(${JSON.stringify(delayedEffect)}, "late"), 1_000);`,
-                  'setInterval(() => undefined, 1_000);',
-                ].join(''),
-              ],
-            }),
-          ),
-          prompt: '',
-          authorizationProjectDir: projectDir,
-          cwd: projectDir,
-          sourceEnv: {},
-        },
-        undefined,
-        { hardDeadlineMs: 300 },
-      );
-
-      expect(observation.result).toBeUndefined();
-      expect(observation.failure).toMatchObject({ kind: 'command-timeout' });
-      expect(existsSync(delayedEffect)).toBe(false);
-    });
   });
 });

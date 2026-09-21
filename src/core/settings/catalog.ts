@@ -68,7 +68,6 @@ export const SETTINGS_DEFS: SettingDef[] = [
     description: 'Request timeout (ms)',
     kind: 'number',
     min: 1,
-    max: 600000,
     integer: true,
     appliesTo: isApiImplementer,
     unsetLabel: `auto (idle kill ${RUNNER_IDLE_KILL_MS / 60_000}m)`,

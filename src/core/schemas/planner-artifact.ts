@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
-export const MAX_DECLARED_ARTIFACT_BYTES = 96 * 1_024;
+export const MAX_DECLARED_ARTIFACT_BYTES = 1_024 * 1_024;
 
 const nonnegativeInteger = z.number().int().nonnegative();
 const boundedId = z.string().min(1).max(256);
@@ -110,16 +110,6 @@ export const OwnedPlannerArtifactSchema = z
         code: 'custom',
         path: ['byteLength'],
         message: 'byteLength must equal the UTF-8 byte length of text',
-      });
-    }
-    if (value.byteLength > MAX_DECLARED_ARTIFACT_BYTES) {
-      ctx.addIssue({
-        code: 'too_big',
-        maximum: MAX_DECLARED_ARTIFACT_BYTES,
-        origin: 'number',
-        inclusive: true,
-        path: ['byteLength'],
-        message: 'artifact exceeds the declared artifact byte bound',
       });
     }
     if (value.batchId !== null && value.programId === null) {

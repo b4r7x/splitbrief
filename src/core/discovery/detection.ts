@@ -304,7 +304,7 @@ export type CliAuthState = z.infer<typeof CliAuthStateSchema>;
 export const CliProviderAuthFactSchema = z
   .object({
     provider: z.string().min(1).max(200),
-    source: z.enum(['oauth', 'api', 'env']),
+    source: z.enum(['oauth', 'api', 'env', 'stored']),
     envVar: z.string().min(1).max(200).optional(),
   })
   .strict();

@@ -5,6 +5,7 @@ import {
   RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES,
   RUNNER_CALL_OUTPUT_MAX_BYTES,
   RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES,
+  RUNNER_CALL_TOOL_USE_MAX_ITEMS,
 } from './output-limit.js';
 import type { RunnerCallContext, RunnerCallEvent } from './types.js';
 
@@ -249,7 +250,24 @@ describe('createRunnerCallRecorder', () => {
     expect(result.error).toBeNull();
   });
 
-  it('bounds direct tool and artifact payloads before storing result values', () => {
+  it('caps recorded tool uses at the item limit without truncating the call', () => {
+    const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
+    for (let index = 0; index < RUNNER_CALL_TOOL_USE_MAX_ITEMS + 44; index += 1) {
+      recorder.toolUseDone({
+        toolUse: { id: `tool-${index}`, name: 'Read', input: {}, output: {} },
+      });
+    }
+
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(result.status).toBe('completed');
+    expect(result.toolUses).toHaveLength(RUNNER_CALL_TOOL_USE_MAX_ITEMS);
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: 'runner_call_tool_use_count_limit' }),
+    ]);
+  });
+
+  it('bounds direct tool payloads without truncating the call', () => {
     const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
     recorder.toolUseDone({
       toolUse: {
@@ -259,6 +277,19 @@ describe('createRunnerCallRecorder', () => {
         output: { content: 'y'.repeat(RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES + 10) },
       },
     });
+
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(result.status).toBe('completed');
+    expect(JSON.stringify(result.toolUses)).not.toContain('x'.repeat(1024));
+    expect(JSON.stringify(result.toolUses)).not.toContain('y'.repeat(1024));
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: 'runner_call_tool_input_limit' }),
+    ]);
+  });
+
+  it('bounds direct artifact payloads before storing result values', () => {
+    const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
     recorder.artifact({
       artifact: {
         id: 'artifact-1',
@@ -273,11 +304,9 @@ describe('createRunnerCallRecorder', () => {
     const result = recorder.finishCompleted({ endedAt: 20 });
 
     expect(result.status).toBe('truncated');
-    expect(JSON.stringify(result.toolUses)).not.toContain('x'.repeat(1024));
-    expect(JSON.stringify(result.toolUses)).not.toContain('y'.repeat(1024));
     expect(result.artifacts[0]?.text).not.toContain('z'.repeat(1024));
     expect(result.warnings.map((warning) => warning.code)).toEqual(
-      expect.arrayContaining(['runner_call_tool_input_limit', 'runner_call_artifact_text_limit']),
+      expect.arrayContaining(['runner_call_artifact_text_limit']),
     );
   });
 

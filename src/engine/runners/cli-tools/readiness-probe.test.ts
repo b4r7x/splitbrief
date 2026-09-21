@@ -3,6 +3,7 @@ import { chmod, mkdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
 import { itUnix } from '#testing/helpers/planner-command-invoke.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
@@ -14,6 +15,7 @@ import {
 } from './contract.js';
 import { providerOracleAuthFact } from './provider-oracle.js';
 import { probeCliReadiness, probeDeclaredCliReadinessEvidence } from './readiness-probe.js';
+import { lookupCliReadinessProbe } from './registry.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
 
 async function nodeExecutable(): Promise<CliExecutableIdentity> {
@@ -134,6 +136,7 @@ function declaredProbe(
 
 const ORACLE_READ_OUTPUT = 'Credentials\nanthropic  oauth\n1 credential\n';
 const ORACLE_EMPTY_OUTPUT = 'Credentials\n0 credentials\n';
+const OPENCODE_TESTED_VERSION = CLI_TOOL_CATALOG.opencode.compatibility.testedVersion;
 
 async function fakeOpencode(dir: string, oracleBody: string): Promise<CliExecutableIdentity> {
   const path = join(await realpath(dir), 'opencode');
@@ -142,7 +145,7 @@ async function fakeOpencode(dir: string, oracleBody: string): Promise<CliExecuta
     [
       '#!/usr/bin/env node',
       'const args = process.argv.slice(2);',
-      "if (args[0] === '--version') { process.stdout.write('opencode 0.5.0'); process.exit(0); }",
+      `if (args[0] === '--version') { process.stdout.write('opencode ${OPENCODE_TESTED_VERSION}'); process.exit(0); }`,
       oracleBody,
     ].join('\n'),
   );
@@ -164,7 +167,7 @@ function opencodeProbe(
     maxOutputBytes: 1_024,
   };
   const auth = {
-    command: ['opencode', 'providers', 'list'] as const,
+    command: ['opencode', 'auth', 'list', '--standalone', '--format', 'json'] as const,
     cwd: 'neutral' as const,
     timeoutMs: options.authTimeoutMs ?? PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
@@ -178,7 +181,9 @@ function opencodeProbe(
         ...version,
         kind: 'version',
         parse: ({ stdout }) =>
-          stdout.includes('0.5.0') ? { kind: 'success', value: '0.5.0' } : { kind: 'malformed' },
+          stdout.includes(OPENCODE_TESTED_VERSION)
+            ? { kind: 'success', value: OPENCODE_TESTED_VERSION }
+            : { kind: 'malformed' },
       },
       auth: options.authNotRun
         ? { kind: 'not-run' }
@@ -876,4 +881,113 @@ describe('CLI readiness probe', () => {
       expect(result.auth).toBe('authenticated');
     });
   });
+});
+
+// Captured from `opencode auth list --standalone --format json` on opencode
+// 2.0.12, 2026-09-21; credential record ids replaced with placeholders.
+const OPENCODE_V2_AUTH_LIST_JSON = readFileSync(
+  join(import.meta.dirname, '../../../../testing/fixtures/opencode/auth-list-v2.json'),
+  'utf8',
+);
+// Captured verbatim from `opencode auth list` on opencode 1.18.15, 2026-09-21.
+const OPENCODE_V1_AUTH_LIST_OUTPUT =
+  '\u001b[0m\n┌  Credentials \u001b[90m~/.local/share/opencode/auth.json\n│\n●  OpenAI \u001b[90moauth\n│\n●  OpenCode Go \u001b[90mapi\n│\n└  2 credentials\n\n┌  Environment\n│\n●  Ollama Cloud \u001b[90mOLLAMA_API_KEY\n│\n●  OpenAI \u001b[90mOPENAI_API_KEY\n│\n●  Kimi For Coding \u001b[90mKIMI_API_KEY\n│\n└  3 environment variables\n\n';
+
+/**
+ * What each opencode release does with the two listing argv: 2.x answers the
+ * private-server JSON form and hangs on the plain one (a background service
+ * it cannot start), 1.x rejects the private-server flag with its usage text.
+ */
+async function fakeOpencodeRelease(
+  dir: string,
+  release: Readonly<{ versionLine: string; major: 1 | 2 }>,
+  log: string,
+): Promise<CliExecutableIdentity> {
+  const path = join(dir, 'opencode');
+  const modernListing = `args.includes('--standalone') && args.includes('json') ? ${JSON.stringify(OPENCODE_V2_AUTH_LIST_JSON)} : null`;
+  const legacyListing = `args.includes('--standalone') ? null : ${JSON.stringify(OPENCODE_V1_AUTH_LIST_OUTPUT)}`;
+  await writeFile(
+    path,
+    [
+      '#!/usr/bin/env node',
+      'const args = process.argv.slice(2);',
+      `require('node:fs').appendFileSync(${JSON.stringify(log)}, args.join(' ') + '\\n');`,
+      `if (args[0] === '--version') { process.stdout.write(${JSON.stringify(`${release.versionLine}\n`)}); process.exit(0); }`,
+      `const listing = ${release.major === 2 ? modernListing : legacyListing};`,
+      "if (listing === null) { process.stderr.write('unsupported invocation\\n'); process.exit(1); }",
+      'process.stdout.write(listing); process.exit(0);',
+    ].join('\n'),
+  );
+  await chmod(path, 0o755);
+  const info = await stat(path);
+  return {
+    path,
+    fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
+  };
+}
+
+async function probeOpencodeRelease(release: Readonly<{ versionLine: string; major: 1 | 2 }>) {
+  return withTempDir('readiness-opencode-release', async (dir) => {
+    const root = await realpath(dir);
+    const home = join(root, 'home');
+    await mkdir(join(home, '.config', 'opencode'), { recursive: true });
+    await writeFile(join(home, '.config', 'opencode', 'auth.json'), '{}');
+    vi.stubEnv('HOME', home);
+    const log = join(root, 'argv.log');
+    const executable = await fakeOpencodeRelease(root, release, log);
+    const probe = lookupCliReadinessProbe({ tool: 'opencode', role: 'planner' });
+    if (!isDeclaredCliProbeContract(probe)) throw new Error('expected the declared opencode probe');
+    const evidence = await probeDeclaredCliReadinessEvidence({
+      tool: 'opencode',
+      executable,
+      probe: probe.declared,
+      authChannel: 'provider-dependent',
+    });
+    return { evidence, argv: readFileSync(log, 'utf8').trim().split('\n') };
+  });
+}
+
+describe('opencode oracle argv follows the installed release', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  itUnix('reads the 2.x JSON listing through a private server', async () => {
+    const { evidence, argv } = await probeOpencodeRelease({
+      versionLine: 'opencode v2.0.12',
+      major: 2,
+    });
+
+    expect(evidence.version).toEqual({ kind: 'success', value: '2.0.12' });
+    expect(argv).toEqual(['--version', 'auth list --standalone --format json']);
+    expect(evidence.auth).toBe('verified');
+    expect(evidence.providerAuth).toEqual({
+      kind: 'read',
+      facts: expect.arrayContaining([
+        { provider: 'OpenCode Go', source: 'stored' },
+        { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
+      ]),
+    });
+  });
+
+  itUnix(
+    'keeps the boxed listing below 2.0.0, where the private-server flag is rejected',
+    async () => {
+      const { evidence, argv } = await probeOpencodeRelease({ versionLine: '1.18.15', major: 1 });
+
+      expect(evidence.version).toEqual({ kind: 'success', value: '1.18.15' });
+      expect(argv).toEqual(['--version', 'auth list']);
+      expect(evidence.auth).toBe('verified');
+      expect(evidence.providerAuth).toEqual({
+        kind: 'read',
+        facts: [
+          { provider: 'OpenAI', source: 'oauth' },
+          { provider: 'OpenCode Go', source: 'api' },
+          { provider: 'Ollama Cloud', source: 'env', envVar: 'OLLAMA_API_KEY' },
+          { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
+          { provider: 'Kimi For Coding', source: 'env', envVar: 'KIMI_API_KEY' },
+        ],
+      });
+    },
+  );
 });

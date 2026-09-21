@@ -313,8 +313,6 @@ export function createRunnerCallRecorder(opts: {
     return {
       code: opts.code,
       message: `${opts.label} exceeded ${opts.maxItems} items and was truncated`,
-      eventsSeen: opts.nextItemCount,
-      maxEvents: opts.maxItems,
     };
   }
 
@@ -360,9 +358,7 @@ export function createRunnerCallRecorder(opts: {
       if (eventOpts.semantics === 'final') textLimiter = createTextLimiter();
       // An explicit `delta` is a partial slice of one record: the byte budget
       // bounds it, the event budget counts records.
-      const accepted = textLimiter.accept(redactCredential(eventOpts.text), {
-        countEvent: eventOpts.semantics !== 'delta',
-      });
+      const accepted = textLimiter.accept(redactCredential(eventOpts.text));
       const eventText = accepted.text;
       if (accepted.limit === null && resultLimit?.code === 'runner_call_text_limit') {
         resultLimit = null;
@@ -397,9 +393,7 @@ export function createRunnerCallRecorder(opts: {
       if (accepted.limit !== null) noteLimit(accepted.limit, 'diagnostic-only');
     },
     toolUseDelta: (eventOpts) => {
-      const accepted = toolDeltaLimiter.accept(redactCredential(eventOpts.inputDelta), {
-        countEvent: true,
-      });
+      const accepted = toolDeltaLimiter.accept(redactCredential(eventOpts.inputDelta));
       if (accepted.text.length > 0 || accepted.limit === null) {
         emit({
           type: 'call_tool_use_delta',
@@ -422,7 +416,7 @@ export function createRunnerCallRecorder(opts: {
             maxItems: RUNNER_CALL_TOOL_USE_MAX_ITEMS,
             nextItemCount: toolUseDoneCount + 1,
           }),
-          'truncates-result',
+          'diagnostic-only',
         );
         return;
       }
@@ -430,7 +424,7 @@ export function createRunnerCallRecorder(opts: {
         redactRunnerCallToolUse(eventOpts.toolUse, redactCredential),
       );
       toolUseDoneCount += 1;
-      if (bounded.limit !== null) noteLimit(bounded.limit, 'truncates-result');
+      if (bounded.limit !== null) noteLimit(bounded.limit, 'diagnostic-only');
       emit({
         type: 'call_tool_use_done',
         ts: eventOpts.ts ?? Date.now(),

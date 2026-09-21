@@ -80,12 +80,15 @@ export async function runImplementation(opts: {
 
   let loop: { state: WorkflowState; value: ImplementerResult };
   try {
+    // Only a mid-step partial resumes an earlier attempt's worktree. A steer
+    // alone is guidance for a fresh try, so it must not keep leftovers a failed
+    // promotion or a restore already reverted in the project — reseed instead.
     workspace = usesIsolation
       ? await wctx.isolation.acquire({
           role: 'implementer',
           writesFiles: 'direct',
           config,
-          fresh: state.attempt === 0 && seed === undefined,
+          fresh: state.attempt === 0 && seed?.partial === undefined,
         })
       : undefined;
     loop = await withContinuationLoop<ImplementerResult>({

@@ -87,6 +87,66 @@ describe('OpenCode role adapters', () => {
     }
   });
 
+  it('runs on a private server from 2.0.0 on and on the background service below it', () => {
+    const planner = (installedVersion: string | undefined) =>
+      opencodePlannerAdapter.buildArgs({
+        prompt: PROMPT,
+        model: undefined,
+        projectDir: PROJECT_DIR,
+        configuredArgs: [],
+        mode: 'plan',
+        sessionId: null,
+        effort: undefined,
+        installedVersion,
+      });
+    const implementer = (installedVersion: string | undefined) =>
+      opencodeImplementerAdapter.buildArgs({
+        prompt: PROMPT,
+        model: undefined,
+        projectDir: PROJECT_DIR,
+        configuredArgs: [],
+        installedVersion,
+      });
+
+    expect(planner('2.0.12')).toEqual([
+      'run',
+      '--standalone',
+      '--format',
+      'json',
+      '--agent',
+      'plan',
+      PROMPT,
+    ]);
+    expect(implementer('2.0.12')).toEqual([
+      'run',
+      '--standalone',
+      '--format',
+      'json',
+      '--agent',
+      'build',
+      PROMPT,
+    ]);
+    for (const release of ['1.18.15', undefined]) {
+      expect(planner(release)).toEqual(['run', '--format', 'json', '--agent', 'plan', PROMPT]);
+      expect(implementer(release)).toEqual(['run', '--format', 'json', '--agent', 'build', PROMPT]);
+    }
+    expect(
+      opencodeImplementerAdapter.validateArgs({
+        invocationArgs: [
+          'run',
+          '--standalone',
+          '--format',
+          'json',
+          '--agent',
+          'build',
+          PROMPT,
+          '--standalone',
+        ],
+        baseArgs: ['run', '--standalone', '--format', 'json', '--agent', 'build', PROMPT],
+      }).valid,
+    ).toBe(false);
+  });
+
   it('preserves planner agent, model placement, implementer build role, and configured order', () => {
     expect(plannerArgs(undefined, 'plan', ['--label', 'one'])).toEqual([
       'run',

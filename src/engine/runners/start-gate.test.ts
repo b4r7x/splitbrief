@@ -229,7 +229,7 @@ describe('fresh CLI start gate', () => {
       admit(freshEvidence({ auth: 'unknown' }), { unverifiedAuth: 'disclosed' }),
     ).toMatchObject({
       kind: 'admitted',
-      gate: { tool: 'codex' },
+      gate: { tool: 'codex', installedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion },
     });
     expect(admit(freshEvidence({ auth: 'unknown' }), { interaction: 'headless' })).toEqual({
       kind: 'denied',

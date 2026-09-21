@@ -3,6 +3,7 @@ import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import type { ProvenanceWord } from '../../../core/providers/provenance.js';
 import type {
   CliProviderAuth,
+  CliProviderAuthFact,
   CliProviderAuthUnreadableReason,
 } from '../../../core/discovery/detection.js';
 import { deriveCliAuthSelection } from '../../../core/runners/cli-auth-selection.js';
@@ -29,7 +30,7 @@ import type { ModelOption, ModelVariant } from './recency.js';
 
 /** What the tool's own credential listing says about one route's provider. */
 export type RouteAuthState =
-  | { kind: 'configured'; source: 'oauth' | 'api' | 'env'; envVar?: string }
+  | { kind: 'configured'; source: CliProviderAuthFact['source']; envVar?: string }
   | { kind: 'needs-sign-in' }
   | { kind: 'unknown'; reason: CliProviderAuthUnreadableReason | 'empty' }
   | { kind: 'unchecked' };

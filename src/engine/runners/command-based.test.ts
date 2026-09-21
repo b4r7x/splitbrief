@@ -157,7 +157,7 @@ describe('invokeCommandBasedRunner', () => {
     expect(result.stderr).toContain('error');
   });
 
-  it('treats a stderr line overflow as a fatal truncation with bounded stderr', async () => {
+  it('recovers from a stderr line overflow with a warning and bounded stderr', async () => {
     const result = await invokeCommandBasedRunner({
       command: 'node',
       args: [
@@ -172,11 +172,7 @@ describe('invokeCommandBasedRunner', () => {
       projectDir: process.cwd(),
     });
 
-    expect(result.callResult).toMatchObject({
-      status: 'truncated',
-      partial: true,
-      error: { code: 'stderr_line_overflow' },
-    });
+    expect(result.callResult).toMatchObject({ status: 'completed' });
     expect(Buffer.byteLength(result.stderr, 'utf8')).toBeLessThanOrEqual(
       DEFAULT_PROCESS_STDERR_MAX_BYTES,
     );
@@ -188,7 +184,7 @@ describe('invokeCommandBasedRunner', () => {
     );
   });
 
-  it('treats a stdout line overflow as a fatal truncation that stops the collection', async () => {
+  it('recovers from a stdout line overflow with a warning instead of failing the call', async () => {
     const result = await invokeCommandBasedRunner({
       command: 'node',
       args: [
@@ -202,17 +198,30 @@ describe('invokeCommandBasedRunner', () => {
       projectDir: process.cwd(),
     });
 
-    expect(result.callResult).toMatchObject({
-      status: 'truncated',
-      partial: true,
-      error: { code: 'stdout_line_overflow' },
-    });
-    expect(result.stdout).not.toContain('after-overflow');
+    expect(result.callResult).toMatchObject({ status: 'completed' });
+    expect(result.stdout).toContain('after-overflow');
     expect(result.callResult.warnings).toContainEqual(
       expect.objectContaining({
         code: 'stdout_line_overflow',
         message: expect.stringContaining('stdout line exceeded'),
       }),
     );
+  });
+
+  it('spawns a child bound to the shared 64 MiB output ceiling and reaps it on breach', async () => {
+    const result = await invokeCommandBasedRunner({
+      command: 'node',
+      args: [
+        '-e',
+        'for (let i = 0; i < 1100; i++) process.stdout.write("y".repeat(65_536));setInterval(() => {}, 1_000);',
+      ],
+      prompt: '',
+      projectDir: process.cwd(),
+    });
+
+    expect(result.callResult).toMatchObject({
+      status: 'truncated',
+      error: { code: 'runner_process_output_limit' },
+    });
   });
 });

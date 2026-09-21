@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import './node-env.js';
 import { Command } from 'commander';
 import ansis from 'ansis';
 import { registerStartCommand } from './cli/commands/start/register.js';

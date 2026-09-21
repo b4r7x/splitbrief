@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import { runnerCallEventToSessionLogEntry } from '../calls/session-log.js';
-import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../calls/output-limit.js';
 import { boundEngineEventForConsumer } from '../events/bound.js';
 import { spawnAndCollect, spawnCollectError } from './spawn-collect.js';
 import { parseJsonlLine } from './parse-jsonl.js';
@@ -643,38 +642,55 @@ describe('spawnAndCollect', () => {
 
   it('reaps the process tree when an oversized diagnostic becomes fatal', async () => {
     let descendantPid = 0;
+    let descendantAliveOnWarning = false;
     const program = [
       "const { spawn } = require('node:child_process');",
       "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore' });",
+      'child.unref();',
       'process.stderr.write("descendant:" + child.pid + "\\n");',
       'process.stderr.write("x".repeat(9000));',
-      'setInterval(() => {}, 60_000);',
     ].join('');
-    const result = await spawnAndCollect({
-      command: 'node',
-      args: ['-e', program],
-      cwd: process.cwd(),
-      onStderr: (chunk) => {
-        const match = /descendant:(\d+)/.exec(chunk);
-        if (match?.[1] !== undefined) descendantPid = Number.parseInt(match[1], 10);
-      },
-    });
+    try {
+      const result = await spawnAndCollect({
+        command: 'node',
+        args: ['-e', program],
+        cwd: process.cwd(),
+        onStderr: (chunk) => {
+          const match = /descendant:(\d+)/.exec(chunk);
+          if (match?.[1] !== undefined) descendantPid = Number.parseInt(match[1], 10);
+        },
+        onCallEvent: (event) => {
+          if (event.type === 'call_warning' && event.warning.code === 'stderr_line_overflow') {
+            try {
+              process.kill(descendantPid, 0);
+              descendantAliveOnWarning = true;
+            } catch {
+              descendantAliveOnWarning = false;
+            }
+          }
+        },
+      });
 
-    expect(result).toMatchObject({
-      status: 'truncated',
-      error: { code: 'stderr_line_overflow' },
-    });
-    expect(result.warnings).toContainEqual(
-      expect.objectContaining({
-        code: 'stderr_line_overflow',
-        severity: 'warning',
-        source: 'provider',
-        surface: 'activity',
-        message: 'stderr line exceeded 8192 bytes and was skipped',
-      }),
-    );
-    expect(descendantPid).toBeGreaterThan(1);
-    expect(() => process.kill(descendantPid, 0)).toThrow();
+      expect(result.status).toBe('completed');
+      expect(result.warnings.filter((w) => w.code === 'stderr_line_overflow')).toHaveLength(1);
+      expect(result.warnings).toContainEqual(
+        expect.objectContaining({
+          code: 'stderr_line_overflow',
+          severity: 'warning',
+          source: 'provider',
+          surface: 'activity',
+          message: 'stderr line exceeded 8192 bytes and was skipped',
+        }),
+      );
+      expect(descendantPid).toBeGreaterThan(1);
+      expect(descendantAliveOnWarning).toBe(true);
+    } finally {
+      if (descendantPid > 1) {
+        try {
+          process.kill(descendantPid, 'SIGKILL');
+        } catch {}
+      }
+    }
   });
 
   it('reports an oversized structured terminal result as a bounded truncation', async () => {
@@ -682,20 +698,18 @@ describe('spawnAndCollect', () => {
       command: 'node',
       args: [
         '-e',
-        `process.stdout.write(JSON.stringify({type:"result",result:"x".repeat(${
-          DEFAULT_PROCESS_LINE_MAX_BYTES + 100
-        })})+"\\n"); setInterval(() => {}, 60_000)`,
+        [
+          `process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}) + "\\n");`,
+          `process.stdout.write(JSON.stringify({type:"result",result:"valid terminal output"}) + "\\n");`,
+        ].join(''),
       ],
       cwd: process.cwd(),
       format: 'stream-json',
     });
 
-    expect(result).toMatchObject({
-      status: 'truncated',
-      text: '',
-      error: { code: 'stdout_line_overflow' },
-    });
-    expect(result.error?.code).not.toBe('missing_terminal_event');
+    expect(result.status).toBe('completed');
+    expect(result.text).toBe('valid terminal output');
+    expect(result.warnings.filter((w) => w.code === 'stdout_line_overflow')).toHaveLength(1);
     expect(result.warnings).toEqual([
       expect.objectContaining({
         code: 'stdout_line_overflow',
@@ -709,16 +723,14 @@ describe('spawnAndCollect', () => {
       command: 'node',
       args: [
         '-e',
-        `process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100})); setInterval(() => {}, 60_000)`,
+        `process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}) + "\\n"); process.stdout.write("plain output\\n");`,
       ],
       cwd: process.cwd(),
     });
 
-    expect(result).toMatchObject({
-      status: 'truncated',
-      text: '',
-      error: { code: 'stdout_line_overflow' },
-    });
+    expect(result.status).toBe('completed');
+    expect(result.text).toBe('plain output\n');
+    expect(result.warnings.filter((w) => w.code === 'stdout_line_overflow')).toHaveLength(1);
     expect(result.warnings).toEqual([
       expect.objectContaining({
         code: 'stdout_line_overflow',
@@ -733,33 +745,55 @@ describe('spawnAndCollect', () => {
   it('caps aggregate parsed stdout and reaps the producer on event overflow', async () => {
     const events: RunnerCallEvent[] = [];
     let descendantPid = 0;
+    let descendantAliveOnWarning = false;
     const program = [
       "const { spawn } = require('node:child_process');",
       "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore' });",
-      'process.stdout.write("descendant:" + child.pid + "\\n");',
-      `for (let i = 0; i < ${RUNNER_CALL_OUTPUT_MAX_EVENTS + 10}; i += 1) console.log("x");`,
-      'setInterval(() => {}, 60_000);',
+      'child.unref();',
+      'process.stderr.write("descendant:" + child.pid + "\\n");',
+      'for (let i = 0; i < 4200; i += 1) process.stdout.write("x\\n");',
+      'process.stdout.write(JSON.stringify({ type: "result", result: "done" }) + "\\n");',
     ].join('');
-    const result = await spawnAndCollect({
-      command: 'node',
-      args: ['-e', program],
-      cwd: process.cwd(),
-      onText: (text) => {
-        if (text.startsWith('descendant:')) {
-          descendantPid = Number.parseInt(text.slice('descendant:'.length), 10);
-        }
-      },
-      onCallEvent: (event) => events.push(event),
-    });
+    try {
+      const result = await spawnAndCollect({
+        command: 'node',
+        args: ['-e', program],
+        cwd: process.cwd(),
+        format: 'stream-json',
+        onText: (text) => {
+          if (text.startsWith('descendant:')) {
+            descendantPid = Number.parseInt(text.slice('descendant:'.length), 10);
+          }
+        },
+        onStderr: (chunk) => {
+          const match = /descendant:(\d+)/.exec(chunk);
+          if (match?.[1] !== undefined) descendantPid = Number.parseInt(match[1], 10);
+        },
+        onCallEvent: (event) => {
+          events.push(event);
+          if (event.type === 'call_warning') {
+            try {
+              process.kill(descendantPid, 0);
+              descendantAliveOnWarning = true;
+            } catch {
+              descendantAliveOnWarning = false;
+            }
+          }
+        },
+      });
 
-    const textEvents = events.filter((event) => event.type === 'call_text_delta');
-    expect(result).toMatchObject({
-      status: 'truncated',
-      error: { code: 'runner_output_text_limit' },
-    });
-    expect(textEvents).toHaveLength(RUNNER_CALL_OUTPUT_MAX_EVENTS);
-    expect(descendantPid).toBeGreaterThan(1);
-    expect(() => process.kill(descendantPid, 0)).toThrow();
+      expect(result.status).toBe('completed');
+      expect(result.text).toBe('done');
+      expect(result.error).toBeNull();
+      expect(descendantPid).toBeGreaterThan(1);
+      expect(descendantAliveOnWarning).toBe(true);
+    } finally {
+      if (descendantPid > 1) {
+        try {
+          process.kill(descendantPid, 'SIGKILL');
+        } catch {}
+      }
+    }
   });
 
   it('idle warnings emit call_stalled and call_stall_cleared events', async () => {

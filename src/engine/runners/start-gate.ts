@@ -23,11 +23,14 @@ import type {
 export type CliStartGate = Readonly<{
   tool: CliToolId;
   executable: CliExecutableTrust;
+  /** The release readiness admitted, for an adapter whose argv differs by release. */
+  installedVersion?: string | undefined;
 }>;
 
 export type FreshCliStartGate = Readonly<{
   tool: CliToolId;
   executable: CliExecutableReceipt;
+  installedVersion: string | undefined;
 }>;
 
 export type FreshCliStartGateResult =
@@ -146,7 +149,16 @@ export function admitFreshCliStart(options: AdmitFreshCliStartOptions): FreshCli
   if (options.evidence.executable.kind !== 'trusted') return deniedExecutableFact();
   const executable = executableFromEvidence(options.evidence.executable.identity);
   if (executable === null) return deniedExecutableFact();
-  return { kind: 'admitted', gate: { tool: options.tool, executable } };
+  const { compatibility } = options.evidence;
+  return {
+    kind: 'admitted',
+    gate: {
+      tool: options.tool,
+      executable,
+      installedVersion:
+        compatibility.kind === 'compatible' ? compatibility.installedVersion : undefined,
+    },
+  };
 }
 
 function missingCliStartGate(tool: CliToolId): never {

@@ -88,6 +88,20 @@ function directProfile(name: string, contextLength?: number): ResolvedImplemente
   };
 }
 
+function shellProfile(name: string, contextLength?: number): ResolvedImplementerProfile {
+  return {
+    name,
+    config: {
+      kind: 'shell',
+      command: name,
+      model: name,
+      ...(contextLength !== undefined ? { contextLength } : {}),
+    },
+    capabilities: { writesFiles: 'extracted-code' },
+    isDefault: false,
+  };
+}
+
 describe('routeTaskToImplementerProfile', () => {
   it('applies both files through the API profile selected by routing', async () => {
     await withTempDir('routed-bundle', async (projectDir) => {
@@ -518,7 +532,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [directProfile('small-local', 2000), directProfile('larger-cheap', 40_000)],
+      profiles: [shellProfile('small-local', 2000), shellProfile('larger-cheap', 40_000)],
     });
 
     expect(decision.selectedProfile).toBe('larger-cheap');
@@ -535,6 +549,27 @@ describe('routeTaskToImplementerProfile', () => {
       decision.rejected[0]?.estimatedTokens ?? 0,
     );
     expect(decision.rejected[0]?.reason).toContain('current code truncated');
+  });
+
+  it('sizes a direct writer on the prompt it is sent, which carries no current code', () => {
+    const task = makeTask({
+      action: 'modify',
+      currentCode: Array.from({ length: 1200 }, (_, i) => `export const value${i} = ${i};`).join(
+        '\n',
+      ),
+    });
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [directProfile('small-local', 2000)],
+    });
+
+    expect(decision.selectedProfile).toBe('small-local');
+    expect(decision.fit).toBe('fits');
+    expect(decision.currentCodeContextMode).toBe('none');
+    expect(decision.currentCodeTruncated).toBe(false);
+    expect(decision.estimatedTokens).toBe(decision.untruncatedEstimatedTokens);
   });
 
   it('marks function-level currentCode fallback in routing metadata', () => {
@@ -555,7 +590,7 @@ describe('routeTaskToImplementerProfile', () => {
     const decision = routeTaskToImplementerProfile({
       task,
       context,
-      profiles: [directProfile('function-context-worker', 6000)],
+      profiles: [shellProfile('function-context-worker', 6000)],
     });
 
     expect(decision.selectedProfile).toBe('function-context-worker');

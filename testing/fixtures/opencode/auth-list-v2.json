@@ -1,0 +1,63 @@
+[
+  {
+    "id": "opencode-go",
+    "name": "OpenCode Go",
+    "connections": [
+      {
+        "type": "credential",
+        "id": "cred_0001",
+        "label": "OpenCode Go"
+      },
+      {
+        "type": "credential",
+        "id": "cred_0002",
+        "label": "default"
+      }
+    ]
+  },
+  {
+    "id": "kimi-code-plan-global",
+    "name": "Kimi For Coding (kimi.ai)",
+    "connections": [
+      {
+        "type": "env",
+        "name": "KIMI_API_KEY"
+      }
+    ]
+  },
+  {
+    "id": "kimi-code-plan-cn",
+    "name": "Kimi For Coding (kimi.com)",
+    "connections": [
+      {
+        "type": "env",
+        "name": "KIMI_API_KEY"
+      }
+    ]
+  },
+  {
+    "id": "ollama-cloud",
+    "name": "Ollama Cloud",
+    "connections": [
+      {
+        "type": "env",
+        "name": "OLLAMA_API_KEY"
+      }
+    ]
+  },
+  {
+    "id": "openai",
+    "name": "OpenAI",
+    "connections": [
+      {
+        "type": "credential",
+        "id": "cred_0003",
+        "label": "default"
+      },
+      {
+        "type": "env",
+        "name": "OPENAI_API_KEY"
+      }
+    ]
+  }
+]

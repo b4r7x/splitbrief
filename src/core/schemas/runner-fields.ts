@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { TIMEOUTS } from '../pipeline-spec/timeouts.js';
 import { API_OFFERINGS, API_PROVIDER_CATALOG } from '../providers/api-provider-catalog.js';
 import {
   CLI_AUTH_CHANNEL_IDS,
@@ -90,8 +89,8 @@ export const RUNNER_IDLE_KILL_MS = 1_800_000;
 export const DEFAULT_IMPLEMENTER_TEMPERATURE = 0.3;
 
 const WatchdogFields = {
-  idleWarnMs: z.number().int().positive().max(3_600_000).optional(),
-  idleKillMs: z.number().int().positive().max(3_600_000).optional(),
+  idleWarnMs: z.number().int().positive().optional(),
+  idleKillMs: z.number().int().positive().optional(),
 };
 
 // The kill threshold must not fire before the warn threshold, or the runner is
@@ -345,7 +344,7 @@ export const GenerationCommonFields = {
   customModels: z.array(z.string()).optional(),
   contextLength: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
-  timeout: z.number().positive().max(TIMEOUTS.implementerMs).optional(),
+  timeout: z.number().positive().optional(),
   effort: EffortLevelSchema.optional(),
   variant: z.string().min(1).optional(),
 };

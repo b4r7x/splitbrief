@@ -6,6 +6,8 @@ import type {
   CliExecutableIdentity,
   CliProviderAuth,
 } from '../../../core/discovery/detection.js';
+import type { ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
+import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
 import {
   CLI_TOOL_CATALOG,
   cliAuthChannelPlatformSupported,
@@ -34,6 +36,7 @@ import {
 } from './cli-probe-process.js';
 import {
   isDeclaredCliProbeContract,
+  type CliAuthProbe,
   type CliDeclaredProbeContract,
   type CliProbeCommand,
   type CliProbeContract,
@@ -70,6 +73,22 @@ export type ProbeDeclaredCliReadinessEvidenceOptions = Readonly<{
 }>;
 
 export type AuthProbeRun = Readonly<{ command: CliProbeCommand; output: CliProbeOutput }>;
+
+/** A release below the probe's legacy threshold takes the legacy argv; an unread version takes the declared one. */
+function authProbeCommandForVersion(
+  tool: CliToolId,
+  probe: Exclude<CliAuthProbe, { kind: 'not-run' }>,
+  version: ProbeOutcome<string>,
+): CliProbeCommand {
+  if (probe.legacy === undefined || version.kind !== 'success') return probe;
+  const below =
+    classifyCliAdmittedVersion({
+      installedVersion: version.value,
+      minimumAdmittedVersion: probe.legacy.belowVersion,
+      versionScheme: CLI_TOOL_CATALOG[tool].compatibility.versionScheme,
+    }) === 'incompatible';
+  return below ? { ...probe, command: probe.legacy.command } : probe;
+}
 
 /** `null` is an invalid requested channel; `undefined` is intentionally unselected. */
 function selectedAuthChannel(
@@ -153,9 +172,10 @@ async function declaredReadinessEvidence({
   if (authEnvironment.credential === 'absent' && authChannelRequiresCredential(authChannel)) {
     return { version, auth: 'missing' };
   }
+  const authCommand = authProbeCommandForVersion(tool, authProbe, version);
   const output = await runProbe({
     executable,
-    command: authProbe,
+    command: authCommand,
     cwd: neutralDir,
     env: authEnvironment.env,
     signal,
@@ -163,7 +183,7 @@ async function declaredReadinessEvidence({
   if ((await revalidateCliExecutableIdentity(executable)) !== 'match') {
     return { version: { kind: 'cancelled' }, auth: 'cancelled' };
   }
-  onAuthProbeRun?.({ command: authProbe, output });
+  onAuthProbeRun?.({ command: authCommand, output });
   if (isProviderOracleProbe({ tool, command: authProbe })) {
     return {
       version,

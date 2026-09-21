@@ -266,6 +266,8 @@ function credentialSourceWord(auth: Extract<RouteAuthState, { kind: 'configured'
       return 'oauth';
     case 'api':
       return 'api key';
+    case 'stored':
+      return 'stored credential';
     case 'env':
       return auth.envVar === undefined ? 'env' : `$${auth.envVar}`;
     default:

@@ -77,82 +77,69 @@ describe('spawnWithStdin', () => {
     expect(stderrChunks.join('')).toContain('err msg');
   });
 
-  it('rejects byte overflow with bounded partial stdout and stderr', {
+  it('retains bounded partial stdout and stderr on a clean exit', {
     timeout: 60_000,
   }, async () => {
     const lines: string[] = [];
     const stderrChunks: string[] = [];
-    let outcome: unknown;
-    try {
-      await spawnWithStdin({
-        command: 'node',
-        args: [
-          '-e',
-          [
-            'process.stdout.write("line1\\n");',
-            'process.stdout.write("x".repeat(80));',
-            'process.stderr.write("e".repeat(80));',
-          ].join(''),
-        ],
-        cwd: '.',
-        onLine: (line) => lines.push(line),
-        onStderr: (chunk) => stderrChunks.push(chunk),
-        outputMaxBytes: 20,
-        stderrMaxBytes: 10,
-        stdoutLineMaxBytes: 16,
-      });
-    } catch (err) {
-      outcome = err;
-    }
+    const result = await spawnWithStdin({
+      command: 'node',
+      args: [
+        '-e',
+        [
+          'process.stdout.write("line1\\n");',
+          'process.stdout.write("x".repeat(80));',
+          'process.stderr.write("e".repeat(80));',
+        ].join(''),
+      ],
+      cwd: '.',
+      onLine: (line) => lines.push(line),
+      onStderr: (chunk) => stderrChunks.push(chunk),
+      outputMaxBytes: 20,
+      stderrMaxBytes: 10,
+      stdoutLineMaxBytes: 16,
+    });
 
+    expect(result.code).toBe(0);
     expect(lines).toEqual(['line1']);
-    expect(outcome).toMatchObject({
-      state: 'output-budget-breach',
-      stdoutMetadata: {
-        bytesSeen: 86,
-        bytesStored: 20,
-        omittedBytes: 86,
-        truncated: true,
-      },
-      stderrMetadata: {
-        maxBytes: 10,
-      },
+    expect(result.textMetadata).toMatchObject({
+      bytesSeen: 86,
+      bytesStored: 20,
+      omittedBytes: 86,
+      truncated: true,
+    });
+    expect(result.stderrMetadata).toMatchObject({
+      bytesSeen: 80,
+      bytesStored: 10,
+      omittedBytes: 80,
+      truncated: true,
+      maxBytes: 10,
     });
   });
 
-  it('caps retained text when byte overflow becomes fatal', { timeout: 60_000 }, async () => {
+  it('caps retained text on byte overflow while exiting cleanly', { timeout: 60_000 }, async () => {
     const lines: string[] = [];
-    let outcome: unknown;
-    try {
-      // 8 KiB fits a single pipe read, so the child is fully drained in the
-      // chunk that trips the budget. A payload past the 64 KiB pipe buffer
-      // would leave the tail's arrival racing the teardown.
-      await spawnWithStdin({
-        command: 'node',
-        args: ['-e', 'process.stdout.write("x".repeat(8192)); setInterval(() => {}, 60_000)'],
-        cwd: '.',
-        notFoundMessage: 'node not found',
-        outputMaxBytes: 1024,
-        stdoutLineMaxBytes: 512,
-        onLine: (line) => lines.push(line),
-      });
-    } catch (err) {
-      outcome = err;
-    }
+    const result = await spawnWithStdin({
+      command: 'node',
+      args: ['-e', 'process.stdout.write("x".repeat(8192))'],
+      cwd: '.',
+      notFoundMessage: 'node not found',
+      outputMaxBytes: 1024,
+      stdoutLineMaxBytes: 512,
+      onLine: (line) => lines.push(line),
+    });
 
+    expect(result.code).toBe(0);
     expect(lines).toEqual([]);
-    expect(outcome).toMatchObject({
-      state: 'output-budget-breach',
-      stdoutMetadata: {
-        bytesSeen: 8192,
-        bytesStored: 1024,
-        maxBytes: 1024,
-        truncated: true,
-      },
+    expect(result.textMetadata).toMatchObject({
+      bytesSeen: 8192,
+      bytesStored: 1024,
+      maxBytes: 1024,
+      truncated: true,
     });
   });
 
-  it('bounds retention without tearing the child down when byte-limit aborts are off', {
+  it('bounds retention without tearing the child down', {
     timeout: 60_000,
   }, async () => {
     const stderrChunks: string[] = [];
@@ -170,7 +157,6 @@ describe('spawnWithStdin', () => {
       onLine: () => {},
       onStderr: (chunk) => stderrChunks.push(chunk),
       stderrMaxBytes: 128,
-      abortOnByteLimit: false,
     });
 
     expect(result.code).toBe(0);

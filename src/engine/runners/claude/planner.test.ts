@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { runClaudePlannerStream as runClaudePlannerStreamImpl } from './invoke.js';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../../lib/process/spawn/lifecycle.js';
-import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../../calls/output-limit.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
@@ -399,36 +398,29 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'unexpected' }) + 
     });
   });
 
-  it('reports an oversized terminal result line as a truncated call', async () => {
+  it('skips an oversized stdout line with a warning and completes on a valid terminal', async () => {
     installClaudeNodeShim(
       shimDir,
       `
-const result = "x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100});
-process.stdout.write(JSON.stringify({ type: "result", result }) + "\\n");
+process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}) + "\\n");
+process.stdout.write(JSON.stringify({ type: "result", result: "ok" }) + "\\n");
 `,
     );
 
     const events: RunnerCallEvent[] = [];
-    await expect(
-      runClaudePlannerStream({
-        prompt: 'p',
-        projectDir,
-        sessionId: null,
-        onOutput: () => {},
-        onCallEvent: (event) => events.push(event),
-      }),
-    ).rejects.toMatchObject({
-      kind: 'runner-call-failed',
-      message: expect.stringContaining('stdout line exceeded'),
+    const result = await runClaudePlannerStream({
+      prompt: 'p',
+      projectDir,
+      sessionId: null,
+      onOutput: () => {},
+      onCallEvent: (event) => events.push(event),
     });
 
+    expect(result.status).toBe('completed');
+    expect(result.text).toBe('ok');
     const errors = runnerCallErrors(events);
     expect(runnerCallTerminals(events)).toHaveLength(1);
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({
-      status: 'truncated',
-      error: { code: 'stdout_line_overflow' },
-    });
+    expect(errors).toHaveLength(0);
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'call_warning',
@@ -438,13 +430,14 @@ process.stdout.write(JSON.stringify({ type: "result", result }) + "\\n");
         }),
       }),
     );
+    expect(events.filter((event) => event.type === 'call_warning')).toHaveLength(1);
   });
 
   it('caps many small assistant chunks before accumulating unbounded output', async () => {
     installClaudeNodeShim(
       shimDir,
       `
-for (let i = 0; i < ${RUNNER_CALL_OUTPUT_MAX_EVENTS + 1}; i += 1) {
+for (let i = 0; i < 5000; i += 1) {
   process.stdout.write(JSON.stringify({
     type: "assistant",
     message: { content: [{ type: "text", text: "x" }] }
@@ -452,36 +445,44 @@ for (let i = 0; i < ${RUNNER_CALL_OUTPUT_MAX_EVENTS + 1}; i += 1) {
 }
 process.stdout.write(JSON.stringify({
   type: "result",
-  result: "x".repeat(${RUNNER_CALL_OUTPUT_MAX_EVENTS + 1})
+  result: "x".repeat(5000)
 }) + "\\n");
 `,
     );
 
     const chunks: string[] = [];
     const events: RunnerCallEvent[] = [];
-    await expect(
-      runClaudePlannerStream({
-        prompt: 'p',
-        projectDir,
-        sessionId: null,
-        onOutput: (text) => chunks.push(text),
-        onCallEvent: (event) => events.push(event),
-      }),
-    ).rejects.toMatchObject({
-      kind: 'runner-call-failed',
-      message: expect.stringContaining('runner output text exceeded'),
+    const result = await runClaudePlannerStream({
+      prompt: 'p',
+      projectDir,
+      sessionId: null,
+      onOutput: (text) => chunks.push(text),
+      onCallEvent: (event) => events.push(event),
     });
 
+    expect(result.status).toBe('completed');
+    expect(result.text).toBe('x'.repeat(4096));
     const textEvents = events.filter((event) => event.type === 'call_text_delta');
     const errors = runnerCallErrors(events);
-    expect(chunks.join('')).toBe('x'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS));
-    expect(textEvents).toHaveLength(RUNNER_CALL_OUTPUT_MAX_EVENTS);
+    expect(chunks.join('')).toBe('x'.repeat(4096));
+    expect(textEvents).toHaveLength(4096);
     expect(runnerCallTerminals(events)).toHaveLength(1);
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({
-      status: 'truncated',
-      error: { code: 'runner_output_text_limit' },
-    });
+    expect(errors).toHaveLength(0);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_warning',
+        warning: expect.objectContaining({
+          code: 'runner_output_text_limit',
+          message: expect.stringContaining('runner output text exceeded'),
+        }),
+      }),
+    );
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'call_warning' && event.warning.code === 'runner_output_text_limit',
+      ),
+    ).toHaveLength(1);
   });
 
   it('emits session id and partial output before an interrupted stream rejects', async () => {

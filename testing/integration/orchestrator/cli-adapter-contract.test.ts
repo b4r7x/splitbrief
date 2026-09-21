@@ -57,6 +57,7 @@ function canonicalVersionLine(toolId: ImplementerCliToolId, version: string): st
     case 'codex':
       return `codex-cli ${version}`;
     case 'opencode':
+      return `opencode v${version}`;
     case 'kilo-code':
     case 'cursor':
     case 'command-code':
@@ -82,7 +83,7 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
   },
   opencode: {
     transport: 'argv',
-    versionLine: canonicalVersionLine('opencode', '0.5.0'),
+    versionLine: canonicalVersionLine('opencode', '2.0.12'),
     successLines: ['{"type":"text","part":{"type":"text","text":"ok"}}'],
     authArgv: ['auth'],
   },

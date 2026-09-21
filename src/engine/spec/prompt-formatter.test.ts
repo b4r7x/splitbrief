@@ -175,7 +175,7 @@ describe('formatTaskPrompt', () => {
       currentCode: 'export function x(): void {}\n',
       currentCodeByFile: { 'src/x.test.ts': "it('x', () => {});\n" },
     });
-    const prompt = formatTaskPrompt({ task, context, writesFiles: 'direct' });
+    const prompt = formatTaskPrompt({ task, context });
 
     expect(prompt).toContain('### Files:');
     expect(prompt).toContain('- src/x.ts (anchor)');
@@ -183,7 +183,6 @@ describe('formatTaskPrompt', () => {
     expect(prompt).not.toContain('### File: ');
     expect(prompt).toContain('### Current Code — src/x.test.ts');
     expect(prompt).toContain("it('x', () => {});");
-    expect(prompt).toContain('Edit src/x.ts, src/x.test.ts directly in the isolation directory');
   });
 
   it('one-file brief still renders ### File:', () => {
@@ -209,7 +208,7 @@ describe('formatTaskPrompt', () => {
       },
     });
 
-    const prompt = formatTaskPrompt({ task, context, contextLength, writesFiles: 'direct' });
+    const prompt = formatTaskPrompt({ task, context, contextLength });
 
     expect(estimateTokens(prompt)).toBeLessThan(contextLength);
     expect(prompt.split('### Current Code').length - 1).toBe(5);
@@ -223,17 +222,11 @@ describe('formatTaskPrompt', () => {
       currentCodeByFile: { 'src/health.test.ts': "it('health', () => {});\n" },
     });
 
-    const prompt = formatTaskPrompt({ task, context, writesFiles: 'direct' });
+    const prompt = formatTaskPrompt({ task, context });
     expect(prompt).toContain('### Current Code — src/health.test.ts');
     expect(prompt).toContain("it('health', () => {});");
 
-    const retry = formatRetryPrompt({
-      task,
-      context,
-      error: 'boom',
-      attempt: 1,
-      writesFiles: 'direct',
-    });
+    const retry = formatRetryPrompt({ task, context, error: 'boom', attempt: 1 });
     expect(retry).toContain('### Current Code — src/health.test.ts');
   });
 
@@ -251,6 +244,69 @@ describe('formatTaskPrompt', () => {
     expect(prompt).toContain('- stop on type error in shared schema');
     expect(prompt).toContain('### Evidence');
     expect(prompt).toContain('- typecheck output');
+  });
+});
+
+describe('direct writer', () => {
+  const task = makeTask({
+    action: 'modify',
+    file: 'src/x.ts',
+    files: ['src/x.ts', 'src/x.test.ts'],
+    currentCode: 'export function x(): void {}\n',
+    currentCodeByFile: { 'src/x.test.ts': "it('x', () => {});\n" },
+  });
+
+  it('task prompt carries no current code: the tool reads the files it edits', () => {
+    const prompt = formatTaskPrompt({ task, context, contextLength: 8192, writesFiles: 'direct' });
+
+    expect(prompt).not.toContain('Current Code');
+    expect(prompt).not.toContain('export function x(): void {}');
+    expect(prompt).not.toContain("it('x', () => {});");
+    expect(prompt).toContain('- src/x.ts (anchor)');
+    expect(prompt).toContain('Edit src/x.ts, src/x.test.ts directly in the isolation directory');
+  });
+
+  it('retry prompt carries no current code either', () => {
+    const retry = formatRetryPrompt({
+      task,
+      context,
+      error: 'boom',
+      attempt: 2,
+      contextLength: 8192,
+      writesFiles: 'direct',
+    });
+
+    expect(retry).not.toContain('Current Code');
+    expect(retry).not.toContain('export function x(): void {}');
+    expect(retry).toContain('rephrased');
+  });
+
+  it('an extracted-code writer still gets every file body', () => {
+    const prompt = formatTaskPrompt({ task, context, writesFiles: 'extracted-code' });
+
+    expect(prompt).toContain('### Current Code\nexport function x(): void {}');
+    expect(prompt).toContain('### Current Code — src/x.test.ts');
+  });
+
+  it('the file-bundle contract still gets every file body', () => {
+    const prompt = formatTaskPrompt({
+      task,
+      context,
+      writesFiles: 'extracted-code',
+      outputContract: 'file-bundle-v1',
+    });
+    const retry = formatRetryPrompt({
+      task,
+      context,
+      error: 'boom',
+      attempt: 1,
+      writesFiles: 'extracted-code',
+      outputContract: 'file-bundle-v1',
+    });
+
+    expect(prompt).toContain('### Current Code\nexport function x(): void {}');
+    expect(prompt).toContain('### Current Code — src/x.test.ts');
+    expect(retry).toContain('### Current Code — src/x.test.ts');
   });
 });
 

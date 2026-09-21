@@ -227,7 +227,13 @@ export function admitPlannerBackend(
     }),
   );
   return gate.kind === 'cli'
-    ? { trustedCli: { tool: gate.tool, executable: gate.executable } }
+    ? {
+        trustedCli: {
+          tool: gate.tool,
+          executable: gate.executable,
+          installedVersion: gate.installedVersion,
+        },
+      }
     : {};
 }
 

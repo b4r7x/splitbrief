@@ -22,7 +22,7 @@ function createHarness() {
     recorder,
     onText: (chunk) => text.push(chunk),
   });
-  return { events, parsed, text };
+  return { events, parsed, recorder, text };
 }
 
 describe('createParsedLineRecorder', () => {
@@ -210,5 +210,38 @@ describe('createParsedLineRecorder', () => {
         }),
       }),
     );
+  });
+
+  it('warns once and does not finish the call when feeding 5 000 assistant lines', () => {
+    const { events, parsed, recorder } = createHarness();
+
+    for (let i = 0; i < 5_000; i++) {
+      parsed.apply({ text: 'x'.repeat(40), channel: 'assistant' });
+    }
+    parsed.apply({ text: 'final ok', channel: 'result' });
+
+    expect(recorder.hasTerminal()).toBe(false);
+    recorder.finishCompleted();
+    expect(recorder.hasTerminal()).toBe(true);
+
+    const warnings = events.filter(
+      (event) => event.type === 'call_warning' && event.warning.code === 'runner_output_text_limit',
+    );
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('warns once when feeding 3 MB of assistant text in 200 chunks', () => {
+    const { events, parsed } = createHarness();
+
+    const chunk = 'x'.repeat(15_000);
+    for (let i = 0; i < 200; i++) {
+      parsed.apply({ text: chunk, channel: 'assistant' });
+    }
+
+    const warnings = events.filter(
+      (event) => event.type === 'call_warning' && event.warning.code === 'runner_output_text_limit',
+    );
+    expect(warnings).toHaveLength(1);
+    expect(parsed.text.length).toBeLessThanOrEqual(1024 * 1024);
   });
 });

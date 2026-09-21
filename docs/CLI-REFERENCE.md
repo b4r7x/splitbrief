@@ -410,7 +410,7 @@ During `start`, `spec`, `resume`, and other commands that invoke planners or imp
 
 | `state` | Condition | Copyable remediation |
 |---|---|---|
-| `output-budget-breach` | CLI stdout, stderr, or protocol event stream exceeded the configured byte or line budget. | Reduce the requested output or increase the configured output budget. |
+| `output-budget-breach` | CLI stdout, stderr, or protocol event stream exceeded the configured byte or line budget. | The tool wrote more than 64 MB of output and was stopped. Narrow what it was asked to print, then retry. |
 | `no-staged-change` | Implementer completed without staging the expected working-tree change. | Make the requested change in the staged project, then retry. |
 
 Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `incompatible-version`, `unauthenticated`, and others) are documented in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [ENGINE.md](./ENGINE.md). Symptom-oriented guidance: [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).

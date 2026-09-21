@@ -26,7 +26,8 @@ describe('normalizeClaudeProcessOutputError', () => {
 
     expect(err).toMatchObject({
       kind: 'output-budget-breach',
-      message: 'Reduce the requested output or increase the configured output budget.',
+      message:
+        'The tool wrote more than 64 MB of output and was stopped. Narrow what it was asked to print, then retry.',
     });
   });
 

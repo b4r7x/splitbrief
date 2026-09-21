@@ -1,6 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { streamCompletion } from './completion.js';
-import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../../calls/output-limit.js';
 import { RunnerCallEventSchema } from '../../calls/schema.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import {
@@ -460,9 +459,10 @@ describe('streamCompletion', () => {
     expect(progress.some((line) => line.includes('truncated'))).toBe(true);
   });
 
-  it('caps many OpenAI-compatible text deltas before recorder storage', async () => {
+  it('completes many OpenAI-compatible text deltas without event cap', async () => {
+    const count = 5_000;
     const client = makeMockClient([
-      ...Array.from({ length: RUNNER_CALL_OUTPUT_MAX_EVENTS + 1 }, () => ({ content: 'x' })),
+      ...Array.from({ length: count }, () => ({ content: 'x' })),
       { finishReason: 'stop' },
     ]);
     const progress: string[] = [];
@@ -475,22 +475,21 @@ describe('streamCompletion', () => {
     });
 
     expect(result).toMatchObject({
-      status: 'truncated',
-      text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS),
-      error: { code: 'provider_text_delta_limit' },
+      status: 'completed',
+      text: 'x'.repeat(count),
+      error: null,
     });
-    expect(progress).toHaveLength(RUNNER_CALL_OUTPUT_MAX_EVENTS);
-    expect(events.filter((event) => event.type === 'call_text_delta')).toHaveLength(
-      RUNNER_CALL_OUTPUT_MAX_EVENTS,
-    );
+    expect(progress).toHaveLength(count);
+    expect(events.filter((event) => event.type === 'call_text_delta')).toHaveLength(count);
   });
 
-  it('caps many OpenAI-compatible tool deltas before recorder storage', async () => {
+  it('completes many OpenAI-compatible tool deltas without event cap', async () => {
+    const count = 5_000;
     const client = makeMockClient([
-      ...Array.from({ length: RUNNER_CALL_OUTPUT_MAX_EVENTS + 1 }, () => ({
+      ...Array.from({ length: count }, () => ({
         delta: { tool_calls: [{ id: 'tool-1', function: { name: 'search', arguments: 'x' } }] },
       })),
-      { finishReason: 'tool_calls' },
+      { finishReason: 'stop' },
     ]);
     const events: RunnerCallEvent[] = [];
 
@@ -501,12 +500,10 @@ describe('streamCompletion', () => {
     });
 
     expect(result).toMatchObject({
-      status: 'truncated',
-      error: { code: 'provider_tool_delta_limit' },
+      status: 'completed',
+      error: null,
     });
-    expect(events.filter((event) => event.type === 'call_tool_use_delta')).toHaveLength(
-      RUNNER_CALL_OUTPUT_MAX_EVENTS,
-    );
+    expect(events.filter((event) => event.type === 'call_tool_use_delta')).toHaveLength(count);
   });
 
   it('returns refused status when the finish_reason is content_filter', async () => {

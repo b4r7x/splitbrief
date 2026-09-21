@@ -3,7 +3,7 @@ import type { RunnerCallRecorder } from '../calls/recorder.js';
 import type { ParsedLine, ParsedTextChannel } from '../runners/types.js';
 import {
   createRunnerCallDeltaLimiter,
-  finishRunnerCallOutputLimit,
+  runnerCallLimitWarning,
   type RunnerCallDeltaLimitResult,
 } from '../calls/output-limit.js';
 import { reconcileFinalText } from './final-text.js';
@@ -26,6 +26,7 @@ export function createParsedLineRecorder(opts: {
   let sessionId: string | null = null;
   let activeToolUse: { id: string | null; name: string } | null = null;
   let textLimiter = createTextLimiter();
+  let limitWarned = false;
 
   function acceptTextDelta(textDelta: string): RunnerCallDeltaLimitResult {
     return textLimiter.accept(textDelta);
@@ -33,16 +34,14 @@ export function createParsedLineRecorder(opts: {
 
   function acceptFinalText(textDelta: string): RunnerCallDeltaLimitResult {
     textLimiter = createTextLimiter();
+    limitWarned = false;
     return textLimiter.accept(textDelta);
   }
 
-  function finishLimitIfNeeded(result: RunnerCallDeltaLimitResult): boolean {
-    if (result.limit === null) return false;
-    finishRunnerCallOutputLimit(opts.recorder, result.limit, {
-      usage,
-      nativeSessionId: sessionId,
-    });
-    return true;
+  function noteLimitWarning(result: RunnerCallDeltaLimitResult): void {
+    if (result.limit === null || limitWarned) return;
+    limitWarned = true;
+    opts.recorder.warning({ warning: runnerCallLimitWarning(result.limit) });
   }
 
   function applyResultText(resultText: string): void {
@@ -61,7 +60,7 @@ export function createParsedLineRecorder(opts: {
       if (accepted.text.length > 0 || accepted.limit === null) {
         opts.recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
       }
-      finishLimitIfNeeded(accepted);
+      noteLimitWarning(accepted);
       return;
     }
     if (reconciliation.kind === 'suffix') {
@@ -70,7 +69,7 @@ export function createParsedLineRecorder(opts: {
         opts.onText?.(accepted.text);
         opts.recorder.text({ channel: 'assistant', text: accepted.text });
       }
-      finishLimitIfNeeded(accepted);
+      noteLimitWarning(accepted);
       return;
     }
 
@@ -78,7 +77,7 @@ export function createParsedLineRecorder(opts: {
     if (accepted.text.length > 0 || accepted.limit === null) {
       opts.recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
     }
-    finishLimitIfNeeded(accepted);
+    noteLimitWarning(accepted);
   }
 
   function applyDeltaText(channel: ParsedTextChannel, textDelta: string): void {
@@ -90,7 +89,7 @@ export function createParsedLineRecorder(opts: {
       }
       opts.recorder.text({ channel, text: accepted.text, semantics: 'delta' });
     }
-    finishLimitIfNeeded(accepted);
+    noteLimitWarning(accepted);
   }
 
   return {

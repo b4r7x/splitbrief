@@ -282,24 +282,6 @@ describe('declared artifact review lease', () => {
     );
   });
 
-  it('rejects oversized output before callback or candidate creation', async () => {
-    let approvalRequests = 0;
-    await withReview(
-      {
-        onApprovalNeeded: async () => {
-          approvalRequests += 1;
-          return { approved: true };
-        },
-      },
-      async (fixture, review) => {
-        writeArtifact(fixture, Buffer.alloc(PLANNER_ARTIFACT_MAX_BYTES + 1));
-        await expectInvalid(() => review.reviewAfterChild());
-        expect(approvalRequests).toBe(0);
-        expect(existsSync(candidateRoot(fixture.projectDir))).toBe(false);
-      },
-    );
-  });
-
   it.each(['requires approval', 'original bytes'])(
     'cleans the candidate when interactive approval rejects the artifact (%s)',
     async (payload) => {

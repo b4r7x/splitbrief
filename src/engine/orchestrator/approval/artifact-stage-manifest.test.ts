@@ -16,14 +16,11 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createPlannerArtifactAttemptId,
+  MAX_DECLARED_ARTIFACT_BYTES,
   PlannerArtifactSemanticIdSchema,
 } from '../../../core/schemas/planner-artifact.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import {
-  DECLARED_ARTIFACT_STAGE_MAX_BYTES,
-  prepareArtifactStageLease,
-  type ArtifactStageLease,
-} from './artifact-stage-manifest.js';
+import { prepareArtifactStageLease, type ArtifactStageLease } from './artifact-stage-manifest.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const itWindows = process.platform === 'win32' ? it : it.skip;
@@ -211,7 +208,7 @@ describe('prepareArtifactStageLease', () => {
 
   it('rejects an oversized result before reading it', async () => {
     const fixture = await createFixture();
-    writeArtifact(fixture, Buffer.alloc(DECLARED_ARTIFACT_STAGE_MAX_BYTES + 1));
+    writeArtifact(fixture, Buffer.alloc(MAX_DECLARED_ARTIFACT_BYTES + 1));
 
     await expectInvalid(() => fixture.lease.readAfterChild({ declaredRedactionValues: [] }));
   });

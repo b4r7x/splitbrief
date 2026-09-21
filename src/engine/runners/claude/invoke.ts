@@ -6,13 +6,12 @@ import type { CliAuthChannelId } from '../../../core/runners/cli-tool-catalog.js
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
-import { runnerCallLineOutputLimit } from '../../calls/output-limit.js';
+import { runnerCallLimitWarning, runnerCallLineOutputLimit } from '../../calls/output-limit.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES } from '../cli-tools/process-invoke.js';
 import { error } from '../../../utils/error.js';
 import {
   buildClaudeIdleOptions,
   createStreamHandler,
-  finishClaudeOutputLimit,
   finishClaudeStream,
   interruptedError,
   markFailedClaudeStream,
@@ -125,15 +124,17 @@ async function runClaudeCall(
       notFoundMessage: CLAUDE_NOT_FOUND,
       onLine: handleLine,
       onStdoutLineOverflow: (overflow) => {
-        finishClaudeOutputLimit(
-          state,
-          runnerCallLineOutputLimit({
-            code: 'stdout_line_overflow',
-            label: 'stdout line',
-            lineBytes: overflow.lineBytes,
-            maxLineBytes: overflow.maxLineBytes,
-          }),
-        );
+        state.recorder.warning({
+          warning: runnerCallLimitWarning(
+            runnerCallLineOutputLimit({
+              code: 'stdout_line_overflow',
+              label: 'stdout line',
+              lineBytes: overflow.lineBytes,
+              maxLineBytes: overflow.maxLineBytes,
+            }),
+          ),
+        });
+        return undefined;
       },
       errorDetail: () => state.resultText ?? undefined,
       // Every line is consumed as it arrives and the recorder bounds what it keeps,
@@ -142,7 +143,6 @@ async function runClaudeCall(
       // envelope, and a long brief list alone passes the 1 MB retention bound.
       // The shared CLI ceiling still ends a runaway process.
       outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
-      abortOnByteLimit: false,
       signal: opts.signal,
       idle: buildClaudeIdleOptions(state, {
         idleWarnMs: opts.idleWarnMs,

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH, RunnerCallContextSchema } from './schema.js';
 import { projectRunnerCallEvents } from './event-projection.js';
 import { createRunnerAttemptCallbackBuffer } from './callback-buffer.js';
-import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from './output-limit.js';
 import type { RunnerCallContext, RunnerCallEvent } from './types.js';
 
 const runnerContext: RunnerCallContext = {
@@ -108,7 +107,7 @@ describe('createRunnerAttemptCallbackBuffer', () => {
     });
 
     buffer.callbacks.onCallEvent?.(callStarted(1));
-    for (let i = 0; i < RUNNER_CALL_OUTPUT_MAX_EVENTS * 3 + 10; i += 1) {
+    for (let i = 0; i < 12_298; i += 1) {
       buffer.callbacks.onCallEvent?.(textDelta(i + 2));
     }
     buffer.callbacks.onOutput('dropped after overflow');

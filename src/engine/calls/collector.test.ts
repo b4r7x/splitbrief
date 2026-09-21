@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { collectRunnerCallResult } from './collector.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
-import { RUNNER_CALL_OUTPUT_MAX_BYTES, RUNNER_CALL_WARNING_MAX_ITEMS } from './output-limit.js';
+import {
+  RUNNER_CALL_OUTPUT_MAX_BYTES,
+  RUNNER_CALL_TOOL_USE_MAX_ITEMS,
+  RUNNER_CALL_WARNING_MAX_ITEMS,
+} from './output-limit.js';
 import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
 
@@ -427,6 +431,64 @@ describe('collectRunnerCallResult', () => {
       result.warnings.filter((warning) => warning.code === 'runner_call_warning_count_limit'),
     ).toHaveLength(1);
     expect(result.warnings).toHaveLength(RUNNER_CALL_WARNING_MAX_ITEMS + 1);
+  });
+
+  it('caps tool uses at the item limit without truncating the call', () => {
+    const toolEvents: RunnerCallEvent[] = Array.from({ length: 300 }, (_, index) => ({
+      type: 'call_tool_use_done',
+      ...base,
+      ts: index + 1,
+      channel: 'tool',
+      toolUse: { id: `tool-${index}`, name: 'read_file', input: { path: `a-${index}.ts` } },
+    }));
+
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      ...toolEvents,
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result.status).toBe('completed');
+    expect(result.toolUses).toHaveLength(RUNNER_CALL_TOOL_USE_MAX_ITEMS);
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: 'runner_call_tool_use_count_limit' }),
+    ]);
+  });
+
+  it('bounds direct tool payloads without truncating the call', () => {
+    const rawInput = { content: 'x'.repeat(300 * 1024) };
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_tool_use_done',
+        ...base,
+        channel: 'tool',
+        toolUse: {
+          id: 'tool-1',
+          name: 'read_file',
+          input: rawInput,
+        },
+      },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect(result.status).toBe('completed');
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: 'runner_call_tool_input_limit' }),
+    ]);
+    expect(JSON.stringify(result.toolUses[0]?.input).length).toBeLessThan(
+      JSON.stringify(rawInput).length,
+    );
   });
 
   it('rejects mixed call events', () => {

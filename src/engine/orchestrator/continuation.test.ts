@@ -86,14 +86,17 @@ describe('createContinuationHolder', () => {
     expect(holder.take({ kind: 'planner', call: 'spec' })).toBeUndefined();
   });
 
-  it('withholds the seed from a step it does not belong to', () => {
+  it('withholds a brief seed from another task, kind, or attempt', () => {
     const holder = createContinuationHolder({
-      step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+      step: { kind: 'brief', taskId: taskId('T001'), attempt: 2 },
       partial: 'half a brief',
     });
 
-    expect(holder.take({ kind: 'brief', taskId: taskId('T002'), attempt: 0 })).toBeUndefined();
+    expect(holder.take({ kind: 'brief', taskId: taskId('T002'), attempt: 2 })).toBeUndefined();
     expect(holder.take({ kind: 'planner', call: 'tasks' })).toBeUndefined();
+    // A reset attempt of the same brief is a fresh try, not this partial's resume:
+    // the ladder cleared attempt 2 back to 0, so the mid-step partial no longer applies.
+    expect(holder.take({ kind: 'brief', taskId: taskId('T001'), attempt: 0 })).toBeUndefined();
     expect(holder.take({ kind: 'brief', taskId: taskId('T001'), attempt: 2 })).toEqual({
       partial: 'half a brief',
     });

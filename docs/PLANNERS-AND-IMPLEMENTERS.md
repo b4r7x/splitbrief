@@ -334,7 +334,7 @@ The last four rows are what makes `direct` reviewable. An agent that writes file
 
 Wraps a backend-specific `invoke()` with:
 
-1. **Build prompt** -- `formatTaskPrompt()` (`src/engine/spec/prompt-formatter.ts`) assembles the task sections and takes the write mode, so the closing instruction matches how the model is expected to answer. For modify tasks, `currentCode` is resolved through a tiered context strategy.
+1. **Build prompt** -- `formatTaskPrompt()` (`src/engine/spec/prompt-formatter.ts`) assembles the task sections and takes the write mode, so the closing instruction matches how the model is expected to answer. For modify tasks, `currentCode` is resolved through a tiered context strategy. A direct writer gets no inlined code at all: it edits the files where they live and reads them itself, so only `extracted-code` writers and the `file-bundle-v1` contract carry file bodies in the prompt.
 2. **Prepend system preamble** -- `formatImplementerSystemPreamble(languageContext, writesFiles)`; the mode-specific preamble described above. API backends send it as a separate system message instead of prepending (`prependSystemPreamble: false`).
 3. **Call backend `invoke()`** -- the actual model call. `InvokeOpts.callContext` identifies the runner call for adapters that can emit typed events directly. `InvokeOpts.sandboxEnv` carries the isolation directory's environment when the run is isolated.
 4. **Process output:**
@@ -458,7 +458,7 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 |---|---|---|---|---|---|---|---|---|
 | `claude-code` | `claude` | planner, implementer | 2.0.0 | `semver` | 2026-07-31 | optional / optional | `native-aliases-and-custom` | subscription-included |
 | `codex` | `codex` | planner, implementer | 0.40.0 | `semver` | 2026-07-31 | optional / optional | `capability-gated-native` | subscription-included |
-| `opencode` | `opencode` | planner, implementer | 0.5.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent |
+| `opencode` | `opencode` | planner, implementer | 2.0.12 | `semver` | 2026-09-21 | optional / optional | `native-cli` | provider-dependent |
 | `copilot` | `copilot` | planner, implementer | 1.0.77 | `semver` | 2026-09-02 | optional / optional | `native-cli` (`copilot help config`) | subscription-included |
 | `kilo-code` | `kilo` | planner, implementer | 0.1.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent |
 | `cursor` | `cursor-agent` | planner, implementer | 2026.08.25-3e8eec8 | `calver` | 2026-08-27 | optional / optional | `native-cli` (`--list-models`) | subscription-included |

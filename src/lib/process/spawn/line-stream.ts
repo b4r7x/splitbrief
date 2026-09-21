@@ -17,8 +17,8 @@ type LineStreamCallback<T> =
 
 export async function spawnWithStdin(opts: {
   command: string;
-  args: string[];
-  cwd: string;
+  args: readonly string[];
+  cwd?: string | undefined;
   env?: NodeJS.ProcessEnv | undefined;
   stdin?: string | undefined;
   onLine: LineStreamCallback<string>;
@@ -34,13 +34,6 @@ export async function spawnWithStdin(opts: {
   stderrMaxBytes?: number | undefined;
   stdoutLineMaxBytes?: number | undefined;
   outputBudgetBytes?: number | undefined;
-  /**
-   * Tear the child down once a channel outgrows its retention bound (default).
-   * Callers that keep collecting past the bound — they forward every chunk
-   * through their own bounded sink — turn this off; retention stays bounded
-   * either way.
-   */
-  abortOnByteLimit?: boolean | undefined;
 }): Promise<{
   text: string;
   stderrOutput: string;
@@ -71,18 +64,10 @@ export async function spawnWithStdin(opts: {
       },
     },
   );
-  let stdoutBytesSeen = 0;
-  let stderrBytesSeen = 0;
-  const abortOnByteLimit = opts.abortOnByteLimit ?? true;
-
-  const byteLimitSignal = (channel: 'stdout' | 'stderr', maxBytes: number) => ({
-    state: 'output-budget-breach' as const,
-    remediation: `${channel} exceeded its ${maxBytes}-byte output budget. Reduce the requested output or increase the configured output budget.`,
-  });
 
   return spawnPipe({
     command: opts.command,
-    args: opts.args,
+    args: [...opts.args],
     cwd: opts.cwd,
     env: opts.env,
     detached: true,
@@ -94,23 +79,13 @@ export async function spawnWithStdin(opts: {
     partialStderrMaxBytes: stderrMaxBytes,
     onStdout: (chunk) => {
       rawText.append(chunk);
-      stdoutBytesSeen += Buffer.byteLength(chunk, 'utf8');
       const callbackResult = stdoutBuf.push(chunk);
-      if (isFatalSignal(callbackResult)) return callbackResult;
-      if (abortOnByteLimit && stdoutBytesSeen > stdoutMaxBytes) {
-        return byteLimitSignal('stdout', stdoutMaxBytes);
-      }
-      return undefined;
+      return isFatalSignal(callbackResult) ? callbackResult : undefined;
     },
     onStderr: (chunk) => {
       stderrOutput.append(chunk);
-      stderrBytesSeen += Buffer.byteLength(chunk, 'utf8');
       const callbackResult = opts.onStderr?.(chunk);
-      if (isFatalSignal(callbackResult)) return callbackResult;
-      if (abortOnByteLimit && stderrBytesSeen > stderrMaxBytes) {
-        return byteLimitSignal('stderr', stderrMaxBytes);
-      }
-      return undefined;
+      return isFatalSignal(callbackResult) ? callbackResult : undefined;
     },
     onError: (err) =>
       isENOENT(err) ? processError.notFound(opts.command, opts.notFoundMessage) : null,

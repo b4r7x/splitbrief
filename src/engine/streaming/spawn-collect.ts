@@ -27,7 +27,6 @@ import {
   finishRunnerCallOutputLimit,
   runnerCallLimitWarning,
   runnerCallLineOutputLimit,
-  type RunnerCallOutputLimit,
 } from '../calls/output-limit.js';
 import { getLineParser } from './output-parsers.js';
 import { createParsedLineRecorder } from './parsed-line-recorder.js';
@@ -36,8 +35,8 @@ import { sandboxCredentialValues } from '../runners/sandbox-credential-values.js
 
 interface SpawnAndCollectOptions {
   command: string;
-  args: string[];
-  cwd: string;
+  args: readonly string[];
+  cwd?: string | undefined;
   env?: NodeJS.ProcessEnv | undefined;
   stdin?: string | undefined;
   format?: OutputFormat | undefined;
@@ -56,12 +55,6 @@ interface SpawnAndCollectOptions {
   stderrMaxBytes?: number | undefined;
   stdoutLineMaxBytes?: number | undefined;
   outputBudgetBytes?: number | undefined;
-  /**
-   * Tear the child down when its output breaches a recorded limit or a channel
-   * retention bound (default). Callers that keep collecting past the bounds turn
-   * this off; the call is then warned about, not truncated.
-   */
-  abortOnOutputLimits?: boolean | undefined;
   /** Credential values are passed explicitly so callbacks never receive raw secrets. */
   credentialValues?: readonly string[] | undefined;
   /**
@@ -87,23 +80,6 @@ export const spawnCollectError = {
     error(opts.kind, opts.message, opts.data),
   isInvalidHardDeadline: matches('runner-invalid-timeout'),
 } as const;
-
-function fatalLimitFromEvent(
-  event: RunnerCallEvent,
-  abortOnOutputLimits: boolean,
-): RunnerCallOutputLimit | null {
-  if (!abortOnOutputLimits || event.type !== 'call_warning') return null;
-  const { code, message } = event.warning;
-  if (
-    code === 'runner_output_text_limit' ||
-    code === 'stdout_line_overflow' ||
-    code === 'stderr_line_overflow' ||
-    (code.startsWith('runner_call_') && code.endsWith('_limit'))
-  ) {
-    return { code, message };
-  }
-  return null;
-}
 
 function isOutputBudgetFatalSignal(
   err: unknown,
@@ -178,21 +154,16 @@ export async function spawnAndCollect(
 
   const credentialValues =
     opts.credentialValues ?? credentialValuesFromEnvironment(opts.env ?? process.env);
-  const abortOnOutputLimits = opts.abortOnOutputLimits ?? true;
   const explicitRedactor = createRunnerCallCredentialRedactor(credentialValues);
   const redactCredential = (value: string): string => {
     const redactedCredentials = redactSecrets(explicitRedactor(value));
     return opts.redact?.(redactedCredentials) ?? redactedCredentials;
   };
   const cancellation = createInvocationCancellation(opts.signal, opts.timeoutMs);
-  let fatalLimit: RunnerCallOutputLimit | null = null;
   const recorder = createRunnerCallRecorder({
     context,
     credentialValues,
-    onEvent: (event) => {
-      fatalLimit ??= fatalLimitFromEvent(event, abortOnOutputLimits);
-      opts.onCallEvent?.(event);
-    },
+    onEvent: (event) => opts.onCallEvent?.(event),
   });
   const protectedValues = [...credentialValues, ...customRunnerRedactionValuesFor(opts.redact)];
   const parsedRecorder = createParsedLineRecorder({
@@ -274,20 +245,6 @@ export async function spawnAndCollect(
     emitStderr(stderrRedactor.flush());
     stderrBuffer.flush();
   };
-  const fatalOutputSignal = (): SpawnPipeFatalSignal | undefined => {
-    if (fatalLimit === null) return undefined;
-    flushStdout();
-    if (!recorder.hasTerminal()) {
-      recorder.finishFailed({
-        status: 'truncated',
-        error: { code: fatalLimit.code, message: fatalLimit.message },
-        usage: parsedRecorder.usage,
-        nativeSessionId: parsedRecorder.sessionId,
-        partial: true,
-      });
-    }
-    return { state: 'output-budget-breach', remediation: fatalLimit.message };
-  };
   const toolInputCapacitySignal = (): SpawnPipeFatalSignal | undefined =>
     toolInputCapacityExceeded
       ? {
@@ -306,7 +263,7 @@ export async function spawnAndCollect(
       notFoundMessage: opts.notFoundMessage,
       onStderr: (chunk) => {
         emitStderr(stderrRedactor.push(chunk));
-        return toolInputCapacitySignal() ?? fatalOutputSignal();
+        return toolInputCapacitySignal();
       },
       signal: cancellation.signal,
       idle: {
@@ -319,31 +276,22 @@ export async function spawnAndCollect(
       stderrMaxBytes: opts.stderrMaxBytes,
       stdoutLineMaxBytes: opts.stdoutLineMaxBytes,
       outputBudgetBytes: opts.outputBudgetBytes,
-      abortOnByteLimit: abortOnOutputLimits,
       onStdoutLineOverflow: (overflow) => {
-        const limit = runnerCallLineOutputLimit({
-          code: 'stdout_line_overflow',
-          label: 'stdout line',
-          lineBytes: overflow.lineBytes,
-          maxLineBytes: overflow.maxLineBytes,
+        recorder.warning({
+          warning: runnerCallLimitWarning(
+            runnerCallLineOutputLimit({
+              code: 'stdout_line_overflow',
+              label: 'stdout line',
+              lineBytes: overflow.lineBytes,
+              maxLineBytes: overflow.maxLineBytes,
+            }),
+          ),
         });
-        // The opt-out caller keeps collecting: only the overlong line is lost,
-        // and it asked for output limits not to tear its process down.
-        if (!abortOnOutputLimits) {
-          recorder.warning({ warning: runnerCallLimitWarning(limit) });
-          return undefined;
-        }
-        fatalLimit = limit;
-        flushStdout();
-        finishRunnerCallOutputLimit(recorder, limit, {
-          usage: parsedRecorder.usage,
-          nativeSessionId: parsedRecorder.sessionId,
-        });
-        return fatalOutputSignal();
+        return undefined;
       },
       onLine(line) {
         applyParsed(parseLine(line));
-        return toolInputCapacitySignal() ?? fatalOutputSignal();
+        return toolInputCapacitySignal();
       },
     });
   } catch (err) {
@@ -367,7 +315,7 @@ export async function spawnAndCollect(
     flushStderr();
     if (isOutputBudgetFatalSignal(err)) {
       if (!recorder.hasTerminal()) {
-        const limit = fatalLimit ?? {
+        const limit = {
           code: 'runner_process_output_limit',
           message: err.remediation,
         };
