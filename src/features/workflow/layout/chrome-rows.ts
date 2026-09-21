@@ -89,7 +89,6 @@ export function getChromeContentWidth(cols: number): number {
   return Number.isFinite(cols) ? Math.max(1, Math.floor(cols) - WORKFLOW_GUTTER_X * 2) : 1;
 }
 
-
 export function getChromeHeight(inputRows: number, progressRows = 0): number {
   return FIXED_CHROME_ROWS + normalizeInputRows(inputRows) + normalizeInputRows(progressRows);
 }

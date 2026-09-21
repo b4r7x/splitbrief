@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { fitKeyLegend } from './key-legend.js';
+import { fitKeyLegend, KEY_LEGEND_LEADING } from './key-legend.js';
+import { getTerminalCellWidth } from '../utils/display-text.js';
+
+describe('KEY_LEGEND_LEADING', () => {
+  it('measures exactly the two-cell mark slot, whatever mark it carries', () => {
+    expect(getTerminalCellWidth(KEY_LEGEND_LEADING)).toBe(2);
+  });
+});
 
 describe('fitKeyLegend', () => {
   it('drops whole trailing tokens rather than ellipsising a key in half', () => {

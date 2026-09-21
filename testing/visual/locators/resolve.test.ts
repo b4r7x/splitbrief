@@ -15,6 +15,7 @@ import { resolveElementLocator, tryResolveElementLocator } from './resolve.js';
 const ESC = '\u001b';
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
 const WIDE_VIEWPORT = viewport({ cols: 120, rows: 40 });
+const SIDEBAR_VIEWPORT = viewport({ cols: 160, rows: 45 });
 
 function requireScenario(id: string): ScenarioDefinition {
   const scenario = findVisualScenario(id);
@@ -127,7 +128,7 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
     );
   }, 120_000);
 
-  it('pins the header, sidebar, composer, approval and hero rects at 80x24 / 120x40', async () => {
+  it('pins the header, sidebar, composer, approval and hero rects at 80x24 / 120x40 / 160x45', async () => {
     const home = requireScenario('home-empty');
     const homeGrid = await createFrameGrid(home, VIEWPORT, requireCheckpoint(home).marker);
     const header = resolveElementLocator({
@@ -149,9 +150,11 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
       elementId: 'composer',
     });
     const implementation = requireScenario('workflow-implementation');
+    // The sidebar stands only above the 120-column breakpoint, so its pin renders at 160x45;
+    // the composer keeps its 120x40 grid, where it spans 118 columns inside the gutter.
     const implementationGrid = await createFrameGrid(
       implementation,
-      WIDE_VIEWPORT,
+      SIDEBAR_VIEWPORT,
       requireCheckpoint(implementation).marker,
     );
     const sidebar = resolveElementLocator({

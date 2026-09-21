@@ -129,7 +129,7 @@ export function WorkflowFooter({
   const composerWidth = getChromeContentWidth(terminalSizeStore.use((s) => s.cols));
   const footer = (
     <Box flexDirection="column" paddingX={WORKFLOW_GUTTER_X}>
-      <FeedbackRow inputHint={feedbackHint ?? inputHint} />
+      <FeedbackRow keyHint={feedbackHint ?? undefined} inputHint={inputHint} />
       {beforeComposer}
       <Composer
         maxRows={compactInput ? 1 : 6}

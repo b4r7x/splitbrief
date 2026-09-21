@@ -25,6 +25,7 @@ import { useStopByline } from '../stop/use-stop-byline.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { glyph } from '../../../lib/glyphs.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../engine/events/workflow-cancel.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import {
@@ -226,12 +227,13 @@ export function InputFooter({
     );
   }
 
-  // The only byline with no pip of its own, so it opens on the text column rather than in the
-  // column the live bylines put their mark in.
+  // The only byline with no pip of its own: it keeps an empty mark slot and opens its words on the
+  // text column, where the live bylines' words and the legend's keys open too.
   if (givenByline !== undefined && stopped === null) {
     return (
       <Box width="100%" height={1} flexShrink={0}>
         <Text color={t.textDim} wrap="truncate-end">
+          {' '.repeat(MARK_SLOT_CELLS)}
           {givenByline}
         </Text>
       </Box>

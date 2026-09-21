@@ -67,7 +67,7 @@ function firstLineStartingWith(frame: string, needle: string): string {
 }
 
 describe('closedBlockRows', () => {
-  it('opens every ledger row on the transcript\'s own two columns', () => {
+  it("opens every ledger row on the transcript's own two columns", () => {
     const width = 60;
     const rows = closedRows(width);
     const ui = renderRows(rows, width);

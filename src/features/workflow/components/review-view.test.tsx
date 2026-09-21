@@ -10,6 +10,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getReviewColumnWidth } from '../layout/rect.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 import { WorkflowBody } from './body.js';
@@ -138,15 +139,20 @@ describe('ReviewView', () => {
       const frame = ui?.lastFrame() ?? '';
       expect(frame).toContain('Wide Review');
       const rule = glyph('divider', 'unicode');
+      // The frame stands one gutter in from the pane's edge (getReviewColumnWidth), so the
+      // interior rule is four cells narrower than the document column, not than the pane.
+      const interiorRuleCells = getReviewColumnWidth(180) - 4;
       const interiorRuleLine =
         frame
           .split('\n')
           .find(
-            (line) => (stripAnsiStyles(line).match(new RegExp(rule, 'g')) ?? []).length === 176,
+            (line) =>
+              (stripAnsiStyles(line).match(new RegExp(rule, 'g')) ?? []).length ===
+              interiorRuleCells,
           ) ?? '';
       expect(interiorRuleLine).not.toBe('');
-      expect(stripAnsiStyles(interiorRuleLine)).toContain(rule.repeat(176));
-      expect(stripAnsiStyles(interiorRuleLine)).not.toContain(rule.repeat(177));
+      expect(stripAnsiStyles(interiorRuleLine)).toContain(rule.repeat(interiorRuleCells));
+      expect(stripAnsiStyles(interiorRuleLine)).not.toContain(rule.repeat(interiorRuleCells + 1));
     });
   });
 

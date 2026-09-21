@@ -9,7 +9,8 @@ import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { fitKeyLegend } from '../../../core/key-legend.js';
+import { fitKeyLegend, KEY_LEGEND_LEADING } from '../../../core/key-legend.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { hintStateSeverity } from '../input-hints.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
 
@@ -27,14 +28,19 @@ function summarizeDisplayLine(text: string): string {
   );
 }
 
-export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined }) {
+export function FeedbackRow({
+  inputHint = '',
+  keyHint = '',
+}: {
+  inputHint?: string | undefined;
+  /** A caller's key legend — the row's own mark grammar, not a message's. */
+  keyHint?: string | undefined;
+}) {
   const [{ message, isError }] = useStores(feedbackStore);
   const inputMode = controlsStore.use((s) => s.inputMode);
   const approvalPending = approvalPromptStore.use((s) => s.status === 'pending');
   const running = lifecycleStore.use((s) => s.status === 'running');
   const stopped = useStopByline();
-  // The legend is the footer's own furniture, so it opens on the gutter line with the composer's
-  // box and the byline's pip — the transcript's text column is the transcript's.
   const cols = getChromeContentWidth(terminalSizeStore.use((s) => s.cols));
   const t = useTheme();
 
@@ -43,43 +49,70 @@ export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined
   const owned = approvalPending || inputMode !== 'normal';
   const safeMessage = message === null ? null : summarizeDisplayLine(message);
   // One cell short of the edge: a legend that ends in the last column reads as cut off even when
-  // every token it names is whole.
-  const runningHint = running ? fitKeyLegend(RUNNING_LEGEND, cols - 1) : '';
+  // every token it names is whole. The leading is spent before the keys are fitted.
+  const legendWidth = cols - 1 - KEY_LEGEND_LEADING.length;
+  const runningHint = running ? fitKeyLegend(RUNNING_LEGEND, legendWidth) : '';
   const stopHint =
-    stopped === null || stopped.hint === '' ? '' : fitKeyLegend(stopped.hint, cols - 1);
-  const displayMessage =
-    owned && !isError && safeMessage !== 'Press ctrl+c again to quit'
-      ? ''
-      : safeMessage || stopHint || summarizeDisplayLine(inputHint) || runningHint;
-  const severity = isError ? 'error' : displayMessage ? hintStateSeverity(displayMessage) : null;
+    stopped === null || stopped.hint === '' ? '' : fitKeyLegend(stopped.hint, legendWidth);
+
+  // The footer keeps the transcript's grammar: a mark in the mark slot — the legend's pointer, the
+  // byline's pip, the composer's border — and every word on the text column its chevron opens on.
+  // Every key legend carries the mark, whichever seat it arrived from; a message or a caller's
+  // prose hint leaves the slot empty and still opens on the text column.
+  const messageWord = safeMessage ?? '';
+  const keyHintFitted = keyHint === '' ? '' : fitKeyLegend(keyHint, legendWidth);
+  let word = '';
+  let isLegend = false;
+  if (!owned || isError || messageWord === 'Press ctrl+c again to quit') {
+    if (messageWord !== '') word = messageWord;
+    else if (stopHint !== '') {
+      word = stopHint;
+      isLegend = true;
+    } else if (keyHintFitted !== '') {
+      word = keyHintFitted;
+      isLegend = true;
+    } else {
+      const inputWord = summarizeDisplayLine(inputHint);
+      if (inputWord !== '') word = inputWord;
+      else if (runningHint !== '') {
+        word = runningHint;
+        isLegend = true;
+      }
+    }
+  }
+  const severity = isError ? 'error' : word !== '' ? hintStateSeverity(word) : null;
   const wordColor = severity === 'error' ? t.error : severity === 'warning' ? t.warning : null;
+  const lead = word === '' ? '' : isLegend ? KEY_LEGEND_LEADING : ' '.repeat(MARK_SLOT_CELLS);
 
   return (
     <Box height={1} flexShrink={0}>
-      {displayMessage &&
+      {word &&
         (wordColor !== null ? (
-          <StateWordVoice text={displayMessage} color={wordColor} />
+          <StateWordVoice lead={lead} text={word} color={wordColor} />
         ) : (
           <Text color={t.textDim} wrap="truncate-end">
-            {displayMessage}
+            {lead}
+            {word}
           </Text>
         ))}
     </Box>
   );
 }
 
-function StateWordVoice({ text, color }: { text: string; color: string }) {
+function StateWordVoice({ lead, text, color }: { lead: string; text: string; color: string }) {
   const t = useTheme();
   const spaceIndex = text.indexOf(' ');
   if (spaceIndex === -1) {
     return (
-      <Text color={color} wrap="truncate-end">
-        {text}
+      <Text wrap="truncate-end">
+        <Text color={t.textDim}>{lead}</Text>
+        <Text color={color}>{text}</Text>
       </Text>
     );
   }
   return (
     <Text wrap="truncate-end">
+      <Text color={t.textDim}>{lead}</Text>
       <Text color={color}>{text.slice(0, spaceIndex)}</Text>
       <Text color={t.textDim}>{text.slice(spaceIndex)}</Text>
     </Text>

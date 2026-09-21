@@ -13,6 +13,7 @@ import { sessionsStore } from '../../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { RecentSessions } from './recent-sessions.js';
 import { getHomeLayout } from '../layout.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 
 const FOCUS_BAR = '▌';
 
@@ -63,7 +64,8 @@ describe('RecentSessions', () => {
     expect(frame).toContain('bravo');
     expect(frame).not.toContain(FOCUS_BAR);
     expect(frame).not.toContain('Esc back');
-    expect(lineContaining(frame, 'alpha')).toMatch(/^◌ alpha/);
+    // The shell shares the row leading: every row opens with the mark-slot inset before its mark.
+    expect(lineContaining(frame, 'alpha')).toMatch(new RegExp(`^ {${MARK_SLOT_CELLS}}◌ alpha`));
     ui.unmount();
   });
 

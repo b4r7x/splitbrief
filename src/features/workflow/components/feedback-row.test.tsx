@@ -5,8 +5,11 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { REVIEW_HINT } from '../review-commands.js';
+import { KEY_LEGEND_LEADING } from '../../../core/key-legend.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
 
 describe('FeedbackRow', () => {
@@ -18,15 +21,15 @@ describe('FeedbackRow', () => {
     resetAllStores();
   });
 
-  it('renders flush, leaving the gutter to the footer that wraps it', () => {
+  it('opens a message on the text column, leaving the mark slot empty', () => {
     feedbackStore.setMessage('Message queued for the next planner turn.');
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    // The row is bare text: the footer's gutter puts it on column 1, and the mark slot it insets
-    // itself by carries it the rest of the way to the text column.
-    expect(frame.indexOf('Message queued')).toBe(0);
+    // The footer's gutter puts the row on column 1; the row insets itself by the mark slot so its
+    // words land on the text column without putting a letter where a mark would stand.
+    expect(frame.indexOf('Message queued')).toBe(MARK_SLOT_CELLS);
 
     ui.unmount();
   });
@@ -64,8 +67,31 @@ describe('FeedbackRow', () => {
 
     expect(frame).toContain('esc stop options');
     expect(frame).toContain(RUNNING_LEGEND);
+    // The legend carries the key mark, so its first key opens on the text column.
+    expect(frame.startsWith(KEY_LEGEND_LEADING)).toBe(true);
+    expect(frame.indexOf('esc stop options')).toBe(KEY_LEGEND_LEADING.length);
 
     ui.unmount();
+  });
+
+  it("marks a caller's key hint with the legend grammar, fitted to the legend budget", () => {
+    const ui = renderFeature(
+      <FeedbackRow keyHint="esc home · ctrl+k commands · /sessions · /help" />,
+    );
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame.startsWith(KEY_LEGEND_LEADING)).toBe(true);
+    expect(frame.indexOf('esc home')).toBe(KEY_LEGEND_LEADING.length);
+    ui.unmount();
+
+    terminalSizeStore.__testReset({ cols: 34, rows: 24, isSmall: false });
+    const narrow = renderFeature(
+      <FeedbackRow keyHint="esc home · ctrl+k commands · /sessions · /help" />,
+    );
+    const narrowFrame = stripAnsiStyles(narrow.lastFrame() ?? '');
+    expect(narrowFrame.startsWith(KEY_LEGEND_LEADING)).toBe(true);
+    expect(narrowFrame).not.toContain('…');
+    narrow.unmount();
   });
 
   it('keeps review hints visible even while the composer is focused', () => {

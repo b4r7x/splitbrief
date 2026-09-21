@@ -17,6 +17,7 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { WorkflowFooter, WorkflowHeader } from './chrome.js';
 import { ConversationFlow } from './conversation-flow/flow.js';
 import type { RouteData } from '../../../stores/navigation/router.js';
@@ -253,7 +254,7 @@ describe('WorkflowFooter', () => {
     ui.unmount();
   });
 
-  it('puts the composer border and the live pip on the mark column, the legend on the text one', async () => {
+  it('puts the border, the live pip and the legend mark on the mark column, the keys on the text one', async () => {
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const ui = renderFooter();
     await tick();
@@ -263,10 +264,12 @@ describe('WorkflowFooter', () => {
     const topBorder = lines.find((line) => line.includes(COMPOSER_TOP_LEFT)) ?? '';
     const byline = lines.at(-1) ?? '';
 
-    expect(legend.search(/\S/)).toBe(WORKFLOW_GUTTER_X);
     expect(topBorder.indexOf(COMPOSER_TOP_LEFT)).toBe(WORKFLOW_GUTTER_X);
     // A live byline opens with its pip, so it keeps the mark column the border stands on.
     expect(byline.search(/\S/)).toBe(WORKFLOW_GUTTER_X);
+    // The legend's mark shares that column and its first key opens on the text column.
+    expect(legend.search(/\S/)).toBe(WORKFLOW_GUTTER_X);
+    expect(legend.indexOf('esc')).toBe(WORKFLOW_GUTTER_X + MARK_SLOT_CELLS);
     ui.unmount();
   });
 

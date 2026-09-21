@@ -23,6 +23,7 @@ import { focusStore } from '../../../stores/ui/focus.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BRAILLE_SPINNER_FRAMES, glyph } from '../../../lib/glyphs.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { InputFooter } from './input-footer.js';
 
 import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
@@ -105,9 +106,9 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter byline="Paused at T002 — stopped by you" />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    // A live byline opens with its pip on the mark column; this one has none, so it starts on the
-    // text column instead of putting a letter where the pip would be.
-    expect(frame.indexOf('Paused at T002')).toBe(0);
+    // A live byline opens with its pip on the mark column; this one has none, so it keeps an empty
+    // mark slot and puts its words on the text column instead of a letter where the pip would be.
+    expect(frame.indexOf('Paused at T002')).toBe(MARK_SLOT_CELLS);
 
     ui.unmount();
   });
@@ -641,9 +642,9 @@ describe('InputFooter', () => {
     expect(stripAnsiStyles(narrow.lastFrame() ?? '')).toContain('2 queued');
     narrow.unmount();
 
-    // The frame costs the two edge cells, so a 20-column terminal cannot seat the queued
+    // The frame costs the two gutter cells, so a 19-column terminal cannot seat the queued
     // segment too; the ladder drops it and the lead stands alone rather than clipping.
-    terminalSizeStore.__testReset({ cols: 20, rows: 24, isSmall: false });
+    terminalSizeStore.__testReset({ cols: 19, rows: 24, isSmall: false });
     const cramped = renderFeature(<InputFooter />);
     const crampedFrame = stripAnsiStyles(cramped.lastFrame() ?? '');
     expect(crampedFrame).toContain('Build');
