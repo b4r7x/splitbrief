@@ -18,6 +18,7 @@ import { writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
+import { callPhase } from '#testing/helpers/planner-call.js';
 
 let shimDir: string;
 let projectDir: string;
@@ -115,7 +116,7 @@ export const x = 1;
     );
 
     try {
-      const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
+      const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
       const result = await planner.escalateFull({
         task: makeTask(),
         error: 'boom',
@@ -170,29 +171,22 @@ describe('createClaudeCodePlanner planning', () => {
     }
   });
 
-  it('forwards only the selected API-key auth channel into a sanitized planner environment', async () => {
-    const envFile = installAuthRecordingShim();
-    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
-    process.env['ANTHROPIC_API_KEY'] = 'anthropic-canary';
-    process.env['OPENAI_API_KEY'] = 'openai-canary';
+  it.each(['api-key', 'session'] as const)(
+    'refuses an explicit unproven %s auth channel before spawning',
+    async (authChannel) => {
+      const envFile = installAuthRecordingShim();
+      process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+      process.env['ANTHROPIC_API_KEY'] = 'anthropic-canary';
+      process.env['OPENAI_API_KEY'] = 'openai-canary';
 
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'api-key' });
-    await planner.review('prompt', projectDir, { onOutput: () => {} });
+      const planner = await createTrustedClaudeCodePlanner({ authChannel });
 
-    expect(readFileSync(envFile, 'utf8').trim()).toBe('anthropic-canary|');
-  });
-
-  it('does not inherit ambient API keys for the session auth channel', async () => {
-    const envFile = installAuthRecordingShim();
-    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
-    process.env['ANTHROPIC_API_KEY'] = 'anthropic-canary';
-    process.env['OPENAI_API_KEY'] = 'openai-canary';
-
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
-    await planner.review('prompt', projectDir, { onOutput: () => {} });
-
-    expect(readFileSync(envFile, 'utf8').trim()).toBe('|');
-  });
+      await expect(
+        planner.review('prompt', projectDir, { onOutput: () => {} }),
+      ).rejects.toMatchObject({ kind: 'runner-auth-channel-unenforced' });
+      expect(existsSync(envFile)).toBe(false);
+    },
+  );
 
   it('suppresses expired-session resume attempt events when fallback succeeds', async () => {
     const tasksMarkdown = `---
@@ -229,11 +223,11 @@ Create the Claude fallback file.
     const events: Array<{ type: string; callId: string; attempt?: number | undefined }> = [];
     const reportedSessionIds: string[] = [];
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: 'session',
+      authChannel: undefined,
       initialSessionId: 'sess-old',
     });
 
-    const result = await planner.quickPlan({
+    const result = await callPhase(planner, {
       feature: 'fallback',
       projectDir,
       callbacks: {
@@ -245,6 +239,7 @@ Create the Claude fallback file.
       },
     });
 
+    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
     expect(result.tasks).toHaveLength(1);
     const started = events.filter((event) => event.type === 'call_started');
     expect(started).toHaveLength(1);
@@ -255,7 +250,7 @@ Create the Claude fallback file.
     expect(reportedSessionIds).toEqual(['sess-new']);
   });
 
-  it('treats a different returned Claude session id as expired resume and does not expose it', async () => {
+  it.each([false, true])('quarantines mismatched resume (init=%s)', async (withInit) => {
     const tasksMarkdown = `---
 id: T001
 title: Claude mismatch fallback task
@@ -276,6 +271,11 @@ Create the Claude mismatch fallback file.
       [
         '#!/bin/bash',
         'if printf \'%s\\n\' "$@" | grep -q "^--resume$"; then',
+        ...(withInit
+          ? [
+              `  printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-new-unexpected' })}'`,
+            ]
+          : []),
         `  printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new-unexpected', result: 'stale resumed output', usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
         '  exit 0',
         'fi',
@@ -292,11 +292,11 @@ Create the Claude mismatch fallback file.
     const expiredSessionIds: string[] = [];
     const output: string[] = [];
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: 'session',
+      authChannel: undefined,
       initialSessionId: 'sess-old',
     });
 
-    const result = await planner.quickPlan({
+    const result = await callPhase(planner, {
       feature: 'fallback',
       projectDir,
       callbacks: {
@@ -307,6 +307,7 @@ Create the Claude mismatch fallback file.
       },
     });
 
+    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
     expect(result.tasks).toHaveLength(1);
     expect(expiredSessionIds).toEqual(['sess-old']);
     expect(reportedSessionIds).toEqual(['sess-fresh']);
@@ -376,9 +377,9 @@ Create \`src/text.test.ts\` with vitest tests for \`titleCase\`.
     const sessionId = '2026-08-06-add-a-titlecase-function-to-src-text-ts-that-capit';
     writeSpecFile({ projectDir, sessionId }, TASKS_FILE, terminalMarkdown);
 
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
 
-    const result = await planner.quickPlan({
+    const result = await callPhase(planner, {
       feature: 'add a titleCase function to src/text.ts',
       projectDir,
       callbacks: {
@@ -389,9 +390,74 @@ Create \`src/text.test.ts\` with vitest tests for \`titleCase\`.
     });
 
     expect(warnings).toEqual([]);
-    expect(result.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
-    expect(result.phases?.[0]?.artifact.text).toContain('id: T001');
-    expect(result.phases?.[0]?.rawOutput).toBeUndefined();
+    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
+    expect(result.tasks?.map((task) => task.id)).toEqual(['T001', 'T002']);
+    expect(result.artifact.artifact.text).toContain('id: T001');
+    expect(result.artifact.rawOutput).toBeUndefined();
+  });
+
+  it('captures the native session id as it streams, so the next call resumes a failed one', async () => {
+    const tasksMarkdown = `---
+id: T001
+title: Claude stream capture task
+action: create
+file: src/claude-stream.ts
+depends_on: []
+---
+
+### Description
+Create the stream capture file.
+
+### Tests
+- second call resumes the captured thread
+`;
+    const argvLog = join(shimDir, 'argv-log.txt');
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        `printf '%s ' "$@" >> '${argvLog}'`,
+        `printf '\\n' >> '${argvLog}'`,
+        'if printf \'%s\\n\' "$@" | grep -q "^--resume$"; then',
+        `  printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-stream', result: tasksMarkdown, usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
+        '  exit 0',
+        'fi',
+        `printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-stream' }).replace(/'/g, "'\\''")}'`,
+        'exit 1',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+    await expect(
+      callPhase(planner, {
+        call: 'research',
+        feature: 'first call dies after the id',
+        projectDir,
+        callbacks: { onOutput: () => {} },
+      }),
+    ).rejects.toBeDefined();
+
+    const second = await callPhase(planner, {
+      feature: 'second call',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
+    if (second.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
+    expect(second.tasks).toHaveLength(1);
+
+    const calls = readFileSync(argvLog, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => line.trim().split(' '));
+    expect(calls).toHaveLength(2);
+    expect(calls[0] ?? []).not.toContain('--resume');
+    const secondArgs = calls[1] ?? [];
+    expect(secondArgs.slice(secondArgs.indexOf('--resume'))).toEqual(['--resume', 'sess-stream']);
   });
 
   it('never re-sends a consumed session id: the second consecutive planner call resumes it', async () => {
@@ -425,19 +491,21 @@ Create the Claude retry file.
     chmodSync(shimPath, 0o755);
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
-    const first = await planner.quickPlan({
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+    const first = await callPhase(planner, {
       feature: 'first call',
       projectDir,
       callbacks: { onOutput: () => {} },
     });
-    const second = await planner.quickPlan({
+    const second = await callPhase(planner, {
       feature: 'retry call',
       projectDir,
       callbacks: { onOutput: () => {} },
     });
 
+    if (first.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
     expect(first.tasks).toHaveLength(1);
+    if (second.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
     expect(second.tasks).toHaveLength(1);
 
     const calls = readFileSync(argvLog, 'utf8')
@@ -469,7 +537,7 @@ Create the Claude retry file.
 
     const events: RunnerCallEvent[] = [];
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: 'session',
+      authChannel: undefined,
       initialSessionId: 'sess-old',
     });
 
@@ -489,6 +557,47 @@ Create the Claude retry file.
     expect(events).toEqual([]);
   });
 
+  it('reports a user turn not ready without spawning while no native session exists', async () => {
+    const marker = join(shimDir, 'spawned');
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(shimPath, ['#!/bin/bash', `touch '${marker}'`, ''].join('\n'), 'utf8');
+    chmodSync(shimPath, 0o755);
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+
+    const events: RunnerCallEvent[] = [];
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+
+    await expect(
+      planner.injectUserTurn?.({
+        text: 'use JWT instead',
+        projectDir,
+        callbacks: { onCallEvent: (event) => events.push(event) },
+      }),
+    ).resolves.toEqual({ status: 'not-delivered', reason: 'not-ready' });
+
+    expect(existsSync(marker)).toBe(false);
+    expect(events).toEqual([]);
+  });
+
+  it('reports a native user turn delivered even when Claude returns no usage', async () => {
+    writeCommandShim({
+      dir: shimDir,
+      command: 'claude',
+      lines: [JSON.stringify({ type: 'result', session_id: 'sess-old', result: 'noted' })],
+    });
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+
+    const planner = await createTrustedClaudeCodePlanner({
+      authChannel: undefined,
+      initialSessionId: 'sess-old',
+    });
+
+    await expect(planner.injectUserTurn?.({ text: 'continue', projectDir })).resolves.toEqual({
+      status: 'delivered',
+      usage: null,
+    });
+  });
+
   it('threads a configured idleWarnMs override into the spawn', async () => {
     writeCommandShim({
       dir: shimDir,
@@ -500,7 +609,7 @@ Create the Claude retry file.
 
     const events: RunnerCallEvent[] = [];
     const planner = await createTrustedClaudeCodePlanner({
-      authChannel: 'session',
+      authChannel: undefined,
       idleWarnMs: 30,
     });
 
@@ -535,7 +644,7 @@ Create the Claude retry file.
     });
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
     const result = await planner.review('prompt', projectDir, { onOutput: () => {} });
 
     // REQ-013: only the authoritative final assistant response is content; the
@@ -562,7 +671,7 @@ Create the Claude retry file.
     chmodSync(shimPath, 0o755);
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
     await planner.review('REPO-INSTRUCTIONS-MARKER\n\nproceed', projectDir, {
       onOutput: () => {},
     });
@@ -592,7 +701,7 @@ Create the Claude retry file.
 
     try {
       const planner = await createTrustedClaudeCodePlanner({
-        authChannel: 'session',
+        authChannel: undefined,
         args: ['--add-dir', '/srv/shared-context'],
       });
 
@@ -621,7 +730,7 @@ Create the Claude retry file.
 
     try {
       const planner = await createTrustedClaudeCodePlanner({
-        authChannel: 'session',
+        authChannel: undefined,
         args: ['--permission-mode', 'bypassPermissions'],
       });
 
@@ -635,4 +744,125 @@ Create the Claude retry file.
       home.restore();
     }
   });
+});
+
+describe('confirmed Claude resume streaming', () => {
+  it.each([
+    { abort: false, injection: false },
+    { abort: true, injection: false },
+    { abort: false, injection: true },
+  ])('streams before completion: $abort / $injection', async ({ abort, injection }) => {
+    const gate = join(shimDir, 'released');
+    const finished = join(shimDir, 'finished');
+    const shim = join(shimDir, 'claude');
+    const frames = [
+      { type: 'system', subtype: 'init', session_id: 'sess-old' },
+      {
+        type: 'assistant',
+        session_id: 'sess-old',
+        message: { content: [{ type: 'text', text: 'Which module?' }] },
+      },
+    ];
+    writeFileSync(
+      shim,
+      `#!${process.execPath}
+const fs = require('node:fs');
+${frames.map((frame) => `console.log(${JSON.stringify(JSON.stringify(frame))});`).join('\n')}
+const deadline = setTimeout(() => process.exit(3), 3000);
+const wait = setInterval(() => {
+  if (!fs.existsSync(${JSON.stringify(gate)})) return;
+  clearInterval(wait); clearTimeout(deadline);
+  fs.writeFileSync(${JSON.stringify(finished)}, 'done');
+  console.log(JSON.stringify({type:'result',session_id:'sess-old',result:'Which module?'}));
+}, 10);
+`,
+    );
+    chmodSync(shim, 0o755);
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+    const planner = await createTrustedClaudeCodePlanner({
+      authChannel: undefined,
+      initialSessionId: 'sess-old',
+    });
+    const controller = new AbortController();
+    const events: RunnerCallEvent[] = [];
+    const output: string[] = [];
+    const release = (text: string) => {
+      expect(existsSync(finished)).toBe(false);
+      expect(events.some((event) => event.type === 'call_started')).toBe(true);
+      output.push(text);
+      if (abort) controller.abort();
+      else writeFileSync(gate, 'release');
+    };
+    const onCallEvent = (event: RunnerCallEvent) => {
+      events.push(event);
+      if (injection && event.type === 'call_text_delta' && event.channel === 'assistant')
+        release(event.text);
+    };
+    if (injection) {
+      expect(
+        await planner.injectUserTurn?.({ text: 'answer', projectDir, callbacks: { onCallEvent } }),
+      ).toMatchObject({ status: 'delivered' });
+    } else {
+      const result = callPhase(planner, {
+        feature: 'refactor',
+        projectDir,
+        callbacks: {
+          signal: controller.signal,
+          onCallEvent,
+          onOutput: release,
+        },
+      });
+      if (abort) await expect(result).rejects.toThrow();
+      else expect((await result).kind).toBe('conversation');
+    }
+    expect(output).toEqual(['Which module?']);
+    expect(events.filter((event) => event.type === 'call_started')).toHaveLength(1);
+  });
+
+  it.each(['expired', 'mismatch'])(
+    'does not retry a confirmed session after %s',
+    async (failure) => {
+      const shim = join(shimDir, 'claude');
+      const frames = [
+        { type: 'system', subtype: 'init', session_id: 'sess-old' },
+        {
+          type: 'result',
+          session_id: failure === 'mismatch' ? 'sess-other' : 'sess-old',
+          is_error: failure === 'expired',
+          result: failure === 'expired' ? 'session not found' : 'Which module?',
+        },
+      ];
+      writeFileSync(
+        shim,
+        `#!${process.execPath}\n${frames.map((frame) => `console.log(${JSON.stringify(JSON.stringify(frame))});`).join('\n')}\n`,
+      );
+      chmodSync(shim, 0o755);
+      process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+      const planner = await createTrustedClaudeCodePlanner({
+        authChannel: undefined,
+        initialSessionId: 'sess-old',
+      });
+      const events: RunnerCallEvent[] = [];
+      await expect(
+        callPhase(planner, {
+          feature: 'refactor',
+          projectDir,
+          callbacks: {
+            onOutput: () => {},
+            onCallEvent: (event) => events.push(event),
+          },
+        }),
+      ).rejects.toMatchObject({ kind: 'session-resume-failed' });
+      expect(events.filter((event) => event.type === 'call_started')).toHaveLength(1);
+      const injectionEvents: RunnerCallEvent[] = [];
+      await expect(
+        planner.injectUserTurn?.({
+          text: 'continue',
+          projectDir,
+          callbacks: { onCallEvent: (event) => injectionEvents.push(event) },
+        }),
+      ).rejects.toMatchObject({ kind: 'session-resume-failed' });
+      expect(injectionEvents.filter((event) => event.type === 'call_started')).toHaveLength(1);
+    },
+  );
 });

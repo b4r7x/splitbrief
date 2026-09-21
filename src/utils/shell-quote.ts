@@ -4,10 +4,6 @@ export function shellQuoteArg(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-export function formatShellArgv(argv: readonly string[]): string {
-  return argv.map(shellQuoteArg).join(' ');
-}
-
 export function shellCommandFromText(text: string): string | null {
   const prefixes = [
     '/bin/zsh -lc ',

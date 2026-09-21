@@ -2,33 +2,96 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { abortStore } from '../../../stores/workflow/abort.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
-import { resolveAttachFeedbackHint } from '../input-hints.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { REVIEW_HINT } from '../review-commands.js';
-import { FeedbackRow } from './feedback-row.js';
+import { KEY_LEGEND_LEADING } from '../../../core/key-legend.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
+import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
 
 describe('FeedbackRow', () => {
   beforeEach(() => {
-    abortStore.clear();
     resetAllStores();
   });
 
   afterEach(() => {
-    abortStore.clear();
     resetAllStores();
   });
 
-  it('aligns armed interrupt feedback with the workflow content inset', () => {
-    abortStore.arm('interrupt');
+  it('opens a message on the text column, leaving the mark slot empty', () => {
+    feedbackStore.setMessage('Message queued for the next planner turn.');
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame.indexOf('esc again to interrupt')).toBe(WORKFLOW_CONTENT_PADDING_X);
+    // The footer's gutter puts the row on column 1; the row insets itself by the mark slot so its
+    // words land on the text column without putting a letter where a mark would stand.
+    expect(frame.indexOf('Message queued')).toBe(MARK_SLOT_CELLS);
 
     ui.unmount();
+  });
+
+  it('says nothing while a gate panel owns the legend', () => {
+    controlsStore.setInputMode('review');
+
+    const ui = renderFeature(<FeedbackRow inputHint={REVIEW_HINT} />);
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').trim()).toBe('');
+
+    ui.unmount();
+  });
+
+  it('says nothing while a tiered approval is pending', () => {
+    void openApprovalPrompt({
+      tier: 'sticky',
+      actionClass: 'write_out_of_scope',
+      actionDescription: 'write src/x.ts',
+      phase: 'implementing',
+    });
+
+    const ui = renderFeature(<FeedbackRow inputHint="approve · ctrl+e/e edit" />);
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').trim()).toBe('');
+
+    ui.unmount();
+  });
+
+  it('names the keys a running build answers to when nothing else owns the row', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+
+    const ui = renderFeature(<FeedbackRow />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('esc stop options');
+    expect(frame).toContain(RUNNING_LEGEND);
+    // The legend carries the key mark, so its first key opens on the text column.
+    expect(frame.startsWith(KEY_LEGEND_LEADING)).toBe(true);
+    expect(frame.indexOf('esc stop options')).toBe(KEY_LEGEND_LEADING.length);
+
+    ui.unmount();
+  });
+
+  it("marks a caller's key hint with the legend grammar, fitted to the legend budget", () => {
+    const ui = renderFeature(
+      <FeedbackRow keyHint="esc home · ctrl+k commands · /sessions · /help" />,
+    );
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame.startsWith(KEY_LEGEND_LEADING)).toBe(true);
+    expect(frame.indexOf('esc home')).toBe(KEY_LEGEND_LEADING.length);
+    ui.unmount();
+
+    terminalSizeStore.__testReset({ cols: 34, rows: 24, isSmall: false });
+    const narrow = renderFeature(
+      <FeedbackRow keyHint="esc home · ctrl+k commands · /sessions · /help" />,
+    );
+    const narrowFrame = stripAnsiStyles(narrow.lastFrame() ?? '');
+    expect(narrowFrame.startsWith(KEY_LEGEND_LEADING)).toBe(true);
+    expect(narrowFrame).not.toContain('…');
+    narrow.unmount();
   });
 
   it('keeps review hints visible even while the composer is focused', () => {
@@ -52,8 +115,8 @@ describe('FeedbackRow', () => {
     ui.unmount();
   });
 
-  it('renders blank when the attached client is connected so the placeholder owns the hint', () => {
-    const ui = renderFeature(<FeedbackRow inputHint={resolveAttachFeedbackHint('connected')} />);
+  it('renders blank when the input hint is empty so the placeholder owns the hint', () => {
+    const ui = renderFeature(<FeedbackRow inputHint="" />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame.trim()).toBe('');

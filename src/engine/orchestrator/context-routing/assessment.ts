@@ -1,3 +1,6 @@
+import { taskFiles } from '../../../core/schemas/task.js';
+import { selectBuildOutputContract } from '../../implementers/file-bundle.js';
+import { apiBuildTargets, estimateBundleOutputReserve } from '../../providers/api-budget.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { missingRunnerCredential } from '../../../core/config/accessors/runner-credentials.js';
 import { estimateTokens } from '../../../core/tokens/estimate.js';
@@ -43,12 +46,17 @@ export function assessProfile(
     : undefined;
   const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
   const writesFiles = profile.capabilities.writesFiles;
+  const outputContract = selectBuildOutputContract({
+    extractsCode: writesFiles === 'extracted-code',
+    backendKind: profile.config.kind,
+  });
   const untruncatedEstimatedTokens = estimateFormattedTaskPromptTokens({
     task: opts.task,
     context: opts.context,
     languageContext,
     modelId,
     writesFiles,
+    outputContract,
   });
   const prompt = formatTaskPrompt({
     task: opts.task,
@@ -56,21 +64,37 @@ export function assessProfile(
     contextLength,
     languageContext,
     writesFiles,
+    outputContract,
   });
   const estimatedTokens =
-    estimateTokens(formatImplementerSystemPreamble(languageContext, writesFiles), modelId) +
-    estimateTokens(prompt, modelId);
-  const mode = currentCodeContextMode(opts.task, prompt);
+    estimateTokens(
+      formatImplementerSystemPreamble(languageContext, writesFiles, outputContract),
+      modelId,
+    ) + estimateTokens(prompt, modelId);
+  const mode =
+    outputContract === 'file-bundle-v1'
+      ? opts.task.currentCode ||
+        taskFiles(opts.task).some((path) => opts.task.currentCodeByFile?.[path] !== undefined)
+        ? 'whole-file'
+        : 'none'
+      : currentCodeContextMode(opts.task, prompt);
   const currentCodeTruncated = mode === 'truncated';
-  const formattedFit = classifyContextFit(estimatedTokens, contextLength, opts);
-  const untruncatedFit = classifyContextFit(untruncatedEstimatedTokens, contextLength, opts);
+  const outputReserve =
+    outputContract === 'file-bundle-v1'
+      ? estimateBundleOutputReserve(apiBuildTargets(opts.task), modelId)
+      : 0;
+  const inputBudget = contextLength - outputReserve;
+  const formattedFit = classifyContextFit(estimatedTokens, inputBudget, opts);
+  const untruncatedFit = classifyContextFit(untruncatedEstimatedTokens, inputBudget, opts);
   const fit = determineFit({ currentCodeTruncated, mode, formattedFit, untruncatedFit });
   const requiredWriteMode = requiredWriteModeForTask(opts.task);
   const credentialFailure = credentialFailureReason(profile);
   const capabilityFailure =
     requiredWriteMode === 'direct' && profile.capabilities.writesFiles !== 'direct'
       ? `Task scope requires direct file writes; profile writes via ${profile.capabilities.writesFiles}`
-      : undefined;
+      : outputContract === 'legacy-code-v1' && taskFiles(opts.task).length > 1
+        ? 'Task requires a multi-file bundle; profile only extracts a single file'
+        : undefined;
 
   return {
     profile,

@@ -3,17 +3,16 @@ import { Box, Text, type TextProps } from 'ink';
 import { getTerminalCellWidth, stripTerminalControls } from '../../utils/display-text.js';
 
 export interface AlignedOptionLabelWidthOptions {
-  gap: number;
   maxWidth?: number | undefined;
   minWidth?: number | undefined;
 }
 
 export function getAlignedOptionLabelWidth(
   labels: readonly string[],
-  { gap, maxWidth, minWidth = 0 }: AlignedOptionLabelWidthOptions,
+  { maxWidth, minWidth = 0 }: AlignedOptionLabelWidthOptions,
 ): number {
   const longest = labels.reduce((max, label) => Math.max(max, getTerminalCellWidth(label)), 0);
-  const width = Math.max(minWidth, longest + gap);
+  const width = Math.max(minWidth, longest);
   return maxWidth === undefined ? width : Math.min(maxWidth, width);
 }
 
@@ -30,6 +29,7 @@ export interface AlignedOptionRowProps {
   metaGap?: number | undefined;
   label: string;
   labelWidth: number;
+  labelGap?: number | undefined;
   labelColor?: string | undefined;
   labelBold?: boolean | undefined;
   detail?: string | undefined;
@@ -45,6 +45,7 @@ export function AlignedOptionRow({
   metaGap = 1,
   label,
   labelWidth,
+  labelGap = 0,
   labelColor,
   labelBold,
   detail,
@@ -91,6 +92,9 @@ export function AlignedOptionRow({
           {cleanLabel}
         </Text>
       </Box>
+      {labelGap > 0 ? (
+        <Box width={labelGap} flexShrink={0} backgroundColor={backgroundColor} />
+      ) : null}
       {cleanDetail ? (
         <Box
           flexGrow={1}

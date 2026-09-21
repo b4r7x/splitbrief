@@ -7,7 +7,7 @@ import type {
   SnapshotManifest,
 } from '../../../core/schemas/snapshot.js';
 import { RunSnapshotLedgerSchema } from '../../../core/schemas/snapshot.js';
-import { sessionDir, snapshotsDir } from '../../../core/paths.js';
+import { RUN_LEDGER_FILE, sessionDir, snapshotsDir } from '../../../core/paths.js';
 import { writeConfinedSecureFileAsync } from '../../../lib/fs.js';
 import { error } from '../../../utils/error.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -15,7 +15,6 @@ import { isENOENT } from '../../../lib/process/errors.js';
 import { readManifest } from '../manifest.js';
 
 export const ACCEPTED_RUN_SNAPSHOT_NAME = 'accepted-run';
-const RUN_LEDGER_FILE = 'run-ledger.json';
 
 function runLedgerPath(projectDir: string, sessionId: string): string {
   return join(snapshotsDir({ projectDir, sessionId }), RUN_LEDGER_FILE);

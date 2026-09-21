@@ -40,3 +40,13 @@ export function wrappedRowTexts(text: string, width: number): string[] {
   if (sanitized.length <= wrapWidth && PRINTABLE_ASCII_ROW.test(sanitized)) return [sanitized];
   return wrapHard(sanitized, wrapWidth).split('\n');
 }
+
+// The wrapper keeps the space it broke on (`trim: false`): usually it trails the line above, but
+// when the word before the break fills the row exactly, the space leads the continuation instead
+// and starts it one cell off its row's column. Prose continues from the break, never from the space
+// in it, so a continuation drops that one cell.
+export function wrappedProseTexts(text: string, width: number): string[] {
+  return wrappedRowTexts(text, width).map((line, index) =>
+    index > 0 && line.startsWith(' ') ? line.slice(1) : line,
+  );
+}

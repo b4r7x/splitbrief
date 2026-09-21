@@ -1,11 +1,9 @@
-import type {
-  ImplementerCostTier,
-  ImplementerWriteMode,
-} from '../../../core/schemas/implementer-config.js';
+import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
+import { scopeEntryPatterns, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import type { Task } from '../../../core/schemas/task.js';
-import { uniqueSorted } from '../../../utils/collections.js';
-import { scopePathPatterns } from '../../../utils/path-patterns.js';
-import { taskScopePatterns } from '../task-scope.js';
+import { taskFiles } from '../../../core/schemas/task.js';
+import { declaredPathProblem } from '../../implementers/bundle-baseline.js';
+import { FILE_BUNDLE_MAX_FILES } from '../../implementers/file-bundle.js';
 import type { ProfileFit } from './types.js';
 
 function normalizeScopePattern(pattern: string): string {
@@ -13,28 +11,21 @@ function normalizeScopePattern(pattern: string): string {
 }
 
 export function requiredWriteModeForTask(task: Task): ImplementerWriteMode {
-  const scopedWritePatterns = taskScopePatterns(task);
+  const files = taskFiles(task);
+  if (task.action !== 'create' && task.action !== 'modify') return 'direct';
+  if (files.length > FILE_BUNDLE_MAX_FILES) return 'direct';
+  if (files.some((path, index) => declaredPathProblem(path, files.slice(0, index))))
+    return 'direct';
 
-  const namedScopePaths = scopedWritePatterns.flatMap(scopePathPatterns);
+  const namedScopePaths = taskDeclaredPatterns(task).flatMap(scopeEntryPatterns);
   const hasAdditionalPathScope = namedScopePaths.some(
-    (pattern) => normalizeScopePattern(pattern) !== normalizeScopePattern(task.file),
+    (pattern) => !files.some((file) => normalizeScopePattern(pattern) === file),
   );
 
   return hasAdditionalPathScope ? 'direct' : 'extracted-code';
 }
 
-const COST_TIER_RANK: Record<ImplementerCostTier, number> = {
-  local: 0,
-  cheap: 1,
-  standard: 2,
-  frontier: 3,
-  unknown: 4,
-};
-
 export function compareProfileRouteRank(left: ProfileFit, right: ProfileFit): number {
-  const costRank = COST_TIER_RANK[left.profile.costTier] - COST_TIER_RANK[right.profile.costTier];
-  if (costRank !== 0) return costRank;
-
   const contextRank = left.contextLength - right.contextLength;
   if (contextRank !== 0) return contextRank;
 
@@ -72,7 +63,7 @@ export function selectedReason(profileFit: ProfileFit): string {
     : '';
   const reductionNote = currentCodeReductionNote(profileFit, ',');
   const capabilityNote = profileFit.requiredWriteMode === 'direct' ? ', direct-write capable' : '';
-  return `Selected cheapest capable profile ${profileFit.profile.name} (${profileFit.fit}, estimated ${profileFit.estimatedTokens}/${profileFit.contextLength} tokens${fallbackNote}${capabilityNote}${reductionNote})`;
+  return `Selected profile ${profileFit.profile.name} (${profileFit.fit}, estimated ${profileFit.estimatedTokens}/${profileFit.contextLength} tokens${fallbackNote}${capabilityNote}${reductionNote})`;
 }
 
 function currentCodeReductionNote(profileFit: ProfileFit, prefix: string): string {
@@ -83,12 +74,4 @@ function currentCodeReductionNote(profileFit: ProfileFit, prefix: string): strin
     return `${prefix} current code truncated from ${profileFit.untruncatedEstimatedTokens} untruncated tokens`;
   }
   return '';
-}
-
-export function costPosture(selected: ProfileFit | undefined, rejected: ProfileFit[]): string {
-  if (!selected) return 'No capable implementer profile; no cost tier selected';
-  const rejectedTiers = uniqueSorted(rejected.map((profileFit) => profileFit.profile.costTier));
-  const rejectedNote =
-    rejectedTiers.length > 0 ? `; rejected tiers: ${rejectedTiers.join(', ')}` : '';
-  return `Selected ${selected.profile.costTier} cost tier via cheapest-capable routing${rejectedNote}`;
 }

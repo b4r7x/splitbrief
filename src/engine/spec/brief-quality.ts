@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import type { Task } from '../../core/schemas/task.js';
-import { taskId, TaskIdSchema } from '../../core/schemas/task.js';
-import { BriefQualityIssueSchema } from '../../core/schemas/brief-recovery/primitives.js';
+import { taskFiles, taskId, TaskIdSchema } from '../../core/schemas/task.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared-set.js';
+import { isTestFile, sourceForTest } from '../../core/validation/stacks/registry.js';
+import type { Stack } from '../../core/validation/stacks/types.js';
 import { CONCRETE_FILE_PATH_PATTERN } from '../../utils/path-patterns.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { clamp01 } from '../../utils/math.js';
@@ -14,17 +16,23 @@ const BRIEF_QUALITY_CODES = [
   'missing_escalation',
   'missing_code_context',
   'empty_task_list',
-  'multi_file_task',
+  'write_outside_declared_files',
+  'anchor_not_in_files',
+  'test_without_code',
   'missing_type_definitions',
   'missing_implementation_steps',
 ] as const;
 
 export type BriefQualityCode = (typeof BRIEF_QUALITY_CODES)[number];
 
-const briefQualityIssueSchema = BriefQualityIssueSchema.extend({
-  code: z.enum(BRIEF_QUALITY_CODES),
-  taskId: TaskIdSchema,
-});
+const briefQualityIssueSchema = z
+  .object({
+    code: z.enum(BRIEF_QUALITY_CODES),
+    severity: z.enum(['error', 'warning']),
+    taskId: TaskIdSchema,
+    message: z.string().trim().min(1).max(4_096),
+  })
+  .strict();
 
 const briefQualityReportSchema = z.object({
   version: z.literal(1),
@@ -36,12 +44,6 @@ const briefQualityReportSchema = z.object({
 export type BriefQualityIssue = z.infer<typeof briefQualityIssueSchema>;
 
 export type BriefQualityReport = z.infer<typeof briefQualityReportSchema>;
-
-const BRIEF_QUALITY_ISSUE_CODES: ReadonlySet<string> = new Set(BRIEF_QUALITY_CODES);
-
-export function isBriefQualityCode(value: string): value is BriefQualityCode {
-  return BRIEF_QUALITY_ISSUE_CODES.has(value);
-}
 
 export function firstBriefError(report: BriefQualityReport): BriefQualityIssue | undefined {
   return report.issues.find((issue) => issue.severity === 'error');
@@ -93,11 +95,11 @@ function isRisky(task: Task): boolean {
 }
 
 /**
- * `multi_file_task` counts write targets, not mentions. A path in the
+ * `write_outside_declared_files` counts write targets, not mentions. A path in the
  * description/steps counts only when a write verb governs it ("update
  * `src/api.ts`"); paths that are referenced — a pattern exemplar to follow, an
  * import source, a negated "do not modify" — do not. A path with no verdict
- * defaults to reference: a missed multi-file brief is caught downstream by
+ * defaults to reference: a missed undeclared write is caught downstream by
  * scope enforcement, while a false positive kills quick runs outright.
  */
 const WRITE_VERB_PATTERN =
@@ -158,6 +160,28 @@ function collectWriteTargets(unit: string, targets: Map<string, string>): void {
   }
 }
 
+function siblingTestFold(
+  task: Task,
+  tasks: readonly Task[],
+  stack: Stack | null | undefined,
+): { sibling: string; depId: string } | undefined {
+  if (stack === null || stack === undefined) return undefined;
+  const files = taskFiles(task);
+  if (!files.every((path) => isTestFile(path, stack))) return undefined;
+  for (const path of files) {
+    const sibling = sourceForTest(path, stack);
+    if (sibling === null) continue;
+    const dep = tasks.find(
+      (other) =>
+        other.action === 'create' &&
+        task.dependsOn.includes(other.id) &&
+        taskFiles(other).includes(sibling),
+    );
+    if (dep !== undefined) return { sibling, depId: dep.id };
+  }
+  return undefined;
+}
+
 function writeTargetFiles(task: Task): string[] {
   const targets = new Map<string, string>();
   for (const unit of [task.description, ...task.implementationSteps]) {
@@ -184,7 +208,7 @@ export function briefQualityVerdict(
   return { passed: errorCount === 0, score: clamp01(1 - errorCount * 0.2 - warningCount * 0.05) };
 }
 
-export function evaluateBriefQuality(tasks: Task[]): BriefQualityReport {
+export function evaluateBriefQuality(tasks: Task[], stack?: Stack | null): BriefQualityReport {
   const issues: BriefQualityIssue[] = [];
 
   if (tasks.length === 0) {
@@ -222,13 +246,33 @@ export function evaluateBriefQuality(tasks: Task[]): BriefQualityReport {
       });
     }
 
-    const writeTargets = writeTargetFiles(task);
-    if (writeTargets.length >= 2) {
+    const declared = taskDeclaredPatterns(task);
+    const outside = writeTargetFiles(task).filter((path) => !isInDeclaredSet(path, declared));
+    if (outside.length > 0) {
       issues.push({
         taskId: task.id,
         severity: 'error',
-        code: 'multi_file_task',
-        message: `Task ${task.id} description/steps direct writes to multiple files: ${writeTargets.join(', ')}`,
+        code: 'write_outside_declared_files',
+        message: `Task ${task.id} description/steps direct writes outside its declared files: ${outside.join(', ')}`,
+      });
+    }
+
+    if (task.files !== undefined && !task.files.includes(task.file)) {
+      issues.push({
+        taskId: task.id,
+        severity: 'error',
+        code: 'anchor_not_in_files',
+        message: `Task ${task.id} names ${task.file} as its anchor but files does not list it`,
+      });
+    }
+
+    const fold = siblingTestFold(task, tasks, stack);
+    if (fold !== undefined) {
+      issues.push({
+        taskId: task.id,
+        severity: 'warning',
+        code: 'test_without_code',
+        message: `Task ${task.id} only tests ${fold.sibling} which ${fold.depId} creates; fold it into ${fold.depId}'s files`,
       });
     }
 

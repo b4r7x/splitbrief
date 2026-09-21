@@ -8,8 +8,8 @@ import {
   TEST_METADATA,
 } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
-import { createInitialState } from '../../../core/state/machine.js';
-import type { PlanOptions, Planner, PlannerCapabilities } from '../../planners/types.js';
+import { createInitialState, transition } from '../../../core/state/machine.js';
+import type { PhaseInputs, Planner, PlannerCapabilities } from '../../planners/types.js';
 import { runPlanningPhase } from './run.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -35,7 +35,7 @@ describe('runPlanningPhase — advisor trivial hint (REQ-056 seam)', () => {
   async function runQuickPlanningFor(feature: string) {
     const { projectDir, sessionId } = setupProject(dirs);
     const prompts: string[] = [];
-    const planOptions: PlanOptions[] = [];
+    const phaseInputs: PhaseInputs[] = [];
     const base = createPlannerBase({
       invokePlan: async (opts) => {
         prompts.push(opts.prompt);
@@ -47,9 +47,9 @@ describe('runPlanningPhase — advisor trivial hint (REQ-056 seam)', () => {
     });
     const planner: Planner = {
       ...base,
-      quickPlan: (options) => {
-        planOptions.push(options);
-        return base.quickPlan(options);
+      runPhase: (input) => {
+        phaseInputs.push(input.inputs);
+        return base.runPhase(input);
       },
     };
     const { callbacks } = makeCallbacks();
@@ -65,28 +65,28 @@ describe('runPlanningPhase — advisor trivial hint (REQ-056 seam)', () => {
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
-      state: { ...createInitialState(feature), phase: 'idle' },
+      state: transition(createInitialState(feature), { type: 'START' }),
       feature,
     });
-    return { result, prompts, planOptions };
+    return { result, prompts, phaseInputs };
   }
 
   it('advisor trivial class changes quick planner prompt', async () => {
-    const { result, prompts, planOptions } = await runQuickPlanningFor('fix typo in README');
+    const { result, prompts, phaseInputs } = await runQuickPlanningFor('fix typo in README');
 
-    expect(result.disposition).toBe('parked');
-    expect(planOptions[0]?.trivial).toBe(true);
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(phaseInputs[0]?.quickPlan).toEqual({ trivial: true });
     expect(prompts[0]).toContain(TRIVIAL_INSTRUCTION);
     expect(prompts[0]).not.toContain(REVIEW_INSTRUCTION);
   });
 
   it('ordinary work carries no trivial hint and keeps the codebase-review step', async () => {
-    const { result, prompts, planOptions } = await runQuickPlanningFor(
+    const { result, prompts, phaseInputs } = await runQuickPlanningFor(
       'add a pagination component to the results screen with tests',
     );
 
-    expect(result.disposition).toBe('parked');
-    expect(planOptions[0]?.trivial).toBeUndefined();
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(phaseInputs[0]?.quickPlan).toEqual({ trivial: false });
     expect(prompts[0]).toContain(REVIEW_INSTRUCTION);
     expect(prompts[0]).not.toContain(TRIVIAL_INSTRUCTION);
   });

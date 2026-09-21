@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TIMEOUTS } from '../pipeline-spec/timeouts.js';
 import { API_OFFERINGS, API_PROVIDER_CATALOG } from '../providers/api-provider-catalog.js';
 import {
   CLI_AUTH_CHANNEL_IDS,
@@ -40,6 +41,12 @@ export const REMOVED_API_PROVIDER_IDS = Object.freeze([
   'openrouter',
   'together',
 ] as const);
+
+// Named from the catalog itself, so a newly admitted provider cannot leave the
+// diagnostic advertising a shorter built-in list than the schema accepts.
+const BUILT_IN_API_PROVIDER_LIST = Object.keys(API_PROVIDER_CATALOG)
+  .map((id) => `"${id}"`)
+  .join(', ');
 
 export const REMOVED_CLI_TOOL_IDS = Object.freeze(['aider'] as const);
 
@@ -223,15 +230,14 @@ function validateRemovedApiProvider(input: unknown, ctx: z.RefinementCtx): void 
   ctx.addIssue({
     code: 'custom',
     path: ['provider'],
-    message: `API provider "${runner.provider}" was removed; only "ollama" and "lm-studio" are built in. Configure it as a custom endpoint: set provider/service to your own name plus apiBase and an inline apiKey (docs/CONFIGURATION.md).`,
+    message: `API provider "${runner.provider}" was removed; only ${BUILT_IN_API_PROVIDER_LIST} are built in. Configure it as a custom endpoint: set provider/service to your own name plus apiBase and an inline apiKey (docs/CONFIGURATION.md).`,
   });
 }
 
 function validateApiIdentity(input: unknown, ctx: z.RefinementCtx): void {
   const runner = narrowRecord(input);
   if (
-    !runner ||
-    runner.kind !== 'api' ||
+    runner?.kind !== 'api' ||
     typeof runner.provider !== 'string' ||
     typeof runner.service !== 'string' ||
     typeof runner.offering !== 'string'
@@ -271,7 +277,7 @@ function validateApiIdentity(input: unknown, ctx: z.RefinementCtx): void {
 
 function validateCliModelPolicy(role: RunnerRole, input: unknown, ctx: z.RefinementCtx): void {
   const runner = narrowRecord(input);
-  if (!runner || runner.kind !== 'cli' || typeof runner.tool !== 'string') return;
+  if (runner?.kind !== 'cli' || typeof runner.tool !== 'string') return;
 
   const descriptor = Object.values(CLI_TOOL_CATALOG).find(({ id }) => id === runner.tool);
   if (descriptor === undefined) return;
@@ -294,8 +300,7 @@ function validateCliModelPolicy(role: RunnerRole, input: unknown, ctx: z.Refinem
 function validateCliAuthChannel(input: unknown, ctx: z.RefinementCtx): void {
   const runner = narrowRecord(input);
   if (
-    !runner ||
-    runner.kind !== 'cli' ||
+    runner?.kind !== 'cli' ||
     typeof runner.tool !== 'string' ||
     typeof runner.authChannel !== 'string'
   ) {
@@ -340,7 +345,7 @@ export const GenerationCommonFields = {
   customModels: z.array(z.string()).optional(),
   contextLength: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
-  timeout: z.number().positive().max(600000).optional(),
+  timeout: z.number().positive().max(TIMEOUTS.implementerMs).optional(),
   effort: EffortLevelSchema.optional(),
   variant: z.string().min(1).optional(),
 };

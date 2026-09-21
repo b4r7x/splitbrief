@@ -69,14 +69,15 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
  * REQ-017 read-only planner vector for Codex 0.147.0. Sandbox and approval are
  * GLOBAL flags in v0.147 and must precede `exec`; `exec resume` does not accept
  * local `--sandbox`/`--ask-for-approval`. Ambient user config and AGENTS.md
- * rules are adapter-owned inputs the planner ignores; a fresh (compiler) exec
- * is ephemeral and never resumes. The escalated planner row keeps its tier-2
+ * rules are adapter-owned inputs the planner ignores; a fresh exec is ephemeral
+ * and never resumes. The escalated planner row keeps its tier-2
  * workspace-write within the staged project under the same never-approval
  * policy.
  */
 function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
   if (input.sessionId !== null && input.mode === 'plan') {
     return [
+      ...(input.effort === undefined ? [] : ['-c', `model_reasoning_effort=${input.effort}`]),
       '--sandbox',
       'read-only',
       '--ask-for-approval',
@@ -95,6 +96,7 @@ function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
   const escalate = input.mode === 'escalate';
   return [
     ...(input.model === undefined ? [] : ['--model', input.model]),
+    ...(input.effort === undefined ? [] : ['-c', `model_reasoning_effort=${input.effort}`]),
     '--sandbox',
     escalate ? 'workspace-write' : 'read-only',
     '--ask-for-approval',
@@ -112,12 +114,13 @@ function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
 
 /**
  * REQ-048 implementer vector: global workspace-write + never approval inside
- * the disposable staged checkout; no added roots, no config override, exact
- * staged `--cd`.
+ * the disposable staged checkout; no added roots, the reasoning effort as the
+ * only config override, exact staged `--cd`.
  */
 function implementerBaseArgs(input: CodexImplementerBuildInput): string[] {
   return [
     ...(input.model === undefined ? [] : ['--model', input.model]),
+    ...(input.effort === undefined ? [] : ['-c', `model_reasoning_effort=${input.effort}`]),
     '--sandbox',
     'workspace-write',
     '--ask-for-approval',

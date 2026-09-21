@@ -3,7 +3,10 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Config } from '../../core/schemas/config.js';
 import { createApiPlanner } from './api.js';
+import { runDocumentPhases } from './document-phases.js';
+import { callPhase } from '#testing/helpers/planner-call.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/phase-call.js';
 
 let server: http.Server;
 let port: number;
@@ -18,6 +21,7 @@ let receivedHeaders: http.IncomingHttpHeaders[];
 let receivedCatalogRequests: { pathname: string; limit: string | null }[];
 let projectDir: string;
 let openAiCompletionChunks: string[];
+let openAiCompletionReplies: string[];
 
 const validPlannerArtifact = `---
 id: T001
@@ -92,7 +96,6 @@ function makeApiPlannerConfig(provider: string): Config {
     validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
     workflow: {
       maxRetries: 3,
-      persistTranscript: true,
       compactionFormat: 'auto',
     },
   };
@@ -130,6 +133,7 @@ beforeEach(async () => {
   receivedHeaders = [];
   receivedCatalogRequests = [];
   openAiCompletionChunks = ['Hello ', 'world'];
+  openAiCompletionReplies = [];
   projectDir = createTempDir('api-planner-test');
 
   server = http.createServer((req, res) => {
@@ -156,7 +160,8 @@ beforeEach(async () => {
       req.on('end', () => {
         receivedBodies.push(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
         receivedHeaders.push(req.headers);
-        streamSseChunks(res, openAiCompletionChunks, {
+        const reply = openAiCompletionReplies.shift();
+        streamSseChunks(res, reply === undefined ? openAiCompletionChunks : [reply], {
           prompt_tokens: 42,
           completion_tokens: 17,
         });
@@ -194,7 +199,18 @@ describe('createApiPlanner', () => {
     });
 
     expect(result.text).toBe('Hello world');
-    expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 17 });
+    expect(result.usage).toEqual({
+      inputTokens: 42,
+      outputTokens: 17,
+      counterCoverage: {
+        input: 'partial',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { input: 42, output: 17 },
+    });
     expect(collected.join('')).toBe('Hello world');
 
     expect(receivedBodies).toHaveLength(1);
@@ -240,11 +256,18 @@ describe('createApiPlanner', () => {
     expect(receivedBodies[0]).not.toHaveProperty('reasoning_effort');
   });
 
-  it('plan() runs four phases and accumulates token usage across them', async () => {
+  it('spends one call per document phase and accumulates token usage across them', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
-    openAiCompletionChunks = [validPlannerArtifact];
+    openAiCompletionReplies = [
+      PLANNER_DOCUMENT_FIXTURES.research,
+      PLANNER_DOCUMENT_FIXTURES.spec,
+      PLANNER_DOCUMENT_FIXTURES.plan,
+      validPlannerArtifact,
+    ];
 
-    const result = await planner.plan({
+    const result = await runDocumentPhases({
+      planner,
+      mode: 'standard',
       feature: 'test feature',
       projectDir,
       callbacks: {
@@ -254,24 +277,41 @@ describe('createApiPlanner', () => {
     });
 
     expect(receivedBodies).toHaveLength(4);
-    expect(result.usage).toEqual({ inputTokens: 42 * 4, outputTokens: 17 * 4 });
+    expect(result.usage).toEqual({
+      inputTokens: 42 * 4,
+      outputTokens: 17 * 4,
+      counterCoverage: {
+        input: 'partial',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { input: 42, output: 17 },
+    });
   });
 
-  it('plan() injects priorMessages into the first phase chat history (FR-007 api-kind)', async () => {
+  it('injects priorMessages into the first call of the planner only (FR-007 api-kind)', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
-    openAiCompletionChunks = [validPlannerArtifact];
+    openAiCompletionReplies = [PLANNER_DOCUMENT_FIXTURES.research, PLANNER_DOCUMENT_FIXTURES.spec];
+    const priorMessages = [
+      { role: 'user' as const, content: 'start: add auth' },
+      { role: 'assistant' as const, content: 'we should use JWT' },
+    ];
 
-    await planner.plan({
+    await callPhase(planner, {
+      call: 'research',
       feature: 'add auth',
       projectDir,
-      callbacks: {
-        onOutput: vi.fn(),
-        onPhase: vi.fn(),
-        priorMessages: [
-          { role: 'user', content: 'start: add auth' },
-          { role: 'assistant', content: 'we should use JWT' },
-        ],
-      },
+      priorMessages,
+      callbacks: { onOutput: vi.fn(), onPhase: vi.fn() },
+    });
+    await callPhase(planner, {
+      call: 'spec',
+      feature: 'add auth',
+      projectDir,
+      priorMessages,
+      callbacks: { onOutput: vi.fn(), onPhase: vi.fn() },
     });
 
     expect(receivedBodies.length).toBeGreaterThan(0);
@@ -344,7 +384,7 @@ describe('createApiPlanner', () => {
         callbacks: { onOutput: () => {} },
       }),
     ).rejects.toMatchObject({
-      kind: 'provider-prompt-exceeds-context',
+      kind: 'api-insufficient-context',
     });
     expect(receivedBodies).toEqual([]);
   });

@@ -102,7 +102,7 @@ describe('SessionRow', () => {
         <SessionRow session={makeSession({ feature: longFeature, startedAt: now })} />
       </Box>,
     );
-    expect(untruncated).toContain(`○ ${longFeature}`);
+    expect(untruncated).toContain(`◌ ${longFeature}`);
     expect(untruncated).not.toContain('…');
   });
 
@@ -163,41 +163,70 @@ describe('SessionRow', () => {
     expect(selected.indexOf('alpha')).toBe(unselected.indexOf('alpha'));
   });
 
-  it('renders the status icon for each session status', () => {
-    expect(frameOf(<SessionRow session={makeSession({ status: 'complete' })} />)).toContain('✓');
-    expect(
-      frameOf(<SessionRow session={makeSession({ status: 'interrupted', summary: null })} />),
-    ).toContain('○');
+  it.each([
+    ['complete', undefined, '✓', 'complete'],
+    ['ended', undefined, '×', 'ended'],
+    ['open', 'paused', '◌', 'paused'],
+    ['open', 'waiting', '◌', 'waiting'],
+    ['open', 'halted', '◌', 'halted'],
+    ['open', 'failed', '◌', 'failed'],
+    ['open', 'interrupted', '◌', 'interrupted'],
+  ] as const)('leads a %s %s row with one glyph and one word', (status, stop, icon, word) => {
+    const frame = frameOf(
+      <Box width={72}>
+        <SessionRow
+          session={makeSession({
+            status,
+            feature: 'row-under-test',
+            ...(stop !== undefined && { stop }),
+          })}
+        />
+      </Box>,
+    );
+    const line = lineContaining(frame, 'row-under-test');
+    expect(line.startsWith(`${icon} row-under-test`)).toBe(true);
+    expect(line).toContain(word);
   });
 
-  it('renders a failed session with a dim ○ lead and a dim-red "failed" word, never a ✗ glyph', () => {
+  it('reads an open row with no stop reason as a run still going', () => {
     const frame = frameOf(
-      <SessionRow
-        session={makeSession({ status: 'failed', feature: 'flaky-test', summary: null })}
-      />,
+      <Box width={72}>
+        <SessionRow session={makeSession({ status: 'open', stop: undefined, feature: 'live' })} />
+      </Box>,
+    );
+    expect(frame).toContain('running');
+    expect(frame).toContain('◉');
+  });
+
+  it('never leads a failed row with a ✗ glyph', () => {
+    const frame = frameOf(
+      <Box width={72}>
+        <SessionRow
+          session={makeSession({ status: 'open', stop: 'failed', feature: 'flaky-test' })}
+        />
+      </Box>,
     );
     expect(frame).not.toContain('✗');
-    expect(lineContaining(frame, 'flaky-test')).toMatch(/^○ flaky-test/);
     expect(frame).toContain('failed');
   });
 
   it('does not reserve a cursor cell when no cursor is requested', () => {
     const frame = frameOf(<SessionRow session={makeSession({ feature: 'alpha' })} />);
-    expect(lineContaining(frame, 'alpha')).toMatch(/^○ alpha/);
+    expect(lineContaining(frame, 'alpha')).toMatch(/^◌ alpha/);
   });
 
   it('uses ascii status and selection markers when the glyph tier is ascii', () => {
     withAsciiTier(() => {
       const frame = frameOf(
         <SessionRow
-          session={makeSession({ feature: 'ascii-task', status: 'interrupted', summary: null })}
+          session={makeSession({ feature: 'ascii-task', status: 'open', summary: null })}
           cursor={{ kind: 'inline', isCursor: true }}
         />,
       );
       expect(frame).toContain(`${glyph('liveBar', 'ascii')} `);
-      expect(frame).toContain(`${glyph('statusPending', 'ascii')} ascii-task`);
+      expect(frame).toContain(`${glyph('statusOpen', 'ascii')} ascii-task`);
       expect(frame).not.toContain('▌');
-      expect(frame).not.toContain('○');
+      expect(frame).not.toContain('◌');
     });
   });
 
@@ -218,7 +247,7 @@ describe('SessionRow', () => {
     expect(stripAnsiStyles(rawFrame)).toContain('beforeafter');
   });
 
-  it('leads an outdented row with the ▌ accent bar, never the ▸ cursor, without shifting the feature', () => {
+  it('puts the ▌ bar in the slot beside the row, never the ▸ cursor, without shifting the feature', () => {
     const session = makeSession({ feature: 'alpha', startedAt: Date.now() });
     const plain = frameOf(
       <Box marginLeft={4} width={72}>
@@ -235,6 +264,7 @@ describe('SessionRow', () => {
     const outdentedLine = lineContaining(outdented, 'alpha');
     expect(outdented).not.toContain(CURSOR_GLYPH);
     expect(outdentedLine.indexOf('alpha')).toBe(plainAlpha);
-    expect(outdentedLine.indexOf('▌')).toBeLessThan(outdentedLine.indexOf('○ alpha'));
+    // One cell out, not two: two would stand the bar on the column the list's own frame uses.
+    expect(outdentedLine.indexOf('▌')).toBe(outdentedLine.indexOf('◌ alpha') - 1);
   });
 });

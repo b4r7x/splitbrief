@@ -1,21 +1,15 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  listRecentSessions,
-  listSessions,
-  listAllSessions,
-  saveSummary,
-  readSession,
-} from './io.js';
+import { listSessions, saveSummary, readSession } from './io.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
-import { saveState, loadState } from '../state/persistence.js';
-import { isResumable } from '../phases.js';
+import { saveState } from '../state/persistence.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../schemas/task.js';
 
 let tmp: string;
@@ -108,28 +102,21 @@ describe('listSessions', () => {
     ]);
   });
 
-  it('returns every stored session newest first with total = count', () => {
+  it('returns every stored session newest first', () => {
     tmp = createTempDir('sessions-io-test');
     for (let i = 0; i < 35; i++) {
       const id = `2024-01-01-sess-${i}`;
       writeSessionSubdir(tmp, id, makeSession({ id, startedAt: i * 1000 }));
     }
 
-    const recent = listRecentSessions(tmp);
     const sessions = listSessions(tmp);
-    const all = listAllSessions(tmp);
 
-    expect(recent.sessions).toHaveLength(35);
-    expect(recent.total).toBe(35);
-    expect(recent.sessions[0]?.startedAt).toBe(34000);
-    expect(recent.sessions[34]?.startedAt).toBe(0);
-    expect(recent.sessions.map((s) => s.id)).toEqual(
+    expect(sessions).toHaveLength(35);
+    expect(sessions[0]?.startedAt).toBe(34000);
+    expect(sessions[34]?.startedAt).toBe(0);
+    expect(sessions.map((s) => s.id)).toEqual(
       Array.from({ length: 35 }, (_, i) => `2024-01-01-sess-${34 - i}`),
     );
-    expect(sessions).toHaveLength(35);
-    expect(all).toHaveLength(35);
-    expect(sessions).toEqual(recent.sessions);
-    expect(all).toEqual(recent.sessions);
   });
 
   it('skips subdirectories with neither summary.json nor a recoverable state.json', () => {
@@ -283,11 +270,11 @@ describe('readSession', () => {
   });
 });
 
-describe('crashed-run recovery from state.json', () => {
-  it('lists a summary-less session that has a state.json as interrupted and resumable', () => {
+describe('rows derived from state.json', () => {
+  it('lists a summary-less session that has a state.json as open, with its phase and mode', () => {
     tmp = createTempDir('sessions-io-test');
     const sessionId = '2024-01-01-crashed';
-    const state = makeImplState([makeTask()], { feature: 'crashed-feature' });
+    const state = makeImplState([makeTask()], { feature: 'crashed-feature', mode: 'standard' });
     saveState({ projectDir: tmp, sessionId }, state);
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId, 'summary.json'))).toBe(
       false,
@@ -295,20 +282,38 @@ describe('crashed-run recovery from state.json', () => {
 
     const sessions = listSessions(tmp);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]?.id).toBe(sessionId);
-    expect(sessions[0]?.feature).toBe('crashed-feature');
-    expect(sessions[0]?.status).toBe('interrupted');
+    expect(sessions[0]).toMatchObject({
+      id: sessionId,
+      feature: 'crashed-feature',
+      status: 'open',
+      stop: 'interrupted',
+      phase: 'implementing',
+      mode: 'standard',
+    });
     expect(sessions[0]?.summary).toBeNull();
-
-    const recovered = loadState({ projectDir: tmp, sessionId });
-    expect(recovered).not.toBeNull();
-    expect(recovered && isResumable(recovered)).toBe(true);
   });
 
-  it('prefers summary.json over state.json when both exist', () => {
+  it('names the stop reason a halted run left on its state', () => {
+    tmp = createTempDir('sessions-io-test');
+    const sessionId = '2024-01-01-halted';
+    saveState(
+      { projectDir: tmp, sessionId },
+      makeImplState([makeTask({ id: 'T001' })], {
+        phase: 'validating-task',
+        pendingRecovery: makeRecoveryIssue(),
+      }),
+    );
+
+    expect(listSessions(tmp)[0]).toMatchObject({ status: 'open', stop: 'halted' });
+  });
+
+  it('derives the status from the state even when a summary.json is present', () => {
     tmp = createTempDir('sessions-io-test');
     const sessionId = '2024-01-01-both';
-    saveState({ projectDir: tmp, sessionId }, makeImplState([makeTask()]));
+    saveState(
+      { projectDir: tmp, sessionId },
+      makeImplState([makeTask()], { phase: 'complete', reviewStatus: 'passed' }),
+    );
     saveSummary(
       { projectDir: tmp, sessionId },
       makeSession({ id: sessionId, status: 'complete', feature: 'finished' }),
@@ -318,5 +323,38 @@ describe('crashed-run recovery from state.json', () => {
     expect(sessions).toHaveLength(1);
     expect(sessions[0]?.status).toBe('complete');
     expect(sessions[0]?.feature).toBe('finished');
+  });
+
+  it('keeps the recorded status of a run whose state no longer loads', () => {
+    tmp = createTempDir('sessions-io-test');
+    const sessionId = '2024-01-01-legacy';
+    writeSessionSubdir(
+      tmp,
+      sessionId,
+      makeSession({ id: sessionId, status: 'complete', feature: 'legacy-complete' }),
+    );
+
+    expect(listSessions(tmp)[0]?.status).toBe('complete');
+  });
+
+  it('lists a legacy summary.json written with an interrupted status as open', () => {
+    tmp = createTempDir('sessions-io-test');
+    const sessionId = '2024-01-01-legacy-open';
+    const subdir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
+    mkdirSync(subdir, { recursive: true });
+    writeFileSync(
+      join(subdir, 'summary.json'),
+      JSON.stringify({
+        id: sessionId,
+        feature: 'legacy feature',
+        startedAt: 1000,
+        completedAt: 2000,
+        stateVersion: 4,
+        status: 'interrupted',
+        summary: null,
+      }),
+    );
+
+    expect(listSessions(tmp)[0]).toMatchObject({ status: 'open', feature: 'legacy feature' });
   });
 });

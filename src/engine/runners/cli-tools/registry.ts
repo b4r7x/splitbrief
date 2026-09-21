@@ -1,29 +1,25 @@
-import { assertCandidateFilesAbsent } from '../../../core/runners/candidate-admission.js';
-import { cliAdmissionError } from '../../../core/runners/cli-admission-error.js';
 import {
   nativeCliCatalogToDetectedModels,
+  parseAntigravityModelCatalog,
   parseCodexNativeModelCatalog,
   parseCommandCodeNativeModelCatalog,
+  parseCopilotHelpConfigCatalog,
   parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
   type NativeCliModelCatalog,
 } from '../../providers/cli-model-catalog.js';
 import {
-  ANTIGRAVITY_CLI_CANDIDATE_PATHS,
-  CLI_COMPILER_EVIDENCE,
   CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
-  type CliCompilerEvidence,
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerRole } from '../../../core/runners/seat-roles.js';
 import type { PlannerCliToolId, ImplementerCliToolId } from '../../../core/schemas/enums.js';
 import { includes, isRecord } from '../../../utils/type-guards.js';
 import { runnerConfigError } from '../errors.js';
-import { refusedCompilerAdmission, type RefusedCompilerAdmission } from '../compiler-capability.js';
-import type { CompilerRuntimeEvidence } from '../compiler-runtime-evidence.js';
+import { antigravityImplementerAdapter, antigravityPlannerAdapter } from './antigravity.js';
 import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './claude-code.js';
 import { codexImplementerAdapter, codexPlannerAdapter } from './codex.js';
 import { CODEX_NATIVE_MODEL_CATALOG_PROBE } from './codex.js';
@@ -94,6 +90,8 @@ function versionOutputFormat(tool: CliToolId, command: string): VersionOutputFor
         labels: [command, 'GitHub Copilot CLI'],
         allowTrailingPeriod: true,
       };
+    case 'antigravity':
+      return { kind: 'bare' };
   }
 }
 
@@ -293,6 +291,17 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
         parse: parseCommandCodeStatusAuth,
       };
+    case 'antigravity':
+      return {
+        kind: 'auth-status',
+        command: [command, 'models'],
+        cwd: 'neutral',
+        timeoutMs: PROBE_TIMEOUT_MS,
+        maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
+        // `agy models` needs a signed-in account to list anything, so a
+        // non-zero exit is the missing-credential answer.
+        parse: (output) => (output.exitCode === 0 ? 'verified' : 'missing'),
+      };
     case 'copilot':
       return { kind: 'not-run' };
   }
@@ -424,8 +433,17 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
         command: ['cmd', '--list-models'],
         parser: parseCommandCodeNativeModelCatalog,
       });
-    case 'claude-code':
     case 'copilot':
+      return structuralCatalogProbe({
+        command: ['copilot', 'help', 'config'],
+        parser: parseCopilotHelpConfigCatalog,
+      });
+    case 'antigravity':
+      return structuralCatalogProbe({
+        command: ['agy', 'models'],
+        parser: parseAntigravityModelCatalog,
+      });
+    case 'claude-code':
       return { kind: 'not-run' };
   }
 }
@@ -473,12 +491,8 @@ function assembleImplementerAdapters(): Record<ImplementerCliToolId, CliImplemen
     'kilo-code': withDeclaredImplementerProbe(kiloImplementerAdapter),
     cursor: withDeclaredImplementerProbe(cursorImplementerAdapter),
     'command-code': withDeclaredImplementerProbe(commandCodeImplementerAdapter),
+    antigravity: withDeclaredImplementerProbe(antigravityImplementerAdapter),
   } satisfies Record<ImplementerCliToolId, CliImplementerAdapter>;
-
-  assertCandidateFilesAbsent(
-    ANTIGRAVITY_CLI_CANDIDATE_PATHS,
-    cliAdmissionError.omitRequiresAbsentSource,
-  );
 
   return Object.freeze(adapters);
 }
@@ -492,6 +506,7 @@ function assemblePlannerAdapters(): Record<PlannerCliToolId, CliPlannerAdapter> 
     'kilo-code': withDeclaredPlannerProbe(kiloPlannerAdapter),
     cursor: withDeclaredPlannerProbe(cursorPlannerAdapter),
     'command-code': withDeclaredPlannerProbe(commandCodePlannerAdapter),
+    antigravity: withDeclaredPlannerProbe(antigravityPlannerAdapter),
   });
 }
 
@@ -546,56 +561,4 @@ export function isCanonicalCliDeclaredProbe(
             CLI_IMPLEMENTER_ADAPTERS[input.tool].probe.declared,
           ];
   return declared.some((candidate) => candidate === input.probe);
-}
-
-export type CliCompilerRuntimeAdmission =
-  | Readonly<{ kind: 'admitted'; evidence: CliCompilerEvidence }>
-  | RefusedCompilerAdmission;
-
-/**
- * Registry-side compiler admission (REQ-003, REQ-016, REQ-049): a gate, not a
- * source of evidence — the seam consumes the admitted/refused decision and
- * keeps using the bound runtime evidence. Evidence with a drifted version
- * observation is admitted for supported tools. Runtime evidence bound for this
- * same tool carries the catalog's identity fields by construction —
- * `bindCompilerRuntimeEvidence` copies them out of the support table row this
- * record owns — so the comparisons below exist to enumerate the mismatched
- * properties when a caller binds one tool's runtime and admits it under
- * another, and the loader-only refusal to fail closed for a caller that reaches
- * here without that bind.
- */
-export function admitCliCompilerRuntime(
-  input: Readonly<{ tool: CliToolId; runtime: CompilerRuntimeEvidence }>,
-): CliCompilerRuntimeAdmission {
-  const evidence = CLI_COMPILER_EVIDENCE[input.tool];
-  if (evidence.state === 'unsupported') {
-    return refusedCompilerAdmission({
-      stage: 'runtime',
-      backend: input.tool,
-      claimedVersion: input.runtime.version,
-      missing: ['backend'],
-      ...(evidence.unsupportedReason === undefined ? {} : { detail: evidence.unsupportedReason }),
-    });
-  }
-  const missing: string[] = [];
-  if (input.runtime.backend !== input.tool) missing.push('backend');
-  if (input.runtime.version !== evidence.version) missing.push('version');
-  if (input.runtime.terminalContract !== evidence.terminalContract)
-    missing.push('terminalContract');
-  if (input.runtime.fixtureDate !== evidence.fixtureDate) missing.push('fixtureDate');
-  if (
-    input.runtime.transports.length !== evidence.transports.length ||
-    !input.runtime.transports.every((transport) => evidence.transports.includes(transport))
-  ) {
-    missing.push('transport');
-  }
-  if (missing.length > 0) {
-    return refusedCompilerAdmission({
-      stage: 'runtime',
-      backend: input.tool,
-      claimedVersion: input.runtime.version,
-      missing,
-    });
-  }
-  return { kind: 'admitted', evidence };
 }

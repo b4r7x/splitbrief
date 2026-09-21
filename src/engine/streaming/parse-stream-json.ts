@@ -8,7 +8,7 @@ import type {
   ToolUseInfo,
 } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import { toTokenDelta } from '../calls/usage.js';
+import { accumulateTokenUsage, BackendTokenUsageSchema, toTokenDelta } from '../calls/usage.js';
 import { isRecord, optionalString } from '../../utils/type-guards.js';
 import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
 
@@ -19,6 +19,7 @@ export interface StreamParseResult {
   textSemantics?: ParsedTextSemantics | undefined;
   sessionId?: string | undefined;
   isResult?: boolean | undefined;
+  isSessionInit?: boolean | undefined;
   isError?: boolean | undefined;
   usage?: TokenDelta | undefined;
   usageSemantics?: ParsedUsageSemantics | undefined;
@@ -29,6 +30,72 @@ export interface StreamParseResult {
 }
 
 export const EMPTY_RESULT: StreamParseResult = Object.freeze({});
+
+type MessageUsage = z.infer<typeof BackendTokenUsageSchema>;
+type CollectMessageUsage = (event: Record<string, unknown>) => TokenDelta | undefined;
+
+/** A delta with no message_start behind it still reports real usage. */
+const ORPHAN_MESSAGE_DELTA_ID = 'message-delta-without-message-start';
+
+/** One parser per invocation: message snapshots replace, distinct messages add. */
+export function createStreamParser(): (line: string) => StreamParseResult {
+  const messages = new Map<string, MessageUsage>();
+  let activeMessage: string | undefined;
+
+  const collect: CollectMessageUsage = (event) => {
+    // The invocation result covers the main loop, not nested subagent messages.
+    if (event.parent_tool_use_id != null) return undefined;
+    const stream = event.type === 'stream_event' && isRecord(event.event) ? event.event : null;
+    const message =
+      event.type === 'assistant'
+        ? event.message
+        : stream?.type === 'message_start'
+          ? stream.message
+          : undefined;
+    let id: string | undefined;
+    let raw: unknown;
+    if (isRecord(message)) {
+      id = firstString(message.id);
+      if (stream?.type === 'message_start') activeMessage = id;
+      if (!isRecord(message.usage)) return undefined;
+      // Assistant/message_start output is a placeholder. Only message_delta or
+      // the invocation result establishes the generated count.
+      const { output_tokens: _placeholder, ...inputUsage } = message.usage;
+      raw = inputUsage;
+    } else if (stream?.type === 'message_delta') {
+      // Dropping a delta no message_start opened would erase the only usage
+      // evidence a terminal result without usage ever sees, so it stands in
+      // as a message of its own and the aggregate keeps it.
+      id = activeMessage ?? ORPHAN_MESSAGE_DELTA_ID;
+      raw = stream.usage;
+    } else {
+      if (stream?.type === 'message_stop') activeMessage = undefined;
+      return undefined;
+    }
+    if (id === undefined) return undefined;
+    const parsed = BackendTokenUsageSchema.safeParse(raw);
+    if (!parsed.success) return undefined;
+    messages.set(id, { ...messages.get(id), ...parsed.data });
+
+    let aggregate: TokenDelta | null = null;
+    let outputTotal = 0;
+    let allOutputsKnown = true;
+    for (const value of messages.values()) {
+      const usage = toTokenDelta(value);
+      if (usage === null) continue;
+      aggregate = accumulateTokenUsage(aggregate, usage);
+      if (usage.providerTotals?.output === undefined) allOutputsKnown = false;
+      else outputTotal += usage.providerTotals.output;
+    }
+    if (aggregate === null) return undefined;
+    const { providerTotals: _lastMessageTotals, ...counters } = aggregate;
+    return {
+      ...counters,
+      ...(allOutputsKnown && { providerTotals: { output: outputTotal } }),
+    };
+  };
+  return (line) => parseLine(line, collect);
+}
 
 const TextBlock = z.object({ type: z.literal('text'), text: z.string() });
 const ToolUseBlock = z.object({
@@ -127,7 +194,14 @@ function parseSystemProgress(event: Record<string, unknown>): StreamParseResult 
   const sessionId = firstString(event.session_id);
   if (type === 'system') {
     const subtype = firstString(event.subtype);
-    return subtype ? { text: subtype, channel: 'system', sessionId } : { sessionId };
+    return subtype
+      ? {
+          text: subtype,
+          channel: 'system',
+          sessionId,
+          ...(subtype === 'init' && { isSessionInit: true }),
+        }
+      : { sessionId };
   }
   if (type === 'api_error' || type === 'api_retry' || type === 'plugin_progress') {
     return {
@@ -144,11 +218,16 @@ function parseSystemProgress(event: Record<string, unknown>): StreamParseResult 
 }
 
 export function parseStreamLine(line: string): StreamParseResult {
+  return parseLine(line);
+}
+
+function parseLine(line: string, collectUsage?: CollectMessageUsage): StreamParseResult {
   if (!line.trim()) return EMPTY_RESULT;
 
   try {
     const event: unknown = JSON.parse(line);
     const record = isRecord(event) ? event : null;
+    const usage = record === null ? undefined : collectUsage?.(record);
 
     const assistant = AssistantEvent.safeParse(event);
     if (assistant.success) {
@@ -177,6 +256,7 @@ export function parseStreamLine(line: string): StreamParseResult {
         textSemantics: texts.length > 0 ? 'final' : undefined,
         sessionId: assistant.data.session_id ?? undefined,
         toolUse: tools.length > 0 ? tools : undefined,
+        ...(usage !== undefined && { usage, usageSemantics: 'cumulative' }),
       };
     }
 
@@ -195,7 +275,11 @@ export function parseStreamLine(line: string): StreamParseResult {
 
     if (record) {
       const streamEvent = parseStreamEvent(record);
-      if (streamEvent) return streamEvent;
+      if (streamEvent) {
+        if (collectUsage === undefined) return streamEvent;
+        const { usage: _messageUsage, usageSemantics: _semantics, ...rest } = streamEvent;
+        return { ...rest, ...(usage !== undefined && { usage, usageSemantics: 'cumulative' }) };
+      }
       const systemProgress = parseSystemProgress(record);
       if (systemProgress) return systemProgress;
     }

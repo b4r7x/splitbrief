@@ -2,16 +2,27 @@ import { z } from 'zod';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 
-export type NativeCliCatalogTool = 'codex' | 'opencode' | 'kilo-code' | 'cursor' | 'command-code';
+export type NativeCliCatalogTool =
+  | 'codex'
+  | 'opencode'
+  | 'kilo-code'
+  | 'cursor'
+  | 'command-code'
+  | 'copilot'
+  | 'antigravity';
 
 export interface NativeCliModelCatalogEntry {
   readonly selectionId: string;
   readonly nativeOrder: number;
   readonly displayName?: string | undefined;
+  readonly detail?: string | undefined;
   readonly nativeDefault?: boolean | undefined;
   readonly nativeHidden?: boolean | undefined;
   readonly nativeReasoningEfforts?: readonly string[] | undefined;
+  readonly nativeDefaultReasoningEffort?: string | undefined;
   readonly contextWindow?: number | undefined;
+  readonly supportsToolCalls?: boolean | undefined;
+  readonly outputModalities?: readonly string[] | undefined;
 }
 
 export interface NativeCliModelCatalog {
@@ -26,7 +37,13 @@ const CURSOR_MODEL_LINE = /^(\S+) - (.+)$/;
 // a run of spaces, and only first-party ids drop the `provider/` prefix. The id
 // shape rejects the provider headings, the `cmd --model …` usage examples and
 // the trailing `Docs:` line, none of which are selectable.
-const COMMAND_CODE_MODEL_LINE = /^([a-z0-9][a-z0-9.-]*(?:\/[a-z0-9][a-z0-9.-]*)*) {2,}(.+)$/i;
+const COMMAND_CODE_MODEL_LINE =
+  /^([a-z0-9][a-z0-9.-]*(?::[a-z0-9][a-z0-9.-]*)?(?:\/[a-z0-9][a-z0-9.-]*(?::[a-z0-9][a-z0-9.-]*)?)*) {2,}(.+)$/i;
+// `copilot help config` prints the `--model` enum as quoted bullets under its
+// `model` key, and a blank line separates the last bullet from the next config
+// key, so the first non-bullet line ends the enum rather than interrupting it.
+const COPILOT_MODEL_KEY_LINE = /^`model`:/;
+const COPILOT_MODEL_BULLET = /^-\s+"([^"]+)"$/;
 const NATIVE_DEFAULT_SUFFIX = /\s*\(default\)$/i;
 
 const CodexReasoningEffortSchema: z.ZodType<string> = z
@@ -56,6 +73,8 @@ const CodexNativeModelSchema = z
     contextWindow: z.number().int().positive().optional(),
     reasoning_efforts: z.array(CodexReasoningEffortSchema).optional(),
     supported_reasoning_efforts: z.array(CodexReasoningEffortSchema).optional(),
+    supported_reasoning_levels: z.array(CodexReasoningEffortSchema).optional(),
+    default_reasoning_level: z.string().trim().min(1).optional(),
   })
   .passthrough();
 
@@ -78,6 +97,13 @@ const VerboseModelBlockSchema = z
       .passthrough()
       .optional(),
     variants: z.record(z.string(), z.unknown()).optional(),
+    capabilities: z
+      .object({
+        toolcall: z.boolean().optional(),
+        output: z.object({ text: z.boolean().optional() }).passthrough().optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 
@@ -122,8 +148,13 @@ function codexNativeEntry(
   const nativeDefault = distinct([input.model.is_default, input.model.isDefault]);
   const nativeHidden = distinct([input.model.hidden, input.model.is_hidden]);
   const contextWindow = distinct([input.model.context_window, input.model.contextWindow]);
+  const nativeDefaultReasoningEffort = input.model.default_reasoning_level;
   const nativeReasoningEfforts = distinct(
-    [input.model.reasoning_efforts, input.model.supported_reasoning_efforts],
+    [
+      input.model.reasoning_efforts,
+      input.model.supported_reasoning_efforts,
+      input.model.supported_reasoning_levels,
+    ],
     equalStringLists,
   );
   if (
@@ -144,6 +175,7 @@ function codexNativeEntry(
     ...(nativeDefault === undefined ? {} : { nativeDefault }),
     ...(nativeHidden === undefined ? {} : { nativeHidden }),
     ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(nativeDefaultReasoningEffort === undefined ? {} : { nativeDefaultReasoningEffort }),
     ...(nativeReasoningEfforts === undefined
       ? {}
       : { nativeReasoningEfforts: [...nativeReasoningEfforts] }),
@@ -182,10 +214,14 @@ function verboseBlockFields(
   // models on 2026-09-05 (kilo 7.0.49): no text window, not a zero-token one.
   const context = block.data.limit?.context;
   const variants = block.data.variants;
+  const toolcall = block.data.capabilities?.toolcall;
+  const outputText = block.data.capabilities?.output?.text;
   return {
     ...(block.data.name === undefined ? {} : { displayName: block.data.name }),
     ...(context === undefined || context === 0 ? {} : { contextWindow: context }),
     ...(variants === undefined ? {} : { nativeReasoningEfforts: Object.keys(variants) }),
+    ...(toolcall === undefined ? {} : { supportsToolCalls: toolcall }),
+    ...(outputText === undefined ? {} : { outputModalities: outputText ? ['text'] : [] }),
   };
 }
 
@@ -282,14 +318,64 @@ export function parseCommandCodeNativeModelCatalog(stdout: string): NativeCliMod
     const selectionId = match?.[1];
     const blurb = match?.[2];
     if (selectionId === undefined || blurb === undefined) continue;
-    // The second column is a capability blurb, not a display name, so the row
-    // contributes no displayName and the picker falls back to the id.
+    const detail = blurb.replace(NATIVE_DEFAULT_SUFFIX, '').trim();
     entries.push({
       selectionId,
+      ...(detail.length === 0 ? {} : { detail }),
       ...(NATIVE_DEFAULT_SUFFIX.test(blurb) ? { nativeDefault: true } : {}),
     });
   }
   return entries.length === 0 ? null : catalogFromEntries({ tool: 'command-code', entries });
+}
+
+/** The native count and final footer prove the listing finished even if shutdown stalls. */
+export function parseCompleteCommandCodeNativeModelCatalog(
+  stdout: string,
+): NativeCliModelCatalog | null {
+  const lines = cleanCatalogLines(stdout);
+  const footer = lines.findLast((line) => line.length > 0);
+  const counts = lines.flatMap((line) => {
+    const match = /^Available models\s*·\s*(\d+) models$/i.exec(line);
+    return match === null ? [] : [Number(match[1])];
+  });
+  if (
+    counts.length !== 1 ||
+    !/^Docs:\s+https:\/\/commandcode\.ai\/docs\/reference\/cli\/models\/?$/.test(footer ?? '')
+  )
+    return null;
+  const catalog = parseCommandCodeNativeModelCatalog(stdout);
+  return catalog !== null && catalog.models.length === counts[0] ? catalog : null;
+}
+
+export function parseCopilotHelpConfigCatalog(stdout: string): NativeCliModelCatalog | null {
+  const lines = cleanCatalogLines(stdout);
+  const start = lines.findIndex((line) => COPILOT_MODEL_KEY_LINE.test(line));
+  if (start === -1) return null;
+
+  const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
+  for (const line of lines.slice(start + 1)) {
+    const selectionId = COPILOT_MODEL_BULLET.exec(line)?.[1];
+    if (selectionId === undefined) break;
+    entries.push({ selectionId });
+  }
+  return entries.length === 0 ? null : catalogFromEntries({ tool: 'copilot', entries });
+}
+
+// `agy models` prints `<id>\t<display name>` per model, one row per effort
+// variant (`gemini-3.8-flash-high`), and sends its progress line to stderr. The
+// tab is the only separator and `stripTerminalControls` deletes it, so a row is
+// split before it is cleaned; a line without a tab carries no model.
+export function parseAntigravityModelCatalog(stdout: string): NativeCliModelCatalog | null {
+  const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
+  for (const line of stdout.split('\n')) {
+    const tab = line.indexOf('\t');
+    if (tab === -1) continue;
+    const selectionId = stripTerminalControls(line.slice(0, tab)).trim();
+    if (selectionId === '') continue;
+    const displayName = stripTerminalControls(line.slice(tab + 1)).trim();
+    entries.push({ selectionId, ...(displayName === '' ? {} : { displayName }) });
+  }
+  return entries.length === 0 ? null : catalogFromEntries({ tool: 'antigravity', entries });
 }
 
 export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog): DetectedModel[] {
@@ -297,15 +383,25 @@ export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog)
     id: model.selectionId,
     nativeOrder: model.nativeOrder,
     ...(model.displayName === undefined ? {} : { displayName: model.displayName }),
+    ...(model.detail === undefined ? {} : { detail: model.detail }),
     ...(model.nativeDefault === undefined ? {} : { nativeDefault: model.nativeDefault }),
     ...(model.nativeHidden === undefined ? {} : { nativeHidden: model.nativeHidden }),
     ...(model.contextWindow === undefined ? {} : { contextLength: model.contextWindow }),
+    ...(model.nativeDefaultReasoningEffort === undefined
+      ? {}
+      : { nativeDefaultReasoningEffort: model.nativeDefaultReasoningEffort }),
     ...(model.nativeReasoningEfforts === undefined
       ? {}
       : {
           nativeReasoningEfforts: [...model.nativeReasoningEfforts],
           supportsReasoning: model.nativeReasoningEfforts.length > 0,
         }),
+    ...(model.supportsToolCalls === undefined
+      ? {}
+      : { supportsToolCalls: model.supportsToolCalls }),
+    ...(model.outputModalities === undefined
+      ? {}
+      : { outputModalities: [...model.outputModalities] }),
   }));
 }
 

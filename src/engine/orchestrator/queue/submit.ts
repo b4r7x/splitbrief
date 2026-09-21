@@ -6,7 +6,7 @@ import type { Planner } from '../../planners/types.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { publishWarning } from '../events.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
-import { dispatchNativeInjection, type RecoveryQueueBinding } from './native-injection.js';
+import { dispatchNativeInjection } from './native-injection.js';
 import { warnError } from '../../../lib/warn.js';
 import { nowIso } from '../../../utils/format-time.js';
 import type { WriteSequencer } from '../serial-executor.js';
@@ -30,7 +30,6 @@ export function enqueueUserMessage({
   text,
   phase,
   bus,
-  persistTranscript,
   enforcePhasePolicy = true,
 }: EnqueueUserMessageOptions): {
   state: WorkflowState;
@@ -47,7 +46,6 @@ export function enqueueUserMessage({
       safety: {
         category: 'queue',
         code: 'phase_unavailable',
-        transcriptSafe: true,
       },
     });
     return { state: base, result: { status: 'rejected', reason: 'phase-unavailable', message } };
@@ -63,7 +61,6 @@ export function enqueueUserMessage({
       safety: {
         category: 'queue',
         code: 'queue_full',
-        transcriptSafe: true,
       },
     });
     return { state: base, result: { status: 'rejected', reason: 'queue-full', message } };
@@ -86,7 +83,6 @@ export function enqueueUserMessage({
   appendMessage(
     { projectDir, sessionId },
     { role: 'user', phase, text, queuedAt: message.queuedAt, queueMessageId: message.id },
-    { persistTranscript },
   );
   const preview = formatQueuedMessagePreview(message);
   bus.publish({
@@ -105,25 +101,12 @@ export function enqueueUserMessage({
 
 export function createQueueHandler(
   opts: QueueHandlerContext & {
-    persistTranscript: boolean;
     planner: Planner;
     serialize: WriteSequencer;
     signal?: AbortSignal | undefined;
-    recovery?: RecoveryQueueBinding | undefined;
   },
 ): (text: string, phase: Phase) => Promise<QueueSubmissionResult> {
-  const {
-    projectDir,
-    sessionId,
-    getState,
-    setState,
-    bus,
-    persistTranscript,
-    planner,
-    serialize,
-    signal,
-    recovery,
-  } = opts;
+  const { projectDir, sessionId, getState, setState, bus, planner, serialize, signal } = opts;
   return async (text: string, phase: Phase) => {
     try {
       const submitted = await serialize(
@@ -150,7 +133,6 @@ export function createQueueHandler(
             text,
             phase,
             bus,
-            persistTranscript,
           });
           setState(result.state);
           return { result: result.result, message: result.message, state: result.state };
@@ -169,7 +151,6 @@ export function createQueueHandler(
             setState,
             bus,
             ...(signal !== undefined && { signal }),
-            ...(recovery !== undefined && { recovery }),
           }),
         ).catch((err) => warnError('queue-handler failed', err));
       }

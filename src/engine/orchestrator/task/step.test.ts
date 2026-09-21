@@ -22,7 +22,10 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 
 afterEach(cleanupTaskProjects);
 
-describe('runSingleTask — completion, abort and approval evidence', () => {
+// Every case here drives a real git fixture repo and real snapshot/drift git
+// subprocesses, so the body is a second of work in isolation and several under
+// a loaded suite. The window is explicit rather than left to the default.
+describe('runSingleTask — completion, abort and approval evidence', { timeout: 60_000 }, () => {
   it('emits task-start and task-complete, advances to done, and records token usage', async () => {
     const task = makeTask({ id: 'T001' });
     const state = implementingState([task]);
@@ -209,6 +212,60 @@ describe('runSingleTask — completion, abort and approval evidence', () => {
     expect(result.tasks[0]?.status).not.toBe('done');
     expect(result.currentTaskIndex).toBe(0);
     expect(events.find((e) => e.type === 'task_completed')).toBeUndefined();
+  });
+
+  it('first out-of-scope write retries with revert instruction; second raises recovery', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/other.ts': 'committed other\n' });
+    const task = makeTask({
+      id: 'T001',
+      action: 'create',
+      file: 'src/hello.ts',
+      scope: { inBounds: ['src/hello.ts'] },
+    });
+    const state = implementingState([task]);
+
+    const writeOutOfScope = async () => {
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = 1;\n');
+      writeFileSync(join(projectDir, 'src/other.ts'), 'agent rewrote this\n');
+      return {
+        success: false,
+        output: '',
+        outcome: 'implementer-effect-invalid' as const,
+        error: "wrote outside the brief's declared files: src/other.ts",
+      };
+    };
+    const retry = vi.fn().mockImplementation(writeOutOfScope);
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(writeOutOfScope),
+      retry,
+    });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        implementer,
+        bus,
+        config: makeConfig({
+          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          workflow: { maxRetries: 1 },
+        }),
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(retry).toHaveBeenCalled();
+    expect(retry.mock.calls[0]?.[0]?.error).toMatch(/^Revert your changes to src\/other\.ts;/);
+    expect(result.pendingRecovery).toBeDefined();
+    expect(events.some((e) => e.type === 'recovery_prompted')).toBe(true);
   });
 
   it('persists successful confirm reasons in the evidence ledger', async () => {

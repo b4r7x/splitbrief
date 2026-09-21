@@ -17,7 +17,6 @@ let projectDir = '';
 const { routerStore } = await import('../../../src/stores/navigation/router.js');
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
 const { openApprovalPrompt } = await import('../../../src/stores/approval-prompt/prompt.js');
-const { openCostApprovalPrompt } = await import('../../../src/stores/cost-approval/prompt.js');
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 
@@ -59,7 +58,7 @@ describe('WorkflowScreen key ownership', () => {
     await tick(PAST_GRACE);
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').toContain('Approve once');
+    expect(ui.lastFrame() ?? '').toContain('allow this operation only');
 
     // A single 's' must produce exactly one semantic action: the prompt's session-approve.
     // If the composer were still focused it would also append 's' to the input box.
@@ -113,50 +112,6 @@ describe('WorkflowScreen key ownership', () => {
     await flushEffects();
     ui.stdin.write('x');
     await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
-
-    ui.unmount();
-  });
-
-  it('a pending cost prompt owns y/n; the composer stays disabled', async () => {
-    const ui = mountWorkflow();
-    await tick(20);
-
-    const decision = openCostApprovalPrompt({
-      estimatedTasks: 3,
-      lowCost: 0.01,
-      expectedCost: 0.02,
-      highCost: 0.05,
-      plannerTool: 'anthropic',
-      implementerTool: 'anthropic',
-      deterministic: {
-        taskCount: 3,
-        taskFitCounts: { fits: 3, tight: 0, overflow: 0, unknown: 0 },
-        contextConfidenceCounts: {
-          contextExplicit: 3,
-          contextDetected: 0,
-          contextKnownCatalog: 0,
-          contextCachedProvider: 0,
-          contextConservativeFallback: 0,
-          profileUnavailable: 0,
-        },
-        priceConfidenceCounts: { priceKnown: 3, priceUnknown: 0, profileUnavailable: 0 },
-        tasks: [],
-        totals: {
-          knownActualEstimate: 0.02,
-          hypotheticalAllPlanner: 0.1,
-          estimatedSavings: 0.08,
-          unknownCostReason: [],
-        },
-      },
-    });
-    await tick(PAST_GRACE);
-    await tick(20);
-
-    expect(ui.lastFrame() ?? '').toContain('Approve');
-
-    await flushEffects();
-    ui.stdin.write('n');
-    await expect(decision).resolves.toBe(false);
 
     ui.unmount();
   });

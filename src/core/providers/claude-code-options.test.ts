@@ -28,6 +28,28 @@ describe('loadClaudeCodeModelOptions', () => {
     ]);
   });
 
+  it('keeps the sentence Claude Code stores beside the label', () => {
+    const dir = homeWith(
+      '{"additionalModelOptionsCache":[{"value":"claude-fable-5-1[1m]","label":"Fable","description":"Fable 5.1 · Most capable for your hardest and longest-running tasks"}]}',
+    );
+
+    expect(loadClaudeCodeModelOptions(dir)).toEqual([
+      {
+        id: 'claude-fable-5-1[1m]',
+        displayName: 'Fable',
+        description: 'Fable 5.1 · Most capable for your hardest and longest-running tasks',
+      },
+    ]);
+  });
+
+  it('leaves the description unset when the entry carries none', () => {
+    const dir = homeWith(
+      '{"additionalModelOptionsCache":[{"value":"claude-x","label":"X","description":"  "}]}',
+    );
+
+    expect(loadClaudeCodeModelOptions(dir)[0]?.description).toBeUndefined();
+  });
+
   it('accepts the cache as an object map as well as an array', () => {
     const dir = homeWith('{"additionalModelOptionsCache":{"a":{"value":"claude-x","label":"X"}}}');
 

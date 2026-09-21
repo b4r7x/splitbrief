@@ -56,7 +56,7 @@ describe('runValidation', () => {
     expectCommandRanInProject(runner, tempDir);
   });
 
-  it('discovered wins over heuristic', async () => {
+  it('discovered wins over the stack default', async () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
     const config = makeConfig({ lint: false, test: false });
@@ -76,7 +76,7 @@ describe('runValidation', () => {
     expectCommandRanInProject(runner, tempDir);
   });
 
-  it('heuristic fallback when no config and no discovered', async () => {
+  it('stack default when no config, manifest or discovered command', async () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
     const config = makeConfig({ lint: false, test: false });
@@ -94,7 +94,7 @@ describe('runValidation', () => {
     expectCommandRanInProject(runner, tempDir);
   });
 
-  it('runs the heuristic cargo test when the loaded config sets no test_command', async () => {
+  it('runs the stack-default cargo test when the loaded config sets no test_command', async () => {
     const configDir = join(tempDir, SPLITBRIEF_DIR);
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
@@ -103,6 +103,8 @@ describe('runValidation', () => {
       'utf-8',
     );
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'main.rs'), '#[cfg(test)]\nmod tests {}');
 
     const { config } = loadConfig(tempDir);
     expect(config.validation.testCommand).toBeUndefined();
@@ -118,9 +120,9 @@ describe('runValidation', () => {
       phase: 'implementing',
     });
 
-    expect(results.find((r) => r.stage === 'test')?.output).toBe('cargo test');
+    expect(results.find((r) => r.stage === 'test')?.output).toBe('cargo test -- main');
     expect(runner.calls.at(-1)?.cmd).toBe('cargo');
-    expect(runner.calls.at(-1)?.args).toEqual(['test']);
+    expect(runner.calls.at(-1)?.args).toEqual(['test', '--', 'main']);
     expectCommandRanInProject(runner, tempDir);
   });
 
@@ -160,7 +162,7 @@ describe('runValidation', () => {
     expect(tc?.output).toContain('not found');
   });
 
-  it('skips a heuristic lint command when the cargo subcommand is missing (rustup minimal)', async () => {
+  it('skips a stack-default lint command when the cargo subcommand is missing (rustup minimal)', async () => {
     const missingClippy = processError.exitCode({
       command: 'cargo',
       label: 'lint validation',
@@ -301,7 +303,7 @@ describe('runValidation', () => {
     expect(results.find((r) => r.stage === 'typecheck')?.output).toBe('npx tsc --noEmit');
   });
 
-  it('TS project uses default npx tsc --noEmit when heuristic returns null', async () => {
+  it('TS project uses default npx tsc --noEmit when no manifest script exists', async () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
     const config = makeConfig({ lint: false, test: false });
@@ -427,5 +429,129 @@ describe('runValidation', () => {
       passed: true,
       skipped: true,
     });
+  });
+  it('manifest script beats discovered', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: false, lint: true, test: false });
+    writeFileSync(join(tempDir, 'package.json'), '{"scripts":{"lint":"biome check"}}');
+
+    await validator.runValidation({
+      task: mkTask('src/app.js'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+      discoveredValidation: { lintCommand: 'eslint --max-warnings 0' },
+    });
+
+    expect(runner.calls[0]?.cmd).toBe('npm');
+    expect(runner.calls[0]?.args).toEqual(['run', 'lint']);
+  });
+
+  it('narrowing unions affected tests over files', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: false, lint: false, test: true });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+    writeFileSync(join(tempDir, 'package.json'), '{"scripts":{"test":"vitest run"}}');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'a.test.ts'), '');
+    writeFileSync(join(tempDir, 'src', 'b.test.ts'), '');
+
+    await validator.runValidation({
+      task: makeTask({ file: 'src/a.ts', files: ['src/a.ts', 'src/b.ts'], action: 'modify' }),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(runner.calls[0]?.cmd).toBe('npm');
+    expect(runner.calls[0]?.args).toEqual(['test', '--', 'src/a.test.ts', 'src/b.test.ts']);
+  });
+
+  it("narrows a python stack with path-arg ''", async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: false, lint: false, test: true });
+    writeFileSync(join(tempDir, 'pyproject.toml'), '[project]\nname = "x"');
+    mkdirSync(join(tempDir, 'tests'), { recursive: true });
+    writeFileSync(join(tempDir, 'tests', 'test_a.py'), '');
+
+    await validator.runValidation({
+      task: mkTask('src/a.py'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(runner.calls[0]?.cmd).toBe('pytest');
+    expect(runner.calls[0]?.args).toEqual([join('tests', 'test_a.py')]);
+  });
+
+  it('narrows a go stack with package-arg', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: false, lint: false, test: true });
+    writeFileSync(join(tempDir, 'go.mod'), 'module example.com/test');
+    mkdirSync(join(tempDir, 'pkg'), { recursive: true });
+    writeFileSync(join(tempDir, 'pkg', 'x_test.go'), '');
+
+    await validator.runValidation({
+      task: mkTask('pkg/x.go'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(runner.calls[0]?.cmd).toBe('go');
+    expect(runner.calls[0]?.args).toEqual(['test', './pkg/']);
+  });
+
+  it('narrows a rust stack with a name filter', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: false, lint: false, test: true });
+    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'lib.rs'), '#[cfg(test)]\nmod tests {}');
+
+    await validator.runValidation({
+      task: mkTask('src/lib.rs'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(runner.calls[0]?.cmd).toBe('cargo');
+    expect(runner.calls[0]?.args).toEqual(['test', '--', 'lib']);
+  });
+
+  it('a config-pinned test command runs unnarrowed', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({
+      typecheck: false,
+      lint: false,
+      test: true,
+      testCommand: 'npm test',
+    });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'a.test.ts'), '');
+
+    await validator.runValidation({
+      task: mkTask('src/a.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(runner.calls[0]?.args).toEqual(['test']);
   });
 });

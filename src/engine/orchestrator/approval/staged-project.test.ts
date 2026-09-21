@@ -6,7 +6,7 @@ import { listTrackedAndUntrackedFiles } from '../../../lib/git/files.js';
 import { SANDBOX_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { collectTrackedFiles } from '../../snapshots/files.js';
 import { getChangedFilesSinceSnapshot } from './file-snapshots/capture.js';
-import { captureCurrentFileContents } from './file-snapshots/contents.js';
+import { captureAcquisitionBaseline } from './file-snapshots/entry.js';
 import { createStagedProject, promoteStagedChanges } from './staged-project.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -114,12 +114,12 @@ describe('createStagedProject', () => {
         const changed = await getChangedFilesSinceSnapshot(staged.projectDir, staged.snapshot);
         expect(changed).toContain('src/gone.ts');
 
-        const expectedCurrentContents = await captureCurrentFileContents(dir, changed);
+        const targetBaseline = await captureAcquisitionBaseline(dir);
         const promoted = await promoteStagedChanges({
           targetProjectDir: dir,
           stagedProjectDir: staged.projectDir,
           files: changed,
-          expectedCurrentContents,
+          targetBaseline,
         });
 
         expect(promoted.conflictedFiles).toEqual([]);

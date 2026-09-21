@@ -6,12 +6,13 @@ import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { loadConfig } from '../../core/config/load/io.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
-import { deriveCrewRows, type CrewRow } from '../../core/crew/rows.js';
+import { deriveCrewRows } from '../../core/crew/rows.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import type { Config } from '../../core/schemas/config.js';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { crewActivate, crewVerdict } from './rows.js';
 
 const PRESET: CrewPreset = {
@@ -31,38 +32,78 @@ function currentConfig(): Config {
   return config;
 }
 
-function rowOfKind(config: Config, kind: CrewRow['kind']): CrewRow {
-  const row = deriveCrewRows({ config }).find((candidate) => candidate.kind === kind);
-  if (row === undefined) throw new Error(`No ${kind} row for this config.`);
-  return row;
-}
-
 describe('crew row activation', () => {
   beforeEach(() => {
     overlayStore.reset();
+    pickerViewStore.reset();
   });
 
-  it('opens the seat picker for the seat the row names, with no sub-focus', () => {
+  it('opens a seat row with a real model, expands it and lands the token', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' },
+    });
+    const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
+    if (plan === undefined) throw new Error('No plan seat row.');
+
+    expect(crewActivate({ target: { kind: 'crew', row: plan }, config })).toEqual({
+      kind: 'opened',
+    });
+    expect(overlayStore.get()).toMatchObject({ active: 'planner-picker' });
+    expect(overlayStore.get().focus).toBe('seat:plan:effort');
+    expect(pickerViewStore.get().expandedModelId).toBe('claude-sonnet-4');
+  });
+
+  it('opens the reviewer picker for the review seat row with its own token', () => {
     const config = makeConfig();
-    const review = deriveCrewRows({ config }).find(
-      (row) => row.kind === 'seat' && row.id === 'review',
-    );
+    const review = deriveCrewRows({ config }).find((row) => row.id === 'review');
     if (review === undefined) throw new Error('No review seat row.');
 
     expect(crewActivate({ target: { kind: 'crew', row: review }, config })).toEqual({
       kind: 'opened',
     });
     expect(overlayStore.get()).toMatchObject({ active: 'reviewer-picker' });
-    expect(overlayStore.get().focus).toBeUndefined();
+    expect(overlayStore.get().focus).toBe('seat:review:effort');
   });
 
-  it('does nothing on an effort row, which its list cycles in place', () => {
-    const config = makeConfig();
+  it('opens an auto seat with the token and no expand', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'auto' },
+    });
+    const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
+    if (plan === undefined) throw new Error('No plan seat row.');
 
-    expect(
-      crewActivate({ target: { kind: 'crew', row: rowOfKind(config, 'effort') }, config }),
-    ).toEqual({ kind: 'inert' });
-    expect(overlayStore.get()).toMatchObject({ active: 'none' });
+    expect(crewActivate({ target: { kind: 'crew', row: plan }, config })).toEqual({
+      kind: 'opened',
+    });
+    expect(overlayStore.get().focus).toBe('seat:plan:effort');
+    expect(pickerViewStore.get().expandedModelId).toBeNull();
+  });
+
+  it('a claude-code seat carrying the legacy default alias behaves the same as auto', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'default' },
+    });
+    const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
+    if (plan === undefined) throw new Error('No plan seat row.');
+
+    expect(crewActivate({ target: { kind: 'crew', row: plan }, config })).toEqual({
+      kind: 'opened',
+    });
+    expect(pickerViewStore.get().expandedModelId).toBeNull();
+  });
+
+  it('a seat with no model field at all opens with the token and no expand', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'opencode' },
+    });
+    const build = deriveCrewRows({ config }).find((row) => row.id === 'build');
+    if (build === undefined) throw new Error('No build seat row.');
+
+    expect(crewActivate({ target: { kind: 'crew', row: build }, config })).toEqual({
+      kind: 'opened',
+    });
+    expect(pickerViewStore.get().expandedModelId).toBeNull();
+    expect(overlayStore.get().focus).toBe('seat:build:effort');
   });
 });
 

@@ -1,32 +1,21 @@
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
+import { STACKS } from '../../../core/validation/stacks/registry.js';
 import { isTestPatternSafe } from '../../../core/validation/test-discovery.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { warnStderr } from '../../../lib/warn.js';
 
+const PACKAGE_MANAGERS = ['npm', 'npx', 'node', 'pnpm', 'yarn', 'bun', 'make', 'just'];
+
 const ALLOWED_COMMANDS = new Set([
-  'npm',
-  'npx',
-  'node',
-  'tsc',
-  'vitest',
-  'jest',
-  'eslint',
-  'prettier',
-  'biome',
-  'cargo',
-  'go',
-  'golangci-lint',
-  'pytest',
-  'mypy',
-  'ruff',
-  'pnpm',
-  'yarn',
-  'bun',
+  ...PACKAGE_MANAGERS,
+  ...STACKS.flatMap((stack) => stack.allowedCommands),
 ]);
 
 const SHELL_OPERATORS = /[|&;`$(){}]/;
 
-const NODE_CODE_LOAD_FLAGS = new Set([
+const INTERPRETERS = new Set(['node', 'python', 'python3']);
+
+const CODE_LOAD_FLAGS = new Set([
   '-e',
   '--eval',
   '-r',
@@ -34,6 +23,8 @@ const NODE_CODE_LOAD_FLAGS = new Set([
   '--import',
   '-i',
   '--input-type',
+  '-c',
+  '--command',
 ]);
 
 const NPX_CODE_LOAD_PACKAGES = new Set(['tsx', 'ts-node', 'ts-node/esm', 'node']);
@@ -53,10 +44,13 @@ function isPathLikeScriptArg(arg: string): boolean {
   return false;
 }
 
-function loadsNodeScript(tokens: string[]): boolean {
-  if (tokens[0] !== 'node') return false;
+// A runner front-end (`uv run`, `poetry run`, `make`) can put the interpreter
+// anywhere in the line, so the scan starts at the interpreter token, not at 0.
+function loadsInterpreterScript(tokens: string[]): boolean {
+  const start = tokens.findIndex((token) => INTERPRETERS.has(token));
+  if (start === -1) return false;
   let afterSeparator = false;
-  for (let index = 1; index < tokens.length; index++) {
+  for (let index = start + 1; index < tokens.length; index++) {
     const arg = tokens[index];
     if (!arg) continue;
     if (arg === '--') {
@@ -64,7 +58,7 @@ function loadsNodeScript(tokens: string[]): boolean {
       continue;
     }
     if (!afterSeparator && arg.startsWith('-')) {
-      if (NODE_CODE_LOAD_FLAGS.has(arg)) return true;
+      if (CODE_LOAD_FLAGS.has(arg)) return true;
       continue;
     }
     if (isPathLikeScriptArg(arg)) return true;
@@ -130,7 +124,7 @@ function isCommandSafe(raw: string): boolean {
   if (!cmd) return false;
   if (cmd.includes('/') || cmd.includes('\\')) return false;
   if (!ALLOWED_COMMANDS.has(cmd)) return false;
-  if (loadsNodeScript(tokens)) return false;
+  if (loadsInterpreterScript(tokens)) return false;
   if (loadsNpxScript(tokens)) return false;
   if (loadsPackageScript(tokens)) return false;
   if (loadsTestRunnerConfig(tokens)) return false;

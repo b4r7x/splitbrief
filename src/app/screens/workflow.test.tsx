@@ -1,14 +1,18 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { taskId } from '../../core/schemas/task.js';
+import { saveState } from '../../core/state/persistence.js';
+import { addEvent } from '../../stores/workflow/actions/event.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
-import { STATE_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
@@ -16,12 +20,8 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
-import { formatTasks } from '../../engine/spec/formatter.js';
-import { createBriefRecoveryState } from '../../engine/orchestrator/planning/brief-recovery.js';
-import { createInitialState } from '../../core/state/machine.js';
 import { getContentTopRow } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
-import { glyph } from '../../lib/glyphs.js';
 import { WorkflowScreen } from './workflow.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
@@ -32,13 +32,11 @@ const { terminalSizeStore } = await import('../../stores/ui/terminal-size.js');
 const { routerStore } = await import('../../stores/navigation/router.js');
 const { inputHeightStore } = await import('../../stores/ui/input-height.js');
 const { inputHistoryStore } = await import('../../stores/ui/input-history.js');
-const { focusStore } = await import('../../stores/ui/focus.js');
-const { lifecycleStore } = await import('../../stores/workflow/lifecycle.js');
-const { reviewStore } = await import('../../stores/workflow/review.js');
+const { feedbackStore } = await import('../../stores/ui/feedback.js');
+const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/composer.js');
 
 const FIXED_TS = 1_783_958_400_000;
 const SHIFT_ENTER = '\x1b[13;2u';
-const SHIFT_DOWN = '\x1b[1;2B';
 
 function pendingWorkflow(): Promise<never> {
   return new Promise<never>(() => {});
@@ -86,9 +84,11 @@ function preparedExecution(projectDir: string, feature: string): PreparedExecuti
 }
 
 function navigatePreparedWorkflow(projectDir: string, feature: string): void {
+  const prepared = preparedExecution(projectDir, feature);
   routerStore.navigate({
     to: 'workflow',
-    execution: { kind: 'local', prepared: preparedExecution(projectDir, feature) },
+    run: makeRunRecord({ ref: prepared.session.ref }),
+    execution: { kind: 'local', prepared },
   });
 }
 
@@ -137,65 +137,6 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.unmount();
   });
 
-  it('passes persisted Brief recovery through the production screen mount', async () => {
-    const sessionId = 'workflow-screen-session';
-    const sessionPath = sessionDir(projectDir, sessionId);
-    const tasksPath = join(sessionPath, TASKS_FILE);
-    mkdirSync(sessionPath, { recursive: true });
-    writeFileSync(
-      tasksPath,
-      formatTasks([makeTask({ id: 'T001', title: 'Persisted recovery task' })]),
-      'utf8',
-    );
-    const activeBrief = { revision: 1, hash: 'persisted-brief-hash', path: TASKS_FILE };
-    const report = {
-      briefHash: activeBrief.hash,
-      report: { revision: 1, hash: 'persisted-report-hash', path: 'brief-quality.json' },
-      ruleVersion: 'brief-quality-v1',
-      issues: [],
-      errorCount: 0,
-    };
-    const state = {
-      ...createInitialState('persisted recovery mount'),
-      stateRevision: 7,
-      stateFence: { token: 1, ownerId: 'workflow-screen-test' },
-      phase: 'reviewing-briefs' as const,
-      briefRecovery: createBriefRecoveryState(
-        {
-          sessionId,
-          origin: { mode: 'standard', entry: 'initial' },
-          continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
-          activeBrief,
-          report,
-          qualityPolicyVersion: 'brief-quality-v1',
-        },
-        { epochId: 'persisted-recovery-epoch', recoveryRevision: 3 },
-      ),
-    };
-    writeFileSync(join(sessionPath, STATE_FILE), JSON.stringify(state), 'utf8');
-    reviewStore.setReviewFile(tasksPath);
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running' });
-    runWorkflow.mockImplementation(async (opts) => {
-      lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running' });
-      await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
-      return pendingWorkflow();
-    });
-    configStore.__testReset({ config: makeConfig(), projectDir });
-    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
-    navigatePreparedWorkflow(projectDir, 'persisted recovery mount');
-
-    const ui = renderFeature(
-      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
-    );
-    await vi.waitFor(() => {
-      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame).toContain('CONTRACT READY');
-      expect(frame).toContain('Persisted recovery task');
-    });
-
-    ui.unmount();
-  });
-
   it('keeps a keyboard review action through resize and resets it for the next review owner', async () => {
     const firstReviewPath = join(projectDir, 'first-review.md');
     const secondReviewPath = join(projectDir, 'second-review.md');
@@ -233,6 +174,10 @@ describe('WorkflowScreen chrome calibration', () => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('First review');
     });
 
+    // The document gate lists approve · comment · edit · end run, so the third step down is the
+    // end-run row this test drives.
+    await flushEffects();
+    ui.stdin.write('\x1b[B');
     await flushEffects();
     ui.stdin.write('\x1b[B');
     await flushEffects();
@@ -243,14 +188,15 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
+      expect(outcomes).toEqual([{ approved: false, action: 'end-run' }]);
+    });
+    // The second gate's document is read from disk after its prompt opens, so the frame that
+    // carries it lands a paint later than the answer that opened it.
+    await vi.waitFor(() => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Second review');
     });
-    expect(outcomes).toEqual([{ approved: false }]);
 
-    await flushEffects();
-    ui.stdin.write('\r');
-    await tick();
-    expect(outcomes).toHaveLength(1);
+    // The next gate starts on its own first row again — the cursor never carries over.
     await flushEffects();
     ui.stdin.write('\x1b[B');
     await flushEffects();
@@ -258,7 +204,7 @@ describe('WorkflowScreen chrome calibration', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(outcomes).toEqual([{ approved: false }, { approved: true }]);
+      expect(outcomes).toEqual([{ approved: false, action: 'end-run' }, { approved: true }]);
     });
     ui.unmount();
   });
@@ -351,89 +297,143 @@ describe('WorkflowScreen chrome calibration', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(outcome).toEqual({ approved: false });
+      expect(outcome).toEqual({ approved: false, action: 'end-run' });
     });
     ui.unmount();
   });
+});
+describe('WorkflowScreen showing a run at rest', () => {
+  let projectDir = '';
 
-  it('transfers brief focus without history and keeps yank and text ownership exclusive', async () => {
-    const tasksPath = join(projectDir, 'tasks.md');
-    writeFileSync(
-      tasksPath,
-      formatTasks(
-        ['First brief', 'Second brief', 'Third brief'].map((title, index) =>
-          makeTask({
-            id: `T00${index + 1}`,
-            title,
-            file: `src/task-${index + 1}.ts`,
-          }),
-        ),
-      ),
-      'utf8',
-    );
-    inputHistoryStore.hydrate(['HISTORY_SENTINEL']);
-    const copyTarget = vi.fn(async () => 'empty' as const);
+  beforeEach(() => {
+    resetAllStores();
+    projectDir = createTempDir('workflow-at-rest');
     configStore.__testReset({ config: makeConfig(), projectDir });
-    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
-    navigatePreparedWorkflow(projectDir, 'brief key ownership');
-    runWorkflow.mockImplementation(async (opts) => {
-      lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-      await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
-      return pendingWorkflow();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    runWorkflow.mockReset();
+    runWorkflow.mockReturnValue(pendingWorkflow());
+  });
+
+  afterEach(() => {
+    resetAllStores();
+    if (projectDir) cleanupTempDir(projectDir);
+  });
+
+  function openRun(overrides: Partial<Parameters<typeof makeRunRecord>[0]> = {}) {
+    const record = makeRunRecord({
+      ref: { projectDir, sessionId: 'at-rest-session' },
+      status: {
+        kind: 'open',
+        stop: { kind: 'paused', at: 'mid-step' },
+        resumeAt: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
+      },
+      hydration: { kind: 'loaded', state: makeWorkflowState({ phase: 'implementing' }) },
+      ...overrides,
     });
+    routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
+    return record;
+  }
+
+  function closedRun(
+    as: 'complete' | 'ended',
+    extra: Partial<Parameters<typeof makeRunRecord>[0]> = {},
+  ) {
+    return openRun({
+      status: { kind: 'closed', as },
+      summary: makeSummary({ feature: 'closed at rest', totalTasks: 0 }),
+      ...extra,
+    });
+  }
+
+  it('shows the history the replay put on the screen, with nothing running', async () => {
+    openRun();
+    addEvent({
+      type: 'planner_text',
+      ts: FIXED_TS,
+      phase: 'implementing',
+      text: 'The signup form posts straight to the route handler.',
+    });
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('signup form posts');
+    expect(runWorkflow).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('states what an open run takes and continues it on a typed correction', async () => {
+    const record = openRun();
+    const state = makeWorkflowState({ phase: 'implementing' });
+    saveState(record.ref, state);
+    const prepareResume = vi.fn(async () => ({
+      kind: 'prepared' as const,
+      execution: preparedExecution(projectDir, 'continued run'),
+    }));
 
     const ui = renderFeature(
       <WorkflowScreen
         commands={[]}
         onRuntimeCommand={vi.fn()}
-        copyTarget={copyTarget}
-        canCopyFocused={(focus) => focus?.region === 'brief' && focus.index === 1}
-        deps={workflowDeps}
+        deps={{
+          runWorkflow,
+          sessionSelect: {
+            loadResumeState: () => ({ kind: 'loaded', state }),
+            prepareResume,
+            hydrateRun: async () => {},
+          },
+        }}
       />,
     );
+    await flushEffects();
+    const byline = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(byline).toContain('Paused at T003');
+    expect(byline).toContain('type a correction or ⏎ to continue');
+
+    ui.stdin.write('use the cached parser');
+    await flushEffects();
+    ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('First brief');
+      expect(prepareResume).toHaveBeenCalled();
     });
 
-    await flushEffects();
-    ui.stdin.write('\x1b[B');
-    await tick();
-    expect(focusStore.get()).toEqual({ region: 'brief', index: 0 });
-    await flushEffects();
-    ui.stdin.write('\x1b[B');
-    await tick();
-    expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('HISTORY_SENTINEL');
+    const route = routerStore.get();
+    if (route.screen === 'workflow' && route.execution.kind === 'local') {
+      expect(route.execution.steer).toBe('use the cached parser');
+    } else {
+      throw new Error('expected the continuation to flip the execution in place');
+    }
+    ui.unmount();
+  });
 
-    await flushEffects();
-    ui.stdin.write('ab');
-    await tick();
-    expect(focusStore.get()).toBeNull();
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} ab`);
+  it('takes only commands on a closed run and paints its ledger at the transcript tail', async () => {
+    closedRun('complete');
 
-    focusStore.set('brief', 1);
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
     await flushEffects();
-    ui.stdin.write('y');
-    await tick();
-    await Promise.resolve();
-    await tick();
-    expect(copyTarget).toHaveBeenCalledWith('brief');
-    expect(copyTarget).toHaveBeenCalledTimes(1);
-    expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} ab`);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Closed');
+    expect(frame).toContain('Session');
 
+    ui.stdin.write('z');
     await flushEffects();
-    ui.stdin.write(SHIFT_DOWN);
-    await tick();
-    expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
+    expect(feedbackStore.get().message).toBe(COMMANDS_ONLY_NOTICE);
+    ui.unmount();
+  });
 
-    focusStore.set('brief', 0);
+  it('flips the byline when the run record says the run was accepted', async () => {
+    const record = closedRun('complete');
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
     await flushEffects();
-    ui.stdin.write('y');
-    await tick();
-    expect(copyTarget).toHaveBeenCalledTimes(1);
-    expect(focusStore.get()).toBeNull();
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} aby`);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/run accept');
+
+    routerStore.updateRun({ run: { ...record, checkpoint: { kind: 'accepted' } } });
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Accepted');
+    expect(frame).not.toContain('Keep it with /run accept');
     ui.unmount();
   });
 });

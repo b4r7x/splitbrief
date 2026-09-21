@@ -5,13 +5,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../src/core/paths-io.js';
+import { SessionLogEventEntrySchema } from '../../../src/core/schemas/session-log.js';
 import type { EngineEvent, EngineEventOf } from '../../../src/engine/events/types.js';
 import { createJsonlSink } from '../../../src/engine/events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../../src/engine/events/sinks/stdout-json.js';
-import { createTreeRecorderSink } from '../../../src/engine/events/sinks/tree-recorder.js';
+import { HeadlessJsonRecordSchema } from '../../../src/engine/events/public-json.js';
 
 const sessionId = 'perf-session';
-const sentinel = 'sink-private-sentinel-74126';
+const sentinel = 'sk-sink-private-sentinel-74126';
 
 function withTempProject<T>(prefix: string, run: (projectDir: string) => T): T {
   const projectDir = mkdtempSync(join(tmpdir(), prefix));
@@ -87,83 +88,10 @@ function protectedPublicEvents(cycles: number): EngineEvent[] {
   return events;
 }
 
-function runnerStarted(index: number): EngineEventOf<'runner_call_started'> {
-  return {
-    type: 'runner_call_started',
-    ts: 4_000 + index * 10,
-    phase: 'final-review',
-    callId: `tree-call-${index}`,
-    role: 'review',
-    backendKind: 'cli',
-    runnerName: 'codex',
-    model: 'gpt-5-mini',
-    sequence: index * 10,
-  };
-}
-
-function runnerWarning(index: number): EngineEventOf<'runner_call_warning'> {
-  return {
-    type: 'runner_call_warning',
-    ts: 4_001 + index * 10,
-    phase: 'final-review',
-    callId: `tree-call-${index}`,
-    role: 'review',
-    backendKind: 'cli',
-    runnerName: 'codex',
-    model: 'gpt-5-mini',
-    sequence: index * 10 + 1,
-    warning: {
-      code: 'provider_warning',
-      severity: 'warning',
-      source: 'provider',
-      surface: 'activity',
-      fingerprint: `provider-warning-${index}`,
-      message: `warning ${sentinel} ${index}`,
-    },
-  };
-}
-
-function runnerCompleted(index: number): EngineEventOf<'runner_call_completed'> {
-  const startedAt = 4_000 + index * 10;
-  const endedAt = startedAt + 5;
-  return {
-    type: 'runner_call_completed',
-    ts: endedAt,
-    phase: 'final-review',
-    callId: `tree-call-${index}`,
-    role: 'review',
-    backendKind: 'cli',
-    runnerName: 'codex',
-    model: 'gpt-5-mini',
-    sequence: index * 10 + 2,
-    status: 'completed',
-    error: null,
-    startedAt,
-    endedAt,
-    durationMs: endedAt - startedAt,
-    partial: false,
-    usage: { inputTokens: 10, outputTokens: 20 },
-    nativeSessionId: `native-${sentinel}-${index}`,
-  };
-}
-
-function protectedTreeEvents(cycles: number): EngineEvent[] {
-  const events: EngineEvent[] = [workflowStarted()];
-  for (let index = 0; index < cycles; index += 1) {
-    events.push(
-      runnerStarted(index),
-      runnerText(index),
-      runnerWarning(index),
-      runnerCompleted(index),
-    );
-  }
-  return events;
-}
-
 describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('event sinks throughput perf', () => {
-  it('writes protected JSONL events without retaining raw transcript fields', () => {
+  it('retains public JSONL events while redacting credentials at event-sink scale', () => {
     withTempProject('splitbrief-jsonl-perf-', (projectDir) => {
-      const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
+      const sink = createJsonlSink({ projectDir, sessionId });
       const events = protectedPublicEvents(700);
 
       forceGc();
@@ -173,8 +101,15 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('event sinks throughput per
       forceGc();
 
       const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf8');
-      expect(log.split('\n').filter(Boolean).length).toBe(1_401);
+      const records = log
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => SessionLogEventEntrySchema.parse(JSON.parse(line)));
+      expect(records.map((record) => record.type)).toEqual(events.map((event) => event.type));
       expect(log).not.toContain(sentinel);
+      expect(log).not.toContain('sk-abcdefghijklmnopqrst');
+      expect(log).toContain('assistant sk-***REDACTED*** 0');
+      expect(log).toContain('running echo sk-***REDACTED***');
       expect(elapsedMs).toBeLessThan(4_000);
     });
   });
@@ -187,7 +122,7 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('event sinks throughput per
     });
 
     try {
-      const sink = createStdoutJsonSink({ persistTranscript: false });
+      const sink = createStdoutJsonSink();
       const events = protectedPublicEvents(700);
 
       forceGc();
@@ -197,32 +132,17 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('event sinks throughput per
       forceGc();
 
       const output = writes.join('');
-      expect(writes).toHaveLength(1_401);
+      const records = writes.map((line) => HeadlessJsonRecordSchema.parse(JSON.parse(line)));
+      expect(records.map((record) => record.type === 'event' && record.data.type)).toEqual(
+        events.map((event) => event.type),
+      );
       expect(output).not.toContain(sentinel);
+      expect(output).not.toContain('sk-abcdefghijklmnopqrst');
+      expect(output).toContain('assistant sk-***REDACTED*** 0');
+      expect(output).toContain('running echo sk-***REDACTED***');
       expect(elapsedMs).toBeLessThan(3_000);
     } finally {
       spy.mockRestore();
     }
-  });
-
-  it('records protected session-tree runner lifecycle throughput', () => {
-    withTempProject('splitbrief-tree-perf-', (projectDir) => {
-      const sink = createTreeRecorderSink({ projectDir, sessionId, persistTranscript: false });
-      const events = protectedTreeEvents(240);
-
-      forceGc();
-      const startedAt = performance.now();
-      for (const event of events) sink(event);
-      const elapsedMs = performance.now() - startedAt;
-      forceGc();
-
-      const treeLog = readFileSync(
-        join(sessionDir(projectDir, sessionId), 'session-tree.jsonl'),
-        'utf8',
-      );
-      expect(treeLog.split('\n').filter(Boolean).length).toBe(481);
-      expect(treeLog).not.toContain(sentinel);
-      expect(elapsedMs).toBeLessThan(5_000);
-    });
   });
 });

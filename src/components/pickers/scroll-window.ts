@@ -1,3 +1,5 @@
+import { clamp } from '../../utils/math.js';
+
 function normalizeCount(value: number): number {
   return Math.max(0, Math.floor(value));
 }
@@ -24,6 +26,22 @@ export function computeScrollOffset(opts: {
   if (totalItems <= windowSize) return 0;
   const half = Math.floor(windowSize / 2);
   return Math.max(0, Math.min(Math.floor(opts.index) - half, totalItems - windowSize));
+}
+
+// A cursor-following window: the offset holds while the index is inside it and moves by the least
+// that brings the index back in, so the cursor walks to the edge before the list slides.
+export function keepInViewOffset(opts: {
+  previous: number;
+  index: number;
+  windowSize: number;
+  totalItems: number;
+}): number {
+  const totalItems = normalizeCount(opts.totalItems);
+  const windowSize = normalizeCount(opts.windowSize);
+  if (windowSize === 0 || totalItems <= windowSize) return 0;
+  const index = clamp(Math.floor(opts.index), 0, totalItems - 1);
+  const offset = clamp(normalizeCount(opts.previous), index - windowSize + 1, index);
+  return clamp(offset, 0, totalItems - windowSize);
 }
 
 export function windowSlice<T>(opts: { items: T[]; selectedIndex: number; windowSize: number }) {
@@ -210,10 +228,17 @@ function computeContentWindow(opts: {
   return { contentRows, scrollOffset, showScrollUp, showScrollDown };
 }
 
+// A window edge never shows a slot whose row is somewhere else: an `after` or a gap with no row
+// above it, a `before`, a gap or a section header with no row under it.
+const ORPHAN_LEAD = new Set<ListDisplaySlot<unknown>['kind']>(['after', 'gap']);
+const ORPHAN_TAIL = new Set<ListDisplaySlot<unknown>['kind']>(['before', 'gap', 'header']);
+
 function trimEdgeDecorations<T>(content: ListDisplaySlot<T>[]): ListDisplaySlot<T>[] {
-  const start = content[0]?.kind === 'after' ? 1 : 0;
-  const end = content.at(-1)?.kind === 'before' ? content.length - 1 : content.length;
-  return content.slice(start, Math.max(start, end));
+  let start = 0;
+  let end = content.length;
+  while (start < end && ORPHAN_LEAD.has(content[start]?.kind ?? 'item')) start += 1;
+  while (end > start && ORPHAN_TAIL.has(content[end - 1]?.kind ?? 'item')) end -= 1;
+  return content.slice(start, end);
 }
 
 export function isItemIndexVisible<T>(opts: {

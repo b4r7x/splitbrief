@@ -16,6 +16,10 @@ export const RUNNER_OUTCOME_STATES = [
   'callback-failure',
   'no-staged-change',
   'platform-limitation',
+  'implementer-effect-invalid',
+  'implementer-recipe-invalid',
+  'runner-timeout-repeated',
+  'missing-model',
   'success',
 ] as const;
 
@@ -38,7 +42,7 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
     case 'unauthenticated':
       return 'Authenticate the CLI, then retry.';
     case 'usage-limit':
-      return 'Wait for the usage limit to reset, switch to a different runner profile, or abort.';
+      return 'Wait for the usage limit to reset, switch the seat to another tool, or end the run.';
     case 'timeout':
       return 'Retry the command or increase its configured timeout.';
     case 'user-abort':
@@ -57,6 +61,14 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
       return 'Make the requested change in the staged project, then retry.';
     case 'platform-limitation':
       return 'Run this CLI on a supported platform.';
+    case 'implementer-effect-invalid':
+      return "The implementer wrote outside the brief's declared files. Retry with a revert instruction or widen Scope.";
+    case 'implementer-recipe-invalid':
+      return 'Correct the tool recipe (flags or permissions) and retry; this attempt consumed no retry.';
+    case 'runner-timeout-repeated':
+      return 'Two consecutive attempts timed out; switch the seat, route a bigger worker, or skip.';
+    case 'missing-model':
+      return 'Pick a model the tool lists, then retry.';
     default: {
       const _exhaustive: never = state;
       return _exhaustive;

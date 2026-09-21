@@ -1,3 +1,6 @@
+import type { EngineEventOf } from '../../../engine/events/types.js';
+import { taskTargetLabel } from '../../../stores/workflow/tasks.js';
+import { formatTaskStartedValue } from './event-format.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } from './types.js';
 import { segmentedRow } from './row-format/rows.js';
 import { sanitizeRowDisplayText, wrappedRowTexts } from './row-format/text.js';
@@ -14,6 +17,22 @@ function withoutLeadingBreak(segments: ConversationRowSegment[]): ConversationRo
   const text = first.text.replace(LEADING_BREAK, '');
   if (text === first.text) return segments;
   return text.length === 0 ? rest : [{ ...first, text }, ...rest];
+}
+
+// The header names one target, and a slice writes more than one file. The anchor plus a count is
+// what fits, so the row says the same thing the sidebar and the editor say.
+export function taskStartedMetadata(event: EngineEventOf<'task_started'>): string {
+  return formatTaskStartedValue(event).replace(
+    `${event.file} (${event.action})`,
+    taskTargetLabel({
+      id: event.taskId,
+      title: event.title,
+      status: 'in_progress',
+      file: event.file,
+      ...(event.files === undefined ? {} : { files: [...event.files] }),
+      action: event.action,
+    }),
+  );
 }
 
 export function taskStartedRowBlock(input: {

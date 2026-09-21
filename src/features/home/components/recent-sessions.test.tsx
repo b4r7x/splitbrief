@@ -13,6 +13,7 @@ import { sessionsStore } from '../../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { RecentSessions } from './recent-sessions.js';
 import { getHomeLayout } from '../layout.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 
 const FOCUS_BAR = '▌';
 
@@ -63,7 +64,8 @@ describe('RecentSessions', () => {
     expect(frame).toContain('bravo');
     expect(frame).not.toContain(FOCUS_BAR);
     expect(frame).not.toContain('Esc back');
-    expect(lineContaining(frame, 'alpha')).toMatch(/^○ alpha/);
+    // The shell shares the row leading: every row opens with the mark-slot inset before its mark.
+    expect(lineContaining(frame, 'alpha')).toMatch(new RegExp(`^ {${MARK_SLOT_CELLS}}◌ alpha`));
     ui.unmount();
   });
 
@@ -84,15 +86,13 @@ describe('RecentSessions', () => {
     ui.unmount();
   });
 
-  it('renders the empty state under the sentence-case header when no sessions are loaded', async () => {
+  it('renders nothing at all when there are no sessions to list', async () => {
     sessionsStore.load(projectDir);
 
     const ui = renderFeature(<RecentSessions />);
     await tick(20);
 
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('No recent sessions');
-    expect(frame.split('\n').some((line) => line.includes('Recent sessions'))).toBe(true);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').trim()).toBe('');
     ui.unmount();
   });
 
@@ -130,10 +130,7 @@ describe('RecentSessions', () => {
   });
 
   it('a resize that changes limit but keeps it positive does not re-read the sessions directory', async () => {
-    saveSummary(
-      { projectDir, sessionId: 'rs-first' },
-      makeSession({ id: 'rs-first', feature: 'first', startedAt: 1_700_000_000 }),
-    );
+    seed([{ id: 'rs-first', feature: 'first', startedAt: 1_700_000_000 }]);
 
     const ui = renderFeature(<RecentSessions limit={5} />);
     await tick(20);
@@ -151,7 +148,7 @@ describe('RecentSessions', () => {
     ui.unmount();
   });
 
-  it('limit<=0 renders null and skips the load effect', async () => {
+  it('limit<=0 renders null and reads nothing', async () => {
     seed([{ id: 'hidden-one', feature: 'should-not-load', startedAt: 1_700_000_000 }]);
     sessionsStore.reset();
 

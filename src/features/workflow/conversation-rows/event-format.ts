@@ -28,7 +28,6 @@ export function formatTaskStartedValue(
     parts.push(`code ${event.currentCodeContextMode}`);
   }
   if (event.routingReason) parts.push(`why ${event.routingReason}`);
-  else if (event.costPosture) parts.push(`cost ${event.costPosture}`);
   return parts.join(' · ');
 }
 
@@ -71,17 +70,33 @@ export function validationSummarySegments(
   return segments;
 }
 
-function stageGlyph(state: string): string {
+// A glyph is enough to say a gate passed; it is not enough to say one never ran, or that the one
+// that failed was already red before the task started. Those two verdicts say themselves in the
+// words the evidence ledger uses for them, so the row and the ledger read alike.
+export function validationStageNotes(event: Extract<EngineEvent, { type: 'validate' }>): string[] {
+  return ValidationStageSchema.options.flatMap((stage) => {
+    const state = validationStageSymbol(event, event.stages, stage, event.skipped);
+    if (state === 'exempt') return [`${stage} pre-existing failure`];
+    if (state !== 'skipped') return [];
+    const reason = event.skippedReason?.[stage];
+    return [reason === undefined ? `${stage} skipped` : `${stage} skipped (${reason})`];
+  });
+}
+
+function stageGlyph(state: ValidationStageState): string {
   if (state === 'passed') return glyph('check');
-  if (state === 'failed') return glyph('statusFailed');
+  if (state === 'failed' || state === 'exempt') return glyph('statusFailed');
   if (state === 'running') return glyph('statusInProgress');
   if (state === 'skipped') return glyph('statusSkipped');
   return glyph('statusPending');
 }
 
-function stageTone(state: string): ConversationRowTone {
+function stageTone(state: ValidationStageState): ConversationRowTone {
   if (state === 'passed') return 'success';
   if (state === 'failed') return 'error';
+  // The task did not break this gate, and the run was accepted with it red, so the cross is not
+  // this task's failure to answer for.
+  if (state === 'exempt') return 'warning';
   if (state === 'running') return 'info';
   return 'textDim';
 }
@@ -109,17 +124,20 @@ function formatEventContextFit(
   return `${contextFit} ${tokenLabel}`;
 }
 
+type ValidationStageState = 'passed' | 'failed' | 'exempt' | 'running' | 'skipped' | 'not-run';
+
 function validationStageSymbol(
   event: Extract<EngineEvent, { type: 'validate' }>,
   stages: ValidationStages,
   stage: ValidationStage,
   skipped: ValidationStageSkips | undefined,
-): string {
+): ValidationStageState {
   if (skipped?.[stage]) return 'skipped';
   if (event.status === 'running' && event.activeStage === stage) return 'running';
   if (stages[stage]) return 'passed';
   if (event.status === 'done' && validationStageWasAttempted(event, stage, skipped)) {
-    return 'failed';
+    // An exempt event is accepted only when every stage it failed was already failing at baseline.
+    return event.exempt === true ? 'exempt' : 'failed';
   }
   return 'not-run';
 }

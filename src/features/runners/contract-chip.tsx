@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { useTheme, type Theme } from '../../components/theme.js';
 import { glyph } from '../../lib/glyphs.js';
 import type { CustomCommandContract } from '../../core/config/custom-commands.js';

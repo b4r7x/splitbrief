@@ -6,7 +6,12 @@ import {
 import { buildRightModels, countModelOptions, resolveAndSort } from './catalog.js';
 import type { PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
-import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
+import {
+  getBundledModels,
+  type ModelCacheAccessor,
+} from '../../../engine/providers/model/resolution.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
 import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 
 function pickerItem(
@@ -125,7 +130,7 @@ describe('right column models', () => {
       countModelOptions([
         { id: 'confirmed', membership: 'confirmed', isDetected: true },
         { id: 'stale', membership: 'stale', isStale: true, isDetected: false },
-        { id: 'suggestion', membership: 'catalog-suggestion' },
+        { id: 'suggestion', membership: CATALOG_SUGGESTION_MEMBERSHIP },
         { id: 'bundled', membership: 'bundled-suggestion' },
         { id: 'custom', membership: 'custom', isCustom: true },
         { id: 'custom-stale', membership: 'stale', isStale: true, isCustom: true },
@@ -525,8 +530,8 @@ describe('one authoritative row per model', () => {
     const cache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,
       getProviderModels: () => null,
-      getScopedCliCatalogRuntime: () => ({
-        connection: { role: 'planner', tool: 'opencode', contextKey: 'routes-test' },
+      getCliCatalogRuntime: () => ({
+        connection: { tool: 'opencode', contextKey: 'routes-test' },
         state: 'fresh',
         models: [
           { id: 'anthropic/claude-sonnet-5' },
@@ -553,7 +558,7 @@ describe('one authoritative row per model', () => {
           models: {
             'claude-opus-5': { id: 'claude-opus-5', release_date: '2026-04-01' },
             'claude-sonnet-5': { id: 'claude-sonnet-5', release_date: '2026-03-01' },
-            'claude-fable-5': { id: 'claude-fable-5', release_date: '2026-05-01' },
+            'claude-fable-5-1': { id: 'claude-fable-5-1', release_date: '2026-05-01' },
             'claude-haiku-4-5': { id: 'claude-haiku-4-5', release_date: '2026-01-01' },
           },
         },
@@ -562,16 +567,90 @@ describe('one authoritative row per model', () => {
     };
 
     expect(resolveAndSort('claude-code', 'planner', cache).map((model) => model.id)).toEqual([
-      'default',
-      'best',
-      'fable',
-      'opus',
       'sonnet',
+      'opus',
+      'fable',
       'haiku',
       'opusplan',
+      'best',
       'sonnet[1m]',
       'opus[1m]',
+      'fable[1m]',
     ]);
+  });
+
+  it('leaves the account option row out of the documented alias count', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getClaudeCodeModelOptions: () => [
+        { id: 'claude-opus-5-20260201', displayName: 'Claude Opus 5 (Feb 2026)' },
+      ],
+    };
+
+    const models = resolveAndSort('claude-code', 'planner', cache);
+
+    expect(models.map((model) => model.id)).toContain('claude-opus-5-20260201');
+    expect(countModelOptions(models).bundled).toBe(getBundledModels('claude-code').length);
+  });
+
+  it('folds an account option that names an alias into that alias row', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getClaudeCodeModelOptions: () => [
+        {
+          id: 'claude-fable-5-1[1m]',
+          displayName: 'Fable',
+          description: 'Fable 5.1 · Most capable',
+        },
+      ],
+    };
+
+    const models = resolveAndSort('claude-code', 'planner', cache);
+
+    expect(models.map((model) => model.id)).not.toContain('claude-fable-5-1[1m]');
+    expect(models.map((model) => model.id)).toContain('fable[1m]');
+    expect(countModelOptions(models).bundled).toBe(getBundledModels('claude-code').length);
+  });
+
+  it('leaves an account option out of the alias count after it merges into a family', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getClaudeCodeModelOptions: () => [{ id: 'opus-high', displayName: 'Opus High' }],
+    };
+
+    const models = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: cliItem('claude-code', 'optional', false),
+      cache,
+    });
+
+    const opus = models.find((model) => model.id === 'opus');
+    expect(opus?.variants?.map((variant) => variant.fullId)).toEqual(['opus', 'opus-high']);
+    expect(countModelOptions(models).bundled).toBe(getBundledModels('claude-code').length);
+  });
+
+  it('still counts an account option the operator also saved as a custom model', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getClaudeCodeModelOptions: () => [{ id: 'claude-fable-5-1[1m]', displayName: 'Fable' }],
+    };
+
+    const models = buildRightModels({
+      role: 'planner',
+      customModels: ['claude-fable-5-1[1m]'],
+      currentItem: cliItem('claude-code', 'optional', false),
+      cache,
+    });
+
+    expect(models.find((model) => model.id === 'claude-fable-5-1[1m]')?.isCustom).toBe(true);
+    const counts = countModelOptions(models);
+    expect(counts.custom).toBe(1);
+    expect(counts.bundled).toBe(getBundledModels('claude-code').length);
   });
 
   it('carries the native order of a confirmed row into the picker option', () => {
@@ -594,7 +673,7 @@ describe('one authoritative row per model', () => {
 });
 
 describe('the configured model that the list does not contain', () => {
-  it('marks the configured model absent from the list as a recovery row', () => {
+  it('recovers the configured model absent from the list as a custom row', () => {
     const models = buildRightModels({
       role: 'planner',
       customModels: ['some-unlisted-id'],
@@ -603,8 +682,8 @@ describe('the configured model that the list does not contain', () => {
     });
 
     expect(models.find((model) => model.id === 'some-unlisted-id')).toMatchObject({
-      isRecovery: true,
       isCustom: true,
+      membership: 'custom',
     });
   });
 
@@ -617,8 +696,8 @@ describe('the configured model that the list does not contain', () => {
       cache: {
         getModelsDevCatalog: () => null,
         getProviderModels: () => null,
-        getScopedCliCatalogRuntime: () => ({
-          connection: { role: 'planner', tool: 'opencode', contextKey: 'browsing-test' },
+        getCliCatalogRuntime: () => ({
+          connection: { tool: 'opencode', contextKey: 'browsing-test' },
           state: 'fresh',
           models: [{ id: 'anthropic/claude-sonnet-5' }],
           fetchedAt: 1,
@@ -627,11 +706,10 @@ describe('the configured model that the list does not contain', () => {
       },
     });
 
-    expect(models.some((model) => model.isRecovery === true)).toBe(false);
     expect(models.map((model) => model.id)).not.toContain('gpt-5.6-sol');
   });
 
-  it('reopens the catalog rows when browseCatalog is set', () => {
+  it('keeps a cli tool on its native rows even while the catalog is browsed', () => {
     const cache: ModelCacheAccessor = {
       getModelsDevCatalog: () => ({
         openai: {
@@ -641,8 +719,8 @@ describe('the configured model that the list does not contain', () => {
         },
       }),
       getProviderModels: () => null,
-      getScopedCliCatalogRuntime: () => ({
-        connection: { role: 'planner', tool: 'codex', contextKey: 'browse-test' },
+      getCliCatalogRuntime: () => ({
+        connection: { tool: 'codex', contextKey: 'browse-test' },
         state: 'fresh',
         models: [{ id: 'gpt-5-codex' }],
         fetchedAt: 1,
@@ -653,9 +731,11 @@ describe('the configured model that the list does not contain', () => {
     expect(resolveAndSort('codex', 'planner', cache).map((model) => model.id)).toEqual([
       'gpt-5-codex',
     ]);
+    // Browsing reopens the bundled lane, never models.dev: a CLI tool has no models.dev lane in
+    // any state (REQ-B08), so the hydrated `gpt-4o` row stays out of the column.
     expect(
       resolveAndSort('codex', 'planner', cache, { browseCatalog: true }).map((model) => model.id),
-    ).toContain('gpt-4o');
+    ).not.toContain('gpt-4o');
   });
 });
 
@@ -716,5 +796,98 @@ describe('toModelOption displayName precedence', () => {
     const models = resolveAndSort('ollama', 'implementer', cache);
     const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
     expect(sonnet?.displayName).toBe('ModelsDev Sonnet');
+  });
+
+  it("carries the runtime model's own detail line", () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        ollama: {
+          id: 'ollama',
+          models: {
+            'claude-sonnet-4-6': {
+              id: 'claude-sonnet-4-6',
+              name: 'ModelsDev Sonnet',
+            },
+          },
+        },
+      }),
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ({
+        connection: { role: 'implementer', provider: 'ollama', contextKey: 'implementer-context' },
+        state: 'fresh',
+        catalog: 'populated',
+        models: [
+          {
+            id: 'claude-sonnet-4-6',
+            displayName: 'Provider Sonnet',
+            detail: 'forces the 1M window',
+          },
+        ],
+        fetchedAt: 1,
+        validatedAt: 2,
+      }),
+    };
+
+    const models = resolveAndSort('ollama', 'implementer', cache);
+    const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
+    expect(sonnet?.detail).toBe('forces the 1M window');
+  });
+
+  it('omits detail when the runtime model has none', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        ollama: {
+          id: 'ollama',
+          models: {
+            'claude-sonnet-4-6': {
+              id: 'claude-sonnet-4-6',
+              name: 'ModelsDev Sonnet',
+            },
+          },
+        },
+      }),
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ({
+        connection: { role: 'implementer', provider: 'ollama', contextKey: 'implementer-context' },
+        state: 'fresh',
+        catalog: 'populated',
+        models: [{ id: 'claude-sonnet-4-6', displayName: 'Provider Sonnet' }],
+        fetchedAt: 1,
+        validatedAt: 2,
+      }),
+    };
+
+    const models = resolveAndSort('ollama', 'implementer', cache);
+    const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
+    expect(sonnet === undefined ? false : 'detail' in sonnet).toBe(false);
+  });
+
+  it('row without catalog entry says no catalog entry', () => {
+    const cache = makeModelCacheAccessor({ providerModels: { codex: [{ id: 'mystery-7b' }] } });
+
+    const row = resolveAndSort('codex', 'implementer', cache).find(
+      (model) => model.id === 'mystery-7b',
+    );
+
+    expect(row).toMatchObject({ id: 'mystery-7b', detail: 'no catalog entry' });
+    expect(row?.displayName).toBeUndefined();
+  });
+
+  it('no id appears twice', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: { 'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' } },
+        },
+      },
+      providerModels: {
+        'claude-code': [{ id: 'claude-sonnet-5' }, { id: 'claude-sonnet-5' }, { id: 'opus' }],
+      },
+    });
+
+    expect(uniqueModelIds(resolveAndSort('claude-code', 'planner', cache))).toContain(
+      'claude-sonnet-5',
+    );
   });
 });

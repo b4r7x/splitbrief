@@ -48,10 +48,10 @@ function preparePlanState(): WorkflowState {
 }
 
 describe('runApprovalLoop', () => {
-  it('rejects when user declines without comment — state transitions and spec_rejected event fires', async () => {
+  it('closes the run when the gate answers end-run — state transitions and spec_rejected event fires', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }),
+      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false, action: 'end-run' }),
     });
     const { bus, events } = makeBusRecorder();
     const result = await runApprovalLoop({
@@ -63,16 +63,15 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
     });
-    expect(result.rejected).toBe(true);
+    expect(result.closed).toBe(true);
     expect(events.some((e) => e.type === 'spec_rejected')).toBe(true);
     expect(
       events.some((e) => e.type === 'planner_status' && 'status' in e && e.status === 'done'),
     ).toBe(true);
   });
 
-  it('returns not-rejected immediately when AbortSignal is already aborted', async () => {
+  it('returns not-closed immediately when AbortSignal is already aborted', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const controller = new AbortController();
     controller.abort();
@@ -92,14 +91,13 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
       signal: controller.signal,
     });
-    expect(result.rejected).toBe(false);
+    expect(result.closed).toBe(false);
     expect(approvalPrompts).toBe(0);
   });
 
-  it('does not treat an aborted in-flight approval prompt as rejection', async () => {
+  it('does not close the run when an in-flight approval prompt is aborted', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const controller = new AbortController();
     let approvalPrompts = 0;
@@ -119,10 +117,9 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
       signal: controller.signal,
     });
-    expect(result.rejected).toBe(false);
+    expect(result.closed).toBe(false);
     expect(approvalPrompts).toBe(1);
   });
 
@@ -158,10 +155,9 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
     });
 
-    expect(result.rejected).toBe(false);
+    expect(result.closed).toBe(false);
     expect(result.regenerated).toBe(true);
     expect(regenCalls).toHaveLength(1);
     expect(regenCalls[0]).toContain('please add auth section');
@@ -211,7 +207,6 @@ describe('runApprovalLoop', () => {
           callbacks,
           bus,
           state: makeState(),
-          persistTranscript: false,
         }),
       ).rejects.toMatchObject({
         kind: 'planning-invalid-artifact',
@@ -271,7 +266,6 @@ describe('runApprovalLoop', () => {
         callbacks,
         bus,
         state: makeState(),
-        persistTranscript: false,
       });
 
       expect(result.regenerated).toBe(true);
@@ -293,7 +287,6 @@ describe('runApprovalLoop', () => {
       text: 'keep this brief-only and do not write spec.md',
       phase: 'researching',
       bus,
-      persistTranscript: false,
     });
     const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: true });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
@@ -314,10 +307,9 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: queued.state,
-      persistTranscript: false,
     });
 
-    expect(result.rejected).toBe(false);
+    expect(result.closed).toBe(false);
     expect(result.regenerated).toBe(true);
     expect(regenCalls).toHaveLength(1);
     expect(regenCalls[0]).toContain('keep this brief-only');
@@ -359,7 +351,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
     });
 
     expect(events.some((e) => e.type === 'planner_text' && e.text.includes('Requirement 1.'))).toBe(
@@ -408,10 +399,9 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
     });
 
-    expect(result.rejected).toBe(false);
+    expect(result.closed).toBe(false);
     expect(result.regenerated).toBe(true);
     expect(events.some((e) => e.type === 'spec_regenerated')).toBe(true);
   });
@@ -432,10 +422,9 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
     });
 
-    expect(result.rejected).toBe(false);
+    expect(result.closed).toBe(false);
     expect(result.regenerated).toBe(false);
     expect(events.some((e) => e.type === 'spec_regenerated')).toBe(false);
   });
@@ -459,10 +448,9 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: preparePlanState(),
-      persistTranscript: false,
     });
 
-    expect(result.rejected).toBe(false);
+    expect(result.closed).toBe(false);
     expect(result.regenerated).toBe(true);
     expect(events.some((e) => e.type === 'plan_regenerated')).toBe(true);
   });
@@ -513,7 +501,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
       signal: workflowSignal,
       sinks,
     });
@@ -526,7 +513,7 @@ describe('runApprovalLoop', () => {
     const result = await loopPromise;
 
     expect(result.aborted).toBe(true);
-    expect(result.rejected).toBe(false);
+    expect(result.closed).toBe(false);
     const onDisk = readFileSync(
       join(projectDir, '.splitbrief', 'sessions', sessionId, SPEC_FILE),
       'utf8',

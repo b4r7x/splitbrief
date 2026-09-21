@@ -7,6 +7,8 @@ import {
   type ApiRunnerRole,
 } from '../providers/api-provider-catalog.js';
 import { FORBIDDEN_API_PROVIDER_IDS } from '../providers/api-provider-verdicts.js';
+import { STACKS } from '../validation/stacks/registry.js';
+import { STACK_IDS } from '../validation/stacks/types.js';
 import { ConfigSchema } from './config.js';
 import { ImplementerApiProviderIdSchema, PlannerApiProviderIdSchema } from './enums.js';
 
@@ -241,6 +243,41 @@ describe('ConfigSchema user config contracts', () => {
   });
 });
 
+describe('ConfigSchema retired git automation', () => {
+  it.each(['checkpoint', 'per-task'])(
+    'rejects workflow.git.commitStrategy %s at its own path with a removal message',
+    (commitStrategy) => {
+      const issues = issuesFor({
+        ...validConfig,
+        workflow: { ...validConfig.workflow, git: { commitStrategy, createBranch: true } },
+      });
+
+      expect(issues).toHaveLength(1);
+      expect(issues[0]?.path.join('.')).toBe('workflow.git.commitStrategy');
+      expect(issues[0]?.message).toContain(`"${commitStrategy}" was removed`);
+      expect(issues[0]?.message).toContain('delete workflow.git.commit_strategy');
+    },
+  );
+
+  it('loads a historical commitStrategy none as inert and drops it, keeping createBranch', () => {
+    const config = ConfigSchema.parse({
+      ...validConfig,
+      workflow: { ...validConfig.workflow, git: { commitStrategy: 'none', createBranch: true } },
+    });
+
+    expect(config.workflow.git).toEqual({ createBranch: true });
+  });
+
+  it('keeps an ordinary createBranch unchanged', () => {
+    const config = ConfigSchema.parse({
+      ...validConfig,
+      workflow: { ...validConfig.workflow, git: { createBranch: false } },
+    });
+
+    expect(config.workflow.git).toEqual({ createBranch: false });
+  });
+});
+
 function implementerOnlyApiProviderIds() {
   const plannerIds = new Set<string>(PLANNER_API_PROVIDER_IDS);
   return IMPLEMENTER_API_PROVIDER_IDS.filter((id) => !plannerIds.has(id));
@@ -347,5 +384,27 @@ describe('ConfigSchema API identity', () => {
 
   it.each([1, 2, 4])('rejects config version %s', (version) => {
     expect(ConfigSchema.safeParse({ ...validConfig, version }).success).toBe(false);
+  });
+});
+
+describe('ConfigSchema validation stack pin', () => {
+  it('admits exactly the stack ids the registry can detect', () => {
+    expect([...STACK_IDS].sort()).toEqual(STACKS.map((stack) => stack.id).sort());
+
+    for (const stack of STACKS) {
+      expect(
+        ConfigSchema.safeParse({
+          ...validConfig,
+          validation: { ...validConfig.validation, stack: stack.id },
+        }).success,
+      ).toBe(true);
+    }
+
+    expect(
+      ConfigSchema.safeParse({
+        ...validConfig,
+        validation: { ...validConfig.validation, stack: 'kotlin' },
+      }).success,
+    ).toBe(false);
   });
 });

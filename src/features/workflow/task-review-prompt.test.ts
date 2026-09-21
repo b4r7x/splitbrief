@@ -58,14 +58,13 @@ const request: TaskReviewRequest = {
     contextLength: 1000,
     currentCodeTruncated: false,
     currentCodeContextMode: 'none',
-    costPosture: 'local',
     reason: 'Selected cheapest capable profile local-small.',
   },
   availableCommands: [...TASK_REVIEW_COMMANDS],
 };
 
 describe('task review prompt', () => {
-  it('builds task metadata, evidence, cost, routing, and commands', async () => {
+  it('builds task metadata, evidence, worker, route fit, and commands', async () => {
     const visible = await renderPromptBody(formatTaskReviewPrompt(request));
 
     expect(visible).toContain('T001 ready for review · Add auth');
@@ -73,14 +72,38 @@ describe('task review prompt', () => {
     expect(visible).toContain('files src/auth.ts');
     expect(visible).toContain('checks validation passed');
     expect(visible).toContain('evidence task reached done; test passed');
-    expect(visible).toMatch(/15 implementer, 0 escalation/);
-    expect(visible).toMatch(/route fits 120\/1000 tokens/);
+    expect(visible).toContain('worker ollama / qwen / local-small');
+    expect(visible).toContain('route fits');
     expect(visible).toContain('[c]  continue');
     expect(visible).toContain('[r]  redo task');
     expect(visible).toContain('[p]  revise-plan <notes>');
     expect(visible).toContain('[a]  abort');
     expect(visible).toContain('notes <text>');
     expect(visible).toContain(`${glyph('liveBar')} [c]  continue`);
+  });
+
+  it('keeps numeric usage and routing diagnostics out of the automatic prompt', async () => {
+    const prompt = formatTaskReviewPrompt({
+      ...request,
+      routing: {
+        ...request.routing,
+        fit: 'tight',
+        estimatedTokens: 12345,
+        untruncatedEstimatedTokens: 23456,
+        contextLength: 32768,
+        currentCodeTruncated: false,
+        currentCodeContextMode: 'whole-file',
+        reason: 'Selected worker (tight, estimated 12345/32768 tokens)',
+      },
+    });
+    const visible = await renderPromptBody(prompt);
+
+    for (const text of [prompt, visible]) {
+      expect(text).toContain('worker ollama / qwen / local-small');
+      expect(text).toContain('route tight');
+      expect(text).not.toMatch(/tokens|12345|23456|32768|15 implementer|0 escalation|cost /);
+      expect(text).not.toContain('Selected worker');
+    }
   });
 
   it('flags a failed review headline with the task title detail', async () => {

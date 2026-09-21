@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { PhaseSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';
+import { AnsweredQuestionSchema } from './question.js';
 import { StructuredSummarySchema } from './compaction.js';
 
 export const SESSION_LOG_MAX_ENTRY_BYTES = 512 * 1024;
@@ -17,6 +18,7 @@ export const SessionLogMessageEntrySchema = z.object({
   role: z.enum(['user', 'assistant']),
   phase: PhaseSchema.optional(),
   text: z.string(),
+  qa: z.array(AnsweredQuestionSchema).optional(),
   interrupted: z.boolean().optional(),
   queuedAt: z.string().optional(),
   queueMessageId: z.string().optional(),

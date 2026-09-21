@@ -8,7 +8,7 @@ import { GLOBAL_SKILL_SCAN_PATHS, PROJECT_SKILL_SCAN_PATHS } from '../core/skill
 import { extractFrontmatter } from '../utils/frontmatter.js';
 
 import { isENOENT } from '../lib/process/errors.js';
-import { warnError } from '../lib/warn.js';
+import { warnError, warnStderr } from '../lib/warn.js';
 import { readProjectFileConfined } from '../lib/fs.js';
 
 const MAX_SKILL_CHARS = 16_000;
@@ -60,7 +60,7 @@ function parseFrontmatter(raw: string, path: string): SkillFrontmatter | null {
   if (body === raw) return null;
   if (!warnedMalformed.has(path)) {
     warnedMalformed.add(path);
-    warnError(`Skill frontmatter is not valid YAML, recovered by line scan: ${path}`);
+    warnStderr(`Skill frontmatter is not valid YAML, recovered by line scan: ${path}`, 'log-only');
   }
   return scanFrontmatterFields(raw.slice(0, raw.length - body.length));
 }
@@ -242,17 +242,30 @@ export async function discoverSkills(projectDir: string): Promise<SkillMeta[]> {
   const seen = new Set<string>();
   const skills: SkillMeta[] = [];
   for (const skill of ordered) {
-    if (seen.has(skill.id)) continue;
+    if (seen.has(skill.id) || ORCHESTRATION_SKILL_IDS.has(skill.id)) continue;
     seen.add(skill.id);
     skills.push(skill);
   }
   return skills;
 }
 
-export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
-  if (skills.length === 0) return '';
+// The portable splitbrief skills tell a host session to spawn its own implementer and
+// reviewer; injected into this planner they would describe the pipeline it is already
+// running. The repo's own dev skills (`splitbrief-dev`, …) are not in this set.
+const ORCHESTRATION_SKILL_IDS = new Set([
+  'splitbrief',
+  'splitbrief-brief',
+  'splitbrief-run',
+  'splitbrief-review',
+]);
+
+export type SkillContent = { content: string; omitted: string[] };
+
+export async function loadSkillContent(skills: SkillMeta[]): Promise<SkillContent> {
+  if (skills.length === 0) return { content: '', omitted: [] };
 
   const sections: string[] = [];
+  const omitted: string[] = [];
   let totalChars = 0;
 
   for (let i = 0; i < skills.length; i++) {
@@ -287,9 +300,10 @@ export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
       }
       const dropped = skills.slice(partial ? i + 1 : i);
       if (dropped.length > 0) {
-        const names = dropped.map((s) => s.name).join(', ');
+        const names = dropped.map((s) => s.name);
+        omitted.push(...names);
         sections.push(
-          `[${dropped.length} more selected skills omitted: budget ${MAX_SKILL_CHARS} chars — ${names}]`,
+          `[${dropped.length} more selected skills omitted: budget ${MAX_SKILL_CHARS} chars — ${names.join(', ')}]`,
         );
       }
       break;
@@ -299,11 +313,13 @@ export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
     totalChars += body.length;
   }
 
-  return sections.join('\n\n');
+  return { content: sections.join('\n\n'), omitted };
 }
 
-export async function buildSkillsSection(skills: SkillMeta[]): Promise<string> {
-  const content = await loadSkillContent(skills);
-  if (!content) return '';
-  return `## Active Project Skills\n\n${content}`;
+export async function buildSkillsSection(
+  skills: SkillMeta[],
+): Promise<{ section: string; omitted: string[] }> {
+  const { content, omitted } = await loadSkillContent(skills);
+  if (content === '') return { section: '', omitted };
+  return { section: `## Active Project Skills\n\n${content}`, omitted };
 }

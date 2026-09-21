@@ -11,6 +11,7 @@ import {
 import { DriftSeveritySchema, DriftCodeSchema } from './drift.js';
 import { EvidenceValidationStageSchema, EvidenceFinalReviewStatusSchema } from './evidence.js';
 import {
+  CostAmountBasisSchema,
   CostBreakdownSchema,
   ReviewFinalReviewStatusSchema,
   ReviewFindingCountsSchema,
@@ -68,6 +69,7 @@ const ReviewPacketTaskFileSchema = z.object({
   taskId: TaskIdSchema,
   title: z.string(),
   file: z.string(),
+  files: z.array(z.string()).optional(),
   status: TaskStatusSchema,
   changedFiles: z.array(z.string()),
   expectedEvidence: z.array(z.string()),
@@ -107,8 +109,6 @@ const ReviewPacketCheckpointSchema = z.object({
   kind: z.enum(['manual', 'pre-task', 'post-task', 'pre-final-review', 'accepted-run', 'other']),
   inferredKind: z.enum(['pre-task', 'post-task', 'pre-final-review', 'accepted-run']).optional(),
   isRunCheckpoint: z.boolean(),
-  diffCommand: z.string(),
-  restoreCommand: z.string(),
 });
 
 const ReviewPacketRunLedgerSchema = z.object({
@@ -324,22 +324,23 @@ const ReviewPacketEscalationsSchema = z.object({
 const ReviewPacketCostSchema = z.object({
   tokenUsage: TokenUsageSchema,
   costBreakdown: CostBreakdownSchema.pick({
-    hypotheticalCost: true,
     actualPlannerCost: true,
     actualImplementerCost: true,
     actualReviewerCost: true,
     totalActualCost: true,
-    savingsAmount: true,
-    savingsPercentage: true,
-    localCompletionRate: true,
     hasPricedUsage: true,
     hasUnpricedUsage: true,
-    hasSavingsEstimate: true,
     isActualReviewerCostKnown: true,
     isTotalActualCostKnown: true,
-    isAllPlannerBaselineKnown: true,
+    // The rates and identities the run was priced against travel with the
+    // export, so a reader of the packet reads what it was priced at instead of
+    // recosting it against whatever the catalog says by then.
+    requestEstimate: true,
+    providerRunMetadata: true,
   }).nullable(),
-  estimatedCostSavings: z.string().nullable(),
+  /** What the amounts above are: a catalog estimate, unavailable, or a sum from
+   * a run that recorded no provenance. Never an invoice. */
+  amountBasis: CostAmountBasisSchema.default('legacy-unattributed'),
   taskRouting: z.array(TaskTokenUsageSchema),
   routingWarnings: z.array(ReviewPacketEventSchema),
 });

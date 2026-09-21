@@ -1,38 +1,14 @@
 import OpenAI from 'openai';
-import type { ApiOffering } from '../../../core/providers/api-provider-catalog.js';
+import { TIMEOUTS } from '../../../core/pipeline-spec/timeouts.js';
 import { validateApiBaseUrl } from '../../../core/providers/validate-api-base.js';
 import { error } from '../../../utils/error.js';
 import type { ProviderDef } from '../types.js';
 import { providerError } from '../errors.js';
-import { resolveApiKeyOverride } from './api-key.js';
 import {
   endpointPolicyError,
   endpointPolicyFetch,
-  normalizeProviderEndpoint,
-  type EndpointPolicy,
   type EndpointPolicyFetchOwner,
 } from '../../../core/providers/endpoint-policy.js';
-import {
-  createEndpointPolicyFetch,
-  type EndpointPolicyFetch,
-} from '../../../lib/http/policy-fetch.js';
-
-export interface ProviderConnectionMetadata {
-  readonly baseURL: string;
-  readonly offering: ApiOffering | undefined;
-  readonly credentialPrefix: string | null;
-}
-
-export interface CreateProviderConnectionOpts {
-  readonly requestedBaseURL: string;
-  readonly endpointPolicy: EndpointPolicy;
-  readonly offering?: ApiOffering | undefined;
-  readonly credentialOverride?: string | undefined;
-  readonly envKeyName?: string | undefined;
-  readonly apiKeyDefault?: string | undefined;
-  readonly credentialPrefix?: string | null | undefined;
-  readonly fetchImplementation?: EndpointPolicyFetch;
-}
 
 export function validateProviderBaseURL(baseURL: string): string {
   try {
@@ -55,41 +31,10 @@ export function assertCredentialPrefix(credential: string, prefix: string | null
   );
 }
 
-function resolveConnectionCredential(
-  opts: CreateProviderConnectionOpts,
-  credentialPrefix: string | null,
-): string {
-  const value =
-    resolveApiKeyOverride(opts.credentialOverride) ??
-    (opts.envKeyName !== undefined ? process.env[opts.envKeyName] : undefined) ??
-    opts.apiKeyDefault ??
-    '';
-  assertCredentialPrefix(value, credentialPrefix);
-  return value;
-}
-
-export function createProviderConnection(
-  opts: CreateProviderConnectionOpts,
-): ProviderConnectionMetadata & EndpointPolicyFetchOwner & { readonly apiKey: () => string } {
-  const baseURL = normalizeProviderEndpoint(opts.endpointPolicy, opts.requestedBaseURL);
-  const credentialPrefix = opts.credentialPrefix ?? null;
-  const resolvedCredential = resolveConnectionCredential(opts, credentialPrefix);
-  const policyFetch = createEndpointPolicyFetch(
-    baseURL,
-    endpointPolicyError.invalid,
-    opts.fetchImplementation,
-  );
-
-  return {
-    baseURL,
-    offering: opts.offering,
-    credentialPrefix,
-    apiKey: () => resolvedCredential,
-    [endpointPolicyFetch]: policyFetch,
-  };
-}
-
-export function createClientFromProvider(provider: ProviderDef): OpenAI {
+export function createClientFromProvider(
+  provider: ProviderDef,
+  opts: { readonly timeoutMs?: number | undefined } = {},
+): OpenAI {
   const fetch = hasEndpointPolicyFetch(provider) ? provider[endpointPolicyFetch] : undefined;
   if (fetch === undefined) {
     // OpenAI's default fetch follows redirects itself. A provider without the
@@ -97,10 +42,21 @@ export function createClientFromProvider(provider: ProviderDef): OpenAI {
     throw endpointPolicyError.unsupported();
   }
 
+  const apiKey = provider.apiKey();
   return new OpenAI({
     baseURL: provider.baseURL,
-    apiKey: provider.apiKey(),
+    // The SDK requires a nonempty key at construction. The local placeholder
+    // never reaches HTTP and never changes the provider's authentication evidence.
+    apiKey: apiKey || 'splitbrief-no-auth',
+    defaultHeaders: apiKey.length === 0 ? { Authorization: null, 'api-key': null } : undefined,
+    adminAPIKey: null,
+    organization: null,
+    project: null,
     fetch,
+    // A hidden SDK retry would multiply the application's own total deadline,
+    // and the SDK default timeout is unrelated to it. Both are stated here.
+    maxRetries: 0,
+    timeout: opts.timeoutMs ?? TIMEOUTS.implementerMs,
   });
 }
 

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'ink-testing-library';
 import { PromptBody } from './prompt-body.js';
+import { countPromptBodyRows } from '../prompt-body-rows.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 
 const RECOVERY_PROMPT = [
@@ -82,6 +83,24 @@ describe('PromptBody', () => {
 
     expect(frame).toContain('t3 failed review · add session middleware');
     expect(frame).toContain('▌');
+  });
+
+  // The panel is sized from countPromptBodyRows, so a row that paints taller than the model
+  // measured costs a row above it: at 76 columns the recommended tail used to wrap onto its own
+  // line and the headline lost its first cell, at 56 it lost the whole row.
+  it('paints exactly the rows the model measured, headline first, at every width', () => {
+    for (const width of [116, 76, 56, 20]) {
+      for (const height of [countPromptBodyRows(RECOVERY_PROMPT, width), 6]) {
+        const ui = render(<PromptBody prompt={RECOVERY_PROMPT} height={height} width={width} />);
+        const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+
+        expect(lines).toHaveLength(height);
+        expect(lines[0]).toContain('recovery needed');
+        expect(lines.filter((line) => line.includes('recommended'))).toHaveLength(1);
+
+        ui.unmount();
+      }
+    }
   });
 
   it('renders nothing when height is non-positive', () => {

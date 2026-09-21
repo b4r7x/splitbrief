@@ -2,7 +2,8 @@ import { Box, Text } from 'ink';
 import { useEffect } from 'react';
 import { renderReviewRows } from './review-rows-cache.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { projectRelativePathLabel } from '../../../utils/path-links.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import { ScrollIndicator } from '../../../components/scroll-indicator.js';
 import {
@@ -10,10 +11,11 @@ import {
   getScrollableDocumentLineCount,
   ScrollableDocument,
 } from '../../../components/scrollable-document.js';
-import { Divider } from './divider.js';
+import { Divider } from '../../../components/divider.js';
 import { FramePanel } from './frame-panel.js';
 import { useTheme } from '../../../components/theme.js';
 import { getReviewColumnWidth, getReviewContentLayout, REVIEW_FRAME_ROWS } from '../layout/rect.js';
+import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { normalizeScrollRows } from '../layout/scroll-window.js';
 import { useReviewContent } from '../hooks/use-review-content.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -36,12 +38,13 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   const scrollableWidth = Math.max(1, documentWidth - 2);
   const bodyWidth = Math.max(1, getScrollViewportContentWidth(scrollableWidth));
   const innerHeight = Math.max(0, containerHeight - REVIEW_FRAME_ROWS);
+  const projectDir = configStore.get().projectDir;
   const rows = renderReviewRows({
     source: content,
     width: bodyWidth,
     theme: t,
     decorateSegment: workflowMarkdownRenderSegments,
-    projectDir: configStore.get().projectDir,
+    projectDir,
   });
   const renderedLineCount = getScrollableDocumentLineCount(rows);
   const { contentHeight, showFooter } = getReviewContentLayout(innerHeight, renderedLineCount);
@@ -57,7 +60,10 @@ export function ReviewView({ height, width }: ReviewViewProps) {
 
   if (!source) return null;
 
-  const reviewLabel = source.kind === 'file' ? source.filePath : 'Custom planner artifact';
+  const reviewLabel =
+    source.kind === 'file'
+      ? projectRelativePathLabel({ path: source.filePath, rootDir: projectDir })
+      : 'Custom planner artifact';
 
   const remaining = Math.max(0, renderedLineCount - clampedOffset - contentHeight);
   const scrollIndicatorText = ` ↓ ${remaining} more`;
@@ -67,8 +73,15 @@ export function ReviewView({ height, width }: ReviewViewProps) {
     getTerminalCellWidth(scrollIndicatorText) + getTerminalCellWidth(scrollHint) + 2 <=
       frameInnerWidth;
 
+  // The frame is a box, so its border stands on the gutter line the transcript's marks do.
   return (
-    <Box flexDirection="column" height={containerHeight} width={width} overflow="hidden">
+    <Box
+      flexDirection="column"
+      height={containerHeight}
+      width={width}
+      paddingLeft={WORKFLOW_GUTTER_X}
+      overflow="hidden"
+    >
       <FramePanel filePath={reviewLabel} width={documentWidth} height={containerHeight}>
         {contentHeight > 0 && (
           <ScrollableDocument

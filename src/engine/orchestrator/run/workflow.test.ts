@@ -1,6 +1,14 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
-import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -12,13 +20,14 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { RunnerCallContext } from '../../../engine/calls/types.js';
-import type { PlanOptions, PlannerOutputCallbacks } from '../../../engine/planners/types.js';
+import type { RunPhaseInput, PlannerOutputCallbacks } from '../../../engine/planners/types.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -36,32 +45,21 @@ import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import {
-  acquireStateAuthority,
-  readStateAuthority,
-  releaseStateAuthority,
-} from '../../../core/state/authority.js';
-import {
   reactivateExistingSession,
   readActive,
   writeActive,
 } from '../../../core/sessions/active-pointer.js';
-import {
-  TRANSCRIPT_OMITTED_FEATURE,
-  generateSessionId,
-} from '../../../core/sessions/session-id.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
+import { generateSessionId } from '../../../core/sessions/session-id.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { registerProcess } from '../../../lib/process/registry.js';
 import { readRunnerPids } from '../../../core/sessions/runner-pids.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow as runPreparedWorkflow } from './workflow.js';
-import { WORKFLOW_REWIND_ABORT_REASON } from './rewind-authority.js';
 import type { RunWorkflowOptions } from './init.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { error } from '../../../utils/error.js';
 import { parsePreparedConfig, type RunnerGate } from '../../runners/prepared-execution.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { resolveHooksConfig } from '../../hooks/discover.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 
 let dirs: string[] = [];
@@ -151,7 +149,7 @@ async function runWorkflow(input: WorkflowTestOptions) {
     purpose: requestedPurpose,
     ...options
   } = input;
-  const hooks = await resolveHooksConfig(projectDir, inputConfig.hooks);
+  const hooks = inputConfig.hooks;
   if (hooks !== undefined && input.allowHooks === true) {
     markHooksConfigTrusted(projectDir, hooks);
   }
@@ -161,9 +159,13 @@ async function runWorkflow(input: WorkflowTestOptions) {
     generateSessionId({
       projectDir,
       feature,
-      persistTranscript: config.workflow.persistTranscript,
     });
   ensureSessionDir(projectDir, sessionId);
+  // An open run keeps the active pointer, so a second run in one project has to take it over the
+  // way `prepareNewSession` does rather than collide with the run before it.
+  if (readActive(projectDir) !== null && readActive(projectDir) !== sessionId) {
+    rmSync(join(projectDir, SPLITBRIEF_DIR, 'active'), { force: true });
+  }
   const active = reactivateExistingSession({ projectDir, sessionId });
   const preparationId = `workflow-test-${sessionId}`;
   const gates: RunnerGate[] = [
@@ -227,7 +229,6 @@ function unavailablePlannerConfig(): Config {
     workflow: {
       approve: 'none',
       mode: 'quick',
-      persistTranscript: false,
     },
   });
 }
@@ -237,7 +238,7 @@ describe('runWorkflow — smoke', () => {
     const projectDir = setupProject();
     const mutableConfig = makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { approve: 'none', mode: 'quick', persistTranscript: false },
+      workflow: { approve: 'none', mode: 'quick' },
     });
     const config = parsePreparedConfig(mutableConfig);
     const feature = 'prepared snapshot';
@@ -295,7 +296,7 @@ describe('runWorkflow — smoke', () => {
       _eventSink: (e) => events.push(e),
     });
 
-    expect(summary.feature).toBe(TRANSCRIPT_OMITTED_FEATURE);
+    expect(summary.feature).toBe('add auth');
     expect(summary.totalTasks).toBe(0);
 
     const errorEvent = events.find(
@@ -324,11 +325,10 @@ describe('runWorkflow — smoke', () => {
     };
     const onContinuationNeeded = vi.fn(async () => 'should not run');
     const { callbacks } = makeCallbacks({ onContinuationNeeded });
-    const quickPlan = vi.fn().mockImplementation(async () => {
+    const runPhase = vi.fn(async ({ call }: RunPhaseInput) => {
       expect(pendingBoundaryInterrupt).toBe(false);
-      return {
-        spec: '',
-        plan: '',
+      return makePhaseCallResult({
+        call,
         tasks: [
           makeTask({
             id: 'T001',
@@ -338,7 +338,7 @@ describe('runWorkflow — smoke', () => {
           }),
         ],
         usage: { inputTokens: 50, outputTokens: 25 },
-      };
+      });
     });
 
     const summary = await runWorkflow({
@@ -349,7 +349,6 @@ describe('runWorkflow — smoke', () => {
         workflow: {
           approve: 'none',
           mode: 'quick',
-          persistTranscript: false,
         },
       }),
       callbacks,
@@ -359,18 +358,18 @@ describe('runWorkflow — smoke', () => {
         consumeBoundaryInterrupt,
       },
       _eventSink: (e) => events.push(e),
-      _planner: makePlanner({ quickPlan }),
+      _planner: makePlanner({ runPhase }),
       _implementer: makeImplementer(),
     });
 
     expect(events.find((e) => e.type === 'turn_interrupted')).toBeUndefined();
     expect(onContinuationNeeded).not.toHaveBeenCalled();
-    expect(quickPlan).toHaveBeenCalled();
+    expect(runPhase).toHaveBeenCalled();
     expect(pendingBoundaryInterrupt).toBe(false);
     expect(summary.totalTasks).toBe(1);
   }, 20_000);
 
-  it('records the session status as failed (not interrupted) when planning fails', async () => {
+  it('records the planning failure as the stop reason of an open run', async () => {
     const projectDir = setupProject();
     const sessionId = 'planning-failed-sid';
     const { callbacks } = makeCallbacks();
@@ -379,13 +378,11 @@ describe('runWorkflow — smoke', () => {
       workflow: {
         approve: 'none',
         mode: 'quick',
-        persistTranscript: false,
       },
     });
 
-    // An available planner that returns zero tasks routes through handlePlanningFailure
-    // with a real (non-abort) error. The persisted session must read as 'failed', not the
-    // user-cancel status 'interrupted' (F-127).
+    // An available planner that returns zero briefs raises a halt the operator answers. The run
+    // stays open — nothing closed it — and the record names the halt as why it stopped.
     await runWorkflow({
       feature: 'planning-failure',
       projectDir,
@@ -394,29 +391,29 @@ describe('runWorkflow — smoke', () => {
       sessionId,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _planner: makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '',
-          tasks: [],
-          usage: { inputTokens: 50, outputTokens: 25 },
-        }),
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [],
+            usage: { inputTokens: 50, outputTokens: 25 },
+          }),
+        ),
       }),
     });
 
-    const { listAllSessions } = await import('../../../core/sessions/io.js');
-    const persisted = listAllSessions(projectDir).find((s) => s.id === sessionId);
-    expect(persisted?.status).toBe('failed');
+    const { listSessions } = await import('../../../core/sessions/io.js');
+    const persisted = listSessions(projectDir).find((s) => s.id === sessionId);
+    expect(persisted).toMatchObject({ status: 'open', stop: 'halted' });
   });
 
-  it('initialization failure yields a failed session status', async () => {
+  it('initialization failure leaves the run open', async () => {
     const projectDir = setupProject();
     const sessionId = 'init-failed-sid';
     const { callbacks } = makeCallbacks();
     const config = unavailablePlannerConfig();
 
     // The planner is unavailable, so initializeWorkflow returns `ok: false` before any
-    // planning work starts. The persisted session must read as 'failed', not the default
-    // 'interrupted' status.
+    // planning work starts. Nothing closed the run, so it stays open and continuable.
     await runWorkflow({
       feature: 'init-failure',
       projectDir,
@@ -426,9 +423,9 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
     });
 
-    const { listAllSessions } = await import('../../../core/sessions/io.js');
-    const persisted = listAllSessions(projectDir).find((s) => s.id === sessionId);
-    expect(persisted?.status).toBe('failed');
+    const { listSessions } = await import('../../../core/sessions/io.js');
+    const persisted = listSessions(projectDir).find((s) => s.id === sessionId);
+    expect(persisted?.status).toBe('open');
   });
 
   it('writes a liveness record (pid + fresh heartbeat) for an interactive run and marks it exited on completion', async () => {
@@ -447,22 +444,24 @@ describe('runWorkflow — smoke', () => {
     });
 
     // acquireLiveness writes the lockfile at the start of EVERY run (TUI/headless/RPC),
-    // so checkServerStatus can refuse a concurrent resume/continue. Assert the record on disk.
-    const { readLockfile, checkServerStatus } = await import('../../ipc/lockfile.js');
+    // so checkSessionLiveness can refuse a concurrent resume/continue. Assert the record on disk.
+    const { readLockfile, checkSessionLiveness } = await import(
+      '../../../core/sessions/lockfile.js'
+    );
     const dir = sessionDir(projectDir, 'liveness-sid');
-    const lock = await readLockfile(dir);
+    const lock = readLockfile(dir);
     expect(lock).not.toBeNull();
     expect(lock?.pid).toBe(process.pid);
     expect(lock?.sessionId).toBe('liveness-sid');
-    expect(lock?.feature).toBe(TRANSCRIPT_OMITTED_FEATURE);
+    expect(lock?.feature).toBe('liveness-record');
     expect(lock?.lastAliveMs).toBeGreaterThanOrEqual(before);
 
     // releaseLiveness() runs in the finally arm and marks the record exited (best-effort,
     // fire-and-forget) so the session no longer reads as alive once the run finishes.
-    let status = await checkServerStatus(dir);
+    let status = checkSessionLiveness(dir);
     for (let i = 0; i < 50 && status.alive; i++) {
       await new Promise((r) => setTimeout(r, 10));
-      status = await checkServerStatus(dir);
+      status = checkSessionLiveness(dir);
     }
     expect(status.alive).toBe(false);
   });
@@ -476,7 +475,6 @@ describe('runWorkflow — smoke', () => {
       workflow: {
         approve: 'none',
         mode: 'quick',
-        persistTranscript: false,
       },
     });
 
@@ -491,15 +489,14 @@ describe('runWorkflow — smoke', () => {
       sessionId,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _planner: makePlanner({
-        quickPlan: vi.fn().mockImplementation(async () => {
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) => {
           registerProcess(groupChild, { group: true });
           entriesDuringRun = readRunnerPids({ projectDir, sessionId });
-          return {
-            spec: '',
-            plan: '',
+          return makePhaseCallResult({
+            call,
             tasks: [makeTask()],
             usage: { inputTokens: 50, outputTokens: 25 },
-          };
+          });
         }),
       }),
       _implementer: makeImplementer(),
@@ -557,7 +554,7 @@ describe('runWorkflow — smoke', () => {
       await new Promise<void>((resolve) => child.stdout?.once('data', () => resolve()));
 
       const { callbacks } = makeCallbacks({
-        onQuestionAsked: vi.fn(async () => {
+        onPlannerReply: vi.fn(async () => {
           throw new Error('question handler failed');
         }),
       });
@@ -571,28 +568,21 @@ describe('runWorkflow — smoke', () => {
           workflow: {
             approve: 'none',
             mode: 'quick',
-            persistTranscript: false,
           },
         }),
         callbacks,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
         _planner: makePlanner({
-          quickPlan: vi.fn().mockImplementation(async (opts: PlanOptions) => {
+          runPhase: vi.fn(async () => {
             registerProcess(child);
-            opts.callbacks.onQuestion?.([{ id: 'q1', type: 'input', text: 'Continue?' }]);
-            return {
-              spec: '',
-              plan: '',
-              tasks: [makeTask()],
-              usage: { inputTokens: 50, outputTokens: 25 },
-            };
+            return { kind: 'conversation' as const, text: 'Continue?', questions: [], usage: null };
           }),
         }),
         _implementer: makeImplementer(),
       });
 
       expect(summary.totalTasks).toBe(0);
-      expect(JSON.parse(readFileSync(summaryPath, 'utf8'))).toMatchObject({ status: 'failed' });
+      expect(JSON.parse(readFileSync(summaryPath, 'utf8'))).toMatchObject({ status: 'open' });
       expect(child.exitCode).toBe(0);
       expect(existsSync(observedEarlySummaryPath)).toBe(false);
     },
@@ -603,7 +593,7 @@ describe('runWorkflow — smoke', () => {
     const sessionId = 'liveness-conflict-sid';
     const { callbacks } = makeCallbacks();
     const config = unavailablePlannerConfig();
-    const { writeLockfile } = await import('../../ipc/lockfile.js');
+    const { writeLockfile } = await import('../../../core/sessions/lockfile.js');
     const dir = sessionDir(projectDir, sessionId);
     ensureSessionDir(projectDir, sessionId);
     await writeLockfile(dir, {
@@ -627,55 +617,12 @@ describe('runWorkflow — smoke', () => {
     ).rejects.toThrow(/already running/);
   });
 
-  it('refuses a live state-authority owner before constructing provider work', async () => {
-    const projectDir = setupProject();
-    const sessionId = 'state-authority-live-owner-sid';
-    const ref = { projectDir, sessionId };
-    ensureSessionDir(projectDir, sessionId);
-    saveState(ref, createInitialState('live authority owner'));
-    const owner = acquireStateAuthority({
-      ref,
-      purpose: 'resume',
-      ownerId: 'live-owner',
-      runId: 'live-run',
-      acquisitionId: 'live-acquisition',
-    });
-    expect(owner.kind).toBe('fenced');
-    if (owner.kind !== 'fenced') return;
-    expect(readStateAuthority(ref)?.ownerId).toBe('live-owner');
-
-    const planner = makePlanner({
-      isAvailable: vi.fn().mockResolvedValue(true),
-      quickPlan: vi.fn(),
-      plan: vi.fn(),
-    });
-    try {
-      const summary = await runWorkflow({
-        feature: 'live authority owner',
-        projectDir,
-        config: unavailablePlannerConfig(),
-        callbacks: makeCallbacks().callbacks,
-        sessionId,
-        purpose: 'resume',
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-        _planner: planner,
-      });
-      expect(summary.totalTasks).toBe(0);
-      expect(readStateAuthority(ref)?.ownerId).toBe('live-owner');
-      expect(planner.isAvailable).not.toHaveBeenCalled();
-      expect(planner.plan).not.toHaveBeenCalled();
-      expect(planner.quickPlan).not.toHaveBeenCalled();
-    } finally {
-      expect(releaseStateAuthority(ref, owner.receipt)).toBe(true);
-    }
-  });
-
   it('rejects a concurrent workflow before its planner crosses a provider boundary', async () => {
     const projectDir = setupProject();
-    const sessionId = 'state-authority-concurrent-sid';
+    const sessionId = 'concurrent-run-sid';
     const config = makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { approve: 'none', mode: 'quick', persistTranscript: false },
+      workflow: { approve: 'none', mode: 'quick' },
     });
     const releaseFirst = Promise.withResolvers<void>();
     const firstAvailability = vi.fn(async () => {
@@ -684,7 +631,7 @@ describe('runWorkflow — smoke', () => {
     });
     const firstPlanner = makePlanner({ isAvailable: firstAvailability });
     const firstRun = runWorkflow({
-      feature: 'concurrent authority owner',
+      feature: 'concurrent run owner',
       projectDir,
       config,
       callbacks: makeCallbacks().callbacks,
@@ -697,12 +644,11 @@ describe('runWorkflow — smoke', () => {
       await vi.waitFor(() => expect(firstAvailability).toHaveBeenCalledTimes(1));
       const secondPlanner = makePlanner({
         isAvailable: vi.fn(),
-        quickPlan: vi.fn(),
-        plan: vi.fn(),
+        runPhase: vi.fn(),
       });
       await expect(
         runWorkflow({
-          feature: 'concurrent authority owner',
+          feature: 'concurrent run owner',
           projectDir,
           config,
           callbacks: makeCallbacks().callbacks,
@@ -713,35 +659,24 @@ describe('runWorkflow — smoke', () => {
         }),
       ).rejects.toMatchObject({ kind: 'workflow-session-already-live' });
       expect(secondPlanner.isAvailable).not.toHaveBeenCalled();
-      expect(secondPlanner.plan).not.toHaveBeenCalled();
-      expect(secondPlanner.quickPlan).not.toHaveBeenCalled();
+      expect(secondPlanner.runPhase).not.toHaveBeenCalled();
     } finally {
       releaseFirst.resolve();
       await firstRun;
     }
   });
 
-  it('takes over a proven-dead owner with a higher fence and rejects stale teardown', async () => {
+  it('leaves an unmigrated legacy state untouched and keeps provider work out of the path', async () => {
     const projectDir = setupProject();
-    const sessionId = 'state-authority-takeover-sid';
+    const sessionId = 'legacy-state-sid';
     const ref = { projectDir, sessionId };
     ensureSessionDir(projectDir, sessionId);
-    saveState(ref, createInitialState('dead authority owner'));
-    const old = acquireStateAuthority({
-      ref,
-      purpose: 'resume',
-      ownerId: 'dead-owner',
-      runId: 'dead-run',
-      acquisitionId: 'dead-acquisition',
-      pid: 2_147_483_646,
-      processStart: '1',
-    });
-    expect(old.kind).toBe('fenced');
-    if (old.kind !== 'fenced') return;
+    writeRawState(ref, legacyWorkflowState('legacy state'));
+    const before = readFileSync(stateFile(ref));
 
-    const planner = makePlanner({ isAvailable: vi.fn().mockResolvedValue(false) });
-    await runWorkflow({
-      feature: 'dead authority owner',
+    const planner = makePlanner({ isAvailable: vi.fn(), runPhase: vi.fn() });
+    const summary = await runWorkflow({
+      feature: 'legacy state',
       projectDir,
       config: unavailablePlannerConfig(),
       callbacks: makeCallbacks().callbacks,
@@ -751,57 +686,23 @@ describe('runWorkflow — smoke', () => {
       _planner: planner,
     });
 
-    const successor = loadState(ref);
-    expect(successor?.stateVersion).toBe(4);
-    expect(successor?.stateRevision).toBeGreaterThan(old.receipt.stateRevision);
-    expect(successor?.stateFence?.token).toBeGreaterThan(old.receipt.fence);
-    expect(successor?.stateFence?.ownerId).not.toBe(old.receipt.ownerId);
-    expect(releaseStateAuthority(ref, old.receipt)).toBe(false);
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
-  });
-
-  it('migrates v3 before planner work and keeps provider operations out of migration', async () => {
-    const projectDir = setupProject();
-    const sessionId = 'state-authority-migration-sid';
-    const ref = { projectDir, sessionId };
-    ensureSessionDir(projectDir, sessionId);
-    writeRawState(ref, legacyWorkflowState('legacy migration'));
-
-    const planner = makePlanner({ isAvailable: vi.fn().mockResolvedValue(false) });
-    await runWorkflow({
-      feature: 'legacy migration',
-      projectDir,
-      config: unavailablePlannerConfig(),
-      callbacks: makeCallbacks().callbacks,
-      sessionId,
-      purpose: 'resume',
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      _planner: planner,
-    });
-
-    const migrated = loadState(ref);
-    expect(migrated?.stateVersion).toBe(4);
-    expect(migrated?.stateRevision).toBeGreaterThan(0);
-    expect(migrated?.stateFence?.token).toBeGreaterThan(0);
-    expect(migrated?.briefRecovery?.status).toBe('storage-blocked');
-    expect(planner.isAvailable).toHaveBeenCalledTimes(1);
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(summary.totalTasks).toBe(0);
+    expect(readFileSync(stateFile(ref))).toEqual(before);
+    expect(planner.isAvailable).not.toHaveBeenCalled();
+    expect(planner.runPhase).not.toHaveBeenCalled();
     expect(planner.review).not.toHaveBeenCalled();
   });
 
   it('rejects a future state without rewriting bytes or invoking the planner', async () => {
     const projectDir = setupProject();
-    const sessionId = 'state-authority-future-sid';
+    const sessionId = 'future-state-sid';
     const ref = { projectDir, sessionId };
     ensureSessionDir(projectDir, sessionId);
     writeRawState(ref, { ...legacyWorkflowState('future state'), stateVersion: 99 });
     const before = readFileSync(stateFile(ref));
     const planner = makePlanner({
       isAvailable: vi.fn(),
-      plan: vi.fn(),
-      quickPlan: vi.fn(),
+      runPhase: vi.fn(),
     });
 
     const summary = await runWorkflow({
@@ -818,8 +719,37 @@ describe('runWorkflow — smoke', () => {
     expect(summary.totalTasks).toBe(0);
     expect(readFileSync(stateFile(ref))).toEqual(before);
     expect(planner.isAvailable).not.toHaveBeenCalled();
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(planner.runPhase).not.toHaveBeenCalled();
+  });
+
+  it('refuses a new-workflow run over a session that already started', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'already-started-sid';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    saveState(ref, makeImplStateWithMetadata([makeTask({ id: 'T001' })]));
+    const before = readFileSync(stateFile(ref));
+    const planner = makePlanner({ isAvailable: vi.fn(), runPhase: vi.fn() });
+
+    await expect(
+      runWorkflow({
+        feature: 'already started',
+        projectDir,
+        config: unavailablePlannerConfig(),
+        callbacks: makeCallbacks().callbacks,
+        sessionId,
+        purpose: 'new-workflow',
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        _planner: planner,
+      }),
+    ).rejects.toMatchObject({
+      kind: 'workflow-session-already-started',
+      data: { sessionId, phase: 'implementing' },
+    });
+
+    expect(readFileSync(stateFile(ref))).toEqual(before);
+    expect(planner.isAvailable).not.toHaveBeenCalled();
+    expect(planner.runPhase).not.toHaveBeenCalled();
   });
 
   it('uses the explicit sessionId when provided and creates the session directory', async () => {
@@ -874,7 +804,6 @@ describe('runWorkflow — smoke', () => {
       workflow: {
         approve: 'none',
         mode: 'quick',
-        persistTranscript: false,
       },
     });
 
@@ -894,7 +823,7 @@ describe('runWorkflow — smoke', () => {
 
     expect(summary.totalTasks).toBe(0);
     expect(events.some((e) => e.type === 'task_started')).toBe(false);
-    expect(summary.feature).toBe(TRANSCRIPT_OMITTED_FEATURE);
+    expect(summary.feature).toBe('aborted-before-start');
   });
 
   it('publishes workflow_cancelled with the canonical reason for UI cancellation signals', async () => {
@@ -911,7 +840,6 @@ describe('runWorkflow — smoke', () => {
         workflow: {
           approve: 'none',
           mode: 'quick',
-          persistTranscript: false,
         },
       }),
       callbacks,
@@ -919,14 +847,13 @@ describe('runWorkflow — smoke', () => {
       signal: controller.signal,
       _eventSink: (event) => events.push(event),
       _planner: makePlanner({
-        quickPlan: vi.fn().mockImplementation(async () => {
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) => {
           controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
-          return {
-            spec: '',
-            plan: '',
+          return makePhaseCallResult({
+            call,
             tasks: [makeTask()],
             usage: null,
-          };
+          });
         }),
       }),
       _implementer: makeImplementer(),
@@ -936,6 +863,104 @@ describe('runWorkflow — smoke', () => {
       type: 'workflow_cancelled',
       reason: 'user_cancelled',
     });
+  });
+
+  it('End run closes the run on the state', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'user-cancel-sid';
+    const { callbacks } = makeCallbacks();
+    const controller = new AbortController();
+
+    await runWorkflow({
+      feature: 'end the run',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { approve: 'none', mode: 'quick' },
+      }),
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+      _planner: makePlanner({
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [
+              makeTask({
+                id: 'T001',
+                scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+                evidence: ['task_completed event shows the planned task ran'],
+                typeDefs: 'type HelloTask = { file: string }',
+              }),
+            ],
+            usage: null,
+          }),
+        ),
+      }),
+      _implementer: makeImplementer({
+        implement: vi.fn().mockImplementation(async () => {
+          controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+          return { success: false, output: '', usage: null };
+        }),
+      }),
+    });
+
+    const { listSessions } = await import('../../../core/sessions/io.js');
+    expect(listSessions(projectDir).find((s) => s.id === sessionId)?.status).toBe('ended');
+    const { loadState } = await import('../../../core/state/persistence.js');
+    expect(loadState({ projectDir, sessionId })?.closed?.as).toBe('ended');
+  });
+
+  it('a plain abort parks the step and leaves the run open', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'plain-pause-sid';
+    const { callbacks } = makeCallbacks();
+    const controller = new AbortController();
+
+    await runWorkflow({
+      feature: 'pause the run',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { approve: 'none', mode: 'quick' },
+      }),
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+      _planner: makePlanner({
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [
+              makeTask({
+                id: 'T001',
+                scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+                evidence: ['task_completed event shows the planned task ran'],
+                typeDefs: 'type HelloTask = { file: string }',
+              }),
+            ],
+            usage: null,
+          }),
+        ),
+      }),
+      _implementer: makeImplementer({
+        implement: vi.fn().mockImplementation(async () => {
+          controller.abort();
+          return { success: false, output: '', usage: null };
+        }),
+      }),
+    });
+
+    const { listSessions } = await import('../../../core/sessions/io.js');
+    const row = listSessions(projectDir).find((s) => s.id === sessionId);
+    expect(row?.status).toBe('open');
+    expect(row?.stop).toBe('paused');
+    const { loadState } = await import('../../../core/state/persistence.js');
+    const saved = loadState({ projectDir, sessionId });
+    expect(saved?.closed).toBeUndefined();
+    expect(saved?.interruptedStep?.source).toBe('user');
   });
 
   it('persists workflow_cancelled when user cancellation reaches the unavailable-planner path', async () => {
@@ -966,38 +991,7 @@ describe('runWorkflow — smoke', () => {
     });
   });
 
-  it('preserves the active session when a rewind-triggered abort finishes the old run', async () => {
-    const projectDir = setupProject();
-    const { callbacks } = makeCallbacks();
-    const sessionId = 'explicit-rewind-sid';
-    const config = makeConfig({
-      planner: { kind: 'agent', command: 'echo', args: ['done'] },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: {
-        approve: 'none',
-        mode: 'quick',
-        persistTranscript: false,
-      },
-    });
-    const controller = new AbortController();
-    controller.abort(WORKFLOW_REWIND_ABORT_REASON);
-
-    // No fixture pre-write of `.splitbrief/active`: runWorkflow itself must write the pointer
-    // for the explicit sessionId, and the rewind-abort reason must preserve it (F-317).
-    await runWorkflow({
-      feature: 'rewind-active',
-      projectDir,
-      config,
-      callbacks,
-      sessionId,
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      signal: controller.signal,
-    });
-
-    expect(readActive(projectDir)).toBe(sessionId);
-  });
-
-  it('preserves persisted rewind state when an approval gate aborts the turn', async () => {
+  it('preserves the persisted rewind request when an approval gate aborts the turn', async () => {
     const projectDir = setupProject();
     const sessionId = 'approval-rewind-sid';
     const controller = new AbortController();
@@ -1006,7 +1000,6 @@ describe('runWorkflow — smoke', () => {
       workflow: {
         approve: 'plan',
         mode: 'standard',
-        persistTranscript: false,
       },
     });
     const { callbacks } = makeCallbacks({
@@ -1019,11 +1012,11 @@ describe('runWorkflow — smoke', () => {
           { projectDir, sessionId },
           {
             ...persisted,
-            rewindPending: { target: 'plan', comment: TRANSCRIPT_OMITTED_MESSAGE },
+            rewindPending: { target: 'plan', comment: 'rewind to the plan' },
           },
         );
-        controller.abort(WORKFLOW_REWIND_ABORT_REASON);
-        throw error('operation-aborted', WORKFLOW_REWIND_ABORT_REASON);
+        controller.abort();
+        throw error('operation-aborted', 'approval gate cancelled');
       }),
     });
 
@@ -1040,12 +1033,12 @@ describe('runWorkflow — smoke', () => {
 
     expect(loadState({ projectDir, sessionId })?.rewindPending).toEqual({
       target: 'plan',
-      comment: TRANSCRIPT_OMITTED_MESSAGE,
+      comment: 'rewind to the plan',
     });
     expect(loadState({ projectDir, sessionId })?.phase).toBe('reviewing-plan');
   });
 
-  it('clears the active session for a normal aborted run', async () => {
+  it('keeps the active session for an aborted run so it can be picked up', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();
     const sessionId = 'explicit-normal-abort-sid';
@@ -1055,7 +1048,6 @@ describe('runWorkflow — smoke', () => {
       workflow: {
         approve: 'none',
         mode: 'quick',
-        persistTranscript: false,
       },
     });
     const controller = new AbortController();
@@ -1072,41 +1064,8 @@ describe('runWorkflow — smoke', () => {
       signal: controller.signal,
     });
 
-    expect(readActive(projectDir)).toBeNull();
-  });
-
-  it('writes the .splitbrief/active pointer for a generated session id with no fixture pre-write', async () => {
-    // The flagship TUI journey passes no explicit sessionId; runWorkflow generates one and
-    // MUST publish it to `.splitbrief/active` so rewind/resume/status/recovery can find the run
-    // (F-317). A rewind-abort reason preserves the pointer past saveFinalSession so we can
-    // read back exactly the producer-written id without any hand-written fixture.
-    const projectDir = setupProject();
-    const { callbacks } = makeCallbacks();
-    const config = makeConfig({
-      planner: { kind: 'agent', command: 'echo', args: ['done'] },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: {
-        approve: 'none',
-        mode: 'quick',
-        persistTranscript: false,
-      },
-    });
-    const controller = new AbortController();
-    controller.abort(WORKFLOW_REWIND_ABORT_REASON);
-
-    expect(readActive(projectDir)).toBeNull();
-    await runWorkflow({
-      feature: 'pointer from producer',
-      projectDir,
-      config,
-      callbacks,
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      signal: controller.signal,
-    });
-
-    const activeSessionId = readActive(projectDir);
-    expect(activeSessionId).toMatch(/^\d{4}-\d{2}-\d{2}-session-[a-f0-9]{12}$/);
-    expect(activeSessionId).not.toContain('pointer-from-producer');
+    // An abort parks the run rather than ending it, so `splitbrief resume` still finds it.
+    expect(readActive(projectDir)).toBe(sessionId);
   });
 
   it('carries the planner-produced tasks straight into the task loop and completes them', async () => {
@@ -1124,26 +1083,26 @@ describe('runWorkflow — smoke', () => {
         workflow: {
           approve: 'none',
           mode: 'quick',
-          persistTranscript: false,
         },
       }),
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (e) => events.push(e),
       _planner: makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '',
-          tasks: [
-            makeTask({
-              id: 'T001',
-              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the planned task ran'],
-              typeDefs: 'type HelloTask = { file: string }',
-            }),
-          ],
-          usage: { inputTokens: 50, outputTokens: 25 },
-        }),
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [
+              makeTask({
+                id: 'T001',
+                scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+                evidence: ['task_completed event shows the planned task ran'],
+                typeDefs: 'type HelloTask = { file: string }',
+              }),
+            ],
+            usage: { inputTokens: 50, outputTokens: 25 },
+          }),
+        ),
       }),
       _implementer: makeImplementer(),
     });
@@ -1153,40 +1112,42 @@ describe('runWorkflow — smoke', () => {
     expect(summary.completedByLocal).toBe(1);
   }, 20_000);
 
-  it('re-enters planning after task review requests revise-plan without notes', async () => {
+  it('a rewind at the task boundary loops back to planning', async () => {
     const projectDir = setupProject();
-    const quickPlan = vi
+    const runPhase = vi
       .fn()
-      .mockResolvedValueOnce({
-        spec: '',
-        plan: '# First plan',
-        tasks: [
-          makeTask({
-            id: 'T001',
-            title: 'First task',
-            file: 'src/first.ts',
-            scope: { inBounds: ['src/first.ts'], outOfBounds: ['other files'] },
-            evidence: ['task_completed event shows the first task ran'],
-            typeDefs: 'type FirstTask = { file: string }',
-          }),
-        ],
-        usage: null,
-      })
-      .mockResolvedValueOnce({
-        spec: '',
-        plan: '# Revised plan',
-        tasks: [
-          makeTask({
-            id: 'T002',
-            title: 'Revised task',
-            file: 'src/revised.ts',
-            scope: { inBounds: ['src/revised.ts'], outOfBounds: ['other files'] },
-            evidence: ['task_completed event shows the revised task ran'],
-            typeDefs: 'type RevisedTask = { file: string }',
-          }),
-        ],
-        usage: null,
-      });
+      .mockResolvedValueOnce(
+        makePhaseCallResult({
+          call: 'tasks',
+          tasks: [
+            makeTask({
+              id: 'T001',
+              title: 'First task',
+              file: 'src/first.ts',
+              scope: { inBounds: ['src/first.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the first task ran'],
+              typeDefs: 'type FirstTask = { file: string }',
+            }),
+          ],
+          usage: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        makePhaseCallResult({
+          call: 'tasks',
+          tasks: [
+            makeTask({
+              id: 'T002',
+              title: 'Revised task',
+              file: 'src/revised.ts',
+              scope: { inBounds: ['src/revised.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the revised task ran'],
+              typeDefs: 'type RevisedTask = { file: string }',
+            }),
+          ],
+          usage: null,
+        }),
+      );
     const onTaskReviewNeeded = vi
       .fn()
       .mockResolvedValueOnce({ action: 'revise-plan' })
@@ -1202,18 +1163,20 @@ describe('runWorkflow — smoke', () => {
         workflow: {
           approve: 'none',
           mode: 'quick',
-          persistTranscript: false,
           taskReview: 'every',
         },
       }),
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (e) => events.push(e),
-      _planner: makePlanner({ quickPlan }),
+      _planner: makePlanner({
+        runPhase,
+        review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
+      }),
       _implementer: makeImplementer(),
     });
 
-    expect(quickPlan).toHaveBeenCalledTimes(2);
+    expect(runPhase).toHaveBeenCalledTimes(2);
     expect(onTaskReviewNeeded).toHaveBeenCalledTimes(2);
     expect(onTaskReviewNeeded.mock.calls.map(([request]) => request.taskId)).toEqual([
       'T001',
@@ -1242,7 +1205,6 @@ describe('runWorkflow — smoke', () => {
         workflow: {
           approve: 'none',
           mode: 'quick',
-          persistTranscript: false,
           taskReview: 'every',
         },
       }),
@@ -1250,21 +1212,22 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (e) => events.push(e),
       _planner: makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '# Plan',
-          tasks: [
-            makeTask({
-              id: 'T001',
-              title: 'Abortable task',
-              file: 'src/abortable.ts',
-              scope: { inBounds: ['src/abortable.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the task ran'],
-              typeDefs: 'type AbortableTask = { file: string }',
-            }),
-          ],
-          usage: null,
-        }),
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [
+              makeTask({
+                id: 'T001',
+                title: 'Abortable task',
+                file: 'src/abortable.ts',
+                scope: { inBounds: ['src/abortable.ts'], outOfBounds: ['other files'] },
+                evidence: ['task_completed event shows the task ran'],
+                typeDefs: 'type AbortableTask = { file: string }',
+              }),
+            ],
+            usage: null,
+          }),
+        ),
       }),
       _implementer: makeImplementer(),
     });
@@ -1304,14 +1267,13 @@ describe('runWorkflow — smoke', () => {
         workflow: {
           approve: 'none',
           mode: 'quick',
-          persistTranscript: false,
         },
       }),
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (event) => events.push(event),
       _planner: makePlanner({
-        quickPlan: vi.fn().mockImplementation(async (opts: PlanOptions) => {
+        runPhase: vi.fn(async (opts: RunPhaseInput) => {
           opts.callbacks.onCallEvent?.({ type: 'call_started', ts: startedAt, ...call });
           opts.callbacks.onCallEvent?.({
             type: 'call_usage',
@@ -1333,12 +1295,11 @@ describe('runWorkflow — smoke', () => {
             usage,
             nativeSessionId: null,
           });
-          return {
-            spec: '',
-            plan: '',
+          return makePhaseCallResult({
+            call: opts.call,
             tasks: [makeTask()],
             usage: null,
-          };
+          });
         }),
       }),
       _implementer: makeImplementer(),
@@ -1377,30 +1338,31 @@ describe('runWorkflow — smoke', () => {
       projectDir,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { approve: 'none', mode: 'quick', persistTranscript: false },
+        workflow: { approve: 'none', mode: 'quick' },
       }),
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (event) => events.push(event),
       _planner: makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '# Plan',
-          tasks: [
-            makeTask({
-              id: 'T001',
-              title: 'Reviewable task',
-              file: 'src/reviewable.ts',
-              scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the task ran'],
-              typeDefs: 'type ReviewableTask = { file: string }',
-            }),
-          ],
-          usage: null,
-        }),
+        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+          makePhaseCallResult({
+            call,
+            tasks: [
+              makeTask({
+                id: 'T001',
+                title: 'Reviewable task',
+                file: 'src/reviewable.ts',
+                scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
+                evidence: ['task_completed event shows the task ran'],
+                typeDefs: 'type ReviewableTask = { file: string }',
+              }),
+            ],
+            usage: null,
+          }),
+        ),
         review: vi.fn().mockImplementation(async (_prompt, _dir, cbs: PlannerOutputCallbacks) => {
           emitReviewCall(cbs, 'test-planner');
-          return { text: '# Review', usage: null };
+          return { text: '# Review\n\n### Verdict\npass\n', usage: null };
         }),
       }),
       _implementer: makeImplementer(),
@@ -1417,21 +1379,22 @@ describe('runWorkflow — smoke', () => {
     const { callbacks } = makeCallbacks();
     const events: EngineEvent[] = [];
     const planner = makePlanner({
-      quickPlan: vi.fn().mockResolvedValue({
-        spec: '',
-        plan: '# Plan',
-        tasks: [
-          makeTask({
-            id: 'T001',
-            title: 'Reviewable task',
-            file: 'src/reviewable.ts',
-            scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
-            evidence: ['task_completed event shows the task ran'],
-            typeDefs: 'type ReviewableTask = { file: string }',
-          }),
-        ],
-        usage: null,
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          tasks: [
+            makeTask({
+              id: 'T001',
+              title: 'Reviewable task',
+              file: 'src/reviewable.ts',
+              scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the task ran'],
+              typeDefs: 'type ReviewableTask = { file: string }',
+            }),
+          ],
+          usage: null,
+        }),
+      ),
     });
 
     await runWorkflow({
@@ -1440,7 +1403,7 @@ describe('runWorkflow — smoke', () => {
       config: makeConfig({
         reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { approve: 'none', mode: 'quick', persistTranscript: false },
+        workflow: { approve: 'none', mode: 'quick' },
       }),
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
@@ -1450,7 +1413,7 @@ describe('runWorkflow — smoke', () => {
       _reviewer: {
         review: vi.fn().mockImplementation(async (_prompt, _dir, cbs: PlannerOutputCallbacks) => {
           emitReviewCall(cbs, 'test-reviewer');
-          return { text: '# Review', usage: null };
+          return { text: '# Review\n\n### Verdict\npass\n', usage: null };
         }),
       },
     });
@@ -1460,58 +1423,6 @@ describe('runWorkflow — smoke', () => {
       { type: 'runner_call_completed', runnerName: 'test-reviewer' },
     ]);
     expect(planner.review).not.toHaveBeenCalled();
-  }, 40_000);
-
-  it('runs auto-discovered pre_task module hooks without hooks config', async () => {
-    const projectDir = setupProject();
-    mkdirSync(join(projectDir, '.splitbrief', 'hooks'), { recursive: true });
-    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ type: 'module' }));
-    writeFileSync(
-      join(projectDir, '.splitbrief', 'hooks', 'pre-task.js'),
-      'export default () => ({ kind: "deny", message: "auto blocked" });',
-    );
-
-    const { callbacks } = makeCallbacks();
-    const events: EngineEvent[] = [];
-
-    await runWorkflow({
-      feature: 'auto hook',
-      projectDir,
-      config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: {
-          approve: 'none',
-          mode: 'quick',
-          persistTranscript: false,
-        },
-      }),
-      callbacks,
-      allowHooks: true,
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      _eventSink: (event) => events.push(event),
-      _planner: makePlanner({
-        quickPlan: vi.fn().mockResolvedValue({
-          spec: '',
-          plan: '',
-          tasks: [
-            makeTask({
-              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_skipped event shows the discovered hook blocked the task'],
-              typeDefs: 'type HelloTask = { file: string }',
-            }),
-          ],
-          usage: { inputTokens: 50, outputTokens: 25 },
-        }),
-      }),
-      _implementer: makeImplementer(),
-    });
-
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'task_skipped',
-        reason: 'auto blocked',
-      }),
-    );
   }, 40_000);
 
   it('builds the run isolation handle once per run and disposes it once, including on the abort path', async () => {
@@ -1547,7 +1458,7 @@ describe('runWorkflow — smoke', () => {
         config: makeConfig({
           planner: { kind: 'agent', command: 'echo', args: ['done'] },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { approve: 'none', mode: 'quick', persistTranscript: false },
+          workflow: { approve: 'none', mode: 'quick' },
         }),
         callbacks,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
@@ -1686,7 +1597,6 @@ describe('runWorkflow — createBranch', () => {
       workflow: {
         git: { createBranch: true },
         mode: 'quick',
-        persistTranscript: false,
       },
     });
 
@@ -1706,8 +1616,7 @@ describe('runWorkflow — createBranch', () => {
         e.type === 'git_branch_created',
     );
     expect(branchEvent).toBeDefined();
-    expect(branchEvent?.name).toMatch(/^splitbrief\/session-[a-f0-9]{12}$/);
-    expect(branchEvent?.name).not.toContain('add-auth');
+    expect(branchEvent?.name).toBe('splitbrief/add-auth');
 
     const g = simpleGit(projectDir);
     const status = await g.status();
@@ -1726,7 +1635,6 @@ describe('runWorkflow — createBranch', () => {
       workflow: {
         git: { createBranch: false },
         mode: 'quick',
-        persistTranscript: false,
       },
     });
 
@@ -1789,7 +1697,6 @@ describe('runWorkflow — recovery resume', () => {
         workflow: {
           approve: 'none',
           mode: 'quick',
-          persistTranscript: false,
         },
       }),
       callbacks,
@@ -1839,7 +1746,6 @@ describe('runWorkflow — recovery resume', () => {
         workflow: {
           approve: 'none',
           mode: 'quick',
-          persistTranscript: false,
         },
       }),
       callbacks,
@@ -1861,12 +1767,12 @@ describe('runWorkflow — recovery resume', () => {
 
     // The persisted session record keeps the original start instead of overwriting it with
     // the resume's wall-clock time.
-    const { listAllSessions } = await import('../../../core/sessions/io.js');
-    const persisted = listAllSessions(projectDir).find((s) => s.id === sessionId);
+    const { listSessions } = await import('../../../core/sessions/io.js');
+    const persisted = listSessions(projectDir).find((s) => s.id === sessionId);
     expect(persisted?.startedAt).toBe(originalStartMs);
   });
 
-  it('prices the resumed summary at the state-pinned runner identity, not the new config', async () => {
+  it('prices the resumed summary at the state-pinned runner identity while naming the seat in use', async () => {
     const projectDir = setupProject();
     const sessionId = 'sess-run-identity';
     ensureSessionDir(projectDir, sessionId);
@@ -1888,9 +1794,9 @@ describe('runWorkflow — recovery resume', () => {
     saveState({ projectDir, sessionId }, savedState);
 
     const { callbacks } = makeCallbacks();
-    // The new config switches the implementer to a custom endpoint; the resumed summary
-    // must keep the state-pinned identity so cumulative usage is not re-priced at the new
-    // runner.
+    // The new config switches the implementer to a custom endpoint: the resumed summary
+    // names that seat, and the cost breakdown still attributes the cumulative usage to the
+    // state-pinned runner that actually spent it.
     const summary = await runWorkflow({
       feature: 'feat',
       projectDir,
@@ -1905,7 +1811,6 @@ describe('runWorkflow — recovery resume', () => {
         workflow: {
           approve: 'none',
           mode: 'quick',
-          persistTranscript: false,
         },
       }),
       callbacks,
@@ -1922,7 +1827,10 @@ describe('runWorkflow — recovery resume', () => {
     });
 
     expect(summary.plannerTool).toBe('claude-code');
-    expect(summary.implementerTool).toBe('ollama');
-    expect(summary.implementerModel).toBe('qwen2.5');
+    expect(summary.implementerTool).toBe('custom-endpoint');
+    expect(summary.implementerModel).toBe('deepseek-chat');
+    // Nothing was ever spent on the seat the run now names, so no cost may be
+    // attributed to it: the breakdown follows the state, not the identity.
+    expect(summary.costBreakdown?.providerCosts?.['custom-endpoint']).toBeUndefined();
   });
 });

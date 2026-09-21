@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { addEvent } from './event.js';
-import { markCancellationRequested, markInterruptRequested } from './interrupt.js';
-import { markInterruptResumed } from './resume.js';
+import { markCancellationRequested } from './interrupt.js';
 import { resetWorkflow } from './reset.js';
 import { eventsStore, MAX_EVENTS } from '../events.js';
 import { lifecycleStore } from '../lifecycle.js';
@@ -46,51 +45,5 @@ describe('markCancellationRequested', () => {
     expect(events).toHaveLength(MAX_EVENTS);
     expect((events[0] as { taskId: string }).taskId).toBe('T002');
     expect(events[events.length - 1]?.type).toBe('workflow_cancelled');
-  });
-});
-
-describe('markInterruptRequested / markInterruptResumed', () => {
-  beforeEach(() => resetWorkflow());
-
-  it('markInterruptRequested flips a running lifecycle to interrupted and returns true', () => {
-    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
-
-    expect(markInterruptRequested()).toBe(true);
-
-    expect(lifecycleStore.get()).toMatchObject({
-      status: 'interrupted',
-      phase: 'implementing',
-      cancelled: false,
-    });
-  });
-
-  it('markInterruptRequested returns false when no workflow is running', () => {
-    expect(markInterruptRequested()).toBe(false);
-    expect(lifecycleStore.get().status).toBe('idle');
-
-    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
-    markInterruptRequested();
-    expect(markInterruptRequested()).toBe(false);
-    expect(lifecycleStore.get().status).toBe('interrupted');
-
-    resetWorkflow();
-    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
-    addEvent({ type: 'workflow_complete', ts: 2_000, phase: 'complete' });
-    expect(markInterruptRequested()).toBe(false);
-    expect(lifecycleStore.get().status).toBe('complete');
-  });
-
-  it('markInterruptResumed restores running', () => {
-    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
-    markInterruptRequested();
-    expect(lifecycleStore.get().status).toBe('interrupted');
-
-    markInterruptResumed();
-
-    expect(lifecycleStore.get()).toMatchObject({
-      status: 'running',
-      phase: 'implementing',
-      startedAt: 1_000,
-    });
   });
 });

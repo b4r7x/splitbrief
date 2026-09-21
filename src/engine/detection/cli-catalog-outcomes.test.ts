@@ -1,28 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
-  findGenericCliCatalogRuntime,
-  findScopedCliCatalogRuntime,
+  findCliCatalogRuntime,
   reconcileScopedCliCatalogAttempts,
   scopedCliCatalogConnection,
 } from './cli-catalog-outcomes.js';
 
-const planner = { role: 'planner' as const, tool: 'codex' as const, contextKey: 'planner-a' };
-const implementer = {
-  role: 'implementer' as const,
-  tool: 'codex' as const,
-  contextKey: 'implementer-a',
-};
+const codex = { tool: 'codex' as const, contextKey: 'codex-a' };
+const opencode = { tool: 'opencode' as const, contextKey: 'opencode-a' };
 
 describe('scoped CLI catalog outcomes', () => {
-  it('retains stale models only for the exact failed role/tool/context connection', () => {
+  it('retains stale models only for the exact failed tool/context connection', () => {
     const first = reconcileScopedCliCatalogAttempts({
       previous: [],
       observedAt: 10,
       attempts: [
-        { connection: planner, outcome: { kind: 'success', value: [{ id: 'planner-model' }] } },
+        { connection: codex, outcome: { kind: 'success', value: [{ id: 'codex-model' }] } },
         {
-          connection: implementer,
-          outcome: { kind: 'success', value: [{ id: 'implementer-model' }] },
+          connection: opencode,
+          outcome: { kind: 'success', value: [{ id: 'opencode-model' }] },
         },
       ],
     });
@@ -30,22 +25,22 @@ describe('scoped CLI catalog outcomes', () => {
       previous: first,
       observedAt: 20,
       attempts: [
-        { connection: planner, outcome: { kind: 'offline' } },
+        { connection: codex, outcome: { kind: 'offline' } },
         {
-          connection: implementer,
-          outcome: { kind: 'success', value: [{ id: 'implementer-new-model' }] },
+          connection: opencode,
+          outcome: { kind: 'success', value: [{ id: 'opencode-new-model' }] },
         },
       ],
     });
 
-    expect(findScopedCliCatalogRuntime(second, planner)).toMatchObject({
+    expect(findCliCatalogRuntime(second, 'codex')).toMatchObject({
       state: 'stale',
-      models: [{ id: 'planner-model' }],
+      models: [{ id: 'codex-model' }],
       failure: 'offline',
     });
-    expect(findScopedCliCatalogRuntime(second, implementer)).toMatchObject({
+    expect(findCliCatalogRuntime(second, 'opencode')).toMatchObject({
       state: 'fresh',
-      models: [{ id: 'implementer-new-model' }],
+      models: [{ id: 'opencode-new-model' }],
     });
   });
 
@@ -54,26 +49,26 @@ describe('scoped CLI catalog outcomes', () => {
       previous: [],
       observedAt: 10,
       attempts: [
-        { connection: planner, outcome: { kind: 'success', value: [{ id: 'planner-model' }] } },
+        { connection: codex, outcome: { kind: 'success', value: [{ id: 'codex-model' }] } },
         {
-          connection: implementer,
-          outcome: { kind: 'success', value: [{ id: 'implementer-model' }] },
+          connection: opencode,
+          outcome: { kind: 'success', value: [{ id: 'opencode-model' }] },
         },
       ],
     });
     const second = reconcileScopedCliCatalogAttempts({
       previous: first,
       observedAt: 20,
-      attempts: [{ connection: planner, outcome: { kind: 'success', value: [] } }],
+      attempts: [{ connection: codex, outcome: { kind: 'success', value: [] } }],
     });
 
-    expect(findScopedCliCatalogRuntime(second, planner)).toMatchObject({
+    expect(findCliCatalogRuntime(second, 'codex')).toMatchObject({
       state: 'fresh',
       models: [],
     });
-    expect(findScopedCliCatalogRuntime(second, implementer)).toMatchObject({
+    expect(findCliCatalogRuntime(second, 'opencode')).toMatchObject({
       state: 'fresh',
-      models: [{ id: 'implementer-model' }],
+      models: [{ id: 'opencode-model' }],
     });
   });
 
@@ -81,10 +76,10 @@ describe('scoped CLI catalog outcomes', () => {
     const runtimes = reconcileScopedCliCatalogAttempts({
       previous: [],
       observedAt: 10,
-      attempts: [{ connection: planner, outcome: { kind: 'malformed' } }],
+      attempts: [{ connection: codex, outcome: { kind: 'malformed' } }],
     });
 
-    expect(findScopedCliCatalogRuntime(runtimes, planner)).toMatchObject({
+    expect(findCliCatalogRuntime(runtimes, 'codex')).toMatchObject({
       state: 'failed',
       models: null,
       failure: 'malformed',
@@ -96,10 +91,10 @@ describe('scoped CLI catalog outcomes', () => {
       previous: [],
       observedAt: 10,
       attempts: [
-        { connection: planner, outcome: { kind: 'success', value: [{ id: 'old-executable' }] } },
+        { connection: codex, outcome: { kind: 'success', value: [{ id: 'old-executable' }] } },
       ],
     });
-    const replacement = { ...planner, contextKey: 'planner-replaced-executable' };
+    const replacement = { ...codex, contextKey: 'codex-replaced-executable' };
     const second = reconcileScopedCliCatalogAttempts({
       previous: first,
       observedAt: 20,
@@ -117,27 +112,27 @@ describe('scoped CLI catalog outcomes', () => {
     expect(JSON.stringify(second)).not.toContain('old-executable');
   });
 
-  it('rejects generic and role lookup when two selected channel contexts are ambiguous', () => {
-    const alternatePlanner = { ...planner, contextKey: 'planner-b' };
+  it('rejects a tool lookup when two executable contexts are ambiguous', () => {
+    const alternateCodex = { ...codex, contextKey: 'codex-b' };
     const runtimes = reconcileScopedCliCatalogAttempts({
       previous: [],
       observedAt: 10,
       attempts: [
-        { connection: planner, outcome: { kind: 'success', value: [{ id: 'channel-a' }] } },
-        {
-          connection: alternatePlanner,
-          outcome: { kind: 'success', value: [{ id: 'channel-b' }] },
-        },
+        { connection: codex, outcome: { kind: 'success', value: [{ id: 'channel-a' }] } },
+        { connection: alternateCodex, outcome: { kind: 'success', value: [{ id: 'channel-b' }] } },
+        { connection: opencode, outcome: { kind: 'success', value: [{ id: 'opencode-model' }] } },
       ],
     });
 
-    expect(findScopedCliCatalogRuntime(runtimes, planner)).toBeNull();
-    expect(findGenericCliCatalogRuntime(runtimes, 'codex')).toBeNull();
+    expect(findCliCatalogRuntime(runtimes, 'codex')).toBeNull();
+    expect(findCliCatalogRuntime(runtimes, 'opencode')).toMatchObject({
+      state: 'fresh',
+      models: [{ id: 'opencode-model' }],
+    });
   });
 
   it('binds an opaque public context token to the full digest-bound executable receipt', () => {
     const first = scopedCliCatalogConnection({
-      role: 'planner',
       tool: 'codex',
       runnerContextKey: 'safe-config-context',
       executable: {
@@ -153,7 +148,6 @@ describe('scoped CLI catalog outcomes', () => {
       },
     });
     const replacement = scopedCliCatalogConnection({
-      role: 'planner',
       tool: 'codex',
       runnerContextKey: 'safe-config-context',
       executable: {

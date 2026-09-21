@@ -139,8 +139,8 @@ export const gates: readonly Gate[] = [
   {
     id: '17c',
     description:
-      'No incidental broad as-casts (type token must be followed by a terminator, excluding as const/as unknown/as Extract and sanctioned files)',
-    command: `{ rg -n -P "[)\\]}A-Za-z0-9_>'] as [A-Z][A-Za-z0-9_]*(?=\\s*[;),<\\].}>&|]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|utils/error|utils/type-guards)\\.ts:" || true; } | wc -l`,
+      'No incidental broad as-casts (type token must be followed by a terminator, excluding as const/as unknown/as Extract, comment lines, ESM import/export alias clauses, and sanctioned files)',
+    command: `{ rg -n -P "[)\\]}A-Za-z0-9_>'] as [A-Z][A-Za-z0-9_]*(?=\\s*[;),<\\].}>&|]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v -P "^[^:]+:\\d+:\\s*(?://|\\*|/\\*|(?:import|export)\\s+(?:type\\s+)?\\{)" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|utils/error|utils/type-guards)\\.ts:" || true; } | wc -l`,
     expected: 0,
   },
   {
@@ -237,9 +237,9 @@ export const gates: readonly Gate[] = [
   },
   {
     id: '31',
-    description: 'No vendor-ID JSX branches in seat-selection surfaces',
+    description: 'No vendor-ID JSX branches in seat-selection surfaces (comment lines excluded)',
     command:
-      "{ rg -i \"\\\\b(cursor|antigravity|mimo-token-plan|mistral|gemini|cerebras|zai|minimax|moonshot|dashscope|llama-cpp)\\\\b\" src/features/runners src/app/overlays/runners.tsx src/features/crew src/features/settings src/app/overlays/settings.tsx src/app/screens/setup.tsx --glob '*.tsx' --glob '!**/*.test.tsx' || true; } | wc -l",
+      "{ rg -i \"\\\\b(cursor|antigravity|mimo-token-plan|mistral|gemini|cerebras|zai|minimax|moonshot|dashscope|llama-cpp)\\\\b\" src/features/runners src/app/overlays/runners.tsx src/features/crew src/features/settings src/app/overlays/settings.tsx src/app/screens/setup.tsx --glob '*.tsx' --glob '!**/*.test.tsx' -n | rg -v -P '^[^:]+:\\d+:\\s*(?://|\\*|/\\*)' || true; } | wc -l",
     expected: 0,
   },
   {
@@ -270,70 +270,10 @@ export const gates: readonly Gate[] = [
     expected: 0,
   },
   {
-    id: '36',
-    description: 'T-065 direct state writes stay behind persistence/state-ops',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule direct-state | wc -l',
-    expected: 0,
-  },
-  {
-    id: '37',
-    description: 'T-065 raw state.json replacement stays in core state persistence',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule raw-state-writer | wc -l',
-    expected: 0,
-  },
-  {
-    id: '38',
-    description: 'T-065 recovery reducer is imported only by its controller',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule reducer-import | wc -l',
-    expected: 0,
-  },
-  {
-    id: '39',
-    description: 'T-065 BRIEFS_READY ownership is path-aware',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule briefs-ready | wc -l',
-    expected: 0,
-  },
-  {
-    id: '40',
-    description: 'T-065 quality evaluation is controller-owned',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule quality-gate | wc -l',
-    expected: 0,
-  },
-  {
-    id: '41',
-    description: 'T-065 continuation guard has one implementation',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule continuation | wc -l',
-    expected: 0,
-  },
-  {
-    id: '42',
-    description: 'T-065 recovery planner.review has one provider boundary',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule recovery-provider | wc -l',
-    expected: 0,
-  },
-  {
-    id: '43',
-    description: 'T-065 recovery continuation markers cannot re-enter review',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule recovery-marker | wc -l',
-    expected: 0,
-  },
-  {
-    id: '44',
-    description: 'T-065 client adapters use controller/projection seams',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule adapters | wc -l',
-    expected: 0,
-  },
-  {
-    id: '45',
-    description: 'T-065 hydration paths are exhaustively classified',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule hydration | wc -l',
-    expected: 0,
-  },
-  {
     id: '46',
     description: 'Pinned overlay widths are gone',
     command:
-      '{ rg -n "maxWidth=" src/app src/features src/components/overlays || true; rg -n "getResponsivePanelWidth|getClampedTerminalWidth|PICKER_WIDTHS|SUB_PANEL_MAX_WIDTH|MAX_PANEL_WIDTH|SETUP_PANEL_WIDTH|PALETTE_MAX_WIDTH" src || true; rg -n "isSmall" src/app/overlays src/app/screens/home.tsx src/app/screens/setup.tsx src/features/home/layout.ts src/features/runners src/features/start-preparation src/features/workflow/cost-drilldown src/components/overlays src/components/pickers testing/visual/locators/registry.ts --glob \'!**/*.test.ts\' --glob \'!**/*.test.tsx\' || true; } | wc -l',
+      '{ rg -n "maxWidth=" src/app src/features src/components/overlays || true; rg -n "getResponsivePanelWidth|getClampedTerminalWidth|PICKER_WIDTHS|SUB_PANEL_MAX_WIDTH|MAX_PANEL_WIDTH|SETUP_PANEL_WIDTH|PALETTE_MAX_WIDTH" src || true; rg -n "isSmall" src/app/overlays src/app/screens/home.tsx src/app/screens/setup.tsx src/features/home/layout.ts src/features/runners src/features/start-preparation src/components/overlays src/components/pickers testing/visual/locators/registry.ts --glob \'!**/*.test.ts\' --glob \'!**/*.test.tsx\' || true; } | wc -l',
     expected: 0,
   },
   {
@@ -341,6 +281,41 @@ export const gates: readonly Gate[] = [
     description: 'Capability inference is imported from core, never from engine',
     command:
       "{ rg -n \"from '.*engine/providers/capability-inference\" src/features src/app src/components src/core --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
+    expected: 0,
+  },
+  {
+    id: '48',
+    description: 'Validation stack literals live only in src/core/validation/stacks',
+    command: `{ rg -n "npx tsc|npm test|\\.test\\.ts'" src --glob '!**/*.test.*' --glob '!src/core/validation/stacks/**' || true; } | wc -l`,
+    expected: 0,
+  },
+  {
+    id: '49',
+    description:
+      'No gate-rejection or reset-to-idle state actions (a run is closed, never reset; gates never reject)',
+    command:
+      "{ rg -n \"REJECT_SPEC|REJECT_PLAN|REJECT_BRIEFS|'CANCEL'|resetToIdle|ABORT_TURN|CONTINUE_TURN\" src --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
+    expected: 0,
+  },
+  {
+    id: '50',
+    description: 'No resumable-phase or summary-screen vocabulary (every open run is continuable)',
+    command:
+      '{ rg -n "isResumable|resumeVerdict|SummaryPayload|loadSummaryContext|RESUMABLE_PHASES" src || true; } | wc -l',
+    expected: 0,
+  },
+  {
+    id: '51',
+    description: 'No budget, price-tier or savings vocabulary (spend is a fact, never a gate)',
+    command:
+      '{ rg -n "maxBudget|budgetPauseThreshold|costTier|pricePer1M|auto:cheapest|estimatedCostSavings|hypotheticalCost|savingsPercentage|costPosture" src || true; } | wc -l',
+    expected: 0,
+  },
+  {
+    id: '52',
+    description: 'Features never construct an EventBus; the engine owns every bus',
+    command:
+      "{ rg -n \"createEventBus|new EventBus\" src/features --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
     expected: 0,
   },
 ];

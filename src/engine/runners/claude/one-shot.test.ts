@@ -69,6 +69,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     await runClaudeOneShot({
       prompt: 'p',
       projectDir,
+      mode: 'escalate',
       authChannel: 'session',
       onOutput: () => {},
     });
@@ -85,11 +86,23 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     const result = await runClaudeOneShot({
       prompt: 'hi',
       projectDir,
+      mode: 'escalate',
       onOutput: () => {},
     });
 
     expect(result.text).toBe('reply');
-    expect(result.usage).toEqual({ inputTokens: 3, outputTokens: 1 });
+    expect(result.usage).toEqual({
+      inputTokens: 3,
+      outputTokens: 1,
+      counterCoverage: {
+        input: 'reported',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { output: 1 },
+    });
   });
 
   it('passes effort as an --effort argv flag and leaves stdin as the raw prompt', async () => {
@@ -98,6 +111,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     await runClaudeOneShot({
       prompt: 'escalate me',
       projectDir,
+      mode: 'escalate',
       onOutput: () => {},
       effort: 'xhigh',
     });

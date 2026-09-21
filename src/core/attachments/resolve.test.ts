@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
-import { attachmentShortName, resolveAttachment } from './resolve.js';
+import { attachmentShortName, formatAttachmentFailure, resolveAttachment } from './resolve.js';
 
 let projectDir: string;
 let externalDir: string;
@@ -116,5 +116,33 @@ describe('attachmentShortName', () => {
 
   it('handles backslash-separated paths', () => {
     expect(attachmentShortName('C:\\dir\\image.jpg')).toBe('image.jpg');
+  });
+});
+
+describe('formatAttachmentFailure', () => {
+  it('explains how to recover from a missing submitted image', () => {
+    expect(
+      formatAttachmentFailure({
+        action: 'send',
+        reason: 'not-found',
+        imageId: 'att-missing',
+      }),
+    ).toContain('att-missing');
+    expect(
+      formatAttachmentFailure({
+        action: 'send',
+        reason: 'not-found',
+        imageId: 'att-missing',
+      }),
+    ).toContain('attach it again');
+  });
+
+  it('describes attachment restrictions without exposing reason codes', () => {
+    expect(formatAttachmentFailure({ action: 'attach', reason: 'outside-safe-roots' })).toBe(
+      'Cannot attach image: the file must be inside the project or home folder.',
+    );
+    expect(formatAttachmentFailure({ action: 'attach', reason: 'not-image' })).toContain(
+      'PNG, JPEG, GIF, WebP, or BMP',
+    );
   });
 });

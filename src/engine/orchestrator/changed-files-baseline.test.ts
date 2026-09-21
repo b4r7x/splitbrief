@@ -1,10 +1,19 @@
-import { describe, it, expect } from 'vitest';
-import { execSync } from 'node:child_process';
-import { chmodSync, lstatSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import {
   UNREADABLE_FINGERPRINT,
   captureChangedFilesBaseline,
+  inferTaskAcceptedChangedFiles,
   changedFilesSinceBaseline,
   deserializeChangedFilesBaseline,
   refreshChangedFilesBaseline,
@@ -13,11 +22,55 @@ import {
   userVisibleChangedFiles,
   withActiveTaskSnapshot,
 } from './changed-files-baseline.js';
-import { commitChanges, stageAll } from '../../lib/git/staging.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
+
+// Git is an injected read-only boundary. History lives only in this test's Map;
+// the real filesystem remains responsible for bytes, links, and permissions.
+const history = new Map<string, Array<Record<string, string>>>();
+afterEach(() => history.clear());
+
+function contents(dir: string, prefix = ''): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const entry of readdirSync(join(dir, prefix), { withFileTypes: true })) {
+    const file = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) Object.assign(result, contents(dir, file));
+    else result[file] = entry.isSymbolicLink() ? 'symlink' : readFileSync(join(dir, file), 'utf8');
+  }
+  return result;
+}
+function changed(a: Record<string, string>, b: Record<string, string>): string[] {
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((file) => a[file] !== b[file]);
+}
+function recordHead(dir: string): void {
+  const revisions = history.get(dir) ?? [];
+  revisions.push(contents(dir));
+  history.set(dir, revisions);
+}
+function seedProject(dir: string): void {
+  writeFileSync(join(dir, 'init.txt'), 'init');
+  recordHead(dir);
+}
+vi.mock('../../lib/git/files.js', () => ({
+  getCurrentChangedFiles: async (dir: string) =>
+    changed(history.get(dir)?.at(-1) ?? {}, contents(dir)),
+}));
+vi.mock('../../lib/git/repository.js', () => ({
+  hasCommits: async (dir: string) => (history.get(dir)?.length ?? 0) > 0,
+}));
+vi.mock('../../lib/git/refs.js', () => ({
+  getCurrentCommitSha: async (dir: string) => String((history.get(dir)?.length ?? 0) - 1),
+  resolveRunStartBase: async ({ head }: { head: string | null }) => ({
+    kind: 'commit',
+    ref: head ?? '-1',
+  }),
+}));
+vi.mock('../../lib/git/diff.js', () => ({
+  getCommittedFilesSince: async (dir: string, ref: string) =>
+    changed(history.get(dir)?.[Number(ref)] ?? {}, history.get(dir)?.at(-1) ?? {}),
+}));
 
 describe('userVisibleChangedFiles', () => {
   it('drops worktree and splitbrief artifacts at any directory level', () => {
@@ -36,7 +89,7 @@ describe('captureChangedFilesBaseline', () => {
   itUnix('records an existing final symlink as unreadable without reading its target', async () => {
     const dir = createTempDir('changed-files-baseline-symlink');
     const outside = createTempDir('changed-files-baseline-outside');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       mkdirSync(join(dir, 'src'), { recursive: true });
       writeFileSync(join(outside, 'secret.ts'), 'outside');
@@ -53,7 +106,7 @@ describe('captureChangedFilesBaseline', () => {
 
   itUnix('records a dangling final symlink as unreadable, not as missing', async () => {
     const dir = createTempDir('changed-files-baseline-dangling-symlink');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       mkdirSync(join(dir, 'src'), { recursive: true });
       symlinkSync('missing.ts', join(dir, 'src', 'dangling.ts'));
@@ -69,7 +122,7 @@ describe('captureChangedFilesBaseline', () => {
 
   it('rejects absolute changed-file paths', async () => {
     const dir = createTempDir('changed-files-baseline-absolute');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       const absolute = join(dir, 'src', 'a.ts');
       await expect(captureChangedFilesBaseline(dir, [absolute])).rejects.toMatchObject({
@@ -82,7 +135,7 @@ describe('captureChangedFilesBaseline', () => {
 
   it('records an unreadable entry while other changed files still fingerprint', async () => {
     const dir = createTempDir('changed-files-baseline-read-failure');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       mkdirSync(join(dir, 'unreadable'));
       mkdirSync(join(dir, 'src'), { recursive: true });
@@ -103,7 +156,7 @@ describe('captureChangedFilesBaseline', () => {
       const dir = createTempDir('changed-files-baseline-inspection-eacces');
       const blockedDir = join(dir, 'blocked');
       const filePath = join(blockedDir, 'secret.ts');
-      createTestGitRepo(dir);
+      seedProject(dir);
       try {
         mkdirSync(blockedDir);
         writeFileSync(filePath, 'export const secret = true;\n');
@@ -130,7 +183,7 @@ describe('captureChangedFilesBaseline', () => {
   itUnix('reports an entry unreadable at both ends as unchanged', async () => {
     const dir = createTempDir('changed-files-baseline-unreadable-both-ends');
     const outside = createTempDir('changed-files-baseline-outside-both-ends');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       mkdirSync(join(dir, 'src'), { recursive: true });
       writeFileSync(join(outside, 'secret.ts'), 'outside');
@@ -148,12 +201,11 @@ describe('captureChangedFilesBaseline', () => {
   itUnix('reports a regular file replaced by a symlink after the baseline as changed', async () => {
     const dir = createTempDir('changed-files-baseline-replaced-by-symlink');
     const outside = createTempDir('changed-files-baseline-outside-replaced');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       mkdirSync(join(dir, 'src'), { recursive: true });
       writeFileSync(join(dir, 'src', 'swap.ts'), 'original\n');
-      await stageAll(dir);
-      await commitChanges(dir, 'seed swap file');
+      recordHead(dir);
       const baseline = await captureChangedFilesBaseline(dir);
 
       unlinkSync(join(dir, 'src', 'swap.ts'));
@@ -172,7 +224,7 @@ describe('unreadableChangedFiles', () => {
   itUnix('returns the sorted project-relative paths of unreadable entries', async () => {
     const dir = createTempDir('changed-files-baseline-unreadable-list');
     const outside = createTempDir('changed-files-baseline-unreadable-list-outside');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       mkdirSync(join(dir, 'src'), { recursive: true });
       writeFileSync(join(outside, 'secret.ts'), 'outside');
@@ -192,7 +244,7 @@ describe('unreadableChangedFiles', () => {
 describe('changed-files baseline persistence', () => {
   it('keeps run-start paths empty while rolling fingerprints absorb a later file', async () => {
     const dir = createTempDir('changed-files-baseline-run-start-clean');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       const baseline = await captureChangedFilesBaseline(dir);
       mkdirSync(join(dir, 'src'), { recursive: true });
@@ -217,7 +269,7 @@ describe('changed-files baseline persistence', () => {
 
   it('retains genuinely dirty-at-start paths while rolling fingerprints refresh', async () => {
     const dir = createTempDir('changed-files-baseline-run-start-dirty');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       mkdirSync(join(dir, 'src'), { recursive: true });
       writeFileSync(join(dir, 'src', 'dirty.ts'), 'export const dirty = true;\n');
@@ -273,12 +325,11 @@ describe('changed-files baseline persistence', () => {
 describe('changedFilesSinceBaseline committed leg', () => {
   it('surfaces a user edit that was swept into a commit after the baseline', async () => {
     const dir = createTempDir('changed-files-baseline-committed');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       mkdirSync(join(dir, 'src'), { recursive: true });
       writeFileSync(join(dir, 'src', 'a.ts'), 'original\n');
-      await stageAll(dir);
-      await commitChanges(dir, 'seed');
+      recordHead(dir);
 
       const baseline = await captureChangedFilesBaseline(dir);
       expect(await changedFilesSinceBaseline(dir, baseline)).toEqual([]);
@@ -286,8 +337,7 @@ describe('changedFilesSinceBaseline committed leg', () => {
       // A user edit lands and is then committed (mirrors a per-task commit that
       // sweeps the edit into history, leaving the working tree clean).
       writeFileSync(join(dir, 'src', 'a.ts'), 'user edit\n');
-      await stageAll(dir);
-      await commitChanges(dir, 'commit that swept the user edit');
+      recordHead(dir);
 
       expect(await changedFilesSinceBaseline(dir, baseline)).toEqual(['src/a.ts']);
     } finally {
@@ -298,17 +348,11 @@ describe('changedFilesSinceBaseline committed leg', () => {
   it('includes a first commit made after an unborn run start', async () => {
     const dir = createTempDir('changed-files-baseline-unborn');
     try {
-      execSync('git init', { cwd: dir, stdio: 'pipe' });
-      execSync('git config user.email "t@t.com" && git config user.name "T"', {
-        cwd: dir,
-        stdio: 'pipe',
-      });
       const baseline = await captureChangedFilesBaseline(dir);
       expect(baseline.head).toBeNull();
 
       writeFileSync(join(dir, 'first.ts'), 'export const first = true;\n');
-      await stageAll(dir);
-      await commitChanges(dir, 'first commit');
+      recordHead(dir);
 
       expect(await changedFilesSinceBaseline(dir, baseline)).toEqual(['first.ts']);
     } finally {
@@ -320,7 +364,7 @@ describe('changedFilesSinceBaseline committed leg', () => {
 describe('changedFilesSinceBaseline artifact-name neutrality', () => {
   it('matches an artifact basename nested under a subdirectory, not only at the root', async () => {
     const dir = createTempDir('changed-files-baseline-artifact-tasks');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       const baseline = await captureChangedFilesBaseline(dir);
 
@@ -335,7 +379,7 @@ describe('changedFilesSinceBaseline artifact-name neutrality', () => {
 
   it('reports direct writes of every planner artifact basename', async () => {
     const dir = createTempDir('changed-files-baseline-artifact-all');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       const baseline = await captureChangedFilesBaseline(dir);
 
@@ -356,7 +400,7 @@ describe('changedFilesSinceBaseline artifact-name neutrality', () => {
 
   it('captures a pre-existing tasks.md without admitting later edits', async () => {
     const dir = createTempDir('changed-files-baseline-artifact-pre-existing');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       writeFileSync(join(dir, 'tasks.md'), '---\nid: task-1\n---\n# Original\n');
       const baseline = await captureChangedFilesBaseline(dir);
@@ -375,11 +419,10 @@ describe('changedFilesSinceBaseline artifact-name neutrality', () => {
 describe('changed-files rolling disappearance', () => {
   it('reports a tracked dirty file becoming clean', async () => {
     const dir = createTempDir('changed-files-baseline-tracked-clean');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       writeFileSync(join(dir, 'tracked.txt'), 'original\n');
-      await stageAll(dir);
-      await commitChanges(dir, 'seed tracked file');
+      recordHead(dir);
       writeFileSync(join(dir, 'tracked.txt'), 'dirty\n');
       const baseline = await captureChangedFilesBaseline(dir);
 
@@ -393,7 +436,7 @@ describe('changed-files rolling disappearance', () => {
 
   it('reports a deleted untracked file', async () => {
     const dir = createTempDir('changed-files-baseline-untracked-delete');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       writeFileSync(join(dir, 'untracked.txt'), 'temporary\n');
       const baseline = await captureChangedFilesBaseline(dir);
@@ -408,7 +451,7 @@ describe('changed-files rolling disappearance', () => {
 
   it('stores an absorbed disappearance once and then compares cleanly', async () => {
     const dir = createTempDir('changed-files-baseline-absorb-delete');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       writeFileSync(join(dir, 'gone.txt'), 'temporary\n');
       const baseline = await captureChangedFilesBaseline(dir);
@@ -430,7 +473,7 @@ describe('changed-files rolling disappearance', () => {
 
   it('reports a file that reappears after its missing tombstone', async () => {
     const dir = createTempDir('changed-files-baseline-reappear');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       writeFileSync(join(dir, 'returning.txt'), 'first\n');
       const baseline = await captureChangedFilesBaseline(dir);
@@ -451,7 +494,7 @@ describe('changed-files rolling disappearance', () => {
 
   it('keeps a new nonabsorbed file outside the baseline', async () => {
     const dir = createTempDir('changed-files-baseline-new-file');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       const baseline = await captureChangedFilesBaseline(dir);
       writeFileSync(join(dir, 'new.txt'), 'new\n');
@@ -471,7 +514,7 @@ describe('changed-files rolling disappearance', () => {
 
   it('serializes a missing tombstone, preserves explicit-empty provenance, and clears active state', async () => {
     const dir = createTempDir('changed-files-baseline-tombstone-persistence');
-    createTestGitRepo(dir);
+    seedProject(dir);
     try {
       const baseline = withActiveTaskSnapshot(await captureChangedFilesBaseline(dir), {
         head: 'abc123',
@@ -494,6 +537,30 @@ describe('changed-files rolling disappearance', () => {
       expect(persisted.activeTaskSnapshot).toBeUndefined();
       expect(deserialized.fingerprints.get('never-created.txt')).toBe('missing');
       expect(deserialized.runStartChangedFiles).toEqual(new Set());
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe('inferTaskAcceptedChangedFiles', () => {
+  it('attributes every declared file and a prose in-bounds bullet', async () => {
+    const dir = createTempDir('infer-task-accepted-declared-set');
+    seedProject(dir);
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      for (const file of ['a.ts', 'a.test.ts', 'x.ts', 'leak.ts']) {
+        writeFileSync(join(dir, 'src', file), 'export const changed = true;\n');
+      }
+      const task = makeTask({
+        file: 'src/a.ts',
+        files: ['src/a.ts', 'src/a.test.ts'],
+        scope: { inBounds: ['`src/x.ts` \u2014 the union collapse'] },
+      });
+
+      const attributed = await inferTaskAcceptedChangedFiles(dir, task, null);
+
+      expect(attributed.sort()).toEqual(['src/a.test.ts', 'src/a.ts', 'src/x.ts']);
     } finally {
       cleanupTempDir(dir);
     }

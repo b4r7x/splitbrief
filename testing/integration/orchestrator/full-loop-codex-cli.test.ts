@@ -5,6 +5,8 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -139,14 +141,15 @@ async function runCodexLoop(opts: {
   });
 
   const planner = makePlanner({
-    plan: vi.fn().mockResolvedValue({
-      spec: '# Spec\n\nCreate a module with a Codex CLI implementer.',
-      plan: '# Plan\n\nUse the configured cheap CLI implementer.',
-      tasks: [task],
-      usage: { inputTokens: 140, outputTokens: 90 },
-    }),
+    runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+      makePhaseCallResult({
+        call,
+        usage: { inputTokens: 140, outputTokens: 90 },
+        ...(call === 'tasks' ? { tasks: [task] } : {}),
+      }),
+    ),
     review: vi.fn().mockResolvedValue({
-      text: '# Final review\n\nCodex CLI implementer passed validation.',
+      text: '# Final review\n\nCodex CLI implementer passed validation.\n\n### Verdict\npass',
       usage: { inputTokens: 60, outputTokens: 30 },
     }),
   });
@@ -178,7 +181,6 @@ async function runCodexLoop(opts: {
         mode: 'standard',
         approve: 'none',
         maxRetries: 1,
-        persistTranscript: true,
       },
     }),
     preparationId,
@@ -314,9 +316,8 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
     expect(warning).toMatchObject({
       type: 'warning',
       taskId: 'T001',
-      category: 'cost',
+      category: 'usage',
       code: 'implementer_usage_not_reported',
-      transcriptSafe: true,
     });
     expect(warning?.message).toContain('codex');
     expect(warning?.message).toContain('T001');

@@ -1,0 +1,16 @@
+{"kind":"event","ts":"2026-09-14T10:00:00.000Z","type":"workflow_started","phase":"researching","data":{"feature":"add a replay path"}}
+{"kind":"event","ts":"2026-09-14T10:00:00.010Z","type":"workflow_config","phase":"researching","data":{"mode":"standard","plannerTool":"claude-code","plannerModel":"opus","implementerTool":"codex","implementerModel":"gpt-5"}}
+{"kind":"event","ts":"2026-09-14T10:00:01.000Z","type":"planner_status","phase":"researching","data":{"status":"running","tool":"claude-code"}}
+{"kind":"event","ts":"2026-09-14T10:00:02.000Z","type":"planner_text","phase":"researching","data":{"text":"Reading the "}}
+{"kind":"event","ts":"2026-09-14T10:00:02.200Z","type":"planner_text","phase":"researching","data":{"text":"session log format."}}
+{"kind":"message","ts":"2026-09-14T10:00:02.300Z","role":"assistant","phase":"researching","text":"Reading the session log format."}
+{"kind":"event","ts":"2026-09-14T10:00:03.000Z","type":"brief_compiled","phase":"planning","data":{"taskCount":1,"compiler":"v1"}}
+{"kind":"event","ts":"2026-09-14T10:00:04.000Z","type":"tasks_planned","phase":"planning","data":{"tasks":[{"id":"T001","title":"Invert the event entry","index":0,"file":"src/engine/events/replay.ts","action":"create"}],"total":1}}
+{"kind":"event","ts":"2026-09-14T10:00:05.000Z","type":"task_started","phase":"implementing","taskId":"T001","data":{"title":"Invert the event entry","index":0,"total":1,"file":"src/engine/events/replay.ts","action":"create"}}
+{"kind":"event","ts":"2026-09-14T10:00:06.000Z","type":"validate","phase":"validating-task","taskId":"T001","data":{"status":"done","passed":true,"stages":{"typecheck":true,"lint":true,"test":true}}}
+{"kind":"event","ts":"2026-09-14T10:00:07.000Z","type":"task_completed","phase":"implementing","taskId":"T001","data":{"title":"Invert the event entry","method":"local","retries":0,"duration":2000}}
+{"kind":"event","ts":"2026-09-14T10:00:08.000Z","type":"cost_update","phase":"implementing","data":{"tokenUsage":{"plannerInput":1200,"plannerOutput":340,"implementerInput":900,"implementerOutput":210,"escalationInput":0,"escalationOutput":0,"reviewerInput":0,"reviewerOutput":0}}}
+{"kind":"event","ts":"2026-09-14T10:00:09.000Z","type":"task_completed","phase":"implementing","taskId":"T001","data":{"title":"Invert the event entry","method":"not-a-method","retries":0,"duration":2000}}
+{"kind":"event","ts":"2026-09-14T10:00:10.
+{"kind":"totally-unknown-record","ts":"2026-09-14T10:00:11.000Z"}
+{"kind":"event","ts":"2026-09-14T10:00:12.000Z","type":"workflow_complete","phase":"complete","data":{"review":"passed","blocking":0}}

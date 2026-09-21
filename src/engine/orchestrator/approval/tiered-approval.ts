@@ -6,7 +6,8 @@ import { ActionClassSchema } from '../../../core/schemas/enums.js';
 import { error } from '../../../utils/error.js';
 import { gateConfirmTier } from './confirm.js';
 import { gateStickyTier } from './sticky.js';
-import { taskScopePatterns } from '../task-scope.js';
+import { taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
+import { taskFiles } from '../../../core/schemas/task.js';
 import type { GateActionInput, GateDecision } from './types.js';
 
 type ApprovalTierOverrides = NonNullable<Config['approval']>['tiers'];
@@ -43,8 +44,9 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
   const { actionClass, tier } = classifyAction(
     {
       actionDescription,
-      taskFile: task.file,
-      taskInBounds: taskScopePatterns(task),
+      targetPath: input.targetPath,
+      taskFiles: taskFiles(task),
+      taskInBounds: taskDeclaredPatterns(task),
       dependsOnFiles,
       projectDir,
       allowedPaths: config.approval?.allowedPaths,

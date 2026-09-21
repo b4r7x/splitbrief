@@ -19,6 +19,7 @@ type CommonPreparationPolicy = CustomRunnerAdmissionPolicy &
 
 export type PreparationPolicy =
   | (CommonPreparationPolicy & Readonly<{ purpose: 'new-workflow' | 'spec' }>)
+  | (CommonPreparationPolicy & Readonly<{ purpose: 'review' }>)
   | (CommonPreparationPolicy & Readonly<{ purpose: 'resume' }>);
 
 export type PrepareExecutionDependencies = Readonly<{

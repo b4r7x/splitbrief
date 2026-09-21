@@ -57,17 +57,22 @@ function failedRefreshSummary(
 }
 
 describe('/mode command', () => {
-  it('opens mode-selector overlay when called without args', async () => {
+  it('refills the composer with the option grammar when called without args', async () => {
+    let prefilled: string | undefined;
     let openedOverlay: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
+        prefillComposer: (text) => {
+          prefilled = text;
+        },
         openOverlay: (type) => {
           openedOverlay = type;
         },
       }),
     );
     await runCommandInTest({ commands: commands, raw: '/mode', screen: 'home', onError: noop });
-    expect(openedOverlay).toBe('mode-selector');
+    expect(prefilled).toBe('/mode ');
+    expect(openedOverlay).toBeUndefined();
   });
 
   it('shows success only after a saved mode result resolves', async () => {
@@ -322,8 +327,8 @@ describe('/crew command', () => {
 
     runCommandInTest({ commands: commands, raw: '/crew', screen: 'home', onError: noop });
     runCommandInTest({ commands: commands, raw: '/crew review', screen: 'home', onError: noop });
-    runCommandInTest({ commands: commands, raw: '/planner', screen: 'home', onError: noop });
-    runCommandInTest({ commands: commands, raw: '/implementer', screen: 'home', onError: noop });
+    runCommandInTest({ commands: commands, raw: '/crew plan', screen: 'home', onError: noop });
+    runCommandInTest({ commands: commands, raw: '/crew build', screen: 'home', onError: noop });
 
     expect(opened).toEqual([
       { type: 'settings', focus: 'seat:plan' },

@@ -8,13 +8,13 @@ import {
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
+import { APPLICATION_DEFAULT_CONTEXT_TOKENS } from '../../providers/runtime-context.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { selectRoutingProfile } from './routing-selection.js';
 
 function cacheOnlyResolvableProfile(): ResolvedImplementerProfile {
   return {
     name: 'cache-worker',
-    costTier: 'cheap',
     capabilities: { writesFiles: 'extracted-code' },
     isDefault: true,
     config: {
@@ -32,7 +32,6 @@ function detectedFallbackProfiles(): ResolvedImplementerProfile[] {
   return [
     {
       name: 'cheap-detected-worker',
-      costTier: 'cheap',
       capabilities: { writesFiles: 'extracted-code' },
       isDefault: true,
       config: {
@@ -43,7 +42,6 @@ function detectedFallbackProfiles(): ResolvedImplementerProfile[] {
     },
     {
       name: 'standard-worker',
-      costTier: 'standard',
       capabilities: { writesFiles: 'extracted-code' },
       isDefault: false,
       config: {
@@ -68,7 +66,14 @@ describe('selectRoutingProfile context cache', () => {
       getModelsDevCatalog: () => null,
       getProviderModels: (providerId) =>
         providerId === 'ollama'
-          ? [{ id: 'runtime-only-model', contextLength: 64_000, pricingInput: 1, pricingOutput: 2 }]
+          ? [
+              {
+                id: 'runtime-only-model',
+                effectiveContextTokens: 64_000,
+                pricingInput: 1,
+                pricingOutput: 2,
+              },
+            ]
           : null,
     };
     const wctx = makeTaskWorkflowContext({ modelCache });
@@ -94,7 +99,7 @@ describe('selectRoutingProfile context cache', () => {
     expect(result.selectedProfile).toEqual(profile);
   });
 
-  it('falls back to the conservative context length when no model cache is provided', async () => {
+  it('falls an api profile back to the application budget when no model cache is provided', async () => {
     const wctx = makeTaskWorkflowContext();
     const task = makeTask();
     const state = makeImplStateWithMetadata([task]);
@@ -113,7 +118,7 @@ describe('selectRoutingProfile context cache', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.routingDecision.contextLength).toBe(DEFAULT_UNKNOWN_CONTEXT_LENGTH);
+    expect(result.routingDecision.contextLength).toBe(APPLICATION_DEFAULT_CONTEXT_TOKENS);
   });
 
   it('uses detected context length as the live conservative fallback so a cheaper profile can fit', async () => {

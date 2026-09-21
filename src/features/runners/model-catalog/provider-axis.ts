@@ -14,6 +14,35 @@ export function modelBareId(id: string): string {
   return slash > 0 ? id.slice(slash + 1) : id;
 }
 
+/**
+ * The leading segment every namespaced row of a listing shares — `kilo` on a Kilo listing. The
+ * Tools column beside the list already names the tool, so repeating it on every row costs cells the
+ * model's own name needs. Undefined unless at least two three-segment ids agree on one.
+ */
+export function sharedModelNamespace(ids: readonly string[]): string | undefined {
+  let shared: string | undefined;
+  let agreed = 0;
+  for (const id of ids) {
+    const segments = id.split('/');
+    if (segments.length < 3) continue;
+    const first = segments[0];
+    if (first === undefined || first === '') return undefined;
+    if (shared === undefined) shared = first;
+    else if (shared !== first) return undefined;
+    agreed += 1;
+  }
+  return agreed >= 2 ? shared : undefined;
+}
+
+/** Drops that shared segment, and only while what is left is still a namespaced id. */
+export function stripModelNamespace(id: string, namespace: string | undefined): string {
+  if (namespace === undefined) return id;
+  const prefix = `${namespace}/`;
+  if (!id.startsWith(prefix)) return id;
+  const rest = id.slice(prefix.length);
+  return rest.includes('/') ? rest : id;
+}
+
 /** The account that actually gates the call: the first path segment of the raw id. */
 export function modelProviderAuthKey(id: string): string | undefined {
   const slash = id.indexOf('/');
@@ -40,17 +69,29 @@ function envVarStem(envVar: string): string {
   return slugifyProviderName(envVar.replace(/_(API_KEY|KEY|TOKEN)$/i, ''));
 }
 
+/**
+ * Display-name slugs the oracles report under a name whose slug is not the
+ * model-id segment, mapped to the segment they genuinely back. Documented
+ * aliases only, each backed by a captured listing: Kilo's credential listing
+ * reports the plan as "Alibaba Coding Plan" while the ids segment as
+ * `alibaba`. "GitHub Copilot" needs no entry — its slug is exactly
+ * `github-copilot`. OpenCode and OpenCode Go are distinct identities and
+ * deliberately carry no entry in either direction.
+ */
+const PROVIDER_ALIASES: Record<string, string> = { 'alibaba-coding-plan': 'alibaba' };
+
+/** Exact normalized identity: the slug itself, or one explicit documented alias. */
 function slugMatchesKey(slug: string, key: string): boolean {
-  return slug === key || slug.startsWith(`${key}-`) || key.startsWith(`${slug}-`);
+  return slug === key || PROVIDER_ALIASES[slug] === key;
 }
 
 /**
  * Whether a credential fact from the tool's own auth listing backs the given
  * model-id segment. Oracle display names ("GitHub Copilot") reach id segments
- * through slugification plus dash-boundary containment ("Alibaba Coding Plan"
- * backs `alibaba/*`); env facts also match through the env var stem. A fact
- * that resolves to nothing simply does not contribute — it never manufactures
- * a claim about another provider.
+ * through exact slugification plus the explicit alias map ("Alibaba Coding
+ * Plan" backs `alibaba/*`); env facts also match through the env var stem. A
+ * fact that resolves to nothing simply does not contribute — it never
+ * manufactures a claim about another provider.
  */
 export function providerFactMatchesAuthKey(fact: CliProviderAuthFact, authKey: string): boolean {
   if (slugMatchesKey(slugifyProviderName(fact.provider), authKey)) return true;

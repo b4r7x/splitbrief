@@ -1,24 +1,24 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SPEC_FILE, sessionDir } from '../../../src/core/paths.js';
+import { SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
-import { saveState } from '../../../src/core/state/persistence.js';
 import type { WorkflowMode } from '../../../src/core/schemas/enums.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { OrchestratorCallbacks } from '../../../src/engine/orchestrator/types.js';
 import { runPlanningPhase } from '../../../src/engine/orchestrator/planning/run.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import {
   createQuestionAccumulator,
   extractQuestionsFromStream,
 } from '../../../src/engine/parsers/question.js';
 import { CONVERSATIONAL_CAPS } from '../../../src/engine/planners/types.js';
 import type {
-  PlanOptions,
+  PhaseCallResult,
   Planner,
   PlannerCallbacks,
-  PlanResult,
+  RunPhaseInput,
 } from '../../../src/engine/planners/types.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -49,11 +49,6 @@ const SEVEN_MARKERS = Array.from(
 );
 const ANSWER = 'use-jwt-for-auth';
 const FLAVORS = ['conversational', 'command'] as const;
-const PRODUCER_HANDOFF_PHASE: Record<WorkflowMode, WorkflowState['phase']> = {
-  quick: 'idle',
-  standard: 'reviewing-plan',
-  speckit: 'analyzing',
-};
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -67,11 +62,13 @@ function splitIntoChunks(text: string, size: number): string[] {
   return chunks;
 }
 
+type RecordedCall = { call: string; feature: string; promptPrefix: string };
+
 function makeMarkerPlanner(opts: {
   flavor: (typeof FLAVORS)[number];
   markers: readonly string[];
-}): { planner: Planner; planningInputs: string[]; reviewPrompts: string[] } {
-  const planningInputs: string[] = [];
+}): { planner: Planner; planningInputs: RecordedCall[]; reviewPrompts: string[] } {
+  const planningInputs: RecordedCall[] = [];
   const reviewPrompts: string[] = [];
   const narration = `Reviewing the feature request.\n\n${opts.markers.join('\n')}\n\nDrafting Task Briefs.\n`;
 
@@ -98,28 +95,30 @@ function makeMarkerPlanner(opts: {
     }
   };
 
-  const respond = async (planOpts: PlanOptions, result: PlanResult): Promise<PlanResult> => {
-    planningInputs.push(planOpts.feature);
-    if (planningInputs.length === 1) stream(planOpts.callbacks);
-    return result;
-  };
-
-  const fullPlan: PlanResult = {
-    spec: '# Spec',
-    plan: '# Plan',
-    tasks: [makePassingTask()],
-    usage: { inputTokens: 100, outputTokens: 50 },
-  };
-  const briefOnly: PlanResult = {
-    spec: '',
-    plan: '',
-    tasks: [makePassingTask()],
-    usage: { inputTokens: 50, outputTokens: 25 },
+  const respond = async (input: RunPhaseInput): Promise<PhaseCallResult> => {
+    planningInputs.push({
+      call: input.call,
+      feature: input.inputs.feature,
+      promptPrefix: input.inputs.promptSuffix ?? input.inputs.promptPrefix ?? '',
+    });
+    if (planningInputs.length === 1) {
+      stream(input.callbacks);
+      return {
+        kind: 'conversation',
+        text: narration,
+        questions: extractQuestionsFromStream(narration).slice(0, 5),
+        usage: null,
+      };
+    }
+    return makePhaseCallResult({
+      call: input.call,
+      usage: { inputTokens: 100, outputTokens: 50 },
+      ...(input.call === 'tasks' ? { tasks: [makePassingTask()] } : {}),
+    });
   };
 
   const planner = makePlanner({
-    plan: vi.fn((planOpts: PlanOptions) => respond(planOpts, fullPlan)),
-    quickPlan: vi.fn((planOpts: PlanOptions) => respond(planOpts, briefOnly)),
+    runPhase: vi.fn(respond),
     review: vi.fn(async (prompt: string) => {
       reviewPrompts.push(prompt);
       return { text: REAL_TASKS_MD, usage: null };
@@ -130,16 +129,14 @@ function makeMarkerPlanner(opts: {
   return { planner, planningInputs, reviewPrompts };
 }
 
-function entryState(mode: WorkflowMode, feature: string): WorkflowState {
-  const initial = createInitialState(feature);
-  if (mode === 'standard' || mode === 'speckit') return transition(initial, { type: 'START' });
-  return initial;
+function entryState(feature: string): WorkflowState {
+  return transition(createInitialState(feature), { type: 'START' });
 }
 
 async function runMode(opts: {
   mode: WorkflowMode;
   planner: Planner;
-  onQuestionAsked?: OrchestratorCallbacks['onQuestionAsked'];
+  onPlannerReply?: OrchestratorCallbacks['onPlannerReply'];
   project?: { projectDir: string; sessionId: string };
   state?: WorkflowState;
   feature?: string;
@@ -147,7 +144,7 @@ async function runMode(opts: {
   const project = opts.project ?? setupProject(dirs);
   const feature = opts.feature ?? 'add token auth';
   const { callbacks } = makeCallbacks(
-    opts.onQuestionAsked ? { onQuestionAsked: opts.onQuestionAsked } : undefined,
+    opts.onPlannerReply ? { onPlannerReply: opts.onPlannerReply } : undefined,
   );
   const { bus, events } = makeBusRecorder();
   const result = await runPlanningPhase({
@@ -161,7 +158,7 @@ async function runMode(opts: {
       sinks: TEST_WORKFLOW_SINKS,
     },
     planner: opts.planner,
-    state: opts.state ?? entryState(opts.mode, feature),
+    state: opts.state ?? entryState(feature),
     feature,
   });
   return { result, events, ...project };
@@ -187,87 +184,75 @@ function modeSuite(mode: WorkflowMode): void {
   it.each(FLAVORS)('%s planner: question prompt fires and pauses the workflow', async (flavor) => {
     const { planner } = makeMarkerPlanner({ flavor, markers: TWO_MARKERS });
     const resolvers: Array<(answer: string) => void> = [];
-    const onQuestionAsked = vi.fn(
+    const onPlannerReply = vi.fn(
       () =>
         new Promise<string>((resolve) => {
           resolvers.push(resolve);
         }),
     );
 
-    const pending = runMode({ mode, planner, onQuestionAsked });
-    await vi.waitFor(() => expect(onQuestionAsked).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    const pending = runMode({ mode, planner, onPlannerReply });
+    await vi.waitFor(() => expect(onPlannerReply).toHaveBeenCalledTimes(1), { timeout: 5000 });
     await expectStillPending(pending);
-    resolvers[0]?.('skip');
-    await vi.waitFor(() => expect(onQuestionAsked).toHaveBeenCalledTimes(2), { timeout: 5000 });
-    resolvers[1]?.('skip');
+    resolvers[0]?.('Use jwt in src/auth.');
     const { result, events } = await pending;
 
-    expect(onQuestionAsked).toHaveBeenNthCalledWith(1, expect.objectContaining({ id: 'q1' }), 1, 2);
-    expect(onQuestionAsked).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'q2' }), 2, 2);
-    expect(result.disposition).toBe('parked');
-    expect(result.state.phase).toBe(PRODUCER_HANDOFF_PHASE[mode]);
+    expect(onPlannerReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        questions: [expect.objectContaining({ id: 'q1' }), expect.objectContaining({ id: 'q2' })],
+      }),
+    );
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(result.state.phase).toBe('implementing');
     expectMarkerFreePlannerText(events);
   });
 
   it('caps prompted questions at five when seven markers are emitted', async () => {
     const { planner } = makeMarkerPlanner({ flavor: 'command', markers: SEVEN_MARKERS });
-    const onQuestionAsked = vi.fn().mockResolvedValue('skip');
+    const onPlannerReply = vi.fn().mockResolvedValue('skip');
 
-    const { result, events } = await runMode({ mode, planner, onQuestionAsked });
+    const { result, events } = await runMode({ mode, planner, onPlannerReply });
 
-    expect(onQuestionAsked).toHaveBeenCalledTimes(5);
-    expect(result.disposition).toBe('parked');
-    expect(result.state.phase).toBe(PRODUCER_HANDOFF_PHASE[mode]);
+    expect(onPlannerReply).toHaveBeenCalledTimes(1);
+    expect(onPlannerReply.mock.calls[0]?.[0].questions).toHaveLength(5);
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(result.state.phase).toBe('implementing');
     expectMarkerFreePlannerText(events);
   });
 
-  it('persists the answer under ## Clarifications and feeds it into the next planner input', async () => {
-    const { planner, planningInputs, reviewPrompts } = makeMarkerPlanner({
+  it('persists the answer in the transcript and continues the same planner step', async () => {
+    const { planner, planningInputs } = makeMarkerPlanner({
       flavor: 'conversational',
       markers: TWO_MARKERS,
     });
-    const onQuestionAsked = vi.fn().mockResolvedValueOnce(ANSWER).mockResolvedValue('skip');
+    const onPlannerReply = vi.fn().mockResolvedValueOnce(ANSWER).mockResolvedValue('skip');
 
-    const first = await runMode({ mode, planner, onQuestionAsked });
+    const first = await runMode({ mode, planner, onPlannerReply });
 
-    expect(first.result.disposition).toBe('parked');
+    expect(first.result.disposition).toBe('ready-for-tasks');
     const specContent = readFileSync(
-      join(sessionDir(first.projectDir, first.sessionId), SPEC_FILE),
+      join(sessionDir(first.projectDir, first.sessionId), SESSION_LOG_FILE),
       'utf8',
     );
-    expect(specContent).toContain('## Clarifications');
     expect(specContent).toContain(ANSWER);
 
-    if (mode === 'standard' || mode === 'speckit') {
-      expect(reviewPrompts.some((prompt) => prompt.includes(ANSWER))).toBe(true);
-    } else {
-      const secondState = transition(first.result.state, { type: 'CANCEL' });
-      saveState({ projectDir: first.projectDir, sessionId: first.sessionId }, secondState);
-      const second = await runMode({
-        mode,
-        planner,
-        project: { projectDir: first.projectDir, sessionId: first.sessionId },
-        state: secondState,
-        feature: 'follow-up tweak',
-      });
-      expect(second.result.disposition).toBe('parked');
-      expect(planningInputs).toHaveLength(2);
-      expect(planningInputs[0]).not.toContain(ANSWER);
-      expect(planningInputs[1]).toContain(ANSWER);
-    }
+    const calls = planningInputs.map((input) => input.call);
+    expect(calls[0]).toBe(calls[1]);
+    expect(new Set(calls).size).toBe(calls.length - 1);
+    expect(planningInputs.every((input) => !input.feature.includes(ANSWER))).toBe(true);
+    expect(planningInputs[1]?.promptPrefix).toContain(ANSWER);
     expectMarkerFreePlannerText(first.events);
   });
 
-  it('answering an empty string to every question reaches the terminal phase', async () => {
+  it('an empty answer parks the run without admitting a document', async () => {
     const answer = '';
     const { planner } = makeMarkerPlanner({ flavor: 'conversational', markers: TWO_MARKERS });
-    const onQuestionAsked = vi.fn().mockResolvedValue(answer);
+    const onPlannerReply = vi.fn().mockResolvedValue(answer);
 
-    const { result, events } = await runMode({ mode, planner, onQuestionAsked });
+    const { result, events } = await runMode({ mode, planner, onPlannerReply });
 
-    expect(onQuestionAsked).toHaveBeenCalledTimes(2);
-    expect(result.disposition).toBe('parked');
-    expect(result.state.phase).toBe(PRODUCER_HANDOFF_PHASE[mode]);
+    expect(onPlannerReply).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'input-required' });
     expectMarkerFreePlannerText(events);
   });
 }

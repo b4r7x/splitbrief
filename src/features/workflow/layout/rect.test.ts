@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
+import { getChromeHeight, getContentTopRow, WORKFLOW_GUTTER_X } from './chrome-rows.js';
 import {
   clampWorkflowPromptRows,
   getReviewContentLayout,
@@ -22,21 +22,25 @@ describe('workflow viewport layout', () => {
     expect(getSidebarStatusColumnCells({ hasStatusTail: true })).toBeGreaterThan(0);
   });
 
-  it('splits width between sidebar, gap, and content exactly, only when the sidebar is visible above the breakpoint', () => {
+  it('splits width between gutters, sidebar, and gap exactly, only when the sidebar is visible above the breakpoint', () => {
     const cols = 121;
 
+    // Without a sidebar the transcript spends the left gutter as its own lead, so the pane keeps
+    // only the right one out.
     expect(getWorkflowSidebarWidth({ cols, sidebarVisible: false })).toBe(0);
-    expect(getWorkflowContentWidth({ cols, sidebarVisible: false })).toBe(cols);
+    expect(getWorkflowContentWidth({ cols, sidebarVisible: false })).toBe(cols - WORKFLOW_GUTTER_X);
 
     expect(getWorkflowSidebarWidth({ cols: 100, sidebarVisible: true })).toBe(0);
-    expect(getWorkflowContentWidth({ cols: 100, sidebarVisible: true })).toBe(100);
+    expect(getWorkflowContentWidth({ cols: 100, sidebarVisible: true })).toBe(
+      100 - WORKFLOW_GUTTER_X,
+    );
 
     const sidebar = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
     const content = getWorkflowContentWidth({ cols, sidebarVisible: true });
     expect(sidebar).toBeGreaterThan(0);
     expect(content).toBeGreaterThan(0);
     expect(WORKFLOW_SIDEBAR_GAP).toBe(2);
-    expect(sidebar + WORKFLOW_SIDEBAR_GAP + content).toBe(cols);
+    expect(sidebar + WORKFLOW_SIDEBAR_GAP + content).toBe(cols - WORKFLOW_GUTTER_X * 2);
   });
 
   it('hides the sidebar below the workflow breakpoint and clamps its share between a floor and a ceiling above it', () => {
@@ -59,9 +63,9 @@ describe('workflow viewport layout', () => {
 
   it('gives the task title the interior of the box the row paints into, and less when a status tail reserves cells', () => {
     const width = 48;
-    expect(getSidebarTaskTitleWidth({ width, reservedTailCells: 0 })).toBe(width - 7);
+    expect(getSidebarTaskTitleWidth({ width, reservedTailCells: 0 })).toBe(width - 6);
     const withTail = getSidebarTaskTitleWidth({ width, reservedTailCells: 5 });
-    expect(withTail).toBe(width - 7 - 5);
+    expect(withTail).toBe(width - 6 - 5);
     expect(withTail).toBeLessThan(getSidebarTaskTitleWidth({ width, reservedTailCells: 0 }));
   });
 
@@ -117,7 +121,9 @@ describe('workflow viewport layout', () => {
 
       expect(sidebarWidth > 0).toBe(expectedSidebar);
       expect(getWorkflowContentWidth({ cols, sidebarVisible: true })).toBe(
-        expectedSidebar ? cols - sidebarWidth - WORKFLOW_SIDEBAR_GAP : cols,
+        expectedSidebar
+          ? cols - sidebarWidth - WORKFLOW_SIDEBAR_GAP - WORKFLOW_GUTTER_X * 2
+          : cols - WORKFLOW_GUTTER_X,
       );
       expect(getWorkflowContentRect({ cols, rows, inputRows, sidebarVisible: true }).bottom).toBe(
         getContentTopRow() + contentHeight - 1,
@@ -140,9 +146,9 @@ describe('workflow viewport layout', () => {
 });
 
 describe('review document layout', () => {
-  it('spans the full workflow content width', () => {
-    expect(getReviewColumnWidth(180)).toBe(180);
-    expect(getReviewColumnWidth(80)).toBe(80);
+  it('spans the workflow content width past the gutter its frame stands in', () => {
+    expect(getReviewColumnWidth(180)).toBe(180 - WORKFLOW_GUTTER_X);
+    expect(getReviewColumnWidth(80)).toBe(80 - WORKFLOW_GUTTER_X);
   });
 });
 
@@ -168,18 +174,19 @@ describe('getWorkflowContentRect', () => {
     expect(rect.bottom).toBe(rect.top + rect.height - 1);
 
     const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible });
-    expect(rect.left).toBe(sidebarWidth + WORKFLOW_SIDEBAR_GAP + 1);
+    expect(rect.left).toBe(WORKFLOW_GUTTER_X + sidebarWidth + WORKFLOW_SIDEBAR_GAP);
   });
 
-  it('when the sidebar is hidden the flush rect starts at the terminal edge and takes full width', () => {
+  it('when the sidebar is hidden the rect starts at column 0 and keeps the right gutter empty', () => {
     const rect = getWorkflowContentRect({
       cols: 100,
       rows: 30,
       inputRows: 2,
       sidebarVisible: false,
     });
-    expect(rect.left).toBe(1);
-    expect(rect.width).toBe(100);
+    expect(rect.left).toBe(0);
+    expect(rect.width).toBe(100 - WORKFLOW_GUTTER_X);
+    expect(rect.right).toBe(100 - 1 - WORKFLOW_GUTTER_X);
   });
 
   it('keeps edges non-inverted when the terminal has no usable content area', () => {
@@ -236,6 +243,11 @@ describe('getReviewContentLayout', () => {
     });
     expect(getReviewContentLayout(1, 20).contentHeight).toBe(0);
     expect(getReviewContentLayout(0, 0).contentHeight).toBe(0);
+  });
+
+  it('keeps the document rows the footer would have counted when they are the only ones', () => {
+    expect(getReviewContentLayout(4, 20)).toEqual({ contentHeight: 2, showFooter: false });
+    expect(getReviewContentLayout(5, 20)).toEqual({ contentHeight: 1, showFooter: true });
   });
 });
 
@@ -360,5 +372,26 @@ describe('sidebar task list geometry', () => {
       showBelow: false,
       combine: false,
     });
+  });
+});
+
+describe('progress rows', () => {
+  it('take their rows from the body and push its top down', () => {
+    const base = getWorkflowContentRect({
+      cols: 120,
+      rows: 40,
+      inputRows: 3,
+      sidebarVisible: false,
+    });
+    const withBlock = getWorkflowContentRect({
+      cols: 120,
+      rows: 40,
+      inputRows: 3,
+      sidebarVisible: false,
+      progressRows: 2,
+    });
+
+    expect(withBlock.top).toBe(base.top + 2);
+    expect(withBlock.height).toBe(base.height - 2);
   });
 });

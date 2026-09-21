@@ -1,11 +1,9 @@
 import { Text } from 'ink';
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { approvalPromptStore } from '../../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../stores/cost-approval/prompt.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { useEditorKeys } from './use-editor-keys.js';
 
@@ -35,7 +33,6 @@ describe('useEditorKeys field surface stands down under overlays/prompts', () =>
     editorStore.close();
     overlayStore.close();
     approvalPromptStore.__testReset();
-    costApprovalStore.__testReset();
     reviewStore.clearReview();
   });
 
@@ -72,24 +69,6 @@ describe('useEditorKeys field surface stands down under overlays/prompts', () =>
       status: 'pending',
       // The shape is not read by the key gate; only status === 'pending' matters here.
       request: {} as never,
-      resolve: () => {},
-    });
-    const ui = renderFeature(<FieldHost />);
-    unmount = ui.unmount;
-    await flushEffects();
-
-    ui.stdin.write('a');
-    await tick();
-
-    const state = editorStore.get();
-    expect(state.status === 'open' && state.value).toBe('');
-  });
-
-  it('ignores keystrokes while a cost prompt is pending', async () => {
-    openFieldSession();
-    costApprovalStore.__testReset({
-      status: 'pending',
-      prediction: makeCostPrediction(),
       resolve: () => {},
     });
     const ui = renderFeature(<FieldHost />);

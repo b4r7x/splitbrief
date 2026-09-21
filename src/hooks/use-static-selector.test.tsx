@@ -9,12 +9,21 @@ const DOWN = '\u001b[B';
 const ENTER = '\r';
 const ESC = '\u001b';
 
-function Harness({ items, initialIndex }: { items: string[]; initialIndex?: number | undefined }) {
+function Harness({
+  items,
+  initialIndex,
+  keyed,
+}: {
+  items: string[];
+  initialIndex?: number | undefined;
+  keyed?: boolean | undefined;
+}) {
   const [chosen, setChosen] = useState('none');
   const [cancelled, setCancelled] = useState(false);
   const selector = useStaticSelector({
     items,
     initialIndex,
+    keyOf: keyed === true ? (item) => item : undefined,
     onSelect: (item, index) => setChosen(`${item}@${index}`),
     onCancel: () => setCancelled(true),
   });
@@ -83,6 +92,36 @@ describe('useStaticSelector', () => {
     ui.stdin.write(ENTER);
     await tick(20);
     expect(ui.lastFrame()).toContain('chosen:alpha@0');
+
+    ui.unmount();
+  });
+
+  it('with keyOf the cursor follows its row when the list re-derives under it', async () => {
+    const items = ['alpha', 'beta', 'gamma', 'delta'];
+    const ui = renderFeature(<Harness items={items} keyed />);
+    await tick(20);
+
+    await flushEffects();
+    ui.stdin.write(DOWN);
+    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('current:beta');
+    });
+
+    ui.rerender(<Harness items={['beta', 'gamma', 'delta']} keyed />);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('current:beta');
+
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('chosen:beta@0');
+    });
+
+    ui.rerender(<Harness items={['gamma', 'delta']} keyed />);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('current:gamma');
 
     ui.unmount();
   });

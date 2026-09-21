@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { Layout } from './layout.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
-import { SummaryScreen } from './screens/summary.js';
 import { SetupScreen } from './screens/setup.js';
 import { HelpOverlay } from './overlays/help.js';
 import { CommandPaletteOverlay } from './overlays/palette.js';
@@ -10,16 +9,15 @@ import { SkillsPicker } from './overlays/skills.js';
 import { SessionsPicker } from './overlays/sessions.js';
 import { EditorOverlay } from './overlays/editor.js';
 import { SettingsOverlay } from './overlays/settings.js';
+import { UsageOverlay } from './overlays/usage.js';
 import { ToolModelPicker } from './overlays/runners.js';
-import { ModeSelector } from '../features/settings/mode-selector.js';
-import { CostDrilldownOverlay } from '../features/workflow/cost-drilldown/overlay.js';
 import { focusHasResolvableCopy } from '../features/workflow/copy/resolve.js';
 import type { RuntimeCommandDef, CopyResult, CopyTarget } from '../core/runtime/commands/types.js';
 import type { OverlayType, Screen } from '../core/navigation/types.js';
 import type { WorkflowScreenDeps } from '../features/workflow/hooks/workflow-screen/use-model.js';
+import type { AppInteractionDeps } from './root.js';
 import { assertNever } from '../utils/type-guards.js';
-import { sessionSelectStore } from '../stores/navigation/session-select.js';
-import { SessionPreparation } from './session-preparation.js';
+import { SessionPreparation, useSessionPreparationTakesPage } from './session-preparation.js';
 
 interface RouterProps {
   screen: Screen;
@@ -28,6 +26,7 @@ interface RouterProps {
   onRuntime: (raw: string, from: Screen) => void;
   copyTarget: (target: CopyTarget) => Promise<CopyResult>;
   workflowDeps?: WorkflowScreenDeps | undefined;
+  interactionDeps?: AppInteractionDeps | undefined;
 }
 
 export function Router({
@@ -37,21 +36,28 @@ export function Router({
   onRuntime,
   copyTarget,
   workflowDeps,
+  interactionDeps,
 }: RouterProps) {
-  const sessionPreparationActive = sessionSelectStore.use(
-    (state) => state.preparation.kind !== 'idle',
-  );
+  const sessionPreparationTakesPage = useSessionPreparationTakesPage();
 
   return (
     <Layout
       sessionPreparation={<SessionPreparation />}
-      sessionPreparationActive={sessionPreparationActive}
-      screen={renderScreen({ screen, commands, onRuntime, copyTarget, workflowDeps })}
+      sessionPreparationTakesPage={sessionPreparationTakesPage}
+      screen={renderScreen({
+        screen,
+        commands,
+        onRuntime,
+        copyTarget,
+        workflowDeps,
+        interactionDeps,
+      })}
       overlay={renderOverlay({
         active: overlayActive,
         screen,
         commands,
         onRuntime: (raw) => onRuntime(raw, screen),
+        interactionDeps,
       })}
     />
   );
@@ -63,16 +69,26 @@ function renderScreen({
   onRuntime,
   copyTarget,
   workflowDeps,
+  interactionDeps,
 }: {
   screen: Screen;
   commands: RuntimeCommandDef[];
   onRuntime: (raw: string, from: Screen) => void;
   copyTarget: (target: CopyTarget) => Promise<CopyResult>;
   workflowDeps?: WorkflowScreenDeps | undefined;
+  interactionDeps?: AppInteractionDeps | undefined;
 }): ReactNode {
   switch (screen) {
     case 'home':
-      return <HomeScreen commands={commands} onRuntimeCommand={(raw) => onRuntime(raw, 'home')} />;
+      return (
+        <HomeScreen
+          commands={commands}
+          onRuntimeCommand={(raw) => onRuntime(raw, 'home')}
+          deps={interactionDeps?.home}
+          readClipboardImage={interactionDeps?.readClipboardImage}
+          listProjectFiles={interactionDeps?.listProjectFiles}
+        />
+      );
     case 'workflow':
       return (
         <WorkflowScreen
@@ -81,14 +97,12 @@ function renderScreen({
           copyTarget={copyTarget}
           canCopyFocused={focusHasResolvableCopy}
           deps={workflowDeps}
+          readClipboardImage={interactionDeps?.readClipboardImage}
+          listProjectFiles={interactionDeps?.listProjectFiles}
         />
       );
-    case 'summary':
-      return (
-        <SummaryScreen commands={commands} onRuntimeCommand={(raw) => onRuntime(raw, 'summary')} />
-      );
     case 'setup':
-      return <SetupScreen />;
+      return <SetupScreen deps={interactionDeps?.setup} />;
     default:
       return assertNever(screen);
   }
@@ -99,11 +113,13 @@ function renderOverlay({
   screen,
   commands,
   onRuntime,
+  interactionDeps,
 }: {
   active: OverlayType;
   screen: Screen;
   commands: RuntimeCommandDef[];
   onRuntime: (raw: string) => void;
+  interactionDeps?: AppInteractionDeps | undefined;
 }): ReactNode | null {
   switch (active) {
     case 'none':
@@ -116,20 +132,27 @@ function renderOverlay({
       return <SkillsPicker />;
     case 'settings':
       return <SettingsOverlay />;
-    case 'mode-selector':
-      return <ModeSelector />;
     case 'planner-picker':
-      return <ToolModelPicker role="planner" />;
+      return <ToolModelPicker role="planner" deps={interactionDeps?.picker} />;
     case 'implementer-picker':
-      return <ToolModelPicker role="implementer" />;
+      return <ToolModelPicker role="implementer" deps={interactionDeps?.picker} />;
     case 'reviewer-picker':
-      return <ToolModelPicker role="reviewer" />;
+      return <ToolModelPicker role="reviewer" deps={interactionDeps?.picker} />;
+    case 'stop-sheet':
+      // This focus owner is rendered above the workflow composer, without covering the page.
+      return null;
     case 'sessions':
-      return <SessionsPicker />;
+      // `SessionsPicker.deps` is required-when-present, so an absent interaction object
+      // passes no prop at all rather than an explicit `undefined`.
+      return (
+        <SessionsPicker
+          {...(interactionDeps === undefined ? {} : { deps: interactionDeps.home.sessionSelect })}
+        />
+      );
+    case 'usage-details':
+      return <UsageOverlay />;
     case 'editor':
       return <EditorOverlay />;
-    case 'cost-drilldown':
-      return <CostDrilldownOverlay />;
     default:
       return assertNever(active);
   }

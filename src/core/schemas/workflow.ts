@@ -1,20 +1,30 @@
 import { z } from 'zod';
-import { PhaseSchema, WorkflowModeSchema, ApproveLevelSchema, type Phase } from './enums.js';
+import {
+  PhaseSchema,
+  WorkflowModeSchema,
+  ApproveLevelSchema,
+  REVIEW_STATUSES,
+  ValidationStageSchema,
+  type Phase,
+} from './enums.js';
 import { TaskSchema } from './task.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema } from './recovery/schemas.js';
-import { BriefRecoveryV1Schema } from './brief-recovery/document.js';
-import { BriefGenerationRefSchema, TaskExecutionPermitSchema } from './brief-owner.js';
+import { StepCutSchema, StepRefSchema } from './run-step.js';
 import { topoSort } from '../state/topo-sort.js';
+import { isRecord } from '../../utils/type-guards.js';
+import { ClarificationQuestionSchema } from './question.js';
+
+export const PlannerConversationSchema = z.object({
+  call: z.enum(['research', 'spec', 'plan', 'tasks']),
+  text: z.string(),
+  questions: z.array(ClarificationQuestionSchema),
+  answers: z.array(z.object({ reply: z.string(), answer: z.string() })),
+  answered: z.boolean().default(false),
+});
+export type PlannerConversation = z.infer<typeof PlannerConversationSchema>;
 
 export const WORKFLOW_STATE_VERSION = 4;
-
-export const StateFenceSchema = z.strictObject({
-  token: z.number().int().nonnegative(),
-  ownerId: z.string().min(1),
-});
-
-export type StateFence = z.infer<typeof StateFenceSchema>;
 
 const nonnegativeInteger = z.number().int().nonnegative();
 
@@ -27,6 +37,14 @@ export const DiscoveredValidationSchema = z.object({
 });
 
 export type DiscoveredValidation = z.infer<typeof DiscoveredValidationSchema>;
+
+export const ValidationBaselineSchema = z.object({
+  failingStages: z.array(ValidationStageSchema),
+  commands: z.partialRecord(ValidationStageSchema, z.string()),
+  failures: z.partialRecord(ValidationStageSchema, z.array(z.string())),
+});
+
+export type PersistedValidationBaseline = z.infer<typeof ValidationBaselineSchema>;
 
 export const QueuedMessageSchema = z.object({
   id: z.string(),
@@ -44,6 +62,18 @@ export const ChangedFilesSnapshotSchema = z.object({
   head: z.string(),
   files: z.array(z.string()),
   dirtyFileContents: z.record(z.string(), z.string().nullable()),
+  // Fresh snapshots retain exact bytes and modes; legacy text snapshots still load.
+  dirtyFileEntries: z
+    .record(
+      z.string(),
+      z
+        .object({
+          base64: z.string(),
+          mode: z.number().int().min(0).max(0o777),
+        })
+        .nullable(),
+    )
+    .optional(),
   gitlinks: z.array(z.string()).optional(),
   baselineFileHashes: z.record(z.string(), z.string().nullable()).optional(),
   ignoreProjectDir: z.string().optional(),
@@ -59,20 +89,10 @@ export const ChangedFilesBaselineSchema = z.object({
 });
 
 const TASK_ACTIVE_PHASES = new Set<Phase>(['validating-task', 'escalating']);
-const READY_BRIEF_RECOVERY_PHASES = new Set<Phase>([
-  'implementing',
-  'validating-task',
-  'escalating',
-  'final-review',
-]);
 
 const WorkflowStateFields = {
   stateVersion: z.literal(WORKFLOW_STATE_VERSION),
   stateRevision: nonnegativeInteger,
-  stateFence: StateFenceSchema,
-  authorityRevision: nonnegativeInteger.optional(),
-  generation: BriefGenerationRefSchema.nullable().optional(),
-  permit: TaskExecutionPermitSchema.nullable().optional(),
   phase: PhaseSchema,
   feature: z.string(),
   currentTaskIndex: z.number().int().nonnegative(),
@@ -93,7 +113,6 @@ const WorkflowStateFields = {
   approve: ApproveLevelSchema.optional(),
   selectedSkills: z.array(z.string()).optional(),
   awaitingContinue: z.boolean().default(false),
-  budgetPauseAcknowledgedAtCost: z.number().optional(),
   messageQueue: z.array(QueuedMessageSchema).default([]),
   rewindPending: z
     .object({
@@ -103,15 +122,47 @@ const WorkflowStateFields = {
     .optional(),
   changedFilesBaseline: ChangedFilesBaselineSchema.optional(),
   pendingRecovery: RecoveryIssueSchema.optional(),
+  pendingPlannerConversation: PlannerConversationSchema.optional(),
   discoveredValidation: DiscoveredValidationSchema.optional(),
+  validationBaseline: ValidationBaselineSchema.optional(),
+  reviewFixes: z
+    .object({
+      cycle: z.number().int(),
+      findings: z.record(z.string(), z.array(z.string())),
+    })
+    .optional(),
+  reviewStatus: z.enum(REVIEW_STATUSES).optional(),
+  interruptedStep: z
+    .object({
+      step: StepRefSchema,
+      source: z.enum(['user', 'watchdog']),
+      cut: StepCutSchema.optional(),
+      partialRef: z.object({ kind: z.literal('session-log'), index: z.number().int() }).optional(),
+      at: z.string(),
+    })
+    .optional(),
+  closed: z.object({ at: z.string(), as: z.literal('ended') }).optional(),
+  lastFailure: z.object({ step: StepRefSchema, message: z.string(), at: z.string() }).optional(),
   external: z.record(z.string(), z.unknown()).optional(),
-  briefRecovery: z.preprocess(
-    (value) => (value === undefined ? null : value),
-    BriefRecoveryV1Schema.nullable(),
-  ),
 };
 
-export const WorkflowStateSchema = z.strictObject(WorkflowStateFields).superRefine((state, ctx) => {
+const LEGACY_STATE_KEYS = [
+  'stateFence',
+  'authorityRevision',
+  'generation',
+  'permit',
+  'briefRecovery',
+  'budgetPauseAcknowledgedAtCost',
+] as const;
+
+function stripLegacyStateKeys(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const record: Record<string, unknown> = { ...value };
+  for (const key of LEGACY_STATE_KEYS) delete record[key];
+  return record;
+}
+
+const WorkflowStateCoreSchema = z.strictObject(WorkflowStateFields).superRefine((state, ctx) => {
   try {
     topoSort(state.tasks);
   } catch (err) {
@@ -141,112 +192,9 @@ export const WorkflowStateSchema = z.strictObject(WorkflowStateFields).superRefi
       });
     }
   }
-
-  if (state.permit !== undefined && state.permit !== null) {
-    if (state.generation === undefined || state.generation === null) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['permit'],
-        message: 'an execution permit requires an authoritative generation',
-      });
-    }
-    if (state.authorityRevision === undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['authorityRevision'],
-        message: 'an execution permit requires an authority revision',
-      });
-    } else if (state.permit.authorityRevision !== state.authorityRevision) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['permit', 'authorityRevision'],
-        message: 'permit authority revision must match workflow authority revision',
-      });
-    }
-    if (state.generation !== undefined && state.generation !== null) {
-      if (
-        state.permit.generationId !== state.generation.generationId ||
-        state.permit.manifestDigest !== state.generation.manifestDigest ||
-        state.permit.tasksDigest !== state.generation.tasksDigest ||
-        state.permit.qualityDigest !== state.generation.qualityDigest
-      ) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['permit'],
-          message: 'permit must identify the current generation digests',
-        });
-      }
-    }
-    if (state.briefRecovery === null) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['briefRecovery'],
-        message: 'an execution permit requires ready recovery authority',
-      });
-    } else {
-      if (state.briefRecovery.status !== 'ready') {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['briefRecovery', 'status'],
-          message: 'an execution permit requires ready recovery authority',
-        });
-      }
-      if (state.permit.epochId !== state.briefRecovery.epochId) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['permit', 'epochId'],
-          message: 'permit epoch must match the current Brief recovery epoch',
-        });
-      }
-    }
-  }
-
-  if (
-    state.generation !== undefined &&
-    state.generation !== null &&
-    state.authorityRevision === undefined
-  ) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['authorityRevision'],
-      message: 'an authoritative generation requires an authority revision',
-    });
-  }
-
-  const recovery = state.briefRecovery;
-
-  if (state.phase === 'reviewing-briefs') {
-    if (recovery !== null && recovery.status === 'rejected') {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['briefRecovery', 'status'],
-        message: 'rejected Brief archives belong to the idle phase',
-      });
-    }
-  } else if (READY_BRIEF_RECOVERY_PHASES.has(state.phase)) {
-    if (recovery !== null && recovery.status !== 'ready') {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['briefRecovery', 'status'],
-        message: 'task execution phases require ready Brief recovery authority',
-      });
-    }
-  } else if (state.phase === 'idle') {
-    if (recovery !== null && recovery.status !== 'rejected') {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['briefRecovery', 'status'],
-        message: 'idle may only retain a rejected Brief archive',
-      });
-    }
-  } else if (recovery !== null) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['briefRecovery'],
-      message: 'Brief recovery is scoped to reviewing-briefs or an idle rejected archive',
-    });
-  }
 });
+
+export const WorkflowStateSchema = z.preprocess(stripLegacyStateKeys, WorkflowStateCoreSchema);
 
 export type PersistedWorkflowState = z.infer<typeof WorkflowStateSchema>;
 
@@ -255,12 +203,10 @@ export type PersistedWorkflowState = z.infer<typeof WorkflowStateSchema>;
 // pre-persistence construction assignable without weakening that boundary.
 export type WorkflowStateAssembly = Omit<
   PersistedWorkflowState,
-  'stateVersion' | 'stateRevision' | 'stateFence' | 'briefRecovery'
+  'stateVersion' | 'stateRevision'
 > & {
   stateVersion: number;
   stateRevision?: number;
-  stateFence?: StateFence;
-  briefRecovery?: PersistedWorkflowState['briefRecovery'];
 };
 export type WorkflowState = WorkflowStateAssembly;
 export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;

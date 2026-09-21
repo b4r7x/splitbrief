@@ -107,9 +107,11 @@ describe('planner text rows', () => {
       event,
       globalIndex: 0,
       expanded: false,
-      ctx: { width: 4, viewportRows: 20, streaming },
+      ctx: { width: 5, viewportRows: 20, streaming },
     }).map(rowText);
 
+    // Five columns past the row's three-cell leading leave a two-cell body: the payload the OSC 52
+    // sequence carries never reaches it, so only `abcdefgh` is wrapped.
     expect(lines).toEqual(['ab', 'cd', 'ef', 'gh']);
     expect(lines.every((line) => getTerminalCellWidth(line) <= 2)).toBe(true);
   });

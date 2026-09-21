@@ -5,15 +5,15 @@ import {
   parseReviewCommand,
   reviewOpeningPromptMessage,
 } from './review-commands.js';
-import { fitKeyLegend } from './input-hints.js';
+import { fitKeyLegend } from '../../core/key-legend.js';
 
 describe('REVIEW_HINT', () => {
   // Asserted against the literal legend rather than against the constant it names, so the
   // assertion still fails if the legend changes wording, order, or separator.
   it('names four keys once each, in one order, for every review phase', () => {
-    expect(REVIEW_HINT).toBe('y approve · c comment · q reject · e edit');
+    expect(REVIEW_HINT).toBe('y approve · c comment · q end run · e edit');
     expect(reviewOpeningPromptMessage()).toBe(
-      'Review prompt is opening. Once active, use: y approve · c comment · q reject · e edit',
+      'Review prompt is opening. Once active, use: y approve · c comment · q end run · e edit',
     );
   });
 
@@ -22,12 +22,12 @@ describe('REVIEW_HINT', () => {
     expect(fitKeyLegend(REVIEW_HINT, 78)).toBe(REVIEW_HINT);
     // At 40 columns the fourth token does not fit; it is dropped whole rather than ellipsised,
     // and `e` stays reachable through ctrl+e and the composer placeholder.
-    expect(fitKeyLegend(REVIEW_HINT, 40)).toBe('y approve · c comment · q reject');
+    expect(fitKeyLegend(REVIEW_HINT, 40)).toBe('y approve · c comment · q end run');
     expect(fitKeyLegend(REVIEW_HINT, 40)).not.toContain('…');
   });
 
   it('offers only commands the parser accepts when it rejects one', () => {
-    for (const command of ['approve', 'reject', 'edit']) {
+    for (const command of ['approve', 'end-run', 'edit']) {
       expect(REVIEW_UNKNOWN_COMMAND_MESSAGE).toContain(command);
       expect(parseReviewCommand(command)).not.toBeNull();
     }
@@ -44,9 +44,10 @@ describe('parseReviewCommand', () => {
   it.each([
     ['approve', { kind: 'brief-review-command', command: { action: 'approve' } }],
     ['yes', { kind: 'brief-review-command', command: { action: 'approve' } }],
-    ['reject', { kind: 'brief-review-command', command: { action: 'reject' } }],
-    ['quit', { kind: 'brief-review-command', command: { action: 'reject' } }],
-    ['q', { kind: 'brief-review-command', command: { action: 'reject' } }],
+    ['end-run', { kind: 'brief-review-command', command: { action: 'end-run' } }],
+    ['reject', { kind: 'brief-review-command', command: { action: 'end-run' } }],
+    ['quit', { kind: 'brief-review-command', command: { action: 'end-run' } }],
+    ['q', { kind: 'brief-review-command', command: { action: 'end-run' } }],
     [
       'comment explain the failure',
       {

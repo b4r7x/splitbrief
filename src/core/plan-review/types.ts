@@ -1,4 +1,3 @@
-import type { ImplementerCostTier } from '../schemas/implementer-config.js';
 import type {
   CurrentCodeContextMode,
   TaskContextFit,
@@ -26,8 +25,6 @@ export interface PlanReviewConflictMetadata {
 export interface PlanTaskReviewMetadata {
   taskId: TaskId;
   workerProfile?: string | undefined;
-  selectedCostTier?: ImplementerCostTier | undefined;
-  costPosture?: string | undefined;
   contextFit?: TaskContextFit | undefined;
   estimatedTokens?: number | undefined;
   contextLength?: number | undefined;

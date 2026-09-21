@@ -1,15 +1,10 @@
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { Text, useInput } from 'ink';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { Composer } from '../../components/composer/composer.js';
-import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
 import {
@@ -21,13 +16,9 @@ import type {
   PreparationOutcome,
   PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
-import { observePreparationCleanup } from './observe-cleanup.js';
 import { useStartPreparation } from './use-start-preparation.js';
 
 const OWNERSHIP_FILE = '.prepare-owner.json';
-const ENTER = '\r';
-const ESC = '\x1b';
-const CTRL_U = '\x15';
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -73,37 +64,6 @@ function Harness({ prepare, onPrepared, onBack, onEscape, onAttempt }: HarnessPr
   return <Text>{controller.state.kind}</Text>;
 }
 
-// Mirrors the home wiring (src/app/screens/home.tsx): the composer clears its draft on
-// every submit, so only the controller's republished draftRestore can put the text back.
-// The submit counter is the settle signal — the composer bumps it in the same commit that
-// clears the input, so a frame showing both the counter and the text is a restored one.
-function ComposerHarness({ prepare }: Readonly<{ prepare: Prepare }>) {
-  const [submits, setSubmits] = useState(0);
-  const controller = useStartPreparation<string>({ prepare, onPrepared: () => {} });
-
-  useInput((_input, key) => {
-    if (key.escape) controller.cancel();
-  });
-
-  return (
-    <Box flexDirection="column">
-      <Text>{`${controller.state.kind} submits:${submits}`}</Text>
-      <Composer
-        commands={[]}
-        currentScreen="home"
-        mode="normal"
-        hint=""
-        onSubmit={(text) => {
-          setSubmits((count) => count + 1);
-          observePreparationCleanup(controller.submit(text));
-        }}
-        onRuntimeCommand={() => {}}
-        draftRestore={controller.draftRestore}
-      />
-    </Box>
-  );
-}
-
 function readinessReport(projectDir = '/project'): ReadinessReport {
   return {
     generatedAt: '2026-08-04T00:00:00.000Z',
@@ -138,7 +98,6 @@ function prepared(id: string): Extract<PreparationOutcome, { kind: 'prepared' }>
     candidate: createSessionPreparationCandidate({
       projectDir,
       feature: 'feature',
-      persistTranscript: config.workflow.persistTranscript,
       sessionId: id,
     }),
   });
@@ -496,51 +455,6 @@ describe('useStartPreparation', () => {
     ui.stdin.write('b');
     second.resolve({ kind: 'aborted' });
     await flushEffects();
-    ui.unmount();
-  });
-});
-
-describe('useStartPreparation composer draft', () => {
-  beforeEach(() => {
-    resetAllStores();
-    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
-  });
-
-  it('keeps the draft in the composer across a repeat Enter and restores it on cancel', async () => {
-    const pending = Promise.withResolvers<PreparationOutcome>();
-    const prepare = vi.fn<Prepare>(() => pending.promise);
-    const ui = renderFeature(<ComposerHarness prepare={prepare} />);
-    const frame = () => stripAnsiStyles(ui.lastFrame());
-
-    await flushEffects();
-    ui.stdin.write('restore this draft');
-    await vi.waitFor(() => expect(frame()).toContain('restore this draft'));
-
-    ui.stdin.write(ENTER);
-    await vi.waitFor(() => {
-      expect(frame()).toContain('preparing submits:1');
-      expect(frame()).toContain('restore this draft');
-    });
-    expect(prepare).toHaveBeenCalledOnce();
-
-    ui.stdin.write(' plus a late edit');
-    await vi.waitFor(() => expect(frame()).toContain('restore this draft plus a late edit'));
-
-    ui.stdin.write(ENTER);
-    await vi.waitFor(() => {
-      expect(frame()).toContain('preparing submits:2');
-      expect(frame()).toContain('restore this draft plus a late edit');
-    });
-    expect(prepare).toHaveBeenCalledOnce();
-
-    ui.stdin.write(CTRL_U);
-    await vi.waitFor(() => expect(frame()).not.toContain('restore this draft'));
-
-    ui.stdin.write(ESC);
-    await vi.waitFor(() => {
-      expect(frame()).toContain('idle submits:2');
-      expect(frame()).toContain('restore this draft');
-    });
     ui.unmount();
   });
 });

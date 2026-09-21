@@ -3,21 +3,42 @@ import { cp, copyFile, lstat, mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
+import type { EvidencePromotedFile } from '../../../core/schemas/evidence.js';
 import { INTERNAL_SKIP_DIRS, SPLITBRIEF_DIR, TREES_DIR } from '../../../core/paths.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import { listTrackedAndUntrackedFiles } from '../../../lib/git/files.js';
-import { assertPathConfined } from '../../../lib/path-confinement.js';
+import { assertPathConfined, assertWritablePathConfined } from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
+import { sha256Hex } from '../../../utils/sha256.js';
+import { error } from '../../../utils/error.js';
 import { createRunnerSandboxEnv, createSandboxEnv } from '../../runners/sandbox-env.js';
 import { captureProjectFileHashes, getChangedFilesSnapshot } from './file-snapshots/capture.js';
-import type { FileContentSnapshot } from './file-snapshots/types.js';
-import { readCurrentFileContent, writeCurrentFileContent } from './file-snapshots/contents.js';
+import { readCurrentFileContent } from './file-snapshots/contents.js';
+import {
+  type AcquisitionBaseline,
+  captureAcquisitionBaseline,
+  matchesAcquisitionBaseline,
+  readConfinedEntry,
+  writeConfinedEntry,
+  type FileSnapshotEntry,
+} from './file-snapshots/entry.js';
 import type { IsolationRole, IsolatedWorkspace } from '../isolation/types.js';
+
+/** Which file's apply failed and why; the promotion stopped there. */
+export type PromotionFailure = { failedFile: string; error: unknown };
 
 export type PromoteStagedChangesResult = {
   promotedFiles: string[];
   conflictedFiles: string[];
+  failure?: PromotionFailure;
+  /** Exact entries committed before an interrupted promotion. */
+  appliedFiles?: EvidencePromotedFile[];
 };
+
+export const stagedProjectError = {
+  conflict: (file: string) =>
+    error('approval-promotion-conflict', `Target changed before promotion: ${file}`, { file }),
+} as const;
 
 const GITIGNORE_FILE = '.gitignore';
 const GITIGNORE_BOOKKEEPING_LINES = new Set([`${SPLITBRIEF_DIR}/`, `${TREES_DIR}/`]);
@@ -98,10 +119,22 @@ export async function createStagedProject(
   config?: Config,
   role: IsolationRole = 'implementer',
 ): Promise<IsolatedWorkspace> {
-  const snapshot = await getChangedFilesSnapshot(projectDir);
+  // Before the copy, so an edit racing the copy lands on the worker's side of
+  // the baseline and is reported as a conflict rather than silently overwritten.
+  const targetBaseline = await captureAcquisitionBaseline(projectDir);
+  // The staged copy skips symlinked entries, so the snapshot describes the tree
+  // the worker receives: a source symlink is recorded as absent, not refused —
+  // this strategy is the fallback for exactly those sources.
+  const snapshot = await getChangedFilesSnapshot(projectDir, undefined, {
+    symlinkedEntriesAsAbsent: true,
+  });
   const stagedRoot = await mkdtemp(join(tmpdir(), `${SPLITBRIEF_IDENTITY.slug}-stage-`));
   try {
     const stagedProjectDir = join(stagedRoot, basename(projectDir));
+    // Git can legitimately return no copyable entries (an empty repository or
+    // a project whose files are all excluded). The hash walk still needs a
+    // real staged root in that case.
+    await mkdir(stagedProjectDir, { recursive: true });
     await copyProjectFiles(projectDir, stagedProjectDir);
     const baselineFileHashes = await captureProjectFileHashes(stagedProjectDir, {
       ignoreProjectDir: projectDir,
@@ -113,6 +146,7 @@ export async function createStagedProject(
       projectDir: stagedProjectDir,
       sandboxEnv,
       snapshot: { ...snapshot, baselineFileHashes, ignoreProjectDir: projectDir },
+      targetBaseline,
       cleanup: () => {
         rmSync(stagedRoot, { recursive: true, force: true });
       },
@@ -123,50 +157,83 @@ export async function createStagedProject(
   }
 }
 
-async function contentToPromote(opts: {
+async function entryToPromote(opts: {
   targetProjectDir: string;
   stagedProjectDir: string;
   file: string;
-}): Promise<string | null> {
+}): Promise<FileSnapshotEntry> {
   const { targetProjectDir, stagedProjectDir, file } = opts;
-  const staged = await readCurrentFileContent(stagedProjectDir, file);
-  if (file !== GITIGNORE_FILE || staged === null) return staged;
-  return stripGitignoreBookkeeping(staged, await readCurrentFileContent(targetProjectDir, file));
+  const staged = await readConfinedEntry(stagedProjectDir, file);
+  if (file !== GITIGNORE_FILE || staged.kind !== 'file') return staged;
+  // The .gitignore is the only promoted file whose bytes are decoded: it keeps
+  // its bookkeeping strip; every other file is carried byte for byte with its
+  // ordinary permission bits.
+  const bytes = Buffer.from(
+    stripGitignoreBookkeeping(
+      staged.bytes.toString('utf8'),
+      await readCurrentFileContent(targetProjectDir, file),
+    ),
+    'utf8',
+  );
+  return { kind: 'file', bytes, sha256: sha256Hex(bytes), mode: staged.mode };
 }
 
 export async function promoteStagedChanges(opts: {
   targetProjectDir: string;
   stagedProjectDir: string;
   files: string[];
-  expectedCurrentContents: FileContentSnapshot;
+  targetBaseline: AcquisitionBaseline | undefined;
 }): Promise<PromoteStagedChangesResult> {
-  const { targetProjectDir, stagedProjectDir, files, expectedCurrentContents } = opts;
-  const promotedFiles: string[] = [];
+  const { targetProjectDir, stagedProjectDir, files, targetBaseline } = opts;
   for (const file of files) {
-    assertPathConfined(file, targetProjectDir);
+    assertWritablePathConfined(file, targetProjectDir);
     assertPathConfined(file, stagedProjectDir);
   }
-  const conflictResults = await Promise.all(
-    files.map(async (file): Promise<string | null> => {
-      if (!Object.hasOwn(expectedCurrentContents, file)) return null;
-      return (await readCurrentFileContent(targetProjectDir, file)) !==
-        expectedCurrentContents[file]
-        ? file
-        : null;
-    }),
-  );
-  const conflictedFiles = conflictResults.filter((f): f is string => f !== null);
+  // A workspace acquired without a baseline holds no authority over the target:
+  // an unknown target is a conflict, never an overwrite.
+  if (targetBaseline === undefined) return { promotedFiles: [], conflictedFiles: [...files] };
 
+  const preflight = await Promise.all(
+    files.map(
+      async (file): Promise<string | null> =>
+        (await matchesAcquisitionBaseline(targetProjectDir, file, targetBaseline)) ? null : file,
+    ),
+  );
+  const conflictedFiles = preflight.filter((file): file is string => file !== null);
   if (conflictedFiles.length > 0) {
-    return { promotedFiles, conflictedFiles };
+    return { promotedFiles: [], conflictedFiles };
   }
 
+  const promotedFiles: string[] = [];
+  const appliedFiles: EvidencePromotedFile[] = [];
   for (const file of files) {
-    await writeCurrentFileContent(
-      targetProjectDir,
-      file,
-      await contentToPromote({ targetProjectDir, stagedProjectDir, file }),
-    );
+    const conflict = stagedProjectError.conflict(file);
+    try {
+      const entry = await entryToPromote({ targetProjectDir, stagedProjectDir, file });
+      // Recheck after preparing bytes and mode, immediately before replacement.
+      // A filesystem rename is atomic, but is not a portable compare-and-swap.
+      await writeConfinedEntry(targetProjectDir, file, entry, async () => {
+        if (!(await matchesAcquisitionBaseline(targetProjectDir, file, targetBaseline))) {
+          throw conflict;
+        }
+      });
+      appliedFiles.push(
+        entry.kind === 'file'
+          ? { path: file, sha256: entry.sha256, mode: entry.mode & 0o777 }
+          : { path: file, sha256: null, mode: null },
+      );
+    } catch (err) {
+      if (err === conflict) return { promotedFiles, conflictedFiles: [file], appliedFiles };
+      // A failed apply stops the promotion where it stands. Nothing is rolled
+      // back and no later file is attempted, so promotedFiles is the exact
+      // prefix the target now holds and the rest is untouched.
+      return {
+        promotedFiles,
+        conflictedFiles: [],
+        appliedFiles,
+        failure: { failedFile: file, error: err },
+      };
+    }
     promotedFiles.push(file);
   }
 

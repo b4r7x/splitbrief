@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { renderFeature } from '#testing/helpers/ink.js';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -7,10 +7,11 @@ import { overlayStore } from '../../../stores/ui/overlay.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { rowText } from '../conversation-rows/row-format/rows.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
-import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { CostApprovalPrompt } from './cost-approval-prompt.js';
+import { ApprovalPrompt } from './approval-prompt.js';
+import { approvalPromptStore, openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
+import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 
 // Stripping every ANSI style sequence reproduces exactly what a NO_COLOR / FORCE_COLOR=0 terminal
 // paints: both hue (SGR colour) and the dimColor faint attribute are gone. What survives is the
@@ -19,6 +20,15 @@ import { CostApprovalPrompt } from './cost-approval-prompt.js';
 
 function monoFrame(frame: string | undefined): string {
   return stripAnsiStyles(frame ?? '');
+}
+
+function confirmRequest(): TieredApprovalRequest {
+  return {
+    tier: 'confirm',
+    actionClass: 'destructive',
+    actionDescription: '.splitbrief/state.json',
+    phase: 'implementing',
+  };
 }
 
 beforeEach(() => {
@@ -31,10 +41,11 @@ beforeEach(() => {
 // emits the heavy frame, then strip ANSI to drop hue. (The non-TTY test default would otherwise
 // resolve the ascii tier, where every border collapses to `classic` and the test would assert a
 // degradation it is not trying to measure.)
-describe('mono legibility — the cost approval gate without colour (unicode terminal)', () => {
+describe('mono legibility — the tiered approval gate without colour (unicode terminal)', () => {
   let restoreTTY: () => void;
 
   beforeEach(() => {
+    approvalPromptStore.__testReset();
     const descriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
     const prevTerm = process.env.TERM;
     const prevLang = process.env.LANG;
@@ -52,16 +63,14 @@ describe('mono legibility — the cost approval gate without colour (unicode ter
 
   afterEach(() => {
     restoreTTY();
+    approvalPromptStore.__testReset();
   });
 
-  it('keeps the bold gate border as a distinct heavy weight, never confused with round/single', () => {
-    const ui = renderFeature(
-      <CostApprovalPrompt
-        prediction={makeCostPrediction()}
-        onApprove={vi.fn()}
-        onReject={vi.fn()}
-      />,
-    );
+  it('keeps the bold gate border as a distinct heavy weight, never confused with round/single', async () => {
+    const ui = renderFeature(<ApprovalPrompt />);
+    void openApprovalPrompt(confirmRequest());
+    await tick(1);
+    await flushEffects();
     const frame = monoFrame(ui.lastFrame());
 
     // "bold border = stop and decide" survives the strip because the heavy box glyphs are shape,
@@ -74,26 +83,18 @@ describe('mono legibility — the cost approval gate without colour (unicode ter
     ui.unmount();
   });
 
-  it('marks the default action with the ▸ cursor and keeps numbers as words, not hue', () => {
-    const ui = renderFeature(
-      <CostApprovalPrompt
-        prediction={makeCostPrediction()}
-        onApprove={vi.fn()}
-        onReject={vi.fn()}
-      />,
-    );
+  it('marks the default action with the ▸ cursor, not a hue', async () => {
+    const ui = renderFeature(<ApprovalPrompt />);
+    void openApprovalPrompt(confirmRequest());
+    await tick(1);
+    await flushEffects();
     const frame = monoFrame(ui.lastFrame());
 
-    // The approve action is the focused default: the ▸ cursor (not a hue) points at it.
     const cursor = glyph('cursor');
-    const approveLine = frame.split('\n').find((row) => row.includes('Approve')) ?? '';
-    expect(approveLine).toContain(cursor);
-    expect(approveLine.indexOf(cursor)).toBeLessThan(approveLine.indexOf('Approve'));
-    expect(frame).toContain('x   Deny');
-    // The savings comparison reads as text/figures, so the "saving" emphasis (green in colour mode)
-    // is not the only thing distinguishing it.
-    expect(frame).toContain('$0.14');
-    expect(frame).toContain('saving');
+    const confirmLine = frame.split('\n').find((row) => row.includes('Confirm')) ?? '';
+    expect(confirmLine).toContain(cursor);
+    expect(confirmLine.indexOf(cursor)).toBeLessThan(confirmLine.indexOf('Confirm'));
+    expect(frame).toContain('Deny');
     ui.unmount();
   });
 });

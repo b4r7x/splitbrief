@@ -3,7 +3,6 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import {
   makeCallbacks,
   makeImplementer,
@@ -33,30 +32,6 @@ function setupProject(): { projectDir: string; sessionId: string } {
   dirs.push(projectDir);
   return { projectDir, sessionId };
 }
-
-// A custom endpoint carries no catalog vendor, so its rates come from the
-// models.dev catalog keyed by model id.
-const BUDGET_IMPLEMENTER = {
-  provider: 'custom-endpoint',
-  apiBase: 'https://api.example.com/v1',
-  apiKey: 'test-key',
-  model: 'deepseek-v4-flash',
-};
-
-const BUDGET_MODEL_CACHE = makeModelCacheAccessor({
-  catalog: {
-    'test-vendor': {
-      id: 'test-vendor',
-      models: {
-        'deepseek-v4-flash': {
-          id: 'deepseek-v4-flash',
-          cost: { input: 0.3, output: 0.6 },
-          limit: { context: 128_000 },
-        },
-      },
-    },
-  },
-});
 
 function setupSessionOnly(): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('task-loop-test');
@@ -106,7 +81,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       reason: 'dependency-blocked',
       taskId: 'T002',
       affectedTaskIds: ['T001', 'T002'],
-      availableActions: ['skip-current-task', 'pause-run', 'abort-workflow'],
+      availableActions: ['skip-current-task', 'pause-run', 'end-run'],
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'dependency-blocked',
@@ -117,7 +92,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         type: 'recovery_prompted',
         reason: 'dependency-blocked',
         taskId: 'T002',
-        availableActions: ['skip-current-task', 'pause-run', 'abort-workflow'],
+        availableActions: ['skip-current-task', 'pause-run', 'end-run'],
         recommendedAction: 'pause-run',
       }),
     );
@@ -185,7 +160,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
             offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'tiny-cloud',
-            costTier: 'cheap',
             contextLength: 10,
           },
           'tiny-local': {
@@ -195,7 +169,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
             offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'tiny-local',
-            costTier: 'local',
             contextLength: 10,
           },
         },
@@ -228,7 +201,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'context-overflow',
       taskId: 'T001',
-      availableActions: ['pause-run', 'abort-workflow'],
+      availableActions: ['pause-run', 'end-run'],
       recommendedAction: 'pause-run',
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
@@ -244,7 +217,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         type: 'recovery_prompted',
         reason: 'context-overflow',
         taskId: 'T001',
-        availableActions: ['pause-run', 'abort-workflow'],
+        availableActions: ['pause-run', 'end-run'],
         recommendedAction: 'pause-run',
       }),
     );
@@ -355,7 +328,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           type: 'warning',
           code: 'recovery_pending_unresolved',
           category: 'recovery',
-          transcriptSafe: true,
           message: expect.stringContaining('context-overflow'),
         }),
       );
@@ -370,112 +342,4 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       expect(result.state.pendingRecovery?.status).toBe(status);
     },
   );
-
-  it('persists budget pause recovery after a task boundary', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001' });
-    const state = makeImplState([task]);
-    const implementer = makeImplementer({
-      implement: vi.fn().mockResolvedValue({
-        success: true,
-        output: 'code',
-        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
-      }),
-    });
-
-    const result = await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({
-          implementer: BUDGET_IMPLEMENTER,
-          workflow: { ...defaultWorkflow, maxBudget: 1.5, budgetPauseThreshold: 0.25 },
-        }),
-        implementer,
-        modelCache: BUDGET_MODEL_CACHE,
-      }),
-      initialState: state,
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(result.status).toBe('stopped');
-    expect(result.state.tasks[0]?.status).toBe('done');
-    expect(result.state.pendingRecovery).toMatchObject({
-      reason: 'budget-paused',
-      availableActions: ['continue', 'pause-run', 'abort-workflow'],
-    });
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery?.reason).toBe('budget-paused');
-  });
-
-  it('does not re-pause after a budget pause has been acknowledged', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001' });
-    const state = { ...makeImplState([task]), budgetPauseAcknowledgedAtCost: 0.4 };
-    const implementer = makeImplementer({
-      implement: vi.fn().mockResolvedValue({
-        success: true,
-        output: 'code',
-        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
-      }),
-    });
-
-    const result = await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({
-          implementer: BUDGET_IMPLEMENTER,
-          workflow: { ...defaultWorkflow, maxBudget: 1.5, budgetPauseThreshold: 0.25 },
-        }),
-        implementer,
-        modelCache: BUDGET_MODEL_CACHE,
-      }),
-      initialState: state,
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(result.status).toBe('complete');
-    expect(result.state.tasks[0]?.status).toBe('done');
-    expect(result.state.pendingRecovery).toBeUndefined();
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
-  });
-
-  it('persists budget exceeded recovery without ordinary continue', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001' });
-    const state = makeImplState([task]);
-    const implementer = makeImplementer({
-      implement: vi.fn().mockResolvedValue({
-        success: true,
-        output: 'code',
-        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
-      }),
-    });
-
-    const result = await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({
-          implementer: BUDGET_IMPLEMENTER,
-          workflow: { ...defaultWorkflow, maxBudget: 0.1 },
-        }),
-        implementer,
-        modelCache: BUDGET_MODEL_CACHE,
-      }),
-      initialState: state,
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(result.status).toBe('stopped');
-    expect(result.state.pendingRecovery).toMatchObject({
-      reason: 'budget-exceeded',
-      availableActions: ['pause-run', 'abort-workflow'],
-    });
-    expect(result.state.pendingRecovery?.availableActions).not.toContain('continue');
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery?.reason).toBe('budget-exceeded');
-  });
 });

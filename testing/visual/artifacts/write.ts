@@ -80,8 +80,8 @@ export async function writeArtifactBundle(
     });
     const manifested = await stageArtifactManifest(publication, manifest);
     return await publishArtifactPublication(manifested);
-  } catch {
+  } catch (error) {
     await discardPublicationLayout(layout);
-    throw new Error('Visual artifact bundle publication failed');
+    throw new Error('Visual artifact bundle publication failed', { cause: error });
   }
 }

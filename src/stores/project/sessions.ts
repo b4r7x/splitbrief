@@ -1,28 +1,30 @@
 import { createStore, storeBase } from '../create-store.js';
-import { listRecentSessions, listAllSessions } from '../../core/sessions/io.js';
+import { listSessions } from '../../core/sessions/io.js';
 import type { Session } from '../../core/schemas/session.js';
 
 interface SessionsState {
   sessions: Session[];
-  allSessions: Session[];
   totalCount: number;
+  /** The project the list was read from, so a run that just ended can refresh it. */
+  projectDir: string | null;
 }
 
-const initial: SessionsState = { sessions: [], allSessions: [], totalCount: 0 };
+const initial: SessionsState = { sessions: [], totalCount: 0, projectDir: null };
 
 const store = createStore<SessionsState>(initial);
 
 function load(projectDir: string) {
-  const { sessions, total } = listRecentSessions(projectDir);
-  store.set((s) => ({ ...s, sessions, totalCount: total }));
+  const sessions = listSessions(projectDir);
+  store.set({ sessions, totalCount: sessions.length, projectDir });
 }
 
-function loadAll(projectDir: string) {
-  store.set((s) => ({ ...s, allSessions: listAllSessions(projectDir) }));
+function refresh() {
+  const { projectDir } = store.get();
+  if (projectDir !== null) load(projectDir);
 }
 
 function __testReset(next?: Partial<SessionsState>): void {
   store.set(next ? { ...initial, ...next } : initial);
 }
 
-export const sessionsStore = { ...storeBase(store), load, loadAll, __testReset };
+export const sessionsStore = { ...storeBase(store), load, refresh, __testReset };

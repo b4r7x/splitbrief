@@ -14,6 +14,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
+import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { handleRetryAndEscalation } from './handle.js';
 
@@ -94,9 +95,6 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         code: null,
         usage: { inputTokens: 50, outputTokens: 25 },
       }),
-      escalateFull: vi
-        .fn()
-        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     await handleRetryAndEscalation({
@@ -141,9 +139,6 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         code: null,
         usage: { inputTokens: 50, outputTokens: 25 },
       }),
-      escalateFull: vi
-        .fn()
-        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     await handleRetryAndEscalation({
@@ -192,7 +187,6 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
         maxRetries: 1,
-        persistTranscript: true,
         compactionFormat: 'auto' as const,
         mode: 'standard' as const,
       },
@@ -224,9 +218,6 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         code: null,
         usage: { inputTokens: 50, outputTokens: 25 },
       }),
-      escalateFull: vi
-        .fn()
-        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     await handleRetryAndEscalation({
@@ -265,13 +256,24 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     const task = makeTask({ id: 'T001', file: 'src/intermediate-success.ts', action: 'create' });
     const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };
 
-    // Intermediate provider returns real OpenAI-compatible SSE with extractable code.
-    const code = '```typescript\nexport const fixed = true;\n```';
-    fetchMock.mockResolvedValue(
-      makeOpenAiSseResponse([
-        { content: code },
-        { usage: { prompt_tokens: 400, completion_tokens: 200 } },
-      ]),
+    // Intermediate provider returns real OpenAI-compatible SSE carrying a bundle.
+    const code = JSON.stringify({
+      version: 1,
+      files: [
+        {
+          path: 'src/intermediate-success.ts',
+          action: 'create',
+          content: 'export const fixed = true;\n',
+        },
+      ],
+    });
+    fetchMock.mockImplementation(
+      withLocalCatalog(['x-ai/grok-4-fast'], () =>
+        makeOpenAiSseResponse([
+          { content: code },
+          { usage: { prompt_tokens: 400, completion_tokens: 200 } },
+        ]),
+      ),
     );
 
     const implementer = makeImplementer({
@@ -354,9 +356,6 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         code: null,
         usage: { inputTokens: 50, outputTokens: 25 },
       }),
-      escalateFull: vi
-        .fn()
-        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     await handleRetryAndEscalation({
@@ -453,9 +452,6 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         code: null,
         usage: { inputTokens: 40, outputTokens: 20 },
       }),
-      escalateFull: vi
-        .fn()
-        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     });
 
     await handleRetryAndEscalation({
@@ -480,7 +476,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     expect(busEvents.find((event) => event.type === 'escalate' && event.tier === 1)).toBeDefined();
   });
 
-  it('emits ordered tier-1 and tier-2 escalate events and a failed terminal result when all tiers fail', async () => {
+  it('ends the ladder at tier 1 with a failed terminal result and no planner takeover', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = makeValidatingState();
@@ -495,6 +491,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         usage: { inputTokens: 5, outputTokens: 5 },
       }),
     });
+    const escalateFull = vi.fn();
     const planner = makePlanner({
       escalateHint: vi.fn().mockResolvedValue({
         success: true,
@@ -502,9 +499,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         code: null,
         usage: { inputTokens: 30, outputTokens: 10 },
       }),
-      escalateFull: vi
-        .fn()
-        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateFull,
     });
 
     const { result } = await handleRetryAndEscalation({
@@ -530,7 +525,9 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
       .map((event) => (event.type === 'escalate' ? event.tier : -1));
 
     expect(retryAttempts).toEqual([1, 2]);
-    expect(escalateTiers).toEqual([1, 2]);
-    expect(result).toEqual({ completed: false, method: 'failed', attempts: expect.any(Number) });
+    expect(escalateTiers).toEqual([1]);
+    // 2 local retries plus the hinted retry: every attempt was the implementer's.
+    expect(result).toEqual({ completed: false, method: 'failed', attempts: 3 });
+    expect(escalateFull).not.toHaveBeenCalled();
   });
 });

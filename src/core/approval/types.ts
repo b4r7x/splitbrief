@@ -22,4 +22,7 @@ export type ApprovalReviewResult =
   | { approved: true; action?: undefined; comment?: undefined }
   | { approved: false; action: 'edit'; comment?: string | undefined }
   | { approved: false; action: 'revise'; comment: string; taskIds?: TaskId[] | undefined }
+  | { approved: false; action: 'end-run'; comment?: undefined }
+  // No decision: a superseded or torn-down prompt. The gate re-asks rather than
+  // reading silence as an answer; only 'end-run' ends a run.
   | { approved: false; action?: undefined; comment?: undefined };

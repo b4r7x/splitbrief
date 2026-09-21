@@ -1,9 +1,9 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": [
-    "src/engine/ipc/server-entry.ts",
     "scripts/cli-conformance.ts",
     "scripts/provider-conformance.ts",
+    "testing/integration/cli/terminal-browser/child.ts",
     "testing/e2e/scenarios/**/*.test.ts"
   ],
   "project": [
@@ -16,7 +16,6 @@
     "!testing/fixtures/**",
     "!testing/e2e/*.config.ts"
   ],
-  "ignoreDependencies": ["node-pty"],
   "ignoreExportsUsedInFile": true,
   "includeEntryExports": true
 }

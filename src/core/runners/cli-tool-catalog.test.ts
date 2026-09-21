@@ -4,8 +4,6 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   ANTIGRAVITY_CLI_ADMISSION_VERDICT,
-  ANTIGRAVITY_CLI_CANDIDATE_PATHS,
-  CLI_COMPILER_EVIDENCE,
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   CLI_TOOL_TRUST,
@@ -21,10 +19,11 @@ import {
   cliToolSupportsRole,
   defaultCliAuthChannel,
   getCliModelPolicy,
+  hasNativeCliCatalog,
   selectCliAuthChannel,
   type CliModelPolicy,
 } from './cli-tool-catalog.js';
-import { classifyCliAdmittedVersion, classifyCliCompilerVersion } from './cli-version.js';
+import { classifyCliAdmittedVersion } from './cli-version.js';
 import { CLI_PLANNER_ADAPTERS } from '../../engine/runners/cli-tools/registry.js';
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '../../..');
@@ -37,6 +36,7 @@ const EXISTING_CLI_TOOL_IDS = [
   'kilo-code',
   'cursor',
   'command-code',
+  'antigravity',
 ] as const;
 
 function resolveRepoPath(relativePath: string): string {
@@ -44,12 +44,13 @@ function resolveRepoPath(relativePath: string): string {
 }
 
 describe('CLI tool catalog', () => {
-  it('admits Cursor and Command Code as active CLI tools', () => {
+  it('admits Cursor, Command Code and Antigravity as active CLI tools', () => {
     expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('PASS');
     expect(COMMAND_CODE_CLI_ADMISSION_VERDICT).toBe('PASS');
-    expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
+    expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('PASS');
     expect(CLI_TOOL_CATALOG.cursor.admission.state).toBe('active');
     expect(CLI_TOOL_CATALOG['command-code'].admission.state).toBe('active');
+    expect(CLI_TOOL_CATALOG.antigravity.admission.state).toBe('active');
     expect(Object.keys(CLI_TOOL_CATALOG)).toEqual(EXISTING_CLI_TOOL_IDS);
     expect(Object.keys(CLI_TOOL_TRUST)).toEqual(EXISTING_CLI_TOOL_IDS);
     expect(CLI_TOOL_IDS).toEqual(EXISTING_CLI_TOOL_IDS);
@@ -112,17 +113,29 @@ describe('CLI tool catalog', () => {
       'kilo-code': '0.1.0',
       cursor: '2026.08.25-3e8eec8',
       'command-code': '1.39.2',
+      antigravity: '1.2.2',
     });
   });
 
-  it('admits native catalog execution only for the five structurally declared CLIs', () => {
+  it('admits native catalog execution only for the seven structurally declared CLIs', () => {
     expect(NATIVE_CLI_CATALOG_TOOL_IDS).toEqual([
       'codex',
       'opencode',
+      'copilot',
       'kilo-code',
       'cursor',
       'command-code',
+      'antigravity',
     ]);
+    expect(hasNativeCliCatalog('copilot')).toBe(true);
+  });
+
+  it('leaves no tool declaring a static, unverifiable model catalog', () => {
+    const staticCatalogTools = CLI_TOOL_IDS.filter(
+      (id) => CLI_TOOL_CATALOG[id].modelDiscoveryMode === 'static-catalog-unverified',
+    );
+
+    expect(staticCatalogTools).toEqual([]);
   });
 
   it('declares project-internal state prefixes only for tools proven to rewrite them', () => {
@@ -140,6 +153,7 @@ describe('CLI tool catalog', () => {
       'kilo-code': [],
       cursor: [],
       'command-code': [],
+      antigravity: [],
     });
   });
 
@@ -151,7 +165,8 @@ describe('CLI tool catalog', () => {
       copilot: ['--allow-all', '--no-ask-user'],
       'kilo-code': ['--auto'],
       cursor: ['--force'],
-      'command-code': ['--permission-mode auto-accept'],
+      'command-code': ['--yolo'],
+      antigravity: [],
     } as const;
 
     for (const id of EXISTING_CLI_TOOL_IDS) {
@@ -192,53 +207,6 @@ describe('CLI tool catalog', () => {
     },
   );
 
-  it('keeps compiler evidence exact-version-only and immutable', () => {
-    expect(Object.keys(CLI_COMPILER_EVIDENCE)).toEqual(EXISTING_CLI_TOOL_IDS);
-    for (const id of EXISTING_CLI_TOOL_IDS) {
-      const evidence = CLI_COMPILER_EVIDENCE[id];
-      expect(Object.isFrozen(evidence)).toBe(true);
-      expect(Object.isFrozen(evidence.transports)).toBe(true);
-      expect(evidence.fixtureDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      if (evidence.state === 'unsupported') {
-        expect(evidence.version).toBe('');
-        expect(evidence.transports).toEqual([]);
-        expect(evidence.unsupportedReason).toBeTruthy();
-        continue;
-      }
-      expect(evidence.version).toMatch(/^\d+\.\d+\.\d+$/);
-      expect(evidence.transports.length).toBeGreaterThan(0);
-      expect(evidence.terminalContract).toMatch(/v1$/);
-    }
-  });
-
-  it('never reports compiler readiness beyond the exact tested version', () => {
-    const newerPairs = [
-      ['opencode', '1.18.16'],
-      ['claude-code', '2.1.233'],
-      ['codex', '0.147.1'],
-      ['kilo-code', '7.0.50'],
-    ] as const;
-
-    for (const [id, newerVersion] of newerPairs) {
-      const evidence = CLI_COMPILER_EVIDENCE[id];
-      expect(evidence.state).not.toBe('unsupported');
-      // The implementer-path gate stays forward-compatible...
-      expect(
-        classifyCliAdmittedVersion({
-          installedVersion: newerVersion,
-          minimumAdmittedVersion: evidence.version,
-        }),
-      ).toBe('compatible');
-      // ...but the compiler path must not borrow that readiness (REQ-049).
-      expect(
-        classifyCliCompilerVersion({
-          installedVersion: newerVersion,
-          exactAdmittedVersion: evidence.version,
-        }),
-      ).toBe('newer');
-    }
-  });
-
   it.each([
     ['claude-code', '2.1.220'],
     ['codex', '0.146.0'],
@@ -254,13 +222,11 @@ describe('CLI tool catalog', () => {
     ).toBe('compatible');
   });
 
-  it('keeps omitted candidate runtime adapter sources absent', () => {
-    for (const relativePath of ANTIGRAVITY_CLI_CANDIDATE_PATHS) {
-      expect(existsSync(resolveRepoPath(relativePath))).toBe(false);
-    }
+  it('carries the runtime adapter sources of every admitted candidate', () => {
+    expect(existsSync(resolveRepoPath('src/engine/runners/cli-tools/antigravity.ts'))).toBe(true);
     expect('cursor' in CLI_TOOL_CATALOG).toBe(true);
     expect('command-code' in CLI_TOOL_CATALOG).toBe(true);
-    expect('antigravity' in CLI_TOOL_CATALOG).toBe(false);
+    expect('antigravity' in CLI_TOOL_CATALOG).toBe(true);
   });
 
   it('excludes deferred and rejected CLI tool IDs from the assembled catalog', () => {
@@ -270,10 +236,9 @@ describe('CLI tool catalog', () => {
     }
   });
 
-  it('marks Kiro, Antigravity, Gemini, Cline, and Qwen as custom-only', () => {
+  it('marks Kiro, Gemini, Cline, and Qwen as custom-only', () => {
     expect(CUSTOM_ONLY_CLI_TOOL_DEFINITIONS.map(({ id }) => id)).toEqual([
       'kiro',
-      'antigravity',
       'gemini',
       'cline',
       'qwen',
@@ -439,14 +404,15 @@ describe('CLI tool catalog', () => {
     expect(defaultCliAuthChannel('kilo-code').id).toBe('provider-dependent');
   });
 
-  it('declares Claude Code and Cursor Agent CLI session credentials keychain items on macOS and nowhere else', () => {
+  it('declares Claude Code, Cursor Agent CLI and Antigravity session credentials keychain items on macOS and nowhere else', () => {
     for (const tool of CLI_TOOL_IDS) {
       for (const channel of CLI_TOOL_CATALOG[tool].auth.channels) {
         expect({ tool, channel: channel.id, platforms: channel.hostKeychainPlatforms }).toEqual({
           tool,
           channel: channel.id,
           platforms:
-            (tool === 'claude-code' || tool === 'cursor') && channel.id === 'session'
+            (tool === 'claude-code' || tool === 'cursor' || tool === 'antigravity') &&
+            channel.id === 'session'
               ? ['darwin']
               : [],
         });
@@ -476,10 +442,26 @@ describe('CLI tool catalog', () => {
     expect(cliAuthChannelHostStateAccess(apiKey, 'darwin')).toBe('none');
   });
 
+  // Antigravity's only channel is a session in the macOS login keychain. On
+  // Linux and Windows its credential has no admitted file to bridge, so it stays
+  // on the (empty) file bridge and is never handed the host account.
+  it('routes the Antigravity session channel through the host account only on macOS', () => {
+    const [session] = CLI_TOOL_CATALOG.antigravity.auth.channels;
+
+    expect(cliAuthChannelHostStateAccess(session, 'darwin')).toBe('host-account');
+    expect(cliAuthChannelHostStateAccess(session, 'linux')).toBe('bridged-files');
+    expect(cliAuthChannelHostStateAccess(session, 'win32')).toBe('bridged-files');
+  });
+
   it('keeps every other session channel on the file bridge, including on macOS', () => {
     for (const tool of CLI_TOOL_IDS) {
       for (const channel of CLI_TOOL_CATALOG[tool].auth.channels) {
-        if ((tool === 'claude-code' || tool === 'cursor') && channel.id === 'session') continue;
+        if (
+          (tool === 'claude-code' || tool === 'cursor' || tool === 'antigravity') &&
+          channel.id === 'session'
+        ) {
+          continue;
+        }
         expect({
           tool,
           channel: channel.id,
@@ -504,6 +486,23 @@ describe('CLI tool catalog', () => {
     expect(descriptor.effortChannel).toBe('effort-flag');
     expect(descriptor.command).toBe('cmd');
     expect(descriptor.executableAliases).toEqual(['cmd']);
+  });
+
+  it('pins Copilot to the release its help-config listing was read from', () => {
+    const descriptor = CLI_TOOL_CATALOG.copilot;
+
+    expect(descriptor.modelDiscoveryMode).toBe('native-cli');
+    expect(descriptor.compatibility.testedVersion).toBe('1.0.77');
+    expect(descriptor.compatibility.evidence.asOf).toBe('2026-09-02');
+    // Older Copilot installs stay admitted: a reshaped listing falls back to
+    // the catalog lanes, so the tested bump is not a readiness change.
+    expect(descriptor.compatibility.minimumAdmittedVersion).toBe('0.3.0');
+    expect(
+      classifyCliAdmittedVersion({
+        installedVersion: '0.3.0',
+        minimumAdmittedVersion: descriptor.compatibility.minimumAdmittedVersion,
+      }),
+    ).toBe('compatible');
   });
 
   it('pins Command Code to the version its conformance transaction exercised', () => {
@@ -538,12 +537,13 @@ describe('effort support', () => {
     );
     expect(channels).toEqual({
       'claude-code': 'effort-flag',
-      codex: 'none',
+      codex: 'effort-flag',
       opencode: 'variant',
-      copilot: 'none',
-      'kilo-code': 'none',
+      copilot: 'effort-flag',
+      'kilo-code': 'variant',
       cursor: 'model-id',
       'command-code': 'effort-flag',
+      antigravity: 'effort-flag',
     });
   });
 

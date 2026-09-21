@@ -3,8 +3,11 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { attachmentShortName } from '../../core/attachments/resolve.js';
+import { removeDraftRange } from '../../core/composer/document.js';
+import { prepareDraftSubmission } from '../../core/composer/submission.js';
 import { attachImage, attachmentsStore, detachImage, listAttachments } from './attachments.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
+import type { DraftDocument } from '../../core/schemas/draft-document.js';
 
 function makeAttachment(id: string): Attachment {
   return {
@@ -13,6 +16,19 @@ function makeAttachment(id: string): Attachment {
     path: `/tmp/${id}.png`,
     mimeType: 'image/png',
     sizeBytes: 100,
+  };
+}
+
+function attachmentFor(id: string, path: string): Attachment {
+  return { id, kind: 'image', path, mimeType: 'image/png', sizeBytes: 4 };
+}
+
+function draftOf(...parts: Array<string | Attachment>): DraftDocument {
+  return {
+    version: 1,
+    parts: parts.map((part) =>
+      typeof part === 'string' ? { kind: 'text', text: part } : { kind: 'image', attachment: part },
+    ),
   };
 }
 
@@ -87,6 +103,22 @@ describe('attachmentsStore', () => {
     expect(internalBefore?.path).toBe('/tmp/a.png');
   });
 
+  it('replaces pending images in one step with copies', () => {
+    attachmentsStore.add(makeAttachment('stale'));
+    const next = [makeAttachment('a'), makeAttachment('b')];
+    const seen: string[][] = [];
+    const unsubscribe = attachmentsStore.subscribe(() => {
+      seen.push(attachmentsStore.get().pending.map((a) => a.id));
+    });
+
+    attachmentsStore.replacePendingImages(next);
+    unsubscribe();
+    next[0]!.path = '/tmp/mutated.png';
+
+    expect(seen).toEqual([['a', 'b']]);
+    expect(attachmentsStore.peek()).toEqual([makeAttachment('a'), makeAttachment('b')]);
+  });
+
   it('drain on empty store does not error', () => {
     expect(attachmentsStore.drain()).toEqual([]);
   });
@@ -159,6 +191,32 @@ describe('attachment actions', () => {
     expect(detachImage('1-first.png')).toBe(true);
 
     expect(listAttachments().map((a) => a.path)).toEqual([real(secondPath)]);
+  });
+
+  it('hands a validated draft to pending images and drops a deleted atom', () => {
+    const first = attachmentFor('img-1', real(writeImage('first.png')));
+    const second = attachmentFor('img-2', real(writeImage('second.png')));
+    attachmentsStore.add(makeAttachment('stale'));
+    const { document } = removeDraftRange(draftOf('A', first, 'B', second), { start: 1, end: 2 });
+
+    const submission = prepareDraftSubmission(document, { projectDir, supportsImages: true });
+    if (submission.ok) attachmentsStore.replacePendingImages(submission.images);
+
+    expect(attachmentsStore.peek()).toEqual([second]);
+  });
+
+  it('keeps pending images when a draft image fails validation', () => {
+    attachmentsStore.add(makeAttachment('stale'));
+    const missing = attachmentFor('img-1', join(projectDir, 'missing.png'));
+
+    const submission = prepareDraftSubmission(draftOf('A', missing), {
+      projectDir,
+      supportsImages: true,
+    });
+    if (submission.ok) attachmentsStore.replacePendingImages(submission.images);
+
+    expect(submission).toEqual({ ok: false, reason: 'not-found', imageId: 'img-1' });
+    expect(attachmentsStore.peek()).toEqual([makeAttachment('stale')]);
   });
 
   it('truncates a long attachment name to 24 columns with an ellipsis', () => {

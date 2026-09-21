@@ -1,14 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { getShortcutKey } from '../../src/core/keybindings/registry.js';
-import { ATTACHED_AVAILABLE_COMMANDS } from '../../src/core/runtime/commands/registry.js';
-import { COPY_TARGETS } from '../../src/core/runtime/commands/types.js';
-import {
-  BUDGET_PAUSE_THRESHOLD,
-  BUDGET_WARNING_THRESHOLD,
-} from '../../src/engine/orchestrator/budget/check.js';
-import { getWorkflowSidebarWidth } from '../../src/features/workflow/layout/rect.js';
+import { createRuntimeCommands } from '../../src/core/runtime/commands/registry.js';
+import { makeCtx } from '#testing/helpers/runtime-commands.js';
 
 const projectRoot = join(import.meta.dirname, '../..');
 const gettingStarted = readFileSync(join(projectRoot, 'docs/GETTING-STARTED.md'), 'utf8');
@@ -25,7 +19,7 @@ function section(doc: string, heading: string): string {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
-const costSection = section(gettingStarted, '\n## 8. Cost transparency\n');
+const usageSection = section(gettingStarted, '\n## 8. Usage details\n');
 
 // A reader who meets the product through either of these two files has to
 // learn what it is before they are told how to run it. The audited state was
@@ -67,38 +61,25 @@ describe('install story', () => {
   });
 });
 
-// §8 documented a top status line reading `spent … proj … budget … cache …`
-// that no component renders. Every surface it now names is checked against the
-// registry or constant that produces it.
-describe('cost transparency section', () => {
-  it('describes no always-visible cost header', () => {
-    expect(costSection).not.toMatch(/top status line/i);
-    expect(costSection).not.toMatch(/always visible/i);
-    expect(costSection).toMatch(/no persistent cost header/i);
+describe('usage details section', () => {
+  it('keeps counters out of the main workflow and closed-run ledger', () => {
+    expect(usageSection).toContain(
+      'Main workflow screens and the closed-run ledger do not show these counters',
+    );
+    expect(usageSection).toContain('There is no Show spend control');
   });
 
-  it('names the sidebar toggle and the width below which it paints nothing', () => {
-    expect(ATTACHED_AVAILABLE_COMMANDS.has('/sidebar')).toBe(true);
-    expect(getWorkflowSidebarWidth({ cols: 119, sidebarVisible: true })).toBe(0);
-    expect(getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true })).toBe(0);
-    expect(costSection).toContain('`/sidebar`');
-    expect(costSection).toContain('at or below 120 columns');
+  it('names the workflow command for opening live and saved usage details', () => {
+    const commands = createRuntimeCommands(makeCtx());
+    const usageCommand = commands.find((command) => command.name === '/usage');
+    expect(usageCommand?.validScreens).toEqual(['workflow']);
+    expect(usageSection).toContain('`/usage`');
+    expect(usageSection).toContain('live and saved runs');
   });
 
-  it('names the drilldown overlay by its real shortcut', () => {
-    expect(getShortcutKey('cost-drilldown')).toBe('ctrl+g');
-    expect(costSection).toContain('Ctrl+G');
-  });
-
-  it('names a copy target the command actually accepts', () => {
-    expect(COPY_TARGETS).toContain('cost');
-    expect(costSection).toContain('`/copy cost`');
-  });
-
-  it('quotes the budget thresholds the orchestrator enforces', () => {
-    expect(costSection).toContain(`${BUDGET_WARNING_THRESHOLD * 100}%`);
-    expect(costSection).toContain(`\`${BUDGET_PAUSE_THRESHOLD}\``);
-    expect(costSection).toContain('`workflow.budgetPauseThreshold`');
-    expect(costSection).toContain('recovery_required');
+  it('distinguishes missing evidence from zero usage or zero cost', () => {
+    expect(usageSection).toContain('reported token counters and monetary estimates');
+    expect(usageSection).toContain('Unknown usage stays unknown');
+    expect(usageSection).toContain('an unpriced run is not a zero-cost run');
   });
 });

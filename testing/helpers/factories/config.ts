@@ -4,7 +4,6 @@ import {
   API_PROVIDER_CATALOG,
   type ApiOffering,
 } from '../../../src/core/providers/api-provider-catalog.js';
-import { defaultCliAuthChannel } from '../../../src/core/runners/cli-tool-catalog.js';
 import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
 import type {
   ApiImplementerConfig,
@@ -68,8 +67,6 @@ type ConfigInput = {
   codebase?: Config['codebase'];
   hooks?: Config['hooks'];
   approval?: Config['approval'];
-  plannerEstimateReview?: Config['plannerEstimateReview'];
-  autoSplitOverflow?: Config['autoSplitOverflow'];
   implementerProfiles?: ImplementerProfilesFixture;
 };
 
@@ -85,7 +82,6 @@ function makePlannerConfig(planner?: PlannerFixture): unknown {
   const config = planner ?? {
     kind: 'cli' as const,
     tool: 'claude-code' as const,
-    authChannel: defaultCliAuthChannel('claude-code').id,
   };
   if (config.kind !== 'api') return config;
   return { ...apiIdentity(config.provider), ...config };
@@ -126,7 +122,6 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
     },
     workflow: {
       maxRetries: 3,
-      persistTranscript: true,
       mode: 'standard',
       taskReview: 'none',
       ...overrides?.workflow,
@@ -139,10 +134,6 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
   if (overrides?.codebase !== undefined) base.codebase = overrides.codebase;
   if (overrides?.hooks !== undefined) base.hooks = overrides.hooks;
   if (overrides?.approval !== undefined) base.approval = overrides.approval;
-  if (overrides?.plannerEstimateReview !== undefined)
-    base.plannerEstimateReview = overrides.plannerEstimateReview;
-  if (overrides?.autoSplitOverflow !== undefined)
-    base.autoSplitOverflow = overrides.autoSplitOverflow;
   if (overrides?.implementerProfiles !== undefined)
     base.implementerProfiles = makeImplementerProfiles(overrides.implementerProfiles);
   return ConfigSchema.parse(base);
@@ -168,7 +159,6 @@ export function makeApprovalConfig(
     approval: {
       enabled: approval.enabled ?? true,
       feedRejectionsToPlanner: approval.feedRejectionsToPlanner ?? true,
-      ...(approval.headless !== undefined && { headless: approval.headless }),
       ...(approval.tiers !== undefined && { tiers: approval.tiers }),
       ...(approval.allowedPaths !== undefined && { allowedPaths: approval.allowedPaths }),
     },

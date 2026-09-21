@@ -1,4 +1,8 @@
 import { collectRunnerCallResult } from './collector.js';
+import {
+  InvocationIdentitySchema,
+  type InvocationIdentity,
+} from '../../core/schemas/invocation-identity.js';
 import { RunnerCallEventSchema, RunnerCallResultSchema } from './schema.js';
 import {
   boundedRunnerCallMessage,
@@ -15,7 +19,6 @@ import {
   boundRunnerCallArtifact,
   boundRunnerCallToolUse,
   createRunnerCallDeltaLimiter,
-  createRunnerCallEnvelopeLimiter,
   runnerCallLimitWarning,
   sanitizeRunnerCallRawPreview,
   RUNNER_CALL_ARTIFACT_MAX_ITEMS,
@@ -55,6 +58,9 @@ export interface RunnerCallRecorder {
   readonly context: RunnerCallContext;
   readonly startedAt: number;
   hasTerminal: () => boolean;
+  runtimeStatus: (
+    status: Extract<RunnerCallEvent, { type: 'call_runtime_status' }>['runtimeStatus'],
+  ) => void;
   text: (opts: {
     channel: RunnerCallTextChannel;
     text: string;
@@ -108,6 +114,7 @@ export function createRunnerCallRecorder(opts: {
   startedAt?: number | undefined;
   credentialValues?: readonly string[] | undefined;
 }): RunnerCallRecorder {
+  const context = snapshotRunnerCallContext(opts.context);
   const startedAt = opts.startedAt ?? Date.now();
   const redactCredential = createRunnerCallCredentialRedactor(opts.credentialValues ?? []);
   const events: RunnerCallEvent[] = [];
@@ -122,11 +129,6 @@ export function createRunnerCallRecorder(opts: {
   let lastNativeSessionId: string | null = null;
   const emittedLimitWarnings = new Set<string>();
   let textLimiter = createTextLimiter();
-  const envelopeLimiter =
-    opts.context.envelope === undefined
-      ? null
-      : createRunnerCallEnvelopeLimiter({ envelope: opts.context.envelope, startedAt });
-  let draftTextBytes = 0;
   const stderrLimiter = createRunnerCallDeltaLimiter({
     code: 'runner_call_stderr_limit',
     label: 'runner call stderr diagnostics',
@@ -178,10 +180,6 @@ export function createRunnerCallRecorder(opts: {
   ): RunnerCallResult {
     if (hasTerminalEvent) return snapshot();
     const defaults = currentTerminalDefaults(finishOpts);
-    if (envelopeLimiter !== null) {
-      envelopeLimiter.checkDeadline(finishOpts.endedAt ?? Date.now());
-      noteEnvelopeLatch();
-    }
     if (resultLimit !== null) {
       return finishFailed({
         status: 'truncated',
@@ -193,7 +191,7 @@ export function createRunnerCallRecorder(opts: {
       });
     }
     emit(
-      runnerCallCompletedEvent(opts.context, {
+      runnerCallCompletedEvent(context, {
         startedAt,
         endedAt: finishOpts.endedAt ?? Date.now(),
         usage: defaults.usage,
@@ -219,7 +217,7 @@ export function createRunnerCallRecorder(opts: {
     };
     emitStderrFailureWarning();
     emit(
-      runnerCallErrorEvent(opts.context, {
+      runnerCallErrorEvent(context, {
         startedAt,
         endedAt: finishOpts.endedAt ?? Date.now(),
         status: finishOpts.status,
@@ -234,10 +232,6 @@ export function createRunnerCallRecorder(opts: {
 
   function finishIncomplete(finishOpts: { endedAt?: number | undefined } = {}): RunnerCallResult {
     if (hasTerminalEvent) return snapshot();
-    if (envelopeLimiter !== null) {
-      envelopeLimiter.checkDeadline(finishOpts.endedAt ?? Date.now());
-      noteEnvelopeLatch();
-    }
     if (resultLimit !== null) {
       return finishFailed({
         status: 'truncated',
@@ -266,7 +260,7 @@ export function createRunnerCallRecorder(opts: {
     const parsed = RunnerCallResultSchema.safeParse(result);
     if (parsed.success) return parsed.data;
     throw error('runner-call-result-invalid', 'Runner call result failed schema validation', {
-      callId: opts.context.callId,
+      callId: context.callId,
       issues: formatZodIssues(parsed.error.issues),
     });
   }
@@ -279,21 +273,21 @@ export function createRunnerCallRecorder(opts: {
     return {
       type: 'call_unknown_upstream',
       ts: nowOrTimestamp(input),
-      ...opts.context,
+      ...context,
       rawPreview: runnerCallUnknownUpstreamPreview({
         label: 'Invalid runner call event',
         value: input,
         issues,
       }),
       backendMetadata: {
-        backendKind: opts.context.backendKind,
+        backendKind: context.backendKind,
         source: 'recorder',
         ...(upstreamType !== undefined && { upstreamType }),
       },
     };
   }
 
-  emit({ type: 'call_started', ts: startedAt, ...opts.context });
+  emit({ type: 'call_started', ts: startedAt, ...context });
 
   function noteLimit(
     limit: RunnerCallOutputLimit,
@@ -305,15 +299,9 @@ export function createRunnerCallRecorder(opts: {
     emit({
       type: 'call_warning',
       ts: Date.now(),
-      ...opts.context,
+      ...context,
       warning: runnerCallLimitWarning(limit),
     });
-  }
-
-  function noteEnvelopeLatch(): void {
-    if (envelopeLimiter === null) return;
-    const limit = envelopeLimiter.limit;
-    if (limit !== null) noteLimit(limit, 'truncates-result');
   }
 
   function itemLimit(opts: {
@@ -347,7 +335,7 @@ export function createRunnerCallRecorder(opts: {
     emit({
       type: 'call_warning',
       ts: Date.now(),
-      ...opts.context,
+      ...context,
       warning: {
         code,
         severity: 'warning',
@@ -365,7 +353,7 @@ export function createRunnerCallRecorder(opts: {
   }
 
   return {
-    context: opts.context,
+    context,
     startedAt,
     hasTerminal: () => hasTerminalEvent,
     text: (eventOpts) => {
@@ -375,22 +363,11 @@ export function createRunnerCallRecorder(opts: {
       if (accepted.limit === null && resultLimit?.code === 'runner_call_text_limit') {
         resultLimit = null;
       }
-      if (envelopeLimiter !== null) {
-        const bytes = Buffer.byteLength(eventOpts.text, 'utf8');
-        envelopeLimiter.recordRaw(bytes);
-        envelopeLimiter.recordNormalized(
-          eventOpts.semantics === 'final' ? bytes - draftTextBytes : bytes,
-        );
-        if (eventOpts.semantics === 'final') draftTextBytes = 0;
-        else draftTextBytes += bytes;
-        envelopeLimiter.checkDeadline(eventOpts.ts ?? Date.now());
-        noteEnvelopeLatch();
-      }
       if (eventText.length > 0 || (eventOpts.semantics === 'final' && accepted.limit === null)) {
         emit({
           type: 'call_text_delta',
           ts: eventOpts.ts ?? Date.now(),
-          ...opts.context,
+          ...context,
           channel: eventOpts.channel,
           text: eventText,
           ...(eventOpts.semantics !== undefined && { semantics: eventOpts.semantics }),
@@ -400,13 +377,6 @@ export function createRunnerCallRecorder(opts: {
     },
     stderr: (eventOpts) => {
       const accepted = stderrLimiter.accept(redactCredential(eventOpts.text));
-      if (envelopeLimiter !== null) {
-        const bytes = Buffer.byteLength(eventOpts.text, 'utf8');
-        envelopeLimiter.recordStderr(bytes);
-        envelopeLimiter.recordRaw(bytes);
-        envelopeLimiter.checkDeadline(eventOpts.ts ?? Date.now());
-        noteEnvelopeLatch();
-      }
       if (accepted.text.length > 0) {
         appendStderrPreview(accepted.text);
         if (stderrLooksWarningLike(accepted.text)) {
@@ -415,7 +385,7 @@ export function createRunnerCallRecorder(opts: {
         emit({
           type: 'call_stderr_delta',
           ts: eventOpts.ts ?? Date.now(),
-          ...opts.context,
+          ...context,
           channel: 'stderr',
           text: accepted.text,
         });
@@ -426,16 +396,11 @@ export function createRunnerCallRecorder(opts: {
       const accepted = toolDeltaLimiter.accept(redactCredential(eventOpts.inputDelta), {
         countEvent: true,
       });
-      if (envelopeLimiter !== null) {
-        envelopeLimiter.recordRaw(Buffer.byteLength(eventOpts.inputDelta, 'utf8'));
-        envelopeLimiter.checkDeadline(eventOpts.ts ?? Date.now());
-        noteEnvelopeLatch();
-      }
       if (accepted.text.length > 0 || accepted.limit === null) {
         emit({
           type: 'call_tool_use_delta',
           ts: eventOpts.ts ?? Date.now(),
-          ...opts.context,
+          ...context,
           channel: 'tool',
           toolUseId: eventOpts.toolUseId,
           name: eventOpts.name,
@@ -462,14 +427,10 @@ export function createRunnerCallRecorder(opts: {
       );
       toolUseDoneCount += 1;
       if (bounded.limit !== null) noteLimit(bounded.limit, 'truncates-result');
-      if (envelopeLimiter !== null) {
-        envelopeLimiter.recordRaw(Buffer.byteLength(JSON.stringify(bounded.value), 'utf8'));
-        noteEnvelopeLatch();
-      }
       emit({
         type: 'call_tool_use_done',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         channel: 'tool',
         toolUse: bounded.value,
       });
@@ -478,7 +439,7 @@ export function createRunnerCallRecorder(opts: {
       emit({
         type: 'call_usage',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         usage: eventOpts.usage,
         semantics: eventOpts.semantics,
       }),
@@ -491,7 +452,7 @@ export function createRunnerCallRecorder(opts: {
       emit({
         type: 'call_session_id',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         nativeSessionId: eventOpts.nativeSessionId,
       });
     },
@@ -521,14 +482,10 @@ export function createRunnerCallRecorder(opts: {
       });
       artifactCount += 1;
       if (bounded.limit !== null) noteLimit(bounded.limit, 'truncates-result');
-      if (envelopeLimiter !== null && bounded.value.text !== null) {
-        envelopeLimiter.recordRaw(Buffer.byteLength(bounded.value.text, 'utf8'));
-        noteEnvelopeLatch();
-      }
       emit({
         type: 'call_artifact',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         artifact: bounded.value,
       });
     },
@@ -553,7 +510,7 @@ export function createRunnerCallRecorder(opts: {
       emit({
         type: 'call_warning',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         warning,
       });
     },
@@ -572,27 +529,22 @@ export function createRunnerCallRecorder(opts: {
       }
       unknownUpstreamCount += 1;
       const rawPreview = sanitizeRunnerCallRawPreview(redactCredential(eventOpts.rawPreview));
-      if (envelopeLimiter !== null) {
-        envelopeLimiter.recordRaw(Buffer.byteLength(rawPreview, 'utf8'));
-        noteEnvelopeLatch();
-      }
       emit({
         type: 'call_unknown_upstream',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         rawPreview,
         backendMetadata: eventOpts.backendMetadata,
       });
     },
+    runtimeStatus: (runtimeStatus) => {
+      emit({ type: 'call_runtime_status', ts: Date.now(), ...context, runtimeStatus });
+    },
     stalled: (eventOpts) => {
-      if (envelopeLimiter !== null) {
-        envelopeLimiter.checkIdle(eventOpts.silentMs);
-        noteEnvelopeLatch();
-      }
       emit({
         type: 'call_stalled',
         ts: eventOpts.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
         silentMs: eventOpts.silentMs,
       });
     },
@@ -600,7 +552,7 @@ export function createRunnerCallRecorder(opts: {
       emit({
         type: 'call_stall_cleared',
         ts: eventOpts?.ts ?? Date.now(),
-        ...opts.context,
+        ...context,
       }),
     finishCompleted,
     finishFailed,
@@ -608,6 +560,27 @@ export function createRunnerCallRecorder(opts: {
     finalResult: () => (hasTerminalEvent ? snapshot() : finishIncomplete()),
     snapshot,
   };
+}
+
+// The identity is fixed before `call_started`: every event and result of the
+// call carries this one frozen copy, whatever the producer does with its own.
+function snapshotRunnerCallContext(context: RunnerCallContext): RunnerCallContext {
+  if (context.invocationIdentity === undefined) return context;
+  const parsed = InvocationIdentitySchema.safeParse(context.invocationIdentity);
+  if (!parsed.success) {
+    throw error('runner-call-identity-invalid', 'Runner call invocation identity is invalid', {
+      callId: context.callId,
+      issues: formatZodIssues(parsed.error.issues),
+    });
+  }
+  return { ...context, invocationIdentity: freezeInvocationIdentity(parsed.data) };
+}
+
+function freezeInvocationIdentity(identity: InvocationIdentity): InvocationIdentity {
+  for (const value of Object.values(identity)) {
+    if (typeof value === 'object') Object.freeze(value);
+  }
+  return Object.freeze(identity);
 }
 
 function nowOrTimestamp(input: RunnerCallEventInput): number {

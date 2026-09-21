@@ -44,10 +44,10 @@ describe('agent implementer', () => {
     if (testDir) cleanupTempDir(testDir);
   });
 
-  it('succeeds when agent writes a file', async () => {
+  it('agent kind reports changed files without an exact-effect gate', async () => {
     const config = makeConfig({
       command: 'bash',
-      args: ['-c', `echo "hello" > ${join(testDir, 'output.txt')}`],
+      args: ['-c', `echo "hello" > ${join(testDir, 'undeclared.txt')}`],
     });
 
     const implementer = createAgentImplementer(config);
@@ -60,6 +60,7 @@ describe('agent implementer', () => {
     });
 
     expect(result.success).toBe(true);
+    expect(result.outcome).toBeUndefined();
   });
 
   it('fails when agent writes no files', async () => {

@@ -1,0 +1,173 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import {
+  buildTestArgs,
+  detectStack,
+  findAffectedTestFiles,
+  isTestFile,
+  sourceForTest,
+} from './registry.js';
+import { pythonStack } from './python.js';
+import { rustStack } from './rust.js';
+import { typescriptStack } from './typescript.js';
+
+describe('detectStack', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = createTempDir('stack-registry');
+  });
+  afterEach(() => {
+    cleanupTempDir(dir);
+  });
+
+  it('Cargo.toml beats package.json', () => {
+    writeFileSync(join(dir, 'Cargo.toml'), '');
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ devDependencies: { typescript: '5' } }),
+    );
+    expect(detectStack(dir)?.id).toBe('rust');
+  });
+
+  it('package.json with a typescript dependency selects typescript over javascript', () => {
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ devDependencies: { typescript: '5' } }),
+    );
+    expect(detectStack(dir)?.id).toBe('typescript');
+  });
+
+  it('package.json without typescript selects javascript', () => {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    expect(detectStack(dir)?.id).toBe('javascript');
+  });
+
+  it('validation.stack pin wins over markers', () => {
+    writeFileSync(join(dir, 'Cargo.toml'), '');
+    expect(detectStack(dir, 'python')?.id).toBe('python');
+  });
+
+  it('no marker returns null', () => {
+    expect(detectStack(dir)).toBeNull();
+  });
+});
+
+describe('isTestFile / sourceForTest', () => {
+  it('recognises colocated and __tests__ conventions', () => {
+    expect(isTestFile('src/a.test.ts', typescriptStack)).toBe(true);
+    expect(isTestFile('src/__tests__/a.ts', typescriptStack)).toBe(true);
+    expect(isTestFile('src/a.ts', typescriptStack)).toBe(false);
+    expect(isTestFile('tests/test_a.py', pythonStack)).toBe(true);
+  });
+
+  it('maps a test file back to its source', () => {
+    expect(sourceForTest('src/a.test.ts', typescriptStack)).toBe('src/a.ts');
+    expect(sourceForTest('src/__tests__/a.ts', typescriptStack)).toBe('src/a.ts');
+    expect(sourceForTest('tests/test_a.py', pythonStack)).toBe(join('tests', 'a.py'));
+    expect(sourceForTest('src/a.ts', typescriptStack)).toBeNull();
+  });
+});
+
+describe('findAffectedTestFiles', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = createTempDir('stack-affected');
+    mkdirSync(join(dir, 'src'), { recursive: true });
+  });
+  afterEach(() => {
+    cleanupTempDir(dir);
+  });
+
+  it('finds the colocated test and the tests/ mirror', () => {
+    writeFileSync(join(dir, 'src', 'a.test.ts'), '');
+    mkdirSync(join(dir, 'tests'), { recursive: true });
+    writeFileSync(join(dir, 'tests', 'a.test.ts'), '');
+    expect(findAffectedTestFiles('src/a.ts', dir, typescriptStack)).toEqual([
+      join(dir, 'src', 'a.test.ts'),
+      join(dir, 'tests', 'a.test.ts'),
+    ]);
+  });
+
+  it('a task file that is itself a test is its own target', () => {
+    writeFileSync(join(dir, 'src', 'a.test.ts'), '');
+    expect(findAffectedTestFiles('src/a.test.ts', dir, typescriptStack)).toEqual([
+      join(dir, 'src', 'a.test.ts'),
+    ]);
+  });
+
+  it('inlineTests marks the task file itself', () => {
+    writeFileSync(join(dir, 'src', 'lib.rs'), 'fn main() {}\n#[cfg(test)]\nmod tests {}\n');
+    expect(findAffectedTestFiles('src/lib.rs', dir, rustStack)).toEqual([
+      join(dir, 'src', 'lib.rs'),
+    ]);
+  });
+
+  it('returns nothing when no test file exists', () => {
+    expect(findAffectedTestFiles('src/a.ts', dir, typescriptStack)).toEqual([]);
+  });
+
+  it('rejects a traversing test pattern', () => {
+    writeFileSync(join(dir, 'src', 'a.test.ts'), '');
+    expect(findAffectedTestFiles('src/a.ts', dir, typescriptStack, '../a.test.ts')).toEqual([]);
+  });
+});
+
+describe('buildTestArgs', () => {
+  it("path-arg '--' appends the targets after a separator", () => {
+    expect(
+      buildTestArgs({ cmd: 'npm', args: ['test'] }, ['src/a.test.ts'], {
+        kind: 'path-arg',
+        separator: '--',
+      }),
+    ).toEqual(['test', '--', 'src/a.test.ts']);
+  });
+
+  it("path-arg '' appends the targets directly", () => {
+    expect(
+      buildTestArgs({ cmd: 'pytest', args: [] }, ['tests/test_a.py'], {
+        kind: 'path-arg',
+        separator: '',
+      }),
+    ).toEqual(['tests/test_a.py']);
+  });
+
+  it('package-arg replaces ./... with the target packages', () => {
+    expect(
+      buildTestArgs({ cmd: 'go', args: ['test', './...'] }, ['pkg/a_test.go'], {
+        kind: 'package-arg',
+      }),
+    ).toEqual(['test', './pkg/']);
+  });
+
+  it('name-filter -- passes the module names', () => {
+    expect(
+      buildTestArgs({ cmd: 'cargo', args: ['test'] }, ['src/pkg.rs'], {
+        kind: 'name-filter',
+        flag: '--',
+      }),
+    ).toEqual(['test', '--', 'pkg']);
+  });
+
+  it('name-filter -run joins the names with a pipe', () => {
+    expect(
+      buildTestArgs({ cmd: 'go', args: ['test'] }, ['pkg/a_test.go', 'pkg/b_test.go'], {
+        kind: 'name-filter',
+        flag: '-run',
+      }),
+    ).toEqual(['test', '-run', 'a_test|b_test']);
+  });
+
+  it('none leaves the args unchanged', () => {
+    expect(buildTestArgs({ cmd: 'make', args: ['test'] }, ['src/a.ts'], { kind: 'none' })).toEqual([
+      'test',
+    ]);
+  });
+
+  it('no target leaves the args unchanged', () => {
+    expect(
+      buildTestArgs({ cmd: 'go', args: ['test', './...'] }, [], { kind: 'package-arg' }),
+    ).toEqual(['test', './...']);
+  });
+});

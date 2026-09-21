@@ -3,6 +3,7 @@ import {
   existsSync,
   lstatSync,
   readdirSync,
+  readFileSync,
   readlinkSync,
   realpathSync,
   rmSync,
@@ -29,6 +30,7 @@ import {
   getChangedFilesSnapshot,
 } from '../approval/file-snapshots/capture.js';
 import { promoteStagedChanges } from '../approval/staged-project.js';
+import { captureAcquisitionBaseline } from '../approval/file-snapshots/entry.js';
 import {
   ensureIsolationWorktree,
   parseIsolationMarker,
@@ -91,7 +93,9 @@ function filesRunnersWouldDiscover(root: string, prefix = ''): string[] {
   return found;
 }
 
-describe('ensureIsolationWorktree', () => {
+// Every case here builds a repository and a linked worktree out of real git subprocesses; the
+// slowest takes under two seconds alone, and the budget is the room four forks need on a loaded box.
+describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
   it('isolation worktree path is outside the git dir and outside the project worktree', async () => {
     delete process.env.XDG_STATE_HOME;
     createTestGitRepo(repoDir, { 'README.md': '# test\n' });
@@ -199,7 +203,7 @@ describe('ensureIsolationWorktree', () => {
     expect(filesRunnersWouldDiscover(repoDir)).toEqual(before);
   });
 
-  // A `--worktree` session's project directory is a linked worktree, where
+  // A session started inside a linked worktree has a project directory where
   // `.git` is a file rather than a directory: joining `.git` onto the project
   // path would name a file to create a directory in. The location is resolved
   // from the repository's common git directory instead, which every checkout of
@@ -316,7 +320,7 @@ describe('ensureIsolationWorktree', () => {
     expect(second.kind).toBe('fallback');
   });
 
-  it('refuses a modified binary file instead of seeding corrupted content', async () => {
+  it('seeds modified binary bytes exactly', async () => {
     createTestGitRepo(repoDir, { 'README.md': '# test\n', 'blob.bin': 'text\n' });
     writeFileSync(join(repoDir, 'blob.bin'), Buffer.from([0x00, 0x01, 0xfe, 0xff, 0x80, 0x81]));
 
@@ -326,8 +330,11 @@ describe('ensureIsolationWorktree', () => {
       git: createGitClient(repoDir),
     });
 
-    expect(result.kind).toBe('fallback');
-    if (result.kind === 'fallback') expect(result.reason).toMatch(/binary/);
+    expect(result.kind).toBe('ready');
+    if (result.kind === 'ready')
+      expect(readFileSync(join(result.worktreePath, 'blob.bin'))).toEqual(
+        Buffer.from([0x00, 0x01, 0xfe, 0xff, 0x80, 0x81]),
+      );
   });
 
   it('throws when the source checkout contains a symlinked directory', async () => {
@@ -391,7 +398,7 @@ describe('ensureIsolationWorktree', () => {
       targetProjectDir: repoDir,
       stagedProjectDir: result.worktreePath,
       files: changed,
-      expectedCurrentContents: { '.gitignore': original },
+      targetBaseline: await captureAcquisitionBaseline(repoDir),
     });
 
     expect(promoted).toEqual({ promotedFiles: ['.gitignore'], conflictedFiles: [] });
@@ -418,7 +425,7 @@ describe('ensureIsolationWorktree', () => {
       targetProjectDir: repoDir,
       stagedProjectDir: result.worktreePath,
       files: changed,
-      expectedCurrentContents: { 'README.md': '# test\n' },
+      targetBaseline: await captureAcquisitionBaseline(repoDir),
     });
 
     expect(await readFile(join(repoDir, '.gitignore'), 'utf-8')).toBe('node_modules/\n');

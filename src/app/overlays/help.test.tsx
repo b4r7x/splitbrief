@@ -49,7 +49,7 @@ describe('HelpOverlay', () => {
         commands={[
           command('/skills', ['home']),
           command('/redo-task', ['workflow']),
-          command('/home', ['workflow', 'summary']),
+          command('/home', ['workflow']),
         ]}
       />,
     );
@@ -79,22 +79,6 @@ describe('HelpOverlay', () => {
     await tick(20);
     expect(allowed.lastFrame() ?? '').toContain('/redo-task');
     allowed.unmount();
-  });
-
-  it('shows a bare alias on its command row and never as its own row', async () => {
-    const settings: RuntimeCommandDef = {
-      ...command('/settings', ['home']),
-      aliases: [{ name: '/config' }],
-    };
-
-    const ui = renderFeature(<HelpOverlay currentScreen="home" commands={[settings]} />);
-    await tick(20);
-
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('/settings (/config)');
-    expect(frame).not.toContain('Alias for');
-
-    ui.unmount();
   });
 
   it('renders the same number of rows whether the document fits or overflows', async () => {

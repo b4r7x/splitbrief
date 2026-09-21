@@ -7,11 +7,17 @@ import type {
 const DETAIL_CHAR_CAP = 800;
 const SECTION_CHAR_CAP = 30_000;
 
+function skippedVerdict(entry: EvidenceValidationEntry): string {
+  return entry.skippedReason === undefined ? 'skipped' : `skipped (${entry.skippedReason})`;
+}
+
 function entryHeadline(entry: EvidenceValidationEntry): string {
   const command = entry.command !== undefined ? ` (\`${entry.command}\`)` : '';
   const retry = entry.retryState !== undefined ? ` [${entry.retryState}]` : '';
   const exempt = entry.baselineExempt === true ? ' [pre-existing failure]' : '';
-  return `- ${entry.stage}${command}: ${entry.passed ? 'passed' : 'failed'}${retry}${exempt}`;
+  const verdict =
+    entry.skipped === true ? skippedVerdict(entry) : entry.passed ? 'passed' : 'failed';
+  return `- ${entry.stage}${command}: ${verdict}${retry}${exempt}`;
 }
 
 function capDetailTail(detail: string): string {

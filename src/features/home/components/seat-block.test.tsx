@@ -84,6 +84,20 @@ describe('HomeSeatBlock', () => {
     unmount();
   });
 
+  it('drops a whole identity from the collapsed line instead of cutting one', async () => {
+    const width = 40;
+
+    const { lines, unmount } = await renderBlock(18, width);
+
+    expect(getTerminalCellWidth(lines[0] ?? '')).toBeLessThanOrEqual(width);
+    expect(lines[0]).toContain('PLAN');
+    expect(lines[0]).toContain('BUILD');
+    // A seat that does not fit leaves the line rather than standing there unnamed, so no ellipsis
+    // reaches the row at all.
+    expect(lines[0]).not.toContain('…');
+    unmount();
+  });
+
   it('shows a configured reviewer its own identity instead of the inheritance sentence', async () => {
     seed(
       makeConfig({

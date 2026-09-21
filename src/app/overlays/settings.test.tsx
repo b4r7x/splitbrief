@@ -6,9 +6,10 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
-import { buildSettingsItems, settingsItemDescription } from '../../features/settings/items.js';
+import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { SettingsOverlay } from './settings.js';
 
 const ESC = String.fromCharCode(27);
@@ -56,6 +57,21 @@ function indexOfLine(lines: string[], needle: string): number {
   return lines.findIndex((line) => line.includes(needle));
 }
 
+/** The rule above the help block carries the seat word too, and it is not a seat row. */
+const RULE_ROW = / [─-]{3,}/;
+
+/** The panel paints a border on both ends of every row; a row's own text is what lies between. */
+function panelText(line: string): string {
+  return line
+    .replace(/^[^|│]*[|│]/, '')
+    .replace(/[|│][^|│]*$/, '')
+    .trimEnd();
+}
+
+function seatRowLines(lines: string[]): string[] {
+  return lines.filter((line) => /\b(PLAN|BUILD|REVIEW)\b/.test(line) && !RULE_ROW.test(line));
+}
+
 describe('SettingsOverlay', () => {
   beforeEach(() => {
     projectDir = createTempDir('settings-overlay');
@@ -68,20 +84,19 @@ describe('SettingsOverlay', () => {
     cleanupTempDir(projectDir);
   });
 
-  it('opens on the crew rail, above every tuning row', async () => {
+  it('opens on the crew block, above every tuning row', async () => {
     const ui = renderAt(120, 40);
     await flushEffects();
     const lines = frameLines(ui);
 
-    const rail = [
+    const crew = [
       indexOfLine(lines, 'PLAN'),
-      indexOfLine(lines, 'effort'),
       indexOfLine(lines, 'BUILD'),
       indexOfLine(lines, 'REVIEW'),
     ];
-    expect(rail).toEqual([...rail].toSorted((a, b) => a - b));
-    expect(rail[0]).toBeGreaterThan(indexOfLine(lines, 'Crew'));
-    for (const index of rail) expect(index).toBeLessThan(indexOfLine(lines, 'Temperature'));
+    expect(crew).toEqual([...crew].toSorted((a, b) => a - b));
+    expect(crew[0]).toBeGreaterThan(indexOfLine(lines, 'Crew'));
+    for (const index of crew) expect(index).toBeLessThan(indexOfLine(lines, 'Temperature'));
 
     ui.unmount();
   });
@@ -92,7 +107,7 @@ describe('SettingsOverlay', () => {
     await flushEffects();
     const lines = frameLines(ui);
 
-    const workflowRowIndex = indexOfLine(lines, 'Commit strategy');
+    const workflowRowIndex = indexOfLine(lines, 'Create branch');
     const validationRowIndex = indexOfLine(lines, 'Lint');
 
     expect(workflowRowIndex).toBeGreaterThan(-1);
@@ -102,7 +117,7 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  it.each(['seat:plan', 'effort:plan', 'seat:build', 'seat:review'])(
+  it.each(['seat:plan', 'seat:build', 'seat:review'])(
     'keeps all three seat rows on screen at 60x18 with the cursor on %s',
     async (focus) => {
       seed({ planner: PLANNER_WITH_EFFORT });
@@ -119,7 +134,7 @@ describe('SettingsOverlay', () => {
     },
   );
 
-  it('keeps the effort rows while hiding the YAML-only escalation tier at 60x18', async () => {
+  it('hides the YAML-only escalation tier at 60x18', async () => {
     seed({
       planner: PLANNER_WITH_EFFORT,
       reviewer: API_REVIEWER,
@@ -132,60 +147,40 @@ describe('SettingsOverlay', () => {
     await flushEffects();
     const lines = frameLines(ui);
 
-    expect(lines.filter((line) => line.includes('effort'))).toHaveLength(3);
     expect(lineWith(lines, 'escalate')).toBeUndefined();
     expect(lineWith(lines, 'REVIEW')).toBeDefined();
 
     ui.unmount();
   });
 
-  it('renders 6 crew rows and cycling effort changes only that row with zero geometry jumps', async () => {
+  it('renders 3 crew rows and Enter opens the seat picker with no geometry jump', async () => {
     seed({
       planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' },
       reviewer: API_REVIEWER,
     });
-    overlayStore.open('settings', 'effort:plan');
+    overlayStore.open('settings', 'seat:plan');
     const ui = renderAt(120, 40);
     await flushEffects();
 
     const beforeLines = stripAnsiStyles(ui.lastFrame()).split('\n');
-    const crewLinesBefore = beforeLines.filter(
-      (line) =>
-        line.includes('PLAN') ||
-        line.includes('BUILD') ||
-        line.includes('REVIEW') ||
-        line.includes('effort'),
-    );
-    expect(crewLinesBefore).toHaveLength(6);
+    const crewLinesBefore = seatRowLines(beforeLines);
+    expect(crewLinesBefore).toHaveLength(3);
 
-    ui.stdin.write(' ');
+    ui.stdin.write(ENTER);
     await vi.waitFor(() => {
-      const p = configStore.get().config?.planner;
-      expect(p && 'effort' in p ? p.effort : undefined).toBe('low');
+      expect(overlayStore.get().active).toBe('planner-picker');
+      expect(overlayStore.get().focus).toBe('seat:plan:effort');
     });
     await flushEffects();
 
     const afterLines = stripAnsiStyles(ui.lastFrame()).split('\n');
     expect(afterLines).toHaveLength(beforeLines.length);
-
-    const changedIndices: number[] = [];
-    for (let i = 0; i < beforeLines.length; i++) {
-      if (beforeLines[i] !== afterLines[i]) {
-        changedIndices.push(i);
-      }
-    }
-    expect(changedIndices).toHaveLength(1);
-    const changedIndex = changedIndices[0] ?? -1;
-    expect(changedIndex).toBeGreaterThanOrEqual(0);
-    expect(beforeLines[changedIndex]).toContain('effort');
-    expect(afterLines[changedIndex]).toContain('effort');
-    expect(beforeLines[changedIndex]).toContain('auto');
-    expect(afterLines[changedIndex]).toContain('low');
+    expect(seatRowLines(afterLines)).toEqual(crewLinesBefore);
 
     ui.unmount();
   });
 
-  it('hides the crew rail behind a filter that only matches a tuning row', async () => {
+  it('hides the crew block behind a filter that only matches a tuning row', async () => {
     const ui = renderAt(120, 40);
     await flushEffects();
     ui.stdin.write('temp');
@@ -198,7 +193,7 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  it('keeps one seat and its effort row under a seat filter', async () => {
+  it('keeps one seat under a seat filter', async () => {
     seed({ planner: PLANNER_WITH_EFFORT });
     const ui = renderAt(120, 40);
     await flushEffects();
@@ -207,7 +202,6 @@ describe('SettingsOverlay', () => {
     const lines = frameLines(ui);
 
     expect(lineWith(lines, 'PLAN')).toBeDefined();
-    expect(lineWith(lines, 'effort')).toBeDefined();
     expect(lineWith(lines, 'BUILD')).toBeUndefined();
     expect(lineWith(lines, 'REVIEW')).toBeUndefined();
 
@@ -247,8 +241,8 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  // The description body is clamped to `height={2}` while the chrome budget reserves
-  // DESCRIPTION_ROWS = 4 for it, so a description that wraps must not grow the panel by a row.
+  // The help block is a fixed DESCRIPTION_ROWS = 5 tall and pays for a wrapped description out of
+  // the spacer above its rule, so a description that wraps must not grow the panel by a row.
   it('keeps the frame height identical between a 1-line and a 2-line description row', async () => {
     // Inner width at 100 cols / roomy density is 70 cells (76 - OVERLAY_FRAME_COLS).
     const shortDef = SETTINGS_DEFS.find((def) => def.id === 'validation.lint');
@@ -293,13 +287,6 @@ describe('SettingsOverlay', () => {
     expect(lines.at(-1)).toMatch(cornerLine);
 
     ui.unmount();
-  });
-
-  it('never points a description at a command the merge deleted', () => {
-    const config = makeConfig();
-    for (const item of buildSettingsItems({ config, defs: SETTINGS_DEFS })) {
-      expect(settingsItemDescription({ item, config })).not.toContain('/planner');
-    }
   });
 
   it('strips terminal controls from the edit-buffer view while preserving the saved value', async () => {
@@ -364,5 +351,177 @@ describe('SettingsOverlay', () => {
     expect(frame).toContain('esc close');
 
     ui.unmount();
+  });
+
+  it('runs the filter straight under the title, with no row between them', async () => {
+    const ui = renderAt(100, 40);
+    await tick(20);
+    const lines = stripAnsiStyles(ui.lastFrame()).split('\n');
+
+    expect(indexOfLine(lines, 'Type to filter…')).toBe(indexOfLine(lines, 'Settings') + 1);
+
+    ui.unmount();
+  });
+
+  it('heads the help block with a rule carrying the highlighted row label', async () => {
+    overlayStore.open('settings', 'workflow.mode');
+    const ui = renderAt(100, 40);
+    await tick(20);
+    const lines = frameLines(ui);
+    const rule = lines.find((line) => RULE_ROW.test(line));
+
+    expect(rule).toMatch(/Mode [─-]{3,}/);
+    expect(indexOfLine(lines, 'quick')).toBe(lines.indexOf(rule ?? '') + 1);
+
+    ui.unmount();
+  });
+
+  it('names the seat, not the row key, on the rule above a crew help block', async () => {
+    overlayStore.open('settings', 'seat:build');
+    const ui = renderAt(100, 40);
+    await tick(20);
+
+    expect(frameLines(ui).find((line) => RULE_ROW.test(line))).toMatch(/BUILD [─-]{3,}/);
+
+    ui.unmount();
+  });
+
+  it('prices every mode and marks the configured one on the right edge', async () => {
+    seed({ workflow: { mode: 'speckit' } });
+    overlayStore.open('settings', 'workflow.mode');
+    const ui = renderAt(100, 40);
+    await tick(20);
+    const lines = frameLines(ui);
+
+    const modeLine = (mode: string) => panelText(lineWith(lines, mode) ?? '');
+
+    expect(modeLine('quick     1 planning call · 0 gates')).not.toMatch(/current$/);
+    expect(modeLine('speckit   6-7 planning calls · 3 gates')).toMatch(/current$/);
+    expect(lines.filter((line) => panelText(line).endsWith('current'))).toHaveLength(1);
+
+    ui.unmount();
+  });
+
+  it.each([
+    ['workflow.mode', 'space cycle'],
+    ['validation.lint', 'space toggle'],
+    ['validation.testCommand', '⏎ edit'],
+  ])('advertises %s as %s in the legend', async (focus, hint) => {
+    overlayStore.open('settings', focus);
+    const ui = renderAt(100, 40);
+    await tick(20);
+
+    expect(stripAnsiStyles(ui.lastFrame())).toContain(`↑↓ navigate · ${hint} · esc close`);
+
+    ui.unmount();
+  });
+
+  it('reads an unset test command as auto', async () => {
+    seed({ validation: { testCommand: undefined } });
+    overlayStore.open('settings', 'validation.testCommand');
+    const ui = renderAt(100, 40);
+    await tick(20);
+
+    const row = frameLines(ui).find(
+      (line) => line.includes('Test command') && !RULE_ROW.test(line),
+    );
+
+    expect(panelText(row ?? '')).toMatch(/auto$/);
+
+    ui.unmount();
+  });
+
+  // The commit strategy is no longer a value the config accepts, and spend is read in `/usage`
+  // rather than switched on for a main screen that shows no figure. Neither has a row to land on,
+  // by cursor or by click; the seats the user still chooses are untouched.
+  it('offers no row for the retired commit strategy or spend toggle', async () => {
+    _resetMouseZones();
+    overlayStore.open('settings', 'filter:workflow');
+    const ui = renderAt(120, 40);
+    await flushEffects();
+    const lines = frameLines(ui);
+    const zones = [...collectClickableZones({ cols: 120, rows: 40 }).keys()];
+
+    expect(lineWith(lines, 'Commit strategy')).toBeUndefined();
+    expect(lineWith(lines, 'Show spend')).toBeUndefined();
+    expect(zones).not.toContain('list-row:workflow.git.commitStrategy');
+    expect(zones).not.toContain('list-row:workflow.showSpend');
+
+    expect(lineWith(lines, 'Create branch')).toBeDefined();
+    expect(zones).toContain('list-row:workflow.git.createBranch');
+
+    ui.unmount();
+  });
+
+  it('keeps the build and review seats selectable beside the retired rows', async () => {
+    _resetMouseZones();
+    overlayStore.open('settings', 'seat:build');
+    const ui = renderAt(120, 40);
+    await flushEffects();
+    const zones = [...collectClickableZones({ cols: 120, rows: 40 }).keys()];
+
+    expect(zones).toContain('list-row:seat:build');
+    expect(zones).toContain('list-row:seat:review');
+
+    ui.unmount();
+  });
+
+  it('keeps the list rows clickable', async () => {
+    _resetMouseZones();
+    overlayStore.open('settings', 'validation.typecheck');
+    const ui = renderAt(120, 40);
+    await flushEffects();
+
+    expect([...collectClickableZones({ cols: 120, rows: 40 }).keys()]).toContain(
+      'list-row:validation.typecheck',
+    );
+
+    ui.unmount();
+  });
+
+  it.each([
+    ['seat:plan', 'a one-line help'],
+    ['workflow.mode', 'the mode table'],
+  ])('leaves a blank row above the rule for %s (%s)', async (focus) => {
+    overlayStore.open('settings', focus);
+    const ui = renderAt(100, 40);
+    await tick(20);
+    const lines = stripAnsiStyles(ui.lastFrame()).split('\n');
+    const rule = lines.findIndex((line) => RULE_ROW.test(line));
+
+    expect(rule).toBeGreaterThan(0);
+    expect(panelText(lines[rule - 1] ?? '')).toBe('');
+
+    ui.unmount();
+  });
+
+  it('closes the mode table one blank row above the legend', async () => {
+    overlayStore.open('settings', 'workflow.mode');
+    const ui = renderAt(100, 40);
+    await tick(20);
+    const lines = stripAnsiStyles(ui.lastFrame()).split('\n');
+    const speckit = indexOfLine(lines, 'speckit');
+
+    expect(speckit).toBeGreaterThan(indexOfLine(lines, 'quick'));
+    expect(panelText(lines[speckit + 1] ?? '')).toBe('');
+    expect(lines[speckit + 2]).toContain('↑↓ navigate');
+
+    ui.unmount();
+  });
+
+  it('spends a blank row between sections only where the list has rows to spare', async () => {
+    const roomy = renderAt(120, 40);
+    await tick(20);
+    const roomyLines = stripAnsiStyles(roomy.lastFrame()).split('\n');
+    const roomyHeader = indexOfLine(roomyLines, 'Tuning');
+    expect(panelText(roomyLines[roomyHeader - 1] ?? '')).toBe('');
+    roomy.unmount();
+
+    const tight = renderAt(80, 24);
+    await tick(20);
+    const tightLines = stripAnsiStyles(tight.lastFrame()).split('\n');
+    const tightHeader = indexOfLine(tightLines, 'Tuning');
+    expect(tightLines[tightHeader - 1]).toContain('REVIEW');
+    tight.unmount();
   });
 });

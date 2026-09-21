@@ -9,6 +9,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { BRIEF_READINESS_FILE, sessionDir } from '../../../core/paths.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
+import { APPLICATION_DEFAULT_CONTEXT_TOKENS } from '../../providers/runtime-context.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import type { BriefReadinessBlockKind, BriefReadinessGateReport } from './brief-readiness-gate.js';
 import {
@@ -44,7 +45,6 @@ const LOCAL_AGENT_PROFILE = {
   kind: 'agent',
   command: 'local-worker',
   model: 'local-model',
-  costTier: 'cheap',
 } as const;
 
 function blockedReport(kinds: BriefReadinessBlockKind[]): BriefReadinessGateReport {
@@ -303,7 +303,7 @@ describe('runBriefReadinessGate', () => {
     expect(report.blocks[0]).toMatchObject({ taskId: 'T001', kind: 'stale-conflict' });
   });
 
-  it('unblocks an oversized brief at the model cache window and blocks it at the conservative fallback without the cache', async () => {
+  it('uses the observed active window instead of letting catalog capacity overstate readiness', async () => {
     projectDir = createTempDir('readiness-gate');
     const tasks = [oversizedTask()];
     const config = makeConfig({
@@ -316,7 +316,6 @@ describe('runBriefReadinessGate', () => {
             provider: 'ollama',
             apiBase: 'http://localhost:11434/v1',
             model: 'runtime-wide',
-            costTier: 'standard',
           },
         },
       },
@@ -335,14 +334,14 @@ describe('runBriefReadinessGate', () => {
     });
     const unrouted = await runBriefReadinessGate({ tasks, config, projectDir });
 
-    expect(routed.ok).toBe(true);
-    expect(routed.blocks).toEqual([]);
+    expect(routed.ok).toBe(false);
+    expect(routed.blocks[0]).toMatchObject({ taskId: 'T001', kind: 'overflow' });
     expect(routed.metadata[0]).toMatchObject({
       taskId: 'T001',
-      workerProfile: 'catalog-api',
-      contextFit: 'fits',
-      contextLength: CACHE_CONTEXT_LENGTH,
+      contextFit: 'overflow',
+      contextLength: APPLICATION_DEFAULT_CONTEXT_TOKENS,
     });
+    expect(routed.metadata[0]?.workerProfile).toBeUndefined();
     expect(unrouted.ok).toBe(false);
     expect(unrouted.blocks[0]).toMatchObject({ taskId: 'T001', kind: 'overflow' });
     expect(unrouted.metadata[0]?.contextLength).toBe(DEFAULT_UNKNOWN_CONTEXT_LENGTH);

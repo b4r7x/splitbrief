@@ -25,6 +25,7 @@ function baseProjection(
     ts: event.ts,
     phase: opts.phase,
     ...(opts.taskId !== undefined && { taskId: opts.taskId }),
+    ...(event.taskId !== undefined && { taskId: event.taskId }),
     callId: event.callId,
     role: event.role,
     backendKind: event.backendKind,
@@ -32,6 +33,13 @@ function baseProjection(
     ...(event.runnerName !== undefined && { runnerName: event.runnerName }),
     ...(event.model !== undefined && { model: event.model }),
     ...(event.attempt !== undefined && { attempt: event.attempt }),
+    ...(event.attemptId !== undefined && { attemptId: event.attemptId }),
+    ...(event.transport !== undefined && { transport: event.transport }),
+    ...(event.sessionScope !== undefined && { sessionScope: event.sessionScope }),
+    ...(event.invocationIdentity !== undefined && {
+      invocationIdentity: event.invocationIdentity,
+    }),
+    ...(event.usageBoundary !== undefined && { usageBoundary: event.usageBoundary }),
   };
 }
 
@@ -43,6 +51,8 @@ export function projectRunnerCallEvent(
   switch (event.type) {
     case 'call_started':
       return { type: 'runner_call_started', ...base };
+    case 'call_runtime_status':
+      return { type: 'runner_call_runtime_status', ...base, runtimeStatus: event.runtimeStatus };
     case 'call_text_delta':
       return {
         type: 'runner_call_text_delta',

@@ -18,6 +18,33 @@ export type ResolveAttachmentResult =
   | { ok: true; attachment: Attachment }
   | { ok: false; reason: ResolveAttachmentReason };
 
+export type AttachmentFailureAction = 'attach' | 'send';
+
+export function formatAttachmentFailure(input: {
+  action: AttachmentFailureAction;
+  reason: ResolveAttachmentReason;
+  imageId?: string | undefined;
+}): string {
+  const subject = input.action === 'send' ? 'send image' : 'attach image';
+  const identifiedSubject =
+    input.action === 'send' && input.imageId !== undefined
+      ? `send image (${input.imageId})`
+      : subject;
+
+  switch (input.reason) {
+    case 'not-found':
+      return input.action === 'send'
+        ? `Cannot ${identifiedSubject}: the file is no longer available. Remove it from the draft and attach it again.`
+        : 'Cannot attach image: the file was not found. Check the path and try again.';
+    case 'not-image':
+      return `Cannot ${subject}: choose a PNG, JPEG, GIF, WebP, or BMP file.`;
+    case 'too-large':
+      return `Cannot ${subject}: the file is larger than 10 MiB. Choose a smaller image.`;
+    case 'outside-safe-roots':
+      return `Cannot ${subject}: the file must be inside the project or home folder.`;
+  }
+}
+
 interface ResolveAttachmentOpts {
   input: string;
   projectDir: string;

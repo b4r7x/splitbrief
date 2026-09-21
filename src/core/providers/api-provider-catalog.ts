@@ -126,7 +126,7 @@ export const API_PROVIDER_CATALOG = Object.freeze({
     offering: 'local',
     category: 'local-service',
     locality: 'local',
-    roles: ['implementer'],
+    roles: ['planner', 'implementer'],
     endpointPolicy: { kind: 'loopback', defaultBaseURL: 'http://localhost:11434/v1' },
     credentialEnv: null,
     credentialPrefix: null,
@@ -147,7 +147,7 @@ export const API_PROVIDER_CATALOG = Object.freeze({
     offering: 'local',
     category: 'local-service',
     locality: 'local',
-    roles: ['implementer'],
+    roles: ['planner', 'implementer'],
     endpointPolicy: { kind: 'loopback', defaultBaseURL: 'http://localhost:1234/v1' },
     credentialEnv: null,
     credentialPrefix: null,
@@ -160,6 +160,30 @@ export const API_PROVIDER_CATALOG = Object.freeze({
     privacyURL: 'https://lmstudio.ai/app-privacy',
     termsURL: 'https://lmstudio.ai/terms',
     asOf: '2026-07-31',
+  }),
+  'llama-cpp': freezeDescriptor({
+    id: 'llama-cpp',
+    displayName: 'llama.cpp',
+    service: 'llama-cpp',
+    offering: 'local',
+    category: 'local-service',
+    locality: 'local',
+    roles: ['planner', 'implementer'],
+    endpointPolicy: { kind: 'loopback', defaultBaseURL: 'http://localhost:8080/v1' },
+    credentialEnv: null,
+    credentialPrefix: null,
+    authDiscoveryMode: 'optional-api-key-unverified',
+    modelDiscoveryMode: 'native-local-inventory',
+    mandatoryPreflightFacts: LOCAL_API_PREFLIGHT_FACTS,
+    billing: 'local',
+    compatibility: 'beta',
+    dataUse: 'local',
+    // llama.cpp ships no hosted service: the server README is the endpoint
+    // contract a self-hosted operator runs under, and the repository license is
+    // the only terms the project publishes.
+    privacyURL: 'https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md',
+    termsURL: 'https://github.com/ggml-org/llama.cpp/blob/master/LICENSE',
+    asOf: '2026-09-16',
   }),
 } satisfies Record<string, ApiProviderDescriptor>);
 

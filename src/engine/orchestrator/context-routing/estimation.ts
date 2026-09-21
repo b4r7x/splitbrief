@@ -18,10 +18,13 @@ export function estimateFormattedTaskPromptTokens(
     contextLength: opts.contextLength,
     languageContext,
     writesFiles,
+    outputContract: opts.outputContract,
   });
   return (
-    estimateTokens(formatImplementerSystemPreamble(languageContext, writesFiles), opts.modelId) +
-    estimateTokens(prompt, opts.modelId)
+    estimateTokens(
+      formatImplementerSystemPreamble(languageContext, writesFiles, opts.outputContract),
+      opts.modelId,
+    ) + estimateTokens(prompt, opts.modelId)
   );
 }
 

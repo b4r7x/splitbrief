@@ -12,7 +12,10 @@ afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
-import type { TieredApprovalResponse } from '../../../core/approval/types.js';
+import type {
+  TieredApprovalRequest,
+  TieredApprovalResponse,
+} from '../../../core/approval/types.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 
 function makeInput(overrides: Partial<GateChangedFilesInput> = {}): GateChangedFilesInput {
@@ -111,5 +114,104 @@ describe('gateChangedFiles', () => {
     expect(result.confirmApprovals?.[1]?.actionDescription).toBe('write package.json');
     expect(result.confirmApprovals?.[0]?.reason).toBe('config plane reason');
     expect(result.confirmApprovals?.[1]?.reason).toBe('package manifest reason');
+  });
+
+  function recordingCallbacks(
+    requests: TieredApprovalRequest[],
+  ): GateChangedFilesInput['callbacks'] {
+    return {
+      onApprovalNeeded: async () => ({ approved: true }),
+      onComplete: () => {},
+      onTieredApproval: async (request): Promise<TieredApprovalResponse> => {
+        requests.push(request);
+        return { decision: 'deny', reason: 'denied' };
+      },
+    };
+  }
+
+  it('approves the exact declared path even when it contains spaces', async () => {
+    const requests: TieredApprovalRequest[] = [];
+    const result = await gateChangedFiles(
+      makeInput({
+        task: makeTask({ file: 'src/my app.ts' }),
+        changedFiles: ['src/my app.ts'],
+        config: makeApprovalConfig({ enabled: true }),
+        callbacks: recordingCallbacks(requests),
+      }),
+    );
+
+    expect(result.allow).toBe(true);
+    expect(requests).toEqual([]);
+  });
+
+  it.each([
+    { name: 'suffix of a declared file', changed: 'src/app.ts.backup', dependsOnFiles: [] },
+    { name: 'declared file under another root', changed: 'other/src/app.ts', dependsOnFiles: [] },
+    {
+      name: 'suffix of a selected dependency',
+      changed: 'src/shared/utils.ts.orig',
+      dependsOnFiles: ['src/shared/utils.ts'],
+    },
+  ])('$name reaches the sticky tier', async ({ changed, dependsOnFiles }) => {
+    const requests: TieredApprovalRequest[] = [];
+    const result = await gateChangedFiles(
+      makeInput({
+        task: makeTask({ file: 'src/app.ts' }),
+        changedFiles: [changed],
+        dependsOnFiles,
+        config: makeApprovalConfig({ enabled: true }),
+        callbacks: recordingCallbacks(requests),
+      }),
+    );
+
+    expect(result.allow).toBe(false);
+    expect(result.rejectedFile).toBe(changed);
+    expect(requests.map((request) => [request.tier, request.actionClass])).toEqual([
+      ['sticky', 'write_out_of_scope'],
+    ]);
+  });
+
+  it('writes to a selected dependency are auto-approved', async () => {
+    const requests: TieredApprovalRequest[] = [];
+    const result = await gateChangedFiles(
+      makeInput({
+        changedFiles: ['src/shared/utils.ts'],
+        dependsOnFiles: ['./src/shared/utils.ts'],
+        config: makeApprovalConfig({ enabled: true }),
+        callbacks: recordingCallbacks(requests),
+      }),
+    );
+
+    expect(result.allow).toBe(true);
+    expect(requests).toEqual([]);
+  });
+
+  it('a sticky grant for app.ts does not cover its backup', async () => {
+    const requests: TieredApprovalRequest[] = [];
+    const input = makeInput({
+      changedFiles: ['src/app.ts'],
+      config: makeApprovalConfig({ enabled: true }),
+      callbacks: {
+        onApprovalNeeded: async () => ({ approved: true }),
+        onComplete: () => {},
+        onTieredApproval: async (request): Promise<TieredApprovalResponse> => {
+          requests.push(request);
+          return request.actionDescription === 'write src/app.ts'
+            ? { decision: 'allow', scope: 'session' }
+            : { decision: 'deny', reason: 'not granted' };
+        },
+      },
+    });
+
+    expect((await gateChangedFiles(input)).allow).toBe(true);
+    expect((await gateChangedFiles(input)).allow).toBe(true);
+    const backup = await gateChangedFiles({ ...input, changedFiles: ['src/app.ts.backup'] });
+
+    expect(backup.allow).toBe(false);
+    expect(backup.rejectedFile).toBe('src/app.ts.backup');
+    expect(requests.map((request) => request.actionDescription)).toEqual([
+      'write src/app.ts',
+      'write src/app.ts.backup',
+    ]);
   });
 });

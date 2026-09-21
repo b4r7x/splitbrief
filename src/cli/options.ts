@@ -1,8 +1,10 @@
 import { InvalidArgumentError, type Command } from 'commander';
+import { cliError } from './errors.js';
 import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-catalog.js';
 import { IMPLEMENTER_CLI_TOOL_IDS } from '../core/runners/cli-tool-catalog.js';
 import { META_PROVIDER_IDS, OutputFormatSchema, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
-import { cliError } from './errors.js';
+import type { RecoveryAction } from '../core/schemas/enums.js';
+import type { SeatSwapCandidate } from '../core/schemas/recovery/schemas.js';
 
 const IMPLEMENTER_TOOL_IDS = [
   ...IMPLEMENTER_CLI_TOOL_IDS,
@@ -33,18 +35,6 @@ export function parsePositiveIntegerOption(value: string): number {
   return parsed;
 }
 
-export function parseBudgetOption(value: string): number {
-  const trimmed = value.trim();
-  if (trimmed.length === 0 || !/^\d+(\.\d+)?$/.test(trimmed)) {
-    throw new InvalidArgumentError(`'${value}' is not a valid budget amount.`);
-  }
-  const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new InvalidArgumentError(`'${value}' must be a positive number.`);
-  }
-  return parsed;
-}
-
 export function parseOutputFormatOption(value: string): string {
   const parsed = OutputFormatSchema.safeParse(value);
   if (!parsed.success) {
@@ -55,24 +45,119 @@ export function parseOutputFormatOption(value: string): string {
   return parsed.data;
 }
 
+export function parseSkillIdsOption(value: string): string[] {
+  const ids = value
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id !== '');
+  if (ids.length === 0) {
+    throw new InvalidArgumentError(`'${value}' names no skill ids.`);
+  }
+  return ids;
+}
+
+export type SeatSpec = Readonly<{ tool: string; model?: string; effort?: string }>;
+
+/**
+ * The seat grammar `<tool>[:<model>][@<effort>]` the skills already document for
+ * `impl=` / `review=`: split on the first `:` and the last `@`, so a model id
+ * may carry colons and the effort word is always the tail.
+ */
+export function parseSeatSpecOption(value: string): SeatSpec {
+  const spec = value.trim();
+  const at = spec.lastIndexOf('@');
+  const head = at === -1 ? spec : spec.slice(0, at);
+  const effort = at === -1 ? undefined : spec.slice(at + 1).trim();
+  const colon = head.indexOf(':');
+  const tool = (colon === -1 ? head : head.slice(0, colon)).trim();
+  const model = colon === -1 ? undefined : head.slice(colon + 1).trim();
+  if (tool === '') {
+    throw new InvalidArgumentError(`'${value}' names no tool. Use <tool>[:<model>][@<effort>].`);
+  }
+  if (model === '') {
+    throw new InvalidArgumentError(`'${value}' names an empty model after ':'.`);
+  }
+  if (effort === '') {
+    throw new InvalidArgumentError(`'${value}' names an empty effort after '@'.`);
+  }
+  return { tool, ...(model !== undefined && { model }), ...(effort !== undefined && { effort }) };
+}
+
+export type RecoveryActionOption = Readonly<{
+  action: Extract<
+    RecoveryAction,
+    'skip-current-task' | 'retry-same-worker' | 'switch-seat' | 'end-run'
+  >;
+  candidate?: SeatSwapCandidate;
+}>;
+
+/**
+ * The halts `splitbrief continue` can answer without the panel, in the words the
+ * resume line prints: `skip`, `retry`, `switch-seat:<tool>[:<model>]`, `end-run`.
+ * The first three carry the run on; `end-run` closes it and the command stops there.
+ */
+export function parseRecoveryActionOption(value: string): RecoveryActionOption {
+  const spec = value.trim();
+  if (spec === 'skip') return { action: 'skip-current-task' };
+  if (spec === 'retry') return { action: 'retry-same-worker' };
+  if (spec === 'end-run') return { action: 'end-run' };
+  if (spec.startsWith('switch-seat:')) {
+    const seat = parseSeatSpecOption(spec.slice('switch-seat:'.length));
+    return {
+      action: 'switch-seat',
+      candidate: { tool: seat.tool, ...(seat.model !== undefined && { model: seat.model }) },
+    };
+  }
+  throw cliError(
+    `'${value}' is not a recovery action. Use skip, retry, switch-seat:<tool>[:<model>], or end-run.`,
+    2,
+  );
+}
+
+/**
+ * A ref reaches `git diff` as a positional argument, where a leading `-` would
+ * be read as an option (`--output=<file>` writes the diff to any path). Refs
+ * cannot begin with `-` anyway, so rejecting the shape here costs nothing.
+ */
+export function parseGitRefOption(value: string): string {
+  const ref = value.trim();
+  if (ref === '') {
+    throw new InvalidArgumentError('a git ref cannot be empty.');
+  }
+  if (ref.startsWith('-')) {
+    throw new InvalidArgumentError(`'${value}' is not a git ref: a ref cannot start with '-'.`);
+  }
+  return ref;
+}
+
 function parseEnvRefOption(value: string): string {
   return value.startsWith('env:') ? value : `env:${value}`;
 }
 
-export function assertModeFlagsExclusive(opts: { json?: boolean; rpc?: boolean }): void {
-  if (opts.json && opts.rpc) throw cliError('--json and --rpc cannot be combined');
-}
-
-export function assertWorktreeStartOnly(opts: { worktree?: string }): void {
-  if (opts.worktree !== undefined) {
-    throw cliError(
-      '--worktree is only supported by `splitbrief start`; a resumed session already lives in its original worktree.',
-    );
+/**
+ * Every flag spelling that consumes the next argv token, read off the live
+ * registrations rather than a second list: the retired-command guard has to
+ * tell `--json attach x` (a retired subcommand behind a boolean flag) from
+ * `--project attach` (a directory that happens to be spelled like one).
+ */
+export function valueTakingFlags(program: Command): ReadonlySet<string> {
+  const flags = new Set<string>();
+  for (const command of [program, ...program.commands]) {
+    for (const option of command.options) {
+      if (!option.required && !option.optional) continue;
+      if (option.short !== undefined) flags.add(option.short);
+      if (option.long !== undefined) flags.add(option.long);
+    }
   }
+  return flags;
 }
 
 export function addWorkflowOptions(cmd: Command): Command {
+  // At 80 columns the widest term (37) leaves descriptions 39 — one short of commander's
+  // default minWidthToWrap of 40, below which it emits every description unwrapped and the
+  // terminal breaks them mid-word. 32, not 39, so a term up to 44 columns still wraps.
   return cmd
+    .configureHelp({ minWidthToWrap: 32 })
     .option('--approve <level>', 'Approval gates: none, spec, plan, all, default (follows mode)')
     .option('--model <model>', 'Override implementer model (alias for --implementer-model)')
     .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
@@ -149,14 +234,13 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--no-mouse', 'Disable mouse tracking')
     .option('--hover', 'Enable hover highlight (opt-in; requires mouse + fullscreen)', false)
     .option('--mode <mode>', 'Workflow mode: quick, standard, or speckit')
-    .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseBudgetOption)
     .option(
       '--planner-effort <level>',
-      'Planner effort hint: low, medium, high, xhigh. Dropped on unsupported backends.',
+      "Planner effort hint: none, minimal, low, medium, high, xhigh, max. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it.",
     )
     .option(
       '--reviewer-effort <level>',
-      'Reviewer effort hint: low, medium, high, xhigh. Dropped on unsupported backends.',
+      "Reviewer effort hint: none, minimal, low, medium, high, xhigh, max. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it.",
     )
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
     .option('--allow-repo-runners', ALLOW_REPO_RUNNERS_HELP, false)
@@ -166,11 +250,38 @@ export function addWorkflowOptions(cmd: Command): Command {
       false,
     )
     .option('--json', 'Headless mode: emit public NDJSON records to stdout, skip TUI render', false)
-    .option('--rpc', 'RPC mode: bidirectional NDJSON on stdin/stdout', false)
     .option(
-      '--otel-exporter <name>',
-      'Bootstrap an OTel exporter (currently only "console"); requires otel.enabled in config',
+      '--plain',
+      'Headless mode: emit one plain line per phase, task, review and completion',
+      false,
     )
-    .option('--worktree [name]', 'run in a new linked git worktree (.trees/<name>)')
-    .option('--yolo', 'Skip file-write tiered approval prompts for this session', false);
+    .option('--yolo', 'Skip file-write tiered approval prompts for this session', false)
+    .option(
+      '--skills <ids>',
+      'Attach project/global skills to the planner (comma-separated ids)',
+      parseSkillIdsOption,
+    )
+    .option(
+      '--action <action>',
+      '`continue` only: apply this action to the pending recovery — skip, retry, switch-seat:<tool>[:<model>], or end-run',
+      parseRecoveryActionOption,
+    )
+    .hook('preAction', (command) => {
+      assertOutputModeExclusive(command.opts<OutputModeOpts>());
+    });
+}
+
+interface OutputModeOpts {
+  json?: boolean | undefined;
+  plain?: boolean | undefined;
+}
+
+/**
+ * `--plain` and `--json` are two renderings of the same headless stream and
+ * cannot share one stdout. The pair needs its own guard.
+ */
+function assertOutputModeExclusive(opts: Readonly<OutputModeOpts>): void {
+  if (opts.json === true && opts.plain === true) {
+    throw cliError('--plain and --json cannot be combined; choose one output mode.', 2);
+  }
 }

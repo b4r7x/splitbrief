@@ -224,7 +224,25 @@ export interface ReviewInputHandler {
   handleInput: (text: string) => Promise<void>;
 }
 
-export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewInputHandler {
+/**
+ * The two effects live review input spends outside the stores: the editor process and the
+ * planner queue. Supplied whole or not at all — a caller that hands over one function owns
+ * both, so no surface can start a real editor while it believes it is running on fixtures.
+ */
+export interface ReviewInputEffects {
+  openExternalEditor: (inputMode: UseInputModeResult) => Promise<void>;
+  enqueue: typeof requestEnqueue;
+}
+
+const productionReviewInputEffects: ReviewInputEffects = {
+  openExternalEditor: (inputMode) => openReviewFileExternally(inputMode),
+  enqueue: requestEnqueue,
+};
+
+export function createReviewInputHandler(
+  inputMode: UseInputModeResult,
+  effects: ReviewInputEffects = productionReviewInputEffects,
+): ReviewInputHandler {
   const handleInput = async (text: string) => {
     if (inputMode.mode === 'normal') {
       const lifecycle = lifecycleStore.get();
@@ -246,7 +264,7 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
       if (isLivePhase(phase)) {
         const trimmed = text.trim();
         if (trimmed) {
-          const result = await requestEnqueue(trimmed, phase);
+          const result = await effects.enqueue(trimmed, phase);
           if (!result) {
             feedbackStore.setError('Cannot queue message: no active workflow.');
           } else if (result.status === 'rejected') {
@@ -284,7 +302,7 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
         return;
       }
       if (parsed.kind === 'open-external-editor') {
-        await openReviewFileExternally(inputMode);
+        await effects.openExternalEditor(inputMode);
       }
       return;
     }

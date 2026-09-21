@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
+import { RUNNER_CALL_MESSAGE_MAX_LENGTH, RunnerCallContextSchema } from './schema.js';
+import { projectRunnerCallEvents } from './event-projection.js';
 import { createRunnerAttemptCallbackBuffer } from './callback-buffer.js';
 import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from './output-limit.js';
 import type { RunnerCallContext, RunnerCallEvent } from './types.js';
@@ -62,6 +63,42 @@ function callStallCleared(ts: number): RunnerCallEvent {
 }
 
 describe('createRunnerAttemptCallbackBuffer', () => {
+  it('preserves full call attribution in overflow warning and activity events', () => {
+    const context = RunnerCallContextSchema.parse({
+      ...runnerContext,
+      attemptId: 'attempt-1',
+      attempt: 1,
+      runnerName: 'claude-code',
+      model: 'sonnet',
+      transport: { kind: 'stdout-final' },
+      sessionScope: { kind: 'workflow', workflowSessionId: 'session-1' },
+      taskId: 'T001',
+      usageBoundary: 'aggregate',
+      invocationIdentity: {
+        version: 1,
+        capturedAt: 1,
+        runner: { kind: 'cli', id: 'claude-code' },
+        billing: { posture: 'unknown', basis: 'unknown' },
+      },
+    });
+    const events: RunnerCallEvent[] = [];
+    const buffer = createRunnerAttemptCallbackBuffer({
+      onOutput: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+    buffer.callbacks.onCallEvent?.({ type: 'call_started', ts: 1, ...context });
+    buffer.callbacks.onOutput('x'.repeat(4 * 1024 * 1024));
+    buffer.flush();
+    const warning = events.find((event) => event.type === 'call_warning');
+    expect(warning).toMatchObject(context);
+    if (warning === undefined) throw new Error('Expected overflow warning');
+    const projected = projectRunnerCallEvents(warning, { phase: 'implementing', sequence: 1 });
+    expect(projected.map((event) => event.type)).toEqual([
+      'runner_call_warning',
+      'runner_call_activity',
+    ]);
+    for (const event of projected) expect(event).toMatchObject(context);
+  });
   it('emits one bounded overflow warning and preserves terminal call events', () => {
     const output: string[] = [];
     const events: RunnerCallEvent[] = [];

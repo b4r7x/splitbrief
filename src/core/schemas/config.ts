@@ -3,7 +3,6 @@ import {
   WorkflowModeSchema,
   CommitStrategySchema,
   ApproveLevelSchema,
-  SessionScopeSchema,
   IsolationStrategySchema,
 } from './enums.js';
 import { PlannerConfigSchema } from './planner-config.js';
@@ -11,9 +10,9 @@ import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './impl
 import { ReviewerConfigSchema } from './reviewer-config.js';
 import { CodebaseConfigSchema } from './codebase.js';
 import { HooksConfigSchema } from './hooks.js';
-import { OtelConfigSchema } from './otel.js';
 import { CompactionFormatSchema } from './compaction.js';
 import { CustomCommandsConfigSchema } from '../config/custom-commands.js';
+import { STACK_IDS } from '../validation/stacks/types.js';
 
 const PaletteCustomActionSchema = z.object({
   id: z.string().min(1),
@@ -24,16 +23,6 @@ const PaletteCustomActionSchema = z.object({
 
 const PaletteConfigSchema = z.object({
   customActions: z.array(PaletteCustomActionSchema).optional(),
-});
-
-const SnapshotsAutoConfigSchema = z.object({
-  preTask: z.boolean().optional(),
-  postTask: z.boolean().optional(),
-  preFinalReview: z.boolean().optional(),
-});
-
-const SnapshotsConfigSchema = z.object({
-  auto: SnapshotsAutoConfigSchema.optional(),
 });
 
 const EscalationConfigSchema = z
@@ -52,10 +41,23 @@ const EscalationConfigSchema = z
     }
   });
 
-const GitWorkflowConfigSchema = z.strictObject({
+const GitWorkflowFieldsSchema = z.strictObject({
   commitStrategy: CommitStrategySchema.optional(),
   createBranch: z.boolean().optional(),
 });
+
+// `none` is what the removed automation already did, so it loads and is dropped; `checkpoint` and
+// `per-task` asked SPLITBRIEF to write the git index, which it no longer does, so they fail the load.
+const GitWorkflowConfigSchema = GitWorkflowFieldsSchema.superRefine((git, ctx) => {
+  if (git.commitStrategy === undefined || git.commitStrategy === 'none') return;
+  ctx.addIssue({
+    code: 'custom',
+    message: `commitStrategy "${git.commitStrategy}" was removed — SPLITBRIEF no longer stages, commits or checkpoints; delete workflow.git.commit_strategy and commit your changes yourself.`,
+    path: ['commitStrategy'],
+  });
+}).transform(
+  ({ commitStrategy: _retired, ...git }): z.infer<typeof GitWorkflowFieldsSchema> => git,
+);
 
 export const TaskReviewModeSchema = z.enum(['none', 'failed', 'every']);
 export type TaskReviewMode = z.infer<typeof TaskReviewModeSchema>;
@@ -67,19 +69,16 @@ const SpeckitWorkflowConfigSchema = z.strictObject({
 export const ApprovalTierSchema = z.enum(['auto', 'sticky', 'confirm']);
 export type ApprovalTier = z.infer<typeof ApprovalTierSchema>;
 
-export const TierMapSchema = z.object({
+export const TierMapSchema = z.strictObject({
   read: ApprovalTierSchema.optional(),
   write_in_scope: ApprovalTierSchema.optional(),
-  validation: ApprovalTierSchema.optional(),
   write_out_of_scope: ApprovalTierSchema.optional(),
   destructive: ApprovalTierSchema.optional(),
-  network: ApprovalTierSchema.optional(),
   package_change: ApprovalTierSchema.optional(),
 });
 
-export const ApprovalConfigSchema = z.object({
+export const ApprovalConfigSchema = z.strictObject({
   enabled: z.boolean().default(true),
-  headless: z.boolean().optional(),
   tiers: TierMapSchema.optional(),
   feedRejectionsToPlanner: z.boolean().default(true),
   allowedPaths: z.array(z.string().min(1)).optional(),
@@ -107,6 +106,7 @@ export const ConfigSchema = z.object({
     lintCommand: z.string().min(1).optional(),
     testPattern: z.string().min(1).optional(),
     timeoutMs: z.number().int().min(1000).optional(),
+    stack: z.enum(STACK_IDS).optional(),
   }),
   workflow: z.strictObject({
     approve: ApproveLevelSchema.optional(),
@@ -115,35 +115,23 @@ export const ConfigSchema = z.object({
     isolation: IsolationStrategySchema.optional(),
     speckit: SpeckitWorkflowConfigSchema.optional(),
     mode: WorkflowModeSchema.optional(),
-    briefReview: z.enum(['simple', 'rich']).optional(),
+    briefReview: z.enum(['simple']).optional(),
     taskReview: TaskReviewModeSchema.optional(),
-    maxBudget: z.number().positive().optional(),
-    budgetPauseThreshold: z.number().min(0).max(1).optional(),
     driftChainThreshold: z.number().min(0).max(1).optional(),
-    costGate: z.boolean().optional(),
-    persistTranscript: z.boolean().default(true),
     compactionThreshold: z.number().int().min(10).optional(),
     compactionFormat: CompactionFormatSchema.default('auto'),
+    showSpend: z.boolean().optional(),
   }),
   sessions: z
     .object({
-      scope: SessionScopeSchema.optional(),
+      scope: z.enum(['project']).optional(),
     })
     .optional(),
   escalation: EscalationConfigSchema.optional(),
   codebase: CodebaseConfigSchema.optional(),
   hooks: HooksConfigSchema.optional(),
-  otel: OtelConfigSchema.optional(),
-  snapshots: SnapshotsConfigSchema.optional(),
   palette: PaletteConfigSchema.optional(),
-  trust: z
-    .object({
-      customRenderers: z.boolean().default(false),
-    })
-    .optional(),
   approval: ApprovalConfigSchema.optional(),
-  plannerEstimateReview: z.boolean().optional(),
-  autoSplitOverflow: z.boolean().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

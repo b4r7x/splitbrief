@@ -1,6 +1,6 @@
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import { parseStreamLine } from '../../streaming/parse-stream-json.js';
+import { createStreamParser } from '../../streaming/parse-stream-json.js';
 import { reconcileFinalText } from '../../streaming/final-text.js';
 import { createQuestionAccumulator } from '../../parsers/question.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
@@ -43,6 +43,7 @@ interface StreamHandlerState {
 interface StreamHandlerCallbacks {
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
+  onSessionInit?: ((id: string) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   credentialValues?: readonly string[] | undefined;
@@ -55,6 +56,7 @@ interface ContentBlockTool {
 }
 
 export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
+  const parseStreamLine = createStreamParser();
   const recorder = createRunnerCallRecorder({
     context: callbacks.context,
     credentialValues: callbacks.credentialValues,
@@ -183,6 +185,7 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
 
     if (parsed.sessionId) {
       const sessionId = redactCredential(parsed.sessionId);
+      if (parsed.isSessionInit) callbacks.onSessionInit?.(sessionId);
       // Every stream-json frame restates the id, and the callback persists
       // workflow state on each call, so only a change is news.
       if (sessionId !== state.sessionId) {
@@ -258,7 +261,7 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
       state.usage = parsed.usage;
       state.recorder.usage({
         usage: parsed.usage,
-        semantics: parsed.isResult ? 'final' : 'delta',
+        semantics: parsed.usageSemantics ?? 'cumulative',
       });
     }
 
@@ -370,25 +373,10 @@ export function throwForClaudeCallFailure(result: RunnerCallResult): never {
 
 export function finishClaudeStream(state: ClaudeStreamState): RunnerCallResult {
   if (!state.isError && state.sawResult) {
-    if (!state.sawResultText && state.recorder.context.envelope !== undefined) {
-      // A `result` record without text is a missing final response: it cannot
-      // complete the call or fall back to earlier partials (REQ-013).
-      state.recorder.finishFailed({
-        status: 'failed',
-        error: {
-          code: 'task_compiler_final_response_missing',
-          message: 'Claude result carried no final response text',
-        },
-        usage: state.usage,
-        nativeSessionId: state.sessionId,
-        partial: true,
-      });
-    } else {
-      state.recorder.finishCompleted({
-        usage: state.usage,
-        nativeSessionId: state.sessionId,
-      });
-    }
+    state.recorder.finishCompleted({
+      usage: state.usage,
+      nativeSessionId: state.sessionId,
+    });
   }
 
   const result = state.recorder.finalResult();

@@ -3,7 +3,11 @@ import type { EffortLevel } from '../../../core/schemas/enums.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
-import { parseStreamLine } from '../../streaming/parse-stream-json.js';
+import {
+  createStreamParser,
+  parseStreamLine,
+  type StreamParseResult,
+} from '../../streaming/parse-stream-json.js';
 import { error } from '../../../utils/error.js';
 
 const CLAUDE_COMMAND = 'claude' as const;
@@ -66,10 +70,9 @@ function buildBaseArgs(opts: ClaudeBuildCommon): string[] {
 
 function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
   const args = buildBaseArgs(opts);
-  // REQ-017: the planner's read-only plan permission mode allows Read, Glob,
-  // Grep, and Plan only; no write, shell, agent, skill, or MCP tool is in its
-  // toolset. A configured --permission-mode or --allowedTools cannot widen it.
-  if (opts.mode === 'plan') args.push('--permission-mode', 'plan');
+  // SPLITBRIEF collects planner answers after the CLI turn finishes.
+  if (opts.mode === 'plan')
+    args.push('--permission-mode', 'plan', '--disallowedTools', 'AskUserQuestion');
   // A non-null sessionId is a handle Claude already minted, so continue that
   // conversation with --resume; --session-id names a NEW session and exits 1
   // ("Session ID <uuid> is already in use.") when given a consumed id.
@@ -94,7 +97,10 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
 }
 
 function toProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  const parsed = parseStreamLine(line);
+  return protocolEvents(parseStreamLine(line));
+}
+
+function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] {
   const events: CliProtocolEvent[] = [];
   if (parsed.sessionId !== undefined) {
     events.push({ type: 'session', nativeSessionId: parsed.sessionId });
@@ -182,6 +188,10 @@ function createAdapter(
     environment: {},
     outputContract: { kind: 'structured-terminal', terminalEvent: 'required' } as const,
     parse: toProtocolEvents,
+    createParser: () => {
+      const parse = createStreamParser();
+      return (line: string) => protocolEvents(parse(line));
+    },
     terminal: ({ events }: { events: readonly CliProtocolEvent[] }) => {
       const terminal = events.findLast((event) => event.type === 'result');
       if (terminal === undefined || terminal.type !== 'result') {
@@ -243,7 +253,7 @@ function rawContract(role: 'planner' | 'implementer'): RawClaudeCliContract {
     auth: { kind: 'env-or-native', env: ['ANTHROPIC_API_KEY'] },
     rawInvocation:
       role === 'planner'
-        ? [...CLAUDE_BASE_ARGS, '--permission-mode', 'plan']
+        ? [...CLAUDE_BASE_ARGS, '--permission-mode', 'plan', '--disallowedTools', 'AskUserQuestion']
         : [...CLAUDE_BASE_ARGS, '--permission-mode', 'acceptEdits'],
     promptTransport: 'stdin',
     expectedRawTerminal: 'result',

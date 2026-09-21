@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, type Dirent } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import { readdir } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { checkIgnoredPaths } from '../../lib/git/files.js';
 import { INTERNAL_SKIP_DIRS } from '../../core/paths.js';
 
@@ -21,41 +21,53 @@ export async function hashFile(filePath: string): Promise<string | null> {
 
 export const ALWAYS_EXCLUDED = INTERNAL_SKIP_DIRS;
 
-async function readdirRecursive(dir: string, base: string): Promise<string[]> {
-  let entries: Dirent[];
-  try {
-    entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' });
-  } catch {
-    return [];
-  }
-  const results: string[] = [];
+type DirectoryListing = { files: string[]; dirs: string[] };
+
+async function listDirectory(projectDir: string, rel: string): Promise<DirectoryListing> {
+  const dir = rel === '' ? projectDir : join(projectDir, rel);
+  const entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' });
+  const listing: DirectoryListing = { files: [], dirs: [] };
   for (const entry of entries) {
     const name = entry.name as string;
-    const rel = relative(base, join(dir, name));
-    const topLevel = rel.split(/[/\\]/)[0];
-    if (topLevel !== undefined && ALWAYS_EXCLUDED.includes(topLevel)) continue;
-    if (entry.isSymbolicLink()) continue;
-    if (entry.isDirectory()) {
-      const children = await readdirRecursive(join(dir, name), base);
-      results.push(...children);
-    } else {
-      results.push(rel);
-    }
+    if (ALWAYS_EXCLUDED.includes(name) || entry.isSymbolicLink()) continue;
+    const childRel = rel === '' ? name : `${rel}/${name}`;
+    if (entry.isDirectory()) listing.dirs.push(childRel);
+    else listing.files.push(childRel);
   }
-  return results;
+  return listing;
 }
 
+/**
+ * Breadth-first, one `git check-ignore` per depth for the directories found
+ * there: an ignored tree — node_modules, .venv, target, build, whatever the
+ * stack ignores — is never entered. Files are filtered the same way at the end.
+ */
 export async function collectTrackedFiles(
   projectDir: string,
   opts: CollectTrackedFilesOptions = {},
 ): Promise<string[]> {
-  const allFiles = await readdirRecursive(projectDir, projectDir);
-  if (allFiles.length === 0) return [];
+  const ignoreDir = opts.ignoreProjectDir ?? projectDir;
+  const files: string[] = [];
+  let level = [''];
+  while (level.length > 0) {
+    const dirs: string[] = [];
+    for (const rel of level) {
+      const listing = await listDirectory(projectDir, rel);
+      for (const file of listing.files) files.push(file);
+      for (const dir of listing.dirs) dirs.push(dir);
+    }
+    const ignoredDirs = new Set(
+      await checkIgnoredPaths(
+        ignoreDir,
+        dirs.map((dir) => `${dir}/`),
+      ),
+    );
+    level = dirs.filter((dir) => !ignoredDirs.has(`${dir}/`));
+  }
+  if (files.length === 0) return [];
 
-  const ignoredPaths = await checkIgnoredPaths(opts.ignoreProjectDir ?? projectDir, allFiles);
-
-  const ignored = new Set(ignoredPaths);
-  const filtered = allFiles.filter((rel) => !ignored.has(rel));
+  const ignored = new Set(await checkIgnoredPaths(ignoreDir, files));
+  const filtered = files.filter((rel) => !ignored.has(rel));
   filtered.sort();
   return filtered;
 }

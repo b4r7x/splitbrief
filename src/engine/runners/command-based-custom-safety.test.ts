@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import { runnerCallEventToSessionLogEntry } from '../calls/session-log.js';
-import { protectEngineEventForConsumer } from '../events/protection/protect.js';
+import { boundEngineEventForConsumer } from '../events/bound.js';
 import { invokeCustomCommandBasedRunner } from './command-based.js';
 import {
   admittedCustomRunner,
@@ -111,9 +111,7 @@ describe('invokeCustomCommandBasedRunner safety', () => {
       .flatMap((event, index) =>
         projectRunnerCallEvents(event, { phase: 'planning', sequence: index + 1 }),
       )
-      .map((event) =>
-        protectEngineEventForConsumer(event, { context: 'ipc', persistTranscript: true }),
-      );
+      .map((event) => boundEngineEventForConsumer(event, 'tui'));
     const sessionLogProjection = observation.events.map((event, index) =>
       runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index + 1 }),
     );

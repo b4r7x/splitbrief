@@ -6,10 +6,7 @@ import type { CliAuthChannelId } from '../../../core/runners/cli-tool-catalog.js
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
-import {
-  finishRunnerCallOutputLimit,
-  runnerCallLineOutputLimit,
-} from '../../calls/output-limit.js';
+import { runnerCallLineOutputLimit } from '../../calls/output-limit.js';
 import { error } from '../../../utils/error.js';
 import {
   buildClaudeIdleOptions,
@@ -19,19 +16,26 @@ import {
   interruptedError,
   markFailedClaudeStream,
   markInterruptedClaudeStream,
-  throwForClaudeCallFailure,
 } from './stream.js';
 import { buildClaudeArgs } from './args.js';
+import { withCliInvocationIdentity } from '../invocation-identity.js';
 import {
   claudeCredentialValues,
   defaultClaudeEnv,
   normalizeClaudeProcessOutputError,
 } from './child-env.js';
-import {
-  type ClaudeEnvelopeCallOptions,
-  claimClaudeDispatch,
-  prepareClaudeEnvelopeCall,
-} from './envelope-guard.js';
+
+let claudeCallSequence = 0;
+
+function createClaudeCallContext(model: string | undefined): RunnerCallContext {
+  return {
+    callId: `claude-${++claudeCallSequence}`,
+    role: 'planner',
+    backendKind: 'cli',
+    runnerName: 'claude',
+    ...(model !== undefined && { model }),
+  };
+}
 
 const CLAUDE_NOT_FOUND = 'Claude Code CLI not found. Install it from https://claude.ai/code';
 
@@ -55,7 +59,7 @@ function applyImageRefs(prompt: string, images: Attachment[] | undefined): strin
   return `${refs}\n\n${prompt}`;
 }
 
-interface ClaudeCallRunOptions extends ClaudeEnvelopeCallOptions {
+interface ClaudeCallRunOptions {
   args: string[];
   stdin: string;
   projectDir: string;
@@ -63,10 +67,13 @@ interface ClaudeCallRunOptions extends ClaudeEnvelopeCallOptions {
   sessionId: string | null;
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
+  onSessionInit?: ((id: string) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   authChannel?: CliAuthChannelId | undefined;
+  /** The runner's raw `authChannel`, kept apart from the resolved default in `authChannel`. */
+  configuredAuthChannel?: CliAuthChannelId | undefined;
   executable?: CliExecutableIdentity | null | undefined;
   signal?: AbortSignal | undefined;
   callContext?: RunnerCallContext | undefined;
@@ -77,25 +84,28 @@ interface ClaudeCallRunOptions extends ClaudeEnvelopeCallOptions {
 async function runClaudeCall(
   opts: ClaudeCallRunOptions,
 ): Promise<{ result: RunnerCallResult; sessionId: string | null }> {
-  const { context, attemptId, guard } = prepareClaudeEnvelopeCall({
-    callContext: opts.callContext,
-    model: opts.model,
-    role: 'planner',
-    signal: opts.signal,
-    idleWarnMs: opts.idleWarnMs,
-    idleKillMs: opts.idleKillMs,
-    ledger: opts.ledger,
-    attemptId: opts.attemptId,
-    envelope: opts.envelope,
-  });
+  const callContext = opts.callContext ?? createClaudeCallContext(opts.model);
+  // Without a trusted executable nothing is spawned: resolution below refuses.
+  const context =
+    opts.executable === null || opts.executable === undefined
+      ? callContext
+      : withCliInvocationIdentity({
+          runner: {
+            kind: 'cli',
+            tool: 'claude-code',
+            ...(opts.configuredAuthChannel !== undefined && {
+              authChannel: opts.configuredAuthChannel,
+            }),
+          },
+          callContext,
+          executable: opts.executable,
+        });
   const { state, handleLine } = createStreamHandler({
     onOutput: opts.onOutput,
     onSessionId: opts.onSessionId,
+    onSessionInit: opts.onSessionInit,
     onQuestion: opts.onQuestion,
-    onCallEvent: (event) => {
-      guard.onEvent(event);
-      opts.onCallEvent?.(event);
-    },
+    onCallEvent: opts.onCallEvent,
     credentialValues: claudeCredentialValues(opts.authChannel, opts.spawnEnv),
     context,
   });
@@ -105,9 +115,6 @@ async function runClaudeCall(
   try {
     trustedExecutablePath = (await resolveTrustedClaudeExecutable(opts.projectDir, opts.executable))
       .path;
-    if (opts.ledger !== undefined) {
-      claimClaudeDispatch(state, opts.ledger, attemptId);
-    }
     await spawnWithStdin({
       command: trustedExecutablePath,
       args: opts.args,
@@ -128,13 +135,11 @@ async function runClaudeCall(
         );
       },
       errorDetail: () => state.resultText ?? undefined,
-      signal: guard.signal,
+      signal: opts.signal,
       idle: buildClaudeIdleOptions(state, {
-        idleWarnMs: guard.idleWarnMs,
-        idleKillMs: guard.idleKillMs,
+        idleWarnMs: opts.idleWarnMs,
+        idleKillMs: opts.idleKillMs,
       }),
-      outputBudgetBytes: guard.outputBudgetBytes,
-      outputMaxBytes: guard.outputMaxBytes,
     });
   } catch (err) {
     const safeError = normalizeClaudeProcessOutputError(
@@ -142,19 +147,9 @@ async function runClaudeCall(
       trustedExecutablePath ?? opts.executable?.path,
       state.redactCredential,
     );
-    const limit = guard.limit();
-    if (limit !== null) {
-      finishRunnerCallOutputLimit(state.recorder, limit, {
-        usage: state.usage,
-        nativeSessionId: state.sessionId,
-      });
-      throwForClaudeCallFailure(state.recorder.finalResult());
-    }
-    markInterruptedClaudeStream(state, guard.signal);
-    if (!guard.signal?.aborted) markFailedClaudeStream(state, safeError);
+    markInterruptedClaudeStream(state, opts.signal);
+    if (!opts.signal?.aborted) markFailedClaudeStream(state, safeError);
     throw interruptedError(opts.signal, safeError, state.redactCredential);
-  } finally {
-    guard.cleanup();
   }
 
   const result = finishClaudeStream(state);
@@ -164,16 +159,19 @@ async function runClaudeCall(
 
 type ClaudePlannerStreamResult = RunnerCallResult & { sessionId?: string | null };
 
-export interface ClaudePlannerStreamOpts extends ClaudeEnvelopeCallOptions {
+export interface ClaudePlannerStreamOpts {
   prompt: string;
   projectDir: string;
   sessionId: string | null;
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
+  onSessionInit?: ((id: string) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   authChannel?: CliAuthChannelId | undefined;
+  /** The runner's raw `authChannel`, kept apart from the resolved default in `authChannel`. */
+  configuredAuthChannel?: CliAuthChannelId | undefined;
   env?: NodeJS.ProcessEnv | undefined;
   executable?: CliExecutableIdentity | null | undefined;
   effort?: EffortLevel | undefined;
@@ -206,31 +204,35 @@ export async function runClaudePlannerStream(
     sessionId: opts.sessionId,
     onOutput: opts.onOutput,
     onSessionId: opts.onSessionId,
+    onSessionInit: opts.onSessionInit,
     onQuestion: opts.onQuestion,
     onCallEvent: opts.onCallEvent,
     model: opts.model,
     authChannel: opts.authChannel,
+    configuredAuthChannel: opts.configuredAuthChannel,
     executable: opts.executable,
     signal: opts.signal,
     callContext: opts.callContext,
     idleWarnMs: opts.idleWarnMs,
     idleKillMs: opts.idleKillMs,
-    ledger: opts.ledger,
-    attemptId: opts.attemptId,
-    envelope: opts.envelope,
   });
 
   return { ...result, sessionId };
 }
 
-export interface ClaudeOneShotOpts extends ClaudeEnvelopeCallOptions {
+export interface ClaudeOneShotOpts {
   prompt: string;
   projectDir: string;
+  /** A read-only call runs in the tool's plan permission mode; only a write-files escalation leaves it. */
+  mode: 'plan' | 'escalate';
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
+  onSessionInit?: ((id: string) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   authChannel?: CliAuthChannelId | undefined;
+  /** The runner's raw `authChannel`, kept apart from the resolved default in `authChannel`. */
+  configuredAuthChannel?: CliAuthChannelId | undefined;
   executable?: CliExecutableIdentity | null | undefined;
   effort?: EffortLevel | undefined;
   configuredArgs?: readonly string[] | undefined;
@@ -244,7 +246,7 @@ export interface ClaudeOneShotOpts extends ClaudeEnvelopeCallOptions {
 export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerCallResult> {
   const args = buildClaudeArgs({
     projectDir: opts.projectDir,
-    mode: 'escalate',
+    mode: opts.mode,
     model: opts.model,
     effort: opts.effort,
     configuredArgs: opts.configuredArgs,
@@ -259,17 +261,16 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
     sessionId: null,
     onOutput: opts.onOutput,
     onSessionId: opts.onSessionId,
+    onSessionInit: opts.onSessionInit,
     onCallEvent: opts.onCallEvent,
     model: opts.model,
     authChannel: opts.authChannel,
+    configuredAuthChannel: opts.configuredAuthChannel,
     executable: opts.executable,
     signal: opts.signal,
     callContext: opts.callContext,
     idleWarnMs: opts.idleWarnMs,
     idleKillMs: opts.idleKillMs,
-    ledger: opts.ledger,
-    attemptId: opts.attemptId,
-    envelope: opts.envelope,
   });
 
   return result;

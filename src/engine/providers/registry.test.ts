@@ -19,7 +19,7 @@ afterEach(() => {
 
 describe('provider registry admission', () => {
   it('registers exactly the retained factories and matches the catalog', () => {
-    expect(Object.keys(KNOWN_PROVIDERS).toSorted()).toEqual(['lm-studio', 'ollama']);
+    expect(Object.keys(KNOWN_PROVIDERS).toSorted()).toEqual(['llama-cpp', 'lm-studio', 'ollama']);
     expect(Object.keys(KNOWN_PROVIDERS).toSorted()).toEqual(
       Object.keys(API_PROVIDER_CATALOG).toSorted(),
     );
@@ -83,6 +83,30 @@ describe('getProvider', () => {
     expect(() =>
       getProvider('custom-api', { apiBase: 'https://user:pass@example.com/v1', apiKey: 'sk-test' }),
     ).toThrow(/must not include credentials/);
+  });
+
+  it('keeps llama.cpp on its own loopback default and takes no invented credential', () => {
+    const provider = getProvider('llama-cpp');
+    expect(provider).toMatchObject({
+      name: 'llama-cpp',
+      baseURL: 'http://localhost:8080/v1',
+      isLocal: true,
+    });
+    expect(provider.apiKey()).toBe('');
+    expect(provider.dispatchAuthentication?.()).toBe('none');
+    expect(() =>
+      getProvider('llama-cpp', { apiBase: 'http://llama.example.test:8080/v1' }),
+    ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
+  });
+
+  it('honours an explicit llama.cpp credential only on its loopback endpoint', () => {
+    expect(getProvider('llama-cpp', { apiKey: 'llama-secret' }).apiKey()).toBe('llama-secret');
+    expect(() =>
+      getProvider('llama-cpp', {
+        apiBase: 'https://proxy.example.com/v1',
+        apiKey: 'llama-secret',
+      }),
+    ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
   });
 
   it('lists models from the admitted local provider', async () => {

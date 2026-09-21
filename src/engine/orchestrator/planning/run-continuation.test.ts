@@ -4,13 +4,15 @@ import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { Planner } from '../../planners/types.js';
 import type { Config } from '../../../core/schemas/config.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import {
   createTestSinks,
+  REAL_TASKS_MD,
   makePassingTask,
   makePassingPlanner,
   auto,
   manual,
-  runPhase as runPhaseHelper,
+  runPlanningTurn as runPhaseHelper,
   type RunOpts,
 } from '#testing/helpers/planning-phase.js';
 
@@ -27,52 +29,45 @@ function runPhase(opts: RunOpts = {}) {
 describe('runPlanningPhase — abort + continuation', () => {
   const abortCases: Array<{
     name: string;
-    fnKey: 'plan' | 'quickPlan';
     workflow: Partial<Config['workflow']>;
     partialText: string;
     continuationText: string;
   }> = [
     {
-      name: 'standard mode: plan() aborts → continuation carries partial + user text',
-      fnKey: 'plan',
+      name: 'standard mode: an aborted call continues with the partial + user text',
       workflow: auto(),
       partialText: 'partially generated spec...',
       continuationText: 'also use PostgreSQL 15',
     },
     {
-      name: 'quick mode: quickPlan() aborts → continuation carries partial + user text',
-      fnKey: 'quickPlan',
+      name: 'quick mode: an aborted call continues with the partial + user text',
       workflow: manual('quick'),
       partialText: 'quick plan partial output',
       continuationText: 'add more detail',
     },
   ];
 
-  it.each(abortCases)('$name', async ({ fnKey, workflow, partialText, continuationText }) => {
+  it.each(abortCases)('$name', async ({ workflow, partialText, continuationText }) => {
     const sinks = createTestSinks();
     let callCount = 0;
-    const fn: Planner['plan'] = async ({ feature, callbacks: plannerCbs }) => {
+    const continuedPhase: Planner['runPhase'] = async ({ call, inputs, callbacks: plannerCbs }) => {
       callCount++;
       if (callCount === 1) {
         plannerCbs.onOutput(partialText);
         sinks.abortTurn();
         throw new DOMException('The user aborted a request.', 'AbortError');
       }
-      expect(feature).toContain(partialText);
-      expect(feature).toContain(continuationText);
-      return fnKey === 'quickPlan'
-        ? {
-            spec: '',
-            plan: '',
-            tasks: [makePassingTask()],
-            usage: { inputTokens: 50, outputTokens: 25 },
-          }
-        : {
-            spec: '# Full Spec',
-            plan: '# Full Plan',
-            tasks: [makePassingTask()],
-            usage: { inputTokens: 100, outputTokens: 50 },
-          };
+      if (callCount === 2) {
+        // The step's own prompt is rebuilt; the continuation trails it.
+        expect(inputs.continuationTurn).toBeUndefined();
+        expect(inputs.promptSuffix).toContain(partialText);
+        expect(inputs.promptSuffix).toContain(continuationText);
+      }
+      return makePhaseCallResult({
+        call,
+        usage: { inputTokens: 100, outputTokens: 50 },
+        ...(call === 'tasks' ? { text: REAL_TASKS_MD, tasks: [makePassingTask()] } : {}),
+      });
     };
 
     const continuationPrompts: string[] = [];
@@ -81,7 +76,7 @@ describe('runPlanningPhase — abort + continuation', () => {
       return continuationText;
     };
     const { callbacks } = makeCallbacks({ onContinuationNeeded });
-    const planner = makePassingPlanner({ [fnKey]: fn });
+    const planner = makePassingPlanner({ runPhase: continuedPhase });
 
     const { result } = await runPhase({
       planner,
@@ -90,15 +85,15 @@ describe('runPlanningPhase — abort + continuation', () => {
       sinks,
     });
 
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(continuationPrompts).toEqual([partialText]);
-    expect(callCount).toBe(2);
+    expect(callCount).toBeGreaterThanOrEqual(2);
   });
 
   it('abort without onContinuationNeeded falls through to planning failure', async () => {
     const sinks = createTestSinks();
     let planCalls = 0;
-    const plan = async () => {
+    const abortingPhase: Planner['runPhase'] = async () => {
       planCalls++;
       sinks.abortTurn();
       throw new DOMException('The user aborted a request.', 'AbortError');
@@ -106,7 +101,7 @@ describe('runPlanningPhase — abort + continuation', () => {
     const { callbacks } = makeCallbacks({ onContinuationNeeded: undefined });
 
     const { result } = await runPhase({
-      planner: makePassingPlanner({ plan }),
+      planner: makePassingPlanner({ runPhase: abortingPhase }),
       callbacks,
       config: makeConfig({ workflow: auto() }),
       sinks,

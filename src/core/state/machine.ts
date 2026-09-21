@@ -1,5 +1,5 @@
 import type { MachineAction, StateAction } from './types.js';
-import type { WorkflowState } from '../schemas/workflow.js';
+import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../schemas/workflow.js';
 import type { TaskId } from '../schemas/task.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
 import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
@@ -7,19 +7,15 @@ import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../que
 import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
+import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 import { transitionError } from './errors.js';
-import {
-  assertCurrentExecutionPermit,
-  recordBriefReadiness,
-  rejectBriefAdmission,
-} from './brief-admission.js';
-
-export const CURRENT_STATE_VERSION = 4;
 
 const anytimeActions = [
-  'CANCEL',
-  'ABORT_TURN',
-  'CONTINUE_TURN',
+  'CLOSE_RUN',
+  'INTERRUPT_STEP',
+  'RESUME_STEP',
+  'SET_PLANNER_CONVERSATION',
+  'CLEAR_PLANNER_CONVERSATION',
   'SET_PLANNER_SESSION_ID',
   'REWIND_TO_SPEC',
   'REWIND_TO_PLAN',
@@ -33,8 +29,6 @@ const anytimeActions = [
   'SET_PENDING_RECOVERY',
   'PAUSE_PENDING_RECOVERY',
   'MARK_RECOVERY_APPLYING',
-  'ACKNOWLEDGE_BUDGET_PAUSE',
-  'ABORT_PENDING_RECOVERY',
   'RESOLVE_PENDING_RECOVERY',
 ] as const satisfies readonly MachineAction['type'][];
 
@@ -47,21 +41,22 @@ const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
 ] as const satisfies readonly MachineAction['type'][];
 
 const phaseActions = {
-  idle: ['START', 'RESEARCH_DONE', 'SPEC_CLARIFY_START'],
-  researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'BRIEF_ADMISSION_OPENED'],
-  specifying: ['SPEC_DONE', 'BRIEF_ADMISSION_OPENED'],
-  'reviewing-spec': ['APPROVE_SPEC', 'REJECT_SPEC', 'SPEC_CLARIFY_START'],
+  idle: ['START', 'RESEARCH_DONE', 'SPEC_CLARIFY_START', 'BEGIN_PLANNING'],
+  researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'PLAN_DONE', 'BEGIN_PLANNING'],
+  specifying: ['SPEC_DONE', 'RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START', 'BEGIN_PLANNING'],
+  'reviewing-spec': ['APPROVE_SPEC', 'SPEC_CLARIFY_START', 'PLAN_DONE'],
   clarifying: ['SPEC_CLARIFY_DONE'],
-  'constitution-check': ['CONSTITUTION_CHECK_PASS', 'CONSTITUTION_CHECK_FAIL'],
-  planning: ['RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START', 'BRIEF_ADMISSION_OPENED'],
-  'reviewing-plan': ['REJECT_PLAN', 'PLAN_DONE', 'BRIEF_ADMISSION_OPENED', 'ANALYZE_START'],
-  'reviewing-briefs': [
+  'constitution-check': ['CONSTITUTION_CHECK_PASS', 'SPEC_DONE'],
+  planning: [
+    'RESEARCH_DONE',
+    'PLAN_DONE',
+    'SPEC_CLARIFY_START',
     'BRIEF_ADMISSION_OPENED',
-    'BEGIN_IMPLEMENTATION',
-    'RECORD_BRIEF_READINESS',
-    'REJECT_BRIEFS',
+    'ANALYZE_START',
   ],
-  analyzing: [],
+  'reviewing-plan': ['PLAN_DONE', 'BRIEF_ADMISSION_OPENED', 'ANALYZE_START', 'BEGIN_PLANNING'],
+  'reviewing-briefs': ['BRIEF_ADMISSION_OPENED', 'BEGIN_IMPLEMENTATION'],
+  analyzing: ['PLAN_DONE'],
   implementing: [
     'START_TASK',
     'UPDATE_TASK_CODE',
@@ -71,7 +66,6 @@ const phaseActions = {
     'HINT_SUCCESS',
     'SKIP_TASK',
     'RESET_TASK',
-    'BRIEF_ADMISSION_OPENED',
     'ANALYZE_START',
     'ALL_DONE',
   ],
@@ -82,7 +76,7 @@ const phaseActions = {
     'CLEAR_TASK_CODE',
     'HINT_FAIL',
   ],
-  'final-review': ['REVIEW_DONE'],
+  'final-review': ['REVIEW_DONE', 'REVIEW_FIX_START'],
   complete: [],
 } as const satisfies Record<Phase, readonly MachineAction['type'][]>;
 
@@ -92,9 +86,8 @@ function canApplyAction(phase: Phase, action: MachineAction['type']): boolean {
 
 export function createInitialState(feature: string, now: Date = new Date()): WorkflowState {
   return {
-    stateVersion: CURRENT_STATE_VERSION,
+    stateVersion: WORKFLOW_STATE_VERSION,
     stateRevision: 0,
-    stateFence: { token: 0, ownerId: 'initial' },
     phase: 'idle',
     feature,
     currentTaskIndex: 0,
@@ -105,7 +98,6 @@ export function createInitialState(feature: string, now: Date = new Date()): Wor
     tokenUsage: { ...ZERO_TOKEN_USAGE },
     awaitingContinue: false,
     messageQueue: [],
-    briefRecovery: null,
   };
 }
 
@@ -121,16 +113,23 @@ function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
     ...state,
     tasks: state.tasks.map((t) => {
       if (t.id !== taskId) return t;
-      const { currentCode: _currentCode, ...rest } = t;
+      const { currentCode: _currentCode, currentCodeByFile: _currentCodeByFile, ...rest } = t;
       return rest;
     }),
   };
 }
 
+function stripReviewFinding(state: WorkflowState, taskId: TaskId): WorkflowState {
+  if (state.reviewFixes?.findings[taskId] === undefined) return state;
+  const { [taskId]: _resolved, ...findings } = state.reviewFixes.findings;
+  return { ...state, reviewFixes: { ...state.reviewFixes, findings } };
+}
+
 function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
   const currentId = state.tasks[state.currentTaskIndex]?.id;
   const withStatus = currentId ? setTaskStatus(state, currentId, status) : state;
-  const cleaned = currentId ? stripCurrentCode(withStatus, currentId) : withStatus;
+  const stripped = currentId ? stripCurrentCode(withStatus, currentId) : withStatus;
+  const cleaned = currentId ? stripReviewFinding(stripped, currentId) : stripped;
   return {
     ...cleaned,
     phase: 'implementing',
@@ -170,32 +169,7 @@ function rewindReset(
     changedFilesBaseline: undefined,
     discoveredValidation: undefined,
     pendingRecovery: undefined,
-    authorityRevision: undefined,
-    generation: null,
-    permit: null,
-    briefRecovery: null,
     rewindPending: { target, ...(comment ? { comment } : {}) },
-  };
-}
-
-function resetToIdle(
-  state: WorkflowState,
-  opts: { clearAwaitingContinue?: boolean } = {},
-): WorkflowState {
-  const shouldClearBriefRecovery =
-    state.briefRecovery === undefined ||
-    (state.briefRecovery !== null && state.briefRecovery.status !== 'rejected');
-  return {
-    ...state,
-    phase: 'idle',
-    ...(opts.clearAwaitingContinue ? { awaitingContinue: false } : {}),
-    tasks: [],
-    currentTaskIndex: 0,
-    attempt: 0,
-    authorityRevision: undefined,
-    generation: null,
-    permit: null,
-    ...(shouldClearBriefRecovery ? { briefRecovery: null } : {}),
   };
 }
 
@@ -204,22 +178,20 @@ export function transition(
   action: MachineAction,
   opts: { maxRetries?: number | undefined; now?: Date | undefined } = {},
 ): WorkflowState {
-  const maxRetries = opts.maxRetries ?? 3;
+  const maxRetries = opts.maxRetries ?? DEFAULT_LOCAL_RETRIES;
   const now = opts.now ?? new Date();
+  // A closed run is the one terminal state: nothing reopens it, so every action
+  // but the close itself is refused rather than silently mutating a finished run.
+  if (state.closed !== undefined && action.type !== 'CLOSE_RUN') {
+    throw transitionError.runClosed(action.type);
+  }
   if (!canApplyAction(state.phase, action.type)) {
     throw transitionError.invalidActionForPhase(state.phase, action.type);
   }
 
   switch (action.type) {
     case 'START':
-      return {
-        ...state,
-        phase: 'researching',
-        authorityRevision: undefined,
-        generation: null,
-        permit: null,
-        briefRecovery: null,
-      };
+      return { ...state, phase: 'researching' };
 
     case 'RESEARCH_DONE':
       return { ...state, phase: 'specifying' };
@@ -230,53 +202,26 @@ export function transition(
     case 'APPROVE_SPEC':
       return { ...state, phase: 'planning' };
 
-    case 'REJECT_SPEC':
-      return resetToIdle(state);
+    case 'BEGIN_PLANNING':
+      return { ...state, phase: 'planning' };
 
     case 'PLAN_DONE':
       return { ...state, phase: 'reviewing-plan', tasks: action.tasks };
 
-    case 'REJECT_PLAN':
-      return resetToIdle(state);
-
     case 'BEGIN_IMPLEMENTATION':
-      assertCurrentExecutionPermit(state, action);
       return {
         ...state,
         phase: 'implementing',
         currentTaskIndex: 0,
         attempt: 0,
-        generation: action.generation,
-        permit: action.permit,
       };
 
-    case 'RECORD_BRIEF_READINESS':
-      return recordBriefReadiness(state, action.decision);
-
-    case 'REJECT_BRIEFS':
-      return rejectBriefAdmission(state, resetToIdle(state));
-
     case 'BRIEF_ADMISSION_OPENED':
-      if (action.briefRecovery.status === 'rejected') {
-        throw transitionError.briefContractBlocked('not-ready', action.briefRecovery.epochId);
-      }
-      if (
-        state.briefRecovery !== undefined &&
-        state.briefRecovery !== null &&
-        (state.briefRecovery.status === 'rejected' ||
-          state.briefRecovery.epochId !== action.briefRecovery.epochId)
-      ) {
-        throw transitionError.briefContractBlocked('stale-report', state.briefRecovery.epochId);
-      }
       return {
         ...state,
         phase: 'reviewing-briefs',
         currentTaskIndex: 0,
         attempt: 0,
-        authorityRevision: undefined,
-        generation: null,
-        permit: null,
-        briefRecovery: action.briefRecovery,
       };
 
     case 'SPEC_CLARIFY_START':
@@ -287,9 +232,6 @@ export function transition(
 
     case 'CONSTITUTION_CHECK_PASS':
       return { ...state, phase: 'planning' };
-
-    case 'CONSTITUTION_CHECK_FAIL':
-      return resetToIdle(state, { clearAwaitingContinue: true });
 
     case 'ANALYZE_START':
       return { ...state, phase: 'analyzing' };
@@ -338,19 +280,18 @@ export function transition(
       return {
         ...state,
         tasks: state.tasks.map((t) =>
-          t.id === action.taskId ? { ...t, currentCode: action.code } : t,
+          t.id === action.taskId
+            ? {
+                ...t,
+                currentCode: action.code,
+                ...(action.codeByFile ? { currentCodeByFile: action.codeByFile } : {}),
+              }
+            : t,
         ),
       };
 
     case 'CLEAR_TASK_CODE':
-      return {
-        ...state,
-        tasks: state.tasks.map((t) => {
-          if (t.id !== action.taskId) return t;
-          const { currentCode: _currentCode, ...task } = t;
-          return task;
-        }),
-      };
+      return stripCurrentCode(state, action.taskId);
 
     case 'ALL_DONE':
       return { ...state, phase: 'final-review' };
@@ -360,20 +301,66 @@ export function transition(
         ...state,
         phase: 'complete',
         completedAt: now.toISOString(),
-        authorityRevision: undefined,
-        generation: null,
-        permit: null,
-        briefRecovery: null,
+        reviewStatus: action.reviewStatus,
       };
 
-    case 'CANCEL':
-      return resetToIdle(state, { clearAwaitingContinue: true });
+    case 'REVIEW_FIX_START': {
+      const fixIds = new Set(Object.keys(action.fixes));
+      const firstIndex = state.tasks.findIndex((t) => fixIds.has(t.id));
+      return {
+        ...state,
+        phase: 'implementing',
+        tasks: state.tasks.map((t) => (fixIds.has(t.id) ? { ...t, status: 'pending' } : t)),
+        currentTaskIndex: firstIndex >= 0 ? firstIndex : state.currentTaskIndex,
+        attempt: 0,
+        reviewFixes: { cycle: action.cycle, findings: action.fixes },
+      };
+    }
 
-    case 'ABORT_TURN':
-      return { ...state, awaitingContinue: true };
+    case 'CLOSE_RUN':
+      return {
+        ...state,
+        closed: { at: action.at ?? now.toISOString(), as: 'ended' },
+        interruptedStep: undefined,
+        pendingRecovery: undefined,
+        pendingPlannerConversation: undefined,
+      };
 
-    case 'CONTINUE_TURN':
-      return { ...state, awaitingContinue: false };
+    case 'INTERRUPT_STEP':
+      return {
+        ...state,
+        interruptedStep: {
+          step: action.step,
+          source: action.source,
+          cut: action.cut,
+          ...(action.partialRef ? { partialRef: action.partialRef } : {}),
+          at: now.toISOString(),
+        },
+        awaitingContinue: true,
+      };
+
+    case 'RESUME_STEP':
+      return { ...state, interruptedStep: undefined, awaitingContinue: false };
+
+    case 'SET_PLANNER_CONVERSATION':
+      return {
+        ...state,
+        phase:
+          action.conversation.call === 'research'
+            ? 'researching'
+            : action.conversation.call === 'spec'
+              ? 'specifying'
+              : 'planning',
+        pendingPlannerConversation: action.conversation,
+      };
+
+    case 'CLEAR_PLANNER_CONVERSATION':
+      return {
+        ...state,
+        pendingPlannerConversation: undefined,
+        interruptedStep: undefined,
+        awaitingContinue: false,
+      };
 
     case 'SET_PLANNER_SESSION_ID':
       return { ...state, plannerSessionId: action.sessionId };
@@ -434,10 +421,13 @@ export function transition(
 
     case 'DRAIN_QUEUE': {
       const ts = now.toISOString();
+      const ids = action.ids === undefined ? undefined : new Set(action.ids);
       return {
         ...state,
         messageQueue: state.messageQueue.map((m) =>
-          isQueuedMessagePendingDelivery(m) ? { ...m, drainedAt: ts } : m,
+          isQueuedMessagePendingDelivery(m) && (ids === undefined || ids.has(m.id))
+            ? { ...m, drainedAt: ts }
+            : m,
         ),
       };
     }
@@ -463,17 +453,6 @@ export function transition(
 
     case 'MARK_RECOVERY_APPLYING':
       return markRecoveryApplying(state, action);
-
-    case 'ACKNOWLEDGE_BUDGET_PAUSE':
-      return { ...state, budgetPauseAcknowledgedAtCost: action.cost };
-
-    case 'ABORT_PENDING_RECOVERY':
-      return {
-        ...resetToIdle(state, { clearAwaitingContinue: true }),
-        tasks: state.tasks,
-        currentTaskIndex: state.currentTaskIndex,
-        pendingRecovery: undefined,
-      };
 
     case 'RESOLVE_PENDING_RECOVERY':
       return { ...state, pendingRecovery: undefined };

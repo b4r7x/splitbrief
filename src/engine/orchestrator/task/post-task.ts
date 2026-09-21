@@ -10,8 +10,6 @@ import {
   refreshChangedFilesBaseline,
 } from '../changed-files-baseline.js';
 import { checkUserEditGate } from './user-edit-gate.js';
-import { checkBudgetAfterTask } from '../budget/enforce.js';
-import type { AutoSnapshotFn } from './auto-snapshot.js';
 
 export async function absorbAcceptedFiles(opts: {
   projectDir: string;
@@ -51,25 +49,18 @@ export async function reconcileAfterTask(opts: {
   setTrackedState: (s: WorkflowState) => void;
   task: Task;
   taskIndex: number;
-  totalTasks: number;
   baseline: ChangedFilesBaseline;
   acknowledgedUserEditFiles: Set<string>;
   taskBreakdowns: TaskTokenUsage[];
   routingDecision: RoutingDecision;
   implementerProfile: string;
-  completedTask: Task | undefined;
-  budgetWarningEmitted: boolean;
-  budgetPauseEmitted: boolean;
-  autoSnapshot: AutoSnapshotFn;
 }): Promise<{
   state: WorkflowState;
   baseline: ChangedFilesBaseline;
   stop: boolean;
-  budgetWarningEmitted: boolean;
-  budgetPauseEmitted: boolean;
 }> {
-  const { wctx, taskWctx, task, taskIndex, totalTasks, taskBreakdowns, setTrackedState } = opts;
-  const { projectDir, sessionId, config } = wctx;
+  const { wctx, taskWctx, task, taskIndex, taskBreakdowns, setTrackedState } = opts;
+  const { projectDir } = wctx;
   let state = opts.state;
   let baseline = opts.baseline;
 
@@ -88,13 +79,7 @@ export async function reconcileAfterTask(opts: {
   });
   state = postTaskConflict.state;
   if (postTaskConflict.stopped) {
-    return {
-      state,
-      baseline,
-      stop: true,
-      budgetWarningEmitted: opts.budgetWarningEmitted,
-      budgetPauseEmitted: opts.budgetPauseEmitted,
-    };
+    return { state, baseline, stop: true };
   }
   if (opts.acknowledgedUserEditFiles.size > 0) {
     baseline = await refreshChangedFilesBaseline({
@@ -105,34 +90,5 @@ export async function reconcileAfterTask(opts: {
     opts.acknowledgedUserEditFiles.clear();
   }
 
-  const succeeded = opts.completedTask?.status === 'done';
-  await opts.autoSnapshot({
-    projectDir,
-    sessionId,
-    config,
-    bus: wctx.bus,
-    phase: state.phase,
-    enabled: succeeded && config.snapshots?.auto?.postTask === true,
-    taskIndex,
-    label: `post-task-${taskIndex}`,
-    recordInRunLedger: true,
-  });
-
-  const budgetCheck = await checkBudgetAfterTask({
-    wctx,
-    state,
-    taskBreakdowns,
-    totalTasks,
-    budgetWarningEmitted: opts.budgetWarningEmitted,
-    budgetPauseEmitted: opts.budgetPauseEmitted,
-  });
-  state = budgetCheck.state;
-
-  return {
-    state,
-    baseline,
-    stop: budgetCheck.stop,
-    budgetWarningEmitted: budgetCheck.warningEmitted,
-    budgetPauseEmitted: budgetCheck.pauseEmitted,
-  };
+  return { state, baseline, stop: false };
 }

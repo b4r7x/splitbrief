@@ -16,7 +16,7 @@ import type {
 import { segmentedRow } from './rows.js';
 import { sanitizeRowDisplayText, wrappedRowTexts } from './text.js';
 
-// Formatter diffs, compiler tables and test frames carry meaning in their columns, so a source
+// Formatter diffs, planner tables and test frames carry meaning in their columns, so a source
 // line must stay a row: cut at the right edge rather than reflowed. 30 lines shows a full biome
 // format hunk (~24 lines) whole while staying under a normal transcript viewport, so the block
 // never evicts the run around it; the session log keeps the untruncated text.
@@ -124,6 +124,8 @@ export interface SourceFooterInput {
   unit: string;
   pointer?: ConversationRowSegment | undefined;
   fitPointer?: ((text: string, width: number) => string) | undefined;
+  /** A compact artifact pointer can use its own mark while preformatted output keeps the tree mark. */
+  marker?: string | undefined;
   width: number;
 }
 
@@ -133,7 +135,7 @@ export interface SourceFooterInput {
 // only sometimes is what made a missing line invisible.
 export function sourceFooterSegments(input: SourceFooterInput): ConversationRowSegment[] | null {
   const width = Math.max(1, input.width);
-  const marker = footerMarker(width);
+  const marker = footerMarker(width, input.marker);
   const count = input.hidden > 0 ? `+ ${countNoun(input.hidden, `more ${input.unit}`)}` : '';
   if (count === '' && input.pointer === undefined) return null;
 
@@ -167,7 +169,12 @@ export function sourceFooterSegments(input: SourceFooterInput): ConversationRowS
   return segments;
 }
 
-function footerMarker(width: number): string {
+function footerMarker(width: number, requested?: string | undefined): string {
+  if (requested !== undefined) {
+    if (getTerminalCellWidth(requested) < width) return requested;
+    const compact = requested.trimEnd();
+    return getTerminalCellWidth(compact) < width ? compact : '';
+  }
   const full = `${glyph('treeLast')} `;
   if (getTerminalCellWidth(full) < width) return full;
 

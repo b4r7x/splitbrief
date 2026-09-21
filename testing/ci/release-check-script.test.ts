@@ -12,12 +12,16 @@ const { scripts } = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'ut
 };
 
 const RELEASE_CHECK =
-  'npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run check:invariants';
+  'npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run check:invariants && npm run skills:check';
 const E2E_CONFIG = 'testing/e2e/vitest.e2e.config.ts';
 const LIVE_CONFIG = 'testing/e2e/vitest.live.config.ts';
 const REAL_CLI_MARKERS = ['SPLITBRIEF_REAL_CLI', 'live-harness'];
 
-const liveScripts = Object.entries(scripts).filter(([key]) => key.startsWith('test:e2e:live'));
+// Every script that reaches the live tier, keyed on the config that collects it
+// rather than on a name prefix: `test:e2e:release` is a live-tier script too.
+const liveScripts = Object.entries(scripts).filter(([, command]) =>
+  command.includes(`--config ${LIVE_CONFIG}`),
+);
 
 function collect(config: ViteUserConfig): string[] {
   const { include = [], exclude = [] } = config.test ?? {};

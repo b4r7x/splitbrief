@@ -33,6 +33,16 @@ describe('skillsStore', () => {
     expect([...skillsStore.get().selected]).toEqual(['review']);
   });
 
+  it('toggles one id in and out of the selection', () => {
+    skillsStore.setSelected(new Set(['review']));
+
+    skillsStore.toggleSelected('test');
+    expect([...skillsStore.get().selected].sort()).toEqual(['review', 'test']);
+
+    skillsStore.toggleSelected('review');
+    expect([...skillsStore.get().selected]).toEqual(['test']);
+  });
+
   it('clones available skills on ingress and prunes unavailable selections', () => {
     skillsStore.setSelected(new Set(['review', 'missing']));
     skillsStore.setAvailable(skills);

@@ -6,7 +6,12 @@ import {
   wrapTerminalGraphemes,
 } from '../../../../utils/display-text.js';
 import { wrapWidthFor } from '../row-markers.js';
-import type { ConversationRow, ConversationRowSegment, ConversationRowTone } from '../types.js';
+import type {
+  ConversationRow,
+  ConversationRowKind,
+  ConversationRowSegment,
+  ConversationRowTone,
+} from '../types.js';
 import { segmentedRow } from './rows.js';
 import { sanitizeRowDisplayText } from './text.js';
 
@@ -63,6 +68,10 @@ export interface CardBlockInput {
   bodyLines: CardBodyLineInput[];
   width: number;
   bodyPrefix?: string;
+  // The kinds the rows will actually render with. The write budget is derived from them, so a caller
+  // whose rows carry a wider leading than a card's cannot compute one width and paint another.
+  topKind?: ConversationRowKind;
+  bodyKind?: ConversationRowKind;
 }
 
 export interface PreparedCardRows {
@@ -164,11 +173,13 @@ function cardBodyRowSegments(
 // wrap inside createRows made every scroll step re-walk the card's whole body.
 export function prepareCardRows(input: CardBlockInput): PreparedCardRows {
   const width = Math.max(CARD_MIN_WIDTH, input.width);
-  const headerWidth = wrapWidthFor('card-top', width);
+  const topKind = input.topKind ?? 'card-top';
+  const bodyKind = input.bodyKind ?? 'card-body';
+  const headerWidth = wrapWidthFor(topKind, width);
   const bodyPrefix = input.bodyPrefix ?? '  ';
   const bodyWrapWidth = Math.max(
     1,
-    wrapWidthFor('card-body', width) - getTerminalCellWidth(bodyPrefix),
+    wrapWidthFor(bodyKind, width) - getTerminalCellWidth(bodyPrefix),
   );
   const metaSegments =
     input.metaSegments === undefined
@@ -205,7 +216,7 @@ export function prepareCardRows(input: CardBlockInput): PreparedCardRows {
       let rowIndex = 0;
 
       if (rowIndex >= start && rowIndex < end) {
-        rows.push(segmentedRow(`${input.keyPrefix}-top`, headerSegments, 'card-top'));
+        rows.push(segmentedRow(`${input.keyPrefix}-top`, headerSegments, topKind));
       }
       rowIndex += 1;
 
@@ -222,7 +233,7 @@ export function prepareCardRows(input: CardBlockInput): PreparedCardRows {
                 ...(bodyPrefix === '' ? [] : [{ text: bodyPrefix }]),
                 ...cardBodyRowSegments(entry.segments, text, entry.body, offset),
               ],
-              'card-body',
+              bodyKind,
             ),
           );
         }

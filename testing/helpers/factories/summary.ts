@@ -15,7 +15,6 @@ export function makeSummary(overrides?: Partial<Summary>): Summary {
     failed: 0,
     totalTime: 10000,
     tokenUsage: makeUsage(),
-    estimatedCostSavings: '~$0.00',
     escalationRate: 0,
     ...overrides,
   };

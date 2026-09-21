@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { Box, Text } from 'ink';
 import { useBriefReviewKeys, type BriefReviewNavigate } from './use-brief-review-keys.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
@@ -45,11 +48,16 @@ describe('useBriefReviewKeys: y yank', () => {
     resetAllStores();
     routerStore.navigate({
       to: 'workflow',
+      run: makeRunRecord(),
       execution: {
-        kind: 'attached',
-        feature: 'test',
-        sessionId: 'attached-session',
-        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'test-token' },
+        kind: 'local',
+        prepared: makePreparedExecution({
+          projectDir: '/tmp/brief-review-keys-test',
+          sessionId: 'brief-review-keys-session',
+          feature: 'test',
+          config: makeConfig(),
+          gates: () => [],
+        }),
       },
     });
   });

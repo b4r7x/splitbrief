@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -54,6 +55,7 @@ describe('WorkflowScreen prepared-route stability', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
     routerStore.navigate({
       to: 'workflow',
+      run: makeRunRecord(),
       execution: { kind: 'local', prepared },
     });
 

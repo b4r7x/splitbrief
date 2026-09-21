@@ -1,11 +1,52 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
 import { uniqueProjectFiles } from './types.js';
 import { getChangedFilesSinceSnapshot, getChangedFilesSnapshot } from './capture.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+
+// The Git legs are stubbed per test so a working tree can be described without a
+// repository; every unset field falls through to the real implementation, which
+// the real-repo suites above and below still exercise.
+const git = vi.hoisted(() => ({
+  status: null as string[] | null,
+  hasCommits: null as boolean | null,
+  committedSince: null as string[] | null,
+}));
+
+vi.mock('../../../../lib/git/files.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../lib/git/files.js')>();
+  return {
+    ...actual,
+    getCurrentChangedFiles: async (dir: string) => git.status ?? actual.getCurrentChangedFiles(dir),
+  };
+});
+
+vi.mock('../../../../lib/git/repository.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../lib/git/repository.js')>();
+  return { ...actual, hasCommits: async (dir: string) => git.hasCommits ?? actual.hasCommits(dir) };
+});
+
+vi.mock('../../../../lib/git/diff.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../lib/git/diff.js')>();
+  return {
+    ...actual,
+    getCommittedFilesSince: async (dir: string, since: string) =>
+      git.committedSince ?? actual.getCommittedFilesSince(dir, since),
+  };
+});
+
+// Fresh captures carry exact bytes and modes in dirtyFileEntries; the legacy
+// text field dirtyFileContents stays empty and only loads old snapshots.
+function capturedText(snapshot: ChangedFilesSnapshot, file: string): string | undefined {
+  const entry = snapshot.dirtyFileEntries?.[file];
+  return entry === undefined || entry === null
+    ? undefined
+    : Buffer.from(entry.base64, 'base64').toString('utf-8');
+}
 
 describe('uniqueProjectFiles', () => {
   it('removes duplicates and sorts', () => {
@@ -93,8 +134,9 @@ describe('getChangedFilesSnapshot', () => {
     expect(snapshot.files).toContain('newdir/a.ts');
     expect(snapshot.files).toContain('newdir/sub/b.ts');
     expect(snapshot.files).not.toContain('newdir/');
-    expect(snapshot.dirtyFileContents['newdir/a.ts']).toBe('export const a = 1;');
-    expect(snapshot.dirtyFileContents['newdir/sub/b.ts']).toBe('export const b = 2;');
+    expect(capturedText(snapshot, 'newdir/a.ts')).toBe('export const a = 1;');
+    expect(capturedText(snapshot, 'newdir/sub/b.ts')).toBe('export const b = 2;');
+    expect(snapshot.dirtyFileContents).toEqual({});
     expect(ignored).not.toContain('newdir/');
     cleanupTempDir(dir);
   });
@@ -164,5 +206,90 @@ describe('getChangedFilesSinceSnapshot', () => {
     } finally {
       cleanupTempDir(dir);
     }
+  });
+});
+
+describe('getChangedFilesSinceSnapshot — baseline files that leave git status', () => {
+  let dirs: string[] = [];
+
+  afterEach(() => {
+    git.status = null;
+    git.hasCommits = null;
+    git.committedSince = null;
+    for (const dir of dirs) cleanupTempDir(dir);
+    dirs = [];
+  });
+
+  async function acquire(
+    name: string,
+    files: Record<string, string>,
+  ): Promise<{ dir: string; snapshot: ChangedFilesSnapshot }> {
+    const dir = createTempDir(name);
+    dirs.push(dir);
+    for (const [file, content] of Object.entries(files)) {
+      mkdirSync(join(dir, dirname(file)), { recursive: true });
+      writeFileSync(join(dir, file), content);
+    }
+    // Acquisition: git reports every one of these as dirty in the working tree.
+    git.status = Object.keys(files);
+    git.hasCommits = false;
+    const snapshot = await getChangedFilesSnapshot(dir);
+    return { dir, snapshot };
+  }
+
+  it('reports an untracked acquisition file the worker deleted', async () => {
+    const { dir, snapshot } = await acquire('snapshot-untracked-delete', {
+      'src/gone.ts': 'export const gone = 1;\n',
+      'src/keep.ts': 'export const keep = 1;\n',
+    });
+    expect(capturedText(snapshot, 'src/gone.ts')).toBe('export const gone = 1;\n');
+
+    // The worker deletes it. It was never tracked, so git status simply stops
+    // mentioning it and only the acquisition baseline still knows it existed.
+    rmSync(join(dir, 'src', 'gone.ts'));
+    git.status = ['src/keep.ts'];
+
+    expect(await getChangedFilesSinceSnapshot(dir, snapshot)).toEqual(['src/gone.ts']);
+  });
+
+  it('reports a deletion and a modification together', async () => {
+    const { dir, snapshot } = await acquire('snapshot-untracked-mixed', {
+      'src/gone.ts': 'export const gone = 1;\n',
+      'src/keep.ts': 'export const keep = 1;\n',
+    });
+
+    rmSync(join(dir, 'src', 'gone.ts'));
+    writeFileSync(join(dir, 'src', 'keep.ts'), 'export const keep = 2;\n');
+    git.status = ['src/keep.ts'];
+
+    expect(await getChangedFilesSinceSnapshot(dir, snapshot)).toEqual([
+      'src/gone.ts',
+      'src/keep.ts',
+    ]);
+  });
+
+  it('reports a dirty baseline file the worker restored to HEAD', async () => {
+    const { dir, snapshot } = await acquire('snapshot-restored-to-head', {
+      'src/app.ts': 'export const app = "dirty";\n',
+    });
+
+    // Back to the committed bytes: the file is clean again, so it leaves status,
+    // but it is not what the acquisition baseline held.
+    writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = "head";\n');
+    git.status = [];
+    git.hasCommits = true;
+    git.committedSince = [];
+
+    expect(await getChangedFilesSinceSnapshot(dir, snapshot)).toEqual(['src/app.ts']);
+  });
+
+  it('leaves an untouched dirty baseline file out of the result', async () => {
+    const { dir, snapshot } = await acquire('snapshot-untouched-dirty', {
+      'src/app.ts': 'export const app = "dirty";\n',
+    });
+
+    git.status = ['src/app.ts'];
+
+    expect(await getChangedFilesSinceSnapshot(dir, snapshot)).toEqual([]);
   });
 });

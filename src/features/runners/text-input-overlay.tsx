@@ -3,7 +3,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { MultilineInput } from '../../components/input/multiline-input.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { useTheme } from '../../components/theme.js';
 import type { SeatPickerRole } from '../../core/runners/seat-roles.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';

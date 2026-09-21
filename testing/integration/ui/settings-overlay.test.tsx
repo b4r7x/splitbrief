@@ -7,6 +7,7 @@ import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { SettingsOverlay } from '../../../src/app/overlays/settings.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
+import { DEFAULT_LOCAL_RETRIES } from '../../../src/core/pipeline-spec/retries.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
@@ -18,6 +19,7 @@ const ARROW_DOWN = '\u001b[B';
 const CURSOR_GLYPH = '▌';
 const KITTY_SUPER_SPACE = '\u001b[32;9u';
 const KITTY_HYPER_SPACE = '\u001b[32;17u';
+const SEEDED_RETRIES = String(DEFAULT_LOCAL_RETRIES);
 
 function lineContaining(frame: string, text: string): string {
   const line = frame.split('\n').find((candidate) => candidate.includes(text));
@@ -156,10 +158,10 @@ describe('settings overlay integration', () => {
     });
     await flushEffects();
 
-    ui.stdin.write('\x7f'); // backspace — clear seeded "3"
+    ui.stdin.write('\x7f'); // backspace — clear the seeded default
     await vi.waitFor(() => {
       const clearedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(clearedFrame, 'Max retries')).not.toContain('3');
+      expect(lineContaining(clearedFrame, 'Max retries')).not.toContain(SEEDED_RETRIES);
     });
     await flushEffects();
 
@@ -190,7 +192,7 @@ describe('settings overlay integration', () => {
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
 
-    ui.stdin.write('\r'); // enter edit mode (seeded "3")
+    ui.stdin.write('\r'); // enter edit mode (seeded with the default)
     await vi.waitFor(() => {
       expect(overlayStore.get().exclusive).toBe(true);
     });
@@ -199,7 +201,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write('\x7f');
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, 'Max retries')).not.toContain('3');
+      expect(lineContaining(frame, 'Max retries')).not.toContain(SEEDED_RETRIES);
     });
     await flushEffects();
 
@@ -220,7 +222,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write('\r'); // attempt commit of out-of-range value
 
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.workflow.maxRetries).toBe(3);
+      expect(loadConfig(dir).config.workflow.maxRetries).toBe(DEFAULT_LOCAL_RETRIES);
       const feedback = feedbackStore.get();
       expect(feedback.isError).toBe(true);
       expect(feedback.message).toContain('Max retries');
@@ -263,13 +265,14 @@ describe('settings overlay integration', () => {
     ui.stdin.write('\x1b'); // escape
 
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.workflow.maxRetries).toBe(3);
+      expect(loadConfig(dir).config.workflow.maxRetries).toBe(DEFAULT_LOCAL_RETRIES);
     });
     ui.unmount();
   });
 
   it('PageDown moves by visible selectable settings without skipping a section', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
+    // Tall enough to seat the whole Workflow section, which is what the page has to land inside.
+    terminalSizeStore.__testReset({ cols: 100, rows: 26, isSmall: false });
     overlayStore.open('settings', 'implementer.temperature');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
@@ -280,8 +283,11 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Spec/plan gates');
-      expect(frame).toContain('Max retries');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Create branch');
+      // The page lands inside the next section with the whole of it on screen — its first row
+      // included — so no row was stepped over unseen.
+      expect(frame).toContain('Mode');
+      expect(frame).toContain('Compaction format');
     });
     ui.unmount();
   });

@@ -1,4 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
+import { taskFiles } from '../../../core/schemas/task.js';
 import { topoSort } from '../../../core/state/topo-sort.js';
 import { error } from '../../../utils/error.js';
 import {
@@ -115,12 +116,34 @@ function parseTaskBlocksFromMarkdown(
   }
   if (strictFailure) throw strictFailure;
   for (const warning of rejectionWarnings) opts.onWarning?.(warning);
+  for (const warning of overlappingFileWarnings(tasks)) opts.onWarning?.(warning);
   if (tasks.length === 0 && rejected === 0) {
     const reason = noTasksReason(stripped);
     if (reason) opts.onWarning?.(reason);
   }
 
   return tasks;
+}
+
+/**
+ * Two briefs declaring the same path is legitimate — the later one modifies what the earlier
+ * one wrote — so this reports and never throws.
+ */
+function overlappingFileWarnings(tasks: readonly Task[]): string[] {
+  const idsByPath = new Map<string, string[]>();
+  for (const task of tasks) {
+    for (const path of taskFiles(task)) {
+      const ids = idsByPath.get(path);
+      if (ids) ids.push(String(task.id));
+      else idsByPath.set(path, [String(task.id)]);
+    }
+  }
+  return [...idsByPath]
+    .filter(([, ids]) => ids.length > 1)
+    .map(
+      ([path, ids]) =>
+        `Task Briefs ${ids.join(', ')} all declare ${path}; the later brief modifies what the earlier one wrote`,
+    );
 }
 
 function noTasksReason(stripped: string): string | null {

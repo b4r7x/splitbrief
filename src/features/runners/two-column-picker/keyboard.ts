@@ -159,8 +159,16 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   }
 
   if (input && !key.ctrl && !key.meta && !key.tab) {
-    if (input === ' ' && ctx.rightActive && ctx.cycleRight(ctx.rightEffectiveIndex) !== 'none') {
-      return;
+    if (input === ' ') {
+      if (ctx.rightActive && ctx.cycleRight(ctx.rightEffectiveIndex) !== 'none') {
+        return;
+      }
+      // A bare space is not the start of a query: with nothing typed in the
+      // focused column it stays inert — no filtering, no collapse, no cursor
+      // move. Once the query holds text, space is just a character in it.
+      if ((ctx.leftActive ? ctx.leftFilter : ctx.rightFilter) === '') {
+        return;
+      }
     }
     if (ctx.isExpanded) ctx.onCollapse?.();
     if (ctx.leftActive) {

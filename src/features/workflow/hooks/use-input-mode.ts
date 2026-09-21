@@ -3,6 +3,7 @@ import type { InputMode } from '../../../core/navigation/types.js';
 import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
+import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 
 export interface UseInputModeResult {
   mode: InputMode;
@@ -31,12 +32,14 @@ export function useInputMode(): UseInputModeResult {
   modeRef.current = modeState.mode;
   const reviewResolverRef = useRef<((value: ApprovalReviewResult) => void) | null>(null);
   const questionResolverRef = useRef<((value: string) => void) | null>(null);
+  const questionRejectorRef = useRef<((reason: unknown) => void) | null>(null);
 
   const supersedePending = (): void => {
     const reviewResolver = reviewResolverRef.current;
     const questionResolver = questionResolverRef.current;
     reviewResolverRef.current = null;
     questionResolverRef.current = null;
+    questionRejectorRef.current = null;
     questionPromptStore.clearHint();
     reviewResolver?.({ approved: false });
     questionResolver?.('');
@@ -53,8 +56,9 @@ export function useInputMode(): UseInputModeResult {
 
   const setQuestionMode = (h: string): Promise<string> => {
     supersedePending();
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       questionResolverRef.current = resolve;
+      questionRejectorRef.current = reject;
       questionPromptStore.setHint(h);
       setModeState((state) => ({
         mode: 'question',
@@ -82,20 +86,24 @@ export function useInputMode(): UseInputModeResult {
     } else if (typeof value === 'string') {
       const resolver = questionResolverRef.current;
       questionResolverRef.current = null;
+      questionRejectorRef.current = null;
       resolver?.(value);
     }
   };
 
+  // Ending a run leaves the question unanswered: resolving it with an empty string would put words
+  // in the user's mouth and let the engine act on them.
   const resetMode = (): void => {
     const reviewResolver = reviewResolverRef.current;
-    const questionResolver = questionResolverRef.current;
+    const questionRejector = questionRejectorRef.current;
     reviewResolverRef.current = null;
     questionResolverRef.current = null;
+    questionRejectorRef.current = null;
     setModeState((state) => ({ ...state, mode: 'normal', hint: '' }));
     controlsStore.clearInputMode();
     questionPromptStore.clearHint();
     reviewResolver?.({ approved: false });
-    questionResolver?.('');
+    questionRejector?.(WORKFLOW_USER_CANCELLED_ABORT_REASON);
   };
 
   useEffect(() => {
@@ -104,6 +112,7 @@ export function useInputMode(): UseInputModeResult {
       questionResolverRef.current?.('');
       reviewResolverRef.current = null;
       questionResolverRef.current = null;
+      questionRejectorRef.current = null;
       controlsStore.clearInputMode();
       questionPromptStore.clearHint();
     };

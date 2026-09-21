@@ -4,6 +4,8 @@ import { claudeCodeImplementerAdapter } from './claude-code.js';
 import { codexImplementerAdapter } from './codex.js';
 import { opencodeImplementerAdapter } from './opencode.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import { STRUCTURED_TERMINAL_TOOL_IDS } from '../../../core/config/load/validation/config.js';
+import { CLI_IMPLEMENTER_ADAPTERS, CLI_PLANNER_ADAPTERS } from './registry.js';
 import type { CliImplementerAdapter, CliProtocolEvent } from './contract.js';
 import { withOutputFormat } from './output-format.js';
 
@@ -86,6 +88,16 @@ describe('withOutputFormat', () => {
       kind: 'structured-terminal',
       terminalEvent: 'required',
     });
+  });
+
+  it('the tools config load refuses are exactly the structured-terminal adapters', () => {
+    const structured = new Set(
+      [...Object.values(CLI_PLANNER_ADAPTERS), ...Object.values(CLI_IMPLEMENTER_ADAPTERS)]
+        .filter((adapter) => adapter.outputContract.kind === 'structured-terminal')
+        .map((adapter) => adapter.descriptor.id),
+    );
+
+    expect([...structured].sort()).toEqual([...STRUCTURED_TERMINAL_TOOL_IDS]);
   });
 
   it('rejects conflicting output flags and separator forms', () => {

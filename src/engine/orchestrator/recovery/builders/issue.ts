@@ -1,5 +1,10 @@
 import type { Phase, RecoveryAction, RecoveryReason } from '../../../../core/schemas/enums.js';
-import type { RecoveryFact, RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
+import type { CrewSeatId } from '../../../../core/crew/identity.js';
+import type {
+  RecoveryFact,
+  RecoveryIssue,
+  SwitchSeatOffer,
+} from '../../../../core/schemas/recovery/schemas.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
 
@@ -43,6 +48,7 @@ export function createRecoveryIssue(opts: {
   id?: string | undefined;
   reason: RecoveryReason;
   phase: Phase;
+  seat?: CrewSeatId | undefined;
   task?: Task | undefined;
   files: string[];
   affectedTaskIds: TaskId[];
@@ -51,6 +57,8 @@ export function createRecoveryIssue(opts: {
   attempts?: number | undefined;
   maxAttempts?: number | undefined;
   selectedImplementerProfile?: string | undefined;
+  resetAt?: string | undefined;
+  switchSeat?: SwitchSeatOffer | undefined;
   facts?: Record<string, RecoveryFact> | undefined;
   availableActions: RecoveryAction[];
   recommendedAction: RecoveryAction;
@@ -68,6 +76,7 @@ export function createRecoveryIssue(opts: {
     reason: opts.reason,
     phase: opts.phase,
     status: 'awaiting-user',
+    ...(opts.seat !== undefined ? { seat: opts.seat } : {}),
     ...(opts.task ? { taskId: opts.task.id, taskTitle: opts.task.title } : {}),
     files: uniqueSorted(opts.files, { trim: true, nonEmpty: true }),
     affectedTaskIds: uniqueSortedIds(opts.affectedTaskIds),
@@ -78,6 +87,8 @@ export function createRecoveryIssue(opts: {
     ...(opts.selectedImplementerProfile !== undefined
       ? { selectedImplementerProfile: opts.selectedImplementerProfile }
       : {}),
+    ...(opts.resetAt !== undefined ? { resetAt: opts.resetAt } : {}),
+    ...(opts.switchSeat !== undefined ? { switchSeat: opts.switchSeat } : {}),
     ...(opts.facts !== undefined && Object.keys(opts.facts).length > 0
       ? { facts: opts.facts }
       : {}),

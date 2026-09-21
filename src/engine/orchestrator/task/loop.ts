@@ -1,4 +1,4 @@
-import type { Task } from '../../../core/schemas/task.js';
+import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
@@ -21,7 +21,6 @@ import {
 import { configForProfile, createTaskImplementer } from './routing.js';
 import { publishError, publishTasksPlanned, publishWarning } from '../events.js';
 import { reviewTaskIfNeeded } from './review-flow.js';
-import { maybeAutoSnapshot } from './auto-snapshot.js';
 import { checkDependencyGate } from './dependency-gate.js';
 import { checkUserEditGate } from './user-edit-gate.js';
 import { selectRoutingProfile } from './routing-selection.js';
@@ -35,13 +34,13 @@ type RunTaskLoopOptions = {
   wctx: WorkflowContext;
   initialState: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
-  setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
+  setCurrentTask: (t: Pick<Task, 'file' | 'files' | 'action'> | undefined) => void;
 };
 
 export type TaskLoopResult = {
   state: WorkflowState;
   taskBreakdowns: TaskTokenUsage[];
-  status: 'complete' | 'stopped' | 'cancelled';
+  status: 'complete' | 'stopped' | 'cancelled' | 'paused';
 };
 
 export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopResult> {
@@ -93,15 +92,13 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
 
   const resolvedProfiles = resolveImplementerProfiles(config);
   const singleImplementerMode = config.implementerProfiles === undefined;
-  let budgetWarningEmitted = false;
-  let budgetPauseEmitted = false;
   if (state.pendingRecovery) {
     const recovery = state.pendingRecovery;
     publishWarning({
       bus: wctx.bus,
       phase: state.phase,
       message: `Recovery is still pending (reason: ${recovery.reason}, status: ${recovery.status}); no task work was started. Available actions: ${recovery.availableActions.join(', ')}.`,
-      safety: { category: 'recovery', code: 'recovery_pending_unresolved', transcriptSafe: true },
+      safety: { category: 'recovery', code: 'recovery_pending_unresolved' },
     });
     return { state, taskBreakdowns, status: 'stopped' };
   }
@@ -115,7 +112,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       bus: wctx.bus,
       phase: state.phase,
       message: `Ignoring changed files that could not be read: ${unreadableFiles.join(', ')}.`,
-      safety: { category: 'user-edit', code: 'unreadable_changed_files', transcriptSafe: true },
+      safety: { category: 'user-edit', code: 'unreadable_changed_files' },
     });
   }
   const acknowledgedUserEditFiles = new Set<string>();
@@ -124,20 +121,28 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   publishTasksPlanned({ bus: wctx.bus, phase: state.phase }, state.tasks);
   const firstTask = state.tasks[state.currentTaskIndex];
   if (firstTask) {
-    await wctx.validator.primeBaseline({
+    const primedBaseline = await wctx.validator.primeBaseline({
       bus: wctx.bus,
       phase: state.phase,
       task: firstTask,
       projectDir,
       config,
       discoveredValidation: state.discoveredValidation,
+      persistedBaseline: state.validationBaseline,
       signal: wctx.signal,
     });
+    if (primedBaseline !== undefined && state.validationBaseline === undefined) {
+      state = { ...state, validationBaseline: primedBaseline };
+      setTrackedState(state);
+    }
   }
   for (let i = state.currentTaskIndex; i < totalTasks; i++) {
     if (wctx.signal?.aborted) return { state, taskBreakdowns, status: 'stopped' };
     const task = state.tasks[i];
     if (!task) continue;
+    // A review-fix re-entry starts at the first brief it reopened; the briefs
+    // after it that already passed are not re-run.
+    if (isTaskCompleted(task.status)) continue;
 
     const depGate = await checkDependencyGate({
       wctx,
@@ -193,17 +198,6 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       selectedProfile,
       routingDecision.contextLength,
     );
-
-    await maybeAutoSnapshot({
-      projectDir,
-      sessionId,
-      config,
-      bus: wctx.bus,
-      phase: state.phase,
-      enabled: config.snapshots?.auto?.preTask === true,
-      taskIndex: i,
-      label: `pre-task-${i}`,
-    });
 
     const taskImplementer = await createTaskImplementer({
       wctx,
@@ -328,21 +322,14 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       setTrackedState,
       task: refreshedTask,
       taskIndex: i,
-      totalTasks,
       baseline: changedFilesBaseline,
       acknowledgedUserEditFiles,
       taskBreakdowns,
       routingDecision,
       implementerProfile: selectedProfile.name,
-      completedTask,
-      budgetWarningEmitted,
-      budgetPauseEmitted,
-      autoSnapshot: maybeAutoSnapshot,
     });
     state = reconcile.state;
     changedFilesBaseline = reconcile.baseline;
-    budgetWarningEmitted = reconcile.budgetWarningEmitted;
-    budgetPauseEmitted = reconcile.budgetPauseEmitted;
     if (reconcile.stop) {
       persistTaskBreakdowns();
       setCurrentTask(undefined);
@@ -350,6 +337,11 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     }
 
     persistTaskBreakdowns();
+
+    if (wctx.sinks.consumeBoundaryPause?.()) {
+      setCurrentTask(undefined);
+      return { state, taskBreakdowns, status: 'paused' };
+    }
   }
   setCurrentTask(undefined);
   return { state, taskBreakdowns, status: 'complete' };

@@ -10,11 +10,11 @@ import {
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  createTaskCompilationAttemptId,
-  createTaskCompilationBatchId,
-  createTaskCompilationProgramId,
-  TaskCompilationSemanticIdSchema,
-} from '../../../core/schemas/task-compilation.js';
+  createPlannerArtifactAttemptId,
+  PlannerArtifactBatchIdSchema,
+  PlannerArtifactProgramIdSchema,
+  PlannerArtifactSemanticIdSchema,
+} from '../../../core/schemas/planner-artifact.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { prepareArtifactStageLease, type ArtifactStageLease } from './artifact-stage-manifest.js';
 import { beginDeclaredArtifactReview } from './planner-artifact.js';
@@ -44,13 +44,13 @@ async function createFixture(
 ): Promise<Fixture> {
   const root = createTempDir('planner-artifact-provenance');
   roots.push(root);
-  const attemptId = createTaskCompilationAttemptId();
-  const programId = createTaskCompilationProgramId({ feature: 'provenance' });
-  const batchId = createTaskCompilationBatchId(programId, 0, [0]);
+  const attemptId = createPlannerArtifactAttemptId();
+  const programId = PlannerArtifactProgramIdSchema.parse('program-provenance');
+  const batchId = PlannerArtifactBatchIdSchema.parse('batch-provenance');
   const lease = await prepareArtifactStageLease({
     stagedProjectDir: root,
     provenance: {
-      semanticId: TaskCompilationSemanticIdSchema.parse('semantic-provenance'),
+      semanticId: PlannerArtifactSemanticIdSchema.parse('semantic-provenance'),
       programId,
       batchId,
       attemptId,
@@ -110,16 +110,14 @@ describe('declared planner artifact provenance', () => {
   it('carries the immutable receipt through planner approval', async () => {
     const root = createTempDir('planner-artifact-provenance-review');
     roots.push(root);
-    const attemptId = createTaskCompilationAttemptId();
-    const programId = createTaskCompilationProgramId({ feature: 'planner-review' });
-    const batchId = createTaskCompilationBatchId(programId, 0, [0]);
+    const attemptId = createPlannerArtifactAttemptId();
+    const programId = PlannerArtifactProgramIdSchema.parse('program-planner-review');
+    const batchId = PlannerArtifactBatchIdSchema.parse('batch-planner-review');
     const review = await beginDeclaredArtifactReview({
       stagedProjectDir: root,
-      projectDir: root,
-      sessionId: 'provenance-review',
       callId: attemptId,
       provenance: {
-        semanticId: TaskCompilationSemanticIdSchema.parse('semantic-review'),
+        semanticId: PlannerArtifactSemanticIdSchema.parse('semantic-review'),
         programId,
         batchId,
         attemptId,
@@ -161,8 +159,8 @@ describe('declared planner artifact provenance', () => {
       await prepareArtifactStageLease({
         stagedProjectDir: fixture.root,
         provenance: {
-          semanticId: TaskCompilationSemanticIdSchema.parse('semantic-provenance'),
-          programId: createTaskCompilationProgramId({ feature: 'provenance' }),
+          semanticId: PlannerArtifactSemanticIdSchema.parse('semantic-provenance'),
+          programId: PlannerArtifactProgramIdSchema.parse('program-provenance'),
           batchId: null,
           attemptId: fixture.attemptId,
           transport: {
@@ -201,12 +199,12 @@ describe('declared planner artifact provenance', () => {
     const root = createTempDir('planner-artifact-paths');
     roots.push(root);
     for (const path of ['result', '../result', '/tmp/result']) {
-      const attemptId = createTaskCompilationAttemptId();
+      const attemptId = createPlannerArtifactAttemptId();
       await expectInvalid(async () => {
         await prepareArtifactStageLease({
           stagedProjectDir: root,
           provenance: {
-            semanticId: TaskCompilationSemanticIdSchema.parse('semantic-provenance'),
+            semanticId: PlannerArtifactSemanticIdSchema.parse('semantic-provenance'),
             programId: null,
             batchId: null,
             attemptId,
@@ -292,17 +290,17 @@ describe('declared planner artifact provenance', () => {
     const firstRoot = createTempDir('planner-artifact-provenance-concurrent-first');
     const secondRoot = createTempDir('planner-artifact-provenance-concurrent-second');
     roots.push(firstRoot, secondRoot);
-    const programId = createTaskCompilationProgramId({ feature: 'provenance-concurrent' });
-    const firstAttemptId = createTaskCompilationAttemptId();
-    const secondAttemptId = createTaskCompilationAttemptId();
-    const semanticId = TaskCompilationSemanticIdSchema.parse('semantic-concurrent');
+    const programId = PlannerArtifactProgramIdSchema.parse('program-provenance-concurrent');
+    const firstAttemptId = createPlannerArtifactAttemptId();
+    const secondAttemptId = createPlannerArtifactAttemptId();
+    const semanticId = PlannerArtifactSemanticIdSchema.parse('semantic-concurrent');
     const first = {
       lease: await prepareArtifactStageLease({
         stagedProjectDir: firstRoot,
         provenance: {
           semanticId,
           programId,
-          batchId: createTaskCompilationBatchId(programId, 0, [0]),
+          batchId: PlannerArtifactBatchIdSchema.parse('batch-first'),
           attemptId: firstAttemptId,
           transport: {
             kind: 'declared-file',
@@ -323,7 +321,7 @@ describe('declared planner artifact provenance', () => {
         provenance: {
           semanticId,
           programId,
-          batchId: createTaskCompilationBatchId(programId, 1, [1]),
+          batchId: PlannerArtifactBatchIdSchema.parse('batch-second'),
           attemptId: secondAttemptId,
           transport: {
             kind: 'declared-file',

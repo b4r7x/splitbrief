@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { wireAppMouse } from '../../../src/app/mouse.js';
 import type { FilteredStdin, MouseEvent } from '../../../src/lib/terminal/filtered-stdin/types.js';
 import { _resetMouseZones, registerMouseZone } from '../../../src/lib/terminal/mouse-zones.js';
@@ -15,24 +16,35 @@ import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../../src/stores/ui/input-height.js';
 import { approvalPromptStore } from '../../../src/stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../../src/stores/cost-approval/prompt.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { conversationScrollStore } from '../../../src/stores/workflow/conversation-scroll.js';
 import { eventsStore } from '../../../src/stores/workflow/events.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import type { TieredApprovalRequest } from '../../../src/core/approval/types.js';
-import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
+import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+
+// A unique directory per run: session preparation allocates the session directory and refuses to
+// reallocate one, so a fixed path would fail every run after the first.
+const PROJECT_DIR = createTempDir('app-mouse-project');
 
 const WORKFLOW_ROUTE = {
   screen: 'workflow',
+  run: makeRunRecord(),
   execution: {
-    kind: 'attached',
-    feature: 'feat',
-    sessionId: 'app-mouse-session',
-    attach: { sockPath: '/tmp/app-mouse.sock', authToken: 'test-token' },
+    kind: 'local',
+    prepared: prepareWorkflowExecution({
+      projectDir: PROJECT_DIR,
+      feature: 'feat',
+      sessionId: 'app-mouse-session',
+    }),
   },
 } as const;
+
+afterAll(() => {
+  cleanupTempDir(PROJECT_DIR);
+});
 
 function createMockFilteredStdin() {
   let listener: ((event: MouseEvent) => void) | undefined;
@@ -102,7 +114,6 @@ describe('wireAppMouse', () => {
     lifecycleStore.__testReset();
     controlsStore.__testReset();
     approvalPromptStore.__testReset();
-    costApprovalStore.__testReset();
     _resetMouseZones();
     _resetHoverThrottle();
     editorStore.close();
@@ -254,7 +265,7 @@ describe('wireAppMouse', () => {
     const owners: ReadonlyArray<{ name: string; take: () => void; release: () => void }> = [
       {
         name: 'overlay',
-        take: () => overlayStore.open('cost-drilldown'),
+        take: () => overlayStore.open('help'),
         release: () => overlayStore.close(),
       },
       {
@@ -266,16 +277,6 @@ describe('wireAppMouse', () => {
             resolve: () => {},
           }),
         release: () => approvalPromptStore.__testReset(),
-      },
-      {
-        name: 'cost prompt',
-        take: () =>
-          costApprovalStore.__testReset({
-            status: 'pending',
-            prediction: makeCostPrediction(),
-            resolve: () => {},
-          }),
-        release: () => costApprovalStore.__testReset(),
       },
       {
         name: 'field editor',
@@ -301,6 +302,31 @@ describe('wireAppMouse', () => {
       owner.release();
     }
 
+    dispose();
+  });
+
+  it('routes overlay wheel input to the topmost overlay zone without activating it', () => {
+    overlayStore.open('planner-picker');
+    const activate = vi.fn();
+    const wheel = vi.fn();
+    registerMouseZone({
+      id: 'picker-row',
+      left: 1,
+      right: 20,
+      top: 3,
+      bottom: 3,
+      z: ROW_ZONE_Z_OVERLAY,
+      onClick: activate,
+      onWheel: wheel,
+    });
+    const mock = createMockFilteredStdin();
+    const dispose = wireAppMouse(mock.filtered);
+
+    mock.emit(pointerEvent('wheel-down', 8, 3));
+    mock.emit(pointerEvent('wheel-up', 8, 3));
+
+    expect(wheel.mock.calls.map(([direction]) => direction)).toEqual(['down', 'up']);
+    expect(activate).not.toHaveBeenCalled();
     dispose();
   });
 

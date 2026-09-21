@@ -43,7 +43,10 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('runner large output perf',
     const elapsedMs = performance.now() - startedAt;
     forceGc();
 
-    expect(result.status).toBe('completed');
+    expect(result.status).toBe('truncated');
+    expect(result.partial).toBe(true);
+    expect(result.error?.code).toBe('stdout_line_overflow');
+    expect(events.at(-1)).toMatchObject({ type: 'call_error', status: 'truncated', partial: true });
     expect(result.text.length).toBeLessThan(1_100_000);
     expect(textDeltaBytes(events, 'stdout')).toBeLessThan(1_100_000);
     expect(serializedBytes(events)).toBeLessThan(1_250_000);
@@ -70,9 +73,15 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('runner large output perf',
     forceGc();
     const serializedEvents = JSON.stringify(events);
 
-    expect(result.status).toBe('completed');
+    expect(result.status).toBe('truncated');
+    expect(result.partial).toBe(true);
+    expect(result.error?.code).toBe('stderr_line_overflow');
+    expect(events.at(-1)).toMatchObject({ type: 'call_error', status: 'truncated', partial: true });
     expect(result.text).toBe('');
-    expect(result.warnings).toHaveLength(lineCount);
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({ code: 'stderr_line_overflow' }),
+    );
+    expect(result.warnings.length).toBeLessThanOrEqual(lineCount + 1);
     expect(textDeltaBytes(events, 'stderr')).toBe(0);
     expect(serializedBytes(events)).toBeLessThan(512_000);
     expect(serializedEvents).not.toContain('stderr-flood-sentinel');

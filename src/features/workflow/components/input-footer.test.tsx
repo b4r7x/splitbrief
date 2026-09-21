@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -11,13 +12,18 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
-import { markInterruptParked } from '../../../stores/workflow/actions/interrupt.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
+import {
+  operationsStore,
+  type RunningOperation,
+} from '../../../stores/workflow/operations/state.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BRAILLE_SPINNER_FRAMES, glyph } from '../../../lib/glyphs.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { InputFooter } from './input-footer.js';
 
 import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
@@ -39,33 +45,72 @@ function publishAdvisory(advisory: AdvisorResult): void {
   });
 }
 
+function runningOn(runnerName: string): RunningOperation {
+  return {
+    callId: `call-${runnerName}`,
+    role: 'implementer',
+    phase: 'implementing',
+    label: runnerName,
+    runnerName,
+    startedAt: 0,
+    status: 'running',
+    endedAt: null,
+    durationMs: null,
+    partial: false,
+    reason: null,
+    usage: null,
+    warnings: [],
+  };
+}
+
 describe('InputFooter', () => {
   beforeEach(() => {
     eventsStore.__testReset();
     configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/splitbrief-test' });
     routerStore.init({
       screen: 'workflow',
+      run: makeRunRecord(),
       execution: {
-        kind: 'attached',
-        feature: 'demo',
-        sessionId: 'attached-session',
-        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'test-token' },
+        kind: 'local',
+        prepared: makePreparedExecution({
+          projectDir: '/tmp/splitbrief-test',
+          sessionId: 'input-footer-session',
+          feature: 'demo',
+          config: makeConfig(),
+          gates: () => [],
+        }),
       },
     });
     conversationScrollStore.__testReset();
     lifecycleStore.__testReset();
     tasksStore.__testReset();
     tokensStore.__testReset();
+    operationsStore.__testReset();
   });
 
   afterEach(() => {
     eventsStore.__testReset();
     configStore.__testReset();
     routerStore.init({ screen: 'home' });
+    stopStore.__testReset();
     conversationScrollStore.__testReset();
     lifecycleStore.__testReset();
     tasksStore.__testReset();
     tokensStore.__testReset();
+    operationsStore.__testReset();
+  });
+
+  it('renders flush, leaving the gutter to the footer that wraps it', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+
+    const ui = renderFeature(<InputFooter byline="Paused at T002 — stopped by you" />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    // A live byline opens with its pip on the mark column; this one has none, so it keeps an empty
+    // mark slot and puts its words on the text column instead of a letter where the pip would be.
+    expect(frame.indexOf('Paused at T002')).toBe(MARK_SLOT_CELLS);
+
+    ui.unmount();
   });
 
   it('renders the y copy affordance only while a focused row resolves a copy value', () => {
@@ -121,6 +166,48 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
+  it('shows neutral API waiting beside the input until the first response, and honors cancellation', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    const operation = runningOn('lm-studio');
+    operationsStore.__testReset({
+      active: {
+        ...operation,
+        apiRuntimeStatus: {
+          phase: 'waiting-first-response',
+          loadState: 'not-loaded',
+          observedAt: 1000,
+        },
+      },
+    });
+    const waiting = renderFeature(<InputFooter />);
+    expect(waiting.lastFrame()).toContain('Waiting for response');
+    expect(waiting.lastFrame()).not.toMatch(/loading|not-loaded|unloaded/i);
+    waiting.unmount();
+
+    operationsStore.__testReset({
+      active: {
+        ...operation,
+        apiRuntimeStatus: { phase: 'streaming', loadState: 'not-loaded', observedAt: 1000 },
+      },
+    });
+    const streaming = renderFeature(<InputFooter />);
+    expect(streaming.lastFrame()).toContain('Implementing');
+    expect(streaming.lastFrame()).not.toContain('Waiting for response');
+    streaming.unmount();
+
+    lifecycleStore.__testReset({
+      status: 'cancelled',
+      phase: 'implementing',
+      reason: 'user_cancelled',
+    });
+    const cancelled = renderFeature(<InputFooter />);
+    expect(cancelled.lastFrame()).toContain('Stopped by you');
+    expect(cancelled.lastFrame()).not.toMatch(/Waiting for response|unloaded/);
+    cancelled.unmount();
+    terminalSizeStore.reset();
+  });
+
   it('leads with the animated live status instead of the stage marker while running', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({
@@ -134,7 +221,6 @@ describe('InputFooter', () => {
 
     expect(frame).toMatch(/Researching… \d+:\d\d/);
     expect(frame).not.toContain(`${glyph('stageDone')} Spec`);
-    expect(frame).toContain('git:none');
 
     ui.unmount();
     terminalSizeStore.reset();
@@ -178,13 +264,79 @@ describe('InputFooter', () => {
 
   it('falls back to the ● stage lead when the workflow is not running', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'researching', cancelled: true });
+    lifecycleStore.__testReset({ phase: 'researching', status: 'complete' });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain(`${glyph('stageDone')} Spec · git:none`);
+    expect(frame).toContain(`${glyph('stageDone')} Spec`);
     expect(frame).not.toContain('Researching…');
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  // SPLITBRIEF no longer stages, commits or tags a checkpoint, so the byline has no strategy to
+  // report and nothing to call `git:none`. What survives is the progress the run made and the way
+  // it parked.
+  it('names no retired git automation while running or at rest, and keeps progress and pause', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    tasksStore.__testReset({
+      currentTask: 2,
+      totalTasks: 3,
+      tasks: [
+        { id: 'T001', title: 'T1', status: 'done' as const },
+        { id: 'T002', title: 'T2', status: 'in_progress' as const },
+        { id: 'T003', title: 'T3', status: 'pending' as const },
+      ],
+    });
+
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing', startedAt: Date.now() });
+    const running = renderFeature(<InputFooter />);
+    const runningFrame = stripAnsiStyles(running.lastFrame() ?? '');
+    expect(runningFrame).toMatch(/Implementing…/);
+    running.unmount();
+
+    lifecycleStore.__testReset({ status: 'complete', phase: 'implementing' });
+    const atRest = renderFeature(<InputFooter />);
+    const atRestFrame = stripAnsiStyles(atRest.lastFrame() ?? '');
+    expect(atRestFrame).toContain('1/3');
+    atRest.unmount();
+
+    lifecycleStore.__testReset({ status: 'paused', phase: 'implementing' });
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', 'T002', null);
+    const parked = renderFeature(<InputFooter />);
+    const parkedFrame = stripAnsiStyles(parked.lastFrame() ?? '');
+    expect(parkedFrame).toContain('Paused at T002');
+    parked.unmount();
+
+    for (const frame of [runningFrame, atRestFrame, parkedFrame]) {
+      expect(frame).not.toContain('git:');
+      expect(frame).not.toContain('checkpoint');
+      expect(frame).not.toContain('per-task');
+    }
+
+    terminalSizeStore.reset();
+  });
+
+  // The branch a run creates is announced by name in the transcript, where the name is real. The
+  // byline does not mirror the setting beside the worktree marker, where a reader would take the
+  // worktree's name for the branch's.
+  it('mirrors no git setting on the byline when createBranch is on', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    configStore.__testReset({
+      config: makeConfig({ workflow: { git: { createBranch: true } } }),
+      projectDir: '/tmp/splitbrief-test',
+    });
+    lifecycleStore.__testReset({ phase: 'researching', status: 'complete' });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${glyph('stageDone')} Spec`);
+    expect(frame).not.toContain('git:');
+    expect(frame).not.toContain('branch');
 
     ui.unmount();
     terminalSizeStore.reset();
@@ -192,8 +344,16 @@ describe('InputFooter', () => {
 
   it('renders the active rail stage and task fraction in the byline when not running', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', cancelled: true });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'complete' });
+    tasksStore.__testReset({
+      currentTask: 3,
+      totalTasks: 7,
+      tasks: [
+        { id: 'T001', title: 'T1', status: 'done' as const },
+        { id: 'T002', title: 'T2', status: 'done' as const },
+        { id: 'T003', title: 'T3', status: 'done' as const },
+      ],
+    });
 
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';
@@ -204,7 +364,80 @@ describe('InputFooter', () => {
     ui.unmount();
   });
 
+  it('quotes the build block estimate and drops it when a seat swap retires it', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    tasksStore.__testReset({
+      currentTask: 3,
+      totalTasks: 4,
+      taskCompletionTimes: [120_000, 120_000],
+      tasks: [
+        { id: 'T001', title: 'T1', status: 'done' as const },
+        { id: 'T002', title: 'T2', status: 'done' as const },
+        { id: 'T003', title: 'T3', status: 'in_progress' as const },
+        { id: 'T004', title: 'T4', status: 'pending' as const },
+      ],
+    });
+
+    const quoted = renderFeature(<InputFooter />);
+    const quotedFrame = stripAnsiStyles(quoted.lastFrame() ?? '');
+
+    // Two briefs left at two minutes each, worded the way the block above words it — one
+    // estimate on the screen, not two dialects of it.
+    expect(quotedFrame).toContain('ETA ~4m');
+    expect(quotedFrame).not.toContain('remaining');
+    quoted.unmount();
+
+    operationsStore.__testReset({ active: runningOn('codex'), last: runningOn('claude-code') });
+
+    const retired = renderFeature(<InputFooter />);
+
+    // The block retires an estimate the new seat never earned; the byline stops quoting it too.
+    expect(stripAnsiStyles(retired.lastFrame() ?? '')).not.toContain('ETA');
+    retired.unmount();
+
+    terminalSizeStore.reset();
+  });
+
+  it('a user-cancelled run leads with the cancelled glyph, never the stage-done pip', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'implementing', cancelled: true });
+    tasksStore.__testReset({
+      currentTask: 1,
+      totalTasks: 1,
+      tasks: [{ id: 'T001', title: 'T1', status: 'done' as const }],
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${glyph('statusCancelled')} Stopped by you · Build 1/1`);
+    expect(frame).not.toContain(`${glyph('stageDone')} Build`);
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('a run that stopped for any other reason leads with the failed glyph and word', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({
+      phase: 'implementing',
+      status: 'cancelled',
+      reason: 'workflow_cancelled',
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${glyph('statusFailed')} Build failed`);
+    expect(frame).not.toContain('Cancelled');
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
   it('renders downgrade advisory text when advisory state is set', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const advisory = adviseMode('fix typo in footer', 'standard');
     publishAdvisory(advisory);
 
@@ -215,6 +448,29 @@ describe('InputFooter', () => {
     expect(frame).toContain('quick');
 
     ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('renders the plan-size stop advice with its split instruction', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    publishAdvisory({
+      kind: 'stop',
+      risk: 'normal',
+      currentMode: 'standard',
+      suggestedMode: 'standard',
+      confidence: 1,
+      factors: ['13 briefs over the 12 cap'],
+      missing: [],
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('advisor: 13 briefs over the 12 cap');
+    expect(frame).toContain('split the work');
+
+    ui.unmount();
+    terminalSizeStore.reset();
   });
 
   it('omits advisory text when the advisor has no displayable warning', () => {
@@ -232,7 +488,11 @@ describe('InputFooter', () => {
   it('does not duplicate cost information already shown in the cost status line', () => {
     terminalSizeStore.__testReset({ cols: 48, rows: 24, isSmall: true });
     lifecycleStore.__testReset({ phase: 'implementing', cancelled: true });
-    tasksStore.__testReset({ currentTask: 1, totalTasks: 4 });
+    tasksStore.__testReset({
+      currentTask: 1,
+      totalTasks: 4,
+      tasks: [{ id: 'T001', title: 'T1', status: 'done' as const }],
+    });
     tokensStore.__testReset({
       localCount: 1,
       escalatedCount: 0,
@@ -255,37 +515,40 @@ describe('InputFooter', () => {
     ui.unmount();
   });
 
-  it('interrupted byline replaces the spinner with a static interrupted lead', () => {
+  it('a parked brief replaces the spinner with the resume keys', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ status: 'interrupted', phase: 'implementing' });
-    markInterruptParked();
+    lifecycleStore.__testReset({ status: 'paused', phase: 'implementing' });
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', 'T002', null);
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Interrupted — ⏎ retry · type to steer');
+    expect(frame).toContain('Paused at T002 · Partial changes kept');
+    // The keys live on the legend row above, so the byline carries the state alone.
+    expect(frame).not.toContain('/resume');
     expect(BRAILLE_SPINNER_FRAMES.some((spinnerFrame) => frame.includes(spinnerFrame))).toBe(false);
 
     ui.unmount();
     terminalSizeStore.reset();
   });
 
-  it('the interrupted lead shows the interim text until the continuation prompt parks', () => {
+  it('the stopping lead reports the wait until the brief parks', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ status: 'interrupted', phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    stopStore.request('stop-now');
+    stopStore.markTerminating();
 
     const pending = renderFeature(<InputFooter />);
     const pendingFrame = stripAnsiStyles(pending.lastFrame() ?? '');
-    expect(pendingFrame).toContain('Interrupted — finishing current step…');
-    expect(pendingFrame).not.toContain('⏎ retry');
+    expect(pendingFrame).toContain('Waiting for processes to exit');
+    expect(pendingFrame).not.toContain('Paused at');
     pending.unmount();
 
-    markInterruptParked();
+    stopStore.park('mid-brief', 'T002', null);
 
     const parked = renderFeature(<InputFooter />);
-    expect(stripAnsiStyles(parked.lastFrame() ?? '')).toContain(
-      'Interrupted — ⏎ retry · type to steer',
-    );
+    expect(stripAnsiStyles(parked.lastFrame() ?? '')).toContain('Paused at T002');
     parked.unmount();
     terminalSizeStore.reset();
   });
@@ -367,24 +630,33 @@ describe('InputFooter', () => {
   });
 
   it('queued count renders as an info byline segment that survives narrow widths', () => {
-    lifecycleStore.__testReset({ phase: 'implementing', cancelled: true, queueDepth: 2 });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'complete', queueDepth: 2 });
 
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const wide = renderFeature(<InputFooter />);
     expect(stripAnsiStyles(wide.lastFrame() ?? '')).toContain('2 queued');
     wide.unmount();
 
-    terminalSizeStore.__testReset({ cols: 20, rows: 24, isSmall: false });
+    terminalSizeStore.__testReset({ cols: 24, rows: 24, isSmall: false });
     const narrow = renderFeature(<InputFooter />);
     expect(stripAnsiStyles(narrow.lastFrame() ?? '')).toContain('2 queued');
     narrow.unmount();
+
+    // The frame costs the two gutter cells, so a 19-column terminal cannot seat the queued
+    // segment too; the ladder drops it and the lead stands alone rather than clipping.
+    terminalSizeStore.__testReset({ cols: 19, rows: 24, isSmall: false });
+    const cramped = renderFeature(<InputFooter />);
+    const crampedFrame = stripAnsiStyles(cramped.lastFrame() ?? '');
+    expect(crampedFrame).toContain('Build');
+    expect(crampedFrame).not.toContain('2 queued');
+    cramped.unmount();
 
     terminalSizeStore.reset();
   });
 
   it('byline stage labels are Title Case', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'planning', cancelled: true });
+    lifecycleStore.__testReset({ phase: 'planning', status: 'complete' });
 
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';
@@ -399,11 +671,12 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const esc = String.fromCharCode(27);
     const bel = String.fromCharCode(7);
-    // OSC-52 clipboard write + CSI erase wrapped around the visible name. A resumed/attached
+    // OSC-52 clipboard write + CSI erase wrapped around the visible name. A resumed
     // workflow's worktree name is untrusted, so none of these bytes may reach the terminal.
     const dirty = `${esc}]52;c;YWJj${bel}clean-tree${esc}[2K`;
     routerStore.init({
       screen: 'workflow',
+      run: makeRunRecord(),
       execution: {
         kind: 'local',
         prepared: makePreparedExecution({
@@ -432,11 +705,16 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     routerStore.init({
       screen: 'workflow',
+      run: makeRunRecord(),
       execution: {
-        kind: 'attached',
-        feature: 'demo',
-        sessionId: 'attached-session',
-        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'test-token' },
+        kind: 'local',
+        prepared: makePreparedExecution({
+          projectDir: '/tmp/splitbrief-test',
+          sessionId: 'no-worktree-session',
+          feature: 'demo',
+          config: makeConfig(),
+          gates: () => [],
+        }),
       },
     });
 

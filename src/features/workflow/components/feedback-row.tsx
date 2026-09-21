@@ -1,20 +1,22 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import { abortStore, type ArmedKind } from '../../../stores/workflow/abort.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
-import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
-import { reviewKeysStore } from '../../../stores/ui/review-keys.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { hintStateSeverity, resolveReviewKeyLegend } from '../input-hints.js';
+import { fitKeyLegend, KEY_LEGEND_LEADING } from '../../../core/key-legend.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
+import { hintStateSeverity } from '../input-hints.js';
+import { useStopByline } from '../stop/use-stop-byline.js';
 
-const ARMED_MESSAGES: Record<Exclude<ArmedKind, 'none'>, string> = {
-  exit: 'ctrl+c again to exit',
-  interrupt: 'esc again to interrupt',
-  cancel: 'esc again to cancel workflow',
-};
+// The keys a run answers to while it is working. `esc` opens the stop sheet rather than stopping,
+// so the word on the row is the sheet, not the stop.
+export const RUNNING_LEGEND = `esc stop options${SOFT_SEP}ctrl+c stop now${SOFT_SEP}ctrl+k commands${SOFT_SEP}/help`;
 
 function summarizeDisplayLine(text: string): string {
   const safeText = sanitizeTerminalDisplayText(text, { preserveLineBreaks: true });
@@ -26,58 +28,91 @@ function summarizeDisplayLine(text: string): string {
   );
 }
 
-export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined }) {
+export function FeedbackRow({
+  inputHint = '',
+  keyHint = '',
+}: {
+  inputHint?: string | undefined;
+  /** A caller's key legend — the row's own mark grammar, not a message's. */
+  keyHint?: string | undefined;
+}) {
   const [{ message, isError }] = useStores(feedbackStore);
-  const armed = abortStore.use((s) => s.armed);
-  const inReviewMode = controlsStore.use((s) => s.inputMode === 'review');
-  const reviewKeysArmed = reviewKeysStore.use((s) => s.armed);
-  const cols = terminalSizeStore.use((s) => s.cols) - WORKFLOW_CONTENT_PADDING_X * 2;
+  const inputMode = controlsStore.use((s) => s.inputMode);
+  const approvalPending = approvalPromptStore.use((s) => s.status === 'pending');
+  const running = lifecycleStore.use((s) => s.status === 'running');
+  const stopped = useStopByline();
+  const cols = getChromeContentWidth(terminalSizeStore.use((s) => s.cols));
   const t = useTheme();
 
-  const safeInputHint = summarizeDisplayLine(
-    resolveReviewKeyLegend({ inputHint, inReviewMode, reviewKeysArmed, width: cols }),
-  );
+  // A panel that is on screen owns the legend. Anything this row could add beside it would either
+  // repeat a key the panel already names or advertise one the panel has taken away.
+  const owned = approvalPending || inputMode !== 'normal';
   const safeMessage = message === null ? null : summarizeDisplayLine(message);
-  // Feedback owns the row while it is live and the key legend returns when it clears;
-  // appending the legend produced run-on lines like
-  // "Failed to open editor: … y approve · c comment · q reject · e edit".
-  const displayMessage = armed !== 'none' ? ARMED_MESSAGES[armed] : safeMessage || safeInputHint;
-  const showArmed = armed !== 'none';
-  const severity = showArmed
-    ? null
-    : isError
-      ? 'error'
-      : displayMessage
-        ? hintStateSeverity(displayMessage)
-        : null;
+  // One cell short of the edge: a legend that ends in the last column reads as cut off even when
+  // every token it names is whole. The leading is spent before the keys are fitted.
+  const legendWidth = cols - 1 - KEY_LEGEND_LEADING.length;
+  const runningHint = running ? fitKeyLegend(RUNNING_LEGEND, legendWidth) : '';
+  const stopHint =
+    stopped === null || stopped.hint === '' ? '' : fitKeyLegend(stopped.hint, legendWidth);
+
+  // The footer keeps the transcript's grammar: a mark in the mark slot — the legend's pointer, the
+  // byline's pip, the composer's border — and every word on the text column its chevron opens on.
+  // Every key legend carries the mark, whichever seat it arrived from; a message or a caller's
+  // prose hint leaves the slot empty and still opens on the text column.
+  const messageWord = safeMessage ?? '';
+  const keyHintFitted = keyHint === '' ? '' : fitKeyLegend(keyHint, legendWidth);
+  let word = '';
+  let isLegend = false;
+  if (!owned || isError || messageWord === 'Press ctrl+c again to quit') {
+    if (messageWord !== '') word = messageWord;
+    else if (stopHint !== '') {
+      word = stopHint;
+      isLegend = true;
+    } else if (keyHintFitted !== '') {
+      word = keyHintFitted;
+      isLegend = true;
+    } else {
+      const inputWord = summarizeDisplayLine(inputHint);
+      if (inputWord !== '') word = inputWord;
+      else if (runningHint !== '') {
+        word = runningHint;
+        isLegend = true;
+      }
+    }
+  }
+  const severity = isError ? 'error' : word !== '' ? hintStateSeverity(word) : null;
   const wordColor = severity === 'error' ? t.error : severity === 'warning' ? t.warning : null;
+  const lead = word === '' ? '' : isLegend ? KEY_LEGEND_LEADING : ' '.repeat(MARK_SLOT_CELLS);
 
   return (
-    <Box height={1} paddingX={WORKFLOW_CONTENT_PADDING_X} flexShrink={0}>
-      {displayMessage &&
+    <Box height={1} flexShrink={0}>
+      {word &&
         (wordColor !== null ? (
-          <StateWordVoice text={displayMessage} color={wordColor} />
+          <StateWordVoice lead={lead} text={word} color={wordColor} />
         ) : (
-          <Text color={showArmed ? t.warning : t.textDim} wrap="truncate-end">
-            {displayMessage}
+          <Text color={t.textDim} wrap="truncate-end">
+            {lead}
+            {word}
           </Text>
         ))}
     </Box>
   );
 }
 
-function StateWordVoice({ text, color }: { text: string; color: string }) {
+function StateWordVoice({ lead, text, color }: { lead: string; text: string; color: string }) {
   const t = useTheme();
   const spaceIndex = text.indexOf(' ');
   if (spaceIndex === -1) {
     return (
-      <Text color={color} wrap="truncate-end">
-        {text}
+      <Text wrap="truncate-end">
+        <Text color={t.textDim}>{lead}</Text>
+        <Text color={color}>{text}</Text>
       </Text>
     );
   }
   return (
     <Text wrap="truncate-end">
+      <Text color={t.textDim}>{lead}</Text>
       <Text color={color}>{text.slice(0, spaceIndex)}</Text>
       <Text color={t.textDim}>{text.slice(spaceIndex)}</Text>
     </Text>

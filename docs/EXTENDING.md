@@ -28,9 +28,9 @@ Existing example to follow: `src/cli/commands/start/register.ts`.
    - `validScreens` — array of screens where the command is available (use `ALL_SCREENS` from `src/core/navigation/types.ts` for global)
    - `handler` — sync or async; an `'arg'` command receives the raw argument string
    - `args` — `'arg'` commands only: `{ kind: 'closed', options, optional? }` when the argument set is fixed (the completion menu offers exactly those — `/crew` closes over `CREW_COMMAND_SEATS`), or `{ kind: 'free', hint }`
-   - Optional: `label` (for the command palette), `shortcut`, `hidden`, `aliases`
-4. Guards: add `guard: (ctx) => string | undefined` when the command is only valid in some phases or states. A returned string is the reason — it blocks the command *and* hides its row, so no listed command errors on Enter. The context is `{ phase, attached, plannerSupportsImages }`; phase predicates live in `src/core/phases.ts` (`canReviseSpec`, `canRevisePlan`, `canRedoTask`)
-5. Aliases are `{ name, args? }` pairs, not bare strings — an alias may pin an argument, which is how `/planner` lives on as `{ name: '/planner', args: 'plan' }` on `/crew`. A name that is gone for good belongs in `REMOVED_COMMANDS` (`src/core/runtime/commands/types.ts`) with the sentence that tells the user where it went, never as a row that errors
+   - Optional: `label` (for the command palette), `shortcut`, `hidden`
+4. Guards: add `guard: (ctx) => string | undefined` when the command is only valid in some phases or states. A returned string is the reason — it blocks the command *and* hides its row, so no listed command errors on Enter. The context is `{ phase, plannerSupportsImages }`; phase predicates live in `src/core/phases.ts` (`canReviseSpec`, `canRevisePlan`, `canRedoTask`)
+5. One name, one command: there is no alias mechanism, so a second spelling means a second row. A name that is gone for good belongs in `REMOVED_COMMANDS` (`src/core/runtime/commands/types.ts`) with the sentence that tells the user where it went, never as a row that errors
 6. Document in `docs/SLASH-COMMANDS-REFERENCE.md`
 
 ---
@@ -73,7 +73,7 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 
 ## 5. New planner/implementer backend
 
-Use an existing runner kind only (`cli`, `api`, `shell`, `agent`). Do not add a fifth kind — see [section 14](#14-cli-and-provider-admission-checklists).
+Use an existing runner kind only (`cli`, `api`, `shell`, `agent`). Do not add a fifth kind — see [section 15](#15-cli-and-provider-admission-checklists).
 
 1. Pick the kind in config (`RunnerKindSchema` in `src/core/schemas/enums.ts`); factory dispatch lives in `src/engine/runners/factory.ts`
 2. Create `src/engine/planners/<name>.ts` implementing the `Planner` interface from `src/engine/planners/types.ts`
@@ -106,8 +106,8 @@ A *seat* is a place in the run where a runner is called. Adding one is not the s
 5. **The port.** Define the narrowest interface the seat actually needs in `src/engine/<seat>s/types.ts`. Narrower is better: it lets an existing runner satisfy the seat structurally and hold it unadapted. Do not put tool or model fields on the port — identity for user-facing messages comes from the config accessor that resolved the seat.
 6. **The factory.** Add `create<Seat>()` to `src/engine/runners/factory.ts`, reusing the existing lazy backend loaders. Create the seat in `src/engine/orchestrator/run/init.ts`, reusing an already-built runner when the resolver says the seat falls back.
 7. **The call.** Give the seat its own call module (`src/engine/orchestrator/<seat>-call.ts`) rather than repointing an existing helper. Repointing a shared helper silently moves every other call site with it — count them first.
-8. **Token accounting.** Add the seat's fields to `TokenUsageSchema` (`src/core/schemas/tokens.ts`) with `.default(0)` so older session state still loads, add the category to `categoryFields` and `usageCategoryForRunnerCallRole()` in `src/engine/orchestrator/tokens.ts`, and check `attributePhaseTokenDelta` (`src/core/state/token-attribution.ts`) — moving tokens out of a bucket a phase's delta is computed from silently zeroes that phase in the cost drilldown.
-9. **Pricing and summary.** Price the new bucket at the seat's own rates when configured and fold it into the fallback seat's line when not. `stats.json` aggregates by provider, not by role, so it needs no new bucket.
+8. **Token accounting.** Add the seat's fields to `TokenUsageSchema` (`src/core/schemas/tokens.ts`) with `.default(0)` so older session state still loads, add the category to `categoryFields` and `usageCategoryForRunnerCallRole()` in `src/engine/orchestrator/tokens.ts`, and check `attributePhaseTokenDelta` (`src/core/state/token-attribution.ts`) — moving tokens out of a bucket a phase's delta is computed from silently zeroes that phase in the recorded per-phase totals.
+9. **Pricing and summary.** Price the new bucket at the seat's own rates when configured and fold it into the fallback seat's line when not. The run's own rollup is `summary.json`, built by `buildSummary()` (`src/engine/orchestrator/summary/build.ts`) from the state's `tokenUsage` and `calculateCostBreakdown()` (`src/engine/providers/cost/breakdown.ts`) — the bucket has to reach both or the seat's spend is dropped from the summary.
 10. **CLI flags.** Mirror the existing per-seat flags in `addWorkflowOptions()` (`src/cli/options.ts`), map them in `src/core/config/runtime/overrides/from-options.ts`, and apply them through `applyRunnerOverrides()`.
 11. **UI.** Widen the role-parameterised picker rather than writing a new one, add the overlay to `SEAT_PICKER_OVERLAYS` (`src/core/navigation/types.ts`), add the seat to `CREW_SEAT_IDS` / `CREW_SEAT_LABELS` (`src/core/crew/identity.ts`) and to `deriveCrewSeats()` (`src/core/crew/seats.ts`), which `deriveCrewRows()` (`src/core/crew/rows.ts`) turns into rows — Settings, Setup, home and the workflow header all derive from those rows; there is no settings section to add.
 12. **Docs.** [CONFIGURATION.md](./CONFIGURATION.md) for the block, [CLI-REFERENCE.md](./CLI-REFERENCE.md) for the flags, [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) for the command, [WORKFLOW.md](./WORKFLOW.md) for which seat runs which phase, and [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for admission and call-time failure.
@@ -123,7 +123,8 @@ The rule that made the review seat cheap: **no automatic fallback at call time.*
    - Add the phase to `phaseActions` (allowed state-action combinations)
    - Add transition logic in the reducer function
 3. Update phase taxonomy in `src/core/phases.ts`:
-   - Add to the correct sets: `RESUMABLE_PHASES`, `LIVE_PHASES`, `IMPLEMENTER_PHASES` / `PLANNER_COST_PHASES` / `IMPLEMENTER_COST_PHASES`
+   - Add to the correct sets: `LIVE_PHASES`, `IMPLEMENTER_PHASES` / `PLANNER_TOKEN_PHASES` / `IMPLEMENTER_TOKEN_PHASES`
+   - Give the phase a resume step in `resumeStep()` (`src/core/sessions/run-status.ts`)
    - Update `phaseRole()` if needed
 4. Add orchestrator logic — typically a new file under `src/engine/orchestrator/planning/` or `src/engine/orchestrator/task/`
 5. If the phase has a visual: update `WorkflowScreen` components in `src/features/workflow/`
@@ -202,7 +203,23 @@ Follow the `runners.ts` pattern: return an array of checks, use `metadata` for m
 
 ---
 
-## 13. New workflow hook event
+## 13. New validation stack
+
+`src/core/validation/stacks/` is the only place a validation command literal may live — invariant gate 48 fails the build when `npx tsc`, `npm test`, or a `.test.ts` literal appears in production `src/` outside it. To add a sixth stack:
+
+1. Create `src/core/validation/stacks/<language>.ts` exporting one `Stack` (shape in `types.ts`): `id`, `language` (the `LanguageContext` key), `markers` (project-relative filenames, or a predicate for a "the manifest mentions X" sniff), `typecheck` / `lint` / `test` — each `(projectDir) => string | null`, returning `null` when that tool is not configured — plus `testFilePatterns` (single-`*` globs), `testDirs`, optional `inlineTests`, `narrowing`, `allowedCommands`, and optional `missingSubcommand`
+2. Add the id to `StackId` in `types.ts` and to the `validation.stack` enum in `src/core/schemas/config.ts`
+3. Register the row in `STACKS` (`src/core/validation/stacks/registry.ts`). **Array order is detection order** — `detectStack` takes the first row whose marker matches, so a narrow marker set goes above a broad one (`Cargo.toml` before `package.json`)
+4. `allowedCommands` is the planner-discovery allowlist: `sanitize-discovered-validation.ts` drops any discovered command no stack lists, so a stack whose runner is missing there is silently disarmed
+5. Write the colocated `<language>.test.ts` against temp dirs holding the marker and config files — one case per sniff branch, both the configured and the `null` outcome
+6. Run `npm run skills:sync`: the `gates` block in `skills/*/references/gates.md` renders the coverage, narrowing, and allowed-command tables from `STACKS`, and `npm run skills:check` stays red until it is synced
+7. Document the row in `docs/FEATURES.md` § Validation and in `docs/CONFIGURATION.md` under `validation.stack`
+
+No plugin API: the registry is a closed array, the same way `RUNNER_KINDS` is a closed set.
+
+---
+
+## 14. New workflow hook event
 
 1. Add the event name to `HookEventSchema` in `src/core/schemas/hooks.ts`
    - Names follow the convention: `pre_*`, `post_*`, `on_*`
@@ -216,7 +233,7 @@ Follow the `runners.ts` pattern: return an array of checks, use `metadata` for m
 
 ---
 
-## 14. CLI and provider admission checklists
+## 15. CLI and provider admission checklists
 
 Canonical support matrices live in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md). Extension work must follow the closed architectural constraints and ordered checklists below — not independent exhaustive lists in secondary guides.
 
@@ -237,7 +254,7 @@ Complete in order before registering in `CLI_PLANNER_ADAPTERS` / `CLI_IMPLEMENTE
 5. **Lossless transport** — `CliPromptTransport` (`stdin`, byte-limited `argv` with `<PROMPT>` sentinel, or mode-0600 `file`). The Task Brief reaches the child byte-for-byte or execution fails before spawn.
 6. **Args conflicts** — user `args` have a documented insertion position; conflicts with prompt transport, output protocol, permission mode, model policy, or terminal behavior are rejected pre-spawn.
 7. **Parser/terminal** — structured protocols require the documented terminal event; text protocols may use process exit plus direct-change proof only when the admitted fixture documents no stable terminal envelope.
-8. **Env** — `src/engine/runners/sandbox-env.ts` allowlists runtime env plus only the descriptor auth channel (the per-tool state allowlist itself lives in `src/engine/runners/sandbox-state-paths.ts`); never copy ambient secrets. A private HOME under `.splitbrief/sandbox/<role>/` is the default and the only thing a new tool should assume. The single sanctioned exception is a channel whose credential is an OS keychain item with no file to bridge: it declares `hostKeychainPlatforms` on the channel, `cliAuthChannelHostStateAccess()` maps that to `host-account`, and the child keeps the host `HOME`/`USER` while every other redirect stays. The Claude Code and Cursor Agent CLI `session` channels declare one today — see [WORKTREES.md](./WORKTREES.md#exception-one-keychain-backed-session-channels-on-macos).
+8. **Env** — `src/engine/runners/sandbox-env.ts` allowlists runtime env plus only the descriptor auth channel (the per-tool state allowlist itself lives in `src/engine/runners/sandbox-state-paths.ts`); never copy ambient secrets. A private HOME under `.splitbrief/sandbox/<role>/` is the default and the only thing a new tool should assume. The single sanctioned exception is a channel whose credential is an OS keychain item with no file to bridge: it declares `hostKeychainPlatforms` on the channel, `cliAuthChannelHostStateAccess()` maps that to `host-account`, and the child keeps the host `HOME`/`USER` while every other redirect stays. The Claude Code and Cursor Agent CLI `session` channels declare one today — see [API-KEYS.md](./API-KEYS.md#security-measures).
 9. **Direct-change proof** — direct writers receive staged-cwd instructions; successful completion requires a real staged change, not stdout extraction alone.
 10. **Common/live/eval gates** — pass the common CLI contract suite, any required credentialed live smoke, and implementation-quality/privacy evaluation before registration.
 11. **Late registry/docs** — register in `src/engine/runners/cli-tools/registry.ts` and update [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) only after every gate above passes.

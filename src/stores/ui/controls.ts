@@ -7,7 +7,8 @@ interface ControlsState {
 }
 
 // The task list is the run's spine, so it is on by default. `getWorkflowSidebarWidth` still
-// suppresses it below 120 columns, and `/sidebar` toggles it off for anyone who wants the width.
+// suppresses it at or below 120 columns, and `/sidebar` toggles it off for anyone who wants
+// the width.
 const initial: ControlsState = { sidebarVisible: true, inputMode: 'normal' };
 
 const store = createStore<ControlsState>(initial);

@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { buildRepoMap, MAX_FILE_SIZE_BYTES } from './repomap.js';
 import { initParser } from './parse.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 
 describe('buildRepoMap', () => {
   let projectDir: string;
@@ -70,15 +71,14 @@ describe('buildRepoMap', () => {
     expect(focusedPos).toBeLessThan(baselinePos);
   });
 
-  it('uses custom cacheDir for the SQLite cache', async () => {
+  it('puts the SQLite cache in the project state directory', async () => {
     const dir = createTempDir('repomap-cache-dir');
     try {
       writeFileSync(join(dir, 'entry.ts'), 'export function entry() { return "ok"; }');
 
-      await buildRepoMap(dir, { tokenBudget: 5000, cacheDir: '.custom-cache' });
+      await buildRepoMap(dir, { tokenBudget: 5000 });
 
-      expect(existsSync(join(dir, '.custom-cache', 'repomap.sqlite'))).toBe(true);
-      expect(existsSync(join(dir, '.splitbrief'))).toBe(false);
+      expect(existsSync(join(dir, SPLITBRIEF_DIR, 'repomap.sqlite'))).toBe(true);
     } finally {
       cleanupTempDir(dir);
     }

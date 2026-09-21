@@ -8,7 +8,6 @@ import { resolveProfileContextLength } from './context-length.js';
 function profile(isDefault: boolean): ResolvedImplementerProfile {
   return {
     name: isDefault ? 'detected-worker' : 'sibling-worker',
-    costTier: 'cheap',
     capabilities: { writesFiles: 'extracted-code' },
     isDefault,
     config: {
@@ -20,6 +19,26 @@ function profile(isDefault: boolean): ResolvedImplementerProfile {
 }
 
 describe('resolveProfileContextLength', () => {
+  it('bounds a configured API window by its smaller observed active context', () => {
+    const apiProfile: ResolvedImplementerProfile = {
+      ...profile(true),
+      config: {
+        kind: 'api',
+        provider: 'lm-studio',
+        service: 'lm-studio',
+        offering: 'local',
+        apiBase: 'http://127.0.0.1:1234/v1',
+        model: 'worker-model',
+        contextLength: 32_768,
+      },
+    };
+    expect(resolveProfileContextLength(apiProfile, 32_768, undefined, 4_096)).toEqual({
+      contextLength: 4_096,
+      source: 'detected',
+      usedConservativeContextLength: false,
+    });
+  });
+
   it('applies the boot-probed window to the default profile it was probed for', () => {
     const result = resolveProfileContextLength(profile(true), 8192, undefined, 262_144);
 
@@ -83,7 +102,6 @@ describe('resolveProfileContextLength', () => {
   it('resolves a CLI profile under automatic model selection at the smallest bundled window', () => {
     const cliAuto: ResolvedImplementerProfile = {
       name: 'codex-auto',
-      costTier: 'cheap',
       capabilities: { writesFiles: 'direct' },
       isDefault: false,
       config: {
@@ -111,7 +129,6 @@ describe('resolveProfileContextLength', () => {
     };
     const cliPinned: ResolvedImplementerProfile = {
       name: 'codex-pinned',
-      costTier: 'cheap',
       capabilities: { writesFiles: 'direct' },
       isDefault: false,
       config: {

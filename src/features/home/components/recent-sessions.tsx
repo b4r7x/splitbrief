@@ -1,9 +1,6 @@
-import { useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
-import { configStore } from '../../../stores/project/config.js';
-import { useStores } from '../../../stores/use-stores.js';
 import { SessionRow } from '../../../components/session-row.js';
 import type { Session } from '../../../core/schemas/session.js';
 import { RecentSessionsList } from './recent-sessions-list.js';
@@ -26,43 +23,23 @@ export function RecentSessions({
   onClose,
   hasOverlay,
 }: RecentSessionsProps) {
-  const [{ sessions, allSessions, totalCount }, { projectDir }] = useStores(
-    sessionsStore,
-    configStore,
-  );
+  const sessions = sessionsStore.use((s) => s.sessions);
+  const totalCount = sessionsStore.use((s) => s.totalCount);
   const theme = useTheme();
 
   const shouldLoad = Boolean(focused) || limit === undefined || limit > 0;
-  const shouldLoadAll = Boolean(focused && onSelect && onClose && shouldLoad);
-
-  useEffect(() => {
-    if (!shouldLoad) return;
-    sessionsStore.load(projectDir);
-  }, [projectDir, shouldLoad]);
-
-  useEffect(() => {
-    if (!shouldLoadAll) return;
-    sessionsStore.loadAll(projectDir);
-  }, [projectDir, shouldLoadAll]);
-
   if (!shouldLoad) return null;
 
-  if (sessions.length === 0) {
-    return (
-      <RecentSessionsShell>
-        <Text color={theme.textDim}>No recent sessions</Text>
-      </RecentSessionsShell>
-    );
-  }
+  // A first run has no history, and a heading over an empty list is a row that states an absence.
+  if (sessions.length === 0) return null;
 
   const visibleSessions = sessions.slice(0, limit ?? sessions.length);
   const hiddenCount = totalCount - visibleSessions.length;
 
   if (focused && onSelect && onClose) {
-    const focusedSessions = allSessions.length > 0 ? allSessions : sessions;
     return (
       <RecentSessionsList
-        sessions={focusedSessions}
+        sessions={sessions}
         hasOverlay={hasOverlay ?? false}
         onSelect={onSelect}
         onClose={onClose}

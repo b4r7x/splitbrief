@@ -6,7 +6,7 @@ import {
   getTerminalCellWidth,
   truncateTerminalDisplayTextStart,
 } from '../../../utils/display-text.js';
-import { Divider } from './divider.js';
+import { Divider } from '../../../components/divider.js';
 
 interface FramePanelProps {
   filePath: string;

@@ -1,4 +1,5 @@
 import { countNoun } from '../utils/pluralize.js';
+import { SOFT_SEP } from './separators.js';
 
 export function formatScoreSummary(
   score: number,
@@ -8,7 +9,7 @@ export function formatScoreSummary(
   const parts = [`${label} ${score.toFixed(2)}`];
   if (counts.errorCount > 0) parts.push(countNoun(counts.errorCount, 'error'));
   if (counts.warningCount > 0) parts.push(countNoun(counts.warningCount, 'warning'));
-  return parts.join(' · ');
+  return parts.join(SOFT_SEP);
 }
 
 /** Floors: a context window may be shown smaller than it is, never larger. */
@@ -26,33 +27,13 @@ export function formatCost(dollars: number): string {
   return `$${Math.max(0, dollars).toFixed(2)}`;
 }
 
-export function formatPercent(value: number): string {
-  if (!Number.isFinite(value)) return 'unknown';
-  return `${Math.round(value)}%`;
-}
-
-export function formatCostFact(value: number): string {
-  if (!Number.isFinite(value)) return String(value);
-  return `$${value.toFixed(2)}`;
-}
-
-export function budgetPercentOf(currentCost: number, maxBudget: number): number {
-  if (!Number.isFinite(currentCost) || !Number.isFinite(maxBudget) || maxBudget <= 0) return 0;
-  return Math.round((currentCost / maxBudget) * 10_000) / 100;
-}
-
 export function formatKnownCost(amount: number, priceState: 'known' | 'partial'): string {
   if (priceState === 'known') return formatCost(amount);
   return amount > 0 ? `${formatCost(amount)} + unknown` : 'Unknown price';
 }
 
-export function formatTokensShort(tokens: number): string {
-  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;
-  return String(tokens);
-}
-
 export function formatTruncatedList(values: string[], max: number): string {
-  const visible = values.slice(0, max).join(' · ');
+  const visible = values.slice(0, max).join(SOFT_SEP);
   const hidden = values.length - max;
-  return hidden > 0 ? `${visible} · +${hidden} more` : visible;
+  return hidden > 0 ? `${visible}${SOFT_SEP}+${hidden} more` : visible;
 }

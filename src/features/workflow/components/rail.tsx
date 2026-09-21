@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { glyph } from '../../../lib/glyphs.js';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { useTheme, type Theme } from '../../../components/theme.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
@@ -12,24 +12,30 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import {
-  chooseFormBVariant,
-  getChromeContentWidth,
-  getRailDriftPassed,
   getRailStages,
   isRailCurrent,
-  measureFormB,
-  railConnectorString,
-  railFormBLabel,
   railIsHandoff,
   railStageRole,
-  type RailForm,
   type RailRole,
   type RailStageState,
   type RailStageStatus,
+} from '../../../core/rail-stages.js';
+import {
+  chooseFormBVariant,
+  getChromeContentWidth,
+  getRailDriftPassed,
+  measureFormB,
+  railConnectorString,
+  railFormBLabel,
+  type RailForm,
 } from '../layout/chrome-rows.js';
 import { RAIL_FORM_C_CANCELLED_SUFFIX, resolveRailFraction } from '../layout/hit-test.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { TasksState } from '../../../stores/workflow/tasks.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 
 interface RailDoneSummary {
   totalTasks: number;
@@ -46,7 +52,15 @@ function roleColor(role: RailRole, t: Theme): string {
 function stageMarkerGlyph(status: RailStageStatus): string {
   if (status === 'done') return glyph('stageDone');
   if (status === 'active') return glyph('stageActive');
+  if (status === 'cancelled') return glyph('statusCancelled');
+  if (status === 'failed') return glyph('statusFailed');
   return glyph('stagePending');
+}
+
+function haltColor(status: RailStageStatus, t: Theme): string | null {
+  if (status === 'cancelled') return t.warning;
+  if (status === 'failed') return t.error;
+  return null;
 }
 
 function railFormCState(stages: RailStageState[]): RailStageState | undefined {
@@ -81,7 +95,8 @@ function RailFormBNode({
   // Three-tier weight: pending stays faint, done steps up to full hue (it happened), active gets
   // bold plus the ◉ marker so the eye lands on exactly one node without adding any characters
   // (the marker+label text keeps its cell count, so the hit-test geometry never moves).
-  const dim = state.status === 'pending' || state.status === 'cancelled';
+  const halt = haltColor(state.status, t);
+  const dim = state.status === 'pending' || halt !== null;
   const rc = roleColor(railStageRole(state.stage), t);
   const label = railFormBLabel(state, { short });
   const left = index > 0 ? stages[index - 1] : undefined;
@@ -95,14 +110,29 @@ function RailFormBNode({
   return (
     <Box>
       {connector !== undefined && <Text color={connector.color}>{connector.text}</Text>}
-      <Text color={rc} bold={live} dimColor={dim}>
-        {`${stageMarkerGlyph(state.status)} ${label}`}
-      </Text>
+      {halt === null ? (
+        <Text color={rc} bold={live} dimColor={dim}>
+          {`${stageMarkerGlyph(state.status)} ${label}`}
+        </Text>
+      ) : (
+        <>
+          <Text color={halt}>{`${stageMarkerGlyph(state.status)} `}</Text>
+          <Text color={rc} dimColor>
+            {label}
+          </Text>
+        </>
+      )}
     </Box>
   );
 }
 
-function RailFormB({ stages, contentWidth }: { stages: RailStageState[]; contentWidth: number }) {
+export function RailFormB({
+  stages,
+  contentWidth,
+}: {
+  stages: RailStageState[];
+  contentWidth: number;
+}) {
   const { short } = chooseFormBVariant(stages, contentWidth);
   return (
     <Box height={1} overflow="hidden">
@@ -160,8 +190,10 @@ export function measureRailCells(input: {
   tasks: TasksState;
   localCount: number;
   events: readonly EngineEvent[];
+  /** Stages the caller already knows; a run at rest wears the mark its own status earned. */
+  stages?: readonly RailStageState[] | undefined;
 }): number {
-  if (input.phase === 'complete') {
+  if (input.stages === undefined && input.phase === 'complete') {
     return getTerminalCellWidth(
       railCompleteText({
         totalTasks: input.tasks.totalTasks,
@@ -170,7 +202,7 @@ export function measureRailCells(input: {
       }),
     );
   }
-  const stages = getRailStages(input.phase, { cancelled: input.cancelled });
+  const stages = [...(input.stages ?? getRailStages(input.phase, { cancelled: input.cancelled }))];
   if (input.form === 'C') {
     const fraction = resolveRailFraction({
       phase: input.phase,
@@ -184,19 +216,42 @@ export function measureRailCells(input: {
   return measureFormB(stages, { short });
 }
 
-export function Rail({ form }: { form?: RailForm | undefined }) {
-  const [{ cols }, lifecycle, tasks, tokens, eventsState] = useStores(
+export function Rail({
+  form,
+  stages: givenStages,
+}: {
+  form?: RailForm | undefined;
+  /** A run at rest paints the stages its record names, not the ones a live phase implies. */
+  stages?: readonly RailStageState[] | undefined;
+}) {
+  const [{ cols }, lifecycle, tasks, tokens, eventsState, controls, approval, recovery] = useStores(
     terminalSizeStore,
     lifecycleStore,
     tasksStore,
     tokensStore,
     eventsStore,
+    controlsStore,
+    approvalPromptStore,
+    recoveryNoticeStore,
   );
   const phase = lifecycle.phase;
   const cancelled = lifecycle.cancelled;
   const resolved: RailForm = form ?? 'B';
   const contentWidth = getChromeContentWidth(cols);
-  const stages = getRailStages(phase, { cancelled });
+  const display = deriveWorkflowDisplay({
+    status: lifecycle.status,
+    cancelled,
+    pendingQuestion: controls.inputMode !== 'normal',
+    pendingRecovery: recovery.issue !== null,
+    pendingApproval: approval.status === 'pending',
+  });
+  const stages = [
+    ...(givenStages ??
+      getRailStages(phase, {
+        cancelled,
+        ...(display.halted === undefined ? {} : { halted: display.halted }),
+      })),
+  ];
   const fraction = resolveRailFraction({
     phase,
     currentTask: tasks.currentTask,
@@ -204,7 +259,7 @@ export function Rail({ form }: { form?: RailForm | undefined }) {
     cancelled,
   });
 
-  if (phase === 'complete') {
+  if (givenStages === undefined && phase === 'complete') {
     return (
       <RailComplete
         summary={{

@@ -6,6 +6,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { configStore } from '../../../stores/project/config.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SettingDef } from '../../../core/settings/catalog.js';
 import { buildSettingsItems, type SettingsItem } from '../items.js';
@@ -39,16 +40,6 @@ function Harness(props: {
     canActOnIndex: () => true,
   });
   return createElement(Text, null, `cursor=${state.filtered[state.effectiveIndex]?.key ?? ''}`);
-}
-
-function plannerEffort(): unknown {
-  const planner = configStore.get().config?.planner;
-  return planner && 'effort' in planner ? planner.effort : undefined;
-}
-
-function implementerVariant(): unknown {
-  const implementer = configStore.get().config?.implementer;
-  return implementer && 'variant' in implementer ? implementer.variant : undefined;
 }
 
 let projectDir = '';
@@ -85,91 +76,68 @@ describe('useSettingsEditor', () => {
     ui.unmount();
   });
 
-  it('cycles an editable effort row through every level and back to unset', async () => {
-    const config = makeConfig({ planner: CLI_PLANNER });
-    seed(config);
-    const items = crewItems(config);
-
-    const ui = renderFeature(
-      createElement(Harness, { config, items, initialKey: 'effort:plan', activated: [] }),
-    );
-    await flushEffects();
-    expect(plannerEffort()).toBeUndefined();
-
-    const seen: unknown[] = [];
-    for (let press = 0; press < 5; press++) {
-      const previous = plannerEffort();
-      ui.stdin.write(' ');
-      for (let poll = 0; poll < 50 && plannerEffort() === previous; poll++) await tick(10);
-      seen.push(plannerEffort());
-    }
-
-    expect(seen).toEqual(['low', 'medium', 'high', 'xhigh', undefined]);
-    const planner = configStore.get().config?.planner;
-    expect(planner && 'effort' in planner).toBe(false);
-    ui.unmount();
-  });
-
-  it('leaves the config untouched when space lands on an inherited effort row', async () => {
+  it('leaves the config untouched when space lands on an inherited review seat', async () => {
     const config = makeConfig({ planner: { ...CLI_PLANNER, effort: 'high' } });
     seed(config);
     const items = crewItems(config);
     const before = JSON.stringify(configStore.get().config);
 
     const ui = renderFeature(
-      createElement(Harness, { config, items, initialKey: 'effort:review', activated: [] }),
+      createElement(Harness, { config, items, initialKey: 'seat:review', activated: [] }),
     );
     await flushEffects();
     ui.stdin.write(' ');
     await tick(30);
 
     expect(JSON.stringify(configStore.get().config)).toBe(before);
+    expect(feedbackStore.get().message).toBeNull();
     ui.unmount();
   });
 
-  it('leaves the config untouched when space lands on an undeliverable effort row', async () => {
+  it('says nothing when space lands on an api seat', async () => {
     const config = makeConfig({
-      implementer: { kind: 'cli', tool: 'codex' },
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://127.0.0.1:11434/v1',
+        model: 'qwen2.5-coder:7b',
+      },
     });
     seed(config);
     const items = crewItems(config);
     const before = JSON.stringify(configStore.get().config);
 
     const ui = renderFeature(
-      createElement(Harness, { config, items, initialKey: 'effort:build', activated: [] }),
+      createElement(Harness, { config, items, initialKey: 'seat:build', activated: [] }),
     );
     await flushEffects();
     ui.stdin.write(' ');
     await tick(30);
 
     expect(JSON.stringify(configStore.get().config)).toBe(before);
+    expect(feedbackStore.get().message).toBeNull();
     ui.unmount();
   });
 
-  it("cycles an opencode build seat through its provider's verbatim variant ladder", async () => {
+  it('leaves a kilo seat untouched and silent on space', async () => {
     const config = makeConfig({
-      implementer: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6-luna' },
+      implementer: { kind: 'cli', tool: 'kilo-code', model: 'openai/gpt-5.6' },
     });
     seed(config);
     const items = crewItems(config);
+    const before = JSON.stringify(configStore.get().config);
 
     const ui = renderFeature(
-      createElement(Harness, { config, items, initialKey: 'effort:build', activated: [] }),
+      createElement(Harness, { config, items, initialKey: 'seat:build', activated: [] }),
     );
     await flushEffects();
-    expect(implementerVariant()).toBeUndefined();
+    ui.stdin.write(' ');
+    await tick(30);
 
-    const seen: unknown[] = [];
-    for (let press = 0; press < 7; press++) {
-      const previous = implementerVariant();
-      ui.stdin.write(' ');
-      for (let poll = 0; poll < 50 && implementerVariant() === previous; poll++) await tick(10);
-      seen.push(implementerVariant());
-    }
-
-    expect(seen).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', undefined]);
-    const implementer = configStore.get().config?.implementer;
-    expect(implementer && 'variant' in implementer).toBe(false);
+    expect(JSON.stringify(configStore.get().config)).toBe(before);
+    expect(feedbackStore.get().message).toBeNull();
     ui.unmount();
   });
 
@@ -182,17 +150,18 @@ describe('useSettingsEditor', () => {
     const before = JSON.stringify(configStore.get().config);
 
     const ui = renderFeature(
-      createElement(Harness, { config, items, initialKey: 'effort:build', activated: [] }),
+      createElement(Harness, { config, items, initialKey: 'seat:build', activated: [] }),
     );
     await flushEffects();
     ui.stdin.write(' ');
     await tick(30);
 
     expect(JSON.stringify(configStore.get().config)).toBe(before);
+    expect(feedbackStore.get().message).toBeNull();
     ui.unmount();
   });
 
-  it("leaves a cursor seat's effort row read-only", async () => {
+  it('leaves a cursor seat untouched and silent on space', async () => {
     const config = makeConfig({
       implementer: { kind: 'cli', tool: 'cursor', model: 'gpt-5.6-luna-high' },
     });
@@ -201,13 +170,34 @@ describe('useSettingsEditor', () => {
     const before = JSON.stringify(configStore.get().config);
 
     const ui = renderFeature(
-      createElement(Harness, { config, items, initialKey: 'effort:build', activated: [] }),
+      createElement(Harness, { config, items, initialKey: 'seat:build', activated: [] }),
     );
     await flushEffects();
     ui.stdin.write(' ');
     await tick(30);
 
     expect(JSON.stringify(configStore.get().config)).toBe(before);
+    expect(feedbackStore.get().message).toBeNull();
+    ui.unmount();
+  });
+
+  it('leaves a claude-code seat untouched and silent across multiple space presses', async () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+    seed(config);
+    const items = crewItems(config);
+    const before = JSON.stringify(configStore.get().config);
+
+    const ui = renderFeature(
+      createElement(Harness, { config, items, initialKey: 'seat:plan', activated: [] }),
+    );
+    await flushEffects();
+    for (let i = 0; i < 4; i++) {
+      ui.stdin.write(' ');
+      await tick(10);
+    }
+
+    expect(JSON.stringify(configStore.get().config)).toBe(before);
+    expect(feedbackStore.get().message).toBeNull();
     ui.unmount();
   });
 });
@@ -226,40 +216,40 @@ describe('hintFor', () => {
     expect(hintFor({ kind: 'setting', def: enumDef, key: enumDef.id })).not.toContain('⏎');
   });
 
-  it('advertises Enter on a seat row', () => {
+  it("cycles an enum and toggles a boolean, in each row's own word", () => {
+    const booleanDef: SettingDef = {
+      id: 'test.boolean',
+      label: 'Boolean',
+      section: 'Workflow',
+      description: '',
+      kind: 'boolean',
+    };
+    expect(hintFor({ kind: 'setting', def: enumDef, key: enumDef.id })).toBe('space cycle');
+    expect(hintFor({ kind: 'setting', def: booleanDef, key: booleanDef.id })).toBe('space toggle');
+  });
+
+  it("advertises '⏎ edit' on a string or number setting row", () => {
+    const stringDef: SettingDef = {
+      id: 'test.string',
+      label: 'String',
+      section: 'Workflow',
+      description: '',
+      kind: 'string',
+    };
+    const numberDef: SettingDef = {
+      id: 'test.number',
+      label: 'Number',
+      section: 'Workflow',
+      description: '',
+      kind: 'number',
+    };
+    expect(hintFor({ kind: 'setting', def: stringDef, key: stringDef.id })).toBe('⏎ edit');
+    expect(hintFor({ kind: 'setting', def: numberDef, key: numberDef.id })).toBe('⏎ edit');
+  });
+
+  it("returns '⏎ change seat' on a seat row", () => {
     const config = makeConfig({ planner: CLI_PLANNER });
-    const seat = crewItems(config)[0];
-    expect(seat && hintFor(seat)).toContain('⏎');
-  });
-
-  function buildEffortHint(config: Config): string {
-    const row = crewItems(config).find((item) => item.key === 'effort:build');
-    if (row === undefined) throw new Error('no build effort row');
-    return hintFor(row);
-  }
-
-  // Space is inert wherever the provider spells no presets, so the row must not
-  // promise it: the cycle stops at the vocabulary, not at the channel.
-  it('promises no cycle on a variant seat whose provider spells no presets', () => {
-    expect(
-      buildEffortHint(makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } })),
-    ).not.toContain('space cycle');
-    expect(
-      buildEffortHint(
-        makeConfig({
-          implementer: { kind: 'cli', tool: 'opencode', model: 'opencode-go/gpt-5.6-luna' },
-        }),
-      ),
-    ).not.toContain('space cycle');
-  });
-
-  it('promises the cycle on a variant seat whose provider spells presets', () => {
-    expect(
-      buildEffortHint(
-        makeConfig({
-          implementer: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6-luna' },
-        }),
-      ),
-    ).toContain('space cycle');
+    const seat = crewItems(config).find((item) => item.key === 'seat:plan');
+    expect(seat && hintFor(seat)).toBe('⏎ change seat');
   });
 });

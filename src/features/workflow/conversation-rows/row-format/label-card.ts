@@ -1,7 +1,7 @@
 import type { ConversationRowKind, ConversationRowTone } from '../types.js';
 import type { ConversationRow } from '../types.js';
 import { row, segmentedRow } from './rows.js';
-import { sanitizeRowDisplayText, wrappedRowTexts } from './text.js';
+import { sanitizeRowDisplayText, wrappedProseTexts } from './text.js';
 
 export interface CardRowsLayout {
   labelText: string;
@@ -32,7 +32,7 @@ export function cardRowsLayout(input: {
   return {
     labelText,
     hasValue: cleanValue !== undefined && cleanValue !== '',
-    wrapped: wrappedRowTexts(`${labelText}${cleanValue ?? ''}`, input.width),
+    wrapped: wrappedProseTexts(`${labelText}${cleanValue ?? ''}`, input.width),
   };
 }
 

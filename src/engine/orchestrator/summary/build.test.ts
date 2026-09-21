@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { buildSummary } from './build.js';
-import type { BuildSummaryState } from './build.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
+import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
 
-function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
+type SummaryState = Parameters<typeof buildSummary>[0]['state'];
+
+function makeState(overrides?: Partial<SummaryState>): SummaryState {
   return {
     tasks: [
       makeTask({ id: 'T001', status: 'done' }),
@@ -14,6 +15,8 @@ function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
       makeTask({ id: 'T003', status: 'done' }),
     ],
     tokenUsage: makeUsage(),
+    phase: 'complete',
+    currentTaskIndex: 0,
     ...overrides,
   };
 }
@@ -62,6 +65,29 @@ describe('buildSummary', () => {
 
     expect(summary.reviewerTool).toBe('custom-endpoint');
     expect(summary.reviewerModel).toBe('custom-v4-flash');
+  });
+
+  it('after a seat swap the identity is the new seat and the spend stays on the old one', () => {
+    const summary = buildSummary({
+      feature: 'auth',
+      state: makeState({
+        tasks: [],
+        tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
+        implementerTool: 'custom-worker-api',
+        implementerModel: 'deepseek-v4-flash',
+      }),
+      startTime: Date.now() - 5000,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      pricingCache: makePricedModelCache(),
+    });
+
+    expect(summary.implementerTool).toBe('ollama');
+    expect(summary.costBreakdown?.providerCosts?.['custom-worker-api']).toBeDefined();
+    expect(summary.costBreakdown?.providerCosts?.['ollama']).toBeUndefined();
+    // The swapped-away seat is priced; the seat now in use is not, so a
+    // breakdown that had followed the identity would read $0.00.
+    expect(summary.costBreakdown?.actualImplementerCost).toBeCloseTo(0.42, 10);
   });
 
   it('mix of local/escalated/skipped/failed → correct counts', () => {
@@ -118,7 +144,6 @@ describe('buildSummary', () => {
     expect(summary.completedByLocal).toBe(0);
     expect(summary.escalatedToPlanner).toBe(1);
     expect(summary.escalationRate).toBe(1);
-    expect(summary.costBreakdown?.localCompletionRate).toBe(0);
   });
 
   it('zero tasks → no division by zero', () => {
@@ -138,7 +163,7 @@ describe('buildSummary', () => {
     expect(summary.escalationRate).toBe(0);
     expect(Number.isFinite(summary.escalationRate)).toBe(true);
     if (!summary.costBreakdown) throw new Error('expected costBreakdown on summary');
-    expect(Number.isFinite(summary.costBreakdown.savingsPercentage)).toBe(true);
+    expect(Number.isFinite(summary.costBreakdown.totalActualCost)).toBe(true);
   });
 
   it('token usage passed through correctly', () => {
@@ -192,111 +217,10 @@ describe('buildSummary', () => {
         implementerTokens: 100,
         escalationTokens: 0,
         retryCount: 0,
-        costPosture: 'unknown-price',
       },
     ]);
     // Verify input array was NOT mutated
     expect(breakdowns[0]).not.toHaveProperty('cost');
-  });
-
-  it('includes available cost prediction data', () => {
-    const prediction = {
-      estimatedTasks: 2,
-      lowCost: 0.01,
-      expectedCost: 0.02,
-      highCost: 0.04,
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-    };
-    const summary = buildSummary({
-      feature: 'cost prediction',
-      state: { tasks: [], tokenUsage: makeUsage() },
-      startTime: Date.now(),
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-      costPrediction: prediction,
-    });
-    expect(summary.costPrediction).toEqual(prediction);
-  });
-
-  it('omits cost prediction prose when transcript persistence is disabled', () => {
-    const sentinel = 'summary-cost-sentinel-83521';
-    const summary = buildSummary({
-      feature: 'cost prediction',
-      state: { tasks: [], tokenUsage: makeUsage() },
-      startTime: Date.now(),
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-      persistTranscript: false,
-      costPrediction: {
-        estimatedTasks: 1,
-        lowCost: 0.01,
-        expectedCost: 0.02,
-        highCost: 0.03,
-        plannerTool: 'planner',
-        implementerTool: 'worker',
-        deterministic: {
-          estimateScope: 'prompt-input-only',
-          taskCount: 1,
-          taskFitCounts: { fits: 1, tight: 0, overflow: 0, unknown: 0 },
-          contextConfidenceCounts: {
-            contextExplicit: 1,
-            contextDetected: 0,
-            contextKnownCatalog: 0,
-            contextCachedProvider: 0,
-            contextConservativeFallback: 0,
-            profileUnavailable: 0,
-          },
-          priceConfidenceCounts: {
-            priceKnown: 1,
-            priceUnknown: 0,
-            profileUnavailable: 0,
-          },
-          tasks: [
-            {
-              taskId: taskId('T051'),
-              title: `cost title ${sentinel}`,
-              estimatedPromptTokens: 100,
-              selectedProfileId: 'local-small',
-              contextFit: 'fits',
-              contextConfidence: 'context-explicit',
-              priceConfidence: 'price-known',
-              estimatedImplementerCost: 0.01,
-              hypotheticalPlannerCost: 0.02,
-            },
-          ],
-          totals: {
-            knownActualEstimate: 0.01,
-            hypotheticalAllPlanner: 0.02,
-            estimatedSavings: 0.01,
-            unknownCostReason: [],
-          },
-        },
-        plannerEstimateReview: {
-          extraPlannerCall: true,
-          status: 'completed',
-          classification: 'needs-user-decision',
-          affectedTaskIds: ['T051'],
-          reason: `review reason ${sentinel}`,
-          recommendedUserDecision: `decision ${sentinel}`,
-        },
-      },
-    });
-
-    expect(summary.costPrediction).toMatchObject({
-      estimatedTasks: 1,
-      expectedCost: 0.02,
-      deterministic: {
-        taskCount: 1,
-        tasks: [{ taskId: taskId('T051'), title: TRANSCRIPT_OMITTED_MESSAGE }],
-      },
-      plannerEstimateReview: {
-        affectedTaskIds: ['T051'],
-        reason: TRANSCRIPT_OMITTED_MESSAGE,
-        recommendedUserDecision: TRANSCRIPT_OMITTED_MESSAGE,
-      },
-    });
-    expect(JSON.stringify(summary.costPrediction)).not.toContain(sentinel);
   });
 
   it('includes model fields when provided', () => {
@@ -369,51 +293,24 @@ function breakdownWithProse() {
       model: 'qwen-local',
       implementerProfile: 'local-small',
       routingReason: `routing prose ${SENTINEL}`,
-      costPosture: `posture prose ${SENTINEL}`,
     },
   ];
 }
 
-describe('buildSummary taskBreakdown transcript policy', () => {
-  it('redacts title, routing reason, and cost posture when transcript persistence is disabled', () => {
-    const summary = buildSummary({
-      feature: 'redacted',
-      state: { tasks: [makeTask({ id: 'T001', status: 'done' })], tokenUsage: makeUsage() },
-      startTime: Date.now(),
-      taskBreakdowns: breakdownWithProse(),
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-      persistTranscript: false,
-    });
-
-    const row = summary.taskBreakdown?.[0];
-    if (!row) throw new Error('expected a task breakdown row');
-    expect(row.taskTitle).toBe(TRANSCRIPT_OMITTED_MESSAGE);
-    expect(row.routingReason).toBe(TRANSCRIPT_OMITTED_MESSAGE);
-    expect(row.costPosture).toBe(TRANSCRIPT_OMITTED_MESSAGE);
-    expect(JSON.stringify(summary.taskBreakdown)).not.toContain(SENTINEL);
-    expect(row.taskId).toBe(taskId('T001'));
-    expect(row.tool).toBe('ollama');
-    expect(row.model).toBe('qwen-local');
-    expect(row.implementerProfile).toBe('local-small');
-    expect(row.implementerTokens).toBe(100);
-  });
-
-  it('preserves task breakdown prose when transcript persistence is enabled', () => {
+describe('buildSummary taskBreakdown', () => {
+  it('preserves task breakdown prose', () => {
     const summary = buildSummary({
       feature: 'kept',
-      state: { tasks: [makeTask({ id: 'T001', status: 'done' })], tokenUsage: makeUsage() },
+      state: makeState({ tasks: [makeTask({ id: 'T001', status: 'done' })] }),
       startTime: Date.now(),
       taskBreakdowns: breakdownWithProse(),
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
-      persistTranscript: true,
     });
 
     const row = summary.taskBreakdown?.[0];
     if (!row) throw new Error('expected a task breakdown row');
     expect(row.taskTitle).toBe(`secret title ${SENTINEL}`);
     expect(row.routingReason).toBe(`routing prose ${SENTINEL}`);
-    expect(row.costPosture).toBe(`posture prose ${SENTINEL}`);
   });
 });

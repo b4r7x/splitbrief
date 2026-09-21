@@ -23,10 +23,13 @@ import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { hydrateDetectionIntoStores } from '../../stores/discovery/detection-adapter.js';
 import { ToolModelPicker } from './runners.js';
 
-// The merged row is expanded only while both of its route ids are on screen;
-// collapsed it shows a route count instead.
+// The merged row is expanded only while both of its route rows are on screen,
+// each on its own branch; collapsed it shows the merged id and a route count.
+const onARouteBranch = (frame: string, provider: string) =>
+  frame.includes(`${glyph('treeBranch')}${glyph('divider')} ${provider}`) ||
+  frame.includes(`${glyph('treeLast')}${glyph('divider')} ${provider}`);
 const showsBothRoutes = (frame: string) =>
-  frame.includes('openrouter') && frame.includes('anthropic');
+  onARouteBranch(frame, 'openrouter') && onARouteBranch(frame, 'anthropic');
 
 const ESC = '\u001B';
 const ARROW_DOWN = `${ESC}[B`;
@@ -35,8 +38,8 @@ const ARROW_UP = `${ESC}[A`;
 async function openContractChoice(ui: ReturnType<typeof renderFeature>) {
   await vi.waitFor(() => {
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Run your own command in the planner seat.');
-    expect(frame).toContain('Nothing is saved until you confirm');
+    expect(frame).toContain('Run your own command.');
+    expect(frame).toContain('Nothing is saved yet.');
   });
   await flushEffects();
   ui.stdin.write('\r'); // Enter on the launcher opens the contract choice
@@ -201,7 +204,7 @@ const catalogContexts = {
 function publishOpenCodePlannerModels(models: readonly string[]): void {
   const attempts: ScopedCliCatalogAttempt[] = [
     {
-      connection: { role: 'planner', tool: 'opencode', contextKey: 'planner-opencode-context' },
+      connection: { tool: 'opencode', contextKey: 'planner-opencode-context' },
       outcome: { kind: 'success', value: models.map((id) => ({ id })) },
     },
   ];
@@ -324,7 +327,7 @@ describe('ToolModelPicker provider routes', () => {
     ui.stdin.write('\r'); // select the tool and focus the model column
     await flushEffects();
     await vi.waitFor(() => {
-      expect(frameText(ui)).toContain('DeepSeek V4 Flash');
+      expect(frameText(ui)).toContain('openrouter/deepseek-v4-flash');
     });
     // Auto is focused first; one down is the merged DeepSeek row. Filtering
     // there instead would hide the route rows the expansion has to reveal.
@@ -332,8 +335,8 @@ describe('ToolModelPicker provider routes', () => {
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
       const frame = frameText(ui);
-      expect(frame).toContain(`${listRowLead('active')}DeepSeek V4 Flash`);
-      expect(frame).not.toContain(`${listRowLead('active')}DeepSeek V4 Flash Free`);
+      expect(frame).toContain(`${listRowLead('active')}openrouter/deepseek-v4-flash`);
+      expect(frame).not.toContain(`${listRowLead('active')}openrouter/deepseek-v4-flash-free`);
     });
     await flushEffects();
   }
@@ -411,7 +414,7 @@ describe('ToolModelPicker provider routes', () => {
     await flushEffects();
     ui.stdin.write('free'); // narrow to the single-provider free variant
     await vi.waitFor(() => {
-      expect(frameText(ui)).toContain('DeepSeek V4 Flash Free');
+      expect(frameText(ui)).toContain('openrouter/deepseek-v4-flash-free');
     });
     await flushEffects();
     ui.stdin.write('\r');
@@ -493,9 +496,7 @@ describe('ToolModelPicker discovery state', () => {
         requestId: 3,
         providers: [],
         cliTools: tools,
-        cliCatalogs: [
-          { role: 'planner', tool: 'codex', models: [{ id: 'gpt-5-codex' }], probedAt: 100 },
-        ],
+        cliCatalogs: [{ tool: 'codex', models: [{ id: 'gpt-5-codex' }], probedAt: 100 }],
       },
     });
 
@@ -508,7 +509,7 @@ describe('ToolModelPicker discovery state', () => {
     expect(frameBefore).toContain('Tools');
     expect(frameBefore).toContain('Codex CLI');
     expect(frameBefore).toContain('OpenCode CLI');
-    expect(frameBefore).toContain('GPT-5 Codex');
+    expect(frameBefore).toContain('gpt-5-codex');
 
     await flushEffects();
     ui.stdin.write(ARROW_DOWN);
@@ -529,7 +530,7 @@ describe('ToolModelPicker discovery state', () => {
 
     const freshAttempts: ScopedCliCatalogAttempt[] = [
       {
-        connection: { role: 'planner', tool: 'codex', contextKey: 'config-b-codex' },
+        connection: { tool: 'codex', contextKey: 'config-b-codex' },
         outcome: { kind: 'success', value: [{ id: 'gpt-6-codex' }] },
       },
     ];
@@ -594,8 +595,8 @@ describe('ToolModelPicker discovery state', () => {
     await vi.waitFor(() => {
       const frameAfter = frameText(ui);
       expect(frameAfter).toContain(`${listRowLead('active')}OpenAI Codex CLI`);
-      expect(frameAfter).toContain('GPT-6 Codex');
-      expect(frameAfter).not.toContain('GPT-5 Codex');
+      expect(frameAfter).toContain('gpt-6-codex');
+      expect(frameAfter).not.toContain('gpt-5-codex');
     });
 
     ui.unmount();
@@ -632,7 +633,11 @@ describe('ToolModelPicker model catalog', () => {
           id: 'anthropic',
           name: 'Anthropic',
           models: {
-            'claude-opus-5': { id: 'claude-opus-5', name: 'Claude Opus 5' },
+            'claude-opus-5': {
+              id: 'claude-opus-5',
+              name: 'Claude Opus 5',
+              limit: { context: 1_000_000 },
+            },
             'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
           },
         },
@@ -641,13 +646,15 @@ describe('ToolModelPicker model catalog', () => {
       validatedAt: 100,
     });
 
-    // The alias is the row; models.dev only tells it what it is called.
+    // The alias is the row and keeps its own name; models.dev only tells it how large it is.
     await vi.waitFor(() => {
-      expect(checkedModelLines(frameText(ui)).join('')).toContain('Claude Opus 5');
+      expect(checkedModelLines(frameText(ui)).join('')).toContain('1M');
     });
 
     const after = checkedModelLines(frameText(ui));
     expect(after).toHaveLength(1);
+    expect(after.join('')).toContain('Opus 5');
+    expect(after.join('')).not.toContain('Claude Opus 5');
     expect(modelColumnLines(frameText(ui))).toHaveLength(aliasRowCount);
     ui.unmount();
   });

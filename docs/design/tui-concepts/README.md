@@ -23,7 +23,7 @@ See the complete set in [`overview.png`](overview.png).
 | [`planning.png`](final/planning.png) | Sparse planner state with a two-row header and readable streaming area |
 | [`implementation.png`](final/implementation.png) | Clean 25/75 sidebar and activity split with aligned routing and cost facts |
 | [`review.png`](final/review.png) | Document and approval controls side by side instead of competing vertically |
-| [`summary.png`](final/summary.png) | Savings and local completion first; compact phase timing without an empty frame |
+| [`summary.png`](final/summary.png) | Local completion first; compact phase timing without an empty frame |
 | [`command-palette.png`](final/command-palette.png) | Aligned command columns, quieter groups, and one unmistakable selected row |
 
 ## Implementation map

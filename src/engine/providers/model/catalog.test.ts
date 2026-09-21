@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { formatModelName } from '../../../core/model-display.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
-import { resolveModelCatalog } from './catalog.js';
-import type { ModelCacheAccessor } from './resolution.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP, resolveModelCatalog } from './catalog.js';
+import { getModelsDevEntries, type ModelCacheAccessor } from './resolution.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 describe('runner-owned catalog resolution', () => {
@@ -177,7 +178,7 @@ describe('runner-owned catalog resolution', () => {
             id: 'native-false-capabilities',
             providerId: 'ollama',
             supportsImages: false,
-            supportsToolCalls: false,
+            supportsToolCalls: true,
             supportsReasoning: false,
           },
         ],
@@ -191,9 +192,33 @@ describe('runner-owned catalog resolution', () => {
     expect(row).toMatchObject({
       source: 'runtime',
       supportsImages: false,
-      supportsToolCalls: false,
+      supportsToolCalls: true,
       supportsReasoning: false,
     });
+  });
+
+  it('never emits a runtime row for a model that cannot chat', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        'kilo-code': [
+          {
+            id: 'openai/text-embedding-3-large',
+            supportsToolCalls: false,
+            capabilities: ['type:embedding'],
+          },
+          { id: 'openai/gpt-image-2', outputModalities: [] },
+          { id: 'zai-org/glm-5.3', supportsToolCalls: true, outputModalities: ['text'] },
+          { id: 'openai/gpt-5.4' },
+        ],
+      },
+    });
+
+    const ids = resolveModelCatalog('kilo-code', { cache }).map((row) => row.selectionId);
+
+    expect(ids).toContain('zai-org/glm-5.3');
+    expect(ids).toContain('openai/gpt-5.4');
+    expect(ids).not.toContain('openai/text-embedding-3-large');
+    expect(ids).not.toContain('openai/gpt-image-2');
   });
 
   it('keeps same-text runtime rows with different owners, aliases, and snapshots separate', () => {
@@ -220,7 +245,7 @@ describe('runner-owned catalog resolution', () => {
     ]);
   });
 
-  it('enriches native CLI catalog confirmed rows with public metadata without appending catalog suggestions', () => {
+  it('keeps native CLI catalog confirmed rows un-enriched and appends no catalog suggestions', () => {
     const models = Object.fromEntries(
       Array.from({ length: 367 }, (_, index) => {
         const id = `kilo/model-${index}`;
@@ -249,12 +274,13 @@ describe('runner-owned catalog resolution', () => {
       ['alibaba-coding-plan/glm-4.7', 'confirmed'],
       ['openai/gpt-5.6', 'confirmed'],
     ]);
-    expect(rows.filter((row) => row.membership === 'catalog-suggestion')).toEqual([]);
+    expect(rows.filter((row) => row.membership === CATALOG_SUGGESTION_MEMBERSHIP)).toEqual([]);
     expect(rows.filter((row) => row.selectionId === 'kilo/model-1')).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ contextLength: 100_001, releaseDate: '2026-02-02' });
+    expect(rows[0]?.contextLength).toBeUndefined();
+    expect(rows[0]?.releaseDate).toBeUndefined();
   });
 
-  it('enriches a bare-id codex confirmed row from the models.dev openai catalog', () => {
+  it('crosses only the catalog name onto a CLI confirmed row', () => {
     const cache = makeModelCacheAccessor({
       catalog: {
         openai: {
@@ -272,15 +298,48 @@ describe('runner-owned catalog resolution', () => {
       providerModels: { codex: [{ id: 'gpt-5.6-sol' }] },
     });
 
-    expect(resolveModelCatalog('codex', { cache })).toMatchObject([
+    const rows = resolveModelCatalog('codex', { cache });
+
+    expect(rows).toMatchObject([
       {
         selectionId: 'gpt-5.6-sol',
         membership: 'confirmed',
-        displayName: 'GPT-5.6 Sol',
-        contextLength: 272_000,
-        releaseDate: '2026-03-01',
       },
     ]);
+    expect(rows[0]?.displayName).toBe('GPT-5.6 Sol');
+    expect(rows[0]?.contextLength).toBeUndefined();
+  });
+
+  it('native row without displayName takes catalog name', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        deepseek: {
+          id: 'deepseek',
+          models: {
+            'deepseek-v4-flash': { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
+          },
+        },
+        'github-copilot': {
+          id: 'github-copilot',
+          models: { 'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' } },
+        },
+      },
+      providerModels: {
+        opencode: [{ id: 'deepseek/deepseek-v4-flash' }],
+        copilot: [{ id: 'claude-sonnet-5' }],
+      },
+    });
+
+    const prefixed = resolveModelCatalog('opencode', { cache }).find(
+      (row) => row.selectionId === 'deepseek/deepseek-v4-flash',
+    );
+    const bare = resolveModelCatalog('copilot', { cache }).find(
+      (row) => row.selectionId === 'claude-sonnet-5',
+    );
+
+    expect(prefixed?.displayName).toBe('DeepSeek V4 Flash');
+    expect(bare?.displayName).toBe('Claude Sonnet 5');
+    expect(prefixed?.contextLength).toBeUndefined();
   });
 
   it('keeps a stale native list free of models.dev rows until a fresh probe lands', () => {
@@ -289,8 +348,8 @@ describe('runner-owned catalog resolution', () => {
         opencode: { id: 'opencode', models: { 'grok-code': { id: 'grok-code' } } },
       }),
       getProviderModels: () => null,
-      getScopedCliCatalogRuntime: () => ({
-        connection: { role: 'planner', tool: 'opencode', contextKey: 'stale-lane-test' },
+      getCliCatalogRuntime: () => ({
+        connection: { tool: 'opencode', contextKey: 'stale-lane-test' },
         state: 'stale',
         models: [{ id: 'anthropic/claude-sonnet-5' }, { id: 'openai/gpt-5.6-luna' }],
         fetchedAt: 1,
@@ -305,9 +364,10 @@ describe('runner-owned catalog resolution', () => {
       ['anthropic/claude-sonnet-5', 'stale'],
       ['openai/gpt-5.6-luna', 'stale'],
     ]);
+    expect(rows.some((row) => row.selectionId === 'grok-code')).toBe(false);
   });
 
-  it('still resolves context length and display name on a confirmed row from models.dev', () => {
+  it('answers a CLI confirmed row from its own listing alone', () => {
     const cache = makeModelCacheAccessor({
       catalog: {
         kilo: {
@@ -330,10 +390,10 @@ describe('runner-owned catalog resolution', () => {
       {
         selectionId: 'kilo/model-1',
         membership: 'confirmed',
-        displayName: 'Kilo Model One',
-        contextLength: 262_144,
       },
     ]);
+    expect(rows[0]?.displayName).toBeUndefined();
+    expect(rows[0]?.contextLength).toBeUndefined();
   });
 
   it('renders no catalog-suggestion rows once a native CLI list is confirmed', () => {
@@ -513,7 +573,11 @@ describe('runner-owned catalog resolution', () => {
         anthropic: {
           id: 'anthropic',
           models: {
-            'claude-opus-5': { id: 'claude-opus-5', name: 'Claude Opus 5' },
+            'claude-opus-5': {
+              id: 'claude-opus-5',
+              name: 'Claude Opus 5',
+              limit: { context: 1_000_000 },
+            },
             'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
           },
         },
@@ -525,8 +589,8 @@ describe('runner-owned catalog resolution', () => {
     expect(rows.map((row) => row.selectionId).sort()).toEqual(
       [
         'best',
-        'default',
         'fable',
+        'fable[1m]',
         'haiku',
         'opus',
         'opus[1m]',
@@ -536,9 +600,250 @@ describe('runner-owned catalog resolution', () => {
       ].sort(),
     );
     expect(rows.every((row) => row.membership === 'bundled-suggestion')).toBe(true);
+    // Four aliases resolve to this one models.dev row, so the alias's own label has to survive
+    // the merge or all four paint `Claude Opus 5`. The number is still models.dev's.
     expect(rows.find((row) => row.selectionId === 'opus')).toMatchObject({
       source: 'bundled-fallback',
-      displayName: 'Claude Opus 5',
+      displayName: 'Opus 5',
+      contextLength: 1_000_000,
+    });
+  });
+
+  it('folds the account cache entry into the alias it names and leaves nine distinct rows', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [
+        {
+          id: 'claude-fable-5-1[1m]',
+          displayName: 'Fable',
+          description: 'Fable 5.1 · Most capable for your hardest and longest-running tasks',
+        },
+      ],
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-opus-5': {
+              id: 'claude-opus-5',
+              name: 'Claude Opus 5',
+              limit: { context: 1_000_000 },
+            },
+            'claude-sonnet-5': {
+              id: 'claude-sonnet-5',
+              name: 'Claude Sonnet 5',
+              limit: { context: 1_000_000 },
+            },
+            'claude-fable-5-1': {
+              id: 'claude-fable-5-1',
+              name: 'Claude Fable 5.1',
+              limit: { context: 1_000_000 },
+            },
+            'claude-haiku-4-5': {
+              id: 'claude-haiku-4-5',
+              name: 'Claude Haiku 4.5 (latest)',
+              limit: { context: 200_000 },
+            },
+          },
+        },
+      },
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+    const selectionIds = rows.map((row) => row.selectionId);
+
+    expect(rows).toHaveLength(9);
+    expect(new Set(rows.map((row) => row.displayName)).size).toBe(9);
+    expect(selectionIds).not.toContain('default');
+    expect(selectionIds).not.toContain('claude-fable-5-1[1m]');
+    expect(rows.filter((row) => row.contextLength === undefined)).toEqual([]);
+    // The alias wrote the one fact that tells it from plain `fable`, so the account's sentence —
+    // which describes the model underneath and reads the same on both rows — does not evict it.
+    expect(rows.find((row) => row.selectionId === 'fable[1m]')).toMatchObject({
+      displayName: 'Fable 5.1 (1M)',
+      detail: 'forces the 1M window',
+      contextLength: 1_000_000,
+    });
+  });
+
+  it('fills a detail-less alias from the account description, minus the name it repeats', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [
+        {
+          id: 'claude-sonnet-5',
+          displayName: 'Sonnet',
+          description: 'Sonnet 5 · Balances speed and capability',
+        },
+      ],
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+
+    expect(rows.find((row) => row.selectionId === 'sonnet')).toMatchObject({
+      displayName: 'Sonnet 5',
+      detail: 'Balances speed and capability',
+    });
+  });
+
+  it('peels the repeated name off a standalone account option row', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [
+        {
+          id: 'claude-haiku-4-5[1m]',
+          displayName: 'Haiku',
+          description: 'Haiku 4.5 · Fastest for everyday tasks',
+        },
+      ],
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+
+    expect(rows.find((row) => row.selectionId === 'claude-haiku-4-5[1m]')).toMatchObject({
+      displayName: 'Haiku 4.5',
+      detail: 'Fastest for everyday tasks',
+    });
+  });
+
+  it('keeps an account option that several aliases could answer to as its own row', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [
+        { id: 'claude-opus-5', displayName: 'Claude Opus 5', description: 'the account entry' },
+      ],
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+
+    // `opus`, `opusplan` and `best` all resolve to this id, so no single alias row is the one
+    // the entry names. Folding it would delete a selectable row and gloss whichever alias
+    // happened to be declared first.
+    expect(rows).toHaveLength(10);
+    expect(rows.find((row) => row.selectionId === 'claude-opus-5')).toMatchObject({
+      source: 'account-options',
+      detail: 'the account entry',
+    });
+    for (const alias of ['opus', 'opusplan', 'best']) {
+      expect(rows.find((row) => row.selectionId === alias)?.detail, alias).not.toBe(
+        'the account entry',
+      );
+    }
+  });
+
+  it('names an account option from the versioned first segment of its description', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [
+        {
+          id: 'claude-sonnet-4-6',
+          displayName: 'Sonnet',
+          description: 'Sonnet 4.6 · prev Sonnet, still fast & capable',
+        },
+      ],
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+
+    // The name column now prints the version, so the description's leading repeat of it is peeled:
+    // the detail says only what the row had not said yet.
+    expect(rows.find((row) => row.selectionId === 'claude-sonnet-4-6')).toMatchObject({
+      displayName: 'Sonnet 4.6',
+      detail: 'prev Sonnet, still fast & capable',
+      source: 'account-options',
+    });
+  });
+
+  it('keeps the account label when the description does not name a version', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [
+        {
+          id: 'claude-sonnet-4-6',
+          displayName: 'Sonnet',
+          description: 'prev Sonnet, still fast & capable',
+        },
+      ],
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+
+    expect(rows.find((row) => row.selectionId === 'claude-sonnet-4-6')).toMatchObject({
+      displayName: 'Sonnet',
+    });
+  });
+
+  it('leaves a configured full model id nameless and windowless beside the alias rows', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-haiku-4-5': {
+              id: 'claude-haiku-4-5',
+              name: 'Claude Haiku 4.5 (latest)',
+              limit: { context: 200_000 },
+            },
+          },
+        },
+      },
+    });
+
+    const [recovered] = resolveModelCatalog('claude-code', {
+      cache,
+      configuredSelectionId: 'claude-haiku-4-5',
+    }).filter((row) => row.source === 'configured-recovery');
+
+    expect(recovered).toMatchObject({
+      selectionId: 'claude-haiku-4-5',
+      membership: 'custom',
+    });
+    expect(recovered?.contextLength).toBeUndefined();
+    expect(recovered?.displayName).toBeUndefined();
+    expect(formatModelName(recovered?.id ?? '')).toBe('claude-haiku-4-5');
+  });
+
+  it('answers an alias window from its own declared number, catalog or not', () => {
+    const catalog: ModelsDevCatalog = {
+      anthropic: {
+        id: 'anthropic',
+        models: { 'claude-haiku-4-5': { id: 'claude-haiku-4-5', limit: { context: 500_000 } } },
+      },
+    };
+
+    const withCatalog = resolveModelCatalog('claude-code', {
+      cache: makeModelCacheAccessor({ catalog }),
+    });
+    const offline = resolveModelCatalog('claude-code');
+
+    expect(withCatalog.find((row) => row.selectionId === 'haiku')?.contextLength).toBe(200_000);
+    expect(offline.find((row) => row.selectionId === 'haiku')?.contextLength).toBe(200_000);
+  });
+
+  it('carries the catalog id each documented alias resolves to, and nothing where the id already is one', () => {
+    const rows = resolveModelCatalog('claude-code');
+
+    expect(rows.find((row) => row.selectionId === 'fable')).toMatchObject({
+      catalogModelId: 'claude-fable-5-1',
+    });
+    expect(rows.find((row) => row.selectionId === 'opusplan')).toMatchObject({
+      catalogModelId: 'claude-opus-5',
+    });
+    // Copilot's bundled rows are their own catalog ids, so they restate nothing.
+    expect(resolveModelCatalog('copilot').every((row) => row.catalogModelId === undefined)).toBe(
+      true,
+    );
+  });
+
+  // The cold start is the first frame of every session, byline `Loading models…`. A row whose
+  // size cell is blank there says nothing at all, and `Sonnet 5 (1M)` beside a blank
+  // cell withholds the very number its own label promises.
+  it('gives every alias row a window before any catalog has loaded', () => {
+    const rows = resolveModelCatalog('claude-code');
+
+    expect(Object.fromEntries(rows.map((row) => [row.selectionId, row.contextLength]))).toEqual({
+      sonnet: 1_000_000,
+      opus: 1_000_000,
+      fable: 1_000_000,
+      haiku: 200_000,
+      opusplan: 1_000_000,
+      best: 1_000_000,
+      'sonnet[1m]': 1_000_000,
+      'opus[1m]': 1_000_000,
+      'fable[1m]': 1_000_000,
     });
   });
 
@@ -554,12 +859,98 @@ describe('runner-owned catalog resolution', () => {
 
     expect(option).toMatchObject([
       {
-        source: 'bundled-fallback',
+        source: 'account-options',
         membership: 'bundled-suggestion',
         sourceProviderId: 'claude-code',
         displayName: 'Claude Opus 5 (Feb 2026)',
       },
     ]);
+  });
+
+  it('gives a window-suffixed account option its own label and the tool flag ladder', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [{ id: 'claude-haiku-4-5[1m]', displayName: 'Haiku 1M' }],
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-haiku-4-5': {
+              id: 'claude-haiku-4-5',
+              name: 'Claude Haiku 4.5',
+              limit: { context: 200_000 },
+              release_date: '2025-10-01',
+              reasoning_options: [{ type: 'budget_tokens', min: 1024 }],
+            },
+          },
+        },
+      },
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+    const haiku = rows.filter((row) => row.selectionId === 'claude-haiku-4-5[1m]');
+
+    expect(haiku).toMatchObject([
+      {
+        id: 'claude-haiku-4-5[1m]',
+        displayName: 'Haiku 1M',
+        nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      },
+    ]);
+    expect(haiku[0]?.contextLength).toBeUndefined();
+    expect(haiku[0]?.releaseDate).toBeUndefined();
+    expect(rows.find((row) => row.selectionId === 'haiku')?.nativeReasoningEfforts).toEqual(
+      haiku[0]?.nativeReasoningEfforts,
+    );
+  });
+
+  it('keeps an account option distinct and fact-less beside the aliases it cannot fold into', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [{ id: 'claude-opus-4-6' }],
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-opus-4-6': {
+              id: 'claude-opus-4-6',
+              name: 'Claude Opus 4.6',
+              limit: { context: 1_000_000 },
+              release_date: '2026-02-04',
+            },
+          },
+        },
+      },
+    });
+
+    const option = resolveModelCatalog('claude-code', { cache }).filter(
+      (row) => row.source === 'account-options',
+    );
+
+    expect(option).toMatchObject([{ id: 'claude-opus-4-6' }]);
+    expect(option[0]?.displayName).toBeUndefined();
+    expect(option[0]?.contextLength).toBeUndefined();
+    expect(option[0]?.releaseDate).toBeUndefined();
+  });
+
+  // The window suffix is what selects the window, so a persisted `[2m]` id is not the same
+  // selection as the bare row: it keeps its own recovery row instead of being silently satisfied.
+  it('keeps a configured window-suffixed selection distinct from the bare row it enriches from', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [{ id: 'claude-opus-4-6', displayName: 'Opus 4.6' }],
+    });
+
+    const suffixed = resolveModelCatalog('claude-code', {
+      cache,
+      configuredSelectionId: 'claude-opus-4-6[2m]',
+    });
+    const bare = resolveModelCatalog('claude-code', {
+      cache,
+      configuredSelectionId: 'claude-opus-4-6',
+    });
+
+    expect(suffixed.filter((row) => row.source === 'configured-recovery')).toMatchObject([
+      { selectionId: 'claude-opus-4-6[2m]' },
+    ]);
+    expect(bare.filter((row) => row.source === 'configured-recovery')).toEqual([]);
   });
 
   it('falls back to aliases alone when the Claude Code option cache is unreadable', () => {
@@ -569,13 +960,128 @@ describe('runner-owned catalog resolution', () => {
     expect(rows.every((row) => row.membership === 'bundled-suggestion')).toBe(true);
   });
 
-  it('gives copilot one bundled list and never mixes models.dev rows into it', () => {
+  it('floors every Claude alias to the tool flag ladder whatever the catalog publishes', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-opus-5': {
+              id: 'claude-opus-5',
+              reasoning_options: [
+                { type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] },
+              ],
+            },
+            'claude-sonnet-5': {
+              id: 'claude-sonnet-5',
+              reasoning_options: [
+                { type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] },
+              ],
+            },
+            'claude-fable-5-1': {
+              id: 'claude-fable-5-1',
+              reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
+            },
+            'claude-haiku-4-5': {
+              id: 'claude-haiku-4-5',
+              reasoning_options: [{ type: 'budget_tokens', min: 1024 }],
+            },
+          },
+        },
+      },
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+    const ladderOf = (selectionId: string) =>
+      rows.find((row) => row.selectionId === selectionId)?.nativeReasoningEfforts;
+
+    expect(ladderOf('opus')).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect(ladderOf('fable')).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect(ladderOf('haiku')).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  it('floors every Claude Code row with the tool flag ladder when no catalog answers', () => {
+    const rows = resolveModelCatalog('claude-code', {
+      cache: makeModelCacheAccessor(),
+      configuredSelectionId: 'claude-opus-5-20260201',
+    });
+
+    expect(rows.find((row) => row.source === 'configured-recovery')?.selectionId).toBe(
+      'claude-opus-5-20260201',
+    );
+    for (const row of rows) {
+      expect(row.nativeReasoningEfforts, row.selectionId).toEqual([
+        'low',
+        'medium',
+        'high',
+        'xhigh',
+        'max',
+      ]);
+    }
+  });
+
+  it('leaves a tool with no documented flag ladder exactly as its own sources answered', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        cursor: [{ id: 'gpt-5.6-sol-high', nativeReasoningEfforts: ['high'] }],
+        opencode: [{ id: 'openai/gpt-5.6-luna' }],
+      },
+    });
+
+    const opencodeRows = resolveModelCatalog('opencode', { cache });
+
+    for (const row of opencodeRows) {
+      expect(row.nativeReasoningEfforts, row.selectionId).toBeUndefined();
+    }
+
+    expect(
+      resolveModelCatalog('cursor', { cache }).map((row) => row.nativeReasoningEfforts),
+    ).toEqual([['high']]);
+  });
+
+  it("paints copilot's own listing alone, with no bundled rows", () => {
     const cache = makeModelCacheAccessor({
       catalog: {
         'github-copilot': {
           id: 'github-copilot',
           models: {
-            'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
+            'claude-sonnet-5': {
+              id: 'claude-sonnet-5',
+              name: 'Claude Sonnet 5',
+              limit: { context: 1_000_000, output: 64_000 },
+            },
+            'gemini-3-pro': { id: 'gemini-3-pro', name: 'Gemini 3 Pro' },
+          },
+        },
+      },
+      providerModels: {
+        copilot: [
+          { id: 'claude-sonnet-5', nativeOrder: 0 },
+          { id: 'claude-opus-4.8-fast', nativeOrder: 1 },
+        ],
+      },
+    });
+
+    const rows = resolveModelCatalog('copilot', { cache });
+
+    expect(rows.map((row) => [row.selectionId, row.membership])).toEqual([
+      ['claude-sonnet-5', 'confirmed'],
+      ['claude-opus-4.8-fast', 'confirmed'],
+    ]);
+    expect(rows[0]?.contextLength).toBeUndefined();
+    // The tool's enum is the row set: an id models.dev never heard of still
+    // paints, and an id only models.dev knows never joins.
+    expect(rows[1]?.contextLength).toBeUndefined();
+  });
+
+  it('falls back to the bundled pair when copilot has listed nothing', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        'github-copilot': {
+          id: 'github-copilot',
+          models: {
+            'claude-opus-5': { id: 'claude-opus-5', name: 'Claude Opus 5' },
+            'gpt-5.6-sol': { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' },
             'gemini-3-pro': { id: 'gemini-3-pro', name: 'Gemini 3 Pro' },
           },
         },
@@ -584,10 +1090,44 @@ describe('runner-owned catalog resolution', () => {
 
     const rows = resolveModelCatalog('copilot', { cache });
 
-    expect(rows.every((row) => row.membership === 'bundled-suggestion')).toBe(true);
-    expect(rows.map((row) => row.selectionId).sort()).toEqual(
-      ['claude-opus-5', 'gpt-5.6-sol'].sort(),
-    );
+    expect(rows.map((row) => row.selectionId)).toEqual(['claude-opus-5', 'gpt-5.6-sol']);
+    expect(rows).toMatchObject([
+      { source: 'bundled-fallback', membership: 'bundled-suggestion', contextLength: 1_000_000 },
+      { source: 'bundled-fallback', membership: 'bundled-suggestion', contextLength: 1_050_000 },
+    ]);
+  });
+
+  it('leaves the offline copilot shape to the bundled pair alone', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        'github-copilot': {
+          id: 'github-copilot',
+          models: {
+            'claude-opus-5': {
+              id: 'claude-opus-5',
+              name: 'Claude Opus 5',
+              limit: { context: 1_000_000, output: 64_000 },
+            },
+            'gpt-5.6-sol': {
+              id: 'gpt-5.6-sol',
+              name: 'GPT-5.6 Sol',
+              limit: { context: 1_050_000, output: 128_000 },
+            },
+          },
+        },
+      },
+    });
+
+    const rows = resolveModelCatalog('copilot', { cache });
+
+    expect(
+      rows.map((row) => [row.selectionId, row.source, row.membership, row.contextLength]),
+    ).toEqual([
+      ['claude-opus-5', 'bundled-fallback', 'bundled-suggestion', 1_000_000],
+      ['gpt-5.6-sol', 'bundled-fallback', 'bundled-suggestion', 1_050_000],
+    ]);
+    expect(rows.some((row) => row.source === 'models-dev')).toBe(false);
+    expect(rows.map((row) => row.maxOutputTokens)).toEqual([undefined, undefined]);
   });
 
   it('collapses a :free catalog twin into its provider-qualified runtime row', () => {
@@ -615,31 +1155,7 @@ describe('runner-owned catalog resolution', () => {
     ]);
   });
 
-  it('keeps two provider routes of the same model as separate rows', () => {
-    const cache = makeModelCacheAccessor({
-      catalog: {
-        opencode: {
-          id: 'opencode',
-          models: { 'openai/gpt-5.6-luna': { id: 'openai/gpt-5.6-luna' } },
-        },
-        'opencode-go': {
-          id: 'opencode-go',
-          models: { 'opencode-go/gpt-5.6-luna': { id: 'opencode-go/gpt-5.6-luna' } },
-        },
-      },
-    });
-
-    const rows = resolveModelCatalog('opencode', { cache }).filter(
-      (row) => row.membership === 'catalog-suggestion',
-    );
-
-    expect(rows.map((row) => row.selectionId).sort()).toEqual([
-      'openai/gpt-5.6-luna',
-      'opencode-go/gpt-5.6-luna',
-    ]);
-  });
-
-  it('reopens the models.dev lane when the caller asks to browse the catalog', () => {
+  it('never reopens the models.dev lane for a CLI runner while browsing', () => {
     const cache = makeModelCacheAccessor({
       catalog: {
         anthropic: {
@@ -653,9 +1169,19 @@ describe('runner-owned catalog resolution', () => {
 
     const rows = resolveModelCatalog('claude-code', { cache, browseCatalog: true });
 
-    expect(rows.filter((row) => row.membership === 'catalog-suggestion')).toMatchObject([
-      { selectionId: 'claude-opus-5', source: 'models-dev' },
+    expect(rows.map((row) => row.selectionId).sort()).toEqual([
+      'best',
+      'fable',
+      'fable[1m]',
+      'haiku',
+      'opus',
+      'opus[1m]',
+      'opusplan',
+      'sonnet',
+      'sonnet[1m]',
     ]);
+    expect(rows.every((row) => row.membership === 'bundled-suggestion')).toBe(true);
+    expect(rows.some((row) => row.source === 'models-dev')).toBe(false);
   });
 
   it('sorts non-native suggestions by real release date rather than metadata update time', () => {
@@ -828,7 +1354,7 @@ describe('runner-owned catalog resolution', () => {
     expect(rows).toHaveLength(11);
   });
 
-  it('deduplicates a confirmed model that models.dev publishes under a different provider while browsing the catalog', () => {
+  it('browsing a CLI tool adds no catalog rows beside its confirmed listing', () => {
     const cache = makeModelCacheAccessor({
       catalog: {
         openai: {
@@ -848,7 +1374,122 @@ describe('runner-owned catalog resolution', () => {
 
     expect(rows.map((row) => [row.selectionId, row.membership])).toEqual([
       ['gpt-5-codex', 'confirmed'],
-      ['gpt-4o', 'catalog-suggestion'],
     ]);
+  });
+
+  it('keeps a CLI runtime row free of catalog numbers at every browse state', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        'github-copilot': {
+          id: 'github-copilot',
+          models: {
+            'gpt-5.6-sol': {
+              id: 'gpt-5.6-sol',
+              name: 'GPT-5.6 Sol',
+              limit: { context: 1_050_000 },
+            },
+            'gpt-4.1': { id: 'gpt-4.1', name: 'GPT-4.1', limit: { context: 128_000 } },
+          },
+        },
+      },
+      providerModels: { copilot: [{ id: 'gpt-5.6-sol' }] },
+    });
+
+    for (const browseCatalog of [false, true]) {
+      const row = resolveModelCatalog('copilot', { cache, browseCatalog }).find(
+        (entry) => entry.selectionId === 'gpt-5.6-sol',
+      );
+
+      expect(row).toMatchObject({ membership: 'confirmed' });
+      expect(row?.displayName).toBe('GPT-5.6 Sol');
+      expect(row?.contextLength).toBeUndefined();
+    }
+
+    expect(
+      resolveModelCatalog('copilot', { cache, browseCatalog: true }).map((row) => row.selectionId),
+    ).toEqual(['gpt-5.6-sol']);
+  });
+
+  it('leaves a runtime row unenriched when two models.dev vendors both serve its id', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        opencode: {
+          id: 'opencode',
+          models: {
+            'shared-model': {
+              id: 'shared-model',
+              name: 'Shared Model (opencode)',
+              limit: { context: 1_000_000 },
+            },
+          },
+        },
+        'opencode-go': {
+          id: 'opencode-go',
+          models: {
+            'shared-model': {
+              id: 'shared-model',
+              name: 'Shared Model (opencode-go)',
+              limit: { context: 128_000 },
+            },
+          },
+        },
+      },
+      providerModels: { opencode: [{ id: 'shared-model', providerId: 'third-vendor' }] },
+    });
+
+    for (const browseCatalog of [false, true]) {
+      const row = resolveModelCatalog('opencode', { cache, browseCatalog }).find(
+        (entry) => entry.source === 'runtime',
+      );
+
+      expect(row).toMatchObject({ selectionId: 'shared-model', membership: 'confirmed' });
+      expect(row?.displayName).toBeUndefined();
+      expect(row?.contextLength).toBeUndefined();
+    }
+  });
+
+  it('serves models.dev rows to api runners only: opencode gets bundled rows, ollama keeps priced catalog rows', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        opencode: {
+          id: 'opencode',
+          models: { 'grok-code': { id: 'grok-code', name: 'Grok Code' } },
+        },
+        'opencode-go': { id: 'opencode-go', models: { 'gpt-x': { id: 'gpt-x' } } },
+        ollama: {
+          id: 'ollama',
+          models: {
+            'qwen3-coder:30b': {
+              id: 'qwen3-coder:30b',
+              name: 'Qwen3 Coder 30B',
+              cost: { input: 2, output: 7 },
+              limit: { context: 262_144 },
+            },
+          },
+        },
+      },
+    });
+
+    const opencodeRows = resolveModelCatalog('opencode', { cache });
+    expect(opencodeRows.map((row) => [row.selectionId, row.membership])).toEqual([
+      ['anthropic/claude-sonnet-5', 'bundled-suggestion'],
+      ['openai/gpt-5.6-sol', 'bundled-suggestion'],
+    ]);
+
+    const ollamaRow = resolveModelCatalog('ollama', { cache }).find(
+      (row) => row.selectionId === 'qwen3-coder:30b',
+    );
+    expect(ollamaRow).toMatchObject({
+      source: 'models-dev',
+      membership: CATALOG_SUGGESTION_MEMBERSHIP,
+      displayName: 'Qwen3 Coder 30B',
+      contextLength: 262_144,
+    });
+    expect(
+      getModelsDevEntries('ollama', cache).find((entry) => entry.id === 'qwen3-coder:30b'),
+    ).toMatchObject({
+      pricingInput: 2,
+      pricingOutput: 7,
+    });
   });
 });

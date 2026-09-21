@@ -70,7 +70,6 @@ describe('computeCrewPresets', () => {
               tool: 'opencode',
               model: 'qwen3-coder',
               label: 'Cheap build',
-              costTier: 'cheap',
             },
           },
         },

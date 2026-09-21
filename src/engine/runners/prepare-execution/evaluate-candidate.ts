@@ -2,6 +2,7 @@ import {
   runnerRoleForSlot,
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
+import { contentIdentityId } from '../../../core/config/accessors/content-identity.js';
 import { findConfiguredCustomCommand } from '../../../core/config/custom-command-catalog.js';
 import { inlineRunnerCommand } from '../../../core/config/custom-commands.js';
 import {
@@ -9,6 +10,7 @@ import {
   type CliAuthChannelId,
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
+import { admitCliAuthChannel } from '../../../core/runners/cli-auth-selection.js';
 import { cliAuthRemediation } from '../../../core/schemas/readiness.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -55,7 +57,10 @@ async function evaluateCli(
     ...(candidate.runner.model !== undefined && { model: candidate.runner.model }),
     authChannel,
     credentialPresent: false,
-    configGeneration: context.preparationId,
+    // The observation names the configuration being checked, not this
+    // preparation: two concurrent preparations of the same config ask the
+    // runner one question. The receipt below is still minted per preparation.
+    configGeneration: contentIdentityId('config', context.config),
   };
   const expectedContextKey = runnerDiscoveryContextKey(discoveryContext);
   const evidence = await context.deps.detectRunnerEvidence({
@@ -91,6 +96,25 @@ async function evaluateCli(
         candidate.runner.kind,
         `Fresh CLI evidence denied admission: ${admission.reason.kind}.`,
         cliAdmissionFix(admission.reason, candidate.runner.tool, authChannel),
+      ),
+    };
+  }
+  // The invocation gate binds no installed version yet, so an explicit method
+  // the matrix cannot enforce is refused here, before the planner spends a token.
+  const authAdmission = admitCliAuthChannel({
+    tool: candidate.runner.tool,
+    platform: process.platform,
+    installedVersion: undefined,
+    authChannel: candidate.runner.authChannel,
+  });
+  if (authAdmission.kind === 'refused') {
+    return {
+      kind: 'blocked',
+      check: blockedCheck(
+        candidate.slot,
+        candidate.runner.kind,
+        authAdmission.message,
+        'Remove auth_channel from this runner in .splitbrief/config.yaml, then retry.',
       ),
     };
   }

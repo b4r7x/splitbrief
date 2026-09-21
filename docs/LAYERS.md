@@ -36,7 +36,7 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 - `error.ts` / `format-errors.ts` — `error(kind, msg, …)` factory + `toErrorMessage(unknown)` → string
 - `redact.ts` — strip API keys from strings
 - `truncate.ts` — `truncateByChars`, `truncateByLines`, `truncateByTailLines`
-- `format-time.ts` — `formatDuration`, `formatTime`, `formatTimeHHMMSS`, `formatEta`
+- `format-time.ts` — `formatDuration`, `formatTime`
 - `with-timeout.ts` — wrap a promise with a timeout
 - `frontmatter.ts` — generic YAML frontmatter parser
 - `diff.ts` — LCS diff algorithm
@@ -117,7 +117,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - Knows SPLITBRIEF concepts: config shape, workflow state machine, task entities, cost/token math, session metadata, path conventions
 - No React, no Ink, no DOM — pure TypeScript
 - No workflow orchestration — `core/` does not run planners, implementers, retries, or commits (that's `engine/`). The one sanctioned subprocess in `core/` is the read-only readiness baseline probe (`core/readiness/checks/validation.ts` runs the configured typecheck/lint/test commands via `lib/process/spawn/run-command.ts` as an on-demand diagnostic behind `splitbrief doctor --probe-validation`); it spawns nothing else
-- Domain persistence is allowed: `core/` writes its own state to disk (sessions, stats, state machine, config, evidence ledger). It prefers the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers (`writeSecureFile`, `readJsonSafe`, `ensureSecureDir`, confined writes) and `lib/file-lock.ts` for whole-file payloads (e.g. `evidence/ledger-storage.ts`), but also writes directly with raw `node:fs` for appends, lockfiles, and atomic renames (e.g. `sessions/tree/io.ts`, `sessions/compaction.ts`) — always with inline secure-mode (`SECURE_FILE_MODE`, `0o700`) and symlink/confinement guards
+- Domain persistence is allowed: `core/` writes its own state to disk (sessions, state machine, config, evidence ledger). It prefers the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers (`writeSecureFile`, `readJsonSafe`, `ensureSecureDir`, confined writes) and `lib/file-lock.ts` for whole-file payloads (e.g. `evidence/ledger-storage.ts`), but also writes directly with raw `node:fs` for appends, lockfiles, and atomic renames (e.g. `sessions/compaction.ts`) — always with inline secure-mode (`SECURE_FILE_MODE`, `0o700`) and symlink/confinement guards
 - Typed data structures, pure transformations, and schema validation live here
 
 **What lives here:**
@@ -132,10 +132,14 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `core/providers/` — provider catalog, known-models, model-selection logic
 - `core/hooks/` — workflow hook trust grant (`trust.ts`) + sha256 config/file digest (`trust-digest.ts`)
 - `core/tokens/` — pure token accounting helpers (`estimate.ts`) used by the repo-map budget and the planner base
+- `core/pipeline-spec/` — the typed pipeline contract: retry ladder, gate order, capture limits, halt signatures, modes and caps, brief body order and slice budget, scope and baseline rules, timeouts, the CLI ↔ skill divergence table. Pure data read by the engine and rendered into `skills/` by `scripts/skill-blocks.ts`
+- `core/scope/` — `declared-set.ts`, the one matcher that decides whether a changed path is inside a brief's declared set
+- `core/validation/stacks/` — the five validation stacks (TypeScript, JavaScript, Python, Go, Rust) and their registry: markers, commands, test patterns, narrowing, allowed commands
+- `core/recovery/` — how a pending recovery reads and what it offers: the headline, the pasteable resume command, and the user-edit → recovery-action mapping
 
 **Prohibited imports:** `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `cli/`. `core/` may import `utils/`, `lib/`, and other `core/` siblings.
 
-**Why `core/` is not `engine/`:** `engine/` runs the workflow (spawns agent subprocesses, streams tokens, retries tasks). `core/` describes it — the types, the transitions, the derived formatters — and persists its own domain state (sessions, stats, state machine, config, evidence ledger), preferring the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers but also writing directly via raw `node:fs` (with inline secure-mode and symlink guards) where it needs appends, lockfiles, or atomic renames. It never runs the workflow loop; its only subprocess is the read-only readiness baseline probe (`core/readiness/checks/validation.ts`) that runs the configured validation commands on demand behind `splitbrief doctor --probe-validation`. The automatic per-run baseline lives in the engine validator (`engine/orchestrator/validation/run.ts`). You could delete `engine/` and rewrite it in a different runtime; `core/` stays.
+**Why `core/` is not `engine/`:** `engine/` runs the workflow (spawns agent subprocesses, streams tokens, retries tasks). `core/` describes it — the types, the transitions, the derived formatters — and persists its own domain state (sessions, state machine, config, evidence ledger), preferring the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers but also writing directly via raw `node:fs` (with inline secure-mode and symlink guards) where it needs appends, lockfiles, or atomic renames. It never runs the workflow loop; its only subprocess is the read-only readiness baseline probe (`core/readiness/checks/validation.ts`) that runs the configured validation commands on demand behind `splitbrief doctor --probe-validation`. The automatic per-run baseline lives in the engine validator (`engine/orchestrator/validation/run.ts`). You could delete `engine/` and rewrite it in a different runtime; `core/` stays.
 
 **Why `core/` is not `features/`:** `core/` is UI-agnostic domain logic. A feature uses it, but the same logic could drive a CLI-only mode, a JSON output mode, or a different TUI framework. Coupling domain to one UI is how codebases die.
 
@@ -148,7 +152,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 **Acceptance criteria:**
 - Zero imports from React, Ink, `src/components/`, `src/hooks/`, `src/features/`
 - Owns the workflow loop: planners, implementers, validation, retry, escalation, commits
-- Emits `EngineEvent` values through the `EventBus`; sinks fan out to the workflow store (for the UI), JSONL log, session-tree log, stdout NDJSON, OTel, and hooks. Engine never calls React directly.
+- Emits `EngineEvent` values through the `EventBus`; sinks fan out to the workflow store (for the UI), JSONL log, process logger, stdout NDJSON, and hooks. Engine never calls React directly.
 - Side-effectful: spawns subprocesses, streams HTTP, writes files
 
 **What lives here:**
@@ -166,10 +170,9 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `engine/events/` — event bus subsystem: `schema.ts` (`EngineEventSchema` type-dispatched schema + `parseEngineEvent`), `types.ts` (the `EngineEvent` alias inferred from that schema, plus the `EventBus`/`EventSink` ports), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding headless/persistence/telemetry subscribers:
   - `features/workflow/tui-sink.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions/event.addEvent` (workflow sub-stores consume `EngineEvent` directly)
   - `sinks/jsonl.ts` — appends every event to `.splitbrief/sessions/<id>/session.jsonl` via `appendEngineEvent`
-  - `sinks/tree-recorder.ts` — always-on sink appending `.splitbrief/sessions/<id>/session-tree.jsonl` and `tree-meta.json`
+  - `sinks/logger.ts` — always-on sink writing every event through the process logger
   - `sinks/stdout-json.ts` — public NDJSON emitter for `splitbrief start --json` / headless mode (`event` envelope plus bounded/redacted payload policy)
-  - `sinks/otel.ts` — optional OpenTelemetry span emitter (workflow → phase → task span tree)
-- `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks; inserts a `--` end-of-options guard before any arg whose leading characters come from an interpolated `${event.*}` value, so untrusted event fields cannot inject flags into the trusted command's argv), `load-module.ts` (in-process `module` hooks), `substitute.ts` (safe `${event.*}` regex substitution — values are emitted verbatim as distinct argv elements, never shell-evaluated), `run-pre.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`, `builtins/` (`prettier-on-change`, `block-secrets`, `registry.ts`)
+- `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks; inserts a `--` end-of-options guard before any arg whose leading characters come from an interpolated `${event.*}` value, so untrusted event fields cannot inject flags into the trusted command's argv), `substitute.ts` (safe `${event.*}` regex substitution — values are emitted verbatim as distinct argv elements, never shell-evaluated), `run-pre.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`
 - `engine/codebase/` — repo-map pipeline (`parse`, `cache`, `graph`, `pagerank`, `format`, `budget`, `rebuild`, `extract-mentioned-filenames`, `repomap.ts` entry, `types.ts`) — produces the token-budgeted codebase summary injected into the planner prompt. See [REPOMAP.md](./REPOMAP.md).
 
 **Prohibited imports:** `features/`, `components/`, `hooks/`, `cli/`, `react`, `ink`. Grep gate in [`INVARIANTS.md`](./INVARIANTS.md).
@@ -210,7 +213,6 @@ If a file in `src/components/` turns out to have a single feature consumer, demo
 
 | File (old home in `components/`) | Real consumer | New home |
 |---|---|---|
-| `components/overlays/mode-selector.tsx` | `app/router.tsx` overlay switch (`renderOverlay`); writes to `configStore.workflow.mode` (settings domain) | `features/settings/mode-selector.tsx` |
 | `components/composer/feedback-row.tsx` | `src/app/screens/workflow.tsx`; reads `abortStore` (workflow domain) | `features/workflow/components/feedback-row.tsx` |
 
 The demotions cost one import-path rewrite each; the benefit is that `src/components/` stops advertising false sharing.

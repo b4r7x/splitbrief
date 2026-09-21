@@ -6,6 +6,7 @@ export interface MouseZone {
   bottom: number;
   z: number;
   onClick?: () => void;
+  onWheel?: (direction: 'up' | 'down') => void;
 }
 
 let zones: MouseZone[] = [];

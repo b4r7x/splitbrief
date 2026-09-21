@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { ATTACHED_AVAILABLE_COMMANDS, createRuntimeCommands } from './registry.js';
+import { createRuntimeCommands } from './registry.js';
 import { ALL_SCREENS } from '../../navigation/types.js';
+import { WORKFLOW_MODES, type WorkflowMode } from '../../schemas/enums.js';
+import { describeModeShape } from '../../pipeline-spec/mode-shape.js';
 import {
   COMMAND_CATEGORIES,
+  REMOVED_COMMANDS,
   type CommandCategory,
   type RuntimeCommandContext,
   type RuntimeCommandDef,
@@ -14,65 +17,6 @@ import { viewCommands } from './defs/view.js';
 import { ioCommands } from './defs/io.js';
 import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 
-const ATTACHED_LOCAL_ONLY = [
-  '/skills',
-  '/settings',
-  '/mode',
-  '/crew',
-  '/refresh',
-  '/revise-spec',
-  '/revise-plan',
-  '/redo-task',
-  '/handoff',
-  '/export',
-  '/compact-transcript',
-  '/image',
-  '/approval',
-  '/run',
-  '/yolo',
-  '/diff',
-  '/cost',
-] as const;
-
-// Registry order: categories concatenated as COMMAND_CATEGORIES lists them.
-const ATTACHED_AVAILABLE = [
-  '/help',
-  '/palette',
-  '/sessions',
-  '/home',
-  '/quit',
-  '/queue',
-  '/scroll',
-  '/activity',
-  '/sidebar',
-  '/copy',
-] as const;
-
-function names(ctxOverrides: Parameters<typeof makeCtx>[0]): string[] {
-  return createRuntimeCommands(makeCtx(ctxOverrides)).map((cmd) => cmd.name);
-}
-
-describe('createRuntimeCommands attached-client gating', () => {
-  it('exposes local-only workflow mutation commands for in-process clients', () => {
-    const exposed = names({ isAttached: false });
-    for (const name of ATTACHED_LOCAL_ONLY) {
-      expect(exposed).toContain(name);
-    }
-  });
-
-  it('hides local-only and config-mutating commands from attached clients', () => {
-    const exposed = names({ isAttached: true });
-    for (const name of ATTACHED_LOCAL_ONLY) {
-      expect(exposed).not.toContain(name);
-    }
-  });
-
-  it('keeps server-safe commands available for attached clients', () => {
-    const exposed = names({ isAttached: true });
-    expect(exposed).toEqual([...ATTACHED_AVAILABLE]);
-  });
-});
-
 describe('createRuntimeCommands registry shape', () => {
   const commands = createRuntimeCommands(makeCtx({}));
 
@@ -80,6 +24,16 @@ describe('createRuntimeCommands registry shape', () => {
     const registered = commands.map((cmd) => cmd.name);
     expect(registered).toHaveLength(27);
     expect(new Set(registered).size).toBe(27);
+  });
+
+  it('registers /usage once, on the workflow, under view', () => {
+    const usage = commands.filter((cmd) => cmd.name === '/usage');
+
+    expect(usage).toHaveLength(1);
+    expect(usage[0]?.kind).toBe('noarg');
+    expect(usage[0]?.category).toBe('view');
+    expect(usage[0]?.validScreens).toEqual(['workflow']);
+    expect(usage[0]?.hidden).toBeUndefined();
   });
 
   it('files every command under the category its module owns, in category order', () => {
@@ -109,7 +63,7 @@ describe('createRuntimeCommands registry shape', () => {
         expect(cmd.args.hint.trim(), `${cmd.name} free-arg hint`).not.toBe('');
         continue;
       }
-      const { options, optionDescriptions } = cmd.args;
+      const { options, optionDescriptions, optionHints } = cmd.args;
       expect(
         options.filter((option) => option.trim() === ''),
         `${cmd.name} options`,
@@ -118,6 +72,10 @@ describe('createRuntimeCommands registry shape', () => {
       expect(
         Object.keys(optionDescriptions ?? {}).filter((id) => !options.includes(id)),
         `${cmd.name} described options that are not offered`,
+      ).toEqual([]);
+      expect(
+        Object.keys(optionHints ?? {}).filter((id) => !options.includes(id)),
+        `${cmd.name} hinted options that are not offered`,
       ).toEqual([]);
     }
   });
@@ -130,34 +88,49 @@ describe('createRuntimeCommands registry shape', () => {
   it('offers images only while the PLAN seat can receive them', () => {
     const image = commands.find((cmd) => cmd.name === '/image');
 
-    expect(
-      image?.guard?.({ phase: 'idle', attached: false, plannerSupportsImages: false }),
-    ).toBeTypeOf('string');
-    expect(
-      image?.guard?.({ phase: 'idle', attached: false, plannerSupportsImages: true }),
-    ).toBeUndefined();
+    expect(image?.guard?.({ phase: 'idle', plannerSupportsImages: false })).toBeTypeOf('string');
+    expect(image?.guard?.({ phase: 'idle', plannerSupportsImages: true })).toBeUndefined();
   });
 
-  it('offers no /attach or /detach alias on the image command', () => {
-    const image = commands.find((cmd) => cmd.name === '/image');
-    expect(image?.aliases ?? []).toHaveLength(0);
-
-    const aliasNames = commands.flatMap((cmd) => cmd.aliases?.map((alias) => alias.name) ?? []);
-    expect(aliasNames).not.toContain('/attach');
-    expect(aliasNames).not.toContain('/detach');
-  });
-
-  it('offers attached clients only names the registry still knows', () => {
-    const registered = new Set(commands.map((cmd) => cmd.name));
-    for (const name of ATTACHED_AVAILABLE_COMMANDS) {
-      expect(registered).toContain(name);
+  it('offers no command under a name a release removed', () => {
+    const names = commands.map((cmd) => cmd.name.toLowerCase());
+    for (const removed of Object.keys(REMOVED_COMMANDS)) {
+      expect(names).not.toContain(removed);
     }
   });
 });
 
+describe('/mode options', () => {
+  function modeArgs(current: WorkflowMode) {
+    const command = createRuntimeCommands(makeCtx({ getWorkflowMode: () => current })).find(
+      (cmd) => cmd.name === '/mode',
+    );
+    if (command?.kind !== 'arg' || command.args.kind !== 'closed') {
+      throw new Error('/mode is not a closed-argument command');
+    }
+    return command.args;
+  }
+
+  it('prices every mode from the pipeline spec, gate names spelled out', () => {
+    const args = modeArgs('speckit');
+
+    expect(args.options).toEqual([...WORKFLOW_MODES]);
+    expect(args.optionDescriptions).toEqual(
+      Object.fromEntries(
+        WORKFLOW_MODES.map((mode) => [mode, describeModeShape(mode, { gateNames: true })]),
+      ),
+    );
+  });
+
+  it('marks the mode the config is on, and only that one', () => {
+    expect(modeArgs('speckit').optionHints).toEqual({ speckit: 'current' });
+    expect(modeArgs('quick').optionHints).toEqual({ quick: 'current' });
+  });
+});
+
 const SKILL_OPTIONS = [
-  { id: 'alpha', name: 'Alpha', description: 'Reviews alpha conventions' },
-  { id: 'bravo', name: 'Bravo', description: '' },
+  { id: 'alpha', name: 'Alpha', description: 'Reviews alpha conventions', attached: false },
+  { id: 'bravo', name: 'Bravo', description: '', attached: false },
 ] as const;
 
 function skillsCommand(overrides: Parameters<typeof makeCtx>[0]) {
@@ -197,11 +170,50 @@ describe('/skills command', () => {
     });
   });
 
+  it('spells the name only when it differs from the id', () => {
+    const { args } = skillsCommand({
+      listSkills: () => [
+        {
+          id: 'agents-root',
+          name: 'AGENTS.md',
+          description: 'Root agent instructions',
+          attached: false,
+        },
+        {
+          id: 'charlie',
+          name: 'charlie',
+          description: 'Reviews charlie conventions',
+          attached: false,
+        },
+        { id: 'delta', name: 'delta', description: '', attached: false },
+      ],
+    });
+
+    expect(args.optionDescriptions).toEqual({
+      'agents-root': 'AGENTS.md — Root agent instructions',
+      charlie: 'Reviews charlie conventions',
+      delta: '',
+    });
+  });
+
+  it('marks only the skills already attached', () => {
+    const { args } = skillsCommand({
+      listSkills: () => [
+        { id: 'alpha', name: 'Alpha', description: 'Reviews alpha conventions', attached: false },
+        { id: 'bravo', name: 'Bravo', description: 'Drafts bravo notes', attached: true },
+      ],
+    });
+
+    expect(args.optionHints).toEqual({ bravo: 'attached' });
+  });
+
   it('opens the skills overlay after a rescan when invoked bare', async () => {
     const steps: string[] = [];
     const { command } = skillsCommand({
       listSkills: () => SKILL_OPTIONS,
-      refreshSkills: () => steps.push('rescan'),
+      refreshSkills: async () => {
+        steps.push('rescan');
+      },
       openOverlay: (type) => steps.push(`open:${type}`),
     });
 
@@ -279,7 +291,9 @@ describe('/skills command', () => {
     const errors: string[] = [];
     const ctx = makeCtx({
       listSkills: () => SKILL_OPTIONS,
-      refreshSkills: () => steps.push('rescan'),
+      refreshSkills: async () => {
+        steps.push('rescan');
+      },
       openOverlay: (type) => steps.push(`open:${type}`),
     });
     const commands = createRuntimeCommands(ctx);
@@ -296,5 +310,27 @@ describe('/skills command', () => {
 
     expect(errors).toEqual([]);
     expect(steps).toEqual(['rescan', 'open:skills']);
+  });
+});
+
+describe('/settings command', () => {
+  function openedBy(raw: string): Array<{ type: string; focus: string | undefined }> {
+    const opened: Array<{ type: string; focus: string | undefined }> = [];
+    const commands = createRuntimeCommands(
+      makeCtx({
+        openOverlay: (type, focus) => {
+          opened.push({ type, focus });
+        },
+      }),
+    );
+    runCommandInTest({ commands, raw, screen: 'home', onError: () => {} });
+    return opened;
+  }
+
+  it('opens the overlay with no focus and takes no argument', () => {
+    const settings = createRuntimeCommands(makeCtx({})).find((cmd) => cmd.name === '/settings');
+
+    expect(settings?.kind).toBe('noarg');
+    expect(openedBy('/settings')).toEqual([{ type: 'settings', focus: undefined }]);
   });
 });

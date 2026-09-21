@@ -1,5 +1,5 @@
 import type { Config } from '../schemas/config.js';
-import { APPROVE_LEVELS, COMMIT_STRATEGIES, WORKFLOW_MODES } from '../schemas/enums.js';
+import { APPROVE_LEVELS, WORKFLOW_MODES } from '../schemas/enums.js';
 import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
@@ -42,7 +42,9 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'implementer.temperature',
     label: 'Temperature',
     section: 'Tuning',
-    description: '0=precise  0.3=balanced  1+=creative (dropped on non-api backends)',
+    // The row only exists for an api implementer, so it says nothing about the backends it never
+    // appears for: the help line has to fit beside its bounds without stranding them on a row.
+    description: '0 = precise, 0.3 = balanced, 1+ = creative',
     kind: 'number',
     min: 0,
     max: 2,
@@ -75,8 +77,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'workflow.mode',
     label: 'Mode',
     section: 'Workflow',
-    description:
-      'quick (1 call, 0 gates) | standard (4 calls, 1 gate) | speckit (6-7 calls, 2 gates)',
+    description: 'How many planner calls run before building, and how many gates stop for you',
     kind: 'enum',
     options: [...WORKFLOW_MODES],
   },
@@ -87,6 +88,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     description: 'Which spec/plan document gates block the workflow ("default" follows mode)',
     kind: 'enum',
     options: [...APPROVE_LEVELS],
+    unsetLabel: 'follows mode',
   },
   {
     id: 'workflow.maxRetries',
@@ -107,15 +109,6 @@ export const SETTINGS_DEFS: SettingDef[] = [
     options: [...CompactionFormatSchema.options],
   },
   {
-    id: 'workflow.git.commitStrategy',
-    label: 'Commit strategy',
-    section: 'Workflow',
-    description: 'none | checkpoint (tags) | per-task (commits)',
-    kind: 'enum',
-    options: [...COMMIT_STRATEGIES],
-    readValue: (config) => config.workflow.git?.commitStrategy,
-  },
-  {
     id: 'workflow.git.createBranch',
     label: 'Create branch',
     section: 'Workflow',
@@ -127,7 +120,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'validation.typecheck',
     label: 'Type check',
     section: 'Validation',
-    description: 'Run tsc type checking',
+    description: "Run the stack's type checker",
     kind: 'boolean',
   },
   {
@@ -148,7 +141,8 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'validation.testCommand',
     label: 'Test command',
     section: 'Validation',
-    description: 'Argv-style test runner command',
+    description: "Argv-style test runner command (auto = the stack's own)",
     kind: 'string',
+    unsetLabel: 'auto',
   },
 ];

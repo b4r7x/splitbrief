@@ -10,7 +10,7 @@ import { focusStore, type Focus } from '../../../stores/ui/focus.js';
 import { getRunnerCommand } from '../../../core/config/accessors/runner-config.js';
 import type { CopyTarget } from '../../../core/runtime/commands/types.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { readCostText } from '../cost-text.js';
+import { readCostText } from '../spend-text.js';
 
 function lastAssistantMessage(): string | null {
   const { events } = eventsStore.get();

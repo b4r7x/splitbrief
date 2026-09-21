@@ -58,6 +58,10 @@ describe('runner outcome taxonomy', () => {
       'callback-failure',
       'no-staged-change',
       'platform-limitation',
+      'implementer-effect-invalid',
+      'implementer-recipe-invalid',
+      'runner-timeout-repeated',
+      'missing-model',
       'success',
     ]);
     expectTypeOf<RunnerOutcomeState>().toEqualTypeOf<(typeof RUNNER_OUTCOME_STATES)[number]>();
@@ -84,6 +88,12 @@ describe('runner outcome taxonomy', () => {
     expect(bounded.remediation).not.toContain('sk-very-secret-value-1234567890');
     expect(bounded.remediation.length).toBeLessThanOrEqual(4_000);
     expect(runnerOutcome.success()).toEqual({ state: 'success', remediation: null });
+  });
+
+  test('effect-invalid remediation names the declared files', () => {
+    expect(runnerOutcome.failure('implementer-effect-invalid').remediation).toBe(
+      "The implementer wrote outside the brief's declared files. Retry with a revert instruction or widen Scope.",
+    );
   });
 
   test('projects stable error codes and legacy call statuses without collapsing outcomes', () => {

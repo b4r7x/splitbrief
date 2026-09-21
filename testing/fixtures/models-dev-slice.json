@@ -3,6 +3,38 @@
     "id": "anthropic",
     "name": "Anthropic",
     "models": {
+      "claude-fable-5-1": {
+        "id": "claude-fable-5-1",
+        "name": "Claude Fable 5.1",
+        "limit": {
+          "context": 1000000,
+          "output": 128000
+        },
+        "release_date": "2026-09-01",
+        "modalities": {
+          "input": ["text", "image"],
+          "output": ["text"]
+        },
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high", "xhigh", "max"] }
+        ]
+      },
+      "claude-opus-5": {
+        "id": "claude-opus-5",
+        "name": "Claude Opus 5",
+        "limit": {
+          "context": 1000000,
+          "output": 128000
+        },
+        "release_date": "2026-07-24",
+        "modalities": {
+          "input": ["text", "image"],
+          "output": ["text"]
+        },
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high", "xhigh", "max"] }
+        ]
+      },
       "claude-opus-4-7": {
         "id": "claude-opus-4-7",
         "name": "Claude Opus 4.7",
@@ -16,6 +48,23 @@
           "output": ["text"]
         }
       },
+      "claude-sonnet-5": {
+        "id": "claude-sonnet-5",
+        "name": "Claude Sonnet 5",
+        "limit": {
+          "context": 1000000,
+          "output": 128000
+        },
+        "release_date": "2026-06-29",
+        "modalities": {
+          "input": ["text", "image"],
+          "output": ["text"]
+        },
+        "reasoning_options": [
+          { "type": "toggle" },
+          { "type": "effort", "values": ["low", "medium", "high", "xhigh", "max"] }
+        ]
+      },
       "claude-sonnet-4-6": {
         "id": "claude-sonnet-4-6",
         "name": "Claude Sonnet 4.6",
@@ -28,6 +77,22 @@
           "input": ["text", "image"],
           "output": ["text"]
         }
+      },
+      "claude-fable-5": {
+        "id": "claude-fable-5",
+        "name": "Claude Fable 5",
+        "limit": {
+          "context": 1000000,
+          "output": 128000
+        },
+        "release_date": "2026-06-07",
+        "modalities": {
+          "input": ["text", "image"],
+          "output": ["text"]
+        },
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high", "xhigh", "max"] }
+        ]
       },
       "claude-opus-4-6": {
         "id": "claude-opus-4-6",
@@ -57,7 +122,7 @@
       },
       "claude-haiku-4-5": {
         "id": "claude-haiku-4-5",
-        "name": "Claude Haiku 4.5",
+        "name": "Claude Haiku 4.5 (latest)",
         "limit": {
           "context": 200000,
           "output": 64000
@@ -66,7 +131,8 @@
         "modalities": {
           "input": ["text"],
           "output": ["text"]
-        }
+        },
+        "reasoning_options": [{ "type": "budget_tokens", "min": 1024 }]
       },
       "claude-opus-4-1": {
         "id": "claude-opus-4-1",
@@ -435,7 +501,10 @@
         "modalities": {
           "input": ["text", "image"],
           "output": ["text"]
-        }
+        },
+        "reasoning_options": [
+          { "type": "effort", "values": ["none", "low", "medium", "high", "xhigh", "max"] }
+        ]
       },
       "opencode-go/gpt-5.6-luna": {
         "id": "opencode-go/gpt-5.6-luna",
@@ -448,7 +517,10 @@
         "modalities": {
           "input": ["text", "image"],
           "output": ["text"]
-        }
+        },
+        "reasoning_options": [
+          { "type": "effort", "values": ["none", "low", "medium", "high", "xhigh", "max"] }
+        ]
       },
       "openai/gpt-5.1": {
         "id": "openai/gpt-5.1",
@@ -461,7 +533,8 @@
         "modalities": {
           "input": ["text", "image"],
           "output": ["text"]
-        }
+        },
+        "reasoning_options": [{ "type": "effort", "values": ["none", "low", "medium", "high"] }]
       },
       "openai/gpt-5.1-codex": {
         "id": "openai/gpt-5.1-codex",
@@ -487,7 +560,8 @@
         "modalities": {
           "input": ["text"],
           "output": ["text"]
-        }
+        },
+        "reasoning_options": [{ "type": "effort", "values": ["minimal", "low", "medium", "high"] }]
       },
       "openai/o4-mini": {
         "id": "openai/o4-mini",
@@ -513,7 +587,8 @@
         "modalities": {
           "input": ["text", "image"],
           "output": ["text"]
-        }
+        },
+        "reasoning_options": [{ "type": "effort", "values": ["low", "medium", "high"] }]
       },
       "openai/o3-pro": {
         "id": "openai/o3-pro",
@@ -826,6 +901,286 @@
           "input": ["text"],
           "output": ["text"]
         }
+      }
+    }
+  },
+  "github-copilot": {
+    "id": "github-copilot",
+    "name": "GitHub Copilot",
+    "models": {
+      "claude-sonnet-5": {
+        "id": "claude-sonnet-5",
+        "name": "Claude Sonnet 5",
+        "limit": {
+          "context": 1000000,
+          "output": 128000
+        },
+        "release_date": "2026-06-30",
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high", "xhigh", "max"] }
+        ]
+      },
+      "claude-sonnet-4.6": {
+        "id": "claude-sonnet-4.6",
+        "name": "Claude Sonnet 4.6",
+        "limit": {
+          "context": 200000,
+          "output": 32000
+        },
+        "release_date": "2026-02-17",
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high", "max"] },
+          { "type": "budget_tokens", "min": 1024, "max": 32000 }
+        ]
+      },
+      "claude-sonnet-4.5": {
+        "id": "claude-sonnet-4.5",
+        "name": "Claude Sonnet 4.5 (latest)",
+        "limit": {
+          "context": 200000,
+          "output": 32000
+        },
+        "release_date": "2025-09-29",
+        "reasoning_options": [{ "type": "budget_tokens", "min": 1024, "max": 32000 }]
+      },
+      "claude-haiku-4.5": {
+        "id": "claude-haiku-4.5",
+        "name": "Claude Haiku 4.5 (latest)",
+        "limit": {
+          "context": 200000,
+          "output": 64000
+        },
+        "release_date": "2025-10-15",
+        "reasoning_options": [{ "type": "budget_tokens", "min": 1024, "max": 32000 }]
+      },
+      "claude-fable-5": {
+        "id": "claude-fable-5",
+        "name": "Claude Fable 5",
+        "limit": {
+          "context": 1000000,
+          "output": 128000
+        },
+        "release_date": "2026-06-09",
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high", "xhigh", "max"] }
+        ]
+      },
+      "claude-opus-5": {
+        "id": "claude-opus-5",
+        "name": "Claude Opus 5",
+        "limit": {
+          "context": 1000000,
+          "output": 64000
+        },
+        "release_date": "2026-07-24",
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high", "xhigh", "max"] }
+        ]
+      },
+      "claude-opus-4.8": {
+        "id": "claude-opus-4.8",
+        "name": "Claude Opus 4.8",
+        "limit": {
+          "context": 200000,
+          "output": 64000
+        },
+        "release_date": "2026-05-28",
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high", "xhigh", "max"] }
+        ]
+      },
+      "claude-opus-4.7": {
+        "id": "claude-opus-4.7",
+        "name": "Claude Opus 4.7",
+        "limit": {
+          "context": 200000,
+          "output": 32000
+        },
+        "release_date": "2026-04-16",
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high", "xhigh", "max"] }
+        ]
+      },
+      "claude-opus-4.6": {
+        "id": "claude-opus-4.6",
+        "name": "Claude Opus 4.6",
+        "limit": {
+          "context": 200000,
+          "output": 32000
+        },
+        "release_date": "2026-02-05",
+        "reasoning_options": [{ "type": "effort", "values": ["low", "medium", "high", "max"] }]
+      },
+      "claude-opus-4.5": {
+        "id": "claude-opus-4.5",
+        "name": "Claude Opus 4.5 (latest)",
+        "limit": {
+          "context": 200000,
+          "output": 32000
+        },
+        "release_date": "2025-11-24",
+        "reasoning_options": [{ "type": "budget_tokens", "min": 1024, "max": 32000 }]
+      },
+      "gpt-5.6-sol": {
+        "id": "gpt-5.6-sol",
+        "name": "GPT-5.6 Sol",
+        "limit": {
+          "context": 1050000,
+          "output": 128000
+        },
+        "release_date": "2026-07-09",
+        "reasoning_options": [
+          { "type": "effort", "values": ["none", "low", "medium", "high", "xhigh", "max"] }
+        ]
+      },
+      "gpt-5.6-terra": {
+        "id": "gpt-5.6-terra",
+        "name": "GPT-5.6 Terra",
+        "limit": {
+          "context": 1050000,
+          "output": 128000
+        },
+        "release_date": "2026-07-09",
+        "reasoning_options": [
+          { "type": "effort", "values": ["none", "low", "medium", "high", "xhigh", "max"] }
+        ]
+      },
+      "gpt-5.6-luna": {
+        "id": "gpt-5.6-luna",
+        "name": "GPT-5.6 Luna",
+        "limit": {
+          "context": 1050000,
+          "output": 128000
+        },
+        "release_date": "2026-07-09",
+        "reasoning_options": [
+          { "type": "effort", "values": ["none", "low", "medium", "high", "xhigh", "max"] }
+        ]
+      },
+      "gpt-5.5": {
+        "id": "gpt-5.5",
+        "name": "GPT-5.5",
+        "limit": {
+          "context": 1050000,
+          "output": 128000
+        },
+        "release_date": "2026-04-23",
+        "reasoning_options": [
+          { "type": "effort", "values": ["none", "low", "medium", "high", "xhigh"] }
+        ]
+      },
+      "gpt-5.4": {
+        "id": "gpt-5.4",
+        "name": "GPT-5.4",
+        "limit": {
+          "context": 1050000,
+          "output": 128000
+        },
+        "release_date": "2026-03-05",
+        "reasoning_options": [
+          { "type": "effort", "values": ["none", "low", "medium", "high", "xhigh"] }
+        ]
+      },
+      "gpt-5.3-codex": {
+        "id": "gpt-5.3-codex",
+        "name": "GPT-5.3 Codex",
+        "limit": {
+          "context": 400000,
+          "output": 128000
+        },
+        "release_date": "2026-02-05",
+        "reasoning_options": [{ "type": "effort", "values": ["low", "medium", "high", "xhigh"] }]
+      },
+      "gpt-5.4-mini": {
+        "id": "gpt-5.4-mini",
+        "name": "GPT-5.4 mini",
+        "limit": {
+          "context": 400000,
+          "output": 128000
+        },
+        "release_date": "2026-03-17",
+        "reasoning_options": [
+          { "type": "effort", "values": ["none", "low", "medium", "high", "xhigh"] }
+        ]
+      },
+      "gpt-5-mini": {
+        "id": "gpt-5-mini",
+        "name": "GPT-5 Mini",
+        "limit": {
+          "context": 264000,
+          "output": 64000
+        },
+        "release_date": "2025-08-07",
+        "reasoning_options": [{ "type": "effort", "values": ["low", "medium", "high"] }]
+      },
+      "mai-code-1-flash-picker": {
+        "id": "mai-code-1-flash-picker",
+        "name": "MAI-Code-1-Flash",
+        "limit": {
+          "context": 256000,
+          "output": 128000
+        },
+        "release_date": "2026-06-02",
+        "reasoning_options": [{ "type": "effort", "values": ["low", "medium", "high"] }]
+      },
+      "gemini-3.1-pro-preview": {
+        "id": "gemini-3.1-pro-preview",
+        "name": "Gemini 3.1 Pro Preview",
+        "limit": {
+          "context": 1000000,
+          "output": 64000
+        },
+        "release_date": "2026-02-19",
+        "reasoning_options": [
+          { "type": "effort", "values": ["low", "medium", "high"] },
+          { "type": "budget_tokens", "min": 256, "max": 32000 }
+        ]
+      },
+      "gemini-3.6-flash": {
+        "id": "gemini-3.6-flash",
+        "name": "Gemini 3.6 Flash",
+        "limit": {
+          "context": 1000000,
+          "output": 64000
+        },
+        "release_date": "2026-07-21",
+        "reasoning_options": [
+          { "type": "effort", "values": ["minimal", "low", "medium", "high"] },
+          { "type": "budget_tokens", "min": 256, "max": 32000 }
+        ]
+      },
+      "gemini-3.5-flash": {
+        "id": "gemini-3.5-flash",
+        "name": "Gemini 3.5 Flash",
+        "limit": {
+          "context": 200000,
+          "output": 64000
+        },
+        "release_date": "2026-05-19",
+        "reasoning_options": [
+          { "type": "effort", "values": ["minimal", "low", "medium", "high"] },
+          { "type": "budget_tokens", "min": 256, "max": 24000 }
+        ]
+      },
+      "grok-4.5": {
+        "id": "grok-4.5",
+        "name": "Grok 4.5",
+        "limit": {
+          "context": 500000,
+          "output": 128000
+        },
+        "release_date": "2026-07-08",
+        "reasoning_options": [{ "type": "effort", "values": ["low", "medium", "high"] }]
+      },
+      "kimi-k2.7-code": {
+        "id": "kimi-k2.7-code",
+        "name": "Kimi K2.7 Code",
+        "limit": {
+          "context": 256000,
+          "output": 32000
+        },
+        "release_date": "2026-06-12",
+        "reasoning_options": []
       }
     }
   }

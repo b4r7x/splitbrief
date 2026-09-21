@@ -112,6 +112,9 @@ export function terminalizeRunningOperation(
     reason: cleanOperationReason(update.reason),
     usage: update.usage ?? operation.usage,
     partial: update.partial,
+    ...(operation.apiRuntimeStatus !== undefined && {
+      apiRuntimeStatus: { ...operation.apiRuntimeStatus, phase: 'finished' },
+    }),
   };
 }
 

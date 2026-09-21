@@ -1,0 +1,35 @@
+export type LadderRungId = 'recipe-fix' | 'local' | 'intermediate' | 'hint' | 'takeover';
+
+export type LadderRung = Readonly<{
+  id: LadderRungId;
+  who: 'implementer' | 'intermediate-implementer' | 'planner-then-implementer' | 'planner';
+  consumesRetry?: boolean;
+  count?: 'DEFAULT_LOCAL_RETRIES';
+  optional?: boolean;
+}>;
+
+export const LADDER: readonly LadderRung[] = [
+  { id: 'recipe-fix', who: 'implementer', consumesRetry: false },
+  { id: 'local', who: 'implementer', count: 'DEFAULT_LOCAL_RETRIES' },
+  { id: 'intermediate', who: 'intermediate-implementer', optional: true },
+  { id: 'hint', who: 'planner-then-implementer' },
+  { id: 'takeover', who: 'planner' },
+];
+
+const FINAL_FRAMING = 'Multiple attempts have failed. Try a completely different approach:';
+
+export const RETRY_FRAMINGS: Readonly<Record<number, string>> = {
+  1: 'Your previous attempt had an error. Fix it:',
+  2: 'Previous attempts failed. Here is the task rephrased differently:',
+  3: FINAL_FRAMING,
+};
+
+export function framingForAttempt(attempt: number): string {
+  return RETRY_FRAMINGS[attempt] ?? FINAL_FRAMING;
+}
+
+export function HINT_ERROR_TEMPLATE(error: string, hint: string): string {
+  return `${error}\n\n## Hints from senior reviewer:\n${hint}`;
+}
+
+export const MAX_HINT_ERROR_LENGTH = 4000;

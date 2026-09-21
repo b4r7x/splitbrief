@@ -10,7 +10,7 @@ export function userEditActionToRecoveryAction(action: UserEditConflictAction): 
     case 'skip-current-task':
       return 'skip-current-task';
     case 'abort-workflow':
-      return 'abort-workflow';
+      return 'end-run';
     default:
       return assertNever(action);
   }

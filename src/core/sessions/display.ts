@@ -1,9 +1,11 @@
 import type { Session } from '../schemas/session.js';
+import type { StopKind } from '../schemas/run-step.js';
 import type { TaskCompletionMethod } from '../schemas/enums.js';
 import { glyph } from '../../lib/glyphs.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 export interface SessionDisplayColors {
+  accent: string;
   success: string;
   warning: string;
   error: string;
@@ -13,6 +15,7 @@ export interface SessionDisplayColors {
 export interface SessionStatusDisplay {
   icon: string;
   color: string;
+  word: string;
 }
 
 export interface MethodDisplay {
@@ -37,17 +40,70 @@ export function getMethodDisplay(
       return { text: 'fail', color: theme.error };
     case 'skipped':
       return { text: 'skip', color: theme.textDim };
-    case 'mcp-tool':
-      return { text: 'mcp', color: theme.success };
     default:
       return assertNever(method);
   }
 }
 
+const STOP_WORDS: Record<StopKind, string> = {
+  'input-required': 'waiting for answer',
+  paused: 'paused',
+  waiting: 'waiting',
+  halted: 'halted',
+  failed: 'failed',
+  interrupted: 'interrupted',
+};
+
+/** The one word a run's state spells, on every surface that names it. */
+export function sessionStatusWord(session: Pick<Session, 'status' | 'stop'>): string {
+  switch (session.status) {
+    case 'complete':
+      return 'complete';
+    case 'ended':
+      return 'ended';
+    case 'open':
+      // An open row with no stop reason is a run still going; the stop reason is
+      // what a run that came to rest leaves behind.
+      return session.stop === undefined ? 'running' : STOP_WORDS[session.stop];
+    default:
+      return assertNever(session.status);
+  }
+}
+
+function statusIcon(session: Pick<Session, 'status' | 'stop'>): string {
+  switch (session.status) {
+    case 'complete':
+      return glyph('check');
+    case 'ended':
+      return glyph('statusCancelled');
+    case 'open':
+      // The list is static, so a running run takes the table's in-progress mark
+      // rather than a spinner frame — at the ascii tier the first line-spinner
+      // frame is the same character as the cursor lead.
+      return session.stop === undefined ? glyph('statusInProgress') : glyph('statusOpen');
+    default:
+      return assertNever(session.status);
+  }
+}
+
+function statusColor(
+  session: Pick<Session, 'status' | 'stop'>,
+  theme: SessionDisplayColors,
+): string {
+  if (session.status === 'complete') return theme.success;
+  if (session.status === 'ended') return theme.textDim;
+  if (session.stop === undefined) return theme.accent;
+  if (session.stop === 'failed') return theme.error;
+  return session.stop === 'halted' ? theme.warning : theme.textDim;
+}
+
 export function getSessionStatusDisplay(
-  status: Session['status'],
+  session: Pick<Session, 'status' | 'stop'>,
   theme: SessionDisplayColors,
 ): SessionStatusDisplay {
-  if (status === 'complete') return { icon: glyph('check'), color: theme.success };
-  return { icon: glyph('statusPending'), color: theme.textDim };
+  return {
+    icon: statusIcon(session),
+    color: statusColor(session, theme),
+    word: sessionStatusWord(session),
+  };
 }

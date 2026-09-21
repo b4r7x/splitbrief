@@ -5,12 +5,7 @@ import type {
   RouteTaskOptions,
 } from './types.js';
 import { assessProfile } from './assessment.js';
-import {
-  compareProfileRouteRank,
-  rejectionReason,
-  selectedReason,
-  costPosture,
-} from './decision.js';
+import { compareProfileRouteRank, rejectionReason, selectedReason } from './decision.js';
 
 function toRejectedProfile(
   profileFit: ProfileFit,
@@ -18,7 +13,6 @@ function toRejectedProfile(
 ): RejectedImplementerProfile {
   return {
     profile: profileFit.profile.name,
-    costTier: profileFit.profile.costTier,
     profileWriteMode: profileFit.profile.capabilities.writesFiles,
     requiredWriteMode: profileFit.requiredWriteMode,
     reason: rejectionReason(profileFit, selected),
@@ -82,7 +76,6 @@ export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDe
         representative?.currentCodeTruncated ?? largestOverflow?.currentCodeTruncated ?? false,
       currentCodeContextMode:
         representative?.currentCodeContextMode ?? largestOverflow?.currentCodeContextMode ?? 'none',
-      costPosture: costPosture(undefined, profileFits),
       reason: noCapableProfileReason(hasCredentialFailure, hasCapabilityFailure),
       rejected,
     };
@@ -96,7 +89,6 @@ export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDe
   return {
     taskId: opts.task.id,
     selectedProfile: selected.profile.name,
-    selectedCostTier: selected.profile.costTier,
     selectedWriteMode: selected.profile.capabilities.writesFiles,
     requiredWriteMode: selected.requiredWriteMode,
     fit: selected.fit,
@@ -105,10 +97,6 @@ export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDe
     contextLength: selected.contextLength,
     currentCodeTruncated: selected.currentCodeTruncated,
     currentCodeContextMode: selected.currentCodeContextMode,
-    costPosture: costPosture(
-      selected,
-      profileFits.filter((profileFit) => profileFit.profile.name !== selected.profile.name),
-    ),
     reason: selectedReason(selected),
     rejected,
   };

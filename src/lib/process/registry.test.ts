@@ -6,6 +6,7 @@ import {
   clearProcessLedger,
   killAllProcesses,
   killProcess,
+  onProcessRegistryChange,
   registerProcess,
   setProcessLedger,
   unregisterProcess,
@@ -579,5 +580,34 @@ describe('killProcess', () => {
     expect(() => process.kill(proc.pid ?? 0, 0)).toThrow(
       expect.objectContaining({ code: 'ESRCH' }),
     );
+  });
+});
+
+describe('onProcessRegistryChange', () => {
+  it('fires with the count on register and unregister', () => {
+    const counts: number[] = [];
+    const off = onProcessRegistryChange((count) => counts.push(count));
+    const proc = { pid: 2_147_482_998, exitCode: null, signalCode: null } as ChildProcess;
+
+    try {
+      registerProcess(proc);
+      unregisterProcess(proc);
+    } finally {
+      off();
+    }
+
+    expect(counts).toHaveLength(2);
+    expect(counts[1]).toBe((counts[0] ?? 0) - 1);
+  });
+
+  it('stops firing after the returned disposer runs', () => {
+    const counts: number[] = [];
+    onProcessRegistryChange((count) => counts.push(count))();
+    const proc = { pid: 2_147_482_999, exitCode: null, signalCode: null } as ChildProcess;
+
+    registerProcess(proc);
+    unregisterProcess(proc);
+
+    expect(counts).toEqual([]);
   });
 });

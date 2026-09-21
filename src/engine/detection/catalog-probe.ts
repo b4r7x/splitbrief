@@ -10,7 +10,7 @@ import type {
 import type { ProbeOutcome } from '../../core/discovery/runner-evidence.js';
 import {
   CLI_TOOL_CATALOG,
-  cliAuthChannelHostStateAccess,
+  cliAuthChannelPlatformSupported,
   selectCliAuthChannel,
   type CliAuthChannel,
   type CliToolId,
@@ -24,10 +24,21 @@ import {
   type SpawnPipeFatalSignal,
 } from '../../lib/process/spawn/lifecycle.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../constants.js';
+import {
+  nativeCliCatalogToDetectedModels,
+  parseCompleteCommandCodeNativeModelCatalog,
+} from '../providers/cli-model-catalog.js';
 import { resolveCustomExecutable } from '../runners/resolve-cli-executable.js';
-import { createSandboxEnv, prependCliExecutableDirectory } from '../runners/sandbox-env.js';
+import {
+  cliChannelStaging,
+  createSandboxEnv,
+  prependCliExecutableDirectory,
+} from '../runners/sandbox-env.js';
 import { bridgedCliStatePresent } from '../runners/sandbox-state-bridge.js';
-import { authChannelRequiresCredential } from '../runners/cli-tools/readiness-probe.js';
+import {
+  authChannelRequiresCredential,
+  type AuthProbeRun,
+} from '../runners/cli-tools/readiness-probe.js';
 import { isCanonicalCliDeclaredProbe } from '../runners/cli-tools/registry.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import type {
@@ -233,17 +244,19 @@ async function catalogProbeEnvironment(
   operation: AdmittedCatalogOperation,
   neutralDir: string,
 ): Promise<CatalogProbeEnvironment> {
-  const channel = operation.authChannel;
-  const hostState = channel === undefined ? 'none' : cliAuthChannelHostStateAccess(channel);
+  const { selectedCli, hostState, preserveEnvKeys } = cliChannelStaging(
+    operation.context.id,
+    operation.authChannel,
+  );
   const env = await createSandboxEnv({
     projectDir: neutralDir,
-    preserveEnvKeys: [...(channel?.env ?? [])],
-    selectedCli: hostState === 'none' ? undefined : operation.context.id,
+    preserveEnvKeys,
+    selectedCli,
     hostState,
   });
   const credentialMayBePresent =
     hostState === 'host-account' ||
-    (channel?.env ?? []).some((key) => (env[key] ?? '').trim().length > 0) ||
+    preserveEnvKeys.some((key) => (env[key] ?? '').trim().length > 0) ||
     (hostState === 'bridged-files' && (await bridgedCliStatePresent(env, operation.context.id)));
   return {
     env: {
@@ -345,11 +358,23 @@ async function runAdmittedCatalogProbe(
 }
 
 function catalogOutcomeFromProbe(
+  tool: CliToolId,
   probe: Exclude<CliCatalogProbe, { kind: 'not-run' }>,
   output: CliProbeOutput,
 ): ProbeOutcome<readonly DetectedModel[]> {
   if (output.outputExceeded) return { kind: 'malformed' };
-  if (output.timedOut) return { kind: 'timeout' };
+  if (output.timedOut) {
+    // spawnPipe has already reaped the process group. Only this native listing
+    // has a declared row count and terminal footer; an ordinary parse is not
+    // evidence that timeout output contains the entire catalog.
+    const complete =
+      tool === 'command-code' && output.stderr.trim() === ''
+        ? parseCompleteCommandCodeNativeModelCatalog(output.stdout)
+        : null;
+    return complete === null
+      ? { kind: 'timeout' }
+      : { kind: 'success', value: nativeCliCatalogToDetectedModels(complete) };
+  }
   if (output.exitCode !== 0) return { kind: 'malformed' };
   try {
     return probe.parse(output);
@@ -368,6 +393,8 @@ export async function probeContextCatalog(
     projectDir: string;
     now: () => number;
     signal: AbortSignal | undefined;
+    /** This pass's auth status run. When its argv is the catalog's, its output is the listing. */
+    authProbeRun?: AuthProbeRun | undefined;
   }>,
 ): Promise<ProbeOutcome<readonly DetectedModel[]>> {
   throwIfAborted(input.signal);
@@ -380,6 +407,12 @@ export async function probeContextCatalog(
     issuedAt: input.now(),
   });
   if (operation === undefined) return { kind: 'unsupported' };
+  if (
+    operation.authChannel !== undefined &&
+    !cliAuthChannelPlatformSupported(operation.authChannel)
+  ) {
+    return { kind: 'unsupported' };
+  }
   if (
     !catalogOperationIsFresh(operation, input.now()) ||
     classifyCliAdmittedVersion({
@@ -414,8 +447,17 @@ export async function probeContextCatalog(
       return { kind: 'missing-credential' };
     }
     const outcome = catalogOutcomeFromProbe(
+      operation.context.id,
       probe,
-      await runAdmittedCatalogProbe(operation, probe, neutralDir, environment.env, input.signal),
+      input.authProbeRun !== undefined && probeCommandsMatch(probe, input.authProbeRun.command)
+        ? input.authProbeRun.output
+        : await runAdmittedCatalogProbe(
+            operation,
+            probe,
+            neutralDir,
+            environment.env,
+            input.signal,
+          ),
     );
     const after = await resolveCustomExecutable({
       command: operation.executable.executableIdentity.canonicalPath,

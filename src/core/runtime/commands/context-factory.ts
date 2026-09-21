@@ -1,4 +1,5 @@
-import type { Config } from '../../schemas/config.js';
+import { type Config, DEFAULT_WORKFLOW_MODE } from '../../schemas/config.js';
+import { getWorkflowMode } from '../../config/accessors/values.js';
 import type { Phase } from '../../schemas/enums.js';
 import type { RewindTarget } from '../../state/build-rewind-action.js';
 import type { OverlayType } from '../../navigation/types.js';
@@ -6,27 +7,22 @@ import type {
   DiscoveryRefreshSummary,
   RuntimeCommandContext,
   RuntimeConfigSaveResult,
-  ExportSessionResult,
   QueueClearCommandResult,
 } from './types.js';
 
 type CommandRewindRequest = Extract<RewindTarget, { target: 'spec' | 'plan' }>;
-type HandoffTargetArg = Parameters<RuntimeCommandContext['writeHandoff']>[0];
 type ApprovalScope = 'session' | 'always' | 'all';
 
 interface CommandContextFactoryOptions {
-  isAttached?: boolean;
   projectDir: () => string;
   getConfig: () => Config | null;
   saveConfig: (config: Config) => Promise<RuntimeConfigSaveResult>;
-  getApprovalEnabled?: (() => boolean) | undefined;
-  setApprovalEnabled?: ((enabled: boolean) => void) | undefined;
   getSessionId: (command: string) => string | null | undefined;
   noActiveSession: (command: string) => Error;
-  exportMissingSession?: (() => ExportSessionResult) | undefined;
   openOverlay: (type: OverlayType, focus?: string) => void;
   navigateHome: () => void;
   quit: () => void;
+  prefillComposer: RuntimeCommandContext['prefillComposer'];
   setFeedbackMessage: (message: string) => void;
   setFeedbackError: (message: string) => void;
   refreshDetection: () => Promise<DiscoveryRefreshSummary>;
@@ -37,8 +33,15 @@ interface CommandContextFactoryOptions {
   getCurrentPhase: () => Phase;
   requestRewind: (request: CommandRewindRequest) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
+  resumeRun: () => boolean;
+  endRun: () => boolean;
   getQueueDepth: () => number;
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
+  insertImage?: (input: {
+    path: string;
+    projectDir: string;
+    supportsImages: boolean;
+  }) => ReturnType<RuntimeCommandContext['attachImage']>;
   attachImage: (input: {
     path: string;
     projectDir: string;
@@ -47,30 +50,21 @@ interface CommandContextFactoryOptions {
   plannerSupportsImages: () => boolean;
   detachImage: RuntimeCommandContext['detachImage'];
   listAttachments: RuntimeCommandContext['listAttachments'];
-  writeHandoff: (opts: {
-    projectDir: string;
-    sessionId: string;
-    target: HandoffTargetArg;
-    taskId?: string | undefined;
-  }) => ReturnType<RuntimeCommandContext['writeHandoff']>;
   listApprovals: (projectDir: string) => ReturnType<RuntimeCommandContext['listApprovals']>;
   clearApprovals: (projectDir: string, scope: ApprovalScope) => number;
   acceptRunSnapshot: (
     projectDir: string,
     sessionId: string,
   ) => ReturnType<RuntimeCommandContext['acceptRunSnapshot']>;
+  refreshRun: RuntimeCommandContext['refreshRun'];
   rejectRunSnapshot: (
     projectDir: string,
     sessionId: string,
   ) => ReturnType<RuntimeCommandContext['rejectRunSnapshot']>;
-  compactTranscript: RuntimeCommandContext['compactTranscript'];
-  exportSession: (
-    projectDir: string,
-    sessionId: string,
-  ) => ReturnType<RuntimeCommandContext['exportSession']>;
   scrollConversation: RuntimeCommandContext['scrollConversation'];
   toggleLatestActivityBatch: RuntimeCommandContext['toggleLatestActivityBatch'];
   toggleLatestDiff: RuntimeCommandContext['toggleLatestDiff'];
+  listBriefs: RuntimeCommandContext['listBriefs'];
   toggleSidebar: RuntimeCommandContext['toggleSidebar'];
   copyTarget: RuntimeCommandContext['copyTarget'];
 }
@@ -94,12 +88,16 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
   };
 
   return {
-    isAttached: opts.isAttached ?? false,
     openOverlay: opts.openOverlay,
     navigate: () => opts.navigateHome(),
     quit: opts.quit,
     setWorkflowMode: (mode) =>
       updateConfig((current) => ({ ...current, workflow: { ...current.workflow, mode } })),
+    getWorkflowMode: () => {
+      const config = opts.getConfig();
+      return config === null ? DEFAULT_WORKFLOW_MODE : getWorkflowMode(config);
+    },
+    prefillComposer: opts.prefillComposer,
     setFeedbackMessage: opts.setFeedbackMessage,
     setFeedbackError: opts.setFeedbackError,
     refreshDetection: opts.refreshDetection,
@@ -113,50 +111,32 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
       return opts.requestRewind(request);
     },
     requestTaskRedo: opts.requestTaskRedo,
+    resumeRun: opts.resumeRun,
+    endRun: opts.endRun,
     getQueueDepth: opts.getQueueDepth,
     clearQueue: opts.clearQueue,
+    insertImage: (path) => {
+      const supportsImages = opts.plannerSupportsImages();
+      const insertImage = opts.insertImage ?? opts.attachImage;
+      return insertImage({ path, projectDir: opts.projectDir(), supportsImages });
+    },
     attachImage: (path) => {
       const supportsImages = opts.plannerSupportsImages();
       return opts.attachImage({ path, projectDir: opts.projectDir(), supportsImages });
     },
     detachImage: opts.detachImage,
     listAttachments: opts.listAttachments,
-    writeHandoff: async (target, taskId) => {
-      const projectDir = opts.projectDir();
-      const sessionId = sessionIdOrThrow('handoff');
-      return opts.writeHandoff({
-        projectDir,
-        sessionId,
-        target,
-        taskId,
-      });
-    },
     listApprovals: () => opts.listApprovals(opts.projectDir()),
     clearApprovals: () => opts.clearApprovals(opts.projectDir(), 'all'),
-    getApprovalEnabled: () =>
-      opts.getApprovalEnabled
-        ? opts.getApprovalEnabled()
-        : opts.getConfig()?.approval?.enabled !== false,
-    setApprovalEnabled: (enabled) => {
-      opts.setApprovalEnabled?.(enabled);
-    },
     acceptRunSnapshot: () =>
       opts.acceptRunSnapshot(opts.projectDir(), sessionIdOrThrow('/run accept')),
     rejectRunSnapshot: () =>
       opts.rejectRunSnapshot(opts.projectDir(), sessionIdOrThrow('/run reject')),
-    compactTranscript: opts.compactTranscript,
-    exportSession: async () => {
-      const projectDir = opts.projectDir();
-      const sessionId = opts.getSessionId('/export');
-      if (!sessionId) {
-        if (opts.exportMissingSession) return opts.exportMissingSession();
-        throw opts.noActiveSession('/export');
-      }
-      return opts.exportSession(projectDir, sessionId);
-    },
+    refreshRun: opts.refreshRun,
     scrollConversation: opts.scrollConversation,
     toggleLatestActivityBatch: opts.toggleLatestActivityBatch,
     toggleLatestDiff: opts.toggleLatestDiff,
+    listBriefs: opts.listBriefs,
     toggleSidebar: opts.toggleSidebar,
     copyTarget: opts.copyTarget,
   };

@@ -8,11 +8,11 @@ Read this first. It explains what SPLITBRIEF does, how it thinks, and why it's b
 
 SPLITBRIEF orchestrates two coding tools. One plans and reviews, the other executes, and SPLITBRIEF holds everything in between: the contract, the isolation, the validation, the retries, the escalation, and the evidence.
 
-**Planner** — the stronger of the two. It understands the feature request, explores the codebase, writes a detailed plan broken into single-file tasks, answers escalations, and reviews the finished work.
+**Planner** — the stronger of the two. It understands the feature request, explores the codebase, writes a detailed plan broken into slices — one verifiable change each — answers escalations, and reviews the finished work.
 
 **Implementer** — a weaker model, reached over one of two transports that are supported equally:
 
-- a **tool CLI** driving a cheaper model, which writes files itself
+- a **tool CLI** driving a smaller model, which writes files itself
 - an **API model**, which returns file contents that SPLITBRIEF writes
 
 You choose the transport. SPLITBRIEF does not favour one over the other.
@@ -23,7 +23,7 @@ The planner thinks, the implementer types, and the implementer never certifies i
 
 ## The Task Brief
 
-The Task Brief is the contract between planner and implementer. Each brief describes exactly one file operation — create or modify — and contains everything the implementer needs to do the work without looking anything up:
+The Task Brief is the contract between planner and implementer. Each brief describes one slice — one verifiable change, listing every file it writes, with one of them as the anchor it creates or modifies — and contains everything the implementer needs to do the work without looking anything up:
 
 - What to do and why
 - The function signatures and types involved
@@ -46,15 +46,15 @@ A typical run, step by step:
 2. Planner researches the codebase — reads files, maps imports, understands patterns
 3. Planner writes a specification — what the feature should do, how it fits
 4. User reviews and approves the spec (or comments, or rejects)
-5. Planner writes Task Briefs — one per file, ordered by dependency
+5. Planner writes Task Briefs — one per slice, ordered by dependency
 6. User reviews the briefs
 7. For each task: the implementer writes code in isolation, SPLITBRIEF promotes the approved changes into the project, then validates (typecheck → lint → test)
-8. If validation fails: retry up to 3 times, then escalate to bigger models
+8. If validation fails: retry (twice by default), then escalate to bigger models
 9. If escalation fails: enter recovery — user picks next action (retry same worker, route to a bigger worker, skip, pause, abort)
 10. The review seat reviews the final result against the spec — the planner, unless a `reviewer` is configured
 11. Session summary written to disk, workflow done
 
-The user can interrupt live model calls with Ctrl-C, queue messages while the planner is working, rewind to re-plan a spec or plan, or skip individual tasks.
+The user can stop a run at any time — `esc` opens the stop options, `ctrl+c` stops now, and no option reverts files — queue messages while the planner is working, rewind to re-plan a spec or plan, or skip individual tasks.
 
 ---
 
@@ -94,17 +94,21 @@ All three modes produce the same output: a list of Task Briefs. The difference i
 
 ## Sessions and persistence
 
-Every workflow run is a session. A session is a folder on disk under `.splitbrief/sessions/<id>/`. It contains:
+Every run is a durable record, kept in a folder on disk under `.splitbrief/sessions/<id>/`. It contains:
 
-- **state.json** — Current phase, task progress. Overwritten on every phase transition. This is the source of truth for resume.
+- **state.json** — Current phase, task progress, and how the run stopped. Overwritten on every phase transition. This is the source of truth for continuing it.
 - **session.jsonl** — Every event and message, append-only. The full audit log.
 - **research.md / spec.md / plan.md / tasks.md** — Planning artifacts, written once per planning phase when the selected mode produces them. Speckit can also write clarification, constitution-check, and analysis artifacts.
 - **summary.json** — Final cost, timing, outcomes. Written once at the end.
 - **snapshots/** — Content-addressed working-tree snapshots for undo.
 
-One foreground active session at a time per project directory. `.splitbrief/active` contains the current foreground session ID when the active pointer is present, while the per-session lockfile/heartbeat proves whether a process is still alive. Detached sessions use lockfiles. Isolated parallel sessions require git worktrees, which give each worktree its own `.splitbrief/`.
+One active session at a time per project directory. `.splitbrief/active` contains the current session ID when the active pointer is present, while the per-session lockfile/heartbeat proves whether a process is still alive. Isolated parallel sessions require git worktrees, which give each worktree its own `.splitbrief/`.
 
-`splitbrief resume` picks up the active interrupted workflow. If the active pointer is absent, use `splitbrief continue <session-id>` for a known resumable session. If the backend supports session persistence (Claude Code), it reconnects. Otherwise, it rebuilds context from the JSONL log.
+**A run is continuable until you close it.** Not until it is "resumable", and not only when it was interrupted — parked, waiting at a gate, halted on a decision, stopped by an error, or killed outright, it keeps its place and picks up at the first thing it has not finished. Two things close a run: passing the final review, and choosing **End run**. A closed run is the only one nothing will pick up again.
+
+`splitbrief resume` continues the most recent run; `splitbrief continue <session-id>` names one. If the backend supports session persistence (Claude Code, Codex), it reconnects to the thread the tool itself reported. Otherwise it rebuilds context from the JSONL log.
+
+There is no separate results screen. A run stays on the screen it was already on, live or not: opening one from `/sessions` replays its history onto that screen and paints where it stopped, typing a correction flips it back to live in place, and a closed run grows a `Closed ─` block at the tail of its own transcript.
 
 ---
 
@@ -121,7 +125,7 @@ Both planner and implementer are pluggable. The same four backend kinds work for
 **agent** — Subprocess that writes files directly to disk (no code extraction from response); no shell/network sandbox.
 
 
-The orchestrator never branches on backend type. It calls `planner.plan()` and `implementer.implement()`. The factory dispatches to the right backend based on `config.planner.kind` and `config.implementer.kind`. Each backend exposes a capabilities struct — the orchestrator reads capabilities, not backend identity, to decide what's possible.
+The orchestrator never branches on backend type. It calls `planner.runPhase()` and `implementer.implement()`. The factory dispatches to the right backend based on `config.planner.kind` and `config.implementer.kind`. Each backend exposes a capabilities struct — the orchestrator reads capabilities, not backend identity, to decide what's possible.
 
 ---
 
@@ -158,8 +162,7 @@ The workflow pauses at defined points for human review:
 - **Spec gate** — After the planner writes the spec. Approve, comment (planner regenerates), or reject.
 - **Plan gate** — After the planner writes the plan (speckit mode by default).
 - **Briefs gate** — After Task Briefs pass the quality gate. The user reviews tasks.md before any code is written.
-- **Tiered approval** — During implementation, declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and gated at three tiers: `auto` (allow silently), `sticky` (remember the user's choice), `confirm` (always ask). `network` is accepted only for config compatibility; it is not shell/network sandboxing.
-- **Cost gate** — Before tasks start, if the predicted cost exceeds the budget.
+- **Tiered approval** — During implementation, declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and gated at three tiers: `auto` (allow silently), `sticky` (remember the user's choice), `confirm` (always ask).
 
 `--approve none` skips spec/plan document gates. Briefs review is separate and still runs in modes that produce reviewable briefs. `--approve all` enables spec and plan gates. The mode sets the default: quick skips spec/plan gates, standard gates on spec, speckit gates on spec and plan.
 

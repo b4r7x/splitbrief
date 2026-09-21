@@ -1,14 +1,47 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { DetectedModelSchema } from '../../core/discovery/detection.js';
 import {
   nativeCliCatalogToDetectedModels,
+  parseAntigravityModelCatalog,
   parseCodexNativeModelCatalog,
   parseCommandCodeNativeModelCatalog,
+  parseCopilotHelpConfigCatalog,
   parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
 } from './cli-model-catalog.js';
+
+// Two-model slice of `codex debug models --bundled` (codex-cli 0.153.3, captured 2026-09-08).
+const CODEX_BUNDLED_SLICE = {
+  models: [
+    {
+      slug: 'gpt-5.6-sol',
+      display_name: 'GPT-5.6-Sol',
+      default_reasoning_level: 'low',
+      supported_reasoning_levels: [
+        { effort: 'low', description: 'Fast responses with lighter reasoning' },
+        { effort: 'medium', description: 'Balances speed and reasoning depth for everyday tasks' },
+        { effort: 'high', description: 'Greater reasoning depth for complex problems' },
+        { effort: 'xhigh', description: 'Extra high reasoning depth for complex problems' },
+        { effort: 'max', description: 'Maximum reasoning depth for the hardest problems' },
+        { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
+      ],
+    },
+    {
+      slug: 'gpt-5.5',
+      display_name: 'GPT-5.5',
+      default_reasoning_level: 'medium',
+      supported_reasoning_levels: [
+        { effort: 'low', description: 'Fast responses with lighter reasoning' },
+        { effort: 'medium', description: 'Balances speed and reasoning depth for everyday tasks' },
+        { effort: 'high', description: 'Greater reasoning depth for complex problems' },
+        { effort: 'xhigh', description: 'Extra high reasoning depth for complex problems' },
+      ],
+    },
+  ],
+};
 
 describe('native CLI model catalogs', () => {
   it('preserves native Codex catalog facts while leaving version admission to canonical detection', () => {
@@ -166,6 +199,8 @@ describe('native CLI model catalogs', () => {
         displayName: 'GPT-5.6 Luna',
         contextWindow: 500_000,
         nativeReasoningEfforts: lunaLadder,
+        supportsToolCalls: true,
+        outputModalities: ['text'],
       },
       {
         selectionId: 'openai/gpt-5.6-luna-fast',
@@ -173,6 +208,8 @@ describe('native CLI model catalogs', () => {
         displayName: 'GPT-5.6 Luna Fast',
         contextWindow: 500_000,
         nativeReasoningEfforts: lunaLadder,
+        supportsToolCalls: true,
+        outputModalities: ['text'],
       },
       {
         selectionId: 'opencode-go/gpt-5.6-luna',
@@ -180,6 +217,8 @@ describe('native CLI model catalogs', () => {
         displayName: 'GPT-5.6 Luna',
         contextWindow: 1_050_000,
         nativeReasoningEfforts: lunaLadder,
+        supportsToolCalls: true,
+        outputModalities: ['text'],
       },
       {
         selectionId: 'opencode-go/minimax-m3',
@@ -187,6 +226,8 @@ describe('native CLI model catalogs', () => {
         displayName: 'MiniMax-M3',
         contextWindow: 1_000_000,
         nativeReasoningEfforts: ['none', 'thinking'],
+        supportsToolCalls: true,
+        outputModalities: ['text'],
       },
       {
         selectionId: 'opencode-go/qwen3.7-max',
@@ -194,12 +235,155 @@ describe('native CLI model catalogs', () => {
         displayName: 'Qwen3.7 Max',
         contextWindow: 1_000_000,
         nativeReasoningEfforts: [],
+        supportsToolCalls: true,
+        outputModalities: ['text'],
       },
     ]);
 
     // The two claims made about `openai/gpt-5.6-luna`: `max` is offered, `minimal` is not.
     expect(catalog.models[0]?.nativeReasoningEfforts).toContain('max');
     expect(catalog.models[0]?.nativeReasoningEfforts).not.toContain('minimal');
+  });
+
+  it('reads verbose capabilities into supportsToolCalls and outputModalities', () => {
+    const catalog = parseKiloNativeModelCatalog(
+      [
+        'kilo/google/lyria-3-pro-preview',
+        '{',
+        '  "name": "Lyria 3 Pro",',
+        '  "capabilities": { "toolcall": false, "output": { "text": false } }',
+        '}',
+        'kilo/z-ai/glm-5.3',
+        '{',
+        '  "name": "GLM-5.3",',
+        '  "capabilities": { "toolcall": true, "output": { "text": true } }',
+        '}',
+      ].join('\n'),
+    );
+    if (catalog === null) throw new Error('Expected the inline kilo listing to parse');
+
+    expect(catalog.models).toEqual([
+      {
+        selectionId: 'kilo/google/lyria-3-pro-preview',
+        nativeOrder: 0,
+        displayName: 'Lyria 3 Pro',
+        supportsToolCalls: false,
+        outputModalities: [],
+      },
+      {
+        selectionId: 'kilo/z-ai/glm-5.3',
+        nativeOrder: 1,
+        displayName: 'GLM-5.3',
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+      },
+    ]);
+  });
+
+  it('reads a verbose block limit and drops its cost from kilo entries and detected models', () => {
+    const catalog = parseKiloNativeModelCatalog(
+      [
+        'kilo/kilo-auto/pro',
+        '{',
+        '  "name": "Auto Pro",',
+        '  "cost": { "input": 0.25, "output": 1.5 },',
+        '  "limit": { "context": 200000 }',
+        '}',
+        'kilo/kilo-auto/free',
+        '{',
+        '  "name": "Auto Free",',
+        '  "cost": { "input": 0, "output": 0, "cache": { "read": 0, "write": 0 } }',
+        '}',
+      ].join('\n'),
+    );
+    if (catalog === null) throw new Error('Expected the inline kilo listing to parse');
+
+    expect(catalog.models).toEqual([
+      {
+        selectionId: 'kilo/kilo-auto/pro',
+        nativeOrder: 0,
+        displayName: 'Auto Pro',
+        contextWindow: 200000,
+      },
+      {
+        selectionId: 'kilo/kilo-auto/free',
+        nativeOrder: 1,
+        displayName: 'Auto Free',
+      },
+    ]);
+    expect(nativeCliCatalogToDetectedModels(catalog)).toEqual([
+      {
+        id: 'kilo/kilo-auto/pro',
+        nativeOrder: 0,
+        displayName: 'Auto Pro',
+        contextLength: 200000,
+      },
+      {
+        id: 'kilo/kilo-auto/free',
+        nativeOrder: 1,
+        displayName: 'Auto Free',
+      },
+    ]);
+  });
+
+  it('parses a verbose block that publishes no cost and one that publishes a partial cost', () => {
+    const catalog = parseKiloNativeModelCatalog(
+      [
+        'kilo/anthropic/claude-sonnet-4-6',
+        '{',
+        '  "name": "Claude Sonnet 4.6"',
+        '}',
+        'kilo/kilo-auto/partial',
+        '{',
+        '  "name": "Partial Price",',
+        '  "cost": { "input": 0.25 }',
+        '}',
+      ].join('\n'),
+    );
+    if (catalog === null) throw new Error('Expected the inline kilo listing to parse');
+
+    expect(catalog.models[0]).toEqual({
+      selectionId: 'kilo/anthropic/claude-sonnet-4-6',
+      nativeOrder: 0,
+      displayName: 'Claude Sonnet 4.6',
+    });
+    expect(catalog.models[1]).toEqual({
+      selectionId: 'kilo/kilo-auto/partial',
+      nativeOrder: 1,
+      displayName: 'Partial Price',
+    });
+  });
+
+  it('carries no pricing key on any parsed catalog entry', () => {
+    const codex = parseCodexNativeModelCatalog(JSON.stringify(CODEX_BUNDLED_SLICE));
+    if (codex === null) throw new Error('Expected the bundled Codex slice to parse');
+    const cursor = parseCursorNativeModelCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/cursor/list-models.txt'),
+        'utf-8',
+      ),
+    );
+    if (cursor === null) throw new Error('Expected admitted Cursor fixture to parse');
+    const commandCode = parseCommandCodeNativeModelCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/command-code/list-models.txt'),
+        'utf-8',
+      ),
+    );
+    if (commandCode === null) throw new Error('Expected the Command Code fixture to parse');
+    const copilot = parseCopilotHelpConfigCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/copilot/help-config.txt'),
+        'utf-8',
+      ),
+    );
+    if (copilot === null) throw new Error('Expected the copilot help config fixture to parse');
+
+    for (const catalog of [codex, cursor, commandCode, copilot]) {
+      expect(
+        catalog.models.every((model) => !('pricingInput' in model) && !('pricingOutput' in model)),
+      ).toBe(true);
+    }
   });
 
   it('keeps bare id rows beside verbose block rows in one listing', () => {
@@ -301,6 +485,13 @@ describe('native CLI model catalogs', () => {
     expect(catalog.models[0]).toEqual({
       selectionId: 'deepseek/deepseek-v4-pro',
       nativeOrder: 0,
+      detail: 'hybrid-attention long-context reasoning',
+    });
+    expect(catalog.models[1]).toEqual({
+      selectionId: 'deepseek/deepseek-v4-flash',
+      nativeOrder: 1,
+      detail: 'fast hybrid-attention reasoning',
+      nativeDefault: true,
     });
     // First-party ids drop the `provider/` prefix; both shapes are selectable.
     expect(catalog.models.some((model) => model.selectionId === 'claude-sonnet-5')).toBe(true);
@@ -316,6 +507,7 @@ describe('native CLI model catalogs', () => {
     ).toEqual({
       selectionId: 'deepseek/deepseek-v4-flash',
       nativeOrder: 1,
+      detail: 'fast hybrid-attention reasoning',
       nativeDefault: true,
     });
     expect(
@@ -326,9 +518,63 @@ describe('native CLI model catalogs', () => {
     expect(nativeCliCatalogToDetectedModels(catalog)[0]).toEqual({
       id: 'deepseek/deepseek-v4-pro',
       nativeOrder: 0,
+      detail: 'hybrid-attention long-context reasoning',
     });
     expect(parseCommandCodeNativeModelCatalog('Usage: cmd --list-models')).toBeNull();
     expect(parseCommandCodeNativeModelCatalog('Available models\n\n')).toBeNull();
+  });
+
+  it('accepts a cmd id that carries a `:` tag and keeps the blurb as detail', () => {
+    const catalog = parseCommandCodeNativeModelCatalog(
+      [
+        'Available models  ·  2 models',
+        '',
+        'Open Source',
+        '',
+        'meituan/longcat-2.0:free                 FREE trillion-parameter agentic coding with 1M context',
+        'deepseek/deepseek-v4-flash             fast hybrid-attention reasoning (default)',
+      ].join('\n'),
+    );
+    if (catalog === null) throw new Error('Expected the inline Command Code listing to parse');
+
+    expect(catalog.models).toEqual([
+      {
+        selectionId: 'meituan/longcat-2.0:free',
+        nativeOrder: 0,
+        detail: 'FREE trillion-parameter agentic coding with 1M context',
+      },
+      {
+        selectionId: 'deepseek/deepseek-v4-flash',
+        nativeOrder: 1,
+        detail: 'fast hybrid-attention reasoning',
+        nativeDefault: true,
+      },
+    ]);
+  });
+
+  it('carries detail and capability flags onto detected models', () => {
+    expect(
+      nativeCliCatalogToDetectedModels({
+        tool: 'command-code',
+        models: [
+          {
+            selectionId: 'x/y',
+            nativeOrder: 0,
+            detail: 'd',
+            supportsToolCalls: false,
+            outputModalities: [],
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        id: 'x/y',
+        nativeOrder: 0,
+        detail: 'd',
+        supportsToolCalls: false,
+        outputModalities: [],
+      },
+    ]);
   });
 
   it('leaves an unrelated trailing parenthetical on the display name', () => {
@@ -382,5 +628,192 @@ describe('native CLI model catalogs', () => {
     if (detected === undefined) throw new Error('Expected one detected model');
 
     expect(detected.contextLength).toBe(contextWindow);
+  });
+
+  describe('parseCopilotHelpConfigCatalog', () => {
+    it('reads the model enum from the recorded help output in the order the tool prints it', () => {
+      const stdout = readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/copilot/help-config.txt'),
+        'utf-8',
+      );
+      const catalog = parseCopilotHelpConfigCatalog(stdout);
+      if (catalog === null) throw new Error('Expected the copilot help config fixture to parse');
+
+      expect(catalog.tool).toBe('copilot');
+      expect(catalog.models.map((model) => model.selectionId)).toEqual([
+        'claude-sonnet-5',
+        'claude-sonnet-4.6',
+        'claude-sonnet-4.5',
+        'claude-haiku-4.5',
+        'claude-fable-5',
+        'claude-opus-5',
+        'claude-opus-4.8',
+        'claude-opus-4.8-fast',
+        'claude-opus-4.7',
+        'claude-opus-4.6',
+        'claude-opus-4.5',
+        'gpt-5.6-sol',
+        'gpt-5.6-terra',
+        'gpt-5.6-luna',
+        'gpt-5.5',
+        'gpt-5.4',
+        'gpt-5.3-codex',
+        'gpt-5.4-mini',
+        'gpt-5-mini',
+        'mai-code-1-flash-picker',
+        'gemini-3.1-pro-preview',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash',
+        'grok-4.5',
+        'kimi-k2.7-code',
+      ]);
+      expect(catalog.models.map((model) => model.nativeOrder)).toEqual(
+        Array.from({ length: 25 }, (_, index) => index),
+      );
+    });
+
+    it('stops at the config key that follows the enum', () => {
+      const catalog = parseCopilotHelpConfigCatalog(
+        [
+          '  `model`: AI model to use for Copilot CLI.',
+          '    - "gpt-5.5"',
+          '  `contextTier`: context window tier for tiered-pricing models.',
+          '    - "long_context"',
+        ].join('\n'),
+      );
+
+      expect(catalog?.models.map((model) => model.selectionId)).toEqual(['gpt-5.5']);
+    });
+
+    it('returns null when the help output carries no readable model enum', () => {
+      expect(
+        parseCopilotHelpConfigCatalog(
+          'Configuration Settings:\n\n  `banner`: frequency of showing animated banner.',
+        ),
+      ).toBeNull();
+      expect(
+        parseCopilotHelpConfigCatalog('  `model`: AI model to use for Copilot CLI.'),
+      ).toBeNull();
+    });
+  });
+
+  describe('codex supported_reasoning_levels', () => {
+    it('reads the per-model ladder and default the bundled listing publishes', () => {
+      const catalog = parseCodexNativeModelCatalog(JSON.stringify(CODEX_BUNDLED_SLICE));
+      if (catalog === null) throw new Error('Expected the bundled Codex slice to parse');
+
+      expect(catalog.models[0]).toEqual({
+        selectionId: 'gpt-5.6-sol',
+        displayName: 'GPT-5.6-Sol',
+        nativeOrder: 0,
+        nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+        nativeDefaultReasoningEffort: 'low',
+      });
+      expect(catalog.models[1]).toEqual({
+        selectionId: 'gpt-5.5',
+        displayName: 'GPT-5.5',
+        nativeOrder: 1,
+        nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+        nativeDefaultReasoningEffort: 'medium',
+      });
+    });
+
+    it('keeps the ultra rung the configurable effort enum cannot represent', () => {
+      // SPEC-D5: the parser reports what the tool publishes; gating is a different sprint's job.
+      const catalog = parseCodexNativeModelCatalog(JSON.stringify(CODEX_BUNDLED_SLICE));
+      if (catalog === null) throw new Error('Expected the bundled Codex slice to parse');
+
+      expect(catalog.models[0]?.nativeReasoningEfforts).toContain('ultra');
+    });
+
+    it('fails closed when the two reasoning sources disagree', () => {
+      expect(
+        parseCodexNativeModelCatalog(
+          JSON.stringify({
+            models: [
+              {
+                slug: 'gpt-5.6-sol',
+                reasoning_efforts: ['low', 'medium'],
+                supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }],
+              },
+            ],
+          }),
+        ),
+      ).toBeNull();
+    });
+
+    it('reads a default with no ladder', () => {
+      const catalog = parseCodexNativeModelCatalog(
+        JSON.stringify({
+          models: [{ slug: 'gpt-5.5', default_reasoning_level: 'medium' }],
+        }),
+      );
+      if (catalog === null) throw new Error('Expected the default-only fixture to parse');
+
+      expect(catalog.models[0]?.nativeDefaultReasoningEffort).toBe('medium');
+      expect(catalog.models[0]).not.toHaveProperty('nativeReasoningEfforts');
+    });
+
+    it('carries the default through the strict DetectedModel boundary', () => {
+      const catalog = parseCodexNativeModelCatalog(JSON.stringify(CODEX_BUNDLED_SLICE));
+      if (catalog === null) throw new Error('Expected the bundled Codex slice to parse');
+
+      const [detected] = nativeCliCatalogToDetectedModels(catalog);
+      if (detected === undefined) throw new Error('Expected one detected model');
+
+      expect(detected).toEqual({
+        id: 'gpt-5.6-sol',
+        displayName: 'GPT-5.6-Sol',
+        nativeOrder: 0,
+        nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+        supportsReasoning: true,
+        nativeDefaultReasoningEffort: 'low',
+      });
+      const parsed = DetectedModelSchema.parse(detected);
+      expect(parsed.nativeDefaultReasoningEffort).toBe('low');
+    });
+  });
+
+  describe('parseAntigravityModelCatalog', () => {
+    it('splits the tab-separated id and display name of every real `agy models` row', () => {
+      const catalog = parseAntigravityModelCatalog(
+        readFileSync(
+          join(import.meta.dirname, '../../../testing/fixtures/antigravity/models.txt'),
+          'utf-8',
+        ),
+      );
+
+      expect(catalog?.models).toHaveLength(14);
+      expect(catalog?.models.slice(0, 3)).toEqual([
+        {
+          selectionId: 'gemini-3.8-flash-high',
+          displayName: 'Gemini 3.8 Flash (High)',
+          nativeOrder: 0,
+        },
+        {
+          selectionId: 'gemini-3.8-flash-medium',
+          displayName: 'Gemini 3.8 Flash (Medium)',
+          nativeOrder: 1,
+        },
+        {
+          selectionId: 'gemini-3.8-flash-low',
+          displayName: 'Gemini 3.8 Flash (Low)',
+          nativeOrder: 2,
+        },
+      ]);
+      expect(catalog?.models.map((model) => model.selectionId)).not.toContain('agy models');
+    });
+
+    it('keeps a row whose display name is empty and drops one without an id', () => {
+      expect(parseAntigravityModelCatalog('gemini-3.8-flash-high\t\n\tGemini 3.8 Flash')).toEqual({
+        tool: 'antigravity',
+        models: [{ selectionId: 'gemini-3.8-flash-high', nativeOrder: 0 }],
+      });
+    });
+
+    it('returns null when the listing carries no tab-separated row', () => {
+      expect(parseAntigravityModelCatalog('Fetching available models...\n\n')).toBeNull();
+      expect(parseAntigravityModelCatalog('')).toBeNull();
+    });
   });
 });

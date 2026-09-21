@@ -1,8 +1,5 @@
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
-import type { PlannerArtifactTransport } from '../schemas/task-compilation.js';
 import { typedEntries } from '../../utils/type-guards.js';
-import { assertCandidateFilesAbsent } from './candidate-admission.js';
-import { cliAdmissionError } from './cli-admission-error.js';
 import type { CliVersionScheme } from './cli-version.js';
 import type { CliEffortChannel } from './effort-channel.js';
 import type { RunnerBillingPosture } from './runner-billing.js';
@@ -55,12 +52,14 @@ export type CliAuthChannel = Readonly<{
   /**
    * Platforms where this channel's credential is an OS keychain item rather
    * than a file, so the file-copying state bridge has nothing to carry. macOS
-   * keeps the Claude Code and Cursor Agent CLI sessions in the login keychain,
+   * keeps the Claude Code, Cursor Agent CLI and Antigravity sessions in the login keychain,
    * whose default search list resolves through `HOME` and whose item is keyed
    * on the account name in `USER`; a staged child reaches it only when both
    * keep their host values.
    */
   hostKeychainPlatforms: readonly NodeJS.Platform[];
+  /** Platforms with an admitted credential bridge; omitted when no restriction is known. */
+  supportedPlatforms?: readonly NodeJS.Platform[];
 }>;
 
 /**
@@ -82,6 +81,38 @@ export function cliAuthChannelHostStateAccess(
   if (channel.stateBridge !== 'host-cli-state') return 'none';
   return channel.hostKeychainPlatforms.includes(platform) ? 'host-account' : 'bridged-files';
 }
+
+export function cliAuthChannelPlatformSupported(
+  channel: CliAuthChannel,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return channel.supportedPlatforms?.includes(platform) ?? true;
+}
+
+/** A channel that names an authentication method; `provider-dependent` is a route, not a method. */
+export type CliAuthMethod = Exclude<CliAuthChannelId, 'provider-dependent'>;
+
+/**
+ * A positive row of `docs/AUTH-METHOD-MATRIX.md`: on this exact platform and
+ * installed version the adapter forces each listed method for one invocation,
+ * and the invocation fails rather than falling back when that method's
+ * credential is absent. `id` is the bounded matrix identifier a receipt cites.
+ */
+export type CliAuthEnforcementEvidence = Readonly<{
+  id: string;
+  tool: CliToolId;
+  platform: NodeJS.Platform;
+  installedVersion: string;
+  channels: readonly CliAuthMethod[];
+}>;
+
+/**
+ * Empty because the matrix proves no admitted CLI enforceable: every one is
+ * host-configured, so no surface may offer a method as enforced.
+ */
+export const CLI_AUTH_ENFORCEMENT_EVIDENCE: readonly CliAuthEnforcementEvidence[] = Object.freeze(
+  [],
+);
 
 export type CliAuthSelection = Readonly<{ channel: CliAuthChannelId }>;
 
@@ -142,7 +173,8 @@ type ExistingCliToolId =
   | 'copilot'
   | 'kilo-code'
   | 'cursor'
-  | 'command-code';
+  | 'command-code'
+  | 'antigravity';
 
 export type CliToolId = ExistingCliToolId;
 
@@ -209,7 +241,7 @@ export const CURSOR_CLI_ADMISSION_VERDICT = 'PASS' satisfies CliAdmissionVerdict
 
 export const COMMAND_CODE_CLI_ADMISSION_VERDICT = 'PASS' satisfies CliAdmissionVerdict;
 
-export const ANTIGRAVITY_CLI_ADMISSION_VERDICT = 'OMIT' satisfies CliAdmissionVerdict;
+export const ANTIGRAVITY_CLI_ADMISSION_VERDICT = 'PASS' satisfies CliAdmissionVerdict;
 
 const ALL_ROLES = Object.freeze(['planner', 'implementer'] as const);
 const CLI_REQUIRED_PREFLIGHT_FACTS = Object.freeze([
@@ -264,6 +296,7 @@ function authChannel(
     stateBridge: CliAuthChannel['stateBridge'];
     billing: RunnerBillingPosture;
     hostKeychainPlatforms?: readonly NodeJS.Platform[];
+    supportedPlatforms?: readonly NodeJS.Platform[];
   }>,
 ): CliAuthChannel {
   return Object.freeze({
@@ -272,6 +305,9 @@ function authChannel(
     stateBridge: input.stateBridge,
     billing: input.billing,
     hostKeychainPlatforms: Object.freeze([...(input.hostKeychainPlatforms ?? [])]),
+    ...(input.supportedPlatforms === undefined
+      ? {}
+      : { supportedPlatforms: Object.freeze([...input.supportedPlatforms]) }),
   });
 }
 
@@ -374,8 +410,8 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
-    supportsEffort: false,
-    effortChannel: 'none',
+    supportsEffort: true,
+    effortChannel: 'effort-flag',
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -450,8 +486,8 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
-    supportsEffort: false,
-    effortChannel: 'none',
+    supportsEffort: true,
+    effortChannel: 'effort-flag',
     auth: authPolicy('session', [
       authChannel({
         id: 'session',
@@ -466,13 +502,13 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://github.com/github/copilot-cli',
-      testedVersion: '0.3.0',
+      testedVersion: '1.0.77',
       minimumAdmittedVersion: '0.3.0',
       versionScheme: 'semver',
-      asOf: '2026-07-31',
+      asOf: '2026-09-02',
     }),
     authDiscoveryMode: 'static-unverified',
-    modelDiscoveryMode: 'static-catalog-unverified',
+    modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
   'kilo-code': activeCliToolDeclaration({
@@ -484,7 +520,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
-    effortChannel: 'none',
+    effortChannel: 'variant',
     auth: authPolicy('provider-dependent', [
       authChannel({
         id: 'provider-dependent',
@@ -593,16 +629,41 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       reason: 'A structured session-scoped model and output adapter is not yet proven.',
     }),
   } satisfies CustomOnlyCliToolExclusion),
-  antigravity: Object.freeze({
+  antigravity: activeCliToolDeclaration({
     id: 'antigravity',
     displayName: 'Google Antigravity CLI',
+    command: 'agy',
+    executableAliases: ['agy'],
     category: 'cli',
-    admission: Object.freeze({
-      state: 'custom-only',
-      reason:
-        'Structured output, noninteractive authentication, and a safe auth probe are not proven.',
+    roles: ALL_ROLES,
+    modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
+    supportsEffort: true,
+    effortChannel: 'effort-flag',
+    auth: authPolicy('session', [
+      authChannel({
+        id: 'session',
+        env: [],
+        stateBridge: 'host-cli-state',
+        billing: 'subscription-included',
+        hostKeychainPlatforms: ['darwin'],
+        supportedPlatforms: ['darwin'],
+      }),
+    ]),
+    billing: 'subscription-included',
+    isSubscription: false,
+    sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
+    internalStatePaths: [],
+    compatibility: compatibility({
+      installUrl: 'https://antigravity.google/docs/cli',
+      testedVersion: '1.2.2',
+      minimumAdmittedVersion: '1.2.2',
+      versionScheme: 'semver',
+      asOf: '2026-09-14',
     }),
-  } satisfies CustomOnlyCliToolExclusion),
+    authDiscoveryMode: 'status-unverified',
+    modelDiscoveryMode: 'native-cli',
+    mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
+  }),
   gemini: Object.freeze({
     id: 'gemini',
     displayName: 'Gemini CLI',
@@ -637,7 +698,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
 
 export const CUSTOM_ONLY_CLI_TOOL_DEFINITIONS = Object.freeze([
   CLI_TOOL_DECLARATIONS.kiro,
-  CLI_TOOL_DECLARATIONS.antigravity,
   CLI_TOOL_DECLARATIONS.gemini,
   CLI_TOOL_DECLARATIONS.cline,
   CLI_TOOL_DECLARATIONS.qwen,
@@ -652,11 +712,6 @@ export const EXCLUDED_CLI_TOOL_IDS = Object.freeze([
   'auggie',
   'junie',
 ]);
-
-export const ANTIGRAVITY_CLI_CANDIDATE_PATHS = Object.freeze([
-  'src/engine/runners/cli-tools/antigravity.ts',
-  'src/engine/runners/cli-tools/antigravity.test.ts',
-] as const);
 
 const BASE_CLI_TOOL_TRUST = Object.freeze({
   'claude-code': cliToolTrust({
@@ -681,8 +736,12 @@ const BASE_CLI_TOOL_TRUST = Object.freeze({
     tier2AutoAllowFlags: ['--force'],
   }),
   'command-code': cliToolTrust({
-    implementerAutoAllowFlags: ['--permission-mode auto-accept'],
-    tier2AutoAllowFlags: ['--permission-mode auto-accept'],
+    implementerAutoAllowFlags: ['--yolo'],
+    tier2AutoAllowFlags: ['--yolo'],
+  }),
+  antigravity: cliToolTrust({
+    implementerAutoAllowFlags: ['--dangerously-skip-permissions'],
+    tier2AutoAllowFlags: [],
   }),
 } satisfies Record<CliToolId, CliToolTrustMetadata>);
 
@@ -710,15 +769,7 @@ function descriptor<Id extends CliToolId>(
   });
 }
 
-function assertOmittedCandidatesAbsent(): void {
-  assertCandidateFilesAbsent(
-    [...ANTIGRAVITY_CLI_CANDIDATE_PATHS],
-    cliAdmissionError.omitRequiresAbsentSource,
-  );
-}
-
 function assembleCliToolTrust(): Readonly<Record<CliToolId, CliToolTrustMetadata>> {
-  assertOmittedCandidatesAbsent();
   return Object.freeze({ ...BASE_CLI_TOOL_TRUST });
 }
 
@@ -733,6 +784,7 @@ function assembleCliToolCatalog(
     'kilo-code': descriptor(trust['kilo-code'], CLI_TOOL_DECLARATIONS['kilo-code']),
     cursor: descriptor(trust.cursor, CLI_TOOL_DECLARATIONS.cursor),
     'command-code': descriptor(trust['command-code'], CLI_TOOL_DECLARATIONS['command-code']),
+    antigravity: descriptor(trust.antigravity, CLI_TOOL_DECLARATIONS.antigravity),
   } satisfies Record<CliToolId, CliToolDescriptor>;
   return Object.freeze(catalog);
 }
@@ -740,89 +792,6 @@ function assembleCliToolCatalog(
 export const CLI_TOOL_TRUST = assembleCliToolTrust();
 export const CLI_TOOL_CATALOG = assembleCliToolCatalog(CLI_TOOL_TRUST);
 export const CLI_TOOL_IDS = Object.freeze(typedEntries(CLI_TOOL_CATALOG).map(([id]) => id));
-
-export type CliCompilerSupportState = 'required-baseline' | 'conformance-gated' | 'unsupported';
-
-export type CliCompilerEvidence = Readonly<{
-  state: CliCompilerSupportState;
-  /** The exact admitted runtime version; always empty for an unsupported tool. */
-  version: string;
-  transports: readonly PlannerArtifactTransport['kind'][];
-  terminalContract: string;
-  fixtureDate: string;
-  unsupportedReason?: string;
-}>;
-
-function compilerEvidence(evidence: CliCompilerEvidence): CliCompilerEvidence {
-  return Object.freeze({
-    ...evidence,
-    transports: Object.freeze([...evidence.transports]),
-  });
-}
-
-/**
- * The single owner of the CLI rows of the compiler support table: the engine
- * table (`src/engine/runners/compiler-capability.ts`) builds its seven CLI rows
- * from this record and adds only the capability-only fields, so the identity
- * evidence cannot diverge. The compiler path admits only the exact tested
- * runtime (REQ-019, REQ-049), so this evidence never carries a minimum, a
- * range, or a secret value.
- */
-export const CLI_COMPILER_EVIDENCE: Readonly<Record<CliToolId, CliCompilerEvidence>> =
-  Object.freeze({
-    'claude-code': compilerEvidence({
-      state: 'conformance-gated',
-      version: '2.1.232',
-      transports: Object.freeze(['stdout-final']),
-      terminalContract: 'claude-terminal-result-v1',
-      fixtureDate: '2026-08-15',
-    }),
-    codex: compilerEvidence({
-      state: 'conformance-gated',
-      version: '0.147.0',
-      transports: Object.freeze(['declared-file']),
-      terminalContract: 'codex-output-last-message-v1',
-      fixtureDate: '2026-08-15',
-    }),
-    opencode: compilerEvidence({
-      state: 'required-baseline',
-      version: '1.18.15',
-      transports: Object.freeze(['stdout-final']),
-      terminalContract: 'opencode-final-message-v1',
-      fixtureDate: '2026-08-15',
-    }),
-    copilot: compilerEvidence({
-      state: 'unsupported',
-      version: '',
-      transports: Object.freeze([]),
-      terminalContract: 'unsupported',
-      fixtureDate: '2026-08-15',
-      unsupportedReason: 'no proven non-writing programmatic planner posture in V1',
-    }),
-    'kilo-code': compilerEvidence({
-      state: 'conformance-gated',
-      version: '7.0.49',
-      transports: Object.freeze(['stdout-final']),
-      terminalContract: 'kilo-final-message-v1',
-      fixtureDate: '2026-08-15',
-    }),
-    cursor: compilerEvidence({
-      state: 'unsupported',
-      version: '',
-      transports: Object.freeze([]),
-      terminalContract: 'unsupported',
-      fixtureDate: '2026-08-15',
-      unsupportedReason: 'no proven compiler planner contract in V1',
-    }),
-    'command-code': compilerEvidence({
-      state: 'unsupported',
-      version: '',
-      transports: Object.freeze([]),
-      terminalContract: 'unsupported',
-      fixtureDate: '2026-09-01',
-      unsupportedReason: 'no proven compiler planner contract in V1',
-    }),
-  });
 
 /**
  * The only admitted CLIs with a structural, non-interactive native model
@@ -832,9 +801,11 @@ export const CLI_COMPILER_EVIDENCE: Readonly<Record<CliToolId, CliCompilerEviden
 export const NATIVE_CLI_CATALOG_TOOL_IDS = Object.freeze([
   'codex',
   'opencode',
+  'copilot',
   'kilo-code',
   'cursor',
   'command-code',
+  'antigravity',
 ] as const satisfies readonly CliToolId[]);
 
 export function hasNativeCliCatalog(tool: string): boolean {

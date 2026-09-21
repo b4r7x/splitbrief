@@ -29,7 +29,6 @@ const NEXT_ACTION_LABELS: Record<
   'prepare-runner': { label: 'Set up the configured runner' },
   'clean-or-isolate-repo': { label: 'Clean or isolate repo' },
   'raise-context': { label: 'Raise context' },
-  'set-budget': { label: 'Set budget' },
   exit: { label: 'Exit' },
 };
 
@@ -39,7 +38,6 @@ const NEXT_ACTION_PRIORITY: ReadinessNextActionKind[] = [
   'prepare-runner',
   'clean-or-isolate-repo',
   'raise-context',
-  'set-budget',
   'continue',
   'exit',
 ];

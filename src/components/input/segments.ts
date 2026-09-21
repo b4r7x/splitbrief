@@ -114,7 +114,10 @@ export function buildSegments(params: BuildSegmentsParams): SegmentResult {
   if (!value) {
     if (placeholder && (!focus || keepPlaceholderWhileFocused === true)) {
       return {
-        preCursor: [{ value: formatText(placeholder, true), type: 'placeholder' }],
+        preCursor: [
+          ...(focus && showCursor ? [{ value: ' ', type: 'cursor' as const }] : []),
+          { value: formatText(placeholder, true), type: 'placeholder' },
+        ],
         postCursor: [],
       };
     }

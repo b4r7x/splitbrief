@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { analyzeBriefDrift } from './analyze.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { ACCEPTED_SCOPE_CASES } from '#testing/helpers/factories/scope-attribution-cases.js';
+import { SCOPE_ENTRY_CASES } from '#testing/helpers/scope-entries.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../../core/evidence/ledger-state.js';
@@ -59,7 +60,7 @@ describe('analyzeBriefDrift', () => {
     expect(report.briefHash).toBeNull();
   });
 
-  it('warns about an extra changed file when no out-of-bounds is declared', () => {
+  it('undeclared path is error without outOfBounds', () => {
     const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' })];
     const report = analyzeBriefDrift({
       tasks,
@@ -68,10 +69,48 @@ describe('analyzeBriefDrift', () => {
       preRunChangedFiles: [],
     });
     const finding = report.findings.find((f) => f.code === 'out_of_scope_file');
-    expect(finding?.severity).toBe('warning');
+    expect(finding?.severity).toBe('error');
     expect(finding?.file).toBe('src/extra.ts');
+    expect(report.passed).toBe(false);
+  });
+
+  it('second declared file changed by the run is not out_of_scope_file', () => {
+    const tasks = [
+      makeTask({
+        id: 'T001',
+        file: 'src/a.ts',
+        files: ['src/a.ts', 'src/a.test.ts'],
+        status: 'done',
+      }),
+    ];
+    const report = analyzeBriefDrift({
+      tasks,
+      changedFiles: ['src/a.ts', 'src/a.test.ts'],
+      diff: '',
+      preRunChangedFiles: [],
+    });
+    expect(report.findings).toEqual([]);
+    expect(report.expectedFiles).toEqual(['src/a.test.ts', 'src/a.ts']);
     expect(report.passed).toBe(true);
   });
+
+  it.each(SCOPE_ENTRY_CASES)(
+    'prose in-bounds bullet is accepted: $name',
+    ({ entry, matches, nonMatches }) => {
+      const tasks = [
+        makeTask({ id: 'T001', file: 'src/a.ts', status: 'done', scope: { inBounds: [entry] } }),
+      ];
+      const report = analyzeBriefDrift({
+        tasks,
+        changedFiles: ['src/a.ts', ...matches, ...nonMatches],
+        diff: '',
+        preRunChangedFiles: [],
+      });
+      expect(
+        report.findings.filter((f) => f.code === 'out_of_scope_file').map((f) => f.file),
+      ).toEqual(nonMatches);
+    },
+  );
 
   it('errors on extra changed file when any task declares out-of-bounds', () => {
     const tasks = [
@@ -526,6 +565,38 @@ describe('analyzeBriefDrift', () => {
     expect(report.findings.find((x) => x.code === 'missing_evidence')).toBeUndefined();
   });
 
+  it('skipped test is missing_evidence', () => {
+    const task = makeTask({
+      id: 'T001',
+      file: 'src/a.ts',
+      status: 'done',
+      evidence: ['hello returns greeting'],
+    });
+    const ledger = withUpdatedTask(
+      createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] }),
+      'T001',
+      (t) => ({
+        ...t,
+        status: 'done',
+        observedEvidence: ['lint passed'],
+        validation: [
+          { stage: 'lint', passed: true },
+          { stage: 'test', passed: true, skipped: true, skippedReason: 'no affected test file' },
+        ],
+      }),
+    );
+    const report = analyzeBriefDrift({
+      tasks: [task],
+      changedFiles: ['src/a.ts'],
+      diff: '',
+      ledger,
+      preRunChangedFiles: [],
+    });
+    const finding = report.findings.find((x) => x.code === 'missing_evidence');
+    expect(finding?.severity).toBe('warning');
+    expect(finding?.taskId).toBe('T001');
+  });
+
   it('treats a ledger-unattributed file absent from the run-start baseline as run-produced', () => {
     const task = makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' });
     const ledger = withUpdatedTask(
@@ -542,7 +613,7 @@ describe('analyzeBriefDrift', () => {
     });
     const finding = report.findings.find((f) => f.file === 'src/unattributed.ts');
     expect(finding?.code).toBe('out_of_scope_file');
-    expect(finding?.severity).toBe('warning');
+    expect(finding?.severity).toBe('error');
     expect(finding?.message).not.toContain('pre-existing');
   });
 
@@ -624,10 +695,10 @@ describe('analyzeBriefDrift', () => {
     });
     const finding = report.findings.find((f) => f.file === 'src/legacy.ts');
     expect(finding?.code).toBe('out_of_scope_file');
-    expect(finding?.severity).toBe('warning');
+    expect(finding?.severity).toBe('error');
   });
 
-  it('still warns out-of-scope for a run-attributed file that no Task Brief targets', () => {
+  it('still errors out-of-scope for a run-attributed file that no Task Brief targets', () => {
     const task = makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' });
     const ledger = withUpdatedTask(
       createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] }),
@@ -643,8 +714,8 @@ describe('analyzeBriefDrift', () => {
     });
     const finding = report.findings.find((f) => f.file === 'src/extra.ts');
     expect(finding?.code).toBe('out_of_scope_file');
-    expect(finding?.severity).toBe('warning');
-    expect(report.passed).toBe(true);
+    expect(finding?.severity).toBe('error');
+    expect(report.passed).toBe(false);
   });
 
   it('errors when diff exists but every task is failed/skipped', () => {

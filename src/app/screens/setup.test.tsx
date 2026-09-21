@@ -356,7 +356,29 @@ describe('SetupScreen', () => {
 
     // Two ready tools and no escalation: the panel fits inside the 18-row viewport, frame included.
     expect(lines.length).toBeLessThanOrEqual(18);
-    expect(lines).toHaveLength(17);
+    expect(lines).toHaveLength(18);
+  });
+
+  // Setup is where a first run is told what SPLITBRIEF will do on its behalf. It no longer stages,
+  // commits or tags a checkpoint, and it never hands a brief to the planner to write, so none of
+  // that may be promised here. What the screen does still decide is the crew.
+  it('promises no retired automation and keeps the build and review seats', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    const request = beginDiscovery();
+    freshDiscovery(request, 1);
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
+      cols: 120,
+      rows: 40,
+    });
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '').toLowerCase();
+    ui.unmount();
+
+    for (const retired of ['commit', 'checkpoint', 'per-task', 'show spend', 'takes over']) {
+      expect(frame).not.toContain(retired);
+    }
+    for (const seat of ['build', 'review']) expect(frame).toContain(seat);
   });
 
   it('says what escape does and does it', async () => {
@@ -420,7 +442,7 @@ describe('SetupScreen', () => {
     expect(frame).toContain(PRESET_SECTION);
   });
 
-  it('yields the ready-made crews, never a seat, and keeps a save error to one line at the smallest supported viewport', async () => {
+  it('yields the blank spacer rows, never a seat, and keeps a save error to one line at the smallest supported viewport', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
     configStore.__testReset({
       projectDir: '/tmp/project',
@@ -462,8 +484,9 @@ describe('SetupScreen', () => {
     expect(lines.filter((line) => line.includes('Failed to save config'))).toHaveLength(1);
     expect(lines.join('\n')).not.toContain('splitbrief.yaml');
     expect(lines.join('\n')).toContain('Continue');
-    // The ready-made crews are the last block to yield; the three seats never do.
-    expect(lines.join('\n')).not.toContain('Claude crew, Codex review');
+    // The blank spacer rows are the last block to yield; the crews and the three seats never do.
+    expect(lines.length).toBeLessThanOrEqual(18);
+    expect(lines.join('\n')).toContain('Claude crew, Codex review');
     for (const seat of ['PLAN', 'BUILD', 'REVIEW']) expect(lines.join('\n')).toContain(seat);
   });
 
@@ -683,10 +706,12 @@ describe('SetupScreen', () => {
       await flushEffects();
       await continueSetup(ui);
 
-      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Start is blocked'));
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('The primary blocker.'));
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('2 checks hidden');
-      expect(frame.indexOf('blocker.first')).toBeLessThan(frame.indexOf('warning.first'));
+      expect(frame).toContain('Another hidden warning.');
+      expect(frame.indexOf('The primary blocker.')).toBeLessThan(
+        frame.indexOf('A lower-priority warning.'),
+      );
       expect(frame).toContain('r retry');
       expect(frame).toContain('esc back');
       expect(frame).toContain('s settings');
@@ -730,11 +755,14 @@ describe('SetupScreen', () => {
 
         await continueSetup(ui);
         await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
-        await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Preparing your tools'));
+        await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Checking tools'));
+        expect(ui.lastFrame() ?? '').toContain(CREW_TITLE);
 
         if (exitMode === 'Escape') {
+          // The crew panel never left, so the cancelled attempt is what this waits on.
           ui.stdin.write(ESC);
-          await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
+          await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+          expect(ui.lastFrame() ?? '').toContain(CREW_TITLE);
         } else {
           ui.unmount();
         }
@@ -784,10 +812,14 @@ describe('SetupScreen', () => {
       await flushEffects();
       await continueSetup(ui);
 
-      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Preparation failed'));
+      await vi.waitFor(() =>
+        expect(ui.lastFrame() ?? '').toContain('The runner check did not complete.'),
+      );
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('The runner check did not complete.');
-      expect(frame.indexOf('blocker.first')).toBeLessThan(frame.indexOf('warning.first'));
+      expect(frame).toContain('Tool preparation · Failed');
+      expect(frame.indexOf('The primary blocker.')).toBeLessThan(
+        frame.indexOf('A lower-priority warning.'),
+      );
       expect(frame).toContain('r retry');
       expect(frame).toContain('esc back');
       expect(frame).toContain('s settings');

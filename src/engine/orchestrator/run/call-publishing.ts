@@ -96,15 +96,10 @@ export function withPlannerCallPublishing(
     isAvailable: () => planner.isAvailable(),
     getVersion: () => planner.getVersion(),
     capabilities: planner.capabilities,
-    plan: (opts) =>
-      planner.plan({
-        ...opts,
-        callbacks: withPlannerCallbacks(opts.callbacks, ctx),
-      }),
-    quickPlan: (opts) =>
-      planner.quickPlan({
-        ...opts,
-        callbacks: withPlannerCallbacks(opts.callbacks, ctx),
+    runPhase: (input) =>
+      planner.runPhase({
+        ...input,
+        callbacks: withPlannerCallbacks(input.callbacks, ctx),
       }),
     regenerate: (opts) =>
       planner.regenerate({

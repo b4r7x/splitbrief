@@ -48,9 +48,9 @@ flowchart LR
   Operations -->|"store.use(selector)"| React
 ```
 
-The engine publishes events through the EventBus. `createTuiSink()` in `src/features/workflow/tui-sink.ts` returns `addEvent` -- `addEvent` in `src/stores/workflow/actions/event.ts`, which dispatches each event synchronously to workflow sub-stores in a fixed order: safe event log, tasks, tokens, lifecycle, and operations. React 19 + Ink batch these synchronous updates into one commit, so subscribers see a consistent snapshot.
+The engine publishes events through the EventBus. `addTuiEvent` in `src/features/workflow/tui-sink.ts` bounds each event and hands it to `addEvent` in `src/stores/workflow/actions/event.ts`, which dispatches each event synchronously to workflow sub-stores in a fixed order: safe event log, tasks, tokens, lifecycle, and operations. React 19 + Ink batch these synchronous updates into one commit, so subscribers see a consistent snapshot.
 
-This is the only event path from engine to UI. UI composition boundaries may call engine read/run APIs explicitly — for example `useWorkflowRunner()` starts `runWorkflow()`, and command-context wiring can invoke snapshot or handoff functions — but engine events still flow into render state through stores, not direct component imports.
+This is the only event path from engine to UI. UI composition boundaries may call engine read/run APIs explicitly — for example `useWorkflowRunner()` starts `runWorkflow()`, and command-context wiring can invoke snapshot functions — but engine events still flow into render state through stores, not direct component imports.
 
 Store modules may import engine types with `import type` (`EngineEvent`, detection service types), but they must not import engine values. Engine modules do not import store values; they publish events and receive explicit inputs.
 
@@ -58,7 +58,7 @@ Store modules may import engine types with `import type` (`EngineEvent`, detecti
 
 Cancellation has the same shape in every path. UI cancel first records a local cancellation intent so the screen stops spinning immediately, then the engine publishes `workflow_cancelled` with a reason such as `user_cancelled`. Both paths terminalize running operations with `endedAt` and `durationMs`; late `runner_call_error(status: aborted)` or final cost events are accepted idempotently.
 
-When the workflow needs a human decision -- approve a spec, answer a question, confirm a cost -- it uses a separate mechanism: the engine awaits a promise, and the UI resolves it when the user acts. These blocking callbacks are distinct from the fire-and-forget event path. The approval stores (`src/stores/approval-prompt/`, `src/stores/cost-approval/`) and the `useInputMode` hook manage this.
+When the workflow needs a human decision -- approve a spec, answer a question, confirm a write -- it uses a separate mechanism: the engine awaits a promise, and the UI resolves it when the user acts. These blocking callbacks are distinct from the fire-and-forget event path. The approval store (`src/stores/approval-prompt/`) and the `useInputMode` hook manage this.
 
 ---
 
@@ -74,14 +74,15 @@ Runtime state of the active workflow run.
 - **tokensStore** -- token usage, cost, pricing context, per-phase breakdowns.
 - **operationsStore** -- active/last normalized runner operation. Terminal states carry frozen `endedAt` / `durationMs`, and running states stay compact. Runner warnings are kept only while the call is running and only when their surface is `status`, `activity`, or `transcript`. They are grouped by fingerprint/code/source/surface with count, first/last timestamps, latest message, and max severity.
 - **conversationScrollStore** -- scroll offset for the conversation view.
-- **abortStore** -- armed-abort indicator (`armed`: `none` / `interrupt` / `cancel` / `exit`, 2s auto-clear).
+- **stopStore** -- the run's stop state: the `intent` the operator chose (`none` / `stop-now` / `pause-after-brief` / `end-run` / `quit`), the `phase` it has reached (`idle` → `requested` → `terminating` → `forcing` → `parked` / `ended`), when it was asked for, and the parked brief with the resolver that resumes it. There is no armed-intent ladder: one press opens the sheet, one row applies.
 - **streamingOutputStore** -- live implementer output lines.
+- **transcriptTailStore** -- the rows and scroll units the blocks after the run's own events add, so the keyboard scrolls the document the screen painted rather than stopping at the last event.
 - **reviewStore** -- which file is under review, the scroll offset, and the rendered Markdown row height.
 - **attachmentsStore** -- files attached to the next user message.
 
 ### Navigation -- `src/stores/navigation/`
 
-- **routerStore** -- current screen (`home` | `workflow` | `summary` | `setup`) plus screen-specific data (feature name, resume state, summary, summary status). Validates transitions against a fixed map. Session selection routes resumable interrupted sessions to `workflow`; sessions with a persisted summary open `summary` with their terminal status.
+- **routerStore** -- current screen (`home` | `workflow` | `setup`) plus screen-specific data. Validates transitions against a fixed map. The `workflow` route carries the run itself: a `RunRecord` (`src/core/sessions/run-record.ts`) and whether a process in this session is driving it (`execution: { kind: 'local'; prepared; steer? } | { kind: 'at-rest' }`). Every session selection lands there — `handleSessionSelect` reads the record, replays the history and navigates at rest, whatever the run did. The record is complete before the route changes, so the screen does no disk IO; `routerStore.updateRun({ run, execution? })` re-reads it in place when the run loop returns or a command changes its checkpoint.
 
 ### UI -- `src/stores/ui/`
 
@@ -90,6 +91,7 @@ Runtime state of the active workflow run.
 - **controlsStore** -- sidebar visibility, input mode echo.
 - **terminalSizeStore** -- reactive terminal cols/rows, subscribes to resize events.
 - **inputHeightStore** -- current composer height in rows.
+- **composerLiveStore** -- whether the composer is empty right now. Session draft persistence lives in `src/stores/ui/session-drafts.ts`, backed by each session’s `draft.json`; departure flushes pending writes before leaving or quitting.
 - **inputHistoryStore** -- command history with disk persistence.
 - **commandPaletteMruStore** -- most-recently-used entries for the command palette.
 - **projectFilesStore** -- refresh invalidation tick for project-file completion; the composer owns the async file read and local suggestion list.
@@ -107,7 +109,7 @@ Runtime state of the active workflow run.
 
 - **modelCacheStore** -- provider model lists with TTL-based expiry.
 
-### Approval -- `src/stores/approval-prompt/`, `src/stores/cost-approval/`
+### Approval -- `src/stores/approval-prompt/`
 
 Promise-based gates. `openApprovalPrompt(request)` returns a promise. The store holds the pending request and its `resolve` function. The UI renders the prompt, the user acts, the component calls `closeApprovalPrompt(response)`, and the promise resolves. The engine continues.
 
@@ -135,7 +137,6 @@ Use `store.use(selector)` when reading one store. Use `useStores()` when reading
 |---|---|---|
 | `home` | `HomeScreen` | `src/app/screens/home.tsx` |
 | `workflow` | `WorkflowScreen` | `src/app/screens/workflow.tsx` |
-| `summary` | `SummaryScreen` | `src/app/screens/summary.tsx` |
 | `setup` | `SetupScreen` | `src/app/screens/setup.tsx` |
 
 Features are vertical slices. Each `src/features/<name>/` owns its screen (or overlay/picker), local components in `components/`, local hooks in `hooks/`. Features never import from each other. Shared code lives in `src/components/`, `src/hooks/`, `src/utils/`.
@@ -146,18 +147,19 @@ Features are vertical slices. Each `src/features/<name>/` owns its screen (or ov
 
 The main screen during execution. Key hooks:
 
-- **`useWorkflowRunner()`** -- starts the engine via `runWorkflow()`, passing `tuiSink: createTuiSink()` and managing the run lifecycle via an `AbortController`. The EventBus is created inside the engine (`runWorkflow` init wires the `tuiSink` to it). Returns `startedAt` and `handleResume`.
+- **`useWorkflowRunner()`** -- starts the engine via `runWorkflow()`, passing `tuiSink: addTuiEvent` and managing the run lifecycle via an `AbortController`. The EventBus is created inside the engine (`runWorkflow` init wires the `tuiSink` to it). Returns `startedAt` and `handleResume`.
 - **`useInputMode()`** -- manages three input modes: `normal` (typing), `review` (approve/reject), `question` (answering planner). `setReviewMode()` and `setQuestionMode()` return promises -- the engine blocks until the user acts, then the promise resolves.
-- **`useWorkflowKeys()`** -- workflow-local keyboard shortcuts: Ctrl-D toggles the latest diff locally, plus review/conversation arrow navigation. Ctrl-C abort/exit handling lives in `src/app/keys.ts`; attached-client Ctrl-D detach is handled in `WorkflowScreen`.
-- **`useIpcClient()`** -- connects to a running workflow via Unix socket for attach mode.
+- **`useWorkflowKeys()`** -- workflow-local keyboard shortcuts: Ctrl-D toggles the latest diff locally, plus review/conversation arrow navigation. Stop now (`ctrl+c`) and the `esc` that opens the stop sheet live in `src/app/keys.ts`.
 
-Key components: `Header` (phase rail), `ConversationFlow` (row-based event stream), `Sidebar`, `Composer`, `InputFooter` (byline), `ApprovalPrompt`, `CostApprovalPromptConnected`, `QuestionPrompt`.
+Key components: `Header` (phase rail), `ConversationFlow` (row-based event stream), `Sidebar`, `Composer`, `InputFooter` (byline), `ApprovalPrompt`, `QuestionPrompt`.
+
+The **Build progress block** is fixed chrome under the header rail (`BuildProgressBlock`, `src/features/workflow/components/build-progress.tsx`, rendered by the workflow page inside `ScreenShell`'s header). `deriveBuildProgress` (`src/features/workflow/display/build-progress.ts`) reads task, lifecycle and operations state and returns five facts — counts (`3/7 briefs passed`, plus `escalated` / `failed` only when non-zero), `attempt N of M`, the ETA (`ETA ~4m`, or `ETA unavailable: no brief finished yet` — never invented before a brief has finished), the activity line (the seat and what it is doing, or the gate command it is inside), and freshness (`last event 3s ago`, or `No update from <tool> for 74s` past `UI_IDLE_WARN_MS`). The same five facts appear at every width, regrouped rather than dropped: two rows at 120 columns and wider, four at 80, five below. The only fraction in the block is passed briefs. Token usage and monetary estimates appear only in the explicitly opened `/usage` overlay; the sidebar and closed-run ledger do not show them. There is no Show spend control.
 
 `Sidebar` asks `layout/rect.ts` for its task-title budget (`getSidebarTaskTitleWidth`) instead of deriving one: the budget is the exact interior of the row it renders into — border, padding, and the bar/marker/space prefix accounted for — and shortens further when a status tail claims cells, so a long title always fits on one line.
 
 The sidebar is the run's persistent task list, and it ships on: `controlsStore.sidebarVisible` starts `true`, `getWorkflowSidebarWidth` suppresses it at 120 columns and below, and `/sidebar` toggles it. Every task in the plan stays listed for the whole run, marked `✓` done (dim), `◉` running (foreground, bold, with the `▌` live bar), `○` pending, `▲` escalated, `✗` failed, `–` skipped. None of those glyphs may be tinted with `accent` — cyan is reserved for paths and links.
 
-`tasks_planned` announces the whole plan once, before the task loop, so the list shows pending rows from the start instead of learning each task only when it begins. `updateTaskMap` seeds one `pending` entry per announced task and never downgrades a task that already earned a status, which is what makes the event safe to republish on resume and on detached re-attach. **`tasks_planned.total` is the authoritative plan size**; `task_started.total` remains only for streams that predate the announcement. The two cannot disagree — `runTaskLoop` derives both from the same `state.tasks.length` on the same entry — so the header cannot flicker as the first task starts.
+`tasks_planned` announces the whole plan once, before the task loop, so the list shows pending rows from the start instead of learning each task only when it begins. `updateTaskMap` seeds one `pending` entry per announced task and never downgrades a task that already earned a status, which is what makes the event safe to republish on resume. **`tasks_planned.total` is the authoritative plan size**; `task_started.total` remains only for streams that predate the announcement. The two cannot disagree — `runTaskLoop` derives both from the same `state.tasks.length` on the same entry — so the header cannot flicker as the first task starts.
 
 The `N queued` count survives only as `selectTaskListView.unannounced` (`total - tasks.length`), which the plan announcement drives to zero; it renders as `+N more` so it never repeats the `queued` wording the overflow marker uses. Only `escalated`, `failed` and `skipped` carry a status word — a dash against a circle is the whole distinction between skipped and queued, so the states the user has to act on keep their word at every width, while done, running and pending never needed one. `getSidebarStatusColumnCells` reserves the 11-cell status column on **every** row of a list that contains any of those three, filled or not, so all titles truncate in one column instead of ragging against a right-aligned word of varying length; a list with none of them reserves nothing and spends the cells on titles. Label case is settled: Title Case for the `Tasks` header and the `Planner`/`Implementer` role names, lowercase for every state and metric word (`done`, `escalated`, `failed`, `skipped`, `queued`, `above`, `below`, `local`).
 
@@ -169,13 +171,13 @@ Completed tasks leave the transcript by design: `groupEventsIntoSections` turns 
 
 `ConversationFlow` batches safe `runner_call_activity` events by model call and builds one canonical activity batch view model whose render-facing fields are `visibleItems`, `hiddenCount`, `headerCount`, `renderableUnits`, `expandableKey`, `severityCounts`, `groups`, and `rawMarkers`, alongside identity/state fields `batchKey`, `expanded`, `headerText`, and `tone`. Header text, hidden-row affordance, scroll math, and activity target discovery all use that model, whose item identity is the normalized visible label/value rather than raw event count. The compact block shows the latest three distinct items, such as `Run  npm run typecheck`, `Read  src/app.ts`, `Search  useWorkflowRunner`, `Call  github/list_issues`, `Sess  captured`, or `Art  plan.md`; when older distinct items are hidden, the batch shows the compact `ctrl+a` affordance for only that targetable batch. `/activity` and `Ctrl+A` both toggle the latest expandable activity batch. Assistant/result text from runner streams is transcript/output content only. `FeedbackRow` reads `lifecycleStore.queueDepth` so the pending queue count remains visible near the composer without echoing queued text outside the conversation.
 
-Raw activity expansion is an explicit boundary. `rawAvailable:true` means a safe display row has an expansion target in the persisted transcript/log; it does not mean raw text can be shown inline or shown without re-sanitizing. The transcript uses a `raw` marker only as an affordance. With `persistTranscript:false`, protected events force `rawAvailable:false` and omit `expandId`, so the UI has no raw expansion target. Default display payloads and expansion payloads canonicalize terminal controls before redaction.
+Raw activity expansion is an explicit boundary. `rawAvailable:true` means a safe display row has an expansion target in the persisted log; it does not mean raw text can be shown inline or shown without re-sanitizing. The transcript uses a `raw` marker only as an affordance. Default display payloads and expansion payloads canonicalize terminal controls before redaction.
 
-Transcript rows share one column model. Columns 0–1 are the glyph slot (`❯` prompt marker, `◉`/`●` batch dots, `│` callout bar) and content starts at column 2; activity children hang under their batch header with `├`/`└` at column 2 and text at column 4. `rowLeading()` in `conversation-rows/row-markers.ts` owns that leading, and every row builder wraps at `width - rowLeadingCells(kind)`, so full lines do not clip at the right edge. Hovering a row paints the accent `▌` bar directly into cell 0 rather than reserving a column for it. There is no transcript max-width cap: the conversation spans the full content width, and a visible sidebar squeezes it by a clamped 25% share — floored at 34 and capped at 48 columns, gated on widths above the workflow-local 120-column breakpoint — plus a 2-column gap (`layout/rect.ts`).
+Transcript rows share one column model, and the workflow screen's chrome stands on it. Column 1 carries centred glyphs only — marks, connectors and every box stroke — and text never enters it; text starts on column 3. Every row the transcript's own builders emit opens with one cell of empty padding (`ROW_LEADING`), so a row's mark — the block `●`/`◉`/`○` batch dots, the `❯` prompt marker on the user-message echo and the answered-question header, the `│` callout bar, or the `├`/`└` activity children under their batch header — lands on column 1 with its content on column 3; a row with no mark — planner/implementer prose, the `1.` question number, the answer, the `+N more · ctrl+a` affordance — leaves the two-cell mark slot (`MARK_SLOT_CELLS`, `components/row-leading.ts`) blank and starts its content on column 3 all the same. The two blocks that paint their own leading — the pinned completed-brief summaries and the closed run's ledger — spend the same cells. `rowLeading()` in `conversation-rows/row-markers.ts` owns that leading, and every row builder wraps at `width - rowLeadingCells(kind)`, so full lines do not clip at the right edge; a prose continuation never opens with the space the wrapper broke on. Hovering or focusing a row paints the `▌` bar into column 0, the padding cell left of the mark. The chrome rows are furniture rather than transcript content, so they open on the gutter line itself: the legend, the build block and the at-rest byline start on column 1 with the rail's pip, the byline's pip and every box stroke, and measure the full `getChromeContentWidth`. Column 1 is the screen's one left line: `WORKFLOW_GUTTER_X` (`layout/chrome-rows.ts`) is measured off `ROW_LEADING`, and the header rail, the question/approval/recovery panels, the stop sheet, the composer, the review frame and the sidebar all stand on it, with the same one-cell gap kept on the right. The boxes are box drawing — `borderStyleFor` returns the named frame (`round` for the input, `single` for panels, `bold` for gates) on a unicode host and `classic` on the ascii tier — standing on column 1 with `paddingX={1}`, so their content lands on column 3 beside the prose above them; a centred stroke sits on the marks' centre line, which is why no letter may share that column. The callout rail and the `├`/`└` connectors stay under their batch dot. Only the rules above and below the transcript — the header and footer dividers — bleed to the screen's own first and last columns, and the closed ledger's own rules stop one column short of the composer's right stroke rather than overhanging it by half a cell. There is no transcript max-width cap: the conversation spans the full content width, and a visible sidebar squeezes it by a clamped 25% share — floored at 34 and capped at 48 columns, gated on widths above the workflow-local 120-column breakpoint — plus a 2-column gap (`layout/rect.ts`).
 
 Activity batches always render a header (`Plan activity  4 updates  [Codex]`), even for a single event, so the header does not flicker in as a batch grows. Ledger labels render as Capitalized display strings via `display/activity-label-display.ts` (`Run`, `Read`, `Edit`, `Search`, `Call`, `List`, …); stage ids and hints stay lowercase (`spec › plan`, `+3 more · ctrl+a`, `git:none`). Shell commands from CLI runners pass through the conservative prettifier in `display/shell-activity-pretty.ts`: `cat` / `sed -n` / `head` / `tail` become `Read`, `rg` / `grep` become `Search`, `ls` becomes `List`, and anything compound (`&&`, `|`, `;`, redirects) stays a raw `Run`.
 
-Live status renders in the byline under the composer, not as a transcript row. `deriveLiveStatus()` in `display/live-activity.ts` decides whether a stage is live; `InputFooter` renders `⠼ Researching… 2:24 · git:none` with spinner, verb, and elapsed in the active stage's role hue and the rest dim. While a prompt is open (question, review, approval, cost) the byline shows `○ waiting for you · <stage> · …` instead. The byline carries only derived status, never model answer text or raw stdout. Spinner frames are braille on every unicode-tier terminal and `|/-\` on the ascii tier (`src/lib/glyphs.ts`).
+Live status renders in the byline under the composer, not as a transcript row. `deriveLiveStatus()` in `display/live-activity.ts` decides whether a stage is live; `InputFooter` renders `⠼ Researching… 2:24 · git:none` with spinner, verb, and elapsed in the active stage's role hue and the rest dim. While a prompt is open (question, review, approval) the byline shows `○ waiting for you · <stage> · …` instead. The byline carries only derived status, never model answer text or raw stdout. Spinner frames are braille on every unicode-tier terminal and `|/-\` on the ascii tier (`src/lib/glyphs.ts`).
 
 Scroll banners ride the chrome dividers instead of consuming transcript rows: `N lines above` on the header divider, `N lines below · ↓ N new events` on the footer divider. `flow.tsx` reports the labels through `onScrollAbove` / `onScrollBelow`, and `layout/scroll-window.ts` gives the window the full viewport height. Question-mode prompts (interrupt continuation, clarify questions, task review, edit conflicts) render as a bordered panel above the composer (`components/question-prompt.tsx`, budgeted by `getQuestionPromptRows` in `prompt-rows/question.ts`) with the transcript still visible; only review mode swaps the body.
 
@@ -185,100 +187,19 @@ The projection and per-event row blocks are cached by identity, not content. `ge
 
 Clarification-question prompts now fire in every workflow mode, not just `speckit`: the same bordered `QuestionPrompt` panel above the composer collects answers in `quick`, `standard`, and `speckit` alike, and answers persist under the run's `## Clarifications` section regardless of mode.
 
-Brief review has one text-editing path. `workflow.briefReview: rich` is deprecated and maps to simple review. Pressing `Ctrl+E` or typing `e`, `edit`, `E`, or `edit-file` opens the persisted `.splitbrief/sessions/<id>/tasks.md` in the external editor. Resolution uses explicit `VISUAL` first, then non-terminal `EDITOR`, then detected GUI editors (`cursor`, `code`, `zed`, `subl`, `mate`, `bbedit`) with wait flags, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`. Implicit GUI auto-detection probes only safe absolute `PATH` segments (empty, `.`, and relative segments are skipped) and spawns the resolved absolute executable path; on Windows it also honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` suffixes. After the editor exits, SPLITBRIEF re-reads `tasks.md`, re-runs brief-quality validation, and keeps the gate open on parse or quality errors. The brief review overlay loads `brief-readiness.json` alongside `brief-quality.json` (defensively: a missing or malformed readiness artifact is treated as absent). The review header folds a `readiness N blocked` slot into its existing width budget while a blocking report is loaded, and appends the override instruction `approve again overrides` in the same header line — the confirm-by-repeat affordance for the readiness override is carried there and only there, because the header is the one surface that holds the loaded report. The composer briefs hint stays fixed at the four review commands. Per-task state words stay first-match-wins: `overflow`, `conflict`, `no worker` (a task no configured profile can run), `failed`, then `stale`. The brief readiness gate renders the same way as the quality gate: `brief_readiness_passed` shows a `brief readiness` card (`passed · N tasks`), and `brief_readiness_blocked` shows an error-toned `brief readiness` card (`blocked · N of M`) in the conversation row stream.
+Brief review has one text-editing path. Pressing `Ctrl+E` or typing `e`, `edit`, `E`, or `edit-file` opens the persisted `.splitbrief/sessions/<id>/tasks.md` in the external editor. Resolution uses explicit `VISUAL` first, then non-terminal `EDITOR`, then detected GUI editors (`cursor`, `code`, `zed`, `subl`, `mate`, `bbedit`) with wait flags, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`. Implicit GUI auto-detection probes only safe absolute `PATH` segments (empty, `.`, and relative segments are skipped) and spawns the resolved absolute executable path; on Windows it also honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` suffixes. After the editor exits, SPLITBRIEF re-reads `tasks.md`, re-runs brief-quality validation, and keeps the gate open on parse or quality errors. The brief review overlay loads `brief-readiness.json` alongside `brief-quality.json` (defensively: a missing or malformed readiness artifact is treated as absent). The review header folds a `readiness N blocked` slot into its existing width budget while a blocking report is loaded, and appends the override instruction `approve again overrides` in the same header line — the confirm-by-repeat affordance for the readiness override is carried there and only there, because the header is the one surface that holds the loaded report. The composer briefs hint stays fixed at the four review commands. Per-task state words stay first-match-wins: `overflow`, `conflict`, `no worker` (a task no configured profile can run), `failed`, then `stale`. The brief readiness gate renders the same way as the quality gate: `brief_readiness_passed` shows a `brief readiness` card (`passed · N tasks`), and `brief_readiness_blocked` shows an error-toned `brief readiness` card (`blocked · N of M`) in the conversation row stream.
 
 ---
 
-### Brief recovery: projection, authority, and ownership
+### Review projection store
 
-Brief recovery has one authority and many projections. The orchestrator's
-`BriefRecoveryController` (the `BriefRecoveryController` contract in
-`src/core/schemas/brief-recovery.ts`) owns admission, the fenced state/evidence mutation, the
-provider call, budget reservation, operation identity, allowed actions, and the durable receipt.
-It returns the versioned `BriefRecoveryProjectionV1` together with a `RecoveryResultV1` or
-`QueueResultV1`. The controller is the only place that may turn a retry, edit, reject, approve, or
-`resolve-unresolved` command into a mutation or provider call. A quality score is diagnostic data;
-it never grants an approve override to a blocked contract.
-
-The production loader is contract-first. `loadBriefReviewData()`
-(`src/features/workflow/brief-review-loader.ts`) reads the persisted `tasks.md`,
-`brief-quality.json`, `brief-readiness.json`, and `state.json`, projects the
-brief recovery from the persisted state, and resolves that projection as the
-authority before any legacy file. The primary status is the binary contract
-outcome — `CONTRACT READY`, `CONTRACT BLOCKED`, or the corresponding non-ready
-recovery state — with the durable cause and the valid action set.
-Score and task count are diagnostic only. A persisted contract projection wins
-over a contradictory legacy score or count display: with zero Tasks and a
-quality score of 0.80 on disk, the blocked contract and its durable cause
-render as the primary state, never `0 tasks · quality 0.80`. The loader and
-the render perform no UI mutation and no provider call; mutating intents are
-forwarded to the owner with the current epoch and receipt.
-
-`src/stores/workflow/review.ts` is the UI projection store, not a recovery authority. It owns the
+`src/stores/workflow/review.ts` is the UI projection store for the review surface. It owns the
 current review source, owner token, revision, scroll offset, rendered/visible row counts, brief
-paths/sources, and load error used to paint the review. Components read it with `store.use()` and
-local review actions update only that display state. The store does not own the recovery status,
-allowed-action set, receipts, persistence, CAS/fence, budget, or provider client. `BriefReviewView`
-renders the bounded recovery projection (including `CHECKING CONTRACT`, `CONTRACT BLOCKED`,
-`RETRYING`, `RETRY UNRESOLVED`, `CONTRACT READY`, `READINESS BLOCKED`, and `rejected`) and sends
-an action through the controller/owner command boundary; it never edits persisted recovery state
-or calls a provider directly.
+paths/sources, and the load error used to paint the review. Components read it with `store.use()`
+and local review actions update only that display state; it owns no persistence and calls no
+provider.
 
-The owner is the only workflow process allowed to hydrate resumable state through the v4
-`loadStateForResume` path and to dispatch a mutating command with its current authority receipt.
-An attached or reconnecting client receives the same projection and replays it for display, but is
-projection-only: status/attach/reconnect performs zero recovery calls and zero local state writes.
-A mutation from an attached client is routed to the live owner, which returns the same versioned
-receipt/result. If the owner is dead, takeover happens through the normal fence acquisition before
-hydration; a stale owner cannot commit or unlock the epoch.
-
-`splitbrief attach <session-id> --project .` reconnects a live detached TUI to that owner's
-projection. A status or reconnect replay is observational; `retry`, edit, reject, and approve are
-the only mutation intents, and they are forwarded to the owner with the current epoch and receipt.
-
-The status/action grammar remains visible after restart:
-
-| Projection | Meaning | Valid next move |
-| --- | --- | --- |
-| `checking` | local contract evidence is being checked | wait; no retry is fabricated |
-| `blocked` | quality/provider/storage evidence prevents approval | retry when allowed, edit, or reject |
-| `retrying` | one identified retry is in flight | observe the operation; duplicate retry is refused |
-| `unresolved` / `UNRESOLVED` | dispatch may have happened, so the operation will not replay | `resolve-unresolved` with explicit rebind or abandon, then edit/reject as allowed |
-| `ready` | the current Brief/report pair passed the contract gate | approve or edit |
-| `readiness-blocked` | operational readiness is separate from Brief quality | edit or reject; no quality override is implied |
-| `rejected` | the Brief epoch is closed by user intent | start a new epoch |
-
-A parked planning result renders the same projection surface with its durable
-cause and valid actions. Resume rehydrates it through the owner fence, and the
-same projection returns; status, attach, and reconnect replays perform zero
-recovery calls and zero local state writes. A park is a decision point, not a
-completion or a failure, so it never renders as done work.
-
-The wire command for a retry contains no comment or fabricated revision request. It is an explicit,
-idempotent action with the current epoch, evidence base, diagnostic fingerprint, and frozen queued
-input IDs:
-
-```json
-{
-  "version": 1,
-  "sessionId": "session-1",
-  "epochId": "epoch-1",
-  "operationId": "operation-1",
-  "base": { "revision": 1, "hash": "brief-hash", "path": "tasks.md" },
-  "intentHash": "retry-intent-hash",
-  "action": "retry",
-  "diagnosticFingerprint": "diagnostic-hash",
-  "frozenInputIds": []
-}
-```
-
-Read-only status and refusal are machine-readable and stable; terminal prose is not an API:
-
-```json
-{ "version": 1, "sessionId": "session-1", "epochId": "epoch-1", "action": "status" }
-{ "type": "status", "data": { "status": "UNRESOLVED", "operationId": "operation-1" } }
-{ "type": "error", "code": "brief_contract_blocked", "status": "blocked", "operationId": null }
-```
+---
 
 ### Whole-screen geometry and composer ownership
 
@@ -290,33 +211,36 @@ body rectangle and is always terminal-originated: `x = 0`, `width = cols`. Recov
 help text, prompt text, sidebar visibility, and review content width may change the composer height
 or its hint, but never its x-coordinate or width.
 
-The sidebar rule is exact: it renders iff `cols > 120`. At 121 columns it has its clamped width and
-the two-column gap; the body and the sidebar end on the same bottom row. At 120 and 119 columns the
-sidebar and gap both disappear and the body reaches the content
-bottom. At 80, 50, and 40 columns the content pane stays full-width; at 40 the rail/review layout
-recomposes to one column rather than shrinking the composer or dropping recovery outcome/action
-text. The same rectangle equation is used for conversation, document review, and Brief review, so
-zero-height and prompt-clamped bodies cannot introduce a second breakpoint or hidden bottom row.
+The sidebar rule is exact: it renders iff `sidebarVisible` and `cols > 120`
+(`getWorkflowSidebarWidth`, `src/features/workflow/layout/rect.ts`) — `/sidebar` turns it off at any
+width. At 121 columns it has its clamped width and the two-column gap; the body and the sidebar end
+on the same bottom row. At 120 columns and below the sidebar and gap both disappear and the body
+reaches the content bottom, which is what all three gallery viewports render — 120x40, 80x24 and
+60x18 (`REQUIRED_VIEWPORTS`, `testing/visual/catalog.ts`). The same rectangle equation is used for
+conversation, document review, and Brief review, so zero-height and prompt-clamped bodies cannot
+introduce a second breakpoint or hidden bottom row.
 
 ## Overlays
 
 `overlayStore` manages a stack. Opening an overlay pushes the current one onto the stack. `Esc` pops. When an overlay is active, `Layout` (`src/app/layout.tsx`) hides the screen and renders the overlay in its place.
 
-Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `sessions`, `editor`, `cost-drilldown` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`, which spreads `SEAT_PICKER_OVERLAYS` (one picker overlay per seat picker role). There is no `crew` overlay: crew is the first section of `settings`.
+Overlay types: `help`, `command-palette`, `skills`, `settings`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `stop-sheet`, `sessions`, `editor` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`, which spreads `SEAT_PICKER_OVERLAYS` (one picker overlay per seat picker role). There is no `crew` overlay: crew is the first section of `settings`.
+
+The `stop-sheet` navigation token owns keyboard focus for a compact menu above the workflow composer (`src/features/workflow/stop/menu.tsx`, view in `stop/sheet.tsx`). Unlike covering overlays, the router renders `null` for this token, leaving the transcript visible and updating. `esc` opens it with or without a draft; `↑↓` selects, `Enter` executes, a second `esc` performs Stop now, and `Tab` dismisses. End run is always an explicit selection. Rows come from `stopSheetRows`, and existing handlers write the intent into `stopStore`. Only the selected consequence expands; the shared layout reserves its maximum height. The composer temporarily displays one line without losing the draft. The menu replaces any question/review prompt visually while preserving its stored answers and focus. Once parked, the rows become Resume / End run / Back to sessions, and Esc leaves the session. Further Esc/Ctrl+C during stopping queue home/quit until cleanup and persistence complete. Ctrl+C at rest/home uses a two-second inline confirmation. `/stop` reopens the menu after Tab dismissal.
 
 Each type maps to a component in `renderOverlay()` in `src/app/router.tsx`. The three picker overlays all render the same component parameterised by role: `<ToolModelPicker role="planner" | "implementer" | "reviewer" />` (`src/app/overlays/runners.tsx`). `role` is `SeatPickerRole` — the three members of `SEAT_PICKER_ROLES` (`src/core/runners/seat-roles.ts`); confirming a `reviewer` selection writes the `reviewer` block in project config.
 
 ### Settings ∋ Crew
 
-Crew has no page of its own. `buildSettingsItems` (`src/features/settings/items.ts`) returns one flat `SettingsItem[]` — the crew rows from `deriveCrewRows` (`src/core/crew/rows.ts`, keyed `seat:<id>` / `effort:<id>`) followed by the settings defs, sorted by section — and `settingsItemSection` files the crew items under the `Crew` section, which `SETTINGS_SECTIONS` orders first. One list, one cursor, one filter: `↑↓` walks from `PLAN` into `Tuning` without a mode switch, and a filter narrows seats and settings together. The escalation tier is YAML-only (`config.escalation`): `deriveCrewRows` never reads it, so it has no crew row and no picker.
+Crew has no page of its own. `buildSettingsItems` (`src/features/settings/items.ts`) returns one flat `SettingsItem[]` — the crew rows from `deriveCrewRows` (`src/core/crew/rows.ts`, keyed `seat:<id>`) followed by the settings defs, sorted by section — and `settingsItemSection` files the crew items under the `Crew` section, which `SETTINGS_SECTIONS` orders first. One list, one cursor, one filter: `↑↓` walks from `PLAN` into `Tuning` without a mode switch, and a filter narrows seats and settings together. The escalation tier is YAML-only (`config.escalation`): `deriveCrewRows` never reads it, so it has no crew row and no picker.
 
-- **Decoration slots.** The spine rows between seats and the cross-lab verdict under `REVIEW` are not items. They are `ListViewport` decorations (`decorations.before` / `after`, `src/components/pickers/list-viewport.tsx`), so `computeListDisplayWindow` charges them against the row budget while they stay unreachable by the cursor. A filtered list is no longer the block, so the page switches them off.
-- **`pinnedHead`.** The page passes the crew item count as `pinnedHead`, so the rail never scrolls out from under a seat row — a visible seat always renders with its own rail above it.
-- **The rail.** Layout is pure. `planSeatBlock` (`src/features/crew/format.ts`) plans the whole block from `innerWidth` plus a row budget; `formatCrewRow` plans one row — the 8-cell label, the identity truncated to one budget shared by every row, the right-aligned posture word and which rail branch it sits on; the renderer paints the cursor gutter and the rail glyph (`●` on a seat, `├` / `└` on a branch). `CrewRowView`, `CrewSpine` and `CrewVerdictLine` (`src/features/crew/row-view.tsx`) render what it planned.
-- **The ladder.** When the block does not fit its budget, `planSeatBlock` yields in a fixed order: the verdict line, then the spine rows. Posture is a width decision, not a budget one — it drops for the whole block when the identity column would fall under its minimum.
+- **Decoration slots.** The cross-lab verdict under `REVIEW` is not an item. It is a single `ListViewport` `after` decoration (`decorations.after`, `src/components/pickers/list-viewport.tsx`), so `computeListDisplayWindow` charges it against the row budget while it stays unreachable by the cursor. There is no `before` decoration and no spine row. A filtered list is no longer the block, so the page switches it off.
+- **`pinnedHead`.** The page passes the crew item count as `pinnedHead`, so while the cursor is on a seat the window pins to the start of the list and the crew block stays whole at its head.
+- **Layout.** Layout is pure. `planSeatBlock` (`src/features/crew/format.ts`) plans the whole block from `innerWidth` plus a row budget; `formatCrewRow` plans one row — the 8-cell label, the identity truncated to one budget shared by every row, and the right-aligned posture word. There is no rail and no branch: the renderer paints the cursor gutter and nothing else. `CrewRowView` and `CrewVerdictLine` (`src/features/crew/row-view.tsx`) render what it planned.
+- **The ladder.** When the block does not fit its budget, `planSeatBlock` drops the verdict line — the one row it can yield. Posture is a width decision, not a budget one — it drops for the whole block when the identity column would fall under its minimum.
 - **`/crew` deep link.** `/crew [plan|build|review]` calls `overlayStore.open('settings', 'seat:<id>')`. The page reads that focus as the `initialKey` for `useFilterableList`, or as `initialFilter` when it carries the `filter:` prefix — so an overlay focus can also reproduce a typed filter.
 
-The seat and lab models live in core, not in the feature: `src/core/crew/seats.ts` (`deriveCrewSeats`, the `plan` / `build` / `review` seats), `src/core/crew/rows.ts` (`deriveCrewRows`, which adds the effort branch under each seat), `src/core/crew/presets.ts` (`computeCrewPresets`, which offers only crews whose every tool is installed and authenticated) and `src/core/crew/labs.ts` (`resolveLab` / `crossLabVerdict` — a verdict is rendered only when the labs behind `BUILD` and `REVIEW` are both determined). The feature keeps `use-crew.ts` (config + detection → `{ seats, presets }`), `rows.ts` (`crewActivate`, which maps a seat to its picker overlay and performs the `overlayStore.open`, or applies a preset in a single config save), `format.ts`, `row-view.tsx` and `preset-row.tsx`.
+The seat and lab models live in core, not in the feature: `src/core/crew/seats.ts` (`deriveCrewSeats`, the `plan` / `build` / `review` seats), `src/core/crew/rows.ts` (`deriveCrewRows`, one row per seat), `src/core/crew/presets.ts` (`computeCrewPresets`, which offers only crews whose every tool is installed and authenticated) and `src/core/crew/labs.ts` (`resolveLab` / `crossLabVerdict` — a verdict is rendered only when the labs behind `BUILD` and `REVIEW` are both determined). The feature keeps `use-crew.ts` (config + detection → `{ seats, presets }`), `rows.ts` (`crewActivate`, which maps a seat to its picker overlay and performs the `overlayStore.open`, or applies a preset in a single config save), `format.ts`, `row-view.tsx` and `preset-row.tsx`.
 
 The first-run setup screen (`src/app/screens/setup.tsx`) composes the same feature — the ready-made crews above the same seat block, plus a continue row — so first run and `/crew` show the same seats through the same code.
 
@@ -326,11 +250,13 @@ The first-run setup screen (`src/app/screens/setup.tsx`) composes the same featu
 
 | density | share | min | max | who |
 |---|---|---|---|---|
-| `compact` | 0.60 | 56 | 72 | mode selector, start preparation, the picker's "initializing tools" panel |
-| `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, skills, the summary screen, the picker's sub-steps |
-| `wide` | 0.90 | 76 | 140 | the seat picker, setup, sessions, the cost drilldown, the home body and composer (capped locally at 108) |
+| `compact` | 0.60 | 56 | 72 | start preparation, the picker's "initializing tools" panel |
+| `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, skills, sessions, the picker's sub-steps |
+| `wide` | 0.90 | 76 | 140 | the seat picker, setup, the home body and composer (capped locally at 108) |
 
 `width = min(cols - 4, max(min, floor(cols * share)), max)`; the frame costs 6 columns and 4 rows, and `overlayGutterRows` gives back one row of vertical air per 6 rows above the 18-row floor, capped at 2 (the first at 24 rows, the second at 30). Every panel passes a `density` to `OverlayPanel`; `maxWidth` no longer exists, so nothing renders byte-identical at 80 and 120 columns.
+
+The workflow screen takes no density, live or at rest: its rail, dividers, transcript (the closed run's ledger included) and composer all span `getChromeContentWidth(cols)`, and nothing on it is centred.
 
 ### Picker view state
 
@@ -426,7 +352,6 @@ interface TokensState {
   localCount: number;       // tasks completed by primary implementer
   escalatedCount: number;   // tasks completed via escalation
   completedTaskCount: number;
-  prediction: CostPrediction | null;       // deterministic prompt-input estimate
   pricingContext: { plannerTool: string; implementerTool: string;
     plannerModel?: string; implementerModel?: string } | null;
 }
@@ -469,10 +394,7 @@ interface ComposerDraftRequest {
 // src/stores/navigation/router.ts
 type RouteData =
   | { screen: 'home' }
-  | { screen: 'workflow'; feature: string; resumeState?: WorkflowState;
-      sessionId?: string; attach?: WorkflowAttach }
-  | { screen: 'summary'; summary: Summary; sessionId?: string;
-      status: Session['status'] }
+  | { screen: 'workflow'; run: RunRecord; execution: WorkflowExecution }
   | { screen: 'setup'; onComplete?: 'home' | 'workflow'; feature?: string };
 ```
 

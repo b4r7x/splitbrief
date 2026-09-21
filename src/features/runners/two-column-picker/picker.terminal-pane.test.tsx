@@ -7,6 +7,7 @@ import { _resetMouseZones } from '../../../lib/terminal/mouse-zones.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { TwoColumnPicker } from './picker.js';
+import type { TerminalPane } from './types.js';
 
 interface Tool {
   id: string;
@@ -66,9 +67,11 @@ describe('TwoColumnPicker terminal rows', () => {
     onLeftChange?: ((left: Tool) => void) | undefined;
     cols?: number;
     rows?: number;
+    pane?: TerminalPane;
   }) {
     const cols = opts.cols ?? 120;
     const rows = opts.rows ?? 40;
+    const pane = opts.pane ?? TERMINAL_PANE;
     terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 120 });
     return renderFeature(
       <TwoColumnPicker<Tool, Model>
@@ -77,7 +80,7 @@ describe('TwoColumnPicker terminal rows', () => {
           items: [INHERIT, ...TOOLS, ...MANY_TOOLS],
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
-          terminalPane: (t) => (t.id === INHERIT.id ? TERMINAL_PANE : undefined),
+          terminalPane: (t) => (t.id === INHERIT.id ? pane : undefined),
           renderRow: (t, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>,
         }}
         rightProps={{
@@ -139,11 +142,33 @@ describe('TwoColumnPicker terminal rows', () => {
     expect(frame).toContain('The review seat runs w');
     expect(frame).not.toContain(TERMINAL_PANE.lines[0]);
 
-    const hintRows = lines.filter((line) => line.includes('↑↓ select'));
+    const hintRows = lines.filter((line) => line.includes(`⏎ ${TERMINAL_PANE.verb}`));
     expect(hintRows).toHaveLength(1);
-    // Keys first: the terminal verb rides with them, never behind a wrap.
-    expect((hintRows[0] ?? '').trim().startsWith(`↑↓ select · ⏎ ${TERMINAL_PANE.verb}`)).toBe(true);
+    expect(hintRows[0]).toContain('esc cancel');
+    expect(hintRows[0]).not.toContain('…');
     expect(getTerminalCellWidth((hintRows[0] ?? '').trim())).toBeLessThanOrEqual(viewport.cols - 2);
+    ui.unmount();
+  });
+
+  // The card never scrolls and never grows: at the shortest supported terminal it has ten interior
+  // rows, the label and the blank under it take two, and the ninth line is paid for by squeezing
+  // that blank out. The runner picker's own copy is written to the eight rows that leaves.
+  it.each([
+    { count: 8, air: true },
+    { count: 9, air: false },
+  ])("keeps the card's air for $count lines at 60x18: $air", async ({ count, air }) => {
+    const lines = Array.from({ length: count }, (_unused, i) => `line-${i}`);
+    const ui = renderTerminal({ cols: 60, rows: 18, pane: { ...TERMINAL_PANE, lines } });
+    await flushEffects();
+    const frame = ui.lastFrame() ?? '';
+
+    for (const line of lines) expect(frame, line).toContain(line);
+    const rows = frame.split('\n');
+    const labelRow = rows.findIndex((row) => row.includes(TERMINAL_PANE.label));
+    // The frame row spans both boxes, so the card's own cells start where its label does.
+    const cardColumn = (rows[labelRow] ?? '').indexOf(TERMINAL_PANE.label);
+    const underLabel = (rows[labelRow + 1] ?? '').slice(cardColumn);
+    expect(/^[\s│]*$/.test(underLabel), underLabel).toBe(air);
     ui.unmount();
   });
 

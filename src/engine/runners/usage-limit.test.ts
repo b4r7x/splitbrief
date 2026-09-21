@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
 import {
   formatUsageLimitReset,
   isUsageLimitDiagnostic,
@@ -77,8 +78,16 @@ describe('isUsageLimitDiagnostic', () => {
     'tsc exited with code 2: src/main.ts(3,1): error TS2304',
     'vitest: 429 tests passed',
     'Added rate limit handling to src/api/client.ts',
+    'update your billing address',
+    'implements a rate limit',
   ])('does not classify %j as a limit', (message) => {
     expect(isUsageLimitDiagnostic(message)).toBe(false);
+  });
+
+  it('every HALT_SIGNATURES.usage phrase classifies as a usage limit', () => {
+    for (const phrase of HALT_SIGNATURES.usage) {
+      expect(isUsageLimitDiagnostic(`CLI failed: ${phrase}`)).toBe(true);
+    }
   });
 
   it.each(['HTTP 429 Too Many Requests'])('corroborates weak 429 signals for %j', (message) => {
@@ -140,6 +149,13 @@ describe('parseUsageLimitReset', () => {
     expect(resetsAt?.getMinutes()).toBe(45);
   });
 
+  it("accepts the 'resets at <clock>' phrasing", () => {
+    const resetsAt = parseUsageLimitReset("You've hit your session limit · resets at 3:45pm", now);
+    expect(resetsAt?.getDate()).toBe(7);
+    expect(resetsAt?.getHours()).toBe(15);
+    expect(resetsAt?.getMinutes()).toBe(45);
+  });
+
   it('rolls a Claude clock time already past to the next day', () => {
     const evening = new Date('2026-08-07T22:00:00');
     const resetsAt = parseUsageLimitReset(CLAUDE_SESSION_LIMIT, evening);
@@ -170,6 +186,38 @@ describe('parseUsageLimitReset', () => {
     expect(resetsAt?.getTime()).toBe(now.getTime() + 60_000);
   });
 
+  it('reads a named IANA zone in that zone, not the local one', () => {
+    // Europe/Warsaw is UTC+2 in August, so 4pm there is 14:00Z.
+    const morning = new Date('2026-08-07T06:00:00Z');
+    const resetsAt = parseUsageLimitReset(
+      "You've hit your session limit · resets 4pm (Europe/Warsaw)",
+      morning,
+    );
+    expect(resetsAt?.toISOString()).toBe('2026-08-07T14:00:00.000Z');
+  });
+
+  it('rolls a zoned clock time already past to the next day', () => {
+    const evening = new Date('2026-08-07T20:00:00Z');
+    const resetsAt = parseUsageLimitReset(
+      "You've hit your session limit · resets 4pm (Europe/Warsaw)",
+      evening,
+    );
+    expect(resetsAt?.toISOString()).toBe('2026-08-08T14:00:00.000Z');
+  });
+
+  it('parses a bare Retry-After header delay in seconds', () => {
+    const resetsAt = parseUsageLimitReset('HTTP 429 (retry-after: 120)', now);
+    expect(resetsAt?.getTime()).toBe(now.getTime() + 120_000);
+  });
+
+  it('parses a Retry-After header carrying an HTTP date', () => {
+    const resetsAt = parseUsageLimitReset(
+      'HTTP 429 rate limit exceeded; retry-after: Wed, 21 Oct 2026 07:28:00 GMT',
+      now,
+    );
+    expect(resetsAt?.toISOString()).toBe('2026-10-21T07:28:00.000Z');
+  });
+
   it('returns null when the message names no reset', () => {
     expect(parseUsageLimitReset('Credit balance is too low', now)).toBeNull();
     expect(parseUsageLimitReset(ANTHROPIC_RATE_LIMIT_BODY, now)).toBeNull();
@@ -180,14 +228,14 @@ describe('usageLimitGuidance', () => {
   it('names the reset when known and never suggests logging in', () => {
     const guidance = usageLimitGuidance(new Date('2026-08-08T15:27:00'));
     expect(guidance).toBe(
-      'The limit resets at Aug 8, 2026, 3:27 PM; wait for it, switch to a different runner profile, or abort.',
+      'The limit resets at Aug 8, 2026, 3:27 PM; wait for it, switch the seat to another tool, or end the run.',
     );
     expect(guidance).not.toMatch(/log ?in|log ?out/i);
   });
 
   it('still offers the real options when the reset is unknown', () => {
     expect(usageLimitGuidance(null)).toBe(
-      'Wait for the limit to reset, switch to a different runner profile, or abort.',
+      'Wait for the limit to reset, switch the seat to another tool, or end the run.',
     );
   });
 });

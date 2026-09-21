@@ -1,0 +1,388 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { addEvent } from './event.js';
+import { hydrateFromState } from './hydrate.js';
+import { resetWorkflow } from './reset.js';
+import { tasksStore } from '../tasks.js';
+import { tokensStore } from '../tokens.js';
+import { lifecycleStore } from '../lifecycle.js';
+import { configStore } from '../../project/config.js';
+import { taskId } from '../../../core/schemas/task.js';
+import { makeCostUpdate } from '#testing/helpers/events/task.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+
+describe('hydrateFromState', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('restores observable workflow state from a persisted snapshot', () => {
+    hydrateFromState({
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 2,
+      attempt: 0,
+      tasks: [
+        makeTask({ id: 'T001', status: 'done' }),
+        makeTask({ id: 'T002', status: 'done', file: 'src/resumed.ts', action: 'modify' }),
+        makeTask({ id: 'T003', status: 'pending' }),
+      ],
+      plannerSessionId: null,
+      startedAt: new Date().toISOString(),
+      tokenUsage: makeUsage(),
+      plannerTool: 'claude-code',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+      implementerModel: 'qwen2.5-coder:7b',
+      awaitingContinue: false,
+      messageQueue: [
+        {
+          id: 'q1',
+          text: 'queued',
+          queuedAt: new Date().toISOString(),
+          phase: 'implementing',
+          deliveredViaNative: false,
+          nativeDeliveryState: 'pending',
+        },
+      ],
+    });
+    expect(lifecycleStore.get().phase).toBe('implementing');
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    expect(tasksStore.get().currentTask).toBe(3);
+    expect(tasksStore.get().totalTasks).toBe(3);
+    expect(tasksStore.get().tasks.map((task) => [task.id, task.status])).toEqual([
+      ['T001', 'done'],
+      ['T002', 'done'],
+      ['T003', 'pending'],
+    ]);
+    expect(tasksStore.get().taskMap.get('T002')?.status).toBe('done');
+    expect(tasksStore.get().taskMap.get('T002')?.file).toBe('src/resumed.ts');
+    expect(tasksStore.get().taskMap.get('T002')?.action).toBe('modify');
+    expect(tasksStore.get().taskMap.get('T002')?.route).toBeUndefined();
+    expect(tokensStore.get().tokenUsage).toEqual(makeUsage());
+    expect(tokensStore.get().localCount).toBe(2);
+    expect(tokensStore.get().escalatedCount).toBe(0);
+    expect(tokensStore.get().completedTaskCount).toBe(2);
+    expect(tokensStore.get().pricingContext).toEqual({
+      plannerTool: 'claude-code',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+      implementerModel: 'qwen2.5-coder:7b',
+    });
+  });
+
+  it('never claims a run read back from disk is still running', () => {
+    hydrateFromState(
+      {
+        stateVersion: 1,
+        phase: 'implementing',
+        feature: 'f',
+        currentTaskIndex: 0,
+        attempt: 0,
+        tasks: [makeTask({ id: 'T001', status: 'pending' })],
+        plannerSessionId: null,
+        startedAt: new Date(1_000_000).toISOString(),
+        tokenUsage: makeUsage(),
+        awaitingContinue: false,
+        messageQueue: [],
+      },
+      { endedAt: 1_060_000 },
+    );
+
+    expect(lifecycleStore.get().status).toBe('paused');
+    expect(lifecycleStore.get().durationMs).toBe(60_000);
+  });
+
+  it('freezes a finished run at the moment it completed', () => {
+    hydrateFromState({
+      stateVersion: 1,
+      phase: 'complete',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      plannerSessionId: null,
+      startedAt: new Date(1_000_000).toISOString(),
+      completedAt: new Date(1_120_000).toISOString(),
+      tokenUsage: makeUsage(),
+      awaitingContinue: false,
+      messageQueue: [],
+    });
+
+    expect(lifecycleStore.get().status).toBe('complete');
+    expect(lifecycleStore.get().phase).toBe('complete');
+    expect(lifecycleStore.get().durationMs).toBe(120_000);
+  });
+
+  it('keeps the phase timestamps the replayed log recorded', () => {
+    addEvent({ type: 'workflow_started', ts: 5_000, phase: 'planning', feature: 'f' });
+
+    hydrateFromState({
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [],
+      plannerSessionId: null,
+      startedAt: new Date(5_000).toISOString(),
+      tokenUsage: makeUsage(),
+      awaitingContinue: false,
+      messageQueue: [],
+    });
+
+    expect(lifecycleStore.get().phaseFirstSeenTs.planning).toBe(5_000);
+  });
+
+  it('prices resumed reviewer tokens with the identity the run started on', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/hydrate-reviewer-pricing-test',
+      config: makeConfig({
+        reviewer: {
+          kind: 'api',
+          provider: 'custom-endpoint',
+          model: 'swapped-after-the-run',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
+        },
+      }),
+    });
+
+    hydrateFromState({
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      plannerSessionId: null,
+      startedAt: new Date().toISOString(),
+      tokenUsage: makeUsage({ reviewerInput: 20_000, reviewerOutput: 5_000 }),
+      plannerTool: 'claude-code',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+      reviewerTool: 'custom-endpoint',
+      reviewerModel: 'custom-v4-flash',
+      awaitingContinue: false,
+      messageQueue: [],
+    });
+
+    expect(tokensStore.get().pricingContext).toMatchObject({
+      reviewerTool: 'custom-endpoint',
+      reviewerModel: 'custom-v4-flash',
+    });
+  });
+
+  it('leaves the reviewer out of the pricing context when the run pinned none', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/hydrate-reviewer-pricing-test',
+      config: makeConfig({
+        reviewer: {
+          kind: 'api',
+          provider: 'custom-endpoint',
+          model: 'custom-v4-flash',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
+        },
+      }),
+    });
+
+    hydrateFromState({
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      plannerSessionId: null,
+      startedAt: new Date().toISOString(),
+      tokenUsage: makeUsage(),
+      plannerTool: 'claude-code',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+      awaitingContinue: false,
+      messageQueue: [],
+    });
+
+    expect(tokensStore.get().pricingContext).toEqual({
+      plannerTool: 'claude-code',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+      implementerModel: undefined,
+    });
+  });
+
+  it('reconstructs task attempts with cache, context, and routing metadata', () => {
+    hydrateFromState({
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 1,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      plannerSessionId: null,
+      startedAt: new Date().toISOString(),
+      tokenUsage: makeUsage({ implementerCacheRead: 1_000_000 }),
+      plannerTool: 'claude-code',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'custom-endpoint',
+      implementerModel: 'runtime-priced-model',
+      awaitingContinue: false,
+      messageQueue: [],
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'Use cached context',
+          method: 'local',
+          implementerTokens: 0,
+          escalationTokens: 0,
+          implementerCacheReadTokens: 1_000_000,
+          implementerCacheCreateTokens: 0,
+          retryCount: 0,
+          tool: 'custom-endpoint',
+          model: 'runtime-priced-model',
+          implementerProfile: 'cheap-cloud',
+          contextFit: 'tight',
+          estimatedTokens: 95_000,
+          untruncatedEstimatedTokens: 120_000,
+          contextLength: 100_000,
+          currentCodeTruncated: true,
+          currentCodeContextMode: 'function-level',
+          routingReason: 'selected cheapest capable profile',
+        },
+      ],
+    });
+
+    const record = tokensStore.get().perTask['T001'];
+    expect(record?.totalTokens).toBe(1_000_000);
+    expect(record?.attempts?.[0]).toMatchObject({
+      implementerCacheReadTokens: 1_000_000,
+      implementerCacheCreateTokens: 0,
+      tool: 'custom-endpoint',
+      model: 'runtime-priced-model',
+      implementerProfile: 'cheap-cloud',
+      contextFit: 'tight',
+      estimatedTokens: 95_000,
+      untruncatedEstimatedTokens: 120_000,
+      contextLength: 100_000,
+      currentCodeTruncated: true,
+      currentCodeContextMode: 'function-level',
+      routingReason: 'selected cheapest capable profile',
+    });
+    expect(tokensStore.get().localCount).toBe(1);
+    expect(tokensStore.get().escalatedCount).toBe(0);
+  });
+
+  it('classifies escalated-intermediate methods as escalated even with legacy done status', () => {
+    hydrateFromState({
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 1,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      plannerSessionId: null,
+      startedAt: new Date().toISOString(),
+      tokenUsage: makeUsage({ implementerInput: 100, implementerOutput: 50 }),
+      awaitingContinue: false,
+      messageQueue: [],
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'Intermediate task',
+          method: 'escalated-intermediate',
+          implementerTokens: 150,
+          escalationTokens: 0,
+          retryCount: 1,
+        },
+      ],
+    });
+
+    expect(tokensStore.get().localCount).toBe(0);
+    expect(tokensStore.get().escalatedCount).toBe(1);
+  });
+
+  it('counts pending queue depth from undrained non-native messages', () => {
+    const queuedAt = new Date().toISOString();
+
+    hydrateFromState({
+      stateVersion: 1,
+      phase: 'planning',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [],
+      plannerSessionId: null,
+      startedAt: queuedAt,
+      tokenUsage: makeUsage(),
+      awaitingContinue: false,
+      messageQueue: [
+        {
+          id: 'pending',
+          text: 'token sk-proj-abcdefghijklmnopqrstuvwxyz',
+          queuedAt,
+          phase: 'planning',
+          deliveredViaNative: false,
+          nativeDeliveryState: 'pending',
+        },
+        {
+          id: 'native',
+          text: 'already delivered',
+          queuedAt,
+          phase: 'planning',
+          deliveredViaNative: true,
+          nativeDeliveryState: 'delivered',
+        },
+        {
+          id: 'drained',
+          text: 'already drained',
+          queuedAt,
+          phase: 'planning',
+          deliveredViaNative: false,
+          nativeDeliveryState: 'pending',
+          drainedAt: queuedAt,
+        },
+        {
+          id: 'clarification',
+          text: 'Use GraphQL',
+          queuedAt,
+          phase: 'specifying',
+          deliveredViaNative: false,
+          nativeDeliveryState: 'pending',
+          origin: 'clarification',
+          question: 'Which API style?',
+        },
+      ],
+    });
+
+    expect(lifecycleStore.get().queueDepth).toBe(2);
+  });
+
+  it('uses the hydrated token usage as the baseline for the next cumulative cost update', () => {
+    hydrateFromState({
+      stateVersion: 1,
+      phase: 'planning',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T001', status: 'pending' })],
+      plannerSessionId: null,
+      startedAt: new Date().toISOString(),
+      tokenUsage: makeUsage({ plannerInput: 100, plannerOutput: 50 }),
+      awaitingContinue: false,
+      messageQueue: [],
+    });
+
+    addEvent(
+      makeCostUpdate({
+        phase: 'planning',
+        tokenUsage: makeUsage({ plannerInput: 150, plannerOutput: 75 }),
+      }),
+    );
+
+    expect(tokensStore.get().perPhase['planning']).toMatchObject({
+      inputTokens: 50,
+      outputTokens: 25,
+    });
+  });
+});

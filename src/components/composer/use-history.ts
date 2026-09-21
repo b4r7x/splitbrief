@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { getInputHistoryEntries, inputHistoryStore } from '../../stores/ui/input-history.js';
+import { getInputHistoryDocuments, inputHistoryStore } from '../../stores/ui/input-history.js';
 import { useStores } from '../../stores/use-stores.js';
-import { INITIAL_INPUT_HISTORY_NAVIGATION_STATE, stepInputHistory } from './history.js';
+import { INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE, stepDocumentHistory } from './history.js';
+import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import type { Screen } from '../../core/navigation/types.js';
 
 interface UseHistoryParams {
   disabled: boolean | undefined;
-  value: string;
-  setValue: (value: string) => void;
+  document: DraftDocument;
+  setDocument: (document: DraftDocument) => void;
   currentScreen: Screen;
-  persistTranscript: boolean;
 }
 
 interface ComposerHistory {
@@ -17,26 +17,25 @@ interface ComposerHistory {
   bumpEpoch: () => void;
   handleBoundaryNavigate: (direction: 'up' | 'down') => boolean;
   resetHistory: () => void;
-  onChange: (nextValue: string) => void;
+  /** An edit means the draft is the operator's again, not the entry they walked back to. */
+  noteEdit: () => void;
   historyActive: boolean;
 }
 
 export function useHistory({
   disabled,
-  value,
-  setValue,
+  document,
+  setDocument,
   currentScreen,
-  persistTranscript,
 }: UseHistoryParams): ComposerHistory {
   const [history] = useStores(inputHistoryStore);
-  const [historyState, setHistoryState] = useState(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
+  const [historyState, setHistoryState] = useState(INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE);
   const [inputEpoch, setInputEpoch] = useState(0);
-  const entries = getInputHistoryEntries(history, { currentScreen, persistTranscript });
+  const entries = getInputHistoryDocuments(history, { currentScreen });
 
-  const onChange = (nextValue: string) => {
-    setValue(nextValue);
+  const noteEdit = () => {
     if (historyState.historyIndex !== null) {
-      setHistoryState(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
+      setHistoryState(INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE);
     }
   };
 
@@ -45,21 +44,21 @@ export function useHistory({
       return false;
     }
 
-    const result = stepInputHistory({
+    const result = stepDocumentHistory({
       entries,
       state: historyState,
       direction,
-      currentValue: value,
+      currentValue: document,
     });
     if (!result.changed) return false;
 
-    setValue(result.nextValue);
+    setDocument(result.nextValue);
     setHistoryState(result.nextState);
     setInputEpoch((epoch) => epoch + 1);
     return true;
   };
 
-  const resetHistory = () => setHistoryState(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
+  const resetHistory = () => setHistoryState(INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE);
   const bumpEpoch = () => setInputEpoch((epoch) => epoch + 1);
 
   return {
@@ -67,7 +66,7 @@ export function useHistory({
     bumpEpoch,
     handleBoundaryNavigate,
     resetHistory,
-    onChange,
+    noteEdit,
     historyActive: historyState.historyIndex !== null,
   };
 }

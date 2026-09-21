@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   realpathSync,
   statSync,
@@ -17,6 +18,7 @@ import {
   resolveCliExecutable,
   resolveCliExecutableAliases,
   resolveCustomExecutable,
+  sanitizedRuntimePath,
 } from './resolve-cli-executable.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -348,6 +350,66 @@ describe('resolveCliExecutable', () => {
       actualIdentity: { fingerprint: expect.any(Object) },
     });
   });
+
+  itUnix('treats a ..bin repository child on PATH as repository-local', async () => {
+    const projectDir = createTempDir('resolver-dotdot-bin-project');
+    const systemDir = createTempDir('resolver-dotdot-bin-system');
+    const neutralProject = createTempDir('resolver-dotdot-bin-neutral');
+    dirs.push(projectDir, systemDir, neutralProject);
+    const dotDotBin = join(projectDir, '..bin');
+    mkdirSync(dotDotBin);
+    makeExecutable(join(dotDotBin, 'vendor-cli'));
+    makeExecutable(join(systemDir, 'vendor-cli'));
+    setEnv('PATH', [dotDotBin, systemDir].join(delimiter));
+
+    await expect(
+      resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir }),
+    ).rejects.toMatchObject({
+      kind: 'cli-executable-untrusted',
+    });
+
+    const trust = await resolveCliExecutable({ command: 'vendor-cli', projectDir: neutralProject });
+    const resolved = await resolveCliExecutable({
+      command: 'vendor-cli',
+      projectDir: projectDir,
+      trust: trust,
+    });
+    expect(resolved.path).toBe(trust.path);
+    expect(resolved.fingerprint).toEqual(trust.fingerprint);
+  });
+
+  itUnix('keeps a sibling repository external while root and .bin stay internal', async () => {
+    const parent = createTempDir('resolver-locality-parent');
+    dirs.push(parent);
+    const repo = join(parent, 'repo');
+    const repoOther = join(parent, 'repo-other');
+    const dotDotBin = join(repo, '..bin');
+    const dotBin = join(repo, '.bin');
+    mkdirSync(dotDotBin, { recursive: true });
+    mkdirSync(dotBin);
+    mkdirSync(repoOther);
+    const spawnMarker = '#!/bin/sh\ntouch "$0.ran"\n';
+    for (const dir of [repo, dotBin, dotDotBin, repoOther]) {
+      makeExecutable(join(dir, 'vendor-cli'), spawnMarker);
+    }
+    const executableRan = (dir: string): boolean => existsSync(`${join(dir, 'vendor-cli')}.ran`);
+
+    setEnv('PATH', repoOther);
+    const external = await resolveCliExecutable({ command: 'vendor-cli', projectDir: repo });
+    expect(external.path).toBe(realpathSync(join(repoOther, 'vendor-cli')));
+
+    for (const internal of [repo, dotBin, dotDotBin]) {
+      setEnv('PATH', internal);
+      await expect(
+        resolveCliExecutable({ command: 'vendor-cli', projectDir: repo }),
+      ).rejects.toMatchObject({ kind: 'cli-executable-untrusted' });
+    }
+
+    expect(executableRan(repo)).toBe(false);
+    expect(executableRan(dotBin)).toBe(false);
+    expect(executableRan(dotDotBin)).toBe(false);
+    expect(executableRan(repoOther)).toBe(false);
+  });
 });
 
 describe('resolveCliExecutableAliases', () => {
@@ -508,5 +570,25 @@ describe('resolveCustomExecutable', () => {
         expected: first.executable,
       }),
     ).resolves.toEqual({ kind: 'identity-drifted' });
+  });
+});
+
+describe('sanitizedRuntimePath', () => {
+  itUnix('excludes a ..bin repository child while keeping an external sibling', async () => {
+    const parent = createTempDir('sanitized-path-parent');
+    dirs.push(parent);
+    const repo = join(parent, 'repo');
+    const repoOther = join(parent, 'repo-other');
+    const dotDotBin = join(repo, '..bin');
+    mkdirSync(dotDotBin, { recursive: true });
+    mkdirSync(repoOther);
+    makeExecutable(join(dotDotBin, 'vendor-cli'));
+    setEnv('PATH', [dotDotBin, repoOther].join(delimiter));
+
+    const sanitized = await sanitizedRuntimePath(repo);
+    const entries = sanitized.split(delimiter);
+    expect(entries).not.toContain(dotDotBin);
+    expect(entries).not.toContain(realpathSync(dotDotBin));
+    expect(entries).toContain(realpathSync(repoOther));
   });
 });

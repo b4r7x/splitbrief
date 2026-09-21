@@ -63,7 +63,6 @@ describe('spec approval gate suspends until externally resolved', () => {
       callbacks,
       bus,
       state,
-      persistTranscript: false,
     });
 
     await expectStillPending(loopPromise);
@@ -73,7 +72,7 @@ describe('spec approval gate suspends until externally resolved', () => {
     approve?.({ approved: true });
     const result = await loopPromise;
 
-    expect(result.rejected).toBe(false);
+    expect(result.closed).toBe(false);
     expect(result.regenerated).toBe(false);
     expect(events.find((e) => e.type === 'spec_rejected')).toBeUndefined();
     expect(events.find((e) => e.type === 'planner_status' && e.status === 'done')).toBeUndefined();

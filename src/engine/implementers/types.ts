@@ -11,6 +11,7 @@ import type { CliStartGate } from '../runners/start-gate.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type * as ImplementerConfig from '../../core/schemas/implementer-config.js';
 import type { RunnerSlot } from '../runners/prepared-execution.js';
+import type { BundleApplyResult } from './file-bundle.js';
 
 export interface ImplementerResult {
   success: boolean;
@@ -19,6 +20,8 @@ export interface ImplementerResult {
   /** Machine outcome behind a failure; the message is for humans, this is not. */
   outcome?: RunnerFailureOutcomeState | undefined;
   usage?: TokenDelta | undefined;
+  /** What a `file-bundle-v1` response actually did on disk; absent for every other grammar. */
+  applyResult?: BundleApplyResult | undefined;
 }
 
 export interface ImplementerPublisher {
@@ -38,8 +41,17 @@ export interface ImplementerPublisher {
     phase: Phase;
     taskId: TaskId;
     message: string;
-    safety: { category: string; code: string; transcriptSafe: true };
+    safety: { category: string; code: string };
   }): void;
+}
+
+export interface UndeclaredWritesPolicy {
+  /**
+   * What a completed direct-write attempt does with files outside the brief's
+   * declared set: `reject` fails the attempt, `gate` leaves the verdict to the
+   * orchestrator's approval path. Defaults to `reject`.
+   */
+  undeclaredWrites?: 'reject' | 'gate' | undefined;
 }
 
 export interface ImplementerFactoryOptions {
@@ -51,7 +63,7 @@ export interface ImplementerFactoryOptions {
   slot?: Extract<RunnerSlot, { role: 'implementer' | 'intermediate' }> | undefined;
 }
 
-export interface ImplementerOptions {
+export interface ImplementerOptions extends UndeclaredWritesPolicy {
   task: Task;
   projectDir: string;
   config: Config;
@@ -63,10 +75,22 @@ export interface ImplementerOptions {
   fileIgnoreProjectDir?: string | undefined;
   /** Baseline the caller's workspace declares; sniffed from the directory when absent. */
   changeDetection?: ChangeDetectionKind | undefined;
-  continuationPrompt?: string | undefined;
-  steer?: string | undefined;
+  /**
+   * The brief restarts on its own prompt; this is what the cut attempt left
+   * behind. `extra` carries the declared files that already changed, so the
+   * implementer edits on top of them instead of rewriting from scratch.
+   */
+  continuation?:
+    | { partial?: string | undefined; steer?: string | undefined; extra?: string | undefined }
+    | undefined;
   languageContext?: LanguageContext | undefined;
   phase?: Phase | undefined;
+  /**
+   * Paths an earlier attempt of this same task is recorded to have created. A
+   * retry rewrites them instead of refusing to create them twice; what this
+   * seat created in its own process counts alongside them.
+   */
+  createdByThisTask?: readonly string[] | undefined;
   approveWrite?:
     | ((file: string) => Promise<{ allow: boolean; reason?: string | undefined }>)
     | undefined;
@@ -78,7 +102,7 @@ export interface RetryOptions extends ImplementerOptions {
   kind: 'local' | 'hint';
 }
 
-export interface InvokeOpts {
+export interface InvokeOpts extends UndeclaredWritesPolicy {
   callContext: RunnerCallContext;
   prompt: string;
   task: Task;

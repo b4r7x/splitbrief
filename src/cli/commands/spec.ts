@@ -1,8 +1,8 @@
 import type { Command } from 'commander';
 import ansis from 'ansis';
 import { createPlanner } from '../../engine/runners/factory.js';
-import { compilerDriftWarning } from '../../engine/runners/compiler-drift-warning.js';
-import type { Planner, PlanOptions, PlanResult } from '../../engine/planners/types.js';
+import { runDocumentPhases } from '../../engine/planners/document-phases.js';
+import type { Planner, PlanResult } from '../../engine/planners/types.js';
 import type { Phase, WorkflowMode } from '../../core/schemas/enums.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 import { getWorkflowMode } from '../../core/config/accessors/values.js';
@@ -11,25 +11,15 @@ import { withCliErrors } from '../errors.js';
 import { TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { ensureHooksTrusted } from '../hook-trust-prompt.js';
-import { resolveHooksConfig } from '../../engine/hooks/discover.js';
-import { warnStderr } from '../../lib/warn.js';
-import { stripTerminalControls } from '../../utils/display-text.js';
+import { sanitizeTerminalDisplayText, stripTerminalControls } from '../../utils/display-text.js';
 import {
   emitEffectiveConfigWarnings,
   resolveEffectiveConfig,
   type EffectiveConfigWarning,
 } from '../../core/config/runtime/effective-config.js';
 import { workflowOptsToCLIOverrides } from '../../core/config/runtime/overrides/from-options.js';
-import { assertNever } from '../../utils/type-guards.js';
-import type {
-  ArtifactApprovalReview,
-  CustomRunnerRuntimePort,
-} from '../../engine/runners/types.js';
-import { createStagedProject } from '../../engine/orchestrator/approval/staged-project.js';
-import {
-  beginDeclaredArtifactReview,
-  cleanupStaleArtifactReviews,
-} from '../../engine/orchestrator/approval/planner-artifact.js';
+import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
+import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-runtime.js';
 import {
   promptCustomRunnerArtifactApproval,
   promptCustomRunnerDisclosure,
@@ -80,8 +70,11 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       clearStaleSessionForCli(projectDir);
 
       const loaded = loadConfigOrExit(projectDir);
-      const mergedHooks = await resolveHooksConfig(projectDir, loaded.config.hooks);
-      await ensureHooksTrusted({ projectDir, hooks: mergedHooks, allowHooks: opts.allowHooks });
+      await ensureHooksTrusted({
+        projectDir,
+        hooks: loaded.config.hooks,
+        allowHooks: opts.allowHooks,
+      });
       const { config, warnings } = resolveEffectiveConfig({
         base: loaded.config,
         overrides: workflowOptsToCLIOverrides(opts),
@@ -116,35 +109,14 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         'prose',
       );
       const sessionId = execution.session.ref.sessionId;
-      const sourceEnv = { ...process.env };
-      const authorizationPathEnv = process.env.PATH;
-      const authorizationPathExt = process.env.PATHEXT;
-      const onArtifactApprovalNeeded = (_type: 'artifact', review: ArtifactApprovalReview) =>
-        interaction === 'interactive'
-          ? promptForArtifactApproval(review)
-          : Promise.resolve({ approved: true as const });
-      const customRuntime: CustomRunnerRuntimePort = {
+      const customRuntime = createCustomRunnerRuntime({
+        projectDir,
         sessionId,
-        authorizationProjectDir: projectDir,
-        sourceEnv,
-        ...(authorizationPathEnv === undefined ? {} : { authorizationPathEnv }),
-        ...(authorizationPathExt === undefined ? {} : { authorizationPathExt }),
-        createStage: async (sourceProjectDir, _role) => {
-          const staged = await createStagedProject(sourceProjectDir);
-          return {
-            projectDir: staged.projectDir,
-            snapshot: staged.snapshot,
-            cleanup: staged.cleanup,
-          };
-        },
-        cleanupStaleArtifactReviews: () => cleanupStaleArtifactReviews({ projectDir, sessionId }),
-        beginDeclaredArtifactReview: (artifactInput) =>
-          beginDeclaredArtifactReview({
-            ...artifactInput,
-            projectDir,
-            sessionId,
-            onApprovalNeeded: onArtifactApprovalNeeded,
-          }),
+        sweepStaleReviews: true,
+        onArtifactApproval: (_type: 'artifact', review: ArtifactApprovalReview) =>
+          interaction === 'interactive'
+            ? promptForArtifactApproval(review)
+            : Promise.resolve({ approved: true as const }),
         admission: {
           interaction,
           allowRepoRunners: opts.allowRepoRunners,
@@ -152,7 +124,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
             ? { onTieredApproval: (request) => promptForDisclosure({ request }) }
             : {}),
         },
-      };
+      });
 
       let planner: Planner;
       try {
@@ -169,9 +141,6 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         rollbackPreparedExecutionOwnership(execution);
         throw cause;
       }
-      const driftWarning = compilerDriftWarning({ planner, projectDir });
-      if (driftWarning !== null) warnStderr(driftWarning);
-
       console.log(
         `Planning feature: ${stripTerminalControls(feature)} (planner: ${getRunnerDisplayName(config.planner)}, mode: ${mode})\n`,
       );
@@ -179,12 +148,16 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       let result: PlanResult;
       try {
         result = await withCliErrors(() =>
-          selectPlanCall(planner, mode).call(planner, {
+          runDocumentPhases({
+            planner,
+            mode,
             feature: execution.runtime.feature,
             projectDir,
             callbacks: {
               onOutput(text: string) {
-                process.stdout.write(stripTerminalControls(text));
+                process.stdout.write(
+                  sanitizeTerminalDisplayText(text, { preserveLineBreaks: true }),
+                );
               },
               onPhase(phase: Phase) {
                 console.log(`\n${ansis.bold(`--- ${phase} ---`)}\n`);
@@ -199,32 +172,17 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       }
       releasePreparedExecutionOwnership(execution);
 
-      for (const phase of result.phases ?? []) {
+      for (const phase of result.phases) {
         writeSpecFile({ projectDir, sessionId }, phase.artifact.logicalName, phase.artifact.text);
       }
 
       const sessionPath = sessionDir(projectDir, sessionId);
       console.log('\nSpec generation complete.');
       console.log(`  Session: ${ansis.dim(sessionId)}`);
-      for (const phase of result.phases ?? []) {
+      for (const phase of result.phases) {
         const taskSuffix =
           phase.artifact.logicalName === TASKS_FILE ? ` (${result.tasks.length} tasks)` : '';
         console.log(`  ${ansis.dim(`${sessionPath}/${phase.artifact.logicalName}`)}${taskSuffix}`);
       }
     });
-}
-
-function selectPlanCall(
-  planner: Planner,
-  mode: WorkflowMode,
-): (opts: PlanOptions) => Promise<PlanResult> {
-  switch (mode) {
-    case 'quick':
-      return planner.quickPlan;
-    case 'standard':
-    case 'speckit':
-      return planner.plan;
-    default:
-      return assertNever(mode);
-  }
 }

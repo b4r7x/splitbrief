@@ -420,11 +420,41 @@ describe('validateConfig', () => {
     expect(data).toBeUndefined();
   });
 
-  it('keeps sessions.scope open for forward compatibility', () => {
-    const { errors, data } = validateConfig(makeConfig({ sessions: { scope: 'global' } }));
+  it('rejects the removed sessions.scope global value', () => {
+    const { errors, data } = validateConfig({ ...makeConfig(), sessions: { scope: 'global' } });
 
-    expect(errors).toEqual([]);
-    expect(data?.sessions?.scope).toBe('global');
+    expect(errors.some(({ path }) => path === 'sessions.scope')).toBe(true);
+    expect(data).toBeUndefined();
+  });
+
+  it('compiler key is rejected with the retirement message', () => {
+    const { errors } = validateConfig({
+      ...makeConfig(),
+      compiler: { kind: 'cli', tool: 'codex' },
+    });
+
+    expect(errors).toContainEqual({
+      path: 'compiler',
+      message:
+        'Unknown key "compiler" \u2014 the brief compiler was retired on 2026-09-13; briefs compile from the plan directly.',
+    });
+  });
+
+  it('outputFormat on a structured-terminal tool is refused at load', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', outputFormat: 'text' },
+    });
+
+    expect(validateConfig(config).errors).toContainEqual({
+      path: 'planner.outputFormat',
+      message:
+        "Configured outputFormat cannot replace the claude-code terminal contract; the backend's native parser and terminal protocol stay authoritative.",
+    });
+    expect(
+      validateConfig(
+        makeConfig({ planner: { kind: 'cli', tool: 'opencode', outputFormat: 'text' } }),
+      ).errors,
+    ).toEqual([]);
   });
 
   it('rejects {prompt} in command strings', () => {

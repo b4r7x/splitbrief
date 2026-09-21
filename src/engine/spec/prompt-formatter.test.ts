@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { formatTaskPrompt, formatRetryPrompt } from './prompt-formatter.js';
+import { estimateTokens } from '../../core/tokens/estimate.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';
 import { defaultContext } from '#testing/helpers/factories/config.js';
 import type { Task } from '../../core/schemas/task.js';
@@ -164,6 +165,76 @@ describe('formatTaskPrompt', () => {
     expect(idxEsc).toBeGreaterThan(idxScope);
     expect(idxEvidence).toBeGreaterThan(idxEsc);
     expect(idxConstraints).toBeGreaterThan(idxEvidence);
+  });
+
+  it('renders every declared file and current code per file', () => {
+    const task = makeTask({
+      action: 'modify',
+      file: 'src/x.ts',
+      files: ['src/x.ts', 'src/x.test.ts'],
+      currentCode: 'export function x(): void {}\n',
+      currentCodeByFile: { 'src/x.test.ts': "it('x', () => {});\n" },
+    });
+    const prompt = formatTaskPrompt({ task, context, writesFiles: 'direct' });
+
+    expect(prompt).toContain('### Files:');
+    expect(prompt).toContain('- src/x.ts (anchor)');
+    expect(prompt).toContain('- src/x.test.ts');
+    expect(prompt).not.toContain('### File: ');
+    expect(prompt).toContain('### Current Code — src/x.test.ts');
+    expect(prompt).toContain("it('x', () => {});");
+    expect(prompt).toContain('Edit src/x.ts, src/x.test.ts directly in the isolation directory');
+  });
+
+  it('one-file brief still renders ### File:', () => {
+    const prompt = formatTaskPrompt({ task: makeTask(), context });
+    expect(prompt).toContain('### File: src/utils/helpers.ts');
+    expect(prompt).not.toContain('### Files:');
+  });
+
+  it('keeps a five-file slice inside the context window', () => {
+    const contextLength = 8192;
+    const body = (name: string) =>
+      `export function ${name}(): void {}\n${'// filler\n'.repeat(2000)}`;
+    const task = makeTask({
+      action: 'modify',
+      file: 'src/a.ts',
+      files: ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts'],
+      currentCode: body('a'),
+      currentCodeByFile: {
+        'src/b.ts': body('b'),
+        'src/c.ts': body('c'),
+        'src/d.ts': body('d'),
+        'src/e.ts': body('e'),
+      },
+    });
+
+    const prompt = formatTaskPrompt({ task, context, contextLength, writesFiles: 'direct' });
+
+    expect(estimateTokens(prompt)).toBeLessThan(contextLength);
+    expect(prompt.split('### Current Code').length - 1).toBe(5);
+  });
+
+  it('renders sibling code for a create anchor whose sibling already exists', () => {
+    const task = makeTask({
+      action: 'create',
+      file: 'src/health.ts',
+      files: ['src/health.ts', 'src/health.test.ts'],
+      currentCodeByFile: { 'src/health.test.ts': "it('health', () => {});\n" },
+    });
+
+    const prompt = formatTaskPrompt({ task, context, writesFiles: 'direct' });
+    expect(prompt).toContain('### Current Code — src/health.test.ts');
+    expect(prompt).toContain("it('health', () => {});");
+
+    const retry = formatRetryPrompt({
+      task,
+      context,
+      error: 'boom',
+      attempt: 1,
+      writesFiles: 'direct',
+    });
+    expect(retry).toContain('### Current Code — src/health.test.ts');
   });
 
   it('retry prompt surfaces Scope / Escalation / Evidence and keeps the retry framing', () => {

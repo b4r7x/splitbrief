@@ -1,4 +1,9 @@
-import { formatModelName } from '../../../core/model-display.js';
+import {
+  displayContextLength,
+  formatModelName,
+  peelDisplayLabel,
+  splitTrailingParens,
+} from '../../../core/model-display.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { EFFORT_AXIS_TOKENS } from '../../../core/runners/effort-channel.js';
 import { bestMembership } from './membership.js';
@@ -16,9 +21,7 @@ interface OptionMergeContext {
 }
 
 const EFFORT_TOKENS = new Set<string>(EFFORT_AXIS_TOKENS);
-const DISPLAY_OPTION_WORDS = new Set(['fast', 'thinking', 'none', 'low', 'medium', 'high', 'max']);
-const DISPLAY_CONTEXT_WORDS = new Set(['1m', '1.0m', '1.1m']);
-const TRAILING_PARENS_RE = /(\s*\([^()]*\))$/;
+const OPTION_TOKENS = new Set<string>([...EFFORT_AXIS_TOKENS, 'fast', 'thinking']);
 
 function lastHyphenToken(id: string): { rest: string; token: string } | undefined {
   const idx = id.lastIndexOf('-');
@@ -78,39 +81,18 @@ export function peelOptionSuffix(id: string): PeeledOptionSuffix {
   return { familyId: `${prefix}/${bare.familyId}`, tokens: bare.tokens };
 }
 
-function splitTrailingParens(value: string): { core: string; parens: string } {
-  let core = value.trimEnd();
-  let parens = '';
-  for (;;) {
-    const match = TRAILING_PARENS_RE.exec(core);
-    const captured = match?.[1];
-    if (captured === undefined) break;
-    parens = captured + parens;
-    core = core.slice(0, core.length - captured.length).trimEnd();
-  }
-  return { core, parens };
-}
+const PAREN_EDGES_RE = /^\s*\(|\)$/g;
+const NO_PREFIX_RE = /^NO /;
 
-function peelDisplayLabel(displayName: string): string {
-  const { core, parens } = splitTrailingParens(displayName.trim());
-  const words = core.split(/\s+/).filter((word) => word.length > 0);
-  for (;;) {
-    const last = words[words.length - 1];
-    if (last === undefined) break;
-    const lower = last.toLowerCase();
-    const prev = words[words.length - 2];
-    if (lower === 'high' && prev?.toLowerCase() === 'extra') {
-      words.splice(words.length - 2, 2);
-      continue;
-    }
-    if (DISPLAY_OPTION_WORDS.has(lower) || DISPLAY_CONTEXT_WORDS.has(lower)) {
-      words.pop();
-      continue;
-    }
-    break;
-  }
-  const peeled = words.join(' ');
-  return parens === '' ? peeled : `${peeled}${parens}`.trim();
+function vendorTagOf(displayName: string): string | undefined {
+  const { parens } = splitTrailingParens(displayName.trim());
+  const tag = parens.replace(PAREN_EDGES_RE, '').trim();
+  if (tag === '') return undefined;
+  // `agy models` names each effort variant `Gemini 3.8 Flash (High)`. That word
+  // is the family's axis, chosen on the expanded row — as a vendor tag it would
+  // pin one member's value to every row of the family.
+  if (OPTION_TOKENS.has(tag.toLowerCase())) return undefined;
+  return tag.replace(NO_PREFIX_RE, 'no ');
 }
 
 function familyDisplayName(rows: readonly ModelOption[], familyId: string): string {
@@ -120,33 +102,6 @@ function familyDisplayName(rows: readonly ModelOption[], familyId: string): stri
     if (peeled !== '') return peeled;
   }
   return formatModelName(familyId);
-}
-
-export function prettyOptionTokens(tokens: readonly string[]): string {
-  return tokens
-    .map((token) => {
-      switch (token) {
-        case 'fast':
-          return 'Fast';
-        case 'thinking':
-          return 'Thinking';
-        case 'none':
-          return 'None';
-        case 'low':
-          return 'Low';
-        case 'medium':
-          return 'Medium';
-        case 'high':
-          return 'High';
-        case 'xhigh':
-          return 'Extra High';
-        case 'max':
-          return 'Max';
-        default:
-          return token;
-      }
-    })
-    .join(' ');
 }
 
 function displayRemainder(displayName: string, familyDisplay: string): string {
@@ -167,17 +122,21 @@ function optionTag(
     const remainder = displayRemainder(row.displayName, familyDisplay);
     if (remainder !== '') return remainder;
   }
-  return prettyOptionTokens(tokens);
+  return tokens.join(' ');
 }
 
 function toOptionVariant(row: ModelOption, familyDisplay: string): ModelVariant {
+  const contextLength =
+    row.displayName === undefined ? undefined : displayContextLength(row.displayName);
   return {
     fullId: row.id,
     providerPrefix: '',
     tag: optionTag(row, familyDisplay),
     ...(row.displayName !== undefined ? { displayName: row.displayName } : {}),
+    ...(contextLength === undefined ? {} : { contextLength }),
     ...(row.membership === undefined ? {} : { membership: row.membership }),
     ...(row.isCustom ? { isCustom: true } : {}),
+    ...(row.isAccountOption ? { isAccountOption: true } : {}),
   };
 }
 
@@ -195,14 +154,18 @@ function mergeOptionGroup(
 ): ModelOption {
   const members = [first, ...rest];
   const customModels = ctx.customModels ?? [];
+  const familyId = peelOptionSuffix(first.id).familyId;
   const representative =
     members.find((row) => row.id === ctx.persistedModel) ??
     members.find((row) => customModels.includes(row.id)) ??
+    members.find((row) => row.id === familyId) ??
     first;
-  const familyId = peelOptionSuffix(first.id).familyId;
   const displayName = familyDisplayName(members, familyId);
   const variants = members.map((row) => toOptionVariant(row, displayName));
   const membership = bestMembership(members);
+  const vendorTag = members
+    .map((row) => (row.displayName === undefined ? undefined : vendorTagOf(row.displayName)))
+    .find((tag) => tag !== undefined);
   let contextLength: number | undefined;
   let releaseDate: string | undefined;
   for (const row of members) {
@@ -219,10 +182,18 @@ function mergeOptionGroup(
       releaseDate = row.releaseDate;
     }
   }
+  const displayContexts = members.map((row) =>
+    row.displayName === undefined ? undefined : displayContextLength(row.displayName),
+  );
+  const unanimous =
+    displayContexts.length > 0 &&
+    displayContexts.every((value) => value !== undefined && value === displayContexts[0]);
+  if (unanimous && contextLength === undefined) contextLength = displayContexts[0];
 
   return {
     id: representative.id,
     displayName,
+    ...(vendorTag === undefined ? {} : { vendorTag }),
     ...(members.some((row) => row.isDefault) ? { isDefault: true } : {}),
     ...(membership === undefined ? {} : { membership }),
     ...(membership !== undefined && membership !== 'custom'
@@ -245,7 +216,7 @@ interface OptionFamilyGroup {
 type MergeSlot = Readonly<{ kind: 'row'; row: ModelOption }> | OptionFamilyGroup;
 
 /**
- * Collapses combinatorial effort/speed/thinking ids into one row per family.
+ * Collapses combinatorial effort/fast/thinking ids into one row per family.
  * Groups of size 1 stay flat; a family never spans two provider routes.
  */
 export function mergeOptionFamilies(

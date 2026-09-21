@@ -17,9 +17,7 @@ import {
   runEffect,
   seedHostileConfig,
 } from '#testing/helpers/factories/cli-effect-fixture.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
@@ -43,7 +41,6 @@ function effectConfig(timeoutMs?: number): Config {
     validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
     workflow: {
       maxRetries: 0,
-      persistTranscript: false,
       mode: 'quick',
       taskReview: 'none',
       compactionFormat: 'auto',
@@ -390,34 +387,6 @@ describe('planner effect matrix — production factories under hostile config', 
         declaredFile: 'src/hello.ts',
       }),
     ).toMatchObject({ admitted: false });
-  });
-
-  it('names the refused backend and its reason on unsupported planner rows', async () => {
-    const reasons = {
-      cursor: /compiler planner contract/i,
-      copilot: /non-writing programmatic planner posture/i,
-    } as const;
-    for (const tool of ['cursor', 'copilot'] as const) {
-      const config = makeConfig({ planner: { kind: 'cli', tool } });
-      const slot = { role: 'planner' } as const;
-      const preparationId = `unsupported-${tool}`;
-      const gates: readonly RunnerGate[] = [
-        { kind: 'cli', slot, preparationId, tool, executable: executableReceipt() },
-      ];
-      await expect(
-        createPlanner(config, {
-          preparedConfig: config,
-          preparationId,
-          gates,
-          slot,
-          initialSessionId: null,
-        }),
-      ).rejects.toMatchObject({
-        kind: 'task_compiler_capability_unsupported',
-        data: { backend: tool, missing: ['backend'] },
-        message: expect.stringMatching(reasons[tool]),
-      });
-    }
   });
 
   it('resolves a clean planner through the production factory with hostile host state on PATH', async () => {

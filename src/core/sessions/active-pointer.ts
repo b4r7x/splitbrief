@@ -26,6 +26,8 @@ import {
 } from '../../lib/path-confinement.js';
 import { isNodeError } from '../../lib/process/errors.js';
 import type { SessionRef } from '../types/session-ref.js';
+import { sessionError } from './errors.js';
+import type { SessionLivenessResult } from './liveness.js';
 
 const MAX_ACTIVE_BYTES = 512n;
 
@@ -66,6 +68,10 @@ export type PreparedNewSession = NewSessionOwnership &
   Readonly<{
     active: ActiveSessionReceipt;
   }>;
+
+export type ReactivateSessionOptions = Readonly<{
+  inspectOwner?: ((ref: SessionRef) => SessionLivenessResult) | undefined;
+}>;
 
 export type ActiveSessionRecord =
   | Readonly<{ kind: 'legacy'; sessionId: string }>
@@ -346,7 +352,35 @@ export function clearActiveReceipt(
   );
 }
 
-export function reactivateExistingSession(ref: SessionRef): ActiveSessionReceipt {
+function assertOwnerReplaceable(
+  projectDir: string,
+  owner: string,
+  snapshot: ActiveFileSnapshot,
+  inspectOwner: ReactivateSessionOptions['inspectOwner'],
+): void {
+  if (inspectOwner === undefined) throw activeMutationError.conflict(projectDir);
+  if (!inspectOwner({ projectDir, sessionId: owner }).takeoverMayBeAttempted) {
+    throw sessionError.stillActive(owner);
+  }
+  const reread = activeSnapshot(activeFile(projectDir));
+  if (
+    reread === null ||
+    reread.dev !== snapshot.dev ||
+    reread.ino !== snapshot.ino ||
+    reread.bytes !== snapshot.bytes
+  ) {
+    throw activeMutationError.conflict(projectDir);
+  }
+}
+
+/**
+ * Only an explicit resume passes `inspectOwner`: it may then replace another
+ * run's pointer, and only when that run's owner is proven gone.
+ */
+export function reactivateExistingSession(
+  ref: SessionRef,
+  options: ReactivateSessionOptions = {},
+): ActiveSessionReceipt {
   validateSessionId(ref.sessionId);
   return withSessionMutationLock(ref.projectDir, () => {
     const target = activeFile(ref.projectDir);
@@ -354,8 +388,8 @@ export function reactivateExistingSession(ref: SessionRef): ActiveSessionReceipt
     const current = snapshot === null ? null : parseActiveBytes(target, snapshot.bytes);
     const currentSessionId =
       current?.kind === 'legacy' ? current.sessionId : current?.receipt.sessionId;
-    if (currentSessionId !== undefined && currentSessionId !== ref.sessionId) {
-      throw activeMutationError.conflict(ref.projectDir);
+    if (snapshot !== null && currentSessionId !== undefined && currentSessionId !== ref.sessionId) {
+      assertOwnerReplaceable(ref.projectDir, currentSessionId, snapshot, options.inspectOwner);
     }
     const receipt: ActiveSessionReceipt = {
       version: 1,

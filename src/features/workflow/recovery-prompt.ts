@@ -1,10 +1,25 @@
 import type { RecoveryAction, RecoveryReason } from '../../core/schemas/enums.js';
 import { PROMPTABLE_RECOVERY_ACTIONS } from '../../core/schemas/enums.js';
-import type { RecoveryFact, RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import type {
+  RecoveryFact,
+  RecoveryIssue,
+  SeatSwapCandidate,
+  SwitchSeatOffer,
+} from '../../core/schemas/recovery/schemas.js';
+import {
+  CREW_SEAT_LABELS,
+  formatSeatCandidateIdentity,
+  type CrewSeatId,
+} from '../../core/crew/identity.js';
 import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recovery/facts.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { glyph } from '../../lib/glyphs.js';
-import { assertNever } from '../../utils/type-guards.js';
+import { formatResetNote } from '../../core/recovery/reset-clock.js';
+import {
+  readRecoveryContext,
+  recoveryContextCauseWords,
+  recoveryContextSeatLabel,
+} from './usage-details-model.js';
 
 const ACTION_ORDER = PROMPTABLE_RECOVERY_ACTIONS;
 
@@ -42,34 +57,47 @@ type ActionRow = Extract<PromptRow, { kind: 'action' } | { kind: 'note' }>;
 
 const REBASE_CONTINUATION = '(approve / edit / reject the proposal)';
 
+// `revise` and `revise-spec` share a key: no reason offers both, and the answer
+// is matched only against the actions the issue itself carries.
 const ACTION_KEYS: Record<RecoveryAction, string> = {
   'retry-same-worker': 'r',
   'route-bigger-worker': 'b',
+  'switch-seat': 'w',
   'planner-split-rebase': 'p',
+  revise: 'v',
+  'revise-spec': 'v',
   continue: 'c',
   'skip-current-task': 's',
   'pause-run': 'space',
-  'abort-workflow': 'a',
+  'end-run': 'a',
 };
 
 export const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
   'retry-same-worker': ['r', 'retry', 'retry same worker', 'retry-same-worker'],
   'route-bigger-worker': ['b', 'bigger', 'route', 'route bigger', 'route-bigger-worker'],
+  'switch-seat': ['w', 'switch', 'switch seat', 'switch-seat'],
   'planner-split-rebase': [],
+  revise: ['v', 'revise', 'comment'],
+  'revise-spec': ['v', 'revise', 'revise spec', 'revise-spec'],
   continue: ['c', 'continue', 'cont'],
   'skip-current-task': ['s', 'skip', 'skip task', 'skip-current-task'],
   'pause-run': ['space', 'pause', 'pause run', 'pause-run'],
-  'abort-workflow': ['a', 'abort', 'quit', 'q', 'abort-workflow'],
+  'end-run': ['a', 'end', 'end run', 'end-run', 'abort', 'quit', 'q'],
 };
+
+/** The numbered form of the seat key, as the prompt prints it for a second and third offer. */
+const SWITCH_SEAT_ROW_KEY = new RegExp(`^${ACTION_KEYS['switch-seat']}([1-9][0-9]?)$`);
 
 export interface RecoveryActionChoiceContext {
   reason?: RecoveryReason | undefined;
   facts?: Record<string, RecoveryFact> | undefined;
+  switchSeat?: SwitchSeatOffer | undefined;
+  /** The seat a retry re-issues when the halt names no brief; absent when it replays one. */
+  seatRetry?: CrewSeatId | undefined;
 }
 
 export function getRecoveryPromptActions(issue: RecoveryIssue): RecoveryAction[] {
   const allowed = new Set(issue.availableActions);
-  if (issue.reason === 'budget-exceeded') allowed.delete('continue');
   return ACTION_ORDER.filter((action) => allowed.has(action));
 }
 
@@ -79,24 +107,126 @@ function formatRecoveryActionText(
 ): string {
   switch (action) {
     case 'retry-same-worker':
-      return 'retry same worker';
+      return context.seatRetry === undefined
+        ? 'retry same worker'
+        : `retry ${CREW_SEAT_LABELS[context.seatRetry]}`;
     case 'route-bigger-worker': {
       const profile = recoveryFactString(context.facts, 'routeBiggerProfile');
       return profile ? `route to bigger worker · ${profile}` : 'route to bigger worker';
     }
+    case 'switch-seat':
+      return 'switch the seat to another tool';
     case 'planner-split-rebase':
       return `ask planner to ${rebaseVerb(context)}`;
+    case 'revise':
+      return 'revise · send the planner a correction';
+    case 'revise-spec':
+      return 'revise the spec · send it back with a note';
     case 'continue':
       return 'continue';
     case 'skip-current-task':
       return 'skip task';
     case 'pause-run':
-      return 'pause';
-    case 'abort-workflow':
-      return 'abort';
-    default:
-      return assertNever(action);
+      return 'pause · no new brief starts, changes kept';
+    case 'end-run':
+      return 'end run · closes this run, changes kept';
   }
+}
+
+/** The words shown by the interactive picker; machine action names stay in the action channel. */
+export function recoveryActionLabel(
+  action: RecoveryAction,
+  context: RecoveryActionChoiceContext = {},
+): string {
+  switch (action) {
+    case 'retry-same-worker':
+      return context.seatRetry === undefined
+        ? 'Try again'
+        : `Try again with ${CREW_SEAT_LABELS[context.seatRetry]}`;
+    case 'route-bigger-worker': {
+      const profile = recoveryFactString(context.facts, 'routeBiggerProfile');
+      return profile === undefined ? 'Use a bigger worker' : `Use a bigger worker · ${profile}`;
+    }
+    case 'switch-seat':
+      return `Change ${CREW_SEAT_LABELS[context.switchSeat?.seat ?? 'build']} tool`;
+    case 'planner-split-rebase':
+      return `Ask planner to ${rebaseVerb(context)}`;
+    case 'revise':
+      return 'Send a correction';
+    case 'revise-spec':
+      return 'Revise the spec';
+    case 'continue':
+      return 'Continue';
+    case 'skip-current-task':
+      return 'Skip task';
+    case 'pause-run':
+      return 'Pause run';
+    case 'end-run':
+      return 'End run';
+  }
+}
+
+/** How many of a seat's detected tools the halt offers; a longer list is a settings question. */
+export const OFFERED_SEAT_SWAP_CANDIDATES = 3;
+
+export function offeredSeatSwapCandidates(
+  offer: SwitchSeatOffer | undefined,
+): readonly SeatSwapCandidate[] {
+  return offer === undefined ? [] : offer.candidates.slice(0, OFFERED_SEAT_SWAP_CANDIDATES);
+}
+
+/** One offered tool needs no number; several are numbered from the seat's own key. */
+function switchSeatRowKey(index: number, offered: number): string {
+  const key = ACTION_KEYS['switch-seat'];
+  return offered === 1 ? key : `${key}${index + 1}`;
+}
+
+function switchSeatRowText(seat: CrewSeatId, candidate: SeatSwapCandidate): string {
+  return `switch ${CREW_SEAT_LABELS[seat]} to ${formatSeatCandidateIdentity(candidate)} · restarts this brief there, edits kept`;
+}
+
+/**
+ * The tools a quota-blocked seat is offered get one row each, because a row is
+ * what the operator presses: a comma-separated list behind a single key names
+ * several destinations and says nothing about which one it takes. Tools past
+ * the offer are counted in a note, never dropped silently.
+ */
+function switchSeatRows(context: RecoveryActionChoiceContext, recommended: boolean): ActionRow[] {
+  const offer = context.switchSeat;
+  const offered = offeredSeatSwapCandidates(offer);
+  if (offer === undefined || offered.length === 0) {
+    return [
+      { kind: 'action', text: formatRecoveryActionChoice('switch-seat', context), recommended },
+    ];
+  }
+  const rows: ActionRow[] = offered.map((candidate, index) => ({
+    kind: 'action',
+    text: formatActionRow(
+      switchSeatRowKey(index, offered.length),
+      switchSeatRowText(offer.seat, candidate),
+    ),
+    recommended: recommended && index === 0,
+  }));
+  const hidden = offer.candidates.length - offered.length;
+  if (hidden > 0) {
+    rows.push({ kind: 'note', text: `(${countNoun(hidden, 'more ready tool')} detected)` });
+  }
+  return rows;
+}
+
+/**
+ * Which offered tool an answer names: the bare seat key takes the first row,
+ * `w2` the second, and a number past the offer takes nothing so an unknown key
+ * is refused instead of silently swapping to a tool the operator never read.
+ */
+export function switchSeatCandidateForAnswer(
+  input: string,
+  offer: SwitchSeatOffer | undefined,
+): SeatSwapCandidate | undefined {
+  const candidates = offer?.candidates ?? [];
+  const match = SWITCH_SEAT_ROW_KEY.exec(input.trim().toLowerCase());
+  if (match?.[1] === undefined) return candidates[0];
+  return candidates[Number.parseInt(match[1], 10) - 1];
 }
 
 function rebaseVerb(context: RecoveryActionChoiceContext): string {
@@ -125,13 +255,8 @@ function buildRecoveryActionRows(
 ): ActionRow[] {
   const rows: ActionRow[] = [];
   for (const action of actions) {
-    if (action === 'planner-split-rebase') {
-      rows.push({
-        kind: 'action',
-        text: formatActionRow(ACTION_KEYS[action], `ask planner to ${rebaseVerb(context)}`),
-        recommended: action === recommended,
-      });
-      rows.push({ kind: 'note', text: REBASE_CONTINUATION });
+    if (action === 'switch-seat') {
+      rows.push(...switchSeatRows(context, action === recommended));
       continue;
     }
     rows.push({
@@ -139,6 +264,9 @@ function buildRecoveryActionRows(
       text: formatRecoveryActionChoice(action, context),
       recommended: action === recommended,
     });
+    if (action === 'planner-split-rebase') {
+      rows.push({ kind: 'note', text: REBASE_CONTINUATION });
+    }
   }
   return rows;
 }
@@ -153,9 +281,30 @@ export function formatRecoveryActionLines(
   );
 }
 
+/**
+ * A halt that names no brief is about the seat, not a task: PLAN and REVIEW have nothing to reset,
+ * so their retry re-issues the same step once the seat is corrected. Mirrors `isSeatLevelRetry`
+ * (`src/engine/orchestrator/recovery/actions.ts`), which decides what the retry actually does;
+ * both are keyed on the same two facts, so a row never offers a replay the applier will not run.
+ */
+function seatLevelRetrySeat(issue: RecoveryIssue): CrewSeatId | undefined {
+  if (issue.taskId !== undefined) return undefined;
+  if (issue.seat !== 'plan' && issue.seat !== 'review') return undefined;
+  const contextCode = recoveryFactString(issue.facts, 'apiContextCode');
+  const reviewFailure = recoveryFactString(issue.facts, 'reviewFailureKind');
+  return contextCode === 'insufficient-context' || reviewFailure === 'call-failed'
+    ? issue.seat
+    : undefined;
+}
+
 function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
   const actions = getRecoveryPromptActions(issue);
-  const context: RecoveryActionChoiceContext = { reason: issue.reason, facts: issue.facts };
+  const context: RecoveryActionChoiceContext = {
+    reason: issue.reason,
+    facts: issue.facts,
+    switchSeat: issue.switchSeat,
+    seatRetry: seatLevelRetrySeat(issue),
+  };
   const recommended = resolveRecommendedAction(issue, actions);
   const facts = [
     ...formatSubjectLines(issue),
@@ -211,18 +360,47 @@ export function formatRecoveryPrompt(issue: RecoveryIssue): string {
   return promptRowsToString(buildRecoveryPromptRows(issue));
 }
 
+/** The issue and its facts for the picker; action rows are rendered as real selectable rows. */
+export function formatRecoveryPromptSummary(issue: RecoveryIssue): string {
+  const rows = buildRecoveryPromptRows(issue).filter(
+    (row): row is Exclude<PromptRow, { kind: 'action' } | { kind: 'note' }> =>
+      row.kind !== 'action' && row.kind !== 'note',
+  );
+  return promptRowsToString(rows);
+}
+
+export function recommendedRecoveryAction(issue: RecoveryIssue): RecoveryAction | undefined {
+  return resolveRecommendedAction(issue, getRecoveryPromptActions(issue));
+}
+
 export function parseRecoveryActionAnswer(
   input: string,
   issue: RecoveryIssue,
 ): RecoveryAction | null {
   const actions = getRecoveryPromptActions(issue);
   if (input.length === 0) return resolveRecommendedAction(issue, actions) ?? null;
-  const normalized = input.trim().toLowerCase();
-  if (normalized.length === 0) {
-    return actions.includes('pause-run') ? 'pause-run' : null;
+  // The pause key is the space bar, so whitespace alone is that key press, not an empty answer.
+  const trimmed = input.trim();
+  const normalized = trimmed.length === 0 ? 'space' : trimmed.toLowerCase();
+  if (SWITCH_SEAT_ROW_KEY.test(normalized)) {
+    return numberedSwitchSeatAction(normalized, issue, actions);
   }
-  const action = findAliasedActionAmong(normalized, actions);
-  return action ?? null;
+  return findAliasedActionAmong(normalized, actions) ?? null;
+}
+
+/**
+ * A numbered seat key is only a key while the prompt printed it: one offered
+ * tool is keyed bare, so `w2` there is a typo, not a choice.
+ */
+function numberedSwitchSeatAction(
+  value: string,
+  issue: RecoveryIssue,
+  actions: readonly RecoveryAction[],
+): RecoveryAction | null {
+  if (!actions.includes('switch-seat')) return null;
+  const offered = issue.switchSeat?.candidates ?? [];
+  if (offered.length < 2) return null;
+  return switchSeatCandidateForAnswer(value, issue.switchSeat) === undefined ? null : 'switch-seat';
 }
 
 function findAliasedActionAmong(
@@ -245,31 +423,86 @@ function resolveRecommendedAction(
 }
 
 function formatRecoveryHeader(issue: RecoveryIssue): string {
+  const context = formatApiContextHeadline(issue);
+  if (context !== undefined) return context;
+  const usageLimit = formatUsageLimitHeadline(issue);
+  if (usageLimit !== undefined) return usageLimit;
+  // "T003 validation failed" takes "after 3 attempts"; a message that already
+  // ends a sentence would read it as part of that sentence ("or abort after 2
+  // attempts"), so it keeps its full stop and the attempt count stays in the
+  // facts, where the issue's own `Attempts: n/m` detail already carries it.
   const attemptSuffix =
-    issue.attempts !== undefined ? ` after ${countNoun(issue.attempts, 'attempt')}` : '';
-  return `recovery needed · ${issue.message}${attemptSuffix}`;
+    issue.attempts !== undefined && !issue.message.endsWith('.')
+      ? ` after ${countNoun(issue.attempts, 'attempt')}`
+      : '';
+  return `Recovery needed · ${issue.message}${attemptSuffix}`;
+}
+
+/** The clock the seat comes back on, in the words the header uses — the panel's only spelling of it. */
+function resetNote(issue: RecoveryIssue): string | undefined {
+  if (issue.resetAt === undefined) return undefined;
+  const resetAt = Date.parse(issue.resetAt);
+  return Number.isFinite(resetAt) ? formatResetNote(resetAt) : undefined;
+}
+
+/**
+ * A packet the seat was never given states two things: that no call was made, and why. The seat is
+ * named in the word the crew uses for it, so the row is not read as a review that found nothing or
+ * a brief that needs repairing. Every figure the refusal compared stays in `/usage`; the message
+ * the boundary wrote repeats the missing sections the details already carry, so the panel states
+ * the cause once and lets the detail row hold the list.
+ */
+function formatApiContextHeadline(issue: RecoveryIssue): string | undefined {
+  const context = readRecoveryContext(issue);
+  if (context === null) return undefined;
+  return `Nothing was sent to ${recoveryContextSeatLabel(context)} · ${recoveryContextCauseWords(context)}`;
+}
+
+/**
+ * A quota halt states three things and no more: that recovery is needed, the tool
+ * that ran out, and the clock it comes back on — the same words the header uses,
+ * so one instant is never spelled two ways on one screen. The engine's own
+ * sentence keeps the advice for the headless sinks; here the action rows are the
+ * advice, and the tool's verbatim diagnostic stays in the facts as a quote.
+ */
+function formatUsageLimitHeadline(issue: RecoveryIssue): string | undefined {
+  if (issue.reason !== 'runner-usage-limit') return undefined;
+  const tool = recoveryFactString(issue.facts, 'tool');
+  if (tool === undefined) return undefined;
+  const reset = resetNote(issue);
+  return `Usage limit on ${tool}${reset === undefined ? '' : ` · ${reset}`}`;
 }
 
 function formatSubjectLines(issue: RecoveryIssue): string[] {
   const lines: string[] = [];
-  if (issue.taskId && issue.taskTitle) lines.push(`task ${issue.taskId} · ${issue.taskTitle}`);
-  if (issue.files.length > 0) lines.push(`files ${formatMiddotList(issue.files, 3)}`);
+  if (issue.taskId && issue.taskTitle) lines.push(`Task ${issue.taskId} · ${issue.taskTitle}`);
+  if (issue.files.length > 0) lines.push(`Files ${formatMiddotList(issue.files, 3)}`);
   const affected = issue.affectedTaskIds.filter((taskId) => taskId !== issue.taskId);
-  if (affected.length > 0) lines.push(`affected ${formatMiddotList(affected, 3)}`);
+  if (affected.length > 0) lines.push(`Affected ${formatMiddotList(affected, 3)}`);
   return lines;
 }
 
+// One instant, one spelling: whichever surface carries the reset clock, the others drop the clause
+// rather than restating it in their own words.
+const RESET_CLAUSE = /\s*·\s*resets\b[^·]*$/iu;
+
+export function stripRecoveryResetClause(text: string): string {
+  return text.replace(RESET_CLAUSE, '');
+}
+
 function formatDetailLines(issue: RecoveryIssue): string[] {
+  const dropQuotedReset = resetNote(issue) !== undefined;
   return issue.details
     .filter((detail) => !detail.startsWith('Worker profile:'))
     .slice(0, 4)
-    .map(formatDetailLine);
+    .map(formatDetailLine)
+    .map((detail) => (dropQuotedReset ? stripRecoveryResetClause(detail) : detail));
 }
 
 function formatDetailLine(detail: string): string {
-  if (detail.startsWith('Validation: ')) return `last check ${detail.slice('Validation: '.length)}`;
-  if (detail.startsWith('Validation ')) return `last check ${detail.slice('Validation '.length)}`;
-  if (detail.startsWith('Spent ')) return `spent ${detail.slice('Spent '.length)}`;
+  if (detail.startsWith('Validation: ')) return `Last check ${detail.slice('Validation: '.length)}`;
+  if (detail.startsWith('Validation ')) return `Last check ${detail.slice('Validation '.length)}`;
+  if (detail.startsWith('Spent ')) return `Spent ${detail.slice('Spent '.length)}`;
   return detail;
 }
 
@@ -279,7 +512,7 @@ function formatWorkerLines(issue: RecoveryIssue): string[] {
   const contextLength = recoveryFactNumber(issue.facts, 'contextLength');
   return [
     contextLength === undefined
-      ? `worker ${worker}`
-      : `worker ${worker} · ${contextLength} context`,
+      ? `Worker ${worker}`
+      : `Worker ${worker} · ${contextLength} context`,
   ];
 }

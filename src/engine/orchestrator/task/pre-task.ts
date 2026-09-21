@@ -1,9 +1,12 @@
 import type { Task } from '../../../core/schemas/task.js';
+import { taskFiles } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
-import { transitionAndSave } from '../state-ops.js';
+import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { buildSnapshotFailedRecoveryIssue } from '../recovery/builders/task.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { publishTaskStart, publishTaskSkipped, publishWarning, publishError } from '../events.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
@@ -37,6 +40,7 @@ export async function runPreTaskHooksAndPublish(opts: {
       index,
       total: totalTasks,
       file: task.file,
+      files: [...taskFiles(task)],
       action: task.action,
       ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
       ...buildRoutingEventFields(wctx.routingDecision),
@@ -82,6 +86,7 @@ export async function runPreTaskHooksAndPublish(opts: {
       index,
       total: totalTasks,
       file: task.file,
+      files: [...taskFiles(task)],
       action: task.action,
       tool: getRunnerDisplayName(config.implementer),
       ...(config.implementer.model !== undefined && { model: config.implementer.model }),
@@ -100,11 +105,14 @@ export async function runPreTaskHooksAndPublish(opts: {
       }),
     );
   } catch (err) {
-    publishError({
-      bus: wctx.bus,
-      phase: state.phase,
-      message: `Failed to capture task baseline snapshot: ${toErrorMessage(err)}`,
-    });
+    const detail = `Failed to capture task baseline snapshot: ${toErrorMessage(err)}`;
+    publishError({ bus: wctx.bus, phase: state.phase, message: detail });
+    state = raisePendingRecovery(
+      wctx,
+      state,
+      buildSnapshotFailedRecoveryIssue({ task, phase: state.phase, detail, createdAt: nowIso() }),
+      setTrackedState,
+    );
     return { proceed: false, state };
   }
 

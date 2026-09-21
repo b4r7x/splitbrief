@@ -355,26 +355,13 @@ describe('handleWorkflowCtrlChords', () => {
     ).toEqual({ type: 'toggle-diff', key: 'implementer_generate_done:1' });
   });
 
-  it('maps Ctrl+G to the cost drilldown', () => {
+  it('leaves Ctrl+G unbound now that the cost drilldown is gone', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'g',
         key: key({ ctrl: true }),
         sections,
         findLatestDiff: () => null,
-        findLatestActivityBatch: () => null,
-      }),
-    ).toEqual({ type: 'open-cost-drilldown' });
-  });
-
-  it('reserves attached Ctrl+D for the attach client instead of toggling diff', () => {
-    expect(
-      handleWorkflowCtrlChords({
-        input: 'd',
-        key: key({ ctrl: true }),
-        attachState: 'attached',
-        sections,
-        findLatestDiff: () => 'implementer_generate_done:1',
         findLatestActivityBatch: () => null,
       }),
     ).toEqual({ type: 'none' });

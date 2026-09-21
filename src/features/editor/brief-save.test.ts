@@ -67,6 +67,16 @@ describe('checkBriefSave', () => {
     expect(result.message).toMatch(/circular dependency/i);
   });
 
+  it('anchor not in files is rejected', () => {
+    const task = validTask({ files: ['src/other.ts', 'src/greet.test.ts'] });
+    const result = checkBriefSave([task]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected rejection');
+    expect(result.message).toBe(
+      'Task T001 names src/greet.ts as its anchor but files does not list it',
+    );
+  });
+
   it('rejects a brief-quality failure and surfaces the first error message', () => {
     const task = makeTask({
       id: 'T001',

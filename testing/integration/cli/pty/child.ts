@@ -1,12 +1,21 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { createElement } from 'react';
+import { createElement, type ReactElement } from 'react';
 import { App, type AppProps } from '../../../../src/app/root.js';
 import { createDefaultConfig } from '../../../../src/core/config/load/defaults.js';
 import { createInitialState, transition } from '../../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../../src/core/paths-io.js';
+import { artifactPresence } from '../../../../src/core/sessions/run-record-io.js';
+import { resumeStep } from '../../../../src/core/sessions/run-status.js';
+import { saveState } from '../../../../src/core/state/persistence.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import type { RunWorkflowOptions } from '../../../../src/engine/orchestrator/run/init.js';
+import {
+  rebaseOnPersistedWorkflowState,
+  transitionAndSave,
+} from '../../../../src/engine/orchestrator/state-ops.js';
+import { throwIfAborted } from '../../../../src/utils/abort.js';
 import { prepareExecution } from '../../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import type { PreparationPolicy } from '../../../../src/engine/runners/prepare-execution/types.js';
 import type { PreparedExecution } from '../../../../src/engine/runners/prepared-execution.js';
@@ -28,14 +37,45 @@ export interface PtyChildResult {
   readonly approved: true;
 }
 
+// This child only ever renders <App>, so the injected renderer takes the
+// element the child builds and tests can read AppProps off it.
 interface PtyChildDependencies {
-  readonly renderApp: typeof productionRenderApp;
+  renderApp: (
+    appElement: ReactElement<AppProps>,
+    options: Parameters<typeof productionRenderApp>[1],
+  ) => ReturnType<typeof productionRenderApp>;
 }
 
 const DEFAULT_DEPENDENCIES: PtyChildDependencies = {
   renderApp: productionRenderApp,
 };
 const PTY_FEATURE = 'PTY behavior contract';
+export const PTY_REVIEW_SESSION_ID = 'pty-review-session';
+
+const APP_ABORTED = Symbol('PTY child app aborted');
+
+/**
+ * Bounds every fixture wait by the app's lifetime: an abort resolves the race
+ * instead of leaving the wait pending, and the abort listener is always
+ * removed. The sentinel resolves rather than rejects so a lost race can never
+ * become an unhandled rejection.
+ */
+function whileAppLives<T>(
+  options: Pick<RunWorkflowOptions, 'signal'>,
+  wait: Promise<T>,
+): Promise<T | typeof APP_ABORTED> {
+  const { signal } = options;
+  if (signal === undefined) return wait;
+  if (signal.aborted) return Promise.resolve(APP_ABORTED);
+  const aborted = Promise.withResolvers<typeof APP_ABORTED>();
+  const onAbort = (): void => {
+    aborted.resolve(APP_ABORTED);
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
+  return Promise.race([wait, aborted.promise]).finally(() => {
+    signal.removeEventListener('abort', onAbort);
+  });
+}
 
 export function parsePtyChildArgs(argv: readonly string[]): void {
   if (argv.length !== 0) throw new Error('PTY child does not accept arguments');
@@ -85,7 +125,6 @@ export async function runPtyChild(
       },
       workflow: {
         ...defaults.workflow,
-        persistTranscript: false,
       },
     };
     configStore.__testReset({
@@ -100,6 +139,7 @@ export async function runPtyChild(
     const prepared = await preparePtyExecution(projectDir, config);
     routerStore.init({
       screen: 'workflow',
+      run: makeRunRecord(),
       execution: { kind: 'local', prepared },
     });
 
@@ -111,12 +151,52 @@ export async function runPtyChild(
         phase: 'reviewing-spec',
         feature: PTY_FEATURE,
       });
-      result = await options.callbacks.onApprovalNeeded('spec', reviewPath);
-      if (result.approved !== true || Object.keys(result).length !== 1) {
+      const approval = await whileAppLives(
+        options,
+        options.callbacks.onApprovalNeeded('spec', reviewPath),
+      );
+      if (approval === APP_ABORTED) {
+        throwIfAborted(options.signal);
+        throw new Error('PTY review exited before approval');
+      }
+      result = approval;
+      if (approval.approved !== true || Object.keys(approval).length !== 1) {
         throw new Error('PTY review did not return exactly approved true');
       }
-      process.stdout.write(`${PTY_APPROVED_MARKER}\n`);
-      return new Promise<never>(() => {});
+      const interrupted = Promise.withResolvers<void>();
+      // The stop's local interrupt is live before the marker: the quit that
+      // follows must land on an abortable wait, never on a fixture that can
+      // only pend forever.
+      options.sinks.setAbortHandler(() => interrupted.resolve());
+      try {
+        process.stdout.write(`${PTY_APPROVED_MARKER}\n`);
+        await whileAppLives(options, interrupted.promise);
+        throwIfAborted(options.signal);
+        const cut = options.sinks.consumeBoundaryInterrupt?.() === true ? 'boundary' : 'mid-step';
+        const ref = { projectDir, sessionId: PTY_REVIEW_SESSION_ID };
+        const current = rebaseOnPersistedWorkflowState(ref, reviewingSpecState());
+        const parked = transitionAndSave(ref, current, {
+          type: 'INTERRUPT_STEP',
+          step: resumeStep(current, artifactPresence(ref)),
+          source: 'user',
+          cut,
+        });
+        publishEvent(options, {
+          type: 'turn_interrupted',
+          ts: Date.now(),
+          phase: parked.phase,
+          source: 'user',
+          at: cut,
+        });
+        await whileAppLives(
+          options,
+          Promise.resolve(options.callbacks.onContinuationNeeded?.('', cut) ?? ''),
+        );
+        throwIfAborted(options.signal);
+        throw new Error('PTY fixture run ended at the continuation park');
+      } finally {
+        options.sinks.setAbortHandler(null);
+      }
     };
 
     await dependencies.renderApp(createElement<AppProps>(App, { workflowDeps: { runWorkflow } }), {
@@ -143,8 +223,11 @@ async function preparePtyExecution(
   config: ReturnType<typeof createDefaultConfig>,
 ): Promise<PreparedExecution> {
   const resumeState = reviewingSpecState();
-  const ref = { projectDir, sessionId: 'pty-review-session' };
+  const ref = { projectDir, sessionId: PTY_REVIEW_SESSION_ID };
   ensureSessionDir(ref.projectDir, ref.sessionId);
+  // A gate is a durable wait: the phase it parks at is on disk before the run
+  // mounts, so the app hydrates it and the resume is real.
+  saveState(ref, resumeState);
   // The fixture planner is a declared shell command, so this child models an
   // owner who already granted it, into a throwaway trust directory.
   const stateDir = join(projectDir, 'pty-runner-trust');

@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, describe, it, expect } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { render } from 'ink-testing-library';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -10,6 +11,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
+import { skillsStore } from '../../stores/project/skills.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { commandPaletteMruStore } from '../../stores/ui/command-palette-mru.js';
@@ -49,13 +51,17 @@ async function setWorkflowModeForTest(mode: WorkflowMode): Promise<RuntimeConfig
   return { kind: 'saved', ok: true };
 }
 
-function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommandDef[] {
+function createTestCommands(): RuntimeCommandDef[] {
   const ctx: RuntimeCommandContext = {
-    isAttached: opts.isAttached ?? false,
     openOverlay: overlayStore.open,
     navigate: (to) => routerStore.navigate({ to }),
     quit: () => {},
+    resumeRun: () => true,
+    endRun: () => true,
+    refreshRun: () => {},
     setWorkflowMode: setWorkflowModeForTest,
+    getWorkflowMode: () => configStore.get().config?.workflow.mode ?? 'standard',
+    prefillComposer: composerDraftStore.request,
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => ({
@@ -70,7 +76,7 @@ function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommand
     refreshProjectFiles: () => {},
     listSkills: () => [],
     toggleSkill: () => ({ status: 'unknown' }),
-    refreshSkills: () => {},
+    refreshSkills: async () => {},
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: () => true,
     requestTaskRedo: () => true,
@@ -79,18 +85,14 @@ function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommand
     attachImage: () => ({ ok: false, reason: 'not-found' }),
     detachImage: () => false,
     listAttachments: () => [],
-    writeHandoff: async () => ({ outputDir: '' }),
     listApprovals: () => [],
     clearApprovals: () => 0,
-    getApprovalEnabled: () => true,
-    setApprovalEnabled: () => {},
     acceptRunSnapshot: async () => ({ snapshotId: 'test-snapshot', isFirstSnapshot: false }),
     rejectRunSnapshot: async () => ({ status: 'empty' }),
-    compactTranscript: async () => ({ status: 'unsupported', plannerName: 'test' }),
-    exportSession: async () => ({ status: 'ok', path: '/tmp/report.html' }),
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
     toggleLatestDiff: () => ({ status: 'toggled', expanded: true }),
+    listBriefs: () => [],
     toggleSidebar: () => ({ status: 'toggled', visible: true }),
     copyTarget: async () => 'empty',
   };
@@ -106,34 +108,6 @@ function renderCommandPalette(): ReturnType<typeof render> {
         executeRuntimeCommand(commands, raw, {
           screen: routerStore.get().screen,
           phase: lifecycleStore.get().phase,
-          attached: false,
-          plannerSupportsImages: true,
-          onError: feedbackStore.setError,
-        })
-      }
-    />,
-  );
-}
-
-function renderAttachedCommandPalette(): ReturnType<typeof render> {
-  routerStore.navigate({
-    to: 'workflow',
-    execution: {
-      kind: 'attached',
-      feature: 'attached feature',
-      sessionId: 'attached-session',
-      attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'tok' },
-    },
-  });
-  const commands = createTestCommands({ isAttached: true });
-  return render(
-    <CommandPaletteOverlay
-      commands={commands}
-      onRuntimeCommand={(raw) =>
-        executeRuntimeCommand(commands, raw, {
-          screen: routerStore.get().screen,
-          phase: lifecycleStore.get().phase,
-          attached: false,
           plannerSupportsImages: true,
           onError: feedbackStore.setError,
         })
@@ -145,6 +119,7 @@ function renderAttachedCommandPalette(): ReturnType<typeof render> {
 function enterWorkflowScreen(): void {
   routerStore.navigate({
     to: 'workflow',
+    run: makeRunRecord(),
     execution: {
       kind: 'local',
       prepared: makePreparedExecution({
@@ -247,6 +222,7 @@ beforeEach(() => {
   feedbackStore.reset();
   routerStore.reset();
   sessionsStore.reset();
+  skillsStore.reset();
   tasksStore.reset();
   lifecycleStore.reset();
   commandPaletteMruStore.__testReset();
@@ -262,6 +238,7 @@ afterEach(() => {
   feedbackStore.reset();
   routerStore.reset();
   sessionsStore.reset();
+  skillsStore.reset();
   tasksStore.reset();
   lifecycleStore.reset();
   commandPaletteMruStore.__testReset();
@@ -416,10 +393,11 @@ describe('CommandPaletteOverlay', () => {
     const session = makeSession({
       id: 'sess-abc',
       feature: 'add login form',
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
     saveSummary({ projectDir: projectDir, sessionId: session.id }, session);
+    sessionsStore.load(projectDir);
 
     const instance = renderCommandPalette();
     await tick(1);
@@ -634,35 +612,16 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
-  it('does not expose local config mutators for attached clients', async () => {
-    const instance = renderAttachedCommandPalette();
-    await tick(1);
-    await tick(1);
-
-    const frame = instance.lastFrame() ?? '';
-    expect(frame).not.toContain('Planner');
-    expect(frame).not.toContain('implementer');
-    expect(frame).not.toContain('settings');
-
-    await write(instance, 'mode');
-    await tick(1);
-    await tick(1);
-    expect(commandRows(instance.lastFrame() ?? '').some((row) => row.includes('/mode'))).toBe(
-      false,
-    );
-
-    instance.unmount();
-  });
-
-  it('session action does not double-close overlay (underlying overlay survives)', async () => {
+  it('opening a run from the palette clears every overlay and shows it at rest', async () => {
     const uniqueFeature = 'uniquefeaturexyz987';
     const session = makeSession({
       id: 'sess-regression',
       feature: uniqueFeature,
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
     saveSummary({ projectDir: projectDir, sessionId: session.id }, session);
+    sessionsStore.load(projectDir);
 
     overlayStore.reset();
     overlayStore.open('settings');
@@ -684,7 +643,13 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    expect(overlayStore.get().active).toBe('settings');
+    // The run takes the screen, so nothing is left layered over it — not the palette that
+    // opened it and not the overlay the palette was opened from.
+    expect(overlayStore.get().active).toBe('none');
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen !== 'workflow') throw new Error('expected the workflow route');
+    expect(route.execution.kind).toBe('at-rest');
 
     instance.unmount();
   });
@@ -801,7 +766,7 @@ describe('CommandPaletteOverlay', () => {
     const rows = commandRows(instance.lastFrame() ?? '');
     expect(rows.some((row) => row.includes('/help'))).toBe(true);
     expect(rows.some((row) => row.includes('/diff'))).toBe(false);
-    expect(rows.some((row) => row.includes('/cost'))).toBe(false);
+    expect(rows.some((row) => row.includes('/sidebar'))).toBe(false);
     instance.unmount();
   });
 
@@ -840,10 +805,11 @@ describe('CommandPaletteOverlay', () => {
     const session = makeSession({
       id: 'sess-long-title',
       feature,
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
     saveSummary({ projectDir, sessionId: session.id }, session);
+    sessionsStore.load(projectDir);
 
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const instance = renderCommandPalette();
@@ -867,10 +833,11 @@ describe('CommandPaletteOverlay', () => {
     const session = makeSession({
       id: 'sess-widening',
       feature,
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
     saveSummary({ projectDir, sessionId: session.id }, session);
+    sessionsStore.load(projectDir);
 
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const instance = renderCommandPalette();
@@ -891,15 +858,50 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
+  it('opens the description at one column for the command and skill rows of a section', async () => {
+    skillsStore.setAvailable([
+      {
+        id: 'terminal-layout',
+        name: 'Terminal layout',
+        description: 'Check spacing and terminal-width behavior',
+        path: 'fixtures/skills/terminal-layout/SKILL.md',
+        scope: 'project',
+        projectDir,
+      },
+      {
+        id: 'release-checks',
+        name: 'Release checks',
+        description: 'Run deterministic quality gates',
+        path: 'fixtures/skills/release-checks/SKILL.md',
+        scope: 'global',
+      },
+    ]);
+
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    const rows = paletteResultRows(instance.lastFrame() ?? '');
+    const longSkill = 'Skill · Terminal layout';
+    const shortSkill = 'Skill · Release checks';
+    const commandColumn = descriptionStart(rowContaining(rows, '/help'), '/help');
+
+    expect(descriptionStart(rowContaining(rows, longSkill), longSkill)).toBe(commandColumn);
+    expect(descriptionStart(rowContaining(rows, shortSkill), shortSkill)).toBe(commandColumn);
+    instance.unmount();
+  });
+
   it('renders the same number of rows for an empty query and a one-match query', async () => {
     const feature = 'zzzuniquesessionfeature';
     const session = makeSession({
       id: 'sess-height',
       feature,
-      status: 'interrupted',
+      status: 'open',
       summary: null,
     });
     saveSummary({ projectDir, sessionId: session.id }, session);
+    sessionsStore.load(projectDir);
 
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const instance = renderCommandPalette();

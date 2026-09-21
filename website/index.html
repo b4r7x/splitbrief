@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#141414">
+  <meta name="description" content="SPLITBRIEF connects a stronger planning tool with a smaller coding tool through self-contained Task Briefs, validation and review.">
+  <title>SPLITBRIEF — two tools, one clear handoff</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/src/styles/main.css">
+  <script type="module" src="/src/main.ts"></script>
+</head>
+<body>
+  <canvas class="ambient" data-ambient aria-hidden="true"></canvas>
+  <div class="atmosphere" data-atmosphere aria-hidden="true"></div>
+  <a class="skip-link" href="#install">Skip to installation</a>
+
+  <main id="top">
+    <section class="scroll-track" data-scroll-track aria-label="Explore a SPLITBRIEF workflow">
+      <div class="scroll-stage" data-scroll-stage>
+        <!-- site-header -->
+        <div class="composition">
+          <div class="introduction">
+            <div><h1>Two tools. One clear handoff.</h1><p>The stronger tool plans and reviews. The smaller tool builds.</p></div>
+            <a class="get-started" href="#install"><span aria-hidden="true">[</span> Get started <span aria-hidden="true">]</span></a>
+          </div>
+          <div class="terminal">
+            <div class="terminal-bar"><span><b aria-hidden="true">[ / ]</b> splitbrief <span class="path">/ a local run</span></span><span class="example">Workflow walkthrough</span></div>
+            <div class="command"><span aria-hidden="true">$</span><code>splitbrief start <span>"your change"</span></code><span class="command-note">one request → one reviewed run</span></div>
+            <div class="terminal-body">
+              <nav class="timeline" aria-label="Choose a workflow step">
+                <button class="timeline-step" data-state="current" aria-current="step" type="button"><i aria-hidden="true">01</i><span>Plan<small>Stronger tool</small></span></button>
+                <button class="timeline-step" type="button"><i aria-hidden="true">02</i><span>Brief<small>Human approval</small></span></button>
+                <button class="timeline-step" type="button"><i aria-hidden="true">03</i><span>Build<small>Smaller tool</small></span></button>
+                <button class="timeline-step" type="button"><i aria-hidden="true">04</i><span>Check<small>Run validation</small></span></button>
+                <button class="timeline-step" type="button"><i aria-hidden="true">05</i><span>Review<small>Stronger tool</small></span></button>
+                <button class="timeline-step" type="button"><i aria-hidden="true">06</i><span>Saved<small>Local evidence</small></span></button>
+                <p class="one-change">One brief.<br>One verifiable change.</p>
+              </nav>
+              <div class="work-window" aria-label="Illustrative workflow, controlled by scrolling or the step buttons">
+                <div class="work-document">
+                  <section class="document-section" id="plan">
+                    <p class="section-eyebrow">01 / PLANNER <span>stronger tool</span></p>
+                    <h2>Turn a request into a plan.</h2>
+                    <p class="explanation">Your planning tool reads the repository and works out what needs to change. SPLITBRIEF saves that context before implementation starts.</p>
+                    <div class="read-list"><span class="tick">✓</span> Repository rules, existing code, types and tests</div>
+                    <div class="artifact-row"><code>research.md</code><span>What is already here</span><b>✓</b></div>
+                    <div class="artifact-row"><code>spec.md</code><span data-reveal="0.005,0.045">The behavior you agree on</span><b data-reveal="0.005,0.045">✓</b></div>
+                    <div class="artifact-row"><code>plan.md</code><span data-reveal="0.05,0.10">The order of the changes</span><b data-reveal="0.05,0.10">✓</b></div>
+                    <p class="document-note" data-reveal="0.075,0.12">You review the spec before the work moves on.</p>
+                  </section>
+                  <section class="document-section" id="brief">
+                    <p class="section-eyebrow">02 / TASK BRIEF <span>the handoff</span></p>
+                    <h2>Give the next tool a complete job.</h2>
+                    <p class="explanation">The planner compiles each change into a self-contained Task Brief. The implementer gets everything it needs for that task.</p>
+                    <dl class="brief-fields">
+                      <div><dt>Scope</dt><dd>Files it may change. Boundaries it must keep.</dd></div>
+                      <div data-reveal="0.18,0.215"><dt>Context</dt><dd>Code, types, signatures and ordered steps.</dd></div>
+                      <div data-reveal="0.22,0.255"><dt>Checks</dt><dd>Acceptance criteria and validation commands.</dd></div>
+                      <div data-reveal="0.26,0.285"><dt>Stop if</dt><dd>An assumption fails. Return to the planner.</dd></div>
+                    </dl>
+                    <p class="approval" data-reveal="0.285,0.31"><span>✓</span> You approve the briefs before execution.</p>
+                  </section>
+                  <section class="document-section" id="build">
+                    <p class="section-eyebrow">03 / IMPLEMENTER <span>smaller tool</span></p>
+                    <h2>One brief in. A scoped change out.</h2>
+                    <p class="explanation">SPLITBRIEF sends the approved brief to your implementation tool. It follows the instructions and changes the declared files.</p>
+                    <div class="handoff" data-reveal="0.36,0.395"><span><small>PLANNER</small>Task Brief</span><span class="handoff-link" aria-hidden="true">········→</span><span><small>IMPLEMENTER</small>Working changes</span></div>
+                    <div class="build-progress" aria-hidden="true"><span></span></div>
+                    <p class="document-note" data-reveal="0.40,0.44">It receives this brief — not the full spec, the whole plan or the other tasks.</p>
+                    <div class="receipt" data-reveal="0.445,0.48"><span>task / T001</span><span>✓ ready for validation</span></div>
+                  </section>
+                  <section class="document-section" id="check">
+                    <p class="section-eyebrow">04 / VALIDATION <span>SPLITBRIEF</span></p>
+                    <h2>Check the work. Keep the evidence.</h2>
+                    <p class="explanation">After implementation, SPLITBRIEF runs the configured checks in your project. A failure goes back with the brief for another attempt.</p>
+                    <div class="check-row"><span>typecheck</span><span>✓ passed</span></div>
+                    <div class="check-row" data-reveal="0.53,0.555"><span>lint</span><span>✓ passed</span></div>
+                    <div class="check-row" data-reveal="0.56,0.585"><span>tests</span><span>× acceptance check failed</span></div>
+                    <div class="retry" data-reveal="0.59,0.635"><span aria-hidden="true">↳</span><p>Retry with the failure attached.<small>Escalate to the stronger tool if retries run out.</small></p></div>
+                    <div class="receipt" data-reveal="0.64,0.68"><span>typecheck / lint / tests</span><span>✓ passed on retry</span></div>
+                  </section>
+                  <section class="document-section" id="review">
+                    <p class="section-eyebrow">05 / REVIEW <span>stronger tool</span></p>
+                    <h2>Bring the planner back to the diff.</h2>
+                    <p class="explanation">Passing checks is one part of the job. The reviewer reads the finished changes against the spec and the briefs.</p>
+                    <div class="review-check"><span>✓</span><div>The requested behavior is there.<small>Compare the result with the spec.</small></div></div>
+                    <div class="review-check" data-reveal="0.74,0.775"><span>✓</span><div>The agreed scope is intact.<small>Check the diff against the briefs.</small></div></div>
+                    <div class="review-check" data-reveal="0.78,0.815"><span>✓</span><div>The evidence supports the result.<small>Inspect the validation output.</small></div></div>
+                    <p class="document-note" data-reveal="0.815,0.84">The planner is the reviewer by default. You can configure a separate one.</p>
+                  </section>
+                  <section class="document-section" id="saved">
+                    <p class="section-eyebrow">06 / LOCAL RECORD <span>your repository</span></p>
+                    <h2>The handoff leaves a trail.</h2>
+                    <p class="explanation">Briefs, validation results and review stay in the local session. You can inspect the decisions and continue an unfinished run.</p>
+                    <p class="saved-path">.splitbrief/sessions/&lt;id&gt;/</p>
+                    <div class="file-row"><code>├ tasks.md</code><span>The approved work</span></div>
+                    <div class="file-row" data-reveal="0.89,0.925"><code>├ session.jsonl</code><span>What happened</span></div>
+                    <div class="file-row" data-reveal="0.93,0.955"><code>├ evidence.json</code><span>Validation results</span></div>
+                    <div class="file-row" data-reveal="0.96,0.98"><code>└ review.md</code><span>The final review</span></div>
+                    <p class="closed" data-reveal="0.98,1">✓ Final review passed. Run closed.</p>
+                  </section>
+                </div>
+              </div>
+            </div>
+            <div class="terminal-footer"><span id="phase-caption">01 / Your request becomes a plan.</span><span class="record-label">Illustrative run · local files</span></div>
+          </div>
+          <div class="scene-controls"><span class="scroll-hint">Scroll to follow the run <span aria-hidden="true">↓</span><span class="click-hint"> or choose a step</span></span><button class="pause" data-pause type="button" aria-pressed="false">Ⅱ Pause motion</button></div>
+        </div>
+      </div>
+    </section>
+    <section class="closing" aria-label="The two tools connected by a brief"><p>Plan. Hand off. Verify.<span>A clear contract between your tools.</span></p><a href="#details">Inside your repository <span aria-hidden="true">↓</span></a></section>
+    <section class="continuation" id="details" data-continuation aria-label="Inside your repository">
+      <div class="details-stage" data-details-stage>
+        <div class="details-composition">
+          <nav class="detail-navigation" aria-label="Explore setup, session files and installation">
+            <a href="#roles" data-chapter="0" aria-current="step"><span>01</span> Setup</a>
+            <a href="#record" data-chapter="1"><span>02</span> Record</a>
+            <a href="#install" data-chapter="2"><span>03</span> Install</a>
+          </nav>
+          <div class="details-body">
+            <div class="details-art" data-art-region aria-hidden="true"></div>
+            <div class="detail-panels">
+              <section class="detail-panel" data-panel="0" id="roles" aria-labelledby="roles-heading">
+                <p class="section-eyebrow" data-decode>01 / THE SETUP</p>
+                <h2 id="roles-heading" data-decode>Your tools. Your roles.</h2>
+                <p class="section-lead" data-decode>Choose a stronger model for planning.<br>A smaller one for implementation.</p>
+                <div class="code-sheet">
+                  <div class="sheet-label"><span data-decode>.splitbrief/config.yaml</span><span>example configuration</span></div>
+                  <pre data-decode><code><span class="dim">version:</span> 3
+
+<span class="code-key">planner:</span>
+  kind: cli
+  tool: claude-code
+  model: opus
+
+<span class="code-key">implementer:</span>
+  kind: cli
+  tool: codex
+  model: auto</code></pre>
+                  <div class="sheet-foot" data-decode>Set each role’s model. <code>auto</code> uses that tool’s default.</div>
+                </div>
+                <p class="detail-footnote" data-decode>The planner also reviews by default. The tools and models are your choice.</p>
+              </section>
+              <section class="detail-panel" data-panel="1" id="record" aria-labelledby="record-heading">
+                <p class="section-eyebrow" data-decode>02 / THE RECORD</p>
+                <h2 id="record-heading" data-decode>Open the files. Follow the work.</h2>
+                <p class="section-lead" data-decode>The run stays with the repository.</p>
+                <p class="detail-description" data-decode>Each session keeps the plan, briefs and results on disk. Pick a file to see what it is for.</p>
+                <div class="file-inspector">
+                  <div class="sheet-label"><span data-decode>.splitbrief/sessions/&lt;id&gt;/</span></div>
+                  <div class="file-tabs" role="tablist" aria-label="Session files">
+                    <button type="button" role="tab" id="tab-tasks" aria-controls="file-description" aria-selected="true" data-file="tasks.md">tasks.md</button>
+                    <button type="button" role="tab" id="tab-review" aria-controls="file-description" aria-selected="false" tabindex="-1" data-file="review.md">review.md</button>
+                    <button type="button" role="tab" id="tab-events" aria-controls="file-description" aria-selected="false" tabindex="-1" data-file="session.jsonl">session.jsonl</button>
+                    <button type="button" role="tab" id="tab-state" aria-controls="file-description" aria-selected="false" tabindex="-1" data-file="state.json">state.json</button>
+                  </div>
+                  <div id="file-description" role="tabpanel" aria-labelledby="tab-tasks" tabindex="0">
+                    <span class="file-kind" data-file-decode>THE CONTRACT</span>
+                    <h3 data-file-decode>The brief the implementer receives.</h3>
+                    <p data-file-decode>Declared files, relevant code, implementation steps, acceptance checks and stop conditions. A self-contained job for the next tool.</p>
+                  </div>
+                </div>
+                <p class="detail-footnote" data-decode>Paused or unfinished? Continue from the saved session.</p>
+              </section>
+              <section class="detail-panel" data-panel="2" id="install" aria-labelledby="install-heading">
+                <p class="section-eyebrow" data-decode>03 / GET STARTED</p>
+                <h2 id="install-heading" data-decode>Start your next change.</h2>
+                <p class="section-lead" data-decode>Install once. Work in any repository.</p>
+                <p class="detail-description" data-decode>Node.js 22+ · macOS, Linux or inside WSL · a Git repository</p>
+                <div class="install-tabs" role="tablist" aria-label="Installation method">
+                  <button type="button" role="tab" id="tab-npm" aria-controls="install-npm" aria-selected="true" data-install-tab>npm</button>
+                  <button type="button" role="tab" id="tab-source" aria-controls="install-source" aria-selected="false" tabindex="-1" data-install-tab>From source</button>
+                </div>
+                <div class="install-methods">
+                <div class="code-sheet install-code install-method" id="install-npm" data-install-method role="tabpanel" aria-labelledby="tab-npm">
+                  <div class="sheet-label"><span>Terminal / install</span><button class="copy-command" type="button" data-copy="install">[ copy ]</button></div>
+                  <pre id="install-command" data-install-decode><code>npm install -g splitbrief</code></pre>
+                  <p class="install-note" data-install-decode>The <code>splitbrief</code> command is now on your PATH.</p>
+                </div>
+                <div class="code-sheet install-code install-method" id="install-source" data-install-method role="tabpanel" aria-labelledby="tab-source">
+                  <div class="sheet-label"><span>Terminal / build from source</span><button class="copy-command" type="button" data-copy="source">[ copy ]</button></div>
+                  <pre id="source-command" data-install-decode><code>git clone https://github.com/b4r7x/splitbrief.git
+cd splitbrief
+npm install
+npm run build
+npm link</code></pre>
+                </div>
+                </div>
+                <div class="code-sheet install-code">
+                  <div class="sheet-label"><span>Inside your project</span><button class="copy-command" type="button" data-copy="start">[ copy ]</button></div>
+                  <pre id="start-command" data-decode><code>splitbrief doctor
+splitbrief init
+splitbrief start "your change"</code></pre>
+                </div>
+                <a class="text-link" href="./docs/getting-started/">[ Read the setup guide ]</a>
+                <p class="copy-status" role="status" aria-live="polite"></p>
+              </section>
+            </div>
+          </div>
+          <div class="details-controls"><span>Scroll to decode <span aria-hidden="true">↓</span></span><button class="pause" data-pause type="button" aria-pressed="false">Ⅱ Pause motion</button></div>
+        </div>
+      </div>
+    </section>
+    <footer class="page-footer"><div class="footer-art" data-footer-art-region aria-hidden="true"></div><span>SPLITBRIEF <span class="dim">/ open source</span></span><a href="./docs/">[ docs ]</a><a href="https://github.com/b4r7x/splitbrief">[ github ]</a><a href="#top">[ back to top ]</a></footer>
+  </main>
+</body>
+</html>

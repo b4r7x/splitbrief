@@ -40,37 +40,35 @@ function activity(
 
 describe('buildActivityBatchViewModel', () => {
   it('keeps collapsed rows bounded while summarizing latest deduped severity', () => {
-    const model = buildActivityBatchViewModel({
-      batchKey: 'batch-1',
-      events: [
-        activity({
-          sequence: 1,
-          activityId: 'command-start',
-          kind: 'command',
-          stage: 'updated',
-          label: 'running npm test',
-          target: 'npm test',
-        }),
-        activity({
-          sequence: 2,
-          activityId: 'a',
-          kind: 'read',
-          label: 'reading a.ts',
-          rawAvailable: true,
-        }),
-        activity({ sequence: 3, activityId: 'b', kind: 'read', label: 'reading b.ts' }),
-        activity({ sequence: 4, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
-        activity({ sequence: 5, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
-        activity({
-          sequence: 6,
-          activityId: 'command-failed',
-          kind: 'command',
-          stage: 'failed',
-          label: 'failed npm test',
-          target: 'npm test',
-        }),
-      ],
-    });
+    const events = [
+      activity({
+        sequence: 1,
+        activityId: 'command-start',
+        kind: 'command',
+        stage: 'updated',
+        label: 'running npm test',
+        target: 'npm test',
+      }),
+      activity({
+        sequence: 2,
+        activityId: 'a',
+        kind: 'read',
+        label: 'reading a.ts',
+        rawAvailable: true,
+      }),
+      activity({ sequence: 3, activityId: 'b', kind: 'read', label: 'reading b.ts' }),
+      activity({ sequence: 4, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
+      activity({ sequence: 5, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
+      activity({
+        sequence: 6,
+        activityId: 'command-failed',
+        kind: 'command',
+        stage: 'failed',
+        label: 'failed npm test',
+        target: 'npm test',
+      }),
+    ];
+    const model = buildActivityBatchViewModel({ batchKey: 'batch-1', events });
 
     expect(model.visibleItems).toHaveLength(COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
     expect(model.headerCount).toBe(5);
@@ -85,6 +83,15 @@ describe('buildActivityBatchViewModel', () => {
     expect(model.headerText).toContain('1 err');
     expect(model.visibleItems.map((item) => item.value)).toContain('npm test');
     expect(model.visibleItems.map((item) => item.value)).not.toContain('a.ts');
+    expect(model.visibleItems.map((item) => item.value)).toEqual(['c.ts', 'd.ts', 'npm test']);
+    const expanded = buildActivityBatchViewModel({ batchKey: 'batch-1', events, expanded: true });
+    expect(expanded.visibleItems.map((item) => item.value)).toEqual([
+      'a.ts',
+      'b.ts',
+      'c.ts',
+      'd.ts',
+      'npm test',
+    ]);
   });
 
   it('clears a collapsed pin when the latest deduped item de-escalates', () => {
@@ -127,6 +134,7 @@ describe('buildActivityBatchViewModel', () => {
         pinned: item.pinned,
       })),
     ).toContainEqual({ value: 'npm test', severity: 'info', pinned: false });
+    expect(model.visibleItems.map((item) => item.value)).toEqual(['b.ts', 'c.ts', 'npm test']);
   });
 
   it('materializes all deduped rows only when expanded', () => {
@@ -150,6 +158,58 @@ describe('buildActivityBatchViewModel', () => {
     expect(expanded.visibleItems).toHaveLength(50);
     expect(collapsed.headerCount).toBe(50);
     expect(expanded.headerCount).toBe(50);
+    expect(collapsed.visibleItems.map((item) => item.value)).toEqual(
+      expanded.visibleItems.slice(-COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT).map((item) => item.value),
+    );
+  });
+
+  it('renders a collapsed pin at its chronological slot with the newest entry last', () => {
+    const oldestWarning = buildActivityBatchViewModel({
+      batchKey: 'batch-1',
+      events: [
+        activity({ sequence: 1, activityId: 'warning', kind: 'warning', label: 'warning stderr' }),
+        activity({ sequence: 2, activityId: 'a', kind: 'read', label: 'reading a.ts' }),
+        activity({ sequence: 3, activityId: 'b', kind: 'read', label: 'reading b.ts' }),
+        activity({ sequence: 4, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
+        activity({ sequence: 5, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
+      ],
+    });
+
+    expect(oldestWarning.visibleItems.map((item) => item.value)).toEqual([
+      'stderr',
+      'c.ts',
+      'd.ts',
+    ]);
+
+    const newestWarningEvents = [
+      activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading a.ts' }),
+      activity({ sequence: 2, activityId: 'b', kind: 'read', label: 'reading b.ts' }),
+      activity({ sequence: 3, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
+      activity({ sequence: 4, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
+      activity({ sequence: 5, activityId: 'warning', kind: 'warning', label: 'warning stderr' }),
+    ];
+    const newestWarning = buildActivityBatchViewModel({
+      batchKey: 'batch-2',
+      events: newestWarningEvents,
+    });
+    const newestWarningExpanded = buildActivityBatchViewModel({
+      batchKey: 'batch-2',
+      events: newestWarningEvents,
+      expanded: true,
+    });
+
+    expect(newestWarning.visibleItems.map((item) => item.value)).toEqual([
+      'c.ts',
+      'd.ts',
+      'stderr',
+    ]);
+    expect(newestWarningExpanded.visibleItems.map((item) => item.value)).toEqual([
+      'a.ts',
+      'b.ts',
+      'c.ts',
+      'd.ts',
+      'stderr',
+    ]);
   });
 });
 

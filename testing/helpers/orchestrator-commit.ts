@@ -1,13 +1,14 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Config } from '../../src/core/schemas/config.js';
+import type { CommitStrategy } from '../../src/core/schemas/enums.js';
+import type { HooksConfig } from '../../src/core/schemas/hooks.js';
 import type { WorkflowState } from '../../src/core/schemas/workflow.js';
 import { createInitialState } from '../../src/core/state/machine.js';
+import { makeConfig } from './factories/config.js';
 import { makeTask } from './factories/task.js';
-import { createTempDir, cleanupTempDir } from './temp-dir.js';
-import { createTestGitRepo } from './git.js';
-import { ensureSessionDir } from '../../src/core/paths-io.js';
+import { cleanupTempDir } from './temp-dir.js';
 import type { Task } from '../../src/core/schemas/task.js';
-import type { InProgressGitOp } from '../../src/lib/git/repository.js';
 
 const commitTestDirs: string[] = [];
 
@@ -20,38 +21,8 @@ export function registerCommitTestDir(projectDir: string): void {
   commitTestDirs.push(projectDir);
 }
 
-export function setupCommitProject(): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('task-commit-test');
-  commitTestDirs.push(projectDir);
-  createTestGitRepo(projectDir);
-  const sessionId = 'sess-commit';
-  ensureSessionDir(projectDir, sessionId);
-  return { projectDir, sessionId };
-}
-
 export function makeDirty(projectDir: string, relativePath = 'task-file.txt'): void {
   writeFileSync(join(projectDir, relativePath), 'content');
-}
-
-export function makeGitOps(
-  overrides: Partial<{
-    stageFiles: (dir: string, files: string[]) => Promise<void>;
-    getStagedFiles: (dir: string) => Promise<string[]>;
-    getInProgressGitOp: (dir: string) => Promise<InProgressGitOp | null>;
-    commitChanges: (dir: string, message: string) => Promise<string>;
-    createTaggedStash: (dir: string, message: string, tagName: string) => Promise<string>;
-    resetIndexPreservingStaged: (dir: string, stagedBefore: string[]) => Promise<void>;
-  }> = {},
-) {
-  return {
-    stageFiles: async () => {},
-    getStagedFiles: async () => [],
-    getInProgressGitOp: async () => null,
-    commitChanges: async () => 'commit-sha',
-    createTaggedStash: async (_dir: string, _message: string, tagName: string) => tagName,
-    resetIndexPreservingStaged: async () => {},
-    ...overrides,
-  };
 }
 
 export function firstCommitTask(state: WorkflowState): Task {
@@ -70,5 +41,26 @@ export function makeCommitState(overrides?: Partial<WorkflowState>): WorkflowSta
     currentTaskIndex: 0,
     attempt: 0,
     ...overrides,
+  };
+}
+
+// ConfigSchema rejects the retired commit strategies and commit hooks, so a config carrying
+// them exists only past the loader. These tests are about the engine ignoring such a value if
+// one reaches it, not about the loader accepting it; rejection is covered by the schema tests.
+export function makeLegacyCommitConfig(options: {
+  commitStrategy?: CommitStrategy | undefined;
+  hooks?: HooksConfig | undefined;
+}): Config {
+  const config = makeConfig();
+  return {
+    ...config,
+    workflow: {
+      ...config.workflow,
+      git: {
+        ...config.workflow.git,
+        ...(options.commitStrategy !== undefined && { commitStrategy: options.commitStrategy }),
+      },
+    },
+    ...(options.hooks !== undefined && { hooks: options.hooks }),
   };
 }

@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { isRecord } from '../../utils/type-guards.js';
 
 export const HOOK_EVENTS = [
   'pre_planning',
@@ -10,8 +9,8 @@ export const HOOK_EVENTS = [
   'pre_commit',
   'post_commit',
   'pre_escalation',
-  'pre_compact',
   'on_error',
+  'on_halt',
   'on_complete',
 ] as const;
 export const HookEventSchema = z.enum(HOOK_EVENTS);
@@ -112,34 +111,35 @@ const HookCommandEntrySchema = z
     }
   });
 
-export const HookModuleEntrySchema = z.strictObject({
-  kind: z.literal('module'),
-  name: z.string().min(1).optional(),
-  path: z.string().min(1),
-  timeout_ms: z.number().int().positive().max(300_000).default(30_000),
-  on_failure: FailureModeSchema.default('warn'),
-});
-
-function isObjectWithoutKind(value: unknown): value is Record<string, unknown> {
-  return isRecord(value) && !('kind' in value);
-}
-
-export const HookEntrySchema = z.preprocess(
-  (val) => (isObjectWithoutKind(val) ? { ...val, kind: 'command' } : val),
-  z.discriminatedUnion('kind', [HookCommandEntrySchema, HookModuleEntrySchema]),
-);
+export const HookEntrySchema = HookCommandEntrySchema;
 export type HookCommandEntry = z.infer<typeof HookCommandEntrySchema>;
-export type HookModuleEntry = z.infer<typeof HookModuleEntrySchema>;
 export type HookEntry = z.infer<typeof HookEntrySchema>;
-export type HooksConfig = {
-  builtin?: Record<string, boolean> | undefined;
-} & Partial<Record<HookEvent, HookEntry[]>>;
+export type HooksConfig = Partial<Record<HookEvent, HookEntry[]>>;
 
 const hookEventConfigShape = Object.fromEntries(
   HOOK_EVENTS.map((event) => [event, z.array(HookEntrySchema).optional()]),
 );
 
-export const HooksConfigSchema: z.ZodType<HooksConfig> = z.strictObject({
-  builtin: z.record(z.string(), z.boolean()).optional(),
-  ...hookEventConfigShape,
-});
+// Nothing commits any more, so the commit events never fire: an empty legacy list loads and is
+// dropped, a populated one fails the load instead of looking like an active hook.
+const RETIRED_HOOK_EVENTS = ['pre_commit', 'post_commit'] as const;
+
+export const HooksConfigSchema: z.ZodType<HooksConfig> = z
+  .strictObject({
+    ...hookEventConfigShape,
+  })
+  .superRefine((hooks, ctx) => {
+    for (const event of RETIRED_HOOK_EVENTS) {
+      if ((hooks[event]?.length ?? 0) === 0) continue;
+      ctx.addIssue({
+        code: 'custom',
+        message: `${event} hooks were removed — SPLITBRIEF no longer commits, so they never run; delete hooks.${event}.`,
+        path: [event],
+      });
+    }
+  })
+  .transform((hooks) => {
+    const active: HooksConfig = { ...hooks };
+    for (const event of RETIRED_HOOK_EVENTS) delete active[event];
+    return active;
+  });

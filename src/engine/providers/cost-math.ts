@@ -10,7 +10,6 @@ export type ProviderCostEntry = {
   cacheReadTokens?: number | undefined;
   cacheCreateTokens?: number | undefined;
 };
-export type TokenSplit = { inputTokens: number; outputTokens: number };
 
 export type ProviderUsageSegment = {
   tool: string;
@@ -200,45 +199,6 @@ export function recordProviderCost(
     ...(cacheReadTokens > 0 && { cacheReadTokens }),
     ...(cacheCreateTokens > 0 && { cacheCreateTokens }),
   };
-}
-
-export function splitTokens(opts: {
-  tokens: number;
-  inputTotal: number;
-  outputTotal: number;
-}): TokenSplit {
-  const { tokens, inputTotal, outputTotal } = opts;
-  const total = inputTotal + outputTotal;
-  if (tokens <= 0 || total <= 0) return { inputTokens: 0, outputTokens: 0 };
-  const inputTokens = tokens * (inputTotal / total);
-  return { inputTokens, outputTokens: tokens - inputTokens };
-}
-
-export function allocatedCacheTokens(opts: {
-  cacheTokens: number | undefined;
-  tokens: number;
-  totalTokens: number;
-}): number {
-  const { cacheTokens, tokens, totalTokens } = opts;
-  if (cacheTokens === undefined || cacheTokens <= 0 || tokens <= 0 || totalTokens <= 0) return 0;
-  return cacheTokens * (tokens / totalTokens);
-}
-
-export function calculateCacheReadSavings(
-  cacheReadTokens: number,
-  pricing: ResolvedPricing,
-  contextTokens = cacheReadTokens,
-): number {
-  const selectedPricing = selectPricingForContext(pricing, contextTokens);
-  if (
-    !selectedPricing.isPriced ||
-    selectedPricing.cacheReadPer1M === undefined ||
-    cacheReadTokens <= 0
-  )
-    return 0;
-  return (
-    (cacheReadTokens / 1_000_000) * (selectedPricing.inputPer1M - selectedPricing.cacheReadPer1M)
-  );
 }
 
 export function recordPricedUsage(

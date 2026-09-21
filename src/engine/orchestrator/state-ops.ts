@@ -1,35 +1,31 @@
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, statSync, type BigIntStats } from 'node:fs';
 import { join } from 'node:path';
-import type { StateAction, StateAuthorityReceipt } from '../../core/state/types.js';
-import { refreshStateAuthority } from '../../core/state/authority.js';
+import type { MachineAction } from '../../core/state/types.js';
 import { transition } from '../../core/state/machine.js';
 import { loadState } from '../../core/state/persistence.js';
-import { serializedState } from '../../core/state/state-file.js';
+import { revisionFromBytes, serializedState } from '../../core/state/state-file.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
+import { WorkflowStateSchema, WORKFLOW_STATE_VERSION } from '../../core/schemas/workflow.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { confinedAtomicWriteFileSync, type ConfigRevision } from '../../lib/confined-fs-atomic.js';
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
-import { sessionDir } from '../../core/paths.js';
+import { STATE_FILE, sessionDir } from '../../core/paths.js';
 import { assertSessionDirConfined } from '../../core/sessions/confinement.js';
 import { error, type AppError } from '../../utils/error.js';
+import { warnError } from '../../lib/warn.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { addUsage, type UsageCategory } from './tokens.js';
 import { publishCostUpdate, publishRecoveryPrompted } from './events.js';
 import type { WorkflowPersistenceContext } from './types.js';
-
-const WORKFLOW_STATE_FILE = ['state', 'json'].join('.');
 
 export const MAX_STATE_CONFLICT_RETRIES = 3;
 const DEFAULT_STATE_CONFLICT_RETRIES = 1;
 
 export type StateOperationExpectedRevision = number | ConfigRevision | null;
 
-export type StateMutationOptions = Readonly<{
+type StateMutationOptions = Readonly<{
   expectedRevision?: StateOperationExpectedRevision | undefined;
-  authority?: StateAuthorityReceipt | undefined;
   conflictRetries?: number | undefined;
   maxRetries?: number | undefined;
 }>;
@@ -37,7 +33,6 @@ export type StateMutationOptions = Readonly<{
 export type StateOperationContext = WorkflowPersistenceContext &
   Readonly<{
     expectedRevision?: StateOperationExpectedRevision | undefined;
-    authority?: StateAuthorityReceipt | undefined;
     conflictRetries?: number | undefined;
   }>;
 
@@ -98,23 +93,7 @@ type MutationInput = Readonly<{
 
 export function workflowStatePath(ref: SessionRef): string {
   assertSessionDirConfined(ref.projectDir, ref.sessionId);
-  return join(realpathSync(sessionDir(ref.projectDir, ref.sessionId)), WORKFLOW_STATE_FILE);
-}
-
-function digestBytes(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex');
-}
-
-function revisionFromHead(bytes: Buffer, stat: BigIntStats): ConfigRevision {
-  return {
-    rawSha256: digestBytes(bytes),
-    fileIdentity: {
-      dev: stat.dev,
-      ino: stat.ino,
-      size: stat.size,
-      mtimeNs: stat.mtimeNs,
-    },
-  };
+  return join(realpathSync(sessionDir(ref.projectDir, ref.sessionId)), STATE_FILE);
 }
 
 export function revisionsMatch(left: ConfigRevision, right: ConfigRevision): boolean {
@@ -159,11 +138,8 @@ function readStateHead(ref: SessionRef): StateHead | null {
     throw stateOpsError.invalidHead('Workflow state failed schema validation.');
   }
 
-  return {
-    state: parsed.data,
-    revision: revisionFromHead(bytes, stat),
-    digest: digestBytes(bytes),
-  };
+  const revision = revisionFromBytes(bytes, stat);
+  return { state: parsed.data, revision, digest: revision.rawSha256 };
 }
 
 export type WorkflowStateHead = StateHead;
@@ -271,45 +247,10 @@ function expectedConflicts(expected: ExpectedIdentity, head: StateHead | null): 
   return false;
 }
 
-function assertMutationAuthority(
-  ref: SessionRef,
-  authority: StateAuthorityReceipt,
-  head: StateHead | null,
-): void {
-  if (
-    authority.kind !== 'usable' ||
-    authority.sessionId !== ref.sessionId ||
-    authority.ownerId.length === 0 ||
-    authority.acquisitionId.length === 0 ||
-    !Number.isInteger(authority.fence) ||
-    authority.fence < 0 ||
-    !Number.isInteger(authority.stateRevision) ||
-    authority.stateRevision < 0
-  ) {
-    throw error(
-      'state-authority-invalid',
-      'state-authority-invalid: State authority receipt is invalid for this session.',
-    );
-  }
-  if (
-    head === null ||
-    head.state.stateFence?.token !== authority.fence ||
-    head.state.stateFence.ownerId !== authority.ownerId
-  ) {
-    throw error(
-      'state-authority-invalid',
-      'state-authority-invalid: State authority does not match the current workflow state fence.',
-    );
-  }
-}
-
 function retryLimit(options: StateMutationOptions | undefined, rederivable: boolean): number {
   if (!rederivable) return 0;
   const requested = options?.conflictRetries ?? options?.maxRetries;
-  if (
-    (options?.expectedRevision !== undefined || options?.authority !== undefined) &&
-    requested === undefined
-  ) {
+  if (options?.expectedRevision !== undefined && requested === undefined) {
     return 0;
   }
   if (requested === undefined) return DEFAULT_STATE_CONFLICT_RETRIES;
@@ -322,7 +263,7 @@ function retryLimit(options: StateMutationOptions | undefined, rederivable: bool
   return Math.min(requested, MAX_STATE_CONFLICT_RETRIES);
 }
 
-function queueAction(action: StateAction): boolean {
+function queueAction(action: MachineAction): boolean {
   switch (action.type) {
     case 'ENQUEUE_USER_MSG':
     case 'MARK_INJECTING_NATIVE':
@@ -336,20 +277,10 @@ function queueAction(action: StateAction): boolean {
   }
 }
 
-function preparedState(
-  base: WorkflowState,
-  next: WorkflowState,
-  authority: StateAuthorityReceipt | null,
-): WorkflowState {
+function preparedState(base: WorkflowState, next: WorkflowState): WorkflowState {
   return {
     ...next,
     stateRevision: (base.stateRevision ?? 0) + 1,
-    stateFence:
-      base.stateFence ??
-      (authority === null
-        ? { token: 0, ownerId: 'initial' }
-        : { token: authority.fence, ownerId: authority.ownerId }),
-    ...(next.briefRecovery === undefined ? { briefRecovery: null } : {}),
   };
 }
 
@@ -380,7 +311,7 @@ export type WorkflowStateCommitInput = Readonly<{
   next: WorkflowState;
 }>;
 
-export type WorkflowStateCommitResult =
+type WorkflowStateCommitResult =
   | Readonly<{ kind: 'committed'; state: WorkflowState; revision: ConfigRevision }>
   | Readonly<{ kind: 'conflict'; observedRevision: ConfigRevision | null }>
   | Readonly<{
@@ -389,27 +320,15 @@ export type WorkflowStateCommitResult =
       revision: ConfigRevision;
     }>;
 
-export function workflowStateRevision(state: WorkflowState): number {
+function workflowStateRevision(state: WorkflowState): number {
   const revision = state.stateRevision;
   return revision === undefined || !Number.isInteger(revision) || revision < 0 ? 0 : revision;
 }
 
-export function workflowStateFence(
-  state: WorkflowState,
-): Readonly<{ token: number; ownerId: string }> {
-  return state.stateFence ?? { token: 0, ownerId: 'initial' };
-}
-
-function workflowStateFencesMatch(left: WorkflowState, right: WorkflowState): boolean {
-  const leftFence = workflowStateFence(left);
-  const rightFence = workflowStateFence(right);
-  return leftFence.token === rightFence.token && leftFence.ownerId === rightFence.ownerId;
-}
-
 /**
- * Commit a complete workflow head for recovery and authority initialization.
- * All callers share the state-ops CAS boundary; callers never write the state
- * file directly or infer a revision from an event stream.
+ * Commit a complete workflow head. All callers share the state-ops CAS
+ * boundary; callers never write the state file directly or infer a revision
+ * from an event stream.
  */
 export function commitWorkflowState(input: WorkflowStateCommitInput): WorkflowStateCommitResult {
   const current = readStateHead(input.ref);
@@ -418,8 +337,7 @@ export function commitWorkflowState(input: WorkflowStateCommitInput): WorkflowSt
   } else {
     if (
       current === null ||
-      workflowStateRevision(current.state) !== workflowStateRevision(input.expected) ||
-      !workflowStateFencesMatch(current.state, input.expected)
+      workflowStateRevision(current.state) !== workflowStateRevision(input.expected)
     ) {
       return { kind: 'conflict', observedRevision: current?.revision ?? null };
     }
@@ -430,9 +348,8 @@ export function commitWorkflowState(input: WorkflowStateCommitInput): WorkflowSt
       ? WorkflowStateSchema.parse(input.next)
       : WorkflowStateSchema.parse({
           ...input.next,
-          stateVersion: 4,
+          stateVersion: WORKFLOW_STATE_VERSION,
           stateRevision: workflowStateRevision(input.expected) + 1,
-          stateFence: current?.state.stateFence ?? workflowStateFence(current?.state ?? input.next),
         });
   const result = confinedAtomicWriteFileSync(
     workflowStatePath(input.ref),
@@ -450,24 +367,15 @@ export function commitWorkflowState(input: WorkflowStateCommitInput): WorkflowSt
 }
 
 function mutateState(input: MutationInput): WorkflowState {
-  if (input.options?.authority !== undefined && input.options.expectedRevision === undefined) {
-    throw error(
-      'state-expected-revision-required',
-      'Authority-bearing state mutations require an expected revision.',
-    );
-  }
   const retryCount = retryLimit(input.options, input.rederivable);
-  const hasExplicitRevision =
-    input.options?.expectedRevision !== undefined || input.options?.authority !== undefined;
+  const hasExplicitRevision = input.options?.expectedRevision !== undefined;
   let retries = 0;
   let expected: StateOperationExpectedRevision | undefined = hasExplicitRevision
     ? input.options?.expectedRevision
     : undefined;
-  const authority = input.options?.authority ?? null;
 
   while (true) {
     const head = readStateHead(input.ref);
-    if (authority !== null) assertMutationAuthority(input.ref, authority, head);
     const identity = expectedIdentity(expected);
     const conflict = expectedConflicts(identity, head);
     if (conflict) {
@@ -499,26 +407,15 @@ function mutateState(input: MutationInput): WorkflowState {
                 // Older engine seams pass the semantic state they are about to
                 // mutate, while the persisted head may have advanced through a
                 // queue/native-delivery writer. Keep that semantic input, but
-                // bind its revision and fence to the head used by the CAS.
+                // bind its revision to the head used by the CAS.
                 ...input.state,
                 stateVersion: head.state.stateVersion,
                 stateRevision: head.state.stateRevision ?? 0,
-                stateFence: head.state.stateFence ?? { token: 0, ownerId: 'initial' },
                 messageQueue: mergeQueues(head.state.messageQueue, input.state.messageQueue),
               };
-    const next = preparedState(base, input.derive(base), authority);
+    const next = preparedState(base, input.derive(base));
     const committed = commitState(input.ref, head, next);
     if (committed === 'written') {
-      if (authority !== null) {
-        const committedHead = readStateHead(input.ref);
-        if (committedHead === null) {
-          throw stateOpsError.durabilityUncertain();
-        }
-        refreshStateAuthority(input.ref, authority, {
-          stateRevision: next.stateRevision ?? 0,
-          stateDigest: committedHead.digest,
-        });
-      }
       return next;
     }
 
@@ -536,7 +433,7 @@ function mutateState(input: MutationInput): WorkflowState {
 export function transitionAndSave(
   ref: SessionRef,
   state: WorkflowState,
-  action: StateAction,
+  action: MachineAction,
   options?: StateMutationOptions,
 ): WorkflowState {
   const isQueueMutation = queueAction(action);
@@ -559,6 +456,27 @@ export function transitionAndSave(
   });
 }
 
+/**
+ * Records why a run stopped, through the same CAS boundary as every other head
+ * write. A conflict means a later writer already moved the head on; the failure
+ * is reported through the bus either way, so the in-memory state is returned
+ * rather than raising over a run that has already ended.
+ */
+export function recordLastFailure(
+  ref: SessionRef,
+  state: WorkflowState,
+  failure: NonNullable<WorkflowState['lastFailure']>,
+): WorkflowState {
+  try {
+    const next = { ...state, lastFailure: failure };
+    const result = commitWorkflowState({ ref, expected: state, next });
+    return result.kind === 'conflict' ? state : result.state;
+  } catch (err) {
+    warnError('Failed to record the run failure on the workflow state', err);
+    return state;
+  }
+}
+
 export function raisePendingRecovery(
   scope: WorkflowPersistenceContext,
   state: WorkflowState,
@@ -566,7 +484,7 @@ export function raisePendingRecovery(
   setTrackedState?: (s: WorkflowState) => void,
 ): WorkflowState {
   const next = transitionAndSave(scope, state, { type: 'SET_PENDING_RECOVERY', issue });
-  publishRecoveryPrompted(scope.bus, issue);
+  publishRecoveryPrompted(scope.bus, scope.sessionId, issue);
   setTrackedState?.(next);
   return next;
 }
@@ -581,13 +499,10 @@ export function addUsageAndSave(
   if (!usage) return state;
   const mutationOptions =
     options ??
-    (ctx.expectedRevision === undefined &&
-    ctx.authority === undefined &&
-    ctx.conflictRetries === undefined
+    (ctx.expectedRevision === undefined && ctx.conflictRetries === undefined
       ? undefined
       : {
           expectedRevision: ctx.expectedRevision,
-          authority: ctx.authority,
           conflictRetries: ctx.conflictRetries,
         });
   const next = mutateState({

@@ -52,13 +52,14 @@ Hooks whose sole consumer is inside one feature folder. Example from `features/w
 
 | Hook | Purpose |
 |---|---|
-| `use-runner.ts` | Engine lifecycle, resume, rewind, approval/question prompts. |
+| `use-run-loop.ts` | Engine lifecycle: `runWorkflow`, the recovery loop between turns, rewind, and the process-registry stop watcher. |
+| `use-run-continue.ts` | How the run is re-entered: the state and steer its next turn starts from, and the `continueRun` call behind `/resume` and a typed correction. |
 | `use-input-mode.ts` | Promise-based modal input (normal/review/question). |
 | `use-review-content.ts` | Async file read via `AbortController`-cancelled `fs.readFile` + line-count sync to `reviewStore`. |
 | `use-mouse-scroll.ts` | Workflow-owned mouse-wheel handlers for conversation/review scroll. App-level dispatch decides when workflow may receive wheel events. |
 | `use-mouse-pointer.ts` | Workflow-owned hit testing for rail, brief, and conversation rows. App-level dispatch owns overlays, non-workflow screens, and prompt gating. |
 | `use-cost-stats.ts` | Cost breakdown from tokens + tasks stores, formatted for footer. |
-| `use-keys.ts` | Workflow-only keyboard: conversation/review scroll, diff/activity expansion, and cost drilldown. Mounted only when `screen === 'workflow'`. |
+| `use-keys.ts` | Workflow-only keyboard: conversation/review scroll and diff/activity expansion. Mounted only when `screen === 'workflow'`. |
 | `use-brief-review-keys.ts` | Brief-review row focus: arrow-key selection and `y` yank during Task Brief review. Receives `copyTarget` / `canCopyFocused` ports from `WorkflowScreen` (wired in `app/router.tsx` / the workflow page) so the app shell never owns workflow copy state. Clears `focusStore` on unmount. |
 
 ## Pure helpers that are not hooks

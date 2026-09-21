@@ -5,9 +5,12 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
-import { REVIEW_TYPING_HINT, resolveReviewKeyLegend } from '../../features/workflow/input-hints.js';
-import { REVIEW_HINT, parseReviewCommand } from '../../features/workflow/review-commands.js';
-import { FeedbackRow } from '../../features/workflow/components/feedback-row.js';
+import { parseReviewCommand } from '../../features/workflow/review-commands.js';
+import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
+import {
+  REVIEW_COMMENT_HINTS,
+  REVIEW_DOCUMENT_HINTS,
+} from '../../features/workflow/prompt-rows/approval.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { Composer } from './composer.js';
 
@@ -26,6 +29,14 @@ function reviewComposer(submissions: string[]) {
   );
 }
 
+// The workflow screen derives the panel's `commenting` from the armed flag the composer writes
+// (`src/app/screens/workflow.tsx:78`); mirroring that derivation is what lets the keystroke and
+// the legend be one render apart here as they are on screen.
+function ReviewPanel() {
+  const armed = reviewKeysStore.use((s) => s.armed);
+  return <ApprovalPrompt review={{ artifact: 'plan', selectedIndex: 1, commenting: !armed }} />;
+}
+
 describe('Composer review action keys', () => {
   beforeEach(() => {
     resetAllStores();
@@ -35,7 +46,7 @@ describe('Composer review action keys', () => {
   it.each([
     ['y', 'approve'],
     ['e', 'edit-file'],
-    ['q', 'reject'],
+    ['q', 'end-run'],
   ])('settles the gate when %s is pressed on an empty draft', async (typed, command) => {
     const submissions: string[] = [];
     const ui = renderFeature(reviewComposer(submissions));
@@ -101,69 +112,55 @@ describe('Composer review action keys', () => {
     ui.unmount();
   });
 
-  it('publishes the armed flag the key legend reads, so both change together', async () => {
+  it('publishes the armed flag the review panel legend reads, so both change together', async () => {
     const ui = renderFeature(reviewComposer([]));
     await tick(PAST_GRACE);
     await flushEffects();
 
-    // Empty draft: the keys are live and the legend is entitled to advertise them.
+    // Empty draft: the keys are live and the panel is entitled to advertise them.
     expect(reviewKeysStore.get().armed).toBe(true);
-    expect(
-      resolveReviewKeyLegend({
-        inputHint: REVIEW_HINT,
-        inReviewMode: true,
-        reviewKeysArmed: reviewKeysStore.get().armed,
-        width: 80,
-      }),
-    ).toBe(REVIEW_HINT);
 
     ui.stdin.write('c');
     await flushEffects();
 
-    // One keystroke turns the letters back into text, and the legend stops promising them in the
+    // One keystroke turns the letters back into text, and the panel stops promising them in the
     // same render — there is no second computation that could disagree.
     expect(reviewKeysStore.get().armed).toBe(false);
-    expect(
-      resolveReviewKeyLegend({
-        inputHint: REVIEW_HINT,
-        inReviewMode: true,
-        reviewKeysArmed: reviewKeysStore.get().armed,
-        width: 80,
-      }),
-    ).toBe(REVIEW_TYPING_HINT);
 
     ui.unmount();
     expect(reviewKeysStore.get().armed).toBe(false);
   });
 
-  it('updates the mounted FeedbackRow legend when c starts a comment draft', async () => {
+  it('turns the review panel legend over to the comment keys when c starts a draft', async () => {
     controlsStore.setInputMode('review');
     const ui = renderFeature(
       <>
-        <FeedbackRow inputHint={REVIEW_HINT} />
+        <ReviewPanel />
         {reviewComposer([])}
       </>,
     );
     await tick(PAST_GRACE);
     await flushEffects();
 
-    expect(stripAnsiStyles(ui.lastFrame())).toContain(REVIEW_HINT);
+    expect(stripAnsiStyles(ui.lastFrame())).toContain(REVIEW_DOCUMENT_HINTS);
 
     ui.stdin.write('c');
     await flushEffects();
 
+    // The panel is a mirror of `reviewKeysStore.armed`, so the draft and the legend change in the
+    // same render: the composer holds `comment ` and the letters are text again.
     const frame = stripAnsiStyles(ui.lastFrame());
-    expect(frame).toContain(REVIEW_TYPING_HINT);
+    expect(frame).toContain(REVIEW_COMMENT_HINTS);
+    expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
     expect(frame).toContain('comment ');
-    expect(frame).not.toContain(REVIEW_HINT);
     ui.unmount();
   });
 
-  // The attached/detached IPC client drives a review gate by sending the command as text, so the
-  // typed vocabulary has to keep settling the gate after the one-key shortcuts were added.
+  // A review gate can also be settled by sending the command as text, so the typed vocabulary has
+  // to keep working after the one-key shortcuts were added.
   it.each([
     ['approve', { kind: 'brief-review-command', command: { action: 'approve' } }],
-    ['reject', { kind: 'brief-review-command', command: { action: 'reject' } }],
+    ['end-run', { kind: 'brief-review-command', command: { action: 'end-run' } }],
     ['edit-file', { kind: 'open-external-editor' }],
     [
       'comment add more evidence',
@@ -183,9 +180,9 @@ describe('Composer review action keys', () => {
     ui.stdin.write('\r');
     await flushEffects();
 
-    // Review mode submits the draft verbatim — the leading space is the seed, not a trim bug —
-    // and the parser is what settles it, exactly as it does for text arriving over IPC.
-    expect(submissions).toEqual([` ${typed}`]);
+    // The seed keeps the keys in text mode while it lives in the draft; send strips it as typing
+    // residue, and the parser settles the word — exactly as it does for text arriving over IPC.
+    expect(submissions).toEqual([typed]);
     expect(parseReviewCommand(submissions[0] ?? '')).toEqual(parsed);
     ui.unmount();
   });

@@ -13,8 +13,7 @@ import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { initializeWorkflow } from './init.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
-import { markHooksConfigTrusted, isHooksConfigTrusted } from '../../../core/hooks/trust.js';
-import { resolveHooksConfig } from '../../hooks/discover.js';
+import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { ensureHooksTrusted } from '../../../cli/hook-trust-prompt.js';
 import { rejectUntrustedRunners } from '../../runners/trust.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
@@ -83,7 +82,7 @@ function makeInitArgs(projectDir: string, hooks?: HooksConfig, extra: InitCaller
     extra.config ??
     makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', persistTranscript: false },
+      workflow: { mode: 'quick' },
       ...(hooks !== undefined && { hooks }),
     });
   const { callbacks } = makeCallbacks();
@@ -112,7 +111,7 @@ function makeInitArgs(projectDir: string, hooks?: HooksConfig, extra: InitCaller
 }
 
 async function initializeFromCaller(args: ReturnType<typeof makeInitArgs>) {
-  const hooks = await resolveHooksConfig(args.projectDir, args.config.hooks);
+  const hooks = args.config.hooks;
   await ensureHooksTrusted(
     {
       projectDir: args.projectDir,
@@ -206,7 +205,7 @@ describe('engine-level hook trust gate', () => {
         model: 'agent-default',
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', persistTranscript: false },
+      workflow: { mode: 'quick' },
       hooks: HOOK,
     });
     const args = makeInitArgs(projectDir, HOOK, { allowHooks: true, config });
@@ -225,7 +224,7 @@ describe('engine-level hook trust gate', () => {
         model: 'agent-default',
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', persistTranscript: false },
+      workflow: { mode: 'quick' },
       hooks: HOOK,
     });
     const args = makeInitArgs(projectDir, HOOK, {
@@ -247,37 +246,7 @@ describe('engine-level hook trust gate', () => {
     expect(init.ok).toBe(true);
   });
 
-  it('blocks discovered filesystem hooks that are not trusted', async () => {
-    const projectDir = setupProjectDir('hook-trust-discovered');
-    const hooksDir = join(projectDir, '.splitbrief', 'hooks');
-    mkdirSync(hooksDir, { recursive: true });
-    writeFileSync(join(hooksDir, 'post-task.js'), 'export default function() {}');
-
-    const args = makeInitArgs(projectDir);
-
-    await expect(initializeFromCaller(args)).rejects.toThrow(/not trusted/);
-  });
-
-  it('trust hash changes when discovered hook content changes', async () => {
-    const projectDir = setupProjectDir('hook-trust-hash-change');
-    const hooksDir = join(projectDir, '.splitbrief', 'hooks');
-    mkdirSync(hooksDir, { recursive: true });
-    writeFileSync(join(hooksDir, 'post-task.js'), 'export default function() { return "v1"; }');
-
-    const mergedV1 = await resolveHooksConfig(projectDir, undefined);
-    markHooksConfigTrusted(projectDir, mergedV1);
-    expect(isHooksConfigTrusted(projectDir, mergedV1)).toBe(true);
-
-    writeFileSync(join(hooksDir, 'post-task.js'), 'export default function() { return "v2"; }');
-
-    const mergedV2 = await resolveHooksConfig(projectDir, undefined);
-    expect(isHooksConfigTrusted(projectDir, mergedV2)).toBe(false);
-
-    const args = makeInitArgs(projectDir);
-    await expect(initializeFromCaller(args)).rejects.toThrow(/not trusted/);
-  });
-
-  it('runs without hooks cleanly when no hooks configured or discovered', async () => {
+  it('runs without hooks cleanly when no hooks are configured', async () => {
     const projectDir = setupProjectDir('hook-trust-no-hooks');
     const args = makeInitArgs(projectDir);
 

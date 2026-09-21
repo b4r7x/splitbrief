@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLI_COMPILER_EVIDENCE, CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import {
   CLI_CONFORMANCE_CANDIDATES,
@@ -79,10 +79,6 @@ describe('Kilo Code role adapters', () => {
   });
 
   it('refuses incomplete conformance with zero dispatch: the row stays conditional until a complete receipt', () => {
-    // The registry row is conformance-gated: without a PASS receipt the Kilo
-    // backend stays unsupported, so no Task dispatch can occur.
-    expect(CLI_COMPILER_EVIDENCE['kilo-code'].state).toBe('conformance-gated');
-    expect(CLI_COMPILER_EVIDENCE['kilo-code'].version).toBe('7.0.49');
     // Activation requires the complete candidate receipt: the adapter and the
     // raw contract must hash to the exact identity the harness verifies.
     for (const candidate of CLI_CONFORMANCE_CANDIDATES) {
@@ -168,6 +164,56 @@ describe('Kilo Code role adapters', () => {
     ).toEqual({
       valid: true,
     });
+  });
+
+  it('sends the reasoning preset the seat configured, beside the model, on both roles', () => {
+    const planner = kiloPlannerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: 'openai/gpt-5.6',
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+      variant: 'max',
+    });
+    expect(planner).toContain('--variant');
+    expect(planner[planner.indexOf('--variant') + 1]).toBe('max');
+
+    const implementer = kiloImplementerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: 'openai/gpt-5.6',
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
+      variant: 'max',
+    });
+    expect(implementer).toContain('--variant');
+    expect(implementer[implementer.indexOf('--variant') + 1]).toBe('max');
+  });
+
+  it('sends no variant flag on either role when the seat spends none', () => {
+    expect(plannerArgs('openai/gpt-5.6', 'plan', [])).not.toContain('--variant');
+    expect(implementerArgs('openai/gpt-5.6', [])).not.toContain('--variant');
+  });
+
+  it('refuses a configured --variant that would outrank the seat', () => {
+    const base = kiloPlannerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: 'openai/gpt-5.6',
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+      variant: 'max',
+    });
+
+    expect(
+      kiloPlannerAdapter.validateArgs({
+        invocationArgs: [...base, '--variant', 'minimal'],
+        baseArgs: base,
+      }),
+    ).toEqual({ valid: false, conflicts: ['--variant'] });
   });
 
   it.each(ROLE_SEATS)(

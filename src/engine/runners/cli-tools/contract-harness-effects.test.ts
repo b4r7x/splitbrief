@@ -129,7 +129,7 @@ describe('production-factory effect conformance', () => {
         ...scenario,
       });
       expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);
-      expect(outcome.reason).toMatch(/instead of exactly src\/hello\.ts/);
+      expect(outcome.reason).toMatch(/wrote outside the brief's declared files: unrelated\.txt/);
     } finally {
       await scenario.cleanup();
     }
@@ -163,7 +163,7 @@ describe('production-factory effect conformance', () => {
         ...scenario,
       });
       expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);
-      expect(outcome.reason).toMatch(/extra\.txt.*instead of exactly src\/hello\.ts/);
+      expect(outcome.reason).toMatch(/wrote outside the brief's declared files: extra\.txt/);
     } finally {
       await scenario.cleanup();
     }
@@ -221,7 +221,10 @@ describe('production-factory effect conformance', () => {
         body: `printf '%s\\n' "$$" > ${JSON.stringify(pidFile)}\nwhile :; do sleep 1; done`,
         effect: { kind: 'direct-write', file: 'src/hello.ts', nonceContent: NONCE },
         task: makeTask(),
-        timeoutMs: 1_200,
+        // Long enough that the shell has started and recorded its pid before the reap, on a
+        // machine running the whole suite at once. The loop never ends on its own, so the reap is
+        // still what stops it.
+        timeoutMs: 5_000,
         ...scenario,
       });
       expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);

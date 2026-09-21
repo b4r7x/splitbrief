@@ -26,6 +26,8 @@ export async function runReviewerCall(
   opts: RunReviewerCallOptions,
 ): Promise<RunReviewerCallResult> {
   const { reviewer, prompt, projectDir, sessionId, bus, metadata } = opts;
+  // Cancellation is the caller's: the interactive path runs this inside
+  // `withContinuationLoop`, which owns the per-call abort handler.
   const result = await reviewer.review(prompt, projectDir, {
     onOutput: createBusTextHandler({ bus, phase: opts.state.phase }, { content: 'markdown' }),
     signal: opts.signal,

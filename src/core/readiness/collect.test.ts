@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
@@ -19,6 +19,46 @@ import { HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { applyRunnerPreparationChecks, collectReadiness } from './collect.js';
 import { flattenReadinessChecks } from './status.js';
+
+// Stands in for the git binary so repository posture is read from a scripted
+// repository instead of a fixture that writes commits. `commands` records every
+// git invocation readiness makes.
+const scriptedGit = vi.hoisted(() => ({
+  repo: undefined as { isRepo: boolean; branch: string } | undefined,
+  commands: [] as string[][],
+}));
+
+vi.mock('../../lib/git/client.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/git/client.js')>();
+  return {
+    ...actual,
+    getGitForDir: (dir: string) => {
+      const repo = scriptedGit.repo;
+      if (repo === undefined) return actual.getGitForDir(dir);
+      const record = (args: string[]) => scriptedGit.commands.push(args);
+      return {
+        checkIsRepo: async () => {
+          record(['rev-parse', '--is-inside-work-tree']);
+          return repo.isRepo;
+        },
+        revparse: async (args: string[]) => {
+          record(['rev-parse', ...args]);
+          return '.git';
+        },
+        status: async () => {
+          record(['status']);
+          return { files: [], not_added: [] };
+        },
+        raw: async (args: string[]) => {
+          record(args);
+          if (args.includes('--verify')) return `${'a'.repeat(40)}\n`;
+          if (args.includes('--abbrev-ref')) return `${repo.branch}\n`;
+          throw new Error(`fatal: no scripted answer for git ${args.join(' ')}`);
+        },
+      };
+    },
+  };
+});
 
 function writeSessionState(projectDir: string, sessionId: string, phase: string): void {
   const sDir = sessionDir(projectDir, sessionId);
@@ -246,39 +286,6 @@ describe('collectReadiness git posture', () => {
     expect(dirty?.details).toEqual(['Examples: src/edited.ts']);
   });
 
-  it('does not warn about git identity when it is configured and commits are enabled', async () => {
-    createTestGitRepo(tempDir);
-
-    const { report } = await collectReadiness({
-      projectDir: tempDir,
-      config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
-    });
-
-    expect(
-      flattenReadinessChecks(report.sections).find(
-        (check) => check.id === 'repo.git-identity-missing',
-      ),
-    ).toBeUndefined();
-  });
-
-  it('reports an active session with a stale heartbeat as stale', async () => {
-    createTestGitRepo(tempDir);
-    const sessionId = '2026-04-18-stale-heartbeat';
-    writeSessionState(tempDir, sessionId, 'implementing');
-    writeSessionLockfile(tempDir, sessionId, {
-      lastAliveMs: Date.now() - HEARTBEAT_STALENESS_MS - 1,
-    });
-    writeActive({ projectDir: tempDir, sessionId });
-
-    const { report } = await collectReadiness({ projectDir: tempDir });
-
-    const activeSession = flattenReadinessChecks(report.sections).find((check) =>
-      check.id.startsWith('repo.active-session-'),
-    );
-    expect(activeSession?.id).toBe('repo.active-session-stale');
-    expect(activeSession?.metadata).toMatchObject({ sessionId, live: false });
-  });
-
   it('ignores only the explicit session being resumed', async () => {
     createTestGitRepo(tempDir);
     const sessionId = '2026-04-18-resume-session';
@@ -306,6 +313,106 @@ describe('collectReadiness git posture', () => {
         check.id.startsWith('repo.active-session-'),
       ),
     ).toBe(true);
+  });
+});
+
+describe('collectReadiness repository posture from a scripted git', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir('collect-scripted-git');
+    scriptedGit.repo = { isRepo: true, branch: 'main' };
+    scriptedGit.commands = [];
+  });
+
+  afterEach(() => {
+    scriptedGit.repo = undefined;
+    cleanupTempDir(tempDir);
+  });
+
+  function repoChecks(report: Awaited<ReturnType<typeof collectReadiness>>['report']) {
+    return report.sections.find((section) => section.id === 'repo')?.checks ?? [];
+  }
+
+  it('admits a repository with no git author identity without asking git for one', async () => {
+    // A config object handed in directly skips the loader that now rejects
+    // per-task, so this is the input that used to trigger the identity probe.
+    const config = makeConfig();
+    const { report } = await collectReadiness({
+      projectDir: tempDir,
+      config: { ...config, workflow: { ...config.workflow, git: { commitStrategy: 'per-task' } } },
+    });
+
+    expect(repoChecks(report)).toEqual([
+      { id: 'repo.git', severity: 'ok', summary: 'Git repository detected.' },
+    ]);
+    expect(scriptedGit.commands.length).toBeGreaterThan(0);
+    expect(
+      scriptedGit.commands.filter(
+        (args) =>
+          args[0] === 'var' ||
+          args[0] === 'config' ||
+          args.some((arg) => /user\.(name|email)|_IDENT$/.test(arg)),
+      ),
+    ).toEqual([]);
+  });
+
+  it('blocks on an active session whose heartbeat is live', async () => {
+    const sessionId = '2026-04-18-live-heartbeat';
+    writeSessionState(tempDir, sessionId, 'implementing');
+    writeSessionLockfile(tempDir, sessionId);
+    writeActive({ projectDir: tempDir, sessionId });
+
+    const { report } = await collectReadiness({ projectDir: tempDir, config: makeConfig() });
+
+    expect(repoChecks(report)).toContainEqual(
+      expect.objectContaining({
+        id: 'repo.active-session-live',
+        severity: 'blocker',
+        metadata: { sessionId, live: true },
+      }),
+    );
+    expect(report.status).toBe('blocked');
+  });
+
+  it('keeps a stale active session marker informational', async () => {
+    const sessionId = '2026-04-18-stale-marker';
+    writeSessionState(tempDir, sessionId, 'implementing');
+    writeSessionLockfile(tempDir, sessionId, {
+      lastAliveMs: Date.now() - HEARTBEAT_STALENESS_MS - 1,
+    });
+    writeActive({ projectDir: tempDir, sessionId });
+
+    const { report } = await collectReadiness({ projectDir: tempDir, config: makeConfig() });
+
+    expect(repoChecks(report)).toContainEqual(
+      expect.objectContaining({
+        id: 'repo.active-session-stale',
+        severity: 'info',
+        metadata: { sessionId, live: false },
+      }),
+    );
+  });
+
+  it('warns about a detached HEAD in terms of the uncommitted run changes', async () => {
+    scriptedGit.repo = { isRepo: true, branch: 'HEAD' };
+
+    const { report } = await collectReadiness({ projectDir: tempDir, config: makeConfig() });
+
+    const detached = repoChecks(report).find((check) => check.id === 'repo.detached-head');
+    expect(detached?.severity).toBe('warning');
+    expect(detached?.details?.join(' ')).toContain('uncommitted');
+    expect(detached?.details?.join(' ')).not.toMatch(/per-task|checkpoint/i);
+  });
+
+  it('blocks a project directory that is not a git repository', async () => {
+    scriptedGit.repo = { isRepo: false, branch: 'main' };
+
+    const { report } = await collectReadiness({ projectDir: tempDir, config: makeConfig() });
+
+    expect(repoChecks(report)).toEqual([
+      expect.objectContaining({ id: 'repo.not-git', severity: 'blocker' }),
+    ]);
   });
 });
 

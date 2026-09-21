@@ -3,8 +3,6 @@ import { resolveScrollKey } from './scroll.js';
 import type { NormalizedKeySignature } from './normalize.js';
 import { resolveTextEditingKeyAction, type TextEditingKeyAction } from './text.js';
 
-export type KeyAttachState = 'local' | 'attached';
-
 export type FocusedKeySurface = 'none' | 'composer' | 'workflow' | 'review';
 
 export interface KeyResolverContext {
@@ -12,28 +10,22 @@ export interface KeyResolverContext {
   inputMode: InputMode;
   focus: FocusedKeySurface;
   overlay: OverlayType;
-  attachState: KeyAttachState;
   composerFocus: boolean;
   key: NormalizedKeySignature;
 }
 
 export type KeyOwner =
   | { owner: 'text-editing'; action: TextEditingKeyAction }
-  | { owner: 'workflow'; action: 'toggle-diff' | 'toggle-activity' | 'cost' }
+  | { owner: 'workflow'; action: 'toggle-diff' | 'toggle-activity' }
   | { owner: 'conversation-scroll'; action: 'scroll' }
   | { owner: 'review'; action: 'scroll' }
-  | { owner: 'overlay'; action: 'close' }
-  | { owner: 'attached-client'; action: 'detach' };
+  | { owner: 'overlay'; action: 'close' };
 
 export function resolveKeyOwner(context: KeyResolverContext): KeyOwner | null {
   const overlayOwner = resolveOverlayOwner(context);
   if (overlayOwner !== null) return overlayOwner;
 
   if (context.screen !== 'workflow') return null;
-
-  if (context.attachState === 'attached' && isCtrlKey(context.key, 'd')) {
-    return { owner: 'attached-client', action: 'detach' };
-  }
 
   if (
     context.inputMode === 'normal' &&
@@ -70,16 +62,12 @@ export function resolveKeyOwner(context: KeyResolverContext): KeyOwner | null {
   if (context.inputMode !== 'normal') return null;
 
   if (isCtrlKey(context.key, 'd')) return { owner: 'workflow', action: 'toggle-diff' };
-  if (isCtrlKey(context.key, 'g')) return { owner: 'workflow', action: 'cost' };
 
   return null;
 }
 
 function resolveOverlayOwner(context: KeyResolverContext): KeyOwner | null {
   if (context.overlay === 'none') return null;
-  if (context.overlay === 'cost-drilldown') {
-    return { owner: 'overlay', action: 'close' };
-  }
   if (context.key.key === 'escape') return { owner: 'overlay', action: 'close' };
   return null;
 }

@@ -2,6 +2,7 @@ import { relative } from 'node:path';
 import { resolveFromProject } from '../../utils/path-patterns.js';
 import { mkdir, stat } from 'node:fs/promises';
 import { warnError } from '../../lib/warn.js';
+import { createLogger } from '../../lib/logger.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { uniqueInOrder } from '../../utils/collections.js';
 import { initParser, parseFile } from './parse.js';
@@ -20,10 +21,9 @@ export interface RepoMapOptions {
   focusFiles?: string[];
   featureText?: string;
   tokenBudget?: number;
-  cacheDir?: string;
   include?: string[];
   exclude?: string[];
-  onWarn?: (message: string) => void;
+  onWarn?: (message: string, details?: string) => void;
 }
 
 export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}): Promise<string> {
@@ -32,15 +32,14 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
     await initParser();
 
     const tokenBudget = opts.tokenBudget ?? 4000;
-    const cacheDir = resolveCodebaseCacheDir(projectDir, opts.cacheDir);
+    const cacheDir = resolveCodebaseCacheDir(projectDir);
     await mkdir(cacheDir, { recursive: true });
-    cache = await createParseCache(resolveRepoMapDbPath(projectDir, opts.cacheDir), {
+    cache = await createParseCache(resolveRepoMapDbPath(projectDir), {
       ...(opts.onWarn && { onWarn: opts.onWarn }),
     });
     const c = cache;
 
     const absFiles = await discoverFiles(projectDir, {
-      cacheDir,
       ...(opts.exclude ? { excludePatterns: opts.exclude } : {}),
       ...(opts.include ? { includePatterns: opts.include } : {}),
     });
@@ -73,10 +72,13 @@ export async function buildRepoMap(projectDir: string, opts: RepoMapOptions = {}
 
     return formatWithBudget(displayNodes, rankingsByRelPath, tokenBudget);
   } catch (err) {
+    const message = 'Repo-map unavailable. Continuing without the code overview.';
+    const details = toErrorMessage(err, { preserveLineBreaks: true });
+    createLogger('repo-map').warn(message, details);
     if (opts.onWarn) {
-      opts.onWarn(`repo-map unavailable: ${toErrorMessage(err)}`);
+      opts.onWarn(message, details);
     } else {
-      warnError('repo-map unavailable', err);
+      warnError(message);
     }
     return '';
   } finally {

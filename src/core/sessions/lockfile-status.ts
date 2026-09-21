@@ -21,11 +21,8 @@ export const LockfileDataSchema = z.object({
   sessionId: z.string(),
   mode: WorkflowModeSchema,
   feature: z.string(),
-  authToken: z.string().optional(),
   exitedAt: z.number().finite().nonnegative().optional(),
   exitCode: z.number().int().optional(),
-  signal: z.string().optional(),
-  cause: z.string().optional(),
 });
 
 export type LockfileData = z.infer<typeof LockfileDataSchema>;
@@ -52,7 +49,7 @@ export interface SessionLockStatusOptions extends SessionLockfileOptions {
   nowMs?: number | undefined;
 }
 
-function lockfilePath(sessionDir: string): string {
+export function sessionLockfilePath(sessionDir: string): string {
   const p = resolve(sessionDir, LOCKFILE);
   assertSessionConfinement(p, sessionDir);
   return p;
@@ -67,14 +64,28 @@ function expectedSessionIdFor(options: SessionLockfileOptions): string | null {
   }
 }
 
-export function readSessionLockfileData(options: SessionLockfileOptions): SessionLockReadResult {
-  if (!existsSync(options.sessionDir)) return { kind: 'missing' };
+export function parseSessionLockfileData(
+  raw: string,
+  options: SessionLockfileOptions,
+): SessionLockReadResult {
   const expectedSessionId = expectedSessionIdFor(options);
   if (expectedSessionId === null) return { kind: 'invalid' };
+  try {
+    const parsed = LockfileDataSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) return { kind: 'invalid' };
+    if (parsed.data.sessionId !== expectedSessionId) return { kind: 'invalid' };
+    return { kind: 'valid', data: parsed.data };
+  } catch {
+    return { kind: 'invalid' };
+  }
+}
+
+export function readSessionLockfileData(options: SessionLockfileOptions): SessionLockReadResult {
+  if (!existsSync(options.sessionDir)) return { kind: 'missing' };
 
   let p: string;
   try {
-    p = lockfilePath(options.sessionDir);
+    p = sessionLockfilePath(options.sessionDir);
   } catch {
     return { kind: 'invalid' };
   }
@@ -82,10 +93,7 @@ export function readSessionLockfileData(options: SessionLockfileOptions): Sessio
   if (!existsSync(p)) return { kind: 'missing' };
 
   try {
-    const parsed = LockfileDataSchema.safeParse(JSON.parse(readFileSync(p, 'utf-8')));
-    if (!parsed.success) return { kind: 'invalid' };
-    if (parsed.data.sessionId !== expectedSessionId) return { kind: 'invalid' };
-    return { kind: 'valid', data: parsed.data };
+    return parseSessionLockfileData(readFileSync(p, 'utf-8'), options);
   } catch {
     return { kind: 'invalid' };
   }

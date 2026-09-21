@@ -1,6 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
 import {
-  CLI_COMPILER_EVIDENCE,
   CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
@@ -195,11 +194,10 @@ export function assertCliImplementerTool(tool: string): void {
 /**
  * One admission path (REQ-016, REQ-018, REQ-047): every planner construction
  * crosses this decision before any adapter exists, so no backend can bypass
- * capability admission. A CLI row the compiler catalog marks unsupported — on
- * the planner seat only, since a reviewer compiles nothing — or a configured
- * argument vector that overrides authority SPLITBRIEF owns, is a typed
- * zero-dispatch refusal; an admitted CLI tool is bound to its prepared start
- * gate, which the adapter revalidates immediately before every spawn.
+ * capability admission. A configured argument vector that overrides authority
+ * SPLITBRIEF owns is a typed zero-dispatch refusal; an admitted CLI tool is
+ * bound to its prepared start gate, which the adapter revalidates immediately
+ * before every spawn.
  */
 export function admitPlannerBackend(
   input: Readonly<{
@@ -211,23 +209,13 @@ export function admitPlannerBackend(
   const runner = input.config.planner;
   if (runner.kind === 'cli') {
     assertCliPlannerTool(runner.tool, input.seat);
-    const evidence = CLI_COMPILER_EVIDENCE[runner.tool];
-    if (input.seat === 'planner' && evidence.state === 'unsupported') {
-      throw plannerCapabilityRefusal({
-        seat: input.seat,
-        backend: runner.tool,
-        reason: evidence.unsupportedReason ?? 'no compiler conformance row exists',
-        missing: ['backend'],
-      });
-    }
     const violations = semanticConfiguredArgViolations(runner.args ?? []);
     if (violations.length > 0) {
-      throw plannerCapabilityRefusal({
-        seat: input.seat,
-        backend: runner.tool,
-        reason: `the configured arguments override authority SPLITBRIEF owns: ${violations.join(', ')}`,
-        missing: ['configuration'],
-      });
+      throw error(
+        'planner-configured-args-rejected',
+        `The ${runner.tool} ${input.seat} is not admitted: the configured arguments override authority SPLITBRIEF owns: ${violations.join(', ')}`,
+        { backend: runner.tool, missing: ['configuration'] },
+      );
     }
   }
   const gate = runnerGateFor(
@@ -241,28 +229,6 @@ export function admitPlannerBackend(
   return gate.kind === 'cli'
     ? { trustedCli: { tool: gate.tool, executable: gate.executable } }
     : {};
-}
-
-/**
- * The compilation clause belongs to the planner seat alone: the reviewer holds
- * a read-only seat that compiles no Task Brief, so its refusal names the seat
- * and states only the cause.
- */
-function plannerCapabilityRefusal(
-  input: Readonly<{
-    seat: PlannerTierRole;
-    backend: string;
-    reason: string;
-    missing: readonly string[];
-  }>,
-): never {
-  throw error(
-    'task_compiler_capability_unsupported',
-    input.seat === 'reviewer'
-      ? `The ${input.backend} reviewer is not admitted: ${input.reason}`
-      : `The ${input.backend} planner is not admitted for Task Brief compilation in V1: ${input.reason}`,
-    { backend: input.backend, missing: [...input.missing] },
-  );
 }
 
 /**

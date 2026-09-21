@@ -171,8 +171,6 @@ describe('config roundtrip', () => {
       ) as Record<string, unknown>;
       expect(written.codebase).toBeDefined();
       expect(written.hooks).toBeDefined();
-      expect(written.otel).toBeDefined();
-      expect(written.snapshots).toBeDefined();
       expect(written.palette).toBeDefined();
       expect(written.approval).toBeDefined();
       expect((written.palette as Record<string, unknown>).custom_actions).toBeDefined();
@@ -199,7 +197,6 @@ describe('config roundtrip', () => {
               api_base: 'http://localhost:11434/v1',
               model: 'qwen2.5-coder:7b',
               context_length: 32768,
-              cost_tier: 'local',
             },
             'agent-cli': {
               kind: 'cli',
@@ -207,7 +204,6 @@ describe('config roundtrip', () => {
               model: 'gpt-5.4-mini',
               context_length: 200000,
               label: 'Codex CLI',
-              cost_tier: 'standard',
             },
           },
         },
@@ -247,7 +243,6 @@ describe('config roundtrip', () => {
               model: 'existing-model',
               custom_models: ['existing-model'],
               label: 'Active cloud',
-              cost_tier: 'cheap',
             },
             'dormant-local': {
               kind: 'cli',
@@ -259,13 +254,11 @@ describe('config roundtrip', () => {
         validation: { typecheck: true, lint: true, test: true },
         workflow: {
           max_retries: 3,
-          persist_transcript: true,
           compaction_format: 'auto',
         },
         codebase: {
           enabled: true,
           token_budget: 4321,
-          cache_dir: '.splitbrief',
           include: ['src/**'],
           exclude: ['dist/**'],
         },
@@ -325,7 +318,6 @@ describe('config roundtrip', () => {
         command: 'local-implementer --stdio',
         model: 'existing-model',
         label: 'Active cloud',
-        costTier: 'cheap',
       });
 
       const commandYaml = YAML.parse(readFileSync(path, 'utf-8')) as {
@@ -338,7 +330,6 @@ describe('config roundtrip', () => {
         command: 'local-implementer --stdio',
         model: 'existing-model',
         label: 'Active cloud',
-        cost_tier: 'cheap',
       });
 
       current = commitImplementerSelection({
@@ -364,23 +355,20 @@ describe('config roundtrip', () => {
     it('converts snake_case keys to camelCase', () => {
       const dir = join(TMP, 'snake-case');
       writeConfigYaml(dir, {
-        planner_estimate_review: true,
-        auto_split_overflow: true,
-        workflow: { max_retries: 5, git: { commit_strategy: 'checkpoint' } },
+        workflow: { max_retries: 5, git: { create_branch: true } },
       });
 
       const { config } = loadConfig(dir);
-      expect(config.plannerEstimateReview).toBe(true);
-      expect(config.autoSplitOverflow).toBe(true);
       expect(config.workflow.maxRetries).toBe(5);
-      expect(config.workflow.git?.commitStrategy).toBe('checkpoint');
+      expect(config.workflow.git?.createBranch).toBe(true);
 
       writeConfig(dir, config);
       const written = YAML.parse(
         readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
       ) as Record<string, unknown>;
-      expect(written.planner_estimate_review).toBe(true);
-      expect(written.auto_split_overflow).toBe(true);
+      const workflow = written.workflow as Record<string, unknown>;
+      expect(workflow.max_retries).toBe(5);
+      expect((workflow.git as Record<string, unknown>).create_branch).toBe(true);
     });
   });
 });

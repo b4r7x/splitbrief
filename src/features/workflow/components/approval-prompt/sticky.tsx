@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
 import { borderStyleFor } from '../../../../lib/glyphs.js';
@@ -8,19 +8,19 @@ import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { registerMouseZone } from '../../../../lib/terminal/mouse-zones.js';
 import { readConversationScrollSnapshot } from '../../layout/snapshot.js';
 import {
-  GATE_TITLE,
   STICKY_HINTS,
   STICKY_OPTIONS,
-  STICKY_PERSIST_NOTE,
   approvalKeyColumnWidth,
   approvalOptionKeyCell,
   approvalOptionLabelText,
   approvalSubjectText,
-  getApprovalSeverityWord,
+  approvalTitle,
   getStickyOptionZones,
+  stickyLeadShed,
+  stickySpacersShed,
 } from '../../prompt-rows/approval.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
-import { SOFT_SEP } from '../../../../components/separators.js';
+import { clamp } from '../../../../utils/math.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 
 export const PROMPT_ZONE_Z = 50;
@@ -61,12 +61,25 @@ export function StickyApprovalPrompt({
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);
+  const boxRows = Math.min(promptRows, clampedBoxRows ?? promptRows);
+  const spacersShed = stickySpacersShed(promptRows, boxRows);
+  const [selected, setSelected] = useState(0);
 
   useInput(
     (input, key) => {
       if (Date.now() < graceUntil) return;
       if (key.escape) {
         closeApprovalPrompt();
+        return;
+      }
+      if (key.upArrow || key.downArrow) {
+        setSelected((index) =>
+          clamp(index + (key.downArrow ? 1 : -1), 0, STICKY_OPTIONS.length - 1),
+        );
+        return;
+      }
+      if (key.return) {
+        triggerStickyOption(STICKY_OPTIONS[selected]?.key ?? 'x');
         return;
       }
       const pressed = input.toLowerCase();
@@ -84,8 +97,9 @@ export function StickyApprovalPrompt({
     const zones = getStickyOptionZones({
       boxTop,
       cols,
-      promptRows: clampedBoxRows ?? promptRows,
+      promptRows: boxRows,
       actionDescription: request.actionDescription,
+      leadShed: stickyLeadShed(spacersShed),
     });
     const cleanups = zones.map((zone) =>
       registerMouseZone({
@@ -101,7 +115,7 @@ export function StickyApprovalPrompt({
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
-  }, [isActive, cols, rows, promptRows, clampedBoxRows, request]);
+  }, [isActive, cols, rows, promptRows, boxRows, spacersShed, request]);
 
   return (
     <Box
@@ -109,22 +123,18 @@ export function StickyApprovalPrompt({
       borderStyle={borderStyleFor('bold')}
       borderColor={t.border}
       paddingX={1}
-      height={promptRows}
+      height={boxRows}
       width="100%"
       overflow="hidden"
       flexShrink={0}
     >
-      <Text color={t.textDim}>
-        {GATE_TITLE}
-        {SOFT_SEP}
-        <Text color={t.warning}>{getApprovalSeverityWord(request.actionClass)}</Text>
-      </Text>
-      <Text> </Text>
+      <Text color={t.warning}>{approvalTitle(request.actionClass)}</Text>
+      {spacersShed < 1 && <Text> </Text>}
       <Text>{approvalSubjectText(request.actionDescription, cols)}</Text>
-      <Text> </Text>
+      {spacersShed < 2 && <Text> </Text>}
       {STICKY_OPTIONS.map((option, index) => (
         <Text key={option.key}>
-          {index === 0 ? <Text color={t.text}>{cursorGlyph()}</Text> : NO_CURSOR}
+          {index === selected ? <Text color={t.text}>{cursorGlyph()}</Text> : NO_CURSOR}
           <Text color={t.textDim}>{approvalOptionKeyCell(option, STICKY_KEY_WIDTH)}</Text>
           {'   '}
           {approvalOptionLabelText({
@@ -134,8 +144,7 @@ export function StickyApprovalPrompt({
           })}
         </Text>
       ))}
-      <Text> </Text>
-      <Text color={t.textDim}>{STICKY_PERSIST_NOTE}</Text>
+      {spacersShed < 3 && <Text> </Text>}
       <Text color={t.textDim}>{STICKY_HINTS}</Text>
     </Box>
   );

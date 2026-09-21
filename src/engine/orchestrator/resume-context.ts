@@ -3,7 +3,6 @@ import type { ResumeContextHolder } from './types.js';
 import type { EventBus } from '../events/types.js';
 import type { Planner } from '../planners/types.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { StateAuthorityReceipt } from '../../core/state/types.js';
 import { publishWarning, publishWarningFromError } from './events.js';
 import { buildResumeContext } from './transcript/rebuild.js';
 import { compactResumeTranscript, keepRecentCountForThreshold } from './transcript/compaction.js';
@@ -16,10 +15,8 @@ export type ApplyRebuiltContextOpts = {
   projectDir: string;
   sessionId: string;
   bus: EventBus;
-  config: Pick<Config, 'workflow'>;
   resumeHolder: ResumeContextHolder | undefined;
   requireNonEmpty?: boolean | undefined;
-  authority?: StateAuthorityReceipt | undefined;
 };
 
 export type AutoCompactResumeOpts = {
@@ -30,24 +27,18 @@ export type AutoCompactResumeOpts = {
   planner: Pick<Planner, 'capabilities' | 'summarize' | 'summarizeStructured'>;
   state: WorkflowState;
   signal?: AbortSignal | undefined;
-  authority?: StateAuthorityReceipt | undefined;
 };
 
 export async function autoCompactResumeContext(
   opts: AutoCompactResumeOpts,
 ): Promise<WorkflowState> {
   const threshold = opts.config.workflow.compactionThreshold;
-  if (threshold === undefined || opts.config.workflow.persistTranscript === false)
-    return opts.state;
+  if (threshold === undefined) return opts.state;
   const summarize = opts.planner.summarize;
   if (opts.planner.capabilities.supportsSelfSummarisation !== true || !summarize) return opts.state;
 
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
-  const rebuilt = await buildResumeContext({
-    ref,
-    persistTranscript: true,
-    authority: opts.authority,
-  });
+  const rebuilt = await buildResumeContext({ ref });
   if (rebuilt.messages.length <= threshold) return opts.state;
 
   try {
@@ -72,12 +63,7 @@ export async function autoCompactResumeContext(
         }),
     });
     return addUsageAndSave(
-      {
-        projectDir: opts.projectDir,
-        sessionId: opts.sessionId,
-        bus: opts.bus,
-        ...(opts.authority !== undefined && { authority: opts.authority }),
-      },
+      { projectDir: opts.projectDir, sessionId: opts.sessionId, bus: opts.bus },
       opts.state,
       'planner',
       result.usage,
@@ -94,21 +80,8 @@ export async function autoCompactResumeContext(
 }
 
 export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promise<void> {
-  const { projectDir, sessionId, bus, config, resumeHolder, requireNonEmpty } = opts;
-  const rebuilt = await buildResumeContext({
-    ref: { projectDir, sessionId },
-    persistTranscript: config.workflow.persistTranscript !== false,
-    authority: opts.authority,
-  });
-  if (rebuilt.warning === 'transcript-unavailable') {
-    publishWarning({
-      bus: bus,
-      phase: 'researching',
-      message:
-        'Previous planner conversation expired and no transcript was persisted. Continuing with spec.md/plan.md/tasks.md only — the planner may regenerate differently.',
-    });
-    return;
-  }
+  const { projectDir, sessionId, bus, resumeHolder, requireNonEmpty } = opts;
+  const rebuilt = await buildResumeContext({ ref: { projectDir, sessionId } });
   if (rebuilt.warning === 'state-unavailable') {
     publishWarning({
       bus,
@@ -127,9 +100,7 @@ export type SessionExpiredHandlerOpts = {
   projectDir: string;
   sessionId: string;
   bus: EventBus;
-  config: Pick<Config, 'workflow'>;
   resumeHolder: ResumeContextHolder | undefined;
-  authority?: StateAuthorityReceipt | undefined;
 };
 
 export function createSessionExpiredHandler(opts: SessionExpiredHandlerOpts): () => Promise<void> {

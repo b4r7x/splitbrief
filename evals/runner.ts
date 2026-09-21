@@ -193,7 +193,6 @@ async function runSingleEval(
           sinks: { setAbortHandler: () => undefined, setQueueHandler: () => undefined },
           callbacks: {
             onApprovalNeeded: async () => ({ approved: true }),
-            onQuestionAsked: async () => '',
             onContinuationNeeded: async () => '',
             onComplete: () => undefined,
           },

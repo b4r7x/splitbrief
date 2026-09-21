@@ -69,26 +69,24 @@ export async function showFileAtHead(dir: string, file: string): Promise<string 
   }
 }
 
-export async function showFileAtRef(
+/** Read restoration material without checking out or modifying any index. */
+export async function readFileEntryAtRef(
   dir: string,
   ref: string,
   file: string,
-): Promise<string | null> {
-  try {
-    return await getGitForDir(dir).show([`${ref}:${file}`]);
-  } catch {
-    return null;
-  }
-}
-
-export function restoreFileFromRef(dir: string, ref: string, file: string): Promise<void> {
-  return runGit(`checkout ${ref} -- ${file}`, () =>
-    getGitForDir(dir).checkout([ref, '--', file]),
-  ).then(() => undefined);
-}
-
-export function resetIndexEntryToRef(dir: string, ref: string, file: string): Promise<void> {
-  return runGit(`reset ${ref} -- ${file}`, () => getGitForDir(dir).reset([ref, '--', file])).then(
-    () => undefined,
+): Promise<{ bytes: Buffer; mode: number } | null> {
+  if (ref === GIT_EMPTY_TREE_HASH) return null;
+  const git = getGitForDir(dir);
+  const tree = await runGit('ls-tree', () =>
+    git.raw(['ls-tree', '-z', ref, '--', `:(literal)${file}`]),
   );
+  const row = tree.split('\0').find((entry) => entry.slice(entry.indexOf('\t') + 1) === file);
+  if (row === undefined) return null;
+  const match = /^(100644|100755) blob ([a-f0-9]+)\t/.exec(row);
+  if (match === null || match[1] === undefined || match[2] === undefined) {
+    throw gitError.commandFailed('ls-tree', `Cannot restore nonregular file: ${file}`);
+  }
+  const object = match[2];
+  const bytes = await runGit('show', () => git.showBuffer([object]));
+  return { bytes, mode: Number.parseInt(match[1], 8) & 0o777 };
 }

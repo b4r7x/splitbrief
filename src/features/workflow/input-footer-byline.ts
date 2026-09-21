@@ -1,7 +1,13 @@
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
+
+// The rail's fraction counts briefs that passed their checks, never the index of the one running:
+// a run on its last brief must not read as finished.
+export function stageFractionText(view: { passed: number; total: number }): string {
+  return view.total > 0 ? `${view.passed}/${view.total}` : '';
+}
 
 export interface InputFooterBylineInput {
   cols: number;
@@ -9,13 +15,12 @@ export interface InputFooterBylineInput {
   hintText?: string | null;
   queuedText: string | null;
   etaText: string | null;
-  gitLabel: string;
   advisoryText: string | null;
   copyHint?: string | null;
   worktreeLabel?: string | null;
 }
 
-function joinBylineParts(parts: readonly (string | null | undefined)[]): string {
+export function joinBylineParts(parts: readonly (string | null | undefined)[]): string {
   return parts
     .filter((part): part is string => part !== null && part !== undefined && part.length > 0)
     .join(SOFT_SEP);
@@ -33,14 +38,14 @@ export interface InputFooterByline {
 }
 
 export function buildInputFooterByline(input: InputFooterBylineInput): InputFooterByline {
+  // The byline renders inside the gutter, so its one measure is the chrome content width.
   const width = getChromeContentWidth(input.cols);
   const queuedPart = input.queuedText && input.queuedText.length > 0 ? input.queuedText : null;
   const hintPart = input.hintText && input.hintText.length > 0 ? input.hintText : null;
 
   const candidates: Array<{ hint: boolean; queued: boolean; tail: (string | null)[] }> = [
-    { hint: true, queued: true, tail: [input.etaText, input.gitLabel, input.advisoryText] },
-    { hint: true, queued: true, tail: [input.etaText, input.gitLabel] },
-    { hint: true, queued: true, tail: [input.gitLabel] },
+    { hint: true, queued: true, tail: [input.etaText, input.advisoryText] },
+    { hint: true, queued: true, tail: [input.etaText] },
     { hint: true, queued: true, tail: [] },
     { hint: false, queued: true, tail: [] },
     { hint: false, queued: false, tail: [] },

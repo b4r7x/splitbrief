@@ -65,7 +65,7 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
       preparationId,
       active,
       resumeState,
-      purpose: 'new-workflow',
+      purpose: 'resume',
       allowHooks: true,
       gates: () => [
         {

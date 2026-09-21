@@ -30,7 +30,6 @@ Only signatures (declarations) appear. Bodies elided. Files outside the budget a
 codebase:
   enabled: true              # set to false to disable
   tokenBudget: 4000          # tokens reserved in the planner prompt
-  cacheDir: ".splitbrief"       # where the SQLite cache lives
   include: ["src/**/*"]     # globs (default: discovery walks all known language extensions)
   exclude:                   # regex strings; default excludes test files + node_modules + dist
     - "\\.test\\.tsx?$"
@@ -58,6 +57,8 @@ Mentioned-file extraction lives in `src/engine/codebase/extract-mentioned-filena
 ## Cache
 
 Parsed symbols are cached in SQLite at `${projectDir}/.splitbrief/repomap.sqlite` via `better-sqlite3`. One row per file.
+
+If the native SQLite binding is missing or incompatible with the current Node runtime, the same parser builds the repo-map without caching. Planning continues with its code overview. The transcript shows one short notice; the full diagnostic is recorded in the session log. Cache path and permission failures do not enter this fallback. To restore caching after changing Node versions, run `npm rebuild better-sqlite3` in the installation directory.
 
 ### Schema
 

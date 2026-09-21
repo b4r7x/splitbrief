@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { useTheme } from '../../components/theme.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { glyph } from '../../lib/glyphs.js';

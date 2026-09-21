@@ -1,14 +1,18 @@
 import type { Config } from '../../core/schemas/config.js';
-import type { BriefReviewPromptKind } from '../../core/schemas/brief-review-command.js';
-import type { Phase, UserEditConflictAction } from '../../core/schemas/enums.js';
+import type {
+  BriefReviewPromptKind,
+  Phase,
+  UserEditConflictAction,
+} from '../../core/schemas/enums.js';
 import type { TaskId } from '../../core/schemas/task.js';
-import type { ProjectContext, StateAuthorityReceipt } from '../../core/state/types.js';
+import type { StepCut } from '../../core/schemas/run-step.js';
+import type { ContinuationHolder } from './continuation.js';
+import type { ProjectContext } from '../../core/state/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { SpecMetadata } from '../../core/paths-io.js';
-import type { CostPrediction, Summary } from '../../core/schemas/summary.js';
-import type { ClarificationQuestion } from '../../core/schemas/question.js';
+import type { Summary } from '../../core/schemas/summary.js';
 import type { Validator } from './validation/types.js';
 import type { RunIsolation } from './isolation/types.js';
 import type { EventBus } from '../events/types.js';
@@ -28,7 +32,12 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StreamingSink } from './task/streaming-feed.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { ApprovalReviewInput } from '../runners/types.js';
+import type { PlannerConversation } from '../../core/schemas/workflow.js';
+import type { PlannerReplyAnswer } from '../../core/schemas/question.js';
 export interface OrchestratorCallbacks {
+  onPlannerReply?:
+    | ((reply: PlannerConversation) => Promise<string | PlannerReplyAnswer | undefined>)
+    | undefined;
   onApprovalNeeded: (
     type: BriefReviewPromptKind,
     input: ApprovalReviewInput,
@@ -36,11 +45,12 @@ export interface OrchestratorCallbacks {
   onUserEditConflict?:
     | ((conflict: UserEditConflict) => Promise<UserEditConflictAction>)
     | undefined;
-  onQuestionAsked?:
-    | ((question: ClarificationQuestion, num: number, total: number) => Promise<string>)
-    | undefined;
-  onCostApprovalNeeded?: ((prediction: CostPrediction) => Promise<boolean>) | undefined;
-  onContinuationNeeded?: ((partialResponse: string) => Promise<string>) | undefined;
+  /**
+   * Parks the run until the operator continues it, resolving with their steer.
+   * `at` says what they are looking at: a call cut in flight, or a run held
+   * between two briefs.
+   */
+  onContinuationNeeded?: ((partialResponse: string, at: StepCut) => Promise<string>) | undefined;
   onTieredApproval?:
     | ((request: TieredApprovalRequest) => Promise<TieredApprovalResponse>)
     | undefined;
@@ -71,6 +81,7 @@ export interface WorkflowSinks {
   setQueueHandler: (handler: QueueHandler | null) => void;
   setClearQueueHandler?: ((handler: ClearQueueHandler | null) => void) | undefined;
   consumeBoundaryInterrupt?: () => boolean;
+  consumeBoundaryPause?: () => boolean;
 }
 
 export interface WorkflowContext {
@@ -98,20 +109,24 @@ export interface WorkflowContext {
   sinks: WorkflowSinks;
   isolation: RunIsolation;
   validator: Validator;
-  stateAuthority?: StateAuthorityReceipt | undefined;
   modelCache?: ModelCacheAccessor | undefined;
   drainPendingAttachments?: (() => Attachment[]) | undefined;
   streamingSink?: StreamingSink | undefined;
   plannerContext?: string | undefined;
   detectedContextLength?: number | undefined;
   setRewindFeedback?: ((feedback: string | undefined) => void) | undefined;
+  /**
+   * The continuation this run carries: the partial its cut attempt left and the
+   * steer that restarted it. The step the run stopped at takes it; every other
+   * step sees nothing.
+   */
+  continuation?: ContinuationHolder | undefined;
 }
 
 export type WorkflowPersistenceContext = SessionRef & { bus: EventBus };
 
 export type PlannerCallbacksContext = Pick<
   WorkflowContext,
-  | 'stateAuthority'
   | 'projectDir'
   | 'sessionId'
   | 'config'
@@ -124,4 +139,5 @@ export type PlannerCallbacksContext = Pick<
   | 'drainPendingAttachments'
   | 'modelCache'
   | 'detectedContextLength'
+  | 'continuation'
 >;

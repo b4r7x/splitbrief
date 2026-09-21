@@ -66,3 +66,25 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run tui-shots -- --scenario home-empty --viewport 80x24 --output .test-artifacts/ui/ci-smoke
+      - run: npm run tui-shots:pty
+        env:
+          SPLITBRIEF_REQUIRE_PTY: '1'
+
+  website:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            website/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm ci
+        working-directory: website
+      - run: npx playwright install --with-deps chrome
+        working-directory: website
+      - run: npm run check
+        working-directory: website

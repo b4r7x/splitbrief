@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -14,12 +14,19 @@ import {
   reactivateExistingSession,
   writeActive,
 } from '../../../core/sessions/active-pointer.js';
+import { LOCKFILE, sessionDir, STATE_FILE } from '../../../core/paths.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { runnerDiscoveryContextKey } from '../../detection/runner-evidence.js';
 import { resolveCustomRunnerTrustFile } from '../custom-trust.js';
 import { prepareCustomRunnerAdmission } from '../custom-admission.js';
 import type { probeRunnerAvailability } from '../probe-availability.js';
-import { prepareExecution, type PrepareExecutionInput } from './prepare-execution.js';
-import type { PreparationPolicy } from './types.js';
+import {
+  prepareExecution,
+  prepareReviewExecution,
+  type PrepareExecutionInput,
+} from './prepare-execution.js';
+import type { PreparationPolicy, PrepareExecutionDependencies } from './types.js';
 
 const EXECUTABLE_DIGEST = 'a'.repeat(64);
 const executable = CliExecutableReceiptSchema.parse({
@@ -193,7 +200,20 @@ function reviewerChecks(report: ReadinessReport): ReadinessReport['sections'][nu
   );
 }
 
-async function resumeActivation(prior: 'absent' | 'legacy' | 'v1' | 'different') {
+function writeDeadRun(project: string, sessionId: string): void {
+  const dir = sessionDir(project, sessionId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, STATE_FILE),
+    JSON.stringify({ ...createInitialState('feature'), phase: 'implementing' }),
+  );
+  writeFileSync(
+    join(dir, LOCKFILE),
+    JSON.stringify(makeSessionLockfile(sessionId, { pid: 99999999 })),
+  );
+}
+
+async function resumeActivation(prior: 'absent' | 'legacy' | 'v1' | 'different' | 'dead-other') {
   const project = projectDir();
   const config = makeConfig({
     planner: { kind: 'cli', tool: 'codex' },
@@ -208,6 +228,10 @@ async function resumeActivation(prior: 'absent' | 'legacy' | 'v1' | 'different')
   if (prior === 'legacy') writeActive(existingSession);
   if (prior === 'v1') reactivateExistingSession(existingSession);
   if (prior === 'different') writeActive({ projectDir: project, sessionId: 'another-session' });
+  if (prior === 'dead-other') {
+    writeDeadRun(project, 'dead-session');
+    writeActive({ projectDir: project, sessionId: 'dead-session' });
+  }
   const before = readActiveRecord(project);
 
   const outcome = await prepareExecution({
@@ -241,7 +265,7 @@ describe('prepareExecution', () => {
   it('checks planner and every configured profile and derives report and gates from each result', async () => {
     const project = projectDir();
     const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      planner: { kind: 'cli', tool: 'codex' },
       implementerProfiles: {
         default: 'api',
         profiles: {
@@ -348,6 +372,42 @@ describe('prepareExecution', () => {
 
     expect(withoutStub.kind).toBe('prepared');
     expect(withStub).toEqual(withoutStub);
+  });
+
+  it('blocks an explicit auth channel the enforcement matrix cannot guarantee', async () => {
+    const project = projectDir();
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+    });
+    const prepareSession = vi.fn();
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'explicit auth channel',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: policy('new-workflow'),
+      deps: {
+        collectArgVectorPreflightChecks: async () => [],
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
+        resolveCliExecutableAliases: async () => ({
+          command: 'codex',
+          executable,
+          usedFallback: false,
+        }),
+        prepareNewSession: prepareSession,
+      },
+    });
+
+    expect(outcome.kind).toBe('blocked');
+    if (outcome.kind !== 'blocked') return;
+    const check = outcome.report.sections
+      .find((section) => section.id === 'runners')
+      ?.checks.find((entry) => entry.id === 'runners.preparation.planner');
+    expect(check?.severity).toBe('blocker');
+    expect(check?.fix).toContain('auth_channel');
+    expect(prepareSession).not.toHaveBeenCalled();
   });
 
   it('leaves the arg-vector preflight unrun when the trust ladder refuses the executable', async () => {
@@ -475,7 +535,7 @@ describe('prepareExecution', () => {
   it('reauthorizes the exact resume ref without creating a session', async () => {
     const project = projectDir();
     const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      planner: { kind: 'cli', tool: 'codex' },
       implementer: {
         kind: 'api',
         provider: 'ollama',
@@ -575,8 +635,24 @@ describe('prepareExecution', () => {
   it('refuses to reactivate when another session owns the active record', async () => {
     const { project, before, outcome } = await resumeActivation('different');
 
-    expect(outcome.kind).toBe('failed');
+    expect(outcome).toMatchObject({
+      kind: 'failed',
+      error: { kind: 'session-still-active' },
+      report: { status: 'ready', counts: { blocker: 0 } },
+    });
     expect(readActiveRecord(project)).toEqual(before);
+  });
+
+  it('takes over the active record from a run whose owner is dead', async () => {
+    const { project, existingSession, outcome } = await resumeActivation('dead-other');
+
+    expect(outcome.kind).toBe('prepared');
+    if (outcome.kind !== 'prepared') return;
+    expect(outcome.execution.session.active.sessionId).toBe(existingSession.sessionId);
+    expect(readActiveRecord(project)).toEqual({
+      kind: 'v1',
+      receipt: outcome.execution.session.active,
+    });
   });
 
   it('prepares only the planner for spec execution', async () => {
@@ -1370,5 +1446,138 @@ describe('prepareExecution availability probe scope', () => {
 
   it('probes only the planner for a spec preparation, which never calls the implementer', async () => {
     expect(await probedRoles('spec')).toEqual(['planner']);
+  });
+});
+
+describe('prepareReviewExecution', () => {
+  const reviewPolicy = (): Extract<PreparationPolicy, { purpose: 'review' }> => ({
+    purpose: 'review',
+    interaction: 'headless',
+    unverifiedAuth: 'denied',
+    allowRepoRunners: true,
+    allowHooks: true,
+  });
+
+  function liveSessionReport(project: string): ReadinessReport {
+    return {
+      generatedAt: '2026-09-11T09:00:00.000Z',
+      projectDir: project,
+      status: 'blocked',
+      counts: { ok: 1, info: 0, warning: 0, blocker: 1 },
+      nextAction: {
+        kind: 'clean-or-isolate-repo',
+        label: 'Clear the session',
+        reason: 'A session is live.',
+      },
+      sections: [
+        {
+          id: 'runners',
+          title: 'Runners',
+          checks: [{ id: 'runners.configured', severity: 'ok', summary: 'Configured' }],
+        },
+        {
+          id: 'repo',
+          title: 'Repository',
+          checks: [
+            {
+              id: 'repo.active-session-live',
+              severity: 'blocker',
+              summary: 'Active session live-one is still live.',
+              fix: 'Run `splitbrief resume` or clear .splitbrief/active.',
+              nextAction: 'clean-or-isolate-repo',
+              metadata: { sessionId: 'live-one', live: true },
+            },
+          ],
+        },
+      ],
+      metadata: {},
+    };
+  }
+
+  const reviewConfig = () =>
+    makeConfig({
+      planner: { kind: 'cli', tool: 'codex' },
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen2.5-coder:7b',
+      },
+    });
+
+  const reviewDeps = (report: ReadinessReport): Partial<PrepareExecutionDependencies> => {
+    const config = reviewConfig();
+    return {
+      collectArgVectorPreflightChecks: async () => [],
+      collectReadiness: async () => ({ report, config }),
+      detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
+      resolveCliExecutableAliases: async () => ({
+        command: 'codex',
+        executable,
+        usedFallback: false,
+      }),
+      newPreparationId: () => 'preparation-review',
+    };
+  };
+
+  it('admits the review seat alone and mints no session', async () => {
+    const project = projectDir();
+    const prepareSession = vi.fn(() => preparedSession(project, 'never-created'));
+
+    const outcome = await prepareReviewExecution({
+      projectDir: project,
+      effectiveConfig: reviewConfig(),
+      signal: new AbortController().signal,
+      policy: reviewPolicy(),
+      deps: { ...reviewDeps(readyReport(project)), prepareNewSession: prepareSession },
+    });
+
+    expect(outcome.kind).toBe('prepared');
+    if (outcome.kind !== 'prepared') return;
+    expect(outcome.execution.purpose).toBe('review');
+    expect(outcome.execution.gates).toHaveLength(1);
+    expect(outcome.execution.gates[0]?.slot).toEqual({ role: 'reviewer' });
+    expect(prepareSession).not.toHaveBeenCalled();
+    for (const path of noArtifactPaths(project)) expect(existsSync(path)).toBe(false);
+  });
+
+  it('reports a live session instead of refusing a read-only review', async () => {
+    const project = projectDir();
+
+    const outcome = await prepareReviewExecution({
+      projectDir: project,
+      effectiveConfig: reviewConfig(),
+      signal: new AbortController().signal,
+      policy: reviewPolicy(),
+      deps: reviewDeps(liveSessionReport(project)),
+    });
+
+    expect(outcome.kind).toBe('prepared');
+    if (outcome.kind !== 'prepared') return;
+    const live = outcome.execution.report.sections
+      .find((section) => section.id === 'repo')
+      ?.checks.find((check) => check.id === 'repo.active-session-live');
+    expect(live?.severity).toBe('info');
+    expect(outcome.execution.report.status).not.toBe('blocked');
+  });
+
+  it('leaves the same live session blocking a workflow start', async () => {
+    const project = projectDir();
+    const config = reviewConfig();
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'start beside a live session',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: policy('new-workflow'),
+      deps: {
+        collectArgVectorPreflightChecks: async () => [],
+        collectReadiness: async () => ({ report: liveSessionReport(project), config }),
+        prepareNewSession: () => preparedSession(project, 'never-created'),
+      },
+    });
+
+    expect(outcome.kind).toBe('blocked');
   });
 });

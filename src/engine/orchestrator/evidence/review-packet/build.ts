@@ -38,8 +38,8 @@ export const REVIEWER_CHECKLIST = [
   'Check escalated, skipped, or retried tasks.',
   'Inspect expected vs observed evidence for each completed task.',
   `Run or review any project-specific tests not covered by ${SPLITBRIEF_IDENTITY.displayName}.`,
-  `Use \`${SPLITBRIEF_IDENTITY.executable} snapshot diff SNAPSHOT_ID\` before any restore.`,
-  `Use \`${SPLITBRIEF_IDENTITY.executable} snapshot restore SNAPSHOT_ID\` only after conflicts are understood.`,
+  'Review the working tree with `git diff` before accepting or rejecting the run.',
+  'Use `/run accept` or `/run reject` once the checkpoint conflicts are understood.',
 ] as const;
 
 export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise<ReviewPacket> {

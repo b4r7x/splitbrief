@@ -69,8 +69,13 @@ function handleWheel(event: MouseEvent): void {
     editorStore.scrollBy(event.type === 'wheel-up' ? -WHEEL_STEP : WHEEL_STEP);
     return;
   }
+  if (overlayStore.get().active !== 'none') {
+    hitTopmostZone(event.x, event.y, { minZ: ROW_ZONE_Z_OVERLAY })?.onWheel?.(
+      event.type === 'wheel-up' ? 'up' : 'down',
+    );
+    return;
+  }
   if (routerStore.get().screen !== 'workflow') return;
-  if (overlayStore.get().active !== 'none') return;
   if (modalPromptOwnsInput()) return;
   if (fieldSessionOwnsInput()) return;
   handleWorkflowMouseWheel(event);

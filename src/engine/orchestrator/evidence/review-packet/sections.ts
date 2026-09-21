@@ -1,8 +1,8 @@
-import type { Summary } from '../../../../core/schemas/summary.js';
+import { costAmountBasis, type Summary } from '../../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../../core/schemas/evidence.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
-import type { Task, TaskId } from '../../../../core/schemas/task.js';
+import { taskFiles, type Task, type TaskId } from '../../../../core/schemas/task.js';
 import {
   BRIEF_QUALITY_FILE,
   DRIFT_CHAINS_FILE,
@@ -46,22 +46,25 @@ export function buildChanges(opts: {
 }): ReviewPacket['changes'] {
   const { state, ledger, drift, changedFiles } = opts;
   const expectedFiles = uniqueSorted(
-    drift?.expectedFiles ?? state.tasks.map((task) => task.file).filter(Boolean),
+    drift?.expectedFiles ?? state.tasks.flatMap((task) => [...taskFiles(task)]).filter(Boolean),
   );
   const outOfScopeFiles = uniqueSorted(
     (drift?.findings ?? [])
       .filter((finding) => finding.code === 'out_of_scope_file' && finding.file)
       .map((finding) => finding.file ?? ''),
   );
-  const taskFiles = state.tasks.map((task) => {
+  const taskFileRows = state.tasks.map((task) => {
     const evidence = taskEvidence(task, ledger);
     const observedEvidence = evidence?.observedEvidence ?? [];
+    const declared = taskFiles(task);
     return {
       taskId: task.id,
       title: task.title,
       file: task.file,
+      files: [...declared],
       status: task.status,
-      changedFiles: evidence?.changedFiles ?? (changedFiles.includes(task.file) ? [task.file] : []),
+      changedFiles:
+        evidence?.changedFiles ?? changedFiles.filter((file) => declared.includes(file)),
       expectedEvidence: expectedEvidenceForTask(task, evidence),
       observedEvidence,
     };
@@ -71,7 +74,7 @@ export function buildChanges(opts: {
     changedFiles,
     expectedFiles,
     outOfScopeFiles,
-    taskFiles,
+    taskFiles: taskFileRows,
     diffReference:
       'Review the working tree with `git diff`; full diffs are intentionally not embedded.',
   };
@@ -238,13 +241,7 @@ export function buildEscalations(opts: {
     failedTasks: state.tasks
       .filter((task) => task.status === 'failed')
       .map((task) => ({ taskId: task.id, title: task.title })),
-    warnings: events.filter(
-      (event) =>
-        event.type === 'warning' ||
-        event.type === 'budget_warning' ||
-        event.type === 'budget_paused' ||
-        event.type === 'budget_exceeded',
-    ),
+    warnings: events.filter((event) => event.type === 'warning'),
   };
 }
 
@@ -253,24 +250,17 @@ export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket
     tokenUsage: summary.tokenUsage,
     costBreakdown: summary.costBreakdown
       ? {
-          hypotheticalCost: summary.costBreakdown.hypotheticalCost,
           actualPlannerCost: summary.costBreakdown.actualPlannerCost,
           actualImplementerCost: summary.costBreakdown.actualImplementerCost,
           ...(summary.costBreakdown.actualReviewerCost !== undefined && {
             actualReviewerCost: summary.costBreakdown.actualReviewerCost,
           }),
           totalActualCost: summary.costBreakdown.totalActualCost,
-          savingsAmount: summary.costBreakdown.savingsAmount,
-          savingsPercentage: summary.costBreakdown.savingsPercentage,
-          localCompletionRate: summary.costBreakdown.localCompletionRate,
           ...(summary.costBreakdown.hasPricedUsage !== undefined && {
             hasPricedUsage: summary.costBreakdown.hasPricedUsage,
           }),
           ...(summary.costBreakdown.hasUnpricedUsage !== undefined && {
             hasUnpricedUsage: summary.costBreakdown.hasUnpricedUsage,
-          }),
-          ...(summary.costBreakdown.hasSavingsEstimate !== undefined && {
-            hasSavingsEstimate: summary.costBreakdown.hasSavingsEstimate,
           }),
           ...(summary.costBreakdown.isActualReviewerCostKnown !== undefined && {
             isActualReviewerCostKnown: summary.costBreakdown.isActualReviewerCostKnown,
@@ -278,13 +268,15 @@ export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket
           ...(summary.costBreakdown.isTotalActualCostKnown !== undefined && {
             isTotalActualCostKnown: summary.costBreakdown.isTotalActualCostKnown,
           }),
-          ...(summary.costBreakdown.isAllPlannerBaselineKnown !== undefined && {
-            isAllPlannerBaselineKnown: summary.costBreakdown.isAllPlannerBaselineKnown,
+          ...(summary.costBreakdown.requestEstimate !== undefined && {
+            requestEstimate: summary.costBreakdown.requestEstimate,
+          }),
+          ...(summary.costBreakdown.providerRunMetadata !== undefined && {
+            providerRunMetadata: summary.costBreakdown.providerRunMetadata,
           }),
         }
       : null,
-    estimatedCostSavings:
-      summary.costBreakdown?.hasSavingsEstimate === false ? null : summary.estimatedCostSavings,
+    amountBasis: costAmountBasis(summary.costBreakdown),
     taskRouting: summary.taskBreakdown ?? [],
     routingWarnings: events
       .filter(

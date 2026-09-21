@@ -11,7 +11,8 @@ import type { Task } from '../../../core/schemas/task.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { applyRecoveryAction } from './actions.js';
 import { buildDependencyBlockedRecoveryIssue } from './builders/task.js';
-import { buildBudgetExceededRecoveryIssue } from './builders/workflow.js';
+import { buildUserEditConflictRecoveryIssue } from './builders/workflow.js';
+import { classifyUserEditConflict } from '../user-edit/conflicts.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 
@@ -61,7 +62,6 @@ function configWithProfiles(): Config {
         apiBase: 'https://api.example.com/v1',
         apiKey: 'test-key',
         model: 'claude-sonnet',
-        costTier: 'standard',
       },
       'local-fast': {
         kind: 'api',
@@ -70,7 +70,6 @@ function configWithProfiles(): Config {
         offering: 'local',
         apiBase: 'http://localhost:11434/v1',
         model: 'qwen2.5-coder:7b',
-        costTier: 'local',
       },
     },
   };
@@ -82,17 +81,17 @@ describe('applyRecoveryAction: reason policy', () => {
     const { projectDir, sessionId } = setupSession('policy-block');
     const task = makeTask({ id: 'T200', status: 'in_progress' });
     const issue: RecoveryIssue = {
-      id: 'rec_budget_skip',
-      reason: 'budget-exceeded',
+      id: 'rec_review_skip',
+      reason: 'review-failed',
       phase: 'implementing',
       status: 'awaiting-user',
       taskId: task.id,
       taskTitle: task.title,
       files: [task.file],
       affectedTaskIds: [task.id],
-      message: 'Budget exceeded',
+      message: 'Review failed',
       details: [],
-      availableActions: ['skip-current-task', 'pause-run', 'abort-workflow'],
+      availableActions: ['skip-current-task', 'pause-run', 'end-run'],
       recommendedAction: 'pause-run',
       createdAt,
     };
@@ -191,17 +190,23 @@ describe('applyRecoveryAction: route-bigger-worker blocked', () => {
 });
 
 describe('applyRecoveryAction: unsafe continue blocked', () => {
-  it('blocks ordinary continue for budget-exceeded even if an issue was malformed to advertise it', () => {
-    const { projectDir, sessionId } = setupSession('continue-budget-exceeded');
-    const persistedIssue = buildBudgetExceededRecoveryIssue({
+  it('blocks ordinary continue for an unsafe conflict even if an issue was malformed to advertise it', () => {
+    const { projectDir, sessionId } = setupSession('continue-unsafe-conflict');
+    const conflictTask = makeTask({ id: 'T031', file: 'src/current.ts' });
+    const persistedIssue = buildUserEditConflictRecoveryIssue({
       createdAt,
-      currentCost: 5.25,
-      maxBudget: 5,
+      currentTask: conflictTask,
+      conflict: classifyUserEditConflict({
+        files: ['src/current.ts'],
+        currentTask: conflictTask,
+        allTasks: [conflictTask],
+        currentTaskIndex: 0,
+      }),
     });
     const issue = {
       ...persistedIssue,
-      availableActions: ['continue', 'pause-run', 'abort-workflow'] as ReturnType<
-        typeof buildBudgetExceededRecoveryIssue
+      availableActions: ['continue', 'pause-run', 'end-run'] as ReturnType<
+        typeof buildUserEditConflictRecoveryIssue
       >['availableActions'],
     };
     const base = makeImplState([makeTask({ id: 'T031' })]);
@@ -227,6 +232,143 @@ describe('applyRecoveryAction: unsafe continue blocked', () => {
   });
 });
 
+describe('applyRecoveryAction: the run-level answers', () => {
+  function plannerHaltState(projectDir: string, sessionId: string, issue: RecoveryIssue) {
+    const base = makeImplState([makeTask({ id: 'T001' })]);
+    const state = { ...base, pendingRecovery: issue };
+    saveState({ projectDir, sessionId }, state);
+    const saved = loadState({ projectDir, sessionId });
+    if (saved === null) throw new Error('expected the halt to persist');
+    return saved;
+  }
+
+  function reviseIssue(reason: RecoveryIssue['reason']): RecoveryIssue {
+    return {
+      id: `rec_${reason}`,
+      reason,
+      phase: 'reviewing-briefs',
+      status: 'awaiting-user',
+      files: [],
+      affectedTaskIds: [],
+      message: 'the planner needs a correction',
+      details: [],
+      availableActions:
+        reason === 'constitution-check-failed' ? ['revise-spec', 'end-run'] : ['revise', 'end-run'],
+      recommendedAction: reason === 'constitution-check-failed' ? 'revise-spec' : 'revise',
+      createdAt,
+    };
+  }
+
+  it('revise queues the comment and clears the halt', () => {
+    const { projectDir, sessionId } = setupSession('recovery-revise');
+    const state = plannerHaltState(projectDir, sessionId, reviseIssue('brief-review-no-progress'));
+    const { bus, events } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'revise',
+      bus,
+      comment: '  split the first brief  ',
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.messageQueue.map((message) => message.text)).toEqual([
+      'split the first brief',
+    ]);
+    expect(loadState({ projectDir, sessionId })?.messageQueue).toHaveLength(1);
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
+    );
+  });
+
+  it('revise with no comment still resolves the halt and queues nothing', () => {
+    const { projectDir, sessionId } = setupSession('recovery-revise-empty');
+    const state = plannerHaltState(projectDir, sessionId, reviseIssue('brief-review-no-progress'));
+    const { bus } = makeBusRecorder();
+
+    const result = applyRecoveryAction({ projectDir, sessionId, state, action: 'revise', bus });
+
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    expect(result.state.messageQueue).toHaveLength(0);
+    expect(result.state.pendingRecovery).toBeUndefined();
+  });
+
+  it('revise-spec rewinds to the spec with the note and clears the halt', () => {
+    const { projectDir, sessionId } = setupSession('recovery-revise-spec');
+    const issue = {
+      ...reviseIssue('constitution-check-failed'),
+      phase: 'constitution-check' as const,
+    };
+    const state = plannerHaltState(projectDir, sessionId, issue);
+    const { bus } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'revise-spec',
+      bus,
+      comment: 'drop the class',
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    expect(result.state.phase).toBe('specifying');
+    expect(result.state.rewindPending).toEqual({ target: 'spec', comment: 'drop the class' });
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.rewindPending?.target).toBe('spec');
+  });
+
+  it('switch-seat on a plan-seat halt resolves it without resetting a brief', () => {
+    const { projectDir, sessionId } = setupSession('recovery-plan-seat-swap');
+    const issue: RecoveryIssue = {
+      id: 'rec_planner_call_failed',
+      reason: 'planner-call-failed',
+      phase: 'planning',
+      status: 'awaiting-user',
+      seat: 'plan',
+      files: [],
+      affectedTaskIds: [],
+      message: 'Planning failed.',
+      details: [],
+      switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      recommendedAction: 'switch-seat',
+      createdAt,
+    };
+    const state = plannerHaltState(projectDir, sessionId, issue);
+    const { bus } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'switch-seat',
+      bus,
+      config: makeConfig(),
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.tasks[0]?.status).toBe(state.tasks[0]?.status);
+  });
+
+  it('end-run closes the run and refuses every later transition', () => {
+    const { projectDir, sessionId } = setupSession('recovery-end-run');
+    const state = plannerHaltState(projectDir, sessionId, reviseIssue('brief-review-no-progress'));
+    const { bus } = makeBusRecorder();
+
+    const result = applyRecoveryAction({ projectDir, sessionId, state, action: 'end-run', bus });
+
+    expect(result).toMatchObject({ ok: true, status: 'closed' });
+    expect(result.state.closed?.as).toBe('ended');
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.closed?.as).toBe('ended');
+  });
+});
+
 describe('applyRecoveryAction: planner-split-rebase blocked', () => {
   it('blocks planner-split-rebase until a proposal approval flow exists', () => {
     const { projectDir, sessionId } = setupSession('planner-proposal-required');
@@ -238,7 +380,7 @@ describe('applyRecoveryAction: planner-split-rebase blocked', () => {
     });
     const issue = {
       ...persistedIssue,
-      availableActions: ['planner-split-rebase', 'pause-run', 'abort-workflow'],
+      availableActions: ['planner-split-rebase', 'pause-run', 'end-run'],
       recommendedAction: 'planner-split-rebase',
     } satisfies ReturnType<typeof buildDependencyBlockedRecoveryIssue>;
     const base = makeImplState([task]);
@@ -264,5 +406,120 @@ describe('applyRecoveryAction: planner-split-rebase blocked', () => {
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']),
     );
+  });
+});
+
+function usageLimitIssue(task: Task): RecoveryIssue {
+  return {
+    id: `rec_${task.id}_usage_limit`,
+    reason: 'runner-usage-limit',
+    phase: 'implementing',
+    status: 'awaiting-user',
+    taskId: task.id,
+    taskTitle: task.title,
+    files: [task.file],
+    affectedTaskIds: [task.id],
+    message: 'Codex hit its usage limit.',
+    details: [],
+    switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }, { tool: 'opencode' }] },
+    availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+    recommendedAction: 'switch-seat',
+    createdAt,
+  };
+}
+
+describe('applyRecoveryAction: switch-seat', () => {
+  it('resets the task onto the chosen tool and returns the switched config', () => {
+    const { projectDir, sessionId } = setupSession('switch-seat-apply');
+    const task = makeTask({ id: 'T400', status: 'in_progress' });
+    const issue = usageLimitIssue(task);
+    const base = makeImplState([task]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const state = { ...base, pendingRecovery: issue };
+    const { bus, events } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'switch-seat',
+      bus,
+      config: makeConfig(),
+      candidate: { tool: 'opencode' },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.status).toBe('retry-current-task');
+    expect(result.action).toBe('switch-seat');
+    expect(result.switchedSeat).toEqual({ seat: 'build', candidate: { tool: 'opencode' } });
+    expect(result.switchedConfig?.implementer).toMatchObject({ kind: 'cli', tool: 'opencode' });
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'task_reset', 'recovery_resolved']),
+    );
+  });
+
+  it('takes the first offered tool when no candidate is named', () => {
+    const { projectDir, sessionId } = setupSession('switch-seat-default');
+    const task = makeTask({ id: 'T401', status: 'in_progress' });
+    const issue = usageLimitIssue(task);
+    const base = makeImplState([task]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'switch-seat',
+      bus,
+      config: makeConfig(),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.switchedSeat?.candidate).toEqual({ tool: 'claude-code' });
+  });
+
+  it('blocks a tool the issue never offered', () => {
+    const { projectDir, sessionId } = setupSession('switch-seat-not-offered');
+    const task = makeTask({ id: 'T402', status: 'in_progress' });
+    const issue = usageLimitIssue(task);
+    const base = makeImplState([task]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'switch-seat',
+      bus,
+      config: makeConfig(),
+      candidate: { tool: 'cursor' },
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'candidate-not-offered' });
+  });
+
+  it('blocks when the halt carried no seat-swap offer', () => {
+    const { projectDir, sessionId } = setupSession('switch-seat-no-offer');
+    const task = makeTask({ id: 'T403', status: 'in_progress' });
+    const { switchSeat: _offer, ...withoutOffer } = usageLimitIssue(task);
+    const base = makeImplState([task]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: withoutOffer });
+    const { bus } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: withoutOffer },
+      action: 'switch-seat',
+      bus,
+      config: makeConfig(),
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'seat-swap-unavailable' });
   });
 });

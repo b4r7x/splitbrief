@@ -3,6 +3,10 @@ import { isAbsolute, resolve } from 'node:path';
 export const CONCRETE_FILE_PATH_PATTERN =
   /\b(?:[a-zA-Z][a-zA-Z0-9_-]*\/)+[a-zA-Z][a-zA-Z0-9._-]*\.[a-zA-Z]{1,5}\b/g;
 
+export function normalizeProjectRelativePath(filePath: string): string {
+  return filePath.replaceAll('\\', '/').replace(/^\.\//, '');
+}
+
 function isPathToken(value: string): boolean {
   return value.includes('/') || value.includes('\\') || value.includes('*');
 }

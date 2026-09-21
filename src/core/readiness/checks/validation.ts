@@ -1,30 +1,33 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
+import { shellQuoteArg } from '../../../utils/shell-quote.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { isENOENT, processError } from '../../../lib/process/errors.js';
-import { detectProjectLanguage } from '../../project-meta.js';
-import { detectLintCommand } from '../../validation/lint-detection.js';
+import { readManifestCommands } from '../../validation/manifest-commands.js';
+import { detectStack } from '../../validation/stacks/registry.js';
+import {
+  isMissingSubcommand,
+  resolveStageCommand,
+  type ResolvedCommand,
+  type StageResolution,
+} from '../../validation/stage-command.js';
 import type { Config } from '../../schemas/config.js';
+import { GATE_ORDER, STAGE_TIMEOUT_MS } from '../../pipeline-spec/gates.js';
 import type { ReadinessCheck } from '../types.js';
 
-const DEFAULT_VALIDATION_TIMEOUT_MS = 600_000;
-const MISSING_SUBCOMMAND_EXIT_CODE = 101;
-
-function isMissingSubcommand(code: number | null, stderr: string): boolean {
-  return code === MISSING_SUBCOMMAND_EXIT_CODE && /no such command/i.test(stderr);
+// The planner-discovered rung does not exist before the run starts, so readiness
+// resolves the same chain the run does with `discovered` empty.
+function probeContext(config: Config, projectDir: string): Omit<StageResolution, 'stage'> {
+  return {
+    config,
+    manifest: readManifestCommands(projectDir),
+    discovered: undefined,
+    stack: detectStack(projectDir, config.validation.stack),
+    projectDir,
+  };
 }
 
-const LANGUAGE_TEST_COMMANDS: Record<string, string> = {
-  rust: 'cargo test',
-  go: 'go test ./...',
-  python: 'pytest',
-};
-
-function resolveReadinessTestCommand(config: Config, projectDir: string): string {
-  if (config.validation.testCommand) return config.validation.testCommand;
-  const language = detectProjectLanguage(projectDir);
-  return (language && LANGUAGE_TEST_COMMANDS[language]) ?? 'npm test';
+function commandText(resolved: ResolvedCommand): string {
+  return [resolved.cmd, ...resolved.args].map(shellQuoteArg).join(' ');
 }
 
 export interface PackageScriptsReadinessInput {
@@ -37,17 +40,11 @@ function onOff(value: boolean): string {
   return value ? 'on' : 'off';
 }
 
-function resolvedLintCommand(config: Config, projectDir: string): string | null {
-  return config.validation.lintCommand || detectLintCommand(projectDir);
-}
-
 // "lint on" must mean a lint stage will actually run; an enabled stage with no
 // resolvable command is reported as skipped, not on.
-function lintSegment(config: Config, projectDir: string): string {
-  if (!config.validation.lint) return 'lint off';
-  return resolvedLintCommand(config, projectDir) === null
-    ? 'lint skipped (no lint command)'
-    : 'lint on';
+function lintSegment(enabled: boolean, command: string | null): string {
+  if (!enabled) return 'lint off';
+  return command === null ? 'lint skipped (no lint command)' : 'lint on';
 }
 
 export function buildValidationChecks(
@@ -55,18 +52,24 @@ export function buildValidationChecks(
   packageScripts: PackageScriptsReadinessInput,
   projectDir: string,
 ): ReadinessCheck[] {
+  const context = probeContext(config, projectDir);
+  const lint = resolveStageCommand({ stage: 'lint', ...context });
+  const test = resolveStageCommand({ stage: 'test', ...context });
+  const lintCommand = lint === null ? null : commandText(lint);
+  const testCommand = test === null ? null : commandText(test);
+
   const checks: ReadinessCheck[] = [
     {
       id: 'validation.configured',
       severity: 'info',
-      summary: `Validation: typecheck ${onOff(config.validation.typecheck)}, ${lintSegment(config, projectDir)}, test ${onOff(config.validation.test)}.`,
-      details: [`Test command: ${resolveReadinessTestCommand(config, projectDir)}`],
+      summary: `Validation: typecheck ${onOff(config.validation.typecheck)}, ${lintSegment(config.validation.lint, lintCommand)}, test ${onOff(config.validation.test)}.`,
+      details: [`Test command: ${testCommand ?? 'none (unrecognised stack)'}`],
       metadata: {
         typecheck: config.validation.typecheck,
         lint: config.validation.lint,
-        lintCommand: config.validation.lint ? resolvedLintCommand(config, projectDir) : null,
+        lintCommand: config.validation.lint ? lintCommand : null,
         test: config.validation.test,
-        testCommand: resolveReadinessTestCommand(config, projectDir),
+        testCommand,
       },
     },
   ];
@@ -86,10 +89,10 @@ export function buildValidationChecks(
     });
   }
 
-  if (config.validation.lint && resolvedLintCommand(config, projectDir) === null) {
-    const language = detectProjectLanguage(projectDir);
+  if (config.validation.lint && lintCommand === null) {
+    const stack = context.stack;
     const isJsLike =
-      language === undefined || language === 'javascript' || language === 'typescript';
+      stack === null || stack.language === 'typescript' || stack.language === 'javascript';
     checks.push({
       id: 'validation.lint-unknown',
       severity: 'info',
@@ -97,16 +100,13 @@ export function buildValidationChecks(
       details: [
         isJsLike
           ? 'Task validation skips the lint stage until a lintCommand is set, a `lint` package script exists, or an ESLint/Biome config exists.'
-          : `Lint config auto-discovery only covers JavaScript/TypeScript linters (ESLint, Biome), so the lint stage is skipped for this ${language} project until validation.lintCommand is set.`,
+          : `No ${stack.language} linter config was discovered, so the lint stage is skipped until validation.lintCommand is set.`,
       ],
     });
   }
 
-  if (config.validation.test) {
-    const testScriptWarning = testCommandWarning(
-      resolveReadinessTestCommand(config, projectDir),
-      packageScripts,
-    );
+  if (config.validation.test && testCommand !== null) {
+    const testScriptWarning = testCommandWarning(testCommand, packageScripts);
     if (testScriptWarning) checks.push(testScriptWarning);
   }
 
@@ -154,50 +154,33 @@ function testCommandWarning(
   return null;
 }
 
-type ProbeStage = 'typecheck' | 'lint' | 'test';
-
-function resolveProbeCommand(stage: ProbeStage, config: Config, projectDir: string): string | null {
-  if (stage === 'typecheck') {
-    if (config.validation.typecheckCommand) return config.validation.typecheckCommand;
-    return isTypeScriptProject(projectDir) ? 'npx tsc --noEmit' : null;
-  }
-  if (stage === 'lint') {
-    return config.validation.lintCommand ?? detectLintCommand(projectDir);
-  }
-  return resolveReadinessTestCommand(config, projectDir);
-}
-
-function isTypeScriptProject(projectDir: string): boolean {
-  if (existsSync(join(projectDir, 'tsconfig.json'))) return true;
-  return detectProjectLanguage(projectDir) === 'typescript';
-}
-
 export async function probeValidationBaseline(
   config: Config,
   projectDir: string,
 ): Promise<ReadinessCheck[]> {
-  const enabled: ProbeStage[] = [
-    config.validation.typecheck ? 'typecheck' : null,
-    config.validation.lint ? 'lint' : null,
-    config.validation.test ? 'test' : null,
-  ].filter((stage): stage is ProbeStage => stage !== null);
+  const enabled = GATE_ORDER.filter((stage) => config.validation[stage]);
+  const context = probeContext(config, projectDir);
 
-  const timeout = config.validation.timeoutMs ?? DEFAULT_VALIDATION_TIMEOUT_MS;
+  const timeout = config.validation.timeoutMs ?? STAGE_TIMEOUT_MS;
   const failing: string[] = [];
   const probedCommands: string[] = [];
 
   for (const stage of enabled) {
-    const command = resolveProbeCommand(stage, config, projectDir);
-    if (!command) continue;
-    const parts = parseShellCommand(command);
-    const cmd = parts[0];
-    if (!cmd) continue;
-    probedCommands.push(`${stage}: ${command}`);
+    const resolved = resolveStageCommand({ stage, ...context });
+    if (resolved === null) continue;
+    probedCommands.push(`${stage}: ${commandText(resolved)}`);
     try {
-      await runCommand(cmd, parts.slice(1), { cwd: projectDir, timeout, label: `${stage} probe` });
+      await runCommand(resolved.cmd, resolved.args, {
+        cwd: projectDir,
+        timeout,
+        label: `${stage} probe`,
+      });
     } catch (err) {
       if (isENOENT(err) || processError.isNotFound(err)) continue;
-      if (processError.isExitCode(err) && isMissingSubcommand(err.data.code, err.data.stderr)) {
+      if (
+        processError.isExitCode(err) &&
+        isMissingSubcommand(context.stack, err.data.code, err.data.stderr)
+      ) {
         continue;
       }
       failing.push(stage);

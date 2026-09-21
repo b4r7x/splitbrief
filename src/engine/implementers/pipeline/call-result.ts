@@ -1,3 +1,4 @@
+import type { TaskId } from '../../../core/schemas/task.js';
 import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
 import {
   runnerOutcome,
@@ -38,15 +39,21 @@ export function createImplementerCallContext(opts: {
   config: ImplementerOptions['config'];
   backendKind?: RunnerCallContext['backendKind'] | undefined;
   attempt: number;
+  taskId: TaskId;
 }): RunnerCallContext {
   const implementer = opts.config.implementer;
+  const backendKind = opts.backendKind ?? implementer.kind;
   return {
     callId: `implementer-${++implementerCallSequence}`,
     role: 'implementer',
-    backendKind: opts.backendKind ?? implementer.kind,
+    backendKind,
     runnerName: implementerRunnerName(implementer),
     model: implementer.model,
     attempt: opts.attempt,
+    taskId: opts.taskId,
+    // An API call's boundary is recorded by the completion that owns its one
+    // HTTP request; a subprocess may make any number of provider requests.
+    ...(backendKind !== 'api' && { usageBoundary: 'aggregate' as const }),
   };
 }
 
@@ -66,12 +73,6 @@ function runnerCallStatusMessage(status: Exclude<RunnerCallResult['status'], 'co
       return 'Implementer used an unsupported tool';
     case 'incomplete':
       return 'Implementer call was incomplete';
-    case 'cancelled':
-      return 'Implementer call was cancelled';
-    case 'protocol-invalid':
-      return 'Implementer call returned an invalid protocol result';
-    case 'unknown':
-      return 'Implementer call ended with an unknown status';
     default: {
       const _exhaustive: never = status;
       return _exhaustive;
@@ -94,6 +95,10 @@ function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
     case 'callback-failure':
     case 'no-staged-change':
     case 'platform-limitation':
+    case 'implementer-effect-invalid':
+    case 'implementer-recipe-invalid':
+    case 'runner-timeout-repeated':
+    case 'missing-model':
       return code;
     default:
       return null;
@@ -126,15 +131,11 @@ export function runnerCallOutcome(result: RunnerCallResult): RunnerOutcome {
     case 'truncated':
       return runnerOutcome.failure('output-budget-breach');
     case 'aborted':
-    case 'cancelled':
       return runnerOutcome.failure('user-abort');
     case 'timeout':
       return runnerOutcome.failure('timeout');
     case 'unsupported_tool':
       return runnerOutcome.failure('platform-limitation');
-    case 'protocol-invalid':
-    case 'unknown':
-      return runnerOutcome.failure('protocol-failure');
     default: {
       const _exhaustive: never = result;
       return _exhaustive;

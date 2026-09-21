@@ -1,15 +1,13 @@
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
-import { openCostApprovalPrompt } from '../../stores/cost-approval/prompt.js';
-import {
-  markInterruptParked,
-  markInterruptRequested,
-} from '../../stores/workflow/actions/interrupt.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { markWorkflowPaused } from '../../stores/workflow/actions/pause.js';
+import { stopStore } from '../../stores/workflow/stop.js';
+import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
+import { isTaskCompleted } from '../../core/schemas/task.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
-import { SOFT_SEP } from '../../components/separators.js';
-import { REVIEW_HINT } from './review-commands.js';
+import type { PlannerConversation } from '../../core/schemas/workflow.js';
+import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import {
   formatUserEditConflictPrompt,
   parseUserEditConflictAnswer,
@@ -17,19 +15,28 @@ import {
 import { formatTaskReviewPrompt, parseTaskReviewAnswer } from './task-review-prompt.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
-export const CONTINUATION_PROMPT =
-  'Interrupted. Type instructions to steer, or press Enter to retry.';
-export const ARTIFACT_REVIEW_HINT = `y approve${SOFT_SEP}q reject`;
+function runningTaskId(): string | null {
+  return selectRunningBrief(tasksStore.get()).current?.id ?? null;
+}
+
+/** A boundary park has no running brief; the one it stopped after is the subject. */
+function lastCompletedBriefId(): string | null {
+  const tasks = tasksStore.get().tasks;
+  for (let i = tasks.length - 1; i >= 0; i--) {
+    const task = tasks[i];
+    if (task !== undefined && isTaskCompleted(task.status)) return task.id;
+  }
+  return null;
+}
 
 interface BuildCallbacksOptions {
   inputMode: UseInputModeResult;
   abortedRef: { current: boolean };
   controller: AbortController;
-  onComplete: OrchestratorCallbacks['onComplete'];
 }
 
 export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorCallbacks {
-  const { inputMode, abortedRef, controller, onComplete } = opts;
+  const { inputMode, abortedRef, controller } = opts;
   return {
     // `type` stays in the positional signature because `OrchestratorCallbacks` defines it and the
     // engine passes it; the review legend no longer varies by approval type, so nothing reads it.
@@ -38,9 +45,9 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       const reviewOwner = artifactReview
         ? reviewStore.setReviewArtifact(input.text)
         : reviewStore.setReviewFile(input);
-      const hint = artifactReview ? ARTIFACT_REVIEW_HINT : REVIEW_HINT;
       try {
-        return await inputMode.setReviewMode(hint);
+        // The review panel is the legend now, so the mode carries no hint text of its own.
+        return await inputMode.setReviewMode('');
       } finally {
         reviewStore.clearReviewIfOwner(reviewOwner);
       }
@@ -49,17 +56,19 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       const answer = await inputMode.setQuestionMode(formatUserEditConflictPrompt(conflict));
       return parseUserEditConflictAnswer(answer, conflict.availableActions);
     },
-    onCostApprovalNeeded: async (prediction) => openCostApprovalPrompt(prediction),
-    onContinuationNeeded: async (_partial) => {
-      markInterruptRequested();
-      while (!controller.signal.aborted && !abortedRef.current) {
-        markInterruptParked();
-        // Contract: resolvers of this prompt must call markInterruptResumed()
-        // before resolving, or the answer is treated as superseded and re-asked.
-        const text = await inputMode.setQuestionMode(CONTINUATION_PROMPT);
-        if (lifecycleStore.get().status !== 'interrupted') return text;
-      }
-      return '';
+    // A stopped brief parks rather than asking a question: blank Enter never resumes it, and the
+    // composer keeps its own meaning until /resume or a typed steer settles this promise.
+    // A boundary park holds the run between briefs; the byline names the one it stopped after.
+    onContinuationNeeded: async (_partial, at) => {
+      if (controller.signal.aborted || abortedRef.current) return '';
+      markWorkflowPaused();
+      return new Promise<string>((resolve) => {
+        if (at === 'boundary') {
+          stopStore.park('boundary', lastCompletedBriefId(), resolve);
+          return;
+        }
+        stopStore.park('mid-brief', runningTaskId(), resolve);
+      });
     },
     onTieredApproval: (request) => openApprovalPrompt(request),
     onTaskReviewNeeded: async (request) => {
@@ -79,10 +88,20 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       }
       return decision;
     },
-    onQuestionAsked: (question, num, total) =>
-      inputMode.setQuestionMode(`Question ${num}/${total}: ${question.text}`),
-    onComplete: (summary) => {
-      if (!controller.signal.aborted && !abortedRef.current) onComplete(summary);
+    onPlannerReply: async (reply: PlannerConversation) => {
+      if (controller.signal.aborted || abortedRef.current) return undefined;
+      // One promise owns this turn, including the whole batch of structured answers.
+      const hint = reply.questions.length > 0 ? 'Type your answer…' : 'Reply to the planner…';
+      const answerPromise = inputMode.setQuestionMode(hint);
+      questionPromptStore.setQuestions(reply.questions);
+      const answer = await answerPromise;
+      if (controller.signal.aborted || abortedRef.current) return undefined;
+      const batch = questionPromptStore.takeAnswerBatch();
+      if (answer.trim() === '') return undefined;
+      return batch ?? answer;
     },
+    // A finished run is the loop returning, and the screen settles itself there from the record it
+    // re-reads. Nothing is left for this callback to say that the return does not already say.
+    onComplete: () => {},
   };
 }

@@ -223,13 +223,13 @@ describe('createReviewInputHandler – idle / other phases', () => {
 });
 
 describe('createReviewInputHandler – brief review edit mode', () => {
-  it('resolves q as a brief review rejection', async () => {
+  it('resolves q as ending the run', async () => {
     const resolve = vi.fn();
     const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
 
     await handleInput('q');
 
-    expect(resolve).toHaveBeenCalledWith({ approved: false });
+    expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'end-run' });
   });
 
   it.each(['comment', 'revise'])(

@@ -1,19 +1,11 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type {
-  BriefRecoveryProviderPort,
-  RecoveryProviderResult,
-} from '../../core/schemas/brief-recovery/provider-call.js';
 import type { Planner } from '../planners/types.js';
 import type { EventBus } from '../events/types.js';
 import { writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE } from '../../core/paths.js';
-import { createBusTextHandler, publishRunnerCallEvent } from './events.js';
+import { createBusTextHandler } from './events.js';
 import { writeAndPublishArtifact } from './artifact-write.js';
 import { addUsageAndSave } from './state-ops.js';
-import {
-  createBriefRecoveryProvider,
-  type BriefRecoveryCallEvent,
-} from './planning/brief-recovery-provider.js';
 
 // Reviewed planning documents reach the transcript as an artifact card once written, never as a
 // body paste. Task Brief candidates never stream either: they return as non-canonical text for
@@ -32,20 +24,11 @@ export type RunPlannerReviewOptions = {
   /** Return the review text as a non-canonical candidate instead of writing any file. */
   returnCandidate?: boolean | undefined;
   signal?: AbortSignal | undefined;
-  briefRecovery?: BriefRecoveryReviewOptions | undefined;
-};
-
-export type BriefRecoveryReviewOptions = {
-  epochId: string;
-  operationId: string;
-  requestId: string;
-  provider?: BriefRecoveryProviderPort | undefined;
 };
 
 export type RunPlannerReviewResult = {
   state: WorkflowState;
   text: string;
-  recovery?: RecoveryProviderResult | undefined;
 };
 
 export async function runPlannerReview(
@@ -54,28 +37,6 @@ export async function runPlannerReview(
   const { planner, prompt, projectDir, sessionId, bus, writeTo, metadata } = opts;
   const carded =
     opts.returnCandidate === true || (writeTo !== undefined && CARDED_ARTIFACTS.has(writeTo));
-  if (opts.briefRecovery !== undefined) {
-    const provider =
-      opts.briefRecovery.provider ??
-      createBriefRecoveryProvider({
-        planner,
-        onOutput: carded
-          ? undefined
-          : createBusTextHandler({ bus, phase: opts.state.phase }, { content: 'markdown' }),
-        onCallEvent: (event: BriefRecoveryCallEvent) =>
-          publishRunnerCallEvent({ bus, phase: opts.state.phase }, event),
-      });
-    const recovery = await provider.dispatch({
-      sessionId,
-      epochId: opts.briefRecovery.epochId,
-      operationId: opts.briefRecovery.operationId,
-      requestId: opts.briefRecovery.requestId,
-      prompt,
-      projectDir,
-      ...(opts.signal !== undefined && { signal: opts.signal }),
-    });
-    return { state: opts.state, text: recovery.text ?? '', recovery };
-  }
 
   const result = await planner.review(prompt, projectDir, {
     onOutput: carded

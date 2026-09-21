@@ -1,15 +1,18 @@
 import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
+import type { BuildOutputContract } from '../../implementers/file-bundle.js';
 import { buildLanguageContext, type LanguageContext } from './language-context.js';
 
 export function buildImplementerSystemPreamble(
   languageContext: LanguageContext,
   writesFiles: ImplementerWriteMode,
+  outputContract?: BuildOutputContract | undefined,
 ): string {
+  if (outputContract === 'file-bundle-v1') return buildFileBundlePreamble(languageContext);
   if (writesFiles === 'extracted-code') return buildSystemPreamble(languageContext);
 
   return `SYSTEM: You are a coding agent for ${languageContext.language}. You write clean, working code directly in the isolation directory. Your changes are promoted into the user's project afterwards.
 Rules:
-- Edit ONLY the file the Task Brief names, plus anything its Scope section lists under approved out-of-bounds. Every other file is out of bounds.
+- Edit ONLY the files the Task Brief lists under Files, plus every path its Scope names under In bounds or Approved out of bounds. Every other file is out of bounds.
 - Do NOT add comments unless specified in the task
 - Use ${languageContext.importConvention}
 - Follow the exact function signatures provided
@@ -25,15 +28,36 @@ Files written:
 Steps completed: all (or list the brief's steps you could not complete)`;
 }
 
+function preambleIntro(ctx: LanguageContext): string {
+  return ctx.language === 'the project language'
+    ? 'SYSTEM: You are a code generator for the project language. You write clean, working code that matches the target file.'
+    : `SYSTEM: You are a ${ctx.language} code generator. You write clean, working ${ctx.language} code.`;
+}
+
+/**
+ * The `file-bundle-v1` grammar: one JSON object carrying the complete contents
+ * of every declared file the answer changes. The brief's own files are the only
+ * paths it may name, and the response text never picks the grammar.
+ */
+function buildFileBundlePreamble(ctx: LanguageContext): string {
+  return `${preambleIntro(ctx)}
+Rules:
+- Answer with ONE JSON object and nothing else: {"version":1,"files":[{"path":"...","action":"create"|"modify","content":"..."}]}
+- Do NOT include prose, explanations or markdown code fences
+- "path" is one of the files the Task Brief declares, spelled exactly as the brief spells it; never another file
+- "action" is "modify" for a file the brief shows under Current Code, "create" for one that does not exist yet
+- "content" is that file's complete new text, never a fragment, a patch or a placeholder
+- List only the files you change; leave every file you did not change out of the object
+- Do NOT add comments unless specified in the task
+- Use ${ctx.importConvention}
+- Follow the exact function signatures provided`;
+}
+
 export function buildSystemPreamble(languageContext?: LanguageContext): string {
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const example = exampleOutput(ctx);
-  const intro =
-    ctx.language === 'the project language'
-      ? 'SYSTEM: You are a code generator for the project language. You write clean, working code that matches the target file.'
-      : `SYSTEM: You are a ${ctx.language} code generator. You write clean, working ${ctx.language} code.`;
 
-  return `${intro}
+  return `${preambleIntro(ctx)}
 Rules:
 - Output ONLY the complete file contents
 - Do NOT include markdown code fences

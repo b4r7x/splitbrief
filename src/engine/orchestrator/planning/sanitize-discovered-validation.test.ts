@@ -138,6 +138,15 @@ describe('sanitizeDiscoveredValidation', () => {
     }
   });
 
+  it('admits uv run pytest, golangci-lint run and make test, still rejects node -e', () => {
+    for (const cmd of ['uv run pytest', 'golangci-lint run', 'make test']) {
+      expect(sanitizeDiscoveredValidation({ testCommand: cmd })?.testCommand).toBe(cmd);
+    }
+    for (const cmd of ['node -e "process.exit(0)"', 'uv run python -c "print(1)"']) {
+      expect(sanitizeDiscoveredValidation({ testCommand: cmd })?.testCommand).toBeUndefined();
+    }
+  });
+
   it('blocks unrecognized commands', () => {
     const input: DiscoveredValidation = {
       testCommand: 'custom-test-tool --all',

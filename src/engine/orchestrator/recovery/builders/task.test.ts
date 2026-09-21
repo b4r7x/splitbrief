@@ -4,10 +4,19 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import {
+  buildApprovalDeniedRecoveryIssue,
   buildContextOverflowRecoveryIssue,
   buildDependencyBlockedRecoveryIssue,
+  buildMissingModelRecoveryIssue,
+  buildRecipeInvalidRecoveryIssue,
+  buildRepeatedTimeoutRecoveryIssue,
   buildRetryExhaustedRecoveryIssue,
+  buildReviewFailedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
+  buildScopeViolationRecoveryIssue,
+  buildSnapshotFailedRecoveryIssue,
+  recoveryBuilderForRunnerOutcome,
+  switchSeatOffer,
 } from './task.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
@@ -27,12 +36,10 @@ function overflowRoutingDecision(overrides: Partial<RoutingDecision> = {}): Rout
     contextLength: 32_768,
     currentCodeTruncated: false,
     currentCodeContextMode: 'whole-file',
-    costPosture: 'No capable implementer profile; no cost tier selected',
     reason: 'No capable implementer profile can fit this task prompt',
     rejected: [
       {
         profile: 'local-qwen',
-        costTier: 'local',
         profileWriteMode: 'extracted-code',
         requiredWriteMode: 'extracted-code',
         reason: 'Estimated 45000 tokens overflows 32768-token context',
@@ -65,12 +72,7 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     expect(issue.phase).toBe('escalating');
     expect(issue.recommendedAction).toBe('route-bigger-worker');
     expect(issue.availableActions).toEqual(
-      expect.arrayContaining([
-        'route-bigger-worker',
-        'skip-current-task',
-        'pause-run',
-        'abort-workflow',
-      ]),
+      expect.arrayContaining(['route-bigger-worker', 'skip-current-task', 'pause-run', 'end-run']),
     );
     expect(issue.availableActions).not.toContain('retry-same-worker');
     expect(issue.availableActions).not.toContain('planner-split-rebase');
@@ -118,7 +120,7 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
       'retry-same-worker',
       'skip-current-task',
       'pause-run',
-      'abort-workflow',
+      'end-run',
     ]);
     expect(issue.recommendedAction).toBe('pause-run');
     expectValidRecoveryIssue(issue);
@@ -146,6 +148,80 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
     expect(issue.facts?.routeBiggerProfile).toBe('cloud-big');
     expectValidRecoveryIssue(issue);
   });
+
+  it('offers the other detected ready tools as seats to switch to', () => {
+    const issue = buildRunnerUsageLimitRecoveryIssue({
+      task: makeTask({ id: 'T003' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage: codexLimit,
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [
+          { tool: 'codex', ready: true },
+          { tool: 'claude-code', model: 'sonnet', ready: true },
+          { tool: 'opencode', ready: false },
+        ],
+      },
+    });
+
+    expect(issue.switchSeat).toEqual({
+      seat: 'build',
+      candidates: [{ tool: 'claude-code', model: 'sonnet' }],
+    });
+    expect(issue.details.join('\n')).not.toContain('claude-code');
+    expect(issue.resetAt).toMatch(/^2026-08-08T/);
+    expect(issue.availableActions).toContain('switch-seat');
+    expect(issue.recommendedAction).toBe('switch-seat');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('omits the seat switch when nothing else is detected ready', () => {
+    const issue = buildRunnerUsageLimitRecoveryIssue({
+      task: makeTask({ id: 'T003' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage: codexLimit,
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [
+          { tool: 'codex', ready: true },
+          { tool: 'opencode', ready: false },
+        ],
+      },
+    });
+
+    expect(issue.switchSeat).toBeUndefined();
+    expect(issue.availableActions).not.toContain('switch-seat');
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('switchSeatOffer', () => {
+  it('offers only tools the seat can host', () => {
+    expect(
+      switchSeatOffer({
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [
+          { tool: 'a-tool-no-seat-hosts', ready: true },
+          { tool: 'claude-code', ready: true },
+        ],
+      }),
+    ).toEqual({ seat: 'build', candidates: [{ tool: 'claude-code' }] });
+  });
+
+  it('offers nothing when no ready tool can host the seat', () => {
+    expect(
+      switchSeatOffer({
+        seat: 'plan',
+        currentTool: 'codex',
+        detectedTools: [{ tool: 'a-tool-no-seat-hosts', ready: true }],
+      }),
+    ).toBeUndefined();
+  });
 });
 
 describe('buildContextOverflowRecoveryIssue', () => {
@@ -163,7 +239,7 @@ describe('buildContextOverflowRecoveryIssue', () => {
     expect(withRoute.reason).toBe('context-overflow');
     expect(withRoute.recommendedAction).toBe('route-bigger-worker');
     expect(withRoute.availableActions).toEqual(
-      expect.arrayContaining(['route-bigger-worker', 'pause-run', 'abort-workflow']),
+      expect.arrayContaining(['route-bigger-worker', 'pause-run', 'end-run']),
     );
     expect(withRoute.availableActions).not.toContain('planner-split-rebase');
     expect(withRoute.facts).toMatchObject({
@@ -180,9 +256,7 @@ describe('buildContextOverflowRecoveryIssue', () => {
     });
 
     expect(withoutRoute.recommendedAction).toBe('pause-run');
-    expect(withoutRoute.availableActions).toEqual(
-      expect.arrayContaining(['pause-run', 'abort-workflow']),
-    );
+    expect(withoutRoute.availableActions).toEqual(expect.arrayContaining(['pause-run', 'end-run']));
     expect(withoutRoute.availableActions).not.toContain('planner-split-rebase');
     expectValidRecoveryIssue(withoutRoute);
 
@@ -196,7 +270,7 @@ describe('buildContextOverflowRecoveryIssue', () => {
 
     expect(explicitlyUnavailableRoute.recommendedAction).toBe('pause-run');
     expect(explicitlyUnavailableRoute.availableActions).toEqual(
-      expect.arrayContaining(['pause-run', 'abort-workflow']),
+      expect.arrayContaining(['pause-run', 'end-run']),
     );
     expect(explicitlyUnavailableRoute.availableActions).not.toContain('route-bigger-worker');
     expect(explicitlyUnavailableRoute.availableActions).not.toContain('planner-split-rebase');
@@ -224,10 +298,215 @@ describe('buildDependencyBlockedRecoveryIssue', () => {
     expect(issue.affectedTaskIds).toEqual([dependency.id, task.id]);
     expect(issue.details).toEqual(['Blocked dependencies: T018 (failed)']);
     expect(issue.availableActions).toEqual(
-      expect.arrayContaining(['skip-current-task', 'pause-run', 'abort-workflow']),
+      expect.arrayContaining(['skip-current-task', 'pause-run', 'end-run']),
     );
     expect(issue.availableActions).not.toContain('planner-split-rebase');
     expect(issue.recommendedAction).toBe('pause-run');
     expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('buildScopeViolationRecoveryIssue', () => {
+  it('lists the undeclared writes and recommends the revert retry', () => {
+    const issue = buildScopeViolationRecoveryIssue({
+      task: makeTask({ id: 'T021', file: 'src/main.ts' }),
+      createdAt,
+      undeclaredFiles: ['src/other.ts', 'README.md'],
+      attempts: 1,
+      maxAttempts: 2,
+      tool: 'Codex',
+    });
+
+    expect(issue.reason).toBe('scope-violation');
+    expect(issue.files).toEqual(['README.md', 'src/other.ts']);
+    expect(issue.details.join('\n')).toContain('Undeclared writes: src/other.ts, README.md');
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expect(issue.facts?.tool).toBe('Codex');
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('buildRecipeInvalidRecoveryIssue', () => {
+  it('names the tool that refused the command line and never recommends a retry', () => {
+    const issue = buildRecipeInvalidRecoveryIssue({
+      task: makeTask({ id: 'T022' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage: "error: unknown option '--nope'",
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('implementer-recipe-invalid');
+    expect(issue.message).toContain('rejected the command');
+    expect(issue.details.join('\n')).toContain("unknown option '--nope'");
+    expect(issue.recommendedAction).toBe('pause-run');
+    expect(issue.availableActions).not.toContain('skip-current-task');
+    expect(issue.availableActions).not.toContain('switch-seat');
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('buildMissingModelRecoveryIssue', () => {
+  it('names the unlisted model and the tool that does not list it', () => {
+    const issue = buildMissingModelRecoveryIssue({
+      task: makeTask({ id: 'T023' }),
+      runner: makeConfig({
+        implementer: { kind: 'cli', tool: 'codex', model: 'gpt-nope' },
+      }).implementer,
+      toolMessage: 'model not found: gpt-nope',
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('implementer-recipe-invalid');
+    expect(issue.message).toBe(
+      'Model gpt-nope is not listed by OpenAI Codex CLI; pick a listed model',
+    );
+    expect(issue.facts?.model).toBe('gpt-nope');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('a recipe-invalid halt offers the seat switch', () => {
+    const issue = buildMissingModelRecoveryIssue({
+      task: makeTask({ id: 'T023' }),
+      runner: makeConfig({
+        implementer: { kind: 'cli', tool: 'codex', model: 'gpt-nope' },
+      }).implementer,
+      toolMessage: 'model not found: gpt-nope',
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [
+          { tool: 'codex', ready: true },
+          { tool: 'claude-code', model: 'sonnet', ready: true },
+        ],
+      },
+    });
+
+    expect(issue.message).toContain('pick a listed model');
+    expect(issue.availableActions).toContain('switch-seat');
+    expect(issue.switchSeat).toEqual({
+      seat: 'build',
+      candidates: [{ tool: 'claude-code', model: 'sonnet' }],
+    });
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('buildRepeatedTimeoutRecoveryIssue', () => {
+  it('reports the repeated timeout without offering a bigger worker', () => {
+    const issue = buildRepeatedTimeoutRecoveryIssue({
+      task: makeTask({ id: 'T024' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage: 'implementer timed out',
+      attempts: 2,
+      maxAttempts: 3,
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('runner-timeout-repeated');
+    expect(issue.message).toContain('timed out twice in a row on T024');
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'skip-current-task',
+      'pause-run',
+      'end-run',
+    ]);
+    expect(issue.recommendedAction).toBe('pause-run');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('offers the seat switch and the bigger worker when both exist', () => {
+    const issue = buildRepeatedTimeoutRecoveryIssue({
+      task: makeTask({ id: 'T024' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage: 'implementer timed out',
+      attempts: 2,
+      maxAttempts: 3,
+      routeBiggerProfile: 'cloud-big',
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [{ tool: 'claude-code', ready: true }],
+      },
+    });
+
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'route-bigger-worker',
+      'switch-seat',
+      'skip-current-task',
+      'pause-run',
+      'end-run',
+    ]);
+    expect(issue.facts?.routeBiggerProfile).toBe('cloud-big');
+    expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'claude-code' }] });
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('buildApprovalDeniedRecoveryIssue', () => {
+  it('carries the denied files and the denial reason', () => {
+    const issue = buildApprovalDeniedRecoveryIssue({
+      task: makeTask({ id: 'T025', file: 'src/main.ts' }),
+      createdAt,
+      deniedFiles: ['src/secret.ts'],
+      denialReason: 'operator denied',
+    });
+
+    expect(issue.reason).toBe('approval-denied');
+    expect(issue.files).toEqual(['src/secret.ts']);
+    expect(issue.details.join('\n')).toContain('Denied: operator denied');
+    expect(issue.recommendedAction).toBe('pause-run');
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('buildSnapshotFailedRecoveryIssue', () => {
+  it('explains that scope cannot be enforced and offers the retry', () => {
+    const issue = buildSnapshotFailedRecoveryIssue({
+      task: makeTask({ id: 'T026' }),
+      createdAt,
+      detail: 'git status failed: not a repository',
+    });
+
+    expect(issue.reason).toBe('snapshot-failed');
+    expect(issue.details).toEqual([
+      'git status failed: not a repository',
+      'Scope and revert cannot be enforced without the snapshot.',
+    ]);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('buildReviewFailedRecoveryIssue', () => {
+  it('counts the blocking findings and leaves only pause or abort', () => {
+    const issue = buildReviewFailedRecoveryIssue({
+      createdAt,
+      blocking: 3,
+      detail: 'Critical: missing test for the new route',
+    });
+
+    expect(issue.reason).toBe('review-failed');
+    expect(issue.phase).toBe('final-review');
+    expect(issue.message).toBe('Final review failed with 3 blocking findings');
+    expect(issue.availableActions).toEqual(['pause-run', 'end-run']);
+    expect(issue.recommendedAction).toBe('pause-run');
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('recoveryBuilderForRunnerOutcome', () => {
+  it('maps every runner defect to its builder and nothing else', () => {
+    expect(recoveryBuilderForRunnerOutcome('implementer-recipe-invalid')).toBe(
+      buildRecipeInvalidRecoveryIssue,
+    );
+    expect(recoveryBuilderForRunnerOutcome('missing-model')).toBe(buildMissingModelRecoveryIssue);
+    expect(recoveryBuilderForRunnerOutcome('runner-timeout-repeated')).toBe(
+      buildRepeatedTimeoutRecoveryIssue,
+    );
+    expect(recoveryBuilderForRunnerOutcome('timeout')).toBeUndefined();
+    expect(recoveryBuilderForRunnerOutcome('unauthenticated')).toBeUndefined();
   });
 });

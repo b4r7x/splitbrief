@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { access, open, realpath, stat } from 'node:fs/promises';
-import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   CliExecutableReceiptSchema,
   EXECUTABLE_CONTENT_DIGEST_ALGORITHM,
@@ -86,7 +86,11 @@ function diagnosticIdentity(identity: CliExecutableIdentity): DiagnosticIdentity
 
 function isWithin(path: string, parent: string): boolean {
   const pathFromParent = relative(parent, path);
-  return pathFromParent === '' || (!pathFromParent.startsWith('..') && !isAbsolute(pathFromParent));
+  if (pathFromParent === '') return true;
+  if (isAbsolute(pathFromParent)) return false;
+  // Segment semantics: only exactly `..` or a `..${sep}` prefix is parent
+  // traversal; a name beginning two dots (`..bin`) is an ordinary child.
+  return pathFromParent !== '..' && !pathFromParent.startsWith(`..${sep}`);
 }
 
 export function fingerprintsEqual(

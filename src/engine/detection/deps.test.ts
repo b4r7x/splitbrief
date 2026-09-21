@@ -101,10 +101,11 @@ describe('createProductionDetectionDeps', () => {
     expect(contextsA.cliModels).not.toBe(contextsB.cliModels);
     expect(JSON.stringify(contextsA)).not.toContain('sk-private-config-a');
     expect(JSON.stringify(contextsB)).not.toContain('sk-private-config-b');
-    // The salted readiness/cliModels lanes key pre-widening snapshots out.
+    // The salted readiness/cliModels lanes key pre-change snapshots out.
     expect(contextsA.readiness).toContain(encodeURIComponent('readiness:all-tools:'));
     expect(contextsA.modelsDev).not.toContain('all-tools');
-    expect(contextsA.cliModels).toContain(encodeURIComponent('cliModels:all-tools:'));
+    expect(contextsA.cliModels).toContain(encodeURIComponent('cliModels:per-tool:'));
+    expect(contextsA.cliModels).not.toContain(encodeURIComponent('cliModels:all-tools:'));
   });
 
   it('probes only the configured built-in API endpoint with its raw override held closure-local', async () => {
@@ -221,6 +222,7 @@ const CLI_VERSION_LABELS: Record<CliToolId, string> = {
   'kilo-code': '',
   cursor: '',
   'command-code': '',
+  antigravity: '',
 };
 
 const CLI_AUTH_STATUS_RESPONSES: Partial<Record<CliToolId, readonly string[]>> = {
@@ -248,6 +250,12 @@ const CLI_AUTH_STATUS_RESPONSES: Partial<Record<CliToolId, readonly string[]>> =
     '  exit 0',
     'fi',
   ],
+  antigravity: [
+    'if [ "$1" = "models" ]; then',
+    `  printf '%s\\n' 'gemini-3-pro'`,
+    '  exit 0',
+    'fi',
+  ],
 };
 
 function cliShimScript(tool: CliToolId, argvLog: string | undefined): string {
@@ -255,7 +263,8 @@ function cliShimScript(tool: CliToolId, argvLog: string | undefined): string {
   return [
     '#!/bin/sh',
     ...(argvLog === undefined ? [] : [`printf '%s\\n' "$*" >> ${JSON.stringify(argvLog)}`]),
-    'if [ "$1" = "--version" ]; then',
+    // `agy` has no version flag: `agy --help` exiting 0 is its whole version probe.
+    `if [ "$1" = "--version" ] || [ "$1" = "--help" ]; then`,
     `  printf '%s\\n' '${version}'`,
     '  exit 0',
     'fi',
@@ -343,6 +352,11 @@ describe('all-admitted-tools auth channels', () => {
               'kilo-code': 'authenticated',
               cursor: 'authenticated',
               'command-code': 'authenticated',
+              // Antigravity's session is a macOS keychain item, so there `agy models`
+              // runs under the host account and its exit decides. Elsewhere `agy`
+              // documents no credential file to bridge, and the fact stays
+              // unauthenticated no matter what `agy models` answers.
+              antigravity: process.platform === 'darwin' ? 'authenticated' : 'unauthenticated',
             },
           );
           const copilot = result.cliTools.find((detection) => detection.tool === 'copilot');

@@ -1,12 +1,37 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   buildLanguageContext,
+  buildProjectLanguageContext,
   buildLanguageContextSections,
   codeFenceLanguage,
   extractLanguageFromResearch,
   isJavaScriptLikeLanguage,
   normalizeLanguage,
 } from './language-context.js';
+
+describe('buildProjectLanguageContext', () => {
+  it('takes the language from the detected stack', () => {
+    const tmpDir = createTempDir('language-context-stack');
+    try {
+      writeFileSync(join(tmpDir, 'Cargo.toml'), '[package]\nname = "app"');
+      expect(buildProjectLanguageContext(tmpDir, undefined).language).toBe('Rust');
+    } finally {
+      cleanupTempDir(tmpDir);
+    }
+  });
+
+  it('falls back to the project-language wording when no stack is detected', () => {
+    const tmpDir = createTempDir('language-context-bare');
+    try {
+      expect(buildProjectLanguageContext(tmpDir, undefined).language).toBe('the project language');
+    } finally {
+      cleanupTempDir(tmpDir);
+    }
+  });
+});
 
 describe('buildLanguageContext', () => {
   it.each([

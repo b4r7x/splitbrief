@@ -1,4 +1,5 @@
 import { wrapHard, wrapPathAware } from '../../../utils/wrap.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
 
 export const MIN_TEXT_WIDTH = 1;
 
@@ -18,12 +19,9 @@ export function pathAwareRows(text: string, width: number): number {
 }
 
 export const APPROVAL_HORIZONTAL_CHROME = 4;
-export const COST_HORIZONTAL_CHROME = 4;
 
+// The panel renders inside the gutter, so its text budget is the chrome content width minus the
+// panel's own border and padding — never the raw terminal width.
 export function approvalTextWidth(cols: number): number {
-  return Math.max(MIN_TEXT_WIDTH, cols - APPROVAL_HORIZONTAL_CHROME);
-}
-
-export function costTextWidth(cols: number): number {
-  return Math.max(MIN_TEXT_WIDTH, cols - COST_HORIZONTAL_CHROME);
+  return Math.max(MIN_TEXT_WIDTH, getChromeContentWidth(cols) - APPROVAL_HORIZONTAL_CHROME);
 }

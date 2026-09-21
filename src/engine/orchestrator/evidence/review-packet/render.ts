@@ -41,18 +41,6 @@ function formatCheckpointKind(checkpoint: ReviewPacketCheckpoint): string {
     : checkpoint.kind;
 }
 
-function formatReviewPacketActualCost(
-  costBreakdown: ReviewPacket['cost']['costBreakdown'],
-): string {
-  if (!costBreakdown) return 'unavailable';
-  if (costBreakdown.isTotalActualCostKnown === false) {
-    return costBreakdown.totalActualCost > 0
-      ? `$${costBreakdown.totalActualCost.toFixed(4)} + unknown`
-      : 'unavailable';
-  }
-  return `$${costBreakdown.totalActualCost.toFixed(4)}`;
-}
-
 export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
   const restoreSafety = packet.checkpoints.safety;
   const checkpointLines =
@@ -60,7 +48,7 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
       ? ['- No checkpoints available.']
       : packet.checkpoints.items.map(
           (checkpoint) =>
-            `- ${checkpoint.id}${checkpoint.name ? ` (${checkpoint.name})` : ''}: ${formatCheckpointKind(checkpoint)}, ${checkpoint.trackedFileCount} files, diff \`${checkpoint.diffCommand}\`, restore \`${checkpoint.restoreCommand}\``,
+            `- ${checkpoint.id}${checkpoint.name ? ` (${checkpoint.name})` : ''}: ${formatCheckpointKind(checkpoint)}, ${checkpoint.trackedFileCount} files`,
         );
   const driftLines =
     packet.drift.findings.length === 0
@@ -141,9 +129,7 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     ...recoveryLines,
     ...packet.recoveryDecisions.unresolvedRisks.map((risk) => `- Risk: ${risk}`),
     '',
-    '## Cost And Routing',
-    `- Actual cost: ${formatReviewPacketActualCost(packet.cost.costBreakdown)}`,
-    `- Estimated savings: ${packet.cost.estimatedCostSavings ?? 'unavailable'}`,
+    '## Routing',
     `- Per-task routing entries: ${packet.cost.taskRouting.length}`,
     '',
     '## Planner Final Review',

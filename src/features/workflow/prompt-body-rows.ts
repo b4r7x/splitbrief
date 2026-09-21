@@ -21,6 +21,8 @@ export type PromptBodyLine =
   | { kind: 'action'; text: string; recommended: boolean }
   | { kind: 'note'; text: string };
 
+const BLANK_ROW: PromptBodyLine = { kind: 'blank' };
+
 function clean(text: string, multiline = false): string {
   return sanitizeTerminalDisplayText(text, { preserveLineBreaks: multiline });
 }
@@ -149,6 +151,29 @@ function promptBodyLinesForRow(row: PromptRow, width: number): PromptBodyLine[] 
 export function promptBodyRows(prompt: string, width: number): PromptBodyLine[] {
   const promptWidth = Math.max(MIN_PROMPT_WIDTH, width);
   return parsePromptRows(prompt).flatMap((row) => promptBodyLinesForRow(row, promptWidth));
+}
+
+/**
+ * What a panel too short for its prompt keeps: the headline that says what
+ * happened and every action row, because a halt whose choices are scrolled off
+ * screen is a halt the operator cannot answer. Facts are what gives way, from
+ * the bottom, and the last kept slot stays blank so the facts do not run into
+ * the keys.
+ */
+export function clipPromptBodyRows(
+  rows: readonly PromptBodyLine[],
+  height: number,
+): PromptBodyLine[] {
+  if (height <= 0) return [];
+  if (rows.length <= height) return [...rows];
+  const actionStart = rows.findIndex((row) => row.kind === 'action');
+  if (actionStart <= 0) return rows.slice(0, height);
+  const head = rows.slice(0, 1);
+  const tail = rows.slice(actionStart).slice(0, Math.max(0, height - head.length));
+  const facts = rows.slice(1, actionStart).filter((row) => row.kind !== 'blank');
+  const room = height - head.length - tail.length;
+  const kept = room > 1 ? [...facts.slice(0, room - 1), BLANK_ROW] : facts.slice(0, room);
+  return [...head, ...kept, ...tail];
 }
 
 export function countPromptBodyRows(prompt: string, width: number): number {

@@ -9,9 +9,8 @@ import {
 import { addEvent } from './actions/event.js';
 import { resetWorkflow } from './actions/reset.js';
 import { taskId } from '../../core/schemas/task.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import type { EngineEventOf } from '../../engine/events/types.js';
-import { protectEngineEventForConsumer } from '../../engine/events/protection/protect.js';
+import { boundEngineEventForConsumer } from '../../engine/events/bound.js';
 import type { RunnerCallWarningInput } from '../../engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
 import { makePlannerText, makePlannerStatus } from '#testing/helpers/events/planner.js';
@@ -367,8 +366,8 @@ describe('eventsStore — append via addEvent', () => {
     ]);
   });
 
-  it('retains an already-protected external-change event without re-processing', () => {
-    const protectedEvent = protectEngineEventForConsumer(
+  it('retains an already-bounded external-change event without re-processing', () => {
+    const boundedEvent = boundEngineEventForConsumer(
       {
         type: 'paused_external_changes',
         ts: 1_002,
@@ -376,12 +375,12 @@ describe('eventsStore — append via addEvent', () => {
         selectedAction: 'pause',
         conflict: {
           kind: 'current-task-conflict',
-          files: [TRANSCRIPT_OMITTED_MESSAGE],
+          files: ['src/a.ts'],
           affectedTaskIds: [taskId('T001')],
           currentTaskId: taskId('T001'),
           fileConflicts: [
             {
-              file: TRANSCRIPT_OMITTED_MESSAGE,
+              file: 'src/a.ts',
               kind: 'current-task-conflict',
               affectedTaskIds: [taskId('T001')],
             },
@@ -390,15 +389,15 @@ describe('eventsStore — append via addEvent', () => {
           availableActions: ['pause', 'skip-current-task', 'abort-workflow'],
         },
       },
-      { context: 'ipc', persistTranscript: false },
+      'tui',
     );
-    if (protectedEvent?.type !== 'paused_external_changes') {
-      throw new Error('Expected protected paused_external_changes event');
+    if (boundedEvent.type !== 'paused_external_changes') {
+      throw new Error('Expected bounded paused_external_changes event');
     }
 
-    addEvent(protectedEvent);
+    addEvent(boundedEvent);
 
-    expect(eventsStore.get().events).toEqual([protectedEvent]);
+    expect(eventsStore.get().events).toEqual([boundedEvent]);
   });
 
   it('stops coalescing when a different event type arrives', () => {

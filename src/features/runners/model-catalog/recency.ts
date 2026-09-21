@@ -6,12 +6,15 @@ export interface ModelVariant {
   providerPrefix: string;
   tag: string;
   displayName?: string | undefined;
+  /** The context window this spelling carries, when the listing states one per spelling. */
+  contextLength?: number | undefined;
   /** Pre-merge enumeration facts so counting can restate per-variant truth. */
   membership?: ResolvedModelMembership | undefined;
   isCustom?: boolean | undefined;
+  isAccountOption?: boolean | undefined;
   /**
    * Named presets the seat's tool offers for this route; synthetic, never
-   * id-encoded. Vocabulary is per provider, so it belongs to the route rather
+   * id-encoded. Vocabulary is per model, so it belongs to the route rather
    * than to the merged row.
    */
   variantChoices?: readonly string[] | undefined;
@@ -20,6 +23,14 @@ export interface ModelVariant {
 export interface ModelOption {
   id: string;
   displayName?: string | undefined;
+  /** One line the row's metadata column carries in place of the context size. */
+  detail?: string | undefined;
+  /**
+   * The catalog id this documented alias resolves to — `fable` to
+   * `claude-fable-5-1`. Absent on rows whose own id already is one; dropped by
+   * both merge passes, which span more members than one id can name.
+   */
+  catalogModelId?: string | undefined;
   isDefault?: boolean | undefined;
   isDetected?: boolean | undefined;
   /** Membership remains visible after engine catalog projection. */
@@ -33,9 +44,19 @@ export interface ModelOption {
    * catalog and custom rows.
    */
   nativeOrder?: number | undefined;
-  /** The configured model the authoritative list does not contain. */
-  isRecovery?: boolean | undefined;
+  /** The tool's own per-account option cache, never a documented alias. */
+  isAccountOption?: boolean | undefined;
   contextLength?: number | undefined;
+  /** A vendor-supplied flag about the model that is not part of its name, e.g. `no ZDR`. */
+  vendorTag?: string | undefined;
+  /**
+   * The effort ladder this model's own source publishes — the tool's `--verbose`
+   * listing, models.dev `reasoning_options`, or the tool's documented flag ladder.
+   * Empty means the model publishes none; absent means nothing has answered.
+   * A row's routes can publish their own (`ModelVariant.variantChoices`), so read a
+   * route's ladder through `effortLadderFor`: the route's first, this one second.
+   */
+  effortChoices?: readonly string[] | undefined;
   releaseDate?: string | undefined;
   /** Present on provider-merged rows and option-family rows (≥2 members). */
   variants?: readonly ModelVariant[] | undefined;

@@ -8,11 +8,11 @@ If you only want a short overview, see [`FEATURES.md`](./FEATURES.md#slash-comma
 
 Type `/` in the TUI to open the command picker. Dispatch inside `src/core/runtime/commands/dispatch.ts` resolves commands in three steps:
 
-1. Exact match on `name` or any `aliases`. An alias may carry an argument: `/config` resolves to `/settings`, `/reviewer` to `/crew review`. See [Aliases](#aliases).
-2. If no exact match, a removed name gets a pointer to its replacement (`removedCommandPointer`, `src/core/runtime/commands/lookup.ts`) — see [Removed](#removed).
+1. Exact match on `name`.
+2. If no exact match, a removed name gets a pointer to its replacement (`removedCommandPointer`, `src/core/runtime/commands/lookup.ts`) instead of `Unknown command`.
 3. Otherwise `suggestRuntimeCommand` in the same module may suggest a close command in the error message — it does not auto-execute. Example: `/mde` returns `Unknown command: /mde. Did you mean /mode?` without running `/mode`.
 
-Each command declares `validScreens`. The screens are `home`, `workflow`, `summary`, and `setup` (`src/core/navigation/types.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/core/navigation/types.ts`) is shorthand for "available everywhere". Attached clients use `ATTACHED_AVAILABLE_COMMANDS` as an allow-list for completion, palette, and help so config/workflow mutations cannot report false local success (see [Attached clients](#attached-clients-start---detach) below).
+Each command declares `validScreens`. The screens are `home`, `workflow`, and `setup` (`src/core/navigation/types.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/core/navigation/types.ts`) is shorthand for "available everywhere".
 
 Each command may also declare a `guard`, which returns one true sentence when the command cannot run right now (wrong phase, no vision on the PLAN seat) and `undefined` otherwise. The command palette and the composer `/` picker hide guarded-out rows; help lists every command valid for the screen. The rewind predicates are the single source of truth for when a rewind can run:
 
@@ -20,27 +20,7 @@ Each command may also declare a `guard`, which returns one true sentence when th
 - `canRevisePlan(phase)` — `src/core/phases.ts` (called at `src/core/runtime/commands/defs/workflow.ts:43`) — true once the plan is written (`reviewing-plan`, `reviewing-briefs`, and later).
 - `canRedoTask(phase)` — `src/core/phases.ts` (called at `src/core/runtime/commands/defs/workflow.ts:60`) — true only during `implementing`, `validating-task`, or `escalating`.
 
-Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, assembled by `createCommandContext` in `src/core/runtime/commands/context-factory.ts` — every config write goes through its `saveConfig` path; the TUI (`src/app/command-context.ts`) and the RPC dispatcher only supply the callbacks. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
-
-### Attached clients (`start --detach`)
-
-When the workflow route carries an `attach` socket (`routerStore` → `route.attach`), the TUI is a thin viewer over a detached IPC server (`src/engine/ipc/server-entry.ts` → `runWorkflowLoop`). `buildCommandContext` sets `ctx.isAttached`, and `createRuntimeCommands` exposes only `ATTACHED_AVAILABLE_COMMANDS` (`src/core/runtime/commands/registry.ts`) in completion, palette, and help.
-
-| Hidden command | Why | Server-side equivalent |
-|---|---|---|
-| `/revise-spec`, `/revise-plan`, `/redo-task` | Rewind mutates orchestrator state on the server | Type the revision as composer text (`user_input` IPC) or approve/reject at the next prompt |
-| `/image` | Pending image attachments live in the client's `attachmentsStore` | Attach before `start --detach`, or restart without detach |
-| `/yolo` | Toggles tiered approvals in local config | Change `approval.enabled` in config and restart the server |
-
-Commands that stay available either affect local UI only (`/scroll`, `/copy`, `/sidebar`) or have an explicit IPC bridge:
-
-| Command | IPC message | Handler |
-|---|---|---|
-| Composer text (normal mode) | `user_input` | `useIpcClient.sendUserInput` → `workflow-bridge.onUserInput` |
-| `/queue clear` | `queue_clear` | `useIpcClient.clearQueue` → `workflow-bridge.onQueueClear` (routed in `src/app/screens/workflow.tsx` before dispatch) |
-| Approval / question prompts | `prompt_response` | `useIpcClient` prompt handler → `workflow-loop/prompts.ts` (`makeCallbacks`) |
-
-Commands outside that allow-list are unavailable while attached. In particular, config-mutating commands such as `/settings`, `/mode`, and `/crew` are hidden so the attached client cannot claim a detached server setting changed when only local config would have changed.
+Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, assembled by `createCommandContext` in `src/core/runtime/commands/context-factory.ts` — every config write goes through its `saveConfig` path; the TUI (`src/app/command-context.ts`) only supplies the callbacks. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
 The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 27 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
 
@@ -68,7 +48,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Args**: none.
 - **Shortcut**: `Ctrl+K` (`src/core/keybindings/registry.ts`).
 - **Example**: `/palette`
-- **Behavior**: Opens the `command-palette` overlay. `/palette` itself is `hidden`, so it is typeable but never listed inside the palette. Palette sources are assembled in `src/features/palette/sources.ts` from labeled runtime commands, workflow modes, live tasks, recent sessions, and `palette.customActions` from config. With an empty query the rows are grouped by `category`. `Enter` on a command that takes an argument prefills `/name ` in the composer instead of running it bare.
+- **Behavior**: Opens the `command-palette` overlay. `/palette` itself is `hidden`, so it is typeable but never listed inside the palette. Palette sources are assembled in `src/features/palette/sources.ts` from labeled runtime commands, live tasks, recent sessions, and `palette.customActions` from config. With an empty query the rows are grouped by `category`. `Enter` on a command that takes an argument prefills `/name ` in the composer instead of running it bare.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens overlay via `overlayStore.open`.
 - **See also**: `/help`.
 
@@ -76,39 +56,38 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 
 - **Purpose**: Pick planner skills for the session. Skills are pre-canned planner persona / instruction bundles that bias the planner toward specific kinds of work (testing, refactoring, security review, etc.).
 - **Screens**: all — a skill added or wanted mid-session matters for the revise/regenerate loops, not just before the first planner call.
-- **Args**: optional. One or more whitespace-separated skill ids, from the ids `ctx.listSkills()` reports. The `/` menu completes them project-first, then already-selected global skills, then the rest, each row showing the skill's name and description. Unknown ids print `"Unknown skill: <x>"` (`"Unknown skills: …"` for several).
+- **Args**: optional, and repeatable on one line — one or more whitespace-separated skill ids, from the ids `ctx.listSkills()` reports. Matching is fuzzy (`match: 'fuzzy'`), so a partial id resolves as long as it is unambiguous. The `/` menu completes them project-first, then already-selected global skills, then the rest, each row showing the skill's name and description, so a skill can be found by what it is for rather than by its id. Unknown ids print `"Unknown skill: <x>"` (`"Unknown skills: …"` for several).
 - **Shortcut**: `Ctrl+S` (home screen only — see `src/core/keybindings/registry.ts`).
 - **Example**: `/skills`, `/skills testing-standards`, `/skills testing-standards security-review`
-- **Behavior**: Bare `/skills` re-runs discovery (`refreshSkills` in `src/app/refresh-skills.ts`) and opens the `skills` overlay, so skills added since startup are present. With arguments it toggles each named skill instead of opening the overlay and reports through feedback (`Attached: …`, `Detached: …`). Toggling accumulates: `/skills alpha` then `/skills bravo` leaves both attached. Selection lives in `skillsStore` for the session only and is not written to `config.yaml`. Picking `/skills` in the command palette prefills `/skills ` in the composer, the same as every other argument-taking command.
+- **Behavior**: Every invocation re-runs discovery first (`refreshSkills` in `src/app/refresh-skills.ts`), so a skill directory added since startup is present whether you open the picker or toggle by id. Bare `/skills` then opens the `skills` overlay; with arguments it toggles each named skill instead and reports through feedback (`Attached: …`, `Detached: …`). Toggling accumulates: `/skills alpha` then `/skills bravo` leaves both attached. The command palette additionally lists one `Skill · <name>` row per discovered skill, hinted `attached` when it is selected, which toggles it directly. Selection lives in `skillsStore` for the session only and is not written to `config.yaml`; headless and resumed runs select the same skills with `--skills <id,…>`. Picking `/skills` in the command palette prefills `/skills ` in the composer, the same as every other argument-taking command.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens overlay via `overlayStore.open`.
 - **See also**: `/settings`, `/crew`.
 
 ### `/sessions`
 
-- **Purpose**: Browse summary-backed past sessions. Opens the sessions overlay backed by `.splitbrief/sessions/` so you can resume interrupted runs or inspect completed runs.
+- **Purpose**: Browse past runs. Opens the sessions overlay backed by `.splitbrief/sessions/`; `⏎` opens the run on the workflow screen at rest, with its history replayed, whatever the run did — an open run is continued from there, a closed one is read.
 - **Screens**: all.
 - **Args**: none.
 - **Example**: `/sessions`
-- **Behavior**: Opens the `sessions` overlay. Selecting an interrupted session loads workflow state directly; selecting a completed session opens its summary. Failed sessions without summaries show feedback instead.
+- **Behavior**: Opens the `sessions` overlay. Selecting a run reads its record, replays its `session.jsonl` into the workflow stores and opens the workflow screen at rest; the only refusal is a local run this process is already driving.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens overlay via `overlayStore.open`.
-- **See also**: `/handoff`, `/home`.
+- **See also**: `/home`, `/settings`.
 
-### `/settings` (alias `/config`)
+### `/settings`
 
-- **Purpose**: Open the settings overlay — Crew, validation, workflow defaults, hooks, OTel. The catch-all configuration UI.
+- **Purpose**: Open the settings overlay — Crew, validation, workflow defaults, hooks. The catch-all configuration UI.
 - **Screens**: all.
 - **Args**: none.
 - **Shortcut**: `Ctrl+,` (`src/core/keybindings/registry.ts`).
-- **Aliases**: `/config`.
-- **Example**: `/settings`, `/config`
-- **Behavior**: Opens the `settings` overlay. **Crew is the first section**: the three seats (`PLAN`, `BUILD`, `REVIEW`), the escalation branch, and per-seat effort live there, not in separate per-seat sections. Everything below it is the ordinary settings list. Mutations are persisted to project config on save.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens overlay via `overlayStore.open`.
+- **Example**: `/settings`
+- **Behavior**: Opens the `settings` overlay. **Crew is the first section**: the three seats (`PLAN`, `BUILD`, `REVIEW`) live there as read-only rows, not in separate per-seat sections; `Enter` on a seat opens that seat's picker, which is where its tool, model and effort are chosen. Everything below it is the ordinary settings list, grouped Crew → Tuning → Workflow → Validation; the Workflow group carries Mode, Spec/plan gates, Max retries, Compaction format and Create branch. Show spend and Commit strategy controls have been removed. Mutations are persisted to project config on save.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens the overlay via `overlayStore.open`; a focus of `seat:<id>` or `filter:<text>` is parsed by `parseSettingsFocus` (`src/features/settings/focus.ts`).
 - **See also**: `/crew`, `/mode`, `/skills`.
 
 ### `/home`
 
-- **Purpose**: Navigate back to the home screen from the workflow or summary screen. Leaving an active workflow unmounts the workflow UI and aborts the active run.
-- **Screens**: `workflow`, `summary`.
+- **Purpose**: Navigate back to the home screen from the workflow screen. Leaving an active workflow unmounts the workflow UI and aborts the active run.
+- **Screens**: `workflow`.
 - **Args**: none.
 - **Example**: `/home`
 - **Behavior**: Calls `routerStore.navigate({ to: 'home' })`. The home screen shows the prompt input and recent sessions.
@@ -117,14 +96,14 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 
 ### `/quit`
 
-- **Purpose**: Exit the application immediately. The TUI tears down, any in-flight subprocesses are killed via the process registry.
+- **Purpose**: Stop the run safely, save the session, then exit. The TUI tears down and any in-flight subprocesses are killed via the process registry.
 - **Screens**: all.
 - **Args**: none.
-- **Shortcut**: `Ctrl+Q` (`src/core/keybindings/registry.ts`). Also `Ctrl+C` twice within 2 seconds.
+- **Shortcut**: `Ctrl+Q` (`src/core/keybindings/registry.ts`). `Ctrl+C` is a separate key with its own meaning — Stop now on the workflow screen, exit elsewhere — and never needs a second press.
 - **Example**: `/quit`
-- **Behavior**: Calls the `exit` callback wired in `src/app/command-context.ts`. No confirmation prompt — use `/home` if you only want to leave the workflow screen.
+- **Behavior**: Routes through `requestQuit` (`src/features/workflow/handlers.ts`), which waits for the run to park or end before calling the `exit` callback wired in `src/app/command-context.ts`, so the session is saved rather than truncated; the byline reads `Quitting · Stopping processes and saving session` while it waits. No confirmation prompt — use `/home` if you only want to leave the workflow screen, or `esc` for the stop sheet if you want to stop the run without exiting.
 - **Implementation**: catalog in `src/core/runtime/commands/defs/navigate.ts`.
-- **See also**: `/home`.
+- **See also**: `/home`, `/end`.
 
 ---
 
@@ -134,12 +113,12 @@ Commands that decide who does the work and how: the three seats, the workflow mo
 
 ### `/mode [name]`
 
-- **Purpose**: Switch workflow mode at runtime. With no argument, opens the mode-selector overlay so you can pick interactively. With a valid mode name, persists the selection so subsequent runs inherit it.
-- **Screens**: all (`home`, `workflow`, `summary`, `setup`).
+- **Purpose**: Switch workflow mode at runtime. With no argument, refills the composer with `/mode ` so the three modes appear as completion rows, each with its planning-call and gate count and `current` on the active one. With a valid mode name, persists the selection so subsequent runs inherit it.
+- **Screens**: all (`home`, `workflow`, `setup`).
 - **Args**: optional. Valid values: `quick`, `standard`, `speckit` (the `WORKFLOW_MODES` tuple in `src/core/schemas/enums.ts`). The retired `instant` is still accepted and sets `quick`. Invalid values print `"Invalid mode: <x>. Valid modes: quick, standard, speckit"`.
 - **Example**: `/mode`, `/mode speckit`, `/mode quick`
 - **Behavior**: Successful save prints `"Workflow mode set to: <mode>"`, or `"instant was merged into quick; workflow mode set to: quick"` when the retired name was used. Failure to save (typically a malformed config file) surfaces the underlying error on the feedback line. Mode semantics live in `docs/WORKFLOW.md` §3.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/crew.ts`; persistence in `src/core/runtime/commands/context-factory.ts` — `createCommandContext` owns the `saveConfig` path every config-writing command goes through, and the app and RPC builders only supply the `saveConfig` callback.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/crew.ts`; persistence in `src/core/runtime/commands/context-factory.ts` — `createCommandContext` owns the `saveConfig` path every config-writing command goes through, and the app builder only supplies the `saveConfig` callback.
 - **See also**: `/settings`, `/crew`.
 
 ### `/crew [plan|build|review]`
@@ -148,7 +127,7 @@ Commands that decide who does the work and how: the three seats, the workflow mo
 - **Screens**: all.
 - **Args**: optional. One of `plan`, `build`, `review` (the `CREW_SEAT_IDS` tuple in `src/core/crew/identity.ts`, re-exported for commands as `CREW_COMMAND_SEATS`). Any other value prints `"Unknown seat: <x>. Valid: plan, build, review"`.
 - **Example**: `/crew`, `/crew plan`, `/crew build`, `/crew review`
-- **Behavior**: Bare `/crew` opens the `settings` overlay focused on the Crew section with the cursor on `plan` (`seat:plan`). `/crew <seat>` — and the `/planner`, `/implementer`, `/reviewer` aliases, which carry their seat with them — skips Settings and opens that seat's picker overlay directly (`planner-picker`, `implementer-picker`, `reviewer-picker`, via `seatPickerOverlayFor` in `src/core/navigation/types.ts`). `Esc` from a directly-opened picker returns to the screen it was invoked from rather than to Settings: nothing was on the overlay stack when it opened, so `overlayStore.close()` pops an empty stack and lands back on `none`. Each seat row in the Crew section reads as one identity — tool then model, separated by ` · ` (for example `Claude Code CLI · Claude Sonnet 4`) — with the billing posture beside it. `Enter` on a seat there opens the same picker and returns to Crew with the seat updated. Per-seat reasoning effort is edited on the seat in the Crew section; there is no separate effort command. With no `reviewer` block configured, `REVIEW` reads as inherited from the planner. The escalation branch hangs under `BUILD` when the escalation tier is on.
+- **Behavior**: Bare `/crew` opens the `settings` overlay focused on the Crew section with the cursor on `plan` (`seat:plan`). `/crew <seat>` skips Settings and opens that seat's picker overlay directly (`planner-picker`, `implementer-picker`, `reviewer-picker`, via `seatPickerOverlayFor` in `src/core/navigation/types.ts`). `Esc` from a directly-opened picker returns to the screen it was invoked from rather than to Settings: nothing was on the overlay stack when it opened, so `overlayStore.close()` pops an empty stack and lands back on `none`. Each seat row in the Crew section reads as one identity — tool then model, separated by ` · ` (for example `Claude Code CLI · Claude Sonnet 4`) — with the billing posture beside it. `Enter` on a seat there opens the same picker and returns to Crew with the seat updated. Reasoning effort is chosen with the model in that picker (`Enter` on the row, or `/crew <seat>` directly) and the crew row mirrors it read-only; there is still no separate effort command. With no `reviewer` block configured, `REVIEW` reads as `same as planner`.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/crew.ts`; overlay routing via `seatPickerOverlayFor` in `src/core/navigation/types.ts`; Crew section at `src/features/crew/`, seat and preset models at `src/core/crew/`; effort delivery rules in [`CONFIGURATION.md`](./CONFIGURATION.md).
 - **See also**: `/settings`, `/refresh`.
 
@@ -201,6 +180,38 @@ Commands that mutate the active run: rewind to an earlier phase, re-run a task, 
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; reset dispatched via `requestRewind({ target: 'task', taskId })` in `src/app/command-context.ts`.
 - **See also**: `/revise-plan`.
 
+### `/stop`
+
+- **Purpose**: Open the inline session-options menu immediately above the workflow composer — the same menu `Esc` opens on a live run.
+- **Screens**: `workflow`.
+- **Args**: none.
+- **Example**: `/stop`
+- **Behavior**: The rows follow the run's state: a live run offers `Stop now`, `Pause after this brief` (or `Keep running` when a pause is pending) and `End run`; a parked or stopped run offers `Resume`, `End run` and `Back to sessions`; a failed stop offers `Retry stop` alone. `↑↓` selects, `Enter` executes, `Tab` dismisses back to the composer without touching the run or the draft. Nothing stops, resumes or ends until a row is confirmed.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; rows from `readStopMenuRows` (`src/features/workflow/stop/options.ts`).
+- **See also**: `/resume`, `/end`.
+
+### `/resume`
+
+- **Purpose**: Continue a run — one parked by the stop sheet (`Stop now` at a brief, `Pause after this brief` at the boundary) or one left at rest on disk.
+- **Screens**: `workflow`.
+- **Phase guard**: `isLivePhase(phase)`; elsewhere the feedback line reads `"No run to resume in this phase"`.
+- **Args**: none.
+- **Example**: `/resume`
+- **Behavior**: Calls `ctx.resumeRun()`, which reaches `continueRun` (`src/engine/orchestrator/run/continue.ts`) — the one path for both cases. A park this process is holding settles in place: a brief parked mid-call re-enters that brief, a boundary park starts the next one. A run at rest is re-entered on its saved state. With nothing parked the feedback line reads `"Nothing to resume."`, and a closed run is refused with its reason rather than restarted. Typing instructions and pressing Enter continues with that text as the step's steer, composed into the step's own prompt rather than replacing it; a blank Enter never resumes a mid-brief park.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; the park itself is `stopStore` (`src/stores/workflow/stop.ts`).
+- **See also**: `/end`, `/quit`.
+
+### `/end`
+
+- **Purpose**: Close the run, keeping every change on disk.
+- **Screens**: `workflow`.
+- **Phase guard**: `isLivePhase(phase)`; elsewhere the feedback line reads `"No run to end in this phase"`.
+- **Args**: none.
+- **Example**: `/end`
+- **Behavior**: Calls `ctx.endRun()` — the same transition as the sheet's `End run` row. Execution stops as it does for Stop now, the state records `closed: { at, as: 'ended' }` so the run lists as `ended` and nothing resumes it, and the byline reads `Cancelled by you at T<id> · Changes kept` with the hint `esc home · /quit`. With no active run the feedback line reads `"No active run to end."`. Nothing is reverted; git is still the layer that reverses a run.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`.
+- **See also**: `/resume`, `/run`.
+
 ### `/queue [show|clear]`
 
 - **Purpose**: Inspect or clear the planner message queue. Messages typed during a planner call are queued and replayed on the next planner turn if they are still pending delivery; `/queue` lets you see how many are pending and discard pending-undelivered entries if you change your mind.
@@ -209,25 +220,12 @@ Commands that mutate the active run: rewind to an earlier phase, re-run a task, 
 - **Example**: `/queue`, `/queue show`, `/queue clear`.
 - **Behavior**: `show` prints `"Queue is empty"` or `"Queue: N message(s) pending"`. `clear` prints `"Cleared N queued message(s)"` or `"Queue is already empty"`. Delivered native messages and already-drained history are not cleared.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; depth read from `lifecycleStore.get().queueDepth`; clearing routes through `requestClearQueue()` in `src/features/workflow/handlers.ts`.
-- **See also**: `/handoff`.
-
-### `/handoff <target> [task-id]`
-
-- **Purpose**: Export a Handoff Pack for the active session — a self-contained directory of markdown files that an external agent (Claude Code, GitHub Copilot, spec-kit, AGENTS.md-style harness) can pick up and continue the work.
-- **Screens**: `workflow`, `summary`.
-- **Args**:
-  - `<target>` (required): one of `spec-kit`, `agents-md`, `claude-code`, `copilot-issue` (the `HANDOFF_TARGETS` tuple in `src/core/handoff/targets.ts`). Invalid values print `"Unknown target \"<x>\". Valid: spec-kit, agents-md, claude-code, copilot-issue"`.
-  - `[task-id]` (optional): a single task ID (e.g. `T003`) to export a single-task pack instead of the full session.
-- **Parsing**: the argument string is split on whitespace; the first token is the target, the second (if any) is the task ID. Calling without a target prints `"Usage: /handoff <target> [task-id]"`.
-- **Example**: `/handoff spec-kit`, `/handoff claude-code T003`, `/handoff copilot-issue`
-- **Behavior**: Writes the pack to `.splitbrief/sessions/<sessionId>/handoffs/<target>/` in `overwrite` mode. On success prints `"Handoff written to: <outputDir>"`. On failure prints the error message. Requires an active session — fails with `"No active session for handoff"` otherwise.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; calls `writeHandoffPack` from `src/engine/handoff/write.ts` via the command context.
-- **See also**: `/sessions`, `/export`.
+- **See also**: `/approval`.
 
 ### `/approval [list|clear]`
 
 - **Purpose**: Inspect or revoke sticky approval grants — the persistent "always approve this file-write pattern" decisions you have made during prior runs (e.g. always allow writes under `src/foo/**`).
-- **Screens**: `workflow`, `summary`.
+- **Screens**: `workflow` (live or at rest).
 - **Args**: optional. `list` (default) shows the current grants; `clear` revokes all grants (the `APPROVAL_ACTIONS` tuple in `src/core/runtime/commands/types.ts`).
 - **Example**: `/approval`, `/approval list`, `/approval clear`
 - **Behavior**:
@@ -235,27 +233,16 @@ Commands that mutate the active run: rewind to an earlier phase, re-run a task, 
   - `clear` prints `"Cleared N approval grant(s)."`.
   - Anything else prints `"Unknown approval command: <sub>. Use: /approval list or /approval clear"`.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; backed by `readApprovalsStore` / `writeApprovalsStore` / `clearGrantsByScope` from `src/core/approval/store.ts`.
-- **See also**: `/yolo`, `/settings`.
+- **See also**: `/run`, `/settings`.
 
 ### `/run accept|reject`
 
-- **Purpose**: Accept or roll back what this run wrote. Accepting writes an accepted run snapshot so a later rejection refuses to roll back past it; rejecting restores the baseline.
-- **Screens**: `workflow`, `summary`.
+- **Purpose**: Settle what this run wrote. Accepting writes an accepted run snapshot so a later rejection refuses to roll back past it. Rejecting discards what the run wrote by restoring the baseline the run started from. Both halves are backed by real snapshots: a run captures its baseline once, before the first task runs, and records exactly one run snapshot in the run ledger (`src/engine/snapshots/run/ledger.ts`) after the task loop completes and before the final review reads the diff (`ensureRunBaselineSnapshot` / `recordRunSnapshotForRun`, `src/engine/orchestrator/run/snapshots.ts`). A run that stopped before the final review records nothing, so a rejection then reports that there is no run snapshot to reject.
+- **Screens**: `workflow` (live or at rest).
 - **Args**: required. `accept` or `reject` (the `RUN_ACTIONS` tuple in `src/core/runtime/commands/types.ts`); `reject` additionally requires the literal `confirm`. Missing or unknown actions print `"Usage: /run <accept|reject>"`; `/run reject` without confirmation prints `"Usage: /run reject confirm"`.
 - **Example**: `/run accept`, `/run reject confirm`
-- **Behavior**: `accept` prints `"Run accepted at snapshot <id>"`. `reject confirm` is refused while work is active (`"Run rejection is unavailable while work is active."`), when there is no snapshot (`"No run snapshot to reject."`), and when the latest snapshot was already accepted. Otherwise files are restored only if their current hash still matches the latest SPLITBRIEF-written hash; user edits made after the snapshot are reported as conflicts and never overwritten, and restored/deleted counts are reported on success.
+- **Behavior**: `accept` prints `"Run accepted at snapshot <id>"` and seals the ledger, so a later `reject confirm` is refused. `reject confirm` is refused while work is active (`"Run rejection is unavailable while work is active."`), when the run recorded no snapshot (`"No run snapshot to reject."`), and when the run was already accepted. Otherwise files the run edited are restored from the baseline and files the run created are deleted — each one only if its current hash still matches the recorded run snapshot; user edits made after that snapshot are reported as conflicts and never overwritten, and restored/deleted counts are reported on success.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; snapshot behavior in `src/engine/snapshots/run/lifecycle.ts`; hash-guarded rollback in `src/engine/snapshots/run/rollback.ts`.
-- **See also**: `splitbrief snapshot create`, `splitbrief snapshot restore`.
-
-### `/yolo`
-
-- **Purpose**: Toggle file-write tiered approvals off or back on for the current session.
-- **Screens**: all.
-- **Args**: none.
-- **Example**: `/yolo`
-- **Behavior**: Flips the approval-enabled state and prints either `YOLO mode ON — file-write tiered approvals disabled` or `YOLO mode OFF — file-write tiered approvals restored`.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; approval state wiring in `src/app/command-context.ts`.
-- **See also**: `/approval`, `/settings`.
 
 ---
 
@@ -294,6 +281,26 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`; command context toggles `controlsStore.sidebarVisible`.
 - **See also**: `/scroll`, `/activity`.
 
+### `/tasks`
+
+- **Purpose**: Show the brief list. The advertised way to reach every brief at any width, so the list is never behind a chord the legend does not name.
+- **Screens**: `workflow`.
+- **Args**: none.
+- **Example**: `/tasks`
+- **Behavior**: Names a destination rather than a switch: it shows the sidebar and a second call leaves it on screen (the sidebar primitive is a toggle, so a toggle that hid it is undone), then reports `"Brief list shown"`. At or below 120 columns there is no sidebar to open, so the command answers with the list itself — `"Briefs: T001 passed, T002 running, T003 queued"`, or `"No briefs planned yet"` before the plan lands — and the transcript keeps its standing `Completed n/total` and `Queued n` blocks.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`; toggles `controlsStore.sidebarVisible` through the command context, and reads the briefs from `tasksStore` through the context's `listBriefs` port.
+- **See also**: `/sidebar`, `/scroll`.
+
+### `/usage`
+
+- **Purpose**: Open reported token usage and monetary estimates explicitly.
+- **Screens**: `workflow`, live or at rest.
+- **Args**: none.
+- **Example**: `/usage`
+- **Behavior**: Opens the `usage-details` overlay for the current run. Missing or partial usage remains labelled; unknown pricing is not zero cost. Closing the details returns to a workflow without token or cost counters.
+- **Implementation**: `src/core/runtime/commands/defs/view.ts`, `src/app/overlays/usage.tsx`.
+- **See also**: `/sessions`, `/copy`.
+
 ### `/diff`
 
 - **Purpose**: Expand or collapse the latest diff block in the workflow conversation — the command mirror of `Ctrl+D`.
@@ -303,24 +310,13 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Example**: `/diff`
 - **Behavior**: Prints `"Expanded latest diff"` or `"Collapsed latest diff"`. With no diff to show, the feedback line says why instead. Same phase semantics as the key.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`; toggle wiring in the command context.
-- **See also**: `/activity`, `/cost`.
-
-### `/cost`
-
-- **Purpose**: Open the cost breakdown — the command mirror of `Ctrl+G`.
-- **Screens**: `workflow`.
-- **Args**: none.
-- **Shortcut**: `Ctrl+G` (`src/core/keybindings/registry.ts`).
-- **Example**: `/cost`
-- **Behavior**: Opens the `cost-drilldown` overlay, which breaks the run's spend down by seat and by phase. Same phase semantics as the key.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`; opens overlay via `overlayStore.open`.
-- **See also**: `/copy` (`/copy cost`), `/diff`.
+- **See also**: `/activity`, `/copy` (`/copy cost`).
 
 ---
 
 ## Input & output
 
-Commands that move data in or out: clipboard copies, exports, transcript compaction, and image attachments. `category: 'io'` in the registry.
+Commands that move data in or out: clipboard copies and image attachments. `category: 'io'` in the registry.
 
 ### `/copy [message|brief|path|command|cost]`
 
@@ -331,31 +327,11 @@ Commands that move data in or out: clipboard copies, exports, transcript compact
   - `brief` — the focused (or top-of-window) Task Brief's source text.
   - `path` — the focused brief's file path, relative to the project directory.
   - `command` — the configured planner runner command.
-  - `cost` — the current cost summary text.
+  - `cost` — an explicit export of available cost details; the legacy config value `workflow.showSpend: false` makes it answer `spend display is off`. There is no Settings toggle or main-screen counter.
 - **Example**: `/copy`, `/copy brief`, `/copy path`, `/copy cost`
 - **Behavior**: Resolves the raw value (never the sanitized display copy) and writes it to the clipboard. When the target has no value the feedback line reads `"Nothing to copy"`. A confirmed native or tmux copy reads `"Copied (native)"` / `"Copied (tmux-buffer)"`; an OSC-52 escape the terminal may silently drop reads `"Copy escape sent; verify your clipboard (some terminals block it)"`; a failure reads `"Could not copy"`.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/io.ts`; value resolution in `src/features/workflow/copy/resolve.ts`; clipboard delivery in `src/lib/clipboard/clipboard.ts`.
-- **See also**: `/export`, `/handoff`.
-
-### `/export`
-
-- **Purpose**: Export the current session as a self-contained HTML report.
-- **Screens**: `workflow`, `summary`.
-- **Args**: none.
-- **Example**: `/export`
-- **Behavior**: Writes `report.html` into the current session directory. On success the feedback line includes the report path; on failure it reports the export error.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/io.ts`; export pipeline in `src/engine/export/`.
-- **See also**: `/handoff`, `/sessions`.
-
-### `/compact-transcript`
-
-- **Purpose**: Summarize older persisted planner/user turns into a compact transcript summary so future resume context can stay small.
-- **Screens**: `workflow`, `summary`.
-- **Args**: none.
-- **Example**: `/compact-transcript`
-- **Behavior**: Uses the current planner from config. If that planner does not advertise `supportsSelfSummarisation`, the feedback line reports that transcript compaction is unsupported and no file is changed. Otherwise SPLITBRIEF calls `compactTranscript()` for the current session directory, appends a summary entry to `session.jsonl`, leaves recent messages verbatim, and reports how many older messages were summarized. `workflow.compactionFormat` controls whether the appended summary is freeform text or structured JSON; `auto` picks structured for `api` planners and freeform for `cli`, `shell`, and `agent`. Structured validation failures are saved as freeform text. The log stays append-only; compaction does not delete historical lines.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/io.ts`; core compaction in `src/core/sessions/compaction.ts`.
-- **See also**: `/sessions`, `/handoff`.
+- **See also**: `/image`.
 
 ### `/image <path>|list|remove`
 
@@ -373,19 +349,6 @@ Commands that move data in or out: clipboard copies, exports, transcript compact
 
 ---
 
-## Aliases
-
-Alias names resolve to their target in `findRuntimeCommand` (`src/core/runtime/commands/lookup.ts`) and carry their argument with them. They are kept for one release; use the target name.
-
-| Alias | Resolves to | Note |
-|---|---|---|
-| `/config` | `/settings` | Long-standing alias. |
-| `/planner` | `/crew plan` | Kept for one release. |
-| `/implementer` | `/crew build` | Kept for one release. |
-| `/reviewer` | `/crew review` | Kept for one release. |
-| `/accept-run` | `/run accept` | Kept for one release. |
-| `/reject-run` | `/run reject` | Kept for one release; still needs `confirm`. |
-
 ## Removed
 
 These names no longer exist. Typing one prints `"<name> was removed: <pointer>"` instead of `Unknown command`, for one release (`REMOVED_COMMANDS` in `src/core/runtime/commands/types.ts`).
@@ -394,9 +357,18 @@ These names no longer exist. Typing one prints `"<name> was removed: <pointer>"`
 |---|---|
 | `/attach` | `images are attached with /image <path>` — see [`/image`](#image-pathlistremove). |
 | `/detach` | `images are removed with /image remove <index\|id>` — see [`/image`](#image-pathlistremove). |
-| `/effort` | `effort lives on the seat: /crew plan` — reasoning effort is a per-seat field, edited in the Crew section; delivery per runner kind is documented in [`CONFIGURATION.md`](./CONFIGURATION.md). |
+| `/effort` | `effort is chosen with the model: /crew plan, then ⏎` — reasoning effort is chosen with the model in the seat picker; delivery per runner kind is documented in [`CONFIGURATION.md`](./CONFIGURATION.md). |
 | `/repomap` | `the repo map rebuilds itself on each planning run, with no manual step` — background on the map in [`REPOMAP.md`](./REPOMAP.md). |
-| `/resume` | `a paused workflow resumes from its approval prompt` — see [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) for `splitbrief resume`. |
+| `/accept-run` | `a run is accepted with /run accept` — see [`/run`](#run-acceptreject). |
+| `/reject-run` | `a run is rejected with /run reject confirm` — see [`/run`](#run-acceptreject). |
+| `/config` | `the same settings open with /settings` — see [`/settings`](#settings). |
+| `/planner` | `the PLAN seat is chosen with /crew plan` — see [`/crew`](#crew-planbuildreview). |
+| `/implementer` | `the BUILD seat is chosen with /crew build` — see [`/crew`](#crew-planbuildreview). |
+| `/reviewer` | `the REVIEW seat is chosen with /crew review` — see [`/crew`](#crew-planbuildreview). |
+| `/compact-transcript` | `the transcript compacts itself as the context window fills` — compaction is automatic; the format is `workflow.compactionFormat` in [`CONFIGURATION.md`](./CONFIGURATION.md). |
+| `/export` | `a run leaves its artifacts in .splitbrief/sessions/<id>/` — there is no HTML report; read the session directory. |
+| `/handoff` | `a run leaves its artifacts in .splitbrief/sessions/<id>/` — there is no handoff pack; read the session directory. |
+| `/yolo` | `approval prompts are turned off with approval.enabled: false in the config` — see `approval` in [`CONFIGURATION.md`](./CONFIGURATION.md), or `--yolo` for one run. |
 
 ---
 
@@ -411,15 +383,13 @@ Most slash commands have no dedicated keybinding — open the command palette wi
 | `Ctrl+K` | Open command palette | `src/app/keys.ts` |
 | `Ctrl+/` | Open help overlay (sent as control character `\x1f`) | `src/app/keys.ts` |
 | `Ctrl+,` | Open settings overlay | `src/app/keys.ts` |
-| `Ctrl+Q` | Quit application | `src/app/keys.ts` |
-| `Ctrl+C` | Interrupt in-flight turn (workflow screen) or exit otherwise | `src/app/keys.ts` |
-| `Ctrl+C` ×2 | Exit (second press while exit is armed, within 2s) | `src/app/keys.ts` |
-| `Esc Esc` | Hard-interrupt the running step (workflow enters the interrupted state); again while interrupted or at a prompt, cancel the workflow (workflow screen) | `src/app/keys.ts` |
-| `Esc` | Close the topmost overlay, or navigate home once the workflow is cancelled | `src/app/keys.ts` |
+| `Ctrl+Q` | Stop the run safely, save the session, exit | `src/app/keys.ts` |
+| `Ctrl+C` | Stop now (workflow screen) or exit otherwise — one press, always | `src/app/keys.ts` |
+| `Esc` | Open the stop menu (live workflow); a second Escape stops now; go home on a run at rest; otherwise close the topmost overlay | `src/app/keys.ts` |
 
-`Ctrl+C` behaviour depends on the screen. Off the workflow screen (and for an attach client), it exits immediately. On the workflow screen, the first press fires the same hard interrupt as `Esc Esc` (`interruptTurn` in `src/features/workflow/handlers.ts` — the workflow is marked interrupted and an in-flight runner's process group is terminated) only when the Esc ladder would arm an interrupt: a live phase is running (`isLivePhase` from `src/core/phases.ts`), the workflow is not already cancelled or interrupted, and no question prompt owns the composer. While a question prompt (including the interrupted continuation prompt) is open, or the workflow is already interrupted, there is no turn to interrupt, so the press interrupts nothing. Either way the press then arms the abort store for exit via `abortStore.arm('exit')` (`src/stores/workflow/abort.ts`), which shows `"Ctrl+C again to exit"`. A second press while `armed` is `'exit'` (within the 2s auto-clear window) exits.
+`Ctrl+C` is one press with one meaning. Off the workflow screen, and on a run at rest, it exits immediately. On the workflow screen with a run left to stop it performs **Stop now** (`requestStopNow` in `src/features/workflow/handlers.ts`): the in-flight call aborts along with any retry, escalation or per-task review call, no new brief is scheduled, and the run parks as `Paused at T<id> · Partial changes kept`. There is no armed window and no second press to learn.
 
-`Esc Esc` is a double-press ladder on the workflow screen. The first press arms an intent — `interrupt` while a live phase runs, or `cancel` while a question prompt is open or the workflow is already interrupted (`abortStore.arm(...)`); the second press fires it. Firing `interrupt` is a hard stop: the in-flight call aborts, the runner's process group is terminated (graceful signal first, force-kill after a grace window), and the workflow enters a visible interrupted state with the composer active — the byline reads the interim `interrupted — finishing current step…` until the continuation prompt parks at the next call boundary (immediately, for a live in-flight call), then `interrupted — Enter retry · type to steer`; once parked, submitting typed text steers the resumed workflow, submitting an empty message (plain Enter) retries the interrupted call. `Esc Esc` is ignored — it arms nothing and no byline changes — during the `validating-task`, `analyzing`, and `constitution-check` phases (per-task validation, the per-task git commit, speckit's analyze step, and speckit's constitution-check gate), since none of these is in the live-phase set (`isLivePhase` from `src/core/phases.ts`); the interim `finishing current step…` byline above already covers the one dead zone that is inside a live phase, the gap between runner calls, where the press still arms and parks at the next call boundary. A second `Esc Esc` while interrupted cancels the entire workflow. The abort store tracks one `armed` kind at a time (`none`, `exit`, `interrupt`, or `cancel`) and auto-clears after 2 seconds.
+`Esc` during a live workflow opens the **Stop options** menu immediately above the composer (`src/features/workflow/stop/menu.tsx`), with or without a draft. The transcript stays visible and updates. `↑↓` selects, `Enter` executes, a second `Esc` performs resumable **Stop now**, and `Tab` dismisses. **End run** stays an explicit selection. The pause row appears while a brief is running and becomes **Keep running** when a pause is pending. Changes and draft stay; the selected consequence is shown in full. `Ctrl+C` remains immediate Stop now. Completion, editor and permission dialogs retain their own Escape handling. On an inactive run, Escape goes home only with an empty composer.
 
 ### Home screen only
 
@@ -436,9 +406,8 @@ macOS terminals do not always forward physical `PageUp`, `PageDown`, `Home`, or 
 
 | Key | Action | Source |
 |---|---|---|
-| `Ctrl+G` | Open the cost drilldown overlay (any key dismisses it) | `use-keys.ts:118` |
-| `Ctrl+D` | Toggle the most recent diff in the conversation; in an attached client, detach instead | `keyboard.ts` `handleWorkflowCtrlChords` |
-| `Esc` | Navigate home (only when the workflow has been cancelled) | `src/app/keys.ts` |
+| `Ctrl+D` | Toggle the most recent diff in the conversation | `keyboard.ts` `handleWorkflowCtrlChords` |
+| `Esc` | Open the stop menu while a run is live; go home on a run at rest | `src/app/keys.ts` |
 | `Shift+↑` | Scroll conversation up by one line | `keyboard.ts` `handleConversationScroll` |
 | `Shift+↓` | Scroll conversation down by one line | `keyboard.ts` `handleConversationScroll` |
 | `PageUp` | Scroll conversation up by one page | `keyboard.ts` `handleConversationScroll` |
@@ -485,7 +454,7 @@ One-key gate actions, armed only while the composer draft is empty and no brief 
 | `c` | Start a comment (seeds the draft with `comment `) | `core/keybindings/review.ts` |
 | `q` | Reject | `core/keybindings/review.ts` |
 
-Typed commands (unchanged; these are what RPC and attached clients send):
+Typed commands:
 
 | Command | Action |
 |---|---|
@@ -494,8 +463,6 @@ Typed commands (unchanged; these are what RPC and attached clients send):
 | `E` / `edit-file` | Open persisted `tasks.md` in the external editor. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. |
 | `comment <text>` | Send revise feedback |
 | `reject` / `q` / `quit` | Reject briefs |
-
-`workflow.briefReview: rich` is deprecated and maps to the same simple review commands; it no longer opens an inline Task Brief plan editor.
 
 ### Inline editor (spec, plan, and Task Brief)
 
@@ -522,15 +489,13 @@ The keymap is protocol-free and is the single source of truth in [`src/core/keyb
 | `PageUp` / `PageDown` | Move by one viewport page |
 | `Backspace` / `Delete` | Delete one grapheme (add `Ctrl`/`Alt` to delete a word) |
 
-`Shift` combined with any motion (`←/→`, word, `Home`/`End`, `Ctrl+Home`/`Ctrl+End`, `PageUp`/`PageDown`) extends the selection; the same motion without `Shift` collapses it. `Ctrl+C` is **never** mapped to copy, cut, or select-all — it keeps its interrupt / exit semantics (copy is `Alt+C` or `Ctrl+Y`), so the editor cannot swallow the interrupt chord. `Home`, `End`, `PageUp`, and `PageDown` are recaptured as editor motions while the exclusive overlay is open rather than being surrendered to the conversation transcript.
+`Shift` combined with any motion (`←/→`, word, `Home`/`End`, `Ctrl+Home`/`Ctrl+End`, `PageUp`/`PageDown`) extends the selection; the same motion without `Shift` collapses it. `Ctrl+C` is **never** mapped to copy, cut, or select-all — it keeps its stop / exit semantics (copy is `Alt+C` or `Ctrl+Y`), so the editor cannot swallow the stop chord. `Home`, `End`, `PageUp`, and `PageDown` are recaptured as editor motions while the exclusive overlay is open rather than being surrendered to the conversation transcript.
 
 When the opt-in `$EDITOR` handover is used instead, `VISUAL` takes precedence over `EDITOR` in editor resolution ([`src/features/workflow/editor-command.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/features/workflow/editor-command.ts) `resolveEditorArgv`); this precedence is asserted by [`src/features/workflow/editor-command.test.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/features/workflow/editor-command.test.ts).
 
-### Summary screen
+### A run at rest
 
-| Key | Action | Source |
-|---|---|---|
-| `Enter` | Continue (handled by the summary screen; shortcut labels come from `src/core/keybindings/registry.ts`) |
+The workflow screen is the run's home when nothing is running on it too. An **open** run takes a correction: typed text steers the next step and a bare `Enter` continues it. A **closed** run's composer takes commands only — every command valid on `workflow` is typed here as usual, an empty `Enter` goes home, and plain text is refused as it is typed with the dim notice `Only /commands here · ⏎ on an empty line goes home`. `esc` leaves a run at rest for home rather than opening the stop sheet: there is nothing to stop.
 
 ---
 
@@ -540,39 +505,34 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 
 | ID | Key | Description | Screens |
 |---|---|---|---|
-| `exit` | `Ctrl+C` | Interrupt, then exit (press again) | workflow |
-| `exit` | `Ctrl+C` | Exit | home, summary, setup |
-| `command-palette` | `Ctrl+K` | Command palette | all |
-| `help` | `Ctrl+/` | Help | all |
-| `quit` | `Ctrl+Q` | Quit | all |
-| `interrupt` | `Esc Esc` | Interrupt current step (press again) | workflow |
-| `cancel` | `Esc Esc` | Cancel workflow at a prompt (press again) | workflow |
-| `recent-sessions` | `Ctrl+R` | Focus recent sessions | home |
-| `skills` | `Ctrl+S` | Skills picker | home |
-| `settings` | `Ctrl+,` | Settings | all |
-| `close-overlay` | `Esc` | Close overlay | all |
-| `toggle-diff` | `Ctrl+D` | Toggle diff; attached detaches | workflow |
-| `cost-drilldown` | `Ctrl+G` | Cost drilldown | workflow |
-| `scroll` | `Shift+↑/↓, PgUp/PgDn, Home/End` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
-| `review-edit` | `Ctrl+E` | Open editor in review mode only | workflow |
-| `activity` | `/activity, Ctrl+A` | Expand activity rows; compact rows show `ctrl+a` | workflow |
-| `continue` | `Enter` | Continue | summary |
+| `exit` | `ctrl+c` | Stop; press again to quit | workflow |
+| `exit` | `ctrl+c` | Press twice to quit | home, setup |
+| `command-palette` | `ctrl+k` | Command palette | all |
+| `help` | `ctrl+/` | Help | all |
+| `quit` | `ctrl+q` | Quit | all |
+| `stop` | `esc` | Options → stop → back to sessions | workflow |
+| `recent-sessions` | `ctrl+r` | Focus recent sessions | home |
+| `skills` | `ctrl+s` | Skills picker | home |
+| `settings` | `ctrl+,` | Settings | all |
+| `close-overlay` | `esc` | Close overlay | home, setup |
+| `toggle-diff` | `ctrl+d` | Toggle diff | workflow |
+| `scroll` | `shift+↑/↓, pgup/pgdn, home/end` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
+| `review-edit` | `ctrl+e` | Open editor in review mode only | workflow |
+| `activity` | `/activity, ctrl+a` | Expand activity rows | workflow |
+| `continue` | `enter` | Continue | summary |
 
 ---
 
 ## Index by command name
 
-Alphabetical, for fast lookup. Aliases and removed names are listed under [Aliases](#aliases) and [Removed](#removed).
+Alphabetical, for fast lookup.
 
 - [`/activity`](#activity) — expand or collapse the latest hidden activity rows.
 - [`/approval`](#approval-listclear) — list or clear sticky approval grants.
-- [`/compact-transcript`](#compact-transcript) — summarize older persisted transcript turns.
 - [`/copy`](#copy-messagebriefpathcommandcost) — copy a reviewed value to the system clipboard.
-- [`/cost`](#cost) — open the cost breakdown.
 - [`/crew`](#crew-planbuildreview) — change who fills the `PLAN`, `BUILD`, or `REVIEW` seat.
 - [`/diff`](#diff) — expand or collapse the latest diff.
-- [`/export`](#export) — export the session as an HTML report.
-- [`/handoff`](#handoff-target-task-id) — export a Handoff Pack.
+- [`/end`](#end) — close the run, keeping every change on disk.
 - [`/help`](#help) — open the help overlay.
 - [`/home`](#home) — navigate to the home screen.
 - [`/image`](#image-pathlistremove) — attach, list, or remove images for the next planner call.
@@ -582,15 +542,17 @@ Alphabetical, for fast lookup. Aliases and removed names are listed under [Alias
 - [`/quit`](#quit) — exit the application.
 - [`/redo-task`](#redo-task-id) — reset and re-run a single task.
 - [`/refresh`](#refresh) — re-run tool detection.
+- [`/resume`](#resume) — continue a paused or stopped run.
 - [`/revise-plan`](#revise-plan-comment) — rewind to the plan phase.
 - [`/revise-spec`](#revise-spec-comment) — rewind to the spec phase.
 - [`/run`](#run-acceptreject) — accept or roll back what this run wrote.
 - [`/scroll`](#scroll-topbottompage-uppage-down) — move the workflow conversation by command.
 - [`/sessions`](#sessions) — browse past sessions.
-- [`/settings`](#settings-alias-config) — open the settings overlay (Crew first).
+- [`/settings`](#settings) — open the settings overlay (Crew first).
 - [`/sidebar`](#sidebar) — show or hide the workflow sidebar.
+- [`/stop`](#stop) — open the inline session-options menu.
 - [`/skills`](#skills) — pick planner skills, bare or by id.
-- [`/yolo`](#yolo) — toggle file-write tiered approvals for the session.
+- [`/tasks`](#tasks) — show the brief list.
 
 ---
 
@@ -598,7 +560,8 @@ Alphabetical, for fast lookup. Aliases and removed names are listed under [Alias
 
 - [`FEATURES.md`](./FEATURES.md#slash-commands-palette) — the shorter overview document, useful as a quick refresher.
 - [`docs/WORKFLOW.md`](./WORKFLOW.md) — workflow phases, modes, and the rewind state machine.
-- [`docs/CONCEPTS.md`](./CONCEPTS.md) — shared vocabulary (phase, queue, awaiting-continue, etc.).
+- [`docs/CONCEPTS.md`](./CONCEPTS.md) — shared vocabulary (phase, queue, run status, stop reason, step, etc.).
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — how the TUI, stores, engine, and runners are layered.
 - [`docs/STORES.md`](./STORES.md) — `configStore`, `overlayStore`, `feedbackStore`, `lifecycleStore`, `routerStore`, `attachmentsStore`.
 - [`src/core/runtime/commands/`](https://github.com/b4r7x/splitbrief/tree/main/src/core/runtime/commands) — `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (`registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`, `registry-session.test.ts`, `registry-snapshots.test.ts`, …) cover the phase / screen / arg matrix.
+

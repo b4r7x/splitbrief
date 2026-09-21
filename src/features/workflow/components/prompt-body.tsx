@@ -3,12 +3,18 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { promptBodyRows, type PromptBodyLine } from '../prompt-body-rows.js';
+import { clipPromptBodyRows, promptBodyRows, type PromptBodyLine } from '../prompt-body-rows.js';
 import { passHeadlinePrefix } from '../recovery-prompt.js';
 
 type Theme = ReturnType<typeof useTheme>;
 
 const MIN_PROMPT_WIDTH = 1;
+// `▌ ` and the tail each keep their own cells and the action text takes what is left, so it is the
+// part that truncates and it says so with an ellipsis. A tail left to wrap makes the panel one row
+// taller than countPromptBodyRows measured, and Ink pays for that row by squashing one above it —
+// which is how the headline lost its first cell at 80 columns and its whole row at 60.
+const RECOMMENDED_TAIL = ' recommended';
+const RECOMMENDED_MARKER_CELLS = 2;
 
 function renderHeadline(
   row: Extract<PromptBodyLine, { kind: 'headline' }>['row'],
@@ -97,10 +103,12 @@ function renderPromptRows(rows: PromptBodyLine[], width: number, t: Theme): Reac
               <Text color={t.accent} bold>
                 {`${glyph('liveBar')} `}
               </Text>
-              <Box flexGrow={1} minWidth={0}>
+              <Box width={Math.max(0, width - RECOMMENDED_MARKER_CELLS - RECOMMENDED_TAIL.length)}>
                 <Text wrap="truncate">{row.text}</Text>
               </Box>
-              <Text color={t.textDim}>{' recommended'}</Text>
+              <Text color={t.textDim} wrap="truncate">
+                {RECOMMENDED_TAIL}
+              </Text>
             </Box>,
           );
         } else {
@@ -134,8 +142,8 @@ export function PromptBody({
   if (height <= 0) return null;
 
   const promptWidth = Math.max(MIN_PROMPT_WIDTH, width);
-  const rows = promptBodyRows(prompt, promptWidth);
-  const nodes = renderPromptRows(rows, promptWidth, t).slice(0, height);
+  const rows = clipPromptBodyRows(promptBodyRows(prompt, promptWidth), height);
+  const nodes = renderPromptRows(rows, promptWidth, t);
 
   return (
     <Box flexDirection="column" height={height} width={width} overflow="hidden">

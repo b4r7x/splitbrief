@@ -1,16 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   abortTurn,
+  cancelBoundaryPause,
   clearAllHandlers,
   consumeBoundaryInterrupt,
+  consumeBoundaryPause,
   createAbortHandlerScope,
-  interruptTurn,
+  requestBoundaryPause,
+  requestEndRun,
+  requestQuit,
+  requestLeaveSession,
+  setStopHandler,
+  requestResume,
+  requestStopNow,
   requestClearQueue,
+  resumeParkedRun,
   setCancelHandler,
   setClearQueueHandler,
+  setResumeHandler,
 } from './handlers.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../stores/workflow/events.js';
+import { routerStore } from '../../stores/navigation/router.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { stopStore } from '../../stores/workflow/stop.js';
 
 describe('createAbortHandlerScope', () => {
   afterEach(() => {
@@ -57,9 +70,10 @@ describe('createAbortHandlerScope', () => {
   });
 });
 
-describe('interruptTurn', () => {
+describe('requestStopNow', () => {
   beforeEach(() => {
     clearAllHandlers();
+    stopStore.__testReset();
     lifecycleStore.reset();
     eventsStore.reset();
     lifecycleStore.__testReset({ phase: 'planning' });
@@ -67,51 +81,177 @@ describe('interruptTurn', () => {
 
   afterEach(() => {
     clearAllHandlers();
+    stopStore.__testReset();
   });
 
-  it('interruptTurn invokes the current abort owner and returns turn while a call is in flight', () => {
-    const abort = vi.fn();
-    createAbortHandlerScope()(abort);
+  it('stop now aborts an escalation call', () => {
+    const abortEscalation = vi.fn();
+    createAbortHandlerScope()(abortEscalation);
 
-    expect(interruptTurn()).toBe('turn');
-    expect(abort).toHaveBeenCalledTimes(1);
-    expect(lifecycleStore.get().status).toBe('interrupted');
+    expect(requestStopNow()).toBe(true);
+    expect(abortEscalation).toHaveBeenCalledTimes(1);
+    expect(stopStore.get()).toMatchObject({ intent: 'stop-now', phase: 'requested' });
     expect(lifecycleStore.get().cancelled).toBe(false);
   });
 
-  it('interruptTurn sets the boundary flag instead of cancelling during a dead zone', () => {
+  it('flags the next boundary when no call is in flight', () => {
     const cancel = vi.fn();
     setCancelHandler(cancel);
 
-    expect(interruptTurn()).toBe('turn');
+    expect(requestStopNow()).toBe(true);
     expect(cancel).not.toHaveBeenCalled();
-    expect(lifecycleStore.get().status).toBe('interrupted');
-    expect(lifecycleStore.get().cancelled).toBe(false);
     expect(consumeBoundaryInterrupt()).toBe(true);
   });
 
-  it('a second interrupt while already interrupted plants no boundary flag', () => {
-    setCancelHandler(vi.fn());
+  it('announces no stop when there is nothing to stop', () => {
+    expect(requestStopNow()).toBe(false);
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
+  });
+});
 
-    expect(interruptTurn()).toBe('turn');
-    expect(consumeBoundaryInterrupt()).toBe(true);
-
-    // Parked at the interrupted prompt: another interrupt press must not queue
-    // a stale boundary flag that would discard the next steering answer.
-    expect(interruptTurn()).toBe('none');
-    expect(consumeBoundaryInterrupt()).toBe(false);
-    expect(lifecycleStore.get().cancelled).toBe(false);
+describe('requestBoundaryPause', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
   });
 
-  it('falls back to cancel when no workflow handlers are registered', () => {
-    expect(interruptTurn()).toBe('workflow');
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  it('hands the engine one pause and clears it on the way out', () => {
+    requestBoundaryPause();
+
+    expect(stopStore.get().intent).toBe('pause-after-brief');
+    expect(consumeBoundaryPause()).toBe(true);
+    expect(consumeBoundaryPause()).toBe(false);
+  });
+
+  it('keeps running drops the pending pause', () => {
+    requestBoundaryPause();
+    cancelBoundaryPause();
+
+    expect(consumeBoundaryPause()).toBe(false);
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
+  });
+});
+
+describe('requestEndRun', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+    lifecycleStore.reset();
+    eventsStore.reset();
+    lifecycleStore.__testReset({ phase: 'planning' });
+  });
+
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  it('cancels the run and records the intent', () => {
+    const cancel = vi.fn();
+    setCancelHandler(cancel);
+
+    expect(requestEndRun()).toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(1);
     expect(lifecycleStore.get().cancelled).toBe(true);
+    expect(stopStore.get().intent).toBe('end-run');
+  });
+});
+
+describe('requestResume', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
   });
 
-  it("returns 'none' when nothing can be stopped (no abort handler, already cancelled)", () => {
-    lifecycleStore.__testReset({ phase: 'planning', cancelled: true });
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
 
-    expect(interruptTurn()).toBe('none');
+  it('hands every continuation to the run, park or no park', () => {
+    const resume = vi.fn();
+    const steer = vi.fn();
+    setResumeHandler(resume);
+    stopStore.park('mid-brief', 'T002', steer);
+
+    expect(requestResume('use the other adapter')).toBe(true);
+    expect(resume).toHaveBeenCalledWith('use the other adapter');
+    // The run decides what continuing means; nothing settles behind its back.
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('reports nothing to resume when no run is on screen', () => {
+    expect(requestResume('')).toBe(false);
+  });
+});
+
+describe('resumeParkedRun', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  it('settles a parked brief with the typed steer', () => {
+    const steer = vi.fn();
+    stopStore.park('mid-brief', 'T002', steer);
+
+    expect(resumeParkedRun('use the other adapter')).toBe(true);
+    expect(steer).toHaveBeenCalledWith('use the other adapter');
+    expect(stopStore.get().phase).toBe('idle');
+  });
+
+  it('settles a boundary park so the run starts the next brief', () => {
+    const steer = vi.fn();
+    stopStore.request('pause-after-brief');
+    stopStore.park('boundary', 'T001', steer);
+
+    expect(resumeParkedRun('')).toBe(true);
+    expect(steer).toHaveBeenCalledWith('');
+  });
+
+  it('reports no park when the run is at rest', () => {
+    expect(resumeParkedRun('')).toBe(false);
+  });
+});
+
+describe('requestQuit', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  it('exits at once when there is no run to stop', () => {
+    const exit = vi.fn();
+
+    requestQuit(exit);
+
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for the run to park before leaving', () => {
+    const exit = vi.fn();
+    createAbortHandlerScope()(vi.fn());
+
+    requestQuit(exit);
+    expect(exit).not.toHaveBeenCalled();
+
+    stopStore.park('mid-brief', 'T002', null);
+    expect(exit).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -130,7 +270,7 @@ describe('consumeBoundaryInterrupt', () => {
     expect(consumeBoundaryInterrupt()).toBe(false);
 
     setCancelHandler(vi.fn());
-    interruptTurn();
+    requestStopNow();
 
     expect(consumeBoundaryInterrupt()).toBe(true);
     expect(consumeBoundaryInterrupt()).toBe(false);
@@ -164,5 +304,96 @@ describe('requestClearQueue', () => {
 
     expect(requestClearQueue()).toEqual({ status: 'cleared', count: 2 });
     expect(clear).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('safe departure', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.reset();
+    routerStore.reset();
+  });
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.reset();
+    routerStore.reset();
+  });
+
+  it('observes a synchronous stop and invokes exit exactly once', () => {
+    const stop = vi.fn(() => stopStore.park('mid-brief', null, null));
+    setStopHandler(stop);
+    const exit = vi.fn();
+    requestQuit(exit);
+    stopStore.end();
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps one stop request while quit supersedes pending home', () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    const exit = vi.fn();
+    const home = vi.spyOn(routerStore, 'navigate');
+    requestStopNow();
+    const requestedAt = stopStore.get().requestedAt;
+    requestLeaveSession();
+    requestQuit(exit);
+    requestQuit(exit);
+    requestLeaveSession();
+    expect(exit).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(stopStore.get().requestedAt).toBe(requestedAt);
+    stopStore.park('mid-brief', null, null);
+    expect(home).not.toHaveBeenCalled();
+    expect(exit).toHaveBeenCalledTimes(1);
+    home.mockRestore();
+  });
+
+  it('unwinds a boundary promise before delivering exit', () => {
+    stopStore.request('pause-after-brief');
+    const resolve = vi.fn();
+    stopStore.park('boundary', 'T001', resolve);
+    const stop = vi.fn(() => stopStore.get().parked?.resolve?.(''));
+    setStopHandler(stop);
+    const exit = vi.fn();
+    requestQuit(exit);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(exit).not.toHaveBeenCalled();
+    stopStore.park('boundary', 'T001', null);
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels departure on a failed save and retries the original explicit end intent', () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+    stopStore.request('end-run');
+    const exit = vi.fn();
+    requestQuit(exit);
+    stopStore.fail('Disk full');
+    expect(exit).not.toHaveBeenCalled();
+    expect(requestStopNow()).toBe(true);
+    expect(stopStore.get()).toMatchObject({ intent: 'end-run', phase: 'requested' });
+    expect(stopStore.get().error).toBeUndefined();
+    stopStore.end();
+    expect(exit).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not deliver stale departure after changing sessions', () => {
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: { projectDir: '/tmp', sessionId: 'first' } }),
+      execution: { kind: 'at-rest' },
+    });
+    setStopHandler(vi.fn());
+    const exit = vi.fn();
+    requestQuit(exit);
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: { projectDir: '/tmp', sessionId: 'second' } }),
+      execution: { kind: 'at-rest' },
+    });
+    stopStore.park('mid-brief', null, null);
+    expect(exit).not.toHaveBeenCalled();
   });
 });

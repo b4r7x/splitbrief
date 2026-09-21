@@ -7,8 +7,6 @@ import { assertNever, narrowRecord } from '../../utils/type-guards.js';
 import { rejectSymlinkTarget } from '../../lib/fs.js';
 import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 import type { SessionRef } from '../types/session-ref.js';
-import { assertStateAuthority, readStateAuthority } from '../state/authority.js';
-import type { StateAuthorityReceipt } from '../state/types.js';
 import { type ActiveSessionRecord, readActiveRecord } from './active-pointer.js';
 import {
   checkProcessIdentity,
@@ -18,22 +16,9 @@ import {
   type SessionLockStatusOptions,
 } from './lockfile-status.js';
 
-export type SessionLivenessAuthority =
-  | 'missing'
-  | 'invalid'
-  | 'live'
-  | 'dead'
-  | 'pid-reused'
-  | 'unknown';
-
 export type SessionLivenessReason =
   | 'state-missing'
   | 'terminal-state'
-  | 'authority-live'
-  | 'authority-dead'
-  | 'authority-pid-reused'
-  | 'authority-unknown'
-  | 'authority-invalid'
   | 'heartbeat-live'
   | 'heartbeat-stale'
   | 'heartbeat-dead'
@@ -46,7 +31,6 @@ export type SessionPointerStatus = 'matching' | 'mismatched' | 'missing' | 'inva
 export type SessionLivenessResult = Readonly<{
   live: boolean;
   takeoverMayBeAttempted: boolean;
-  authority: SessionLivenessAuthority;
   processIdentity: ProcessIdentityStatus | 'not-checked';
   heartbeat: SessionLockStatus['kind'];
   activePointer: SessionPointerStatus;
@@ -57,11 +41,8 @@ export type SessionLivenessDeps = Readonly<{
   readPhase?: ((ref: SessionRef) => Phase | null) | undefined;
   readActive?: ((projectDir: string) => ActiveSessionRecord | null) | undefined;
   checkLock?: ((options: SessionLockStatusOptions) => SessionLockStatus) | undefined;
-  readAuthority?: ((ref: SessionRef) => StateAuthorityReceipt | null) | undefined;
-  assertAuthority?:
-    | ((input: { ref: SessionRef; receipt: StateAuthorityReceipt }) => void)
-    | undefined;
 }>;
+
 function readSessionPhase(ref: SessionRef): Phase | null {
   const { projectDir, sessionId } = ref;
   const stateFile = join(sessionDir(projectDir, sessionId), STATE_FILE);
@@ -92,44 +73,6 @@ function activePointerStatus(
     return sessionId === ref.sessionId ? 'matching' : 'mismatched';
   } catch {
     return 'invalid';
-  }
-}
-
-type AuthorityObservation = Readonly<{
-  authority: SessionLivenessAuthority;
-  processIdentity: ProcessIdentityStatus | 'not-checked';
-}>;
-
-function observeAuthority(
-  ref: SessionRef,
-  readAuthority: (ref: SessionRef) => StateAuthorityReceipt | null,
-  assertAuthority: (input: { ref: SessionRef; receipt: StateAuthorityReceipt }) => void,
-): AuthorityObservation {
-  let receipt: StateAuthorityReceipt | null;
-  try {
-    receipt = readAuthority(ref);
-  } catch {
-    return { authority: 'invalid', processIdentity: 'not-checked' };
-  }
-  if (receipt === null) return { authority: 'missing', processIdentity: 'not-checked' };
-
-  const processIdentity = checkProcessIdentity(receipt.pid, Number(receipt.processStart));
-  switch (processIdentity) {
-    case 'live':
-      try {
-        assertAuthority({ ref, receipt });
-        return { authority: 'live', processIdentity };
-      } catch {
-        return { authority: 'invalid', processIdentity };
-      }
-    case 'dead':
-      return { authority: 'dead', processIdentity };
-    case 'pid-reused':
-      return { authority: 'pid-reused', processIdentity };
-    case 'unknown':
-      return { authority: 'unknown', processIdentity };
-    default:
-      return assertNever(processIdentity);
   }
 }
 
@@ -177,22 +120,12 @@ const HEARTBEAT_OUTCOMES: Readonly<Record<SessionLockStatus['kind'], LivenessOut
   invalid: { live: false, takeoverMayBeAttempted: true, reason: 'heartbeat-invalid' },
 };
 
-const AUTHORITY_OUTCOMES: Readonly<Record<SessionLivenessAuthority, LivenessOutcome | null>> = {
-  live: { live: true, takeoverMayBeAttempted: false, reason: 'authority-live' },
-  dead: { live: false, takeoverMayBeAttempted: true, reason: 'authority-dead' },
-  'pid-reused': { live: false, takeoverMayBeAttempted: true, reason: 'authority-pid-reused' },
-  unknown: { live: true, takeoverMayBeAttempted: false, reason: 'authority-unknown' },
-  invalid: { live: true, takeoverMayBeAttempted: false, reason: 'authority-invalid' },
-  missing: null,
-};
-
 function resultForHeartbeat(
   lock: SessionLockStatus,
   activePointer: SessionPointerStatus,
 ): SessionLivenessResult {
   return {
     ...HEARTBEAT_OUTCOMES[lock.kind],
-    authority: 'missing',
     processIdentity: processIdentityForLock(lock),
     heartbeat: lock.kind,
     activePointer,
@@ -211,7 +144,6 @@ export function inspectSessionLiveness(
     return {
       live: false,
       takeoverMayBeAttempted: false,
-      authority: 'missing',
       processIdentity: 'not-checked',
       heartbeat: 'missing',
       activePointer,
@@ -222,7 +154,6 @@ export function inspectSessionLiveness(
     return {
       live: false,
       takeoverMayBeAttempted: false,
-      authority: 'missing',
       processIdentity: 'not-checked',
       heartbeat: 'missing',
       activePointer,
@@ -231,20 +162,7 @@ export function inspectSessionLiveness(
   }
 
   const lock = readSessionLockStatus(ref, deps.checkLock ?? checkSessionLockStatus);
-  const observed = observeAuthority(
-    ref,
-    deps.readAuthority ?? readStateAuthority,
-    deps.assertAuthority ?? assertStateAuthority,
-  );
-  const outcome = AUTHORITY_OUTCOMES[observed.authority];
-  if (outcome === null) return resultForHeartbeat(lock, activePointer);
-  return {
-    ...outcome,
-    authority: observed.authority,
-    processIdentity: observed.processIdentity,
-    heartbeat: lock.kind,
-    activePointer,
-  };
+  return resultForHeartbeat(lock, activePointer);
 }
 
 export function isSessionLive(ref: SessionRef): boolean {

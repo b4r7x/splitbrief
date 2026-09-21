@@ -238,7 +238,6 @@ export async function invokeCommandBasedRunner(
     maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
     policy: 'tail',
   });
-  // The canonical envelope is enforced at the spawn boundary by `spawnAndCollect`.
   const result = await spawnAndCollect({
     command: finalCommand,
     args: finalArgs,

@@ -1,6 +1,5 @@
 import { pluralize } from '../../../utils/pluralize.js';
 import type { InProgressGitOp } from '../../../lib/git/repository.js';
-import type { CommitStrategy } from '../../schemas/enums.js';
 import type { ReadinessCheck } from '../types.js';
 
 export interface RepoReadinessInput {
@@ -12,9 +11,9 @@ export interface RepoReadinessInput {
   inProgressGitOp?: InProgressGitOp | null | undefined;
   activeSession?: string | undefined;
   activeSessionLive?: boolean | undefined;
-  committerIdentityConfigured?: boolean | undefined;
-  commitStrategy?: CommitStrategy | undefined;
 }
+
+export const ACTIVE_SESSION_LIVE_CHECK = 'repo.active-session-live';
 
 export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
   if (!repo.isGitRepo) {
@@ -69,28 +68,16 @@ export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
       id: 'repo.detached-head',
       severity: 'warning',
       summary: 'Repository is in a detached HEAD state.',
-      details: ['Per-task commits will not be on any branch and can be lost.'],
-      fix: 'Check out a branch (e.g. `git switch -c splitbrief/work`) before starting a workflow.',
-    });
-  }
-
-  if (
-    repo.committerIdentityConfigured === false &&
-    repo.commitStrategy !== undefined &&
-    repo.commitStrategy !== 'none'
-  ) {
-    checks.push({
-      id: 'repo.git-identity-missing',
-      severity: 'warning',
-      summary: 'Git identity not configured — per-task commits/checkpoints will fail.',
-      fix: 'Set a git identity (e.g. `git config user.name "you"` and `git config user.email "you@example.com"`) before starting a workflow.',
-      metadata: { commitStrategy: repo.commitStrategy },
+      details: [
+        'The run leaves its changes uncommitted in your working tree; a commit you make on a detached HEAD belongs to no branch and is easy to lose.',
+      ],
+      fix: 'Check out a branch (e.g. `git switch -c splitbrief/work`) before you commit the changes.',
     });
   }
 
   if (repo.activeSession) {
     checks.push({
-      id: repo.activeSessionLive ? 'repo.active-session-live' : 'repo.active-session-stale',
+      id: repo.activeSessionLive ? ACTIVE_SESSION_LIVE_CHECK : 'repo.active-session-stale',
       severity: repo.activeSessionLive ? 'blocker' : 'info',
       summary: repo.activeSessionLive
         ? `Active session ${repo.activeSession} is still live.`
@@ -118,4 +105,20 @@ export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
   }
 
   return checks;
+}
+
+/**
+ * A read-only purpose starts nothing, claims no active pointer and writes no
+ * session state, so a run in progress elsewhere cannot refuse it. The live
+ * session is still worth reporting, so it is downgraded to the fact it is
+ * rather than dropped.
+ */
+export function exemptLiveSessionBlocker(check: ReadinessCheck): ReadinessCheck {
+  if (check.id !== ACTIVE_SESSION_LIVE_CHECK) return check;
+  return {
+    id: check.id,
+    severity: 'info',
+    summary: check.summary,
+    ...(check.metadata !== undefined && { metadata: check.metadata }),
+  };
 }

@@ -16,12 +16,16 @@ import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { readConversationScrollSnapshot } from '../../layout/snapshot.js';
 import {
-  GATE_TITLE,
+  REVIEW_COMMENT_HINTS,
+  REVIEW_DOCUMENT_HINTS,
   STICKY_HINTS,
   STICKY_OPTIONS,
-  STICKY_PERSIST_NOTE,
+  approvalKeyColumnWidth,
+  approvalOptionLabelLines,
+  approvalTitle,
   getStickyOptionZones,
 } from '../../prompt-rows/approval.js';
+import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../lib/terminal/typeahead-grace.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 
@@ -30,6 +34,18 @@ const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 
 function stripColor(frame: string | undefined): string {
   return stripAnsiStyles(frame ?? '');
+}
+
+const STICKY_KEY_WIDTH = approvalKeyColumnWidth(STICKY_OPTIONS);
+
+/** What a label reads as on the row it starts on, once the panel has wrapped it to `cols`. */
+function optionLeadLine(option: (typeof STICKY_OPTIONS)[number], cols: number): string {
+  const [lead] = approvalOptionLabelLines({
+    option,
+    keyWidth: STICKY_KEY_WIDTH,
+    width: approvalTextWidth(cols),
+  });
+  return `${option.key}   ${lead ?? option.label}`;
 }
 
 function makeStickyRequest(actionDescription: string): TieredApprovalRequest {
@@ -61,14 +77,17 @@ describe('ApprovalPrompt sticky tier', () => {
     await flushEffects();
 
     const lines = stripColor(ui.lastFrame()).split('\n');
-    // Row counts cannot see a clipped line. The disclosure that tells the user `w` is persisted,
-    // and where, has to survive intact on one row — that is the defect a height assertion missed.
-    expect(lines.some((line) => line.includes(STICKY_PERSIST_NOTE))).toBe(true);
     for (const option of STICKY_OPTIONS) {
-      expect(lines.some((line) => line.includes(`${option.key}   ${option.label}`))).toBe(true);
+      expect(lines.some((line) => line.includes(optionLeadLine(option, 40)))).toBe(true);
     }
     expect(lines.some((line) => line.includes(STICKY_HINTS))).toBe(true);
-    expect(lines.some((line) => line.includes(GATE_TITLE))).toBe(true);
+    // 40 columns cannot hold the whole sentence, so the title wraps rather than truncating: it
+    // reads back whole once the box chrome is taken off.
+    const unwrapped = lines
+      .map((line) => line.replaceAll('|', ' ').trim())
+      .join(' ')
+      .replace(/\s+/g, ' ');
+    expect(unwrapped).toContain(approvalTitle('write_out_of_scope'));
     expect(stripColor(ui.lastFrame())).not.toContain('…');
 
     await flushEffects();
@@ -94,7 +113,7 @@ describe('ApprovalPrompt sticky tier', () => {
     expect(frame).not.toContain('\u001b');
     expect(frame).not.toContain('\u0000');
     // The redaction must not cost the panel its answers: every option and the legend still show.
-    for (const option of STICKY_OPTIONS) expect(frame).toContain(option.label);
+    for (const option of STICKY_OPTIONS) expect(frame).toContain(optionLeadLine(option, 34));
     expect(frame).toContain(STICKY_HINTS);
 
     await flushEffects();
@@ -116,7 +135,7 @@ describe('ApprovalPrompt sticky tier', () => {
     });
     await tick(1);
     expect(settled).toBe(false);
-    expect(ui.lastFrame() ?? '').toContain('Approve once');
+    expect(ui.lastFrame() ?? '').toContain('allow this operation only');
 
     await tick(PAST_GRACE);
     await flushEffects();
@@ -233,7 +252,7 @@ describe('sticky option click zones', () => {
   });
 });
 
-describe('short-viewport clamp clips registered sticky zones', () => {
+describe('short-viewport clamp sheds the blank rows, and the zones follow', () => {
   beforeEach(() => {
     _resetMouseZones();
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
@@ -245,7 +264,7 @@ describe('short-viewport clamp clips registered sticky zones', () => {
     terminalSizeStore.reset();
   });
 
-  it('does not activate the deny zone below the shell-clamped prompt box', async () => {
+  it('moves the option zones up with the shed blanks, and registers none below', async () => {
     const decision = openApprovalPrompt(makeStickyRequest('write src/x.ts'));
     const ui = render(<ApprovalPrompt clampedBoxRows={8} />);
     await tick(PAST_GRACE);
@@ -254,8 +273,14 @@ describe('short-viewport clamp clips registered sticky zones', () => {
     const boxTop = contentRect.top + contentRect.height;
     const centerX = 40;
 
-    expect(hitTopmostZone(centerX, boxTop + 5)?.id).toBe('approval-option-a');
+    // Border, title, subject, then the four options: the two blanks above them paid for the
+    // bottom border and the legend, so every option is inside the clamped box and clickable.
+    expect(hitTopmostZone(centerX, boxTop + 3)?.id).toBe('approval-option-a');
+    expect(hitTopmostZone(centerX, boxTop + 6)?.id).toBe('approval-option-x');
     expect(hitTopmostZone(centerX, boxTop + 8)).toBeUndefined();
+
+    const lines = stripColor(ui.lastFrame()).split('\n');
+    expect(lines.some((line) => line.includes(STICKY_HINTS))).toBe(true);
 
     await flushEffects();
     ui.stdin.write(ESC);
@@ -299,12 +324,37 @@ describe('multi-line trust disclosures in the sticky prompt', () => {
     for (const option of STICKY_OPTIONS) {
       expect(lines.some((line) => line.includes(option.label))).toBe(true);
     }
-    expect(lines.some((line) => line.includes(STICKY_PERSIST_NOTE))).toBe(true);
     expect(lines.some((line) => line.includes(STICKY_HINTS))).toBe(true);
 
     await flushEffects();
     ui.stdin.write(ESC);
     await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+});
+
+describe('ApprovalPrompt document review panel', () => {
+  it('names the step each answer releases', () => {
+    const ui = renderFeature(
+      <ApprovalPrompt review={{ artifact: 'plan', selectedIndex: 0, commenting: false }} />,
+    );
+    const frame = stripColor(ui.lastFrame());
+    expect(frame).toContain('Approve plan and compile briefs');
+    expect(frame).toContain('End run (close this run; keep changes)');
+    expect(frame).toContain(REVIEW_DOCUMENT_HINTS);
+    ui.unmount();
+  });
+
+  it('letters typed into comment are text', () => {
+    const ui = renderFeature(
+      <ApprovalPrompt review={{ artifact: 'plan', selectedIndex: 1, commenting: true }} />,
+    );
+    const frame = stripColor(ui.lastFrame());
+    // The composer owns the keyboard while a comment is being typed, so the panel stops naming
+    // the accelerators it can no longer honour and names the two keys that are still live.
+    expect(frame).toContain(REVIEW_COMMENT_HINTS);
+    expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
+    expect(frame).not.toContain('c comment');
     ui.unmount();
   });
 });

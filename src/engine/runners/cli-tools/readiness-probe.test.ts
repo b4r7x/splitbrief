@@ -30,10 +30,18 @@ async function nodeExecutable(): Promise<CliExecutableIdentity> {
   };
 }
 
+/**
+ * How long a probe waits for a `node -e` script that answers immediately. These cases are about
+ * what the probe concludes, never about how fast a process starts, and a machine running the whole
+ * suite at once takes far longer than a second to spawn one. A case that is about a timeout sets
+ * its own, much shorter, value.
+ */
+const PROBE_TIMEOUT_MS = 10_000;
+
 function probe(
   versionScript = "console.log('codex 0.40.0')",
   authScript = 'process.exit(0)',
-  timeoutMs = 1_000,
+  timeoutMs = PROBE_TIMEOUT_MS,
 ): CliProbeContract {
   return {
     version: {
@@ -65,7 +73,7 @@ function declaredProbe(
   const version = {
     command: ['node', '-e', options.versionScript ?? "console.log('codex 0.40.0')"] as const,
     cwd: 'neutral' as const,
-    timeoutMs: 1_000,
+    timeoutMs: PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   const auth = {
@@ -73,13 +81,13 @@ function declaredProbe(
       options.authCommand ??
       (['node', '-e', options.authScript ?? "console.log('verified')"] as const),
     cwd: 'neutral' as const,
-    timeoutMs: options.authTimeoutMs ?? 1_000,
+    timeoutMs: options.authTimeoutMs ?? PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   const catalog = {
     command: ['node', '-e', options.catalogScript ?? "console.log('model-a')"] as const,
     cwd: 'neutral' as const,
-    timeoutMs: 1_000,
+    timeoutMs: PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   return {
@@ -152,13 +160,13 @@ function opencodeProbe(
   const version = {
     command: ['opencode', '--version'] as const,
     cwd: 'neutral' as const,
-    timeoutMs: 2_000,
+    timeoutMs: PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   const auth = {
     command: ['opencode', 'providers', 'list'] as const,
     cwd: 'neutral' as const,
-    timeoutMs: options.authTimeoutMs ?? 2_000,
+    timeoutMs: options.authTimeoutMs ?? PROBE_TIMEOUT_MS,
     maxOutputBytes: 1_024,
   };
   return {
@@ -178,7 +186,7 @@ function opencodeProbe(
       catalog: {
         command: ['opencode', 'models'] as const,
         cwd: 'neutral' as const,
-        timeoutMs: 2_000,
+        timeoutMs: PROBE_TIMEOUT_MS,
         maxOutputBytes: 1_024,
         kind: 'catalog',
         parse: () => ({ kind: 'success', value: [] }),
@@ -216,6 +224,38 @@ async function probeOpencode(
   });
 }
 
+/**
+ * The provider-dependent case with no credential file on disk: whatever
+ * readiness concludes, it concluded from the environment alone.
+ */
+async function probeOpencodeWithoutBridgedState(
+  providerKey: string | undefined,
+): Promise<CliReadinessResult> {
+  return withTempDir('readiness-env-passthrough', async (dir) => {
+    const home = join(dir, 'home');
+    await mkdir(home, { recursive: true });
+    vi.stubEnv('HOME', home);
+    // opencode's bridged auth.json is sourced from all three roots, so leaving
+    // the XDG pair on the host's values would let a real login reach the child.
+    vi.stubEnv('XDG_CONFIG_HOME', join(home, 'xdg-config'));
+    vi.stubEnv('XDG_DATA_HOME', join(home, 'xdg-data'));
+    for (const key of Object.keys(process.env)) {
+      if (key.endsWith('_API_KEY')) vi.stubEnv(key, '');
+    }
+    vi.stubEnv('FOO_API_KEY', providerKey ?? '');
+    const executable = await fakeOpencode(
+      dir,
+      `process.stdout.write(${JSON.stringify(ORACLE_READ_OUTPUT)}); process.exit(0);`,
+    );
+    return probeCliReadiness({
+      tool: 'opencode',
+      executable,
+      authChannel: 'provider-dependent',
+      probe: opencodeProbe(),
+    });
+  });
+}
+
 describe('CLI readiness probe', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -236,6 +276,29 @@ describe('CLI readiness probe', () => {
     });
 
     expect(result.status).toBe('untrusted');
+  });
+
+  itUnix('lets a Copilot probe read the host package cache the launcher execs from', async () => {
+    const executable = await nodeExecutable();
+    const hostCache = '/host-copilot-cache';
+    vi.stubEnv('COPILOT_CACHE_HOME', hostCache);
+    const versionScript = `console.log(process.env.COPILOT_CACHE_HOME === ${JSON.stringify(hostCache)} ? 'copilot 0.40.0' : 'copilot unseen')`;
+
+    const copilot = await probeCliReadiness({
+      tool: 'copilot',
+      executable,
+      probe: declaredProbe({ versionScript }),
+    });
+    const codex = await probeCliReadiness({
+      tool: 'codex',
+      executable,
+      probe: declaredProbe({ versionScript }),
+    });
+
+    // Without it the probe reports the build embedded in the launcher, not the
+    // one the user installed — a version and a model list nothing else agrees with.
+    expect(copilot.installedVersion).toBe('0.40.0');
+    expect(codex.installedVersion).toBeNull();
   });
 
   it('fails closed on Windows before spawning a probe or its descendants', async () => {
@@ -539,7 +602,7 @@ describe('CLI readiness probe', () => {
         }
       });
     },
-    3_000,
+    30_000,
   );
 
   it.runIf(process.platform !== 'win32')(
@@ -555,7 +618,9 @@ describe('CLI readiness probe', () => {
           executable,
           authChannel: 'api-key',
           probe: declaredProbe({
-            authTimeoutMs: 3_000,
+            // Long enough for the grandchild to record its pid before the reap, on a machine
+            // running the whole suite at once; the elapsed assertion below still holds.
+            authTimeoutMs: 8_000,
             authScript: [
               'const { spawn } = require("node:child_process");',
               `const descendant = spawn(process.execPath, ["-e", ${JSON.stringify(`require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); process.on("SIGTERM", () => {}); setInterval(() => {}, 1_000)`)}], { stdio: "ignore" });`,
@@ -781,6 +846,34 @@ describe('CLI readiness probe', () => {
 
       expect(compatible.auth).toBe('authenticated');
       expect(incompatible.auth).toBe('not-checked');
+    });
+  });
+
+  describe('provider key from the shell environment', () => {
+    itUnix('verifies a provider key that lives only in the shell environment', async () => {
+      const result = await probeOpencodeWithoutBridgedState('shell-only');
+
+      expect(result.auth).toBe('authenticated');
+      expect(result.status).toBe('ready');
+      expect(result.providerAuth).toEqual({
+        kind: 'read',
+        facts: [{ provider: 'anthropic', source: 'oauth' }],
+      });
+    });
+
+    itUnix('reports unauthenticated when the key is absent everywhere', async () => {
+      const result = await probeOpencodeWithoutBridgedState(undefined);
+
+      expect(result.auth).toBe('unauthenticated');
+      expect(result.status).toBe('unauthenticated');
+    });
+
+    itUnix('still reports a bridged credential file as authenticated', async () => {
+      const result = await probeOpencode({
+        oracleBody: `process.stdout.write(${JSON.stringify(ORACLE_READ_OUTPUT)}); process.exit(0);`,
+      });
+
+      expect(result.auth).toBe('authenticated');
     });
   });
 });

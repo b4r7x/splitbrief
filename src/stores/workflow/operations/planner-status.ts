@@ -51,7 +51,7 @@ export function updatePlannerStatusFallback(
   const callId = plannerStatusFallbackCallId(event.phase);
   if (event.status === 'done') {
     const operation = state.byCallId.get(callId);
-    if (!operation || operation.status !== 'running') return state;
+    if (operation?.status !== 'running') return state;
     return replaceOperation(
       state,
       terminalizeRunningOperation(operation, {

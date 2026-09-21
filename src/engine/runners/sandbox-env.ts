@@ -98,6 +98,56 @@ export function resolveCliRunnerAuth(runner: Extract<RunnerLike, { kind: 'cli' }
   return channel;
 }
 
+const PROVIDER_API_KEY_ENV_RE = /_API_KEY$/;
+
+/**
+ * The host environment variables a staged child keeps for an auth channel —
+ * one rule for the catalog probe, for readiness, and for dispatch, so a model
+ * the picker lists is a model the runner can actually run. A provider-dependent
+ * tool holds no credential of its own: opencode and kilo use whichever
+ * providers the user's own shell has keys for, so preserving only the channel's
+ * declared keys strands the credential the listing was built from. Those
+ * channels keep every `*_API_KEY` the process carries; every other channel
+ * keeps exactly the keys it declares.
+ */
+export function cliAuthChannelEnvKeys(
+  channel: CliAuthChannel | undefined,
+  processEnv: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const declared = [...(channel?.env ?? [])];
+  if (channel?.billing !== 'provider-dependent') return declared;
+  const passthrough = Object.keys(processEnv).filter((key) => PROVIDER_API_KEY_ENV_RE.test(key));
+  return [...new Set([...declared, ...passthrough])];
+}
+
+export type CliChannelStaging = Readonly<{
+  selectedCli: CliToolId | undefined;
+  hostState: CliHostStateAccess;
+  preserveEnvKeys: string[];
+}>;
+
+/**
+ * How a child of `tool` is staged for an auth channel — the single selection
+ * readiness, the catalog probe and dispatch all build their environment from,
+ * so what a probe verified is what the runner is handed. A channel keeps only
+ * its own credential path: the environment variables it declares and the host
+ * state it reaches, so an API-key channel gets a private `HOME` with no bridged
+ * session. No channel (the version probe) stages no tool state at all.
+ */
+export function cliChannelStaging(
+  tool: CliToolId,
+  channel: CliAuthChannel | undefined,
+): CliChannelStaging {
+  if (channel === undefined) {
+    return { selectedCli: undefined, hostState: 'none', preserveEnvKeys: [] };
+  }
+  return {
+    selectedCli: tool,
+    hostState: cliAuthChannelHostStateAccess(channel),
+    preserveEnvKeys: cliAuthChannelEnvKeys(channel),
+  };
+}
+
 export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
   const keys = new Set<string>();
   if ('apiKey' in runner) {
@@ -111,8 +161,7 @@ export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
       break;
     }
     case 'cli': {
-      const channel = resolveCliRunnerAuth(runner);
-      for (const envVar of channel.env) keys.add(envVar);
+      for (const envVar of cliAuthChannelEnvKeys(resolveCliRunnerAuth(runner))) keys.add(envVar);
       break;
     }
   }
@@ -140,11 +189,44 @@ export function runnerSandboxIdentity(runner: RunnerLike): string {
  * `HOME` but not `USER` still reports `"loggedIn": false`. Nothing else the
  * sandbox redirects is handed back, so temp, cache and XDG state stay isolated
  * — but this child does read and write the real home directory. See
- * docs/WORKTREES.md.
+ * docs/PLANNERS-AND-IMPLEMENTERS.md, "Credential channels".
  */
 function hostAccountState(): Readonly<Record<string, string>> {
   const home = homedir();
   return { HOME: home, USERPROFILE: home, USER: userInfo().username };
+}
+
+function copilotPackageCacheHome(): string {
+  const configured = process.env.COPILOT_CACHE_HOME;
+  if (configured !== undefined) return configured;
+  // The account's own home, read from the passwd database. `homedir()` returns
+  // `$HOME`, which follows any redirect already in place, and naming a
+  // redirected home produces the exact outcome this function exists to prevent:
+  // a cache holding no package, into which the launcher unpacks a fresh 67 MB
+  // copy of the build embedded in it.
+  const home = userInfo().homedir;
+  if (process.platform === 'darwin') return join(home, 'Library', 'Caches', 'copilot');
+  if (process.platform === 'win32') {
+    return join(process.env.LOCALAPPDATA ?? join(home, '.cache'), 'copilot');
+  }
+  return join(process.env.XDG_CACHE_HOME ?? join(home, '.cache'), 'copilot');
+}
+
+/**
+ * Where a tool's launcher finds the versioned package it execs, for the one
+ * tool that resolves it through the host HOME. The Copilot launcher reads
+ * `$COPILOT_CACHE_HOME/pkg` first and the platform cache directory next, and
+ * falls back to the older build embedded in the launcher when neither holds
+ * one — so a redirected HOME silently downgrades the tool. Measured 2026-09-07
+ * against an installed 1.0.77: `HOME=$(mktemp -d) copilot --version` prints
+ * 1.0.37 and its `help config` lists 17 models instead of 25, after extracting
+ * 67 MB into the scratch home. Naming the host cache keeps every sandboxed
+ * child — probe and runner alike — on the build the user installed. The
+ * directory holds the tool's own program, never its credentials, so this widens
+ * nothing a bridged-files channel may read.
+ */
+export function cliPackageCacheEnv(tool: CliToolId | undefined): Readonly<Record<string, string>> {
+  return tool === 'copilot' ? { COPILOT_CACHE_HOME: copilotPackageCacheHome() } : {};
 }
 
 /**
@@ -233,6 +315,7 @@ export async function createSandboxEnv(options: {
         XDG_DATA_HOME: data,
         APPDATA: config,
         LOCALAPPDATA: data,
+        ...cliPackageCacheEnv(selectedCli),
         npm_config_cache: npmCache,
         PIP_CACHE_DIR: pipCache,
         CARGO_HOME: cargoHome,
@@ -274,9 +357,7 @@ export async function createRunnerSandboxEnv(
   }
   return createSandboxEnv({
     projectDir,
-    preserveEnvKeys: runnerAuthEnvKeys(runner),
-    selectedCli: runner.tool,
-    hostState: cliAuthChannelHostStateAccess(resolveCliRunnerAuth(runner)),
+    ...cliChannelStaging(runner.tool, resolveCliRunnerAuth(runner)),
     role,
   });
 }

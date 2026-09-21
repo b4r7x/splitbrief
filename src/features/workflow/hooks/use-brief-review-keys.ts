@@ -7,7 +7,6 @@ import { getVisibleBriefWindow, reviewStore } from '../../../stores/workflow/rev
 import { focusStore } from '../../../stores/ui/focus.js';
 import { completionStore } from '../../../stores/ui/completion.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { formatCopyResult } from '../../../core/runtime/commands/types.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -53,10 +52,9 @@ export function useBriefReviewKeys({
   copyTarget = emptyCopyTarget,
   canCopyFocused = () => false,
 }: UseBriefReviewKeysOptions): BriefReviewNavigate {
-  const [overlay, approval, cost, completion] = useStores(
+  const [overlay, approval, completion] = useStores(
     overlayStore,
     approvalPromptStore,
-    costApprovalStore,
     completionStore,
   );
   const focus = focusStore.use((f) => f);
@@ -78,7 +76,7 @@ export function useBriefReviewKeys({
     inReviewMode;
   const { active: overlayActive, exclusive: overlayExclusive } = overlay;
   const isOpen = overlayActive !== 'none';
-  const promptPending = approval.status === 'pending' || cost.status === 'pending';
+  const promptPending = approval.status === 'pending';
   const completionOpen = completion.open;
 
   const keysBlocked = !isActive || isOpen || overlayExclusive || promptPending || completionOpen;

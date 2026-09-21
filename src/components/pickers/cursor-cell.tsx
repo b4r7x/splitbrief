@@ -1,4 +1,4 @@
-import { Text } from 'ink';
+import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import { cursorGlyph, NO_CURSOR } from './cursor-glyph.js';
 
@@ -10,5 +10,9 @@ interface CursorCellProps {
 export function CursorCell({ isCursor, dimWhenInactive = false }: CursorCellProps) {
   const t = useTheme();
   const color = isCursor ? t.accent : dimWhenInactive ? t.textDim : t.text;
-  return <Text color={color}>{isCursor ? cursorGlyph() : NO_CURSOR}</Text>;
+  return (
+    <Box width={NO_CURSOR.length} flexShrink={0}>
+      <Text color={color}>{isCursor ? cursorGlyph() : NO_CURSOR}</Text>
+    </Box>
+  );
 }

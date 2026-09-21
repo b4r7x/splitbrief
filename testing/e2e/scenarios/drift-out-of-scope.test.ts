@@ -5,29 +5,42 @@ import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
 import { makeE2eScenarioConfig } from '../helpers/config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/harness.js';
 
+const DRIFT_SCRIPT = '.splitbrief/hooks/write-drift.mjs';
+
 const scenario = {
   name: 'drift detection - out of scope writes',
   cassetteName: 'drift-out-of-scope',
   feature: 'update config parser',
   mode: 'quick' as const,
-  config: makeE2eScenarioConfig('quick', { workflow: { driftChainThreshold: 0.01 } }),
+  config: makeE2eScenarioConfig('quick', {
+    workflow: { driftChainThreshold: 0.01 },
+    hooks: {
+      pre_validation: [
+        {
+          kind: 'command',
+          command: 'node',
+          args: [DRIFT_SCRIPT],
+          timeout_ms: 30_000,
+          on_failure: 'warn',
+        },
+      ],
+    },
+  }),
 };
 
 describe('e2e: drift out-of-scope detection', () => {
   const ctx = setupE2eScenario(scenario);
 
+  // The hook writes a file no Task Brief targets, which is the deterministic
+  // drift this scenario measures.
   function installDriftHook(): void {
     mkdirSync(join(ctx.projectDir, '.splitbrief/hooks'), { recursive: true });
     writeFileSync(
-      join(ctx.projectDir, '.splitbrief/hooks/pre-validation.js'),
+      join(ctx.projectDir, DRIFT_SCRIPT),
       [
         "import { mkdirSync, writeFileSync } from 'node:fs';",
-        "import { join } from 'node:path';",
-        'export default function writeDrift(_event, ctx) {',
-        "  mkdirSync(join(ctx.projectDir, 'src'), { recursive: true });",
-        "  writeFileSync(join(ctx.projectDir, 'src/out-of-scope.ts'), 'export const drift = true;\\n');",
-        "  return { kind: 'allow' };",
-        '}',
+        "mkdirSync('src', { recursive: true });",
+        "writeFileSync('src/out-of-scope.ts', 'export const drift = true;\\n');",
         '',
       ].join('\n'),
     );

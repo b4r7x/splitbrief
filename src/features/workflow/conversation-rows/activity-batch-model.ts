@@ -145,13 +145,16 @@ function collapsedActivityItemsProjection(
     }
   }
 
+  const pinned = selectPinnedActivityItem(pinnedCandidates.values());
+  const visibleKeys = collapsedVisibleKeys({
+    recent: Array.from(recent.keys()),
+    pinned: pinned?.visibleKey ?? null,
+  });
+
   return {
-    visibleItems: collapsedActivityItems({
-      recent: Array.from(recent.values()),
-      pinned: selectPinnedActivityItem(pinnedCandidates.values()),
-      totalCount: summaries.size,
-      maxItems,
-    }).map(activityDisplayItem),
+    visibleItems: activityLedgerItems(events)
+      .filter((item) => visibleKeys.has(item.visibleKey))
+      .map(activityDisplayItem),
     headerCount: summaries.size,
     severityCounts: activitySeverityCounts(summaries.values()),
     groups: activityGroups(summaries.values()),
@@ -212,24 +215,16 @@ function activityBatchHeader(
     .join('  ');
 }
 
-function collapsedActivityItems(input: {
-  recent: readonly RunnerActivityLedgerItem[];
-  pinned: RunnerActivityLedgerItem | null;
-  totalCount: number;
-  maxItems: number;
-}): RunnerActivityLedgerItem[] {
-  if (input.totalCount <= input.maxItems) return [...input.recent];
-  const visible: RunnerActivityLedgerItem[] = [];
-  if (input.pinned) visible.push(input.pinned);
-
-  const remaining = input.maxItems - visible.length;
-  if (remaining <= 0) return visible;
-
-  const recentWithoutPinned = input.recent.filter(
-    (item) => item.visibleKey !== input.pinned?.visibleKey,
-  );
-  visible.push(...recentWithoutPinned.slice(-remaining));
-  return visible;
+function collapsedVisibleKeys(input: {
+  recent: readonly string[];
+  pinned: string | null;
+}): Set<string> {
+  const keys = new Set(input.recent);
+  if (input.pinned === null || keys.has(input.pinned)) return keys;
+  const oldest = keys.values().next();
+  if (oldest.done !== true) keys.delete(oldest.value);
+  keys.add(input.pinned);
+  return keys;
 }
 
 function activityItemSummary(item: ActivityItemSummary): ActivityItemSummary {

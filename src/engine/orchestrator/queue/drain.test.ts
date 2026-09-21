@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { recoverInterruptedNativeDeliveries } from '../../../core/queue-state.js';
@@ -18,6 +18,23 @@ import {
   readQueueForPrompt,
 } from './drain.js';
 import { transitionAndSave } from '../state-ops.js';
+import { clearPendingQueue } from './clear.js';
+
+const stateHead = vi.hoisted(() => ({ afterRead: undefined as (() => void) | undefined }));
+
+vi.mock('../state-ops.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../state-ops.js')>();
+  return {
+    ...actual,
+    readWorkflowStateHead: (ref: Parameters<typeof actual.readWorkflowStateHead>[0]) => {
+      const head = actual.readWorkflowStateHead(ref);
+      const afterRead = stateHead.afterRead;
+      stateHead.afterRead = undefined;
+      afterRead?.();
+      return head;
+    },
+  };
+});
 
 let dirs: string[] = [];
 
@@ -67,6 +84,7 @@ describe('drain', () => {
     if (firstMessage === undefined || secondMessage === undefined) {
       throw new Error('expected queued messages');
     }
+    claimQueuedMessage({ projectDir, sessionId }, firstMessage.id, 'prompt');
 
     const result = commitQueueMessagesDrained({
       projectDir,
@@ -81,6 +99,133 @@ describe('drain', () => {
     expect(result.state.messageQueue[1]?.drainedAt).toBe(drainedAt);
     const drained = events.find((event) => event.type === 'queue_drained');
     expect(drained).toMatchObject({ type: 'queue_drained', count: 1, ids: ['msg-1'] });
+  });
+
+  it('acknowledges the claimed message and leaves a message that arrived during the prompt pending', () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const ref = { projectDir, sessionId };
+    const a = { ...makeMessage('use JWT'), id: 'msg-a' };
+    const b = { ...makeMessage('also add refresh tokens'), id: 'msg-b' };
+    saveState(ref, makeStateWithQueue([a]));
+    const { bus, events } = makeBusRecorder();
+
+    const read = readQueueForPrompt({ projectDir, sessionId, state: makeResearchingState() });
+    expect(read.messages.map((message) => message.id)).toEqual(['msg-a']);
+    transitionAndSave(ref, read.state, { type: 'ENQUEUE_USER_MSG', message: b });
+
+    const result = commitQueueMessagesDrained({
+      projectDir,
+      sessionId,
+      state: read.state,
+      messages: read.messages,
+      bus,
+    });
+
+    expect(result.count).toBe(1);
+    expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
+      expect.objectContaining({ count: 1, ids: ['msg-a'] }),
+    ]);
+    const persisted = loadState(ref)?.messageQueue ?? [];
+    expect(persisted.map((message) => [message.id, message.drainedAt !== undefined])).toEqual([
+      ['msg-a', true],
+      ['msg-b', false],
+    ]);
+    const next = readQueueForPrompt({ projectDir, sessionId, state: result.state });
+    expect(next.messages.map((message) => message.id)).toEqual(['msg-b']);
+  });
+
+  it('acknowledges the claimed message while a natively owned arrival stays pending', () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const ref = { projectDir, sessionId };
+    const a = { ...makeMessage('use JWT'), id: 'msg-a' };
+    const b = { ...makeMessage('native owns this turn'), id: 'msg-b' };
+    saveState(ref, makeStateWithQueue([a]));
+    const { bus, events } = makeBusRecorder();
+
+    const read = readQueueForPrompt({ projectDir, sessionId, state: makeResearchingState() });
+    transitionAndSave(ref, read.state, { type: 'ENQUEUE_USER_MSG', message: b });
+    expect(claimQueuedMessage(ref, b.id, 'native')).toBe(true);
+
+    try {
+      const result = commitQueueMessagesDrained({
+        projectDir,
+        sessionId,
+        state: read.state,
+        messages: read.messages,
+        bus,
+      });
+
+      expect(result.count).toBe(1);
+      expect(events.find((event) => event.type === 'queue_drained')).toMatchObject({
+        count: 1,
+        ids: ['msg-a'],
+      });
+      const persisted = loadState(ref)?.messageQueue ?? [];
+      expect(persisted.map((message) => [message.id, message.drainedAt !== undefined])).toEqual([
+        ['msg-a', true],
+        ['msg-b', false],
+      ]);
+    } finally {
+      releaseQueuedMessage(ref, b.id, 'native');
+    }
+  });
+
+  it('does not resurrect a claimed message cleared before its commit', () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const ref = { projectDir, sessionId };
+    const a = { ...makeMessage('use JWT'), id: 'msg-a' };
+    saveState(ref, makeStateWithQueue([a]));
+    const { bus, events } = makeBusRecorder();
+
+    const read = readQueueForPrompt({ projectDir, sessionId, state: makeResearchingState() });
+    clearPendingQueue({ projectDir, sessionId, state: read.state, bus });
+
+    const result = commitQueueMessagesDrained({
+      projectDir,
+      sessionId,
+      state: read.state,
+      messages: read.messages,
+      bus,
+    });
+
+    expect(result.count).toBe(0);
+    expect(result.state.messageQueue).toEqual([]);
+    expect(events.some((event) => event.type === 'queue_drained')).toBe(false);
+    expect(loadState(ref)?.messageQueue).toEqual([]);
+    expect(readQueueForPrompt({ projectDir, sessionId, state: result.state }).messages).toEqual([]);
+  });
+
+  it('refuses the acknowledgement when the state revision moves under it and releases the claim', () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const ref = { projectDir, sessionId };
+    const a = { ...makeMessage('use JWT'), id: 'msg-a' };
+    const b = { ...makeMessage('also add refresh tokens'), id: 'msg-b' };
+    saveState(ref, makeStateWithQueue([a]));
+    const { bus, events } = makeBusRecorder();
+
+    const read = readQueueForPrompt({ projectDir, sessionId, state: makeResearchingState() });
+    stateHead.afterRead = () => {
+      transitionAndSave(ref, read.state, { type: 'ENQUEUE_USER_MSG', message: b });
+    };
+
+    expect(() =>
+      commitQueueMessagesDrained({
+        projectDir,
+        sessionId,
+        state: read.state,
+        messages: read.messages,
+        bus,
+      }),
+    ).toThrow(expect.objectContaining({ kind: 'state-conflict' }));
+
+    expect(events.some((event) => event.type === 'queue_drained')).toBe(false);
+    const persisted = loadState(ref)?.messageQueue ?? [];
+    expect(persisted.map((message) => [message.id, message.drainedAt !== undefined])).toEqual([
+      ['msg-a', false],
+      ['msg-b', false],
+    ]);
+    const next = readQueueForPrompt({ projectDir, sessionId, state: read.state });
+    expect(next.messages.map((message) => message.id)).toEqual(['msg-a', 'msg-b']);
   });
 
   it('returns empty messages and unchanged state when queue is empty', () => {

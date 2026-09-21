@@ -1,26 +1,18 @@
 import type { Task } from '../../../core/schemas/task.js';
-import {
-  TASK_BRIEF_COMPILER_POLICY,
-  type TaskCompilationCallEnvelope,
-} from '../../../core/schemas/task-compilation.js';
-import type { TaskManifestBatch } from '../tasks/partition.js';
-import type { TaskManifestItem } from '../tasks/manifest.js';
-import { TASK_COMPILATION_FAILURE_CODE } from '../tasks/task-compilation-codes.js';
-import type { TaskCompilationProgramId } from '../../../core/schemas/task-compilation.js';
+import { sliceRuleText } from '../../../core/pipeline-spec/brief.js';
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
-import { buildPrompt, instructionsSection } from './builder.js';
+import { plannerConversationSection, buildPrompt, instructionsSection } from './builder.js';
 import { buildTaskFormatExample } from './task-format-example.js';
-import { error } from '../../../utils/error.js';
 import { formatTasks } from '../formatter.js';
 import { TASK_BRIEF_HEADINGS } from '../headings.js';
 
 const H = TASK_BRIEF_HEADINGS;
 
-function briefContract(ctx: LanguageContext): string {
+export function briefContract(ctx: LanguageContext): string {
   return `Every brief must cover these nine semantic sections, even when one is brief:
 
-1. **Identity** — frontmatter \`id\`, \`title\`, \`action\`, \`file\`, \`depends_on\`.
+1. **Identity** — frontmatter \`id\`, \`title\`, \`action\`, \`file\`, optional \`files\`, \`depends_on\`.
 2. **Intent** — \`${H.description.heading}\`: what the change is and why it matters.
 3. **Scope** — \`${H.scope.heading}\` with \`**In bounds:**\`, \`**Out of bounds:**\`, and optional \`**Approved out of bounds:**\` bullet lists. REQUIRED in standard mode so the implementer cannot drift into adjacent files or features.
 4. **Code Context** — \`${H.signature.heading}\`, \`${H.currentCode.heading}\`, \`${H.typeDefs.heading}\`, and \`${H.pattern.heading}\`: copied verbatim from the project when relevant. The implementer cannot look up other files.
@@ -31,10 +23,10 @@ function briefContract(ctx: LanguageContext): string {
 9. **Evidence** — \`${H.evidence.heading}\`: REQUIRED bullets describing the reviewable proof that should exist when the brief is done (passing tests, validation output, changed files, behavioral note).`;
 }
 
-function criticalRules(ctx: LanguageContext): string {
+export function criticalRules(ctx: LanguageContext): string {
   return `1. **Self-contained**: Each brief must inline ALL context needed. Include relevant current code for modify tasks, ${ctx.typeAnnotationStyle}, import paths, function signatures from dependencies, and expected patterns.
 
-2. **Atomic**: One brief = one file. Either create a new file or modify an existing one. Never split a single file across briefs or combine multiple files in one brief.
+2. **Atomic**: ${sliceRuleText()}
 
 3. **Dependency-ordered**: Briefs must be ordered so dependencies come first. Use \`depends_on\` to declare which briefs must complete first. Independent briefs can run in parallel.
 
@@ -56,6 +48,7 @@ export type TasksPromptInput = Readonly<{
   plan: string;
   languageContext?: LanguageContext | undefined;
   currentTasks?: Task[] | undefined;
+  skillsContext?: string | undefined;
 }>;
 
 export function buildTasksPrompt(input: TasksPromptInput): string {
@@ -67,8 +60,12 @@ export function buildTasksPrompt(input: TasksPromptInput): string {
     intro:
       'You are compiling a set of **Product Task Brief v1** records — the durable contract the implementer model will execute against. Each brief is sent independently to a small implementer model that has NO access to this prompt, the spec, the plan, or sibling briefs. Every brief must stand on its own. The `tasks.md` markdown file is the transport; the brief is the meaning.',
     sections: [
+      plannerConversationSection,
       { heading: 'Specification', body: input.spec },
-      { heading: 'Implementation Plan', body: input.plan },
+      {
+        heading: 'Implementation Plan',
+        body: `${input.plan}${input.skillsContext ? `\n\n${input.skillsContext}` : ''}`,
+      },
       ...(currentTasks && currentTasks.length > 0
         ? [
             {
@@ -79,7 +76,7 @@ export function buildTasksPrompt(input: TasksPromptInput): string {
         : []),
       ...buildLanguageContextSections(ctx),
       instructionsSection(
-        'Compose the complete `tasks.md` content with one Task Brief per markdown block, ordered by dependency. Each brief represents a single file operation (create or modify one file).',
+        'Compose the complete `tasks.md` content with one Task Brief per markdown block, ordered by dependency. Each brief represents one verifiable slice; `files` lists every path it writes.',
       ),
       {
         heading: 'Task Brief Format',
@@ -99,118 +96,4 @@ ${buildTaskFormatExample(ctx)}`,
     output:
       'Return the complete tasks.md content in your reply, with all Task Briefs in dependency order. Group related briefs into phases with a brief purpose statement for each phase. Do not write tasks.md or any other project file yourself; SPLITBRIEF captures your reply and persists the tasks.md artifact inside the active session.',
   });
-}
-
-export type TaskBatchPromptInputs = Readonly<{
-  programId: TaskCompilationProgramId;
-  batch: TaskManifestBatch;
-  backwardDependencies: readonly TaskManifestItem[];
-}>;
-
-export type TaskBatchPromptOptions = Readonly<{
-  languageContext?: LanguageContext;
-  envelope?: TaskCompilationCallEnvelope;
-}>;
-
-export const taskBatchPromptError = {
-  tooLarge: (actualBytes: number, maxBytes: number) =>
-    error(
-      TASK_COMPILATION_FAILURE_CODE.task_compiler_prompt_too_large,
-      `The Task batch prompt is ${actualBytes} bytes; the bound is ${maxBytes} bytes.`,
-      { actualBytes, maxBytes },
-    ),
-} as const;
-
-function batchSelectionSection(
-  programId: TaskCompilationProgramId,
-  batch: TaskManifestBatch,
-): string {
-  const items = batch.items
-    .map((item) => `- \`${item.id}\` — ${item.action} \`${item.file}\`\n  Purpose: ${item.purpose}`)
-    .join('\n');
-  return `Program: \`${programId}\`
-Batch: \`${batch.batchId}\`
-
-Compile exactly these ${batch.items.length} manifest items — nothing more, nothing less:
-
-${items}`;
-}
-
-function backwardDependenciesSection(dependencies: readonly TaskManifestItem[]): string {
-  if (dependencies.length === 0) {
-    return 'No earlier manifest items exist. Every `depends_on` must be `[]`; there is nothing this batch may depend on.';
-  }
-  const list = dependencies
-    .map((item) => `- \`${item.id}\` — ${item.action} \`${item.file}\``)
-    .join('\n');
-  return `These earlier manifest items are the only dependency targets this batch may reference:
-
-${list}
-
-Every \`depends_on\` value must name an item listed in this prompt — an earlier item above or an earlier item in this batch. Never name an unlisted or later item; use \`[]\` when independent.`;
-}
-
-/**
- * Deterministic prompt for one frozen four-item manifest slice. The batch identity,
- * the exact selected items, and the backward-only dependency targets are fixed before
- * dispatch; the provider may only choose the brief content, never the membership.
- */
-export function buildTaskBatchPrompt(
-  inputs: TaskBatchPromptInputs,
-  options?: TaskBatchPromptOptions,
-): string {
-  const ctx = options?.languageContext ?? buildLanguageContext(undefined);
-
-  const prompt = buildPrompt({
-    title: 'Compile Product Task Briefs — Batch',
-    intro:
-      'You are compiling exactly one deterministic batch of **Product Task Brief v1** records for a detached SPLITBRIEF compilation. You have no session, no files, and no context beyond this prompt; SPLITBRIEF holds the manifest and captures your final response. Each brief is executed independently by a small implementer model that has NO access to this prompt, sibling briefs, or the manifest — every brief must stand on its own.',
-    sections: [
-      {
-        heading: 'Batch Selection',
-        body: batchSelectionSection(inputs.programId, inputs.batch),
-      },
-      {
-        heading: 'Backward-Only Dependencies',
-        body: backwardDependenciesSection(inputs.backwardDependencies),
-      },
-      {
-        heading: 'Task Brief Format',
-        body: `Each Task Brief MUST be rendered in this exact markdown shape. Frontmatter carries Identity; section headings carry the rest of the contract:
-
-${buildTaskFormatExample(ctx)}`,
-      },
-      {
-        heading: 'Brief Contract (required semantics)',
-        body: briefContract(ctx),
-      },
-      {
-        heading: 'Critical Rules',
-        body: criticalRules(ctx),
-      },
-      instructionsSection(
-        `Emit exactly the ${inputs.batch.items.length} selected complete Product Task Brief v1 blocks — one \`---\` delimited block per manifest item, in the order listed above — as bare markdown, not wrapped in a code fence, with no phase headings, summary, or trailing prose.`,
-      ),
-    ],
-    output:
-      'Return exactly the selected Task Brief blocks in your final response. Do not write, create, or modify any file, and do not read, resume, or reference any session state; SPLITBRIEF captures only your final response as the batch artifact.',
-  });
-  return assertTaskBatchPromptBound(
-    prompt,
-    options?.envelope?.promptBytes ?? TASK_BRIEF_COMPILER_POLICY.maxPromptBytes,
-  );
-}
-
-export function taskBatchPromptByteLength(prompt: string): number {
-  return Buffer.byteLength(prompt, 'utf8');
-}
-
-export function assertTaskBatchPromptBound(
-  prompt: string,
-  maxPromptBytes: number = TASK_BRIEF_COMPILER_POLICY.maxPromptBytes,
-): string {
-  const actualBytes = taskBatchPromptByteLength(prompt);
-  if (actualBytes > maxPromptBytes)
-    throw taskBatchPromptError.tooLarge(actualBytes, maxPromptBytes);
-  return prompt;
 }

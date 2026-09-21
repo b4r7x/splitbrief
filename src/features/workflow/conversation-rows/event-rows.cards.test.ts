@@ -95,13 +95,12 @@ describe('eventRows colored left-rule callouts', () => {
     expect(bodyRow.segments[0]?.tone).toBe('textDim');
   });
 
-  it('renders budget_warning as a yellow left rule + yellow label + dim body', () => {
-    const event: EngineEventOf<'budget_warning'> = {
-      type: 'budget_warning',
+  it('renders warning events as a yellow left rule + yellow label + dim body', () => {
+    const event: EngineEventOf<'warning'> = {
+      type: 'warning',
       ts: 0,
       phase: 'implementing',
-      currentCost: 8_000,
-      maxBudget: 10_000,
+      message: 'the runner reported no usage',
     };
 
     const rows = rowsFor(event);
@@ -113,27 +112,11 @@ describe('eventRows colored left-rule callouts', () => {
     const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-top');
     expect(topRow.markerTone).toBe('warning');
     expect(topRow.segments[0]?.tone).toBe('warning');
-    expect(rowText(topRow)).toContain('budget');
+    expect(rowText(topRow)).toContain('warning');
 
     const bodyRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-body');
-    expect(rowText(bodyRow)).toContain('80% reached');
+    expect(rowText(bodyRow)).toContain('the runner reported no usage');
     expect(bodyRow.segments[0]?.tone).toBe('textDim');
-  });
-
-  it('routes budget_exceeded through a red left rule (hard stop, not yellow)', () => {
-    const event: EngineEventOf<'budget_exceeded'> = {
-      type: 'budget_exceeded',
-      ts: 0,
-      phase: 'implementing',
-      currentCost: 12_000,
-      maxBudget: 10_000,
-    };
-
-    const rows = rowsFor(event);
-    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-top');
-    expect(topRow.markerTone).toBe('error');
-    expect(topRow.segments[0]?.tone).toBe('error');
-    expect(rowText(topRow)).toContain('budget');
   });
 
   it('keeps task_skipped as a flat row with no label header and no left rule', () => {
@@ -164,6 +147,8 @@ describe('eventRows colored left-rule callouts', () => {
       phase: 'implementing',
       issueId: 'issue-1',
       reason: 'validation-failed',
+      headline: 'Validation failed on T001',
+      resumeCommand: 'splitbrief continue s-1 --action retry',
       recommendedAction: 'retry-same-worker',
       taskId: taskId('T001'),
       files: [],
@@ -176,12 +161,13 @@ describe('eventRows colored left-rule callouts', () => {
     expect(hasLabelRow(rows)).toBe(true);
     expect(hasLeftRule(rows)).toBe(false);
     const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-top');
-    expect(rowText(topRow)).toContain('recovery');
+    expect(rowText(topRow)).toContain('Recovery');
     expect(topRow.segments[0]?.tone).toBe('textDim');
 
+    // The card says what happened in the words the prompt uses, not the enum names behind them.
     const bodyRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-body');
-    expect(rowText(bodyRow)).toContain('validation-failed');
-    expect(rowText(bodyRow)).toContain('retry-same-worker');
+    expect(rowText(bodyRow)).toContain('Validation failed on T001');
+    expect(rowText(bodyRow)).not.toContain('retry-same-worker');
   });
 
   it('does not append its own trailing blank row (build.ts owns inter-block spacing)', () => {

@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildSummary } from './build.js';
-import type { BuildSummaryState } from './build.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -17,7 +16,9 @@ import { reviewPacketJsonPath } from '../../../core/paths.js';
 import type { ReviewPacket } from '../../../core/schemas/review-packet.js';
 import { loadSessionArtifactRollups } from './artifact-rollups.js';
 
-function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
+type SummaryState = Parameters<typeof buildSummary>[0]['state'];
+
+function makeState(overrides?: Partial<SummaryState>): SummaryState {
   return {
     tasks: [
       makeTask({ id: 'T001', status: 'done' }),
@@ -25,6 +26,8 @@ function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
       makeTask({ id: 'T003', status: 'done' }),
     ],
     tokenUsage: makeUsage(),
+    phase: 'complete',
+    currentTaskIndex: 0,
     ...overrides,
   };
 }
@@ -63,6 +66,52 @@ describe('buildSummary session artifact rollups', () => {
       expect(summary.evidenceSummary).toBeDefined();
       expect(summary.evidenceSummary?.path).toBe('evidence.json');
       expect(summary.evidenceSummary?.totalTasks).toBe(ledger.tasks.length);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('books stoppedAt against the brief at currentTaskIndex, not the first', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'summary-stopped-'));
+    try {
+      const sessionId = 'stopped-mid-brief';
+      const first = makeTask({ id: 'T001', status: 'done' });
+      const stopped = makeTask({ id: 'T002', status: 'in_progress' });
+      let ledger = createEvidenceLedger({
+        sessionId,
+        feature: 'stopped',
+        mode: 'standard',
+        tasks: [first, stopped],
+      });
+      ledger = recordLocalTaskEvidence({
+        ledger,
+        task: first,
+        status: 'done',
+        method: 'local',
+        validation: [{ passed: true, stage: 'typecheck' }],
+        changedFiles: ['src/first.ts'],
+      });
+      ledger = recordLocalTaskEvidence({
+        ledger,
+        task: stopped,
+        status: 'in_progress',
+        validation: [],
+        changedFiles: ['src/stopped.ts'],
+      });
+      writeEvidenceLedger({ projectDir, sessionId }, ledger);
+
+      const summary = buildSummary({
+        feature: 'stopped',
+        state: makeState({ tasks: [first, stopped], phase: 'implementing', currentTaskIndex: 1 }),
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+        projectDir,
+        sessionId,
+      });
+
+      expect(summary.stoppedAt).toEqual({ taskId: 'T002', partialFiles: ['src/stopped.ts'] });
+      expect(summary.changedFiles).toEqual(['src/first.ts', 'src/stopped.ts']);
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }

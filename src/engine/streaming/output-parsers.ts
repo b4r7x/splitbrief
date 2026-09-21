@@ -1,13 +1,12 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { ParsedLine } from '../runners/types.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { parseStreamLine } from './parse-stream-json.js';
+import { createStreamParser, type StreamParseResult } from './parse-stream-json.js';
 import { parseJsonlLine } from './parse-jsonl.js';
 import { parseTextLine } from './parse-text.js';
 import { parseOpencodeLine } from './parse-opencode.js';
 
-function wrapStreamParser(line: string): ParsedLine {
-  const r = parseStreamLine(line);
+function streamParsedLine(r: StreamParseResult): ParsedLine {
   return {
     ...(r.text !== undefined ? { text: r.text } : {}),
     ...(r.channel !== undefined ? { channel: r.channel } : {}),
@@ -25,8 +24,10 @@ function wrapStreamParser(line: string): ParsedLine {
 
 export function getLineParser(format: OutputFormat): (line: string) => ParsedLine {
   switch (format) {
-    case 'stream-json':
-      return wrapStreamParser;
+    case 'stream-json': {
+      const parse = createStreamParser();
+      return (line) => streamParsedLine(parse(line));
+    }
     case 'jsonl':
       return parseJsonlLine;
     case 'text':

@@ -1,5 +1,3 @@
-import { ALL_SCREENS } from '../../../navigation/types.js';
-import { glyph } from '../../../../lib/glyphs.js';
 import {
   APPROVAL_ACTIONS,
   QUEUE_ACTIONS,
@@ -9,13 +7,21 @@ import {
 } from '../types.js';
 import { includes } from '../../../../utils/type-guards.js';
 import { canRedoTask, canRevisePlan, canReviseSpec, isLivePhase } from '../../../phases.js';
-import { HANDOFF_TARGETS, parseHandoffTarget } from '../../../handoff/targets.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { formatRejectRunMessage } from '../messages.js';
 
 export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
   return [
+    {
+      kind: 'noarg',
+      name: '/stop',
+      label: 'session options',
+      description: 'Open stop and session options',
+      category: 'workflow',
+      validScreens: ['workflow'],
+      handler: () => ctx.openOverlay('stop-sheet'),
+    },
     {
       kind: 'arg',
       name: '/revise-spec',
@@ -70,6 +76,30 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       },
     },
     {
+      kind: 'noarg',
+      name: '/resume',
+      label: 'resume',
+      description: 'Continue a paused or stopped run',
+      category: 'workflow',
+      validScreens: ['workflow'],
+      guard: (c) => (isLivePhase(c.phase) ? undefined : 'No run to resume in this phase'),
+      handler: () => {
+        if (!ctx.resumeRun()) ctx.setFeedbackError('Nothing to resume.');
+      },
+    },
+    {
+      kind: 'noarg',
+      name: '/end',
+      label: 'end run',
+      description: 'Close the run, keeping every change on disk',
+      category: 'workflow',
+      validScreens: ['workflow'],
+      guard: (c) => (isLivePhase(c.phase) ? undefined : 'No run to end in this phase'),
+      handler: () => {
+        if (!ctx.endRun()) ctx.setFeedbackError('No active run to end.');
+      },
+    },
+    {
       kind: 'arg',
       name: '/queue',
       label: 'queue',
@@ -108,39 +138,12 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
     },
     {
       kind: 'arg',
-      name: '/handoff',
-      label: 'handoff',
-      description: `Export handoff pack for an external agent ${glyph('connectorHandoff')}`,
-      category: 'workflow',
-      args: { kind: 'closed', options: HANDOFF_TARGETS },
-      validScreens: ['workflow', 'summary'],
-      handler: async (args) => {
-        if (!args) {
-          ctx.setFeedbackError('Usage: /handoff <target> [task-id]');
-          return;
-        }
-        const [target, taskId] = args.trim().split(/\s+/);
-        const handoffTarget = target ? parseHandoffTarget(target) : null;
-        if (!target || !handoffTarget) {
-          ctx.setFeedbackError(`Unknown target "${target}". Valid: ${HANDOFF_TARGETS.join(', ')}`);
-          return;
-        }
-        try {
-          const { outputDir } = await ctx.writeHandoff(handoffTarget, taskId);
-          ctx.setFeedbackMessage(`Handoff written to: ${outputDir}`);
-        } catch (err) {
-          ctx.setFeedbackError(toErrorMessage(err));
-        }
-      },
-    },
-    {
-      kind: 'arg',
       name: '/approval',
       label: 'approval',
       description: 'List or clear sticky approval grants',
       category: 'workflow',
       args: { kind: 'closed', options: APPROVAL_ACTIONS, optional: true },
-      validScreens: ['workflow', 'summary'],
+      validScreens: ['workflow'],
       handler: (args) => {
         const sub = args?.trim().toLowerCase();
         if (!sub || sub === 'list') {
@@ -166,15 +169,11 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
     {
       kind: 'arg',
       name: '/run',
-      aliases: [
-        { name: '/accept-run', args: 'accept' },
-        { name: '/reject-run', args: 'reject' },
-      ],
       label: 'run',
       description: 'Accept or reject what this run wrote',
       category: 'workflow',
       args: { kind: 'closed', options: RUN_ACTIONS },
-      validScreens: ['workflow', 'summary'],
+      validScreens: ['workflow'],
       handler: async (args) => {
         const [action = '', confirmation] = (args ?? '')
           .trim()
@@ -188,6 +187,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
         if (action === 'accept') {
           try {
             const result = await ctx.acceptRunSnapshot();
+            ctx.refreshRun();
             ctx.setFeedbackMessage(`Run accepted at snapshot ${result.snapshotId}`);
           } catch (err) {
             ctx.setFeedbackError(toErrorMessage(err));
@@ -212,6 +212,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
             ctx.setFeedbackError(`Run already accepted at snapshot ${result.snapshotId}.`);
             return;
           }
+          ctx.refreshRun();
           const message = formatRejectRunMessage(result);
           if (result.conflictedPaths.length > 0 || result.missingSnapshotFiles.length > 0) {
             ctx.setFeedbackError(message);
@@ -220,24 +221,6 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
           }
         } catch (err) {
           ctx.setFeedbackError(toErrorMessage(err));
-        }
-      },
-    },
-    {
-      kind: 'noarg',
-      name: '/yolo',
-      label: 'yolo',
-      description: 'Toggle file-write tiered approvals off/on',
-      category: 'workflow',
-      validScreens: ALL_SCREENS,
-      handler: () => {
-        const current = ctx.getApprovalEnabled();
-        const next = !current;
-        ctx.setApprovalEnabled(next);
-        if (!next) {
-          ctx.setFeedbackMessage('YOLO mode ON — file-write tiered approvals disabled');
-        } else {
-          ctx.setFeedbackMessage('YOLO mode OFF — file-write tiered approvals restored');
         }
       },
     },

@@ -2,7 +2,7 @@
 
 User-facing capability reference for SPLITBRIEF. For each feature: what it does, how to invoke it, when to reach for it, the relevant config, and the on-screen output where applicable. Deeper rationale lives in the linked specs and design docs.
 
-> **Cross-references.** Workflow phases: [WORKFLOW.md](./WORKFLOW.md). Config schema: [CONFIGURATION.md](./CONFIGURATION.md). Slash commands: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md). Architecture inventory: [ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what). Hooks: [HOOKS-CONFIG.md](./HOOKS-CONFIG.md). Worktrees: [WORKTREES.md](./WORKTREES.md).
+> **Cross-references.** Workflow phases: [WORKFLOW.md](./WORKFLOW.md). Config schema: [CONFIGURATION.md](./CONFIGURATION.md). Slash commands: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md). Architecture inventory: [ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what). Hooks: [HOOKS-CONFIG.md](./HOOKS-CONFIG.md).
 
 ---
 
@@ -24,9 +24,11 @@ splitbrief start --mode speckit "redesign auth subsystem"
 
 | Mode | Planner calls | Approval gates | Pick when |
 |---|:---:|:---:|---|
-| `quick` | 1 | none | Trivial single-edit changes and small tasks that warrant a brief but not a spec |
-| `standard` (default) | 4 | spec | Ordinary feature work — research → spec → plan → tasks |
-| `speckit` | 6–7 | spec + plan + constitution + analyze | Risky, large, or externally visible work |
+| `quick` | 1 | 0 | Trivial edits and small tasks that warrant a brief but not a spec |
+| `standard` (default) | 4 | 2 (spec + briefs) | Ordinary feature work — research → spec → plan → tasks |
+| `speckit` | 6–7 | 3 (spec + plan + briefs) | Risky, large, or externally visible work |
+
+The counts come from `MODES` (`src/core/pipeline-spec/modes.ts`), which is also what the `/mode` completion rows, the Settings Mode row and the planner prompts read.
 
 **Configuration.** `workflow.mode`, `workflow.approve` (`none|spec|plan|all|default`), `workflow.maxRetries`. See [CONFIGURATION.md §workflow](./CONFIGURATION.md#5-workflow).
 
@@ -87,7 +89,7 @@ Full schema: [CONFIGURATION.md §planner](./CONFIGURATION.md#2-planner) and [CON
 
 ### Run Readiness / Doctor
 
-**What it does.** Before `splitbrief start` spends planner or implementer tokens, SPLITBRIEF checks config, mode/approval resolution, runner posture, context length, validation settings, git status, active-session conflicts, and budget posture. Blockers stop the run; warnings can continue.
+**What it does.** Before `splitbrief start` spends planner or implementer tokens, SPLITBRIEF checks config, mode/approval resolution, runner posture, context length, validation settings, git status, and active-session conflicts. Blockers stop the run; warnings can continue.
 
 **How to use.**
 
@@ -100,44 +102,58 @@ splitbrief start --json "fix parser edge case"
 
 `splitbrief doctor` is strictly read-only and writes no config, sessions, worktrees, snapshots, or model calls. It runs no validation subprocesses unless `--probe-validation` is given. Its one network call is the runner availability probe: a model-list request to the `api` endpoint each configured runner already targets, so an unreachable planner or default implementer is a blocker here instead of a `fetch failed` after the planning phase has been paid for. A local workflow start prepares every runner context it may select and persists that attempt's compact `.splitbrief/sessions/<id>/readiness.json` before execution begins. If fresh preparation is blocked, cached success cannot create a session or start a process. In headless mode the readiness report is emitted as the first structured JSON line.
 
-**When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, disabled validation, or unset budget.
+**When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, or disabled validation.
 
 **Events/output.** Human output groups checks into config, runners, context, validation, repository, and cost. JSON output uses `{ type: "readiness_report", report: ... }`. Validation readiness is posture only by default — disabled checks, missing npm scripts, and configured commands are reported without running them; `--probe-validation` runs the real commands and can take minutes.
 
 ### Validation pipeline + checkpoints
 
-**What it does.** After every implementer task, SPLITBRIEF runs `tsc --noEmit` → Biome lint → tests (in that order, stop on first failure). On success it records evidence and can create checkpoints. Product-level git commits are optional when explicitly configured; checkpoint safety does not depend on commits.
+**What it does.** After every implementer task, SPLITBRIEF runs typecheck → lint → test (in that order, stop on first failure). The commands are the ones the project's own stack uses, not a fixed TypeScript trio. On success it records evidence. Filesystem snapshots remain available; SPLITBRIEF never stages, commits or creates index checkpoints.
 
-**How to use.** Set `validation.{typecheck,lint,test,testCommand}` and `workflow.git.commitStrategy: none|checkpoint|per-task`. Optionally auto-create a branch with `workflow.git.createBranch: true` (writes to `splitbrief/<slug>`).
+**Stack coverage.** The registry is `src/core/validation/stacks/`; `detectStack` picks the first row whose marker file exists, in this order:
 
-**When to use.** `none` for manual review and commits. `checkpoint` and `per-task` are optional product behaviors for teams that want SPLITBRIEF to create git history as part of the run.
+| Stack | Marker | typecheck | lint | test | Test files |
+|---|---|---|---|---|---|
+| `rust` | `Cargo.toml` | `cargo check` | `cargo clippy --no-deps` | `cargo test` | `#[cfg(test)]` blocks in the changed file |
+| `go` | `go.mod` | `go vet ./...` | `golangci-lint run` with `.golangci.y*ml`, else `staticcheck ./...` when it is on `PATH` | `go test ./...` | `*_test.go` |
+| `python` | `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements.txt`, `Pipfile` | `mypy .` with `[tool.mypy]`/`mypy.ini`, `pyright` with `pyrightconfig.json` | `ruff check .` with `[tool.ruff]`/`ruff.toml`, else `flake8` with `.flake8` | `uv run pytest` with `uv.lock`, `poetry run pytest` with `poetry.lock`, else `pytest` | `test_*.py`, `*_test.py` |
+| `typescript` | `tsconfig.json`, or `typescript` in `package.json` dependencies | `npx tsc --noEmit` | read-only `lint` script, else `npx eslint .`, else `npx biome check .` | `npm test` when `scripts.test` exists | `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `__tests__/*.ts` |
+| `javascript` | `package.json` | — | same as typescript | `npm test` when `scripts.test` exists | `*.test.js`, `*.spec.js`, `*.test.mjs` |
 
-Leave `workflow.git.commitStrategy: none` (the default) if you want SPLITBRIEF to keep changes unstaged for manual review.
+A blank cell means the stack has no default for that stage, so the stage is skipped unless you configure a command.
+
+**Resolution ladder.** Each stage resolves through `config → manifest → discovered → stack default → none`: an explicit `validation.{typecheck,lint,test}Command`, then a `package.json` script / `Makefile` / `justfile` target / `pyproject` section of that name, then the command the planner discovered while reading the repo, then the stack default. When every rung is empty the stage is recorded as `skipped` with the reason `no <stage> command for an unrecognised stack` — never as passed — and a run whose stages are all skipped that way prints `gates: NONE — review-only` once and leans on the review seat instead. SPLITBRIEF never falls back to `npm test` or `npx tsc --noEmit` on a project that is not a JavaScript or TypeScript one.
+
+**How to use.** Set `validation.{typecheck,lint,test}` on or off, pin the stack with `validation.stack` when the markers are ambiguous, override a single command with `validation.{typecheck,lint,test}Command`. Optionally auto-create a branch with `workflow.git.createBranch: true` (writes to `splitbrief/<slug>`).
+
+Review the changes and commit them manually.
+
+Existing staged content, including partial staging, remains the user’s.
 
 ```yaml
 validation: { typecheck: true, lint: true, test: true, testCommand: "npm test" }
 workflow:
-  git: { commitStrategy: none, createBranch: false }
+  git: { createBranch: false }
 ```
 
-Events: `validate`, `git_commit`, `git_checkpoint`, `git_branch_created`.
+Events: `validate`, `git_branch_created`. Historical `git_commit` and `git_checkpoint` records remain replayable, but new runs never publish them.
 
 ### Retry + escalation logic
 
-**What it does.** A failing task retries up to `workflow.maxRetries` (default 3) before escalating. Escalation then runs three tiers in order: **tier 0 — intermediate** (a paid mid-tier API model retries, only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`), **tier 1 — hint** (planner suggests a fix that the implementer applies, for backends with `supportsHintEscalation`), then **tier 2 — full** (the planner writes the code itself).
+**What it does.** A failing task retries up to `workflow.maxRetries` (default 2) before escalating. Escalation then runs the supported help tiers in order: **tier 0 — intermediate** (a paid mid-tier API model retries, only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`), **tier 1 — hint** (planner suggests a fix that the implementer applies, for backends with `supportsHintEscalation`). Exhaustion enters recovery; the planner never automatically writes the implementation.
 
 **How to use.** Tune `workflow.maxRetries` and the optional intermediate tier:
 
 ```yaml
-workflow: { maxRetries: 3 }
+workflow: { maxRetries: 2 }
 escalation:
   intermediateProvider: ollama
   intermediateModel: llama3.1
 ```
 
-**When to use.** Set `escalation.intermediateProvider` to add a mid-tier model between the cheap implementer and the expensive planner; it is active by default once configured. Set `escalation.enabled: false` to disable that intermediate tier without removing the provider config.
+**When to use.** Set `escalation.intermediateProvider` to add a mid-tier model between the implementer and the planner; it is active by default once configured. Set `escalation.enabled: false` to disable that intermediate tier without removing the provider config.
 
-Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`. Tokens consumed during escalation are tracked separately (`escalationInput` / `escalationOutput`) so you can see how much "rescue" cost.
+Outcome events include `task_retry`, `task_escalating` and `hint_failed`; the legacy-named `task_full_fail` still records exhaustion without dispatching a full-planner rung. Escalation usage remains recorded and can be inspected through `/usage`.
 
 ### Final review by the review seat
 
@@ -145,23 +161,7 @@ Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`
 
 **How to use.** Always runs in every mode. Output is written to `.splitbrief/sessions/<id>/review.md`. Fires `workflow_complete` and writes `summary.json`.
 
-**When to use.** No opt-out — final review is the closing safety check before the workflow is marked complete. Pre-final-review snapshots can be enabled (see Snapshots below).
-
-### Run explain
-
-**What it does.** Reads existing session artifacts and explains routing choices, selected profiles, context fit and fallback, cost confidence, unknown pricing, retries, escalations, task review gates, final review status, and readiness warnings. It is artifact-only: no planner, implementer, provider, validation, or network calls.
-
-**How to use.**
-
-```bash
-splitbrief explain                         # active in-progress session
-splitbrief explain --session <id>          # completed or inactive session
-splitbrief explain --session <id> --json   # machine-readable
-```
-
-**When to use.** After a run, or while a run is paused, when you want to know why SPLITBRIEF picked a worker, why cost is partial or unknown, what retries/escalations happened, and which artifacts to inspect next.
-
-**Output.** Human output is compact and references artifact paths such as `summary.json`, `review-packet.json`, `readiness.json`, and `session.jsonl`. It does not embed full plans, Task Briefs, logs, diffs, or source code. JSON output is a single `{ type: "run_explain", explain: ... }` object.
+**When to use.** No opt-out — final review is the closing safety check before the workflow is marked complete.
 
 ---
 
@@ -169,9 +169,9 @@ splitbrief explain --session <id> --json   # machine-readable
 
 ### Task Briefs (the planner-implementer contract)
 
-**What it does.** The Task Brief is a single-file, self-contained executable contract with nine semantic sections: Identity, Intent, Scope, Code Context, Implementation Plan, Validation, Constraints, Escalation, Evidence. Persisted as `Task[]` in `state.json`; transported as `tasks.md`.
+**What it does.** The Task Brief is a self-contained executable contract for one slice — one verifiable change, whose files are listed under `files` and anchored by `file` — with nine semantic sections: Identity, Intent, Scope, Code Context, Implementation Plan, Validation, Constraints, Escalation, Evidence. A slice is often one file; the planner's budget is five files and roughly 150–200 changed lines. Persisted as `Task[]` in `state.json`; transported as `tasks.md`.
 
-**How to use.** Briefs are written by the planner in every mode. External tools consume the active brief by reading `.splitbrief/sessions/<id>/tasks.md` or the task list in `.splitbrief/sessions/<id>/state.json`. Brief hash metadata is recorded in evidence, drift, and handoff/MCP artifacts when available; `state.json` task objects do not carry `briefHash`.
+**How to use.** Briefs are written by the planner in every mode. External tools consume the active brief by reading `.splitbrief/sessions/<id>/tasks.md` or the task list in `.splitbrief/sessions/<id>/state.json`. Brief hash metadata is recorded in evidence and drift artifacts when available; `state.json` task objects do not carry `briefHash`.
 
 **Example (truncated `tasks.md`):**
 
@@ -180,6 +180,9 @@ splitbrief explain --session <id> --json   # machine-readable
 id: T001
 title: Add JWT middleware
 file: src/auth/middleware.ts
+files:
+  - src/auth/middleware.ts
+  - tests/auth/middleware.test.ts
 action: create
 dependsOn: []
 ---
@@ -202,13 +205,13 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 | `research.md`, `clarifications.md`, `constitution-check.json`, `analyze.json` | `speckit` only |
 | `review.md`, `summary.json`, `evidence.json` | all modes |
 
-**How to use.** Files are auto-written at phase boundaries. Inspect them in-place or via `/handoff` (see below).
+**How to use.** Files are auto-written at phase boundaries. Inspect them in-place.
 
 ### Brief quality gate
 
-**What it does.** A deterministic linter scores every Task Brief before implementation begins. Error codes are `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, and `missing_implementation_steps`. `missing_type_definitions` is a warning. Any error-level issue blocks transition to `implementing`.
+**What it does.** A deterministic linter scores every Task Brief before implementation begins. Error codes are `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `write_outside_declared_files` (a step writes a path the brief never declared), `anchor_not_in_files` (`file` is missing from `files`), and `missing_implementation_steps`. `missing_type_definitions` and `test_without_code` (a test brief whose subject is created in another brief — fold the two into one slice) are warnings. Any error-level issue blocks transition to `implementing`.
 
-**How to use.** Always runs in all three modes. Result persists at `brief-quality.json`; events are `brief_quality_passed` or `brief_quality_failed`. Visible in the summary screen as a `Brief quality` row.
+**How to use.** Always runs in all three modes. Result persists at `brief-quality.json`; events are `brief_quality_passed` or `brief_quality_failed`. Visible in a closed run’s `Run` block's `Briefs` row (`quality 0.92 · 1 warning`), present only when the gate ran.
 
 **When to use.** Out of the box. To inspect after the fact, read `.splitbrief/sessions/<id>/brief-quality.json`.
 
@@ -234,12 +237,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 The review surface includes a compact execution-readiness scorecard: `ready`, `routing pending`, `split/overflow`, `risky/tight`, `stale/conflict`, and `missing checks`. Unknown, stale, pending, or missing routing/context fit does not count as ready.
 
-**How to use.** The brief review gate uses the simple review surface. `workflow.briefReview: rich` is deprecated and treated the same as `simple` for compatibility. The view exposes approve/comment/reject/edit text commands. Approve reads `.splitbrief/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor, then return to the gate on parse or quality errors.
-
-```yaml
-workflow:
-  briefReview: simple
-```
+**How to use.** The brief approval gate runs independently of the ignored/deprecated `workflow.briefReview` compatibility field. Legacy `rich` fails config load. The view exposes approve/comment/reject/edit text commands. Approve reads `.splitbrief/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor, then return to the gate on parse or quality errors.
 
 ### Task Brief external editor handoff
 
@@ -251,76 +249,19 @@ After the editor exits successfully, SPLITBRIEF re-reads `.splitbrief/sessions/<
 
 ---
 
-## Cost telemetry
+## Spend
 
-### Where spend appears
+### Where usage appears
 
-**What it does.** There is no persistent cost header. Spend surfaces in four places, each fed from the cost store on `cost_update`:
+Token usage and monetary estimates are available only in explicitly opened usage details.
 
-- **Sidebar footer** — `/sidebar` toggles it; hidden by default and unavailable below 120 columns. Last line reads `Local NN%` — the share of tasks finished without escalating — followed by the run's spend when something priced ran: `Local 80% · $0.42`.
-- **Ctrl+G — `Cost · breakdown`** — the full accounting surface: per phase cost, the input/output token split, `cache NN%` where the runner reports cache reads, and per-task totals with per-attempt detail.
-- **Summary screen** — leads with `$0.42 actual vs $1.80 baseline · 77% saved` when the run produced a savings estimate.
-- **Budget gate** — only with `workflow.maxBudget` set: warns at 80%, pauses at `workflow.budgetPauseThreshold` (default `0.85`), stops at the ceiling.
-
-**How to use.** No setup. `/copy cost` puts the sidebar string on your clipboard. Runners that expose no pricing are reported as unpriced, never as `$0.00`.
-
-### Cost drilldown overlay (`Ctrl+G`)
-
-**What it does.** Opens a per-phase and per-task breakdown: horizontal bars for each planner phase showing input vs output token split (output is typically 3–5x more expensive) and cache-hit %; per-task bars showing total tokens.
-
-**How to use.** Press `Ctrl+G` from any workflow screen. Any key dismisses it.
-
-**When to use.** When you want to see which planner phase or which task is dominating the bill.
+Open `/usage` from a live or saved workflow to inspect reported counters and available estimates. Missing counters remain unknown; partial totals keep their coverage label. The main workflow, build progress, sidebar and closed-run ledger do not display token counts or monetary estimates. There is no Show spend setting. `/copy cost` is an explicit export and does not add a counter to the main screen.
 
 ### Pricing catalog
 
-**What it does.** Per-model pricing for any metered API runner, including a custom endpoint you configure yourself. Rates follow the model, not the provider preset: a `vendor/model` id is rated through that vendor's catalog row, a bare id is matched across the catalog. `local` replaces the dollar amount when the implementer is unpriced (for example local Ollama or an OpenCode/Claude-Code subscription) so no fake savings are shown.
+**What it does.** Per-model pricing for any metered API runner, including a custom endpoint you configure yourself. Rates follow the model, not the provider preset: a `vendor/model` id is rated through that vendor's catalog row, a bare id is matched across the catalog. `local` replaces the dollar amount when the implementer is unpriced (for example local Ollama or an OpenCode/Claude-Code subscription).
 
 **How to use.** Pricing is auto-resolved from the model id against the models.dev catalog, the runtime model cache, or the bundled fallback (see `src/engine/providers/pricing-resolver.ts`). Local, CLI and shell/agent runners are never priced.
-
-### Budget pause gate
-
-**What it does.** At 80% of `workflow.maxBudget` a warning event fires. At the configurable pause threshold (default 0.85), the task loop persists a `budget-paused` recovery issue and prompts with filtered actions. Below max budget the user can continue, pause, or abort. At 100%, the workflow persists `budget-exceeded`; ordinary continue is not offered.
-
-**How to use.**
-
-```yaml
-workflow:
-  maxBudget: 5.00
-  budgetPauseThreshold: 0.85   # 0.0–1.0; default 0.85
-```
-
-Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_exceeded` (100%), followed by `recovery_prompted` when a persisted recovery decision is required. Headless `--json` mode emits `recovery_required` with available actions and exits non-zero instead of blocking.
-
-### Cost-gated plan approval
-
-**What it does.** Before implementation starts, the brief review gate shows a cost-aware approval prompt: task count, estimated implementation cost, all-planner comparison cost, and savings percentage. Transforms rubber-stamp approval into an informed cost decision.
-
-**How to use.** Always active in modes with approval gates (standard, speckit). The prompt renders automatically when briefs are ready.
-
-**Format.** `12 tasks | Est. $0.14 | All-planner: ~$1.20 | Saved: 88% | Approve? [Y/n]`
-
-### Hero savings stat (summary screen)
-
-**What it does.** After a completed workflow, the summary screen reports what the run actually cost against an all-planner baseline, with the percentage difference. Copy-pasteable format for sharing. This is a reported outcome of the run, not a claim SPLITBRIEF makes up front — see [VISION.md](./VISION.md) for what the tool promises instead.
-
-**Format.** `$0.12 actual vs $0.95 baseline · 87% saved`
-
-**How to use.** Always shown on the post-run summary screen when pricing data is available. When the implementer is unpriced (local/subscription), `local` replaces the dollar amount.
-
-### Cumulative stats (`splitbrief stats`)
-
-**What it does.** Tracks cumulative cost savings for saved session summaries with cost data in `.splitbrief/stats.json`. Shows total sessions, total spend, all-planner estimate, and aggregate savings percentage.
-
-**How to use.**
-
-```bash
-splitbrief stats
-splitbrief stats --json
-splitbrief stats --rebuild
-```
-
-**When to use.** To see the cumulative value of the planner/implementer split over time. Use `--rebuild` to reconstruct `.splitbrief/stats.json` from completed session history after the cache is deleted, corrupted, or copied between projects. Retention hook: "You've saved $47 across 23 sessions this month."
 
 ### Planner heartbeat
 
@@ -342,27 +283,52 @@ splitbrief stats --rebuild
 
 ## Safety and control
 
+### Stopping a run
+
+**What it does.** During a live workflow, `esc` opens compact **Stop options** above the composer. The transcript stays visible and keeps updating; the draft is preserved. Select a row to see its consequence:
+
+| Row | Consequence |
+|---|---|
+| `Stop now` | stop execution; keep partial changes |
+| `Pause after this brief` | finish `T<id>` including checks and review; do not start `T<next>` |
+| `End run` | stop execution; close this run; keep changes |
+
+The second row appears only while a brief is running, and reads `Keep running` once a pause is pending. `↑↓` selects, `Enter` executes, a second `esc` performs Stop now, and `Tab` dismisses without changing the run. No letter keys trigger an action.
+
+**How to use.**
+
+- `esc` — open the menu, including with a draft. `esc esc` stops resumably; another Esc returns home after cleanup and saving. Once parked, one Esc returns home.
+- `ctrl+c` — stop active work; another press quits after cleanup and saving. At rest/home, press twice within two seconds to quit.
+- `ctrl+q` or `/quit` — stop safely, save the session, then exit.
+- `/resume` — continue a parked run; the stopped menu also offers Resume, End run and Back to sessions. `/stop` reopens the menu. A run at rest accepts Enter to continue; typed instructions become its steer.
+- `/end` — close a parked run and keep its changes. After that nothing picks it up.
+
+**On-screen.** The byline reports the state and the legend row carries the keys: `Stopping T<id> · Waiting for processes to exit · <t>` (hint `esc back after stop · ctrl+c quit after stop`) while owned processes remain, then `Finishing cleanup and saving`; `Forcing remaining processes to exit` after the grace window; `Finishing T<id>` with `Pause requested; no next brief will start` for a boundary pause; and finally one of `Paused at T<id> · Partial changes kept` (hint `/resume · /stop options · esc back to sessions · ctrl+c quit`), `Paused after T<id> · <n> of <m> briefs complete`, or `Cancelled by you at T<id> · Changes kept`. No option reverts files: git is still the layer that reverses a run.
+
 ### Recovery stops
 
-**What it does.** When SPLITBRIEF cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, retry exhaustion, dependency-blocked tasks, user-edit or approval-promotion conflicts, budget pause, and budget exceeded.
+**What it does.** When SPLITBRIEF cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, retry exhaustion, dependency-blocked tasks, user-edit or approval-promotion conflicts, a scope violation that survived its revert retry, a refused implementer command line, two consecutive implementer timeouts on one brief, a denied approval, a failed snapshot, and a final review that still fails after its fix cycles. The planner seat raises them too — a failed planner call, a `tasks` call that parsed no briefs, a hard constitution violation, a briefs gate that stopped making progress, and a brief-quality repair that failed where no gate exists to decide — and every issue carries the `seat` it belongs to, so the panel and the swap offer name the seat that is actually stuck. Every one of them also fires the `on_halt` hook.
 
 **Actions.** Available actions are filtered per issue:
 
 | Action | Current behavior |
 |---|---|
-| `retry-same-worker` | Resets only the current task and reruns it in a fresh worker context. |
-| `continue` | Allowed only for budget pause below max budget or safe unrelated user edits; never for `budget-exceeded`. |
+| `retry-same-worker` | Retries the recorded PLAN/REVIEW step without requiring a task; BUILD resets and reruns only the matching current task. |
+| `continue` | Allowed only for safe unrelated user edits. |
 | `skip-current-task` | Marks the task skipped, records evidence, and leaves dependents for normal blocked-dependency recovery. |
 | `pause-run` | Leaves the active session resumable with the issue intact. |
-| `abort-workflow` | Ends through the normal intentional shutdown path without staging or committing. |
+| `end-run` | Closes the run: `state.json` records `closed`, the run lists as `ended`, and nothing reverts. |
+| `revise` | Queues the operator's correction for the next planner turn, then clears the halt. |
+| `revise-spec` | Rewinds to `specifying` with the operator's note, then clears the halt. |
 | `route-bigger-worker` | Resets the current task and reruns it with the larger implementer profile named by the recovery issue. |
+| `switch-seat` | Offered for the halts the seat itself caused — `runner-usage-limit`, `runner-unauthenticated`, `implementer-recipe-invalid`, `runner-timeout-repeated`, `planner-call-failed` — on the plan seat as readily as the build seat: moves the blocked seat to another ready detected tool and re-prepares the same session on it. |
 | `planner-split-rebase` | Legacy/manual only; new recovery prompts do not offer it, and old states block with `planner-proposal-required`. |
 
-**Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero.
+**Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero; both headless renderings print the recommended action and the exact `splitbrief continue <session> --action …` line to stderr, and `continue --action <skip|retry|switch-seat:<tool>[:<model>]|end-run>` applies it without a TUI.
 
 ### Tiered approval gates (auto / sticky / confirm)
 
-**What it does.** Declared implementer file writes are classified before application: `auto` (proceed silently), `sticky` (prompt once per session per pattern; persisted to `.splitbrief/approvals.json`), `confirm` (always require typed confirmation phrase). The current classifier produces `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, and `package_change`; retained config keys such as `validation` and `network` do not sandbox shell commands or network access. Composes orthogonally with the document-level approval loop.
+**What it does.** Declared implementer file writes are classified before application: `auto` (proceed silently), `sticky` (prompt once per session per pattern; persisted to `.splitbrief/approvals.json`), `confirm` (always require typed confirmation phrase). The classifier produces `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, and `package_change`, and `approval.tiers` accepts exactly those five keys. There is no tier for shell commands or network access; SPLITBRIEF does not sandbox either. Composes orthogonally with the document-level approval loop.
 
 **How to use.** Defaults are deterministic; override via `approval:` config block. Inspect or clear sticky grants:
 
@@ -375,46 +341,21 @@ Or in the TUI: `/approval list` / `/approval clear`. Headless mode fails fast at
 
 **Events.** `approval_prompted`, `approval_granted`, `approval_rejected`, `approval_sticky_recorded`. Rejections are also written to the evidence ledger with a reason string.
 
-### Snapshots (`splitbrief snapshot create / list / restore / diff`) (advanced run safety)
+### Snapshots (advanced run safety)
 
-**What it does.** Content-addressed working-tree snapshots with a baseline + delta layout under `.splitbrief/sessions/<id>/snapshots/`. Restore is hash-guarded — files modified after the snapshot was taken are reported as conflicts and skipped unless `--force` is passed.
+**What it does.** `/run accept` writes a content-addressed snapshot of the working tree under `.splitbrief/sessions/<id>/snapshots/` (baseline + delta layout) and records the run as accepted in the run ledger. That accepted snapshot is the only snapshot a run writes.
 
-**How to use.**
+**How to use.** `/run accept` after a run. `/run reject confirm` is its counterpart command, but no phase records a pre-run baseline for it to roll back to, so it answers `No run snapshot to reject.` before an accept and `Run already accepted at snapshot <id>.` after one.
 
-```bash
-splitbrief snapshot create [--name "before-refactor"]
-splitbrief snapshot list
-splitbrief snapshot restore <id-or-name> [--force]
-splitbrief snapshot diff <id-or-name>          # exits non-zero when changes detected
-```
+**When to use.** To keep a record of the tree you accepted. It is not a run-undo: git is the layer that reverses a run, and SPLITBRIEF leaves the changes unstaged for exactly that reason.
 
-Manual snapshots require the CLI command above; there is no `/snapshot` slash command. Run-level TUI accept/reject is available through `/run accept` and `/run reject confirm`; reject is hash-guarded and preserves user edits as conflicts. Auto-triggers (`preTask`, `postTask`, `preFinalReview`) are configurable without manual invocation.
-
-**When to use.** Bookmark known-good states before risky refactors; recover from a planner that wandered. Layered on top of git — never replaces it.
-
-**Excluded paths.** `.git/`, `.splitbrief/`, `node_modules/`, `.trees/` are non-negotiably excluded (`ALWAYS_EXCLUDED` invariant in `engine/snapshots/files.ts`). Including them would cause exponential snapshot growth. `.trees/` exclusion also prevents `--worktree` checkouts from leaking into cross-worktree snapshots. The run's own isolation worktree lives outside the project tree entirely (`$XDG_STATE_HOME/splitbrief/trees/...`, default `~/.local/state/...`), so the snapshot walker never sees it.
-
-### Auto-snapshots
-
-**What it does.** Configurable triggers fire snapshots automatically at orchestrator boundaries.
-
-**How to use.** They all default to off:
-
-```yaml
-snapshots:
-  auto:
-    preTask: true              # before each task starts
-    postTask: true             # after each successful task (status === 'done')
-    preFinalReview: true       # before the final-review planner call
-```
-
-Auto-snapshot failures emit a `warning` event and do not abort the run. See [CONFIGURATION.md §snapshots](./CONFIGURATION.md#10-snapshots).
+**Excluded paths.** `.git/`, `.splitbrief/`, `node_modules/`, `.trees/` are non-negotiably excluded (`ALWAYS_EXCLUDED` invariant in `engine/snapshots/files.ts`). Including them would cause exponential snapshot growth. The run's own isolation worktree lives outside the project tree entirely (`$XDG_STATE_HOME/splitbrief/trees/...`, default `~/.local/state/...`), so the snapshot walker never sees it.
 
 ### Drift detection (final review)
 
 **What it does.** Before final review, the orchestrator computes a deterministic drift report comparing the Task Brief against the actual git diff and the evidence ledger. Findings include out-of-scope file edits, missing target files, orphan diffs, out-of-bounds substring matches, missing observed evidence, and failed tasks that nevertheless left changes.
 
-**How to use.** Always runs. Persisted as `.splitbrief/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `score`, `errorCount`, `warningCount`. Visible on the summary screen as a `Drift` row.
+**How to use.** Always runs. Persisted as `.splitbrief/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `score`, `errorCount`, `warningCount`. Visible in a closed run’s `Run` block's `Scope` row — `score 1.00`, `score 0.60 · 1 error · 1 warning`, or `not checked`. That row is the only place the screen names the concept.
 
 **When to use.** No setup needed; the report is the deterministic input to the planner reviewer's qualitative judgment.
 
@@ -433,220 +374,9 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ### Evidence ledger
 
-**What it does.** Per-task validation, retry, escalation, and final-review log. Captures expected evidence (from `task.evidence` ++ `task.tests`) alongside observed evidence strings the orchestrator emits (`typecheck passed`, `lint passed`, `test passed`, `diff written for <file>`, `task reached done`, `task reached escalated`, `final review written`, `skipped: <reason>`). Every entry carries `briefHash` so post-hoc audits can detect brief mutations.
+**What it does.** Per-task validation, retry, escalation, and final-review log. Captures expected evidence (from `task.evidence` ++ `task.tests`) alongside observed evidence strings the orchestrator emits (`typecheck passed`, `lint passed`, `test passed`, `diff written for <n> files`, `task reached done`, `task reached escalated`, `final review written`, `skipped: <reason>`). A stage that did not run is recorded as `test skipped (<reason>)` with `skipped: true` on the entry — never as passed — and a skipped test stage counts as missing evidence in the drift report. Every entry carries `briefHash` so post-hoc audits can detect brief mutations.
 
-**How to use.** Always runs. Persisted at `.splitbrief/sessions/<id>/evidence.json` (mode 0o600). Summary screen shows `Evidence: N/M validated`.
-
----
-
-## Advanced handoff and interop
-
-### External agent handoff packs (advanced)
-
-**What it does.** Renders the compiled Task Brief into a self-contained folder another tool can consume. This is an advanced escape hatch for manual handoff; it is not the primary execution path and SPLITBRIEF never spawns an external agent for you. Built-in targets:
-
-| Target | Consumed by |
-|---|---|
-| `spec-kit` | GitHub Spec Kit folder convention |
-| `agents-md` | AGENTS.md / Cursor / opencode |
-| `claude-code` | Claude Code CLI prompt + commands |
-| `copilot-issue` | Single-file GitHub issue body (`issue.md`) |
-
-Each pack is an inert artifact.
-
-**How to use.**
-
-```bash
-splitbrief handoff spec-kit                          # default target
-splitbrief handoff claude-code --task T003           # single-task pack
-splitbrief handoff agents-md --out ./my-handoff      # custom output dir
-splitbrief handoff --list                            # list available targets
-```
-
-In the TUI: `/handoff <target> [task-id]` writes to `.splitbrief/sessions/<id>/handoffs/<target>/`.
-
-**Pack shape.** Most built-in targets write `manifest.json` (with `briefHash`), `spec.md`, `plan.md`, `constitution.md` (when `.specify/memory/constitution.md` is present), `tasks/T001.md`, `tasks/T002.md`, …, and `README.md`. `copilot-issue` is the exception: it writes `manifest.json` and one self-contained `issue.md` body with the selected tasks embedded.
-
-### Custom handoff renderers (advanced)
-
-**What it does.** Drop a `.js` or runtime-loadable `.ts` file at `.splitbrief/handoff-renderers/<name>.<ext>` exporting a default function. `splitbrief handoff --list` discovers it. Executing it requires `splitbrief handoff <name> --allow-custom-renderer` or `trust.customRenderers: true`.
-
-**How to use.**
-
-```js
-// .splitbrief/handoff-renderers/jira.js
-export default async function render(input) {
-  return { files: [{ path: 'JIRA.md', content: '...' }] };
-}
-```
-
-```bash
-splitbrief handoff jira --allow-custom-renderer
-```
-
-**When to use.** When you need to push the brief into a tool SPLITBRIEF does not ship a renderer for.
-
-### MCP resources and evidence tools server (advanced)
-
-**What it does.** A localhost-only HTTP MCP server exposing supported session resources via standard `resources/list` / `resources/read`: the sessions index, `manifest.json` when canonical `summary.json` and `state.json` exist, `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json` when present. Missing concrete resources return resource-not-found; unavailable manifests are not advertised. Bound to `127.0.0.1`, Bearer-token authenticated (one-shot token printed at startup). With `workflow.persistTranscript: false`, the sessions index and `state.json` read resource replace transcript-sensitive feature, task, queued-message, and queued-question text.
-
-MCP also exposes constrained evidence tools: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. These tools only update `.splitbrief/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shells, write project files, or dispatch implementation work. General tool calls belong to the selected planner or implementer runner.
-
-**Transport.** Implements the MCP Streamable HTTP transport (`2025-11-25`). Accepts `POST /mcp` for requests and notifications. `GET /mcp` returns `405 Method Not Allowed` with an `Allow: POST` header (SSE not implemented). Non-local browser `Origin` headers are rejected with `403`. The server supports `MCP-Protocol-Version: 2025-11-25`; when the request header is missing, the server defaults to that current supported version and echoes it in the response header. Unsupported protocol-version headers return `400` with a JSON-RPC error. Notifications receive `202 Accepted` (no body); requests receive `200` with a JSON-RPC response body.
-
-**How to use.**
-
-```bash
-splitbrief mcp serve --port 4321 --session <id>
-splitbrief mcp serve --all-sessions               # expose every session in the project
-```
-
-External MCP-aware tools (Claude Code, Codex, Cursor) configure the URL plus the printed token. URI scheme is forward-compatible with the handoff pack paths. The bearer token is a one-shot random value generated in-memory at server startup (`src/engine/mcp/auth-token.ts` — `generateToken()`); it is never persisted to disk. Every `manifest.json` exposed by the server includes `briefHash`.
-
-**When to use.** Live mode for external agents that need to inspect SPLITBRIEF state without a copied handoff pack and report evidence back to the active ledger. MCP does not become SPLITBRIEF's project write path; implementation remains inside the configured planner or implementer runner.
-
----
-
-## Advanced worktrees and parallel sessions
-
-### `splitbrief start --worktree [name]`
-
-**What it does.** Creates an isolated git worktree at `.trees/<slug>` on a fresh `splitbrief/<slug>` branch and runs the session inside it. Each worktree has its own `.splitbrief/active` pointer and session directory, so sessions cannot conflict at the SPLITBRIEF level.
-
-**Name restrictions.** The `<name>` argument is validated before any worktree or branch is created. Names must match `[A-Za-z0-9_][A-Za-z0-9._-]{0,63}` — no `/`, `\`, `..`, no leading `.` or `-`, and no shell-sensitive characters. Invalid names (including names that contain path separators or would navigate outside `.trees/`) are rejected immediately with a descriptive error.
-
-**How to use.**
-
-```bash
-splitbrief start --worktree feature-a "add user auth"
-splitbrief start --worktree feature-b "refactor billing"
-```
-
-The source worktree must be clean before creation. `--detach` combination validation (missing feature, `--json`/`--rpc` conflict, Windows) runs **before** the worktree is created so a failed validation never leaves behind a `.trees/<slug>` directory or a `splitbrief/<slug>` branch. With `--detach --worktree`, worktree selection happens before the detached server is spawned.
-
-**When to use.** Isolate unrelated sessions in separate working directories; A/B-test two implementer model configs against the same brief; keep a long planner exploration alive while making quick edits elsewhere. This is not same-directory parallel writing, and same-checkout fan-out is out of scope.
-
-**Caveat.** Filesystem and SPLITBRIEF state are isolated; **runtime** isolation (ports, environment) is the user's responsibility. See [WORKTREES.md](./WORKTREES.md) for the isolation gap and mitigations.
-
-### `splitbrief worktree list / switch / remove`
-
-**What it does.** Manage worktrees registered under `.trees/`.
-
-**How to use.**
-
-```bash
-splitbrief worktree list                              # path, branch, status, session, phase, updated
-splitbrief worktree switch <name>                     # print cd instructions for the worktree
-splitbrief worktree remove <name> [--force] [--delete-branch]
-```
-
-`remove` refuses if the worktree has uncommitted changes or a live session, unless `--force` is passed. Forced removal prints specific warnings with the live session id when known and the uncommitted file count when known. Parallel `--parallel N` fan-out is deferred until isolated ownership boundaries are specified; same-directory parallel writes remain out of scope.
-
----
-
-## Advanced server-client architecture
-
-### `splitbrief start --detach`
-
-**What it does.** Spawns a background server process that owns the orchestrator and subprocess lifetime, then exits the foreground. Closing the terminal no longer kills the workflow.
-
-**How to use.**
-
-```bash
-splitbrief start --detach --mode speckit "long planner run"
-```
-
-Prints the session ID and exits. The server logs to `.splitbrief/sessions/<id>/server.log`. On spawn, writes `.splitbrief/sessions/<id>/lockfile.json` (heartbeat-tracked, see SCD-03).
-
-**Constraints.** `--detach` requires a feature argument (cannot be omitted). It cannot be combined with `--json` or `--rpc` (`start/register.ts` throws before worktree creation).
-
-### `splitbrief attach [session-id]`
-
-**What it does.** Connects a TUI client to a running background session over a per-session UNIX-domain socket (`ipc.sock`). Auto-resolves the session-id when exactly one is running. On attach, the client replays `session.jsonl` to rebuild full TUI state, then subscribes to the live event stream — no LLM call needed.
-
-**How to use.**
-
-```bash
-splitbrief attach                # picks the only running session
-splitbrief attach <id>           # explicit
-```
-
-(Not supported on Windows — attach requires Unix domain sockets.)
-
-### `splitbrief detach [session-id]`
-
-**What it does.** Sends the same detach request as the TUI Ctrl-D path, disconnecting an attached client without stopping the background server. If `session-id` is omitted, it targets the unique running session in the project and errors when there are zero or multiple running sessions.
-
-**How to use.**
-
-```bash
-splitbrief detach
-splitbrief detach <id>
-```
-
-Reattach with `splitbrief attach <id>`. The server remains visible in `splitbrief ps`.
-
-### `splitbrief ps`
-
-**What it does.** Lists running and recently-finished SPLITBRIEF workflows in the project. Status: `running | exited | crashed | unknown`. Shows pid, mode, elapsed time, feature name, sorted newest-first.
-
-```bash
-splitbrief ps
-```
-
-If a session crashed, `splitbrief attach` shows a crash diagnostic with last-alive time and signal/cause before offering resume.
-
-### Event replay on attach
-
-**What it does.** A freshly attached client reads `session.jsonl` from disk and reconstructs the TUI state before subscribing to the live stream. Replay never re-issues planner calls.
-
-### Session continuity (`splitbrief continue` / `splitbrief last`)
-
-**What it does.** One command for session lifecycle. `splitbrief continue` figures out the right thing for the active session, or for the only running session when there is no active pointer. `splitbrief last` targets the newest lockfile-backed session. Replaces the mental model of choosing between `ps`/`attach`/`detach`/`resume` for the common case.
-
-**How to use.**
-
-```bash
-splitbrief continue         # active session, or only running session
-splitbrief continue 1       # numeric alias from ps output
-splitbrief last             # always the most recent session
-```
-
-**When to use.** Any time you return to a terminal and want to pick up where you left off.
-
-### Numeric session aliases in `splitbrief ps`
-
-**What it does.** `splitbrief ps` output includes a `#` column with numeric aliases (1, 2, 3...). These aliases are accepted by `attach`, `continue`, and other session-targeting commands.
-
-**How to use.**
-
-```bash
-splitbrief ps               # shows #1, #2, #3...
-splitbrief attach 1         # instead of the full session ID
-splitbrief continue 2
-splitbrief handoff --session 1
-splitbrief snapshot list --session 1
-```
-
----
-
-## Session tree
-
-### Append-only JSONL tree model
-
-**What it does.** Session data is stored as append-only JSONL entries forming a tree: `{id, parentId, type, timestamp, ...payload}`. A `leafId` pointer tracks the active execution path. Recovery decisions create branches — nothing is deleted. Sessions survive crashes, branching is free, and the full audit trail is preserved.
-
-**Entry types.** Registered entry types: `session-start`, `plan-step`, `agent-invocation`, `recovery-decision`, `file-state`, `cost-checkpoint`, `branch-summary`.
-
-**How to use.** Automatic. The tree model underlies all session persistence. Implementation: `src/core/sessions/tree/`.
-
-### Branch summarization
-
-**What it does.** The tree schema can store `branch-summary` entries for summarized branch context. Current workflow recording preserves recovery decisions and branch history; it does not automatically call an LLM to summarize abandoned branches.
-
-**How to use.** No user action is needed for branch history. `branch-summary` is a schema-supported entry type for code paths that explicitly write branch summaries.
-
-**When to use.** Inspect branch history when diagnosing recovery decisions or comparing attempts.
+**How to use.** Always runs. Persisted at `.splitbrief/sessions/<id>/evidence.json` (mode 0o600). A closed run reads it twice over: it seeds the `Briefs` section with every planned brief, and its validated count closes the Run block's `Review` row (`3/3 briefs validated`).
 
 ---
 
@@ -654,7 +384,7 @@ splitbrief snapshot list --session 1
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input, the command palette, and RPC dispatch. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 27 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
+**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 27 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
 
 **Navigate**
 
@@ -685,9 +415,9 @@ splitbrief snapshot list --session 1
 | `/redo-task <task-id>` | Reset a task to pending and re-run it |
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/approval [list\|clear]` | List or clear sticky approval grants |
-| `/handoff <target> [task-id]` | Export handoff pack for an external agent |
 | `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
-| `/yolo` | Toggle file-write tiered approvals off/on |
+| `/resume` | Continue a paused or stopped run |
+| `/end` | Close the run, keeping every change on disk |
 
 **View**
 
@@ -696,21 +426,17 @@ splitbrief snapshot list --session 1
 | `/scroll <top\|bottom\|page-up\|page-down>` | Scroll the conversation |
 | `/activity` | Expand or collapse the latest activity batch |
 | `/diff` | Expand or collapse the latest diff (Ctrl+D) |
-| `/cost` | Show the cost breakdown (Ctrl+G) |
 | `/sidebar` | Show or hide the workflow sidebar |
+| `/tasks` | Show the brief list — opens the sidebar and leaves it open (at or below 120 columns there is no sidebar, so the command answers with the list itself) |
 
 **Input & output**
 
 | Command | Purpose |
 |---|---|
 | `/copy [message\|brief\|path\|command\|cost]` | Copy to clipboard |
-| `/export` | Export session as HTML report |
-| `/compact-transcript` | Summarize older transcript turns |
 | `/image <path> \| list \| remove <index-or-id>` | Attach, list or remove images for the next planner call |
 
 **Capability-aware `/image`.** The command is offered only when the PLAN seat can actually receive images — `cli` seats can, an `api` seat depends on its model, `shell` and `agent` never can. On a seat without vision the row is hidden and typing the command answers `PLAN seat cannot see images — pick a vision model with /crew plan`, instead of dropping the attachment silently at call time.
-
-**Aliases.** `/config` runs `/settings`; `/planner`, `/implementer` and `/reviewer` run `/crew plan`, `/crew build` and `/crew review`. They are kept for one release. Bare aliases ride their primary row in the palette — `/settings` renders as `/settings (/config)`; argument-bearing aliases get no palette row of their own and stay reachable by typing them in the composer or over RPC. All of them are listed in full — together with the removed names and where each one went — in [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
@@ -725,9 +451,9 @@ Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 ```yaml
 palette:
   customActions:
-    - id: write-handoff
-      label: "Write Claude handoff"
-      command: /handoff claude-code
+    - id: quick-mode
+      label: "Switch to quick mode"
+      command: /mode quick
 ```
 
 ### Help overlay (`Ctrl+/`)
@@ -742,37 +468,83 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 ### Settings overlay
 
-**What it does.** One overlay for crew, validation and workflow defaults. Open via `/settings` (Ctrl+,) or `/config`. Writes back to `.splitbrief/config.yaml`. Crew is its first section; there is no separate crew surface.
+**What it does.** One overlay for crew, validation and workflow defaults. Open via `/settings` (Ctrl+,). Writes back to `.splitbrief/config.yaml`. Crew is its first section; there is no separate crew surface.
+
+**The help block.** The bottom of the panel explains the highlighted row and nothing else. A labelled rule heads it — `Mode ────` to the right edge, the same rule a closed run's ledger uses for its sections — carrying the row's own label, or the seat word on a crew row. The block is bottom-anchored and five rows tall: the rule never touches the last row of the list, and under it sit at most three rows of help, so the legend stays put and nothing below it ever shifts as the cursor moves. A bounded number keeps its range on the line that names it (`Max retry attempts per task · 0–10`); an enum adds a row listing its options; `Mode` gets the whole shape table the `/mode ` completion rows show, one line per mode, with the mode the config is on painted bright and marked `current` on the right edge.
+
+**Reading the list.** Values are as bright as the labels they belong to; only the section headers, the help and the key legend stay dim. The blank row between sections is spent only where the list has rows to spare: below an 18-row list budget the sections close up, which is what keeps a settings row on screen at 80x24 rather than a gap. An unset `Test command` reads `auto`, the stack's own runner, not a dash. The legend names the one key the highlighted row answers to — `space cycle` on an enum, `space toggle` on a boolean, `⏎ edit` on a string or number, `⏎ change seat` on a crew row.
 
 ### Settings ∋ Crew
 
-**What it does.** The crew section is a rail, not a list of settings rows: one labelled row per seat — `PLAN`, `BUILD`, `REVIEW` — each carrying the seat identity (`Claude Code CLI · Claude Sonnet 4`) and a right-aligned posture word, joined by a tree rail (`●` for a seat, `├`/`└` for its branches). A REVIEW seat with no `reviewer:` block shows the planner's identity with the inheritance mark.
+**What it does.** The crew section is one row per seat — `PLAN`, `BUILD`, `REVIEW` — each carrying the seat identity (`Claude Code CLI · Claude Sonnet 4`) and a right-aligned posture word. There is no rail and no connector glyph; the seat label, coloured and bold, is what groups the block. A REVIEW seat with no `reviewer:` block shows the planner's identity with the inheritance mark.
 
-**Branches.** Effort lives on the seat that honours it, and honouring it means one of three real channels rather than a single yes/no. A `claude-code` seat gets an effort branch carrying the `effort` field, cycled in place. An `opencode` seat gets the same branch cycling its `variant` preset, which is the form opencode's effort actually takes. A `cursor` seat shows the effort its selected model id already spells, read-only — that value is chosen in the model picker, not on the branch. Only a seat with no channel at all — `codex`, `copilot`, `kilo-code`, and every `api`, `shell` and `agent` seat — reads `n/a`. An inherited REVIEW seat shows the planner's value read-only. Enter on a seat row opens that seat's tool/model picker. The escalation tier is YAML-only (`config.escalation`) and has no crew row.
+**Seat rows.** A crew row is read-only. Effort, fast and thinking are chosen in the seat's model picker, and the row mirrors the result as a suffix of the seat identity; `⏎` on a seat row is what opens that picker. An inherited REVIEW seat mirrors the planner's identity. The escalation tier is YAML-only (`config.escalation`) and has no crew row.
 
-**How to use.** `/crew` opens Settings on the crew section; `/crew plan`, `/crew build` and `/crew review` land the cursor on that seat directly. Ready-made crew presets are offered only on the first-run Setup screen, never here. At small viewports the section yields in a fixed order — the lab verdict line first, then the rail spine gaps, then the posture column — so all three seat rows stay visible down to the 60x18 floor.
+**How to use.** `/crew` opens Settings on the crew section; `/crew plan`, `/crew build` and `/crew review` skip Settings and open that seat's picker. Ready-made crew presets are offered only on the first-run Setup screen, never here. At small viewports the block drops the lab verdict line when the rows outgrow the budget, and the posture column when the identity column would fall under its minimum width — so all three seat rows stay visible down to the 60x18 floor.
 
-### Mode and seat pickers
+### Seat pickers
 
-**What it does.** Two-column pickers for workflow mode (`/mode` with no argument) and for a seat's tool and model (Enter on a seat row in Settings ∋ Crew). Filtered to detected/available tools.
+Start the local server yourself, configure its address, and use Retry to check the connection. Each PLAN, BUILD and REVIEW seat can use its own Ollama, LM Studio or llama.cpp endpoint and exact model. A server listing is not a promise that a model is loaded. Local authentication is optional; the connection editor retains endpoint-policy checks. CLI authentication stays host-configured unless the exact installed invocation has enforcement evidence, and the current matrix has none.
 
-**Model rows.** One authoritative lane per tool renders the model rows. models.dev is metadata-only enrichment (context window, pricing, release date, display name) and never creates a row for a tool that has an authoritative lane of its own. `codex`, `opencode`, `kilo-code`, `cursor` and `command-code` render their own `--list-models`-style native output as `Detected` rows; rows remembered from an earlier run keep rendering, flagged `Stale`. `claude-code` has no listing command at all, so it renders the documented alias set (`default`, `best`, `fable`, `opus`, `sonnet`, `haiku`, `opusplan`, `sonnet[1m]`, `opus[1m]`) merged best-effort with the local `~/.claude.json` `additionalModelOptionsCache`, and an unknown id you type through is passed to the CLI unvalidated, because Claude Code does not validate it either. `copilot` has no non-interactive listing command, so it renders one bundled static list, labelled unverified against your account. Confirmed rows keep the tool's own order and are not re-sorted by release date. Dedup is by a suffix-aware canonical id, so a `:free` catalog twin folds into its provider-qualified runtime row; a display name is never a dedup key, so two genuinely different ids are never collapsed for printing the same. Context windows are floored and never carry an empty decimal: a 1,048,576-token window reads `1M`, 1,100,000 reads `1.1M`, 262,144 reads `262K`. When the configured model is absent from the authoritative list the picker keeps a recovery row for it and offers one explicit "Browse the full catalog" row; nothing speculative appears otherwise.
+**What it does.** A two-column picker for a seat's tool and model (Enter on a seat row in Settings ∋ Crew). Filtered to detected/available tools.
 
-**Option families.** Detected models whose ids differ only by effort, speed or thinking fold into one row that expands into an axis row per axis. Suffix peeling is provider-aware, so a provider-routed (`provider/model`) id folds into its family per route instead of keeping a row of its own, and a family that also spans providers expands into one provider route row per route, each followed by that route's own axis rows — so every spelling of every route stays reachable. A genuinely branded id with no sibling to fold with (`opencode/grok-code-fast`) stays flat, spelled exactly as the tool listed it. Only custom models keep their own rows. `space` cycles the axis under the cursor in place — the key Settings ∋ Crew already uses for effort — moving the draft onto that axis's route, and `⏎` confirms the drafted id: its own route's from a route or axis row, the family's from the parent.
+**Model rows.** One authoritative lane per tool renders the model rows. models.dev is metadata-only enrichment (context window, pricing, release date, display name) and never creates a row for a tool that has an authoritative lane of its own. `codex`, `opencode`, `kilo-code`, `cursor` and `command-code` render their own `--list-models`-style native output as `Detected` rows; rows remembered from an earlier run keep rendering, flagged `Stale`. `claude-code` has no listing command, so it renders one row per shipped alias — `sonnet`, `opus`, `fable`, `haiku`, `opusplan`, `best`, `sonnet[1m]`, `opus[1m]`, `fable[1m]` — each labelled with Claude's own menu word (`Sonnet 5`, `Opus Plan Mode`, `Fable 5.1 (1M context)`); `default` is not one of them, it is the Auto row; the local `~/.claude.json` `additionalModelOptionsCache` folds in by a specific rule — an entry merges into the one alias row whose resolved catalog id plus that alias's own bracket suffix it equals, case-insensitively, and whose key is already among the shipped aliases, lending its `description` to that row as `detail`; otherwise it renders as its own row under the cache's own label or, failing that, its id; and an unknown id you type through is passed to the CLI unvalidated, because Claude Code does not validate it either. `copilot` lists its own models non-interactively, so the picker renders the quoted ids `copilot help config` prints under its `model` key (25 on 1.0.77), enriched from models.dev `github-copilot`, with the tools-column byline `not verified for your plan`; the bundled rows stand in only when that listing is unavailable. Confirmed rows keep the tool's own order and are not re-sorted by release date. Dedup is by a suffix-aware canonical id, so a `:free` catalog twin folds into its provider-qualified runtime row; a display name is never a dedup key, so two genuinely different ids are never collapsed for printing the same. Context windows are floored and never carry an empty decimal: a 1,048,576-token window reads `1M`, 1,100,000 reads `1.1M`, 262,144 reads `262K`. When the configured model is absent from the authoritative list the picker keeps a recovery row for it. The one explicit "Browse the full catalog" row is offered only where browsing actually widens the list — where the authoritative lane hid bundled rows, as for a local `api` provider with no inventory of its own — never beside a recovery row the escape cannot help; nothing speculative appears otherwise.
 
-**The variant axis.** An `opencode` model row carries one more axis than its id spells: a synthetic `variant` axis built from the tool's own verbatim preset vocabulary (`src/core/runners/variant-vocabulary.ts`), keyed on the route's provider rather than on the merged row's representative id. It is not id-encoded, so there is nothing to peel; `opencode models --verbose` publishes each model's `variants`, and the probe records their keys as that row's `nativeReasoningEfforts`, while the axis itself still reads the static table until the effort-axis work replaces it — an unlisted provider simply offers no variant row, even where a sibling route of the same row offers one. The axis closes its route's block, after that route's effort/speed/thinking rows, cycles with the same `space`, and confirming saves the `variant` config field beside the model — but only on a route whose vocabulary spells the drafted preset; elsewhere the row reads unset and the save drops it. No other tool gets the row.
+**Option families.** Detected models whose ids differ only by effort, speed or thinking fold into one row that expands into an axis row per axis. Suffix peeling is provider-aware, so a provider-routed (`provider/model`) id folds into its family per route instead of keeping a row of its own, and a family that also spans providers expands into one provider route row per route, each followed by that route's own axis rows — so every spelling of every route stays reachable. A genuinely branded id with no sibling to fold with (`opencode/grok-code-fast`) stays flat, spelled exactly as the tool listed it. Only custom models keep their own rows. `space` cycles the axis under the cursor in place, moving the draft onto that axis's route, and `⏎` confirms the drafted id: its own route's from a route or axis row, the family's from the parent.
+
+**The effort axis.** A model whose own source publishes an effort ladder carries one more axis than its id spells: an `effort` row built from that ladder — the route's own where a route publishes one (`opencode models --verbose` records each model's `variants` keys), the row's otherwise (a documented flag ladder, models.dev `reasoning_options`). It is not id-encoded, so there is nothing to peel, and it replaces the id-composed `effort` rather than joining it: no route ever shows two rows labelled `effort`. A model that publishes no ladder gets no row, even where a sibling route of the same merged row offers one; a model with no routes at all — a `claude-code` alias — becomes expandable for it. A seat that cannot spend a level carries no ladder either, whatever its models publish: `cursor` spells its effort inside the model id, and an api, shell or agent seat has no field for one. The row heads its route's block, ahead of that route's fast/thinking rows, cycles with the same `space`, reads `auto` until something is drafted, and confirming saves the drafted level into the field the seat's channel spells — `effort` on a flag-channel tool, `variant` on a variant-channel one — from the same ladder the row offered, so a level the row let you reach is a level the save keeps.
+
+### Build progress block
+
+**What it does.** While the run is `implementing`, a persistent block sits under the header rail at every width and says what the build is doing without a scroll:
+
+```
+3/7 briefs passed · 1 escalated · attempt 2 of 3 · ETA ~4m
+codex · implementing · last activity 3s ago
+```
+
+The fraction counts briefs that **passed their checks** — a started brief is not a settled one, and an escalated brief is never counted as settled. Attempts are stated as attempts (`attempt 2 of 3`, where the maximum is `1 + workflow.maxRetries`), never as retries. The ETA is an average of the briefs that finished, printed in whole minutes; with nothing to average from it reads `ETA unavailable: no brief finished yet`, and a seat swap retires it with `ETA unavailable: worker changed`. The activity line names the seat, the operation and recent activity; while a gate command runs it names the command instead (`npm test · running 41s · no output for 8s`). After 60 seconds without a runner event the freshness line becomes `No update from <tool> for <n>s`. The same five facts regroup rather than disappear as the terminal narrows: two rows at 120 columns and wider, four at 80, five below that.
 
 ### Input footer
 
-**What it does.** Per-task progress and risk posture below the always-visible status line.
+**What it does.** One byline under the composer carrying the run's live state, and the advisor signal below it when active.
 
-**Format.** `Task N/M · mode <mode> · risk <level> · $X.XX expected`. The advisor signal renders below the footer when active: `advisor: consider quick · trivial edit`.
+**Format.** The lead is the live status — `⠙ Implementing… 1m 12s`, `Waiting for you`, `Still working — silent 3m`, a stop state such as `Paused at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, `<n> queued`, the ETA, `git:<strategy>` (`git:branch+<strategy>` when the run created a branch), the advisor line (`advisor: consider quick · trivial edit`), `y copy` when the focused region has something to copy, and the worktree name.
 
-### Summary screen
+**Steer, queue, interrupt.** The composer means a different thing in each state, and its placeholder says which:
 
-**What it does.** Post-run report. Shows planner-vs-implementer split, brief quality, drift score, evidence rollup, per-phase timing, and per-task cost.
+- **Queue** — while a brief is building, the placeholder reads `Queue a message for after this brief…`; text you send waits for the next safe boundary. `/queue show` and `/queue clear` inspect and discard what is pending.
+- **Steer** — while the run is parked (`Stop now`, or an interrupted call), the hint reads `type instructions, enter to send and resume`; text you send steers the resumed run. A blank Enter never resumes.
+- **Interrupt** — `ctrl+c` stops the run at once, `esc` opens the stop menu. Neither is reachable by typing.
 
-**Format (header).** `Planner compiled N Task Briefs · Implementer completed M locally · K escalated`.
+### Run screen at rest
+
+**What it does.** The workflow screen is the run's home whether anything is running on it or not. Opening a run from `/sessions`, from the home list or from the palette replays its `session.jsonl` into the workflow stores and shows the run exactly where it stopped: the same header rail, the same transcript, the same footer. Nothing navigates to a second screen, and continuing the run flips it back to live in place. There is no summary screen.
+
+**Format (header).** The rail and the collapsed seat line, marked for a run that is not moving: stages the run cleared paint `●` in their role hue, stages it never reached `○` dim, and the stage it stopped on wears the mark its stop earned — `×` in warning tone for a run that is paused, waiting at a gate, or interrupted (a stop you can answer), `✗` in error tone for a run that halted on a recovery or died on an error. A closed, complete run shows five `●`. A closed run's seat line names the crew that actually ran it, read from its own record; an open run's names the crew it would continue on.
+
+**Format (composer and byline).** An open run takes a correction: the placeholder reads `Type a correction, or ⏎ to continue…`, a bare `⏎` continues it, and typed text rides into the next step's own prompt as a steer. The byline says where it stopped and the one key that moves it:
+
+- `Paused at T003 · type a correction or ⏎ to continue`
+- `Waiting at the spec gate · ⏎ to reopen it`
+- `Halted · Usage limit on ollama · ⏎ to decide`
+- `Stopped by an error · Planning failed. · ⏎ to retry the step`
+- `Interrupted · ⏎ to continue from the tasks step`
+
+A run nothing can pick up says why before where — `Saved state unreadable · start it again from home` — and takes `/commands` only. A run another process is driving reads `Running in another process`.
+
+**Format (closed run).** A run that was ended or completed takes `/commands` only (`/ for a command · ⏎ for home…`; a keystroke that would start the line with anything but `/` is refused as it is typed, and `⏎` on an empty line goes home) and its ledger is appended to the tail of its own transcript — one scroller, below the last event the run wrote — as a `Closed ─` rule, one outcome sentence, and three labelled sections in a fixed order:
+
+- One outcome sentence led by its glyph: `✓ Ready · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed`, `⚠ Needs attention · …`, or `× Ended · Build 2/5 · stopped in T003 · partial changes kept`. The fraction counts briefs that passed — never one that merely started or escalated. Whole ` · ` tokens shed from the right when the line overruns; nothing is cut mid-token.
+- `Briefs` — one row per planned brief in plan order, in the transcript's grammar: `✓ T001 Add validator module  src/validate.ts · local · 84.2s`, `▲` escalated, `✗` failed, `–` skipped, `×` the brief the run stopped inside (`· stopped · 2 partial files`), `○` a brief that never started.
+- `Files` — the changed set, sorted, project-relative and middle-cut, with ` · partial` on a file the stopped brief left half-written.
+- `Run` — labelled facts, one home each: `Crew` (only when the header named fewer than three seats), `Review`, `Packet`, `Scope`, `Briefs` (brief quality), `Cost`, `Tokens`, `Phases`, `Session`. A fact with no value carries one absence word — `not run`, `not checked`, `not estimated` — never `—`, `n/a` or `$0.00`.
+
+A closed run whose record was never written says so in one line rather than painting an empty ledger: `× Ended · no run record was written`.
+
+**Format (closed byline).** `Keep it with /run accept, or revert it with /run reject confirm` when the run is ready, `Read the 2 blocking findings in the packet, or revert it with /run reject confirm` when it needs attention, `esc home` on a run that was ended. `/run accept` and `/run reject confirm` re-read the record, so the byline flips to `Accepted · nothing left to do` or `Rejected · its files were restored` as soon as the command lands.
+
+**How to use.** `⏎` on a session row opens the run. `esc` leaves a run at rest for home — there is nothing to stop, so no stop sheet opens. When the transcript outgrows its height it scrolls a line at a time with `shift+↑↓` (plain arrows stay with the composer history) or a page with `pgup`/`pgdn`, the legend gains `shift+↑↓ scroll`, and the byline never scrolls away.
 
 ---
 
@@ -780,7 +552,7 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 ### Lifecycle hook events
 
-**What it does.** Lifecycle hook events can fire user-declared shell commands or in-process JS modules. `pre_*` hooks block the next action; `post_*` and `on_*` are fire-and-forget.
+**What it does.** Lifecycle hook events fire user-declared shell commands. `pre_*` hooks block the next action; `post_*` and `on_*` are fire-and-forget.
 
 **How to use.** Declare in `.splitbrief/config.yaml` under `hooks:`. Full list:
 
@@ -791,19 +563,13 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 | `post_task` | After each successful task |
 | `pre_validation` | Before tsc/lint/test |
 | `post_validation` | After validation finishes |
-| `pre_commit` | Before optional product-level commit |
-| `post_commit` | After optional product-level commit |
 | `pre_escalation` | Before planner escalation |
-| `pre_compact` | Reserved (FUTURE) |
 | `on_error` | Any unrecoverable engine error |
+| `on_halt` | A recovery issue is raised — carries `sessionId`, `taskId`, `reason`, `recommendedAction` and the `resumeCommand` to paste |
 | `on_complete` | `workflow_complete` event |
 
 ```yaml
 hooks:
-  pre_commit:
-    - command: ".splitbrief/hooks/check-secrets.sh"
-      timeout_ms: 10000
-      on_failure: block
   post_task:
     - command: "npx"
       args: ["prettier", "--write", "${event.file}"]
@@ -812,42 +578,13 @@ hooks:
 
 **Trust.** Hook configs are sha256-hashed and prompted on first use; in CI pass `--allow-hooks`. Each hook run inherits user shell privileges. Full reference: [HOOKS-CONFIG.md](./HOOKS-CONFIG.md).
 
-### Built-in hooks
-
-Built-ins ship, all off by default:
-
-- `prettier-on-change` — runs `npx prettier --write ${event.file}` on `post_task`.
-- `block-secrets` — scans `event.file` on `pre_commit` for AWS / GitHub PAT / OpenAI / Anthropic key patterns when optional commit hooks are in use.
-
-```yaml
-hooks:
-  builtin:
-    prettier-on-change: true
-    block-secrets: true
-```
-
-### Module hooks (`kind: module`)
-
-**What it does.** Run JS/TS modules in-process instead of spawning a subprocess. Default export must be `(event, ctx) => Promise<HookOutcome>`.
-
-```yaml
-hooks:
-  pre_task:
-    - kind: module
-      path: ./hooks/my-hook.js
-      timeout_ms: 5000
-      on_failure: block
-```
-
-Return shape: `{ kind: 'allow' | 'deny' | 'warn' | 'crash', message?: string }`.
-
 ---
 
 ## Headless mode
 
 ### `splitbrief start --json`
 
-**What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs workflow host callbacks: review gates approve, questions answer empty, and recovery exits non-zero. File-write tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. The normal `session.jsonl` log is still written for the run.
+**What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs workflow host callbacks: review gates approve; planner questions persist as pending input, emit `input_required`, and exit non-zero, as does recovery. File-write tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. The normal `session.jsonl` log is still written for the run.
 
 **How to use.**
 
@@ -859,25 +596,10 @@ splitbrief start --json --allow-hooks --mode quick "add lint rule for empty catc
 
 **Behavior differences.**
 
-- Budget pause threshold (default 85%) exits non-zero with a machine-readable error instead of blocking.
 - Sticky / confirm-tier approvals fail fast.
 - All other behavior matches an interactive run.
 
 The first line is `{ type: "readiness_report", report: ... }`. After that, `stdoutJsonSink` in `src/engine/events/sinks/stdout-json.ts` emits one `EngineEvent` JSON object per line.
-
-### `splitbrief start --rpc`
-
-**What it does.** Runs without Ink like headless mode, but keeps stdin open for external controllers. Stdin accepts NDJSON commands: `approve`, `reject`, `regenerate`, `brief_review`, `message`, `recovery`, `status`, `abort`, and `slash`. Stdout emits NDJSON responses with `type: "ack"`, `"error"`, `"status"`, or `"event"`; event responses wrap the underlying `EngineEvent` in `data`. `brief_review` is prompt-scoped for the Task Brief gate and echoes optional `id` / `operationId` values in status, ack, or error data.
-
-**How to use.**
-
-```bash
-splitbrief start --rpc --allow-hooks "add lint rule for empty catch"
-```
-
-**When to use.** IDE integrations, editor extensions, service wrappers, and tests that need to drive approvals, clarifications, recovery, or status polling programmatically.
-
-`--rpc` requires a feature argument for new runs and is mutually exclusive with `--json` and `--detach`.
 
 ---
 
@@ -885,20 +607,23 @@ splitbrief start --rpc --allow-hooks "add lint rule for empty catch"
 
 ### `splitbrief status` and `splitbrief init`
 
-**What it does.** `init` is the interactive setup that writes `.splitbrief/config.yaml` (or rewrites it with `--reconfigure`). `status` is read-only — prints the active session state without acquiring the lock; pass `--history` for cost rollups across sessions.
+**What it does.** `init` is the interactive setup that writes `.splitbrief/config.yaml` (or rewrites it with `--reconfigure`). `status` is read-only — prints the active session state without acquiring the lock.
 
 ```bash
 splitbrief init [--reconfigure]
-splitbrief status [--history]
+splitbrief status
 splitbrief doctor [--json]
 ```
 
-### `splitbrief resume`
+### `splitbrief resume` / `splitbrief continue`
 
-**What it does.** Re-enters the active workflow at the saved phase. Refuses if `.splitbrief/active` or `state.json` is missing, version-mismatched, or in a non-resumable phase (`researching`, `specifying`, `planning` without `awaitingContinue`).
+**What it does.** Picks a run up where it stopped. A run is a durable record: it stays continuable until somebody closes it, so the only refusals are a missing or unreadable `state.json`, no active pointer, and a **closed** run (ended with `/end`, or `complete` with a passing review). It does not replay what is already on disk — the step loop starts at the first artifact the run has not written.
 
 ```bash
-splitbrief resume
+splitbrief resume                                   # the most recent run
+splitbrief continue 2026-05-01-add-auth             # a named run
+splitbrief continue --action retry --json           # answer its halt, headlessly
+splitbrief continue --action end-run                # close it instead
 ```
 
 For backends without native session resume, the planner context is rebuilt from `session.jsonl` (`transcript/rebuild.ts`).
@@ -913,30 +638,23 @@ For backends without native session resume, the planner context is rebuilt from 
 codebase:
   enabled: true
   tokenBudget: 4000
-  cacheDir: ".splitbrief"
   include: ["src/**/*.ts"]
   exclude: ["\\.test\\.tsx?$"]
 ```
 
 The map rebuilds itself on each planning run when the cache is stale; there is no manual rebuild step. Full details: [REPOMAP.md](./REPOMAP.md).
 
-### OpenTelemetry sink
+### Text selection and copying
 
-**What it does.** Maps workflow, phase, task, validation, warning, error, and cost events to OpenTelemetry spans. Other engine events are no-ops for tracing. Off by default.
+In fullscreen, drag with the mouse or touchpad to select visible text in the composer, transcript or workflow panels. Releasing the drag copies that text to the clipboard. Wheel scrolling and ordinary clicks remain available. Selection does not edit the draft.
 
-**How to use.**
+`Ctrl+C` copies while a selection is active; without a selection it retains its normal stop/exit action. On macOS, `Cmd+C` is usually handled by the terminal itself. The text is already copied on release, so the usual drag, `Cmd+C`, `Cmd+V` sequence works without a custom terminal keymap. Terminals that forward `Cmd+C` using the extended keyboard protocol can also request a copy directly.
 
-```yaml
-otel:
-  enabled: true
-  serviceName: splitbrief
-```
-
-Or per-run: `--otel-exporter console`. Full details: [OTEL.md](./OTEL.md).
+Incoming output cannot replace the text being selected: the display holds still during the drag while the workflow continues, then catches up on release. The highlight survives updates to other text and clears if the selected content changes. Typing, paste, `Esc`, scrolling or resizing clears it. `--no-mouse` leaves selection to the terminal instead.
 
 ### Image attachments
 
-**What it does.** Attach screenshots or images for the next planner call (multimodal-capable backends only). Tracked in the workflow store; displayed as chips in the composer.
+**What it does.** Attach screenshots or images for the next planner call (multimodal-capable backends only). A pasted or dropped image lands in the draft itself, as one atom at the caret shown as `[image #1]`, with editable text on either side; moving and deleting act on the whole atom. Submitting hands the draft's images to the workflow store in document order and sends the planner an `[image:<id>]` reference at each atom's position plus a legend binding those ids to the attachments. `/image <path>` also inserts an inline image.
 
 **How to use.**
 
@@ -946,17 +664,25 @@ Or per-run: `--otel-exporter console`. Full details: [OTEL.md](./OTEL.md).
 /image remove 1
 ```
 
-Dragging a file onto the terminal attaches it too. The home composer advertises this with a `drop an image` hint on its legend line; the workflow composer shows no hint because its byline is occupied by live status, but drops still work there. `Backspace` on an empty draft pops the last attachment chip.
+On macOS, copy an image and press `Cmd+V` in Zed's terminal. [Zed 1.20.2 forwards image paste as `Ctrl+V`](https://github.com/zed-industries/zed/blob/v1.20.2/crates/terminal_view/src/terminal_view.rs#L848-L895), which SPLITBRIEF handles by reading the image from the clipboard. When the clipboard also contains text, [Zed chooses the text representation](https://github.com/zed-industries/zed/blob/v1.20.2/crates/gpui_macos/src/pasteboard.rs#L47-L83); pressing `Ctrl+V` directly reads the image instead. Ordinary text paste stays text.
+
+The composer shows `Pasting image…` during the read and keeps text typed meanwhile after the image's insertion point. Wait for `[image #1]` before submitting. Empty, unreadable, oversized, or unsupported clipboard content produces feedback without changing the draft.
+
+Clipboard images are stored as private PNG files under `~/.splitbrief/clipboard/`, up to 10 MiB each. Identical image bytes share a file. These files remain after submission and exit so draft history and recorded attachments can still read them.
+
+Dragging a file onto the terminal also inserts it at the caret. The home composer advertises this with a `drop an image` hint on its legend line; the workflow composer shows no hint because its byline is occupied by live status, but image input works there too. `Backspace` beside an atom takes the whole reference, and that image with it. `/image list` and `/image remove` address attachments already pending for the planner, including command-line `--image` inputs; edit inline draft atoms in the composer.
 
 Offered only when the PLAN seat can receive images; on a seat without vision the command answers with the reason instead of dropping the attachment at call time.
 
 ### Skills
 
-**What it does.** Loads planner skills into the picker so the planner can be primed with project-specific knowledge. Source discovery lives in `src/engine/skill-discovery.ts` and does not depend on which tool holds the PLAN seat. It scans one fixed union of roots, listed here in precedence order — project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, then global `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`. The path table is `src/core/skills/scan-paths.ts`. Dedup is by skill id, first root wins, so project skills always outrank global ones. `<project>/AGENTS.md` is emitted as the `agents-root` entry whenever the file exists.
+**What it does.** Loads planner skills into the picker so the planner can be primed with project-specific knowledge. Source discovery lives in `src/engine/skill-discovery.ts` and does not depend on which tool holds the PLAN seat. It scans one fixed union of roots, listed here in precedence order — project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `./.github/skills/`, `./.commandcode/skills/`, `./.kilo/skills/`, `./.kilocode/skills/`, `./.cursor/skills/`, then global `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `~/.commandcode/skills/`, `~/.kilo/skills/`, `~/.config/kilo/skills/`, `~/.cursor/skills/`. The path table is `src/core/skills/scan-paths.ts`, and the skills overlay's empty state lists the same roots. Dedup is by skill id, first root wins, so project skills always outrank global ones. `<project>/AGENTS.md` is emitted as the `agents-root` entry whenever the file exists.
 
 **Detection.** A directory holding a `SKILL.md` is a skill and is not descended into; other directories are walked to depth 4. Loose `.md` files count only at the top level of a root. Frontmatter that omits `name` falls back to the directory (or file) name; a file with no frontmatter block is skipped. Symlinks are followed in both scopes, but project scope never leaves the project: a project symlink whose target resolves outside the project is dropped, not read.
 
-**How to use.** Open the picker via `/skills` on any screen (Ctrl+S on home). Discovery re-runs when the overlay opens, so a skill added mid-session appears without a restart. `/skills <id> [<id>…]` toggles skills from the composer instead of opening the picker; the `/` menu completes skill ids, project skills first, then already-selected global ones, and shows each skill's name and description. Selection applies to the session only. Read-only — SPLITBRIEF never writes to skill sources.
+**Where they reach the planner.** Selected skills are rendered into one `## Active Project Skills` section under a 16 000-character budget and sent with **every** planning phase — quick mode's single call as well as the spec and tasks prompts of standard and speckit. When the budget truncates, a `warning` event with code `skills_truncated` names what was dropped (`2 skills omitted (budget): …`) and the TUI feedback row says the same. The four pipeline skills (`splitbrief`, `splitbrief-brief`, `splitbrief-run`, `splitbrief-review`) are excluded from this list: the planner gets that contract from the pipeline spec, not from a skill file.
+
+**How to use.** Open the picker via `/skills` on any screen (Ctrl+S on home). Discovery re-runs when the overlay opens or when `/skills` is typed, so a skill added mid-session appears without a restart. `/skills <id> [<id>…]` toggles one or several skills from the composer instead of opening the picker; ids match fuzzily, and the `/` menu completes them project-first, then already-selected global ones, showing each skill's name and description. The command palette also carries one `Skill · <name>` row per discovered skill, which toggles selection directly. From the command line, `--skills <id,…>` selects them without a picker: on headless `start` (`--json` / `--plain`) and on `resume` / `continue` in either mode. An unknown id fails before planning with `Unknown skill: <id> (scanned: <roots>)` and exit 2. Selection applies to the session only. Read-only — SPLITBRIEF never writes to skill sources.
 
 ---
 
@@ -967,6 +693,5 @@ Offered only when the PLAN seat can receive images; on a seat without vision the
 - [CONFIGURATION.md](./CONFIGURATION.md) — every config field, default, and validation rule.
 - [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — slash command reference, dispatch, phase guards.
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — workflow hooks: events, schemas, trust, security.
-- [WORKTREES.md](./WORKTREES.md) — git worktree usage and the runtime isolation gap.
 - [ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what) — code-level inventory, event union, persistence layout.
-- [API-KEYS.md](./API-KEYS.md), [OTEL.md](./OTEL.md), [REPOMAP.md](./REPOMAP.md), [DEBUGGING.md](./DEBUGGING.md).
+- [API-KEYS.md](./API-KEYS.md), [REPOMAP.md](./REPOMAP.md), [DEBUGGING.md](./DEBUGGING.md).

@@ -1,3 +1,11 @@
+import type { EffortLevel } from '../../core/schemas/enums.js';
+import {
+  effortField,
+  temperatureField,
+  tokenLimitFields,
+  usageField,
+} from './openai-stream/request.js';
+
 export const OPENAI_COMPAT_STANDARD_FINISH_REASONS = Object.freeze([
   'stop',
   'length',
@@ -39,11 +47,62 @@ const CONSERVATIVE_POLICY: OpenAICompatPolicy = Object.freeze({
   finishReasons: OPENAI_COMPAT_STANDARD_FINISH_REASONS,
 });
 
-// No provider is proved: `ollama` and `lm-studio` are the only built-in ids and
-// neither has a fixture, and every other id names a custom endpoint. Widening a
+// No provider is proved: `ollama`, `lm-studio` and `llama-cpp` are the only
+// built-in ids and none has a fixture, and every other id names a custom endpoint. Widening a
 // field here requires a recorded fixture for the endpoint that earns it.
 export function resolveOpenAICompatPolicy(
   _options: ResolveOpenAICompatPolicyOptions,
 ): OpenAICompatPolicy {
   return CONSERVATIVE_POLICY;
+}
+
+export type OpenAICompatControl<T> =
+  | { readonly state: 'not-configured' }
+  | { readonly state: 'sent'; readonly value: T }
+  | { readonly state: 'omitted-unsupported'; readonly configured: T };
+
+export interface EffectiveRequestOptions {
+  readonly tokenField: OpenAICompatTokenField;
+  readonly maxTokens: number | undefined;
+  readonly temperature: OpenAICompatControl<number>;
+  readonly effort: OpenAICompatControl<EffortLevel>;
+  readonly streamUsage: boolean;
+  readonly extraBody: OpenAICompatExtraBody;
+  readonly finishReasons: readonly OpenAICompatFinishReason[];
+}
+
+export interface ResolveEffectiveRequestOptionsInput {
+  readonly policy: OpenAICompatPolicy;
+  readonly temperature?: number | undefined;
+  readonly effort?: EffortLevel | undefined;
+  readonly maxTokens?: number | undefined;
+}
+
+function control<T>(
+  configured: T | undefined,
+  send: (value: T) => T | undefined,
+): OpenAICompatControl<T> {
+  if (configured === undefined) return { state: 'not-configured' };
+  const sent = send(configured);
+  if (sent === undefined) return { state: 'omitted-unsupported', configured };
+  return { state: 'sent', value: sent };
+}
+
+// Every field is derived by the same helpers that build the wire body, so a
+// configured control can never be reported as effective while the request omits
+// it — including a temperature the BUILD retry ladder incremented.
+export function resolveEffectiveRequestOptions(
+  input: ResolveEffectiveRequestOptionsInput,
+): EffectiveRequestOptions {
+  const { policy } = input;
+  const tokenLimit = tokenLimitFields(policy, input.maxTokens);
+  return {
+    tokenField: policy.tokenField,
+    maxTokens: tokenLimit.max_completion_tokens ?? tokenLimit.max_tokens,
+    temperature: control(input.temperature, (value) => temperatureField(policy, value).temperature),
+    effort: control(input.effort, (value) => effortField(policy, value).reasoning_effort),
+    streamUsage: usageField(policy).stream_options !== undefined,
+    extraBody: policy.extraBody,
+    finishReasons: policy.finishReasons,
+  };
 }

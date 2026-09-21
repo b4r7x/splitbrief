@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { buildSummary } from './build.js';
-import type { BuildSummaryState } from './build.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { SummarySchema, unmeteredRunCostLabel } from '../../../core/schemas/summary.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -14,7 +13,9 @@ function summaryOf(opts: Parameters<typeof buildSummary>[0]) {
   return buildSummary({ pricingCache, ...opts });
 }
 
-function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
+type SummaryState = Parameters<typeof buildSummary>[0]['state'];
+
+function makeState(overrides?: Partial<SummaryState>): SummaryState {
   return {
     tasks: [
       makeTask({ id: 'T001', status: 'done' }),
@@ -22,25 +23,14 @@ function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
       makeTask({ id: 'T003', status: 'done' }),
     ],
     tokenUsage: makeUsage(),
+    phase: 'complete',
+    currentTaskIndex: 0,
     ...overrides,
   };
 }
 
-describe('buildSummary estimatedCostSavings', () => {
-  it('returns $0.00 when no implementer tokens used', () => {
-    const usage = makeUsage({ plannerInput: 1000, plannerOutput: 500 });
-    const summary = summaryOf({
-      feature: 'f',
-      state: makeState({ tasks: [], tokenUsage: usage }),
-      startTime: Date.now(),
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerTool: 'ollama',
-    });
-    expect(summary.estimatedCostSavings).toBe('$0.00');
-  });
-
-  it('calculates savings for known token values', () => {
+describe('buildSummary cost knownness', () => {
+  it('prices a run whose seats are both in the catalog', () => {
     const usage = makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 });
     const summary = summaryOf({
       feature: 'f',
@@ -51,13 +41,11 @@ describe('buildSummary estimatedCostSavings', () => {
       implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
     });
-    expect(summary.estimatedCostSavings).toBe('$11.58');
-    expect(summary.costBreakdown?.hypotheticalCost).toBe(12);
     expect(summary.costBreakdown?.actualImplementerCost).toBeCloseTo(0.42, 10);
-    expect(summary.costBreakdown?.hasSavingsEstimate).toBe(true);
+    expect(summary.costBreakdown?.isTotalActualCostKnown).toBe(true);
   });
 
-  it('marks savings unavailable when implementer price is unknown', () => {
+  it('marks the total unknown when the implementer price is unknown', () => {
     const usage = makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 });
     const summary = summaryOf({
       feature: 'f',
@@ -68,29 +56,8 @@ describe('buildSummary estimatedCostSavings', () => {
       implementerTool: 'ollama',
     });
 
-    expect(summary.estimatedCostSavings).toBe('unavailable');
-    expect(summary.costBreakdown?.hasSavingsEstimate).toBe(false);
     expect(summary.costBreakdown?.isActualImplementerCostKnown).toBe(false);
     expect(summary.costBreakdown?.isTotalActualCostKnown).toBe(false);
-  });
-
-  it('formats tiny known savings as $0.00', () => {
-    const usage = makeUsage({
-      plannerInput: 10_000_000,
-      plannerOutput: 5_000_000,
-      implementerInput: 100,
-      implementerOutput: 50,
-    });
-    const summary = summaryOf({
-      feature: 'f',
-      state: makeState({ tasks: [], tokenUsage: usage }),
-      startTime: Date.now(),
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerTool: 'custom-worker-api',
-      implementerModel: 'deepseek-v4-flash',
-    });
-    expect(summary.estimatedCostSavings).toBe('$0.00');
   });
 });
 
@@ -106,6 +73,8 @@ describe('buildSummary task costs', () => {
         taskTitle: 'task 1',
         method: 'local' as const,
         implementerTokens: 150_000,
+        implementerInputTokens: 100_000,
+        implementerOutputTokens: 50_000,
         escalationTokens: 0,
         retryCount: 0,
       },
@@ -114,6 +83,8 @@ describe('buildSummary task costs', () => {
         taskTitle: 'task 2',
         method: 'local' as const,
         implementerTokens: 150_000,
+        implementerInputTokens: 100_000,
+        implementerOutputTokens: 50_000,
         escalationTokens: 0,
         retryCount: 0,
       },
@@ -148,6 +119,8 @@ describe('buildSummary task costs', () => {
         taskTitle: 'task 1',
         method: 'local' as const,
         implementerTokens: 150_000,
+        implementerInputTokens: 100_000,
+        implementerOutputTokens: 50_000,
         escalationTokens: 0,
         retryCount: 0,
       },
@@ -165,7 +138,6 @@ describe('buildSummary task costs', () => {
     const first = summary.taskBreakdown?.[0];
     if (!first) throw new Error('expected a task breakdown entry');
     expect(first.cost).toBeUndefined();
-    expect(first.costPosture).toBe('unknown-price');
   });
 
   it('keeps per-task escalation costs aligned with model-aware summary totals', () => {
@@ -180,6 +152,8 @@ describe('buildSummary task costs', () => {
         method: 'escalated-full' as const,
         implementerTokens: 0,
         escalationTokens: 150_000,
+        escalationInputTokens: 100_000,
+        escalationOutputTokens: 50_000,
         retryCount: 0,
       },
     ];
@@ -211,6 +185,8 @@ describe('buildSummary task costs', () => {
         taskTitle: 'local task',
         method: 'local' as const,
         implementerTokens: 1_000_000,
+        implementerInputTokens: 500_000,
+        implementerOutputTokens: 500_000,
         escalationTokens: 0,
         retryCount: 0,
         tool: 'ollama',
@@ -222,6 +198,8 @@ describe('buildSummary task costs', () => {
         taskTitle: 'paid task',
         method: 'local' as const,
         implementerTokens: 1_000_000,
+        implementerInputTokens: 500_000,
+        implementerOutputTokens: 500_000,
         escalationTokens: 0,
         retryCount: 0,
         tool: 'custom-worker-api',
@@ -245,7 +223,6 @@ describe('buildSummary task costs', () => {
     if (!first || !second || !summary.costBreakdown)
       throw new Error('expected task and cost breakdown');
     expect(first.cost).toBeUndefined();
-    expect(first.costPosture).toBe('unknown-price');
     expect(second.cost).toBeCloseTo(0.21, 10);
     expect(summary.costBreakdown.actualImplementerCost).toBeCloseTo(0.21, 10);
     expect((first.cost ?? 0) + (second.cost ?? 0)).toBeCloseTo(
@@ -253,7 +230,6 @@ describe('buildSummary task costs', () => {
       10,
     );
     expect(summary.costBreakdown.hasUnpricedUsage).toBe(true);
-    expect(summary.costBreakdown.hasSavingsEstimate).toBe(false);
   });
 });
 
@@ -283,7 +259,7 @@ describe('buildSummary offering presentation', () => {
     expect(unmeteredRunCostLabel(parsed)).toBeNull();
   });
 
-  it('labels a subscription-only run without a metered figure', () => {
+  it('does not infer a subscription paid for historical calls without evidence', () => {
     const usage = makeUsage({
       plannerInput: 100_000,
       plannerOutput: 50_000,
@@ -301,10 +277,10 @@ describe('buildSummary offering presentation', () => {
 
     const parsed = SummarySchema.parse(summary).costBreakdown;
     if (!parsed) throw new Error('expected cost breakdown');
-    expect(unmeteredRunCostLabel(parsed)).toBe('subscription-included');
+    expect(unmeteredRunCostLabel(parsed)).toBeNull();
   });
 
-  it('keeps a configured reviewer cache out of per-task escalation cost', () => {
+  it('never charges a per-task escalation leg for cache the run pooled elsewhere', () => {
     const breakdowns = [
       {
         taskId: taskId('T001'),
@@ -312,6 +288,10 @@ describe('buildSummary offering presentation', () => {
         method: 'escalated-full' as const,
         implementerTokens: 0,
         escalationTokens: 38_000,
+        escalationInputTokens: 30_000,
+        escalationOutputTokens: 8_000,
+        escalationCacheReadTokens: 0,
+        escalationCacheCreateTokens: 0,
         retryCount: 0,
       },
     ];
@@ -345,7 +325,11 @@ describe('buildSummary offering presentation', () => {
 
     const configured = { tool: 'custom-worker-api', model: 'deepseek-v4-flash' };
 
+    // The task recorded no escalation cache, so neither the planner's 100k pool
+    // nor a reviewer's 900k can reach it — configured as a seat or folded in.
     expect(buildWith(900_000, configured)).toBe(buildWith(0, configured));
-    expect(buildWith(900_000)).not.toBe(buildWith(0));
+    expect(buildWith(900_000)).toBe(buildWith(0));
+    // 30k input @ $2/MTok + 8k output @ $10/MTok, and no cache dollars.
+    expect(buildWith(900_000)).toBeCloseTo(0.14, 10);
   });
 });

@@ -1,11 +1,10 @@
 import { assertNever } from '../../../utils/type-guards.js';
 import type { Phase } from '../../schemas/enums.js';
+import type { TaskStatus } from '../../schemas/enums.js';
 import type { WorkflowMode } from '../../schemas/enums.js';
 import { CREW_SEAT_IDS } from '../../crew/identity.js';
 import type { OverlayType, Screen } from '../../navigation/types.js';
-import type { HandoffTarget } from '../../handoff/targets.js';
 import type { ApprovalGrant } from '../../schemas/approval-store.js';
-import type { StructuredSummary } from '../../schemas/compaction.js';
 import type { CopyOutcome } from '../../../lib/clipboard/clipboard.js';
 import type { ResolveAttachmentReason } from '../../attachments/resolve.js';
 
@@ -44,19 +43,6 @@ export type RejectRunSnapshotResult =
       missingSnapshotFiles: string[];
     };
 
-export type CompactTranscriptResult =
-  | { status: 'unsupported'; plannerName: string }
-  | {
-      status: 'compacted';
-      summary: string;
-      entriesRemoved: number;
-      structured?: StructuredSummary | null;
-    };
-
-export type ExportSessionResult =
-  | { status: 'ok'; path: string }
-  | { status: 'error'; error: string };
-
 export type QueueClearCommandResult =
   | { status: 'cleared'; count: number }
   | { status: 'unavailable'; message: string };
@@ -80,6 +66,12 @@ export type ToggleLatestDiffResult =
 export type ToggleSidebarResult =
   | { status: 'toggled'; visible: boolean }
   | { status: 'unavailable'; message: string };
+
+/** One brief as a command names it: the id every surface calls it by, and where it got to. */
+export interface BriefListEntry {
+  readonly id: string;
+  readonly status: TaskStatus;
+}
 
 export type RuntimeConfigSaveResult =
   | Readonly<{ kind: 'saved'; ok: true }>
@@ -168,11 +160,20 @@ export const CREW_COMMAND_SEATS = CREW_SEAT_IDS;
 
 /** Deleted names keep pointing at their replacement for one release. */
 export const REMOVED_COMMANDS: Readonly<Record<string, string>> = {
+  '/accept-run': 'a run is accepted with /run accept',
   '/attach': 'images are attached with /image <path>',
+  '/compact-transcript': 'the transcript compacts itself as the context window fills',
+  '/config': 'the same settings open with /settings',
   '/detach': 'images are removed with /image remove <index|id>',
-  '/effort': 'effort lives on the seat: /crew plan',
+  '/effort': 'effort is chosen with the model: /crew plan, then ⏎',
+  '/export': 'a run leaves its artifacts in .splitbrief/sessions/<id>/',
+  '/handoff': 'a run leaves its artifacts in .splitbrief/sessions/<id>/',
+  '/implementer': 'the BUILD seat is chosen with /crew build',
+  '/planner': 'the PLAN seat is chosen with /crew plan',
+  '/reject-run': 'a run is rejected with /run reject confirm',
   '/repomap': 'the repo map rebuilds itself on each planning run, with no manual step',
-  '/resume': 'a paused workflow resumes from its approval prompt',
+  '/reviewer': 'the REVIEW seat is chosen with /crew review',
+  '/yolo': 'approval prompts are turned off with approval.enabled: false in the config',
 };
 
 export type AttachImageResult =
@@ -183,6 +184,7 @@ export interface SkillCommandOption {
   id: string;
   name: string;
   description: string;
+  attached: boolean;
 }
 
 export type SkillToggleResult =
@@ -193,7 +195,6 @@ export type SkillToggleResult =
 
 export interface CommandGuardContext {
   phase: Phase;
-  attached: boolean;
   plannerSupportsImages: boolean;
 }
 
@@ -202,15 +203,18 @@ type CommandArgSpec =
       kind: 'closed';
       options: readonly string[];
       optionDescriptions?: Readonly<Record<string, string>>;
+      /** A trailing word per option — `current`, `attached` — shown right-aligned in the completion row. */
+      optionHints?: Readonly<Record<string, string>>;
       /** Display grammar for option sets too large to spell out in a palette or help row. */
       hint?: string;
       optional?: true;
+      multi?: boolean;
+      match?: 'prefix' | 'fuzzy';
     }
   | { kind: 'free'; hint: string };
 
 interface RuntimeCommandBase {
   name: string;
-  aliases?: readonly { name: string; args?: string }[];
   label?: string;
   description: string;
   shortcut?: string | null;
@@ -230,38 +234,40 @@ export type RuntimeCommandDef =
     });
 
 export interface RuntimeCommandContext {
-  isAttached?: boolean;
   openOverlay: (type: OverlayType, focus?: string) => void;
   navigate: (to: 'home') => void;
   quit: () => void;
   setWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>;
+  getWorkflowMode: () => WorkflowMode;
+  prefillComposer: (text: string) => void;
   setFeedbackMessage: (msg: string) => void;
   setFeedbackError: (msg: string) => void;
   refreshDetection: () => Promise<DiscoveryRefreshSummary>;
   refreshProjectFiles: () => void;
   listSkills: () => readonly SkillCommandOption[];
   toggleSkill: (id: string) => SkillToggleResult;
-  refreshSkills: () => void;
+  refreshSkills: () => Promise<void>;
   getCurrentPhase: () => Phase;
   requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
+  resumeRun: () => boolean;
+  endRun: () => boolean;
   getQueueDepth: () => number;
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
+  insertImage?: (input: string) => AttachImageResult;
   attachImage: (input: string) => AttachImageResult;
   detachImage: (idOrIndex: string) => boolean;
   listAttachments: () => Array<{ id: string; path: string }>;
-  writeHandoff: (target: HandoffTarget, taskId?: string) => Promise<{ outputDir: string }>;
   listApprovals: () => ApprovalGrant[];
   clearApprovals: () => number;
-  getApprovalEnabled: () => boolean;
-  setApprovalEnabled: (enabled: boolean) => void;
   acceptRunSnapshot: () => Promise<AcceptRunSnapshotResult>;
   rejectRunSnapshot: () => Promise<RejectRunSnapshotResult>;
-  compactTranscript: () => Promise<CompactTranscriptResult>;
-  exportSession: () => Promise<ExportSessionResult>;
+  /** Re-reads the run on screen, so a command that changed its record changes what the screen says. */
+  refreshRun: () => void;
   scrollConversation: (target: ScrollCommandTarget) => ScrollConversationResult;
   toggleLatestActivityBatch: () => ToggleLatestActivityBatchResult;
   toggleLatestDiff: () => ToggleLatestDiffResult;
+  listBriefs: () => readonly BriefListEntry[];
   toggleSidebar: () => ToggleSidebarResult;
   copyTarget: (target: CopyTarget) => Promise<CopyResult>;
 }

@@ -83,7 +83,7 @@ describe('gateAction', () => {
 
   it('live session approval state disables the next gate even when captured config enables approval', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true, headless: true });
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
@@ -108,7 +108,7 @@ describe('gateAction', () => {
 
   it('sticky tier, no grant, no callback → deny APPROVAL_REQUIRED', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true, headless: true });
+    const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
@@ -134,7 +134,7 @@ describe('gateAction', () => {
         sessionId,
       },
     ]);
-    const config = makeApprovalConfig({ enabled: true, headless: true });
+    const config = makeApprovalConfig({ enabled: true });
     let callbackCalled = false;
     const input = makeInput({
       bus,
@@ -235,11 +235,10 @@ describe('gateAction', () => {
     expect(rejectedEvent(events)?.reason).toBe('wrong dir');
   });
 
-  it('confirm tier, headless → deny APPROVAL_REQUIRED', async () => {
+  it('confirm tier, no callback → deny APPROVAL_REQUIRED', async () => {
     const { bus } = makeBusRecorder();
     const config = makeApprovalConfig({
       enabled: true,
-      headless: true,
       tiers: { write_out_of_scope: 'confirm' },
     });
     const input = makeInput({

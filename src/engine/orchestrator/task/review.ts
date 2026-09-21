@@ -90,7 +90,6 @@ export function buildTaskReviewRequest(opts: BuildTaskReviewRequestOptions): Tas
         }),
         currentCodeTruncated: opts.routingDecision.currentCodeTruncated,
         currentCodeContextMode: opts.routingDecision.currentCodeContextMode,
-        costPosture: opts.routingDecision.costPosture,
         reason: opts.routingDecision.reason,
       },
     }),

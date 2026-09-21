@@ -1,11 +1,4 @@
 import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
-import {
-  createTaskCompilationAttemptId,
-  type TaskCompilationAttemptId,
-  type TaskCompilationCallEnvelope,
-} from '../../core/schemas/task-compilation.js';
-import type { DispatchClaim, TaskDispatchLedger } from '../calls/dispatch-ledger.js';
-import { createRunnerCallRecorder } from '../calls/recorder.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import type {
   CliImplementerAdapter,
@@ -24,10 +17,6 @@ type InvokeCliOptions = {
   invocation: CliInvocation;
   prompt: string;
   callContext: RunnerCallContext;
-  /** Operation-wide claim port: one claim is taken immediately before the physical invoke. */
-  ledger?: TaskDispatchLedger | undefined;
-  attemptId?: TaskCompilationAttemptId | undefined;
-  envelope?: TaskCompilationCallEnvelope | undefined;
   onOutput?: ((text: string) => void) | undefined;
   onSessionId?: ((id: string) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
@@ -52,32 +41,6 @@ export function toCliEnvironment(environment: NodeJS.ProcessEnv): Readonly<Recor
 }
 
 export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCallResult> {
-  if (opts.ledger === undefined && opts.attemptId === undefined && opts.envelope === undefined) {
-    return invokePreparedCli(opts);
-  }
-  const attemptId =
-    opts.attemptId ?? opts.callContext.attemptId ?? createTaskCompilationAttemptId();
-  const callContext: RunnerCallContext = {
-    ...opts.callContext,
-    attemptId,
-    ...(opts.envelope !== undefined && { envelope: opts.envelope }),
-  };
-  if (opts.ledger !== undefined) {
-    const claim = opts.ledger.claimDispatch(attemptId);
-    if (claim.kind === 'refused') {
-      return createRunnerCallRecorder({ context: callContext }).finishFailed({
-        status: 'refused',
-        error: {
-          code: 'task_compiler_dispatch_limit',
-          message: dispatchRefusalMessage(claim),
-        },
-      });
-    }
-  }
-  return invokePreparedCli({ ...opts, callContext });
-}
-
-async function invokePreparedCli(opts: InvokeCliOptions): Promise<RunnerCallResult> {
   let streamedText = '';
   let blockText = '';
   const stream = (text: string): void => {
@@ -135,17 +98,6 @@ async function invokePreparedCli(opts: InvokeCliOptions): Promise<RunnerCallResu
       if (event.type === 'call_session_id') opts.onSessionId?.(event.nativeSessionId);
     },
   });
-}
-
-function dispatchRefusalMessage(claim: Extract<DispatchClaim, { kind: 'refused' }>): string {
-  switch (claim.reason) {
-    case 'dispatch-limit':
-      return `operation dispatch limit reached (${claim.dispatchCount}/${claim.dispatchLimit})`;
-    case 'attempt-already-claimed':
-      return `attempt ${claim.attemptId} already claimed; refusing replay`;
-    case 'invalid-attempt-id':
-      return `attempt id ${claim.attemptId} is invalid; refusing dispatch`;
-  }
 }
 
 function contributesToStreamedText(

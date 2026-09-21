@@ -66,3 +66,7 @@ Thumbs.db
 *.tgz
 
 .commandcode
+.zcode
+.superpowers
+.specify
+.opencode

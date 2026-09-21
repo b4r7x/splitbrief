@@ -12,11 +12,11 @@ Everything between the two belongs to SPLITBRIEF: the [Task Brief contract](./do
 
 ## Why two tools instead of one
 
-A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff. Put the planner and the implementer on models from different labs and the reviewer no longer shares the author's failure modes. That is the reason to run two tools, and SPLITBRIEF is arranged so the tool that wrote the code is not the tool that signs it off. One path breaks that: when a task exhausts retries and the last escalation tier fires, the planner writes the code itself and then reviews its own work. Escalated tasks are the exception the blind-spot argument does not cover.
+A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff. Put the planner and the implementer on models from different labs and the reviewer no longer shares the author's failure modes. That is the reason to run two tools, and SPLITBRIEF is arranged so the tool that wrote the code is not the tool that signs it off. When retries and planner hints are exhausted, explicit recovery asks the user how to proceed. The planner never automatically takes over code-writing implementation; bounded repairs after review use the selected implementer.
 
 Same-lab still works — two instances of one tool are a valid configuration. You give up the blind-spot argument, not the pipeline.
 
-Cost falls out of the same split rather than driving it: the expensive tool spends its tokens on research, brief compilation, review, and escalation; the cheap one spends its tokens typing. See [Cost](#cost) for what that does and does not promise.
+The split follows capability: the stronger tool spends its tokens on research, brief compilation, review, and escalation; the weaker one spends its tokens typing. See [Spend](#spend) for what the run reports.
 
 ## How it works
 
@@ -48,14 +48,14 @@ You: "add user authentication with JWT"
     │           │
   pass        fail
     │           │
-  next task   retry (max 3)
+  next task   retry (max 2)
                 │
                 fail again
                 │
             escalate, in order:
               mid-tier model (if configured)
               planner hint, implementer retries
-              planner takes the task over
+              explicit recovery asks you what to do
                 │
                 ▼
 ┌──────────────────────┐
@@ -65,28 +65,27 @@ You: "add user authentication with JWT"
 └──────────────────────┘
 ```
 
-How the changes land depends on which kind of implementer you picked. A tool that writes files itself (`writesFiles: direct` — the `cli` and `agent` kinds) works in an isolated directory; SPLITBRIEF promotes the result into your project and refuses to overwrite a file that changed while the task was running. A model that returns file contents (`writesFiles: extracted-code` — the `api` and `shell` kinds) never touches your working tree; SPLITBRIEF writes each file itself, one approval gate at a time. Isolation covers files only — same ports, same database, same hooks and config — so it is not a security boundary.
+How the changes land depends on which kind of implementer you picked. A tool that writes files itself (`writesFiles: direct` — the `cli` and `agent` kinds) works in an isolated directory; SPLITBRIEF promotes the result into your project and refuses to overwrite a file that changed while the task was running. A model that returns file contents (`writesFiles: extracted-code` — the `api` and `shell` kinds) never touches your working tree; SPLITBRIEF writes the returned content. API responses use declared text-file bundles with whole-response preflight and exact-path approval; shell extraction remains single-file. Isolation covers files only — same ports, same database, same hooks and config — so it is not a security boundary.
 
-The TUI shows planner and implementer working together as a conversation flow — event cards, inline diffs, real-time cost tracking.
+The TUI shows planner and implementer working together as a conversation flow — event cards, inline diffs, live token counts.
 
 ## Quick start
 
-Needs **Node.js 22+** and a **git** repository with at least one commit to work in.
+Needs **Node.js 22+**, **macOS, Linux or inside WSL**, and a **git** repository with at least one commit to work in.
 
-SPLITBRIEF is not published to npm yet. Install from source:
+Install from npm:
 
 ```bash
-git clone https://github.com/b4r7x/splitbrief.git
-cd splitbrief
-npm install
-npm run build
-npm link               # exposes the `splitbrief` binary on your PATH
+npm install -g splitbrief
+splitbrief --help
 ```
+
+For a local build or running through `npx`, see [Getting started](docs/GETTING-STARTED.md#3-installation).
 
 Then bring a planner — the stronger of the two:
 
 ```bash
-# Claude Code (default planner): install from https://claude.ai/code — uses your existing subscription, $0 extra
+# Claude Code (default planner): install from https://claude.ai/code — uses your existing subscription
 # Cursor Agent CLI: install from https://cursor.com/cli
 npm install -g @openai/codex      # Codex
 npm install -g @github/copilot    # Copilot
@@ -98,11 +97,12 @@ npm install -g command-code       # Command Code (binary `cmd`)
 
 And an implementer — the weaker **model**. It reaches SPLITBRIEF by either transport, and SPLITBRIEF favours neither:
 
-- **A CLI tool running a cheaper model.** Any of the tools above, pointed at a cheap model. The tool writes files itself, in an isolated directory.
+- **A CLI tool running a smaller model.** Any of the tools above, pointed at a smaller model. The tool writes files itself, in an isolated directory.
 - **An API model.** A local Ollama or LM Studio daemon — `ollama pull qwen3-coder:30b`, or a coding model loaded in LM Studio — or any OpenAI-compatible endpoint. The model returns file contents; SPLITBRIEF writes them.
 
 ```bash
 cd your-project
+splitbrief doctor      # check readiness without making changes or calling models
 splitbrief init        # checks installed CLI tools and reachable providers, then you pick both sides
 splitbrief start "add user authentication with JWT"
 ```
@@ -138,9 +138,10 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 | Action | Key | Effect |
 |--------|-----|--------|
 | Queue a message | Type + Enter | During live planner phases, queues text for the next safe point; planners with `injectUserTurn()` also receive it immediately |
-| Abort current call | Ctrl-C (single press) | During live phases, aborts the active model call and enters awaiting-continue |
-| Exit workflow | Ctrl-C twice within 2s | Saves state and exits; continue later with `splitbrief continue <session-id>` if the saved state is resumable |
-| Continue | Enter (empty) or type + Enter | Exit awaiting-continue; queued messages folded into next call |
+| Stop options | `esc` (empty composer) | Opens the stop sheet — stop now, pause after this brief, or end the run. No option reverts files, and your draft is kept |
+| Stop now | `ctrl+c` (one press) | Aborts the in-flight call, starts no new brief, and parks the run with its partial changes kept |
+| Quit | `ctrl+q` or `/quit` | Stops the run safely, saves the session, then exits; continue later with `splitbrief continue <session-id>` if the saved state is resumable |
+| Resume | `/resume`, or type + Enter | Restarts a parked run; typed text steers it. A blank Enter never resumes |
 
 ## Commands
 
@@ -150,10 +151,11 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 | `splitbrief spec "feature"` | Generate Task Brief transport and supporting planning artifacts only, no implementation |
 | `splitbrief init` | Create config, auto-detect available models |
 | `splitbrief doctor` | Check run readiness — config, runners, credentials, repo — without starting a workflow |
+| `splitbrief review` | Review the working-tree diff in one reviewer call — no session, no planning |
 | `splitbrief resume` | Resume an interrupted workflow |
 | `splitbrief status` | Show current workflow state |
 
-Those are the ones you need first. The full set — `ps`, `stats`, `export`, `explain`, `handoff`, `snapshot`, `approval`, `worktree`, `attach`, `detach`, `continue`, `last`, `mcp` — is in [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md).
+Those are the ones you need first. The full set — `approval`, `continue` — is in [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md).
 
 `start` and `spec` both take `--mode quick|standard|speckit`, which sets how much planning ceremony runs before the Task Briefs exist. The default is `standard`.
 
@@ -169,7 +171,7 @@ Those are the ones you need first. The full set — `ps`, `stats`, `export`, `ex
 | `/queue show` | Show queued messages |
 | `/queue clear` | Clear the message queue |
 
-Those are the ones you reach for mid-run. The full set — `/crew`, `/mode`, `/approval`, `/diff`, `/cost`, `/export`, `/handoff`, `/yolo` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
+Those are the ones you reach for mid-run. The full set — `/crew`, `/mode`, `/approval`, `/diff`, `/cost` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
 
 ## Configuration
 
@@ -184,7 +186,7 @@ planner:
   tool: claude-code          # claude-code | codex | opencode | copilot | kilo-code | cursor | command-code
 
 implementer:
-  kind: api                  # or `kind: cli` with a `tool:`, to run a CLI tool on a cheaper model
+  kind: api                  # or `kind: cli` with a `tool:`, to run a CLI tool on a smaller model
   provider: ollama           # catalog ID, or any custom name
   service: ollama            # required on every api runner — nothing is back-filled
   offering: local            # payg | free-quota | coding-subscription | local
@@ -200,16 +202,13 @@ validation:
   testCommand: npm test
 
 workflow:
-  maxRetries: 3
+  maxRetries: 2
   approve: default
-  git:
-    commitStrategy: none
-  persistTranscript: true  # Save planner/user messages to session.jsonl for resume context
 ```
 
-`contextLength` should match the model's effective window after the provider itself is configured. 25% is reserved for output. Minimum 8192. Optional implementer profiles still keep one implementer role: SPLITBRIEF selects the cheapest capable profile for each Task Brief instead of becoming a multi-agent manager.
+`contextLength` sets the application budget without changing server capacity. API calls use configured context, observed active context or an 8192-token default; PLAN and REVIEW reserve 2048 output tokens plus a 15% input-estimation margin. BUILD reserves for the declared file bundle. Optional implementer profiles still keep one implementer role: SPLITBRIEF selects the capable profile with the smallest sufficient context window for each Task Brief instead of becoming a multi-agent manager.
 
-Git commit strategies are opt-in. The default (`commitStrategy: none`) leaves changes unstaged for manual review; set `checkpoint` or `per-task` only if you want SPLITBRIEF to create git history.
+SPLITBRIEF leaves Git staging and commits to you.
 
 ### Planner backends
 
@@ -228,7 +227,7 @@ Ten planner backends — seven CLI tools, plus `api`, `shell`, and `agent`:
 | `shell` | shell | configurable | Any stdin/stdout command, see below |
 | `agent` | agent | configurable | Subprocess that writes files directly |
 
-Any CLI tool above is valid as `--planner <tool>` or `--reviewer <tool>`, for example `splitbrief start "add tests" --planner codex --implementer ollama`. The built-in providers `ollama` and `lm-studio` are local-only and implementer-only.
+Any CLI tool above is valid as `--planner <tool>` or `--reviewer <tool>`, for example `splitbrief start "add tests" --planner codex --implementer ollama`. The built-in local providers `ollama`, `lm-studio` and `llama-cpp` support PLAN, BUILD and REVIEW, each with its own endpoint and exact model ID. Start the server externally; SPLITBRIEF checks the configured connection.
 
 #### Shell planner
 
@@ -344,19 +343,29 @@ Sizes and speeds are indicative for a recent consumer GPU, not measurements take
 
 Per-token prices are not hardcoded here. They come from models.dev at startup and are shown next to each model in the picker, so the number you see is the one your provider charges today.
 
-## Cost
+## Spend
 
-Keeping the expensive tool on research, brief compilation, review, and escalation, and the cheap one on typing, is what makes a run cost less than doing the whole thing on the expensive tool. That is arithmetic, not a benchmark: what you actually save depends on provider pricing, subscription limits, task size, how good the implementer is, how much validation you have, and how often escalation fires.
+SPLITBRIEF reports what a run spent when it knows the prices: token counts per seat always, and a dollar figure whenever every seat the run used is priced in the catalog. A run that recorded unpriced usage says so instead of publishing a figure it cannot stand behind.
 
-SPLITBRIEF reports the token and dollar split per run. It does not promise a ratio.
-
-There is no spend cap unless you set one. `workflow.maxBudget` in config, or `--budget` on the command line, makes a run pause when it reaches the cap; without either, a run keeps spending until it finishes or you stop it. `splitbrief doctor` reports which of the two applies before you start.
+The figure is a fact about the run, not a target. You can hide it in Settings.
 
 ## Measurement
 
 Two numbers decide whether this design earns its complexity: **first-pass rate** — how often the implementer satisfies a Task Brief without escalation — and **cross-lab review effectiveness** — how much the planner's review catches that validation did not. Those are what will be published here.
 
-Neither is measured yet. The `evals/` harness can be driven from a cassette alone — `--replay` needs no API key and no base URL, because the endpoint and a placeholder credential are resolved from the provider catalog — but it has never produced a recorded run, which is also why every model in the bundled catalog is marked `compatible-only` — `recommended` is reserved for models with recorded evaluation metrics, and none exist. Until those numbers appear in this section, nothing in this README is a performance claim. Cost is reported, never promised: a run that recorded no priced usage reports that explicitly instead of a fabricated zero.
+Neither is measured yet. The `evals/` harness can be driven from a cassette alone — `--replay` needs no API key and no base URL, because the endpoint and a placeholder credential are resolved from the provider catalog — but it has never produced a recorded run, which is also why every model in the bundled catalog is marked `compatible-only` — `recommended` is reserved for models with recorded evaluation metrics, and none exist. Until those numbers appear in this section, nothing in this README is a performance claim. Spend is reported as a fact: a run that recorded no priced usage reports that explicitly instead of a fabricated zero.
+
+## Use the pipeline as skills
+
+The same contract — brief, gates, drift, retry ladder, evidence-bound review — ships as four agent skills for any coding tool:
+
+```bash
+npx skills add b4r7x/splitbrief
+```
+
+Claude Code can also take the repo as a plugin marketplace: `/plugin marketplace add b4r7x/splitbrief`, then `/plugin install splitbrief@splitbrief`.
+
+Then, in Claude Code, Cursor, OpenCode, Codex, Copilot, Antigravity, Command Code, or Kilo: `splitbrief impl=opencode:opencode-go/kimi-k3 review=cursor:gpt-5.3-codex-high "add a /health endpoint"`. The session plans and compiles the briefs, spawns the implementer per brief, validates, and reviews. See [docs/SKILLS.md](https://github.com/b4r7x/splitbrief/blob/main/docs/SKILLS.md).
 
 ## Development
 
@@ -373,18 +382,16 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 
 ## Extensibility
 
-- **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/splitbrief/blob/main/docs/ARCHITECTURE.md#eventbus).
-- **Workflow hooks** — fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). 2 built-ins: `prettier-on-change`, `block-secrets`. See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/splitbrief/blob/main/docs/HOOKS-CONFIG.md).
+- **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, and hooks subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/splitbrief/blob/main/docs/ARCHITECTURE.md#eventbus).
+- **Workflow hooks** — fire shell commands at workflow events (`pre_task`, `post_validation`, etc.). See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/splitbrief/blob/main/docs/HOOKS-CONFIG.md).
 - **Repo-map context** — ranked symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](https://github.com/b4r7x/splitbrief/blob/main/docs/REPOMAP.md).
 - **Headless mode** — `splitbrief start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
-- **Advanced interop** — handoff packs and the MCP server expose read-only session artifacts for external tools; they are escape hatches, not the main execution path.
-- **OpenTelemetry** — opt-in span emission for workflow, phase, and task lifecycle with per-cost attributes. See [docs/OTEL.md](https://github.com/b4r7x/splitbrief/blob/main/docs/OTEL.md).
 
 ## Current state
 
-Primary development stack is TypeScript/JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines.
+Primary development stack is TypeScript/JavaScript. Validation is generic over five stacks, each with its own typecheck, lint and test commands: TypeScript (`npx tsc --noEmit`, ESLint or Biome, `npm test`), JavaScript (lint and test only), Python (`mypy`/`pyright`, `ruff`/`flake8`, `pytest` under `uv`, `poetry` or bare), Go (`go vet ./...`, `golangci-lint`/`staticcheck`, `go test ./...`) and Rust (`cargo check`, `cargo clippy --no-deps`, `cargo test`). The exact per-stack table, and the `config → manifest → discovered → stack default → none` ladder that picks a command, are in [docs/FEATURES.md §Validation pipeline](https://github.com/b4r7x/splitbrief/blob/main/docs/FEATURES.md#validation-pipeline--checkpoints). Any other stack runs review-only (`gates: NONE`) rather than guessing.
 
-macOS and Linux only. Windows is not supported: the IPC server behind `splitbrief attach` / `splitbrief ps` and the snapshot path encoding both need POSIX semantics. Support is planned, not present.
+Use macOS, Linux or run inside WSL. Native Windows is not supported: process and filesystem handling requires POSIX semantics.
 
 ## Contributing
 

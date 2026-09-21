@@ -5,6 +5,7 @@ import {
   resolveEffortLevel,
   blocksSpecGate,
   blocksPlanGate,
+  blocksBriefsGate,
 } from './resolve.js';
 import { formatEffectiveConfigWarnings, resolveEffectiveConfig } from './effective-config.js';
 import type { Config } from '../../schemas/config.js';
@@ -106,6 +107,17 @@ describe('blocksSpecGate / blocksPlanGate', () => {
       expect(blocksPlanGate(input)).toBe(expectedPlan);
     },
   );
+});
+
+describe('blocksBriefsGate', () => {
+  it.each([
+    { mode: 'quick' as const, level: 'all' as const, expected: false },
+    { mode: 'standard' as const, level: 'none' as const, expected: false },
+    { mode: 'standard' as const, level: 'spec' as const, expected: true },
+    { mode: 'speckit' as const, level: 'all' as const, expected: true },
+  ])('$mode + $level -> $expected', ({ mode, level, expected }) => {
+    expect(blocksBriefsGate(mode, level)).toBe(expected);
+  });
 });
 
 describe('retired instant mode', () => {

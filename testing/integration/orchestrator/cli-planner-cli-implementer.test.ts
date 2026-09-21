@@ -118,7 +118,7 @@ function installFakeCodexPlanner(binDir: string): string {
     'const prompt = process.argv[process.argv.length - 1] ?? "";',
     'const threadId = process.argv[process.argv.length - 2] ?? "fake-codex-thread";',
     'if (prompt.includes("Final Implementation Review")) {',
-    '  console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "# Final review\\n\\nCLI planner and CLI implementer completed." } }));',
+    '  console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "# Final review\\n\\nCLI planner and CLI implementer completed.\\n\\n### Verdict\\npass" } }));',
     '  console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 17, output_tokens: 9 } }));',
     '  process.exit(0);',
     '}',
@@ -194,7 +194,6 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
           mode: 'quick',
           approve: 'none',
           maxRetries: 1,
-          persistTranscript: true,
         },
       }),
     );

@@ -4,14 +4,6 @@ import { GenerationCommonFields, createRunnerConfigSchema } from './runner-field
 
 export const ImplementerConfigSchema = createRunnerConfigSchema(GenerationCommonFields);
 
-export const ImplementerCostTierSchema = z.enum([
-  'local',
-  'cheap',
-  'standard',
-  'frontier',
-  'unknown',
-]);
-
 export const ImplementerProfileNameSchema = z
   .string()
   .min(1)
@@ -31,7 +23,6 @@ export function defaultImplementerWriteMode(kind: RunnerKind): ImplementerWriteM
 export const ImplementerProfileConfigSchema = createRunnerConfigSchema({
   ...GenerationCommonFields,
   label: z.string().min(1).optional(),
-  costTier: ImplementerCostTierSchema.optional(),
   capabilities: ImplementerCapabilitiesSchema.optional(),
 }).superRefine((profile, ctx) => {
   const writesFiles = profile.capabilities?.writesFiles;
@@ -71,7 +62,6 @@ export const ImplementerProfilesConfigSchema = z
   });
 
 export type ImplementerConfig = z.infer<typeof ImplementerConfigSchema>;
-export type ImplementerCostTier = z.infer<typeof ImplementerCostTierSchema>;
 export type ImplementerWriteMode = z.infer<typeof ImplementerWriteModeSchema>;
 export type ImplementerCapabilities = z.infer<typeof ImplementerCapabilitiesSchema>;
 export type ImplementerProfileConfig = z.infer<typeof ImplementerProfileConfigSchema>;

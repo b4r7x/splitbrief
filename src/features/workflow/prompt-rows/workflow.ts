@@ -1,21 +1,41 @@
 import type { ApprovalPromptState } from '../../../stores/approval-prompt/prompt.js';
-import type { CostApprovalState } from '../../../stores/cost-approval/prompt.js';
-import { getApprovalPromptRows } from './approval.js';
-import { getCostApprovalPromptRows } from './cost.js';
+import {
+  getApprovalPromptRows,
+  getReviewDocumentPromptRows,
+  type ReviewArtifact,
+} from './approval.js';
 import { getQuestionPromptRows } from './question.js';
+import { getRecoveryPromptRows } from './recovery.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
+import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 
 export interface WorkflowPromptRowsInput {
   approvalState: ApprovalPromptState;
-  costApprovalState: CostApprovalState;
   questionHint: string | null;
+  /** Omitted by callers that measure a zone the document review panel never renders into. */
+  reviewArtifact?: ReviewArtifact | null | undefined;
+  recoveryIssue?: RecoveryIssue | null | undefined;
+  questions?: readonly ClarificationQuestion[] | undefined;
+  questionIndex?: number | undefined;
+  questionWriting?: boolean | undefined;
   cols: number;
 }
 
 export function getWorkflowPromptRows(input: WorkflowPromptRowsInput): number {
-  const { approvalState, costApprovalState, questionHint, cols } = input;
+  const { approvalState, questionHint, reviewArtifact, recoveryIssue, questions, cols } = input;
   return (
     getApprovalPromptRows(approvalState, cols) +
-    getCostApprovalPromptRows(costApprovalState, cols) +
-    (questionHint === null ? 0 : getQuestionPromptRows(questionHint, cols))
+    getReviewDocumentPromptRows(reviewArtifact ?? null, cols) +
+    (recoveryIssue !== null && recoveryIssue !== undefined
+      ? getRecoveryPromptRows(recoveryIssue, cols)
+      : questionHint === null || questions?.length === 0
+        ? 0
+        : getQuestionPromptRows(
+            questionHint,
+            cols,
+            questions,
+            input.questionIndex,
+            input.questionWriting,
+          ))
   );
 }

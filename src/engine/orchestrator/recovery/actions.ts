@@ -1,17 +1,18 @@
+import { randomUUID } from 'node:crypto';
+import { phaseRole } from '../../../core/phases.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { allowedActionsForReason } from '../../../core/schemas/recovery/policy.js';
-import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
-import {
-  recoveryFactBoolean,
-  recoveryFactNumber,
-  recoveryFactString,
-} from '../../../core/schemas/recovery/facts.js';
+import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
+import type { CrewSeatId } from '../../../core/crew/identity.js';
+import { configWithSwitchedSeat } from './switch-seat.js';
+import { recoveryFactBoolean, recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { nowIso } from '../../../utils/format-time.js';
 import type { EventBus } from '../../events/types.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -27,9 +28,6 @@ import {
   publishTaskSkipped,
 } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
-import { readStateAuthority } from '../../../core/state/authority.js';
-import type { StateAuthorityReceipt } from '../../../core/state/types.js';
-import { error } from '../../../utils/error.js';
 
 export type RecoveryActionBlockedCode =
   | 'no-pending-recovery'
@@ -39,12 +37,14 @@ export type RecoveryActionBlockedCode =
   | 'skip-evidence-failed'
   | 'missing-profile'
   | 'profile-not-found'
+  | 'seat-swap-unavailable'
+  | 'candidate-not-offered'
   | 'planner-proposal-required';
 
 export type RecoveryActionAppliedStatus =
   | 'continued'
   | 'paused'
-  | 'aborted'
+  | 'closed'
   | 'skipped-current-task'
   | 'retry-current-task';
 
@@ -56,6 +56,8 @@ export type ApplyRecoveryActionResult =
       state: WorkflowState;
       status: RecoveryActionAppliedStatus;
       implementerProfile?: string | undefined;
+      switchedSeat?: Readonly<{ seat: CrewSeatId; candidate: SeatSwapCandidate }> | undefined;
+      switchedConfig?: Config | undefined;
     }
   | {
       ok: false;
@@ -68,6 +70,22 @@ export type ApplyRecoveryActionResult =
       implementerProfile?: string | undefined;
     };
 
+export type ApplyRecoveryActionBlocked = Extract<ApplyRecoveryActionResult, { ok: false }>;
+
+/**
+ * What `switch-seat` resolves to. The shared result declares the swap fields
+ * optional because no other action sets them; the one action that always does
+ * narrows them back to required, so its caller reads the switched config
+ * without a check for a state the producer cannot emit.
+ */
+export type ApplySwitchSeatResult =
+  | (Extract<ApplyRecoveryActionResult, { ok: true }> &
+      Readonly<{
+        switchedSeat: Readonly<{ seat: CrewSeatId; candidate: SeatSwapCandidate }>;
+        switchedConfig: Config;
+      }>)
+  | ApplyRecoveryActionBlocked;
+
 export interface ApplyRecoveryActionOptions {
   projectDir: string;
   sessionId: string;
@@ -76,20 +94,10 @@ export interface ApplyRecoveryActionOptions {
   bus: EventBus;
   config?: Config | undefined;
   mode?: WorkflowMode | undefined;
-  authority?: StateAuthorityReceipt | undefined;
-}
-
-function recoveryMutationOptions(
-  opts: ApplyRecoveryActionOptions,
-  state: WorkflowState,
-): { expectedRevision: number; authority?: StateAuthorityReceipt } {
-  const expectedRevision = state.stateRevision ?? 0;
-  if (opts.authority === undefined) return { expectedRevision };
-  const current = readStateAuthority({ projectDir: opts.projectDir, sessionId: opts.sessionId });
-  if (current === null) {
-    throw error('state-authority-invalid', 'The recovery state authority is unavailable.');
-  }
-  return { expectedRevision, authority: current };
+  /** `switch-seat` only: which offered tool the seat moves to. Defaults to the first offer. */
+  candidate?: SeatSwapCandidate | undefined;
+  /** `revise` / `revise-spec` only: what the operator wants changed. */
+  comment?: string | undefined;
 }
 
 export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyRecoveryActionResult {
@@ -142,14 +150,20 @@ export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyReco
   switch (opts.action) {
     case 'pause-run':
       return applyPauseRecoveryAction(opts, issue);
-    case 'abort-workflow':
-      return applyAbortRecoveryAction(opts, issue);
+    case 'end-run':
+      return applyEndRunRecoveryAction(opts, issue);
+    case 'revise':
+      return applyReviseRecoveryAction(opts, issue);
+    case 'revise-spec':
+      return applyReviseSpecRecoveryAction(opts, issue);
     case 'skip-current-task':
       return applySkipCurrentTaskRecoveryAction(opts, issue);
     case 'retry-same-worker':
       return applyRetrySameWorkerRecoveryAction(opts, issue);
     case 'route-bigger-worker':
       return applyRouteBiggerWorkerRecoveryAction(opts, issue);
+    case 'switch-seat':
+      return applySwitchSeatRecoveryAction(opts);
     default:
       return assertNever(opts.action);
   }
@@ -174,27 +188,13 @@ function applyContinueRecoveryAction(
   }
 
   let state = markRecoveryApplying(opts, issue);
-  if (issue.reason === 'budget-paused') {
-    const acknowledgedAtCost = recoveryFactNumber(issue.facts, 'currentCost');
-    if (acknowledgedAtCost !== undefined) {
-      state = transitionAndSave(
-        opts,
-        state,
-        {
-          type: 'ACKNOWLEDGE_BUDGET_PAUSE',
-          cost: acknowledgedAtCost,
-        },
-        recoveryMutationOptions(opts, state),
-      );
-    }
-  }
   state = transitionAndSave(
     opts,
     state,
     {
       type: 'RESOLVE_PENDING_RECOVERY',
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
 
@@ -212,12 +212,17 @@ function applyPauseRecoveryAction(
     {
       type: 'PAUSE_PENDING_RECOVERY',
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   return { ok: true, action: opts.action, issue, state, status: 'paused' };
 }
 
-function applyAbortRecoveryAction(
+/**
+ * The one way a halt ends a run: the close is written to the state, so the run
+ * reads `closed · ended` afterwards instead of resetting to a phase it never
+ * returned to. Nothing the implementer wrote is reverted.
+ */
+function applyEndRunRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
@@ -225,11 +230,74 @@ function applyAbortRecoveryAction(
   state = transitionAndSave(
     opts,
     state,
-    { type: 'ABORT_PENDING_RECOVERY' },
-    recoveryMutationOptions(opts, state),
+    { type: 'CLOSE_RUN' },
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'aborted' });
-  return { ok: true, action: opts.action, issue, state, status: 'aborted' };
+  return { ok: true, action: opts.action, issue, state, status: 'closed' };
+}
+
+/**
+ * The operator's correction rides the message queue, which is where every other
+ * mid-run instruction to the planner goes; the next planner turn drains it. An
+ * empty comment is still a decision — the halt resolves and the step re-runs.
+ */
+function applyReviseRecoveryAction(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+): ApplyRecoveryActionResult {
+  let state = markRecoveryApplying(opts, issue);
+  const comment = opts.comment?.trim() ?? '';
+  if (comment.length > 0) {
+    state = transitionAndSave(
+      opts,
+      state,
+      {
+        type: 'ENQUEUE_USER_MSG',
+        message: {
+          id: randomUUID(),
+          text: comment,
+          queuedAt: nowIso(),
+          phase: issue.phase,
+          deliveredViaNative: false,
+          nativeDeliveryState: 'pending',
+          origin: 'user-input',
+        },
+      },
+      { expectedRevision: state.stateRevision ?? 0 },
+    );
+  }
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'RESOLVE_PENDING_RECOVERY' },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
+  return { ok: true, action: opts.action, issue, state, status: 'continued' };
+}
+
+/** Send the spec back to the planner with the operator's note, then resume planning. */
+function applyReviseSpecRecoveryAction(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+): ApplyRecoveryActionResult {
+  let state = markRecoveryApplying(opts, issue);
+  const comment = opts.comment?.trim() ?? '';
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'REWIND_TO_SPEC', ...(comment.length > 0 && { comment }) },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'RESOLVE_PENDING_RECOVERY' },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
+  return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
 
 function applySkipCurrentTaskRecoveryAction(
@@ -276,7 +344,7 @@ function applySkipCurrentTaskRecoveryAction(
       type: 'SKIP_TASK',
       taskId: target.id,
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   state = transitionAndSave(
     opts,
@@ -284,7 +352,7 @@ function applySkipCurrentTaskRecoveryAction(
     {
       type: 'RESOLVE_PENDING_RECOVERY',
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   publishTaskSkipped(
     { bus: opts.bus, phase: issue.phase },
@@ -304,10 +372,26 @@ function applySkipCurrentTaskRecoveryAction(
   return { ok: true, action: opts.action, issue, state, status: 'skipped-current-task' };
 }
 
+/**
+ * A halt that names no brief is about the seat, not a task. PLAN and REVIEW have
+ * nothing to reset: a packet the seat was never given, and a review call that
+ * never landed, are answered by re-issuing the same step once the seat is
+ * corrected. Every other retry replays the brief it names.
+ */
+function isSeatLevelRetry(issue: RecoveryIssue): boolean {
+  return (
+    issue.taskId === undefined &&
+    (issue.seat === 'plan' ||
+      issue.seat === 'review' ||
+      (issue.seat === undefined && phaseRole(issue.phase) === 'planner'))
+  );
+}
+
 function applyRetrySameWorkerRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
+  if (isSeatLevelRetry(issue)) return resolveSeatIssueWithoutTask(opts, issue);
   return applyRetryCurrentTaskRecoveryAction(
     opts,
     issue,
@@ -349,6 +433,153 @@ function applyRouteBiggerWorkerRecoveryAction(
   );
 }
 
+/**
+ * Move a quota-blocked seat onto one of the tools the issue offered, then take
+ * the same retry path `route-bigger-worker` takes: the current task is reset
+ * and replayed, this time on the chosen seat.
+ *
+ * The swap itself travels on the result: `switchedConfig` is the run config
+ * with that seat repointed, which the caller hands to `createPlanner` /
+ * `createImplementer` / `createReviewer` — recovery is a synchronous
+ * transition and never holds the preparation authority those factories
+ * require. Omitting `candidate` takes the first tool the offer named.
+ */
+export function applySwitchSeatRecoveryAction(
+  opts: Omit<ApplyRecoveryActionOptions, 'action'>,
+): ApplySwitchSeatResult {
+  const action: RecoveryAction = 'switch-seat';
+  const issue = opts.state.pendingRecovery;
+  if (!issue) {
+    return {
+      ok: false,
+      action,
+      state: opts.state,
+      status: 'blocked',
+      code: 'no-pending-recovery',
+      message: 'No pending recovery issue is available.',
+    };
+  }
+
+  const offer = issue.switchSeat;
+  const first = offer?.candidates[0];
+  if (!offer || first === undefined || !issue.availableActions.includes(action)) {
+    return blockRecoveryAction({
+      ...opts,
+      action,
+      issue,
+      code: 'seat-swap-unavailable',
+      message: `Recovery issue ${issue.reason} offers no seat to switch to.`,
+    });
+  }
+
+  const chosen = opts.candidate ?? first;
+  const offered = offer.candidates.some(
+    (candidate) => candidate.tool === chosen.tool && candidate.model === chosen.model,
+  );
+  if (!offered) {
+    return blockRecoveryAction({
+      ...opts,
+      action,
+      issue,
+      code: 'candidate-not-offered',
+      message: `'${chosen.tool}' is not one of the tools offered for the ${offer.seat} seat.`,
+      publishSelected: true,
+    });
+  }
+
+  if (!opts.config) {
+    return blockRecoveryAction({
+      ...opts,
+      action,
+      issue,
+      code: 'seat-swap-unavailable',
+      message: 'Switching a seat requires the run config.',
+      publishSelected: true,
+    });
+  }
+
+  // A build halt names the profile that failed; the swap lands on that profile,
+  // and a name the profile table no longer carries changes nothing.
+  const failingProfile = offer.seat === 'build' ? issue.selectedImplementerProfile : undefined;
+  if (
+    failingProfile !== undefined &&
+    opts.config.implementerProfiles !== undefined &&
+    !hasImplementerProfile(opts.config, failingProfile)
+  ) {
+    return blockRecoveryAction({
+      ...opts,
+      action,
+      issue,
+      code: 'profile-not-found',
+      message: `Profile '${failingProfile}' not found in config.`,
+      implementerProfile: failingProfile,
+      publishSelected: true,
+    });
+  }
+
+  const switchedConfig = configWithSwitchedSeat(opts.config, offer.seat, chosen, failingProfile);
+  if (switchedConfig === null) {
+    return blockRecoveryAction({
+      ...opts,
+      action,
+      issue,
+      code: 'candidate-not-offered',
+      message: `'${chosen.tool}' cannot host the ${offer.seat} seat.`,
+      publishSelected: true,
+    });
+  }
+
+  // A seat-level halt — a planner call that could not run at all — names no brief:
+  // resolving it is the whole move, and the run re-issues its step on the new seat.
+  // A halt that names a brief still replays that brief there.
+  const applied = isSeatLevelRetry(issue)
+    ? resolveSeatIssueWithoutTask({ ...opts, action }, issue)
+    : applyRetryCurrentTaskRecoveryAction(
+        { ...opts, action },
+        issue,
+        'Switching a seat requires the pending recovery task to match the current task index.',
+      );
+  if (!applied.ok) return applied;
+  return {
+    ...applied,
+    switchedSeat: { seat: offer.seat, candidate: chosen },
+    switchedConfig,
+  };
+}
+
+/**
+ * Resolve a halt that names no brief: the pending recovery clears and the run
+ * re-enters the same step, with no `RESET_TASK` and no current task required.
+ */
+function resolveSeatIssueWithoutTask(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+): ApplyRecoveryActionResult {
+  let state = markRecoveryApplying(opts, issue);
+  if (opts.comment?.trim()) {
+    state = transitionAndSave(opts, state, {
+      type: 'ENQUEUE_USER_MSG',
+      message: {
+        id: randomUUID(),
+        text: opts.comment,
+        queuedAt: nowIso(),
+        phase: state.phase,
+        deliveredViaNative: false,
+        nativeDeliveryState: 'pending',
+        origin: 'user-input',
+      },
+    });
+  }
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'RESOLVE_PENDING_RECOVERY' },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
+  return { ok: true, action: opts.action, issue, state, status: 'continued' };
+}
+
 function applyRetryCurrentTaskRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
@@ -376,7 +607,7 @@ function applyRetryCurrentTaskRecoveryAction(
       type: 'RESET_TASK',
       taskId: target.id,
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   opts.bus.publish({
     type: 'task_reset',
@@ -390,7 +621,7 @@ function applyRetryCurrentTaskRecoveryAction(
     {
       type: 'RESOLVE_PENDING_RECOVERY',
     },
-    recoveryMutationOptions(opts, state),
+    { expectedRevision: state.stateRevision ?? 0 },
   );
   publishRecoveryResolved({
     bus: opts.bus,
@@ -428,7 +659,7 @@ function markRecoveryApplying(
       type: 'MARK_RECOVERY_APPLYING',
       action: opts.action,
     },
-    recoveryMutationOptions(opts, opts.state),
+    { expectedRevision: opts.state.stateRevision ?? 0 },
   );
 }
 
@@ -439,7 +670,7 @@ function blockRecoveryAction(
     implementerProfile?: string | undefined;
     publishSelected?: boolean | undefined;
   },
-): ApplyRecoveryActionResult {
+): ApplyRecoveryActionBlocked {
   if (opts.publishSelected) {
     publishRecoveryActionSelected({ bus: opts.bus, issue: opts.issue, action: opts.action });
   }
@@ -502,15 +733,6 @@ function recordRecoverySkipEvidence(opts: {
 }
 
 function isSafeContinue(issue: RecoveryIssue): boolean {
-  if (issue.reason === 'budget-exceeded') return false;
-  if (issue.reason === 'budget-paused') {
-    const belowMaxBudget = recoveryFactBoolean(issue.facts, 'belowMaxBudget');
-    if (belowMaxBudget === true) return true;
-
-    const currentCost = recoveryFactNumber(issue.facts, 'currentCost');
-    const maxBudget = recoveryFactNumber(issue.facts, 'maxBudget');
-    return currentCost !== undefined && maxBudget !== undefined && currentCost < maxBudget;
-  }
   if (issue.reason === 'user-edit-conflict') {
     return recoveryFactBoolean(issue.facts, 'safeToContinue') === true;
   }

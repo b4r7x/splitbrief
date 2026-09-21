@@ -47,19 +47,26 @@
     "test:watch": "vitest",
     "test:coverage": "tsx scripts/coverage-run.ts",
     "test:e2e": "vitest run --config testing/e2e/vitest.e2e.config.ts",
+    "test:terminal": "tsx testing/integration/cli/terminal-browser/run.ts",
     "test:e2e:record": "SPLITBRIEF_E2E_RECORD=1 vitest run --config testing/e2e/vitest.e2e.config.ts",
     "test:e2e:live": "SPLITBRIEF_REAL_CLI_E2E=1 vitest run --config testing/e2e/vitest.live.config.ts testing/e2e/scenarios/live",
     "test:e2e:live:heavy": "SPLITBRIEF_REAL_CLI_E2E=1 SPLITBRIEF_REAL_CLI_TIER=heavy vitest run --config testing/e2e/vitest.live.config.ts testing/e2e/scenarios/live",
     "test:e2e:live:smoke": "SPLITBRIEF_REAL_CLI_E2E=1 vitest run --config testing/e2e/vitest.live.config.ts testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts",
+    "test:e2e:live:fixture": "SPLITBRIEF_REAL_CLI_E2E=1 SPLITBRIEF_LIVE_FIXTURE=1 vitest run --config testing/e2e/vitest.live.config.ts testing/e2e/scenarios/live/fixture-loop.test.ts",
+    "test:e2e:release": "SPLITBRIEF_REAL_CLI_E2E=1 vitest run --config testing/e2e/vitest.live.config.ts testing/e2e/scenarios/live/release-matrix.test.ts",
+    "test:e2e:publish": "SPLITBRIEF_REAL_CLI_E2E=1 SPLITBRIEF_PUBLISH_LIVE=1 vitest run --config testing/e2e/vitest.live.config.ts testing/e2e/scenarios/live/publish-smoke.test.ts",
     "tui-shots": "tsx scripts/tui-shots.ts",
+    "tui-preview": "tsx scripts/tui-preview.ts",
     "tui-shots:pty": "tsx testing/integration/cli/pty/cli.ts",
     "eval": "tsx evals/cli.ts",
     "eval:record": "tsx evals/cli.ts --record",
     "eval:replay": "tsx evals/cli.ts --replay",
     "check:invariants": "tsx scripts/check-invariants.ts",
+    "skills:sync": "tsx scripts/sync-skills.ts",
+    "skills:check": "tsx scripts/sync-skills.ts --check",
     "knip": "knip",
-    "release-check": "npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run check:invariants",
-    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run test:e2e && npm run check:invariants"
+    "release-check": "npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run check:invariants && npm run skills:check",
+    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run test:e2e && npm run check:invariants && npm run skills:check"
   },
   "keywords": [
     "ai",
@@ -67,8 +74,7 @@
     "orchestrator",
     "opus",
     "ollama",
-    "local-model",
-    "cost-optimization"
+    "local-model"
   ],
   "imports": {
     "#testing/*": "./testing/*"
@@ -78,8 +84,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@opentelemetry/api": "^1.9.1",
-    "@opentelemetry/sdk-trace-base": "^2.7.0",
+    "@xterm/addon-unicode-graphemes": "0.4.0",
+    "@xterm/headless": "6.0.0",
     "ansis": "^3.0.0",
     "better-sqlite3": "^12.9.0",
     "commander": "^14.0.0",
@@ -102,17 +108,18 @@
     "tree-sitter-typescript": "^0.23.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.0.0",
+    "@biomejs/biome": "2.5.12",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@vitest/coverage-v8": "^4.1.2",
-    "@xterm/headless": "6.0.0",
+    "@xterm/xterm": "6.0.0",
     "chalk": "^5.6.2",
     "dependency-cruiser": "^17.4.3",
     "ink-testing-library": "^4.0.0",
     "knip": "^5.88.1",
     "node-pty": "1.1.0",
+    "playwright": "1.63.0",
     "sharp": "0.35.3",
     "tldts": "7.4.9",
     "tsx": "^4.21.0",

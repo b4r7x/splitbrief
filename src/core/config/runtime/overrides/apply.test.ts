@@ -40,9 +40,13 @@ describe('applyCLIOverrides — plannerEffort', () => {
     const result = applyCLIOverrides(baseConfig, { plannerEffort: 'high' });
     expect(result.planner.effort).toBe('high');
   });
-  it('throws on invalid effort value', () => {
-    expect(() => applyCLIOverrides(baseConfig, { plannerEffort: 'bogus' })).toThrow(
-      /Must be one of/,
+  it('accepts max, the top of the vocabulary', () => {
+    const result = applyCLIOverrides(baseConfig, { plannerEffort: 'max' });
+    expect(result.planner.effort).toBe('max');
+  });
+  it('refuses a level outside the vocabulary and names every level it takes', () => {
+    expect(() => applyCLIOverrides(baseConfig, { plannerEffort: 'ultra' })).toThrow(
+      'Must be one of: none, minimal, low, medium, high, xhigh, max',
     );
   });
   it('leaves config untouched when override absent', () => {
@@ -82,7 +86,7 @@ describe('applyCLIOverrides — yolo', () => {
   });
 });
 
-describe('applyCLIOverrides — contextLength, mode, budget', () => {
+describe('applyCLIOverrides — contextLength and mode', () => {
   it('applies contextLength override', () => {
     const result = applyCLIOverrides(baseConfig, { contextLength: 16384 });
     expect(result.implementer.contextLength).toBe(16384);
@@ -96,23 +100,6 @@ describe('applyCLIOverrides — contextLength, mode, budget', () => {
 
   it('maps --mode instant onto quick', () => {
     expect(applyCLIOverrides(baseConfig, { mode: 'instant' }).workflow.mode).toBe('quick');
-  });
-
-  it('throws on NaN budget override', () => {
-    expect(() => applyCLIOverrides(baseConfig, { budget: NaN })).toThrow('Invalid budget');
-  });
-
-  it('throws on zero budget override', () => {
-    expect(() => applyCLIOverrides(baseConfig, { budget: 0 })).toThrow('Invalid budget');
-  });
-
-  it('throws on negative budget override', () => {
-    expect(() => applyCLIOverrides(baseConfig, { budget: -5 })).toThrow('Invalid budget');
-  });
-
-  it('applies valid budget override', () => {
-    const result = applyCLIOverrides(baseConfig, { budget: 10.5 });
-    expect(result.workflow.maxBudget).toBe(10.5);
   });
 
   it('preserves a configured approve level when no approve override is given', () => {

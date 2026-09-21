@@ -37,17 +37,12 @@ describe('review packet schema verdict fields', () => {
       cost: {
         tokenUsage: makeUsage(),
         costBreakdown: {
-          hypotheticalCost: 4,
           actualPlannerCost: 1,
           actualImplementerCost: 0.5,
           actualReviewerCost: 0.25,
           totalActualCost: 1.75,
-          savingsAmount: 2.25,
-          savingsPercentage: 56,
-          localCompletionRate: 1,
           isActualReviewerCostKnown: true,
         },
-        estimatedCostSavings: null,
         taskRouting: [],
         routingWarnings: [],
       },
@@ -193,7 +188,6 @@ function packetBeforeVerdictFields(): unknown {
     cost: {
       tokenUsage: makeUsage(),
       costBreakdown: null,
-      estimatedCostSavings: null,
       taskRouting: [],
       routingWarnings: [],
     },

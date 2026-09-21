@@ -1,6 +1,6 @@
 # SPLITBRIEF
 
-Open-source orchestrator for two AI coding tools. The stronger one plans, compiles Task Briefs, and reviews; the weaker one executes them. SPLITBRIEF holds the contract between them — the brief, validation, retry, escalation, and the evidence trail. Lower cost is a consequence of the split, not the headline.
+Open-source orchestrator for two AI coding tools. The stronger one plans, compiles Task Briefs, and reviews; the weaker one executes them. SPLITBRIEF holds the contract between them — the brief, validation, retry, escalation, and the evidence trail.
 
 ## CRITICAL — NEVER COMMIT, NEVER STAGE
 
@@ -27,8 +27,9 @@ npm run typecheck                # tsc --noEmit (src + test configs)
 npm run lint                     # Biome check
 npm run format                   # Biome format --write
 npm test                         # vitest run
-npm run release-check            # PR gate: format:check && typecheck && lint && test && test:e2e && invariants
+npm run release-check            # PR gate: format:check && typecheck && lint && test && test:e2e && invariants && skills:check
 npm run test-ci                  # exhaustive form: same, with test:coverage thresholds
+node scripts/dangling-imports.mjs  # audit: relative imports that resolve to nothing (exit 1 on findings)
 ```
 
 ## Documentation map
@@ -46,7 +47,13 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Understand planner/implementer/reviewer pipeline | [docs/PLANNERS-AND-IMPLEMENTERS.md](./docs/PLANNERS-AND-IMPLEMENTERS.md) — runner kinds, the three seats, Task Brief, token accounting |
 | Understand stores and UI | [docs/STORES-AND-UI.md](./docs/STORES-AND-UI.md) — store factory, screens, overlays |
 | Understand approval gates and recovery | [docs/APPROVAL-AND-RECOVERY.md](./docs/APPROVAL-AND-RECOVERY.md) — tiered approval, escalation, drift |
-| Understand supporting subsystems | [docs/SUBSYSTEMS.md](./docs/SUBSYSTEMS.md) — hooks, snapshots, IPC, repo-map, handoff, MCP |
+| Understand supporting subsystems | [docs/SUBSYSTEMS.md](./docs/SUBSYSTEMS.md) — hooks, snapshots, repo-map, runtime commands, detection, compaction, evidence ledger |
+| Understand how the code is laid out and what exists today | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — layer diagram and design rationale, plus a verified inventory of events, commands, paths and public API |
+| Look up a term used in `src/` or the docs | [docs/CONCEPTS.md](./docs/CONCEPTS.md) — concepts and glossary |
+| Read or change the Task Brief / `state.json` contract | [docs/TASK-CONTRACT.md](./docs/TASK-CONTRACT.md) — Product Task Brief v1, state v4 boundary, brief quality |
+| Find what a user-facing feature does and how to invoke it | [docs/FEATURES.md](./docs/FEATURES.md) — capability reference with config and on-screen output |
+| Touch the workflow conversation scroll | [docs/WORKFLOW-CONVERSATION-SCROLL.md](./docs/WORKFLOW-CONVERSATION-SCROLL.md) — the row-counted scroll model |
+| Upgrade across the 2026-04-20 EventBus release | [docs/MIGRATION.md](./docs/MIGRATION.md) — integrator API changes and config additions |
 | Add a command, event, store, or backend | [docs/EXTENDING.md](./docs/EXTENDING.md) — step-by-step recipes |
 | Get SPLITBRIEF running for the first time | [docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md) — onboarding |
 | Look up a CLI command | [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md) — command reference |
@@ -63,17 +70,19 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Add a startup step | [docs/BOOTSTRAP.md](./docs/BOOTSTRAP.md) |
 | Create a new error type | [docs/ERRORS.md](./docs/ERRORS.md) |
 | Place a test | [docs/TESTING.md](./docs/TESTING.md) |
+| Cut a release | [docs/RELEASING.md](./docs/RELEASING.md) — the live release matrix and its manifest |
 | Enforce a cross-cutting rule | [docs/INVARIANTS.md](./docs/INVARIANTS.md) — pre-merge grep gates |
 | Orient yourself in the codebase | [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — one-page rule index |
 | Judge code against the SOTA review bar | [docs/CODE-STANDARD.md](./docs/CODE-STANDARD.md) — consolidated quality standard + reviewer checklist |
 | Check what has already been decided | `.specify/memory/constitution.md` — the ADRs of the 2026-08-04 realignment are folded into it, `docs/VISION.md` and the docs. `.nuke/2026-08-04-decisions.md` is the local decision record for that pass: untracked, present only in the working copy |
-| Check strategic direction | [docs/VISION.md](./docs/VISION.md), [docs/FUTURE.md](./docs/FUTURE.md) |
+| Check strategic direction | [docs/VISION.md](./docs/VISION.md), [docs/FUTURE.md](./docs/FUTURE.md), [docs/DIRECTION.md](./docs/DIRECTION.md) — how we build, [docs/IMPLEMENTER-DIRECTION.md](./docs/IMPLEMENTER-DIRECTION.md) — implementer direction |
+| Browse the whole docs folder | [docs/README.md](./docs/README.md) — the docs index, grouped by task |
 | Contribute to this project | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Work with API keys | [docs/API-KEYS.md](./docs/API-KEYS.md) |
 | Debug a failing workflow | [docs/DEBUGGING.md](./docs/DEBUGGING.md) |
 | Work with workflow hooks | [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) |
-| Enable OpenTelemetry | [docs/OTEL.md](./docs/OTEL.md) |
 | Tune the planner repo-map | [docs/REPOMAP.md](./docs/REPOMAP.md) |
+| Install the pipeline as agent skills | [docs/SKILLS.md](./docs/SKILLS.md) — the four skills, grammar, sync script |
 | Look up release history | [CHANGELOG.md](./CHANGELOG.md) |
 
 Reference also: `.specify/memory/constitution.md` — 6 constitutional principles (linked from VISION).
@@ -92,7 +101,8 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Zero memoization.** No `useMemo`, `useCallback`, or `React.memo`. Store selectors make them unnecessary. See [STORES.md](./docs/STORES.md).
 - **No imperative handles.** No `forwardRef` / `useImperativeHandle`. Extract state to a store instead.
 - **Zero engine → React imports.** `src/engine/` must not import from `ink`, `react`, or `src/features/`, `src/components/`, `src/hooks/`.
-- **Zero failing gates.** `npm run release-check` (format:check → typecheck → lint → test → e2e → invariants) must pass before any PR; `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds.
+- **Zero failing gates.** `npm run release-check` (format:check → typecheck → lint → test → e2e → invariants → skills:check) must pass before any PR; `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds.
+- **Run contract.** A run is a durable record. How it stands is decided once, by `deriveRunStatus` (`src/core/sessions/run-status.ts`) — `running`, `open` with a stop reason and the step it picks up at, or `closed` — and every listing, guard and screen reads that answer instead of inferring its own. A run stays continuable until it is closed, and only two things close it: passing the final review, and `CLOSE_RUN`. `idle` is the pre-`START` phase; nothing resets to it, gates never reject, and continuing is one path (`continueRun`).
 - **Targeted edits only.** Do not rewrite entire files or modules. Provide targeted patches or unified diffs showing only the modified lines with 3 lines of context.
 
 ## Look-and-logic verification (binding for every user-visible change)
@@ -109,16 +119,19 @@ A change to anything a user sees — a screen, an overlay, a row, a byline, a pi
 ## Current TUI architecture
 
 - **Composer** lives in `src/components/composer/`. Do not recreate `input-bar` modules or compatibility shims.
-- **Runtime commands** live in `src/core/runtime/commands/`. They use slash names, but the registry backs composer `/` input, the command palette, and RPC dispatch. 27 commands in five categories; `/crew <seat>` replaces the per-seat commands.
+- **Runtime commands** live in `src/core/runtime/commands/`. They use slash names, and the registry backs both composer `/` input and the command palette. 27 commands in five categories; `/crew <seat>` is the only seat command; `/stop` reopens the inline session-options menu; `/usage` opens token and monetary details on a workflow. Main workflow screens have no cost counter, Show spend control or Commit strategy setting.
 - **App shell** lives in `src/app/`: composition root `root.tsx` (mounts `<AppProvider><Router/>`), `router.tsx` (`renderScreen` + `renderOverlay` switches → `<Layout>`), `provider.tsx` (`AppProvider`; today only `ThemeProvider`), `layout.tsx` (header + body + footer), plus app-wide keys in `keys.ts` and runtime-command context in `command-context.ts`. The shell lives entirely under `src/app/`; there is no monolithic root component or layout file at the `src/` root.
-- **Screens and overlays are FLAT pages** under `src/app/screens/` (`home`, `workflow`, `summary`, `setup`) and `src/app/overlays/` (`help`, `palette`, `skills`, `sessions`, `settings`, `runners`, `editor`). Each page composes its feature; feature components/hooks/helpers stay in `src/features/<x>/` and are imported via `../../features/<x>/…`. `help`, `sessions`, `setup`, and `skills` are dissolved (pure-entry) — the page is the whole surface, no `features/<x>/` folder. Pages must not import each other (they coordinate via stores) or the shell modules; see [docs/INVARIANTS.md](./docs/INVARIANTS.md) gate 9.
+- **Screens and overlays are FLAT pages** under `src/app/screens/` (`home`, `workflow`, `setup`) and `src/app/overlays/` (`help`, `palette`, `skills`, `sessions`, `settings`, `runners`, `editor`). Each page composes its feature; feature components/hooks/helpers stay in `src/features/<x>/` and are imported via `../../features/<x>/…`. `help`, `sessions`, `setup`, and `skills` are dissolved (pure-entry) — the page is the whole surface, no `features/<x>/` folder. Pages must not import each other (they coordinate via stores) or the shell modules; see [docs/INVARIANTS.md](./docs/INVARIANTS.md) gate 9.
 - **Command palette** lives in `src/features/palette/`; source assembly is `sources.ts`, ranking is `results.ts`, and the overlay entry is the page `src/app/overlays/palette.tsx`.
-- **Settings** overlay entry is the page `src/app/overlays/settings.tsx`; `ModeSelector` stays at `src/features/settings/mode-selector.tsx` and is imported directly by `src/app/router.tsx` (a router-imported feature component, not a page).
-- **Runner selection** is the `src/features/runners/` feature; its picker entry is the page `src/app/overlays/runners.tsx`. One `ToolModelPicker` serves three roles (`SeatPickerRole`: planner · implementer · reviewer) — do not fork a per-role picker. `ToolModelPicker` is a component name, not a `tool-picker` folder boundary.
-- **Crew** is the `src/features/crew/` feature (`row-view.tsx`, `rows.ts`, `format.ts`, `preset-row.tsx`, `use-crew.ts`) rendered by the Settings page as its first section and by the Setup screen; seat, row, identity and preset models live in `src/core/crew/` — the UI derives from core, never the reverse; there is no standalone crew overlay.
-- **Sizing** — every overlay panel, the home body and the home/summary composer take their width from `overlayRect` (`src/core/navigation/overlay-rect.ts`, densities `compact`/`roomy`/`wide`); home applies a local 108-column cap. `OverlayPanel` has no `maxWidth`. The workflow composer, the transcript and the full-bleed `editor` overlay stay full-width (see the workflow bullet below).
-- **Seat identity** — one formatter (`src/core/crew/identity.ts`, `<tool> · <model>`, sanitized before measurement) feeds home, Settings, Setup, the picker mirror and the workflow header/sidebar.
-- **Workflow live status** renders in the composer byline (`InputFooter` + `deriveLiveStatus`), not as a transcript row — do not recreate `live-status-row`; status derives from `lifecycle.phaseFirstSeenTs`, not a scan of the events array. The transcript has no max-width cap; the sidebar (a clamped 25% share — floor 34, cap 48, only above the 120-column workflow breakpoint — plus a 2-col gap) is the only width constraint. Transcript and review overlay share the pure markdown core (`src/utils/markdown/`), which covers links, leading-pipe GFM tables, headings h1–h6, strikethrough, and lowlight-highlighted fenced code; markdown HTML comments — including planner `<!-- Q:… -->` clarification markers — never render. File-path links display project-relative and emit OSC 8 hyperlinks when the terminal supports them (in-house env sniff in `src/lib/terminal/hyperlinks.ts`, overridable via `FORCE_HYPERLINK`). Clarification questions fire in every workflow mode through the same bordered `QuestionPrompt` panel.
+- **Settings** overlay entry is the page `src/app/overlays/settings.tsx`.
+- **Runner selection** is the `src/features/runners/` feature; its picker entry is the page `src/app/overlays/runners.tsx`. One `ToolModelPicker` serves three roles (`SeatPickerRole`: planner · implementer · reviewer) — do not fork a per-role picker. `ToolModelPicker` is a component name, not a `tool-picker` folder boundary. The picker's expanded model row is the one place a seat's `effort`, `fast` and `thinking` are chosen (`OptionAxisName`, `src/features/runners/model-catalog/option-axis.ts`); every other surface mirrors that choice read-only.
+- **Crew** is the `src/features/crew/` feature (`row-view.tsx`, `rows.ts`, `format.ts`, `preset-row.tsx`, `use-crew.ts`) rendered by the Settings page as its first section and by the Setup screen; seat, row, identity and preset models live in `src/core/crew/` — the UI derives from core, never the reverse; there is no standalone crew overlay. A crew row is a read-only mirror of its seat (`deriveCrewRows`, `src/core/crew/rows.ts`, one row per seat, keyed `seat:<id>`): it edits nothing, and `⏎` on it opens that seat's picker (`crewActivate`, `src/features/crew/rows.ts`), which is where tool, model and effort are chosen.
+- **Sizing** — every overlay panel and the home body and composer take their width from `overlayRect` (`src/core/navigation/overlay-rect.ts`, densities `compact`/`roomy`/`wide`); home applies a local 108-column cap. `OverlayPanel` has no `maxWidth`. The workflow screen — composer included — the transcript and the full-bleed `editor` overlay stay full-width (see the workflow bullets below), live or at rest.
+- **Seat identity** — one formatter (`src/core/crew/identity.ts`, `<tool> · <model>` plus one ` · <word>` per axis the seat's effort channel carries, in effort → thinking → fast order, sanitized before measurement) feeds home, Settings, Setup, the picker mirror and the workflow header/sidebar. The short/collapsed form carries no axis, and when the collapsed line overruns its width a seat loses its whole identity (`REVIEW …`) rather than half a model name.
+- **Workflow live status** renders in the composer byline (`InputFooter` + `deriveLiveStatus`), not as a transcript row — do not recreate `live-status-row`; status derives from `lifecycle.phaseFirstSeenTs`, not a scan of the events array. The transcript has no max-width cap; the sidebar (a clamped 25% share — floor 34, cap 48, only above the 120-column workflow breakpoint — plus a 2-col gap) is the only width constraint. Transcript and review overlay share the pure markdown core (`src/utils/markdown/`), which covers links, leading-pipe GFM tables, headings h1–h6, strikethrough, and lowlight-highlighted fenced code; markdown HTML comments — including planner `<!-- Q:… -->` clarification markers — never render. File-path links display project-relative and emit OSC 8 hyperlinks when the terminal supports them (in-house env sniff in `src/lib/terminal/hyperlinks.ts`, overridable via `FORCE_HYPERLINK`). Ordinary planner replies wait for an answer in the composer; optional structured questions use the bordered `QuestionPrompt` in every workflow mode. Recovery uses an inline keyboard menu above the composer, with Tab switching focus and a scrollable list of all offered tools.
+- **Stop, leave, quit** — the `stop-sheet` focus token renders an inline menu above the workflow composer, preserving fullscreen and transcript. Running: `esc` opens, another `esc` stops resumably; the next `esc` returns home after cleanup and persistence (rapid `esc esc esc` works). Parked: `esc` returns home. `ctrl+c` stops active work; another press quits after cleanup. At rest/home, two presses within two seconds quit; other interaction clears confirmation. End run is explicit in the menu or `/end`, never inferred from Escape or quit. After stopping the menu offers Resume / End run / Back to sessions; Tab dismisses, `/stop` or the palette reopens it. The outer workflow abort settles questions, approvals and boundary waits; only the process registry owns termination timing. Failed cleanup/saving offers Retry stop and prevents departure. Full unsent draft documents are saved per session in `draft.json`, flushed before departure, and restored on reopening.
+- **Build progress block** — during `implementing` the workflow screen paints fixed chrome under the header rail from `deriveBuildProgress` (`src/features/workflow/display/build-progress.ts`): the running brief and its operation, `attempt <a> of <max>`, run and attempt elapsed, freshness and ETA. The only fraction any surface shows is *passed* briefs — neither the byline nor the sidebar counts a started or escalated brief as settled.
+- **Run screen at rest** — the workflow screen is the run's home whether anything is running on it or not. Opening a run from `/sessions`, home or the palette replays its `session.jsonl` into the workflow stores (`hydrateRun`, `src/features/workflow/run-history.ts`) and shows it at rest (`execution: 'at-rest'` on the workflow route); the live bus appends from there, and continuing it flips the execution back to `local` in place without navigating (`continueRunInPlace`, `src/stores/navigation/session-select.ts`). The header rail marks the stage the run stopped on with the mark its stop earned (`×` paused/waiting/interrupted, `✗` halted/failed, five `●` complete — `atRestRailStages`, `src/features/workflow/at-rest.ts`). An open run's composer takes a correction and a bare `⏎` continues it; a **closed** run (End run, or complete) takes `/commands` only, `⏎` goes home, and its ledger is appended to the tail of its own transcript as a `Closed ─` block naming the run and then its outcome, over `Briefs ─ / Files ─ / Run ─` (`closedTranscriptBlock`, `src/features/workflow/closed/block.tsx`) — one scroller, never a second. A closed run takes the whole width: the sidebar stands down rather than restating today's crew and mode beside the block that states the run's own, and the transcript announces nothing as queued. Every closed fact is derived once by `deriveSummaryView` (`src/features/workflow/closed/view-model.ts`) from the `RunRecord` the route carries and spelled by `copy.ts`, which also writes the open-run byline from the record's stop reason. One fact, one home: absence is `not run` / `not checked` / `not estimated`, never `—`, `n/a` or `$0.00`. There is no summary screen.
 
 ## Runner kinds
 
@@ -126,7 +139,7 @@ Planner, reviewer, and implementer all accept four runner kinds. The reviewer is
 
 | `kind` | What it is | Example |
 |---|---|---|
-| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code` |
+| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity` |
 | `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, or any OpenAI-compatible custom endpoint |
 | `shell` | Arbitrary command (stdin → stdout; no shell/network sandbox) | Custom scripts |
 | `agent` | Subprocess that writes files directly (no stdout extraction; no shell/network sandbox) | Custom file-writing tools |
@@ -137,15 +150,17 @@ Full config schemas and YAML examples: [docs/CONFIGURATION.md](./docs/CONFIGURAT
 
 ## Workflow modes
 
-| Mode | Planner calls | Approval gates | Best for |
-|---|:---:|:---:|---|
-| `quick` | 1 | none | Trivial edits and small tasks that still need a brief |
-| `standard` (default) | 4 | supporting spec + briefs | Ordinary feature work |
-| `speckit` | 6–7 | supporting spec + plan + briefs | Large, risky, or externally visible work |
+A mode is an ordered list of **steps**, each completed by a planner artifact after any conversation turns, declared in `src/core/pipeline-spec/steps.ts` and run by `src/engine/orchestrator/planning/steps.ts`. Each step names the phase it runs in, the artifact that memoizes it and the gate that opens once it lands, so `state.json` always names the call that is running and a run picks up at the first artifact it has not written.
 
-Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. The retired `instant` mode was merged into `quick`; the string still parses everywhere it was persisted — normalized to `quick` with a deprecation notice, except in a few back-compatibility-only wire formats that keep it literally. Detailed semantics: [docs/WORKFLOW.md](./docs/WORKFLOW.md).
+| Mode | Steps, in order | Planner calls | Approval gates | Best for |
+|---|---|:---:|:---:|---|
+| `quick` | `tasks` | 1 | 0 | Trivial edits and small tasks that still need a brief |
+| `standard` (default) | `research` → `spec` → `plan` → `tasks` | 4 | 2 (spec + briefs) | Ordinary feature work |
+| `speckit` | `research` → `spec` → `clarify` → `constitution` → `plan` → `tasks` → `analyze` | 6–7 | 3 (spec + plan + briefs) | Large, risky, or externally visible work |
+
+The call counts assume no clarification turns. A pending planner reply resumes the same step before artifact persistence. The briefs gate is not a step: it opens after the brief-quality pass, downstream of every planner call. `clarify` spends no planner call — its artifact points to the conversation recorded in `session.jsonl`. Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. The retired `instant` mode was merged into `quick`; the string still parses everywhere it was persisted — normalized to `quick` with a deprecation notice, except in a few back-compatibility-only wire formats that keep it literally. Detailed semantics: [docs/WORKFLOW.md](./docs/WORKFLOW.md).
 
 ## Known limitations
 
-- macOS and Linux only — IPC attach/detach/ps and several path/sandbox semantics need POSIX; Windows support is planned but not available yet.
-- Primary development stack is TypeScript / JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines.
+- macOS and Linux only — several path and sandbox semantics need POSIX; Windows support is planned but not available yet.
+- Validation is generic over the five registry stacks (TypeScript, JavaScript, Python, Go, Rust); any other stack runs review-only (`gates: NONE`).

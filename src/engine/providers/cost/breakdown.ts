@@ -1,9 +1,11 @@
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
 import type {
+  BillingAttribution,
   CostBreakdown,
   OfferingBillingPresentation,
   ProviderRunMetadata,
 } from '../../../core/schemas/summary.js';
+import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import {
   API_PROVIDER_CATALOG,
   type ApiOffering,
@@ -16,19 +18,23 @@ import {
   REMOVED_RUNNER_KINDS,
 } from '../../../core/schemas/runner-fields.js';
 import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
+import { isReviewSeatCall } from '../../calls/review-seat.js';
 import { normalizeProviderEndpoint } from '../../../core/providers/endpoint-policy.js';
 import { splitSeatTokenTotals } from '../../../core/providers/seat-totals.js';
-import { formatCost, formatCostFact } from '../../../core/formatting.js';
+import { formatCost } from '../../../core/formatting.js';
 import { resolvePricing, type ResolvedPricing } from '../pricing-resolver.js';
 import type { ModelCacheAccessor } from '../model/resolution.js';
 import {
-  allocatedCacheTokens,
+  callRunnerName,
+  deriveCallBilling,
+  resolveCallPricing,
+  sumRequestEstimates,
+} from './request-estimates.js';
+import {
   buildProviderUsageSegment,
-  calculateCacheReadSavings,
   recordPricedUsage,
   recordProviderCost,
   resolveTaskPricingModel,
-  splitTokens,
   type ProviderCostEntry,
   type ProviderUsageSegment,
 } from '../cost-math.js';
@@ -69,6 +75,14 @@ function defaultEndpointForApiProvider(providerId: keyof typeof API_PROVIDER_CAT
   return '';
 }
 
+/**
+ * A catalog descriptor states what a tool bills by default. That is a product
+ * fact, never evidence about one run's invocations, so metadata resolved from
+ * the catalog alone carries no attribution until the run's own calls supply one.
+ */
+const UNATTRIBUTED_BILLING: BillingAttribution = { posture: 'unknown', basis: 'unknown' };
+const LEGACY_BILLING: BillingAttribution = { posture: 'unknown', basis: 'legacy-unattributed' };
+
 export function resolveProviderRunMetadata(
   opts: ResolveProviderRunMetadataOpts,
 ): ProviderRunMetadata | undefined {
@@ -87,6 +101,7 @@ export function resolveProviderRunMetadata(
       normalizedEndpoint: resolvedEndpoint,
       billing: descriptor.billing,
       asOf: descriptor.asOf,
+      billingAttribution: UNATTRIBUTED_BILLING,
     };
   }
 
@@ -98,6 +113,7 @@ export function resolveProviderRunMetadata(
       normalizedEndpoint: `cli:${descriptor.command}`,
       billing: descriptor.billing,
       asOf: descriptor.compatibility.evidence.asOf,
+      billingAttribution: UNATTRIBUTED_BILLING,
     };
   }
 
@@ -111,6 +127,7 @@ export function resolveProviderRunMetadata(
     normalizedEndpoint: normalizedEndpoint ?? '',
     billing: 'api-metered',
     asOf: '',
+    billingAttribution: UNATTRIBUTED_BILLING,
   };
 }
 
@@ -145,22 +162,57 @@ export function describeOfferingBillingPresentation(
   }
 }
 
-export function formatOfferingAwareExtraCost(
-  metadata: ProviderRunMetadata,
-  extraAmount: number,
-): string | null {
-  if (metadata.offering === 'coding-subscription') return null;
-  if (!Number.isFinite(extraAmount) || extraAmount <= 0) return null;
-  return `Extra ${formatCostFact(extraAmount)}`;
-}
-
 function collectRunMetadataTools(opts: CostBreakdownOptions): string[] {
+  if (opts.callEvidence !== undefined) {
+    return [...new Set(opts.callEvidence.map(callRunnerName).filter((tool) => tool !== undefined))];
+  }
   const tools = new Set<string>([opts.plannerTool, opts.implementerTool]);
   if (opts.reviewerTool !== undefined) tools.add(opts.reviewerTool);
   for (const task of opts.taskBreakdowns ?? []) {
     if (task.tool !== undefined) tools.add(task.tool);
   }
   return [...tools];
+}
+
+/**
+ * What the run's own invocations proved about a tool's billing. Attributions
+ * are compared whole — posture, basis and evidence id together — so one tool
+ * reached through two different channels does not collapse into one claim: two
+ * proven attributions that differ leave the tool unknown rather than letting
+ * either of them stand for the run.
+ */
+function collectBillingEvidence(
+  opts: CostBreakdownOptions,
+  tools: readonly string[],
+): Map<string, BillingAttribution> {
+  const named = new Set(tools);
+  const proven = new Map<string, BillingAttribution[]>();
+
+  for (const call of opts.callEvidence ?? []) {
+    const tool = callRunnerName(call);
+    if (tool === undefined || !named.has(tool)) continue;
+    const attribution = deriveCallBilling(call.invocationIdentity);
+    const attributions = proven.get(tool) ?? [];
+    if (!attributions.some((entry) => sameAttribution(entry, attribution))) {
+      attributions.push(attribution);
+    }
+    proven.set(tool, attributions);
+  }
+
+  const evidence = new Map<string, BillingAttribution>();
+  for (const [tool, attributions] of proven) {
+    const [single] = attributions;
+    evidence.set(tool, attributions.length === 1 && single ? single : UNATTRIBUTED_BILLING);
+  }
+  return evidence;
+}
+
+function sameAttribution(left: BillingAttribution, right: BillingAttribution): boolean {
+  return (
+    left.posture === right.posture &&
+    left.basis === right.basis &&
+    left.evidenceId === right.evidenceId
+  );
 }
 
 function buildProviderRunMetadataRecord(
@@ -172,10 +224,30 @@ function buildProviderRunMetadataRecord(
 } {
   const providerRunMetadata: Record<string, ProviderRunMetadata> = {};
   const offeringPresentations: Record<string, OfferingBillingPresentation> = {};
+  const tools = collectRunMetadataTools(opts);
+  const billingEvidence = collectBillingEvidence(opts, tools);
+  // A run that recorded no call identities at all carries no provenance to read,
+  // which is what a record written before any of it was captured looks like.
+  const unproven = opts.callEvidence === undefined ? LEGACY_BILLING : UNATTRIBUTED_BILLING;
 
-  for (const tool of collectRunMetadataTools(opts)) {
-    const metadata = resolveProviderRunMetadata({ tool });
-    if (metadata === undefined) continue;
+  for (const tool of tools) {
+    const descriptor = resolveProviderRunMetadata({ tool });
+    if (descriptor === undefined) continue;
+    const attribution = billingEvidence.get(tool);
+    // Proof from the run's own invocations outranks the tool's catalogued
+    // default, in both directions: an enforced api-key invocation is billed as
+    // what it was, and channels that disagree are billed as unknown. A CLI
+    // offering is a function of its billing, so it follows; there is no unknown
+    // offering to move to, and payg's label reports the estimate or the word
+    // `unknown` rather than claiming a subscription paid for the run.
+    const billing = attribution === undefined ? descriptor.billing : attribution.posture;
+    const metadata: ProviderRunMetadata = {
+      ...descriptor,
+      billing,
+      ...(attribution !== undefined &&
+        isCliToolId(tool) && { offering: cliOfferingFromBilling(billing) }),
+      billingAttribution: attribution ?? unproven,
+    };
     providerRunMetadata[tool] = metadata;
     const usageEntry = providerCosts?.[tool];
     const usageTokens =
@@ -194,9 +266,6 @@ function buildProviderRunMetadataRecord(
 
 type CostBreakdownOptions = {
   tokenUsage: TokenUsage;
-  totalTasks: number;
-  escalatedCount: number;
-  completedLocalTasks?: number | undefined;
   plannerTool: string;
   implementerTool: string;
   plannerModel?: string | undefined;
@@ -204,14 +273,83 @@ type CostBreakdownOptions = {
   reviewerTool?: string | undefined;
   reviewerModel?: string | undefined;
   taskBreakdowns?: TaskTokenUsage[] | undefined;
+  /**
+   * Per-call usage records for this run. Present, they price every provider
+   * request on its own; absent, the breakdown is the run-wide sum alone and
+   * carries no request estimate.
+   */
+  callEvidence?: readonly CallUsageEvidence[] | undefined;
 };
+
+function calculateRecordedCostBreakdown(
+  opts: CostBreakdownOptions,
+  evidence: readonly CallUsageEvidence[],
+  cache: ModelCacheAccessor | undefined,
+): CostBreakdown {
+  // Planning-time review checks are booked against PLAN. Apply that rule at the shared pricing
+  // boundary so live and persisted evidence produce the same request roles.
+  const pricedEvidence = evidence.map((call) => {
+    if (call.role !== 'review' || isReviewSeatCall({ role: call.role, phase: call.phase })) {
+      return call;
+    }
+    return { ...call, role: 'planner' as const };
+  });
+  const requestEstimate = sumRequestEstimates(pricedEvidence, (call) =>
+    resolveCallPricing(call, cache),
+  );
+  const providerCosts: Record<string, ProviderCostEntry> = {};
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
+  for (const [index, call] of pricedEvidence.entries()) {
+    const tool = callRunnerName(call);
+    const usage = call.usage;
+    if (usage === null) continue;
+    cacheReadTokens += usage.cacheReadTokens ?? 0;
+    cacheWriteTokens += usage.cacheCreateTokens ?? 0;
+    if (tool === undefined) continue;
+    recordProviderCost(providerCosts, {
+      tool,
+      inputTokens: usage.inputTokens,
+      outputTokens:
+        usage.providerTotals?.output ?? usage.outputTokens + (usage.reasoningTokens ?? 0),
+      cacheReadTokens: usage.cacheReadTokens ?? 0,
+      cacheCreateTokens: usage.cacheCreateTokens ?? 0,
+      cost: requestEstimate.items[index]?.knownSubtotal ?? 0,
+    });
+  }
+  const plannerItems = requestEstimate.items.filter(
+    (item) => item.role !== 'implementer' && item.role !== 'review',
+  );
+  const implementerItems = requestEstimate.items.filter((item) => item.role === 'implementer');
+  const reviewerItems = requestEstimate.items.filter((item) => item.role === 'review');
+  return {
+    actualPlannerCost: plannerItems.reduce((sum, item) => sum + item.knownSubtotal, 0),
+    actualImplementerCost: implementerItems.reduce((sum, item) => sum + item.knownSubtotal, 0),
+    totalActualCost: requestEstimate.knownSubtotal,
+    hasPricedUsage: requestEstimate.items.some((item) => item.completeness !== 'unavailable'),
+    hasUnpricedUsage: requestEstimate.items.some((item) => item.completeness !== 'complete'),
+    isActualPlannerCostKnown: plannerItems.every((item) => item.completeness === 'complete'),
+    isActualImplementerCostKnown: implementerItems.every(
+      (item) => item.completeness === 'complete',
+    ),
+    ...(reviewerItems.length > 0 && {
+      actualReviewerCost: reviewerItems.reduce((sum, item) => sum + item.knownSubtotal, 0),
+      isActualReviewerCostKnown: reviewerItems.every((item) => item.completeness === 'complete'),
+    }),
+    isTotalActualCostKnown: requestEstimate.completeness === 'complete',
+    providerCosts,
+    ...buildProviderRunMetadataRecord(opts, providerCosts),
+    ...(cacheReadTokens > 0 && { cacheReadTokens }),
+    ...(cacheWriteTokens > 0 && { cacheWriteTokens }),
+    requestEstimate,
+  };
+}
 
 type ImplementerCostAccounting = {
   actualImplementerCost: number;
   hasPricedUsage: boolean;
   hasUnpricedUsage: boolean;
   providerCosts: Record<string, ProviderCostEntry>;
-  cacheReadSavings: number;
 };
 
 function applyImplementerUsageSegment(
@@ -220,11 +358,6 @@ function applyImplementerUsageSegment(
 ): void {
   if (segment.usageTokens <= 0) return;
   accounting.actualImplementerCost += segment.cost;
-  accounting.cacheReadSavings += calculateCacheReadSavings(
-    segment.cacheReadTokens,
-    segment.pricing,
-    segment.contextTokens,
-  );
   if (segment.pricing.isPriced) {
     accounting.hasPricedUsage = true;
   }
@@ -271,7 +404,6 @@ function calculateAggregateImplementerCost(
     hasPricedUsage: false,
     hasUnpricedUsage: false,
     providerCosts: {},
-    cacheReadSavings: 0,
   };
   applyImplementerUsageSegment(
     accounting,
@@ -288,6 +420,13 @@ function calculateAggregateImplementerCost(
   return accounting;
 }
 
+/**
+ * Books each task's implementer spend against the provider that served it, from
+ * the directional counters the task actually recorded. A record that carries a
+ * combined count alone cannot say how much of it was input, so it is left
+ * unattributed — its tokens stay with the run's own seat below and the run
+ * reports an unpriced part rather than a share it never observed.
+ */
 function calculateTaskAwareImplementerCost(
   opts: CostBreakdownOptions,
   cache?: ModelCacheAccessor,
@@ -295,39 +434,30 @@ function calculateTaskAwareImplementerCost(
   const { taskBreakdowns, tokenUsage, implementerTool, implementerModel } = opts;
   if (taskBreakdowns === undefined) return undefined;
 
-  const totalImplementerTokens = tokenUsage.implementerInput + tokenUsage.implementerOutput;
   const accounting: ImplementerCostAccounting = {
     actualImplementerCost: 0,
     hasPricedUsage: false,
     hasUnpricedUsage: false,
     providerCosts: {},
-    cacheReadSavings: 0,
   };
-  let accountedTokens = 0;
+  let accountedInputTokens = 0;
+  let accountedOutputTokens = 0;
   let accountedCacheReadTokens = 0;
   let accountedCacheCreateTokens = 0;
 
   for (const task of taskBreakdowns) {
+    const hasDirectionalSplit =
+      task.implementerInputTokens !== undefined && task.implementerOutputTokens !== undefined;
+    if (!hasDirectionalSplit && task.implementerTokens > 0) {
+      accounting.hasUnpricedUsage = true;
+      continue;
+    }
     const tool = task.tool ?? implementerTool;
-    const { inputTokens, outputTokens } = splitTokens({
-      tokens: task.implementerTokens,
-      inputTotal: tokenUsage.implementerInput,
-      outputTotal: tokenUsage.implementerOutput,
-    });
-    const cacheReadTokens =
-      task.implementerCacheReadTokens ??
-      allocatedCacheTokens({
-        cacheTokens: tokenUsage.implementerCacheRead,
-        tokens: task.implementerTokens,
-        totalTokens: totalImplementerTokens,
-      });
-    const cacheCreateTokens =
-      task.implementerCacheCreateTokens ??
-      allocatedCacheTokens({
-        cacheTokens: tokenUsage.implementerCacheCreate,
-        tokens: task.implementerTokens,
-        totalTokens: totalImplementerTokens,
-      });
+    const inputTokens = task.implementerInputTokens ?? 0;
+    const cacheReadTokens = task.implementerCacheReadTokens ?? 0;
+    const cacheCreateTokens = task.implementerCacheCreateTokens ?? 0;
+    const generatedTokens =
+      (task.implementerOutputTokens ?? 0) + (task.implementerReasoningTokens ?? 0);
     applyImplementerUsageCost(
       accounting,
       {
@@ -339,18 +469,22 @@ function calculateTaskAwareImplementerCost(
           fallbackModel: implementerModel,
         }),
         inputTokens,
-        outputTokens,
+        outputTokens: generatedTokens,
         cacheReadTokens,
         cacheCreateTokens,
       },
       cache,
     );
-    accountedTokens += task.implementerTokens;
+    accountedInputTokens += inputTokens;
+    accountedOutputTokens += generatedTokens;
     accountedCacheReadTokens += cacheReadTokens;
     accountedCacheCreateTokens += cacheCreateTokens;
   }
 
-  const residualTokens = Math.max(0, totalImplementerTokens - accountedTokens);
+  // What no task claimed is what the run's own seat spent: an exact remainder,
+  // not a ratio.
+  const residualInputTokens = Math.max(0, tokenUsage.implementerInput - accountedInputTokens);
+  const residualOutputTokens = Math.max(0, tokenUsage.implementerOutput - accountedOutputTokens);
   const residualCacheReadTokens = Math.max(
     0,
     (tokenUsage.implementerCacheRead ?? 0) - accountedCacheReadTokens,
@@ -359,19 +493,19 @@ function calculateTaskAwareImplementerCost(
     0,
     (tokenUsage.implementerCacheCreate ?? 0) - accountedCacheCreateTokens,
   );
-  if (residualTokens > 0 || residualCacheReadTokens > 0 || residualCacheCreateTokens > 0) {
-    const { inputTokens, outputTokens } = splitTokens({
-      tokens: residualTokens,
-      inputTotal: tokenUsage.implementerInput,
-      outputTotal: tokenUsage.implementerOutput,
-    });
+  if (
+    residualInputTokens > 0 ||
+    residualOutputTokens > 0 ||
+    residualCacheReadTokens > 0 ||
+    residualCacheCreateTokens > 0
+  ) {
     applyImplementerUsageCost(
       accounting,
       {
         tool: implementerTool,
         model: implementerModel,
-        inputTokens,
-        outputTokens,
+        inputTokens: residualInputTokens,
+        outputTokens: residualOutputTokens,
         cacheReadTokens: residualCacheReadTokens,
         cacheCreateTokens: residualCacheCreateTokens,
       },
@@ -386,8 +520,10 @@ export function calculateCostBreakdown(
   opts: CostBreakdownOptions,
   cache?: ModelCacheAccessor,
 ): CostBreakdown {
-  const { tokenUsage, totalTasks, escalatedCount, completedLocalTasks, plannerTool, plannerModel } =
-    opts;
+  if (opts.callEvidence !== undefined) {
+    return calculateRecordedCostBreakdown(opts, opts.callEvidence, cache);
+  }
+  const { tokenUsage, plannerTool, plannerModel } = opts;
   const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
   const implementerPricing = resolvePricing(opts.implementerTool, cache, opts.implementerModel);
   const reviewerTool = opts.reviewerTool;
@@ -442,47 +578,6 @@ export function calculateCostBreakdown(
     reviewerSegment === undefined || reviewerSegment.usageTokens <= 0 || reviewerSegment.costKnown;
   const isTotalActualCostKnown =
     isActualPlannerCostKnown && isActualImplementerCostKnown && isActualReviewerCostKnown;
-  const hypotheticalImplementerSegment = buildProviderUsageSegment({
-    tool: plannerTool,
-    model: plannerModel,
-    inputTokens: tokenUsage.implementerInput,
-    outputTokens: tokenUsage.implementerOutput,
-    cacheReadTokens: tokenUsage.implementerCacheRead ?? 0,
-    cacheCreateTokens: tokenUsage.implementerCacheCreate ?? 0,
-    pricing: plannerPricing,
-  });
-  const hypotheticalImplementerCost = hypotheticalImplementerSegment.cost;
-  const isHypotheticalImplementerCostKnown =
-    implementerUsageTokens <= 0 || hypotheticalImplementerSegment.costKnown;
-  const hypotheticalReviewerSegment =
-    reviewerSegment === undefined
-      ? undefined
-      : buildProviderUsageSegment({
-          tool: plannerTool,
-          model: plannerModel,
-          inputTokens: reviewerSegment.inputTokens,
-          outputTokens: reviewerSegment.outputTokens,
-          cacheReadTokens: reviewerSegment.cacheReadTokens,
-          cacheCreateTokens: reviewerSegment.cacheCreateTokens,
-          pricing: plannerPricing,
-        });
-  const isHypotheticalReviewerCostKnown =
-    hypotheticalReviewerSegment === undefined ||
-    hypotheticalReviewerSegment.usageTokens <= 0 ||
-    hypotheticalReviewerSegment.costKnown;
-  const isAllPlannerBaselineKnown =
-    isActualPlannerCostKnown &&
-    isHypotheticalImplementerCostKnown &&
-    isHypotheticalReviewerCostKnown;
-  const hypotheticalCost = isAllPlannerBaselineKnown
-    ? actualPlannerCost + hypotheticalImplementerCost + (hypotheticalReviewerSegment?.cost ?? 0)
-    : 0;
-  const hasSavingsEstimate = isAllPlannerBaselineKnown && isTotalActualCostKnown;
-  const savingsAmount = hasSavingsEstimate ? hypotheticalCost - totalActualCost : 0;
-  const savingsPercentage =
-    hasSavingsEstimate && hypotheticalCost > 0 ? (savingsAmount / hypotheticalCost) * 100 : 0;
-  const localSuccesses = completedLocalTasks ?? Math.max(0, totalTasks - escalatedCount);
-  const localCompletionRate = totalTasks > 0 ? localSuccesses / totalTasks : 0;
   const hasPricedUsage =
     (plannerSegment.usageTokens > 0 && plannerPricing.isPriced) ||
     implementerAccounting.hasPricedUsage ||
@@ -519,48 +614,24 @@ export function calculateCostBreakdown(
     (tokenUsage.implementerCacheCreate ?? 0) +
     (reviewerSegment?.cacheCreateTokens ?? 0);
 
-  let cacheReadSavings = 0;
-  if (cacheReadTokens > 0) {
-    cacheReadSavings += calculateCacheReadSavings(
-      plannerTotals.cacheRead,
-      plannerPricing,
-      plannerSegment.contextTokens,
-    );
-    cacheReadSavings += implementerAccounting.cacheReadSavings;
-    if (reviewerSegment !== undefined) {
-      cacheReadSavings += calculateCacheReadSavings(
-        reviewerSegment.cacheReadTokens,
-        reviewerSegment.pricing,
-        reviewerSegment.contextTokens,
-      );
-    }
-  }
-
   const { providerRunMetadata, offeringPresentations } = buildProviderRunMetadataRecord(
     opts,
     Object.keys(providerCosts).length > 0 ? providerCosts : undefined,
   );
 
   return {
-    hypotheticalCost,
     actualPlannerCost,
     actualImplementerCost,
     totalActualCost,
-    savingsAmount,
-    savingsPercentage,
-    localCompletionRate,
     hasPricedUsage,
     hasUnpricedUsage,
-    hasSavingsEstimate,
     isActualPlannerCostKnown,
     isActualImplementerCostKnown,
     ...(reviewerSegment !== undefined && { actualReviewerCost, isActualReviewerCostKnown }),
     isTotalActualCostKnown,
-    isAllPlannerBaselineKnown,
     providerCosts: Object.keys(providerCosts).length > 0 ? providerCosts : undefined,
     ...(Object.keys(providerRunMetadata).length > 0 && { providerRunMetadata }),
     ...(Object.keys(offeringPresentations).length > 0 && { offeringPresentations }),
-    ...(cacheReadSavings > 0 && { cacheReadSavings }),
     ...(cacheReadTokens > 0 && { cacheReadTokens }),
     ...(cacheWriteTokens > 0 && { cacheWriteTokens }),
   };

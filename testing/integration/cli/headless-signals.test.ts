@@ -6,7 +6,6 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   createHeadlessGitProject,
   preparedHeadlessExecution,
-  writeCurrentTranscriptHeadlessConfigYaml,
   writeMinimalHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
@@ -86,7 +85,6 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
         sessionId,
         feature: 'stop me',
         resumeState,
-        purpose: 'new-workflow',
       }),
       _planner: planner,
       _implementer: implementer,
@@ -94,40 +92,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
 
     expect(implement).toHaveBeenCalledTimes(1);
     const session = listSessions(projectDir).find((s) => s.id === sessionId);
-    expect(session?.status).toBe('interrupted');
-  });
-
-  it('keeps opaque resumed sessions transcript-private when current config allows transcripts', async () => {
-    const projectDir = createHeadlessGitProject('headless-private-resume');
-    dirs.push(projectDir);
-    writeCurrentTranscriptHeadlessConfigYaml(projectDir);
-    const sessionId = '2025-04-01-session-abcdef123456';
-    ensureSessionDir(projectDir, sessionId);
-    writeActive({ projectDir, sessionId });
-    const state = makeTwoTaskState();
-    const resumeState = persistReadyExecutionState({ projectDir, sessionId }, state);
-    let seenPersistTranscript: boolean | undefined;
-    const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async (opts) => {
-        seenPersistTranscript = opts.config.workflow.persistTranscript;
-        process.emit('SIGINT');
-        return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
-      }),
-    });
-
-    await runHeadless({
-      prepared: preparedHeadlessExecution({
-        projectDir,
-        sessionId,
-        feature: 'secret oauth login',
-        resumeState,
-        purpose: 'new-workflow',
-      }),
-      _planner: planner,
-      _implementer: implementer,
-    });
-
-    expect(seenPersistTranscript).toBe(false);
+    expect(session?.status).toBe('open');
   });
 
   it('stops the run on SIGTERM the same way', async () => {
@@ -146,7 +111,6 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
         sessionId,
         feature: 'stop me',
         resumeState,
-        purpose: 'new-workflow',
       }),
       _planner: planner,
       _implementer: implementer,
@@ -154,7 +118,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
 
     expect(implement).toHaveBeenCalledTimes(1);
     const session = listSessions(projectDir).find((s) => s.id === sessionId);
-    expect(session?.status).toBe('interrupted');
+    expect(session?.status).toBe('open');
   });
 
   it('does not emit retry or escalation events after a mid-run SIGINT (no paid churn)', async () => {
@@ -178,7 +142,6 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
         sessionId,
         feature: 'stop me',
         resumeState,
-        purpose: 'new-workflow',
       }),
       _planner: planner,
       _implementer: implementer,
@@ -200,7 +163,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     expect(emittedTypes).not.toContain('escalate');
 
     const session = listSessions(projectDir).find((s) => s.id === sessionId);
-    expect(session?.status).toBe('interrupted');
+    expect(session?.status).toBe('open');
   });
 
   it('leaves a broken-pipe guard on stdout and stderr so a closed consumer cannot crash the run', async () => {
@@ -219,7 +182,6 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
         sessionId,
         feature: 'stop me',
         resumeState,
-        purpose: 'new-workflow',
       }),
       _planner: planner,
       _implementer: implementer,

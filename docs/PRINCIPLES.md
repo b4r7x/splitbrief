@@ -32,8 +32,9 @@ Distilled from:
 | 17 | **DRY at the third occurrence** — two copies of a pattern may remain local; a third triggers an extraction. Canonical example: `runWithResumeFallback` (`src/engine/session-expiry.ts`) unifies the session-resume-with-fallback pattern across three planner backends. `runPlannerCallInContinuationLoop` (`src/engine/orchestrator/planning/call-loop.ts`) unifies the planner-in-continuation-loop body across two planning phases (extracted early because the shape was identical). | this doc |
 | 18 | **EventBus port** — engine emits all events through `src/engine/events/bus.ts`; UI / persistence / observability / hooks attach as sinks. `EngineEvent` is the single source of truth; `TuiEvent` / `OrchestratorEvent` / `callbacks.onEvent` are gone. **Event sinks are synchronous** (registered in order, throw isolated per sink) and **hook dispatch is sequential per event** (`pre_*` runs one hook at a time, deny short-circuits; `post_*`/`on_*` runs without awaiting). | [ARCHITECTURE.md](./ARCHITECTURE.md#eventbus) |
 | 19 | **Repo-map context** — the planner sees a token-budgeted symbol summary of the codebase per workflow. PageRank ranking, SQLite cache, opt-out via `codebase.enabled: false`. | [REPOMAP.md](./REPOMAP.md) |
-| 20 | **Hook system** — user-extensible workflow lifecycle commands (unrelated to React hooks) fire at workflow events (`pre_task`, `post_commit`, etc.); trust prompt prevents RCE; opt-in built-ins (`prettier-on-change`, `block-secrets`). | [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) |
-| 21 | **Parameter objects for wide APIs** — any function with 4+ parameters, or any exported/cross-boundary function with 3+ parameters, uses an options object; a bare `boolean` param or two adjacent same-typed params are banned regardless of count. Tiny local non-exported math/helper primitives are exempt. Split oversized option objects by concern instead of passing a grab bag. | [CODE-STANDARD.md §4](./CODE-STANDARD.md#4-parameter-design) |
+| 20 | **Hook system** — user-extensible workflow lifecycle commands (unrelated to React hooks) fire at workflow events (`pre_task`, `post_commit`, etc.); trust prompt prevents RCE. | [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) |
+| 21 | **One run contract** — a run is a durable record whose status is derived once by `deriveRunStatus`; it stays continuable until it is closed, `idle` is the pre-`START` phase and nothing resets to it, gates never reject, and continuing is one path (`continueRun`). Spend is a reported fact, never a gate or a routing input. | [WORKFLOW.md](./WORKFLOW.md), [CONCEPTS.md](./CONCEPTS.md), [INVARIANTS.md](./INVARIANTS.md) gates 49–51 |
+| 22 | **Parameter objects for wide APIs** — any function with 4+ parameters, or any exported/cross-boundary function with 3+ parameters, uses an options object; a bare `boolean` param or two adjacent same-typed params are banned regardless of count. Tiny local non-exported math/helper primitives are exempt. Split oversized option objects by concern instead of passing a grab bag. | [CODE-STANDARD.md §4](./CODE-STANDARD.md#4-parameter-design) |
 
 ## Decision lookup — "where does X go?"
 
@@ -55,7 +56,7 @@ For the per-layer reference (what each layer contains, acceptance criteria, proh
 | [ERRORS.md](./ERRORS.md) | Error factory pattern, domain predicate bags, zero-class rule for errors |
 | [TESTING.md](./TESTING.md) | Test placement, forbidden patterns, fakes vs mocks |
 | [INVARIANTS.md](./INVARIANTS.md) | Pre-merge grep gates — one-stop invariant checklist |
-| [CODE-STANDARD.md](./CODE-STANDARD.md) | Consolidated SOTA review bar + reviewer checklist; refines rule 21's parameter thresholds (≥4 any / ≥3 exported) |
+| [CODE-STANDARD.md](./CODE-STANDARD.md) | Consolidated SOTA review bar + reviewer checklist; refines rule 22's parameter thresholds (≥4 any / ≥3 exported) |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | High-level data flow (CLI → stores → engine/UI) |
 | [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | Build/test commands, coding conventions, editorial rules |
 

@@ -1,73 +1,184 @@
-import { createBusTextHandler, publishRunnerCallEvent, publishWarning } from '../events.js';
-import { transitionAndSave } from '../state-ops.js';
+import {
+  createBusTextHandler,
+  publishRunnerCallEvent,
+  publishUserMessage,
+  publishWarning,
+} from '../events.js';
+import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { appendMessage } from '../../../core/sessions/log-writer.js';
+import { withPerCallAbort } from '../cancellable-call.js';
+import { abortError, throwIfAborted } from '../../../utils/abort.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
-import { workflowAuthority } from '../run/authority.js';
 import { withContinuationLoop } from '../continuation.js';
+import { continuationBlock } from '../../spec/prompts/continuation.js';
+import { plannerInteractionInstructions } from '../../spec/prompts/builder.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { buildRejectionContext } from '../evidence/reporting.js';
 import { startPlannerHeartbeat } from './heartbeat.js';
 import { createQuestionMarkerStripper } from '../../parsers/question.js';
-import { composeSteeredPrompt } from '../../spec/prompts/steered-prompt.js';
-import type { PlanResult, PlannerCallbacks } from '../../planners/types.js';
+import { PLAN_FILE, RESEARCH_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
+import type {
+  PhaseCallResult,
+  PhaseInputs,
+  PlannerCallbacks,
+  PlannerDocumentCall,
+} from '../../planners/types.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { PlannerCallRunResult, PlannerCallOptions } from './types.js';
 
-const MAX_CLARIFICATION_QUESTIONS = 5;
+const CALL_ARTIFACT: Record<PlannerDocumentCall, string> = {
+  research: RESEARCH_FILE,
+  spec: SPEC_FILE,
+  plan: PLAN_FILE,
+  tasks: TASKS_FILE,
+};
 
-function createClarificationQuestionCollector(
-  questions: ClarificationQuestion[],
-): (incoming: ClarificationQuestion[]) => void {
-  const seenIds = new Set(questions.map((question) => question.id));
-
-  return (incoming) => {
-    for (const question of incoming) {
-      if (seenIds.has(question.id)) continue;
-      seenIds.add(question.id);
-      if (questions.length >= MAX_CLARIFICATION_QUESTIONS) continue;
-      questions.push(question);
-    }
-  };
+/**
+ * A seat holding the session this step already ran on has the step's prompt in
+ * its own history, so its continuation is one user turn: what the operator said,
+ * and what to produce.
+ */
+export function composePlannerContinuationTurn(
+  call: PlannerDocumentCall,
+  steer: string | undefined,
+  reason: 'interrupted' | 'answer' = 'interrupted',
+): string {
+  const said = steer?.trim();
+  const lead =
+    reason === 'answer'
+      ? `[User reply] ${said ?? ''}`
+      : said === undefined || said === ''
+        ? '[Continuation] You were interrupted.'
+        : `[Continuation] You were interrupted. The user says: ${said}`;
+  return `${lead}\nContinue the ${call} step. When ready, output the complete ${CALL_ARTIFACT[call]}.\n${plannerInteractionInstructions}`;
 }
 
 export async function runPlannerCallInContinuationLoop(
   opts: PlannerCallOptions,
 ): Promise<PlannerCallRunResult> {
-  const {
-    wctx,
-    planner,
-    feature,
-    skillsContext,
-    codebaseContext,
-    priorMessages,
-    collectedQuestions,
-    attachments,
-    trivial,
-  } = opts;
+  const { wctx, planner, call, inputs } = opts;
   const { projectDir, sessionId, config, callbacks, resumeHolder, sinks, signal } = wctx;
   let state = opts.state;
   const textHandler = createBusTextHandler(
     { bus: wctx.bus, phase: state.phase },
     { content: 'markdown' },
   );
-  let attachmentsConsumed = false;
 
-  const heartbeat = startPlannerHeartbeat(wctx.bus, state.phase, Date.now());
-  if (opts.phaseHint) heartbeat.updatePhaseHint(opts.phaseHint);
-  const collectQuestions = collectedQuestions
-    ? createClarificationQuestionCollector(collectedQuestions)
-    : undefined;
+  let seed = wctx.continuation?.take({ kind: 'planner', call });
 
-  try {
-    const loop = await withContinuationLoop<PlanResult>({
+  while (true) {
+    let pending = state.pendingPlannerConversation;
+    let answeringQuestion = false;
+    if (pending !== undefined && pending.call === call) {
+      if (!pending.answered) {
+        const reply = pending;
+        const resumedAnswer = seed?.steer?.trim();
+        const answer =
+          resumedAnswer ||
+          (await withPerCallAbort({
+            sinks,
+            signal,
+            run: async (waitSignal) => {
+              throwIfAborted(waitSignal);
+              let onAbort: () => void = () => {};
+              const cancelled = new Promise<never>((_resolve, reject) => {
+                onAbort = () => reject(abortError(waitSignal));
+                waitSignal.addEventListener('abort', onAbort, { once: true });
+              });
+              try {
+                return await Promise.race([callbacks.onPlannerReply?.(reply), cancelled]);
+              } finally {
+                waitSignal.removeEventListener('abort', onAbort);
+              }
+            },
+          }));
+        // A structured reply keeps the flat blob as its text, so every consumer below is unchanged.
+        const replyText = typeof answer === 'string' ? answer : answer?.text;
+        if (replyText === undefined || replyText.trim() === '') {
+          return {
+            state,
+            result: {
+              kind: 'conversation',
+              text: pending.text,
+              questions: pending.questions,
+              usage: null,
+            },
+          };
+        }
+        const qa = typeof answer === 'string' ? undefined : answer?.qa;
+        pending = {
+          ...pending,
+          answers: [...pending.answers, { reply: pending.text, answer: replyText }],
+          answered: true,
+        };
+        state = transitionAndSave({ projectDir, sessionId }, state, {
+          type: 'SET_PLANNER_CONVERSATION',
+          conversation: pending,
+        });
+        appendMessage(
+          { projectDir, sessionId },
+          {
+            role: 'user',
+            phase: state.phase,
+            text: replyText,
+            ...(qa !== undefined && qa.length > 0 ? { qa } : {}),
+          },
+        );
+        publishUserMessage({ bus: wctx.bus, phase: state.phase }, replyText, qa);
+        answeringQuestion = true;
+      }
+      if (seed === undefined || answeringQuestion) {
+        answeringQuestion = answeringQuestion || state.interruptedStep === undefined;
+        const onNativeSession =
+          planner.capabilities.supportsSessionResume && Boolean(state.plannerSessionId);
+        seed = {
+          partial: pending.text,
+          steer: onNativeSession
+            ? pending.answers.at(-1)?.answer
+            : pending.answers
+                .map((turn) => `Planner: ${turn.reply}\nUser: ${turn.answer}`)
+                .join('\n\n'),
+        };
+      }
+    }
+    const loop = await withContinuationLoop<PhaseCallResult>({
       ctx: { projectDir, sessionId, callbacks, bus: wctx.bus, signal, sinks },
       state,
+      step: { kind: 'planner', call },
+      ...(seed === undefined ? {} : { seed }),
       onStateChange: (s) => {
         state = s;
       },
-      body: async ({ signal: callSignal, continuationPrompt, steer, recordOutput }) => {
+      body: async ({ signal: callSignal, partial, steer, recordOutput }) => {
+        const heartbeat = startPlannerHeartbeat(wctx.bus, state.phase, Date.now());
+        if (opts.phaseHint) heartbeat.updatePhaseHint(opts.phaseHint);
         const stripper = createQuestionMarkerStripper();
-        let prompt = composeSteeredPrompt(continuationPrompt ?? feature, steer);
+        // A seat that still holds this step's session continues on it; a stateless
+        // one gets the step's prompt back with the continuation trailing it.
+        const continuing = partial !== undefined || steer !== undefined;
+        const onNativeSession =
+          planner.capabilities.supportsSessionResume &&
+          typeof state.plannerSessionId === 'string' &&
+          state.plannerSessionId !== '';
+        const continuation: Pick<PhaseInputs, 'continuationTurn' | 'promptSuffix'> = !continuing
+          ? {}
+          : onNativeSession
+            ? {
+                continuationTurn: composePlannerContinuationTurn(
+                  call,
+                  steer,
+                  answeringQuestion ? 'answer' : 'interrupted',
+                ),
+              }
+            : {
+                promptSuffix: answeringQuestion
+                  ? `[User reply]\n${steer ?? ''}`
+                  : continuationBlock({ partial, steer }),
+              };
+        answeringQuestion = false;
+        // The prefix leads the phase prompt: the messages queued for this call and
+        // the rejections the planner has to respect.
+        let prefix = '';
 
         if (config.approval?.feedRejectionsToPlanner !== false) {
           try {
@@ -75,7 +186,7 @@ export async function runPlannerCallInContinuationLoop(
             if (ledger) {
               const rejectionCtx = buildRejectionContext(ledger);
               if (rejectionCtx.length > 0) {
-                prompt = `${rejectionCtx}\n${prompt}`;
+                prefix = `${rejectionCtx}\n${prefix}`;
               }
             }
           } catch {
@@ -83,9 +194,6 @@ export async function runPlannerCallInContinuationLoop(
           }
         }
 
-        const callAttachments =
-          !attachmentsConsumed && attachments && attachments.length > 0 ? attachments : undefined;
-        attachmentsConsumed = true;
         const plannerCallbacks: PlannerCallbacks = {
           onOutput: (text) => {
             recordOutput(text);
@@ -108,37 +216,27 @@ export async function runPlannerCallInContinuationLoop(
             projectDir,
             sessionId,
             bus: wctx.bus,
-            config,
             resumeHolder,
-            authority: workflowAuthority(wctx),
           }),
           sessionId,
-          persistTranscript: config.workflow.persistTranscript,
           signal: callSignal,
-          ...(priorMessages && priorMessages.length > 0 ? { priorMessages } : {}),
-          ...(callAttachments ? { attachments: callAttachments } : {}),
-          ...(state.discoveredValidation !== undefined
-            ? { discoveredValidation: state.discoveredValidation }
-            : {}),
-          ...(collectQuestions
-            ? {
-                onQuestion: collectQuestions,
-              }
-            : {}),
         };
 
         try {
-          const result = await planner.plan({
-            feature: prompt,
+          const result = await planner.runPhase({
+            call,
             projectDir,
             callbacks: plannerCallbacks,
-            skillsContext,
-            codebaseContext,
-            ...(trivial === true ? { trivial: true } : {}),
+            inputs: {
+              ...inputs,
+              ...continuation,
+              ...(prefix === '' ? {} : { promptPrefix: prefix + (inputs.promptPrefix ?? '') }),
+            },
           });
           heartbeat.updateTokens(plannerCallTokens(result.usage));
           return result;
         } finally {
+          heartbeat.stop();
           // The stripper holds text that could still turn out to be a question marker. An
           // abort or a planner crash ends the call with that text unreleased, so the flush
           // has to run on every exit or the narration it holds never reaches the transcript.
@@ -148,9 +246,19 @@ export async function runPlannerCallInContinuationLoop(
       },
     });
 
-    return { state, result: loop.value };
-  } finally {
-    heartbeat.stop();
+    if (loop.value.kind === 'artifact') return { state, result: loop.value };
+    state = addUsageAndSave(wctx, state, 'planner', loop.value.usage);
+    state = transitionAndSave({ projectDir, sessionId }, state, {
+      type: 'SET_PLANNER_CONVERSATION',
+      conversation: {
+        call,
+        text: loop.value.text,
+        questions: loop.value.questions,
+        answers: state.pendingPlannerConversation?.answers ?? [],
+        answered: false,
+      },
+    });
+    seed = undefined;
   }
 }
 

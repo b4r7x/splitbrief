@@ -61,7 +61,6 @@ function configWithProfileContracts(
       env: definition.env,
       model: `${id}-model`,
       label: `${id} label`,
-      costTier: id === 'selected-id' ? ('frontier' as const) : ('cheap' as const),
       capabilities: {
         writesFiles: contract === 'output' ? ('extracted-code' as const) : ('direct' as const),
       },
@@ -113,7 +112,6 @@ describe('configForProfile', () => {
       expect(active).toMatchObject({
         name: 'selected-profile',
         label: 'selected-id label',
-        costTier: 'frontier',
         capabilities: { writesFiles },
         isDefault: true,
       });
@@ -195,7 +193,6 @@ describe('createTaskImplementer configured profile admission', () => {
       const profileName = `${runner.kind}-profile`;
       const profile = {
         name: profileName,
-        costTier: 'unknown' as const,
         capabilities: {
           writesFiles: runner.kind === 'agent' ? ('direct' as const) : ('extracted-code' as const),
         },
@@ -280,7 +277,6 @@ function routingDecision(overrides: Partial<RoutingDecision>): RoutingDecision {
     contextLength: undefined,
     currentCodeTruncated: false,
     currentCodeContextMode: 'whole-file',
-    costPosture: 'cheapest',
     reason: 'too large',
     rejected: [],
     ...overrides,

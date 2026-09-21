@@ -105,7 +105,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
   });
 
   itUnix(
-    'warns and lets the loop start when a changed file at run start cannot be read',
+    'warns about a changed file at run start it cannot read, and halts before the brief when the task-start snapshot cannot capture it',
     async () => {
       const { projectDir, sessionId } = setupProject();
       const task = makeTask({ id: 'T001' });
@@ -140,7 +140,15 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         });
         expect(events.find((event) => event.type === 'task_started')).toBeDefined();
         expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
-        expect(result.state.pendingRecovery).toBeUndefined();
+        // The snapshot refuses to read through the symlink rather than
+        // mis-recording it, and without it the run cannot attribute writes:
+        // the brief halts for the operator instead of running blind.
+        expect(result.status).toBe('stopped');
+        expect(implementer.implement).not.toHaveBeenCalled();
+        expect(result.state.pendingRecovery).toMatchObject({
+          reason: 'snapshot-failed',
+          taskId: 'T001',
+        });
       } finally {
         cleanupTempDir(outside);
       }

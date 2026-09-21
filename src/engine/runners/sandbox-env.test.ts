@@ -17,8 +17,12 @@ import {
 import { userInfo } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
-import { cliAuthChannelHostStateAccess } from '../../core/runners/cli-tool-catalog.js';
 import {
+  cliAuthChannelHostStateAccess,
+  type CliAuthChannel,
+} from '../../core/runners/cli-tool-catalog.js';
+import {
+  cliAuthChannelEnvKeys,
   createRunnerSandboxEnv,
   createSandboxEnv,
   prependCliExecutableDirectory,
@@ -42,6 +46,11 @@ function setEnv(key: string, value: string): void {
   process.env[key] = value;
 }
 
+function unsetEnv(key: string): void {
+  if (!originalEnvValues.has(key)) originalEnvValues.set(key, process.env[key]);
+  delete process.env[key];
+}
+
 afterEach(() => {
   for (const [key, value] of originalEnvValues) {
     if (value === undefined) delete process.env[key];
@@ -51,6 +60,17 @@ afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
+
+function authChannel(over: Partial<CliAuthChannel>): CliAuthChannel {
+  return {
+    id: 'session',
+    env: [],
+    stateBridge: 'host-cli-state',
+    billing: 'subscription-included',
+    hostKeychainPlatforms: [],
+    ...over,
+  };
+}
 
 describe('prependCliExecutableDirectory', () => {
   it('prepends the executable directory while preserving the safe runtime interpreter PATH', () => {
@@ -188,6 +208,31 @@ describe('createSandboxEnv', () => {
 
     expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(false);
     expect(sandboxCredentialValues(env)).toEqual([]);
+  });
+
+  itUnix('points a Copilot child at the account package cache, not a redirect', async () => {
+    const redirectedHome = createTempDir('sandbox-copilot-redirected-home');
+    const relocated = createTempDir('sandbox-copilot-relocated-cache');
+    const projectDir = createTempDir('sandbox-copilot-cache');
+    dirs.push(redirectedHome, relocated, projectDir);
+    setEnv('HOME', redirectedHome);
+    unsetEnv('XDG_CACHE_HOME');
+    unsetEnv('COPILOT_CACHE_HOME');
+
+    const fromAccountHome = await createSandboxEnv({ projectDir, selectedCli: 'copilot' });
+    setEnv('COPILOT_CACHE_HOME', relocated);
+    const fromRelocatedCache = await createSandboxEnv({ projectDir, selectedCli: 'copilot' });
+    const otherTool = await createSandboxEnv({ projectDir, selectedCli: 'claude-code' });
+
+    // The launcher resolves the build it execs from this directory, so a
+    // sandbox-local one downgrades Copilot to the build embedded in it — and a
+    // directory derived from an already-redirected `$HOME` is sandbox-local by
+    // another name: it holds no package, so the launcher unpacks 67 MB into it.
+    expect(fromAccountHome.COPILOT_CACHE_HOME?.startsWith(userInfo().homedir)).toBe(true);
+    expect(fromAccountHome.COPILOT_CACHE_HOME?.startsWith(redirectedHome)).toBe(false);
+    expect(fromRelocatedCache.COPILOT_CACHE_HOME).toBe(relocated);
+    expect(otherTool.COPILOT_CACHE_HOME).toBeUndefined();
+    expect(fromAccountHome.XDG_CACHE_HOME).toBe(join(projectDir, SANDBOX_DIR, 'cache'));
   });
 
   itUnix('hands a host-account channel the real HOME and USER and nothing else', async () => {
@@ -459,6 +504,52 @@ describe('bridgedCliStatePresent', () => {
   });
 });
 
+describe('cliAuthChannelEnvKeys', () => {
+  it('passes every provider API key to a provider-dependent tool', () => {
+    expect(
+      cliAuthChannelEnvKeys(
+        authChannel({ id: 'provider-dependent', billing: 'provider-dependent' }),
+        { OLLAMA_API_KEY: 'k', KIMI_API_KEY: 'k', PATH: '/bin', HOME: '/h' },
+      ),
+    ).toEqual(['OLLAMA_API_KEY', 'KIMI_API_KEY']);
+  });
+
+  it('keeps a metered channel to the keys it declares', () => {
+    expect(
+      cliAuthChannelEnvKeys(
+        authChannel({
+          id: 'api-key',
+          env: ['ANTHROPIC_API_KEY'],
+          stateBridge: 'none',
+          billing: 'api-metered',
+        }),
+        { OLLAMA_API_KEY: 'k', ANTHROPIC_API_KEY: 'a' },
+      ),
+    ).toEqual(['ANTHROPIC_API_KEY']);
+  });
+
+  it('leaves a subscription session channel scrubbed', () => {
+    expect(cliAuthChannelEnvKeys(authChannel({}), { OLLAMA_API_KEY: 'k' })).toEqual([]);
+  });
+
+  it('preserves nothing when the channel is undefined', () => {
+    expect(cliAuthChannelEnvKeys(undefined, { OLLAMA_API_KEY: 'k' })).toEqual([]);
+  });
+
+  it('lists a declared key of a provider-dependent channel exactly once', () => {
+    expect(
+      cliAuthChannelEnvKeys(
+        authChannel({
+          id: 'provider-dependent',
+          env: ['OPENCODE_API_KEY'],
+          billing: 'provider-dependent',
+        }),
+        { OPENCODE_API_KEY: 'x', OLLAMA_API_KEY: 'y' },
+      ),
+    ).toEqual(['OPENCODE_API_KEY', 'OLLAMA_API_KEY']);
+  });
+});
+
 describe('runnerAuthEnvKeys', () => {
   it('resolves an unset CLI auth channel from the descriptor, never from ambient credentials', () => {
     const claudeCode = { kind: 'cli', tool: 'claude-code', model: 'auto' } as const;
@@ -634,8 +725,7 @@ describe('runnerAuthEnvKeys', () => {
   // implementer profiles naming one tool on different auth channels. One
   // destination still cannot serve two channels of one tool; separating those
   // needs a profile-level identity in the path, which a role root does not
-  // carry. Documented as the one case a role's root cannot serve in
-  // docs/WORKTREES.md. The cross-role case is the role-scoped one below.
+  // carry. The cross-role case is the role-scoped one below.
   itUnix(
     "leaves a same-tool session snapshot bridged after it in the API-key runner's own HOME",
     async () => {
@@ -820,7 +910,8 @@ describe('runnerAuthEnvKeys', () => {
       '{"tokens":{"refresh_token":"rotating-passthrough-canary-2c7e"}}',
     );
     // The whole state directory is shared — that is the documented trade for a
-    // credential the tool must be able to rewrite (docs/WORKTREES.md).
+    // credential the tool must be able to rewrite
+    // (docs/PLANNERS-AND-IMPLEMENTERS.md, "Credential channels").
     expect(readFileSync(join(linkDir, 'config.toml'), 'utf8')).toBe('model = "gpt-5"');
     expect(sandboxCredentialValues(env)).toContain('rotating-passthrough-canary-2c7e');
   });
@@ -1202,6 +1293,38 @@ describe('runnerAuthEnvKeys', () => {
       }),
     ).toContain('CUSTOM_PROVIDER_KEY');
   });
+
+  it('keeps a shell-only provider key for a provider-dependent tool and scrubs it for every other channel', () => {
+    setEnv('FOO_API_KEY', 'shell-only');
+
+    expect(runnerAuthEnvKeys({ kind: 'cli', tool: 'opencode' })).toContain('FOO_API_KEY');
+    expect(runnerAuthEnvKeys({ kind: 'cli', tool: 'kilo-code' })).toContain('FOO_API_KEY');
+    expect(runnerAuthEnvKeys({ kind: 'cli', tool: 'codex' })).not.toContain('FOO_API_KEY');
+
+    unsetEnv('FOO_TOKEN');
+    setEnv('FOO_TOKEN', 'shell-only');
+    expect(runnerAuthEnvKeys({ kind: 'cli', tool: 'opencode' })).not.toContain('FOO_TOKEN');
+  });
+
+  it('carries a shell-only provider key into the dispatch env of a tool whose channel declares no env', async () => {
+    const projectDir = createTempDir('sandbox-env-provider-passthrough');
+    dirs.push(projectDir);
+    setEnv('FOO_API_KEY', 'shell-only');
+
+    const providerDependent = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'opencode' },
+      'implementer',
+    );
+    const session = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex' },
+      'implementer',
+    );
+
+    expect(providerDependent.FOO_API_KEY).toBe('shell-only');
+    expect(session.FOO_API_KEY).toBeUndefined();
+  });
 });
 
 describe('runnerSandboxIdentity', () => {
@@ -1393,14 +1516,20 @@ describe('backend compatibility fixtures', () => {
     expect(Object.keys(env).filter((key) => /COMMAND.?CODE|^CMD_/iu.test(key))).toEqual([]);
   });
 
-  it('keeps the OpenCode and Kilo provider-dependent channels env-credential-free', () => {
+  it('declares no env credential on the OpenCode and Kilo provider-dependent channels', () => {
     expect(resolveCliRunnerAuth({ kind: 'cli', tool: 'opencode' }).id).toBe('provider-dependent');
     expect(resolveCliRunnerAuth({ kind: 'cli', tool: 'kilo-code' }).id).toBe('provider-dependent');
+    // The channel declares no credential of its own. What a dispatch env then
+    // carries is the shell's own provider keys, which `cliAuthChannelEnvKeys`
+    // covers; asserting on `runnerAuthEnvKeys` here would only re-read the
+    // machine's environment.
     expect(
-      runnerAuthEnvKeys({ kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' }),
+      resolveCliRunnerAuth({ kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' })
+        .env,
     ).toEqual([]);
     expect(
-      runnerAuthEnvKeys({ kind: 'cli', tool: 'kilo-code', authChannel: 'provider-dependent' }),
+      resolveCliRunnerAuth({ kind: 'cli', tool: 'kilo-code', authChannel: 'provider-dependent' })
+        .env,
     ).toEqual([]);
     expect(resolveCliRunnerAuth({ kind: 'cli', tool: 'opencode' }).billing).toBe(
       'provider-dependent',

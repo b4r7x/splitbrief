@@ -1,14 +1,20 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
-import { publishWarningFromError } from '../events.js';
+import { publishError, publishWarningFromError } from '../events.js';
+import { raisePendingRecovery } from '../state-ops.js';
+import { createRecoveryIssue } from '../recovery/builders/issue.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import {
+  recordApiApplyEvidence,
   recordLocalTaskEvidence,
+  recordPromotionFailureEvidence,
   recordRetryOrEscalationEvidence,
   recordSkippedTaskEvidence,
 } from './task.js';
+import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from './approval.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { ValidationResult } from '../validation/result.js';
@@ -20,7 +26,11 @@ import type {
 } from '../../../core/schemas/enums.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import type { GateDecision } from '../approval/types.js';
-import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/schemas/evidence.js';
+import type {
+  EvidenceLedger,
+  EvidencePromotionAttempt,
+  EvidenceValidationEntry,
+} from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 
 export function getOrCreateLedger(opts: {
@@ -134,6 +144,112 @@ export function persistTaskEvidence(opts: {
       'failed to persist evidence ledger',
       err,
     );
+  }
+}
+
+/**
+ * §6: the bundle's receipt is written before the attempt's own outcome is
+ * handled, so a brief that stops mid-application still leaves the applied prefix
+ * on the record. A write that fails is a warning rather than a halt: the next
+ * attempt then finds no proof of ownership and parks, which is the safe answer.
+ */
+export function persistApiApplyEvidence(opts: {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  task: Task;
+  result: BundleApplyResult;
+  workspacePath?: string | undefined;
+}): void {
+  const { wctx, state, task, result } = opts;
+  try {
+    mutateEvidenceLedger(wctx, (existing) =>
+      recordApiApplyEvidence({
+        ledger:
+          existing ?? getOrCreateLedger({ ref: wctx, state, mode: wctx.config.workflow.mode }),
+        task,
+        result,
+        workspacePath: opts.workspacePath,
+        briefHash: hashTaskBrief(state.tasks),
+      }),
+    );
+  } catch (err) {
+    publishWarningFromError(
+      { bus: wctx.bus, phase: state.phase },
+      'failed to persist bundle application evidence',
+      err,
+    );
+  }
+}
+
+/** Stop on a known partial apply or an uncertain write without erasing its workspace. */
+export function raiseApiApplyRecovery(opts: {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  task: Task;
+  result: Extract<BundleApplyResult, { status: 'partial' | 'failed' }>;
+  workspacePath?: string | undefined;
+}): WorkflowState {
+  const { wctx, state, task, result, workspacePath } = opts;
+  const landed = result.applied.map((file) => file.path).join(', ');
+  const location = workspacePath === undefined ? '' : ' in the retained worker workspace';
+  const message =
+    result.status === 'partial'
+      ? `${task.id}: the response stopped at ${result.failedPath} after applying ${landed}; partial changes kept${location}, and the brief did not advance (${result.error})`
+      : `${task.id}: the outcome of writing ${result.failedPath} is uncertain${location}; reconcile this file before continuing (${result.error})`;
+  publishError({ bus: wctx.bus, phase: state.phase, message });
+  return raisePendingRecovery(
+    wctx,
+    state,
+    createRecoveryIssue({
+      reason: 'implementation-error',
+      phase: state.phase,
+      seat: 'build',
+      task,
+      files: [...result.applied.map((file) => file.path), result.failedPath],
+      affectedTaskIds: [task.id],
+      message,
+      details:
+        workspacePath === undefined
+          ? ['Inspect the recorded changes before retrying. They have not been rolled back.']
+          : [
+              `Worker output is retained at ${workspacePath}. These writes were not promoted to the project.`,
+            ],
+      facts: {
+        apiApplyIncomplete: true,
+        ...(workspacePath === undefined ? {} : { workspacePath }),
+      },
+      availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+      createdAt: nowIso(),
+    }),
+  );
+}
+
+/**
+ * A partial promotion is the one evidence write whose loss cannot be a warning:
+ * the caller has to know whether the applied prefix is durably recorded before
+ * it decides what to do with the workspace, so the failure is returned.
+ */
+export function persistPromotionFailureEvidence(opts: {
+  ref: SessionRef;
+  state: WorkflowState;
+  task: Task;
+  mode?: WorkflowMode | undefined;
+  attempt: EvidencePromotionAttempt;
+}): { persisted: true } | { persisted: false; error: unknown } {
+  const { ref, state, task, mode, attempt } = opts;
+  try {
+    mutateEvidenceLedger(ref, (existing) =>
+      recordPromotionFailureEvidence({
+        ledger: existing ?? getOrCreateLedger({ ref, state, mode }),
+        task,
+        attempt,
+        briefHash: hashTaskBrief(state.tasks),
+      }),
+    );
+    return { persisted: true };
+  } catch (err) {
+    return { persisted: false, error: err };
   }
 }
 

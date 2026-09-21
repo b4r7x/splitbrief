@@ -64,6 +64,8 @@ describe('Claude Code role adapters', () => {
       'high',
       '--permission-mode',
       'plan',
+      '--disallowedTools',
+      'AskUserQuestion',
       '--resume',
       'session-1',
       '--label',
@@ -196,6 +198,8 @@ describe('Claude Code role adapters', () => {
       '--include-partial-messages',
       '--permission-mode',
       'plan',
+      '--disallowedTools',
+      'AskUserQuestion',
     ]);
     expect(claudeCodePlannerAdapter.validateArgs({ invocationArgs: init, baseArgs: init })).toEqual(
       { valid: true },
@@ -293,7 +297,18 @@ describe('Claude Code stream protocol adapter', () => {
     });
     expect(terminal).toContainEqual({
       type: 'usage',
-      usage: { inputTokens: 2, outputTokens: 1 },
+      usage: {
+        inputTokens: 2,
+        outputTokens: 1,
+        counterCoverage: {
+          input: 'reported',
+          output: 'partial',
+          cacheRead: 'missing',
+          cacheCreate: 'missing',
+          reasoning: 'missing',
+        },
+        providerTotals: { output: 1 },
+      },
       semantics: 'final',
     });
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { wrapHard } from '../../../../utils/wrap.js';
-import { sanitizeRowDisplayText, wrappedRowTexts } from './text.js';
+import { sanitizeRowDisplayText, wrappedProseTexts, wrappedRowTexts } from './text.js';
 
 // The fast path skips wrap-ansi for a printable-ASCII line that already fits. It is only allowed to
 // exist while it is indistinguishable from the wrapper, so the contract is asserted directly rather
@@ -44,5 +44,19 @@ describe('wrappedRowTexts', () => {
 
   it('sanitizes before deciding whether the line fits', () => {
     expect(wrappedRowTexts('\u001b[31mred\u001b[0m', 5)).toEqual(['red']);
+  });
+});
+
+describe('wrappedProseTexts', () => {
+  it('drops the break space a continuation would otherwise open with', () => {
+    // The word before the break fills the row exactly, so the wrapper hands the space to the next
+    // row; prose starts that row on its own column instead.
+    expect(wrappedRowTexts('aaaa bbbb cccc', 9)).toEqual(['aaaa bbbb', ' cccc']);
+    expect(wrappedProseTexts('aaaa bbbb cccc', 9)).toEqual(['aaaa bbbb', 'cccc']);
+  });
+
+  it('leaves the first row and a trailing break space as the wrapper wrote them', () => {
+    expect(wrappedProseTexts('  indented', 20)).toEqual(['  indented']);
+    expect(wrappedProseTexts('aaaa bbbb cccc', 10)).toEqual(wrappedRowTexts('aaaa bbbb cccc', 10));
   });
 });

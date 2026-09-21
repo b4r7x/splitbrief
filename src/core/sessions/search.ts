@@ -9,6 +9,9 @@ export function filterSession(session: Session, query: string): boolean {
 
   if (terms.length === 0) return true;
 
-  const searchable = [session.feature, session.id, session.status].join(' ').toLowerCase();
+  // The row spells the stop reason, not the status, so a filter has to match both.
+  const searchable = [session.feature, session.id, session.status, session.stop ?? '']
+    .join(' ')
+    .toLowerCase();
   return terms.every((term) => searchable.includes(term));
 }

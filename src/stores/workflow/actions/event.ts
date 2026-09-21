@@ -1,9 +1,15 @@
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { lifecycleStore } from '../lifecycle.js';
 import { _eventsInternal, mergeEvent, projectEventForTuiEventLog } from '../events.js';
-import { _tasksInternal, updateTaskCounts, updateTaskMap } from '../tasks.js';
+import { _tasksInternal, updateTaskCounts, updateTaskMap, type TasksState } from '../tasks.js';
 import { _tokensInternal, updateTokens } from '../tokens.js';
-import { _lifecycleInternal, updatePhase, updateQueueDepth, updateStall } from '../lifecycle.js';
+import {
+  _lifecycleInternal,
+  updatePhase,
+  updateQueueDepth,
+  updateStall,
+  type LifecycleState,
+} from '../lifecycle.js';
 import { _operationsInternal } from '../operations/state.js';
 import { updateOperations } from '../operations/reducer.js';
 
@@ -20,31 +26,36 @@ export function addEvent(event: EngineEvent): void {
     _eventsInternal.set((s) => ({ ...s, events: mergeEvent(s.events, eventForLog) }));
   }
 
-  _tasksInternal.set((s) => {
-    const taskMap = updateTaskMap(s.taskMap, event);
-    const counts = updateTaskCounts(s, event);
-    const tasks = taskMap !== s.taskMap ? Array.from(taskMap.values()) : s.tasks;
-    if (
-      taskMap === s.taskMap &&
-      tasks === s.tasks &&
-      counts.currentTask === s.currentTask &&
-      counts.totalTasks === s.totalTasks &&
-      counts.taskCompletionTimes === s.taskCompletionTimes
-    ) {
-      return s;
-    }
-    return { ...s, ...counts, taskMap, tasks };
-  });
+  _tasksInternal.set((s) => reduceTasks(s, event));
 
   _tokensInternal.set((s) => updateTokens(s, event));
 
-  _lifecycleInternal.set((s) => {
-    const afterPhase = updatePhase(s, event);
-    const afterQueue = updateQueueDepth(afterPhase, event);
-    return updateStall(afterQueue, event);
-  });
+  _lifecycleInternal.set((s) => reduceLifecycle(s, event));
 
   _operationsInternal.set((s) => updateOperations(s, event));
+}
+
+export function reduceTasks(state: TasksState, event: EngineEvent): TasksState {
+  const taskMap = updateTaskMap(state.taskMap, event);
+  const counts = updateTaskCounts(state, event);
+  const tasks = taskMap !== state.taskMap ? Array.from(taskMap.values()) : state.tasks;
+  if (
+    taskMap === state.taskMap &&
+    tasks === state.tasks &&
+    counts.currentTask === state.currentTask &&
+    counts.currentAttempt === state.currentAttempt &&
+    counts.totalTasks === state.totalTasks &&
+    counts.taskCompletionTimes === state.taskCompletionTimes
+  ) {
+    return state;
+  }
+  return { ...state, ...counts, taskMap, tasks };
+}
+
+export function reduceLifecycle(state: LifecycleState, event: EngineEvent): LifecycleState {
+  const afterPhase = updatePhase(state, event);
+  const afterQueue = updateQueueDepth(afterPhase, event);
+  return updateStall(afterQueue, event);
 }
 
 function acceptsEventAfterCancellation(event: EngineEvent): boolean {

@@ -252,15 +252,11 @@ function wrapMinimalApiConfig(runnerYaml: string): unknown {
     workflow: {
       approve: 'default',
       maxRetries: 3,
-      git: { commitStrategy: 'none' },
-      persistTranscript: true,
       compactionFormat: 'auto',
       mode: 'standard',
       taskReview: 'none',
     },
     theme: 'terminal',
-    plannerEstimateReview: false,
-    autoSplitOverflow: false,
   };
 }
 
@@ -284,14 +280,20 @@ function collectRuntimeCompatibleOnlyDefaults() {
   );
 }
 
-// The verdict table at the end of §20 must name every excluded offering, so the
+// The verdict table at the end of §18 must name every excluded offering, so the
 // admitted scope stops where it begins.
 function admittedApiSection(doc: string): string {
-  const start = doc.indexOf('## 20. Admitted API providers');
+  const start = doc.indexOf('## 18. Admitted API providers');
   const end = doc.indexOf(EXCLUDED_OFFERINGS_HEADING);
   expect(start).toBeGreaterThanOrEqual(0);
   expect(end).toBeGreaterThan(start);
   return doc.slice(start, end);
+}
+
+function apiCredentialInstructions(): string {
+  const end = apiKeysDoc.indexOf('\n## Security measures');
+  expect(end).toBeGreaterThan(0);
+  return apiKeysDoc.slice(0, end);
 }
 
 function containsExcludedProviderId(doc: string, id: string): boolean {
@@ -324,6 +326,37 @@ describe('configuration documentation', () => {
       expect(runner.service).toBe(descriptor.service);
       expect(runner.offering).toBe(descriptor.offering);
     }
+  });
+
+  it('keeps three local seat endpoints and exact IDs independent', () => {
+    const yaml = extractTaggedYamlBlocks(configurationDoc, 'config-api-three-seats').get('local');
+    expect(yaml).toBeDefined();
+    if (yaml === undefined) return;
+    const config = loadConfigText(yaml);
+    expect(config.planner).toMatchObject({
+      kind: 'api',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'qwen3-coder:30b',
+    });
+    expect(config.implementer).toMatchObject({
+      kind: 'api',
+      provider: 'lm-studio',
+      service: 'lm-studio',
+      offering: 'local',
+      apiBase: 'http://localhost:1234/v1',
+      model: 'qwen2.5-coder-7b',
+    });
+    expect(config.reviewer).toMatchObject({
+      kind: 'api',
+      provider: 'llama-cpp',
+      service: 'llama-cpp',
+      offering: 'local',
+      apiBase: 'http://localhost:8080/v1',
+      model: 'Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf',
+    });
   });
 
   it('keeps runtime recommendation parity in the model catalog table', () => {
@@ -380,8 +413,8 @@ describe('configuration documentation', () => {
     expect(configurationDoc).toContain('optional for `cli`');
   });
 
-  it('rejects excluded provider IDs and deferred verdict candidates in the docs', () => {
-    const scopedDocs = `${admittedApiSection(configurationDoc)}\n${apiKeysDoc}`;
+  it('excludes unsupported providers from admitted API and credential instructions', () => {
+    const scopedDocs = `${admittedApiSection(configurationDoc)}\n${apiCredentialInstructions()}`;
     for (const id of EXCLUDED_DOC_IDS) {
       expect(containsExcludedProviderId(scopedDocs, id), `found excluded id ${id}`).toBe(false);
     }
@@ -539,7 +572,10 @@ describe('API key documentation', () => {
     expect(apiKeysDoc).toContain('sk-ant-');
     expect(apiKeysDoc).toContain('sk-or-');
     for (const id of EXCLUDED_DOC_IDS) {
-      expect(containsExcludedProviderId(apiKeysDoc, id), `found excluded id ${id}`).toBe(false);
+      expect(
+        containsExcludedProviderId(apiCredentialInstructions(), id),
+        `found excluded id ${id}`,
+      ).toBe(false);
     }
   });
 });

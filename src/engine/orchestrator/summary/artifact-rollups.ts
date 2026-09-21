@@ -52,8 +52,6 @@ function readReviewPacketRollups(
       preFinalReviewId: packet.checkpoints.preFinalReview?.id ?? null,
       accepted: packet.checkpoints.runLedger.accepted,
       rejected: packet.checkpoints.runLedger.rejected,
-      diffCommand: latest?.diffCommand ?? null,
-      restoreCommand: latest?.restoreCommand ?? null,
     },
     reviewPacket: {
       jsonPath: REVIEW_PACKET_JSON_FILE,

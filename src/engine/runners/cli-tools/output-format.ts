@@ -84,10 +84,12 @@ export function withOutputFormat(
   adapter: CliPlannerAdapter | CliImplementerAdapter,
   format: OutputFormat,
 ): CliPlannerAdapter | CliImplementerAdapter {
-  // REQ-018: user configuration cannot downgrade the backend's terminal
-  // protocol. A required terminal event is the adapter's own parser contract;
-  // substituting a text parser would let a bare process exit pass as
-  // completed, so the conflicting configuration refuses before any spawn.
+  // User configuration cannot downgrade the backend's terminal protocol. A
+  // required terminal event is the adapter's own parser contract; substituting a
+  // text parser would let a bare process exit pass as completed. Config load
+  // already refuses the combination (STRUCTURED_TERMINAL_TOOL_IDS in
+  // src/core/config/load/validation/config.ts); this throw is the assertion for
+  // any caller that builds an adapter from something other than a loaded config.
   if (adapter.outputContract.kind === 'structured-terminal') {
     throw error(
       'cli-output-format-conflict',

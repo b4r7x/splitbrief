@@ -1,0 +1,850 @@
+import { useEffect } from 'react';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import type { RunRecord } from '../../../core/sessions/run-record.js';
+import { routerStore } from '../../../stores/navigation/router.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render } from 'ink-testing-library';
+import { Box, Text } from 'ink';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { execFileSync } from 'node:child_process';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
+import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
+import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
+import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
+import { useInputMode } from './use-input-mode.js';
+import { useRunContinue } from './use-run-continue.js';
+import { useRunLoop } from './use-run-loop.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { eventsStore } from '../../../stores/workflow/events.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { configStore } from '../../../stores/project/config.js';
+import {
+  abortTurn,
+  requestStopNow,
+  requestCancel,
+  requestRewind,
+  clearAllHandlers,
+} from '../handlers.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
+import {
+  clearActiveReceipt,
+  reactivateExistingSession,
+  writeActive,
+} from '../../../core/sessions/active-pointer.js';
+import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
+import { saveState, loadState } from '../../../core/state/persistence.js';
+import { saveSummary } from '../../../core/sessions/io.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { sessionDir } from '../../../core/paths.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { RunWorkflowFn } from './use-run-loop.js';
+
+// Harness mounts the run loop with a bogus planner command so that
+// runWorkflow exits fast via the "planner not available" branch in
+// initializeWorkflow. That keeps the hook's React-side lifecycle observable
+// (reset, resume, rewind, cancel) without requiring a full engine spin-up.
+
+interface RunnerHandle {
+  startedAt: string;
+  handleResume: (injectedText?: string) => void;
+}
+
+interface HarnessProps {
+  prepared: PreparedExecution;
+  captureRunner?: { current: RunnerHandle | null };
+  runWorkflow?: RunWorkflowFn | undefined;
+}
+
+function Harness({ prepared, captureRunner, runWorkflow }: HarnessProps) {
+  const inputMode = useInputMode();
+  const continuation = useRunContinue({ prepared, inputMode });
+  const runner = useRunLoop({
+    prepared,
+    inputMode,
+    continuation,
+    runWorkflow,
+  });
+  useEffect(() => {
+    if (captureRunner)
+      captureRunner.current = { ...runner, handleResume: continuation.handleResume };
+  });
+  return (
+    <Box>
+      <Text>{inputMode.mode === 'normal' ? 'idle' : inputMode.hint}</Text>
+    </Box>
+  );
+}
+
+function renderHarness(props: HarnessProps) {
+  routerStore.init({
+    screen: 'workflow',
+    run: makeRunRecord({ ref: props.prepared.session.ref }),
+    execution: { kind: 'local', prepared: props.prepared },
+  });
+  return render(<Harness {...props} />);
+}
+
+/** The run the loop handed back to the screen: the same route, at rest, with a fresh record. */
+function settledRun(): RunRecord | null {
+  const route = routerStore.get();
+  if (route.screen !== 'workflow' || route.execution.kind !== 'at-rest') return null;
+  return route.run;
+}
+
+function preparedExecution(input: {
+  projectDir: string;
+  feature: string;
+  sessionId?: string | undefined;
+  resumeState?: WorkflowState | undefined;
+  planner?: PlannerConfig | undefined;
+  workflow?: Partial<Config['workflow']> | undefined;
+}): PreparedExecution {
+  const sessionId = input.sessionId ?? 'prepared-workflow-session';
+  const ref = { projectDir: input.projectDir, sessionId };
+  ensureSessionDir(input.projectDir, sessionId);
+  return makePreparedExecution({
+    projectDir: input.projectDir,
+    sessionId,
+    feature: input.feature,
+    config: makeConfig({
+      planner: input.planner ?? {
+        kind: 'agent',
+        command: 'splitbrief-non-existent-planner-x7q9',
+      },
+      ...(input.workflow !== undefined && { workflow: input.workflow }),
+    }),
+    preparationId: `workflow-hook-${sessionId}`,
+    active: reactivateExistingSession(ref),
+    ...(input.resumeState !== undefined && { resumeState: input.resumeState }),
+  });
+}
+
+async function flush(ms = 60) {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function userMessageEvents() {
+  return eventsStore.get().events.filter((event) => event.type === 'user_message');
+}
+
+function loggedMessageRows(log: string, text: string): number {
+  return log
+    .split('\n')
+    .filter((line) => line.includes('"kind":"message"') && line.includes(JSON.stringify(text)))
+    .length;
+}
+
+let projectDir: string;
+
+beforeEach(() => {
+  projectDir = createTempDir('workflow-runner-test');
+  execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
+  ensureSplitbriefDir(projectDir);
+  resetWorkflow();
+  controlsStore.reset();
+  feedbackStore.reset();
+  configStore.__testReset();
+  clearAllHandlers();
+});
+
+afterEach(() => {
+  clearAllHandlers();
+  stopStore.__testReset();
+  resetWorkflow();
+  controlsStore.reset();
+  feedbackStore.reset();
+  configStore.__testReset();
+  cleanupTempDir(projectDir);
+});
+
+describe('useRunLoop', () => {
+  it('runs once from prepared config session report and gates', async () => {
+    const prepared = preparedExecution({ projectDir, feature: 'prepared authority' });
+    const received: PreparedExecution[] = [];
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
+      received.push(options.prepared);
+      return makeSummary();
+    });
+
+    const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
+
+    await vi.waitFor(() => {
+      expect(received).toHaveLength(1);
+    });
+    await flush();
+
+    const authority = received[0];
+    expect(authority).toBe(prepared);
+    expect(Object.isFrozen(authority?.config)).toBe(true);
+    expect(runWorkflowStub).toHaveBeenCalledTimes(1);
+
+    inst.unmount();
+  });
+
+  it('resets workflow stores on mount and produces a valid startedAt timestamp', async () => {
+    // Seed the stores so the test proves they were reset on mount.
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 5 });
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({ projectDir, feature: 'add auth' });
+
+    const inst = renderHarness({ prepared, captureRunner });
+    await flush();
+
+    expect(lifecycleStore.get().cancelled).toBe(false);
+    expect(lifecycleStore.get().queueDepth).toBe(0);
+    const runner = captureRunner.current;
+    if (!runner) throw new Error('expected captureRunner.current to be populated');
+    expect(runner.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    inst.unmount();
+  });
+
+  it("clears stale store state and applies the resume phase from startWorkflow's authoritative reset", async () => {
+    // Seed the lifecycle store with stale data; startWorkflow's own reset is the
+    // single authoritative reset.
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 7, phase: 'final-review' });
+    const sessionId = '2026-08-14-resume-reset';
+    const resume: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'reviewing-spec',
+    };
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: resume,
+    });
+    saveState({ projectDir, sessionId }, resume);
+
+    const inst = renderHarness({ prepared });
+
+    // Stale fields are cleared (the reset ran) and the resume phase is applied
+    // (the reset received the resume state) — one reset carries both.
+    await vi.waitFor(() => {
+      const lifecycle = lifecycleStore.get();
+      expect(lifecycle.cancelled).toBe(false);
+      expect(lifecycle.queueDepth).toBe(0);
+      expect(lifecycle.phase).toBe('reviewing-spec');
+    });
+    inst.unmount();
+  });
+
+  it('clears session state before a missing persisted resume exits', async () => {
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 7, phase: 'final-review' });
+    eventsStore.__testReset({
+      events: [
+        {
+          type: 'workflow_started',
+          ts: Date.now(),
+          phase: 'final-review',
+          feature: 'old session',
+        },
+      ],
+    });
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'new session',
+      sessionId: '2026-08-14-missing-resume',
+      resumeState: createInitialState('new session'),
+    });
+
+    const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
+    await vi.waitFor(() => {
+      expect(lifecycleStore.get().phase).toBe('idle');
+      expect(lifecycleStore.get().cancelled).toBe(false);
+    });
+
+    expect(lifecycleStore.get().queueDepth).toBe(0);
+    expect(eventsStore.get().events).toEqual([]);
+    expect(runWorkflowStub).not.toHaveBeenCalled();
+    inst.unmount();
+  });
+
+  it('clears session state before an invalid persisted resume exits', async () => {
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 9, phase: 'implementing' });
+    const sessionId = '2026-08-14-invalid-resume';
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'invalid session',
+      sessionId,
+      resumeState: createInitialState('invalid session'),
+    });
+    writeFileSync(
+      join(sessionDir(projectDir, sessionId), 'state.json'),
+      JSON.stringify({ stateVersion: 999 }),
+      'utf8',
+    );
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
+
+    const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
+    await vi.waitFor(() => {
+      expect(lifecycleStore.get().phase).toBe('idle');
+      expect(eventsStore.get().events).toEqual([
+        expect.objectContaining({
+          type: 'error',
+          message: expect.stringContaining('Cannot resume'),
+        }),
+      ]);
+    });
+
+    expect(lifecycleStore.get().cancelled).toBe(false);
+    expect(lifecycleStore.get().queueDepth).toBe(0);
+    expect(runWorkflowStub).not.toHaveBeenCalled();
+    inst.unmount();
+  });
+
+  it('settles the run at rest on the screen it is already on when the loop returns', async () => {
+    const sessionId = '2026-06-18-settled-session';
+    ensureSessionDir(projectDir, sessionId);
+    saveSummary({ projectDir, sessionId }, makeSession({ id: sessionId, status: 'open' }));
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+
+    const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
+
+    await vi.waitFor(() => {
+      expect(settledRun()?.ref.sessionId).toBe(sessionId);
+    });
+    expect(routerStore.get().screen).toBe('workflow');
+
+    inst.unmount();
+  });
+
+  it('settles a run the user stopped without parking, instead of leaving a dead screen', async () => {
+    const sessionId = '2026-07-10-stopped-regen';
+    ensureSessionDir(projectDir, sessionId);
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (opts) => {
+      // Stop now during an approval-gate regeneration: an abort handler is live
+      // (runLiveRegenerate), the stop aborts the regen, and the engine run returns
+      // without parking a continuation prompt or publishing a cancellation event.
+      addEvent({
+        type: 'workflow_started',
+        ts: Date.now(),
+        phase: 'reviewing-spec',
+        feature: 'add auth',
+      });
+      opts.sinks.setAbortHandler(() => {});
+      requestStopNow();
+      opts.sinks.setAbortHandler(null);
+      return makeSummary();
+    });
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+
+    const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
+
+    await vi.waitFor(() => {
+      expect(settledRun()).not.toBeNull();
+    });
+
+    inst.unmount();
+  });
+
+  it('stops at a paused recovery on resume without re-entering runWorkflow (F-510)', async () => {
+    const sessionId = '2024-01-01-paused';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T001' });
+    const issue = buildContextOverflowRecoveryIssue({
+      task,
+      phase: 'implementing',
+      createdAt: '2026-04-28T12:00:00.000Z',
+    });
+    const paused: WorkflowState = {
+      ...makeImplState([task]),
+      pendingRecovery: { ...issue, status: 'paused' },
+    };
+    saveState({ projectDir, sessionId }, paused);
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: paused,
+    });
+
+    const inst = renderHarness({ prepared });
+    await flush();
+
+    // The paused issue is carried, not resolved: the host never resumes the run,
+    // so the recovery stays on disk for an explicit `splitbrief resume` later.
+    const persisted = loadState({ projectDir, sessionId });
+    if (!persisted) throw new Error('expected persisted state on disk');
+    expect(persisted.pendingRecovery?.status).toBe('paused');
+
+    // The host did not re-enter runWorkflow: no resume event was published, so the
+    // budget-pause answer cannot drive an infinite runWorkflow loop.
+    const resumedEvents = eventsStore.get().events.filter((e) => e.type === 'workflow_resumed');
+    expect(resumedEvents).toHaveLength(0);
+
+    inst.unmount();
+  });
+
+  it('writes the session record when a halt is answered with End run', async () => {
+    const sessionId = '2024-01-01-end-run';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T001' });
+    const issue = buildContextOverflowRecoveryIssue({
+      task,
+      phase: 'implementing',
+      createdAt: '2026-04-28T12:00:00.000Z',
+    });
+    const closed: WorkflowState = {
+      ...makeImplState([task]),
+      pendingRecovery: { ...issue, status: 'applying', selectedAction: 'end-run' },
+    };
+    saveState({ projectDir, sessionId }, closed);
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: closed,
+    });
+    const inst = renderHarness({ prepared });
+    await flush();
+
+    expect(existsSync(join(sessionDir(projectDir, sessionId), 'summary.json'))).toBe(true);
+    expect(settledRun()?.status).toEqual({ kind: 'closed', as: 'ended' });
+
+    inst.unmount();
+  });
+
+  it('requestCancel marks the workflow cancelled and clears the review input mode', async () => {
+    const prepared = preparedExecution({ projectDir, feature: 'add auth' });
+    const inst = renderHarness({
+      prepared,
+      runWorkflow: async (options) => {
+        await options.callbacks?.onApprovalNeeded?.('spec', 'spec.md');
+        return makeSummary();
+      },
+    });
+    await flush();
+
+    // Simulate a pending review mode (as if the engine had called onApprovalNeeded).
+    controlsStore.setInputMode('review');
+
+    const cancelled = requestCancel();
+    expect(cancelled).toBe(true);
+    await flush();
+
+    expect(lifecycleStore.get().cancelled).toBe(true);
+    // Cancel handler registered by the runner calls inputMode.resetMode(),
+    // which clears controls.inputMode back to 'normal'.
+    expect(controlsStore.get().inputMode).toBe('normal');
+
+    // A second cancel is a no-op (cancelled gate).
+    const before = eventsStore.get().events.length;
+    expect(requestCancel()).toBe(false);
+    expect(eventsStore.get().events.length).toBe(before);
+
+    inst.unmount();
+  });
+
+  it('requestCancel aborts the engine signal with the canonical user_cancelled reason', async () => {
+    const sessionId = '2026-06-18-cancel-reason';
+    const { promise: runFinished, resolve: finishRun } = Promise.withResolvers<void>();
+    const runWorkflowWithCompletion: RunWorkflowFn = async (options) => {
+      try {
+        return await runWorkflow(options);
+      } finally {
+        finishRun();
+      }
+    };
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'cancel reason',
+      sessionId,
+      planner: { kind: 'shell', command: 'sleep', args: ['10'] },
+      workflow: { mode: 'quick' },
+    });
+    const inst = renderHarness({ prepared, runWorkflow: runWorkflowWithCompletion });
+    const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+    await vi.waitFor(
+      () => {
+        expect(existsSync(logPath)).toBe(true);
+      },
+      { timeout: 5_000 },
+    );
+
+    expect(requestCancel()).toBe(true);
+
+    await vi.waitFor(
+      () => {
+        const log = readFileSync(logPath, 'utf-8');
+        expect(log).toContain('"type":"workflow_cancelled"');
+        expect(log).toContain('"reason":"user_cancelled"');
+      },
+      { timeout: 5_000 },
+    );
+
+    await runFinished;
+    inst.unmount();
+  });
+
+  it('persists a rewind event to the session log when the user rewinds to spec', async () => {
+    const sessionId = '2024-01-01-add-auth';
+    ensureSessionDir(projectDir, sessionId);
+    const saved: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'reviewing-spec',
+    };
+    saveState({ projectDir, sessionId }, saved);
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+
+    const inst = renderHarness({ prepared });
+    await flush();
+    // No `.splitbrief/active` pointer is hand-written. The rewind handler must use the
+    // in-scope sessionId prop, so the rewind still lands even though the bogus
+    // planner has finished and saveFinalSession cleared the active marker.
+
+    const didRewind = requestRewind({ target: 'spec', comment: 'needs clarification' });
+    expect(didRewind).toBe(true);
+    await flush();
+
+    const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+    expect(existsSync(logPath)).toBe(true);
+    const log = readFileSync(logPath, 'utf-8');
+    expect(log).toContain('rewind_to_spec');
+    expect(log).toContain('needs clarification');
+
+    inst.unmount();
+  });
+
+  it('persists a task-reset event when the user rewinds to a task', async () => {
+    const sessionId = '2024-01-01-rewind-task';
+    ensureSessionDir(projectDir, sessionId);
+    const saved: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'implementing',
+    };
+    saveState({ projectDir, sessionId }, saved);
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+
+    const inst = renderHarness({ prepared });
+    await flush();
+
+    const didRewind = requestRewind({ target: 'task', taskId: 'T001' });
+    expect(didRewind).toBe(true);
+    await flush();
+
+    const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+    const log = readFileSync(logPath, 'utf-8');
+    expect(log).toContain('task_reset');
+    expect(log).toContain('T001');
+
+    inst.unmount();
+  });
+
+  it('rewind retry reuses prepared runner authority after store changes', async () => {
+    const sessionId = '2024-01-01-prepared-rewind';
+    const saved: WorkflowState = {
+      ...createInitialState('prepared rewind'),
+      phase: 'reviewing-spec',
+    };
+    ensureSessionDir(projectDir, sessionId);
+    saveState({ projectDir, sessionId }, saved);
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'prepared rewind',
+      sessionId,
+      resumeState: saved,
+    });
+    const attempts: PreparedExecution[] = [];
+    const runWorkflowStub: RunWorkflowFn = async (options) => {
+      attempts.push(options.prepared);
+      if (attempts.length === 1 && !options.signal?.aborted) {
+        await new Promise<void>((resolve) => {
+          options.signal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+      }
+      return makeSummary();
+    };
+    const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
+
+    await vi.waitFor(() => {
+      expect(attempts).toHaveLength(1);
+    });
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({
+        planner: { kind: 'agent', command: '/changed/after/admission' },
+      }),
+    });
+
+    expect(requestRewind({ target: 'spec', comment: 'reuse prepared authority' })).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(attempts).toHaveLength(2);
+    });
+    expect(attempts).toEqual([prepared, prepared]);
+    expect(attempts[1]?.config).toBe(prepared.config);
+    expect(attempts[1]?.gates).toBe(prepared.gates);
+    expect(attempts[1]?.report).toBe(prepared.report);
+    expect(attempts[1]?.session).toBe(prepared.session);
+    expect(attempts[1]?.session.active).toBe(prepared.session.active);
+    expect(Object.isFrozen(attempts[1]?.config)).toBe(true);
+
+    inst.unmount();
+  });
+
+  it('rewinds the in-scope session even when .splitbrief/active names a different session', async () => {
+    // pointer=A (a foreign interrupted session) while the screen is scoped to sessionId=B.
+    // The rewind handler must use the in-scope id (B) and never touch A.
+    const foreignSessionId = '2024-01-01-foreign';
+    const scopedSessionId = '2024-01-01-scoped';
+    ensureSessionDir(projectDir, foreignSessionId);
+    ensureSessionDir(projectDir, scopedSessionId);
+    const foreignState: WorkflowState = {
+      ...createInitialState('foreign feature'),
+      phase: 'reviewing-spec',
+    };
+    const scopedState: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'reviewing-spec',
+    };
+    saveState({ projectDir, sessionId: foreignSessionId }, foreignState);
+    saveState({ projectDir, sessionId: scopedSessionId }, scopedState);
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId: scopedSessionId,
+    });
+
+    const inst = renderHarness({ prepared });
+    await flush();
+    // The pointer now names a FOREIGN interrupted session while the screen stays scoped to B.
+    // A pointer-keyed rewind would corrupt the foreign session; the in-scope id (B) must win.
+    clearActiveReceipt(prepared.session.ref, prepared.session.active);
+    writeActive({ projectDir, sessionId: foreignSessionId });
+
+    const didRewind = requestRewind({ target: 'spec', comment: 'scope-correct rewind' });
+    expect(didRewind).toBe(true);
+    await flush();
+
+    const scopedLog = readFileSync(
+      join(sessionDir(projectDir, scopedSessionId), 'session.jsonl'),
+      'utf-8',
+    );
+    expect(scopedLog).toContain('rewind_to_spec');
+    expect(scopedLog).toContain('scope-correct rewind');
+
+    expect(existsSync(join(sessionDir(projectDir, foreignSessionId), 'session.jsonl'))).toBe(false);
+
+    inst.unmount();
+  });
+
+  it('handleResume shows a feedback error when there is no saved state on disk', async () => {
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({ projectDir, feature: 'add auth' });
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
+
+    const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowStub });
+    await flush();
+
+    // No active session was written — handleResume should surface a feedback
+    // error instead of trying to resume.
+    const runner = captureRunner.current;
+    if (!runner) throw new Error('expected captureRunner.current to be populated');
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 4, phase: 'final-review' });
+    eventsStore.__testReset({
+      events: [
+        {
+          type: 'workflow_started',
+          ts: Date.now(),
+          phase: 'final-review',
+          feature: 'stale session',
+        },
+      ],
+    });
+    runner.handleResume();
+    await flush();
+
+    expect(feedbackStore.get().message).toMatch(/no saved state/i);
+    expect(feedbackStore.get().isError).toBe(true);
+    expect(lifecycleStore.get().cancelled).toBe(false);
+    expect(lifecycleStore.get().queueDepth).toBe(0);
+    expect(eventsStore.get().events).toEqual([]);
+
+    inst.unmount();
+  });
+
+  it.each([
+    { phase: 'planning', sessionId: '2024-01-01-inject', text: 'what about edge case X?' },
+    {
+      phase: 'implementing',
+      sessionId: '2024-01-01-implementing-inject',
+      text: 'carry this into implementation',
+    },
+  ] as const)(
+    'carries the typed continuation into the re-entered run as a steer and records it as a user message',
+    async ({ phase, sessionId, text }) => {
+      const resume: WorkflowState = { ...createInitialState('add auth'), phase };
+      saveState({ projectDir, sessionId }, resume);
+
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const prepared = preparedExecution({
+        projectDir,
+        feature: 'add auth',
+        sessionId,
+        resumeState: resume,
+      });
+      const seen: (string | undefined)[] = [];
+      const runWorkflowSpy: RunWorkflowFn = async (options) => {
+        seen.push(options.steer);
+        return runWorkflow(options);
+      };
+      const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowSpy });
+      await flush();
+      expect(userMessageEvents()).toHaveLength(0);
+
+      const runner = captureRunner.current;
+      if (!runner) throw new Error('expected captureRunner.current to be populated');
+      runner.handleResume(text);
+      await flush();
+
+      expect(seen.at(-1)).toBe(text);
+      const userMessages = userMessageEvents();
+      expect(userMessages).toHaveLength(1);
+      expect(userMessages[0]).toMatchObject({ type: 'user_message', phase, text });
+      const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf-8');
+      expect(loggedMessageRows(log, text)).toBe(1);
+      const persisted = loadState({ projectDir, sessionId });
+      if (!persisted) throw new Error('expected persisted state on disk');
+      expect(persisted.messageQueue).toHaveLength(0);
+      expect(feedbackStore.get().isError).toBe(false);
+
+      inst.unmount();
+    },
+  );
+
+  it('re-enters with no steer and no new row when no text was typed', async () => {
+    const sessionId = '2024-01-01-empty-continue';
+    const resume: WorkflowState = { ...createInitialState('add auth'), phase: 'planning' };
+    saveState({ projectDir, sessionId }, resume);
+
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: resume,
+    });
+    const seen: (string | undefined)[] = [];
+    const runWorkflowSpy: RunWorkflowFn = async (options) => {
+      seen.push(options.steer);
+      return runWorkflow(options);
+    };
+    const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowSpy });
+    await flush();
+    expect(userMessageEvents()).toHaveLength(0);
+
+    const runner = captureRunner.current;
+    if (!runner) throw new Error('expected captureRunner.current to be populated');
+    runner.handleResume();
+    await flush();
+
+    expect(seen.at(-1)).toBeUndefined();
+    expect(userMessageEvents()).toHaveLength(0);
+    const persisted = loadState({ projectDir, sessionId });
+    if (!persisted) throw new Error('expected persisted state on disk');
+    expect(persisted.messageQueue).toHaveLength(0);
+
+    inst.unmount();
+  });
+
+  it('leaves the steer unrecorded when it answers a planner question still pending', async () => {
+    const sessionId = '2024-01-01-pending-answer';
+    const answer = 'change src/auth.ts instead';
+    const resume: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'planning',
+      pendingPlannerConversation: {
+        call: 'research',
+        text: 'Which module should change?',
+        questions: [],
+        answers: [],
+        answered: false,
+      },
+    };
+    saveState({ projectDir, sessionId }, resume);
+
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: resume,
+    });
+    const inst = renderHarness({
+      prepared,
+      captureRunner,
+      runWorkflow: async (options) => runWorkflow(options),
+    });
+    await flush();
+
+    const runner = captureRunner.current;
+    if (!runner) throw new Error('expected captureRunner.current to be populated');
+    runner.handleResume(answer);
+    await flush();
+
+    // The pending question owns the answer: the call loop records it when it consumes
+    // the seed, so the re-entry itself publishes nothing.
+    expect(userMessageEvents()).toHaveLength(0);
+    const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf-8');
+    expect(log).not.toContain(answer);
+
+    inst.unmount();
+  });
+
+  it('settles a park in place instead of re-entering the run', async () => {
+    const sessionId = '2024-01-01-parked-continue';
+    ensureSessionDir(projectDir, sessionId);
+    saveState(
+      { projectDir, sessionId },
+      { ...createInitialState('add auth'), phase: 'implementing' },
+    );
+
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
+    const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowStub });
+    await flush();
+    const runsBefore = (runWorkflowStub as unknown as { mock: { calls: unknown[] } }).mock.calls
+      .length;
+
+    const runner = captureRunner.current;
+    if (!runner) throw new Error('expected captureRunner.current to be populated');
+    const settled = vi.fn();
+    stopStore.park('mid-brief', 'T001', settled);
+    runner.handleResume('use the other adapter');
+    await flush();
+
+    expect(settled).toHaveBeenCalledWith('use the other adapter');
+    expect((runWorkflowStub as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(
+      runsBefore,
+    );
+
+    inst.unmount();
+  });
+
+  it('cleans up all handlers on unmount so later events do not leak into the suite', async () => {
+    const prepared = preparedExecution({ projectDir, feature: 'add auth' });
+    const inst = renderHarness({ prepared });
+    await flush();
+
+    inst.unmount();
+    await flush();
+
+    expect(abortTurn()).toBe(false);
+    expect(requestRewind({ target: 'spec' })).toBe(false);
+  });
+});

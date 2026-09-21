@@ -93,8 +93,10 @@ describe('resolveCrewDisplayNames', () => {
     });
 
     const names = resolveCrewDisplayNames(config, cache);
-    expect(names.plan).toBe('Claude Sonnet 5');
+    // A seat pinned to an alias reads the alias's own label — `sonnet` is Claude's `Sonnet 5`,
+    // not models.dev's `Claude Sonnet 5`, which four of the nine aliases would otherwise share.
+    expect(names.plan).toBe('Sonnet 5');
     expect(names.build).toBe('Claude 3.7 Sonnet');
-    expect(names.review).toBe('Claude Sonnet 5'); // inherited from planner
+    expect(names.review).toBe('Sonnet 5'); // inherited from planner
   });
 });

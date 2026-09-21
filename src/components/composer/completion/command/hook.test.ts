@@ -6,6 +6,7 @@ import { renderFeature, flushEffects, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { useCommandCompletion } from './hook.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.js';
 
 const ENTER = '\r';
@@ -56,7 +57,6 @@ const COMMANDS: RuntimeCommandDef[] = [
     label: 'Mode',
     description: 'Workflow mode',
     category: 'crew',
-    aliases: [{ name: '/m' }],
     args: { kind: 'closed', options: ['instant', 'quick', 'standard', 'speckit'], optional: true },
     validScreens: ['home'],
     handler: () => {},
@@ -67,7 +67,6 @@ const COMMANDS: RuntimeCommandDef[] = [
     label: 'Crew',
     description: 'Who fills each seat',
     category: 'crew',
-    aliases: [{ name: '/planner', args: 'plan' }],
     args: { kind: 'closed', options: ['plan', 'build', 'review'], optional: true },
     validScreens: ['home'],
     handler: () => {},
@@ -80,9 +79,15 @@ const COMMANDS: RuntimeCommandDef[] = [
     category: 'navigate',
     args: {
       kind: 'closed',
-      options: ['alpha', 'bravo'],
-      optionDescriptions: { alpha: 'Reviews alpha conventions', bravo: 'Drafts bravo notes' },
+      options: ['alpha', 'bravo', 'guard'],
+      optionDescriptions: {
+        alpha: 'Reviews alpha conventions',
+        bravo: 'Drafts bravo notes',
+        guard: 'Audits security surfaces',
+      },
       optional: true,
+      multi: true,
+      match: 'fuzzy',
     },
     validScreens: ['home'],
     handler: () => {},
@@ -113,7 +118,6 @@ const COMMANDS: RuntimeCommandDef[] = [
     label: 'Settings',
     description: 'Crew, validation, workflow',
     category: 'navigate',
-    aliases: [{ name: '/config' }],
     validScreens: ['home'],
     handler: () => {},
   },
@@ -131,7 +135,33 @@ function ShowSuggestionsHarness({ value, suppressed }: { value: string; suppress
   return createElement(Text, null, String(command.showSuggestions));
 }
 
-function renderComposer() {
+const HINTED_COMMANDS: RuntimeCommandDef[] = [
+  {
+    kind: 'arg',
+    name: '/mode',
+    label: 'Mode',
+    description: 'Workflow mode',
+    category: 'crew',
+    args: {
+      kind: 'closed',
+      options: ['quick', 'standard', 'speckit'],
+      optionHints: { standard: 'current' },
+      optional: true,
+    },
+    validScreens: ['home'],
+    handler: () => {},
+  },
+];
+
+function rowContaining(frame: string, text: string): string {
+  const row = stripAnsiStyles(frame)
+    .split('\n')
+    .find((line) => line.includes(text));
+  if (row === undefined) throw new Error(`Missing completion row: ${text}`);
+  return row;
+}
+
+function renderComposer(commands: RuntimeCommandDef[] = COMMANDS) {
   const commandCalls: string[] = [];
   const submits: string[] = [];
   const ui = renderFeature(
@@ -139,7 +169,7 @@ function renderComposer() {
       Box,
       { flexDirection: 'column', height: 12, justifyContent: 'flex-end' },
       createElement(Composer, {
-        commands: COMMANDS,
+        commands,
         currentScreen: 'home',
         mode: 'normal',
         hint: '',
@@ -346,13 +376,6 @@ describe('useCommandCompletion closed arguments', () => {
     ui.unmount();
   });
 
-  it('lists the closed option set for an alias of the command', async () => {
-    const shown = renderFeature(createElement(ShowSuggestionsHarness, { value: '/m ' }));
-    await tick(20);
-    expect(shown.lastFrame()).toContain('true');
-    shown.unmount();
-  });
-
   it('runs the highlighted option on Enter when the closed argument is required', async () => {
     const { ui, commandCalls } = renderComposer();
 
@@ -375,13 +398,6 @@ describe('useCommandCompletion closed arguments', () => {
       { timeout: 5000 },
     );
     ui.unmount();
-  });
-
-  it('shows no suggestions after the space of an alias that pre-fills the argument', async () => {
-    const hidden = renderFeature(createElement(ShowSuggestionsHarness, { value: '/planner ' }));
-    await tick(20);
-    expect(hidden.lastFrame()).toContain('false');
-    hidden.unmount();
   });
 
   it('shows no suggestions when no closed option matches the typed prefix', async () => {
@@ -420,6 +436,23 @@ describe('useCommandCompletion closed arguments', () => {
     ui.unmount();
   });
 
+  it('marks the closed option an option hint names, and leaves the others bare', async () => {
+    const { ui } = renderComposer(HINTED_COMMANDS);
+
+    await flushEffects();
+    ui.stdin.write('/mode ');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame() ?? '';
+        expect(rowContaining(frame, 'standard')).toContain('current');
+        expect(rowContaining(frame, 'quick')).not.toContain('current');
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
   it('falls back to an empty description when a closed option has none', async () => {
     const { ui } = renderComposer();
 
@@ -436,16 +469,58 @@ describe('useCommandCompletion closed arguments', () => {
     );
     ui.unmount();
   });
+});
 
-  it('offers an alias under its own name', async () => {
-    const { ui, commandCalls } = renderComposer();
+describe('useCommandCompletion fuzzy multi arguments', () => {
+  beforeEach(() => {
+    resetAllStores();
+  });
+
+  it('description match: lists the option whose description mentions the query', async () => {
+    const { ui } = renderComposer();
 
     await flushEffects();
-    ui.stdin.write('/conf');
+    ui.stdin.write('/skills sec');
     await tick(20);
     await vi.waitFor(
       () => {
-        expect(ui.lastFrame()).toContain('/config');
+        const frame = ui.lastFrame();
+        expect(frame).toContain('Audits security surfaces');
+        expect(frame).not.toContain('Drafts bravo notes');
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
+  it('fuzzy match: lists an option the query only matches out of order', async () => {
+    const { ui } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/skills brv');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame();
+        expect(frame).toContain('Drafts bravo notes');
+        expect(frame).not.toContain('Audits security surfaces');
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
+  it('second token keeps menu open and completes onto the first', async () => {
+    const { ui, commandCalls } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/skills alpha b');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame();
+        expect(frame).toContain('Drafts bravo notes');
+        expect(frame).not.toContain('Audits security surfaces');
       },
       { timeout: 5000 },
     );
@@ -454,7 +529,25 @@ describe('useCommandCompletion closed arguments', () => {
     ui.stdin.write(ENTER);
     await vi.waitFor(
       () => {
-        expect(commandCalls).toEqual(['/config']);
+        expect(commandCalls).toEqual(['/skills alpha bravo']);
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
+  it('a trailing space empties the query and reopens the whole set for the next token', async () => {
+    const { ui } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/skills alpha ');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame();
+        expect(frame).toContain('Reviews alpha conventions');
+        expect(frame).toContain('Drafts bravo notes');
+        expect(frame).toContain('Audits security surfaces');
       },
       { timeout: 5000 },
     );

@@ -15,7 +15,12 @@ import {
 } from '../../../lib/process/spawn/lifecycle.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../../constants.js';
-import { createSandboxEnv, prependCliExecutableDirectory } from '../sandbox-env.js';
+import {
+  cliChannelStaging,
+  cliPackageCacheEnv,
+  createSandboxEnv,
+  prependCliExecutableDirectory,
+} from '../sandbox-env.js';
 import { bridgedCliStatePresent } from '../sandbox-state-bridge.js';
 import type { CliAuthProbe, CliProbeCommand, CliProbeOutput, CliVersionProbe } from './contract.js';
 
@@ -65,9 +70,10 @@ async function credentialPresence(
   env: NodeJS.ProcessEnv,
   tool: CliToolId,
   channel: CliAuthChannel | undefined,
+  preserveEnvKeys: readonly string[],
 ): Promise<CredentialPresence> {
   if (channel === undefined) return 'absent';
-  if (channel.env.some((key) => (env[key] ?? '').trim().length > 0)) return 'present';
+  if (preserveEnvKeys.some((key) => (env[key] ?? '').trim().length > 0)) return 'present';
   switch (cliAuthChannelHostStateAccess(channel)) {
     case 'bridged-files':
       return (await bridgedCliStatePresent(env, tool)) ? 'present' : 'absent';
@@ -89,22 +95,21 @@ export async function probeEnvironment({
   tool: CliToolId;
   channel: CliAuthChannel | undefined;
 }>): Promise<ProbeEnvironment> {
-  const hostState = channel === undefined ? 'none' : cliAuthChannelHostStateAccess(channel);
-  const env = await createSandboxEnv({
-    projectDir: neutralDir,
-    preserveEnvKeys: [...(channel?.env ?? [])],
-    selectedCli: hostState === 'none' ? undefined : tool,
-    hostState,
-  });
+  const staging = cliChannelStaging(tool, channel);
+  const env = await createSandboxEnv({ projectDir: neutralDir, ...staging });
   return {
     env: {
       ...env,
+      // The version probe names no auth channel, so `createSandboxEnv` is not
+      // told which tool is about to run and cannot place the package cache
+      // itself. Without it the version this probe reads is a different build's.
+      ...cliPackageCacheEnv(tool),
       PATH: prependCliExecutableDirectory({
         executablePath: executable.path,
         safeRuntimePath: probeRuntimePath(),
       }),
     },
-    credential: await credentialPresence(env, tool, channel),
+    credential: await credentialPresence(env, tool, channel, staging.preserveEnvKeys),
   };
 }
 

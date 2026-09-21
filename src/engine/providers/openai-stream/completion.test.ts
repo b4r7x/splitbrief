@@ -361,7 +361,18 @@ describe('streamCompletion', () => {
       onProgress: () => {},
     });
 
-    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+    expect(result.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+      counterCoverage: {
+        input: 'partial',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { input: 100, output: 50 },
+    });
   });
 
   it('preserves OpenAI reasoning tokens in usage', async () => {
@@ -381,7 +392,19 @@ describe('streamCompletion', () => {
       onProgress: () => {},
     });
 
-    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 30, reasoningTokens: 20 });
+    expect(result.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 30,
+      reasoningTokens: 20,
+      counterCoverage: {
+        input: 'partial',
+        output: 'reported',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'reported',
+      },
+      providerTotals: { input: 100, output: 50 },
+    });
   });
 
   it('records invalid stream chunks as unknown upstream diagnostics and continues', async () => {
@@ -607,6 +630,14 @@ describe('streamCompletion', () => {
       inputTokens: 200,
       outputTokens: 200,
       cacheReadTokens: 800,
+      counterCoverage: {
+        input: 'partial',
+        output: 'partial',
+        cacheRead: 'reported',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { input: 1000, output: 200 },
     });
   });
 

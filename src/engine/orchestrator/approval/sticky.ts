@@ -1,6 +1,6 @@
 import type { ApprovalGrant } from '../../../core/schemas/approval-store.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
-import { extractActionPattern, matchesActionPattern } from './action-classifier.js';
+import { extractActionPattern } from './action-classifier.js';
 import { readApprovalsStore, mutateApprovalsStore } from '../../../core/approval/store.js';
 import { nowIso } from '../../../utils/format-time.js';
 import {
@@ -9,8 +9,10 @@ import {
   publishApprovalRejected,
 } from './events.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
-import { taskScopePatterns } from '../task-scope.js';
-import { isConfiguredHeadless, type GateActionInput, type GateDecision } from './types.js';
+import { taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
+import { taskFiles } from '../../../core/schemas/task.js';
+import { matchesGlob } from '../../../utils/path-patterns.js';
+import type { GateActionInput, GateDecision } from './types.js';
 
 function mergeGrant(grants: ApprovalGrant[], grant: ApprovalGrant): ApprovalGrant[] | null {
   const alwaysExists = grants.some(
@@ -50,15 +52,15 @@ export async function gateStickyTier(args: StickyTierInput): Promise<GateDecisio
     taskId,
     bus,
     callbacks,
-    config,
   } = input;
   const tier = 'sticky' as const;
 
   const grants = input.grants ?? readApprovalsStore(projectDir).grants;
   const classifyContext = {
     actionDescription,
-    taskFile: task.file,
-    taskInBounds: taskScopePatterns(task),
+    targetPath: input.targetPath,
+    taskFiles: taskFiles(task),
+    taskInBounds: taskDeclaredPatterns(task),
     dependsOnFiles,
     projectDir,
   };
@@ -68,7 +70,7 @@ export async function gateStickyTier(args: StickyTierInput): Promise<GateDecisio
     (g) =>
       g.class === actionClass &&
       g.scope === 'always' &&
-      (g.pattern === actionDescription || matchesActionPattern(grantPattern, g.pattern)),
+      (g.pattern === actionDescription || matchesGlob(grantPattern, g.pattern)),
   );
   if (alwaysGrant) {
     publishApprovalGranted({ bus, phase, tier, actionClass, taskId, scope: 'always' });
@@ -80,7 +82,7 @@ export async function gateStickyTier(args: StickyTierInput): Promise<GateDecisio
       g.class === actionClass &&
       g.scope === 'session' &&
       g.sessionId === sessionId &&
-      (g.pattern === actionDescription || matchesActionPattern(grantPattern, g.pattern)),
+      (g.pattern === actionDescription || matchesGlob(grantPattern, g.pattern)),
   );
   if (sessionGrant) {
     publishApprovalGranted({ bus, phase, tier, actionClass, taskId, scope: 'session' });
@@ -89,7 +91,7 @@ export async function gateStickyTier(args: StickyTierInput): Promise<GateDecisio
 
   publishApprovalPrompted({ bus, phase, tier, actionClass, taskId });
 
-  if (!callbacks.onTieredApproval || isConfiguredHeadless(config)) {
+  if (!callbacks.onTieredApproval) {
     publishApprovalRejected({
       bus,
       phase,

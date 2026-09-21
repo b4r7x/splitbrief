@@ -1,4 +1,5 @@
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import {
   API_PROVIDER_CATALOG,
   KNOWN_API_PROVIDER_IDS,
@@ -20,7 +21,10 @@ import {
   type ActiveRunnerRole,
   type SeatPickerRole,
 } from '../../../core/runners/seat-roles.js';
-import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
+import {
+  cliBillingPosture,
+  type RunnerBillingPosture,
+} from '../../../core/runners/runner-billing.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
@@ -97,7 +101,7 @@ export function inheritPlannerOption(
 ): InheritPlannerOption {
   return {
     id: INHERIT_PLANNER_OPTION_ID,
-    displayName: 'Same as planner',
+    displayName: PLANNER_INHERITANCE.sentence,
     kind: 'inherit-planner',
     roles: input.planner.roles,
     modelPolicy: 'none',
@@ -147,7 +151,14 @@ function projectCliOption(
     roles: descriptor.roles,
     modelPolicy: descriptor.modelPolicy[policyRole],
     modelCapability: deriveModelCatalogCapability(descriptor.modelPolicy[policyRole], true),
-    billing: descriptor.billing,
+    // A tool row states what the tool's own login decides, which is nothing a
+    // list can prove: the descriptor's default channel is a product fact, not
+    // this seat's invocation.
+    billing: cliBillingPosture({
+      tool: descriptor.id,
+      authChannel: undefined,
+      installedVersion: version,
+    }),
     permissions: cliPermissions(descriptor, policyRole),
     status,
     available: isSelectable(status, 'cli'),

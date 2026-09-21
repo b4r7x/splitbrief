@@ -60,16 +60,16 @@ src/stores/
 │   ├── tokens.ts             # Local / escalated token counts
 │   ├── lifecycle.ts          # Phase, cancelled, queue depth
 │   ├── operations/           # Active / last runner operation (state.ts, reducer.ts, …)
-│   ├── actions/              # Composite writes across sub-stores (event, interrupt, resume, reset, sections)
+│   ├── actions/              # Composite writes across sub-stores (event, load, hydrate, interrupt, resume, pause, reset, sections)
 │   ├── abort.ts              # Armed abort intent (ArmedKind) + auto-clear timer
 │   ├── attachments.ts        # Pending prompt attachments
 │   ├── conversation-scroll.ts # Scroll position + expanded diffs
 │   ├── streaming-output.ts   # Live streamed runner output
+│   ├── transcript-tail.ts    # What the blocks after the run's events add to the transcript
+│   ├── recovery-notice.ts    # Halted seat + its quota reset, for the header
 │   └── review.ts             # Review file path + scroll
 ├── approval-prompt/          # Tiered approval request/response prompt
 │   └── prompt.ts             # approvalPromptStore (via channels/prompt)
-├── cost-approval/            # Cost-prediction approval prompt
-│   └── prompt.ts             # costApprovalStore (via channels/prompt)
 ├── channels/                 # Cross-store messaging channels
 │   ├── prompt.ts             # createPromptChannel — request/response with supersede/cancel
 │   └── feedback.ts           # Feedback error publish/subscribe
@@ -89,7 +89,7 @@ src/stores/
 
 `stores/` is grouped by concern, one directory per domain.
 
-`stores/channels/` holds cross-store messaging channels — decoupled pub/sub and request/response wires that let one store signal another without a direct import cycle. `feedback.ts` carries feedback errors (`router` publishes, `ui/feedback` subscribes); `prompt.ts` exposes `createPromptChannel`, the request/response primitive backing `approvalPromptStore` and `costApprovalStore` (with supersede / cancel semantics).
+`stores/channels/` holds cross-store messaging channels — decoupled pub/sub and request/response wires that let one store signal another without a direct import cycle. `feedback.ts` carries feedback errors (`router` publishes, `ui/feedback` subscribes); `prompt.ts` exposes `createPromptChannel`, the request/response primitive backing `approvalPromptStore` (with supersede / cancel semantics).
 
 **Import pattern:**
 
@@ -158,7 +158,7 @@ When a component reads several fields from one or more stores, `useStores` (`src
 ```typescript
 import { useStores } from '../stores/use-stores.js';
 
-const [{ projectDir }, { allSessions }, { cols, isSmall }] = useStores(
+const [{ projectDir }, { sessions }, { cols, isSmall }] = useStores(
   configStore,
   sessionsStore,
   terminalSizeStore,
@@ -210,29 +210,32 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, renderedLineCount }` | `setReviewFile()`, `setScrollOffset()`, `setRenderedLineCount()`, `clearReview()` |
 | `attachmentsStore` | `workflow/attachments.ts` | `{ pending: Attachment[] }` | `add()`, `remove()`, `drain()`, `peek()` — `attachImage()` / `detachImage()` / `listAttachments()` helpers |
 | `streamingOutputStore` | `workflow/streaming-output.ts` | `{ taskId, lines, active }` | `startStreaming()`, `replaceLines()`, `stopStreaming()` |
+| `transcriptTailStore` | `workflow/transcript-tail.ts` | `{ rowCount, renderableUnits }` — what a closed run's ledger adds after the run's own events | `setMetrics()` — written by the transcript, read by the keyboard so both measure one document |
+| `recoveryNoticeStore` | `workflow/recovery-notice.ts` | `{ seat, resetAt }` — the seat an open halt stopped on and the clock its quota returns on | `open({ seat, resetAt })`, `clear()` — written by the TUI recovery driver |
 | `approvalPromptStore` | `approval-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` | `openApprovalPrompt()`, `closeApprovalPrompt()` (via `channels/prompt`) |
-| `costApprovalStore` | `cost-approval/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', prediction, resolve }` | `openCostApprovalPrompt()`, `closeCostApprovalPrompt()` (via `channels/prompt`) |
 | `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |
 | `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `save()`, `useConfig()` |
-| `sessionsStore` | `project/sessions.ts` | `{ sessions, allSessions }` | `load()`, `loadAll()` |
-| `skillsStore` | `project/skills.ts` | `{ available: SkillMeta[], selected: Set<string> }` | `setAvailable()`, `setSelected()` |
+| `sessionsStore` | `project/sessions.ts` | `{ sessions, totalCount, projectDir }` | `load()`, `refresh()` |
+| `skillsStore` | `project/skills.ts` | `{ available: SkillMeta[], selected: Set<string> }` | `setAvailable()`, `setSelected()`, `toggleSelected()` |
 | `detectionStore` | `project/detection.ts` | `{ cliTools, implementers }` | `setDetection()` |
 | `modelCacheStore` | `discovery/model-cache/state.ts` | `{ providers: Map, modelsDevCatalog, ... }` | `setProviderModels()`, `invalidateAll()` |
 
 ### Workflow actions module
 
-`workflow/actions/` is not a store — it holds composite operations that orchestrate writes across workflow sub-stores (`event.ts`, `interrupt.ts`, `resume.ts`, `reset.ts`, `sections.ts`). The TUI sink calls it for engine events, and UI command handlers call it for local intent such as cancellation. Direct `.set()` on sub-stores is reserved for test helpers.
+`workflow/actions/` is not a store — it holds composite operations that orchestrate writes across workflow sub-stores (`event.ts`, `load.ts`, `hydrate.ts`, `interrupt.ts`, `resume.ts`, `pause.ts`, `reset.ts`, `sections.ts`). The TUI sink calls it for engine events, and UI command handlers call it for local intent such as cancellation. Direct `.set()` on sub-stores is reserved for test helpers.
 
 | Export | Purpose |
 |---|---|
 | `addEvent(event: EngineEvent)` | Single ingress for engine events. Called by `tuiSink` (registered on the engine `EventBus`), **not** directly by the orchestrator. `cost_update` still updates tokens after cancellation. After local cancel, terminal runner events and final telemetry are accepted while UI noise is ignored. Normal fan-out order is events → tasks → tokens → lifecycle → operations. Strictly synchronous. |
 | `markCancellationRequested(intent?)` | Local UI intent for immediate feedback. Terminalizes lifecycle and running operations with frozen duration, but does **not** append a fake event or rewrite `planner_status` to success. The canonical history event is still engine-published `workflow_cancelled`. |
-| `resetWorkflow(resume?)` | Calls `abortStore.clear()` first, then resets workflow sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate; applies resume state if provided. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
+| `resetWorkflow()` | Resets the workflow sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate. It only clears: nothing is synthesized here. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
+| `loadEvents(events)` (`load.ts`) | The hydration counterpart of `addEvent`: resets first, then folds a whole replayed log through the same reducers and commits each store once. |
+| `hydrateFromState(state, { endedAt? })` (`hydrate.ts`) | Lays the saved state over whatever the replay rebuilt — the phase, the brief list, the spend and the queue depth. It never claims a run read back from disk is running: an open run hydrates as `paused`, a finished one as `complete`, and the header clock freezes at the last event the log carries. |
 | `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
 
 **Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth`, and `operations/reducer.ts` exports `updateOperations`. They are pure functions and can be tested directly.
 
-`lifecycle.ts` owns queue count state. `message_queued` increments `queueDepth`; `message_injected_native`, `queue_drained`, and `queue_cleared` decrement it. `resetWorkflow(resume)` reconstructs depth from undrained, non-native queue entries so resumed sessions show the same pending queue count near the composer.
+`lifecycle.ts` owns queue count state. `message_queued` increments `queueDepth`; `message_injected_native`, `queue_drained`, and `queue_cleared` decrement it. `hydrateFromState(state)` reconstructs depth from undrained, non-native queue entries so a continued run shows the same pending queue count near the composer.
 
 `operations/state.ts` and `operations/reducer.ts` own compact runner lifecycle for operation-state consumers: active/last call identity, terminal status, frozen timing, warning count/detail, usage, partial output, runner, and model. It does not decide what activity text belongs in chrome. Conversation rows render safe `runner_call_activity` events from the retained event log as batched per-call activity blocks; assistant/result text, prompts, task bodies, full descriptions, and raw tool payloads remain transcript-bearing and must not update status chrome.
 
@@ -267,14 +270,15 @@ Workflow sub-stores (`events`, `tasks`, `tokens`, `lifecycle`, `operations`) are
 
 ### Test escape hatches
 
-A small number of stores ship two test-only exports so tests can arrange specific starting states that no domain action produces.
+A small number of stores ship test-only exports so tests and visual fixtures can arrange starting states that no domain action produces. There are three kinds: a state reset, a raw setter, and a value pin.
 
 | Symbol | Shape | Who may import |
 |---|---|---|
-| `__testReset(next?)` on a store facade | Replaces current state with `{ ...initial, ...next }` | `*.test.ts` / `*.test.tsx` files only |
+| `__testReset(next?)` on a store facade | Replaces current state with `{ ...initial, ...next }` | `*.test.ts` / `*.test.tsx` files, and the visual-gallery fixtures under `testing/visual/fixtures/` (`screen-fixtures.ts` resets `terminalSizeStore` and `configStore`) |
 | `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_operationsInternal`, `_eventsInternal`, `_tasksInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions/` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `src/app/keys.test.tsx` forcing a mid-workflow phase) |
+| `__testSetClaudeCodeModelOptions(options)` on `modelCacheStore` | A value pin, not a state reset: it stores an override that `getClaudeCodeModelOptions()` prefers over the real read | `*.test.ts` / `*.test.tsx` files, and `testing/visual/fixtures/screen-fixtures.ts`, which pins the Claude Code option cache so a capture does not read the developer's `~/.claude.json` |
 
-**Rule.** Production code outside `workflow/actions/` MUST NOT import either symbol. Reviewers reject PRs that add new call sites in `src/` outside that one module. Tests are the only other sanctioned caller.
+**Rule.** Production code outside `workflow/actions/` MUST NOT import any of these symbols. Reviewers reject PRs that add new call sites in `src/` outside that one module. Tests and the visual-gallery fixtures are the only other sanctioned callers.
 
 **Why they exist.** `lifecycleStore` (and the other workflow sub-stores) expose no public setter — `addEvent` is the engine-event ingress, and `markCancellationRequested` is the local-intent ingress. A test that needs to assert behaviour while the store is already at `phase: 'implementing'` cannot replay a full event stream to get there, so `__testReset` arranges the state directly. Similarly, `_lifecycleInternal.set` lets the dispatcher write one slice without exposing generic mutation publicly.
 

@@ -7,6 +7,7 @@ import {
   readReviewContentHeight,
 } from './snapshot.js';
 import { briefListTopOffset, hitBriefTaskRow, hitTranscriptRow } from './hit-test.js';
+import { getContentTopRow, getProgressRows, WORKFLOW_GUTTER_X } from './chrome-rows.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -17,7 +18,6 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { getApprovalPromptRows } from '../prompt-rows/approval.js';
 import { getQuestionPromptRows } from '../prompt-rows/question.js';
@@ -41,7 +41,6 @@ beforeEach(() => {
   controlsStore.reset();
   reviewStore.reset();
   approvalPromptStore.reset();
-  costApprovalStore.reset();
   questionPromptStore.reset();
 });
 
@@ -68,7 +67,7 @@ function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
     estimatedTokens: 3911,
     contextLength: 32768,
     currentCodeContextMode: 'whole-file',
-    costPosture: 'Selected unknown cost tier via cheapest-capable routing',
+    routingReason: 'smallest capable context window',
   });
 }
 
@@ -102,8 +101,8 @@ describe('readConversationScrollSnapshot', () => {
       promptRows: 0,
     });
 
-    expect(snap.contentRect.width).toBe(160);
-    expect(snap.conversationWidth).toBe(160);
+    expect(snap.contentRect.width).toBe(159);
+    expect(snap.conversationWidth).toBe(159);
     expect(snap.viewportHeight).toBe(fullBodyHeight);
     expect(snap.viewportHeight).toBeLessThan(40);
     expect(snap.contentRect.height).toBe(snap.viewportHeight);
@@ -128,8 +127,66 @@ describe('readConversationScrollSnapshot', () => {
     lifecycleStore.__testReset({ phase: 'idle' });
     const idle = readConversationScrollSnapshot();
 
-    expect(active.viewportHeight).toBe(idle.viewportHeight);
+    // The build block is the only chrome a live phase adds; the status byline costs nothing.
+    expect(idle.viewportHeight - active.viewportHeight).toBe(
+      getProgressRows({ phase: 'implementing', cols: 80 }),
+    );
     expect(active.totalHeight).toBe(idle.totalHeight);
+  });
+
+  it('measures the transcript around the build progress block', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+
+    const progressRows = getProgressRows({ phase: 'implementing', cols: 80 });
+    const snap = readConversationScrollSnapshot();
+
+    expect(progressRows).toBe(5);
+    // The block rides above the transcript, so its rows leave the body and push its top row down.
+    expect(snap.viewportHeight).toBe(
+      getWorkflowViewportHeight({ rows: 30, inputRows: 3, progressRows }),
+    );
+    expect(snap.contentRect.height).toBe(snap.viewportHeight);
+    expect(snap.contentRect.top).toBe(getContentTopRow() + progressRows);
+  });
+
+  it('gives the block rows back to an open gate, as the screen does', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    approvalPromptStore.__testReset({
+      status: 'pending',
+      request: makeConfirmRequest('delete generated files'),
+      resolve: () => undefined,
+    });
+
+    const snap = readConversationScrollSnapshot();
+
+    expect(snap.contentRect.top).toBe(getContentTopRow());
+    expect(snap.viewportHeight).toBe(
+      getWorkflowViewportHeight({
+        rows: 30,
+        inputRows: 3,
+        promptRows: getApprovalPromptRows(approvalPromptStore.get(), 80),
+      }),
+    );
+  });
+
+  it('cancelled runs paint no block, so the body reclaims its rows', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({
+      phase: 'implementing',
+      status: 'running',
+      startedAt: 0,
+      cancelled: true,
+    });
+
+    const snap = readConversationScrollSnapshot();
+
+    expect(snap.contentRect.top).toBe(getContentTopRow());
+    expect(snap.viewportHeight).toBe(getWorkflowViewportHeight({ rows: 30, inputRows: 3 }));
   });
 
   it('subtracts dynamic prompt rows from the conversation viewport', () => {
@@ -234,9 +291,10 @@ describe('readConversationScrollSnapshot', () => {
 
     const snap = readConversationScrollSnapshot();
 
-    expect(snap.contentRect.width).toBe(120);
-    expect(snap.conversationWidth).toBe(120);
-    expect(snap.contentRect.right).toBe(snap.contentRect.left + 119);
+    // The transcript spends the left gutter as its own lead, so only the right gutter is out.
+    expect(snap.contentRect.width).toBe(119);
+    expect(snap.conversationWidth).toBe(119);
+    expect(snap.contentRect.right).toBe(snap.contentRect.left + 118);
   });
 
   it('sidebar presence narrows content width', () => {
@@ -400,6 +458,24 @@ describe('readReviewContentHeight', () => {
     expect(height).toBeGreaterThan(0);
   });
 
+  it('keeps the review body on the same rows as the transcript while the block paints', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 40, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({ phase: 'final-review', status: 'running', startedAt: 0 });
+    reviewStore.setRenderedLineCount(0);
+
+    const progressRows = getProgressRows({ phase: 'final-review', cols: 80 });
+    const bodyHeight = getWorkflowViewportHeight({ rows: 40, inputRows: 3, progressRows });
+
+    expect(progressRows).toBe(5);
+    // Both panes are handed the screen's one content height, so the review frame is measured
+    // around the block exactly as the transcript is.
+    expect(readConversationScrollSnapshot().contentRect.height).toBe(bodyHeight);
+    expect(readReviewContentHeight()).toBe(
+      getReviewContentLayout(Math.max(0, bodyHeight - REVIEW_FRAME_ROWS), 0).contentHeight,
+    );
+  });
+
   it('accounts for scrollable content by reserving a footer row', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
@@ -491,14 +567,16 @@ describe('readBriefListSnapshot phantom-hotspot clamp', () => {
     const snap = readBriefListSnapshot();
     if (!snap) throw new Error('expected a brief list snapshot while reviewing briefs');
 
-    // The review column is uncapped, so the brief card fills the whole content pane.
+    // The review column is uncapped, so the brief card fills the content pane past the gutter its
+    // frame stands in.
     const fullContentWidth = getWorkflowContentWidth({
       cols: 300,
       sidebarVisible: false,
     });
     expect(fullContentWidth).toBeGreaterThan(120);
-    expect(snap.rect.width).toBe(fullContentWidth);
-    expect(snap.rect.right).toBe(snap.rect.left + fullContentWidth - 1);
+    expect(snap.rect.left).toBe(WORKFLOW_GUTTER_X);
+    expect(snap.rect.width).toBe(fullContentWidth - WORKFLOW_GUTTER_X);
+    expect(snap.rect.right).toBe(snap.rect.left + snap.rect.width - 1);
 
     const listTop = snap.rect.top + briefListTopOffset({ hasLoadError: false });
 
@@ -567,4 +645,31 @@ describe('readBriefListSnapshot phantom-hotspot clamp', () => {
       }),
     ).toBeNull();
   });
+});
+
+it('remeasures the active structured question after advancing and going back', () => {
+  terminalSizeStore.__testReset({ cols: 80, rows: 40, isSmall: true });
+  inputHeightStore.__testReset({ rows: 3 });
+  const withoutPrompt = readConversationScrollSnapshot().viewportHeight;
+  questionPromptStore.setHint('Type your answer…');
+  questionPromptStore.setQuestions([
+    { id: 'first', type: 'input', text: 'Short question?' },
+    {
+      id: 'second',
+      type: 'choice',
+      text: 'A longer question with choices?',
+      options: ['First choice', 'Second choice', 'Third choice'],
+    },
+  ]);
+  controlsStore.setInputMode('question');
+  const firstHeight = readConversationScrollSnapshot().viewportHeight;
+  questionPromptStore.answer('answer');
+  const current = questionPromptStore.get();
+  const secondHeight = readConversationScrollSnapshot().viewportHeight;
+  expect(secondHeight).toBe(
+    withoutPrompt - getQuestionPromptRows('Type your answer…', 80, current.questions, 1),
+  );
+  expect(secondHeight).toBeLessThan(firstHeight);
+  questionPromptStore.previous();
+  expect(readConversationScrollSnapshot().viewportHeight).toBe(firstHeight);
 });

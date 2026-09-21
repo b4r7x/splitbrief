@@ -6,9 +6,9 @@ import {
   updateStall,
 } from './lifecycle.js';
 import { addEvent } from './actions/event.js';
-import { markInterruptParked, markInterruptRequested } from './actions/interrupt.js';
-import { markInterruptResumed } from './actions/resume.js';
+import { markWorkflowPaused } from './actions/pause.js';
 import { resetWorkflow } from './actions/reset.js';
+import { hydrateFromState } from './actions/hydrate.js';
 import { makePlannerStatus, makePlannerText } from '#testing/helpers/events/planner.js';
 import {
   makeRunnerCallActivity,
@@ -18,7 +18,7 @@ import {
   makeRunnerCallStallCleared,
   makeRunnerCallStarted,
 } from '#testing/helpers/events/runner-call.js';
-import { makeTaskStart } from '#testing/helpers/events/task.js';
+import { makeRetry, makeTaskStart } from '#testing/helpers/events/task.js';
 import { taskId } from '../../core/schemas/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
@@ -195,7 +195,8 @@ describe('lifecycleStore', () => {
   });
 
   it('records phaseFirstSeenTs for the resumed phase on workflow_resumed', () => {
-    resetWorkflow({
+    resetWorkflow();
+    hydrateFromState({
       stateVersion: 1,
       phase: 'specifying',
       feature: 'f',
@@ -304,16 +305,6 @@ describe('interrupted lifecycle', () => {
     expect(lifecycleStore.get().status).toBe('complete');
   });
 
-  it('turn_interrupted parks a host interrupt already requested via Esc-Esc', () => {
-    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
-    markInterruptRequested();
-    expect(lifecycleStore.get()).toMatchObject({ status: 'interrupted', interruptParked: false });
-
-    addEvent({ type: 'turn_interrupted', ts: 2_000, phase: 'implementing', source: 'user' });
-
-    expect(lifecycleStore.get()).toMatchObject({ status: 'interrupted', interruptParked: true });
-  });
-
   it('a new runner call clears an event-set interrupt', () => {
     addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
     addEvent({ type: 'turn_interrupted', ts: 2_000, phase: 'implementing', source: 'user' });
@@ -326,19 +317,14 @@ describe('interrupted lifecycle', () => {
     expect(lifecycleStore.get().phase).toBe('implementing');
   });
 
-  it('tracks the continuation-prompt park across interrupt, park, and resume', () => {
+  it('a new runner call clears a park', () => {
     addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
-    markInterruptParked();
-    expect(lifecycleStore.get().interruptParked).toBe(false);
+    markWorkflowPaused();
+    expect(lifecycleStore.get().status).toBe('paused');
 
-    markInterruptRequested();
-    expect(lifecycleStore.get()).toMatchObject({ status: 'interrupted', interruptParked: false });
+    addEvent(makeRunnerCallStarted({ ts: 3_000 }));
 
-    markInterruptParked();
-    expect(lifecycleStore.get()).toMatchObject({ status: 'interrupted', interruptParked: true });
-
-    markInterruptResumed();
-    expect(lifecycleStore.get()).toMatchObject({ status: 'running', interruptParked: false });
+    expect(lifecycleStore.get()).toMatchObject({ status: 'running', phase: 'implementing' });
   });
 
   it('clearLifecycleInterrupted returns interrupted to running', () => {
@@ -400,5 +386,20 @@ describe('runner call stall', () => {
     expect(lifecycleStore.get().stall).not.toBeNull();
     addEvent(makePlannerStatus({ phase: 'validating-task' }));
     expect(lifecycleStore.get().stall).toBeNull();
+  });
+
+  it('tracks the last runner event and the attempt start for the build-progress block', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent(
+      makeTaskStart({ taskId: taskId('T001'), title: 'One', index: 0, total: 2, ts: 2_000 }),
+    );
+    expect(lifecycleStore.get().attemptStartedTs).toBe(2_000);
+
+    addEvent(makePlannerText({ text: 'thinking', ts: 3_000 }));
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(3_000);
+
+    addEvent(makeRetry({ taskId: taskId('T001'), attempt: 1, ts: 4_000 }));
+    expect(lifecycleStore.get().attemptStartedTs).toBe(4_000);
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(3_000);
   });
 });

@@ -10,6 +10,7 @@ import {
   getApiProviderDescriptor,
   isApiProviderId,
 } from './api-provider-catalog.js';
+import { normalizeProviderEndpoint } from './endpoint-policy.js';
 import { FORBIDDEN_API_PROVIDER_IDS } from './api-provider-verdicts.js';
 import {
   getKnownProviderBaseURL,
@@ -35,11 +36,11 @@ describe('API provider catalog', () => {
     expect(API_PROVIDER_CATALOG).not.toHaveProperty('cursor');
   });
 
-  it('admits the two local services and nothing else', () => {
-    expect(Object.keys(API_PROVIDER_CATALOG)).toEqual(['ollama', 'lm-studio']);
-    expect([...ADMITTED_API_PROVIDER_IDS]).toEqual(['ollama', 'lm-studio']);
+  it('admits the three local services and nothing else', () => {
+    expect(Object.keys(API_PROVIDER_CATALOG)).toEqual(['ollama', 'lm-studio', 'llama-cpp']);
+    expect([...ADMITTED_API_PROVIDER_IDS]).toEqual(['ollama', 'lm-studio', 'llama-cpp']);
     expect(KNOWN_API_PROVIDER_IDS).toEqual(ADMITTED_API_PROVIDER_IDS);
-    expect(LOCAL_API_PROVIDER_IDS).toEqual(['ollama', 'lm-studio']);
+    expect(LOCAL_API_PROVIDER_IDS).toEqual(['ollama', 'lm-studio', 'llama-cpp']);
     expect(REMOTE_API_PROVIDER_IDS).toEqual([]);
   });
 
@@ -81,15 +82,30 @@ describe('API provider catalog', () => {
     expect(forbiddenPresent).toEqual([]);
   });
 
-  it('reserves both local services for the implementer seat', () => {
-    expect(PLANNER_API_PROVIDER_IDS).toEqual([]);
-    expect(IMPLEMENTER_API_PROVIDER_IDS).toEqual(['ollama', 'lm-studio']);
+  it('admits every local service for the planner and implementer seats', () => {
+    expect(PLANNER_API_PROVIDER_IDS).toEqual(['ollama', 'lm-studio', 'llama-cpp']);
+    expect(IMPLEMENTER_API_PROVIDER_IDS).toEqual(['ollama', 'lm-studio', 'llama-cpp']);
 
     for (const id of KNOWN_API_PROVIDER_IDS) {
       const descriptor = API_PROVIDER_CATALOG[id];
       expect(descriptor.id).toBe(id);
       expect(descriptor.offering).toBe('local');
-      expect(descriptor.roles).toEqual(['implementer']);
+      expect(descriptor.roles).toEqual(['planner', 'implementer']);
+    }
+  });
+
+  it('keeps the loopback endpoint policy that admission does not relax', () => {
+    for (const id of KNOWN_API_PROVIDER_IDS) {
+      const { endpointPolicy } = API_PROVIDER_CATALOG[id];
+      expect(endpointPolicy.kind).toBe('loopback');
+      if (endpointPolicy.kind !== 'loopback') continue;
+
+      expect(normalizeProviderEndpoint(endpointPolicy, endpointPolicy.defaultBaseURL)).toBe(
+        endpointPolicy.defaultBaseURL,
+      );
+      expect(() =>
+        normalizeProviderEndpoint(endpointPolicy, 'https://llm.example.test/v1'),
+      ).toThrow();
     }
   });
 
@@ -106,12 +122,25 @@ describe('API provider catalog', () => {
       billing: 'local',
       dataUse: 'local',
     });
+    expect(API_PROVIDER_CATALOG['llama-cpp']).toMatchObject({
+      displayName: 'llama.cpp',
+      service: 'llama-cpp',
+      offering: 'local',
+      billing: 'local',
+      dataUse: 'local',
+      compatibility: 'beta',
+      authDiscoveryMode: 'optional-api-key-unverified',
+      credentialEnv: null,
+      endpointPolicy: { kind: 'loopback', defaultBaseURL: 'http://localhost:8080/v1' },
+    });
 
     for (const descriptor of Object.values(API_PROVIDER_CATALOG)) {
       expect(descriptor.privacyURL).toMatch(/^https:\/\//);
       expect(descriptor.termsURL).toMatch(/^https:\/\//);
-      expect(descriptor.asOf).toBe('2026-07-31');
     }
+    expect(
+      Object.fromEntries(Object.values(API_PROVIDER_CATALOG).map(({ id, asOf }) => [id, asOf])),
+    ).toEqual({ ollama: '2026-07-31', 'lm-studio': '2026-07-31', 'llama-cpp': '2026-09-16' });
   });
 
   it('resolves descriptors by id without matching inherited or service-alias keys', () => {
@@ -134,7 +163,7 @@ describe('API provider catalog', () => {
       Object.fromEntries(
         Object.values(API_PROVIDER_CATALOG).map(({ id, offering }) => [id, offering]),
       ),
-    ).toEqual({ ollama: 'local', 'lm-studio': 'local' });
+    ).toEqual({ ollama: 'local', 'lm-studio': 'local', 'llama-cpp': 'local' });
   });
 
   it('cannot be mutated through exported nested references', () => {
@@ -145,8 +174,8 @@ describe('API provider catalog', () => {
     expect(Object.isFrozen(descriptor.roles)).toBe(true);
     expect(Object.isFrozen(descriptor.endpointPolicy)).toBe(true);
     expect(Reflect.set(descriptor, 'offering', 'coding-subscription')).toBe(false);
-    expect(Reflect.set(descriptor.roles, '0', 'planner')).toBe(false);
+    expect(Reflect.set(descriptor.roles, '0', 'implementer')).toBe(false);
     expect(API_PROVIDER_CATALOG.ollama.offering).toBe('local');
-    expect(API_PROVIDER_CATALOG.ollama.roles).toEqual(['implementer']);
+    expect(API_PROVIDER_CATALOG.ollama.roles).toEqual(['planner', 'implementer']);
   });
 });

@@ -25,6 +25,7 @@ import {
   META_PROVIDER_IDS,
   PLANNER_TOOL_IDS,
   PROVIDER_IDS,
+  TaskCompletionMethodSchema,
   WorkflowModeSchema,
   normalizeWorkflowMode,
   PlannerApiProviderIdSchema,
@@ -69,12 +70,18 @@ describe('runner role enums', () => {
   });
 
   it('builds API schemas from catalog-owned identities and roles', () => {
-    const descriptor = { id: 'ollama', roles: ['implementer'] } as const;
-
     expect(PlannerApiProviderIdSchema.options).toEqual(PLANNER_API_PROVIDER_IDS);
     expect(ImplementerApiProviderIdSchema.options).toEqual(IMPLEMENTER_API_PROVIDER_IDS);
-    expect(PlannerApiProviderIdSchema.safeParse(descriptor.id).success).toBe(false);
-    expect(ImplementerApiProviderIdSchema.safeParse(descriptor.id).success).toBe(true);
+
+    for (const id of KNOWN_API_PROVIDER_IDS) {
+      const roles: readonly string[] = API_PROVIDER_CATALOG[id].roles;
+      expect(PlannerApiProviderIdSchema.safeParse(id).success).toBe(roles.includes('planner'));
+      expect(ImplementerApiProviderIdSchema.safeParse(id).success).toBe(
+        roles.includes('implementer'),
+      );
+    }
+    expect(PlannerApiProviderIdSchema.safeParse('unknown-provider').success).toBe(false);
+    expect(ImplementerApiProviderIdSchema.safeParse('unknown-provider').success).toBe(false);
   });
 
   it('derives planner and provider tuples from catalog role admission', () => {
@@ -142,9 +149,9 @@ describe('runner role enums', () => {
     for (const id of EXCLUDED_CLI_TOOL_IDS) {
       expect(admittedIds.has(id)).toBe(false);
     }
-    expect('antigravity' in CLI_TOOL_CATALOG).toBe(false);
+    expect('antigravity' in CLI_TOOL_CATALOG).toBe(true);
     expect(admittedIds.has('cursor')).toBe(true);
-    expect(admittedIds.has('antigravity')).toBe(false);
+    expect(admittedIds.has('antigravity')).toBe(true);
     expect(PlannerCliToolIdSchema.safeParse('cursor').success).toBe(true);
     expect(ImplementerCliToolIdSchema.safeParse('cursor').success).toBe(true);
   });
@@ -241,5 +248,24 @@ describe('EffortLevelSchema', () => {
   });
   it.each(['ultra', 'default', 'auto', ''])('rejects "%s"', (input) => {
     expect(EffortLevelSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe('TaskCompletionMethodSchema', () => {
+  it.each([
+    'local',
+    'escalated-intermediate',
+    'escalated-hint',
+    'escalated-full',
+    'failed',
+    'skipped',
+  ])('accepts "%s"', (input) => {
+    expect(TaskCompletionMethodSchema.parse(input)).toBe(input);
+  });
+  it('maps the 0.1.0 legacy "mcp-tool" method onto "local"', () => {
+    expect(TaskCompletionMethodSchema.parse('mcp-tool')).toBe('local');
+  });
+  it.each(['mcp', 'done', ''])('rejects "%s"', (input) => {
+    expect(TaskCompletionMethodSchema.safeParse(input).success).toBe(false);
   });
 });

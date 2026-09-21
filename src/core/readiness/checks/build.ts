@@ -11,7 +11,6 @@ import { buildRunnerChecks } from './runners.js';
 import { buildContextChecks } from './context.js';
 import { buildValidationChecks } from './validation.js';
 import { buildRepoChecks } from './repo.js';
-import { buildCostChecks } from './cost.js';
 import { nowIso } from '../../../utils/format-time.js';
 import type { Config } from '../../schemas/config.js';
 import type { CliReadinessResult } from '../../schemas/readiness.js';
@@ -97,11 +96,6 @@ function buildSections(input: BuildReadinessReportInput): ReadinessSection[] {
       id: 'validation',
       title: 'Validation',
       checks: buildValidationChecks(input.config, input.packageScripts, input.projectDir),
-    },
-    {
-      id: 'cost',
-      title: 'Cost',
-      checks: buildCostChecks(input.config),
     },
   );
 

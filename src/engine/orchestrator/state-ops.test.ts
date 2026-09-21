@@ -7,6 +7,8 @@ import { createEventBus } from '../events/bus.js';
 import type { EngineEvent } from '../events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
+import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import {
@@ -197,7 +199,12 @@ describe('raisePendingRecovery', () => {
       expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(issue);
       expect(tracked).toBe(next);
       const prompted = events.find((event) => event.type === 'recovery_prompted');
-      expect(prompted).toMatchObject({ issueId: issue.id, reason: issue.reason });
+      expect(prompted).toMatchObject({
+        issueId: issue.id,
+        reason: issue.reason,
+        headline: formatRecoveryHeadline(issue),
+        resumeCommand: formatResumeCommand(sessionId, issue),
+      });
     } finally {
       cleanupTempDir(projectDir);
     }

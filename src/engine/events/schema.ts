@@ -16,17 +16,18 @@ import {
 } from '../../core/schemas/enums.js';
 import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
+import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
+import { StepCutSchema } from '../../core/schemas/run-step.js';
 import { TaskReviewRecoverySchema } from '../../core/schemas/recovery/schemas.js';
-import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
 import { RewindEventVariantSchemas } from '../../core/state/rewind-event.js';
 import { RunnerCallTextChannelSchema } from '../../core/runner-call-contract.js';
-import { briefRecoveryEventSchemas } from './brief-recovery-schema.js';
 import { WORKFLOW_CANCEL_REASONS } from './workflow-cancel.js';
 import { TASK_REVIEW_COMMANDS } from './workflow-events.js';
 import { isRecord } from '../../utils/type-guards.js';
 import {
   RunnerCallArtifactSchema,
+  RunnerCallApiRuntimeStatusSchema,
   RunnerCallActivityKindSchema,
   RunnerCallActivityStageSchema,
   CallIdSchema,
@@ -64,13 +65,11 @@ function operationalMessageEvent<T extends 'warning' | 'error'>(type: T) {
     message: z.string(),
     category: z.undefined().optional(),
     code: z.undefined().optional(),
-    transcriptSafe: z.undefined().optional(),
   });
   const safe = phaseEvent(type).extend({
     message: z.string(),
     category: z.string().min(1).max(128),
     code: z.string().min(1).max(128),
-    transcriptSafe: z.literal(true),
   });
   return z.union([safe, base]);
 }
@@ -112,7 +111,6 @@ function strictCallPhaseEvent<T extends string>(type: T) {
     type: z.literal(type),
     ts: z.number(),
     phase: PhaseSchema,
-    taskId: TaskIdSchema.optional(),
     ...runnerCallContextFields,
     sequence: z.number().int().nonnegative(),
   });
@@ -223,7 +221,6 @@ export const taskReviewRequestFields = {
       contextLength: z.number().optional(),
       currentCodeTruncated: z.boolean(),
       currentCodeContextMode: CurrentCodeContextModeSchema,
-      costPosture: z.string(),
       reason: z.string(),
     })
     .optional(),
@@ -234,12 +231,17 @@ export const taskReviewRequestFields = {
 const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('workflow_started').extend({ feature: z.string() }),
   phaseEvent('workflow_resumed'),
-  phaseEvent('workflow_complete'),
+  phaseEvent('workflow_complete').extend({
+    review: z.enum(['passed', 'failed']).optional(),
+    blocking: z.number().int().optional(),
+  }),
   phaseEvent('workflow_cancelled').extend({
     reason: WorkflowCancelReasonSchema.optional(),
   }),
   phaseEvent('turn_interrupted').extend({
     source: z.enum(['user', 'watchdog']).optional(),
+    /** Where the stop landed: inside the call, or between two briefs. */
+    at: StepCutSchema.optional(),
   }),
   phaseEvent('workflow_config').extend({
     mode: WorkflowModeSchema,
@@ -262,6 +264,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     affectedTaskIds: taskIdArray,
     availableActions: z.array(RecoveryActionSchema),
     recommendedAction: RecoveryActionSchema,
+    headline: z.string(),
+    resumeCommand: z.string(),
   }),
   phaseEvent('recovery_action_selected').extend({
     issueId: z.string(),
@@ -300,6 +304,9 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     phaseHint: z.string().optional(),
   }),
   strictCallPhaseEvent('runner_call_started'),
+  strictCallPhaseEvent('runner_call_runtime_status').extend({
+    runtimeStatus: RunnerCallApiRuntimeStatusSchema,
+  }),
   strictCallPhaseEvent('runner_call_text_delta').extend({
     channel: RunnerCallTextChannelSchema,
     text: z.string(),
@@ -371,7 +378,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     errorCount: z.number(),
     warningCount: z.number(),
   }),
-  ...briefRecoveryEventSchemas,
   phaseEvent('brief_readiness_passed').extend({
     taskCount: z.number(),
   }),
@@ -416,7 +422,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     approve: ApproveLevelSchema,
   }),
   phaseEvent('mode_advice').extend({
-    kind: z.enum(['none', 'downgrade', 'upgrade', 'missing-context']),
+    kind: z.enum(['none', 'downgrade', 'upgrade', 'missing-context', 'stop']),
     risk: z.enum(['trivial', 'small', 'normal', 'high']),
     currentMode: WorkflowModeSchema,
     suggestedMode: WorkflowModeSchema,
@@ -443,6 +449,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     index: z.number().int().nonnegative(),
     total: z.number().int().nonnegative(),
     file: z.string(),
+    files: stringArray.optional(),
     action: FileActionSchema,
     tool: z.string().optional(),
     model: z.string().optional(),
@@ -453,7 +460,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     contextLength: z.number().optional(),
     currentCodeTruncated: z.boolean().optional(),
     currentCodeContextMode: CurrentCodeContextModeSchema.optional(),
-    costPosture: z.string().optional(),
     routingReason: z.string().optional(),
   }),
   phaseEvent('task_completed').extend({
@@ -478,7 +484,11 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     error: z.string(),
   }),
   phaseEvent('task_escalating').extend({ taskId: TaskIdSchema }),
-  phaseEvent('task_full_fail').extend({ taskId: TaskIdSchema }),
+  phaseEvent('task_full_fail').extend({ taskId: TaskIdSchema, reason: z.string().optional() }),
+  phaseEvent('review_fix_started').extend({
+    cycle: z.number().int(),
+    taskIds: taskIdArray,
+  }),
   phaseEvent('task_tokens').extend({
     taskId: TaskIdSchema,
     method: TaskCompletionMethodSchema,
@@ -488,6 +498,12 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     implementerCacheCreateTokens: z.number().nonnegative().optional(),
     escalationCacheReadTokens: z.number().nonnegative().optional(),
     escalationCacheCreateTokens: z.number().nonnegative().optional(),
+    implementerInputTokens: z.number().nonnegative().optional(),
+    implementerOutputTokens: z.number().nonnegative().optional(),
+    implementerReasoningTokens: z.number().nonnegative().optional(),
+    escalationInputTokens: z.number().nonnegative().optional(),
+    escalationOutputTokens: z.number().nonnegative().optional(),
+    escalationReasoningTokens: z.number().nonnegative().optional(),
     retryCount: z.number().int().nonnegative(),
     tool: z.string().optional(),
     model: z.string().optional(),
@@ -498,7 +514,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     contextLength: z.number().optional(),
     currentCodeTruncated: z.boolean().optional(),
     currentCodeContextMode: CurrentCodeContextModeSchema.optional(),
-    costPosture: z.string().optional(),
     routingReason: z.string().optional(),
   }),
   phaseEvent('task_review_needed').extend(taskReviewRequestFields),
@@ -523,11 +538,13 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     taskId: TaskIdSchema,
     status: z.enum(['running', 'done']),
     passed: z.boolean(),
+    exempt: z.boolean().optional(),
     stages: validationStagesSchema,
     attempted: validationStageAttemptsSchema.optional(),
     activeStage: z.enum(['typecheck', 'lint', 'test']).optional(),
     commands: validationStageCommandsSchema.optional(),
     skipped: validationStageSkipsSchema.optional(),
+    skippedReason: z.record(z.string(), z.string()).optional(),
     error: z.string().optional(),
     duration: z.number().optional(),
   }),
@@ -550,6 +567,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     taskId: TaskIdSchema,
     message: z.string(),
     file: z.string().optional(),
+    files: stringArray.optional(),
   }),
   phaseEvent('git_checkpoint').extend({
     taskId: TaskIdSchema,
@@ -579,26 +597,15 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     ids: z.array(z.string()).optional(),
   }),
   phaseEvent('queue_cleared').extend({ count: z.number().int().nonnegative() }),
-  phaseEvent('user_message').extend({ text: z.string() }),
+  phaseEvent('user_message').extend({
+    text: z.string(),
+    qa: z.array(AnsweredQuestionSchema).optional(),
+  }),
   phaseEvent('planner_attachments_dropped').extend({
     count: z.number(),
     reason: z.enum(['unsupported-backend', 'capability-degraded']),
   }),
   phaseEvent('cost_update').extend({ tokenUsage: TokenUsageSchema }),
-  phaseEvent('cost_prediction').extend({ prediction: CostPredictionSchema }),
-  phaseEvent('budget_warning').extend({
-    currentCost: z.number(),
-    maxBudget: z.number(),
-  }),
-  phaseEvent('budget_paused').extend({
-    currentCost: z.number(),
-    maxBudget: z.number(),
-    threshold: z.number(),
-  }),
-  phaseEvent('budget_exceeded').extend({
-    currentCost: z.number(),
-    maxBudget: z.number(),
-  }),
   phaseEvent('approval_prompted').extend({
     tier: ApprovalTierSchema,
     actionClass: ActionClassSchema,
@@ -625,14 +632,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   noPhaseEvent('approval_mode_changed').extend({
     mode: z.enum(['yolo', 'normal']),
   }),
-  phaseEvent('ipc_server_started').extend({ sockPath: z.string() }),
-  phaseEvent('ipc_client_attached'),
-  phaseEvent('ipc_client_detached'),
-  phaseEvent('ipc_reconnect_attempt').extend({
-    attempt: z.number(),
-    maxAttempts: z.number(),
-  }),
-  phaseEvent('ipc_reconnect_failed'),
   phaseEvent('replay_started').extend({
     totalEvents: z.number(),
     diagnostics: replayDiagnosticsSchema.optional(),

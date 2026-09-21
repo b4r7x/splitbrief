@@ -6,6 +6,6 @@ describe('userEditActionToRecoveryAction', () => {
     expect(userEditActionToRecoveryAction('continue-unrelated')).toBe('continue');
     expect(userEditActionToRecoveryAction('pause')).toBe('pause-run');
     expect(userEditActionToRecoveryAction('skip-current-task')).toBe('skip-current-task');
-    expect(userEditActionToRecoveryAction('abort-workflow')).toBe('abort-workflow');
+    expect(userEditActionToRecoveryAction('abort-workflow')).toBe('end-run');
   });
 });

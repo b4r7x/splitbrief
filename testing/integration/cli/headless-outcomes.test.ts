@@ -111,7 +111,7 @@ describe('runHeadless — recovery stops', () => {
         type: 'recovery_required',
         sessionId,
         reason: 'retry-exhausted',
-        availableActions: ['skip-current-task', 'pause-run', 'abort-workflow'],
+        availableActions: ['skip-current-task', 'pause-run', 'end-run'],
       }),
     );
   });
@@ -151,7 +151,7 @@ describe('runHeadless — recovery stops', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Workflow did not complete — the run stopped early.'),
+      message: expect.stringContaining('Recovery required (review-failed):'),
     });
 
     const jsonLines = stdoutChunks
@@ -161,15 +161,12 @@ describe('runHeadless — recovery stops', () => {
       .filter((line) => line.trim().startsWith('{'))
       .map((line) => JSON.parse(line) as { type?: string; sessionId?: string });
     expect(jsonLines).toContainEqual(
-      expect.objectContaining({
-        type: 'error',
-        message: expect.stringContaining('status interrupted'),
-      }),
+      expect.objectContaining({ type: 'recovery_required', sessionId }),
     );
   }, 20_000);
 });
 
-describe('runHeadless — failed session exits non-zero', () => {
+describe('runHeadless — a halted session exits non-zero', () => {
   let stdoutChunks: string[];
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
 
@@ -190,7 +187,7 @@ describe('runHeadless — failed session exits non-zero', () => {
     dirs = [];
   });
 
-  it('exits non-zero when a watchdog idle-kill fails the session during planning', async () => {
+  it('exits non-zero and names the recovery when a watchdog idle-kill stops planning', async () => {
     const projectDir = createTempDir('headless-failed-session');
     dirs.push(projectDir);
     createTestGitRepo(projectDir);
@@ -200,7 +197,7 @@ describe('runHeadless — failed session exits non-zero', () => {
     writeActive({ projectDir, sessionId });
 
     const stalledPlanner = makePlanner({
-      quickPlan: vi
+      runPhase: vi
         .fn()
         .mockRejectedValue(processError.idleTimeout({ command: 'fake-planner', idleMs: 300_000 })),
     });
@@ -213,7 +210,7 @@ describe('runHeadless — failed session exits non-zero', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Workflow failed — see the error output above.'),
+      message: expect.stringContaining('Recovery required (planner-call-failed)'),
     });
 
     const jsonLines = stdoutChunks
@@ -221,11 +218,13 @@ describe('runHeadless — failed session exits non-zero', () => {
       .trim()
       .split('\n')
       .filter((line) => line.trim().startsWith('{'))
-      .map((line) => JSON.parse(line) as { type?: string; message?: string });
+      .map((line) => JSON.parse(line) as { type?: string; message?: string; reason?: string });
+    // The stream carries the decision the operator has to make, not a bare failure.
     expect(jsonLines).toContainEqual(
       expect.objectContaining({
-        type: 'error',
-        message: expect.stringContaining('status failed'),
+        type: 'recovery_required',
+        reason: 'planner-call-failed',
+        message: expect.stringContaining('produced no output'),
       }),
     );
   }, 20_000);
@@ -285,7 +284,7 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Workflow did not complete — the run stopped early.'),
+      message: expect.stringContaining('Recovery required (approval-denied):'),
     });
 
     const jsonLines = stdoutChunks
@@ -303,10 +302,11 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
       );
     expect(jsonLines).toContainEqual(
       expect.objectContaining({
-        type: 'error',
-        message: expect.stringContaining('status interrupted'),
+        type: 'recovery_required',
+        reason: 'approval-denied',
+        message: expect.stringContaining('denied at the approval gate'),
       }),
     );
-    expect(listSessions(projectDir).find((s) => s.id === sessionId)?.status).toBe('interrupted');
+    expect(listSessions(projectDir).find((s) => s.id === sessionId)?.status).toBe('open');
   }, 20_000);
 });

@@ -6,7 +6,6 @@ import {
   type TaskTokenUsage,
   type TokenUsage,
 } from '../../core/schemas/tokens.js';
-import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { attributePhaseTokenDelta } from '../../core/state/token-attribution.js';
@@ -41,6 +40,12 @@ export type TaskAttemptTokens = Pick<
   | 'implementerCacheCreateTokens'
   | 'escalationCacheReadTokens'
   | 'escalationCacheCreateTokens'
+  | 'implementerInputTokens'
+  | 'implementerOutputTokens'
+  | 'implementerReasoningTokens'
+  | 'escalationInputTokens'
+  | 'escalationOutputTokens'
+  | 'escalationReasoningTokens'
   | 'retryCount'
   | 'tool'
   | 'model'
@@ -51,7 +56,6 @@ export type TaskAttemptTokens = Pick<
   | 'contextLength'
   | 'currentCodeTruncated'
   | 'currentCodeContextMode'
-  | 'costPosture'
   | 'routingReason'
 >;
 
@@ -67,7 +71,6 @@ export interface TokensState {
   tokenUsage: TokenUsage | null;
   perPhase: Partial<Record<Phase, PhaseTokens>>;
   perTask: Record<string, PerTaskTokens>;
-  prediction: CostPrediction | null;
   completedTaskCount: number;
   pricingContext: PricingContext | null;
 }
@@ -87,7 +90,6 @@ const initial: TokensState = {
   tokenUsage: null,
   perPhase: {},
   perTask: {},
-  prediction: null,
   completedTaskCount: 0,
   pricingContext: null,
 };
@@ -197,9 +199,6 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       };
     }
 
-    case 'cost_prediction':
-      return { ...state, prediction: event.prediction };
-
     case 'task_tokens': {
       const existing = state.perTask[event.taskId] ?? { totalTokens: 0, title: '', attempts: [] };
       // One attempt record per task_tokens event keeps each (re)run priced at its own
@@ -294,25 +293,10 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'runner_call_completed':
     case 'runner_call_stalled':
     case 'runner_call_stall_cleared':
+    case 'runner_call_runtime_status':
     case 'artifact_written':
     case 'spec_rejected':
     case 'spec_regenerated':
-    case 'brief_recovery_quality_reported':
-    case 'brief_recovery_auto_repair_exhausted':
-    case 'brief_recovery_attempt_accepted':
-    case 'brief_recovery_attempt_started':
-    case 'brief_recovery_attempt_settled':
-    case 'brief_recovery_attempt_unresolved':
-    case 'brief_recovery_provider_failed':
-    case 'brief_recovery_input_queued':
-    case 'brief_recovery_input_applied':
-    case 'brief_recovery_stale_ignored':
-    case 'brief_recovery_rejected':
-    case 'brief_recovery_refused':
-    case 'brief_recovery_transition':
-    case 'brief_recovery_accepted':
-    case 'brief_generation_published':
-    case 'brief_execution_permit_issued':
     case 'plan_approved':
     case 'plan_rejected':
     case 'plan_regenerated':
@@ -354,21 +338,14 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'queue_cleared':
     case 'user_message':
     case 'planner_attachments_dropped':
-    case 'budget_warning':
-    case 'budget_paused':
-    case 'budget_exceeded':
     case 'approval_prompted':
     case 'approval_granted':
     case 'approval_rejected':
     case 'approval_sticky_recorded':
     case 'approval_mode_changed':
-    case 'ipc_server_started':
-    case 'ipc_client_attached':
-    case 'ipc_client_detached':
-    case 'ipc_reconnect_attempt':
-    case 'ipc_reconnect_failed':
     case 'replay_started':
     case 'replay_complete':
+    case 'review_fix_started':
     case 'warning':
     case 'error':
       return state;

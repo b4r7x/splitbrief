@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { borderStyleFor, glyph, type GlyphName } from '../../../lib/glyphs.js';
 import { useTheme } from '../../../components/theme.js';
 import type { Theme } from '../../../components/theme.js';
@@ -11,6 +11,7 @@ import {
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { selectTaskListView, taskTargetLabel, tasksStore } from '../../../stores/workflow/tasks.js';
+import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
@@ -22,7 +23,7 @@ import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/c
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { formatStageElapsed } from '../display/live-activity.js';
-import { getActiveRailStage } from '../layout/chrome-rows.js';
+import { getActiveRailStage } from '../../../core/rail-stages.js';
 import {
   getSidebarTaskListRows,
   getSidebarTaskTitleWidth,
@@ -30,10 +31,14 @@ import {
   getSidebarStatusColumnCells,
 } from '../layout/rect.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
-import { useCostStats } from '../hooks/use-cost-stats.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
-import { formatCostDisplay } from '../cost-text.js';
-import { Divider } from './divider.js';
+import { formatLocalSharePct, localShare } from '../display/local-share.js';
+import { Divider } from '../../../components/divider.js';
+import { useStores } from '../../../stores/use-stores.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 
 interface SidebarProps {
   width: number;
@@ -60,8 +65,9 @@ const TASK_STATUS_GLYPH_NAME: Record<WorkflowTask['status'], GlyphName> = {
 
 // Bar, marker, and the space after it — the cells a task row paints before its title.
 const LIST_INDENT = '   ';
-// 2 border cells + 2 paddingX cells + the indent a marker row shares with the title column.
-const SIDEBAR_MARKER_ROW_OVERHEAD = 4 + LIST_INDENT.length;
+// 2 border cells + the 1-cell right padding + the indent a marker row shares with the title column;
+// the bar sits in the cell the left padding would take.
+const SIDEBAR_MARKER_ROW_OVERHEAD = 3 + LIST_INDENT.length;
 
 function statusGlyph(status: WorkflowTask['status']): string {
   return glyph(TASK_STATUS_GLYPH_NAME[status]);
@@ -127,22 +133,38 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
 
 function SidebarWaiting() {
   const t = useTheme();
-  const phase = lifecycleStore.use((s) => s.phase);
-  const status = lifecycleStore.use((s) => s.status);
-  const startedAt = lifecycleStore.use((s) => s.startedAt);
-  const running = status === 'running';
-  const { frame } = useSpinnerFrame(running);
+  const [lifecycle, controls, approval, recovery] = useStores(
+    lifecycleStore,
+    controlsStore,
+    approvalPromptStore,
+    recoveryNoticeStore,
+  );
+  const display = deriveWorkflowDisplay({
+    status: lifecycle.status,
+    cancelled: lifecycle.cancelled,
+    pendingQuestion: controls.inputMode !== 'normal',
+    pendingRecovery: recovery.issue !== null,
+    pendingApproval: approval.status === 'pending',
+  });
+  const { frame } = useSpinnerFrame(display.animate);
 
-  if (status !== 'running' && status !== 'interrupted') {
+  if (recovery.issue !== null) {
+    return <Text color={t.warning}>{`${LIST_INDENT}Planning stopped`}</Text>;
+  }
+  if (display.kind === 'waiting') {
+    return <Text color={t.textDim}>{`${LIST_INDENT}Waiting for your answer`}</Text>;
+  }
+  if (lifecycle.status !== 'running' && lifecycle.status !== 'interrupted') {
     return <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>;
   }
 
-  const stage = getActiveRailStage(phase)?.stage ?? '';
-  const elapsed = startedAt !== null ? formatStageElapsed(Date.now() - startedAt) : '';
+  const stage = getActiveRailStage(lifecycle.phase)?.stage ?? '';
+  const elapsed =
+    lifecycle.startedAt !== null ? formatStageElapsed(Date.now() - lifecycle.startedAt) : '';
   return (
     <Box flexDirection="column">
       <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>
-      {status === 'interrupted' ? (
+      {lifecycle.status === 'interrupted' ? (
         <Text color={t.textDim}>{`${LIST_INDENT}Planner interrupted`}</Text>
       ) : (
         // The spinner row already says the planner is running and names the stage, so a separate
@@ -247,16 +269,22 @@ export function Sidebar({ width, height }: SidebarProps) {
   const config = configStore.use((s) => s.config);
   const displayNames = useCrewDisplayNames(config);
   const mode = config?.workflow?.mode;
-  const seats = config ? deriveCrewSeats({ config, displayNames }) : [];
+  const seats: readonly CrewSeat[] = config ? deriveCrewSeats({ config, displayNames }) : [];
   const advisory = useAdvisory();
-  const cost = useCostStats();
+  // The footer reports how much of the build the local seat carried, which is a routing fact. The
+  // run's tokens and money are not read here at all: /usage is where they are named.
+  const localCount = tokensStore.use((s) => s.localCount);
+  const escalatedRoutes = tokensStore.use((s) => s.escalatedCount);
+  const { rate: localRate, routedTasks } = localShare({
+    localCount,
+    escalatedCount: escalatedRoutes,
+  });
   const tasks = view.items;
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
-  const innerWidth = Math.max(0, width - 5);
+  const innerWidth = Math.max(0, width - 4);
 
-  const costFmt = formatCostDisplay(cost.localRate, cost.costBreakdown, cost.pricingState);
-  // The cost row is unconditional; mode and the done/escalated split are not.
+  // The local-share row is unconditional; mode and the done/escalated split are not.
   const footerRows = seats.length + 1 + (mode ? 1 : 0) + (escalatedCount > 0 ? 1 : 0);
   // Without a height the caller is not budgeting rows, so the list never windows.
   const listRows =
@@ -298,15 +326,15 @@ export function Sidebar({ width, height }: SidebarProps) {
       borderDimColor
     >
       {/* The header shares the footer's left edge so the panel reads on one column, not four. */}
-      <Box paddingLeft={2} paddingRight={1} flexShrink={0}>
+      <Box paddingX={1} flexShrink={0}>
         <Text color={t.textDim}>
-          {view.total === 0 ? 'Tasks' : `Tasks ${view.settled}/${view.total}`}
+          {view.total === 0 ? 'Tasks' : `Tasks ${view.passed}/${view.total}`}
         </Text>
       </Box>
 
       <Box
         flexDirection="column"
-        paddingX={1}
+        paddingRight={1}
         marginTop={1}
         flexGrow={1}
         flexShrink={1}
@@ -321,10 +349,10 @@ export function Sidebar({ width, height }: SidebarProps) {
       </Box>
 
       <Box flexDirection="column" flexShrink={0}>
-        <Box paddingLeft={2} paddingRight={1}>
+        <Box paddingX={1}>
           <Divider width={innerWidth} />
         </Box>
-        <Box flexDirection="column" paddingLeft={2} paddingRight={1}>
+        <Box flexDirection="column" paddingX={1}>
           {mode && (
             <Text color={t.textDim}>
               {mode}
@@ -353,15 +381,9 @@ export function Sidebar({ width, height }: SidebarProps) {
           ))}
           <Text color={t.textDim}>
             local{' '}
-            <Text color={rateColor(cost.localRate, cost.routedTasks, t)}>
-              {costFmt.localRatePct}
+            <Text color={rateColor(localRate, routedTasks, t)}>
+              {formatLocalSharePct(localRate)}
             </Text>
-            {costFmt.showSpend && (
-              <Text>
-                {SOFT_SEP}
-                {costFmt.spentText}
-              </Text>
-            )}
           </Text>
         </Box>
       </Box>

@@ -17,10 +17,7 @@ import {
   type ClaudeCodeModelOption,
 } from '../../../core/providers/claude-code-options.js';
 import { CLI_TOOL_IDS, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
-import {
-  runnerRoleForActiveRole,
-  type ActiveRunnerRole,
-} from '../../../core/runners/seat-roles.js';
+import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { DetectionLanePublication } from '../../../engine/detection/lane-channel.js';
 import type { DetectionServiceResult } from '../../../engine/detection/service.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
@@ -31,8 +28,7 @@ import { demotedForContextChange, laneApplied, providerModels } from './apply-la
 import {
   cliCatalogValues,
   cloneScopedCliCatalogRuntime,
-  findGenericCliCatalogRuntime,
-  findScopedCliCatalogRuntime,
+  findCliCatalogRuntime,
   freezeCliCatalogs,
 } from './reconcile-cli-catalogs.js';
 import {
@@ -80,6 +76,9 @@ function initialState(): ModelCacheState {
 
 const store = createStore<ModelCacheState>(initialState);
 let activeContexts: DiscoverySourceContexts | null = null;
+/** Pinned by the visual harness so a capture never depends on the operator's
+ *  `~/.claude.json`; the reader below memoises, so the seam has to be here. */
+let claudeCodeModelOptionsOverride: readonly ClaudeCodeModelOption[] | null = null;
 let nextPublicationId = 0;
 
 function publicationIsCurrent(current: ModelCacheState, request: DiscoveryRefreshRequest): boolean {
@@ -116,6 +115,7 @@ function commit(next: ModelCacheState): void {
 function resetAll(): void {
   activeContexts = null;
   nextPublicationId = 0;
+  claudeCodeModelOptionsOverride = null;
   store.reset();
 }
 
@@ -175,7 +175,9 @@ export const modelCacheStore = {
     const id = nextPublicationId + 1;
     nextPublicationId = id;
     const current = store.get();
-    const base = contextChanged ? demotedForContextChange(current, Date.now()) : current;
+    const base = contextChanged
+      ? demotedForContextChange(current, Date.now(), contexts.configuredProviders)
+      : current;
     const refresh: DiscoveryRefreshState = {
       ...base.refresh,
       publicationId: id,
@@ -214,7 +216,6 @@ export const modelCacheStore = {
         : input.cliCatalogs.map(
             (entry): ScopedCliCatalogRuntime => ({
               connection: {
-                role: entry.role,
                 tool: entry.tool,
                 contextKey: 'remembered-detection-cache',
               },
@@ -311,15 +312,10 @@ export const modelCacheStore = {
   getProviderModels(provider: ProviderId): readonly DetectedModel[] | null {
     const current = store.get();
     if (includes(CLI_TOOL_IDS, provider)) {
-      // Remembered rows are role-scoped and answer only through the scoped
-      // lookup, so a role-blind lookup has no answer before a live lane runs.
+      // A remembered row is not an authoritative answer until a live lane has
+      // run, and a tool with two executables stays ambiguous.
       if (!current.cliCatalogsLoaded) return null;
-      // A generic tool lookup is deliberately denied when planner/implementer
-      // or two selected channels make the catalog ambiguous.
-      return (
-        findGenericCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), provider)?.models ??
-        null
-      );
+      return findCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), provider)?.models ?? null;
     }
     const roleScoped = configuredProviderValues(current.configuredProviders).filter(
       (entry) => entry.connection.provider === provider,
@@ -333,12 +329,10 @@ export const modelCacheStore = {
   isProviderModelCacheStale(provider: ProviderId): boolean {
     const current = store.get();
     if (includes(CLI_TOOL_IDS, provider)) {
-      // Mirrors getProviderModels: remembered rows never answer a role-blind
-      // lookup, so there is nothing whose staleness could be reported.
+      // Mirrors getProviderModels: nothing is authoritative before a live lane.
       if (!current.cliCatalogsLoaded) return false;
       return (
-        findGenericCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), provider)?.state ===
-        'stale'
+        findCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), provider)?.state === 'stale'
       );
     }
     const roleScoped = configuredProviderValues(current.configuredProviders).filter(
@@ -355,14 +349,19 @@ export const modelCacheStore = {
     provider: ApiProviderId;
   }): ConfiguredProviderRuntime | null | undefined {
     const current = store.get();
-    if (Object.keys(current.configuredProviders).length === 0) return undefined;
+    // Keyed by the seat that actually asked. The reviewer shares the planner's
+    // admission tier but never its connection, so it answers from its own row
+    // or from nothing — when no `reviewer:` block is configured, discovery
+    // publishes an explicit planner-derived reviewer outcome to fill it.
     const match =
       current.configuredProviders[
-        configuredProviderRoleKey({
-          role: runnerRoleForActiveRole(input.role),
-          provider: input.provider,
-        })
+        configuredProviderRoleKey({ role: input.role, provider: input.provider })
       ];
+    const expected = activeContexts?.configuredProviders?.find(
+      (connection) => connection.role === input.role && connection.provider === input.provider,
+    );
+    if (expected !== undefined && match?.connection.contextKey !== expected.contextKey) return null;
+    if (Object.keys(current.configuredProviders).length === 0) return undefined;
     // Mirrors the CLI axis: a demoted row still answers, but until a live
     // readiness lane runs under this context absence stays unknown rather than
     // authoritative, so a role the new context has not probed keeps its
@@ -371,15 +370,9 @@ export const modelCacheStore = {
     return match ?? null;
   },
 
-  getScopedCliCatalogRuntime(input: {
-    role: ActiveRunnerRole;
-    tool: CliToolId;
-  }): ScopedCliCatalogRuntime | null | undefined {
+  getCliCatalogRuntime(input: { tool: CliToolId }): ScopedCliCatalogRuntime | null | undefined {
     const current = store.get();
-    const match = findScopedCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), {
-      role: runnerRoleForActiveRole(input.role),
-      tool: input.tool,
-    });
+    const match = findCliCatalogRuntime(cliCatalogValues(current.cliCatalogs), input.tool);
     // Before a live catalog lane completes, a remembered row still answers but
     // absence stays "unknown", never authoritative.
     if (!current.cliCatalogsLoaded) return match ?? undefined;
@@ -422,7 +415,11 @@ export const modelCacheStore = {
     return store.get().modelsDevCatalog;
   },
 
+  __testSetClaudeCodeModelOptions(options: readonly ClaudeCodeModelOption[]): void {
+    claudeCodeModelOptionsOverride = options;
+  },
+
   getClaudeCodeModelOptions(): readonly ClaudeCodeModelOption[] {
-    return readClaudeCodeModelOptions();
+    return claudeCodeModelOptionsOverride ?? readClaudeCodeModelOptions();
   },
 };

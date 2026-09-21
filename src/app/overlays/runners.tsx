@@ -2,14 +2,20 @@ import { useEffect } from 'react';
 import { useInput } from 'ink';
 import { seatPickerLane, type SeatPickerRole } from '../../core/runners/seat-roles.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
-import { arrowSep, SOFT_SEP } from '../../components/separators.js';
+import { arrowSep, SOFT_SEP } from '../../core/separators.js';
 import { BOOT_MANIFEST_TITLE } from '../../core/discovery/copy.js';
 import { BootManifest } from '../../features/runners/boot-manifest.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { usePickerCatalog } from '../../features/runners/use-picker-catalog.js';
-import { usePickerActions } from '../../features/runners/use-picker-actions.js';
+import {
+  defaultPickerEffectDeps,
+  useLocalConnectionActions,
+  usePickerActions,
+  type PickerEffectDeps,
+} from '../../features/runners/use-picker-actions.js';
 import { PickerView } from '../../features/runners/picker-view.js';
+import { LocalConnectionForm } from '../../features/runners/local-connection-form.js';
 import { TextInputOverlay } from '../../features/runners/text-input-overlay.js';
 import { ContractChoiceOverlay } from '../../features/runners/contract-choice-overlay.js';
 import { ContractRecap, StepIndicator } from '../../features/runners/contract-chip.js';
@@ -18,15 +24,17 @@ import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 
 interface ToolModelPickerProps {
   role: SeatPickerRole;
+  deps?: PickerEffectDeps | undefined;
 }
 
-export function ToolModelPicker({ role }: ToolModelPickerProps) {
+export function ToolModelPicker({ role, deps = defaultPickerEffectDeps }: ToolModelPickerProps) {
   const lane = seatPickerLane(role);
   const view = pickerViewStore.use((s) => s.view);
   const preservedLeftIndex = pickerViewStore.use((s) => s.preservedLeftIndex);
   const draft = pickerViewStore.use((s) => s.draft);
   const catalog = usePickerCatalog(role, preservedLeftIndex);
-  const actions = usePickerActions({ role, catalog });
+  const actions = usePickerActions({ role, catalog, deps });
+  const localConnection = useLocalConnectionActions(role, deps);
   const isSubView = view.kind !== 'picker';
   const overlayAllowsKeys = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
   const coldDiscovery = catalog.discovery.cold && catalog.discovery.refreshing;
@@ -95,6 +103,18 @@ export function ToolModelPicker({ role }: ToolModelPickerProps) {
     );
   }
 
+  if (view.kind === 'local-connection') {
+    return (
+      <LocalConnectionForm
+        role={role}
+        provider={view.provider}
+        seat={localConnection.seat(view.provider)}
+        check={localConnection.check}
+        onSave={(input) => void localConnection.save(input)}
+      />
+    );
+  }
+
   if (view.kind === 'custom-model' && item !== undefined) {
     return (
       <TextInputOverlay
@@ -108,5 +128,5 @@ export function ToolModelPicker({ role }: ToolModelPickerProps) {
     );
   }
 
-  return <PickerView role={role} catalog={catalog} actions={actions} />;
+  return <PickerView role={role} catalog={catalog} actions={actions} deps={deps} />;
 }

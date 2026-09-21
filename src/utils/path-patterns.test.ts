@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchesGlob, scopePathPatterns } from './path-patterns.js';
+import { matchesGlob, normalizeProjectRelativePath, scopePathPatterns } from './path-patterns.js';
 
 describe('scopePathPatterns', () => {
   it('extracts exactly the backticked path from a prose bullet', () => {
@@ -75,5 +75,14 @@ describe('matchesGlob', () => {
 
   it('a literal pattern with no wildcard only matches the exact path', () => {
     expect(matchesGlob('src/feature/widget.ts', 'src/feature')).toBe(false);
+  });
+});
+
+describe('normalizeProjectRelativePath', () => {
+  it('rewrites backslashes and strips one leading ./', () => {
+    expect(normalizeProjectRelativePath('src\\core\\a.ts')).toBe('src/core/a.ts');
+    expect(normalizeProjectRelativePath('./src/a.ts')).toBe('src/a.ts');
+    expect(normalizeProjectRelativePath('././src/a.ts')).toBe('./src/a.ts');
+    expect(normalizeProjectRelativePath('src/a.ts')).toBe('src/a.ts');
   });
 });

@@ -5,7 +5,6 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 const mockConfig = makeConfig({
   planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
   implementer: { temperature: 0.3 },
-  plannerEstimateReview: true,
   sessions: { scope: 'project' },
 });
 
@@ -17,7 +16,7 @@ describe('getConfigValue', () => {
   });
 
   it('reads top-level values', () => {
-    expect(getConfigValue(mockConfig, 'plannerEstimateReview')).toBe(true);
+    expect(getConfigValue(mockConfig, 'version')).toBe(3);
     expect(getConfigValue(mockConfig, 'sessions.scope')).toBe('project');
   });
 
@@ -27,7 +26,7 @@ describe('getConfigValue', () => {
   });
 
   it('returns undefined when traversing through a non-object', () => {
-    expect(getConfigValue(mockConfig, 'plannerEstimateReview.nested')).toBeUndefined();
+    expect(getConfigValue(mockConfig, 'version.nested')).toBeUndefined();
   });
 });
 
@@ -44,9 +43,9 @@ describe('getIsolationStrategy', () => {
 
 describe('applyEdits', () => {
   it('sets nested values immutably', () => {
-    const updated = applyEdits(mockConfig, { 'workflow.git.commitStrategy': 'per-task' });
-    expect(updated.workflow.git?.commitStrategy).toBe('per-task');
-    expect(mockConfig.workflow.git?.commitStrategy).toBeUndefined();
+    const updated = applyEdits(mockConfig, { 'workflow.git.createBranch': true });
+    expect(updated.workflow.git?.createBranch).toBe(true);
+    expect(mockConfig.workflow.git?.createBranch).toBeUndefined();
   });
 
   it('applies multiple edits at once', () => {

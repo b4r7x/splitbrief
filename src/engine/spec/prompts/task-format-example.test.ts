@@ -75,6 +75,18 @@ describe('buildTaskFormatExample round-trip', () => {
     expect(example).toContain('`[T001, T002]` when it must run after both');
   });
 
+  it('shows a files list the parser round-trips as the slice it declares', () => {
+    const ctx = buildLanguageContext('typescript');
+    const example = buildTaskFormatExample(ctx);
+
+    expect(example).toContain('- `files` — optional YAML list');
+    expect(example).toContain('files: [src/path/to/file.ts, src/path/to/file.test.ts]');
+    expect(parseTasks(example)[0]?.files).toEqual([
+      'src/path/to/file.ts',
+      'src/path/to/file.test.ts',
+    ]);
+  });
+
   it('is not wrapped in a code fence of its own', () => {
     expect(buildTaskFormatExample().trimStart().startsWith('```')).toBe(false);
   });

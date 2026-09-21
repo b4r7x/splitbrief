@@ -5,6 +5,7 @@ import {
   getConversationRowsWindowProjection,
 } from './projection-cache.js';
 import type {
+  ConversationRowBlock,
   ConversationRowsProjection,
   ConversationRowScrollComputation,
   ConversationRowScrollInputs,
@@ -90,7 +91,10 @@ export function computeConversationRowScroll(
     viewportHeight: scrollViewportHeight,
     streaming: inputs.streaming,
   };
-  const projection = getConversationRowsProjection(projectionInput);
+  const projection = withTailBlocks(
+    getConversationRowsProjection(projectionInput),
+    inputs.tail ?? [],
+  );
   const windowResult = computeConversationRowsWindowFromProjection({
     projection,
     viewportHeight: scrollViewportHeight,
@@ -102,5 +106,23 @@ export function computeConversationRowScroll(
   return {
     ...windowResult,
     viewportHeight: scrollViewportHeight,
+  };
+}
+
+/**
+ * Blocks that come after the run's own events, folded onto the cached projection rather than into
+ * it: the events cache stays keyed on the events alone, and a tail that changes every render never
+ * rebuilds the transcript above it.
+ */
+function withTailBlocks(
+  projection: ConversationRowsProjection,
+  tail: readonly ConversationRowBlock[],
+): ConversationRowsProjection {
+  if (tail.length === 0) return projection;
+  return {
+    blocks: [...projection.blocks, ...tail],
+    renderableCount:
+      projection.renderableCount + tail.reduce((sum, block) => sum + block.renderableUnits, 0),
+    totalRows: projection.totalRows + tail.reduce((sum, block) => sum + block.rowCount, 0),
   };
 }

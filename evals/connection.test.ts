@@ -97,6 +97,6 @@ function localImplementerConfig(
       apiKey: connection.apiKey,
     },
     validation: { typecheck: true, lint: false, test: true, testCommand: 'npm test' },
-    workflow: { maxRetries: 1, mode: 'quick', persistTranscript: true },
+    workflow: { maxRetries: 1, mode: 'quick' },
   };
 }

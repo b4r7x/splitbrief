@@ -105,6 +105,14 @@ export function createRunnerAttemptCallbackBuffer(
       ...(event.runnerName !== undefined && { runnerName: event.runnerName }),
       ...(event.model !== undefined && { model: event.model }),
       ...(event.attempt !== undefined && { attempt: event.attempt }),
+      ...(event.attemptId !== undefined && { attemptId: event.attemptId }),
+      ...(event.transport !== undefined && { transport: event.transport }),
+      ...(event.sessionScope !== undefined && { sessionScope: event.sessionScope }),
+      ...(event.invocationIdentity !== undefined && {
+        invocationIdentity: event.invocationIdentity,
+      }),
+      ...(event.taskId !== undefined && { taskId: event.taskId }),
+      ...(event.usageBoundary !== undefined && { usageBoundary: event.usageBoundary }),
     };
   }
 

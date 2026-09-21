@@ -1,7 +1,15 @@
+import { MODE_UPGRADE } from '../../../core/pipeline-spec/modes.js';
 import { WORKFLOW_MODES, type WorkflowMode } from '../../../core/schemas/enums.js';
 
 export type WorkRisk = 'trivial' | 'small' | 'normal' | 'high';
-export type ModeAdviceKind = 'none' | 'downgrade' | 'upgrade' | 'missing-context';
+export type ModeAdviceKind = 'none' | 'downgrade' | 'upgrade' | 'missing-context' | 'stop';
+
+export type PlanSize = { files: number; briefs: number };
+export type PlanAdvice = {
+  kind: 'none' | 'upgrade' | 'stop';
+  suggestedMode: WorkflowMode;
+  factors: string[];
+};
 
 // High-risk patterns: word-boundary matched to avoid matching auth-domain
 // *variable names* like `authClient` while still matching domain terms
@@ -177,6 +185,36 @@ function detectMissing(prompt: string, lower: string, wordCount: number): string
   return missing;
 }
 
+export function advisePlanSize(plan: PlanSize, currentMode: WorkflowMode): PlanAdvice {
+  if (plan.briefs > MODE_UPGRADE.standardCap) {
+    return {
+      kind: 'stop',
+      suggestedMode: currentMode,
+      factors: [`${plan.briefs} briefs over the ${MODE_UPGRADE.standardCap} cap`],
+    };
+  }
+
+  const factors: string[] = [];
+  if (plan.files > MODE_UPGRADE.quickToStandard.files) {
+    factors.push(`${plan.files} files over ${MODE_UPGRADE.quickToStandard.files}`);
+  }
+  if (plan.briefs > MODE_UPGRADE.quickToStandard.briefs) {
+    factors.push(`${plan.briefs} briefs over ${MODE_UPGRADE.quickToStandard.briefs}`);
+  }
+  if (factors.length === 0 || modeIndex(currentMode) >= modeIndex('standard')) {
+    return { kind: 'none', suggestedMode: currentMode, factors };
+  }
+
+  return { kind: 'upgrade', suggestedMode: 'standard', factors };
+}
+
+export function formatPlanAdviceText(advice: PlanAdvice): string {
+  if (advice.kind === 'none') return '';
+  const factors = advice.factors.join(', ');
+  if (advice.kind === 'stop') return `advisor: ${factors} · split the work`;
+  return `advisor: consider ${advice.suggestedMode} · ${factors}`;
+}
+
 export function adviseMode(prompt: string, currentMode: WorkflowMode): AdvisorResult {
   const wordCount = prompt.trim().split(/\s+/).filter(Boolean).length;
   const lower = prompt.toLowerCase();
@@ -250,6 +288,14 @@ export function formatAdvisoryText(result: AdvisorResult): string {
   if (result.kind === 'missing-context') {
     const first = result.missing[0] ?? 'missing context';
     return `advisor: ${first} · ${result.currentMode} may drift`;
+  }
+
+  if (result.kind === 'stop') {
+    return formatPlanAdviceText({
+      kind: 'stop',
+      suggestedMode: result.suggestedMode,
+      factors: result.factors,
+    });
   }
 
   const label = riskLabel(result.risk);

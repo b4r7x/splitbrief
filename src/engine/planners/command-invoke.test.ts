@@ -4,6 +4,7 @@ import { ONE_SHOT_API_CAPS } from './types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { callPhase } from '#testing/helpers/planner-call.js';
 
 describe('createCommandBasedPlanner', () => {
   it('forwards question markers from subprocess stdout to onQuestion', async () => {
@@ -39,7 +40,7 @@ ${marker}`;
         'test-planner',
       );
       const onQuestion = vi.fn();
-      await planner.plan({
+      await callPhase(planner, {
         feature: 'plan feature',
         projectDir,
         callbacks: { onOutput: vi.fn(), onQuestion },

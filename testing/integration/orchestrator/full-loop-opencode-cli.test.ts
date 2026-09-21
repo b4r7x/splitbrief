@@ -5,6 +5,8 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { REVIEW_FILE, SANDBOX_DIR, sessionDir } from '../../../src/core/paths.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
@@ -124,14 +126,15 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
     });
 
     const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Spec\n\nCreate a module with an OpenCode CLI implementer.',
-        plan: '# Plan\n\nUse the configured cheap CLI implementer.',
-        tasks: [task],
-        usage: { inputTokens: 140, outputTokens: 90 },
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          usage: { inputTokens: 140, outputTokens: 90 },
+          ...(call === 'tasks' ? { tasks: [task] } : {}),
+        }),
+      ),
       review: vi.fn().mockResolvedValue({
-        text: '# Final review\n\nOpenCode CLI implementer passed validation.',
+        text: '# Final review\n\nOpenCode CLI implementer passed validation.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },
       }),
     });
@@ -150,7 +153,6 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
         profiles: {
           'opencode-cli': {
             label: 'Fake OpenCode CLI',
-            costTier: 'cheap',
             kind: 'cli',
             tool: 'opencode',
             model: 'opencode/test-cheap-model',
@@ -169,7 +171,6 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
         mode: 'standard',
         approve: 'none',
         maxRetries: 1,
-        persistTranscript: true,
       },
     });
     const preparationId = 'full-loop-opencode-preparation';
@@ -267,7 +268,6 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
       implementerProfile: 'opencode-cli',
       tool: 'opencode',
       model: 'opencode/test-cheap-model',
-      costPosture: 'Selected cheap cost tier via cheapest-capable routing',
     });
     expect(
       events.find((event) => event.type === 'validate' && event.status === 'done'),

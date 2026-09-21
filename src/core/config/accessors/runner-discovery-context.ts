@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { parseApiKeyEnvRef } from '../credentials.js';
 import { readActiveRunnerLens } from './active-runner.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -12,7 +13,7 @@ import {
 } from '../../runners/seat-roles.js';
 
 export type CredentialSourceIdentity =
-  | { readonly kind: 'env'; readonly name: string }
+  | { readonly kind: 'env'; readonly name: string; readonly valueIdentity?: string | undefined }
   | { readonly kind: 'inline'; readonly configNodeId: string };
 
 export interface CredentialDomainIdentity {
@@ -24,12 +25,17 @@ export interface CredentialDomainIdentity {
 }
 
 export interface RunnerDiscoveryContext {
+  /** The admission role: reviewer shares the planner's admission set. */
   readonly role: RunnerRole;
+  /** The seat that actually asked. Absent in a legacy context. */
+  readonly seatRole?: ActiveRunnerRole | undefined;
   readonly kind: ActiveRunnerConfig['kind'];
   readonly id: string;
   readonly model?: string | undefined;
   readonly authChannel?: CliAuthChannelId | undefined;
   readonly endpointOrigin?: string | undefined;
+  /** Digest of the whole validated API base URL, so a base path cannot collapse. */
+  readonly endpointIdentity?: string | undefined;
   readonly credentialPresent: boolean;
   readonly credentialDomain?: CredentialDomainIdentity | undefined;
   readonly configGeneration: string;
@@ -42,8 +48,41 @@ export interface ProjectRunnerDiscoveryContextInput {
 
 const configGenerationId = (config: Config): string => contentIdentityId('config', config);
 
+// A reference can keep its name while its value changes. Only this process
+// retains the value; published identities are random, never secret digests.
+const envCredentialIdentities = new Map<
+  string,
+  { readonly value: string | undefined; readonly identity: string }
+>();
+
+function envCredentialIdentity(name: string): string {
+  const value = process.env[name];
+  const previous = envCredentialIdentities.get(name);
+  if (previous !== undefined && previous.value === value) return previous.identity;
+  const identity = randomUUID();
+  envCredentialIdentities.set(name, { value, identity });
+  return identity;
+}
+
 function endpointOrigin(apiBase: string): string {
   return new URL(apiBase).origin;
+}
+
+const TRAILING_SLASHES = /\/+$/;
+
+/**
+ * Names the complete endpoint — origin, base path and query — where
+ * `endpointOrigin` names only the host. Embedded user info is reported as
+ * present, never carried, so the identity cannot leak a credential.
+ */
+function apiEndpointIdentity(apiBase: string): string {
+  const url = new URL(apiBase);
+  return contentIdentityId('endpoint', {
+    origin: url.origin,
+    path: url.pathname.replace(TRAILING_SLASHES, ''),
+    search: url.search,
+    userInfo: url.username.length > 0 || url.password.length > 0 ? 'present' : 'absent',
+  });
 }
 
 function runnerId(runner: ActiveRunnerConfig): string {
@@ -67,7 +106,9 @@ function credentialSource(
   if (apiKey === undefined || apiKey.length === 0) return undefined;
 
   const envRef = parseApiKeyEnvRef(apiKey);
-  if (envRef !== undefined) return { kind: 'env', name: envRef };
+  if (envRef !== undefined) {
+    return { kind: 'env', name: envRef, valueIdentity: envCredentialIdentity(envRef) };
+  }
 
   return {
     kind: 'inline',
@@ -128,6 +169,11 @@ function contextEndpointOrigin(runner: ActiveRunnerConfig): string | undefined {
   return undefined;
 }
 
+function contextEndpointIdentity(runner: ActiveRunnerConfig): string | undefined {
+  if (runner.kind === 'api') return apiEndpointIdentity(runner.apiBase);
+  return undefined;
+}
+
 export function projectRunnerDiscoveryContext(
   input: ProjectRunnerDiscoveryContextInput,
 ): RunnerDiscoveryContext {
@@ -141,14 +187,17 @@ export function projectRunnerDiscoveryContext(
   });
   const authChannel = contextAuthChannel(runner);
   const origin = contextEndpointOrigin(runner);
+  const endpointIdentity = contextEndpointIdentity(runner);
 
   return {
     role: runnerRoleForActiveRole(input.role),
+    seatRole: input.role,
     kind: runner.kind,
     id: runnerId(runner),
     ...(runner.model !== undefined && { model: runner.model }),
     ...(authChannel !== undefined && { authChannel }),
     ...(origin !== undefined && { endpointOrigin: origin }),
+    ...(endpointIdentity !== undefined && { endpointIdentity }),
     credentialPresent: domain !== undefined,
     ...(domain !== undefined && { credentialDomain: domain }),
     configGeneration,

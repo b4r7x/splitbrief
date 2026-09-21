@@ -13,28 +13,22 @@ const SHORTCUTS: ShortcutInfo[] = [
   {
     id: 'exit',
     key: 'ctrl+c',
-    description: 'Interrupt, then exit (press again)',
+    description: 'Stop; press again to quit',
     screens: ['workflow'],
   },
   {
     id: 'exit',
     key: 'ctrl+c',
-    description: 'Exit',
-    screens: ['home', 'summary', 'setup'],
+    description: 'Press twice to quit',
+    screens: ['home', 'setup'],
   },
   { id: 'command-palette', key: 'ctrl+k', description: 'Command palette', screens: ALL_SCREENS },
   { id: 'help', key: 'ctrl+/', description: 'Help', screens: ALL_SCREENS },
   { id: 'quit', key: 'ctrl+q', description: 'Quit', screens: ALL_SCREENS },
   {
-    id: 'interrupt',
-    key: 'esc esc',
-    description: 'Interrupt current step (press again)',
-    screens: ['workflow'],
-  },
-  {
-    id: 'cancel',
-    key: 'esc esc',
-    description: 'Cancel workflow at a prompt (press again)',
+    id: 'stop',
+    key: 'esc',
+    description: 'Options → stop → back to sessions',
     screens: ['workflow'],
   },
   {
@@ -45,19 +39,15 @@ const SHORTCUTS: ShortcutInfo[] = [
   },
   { id: 'skills', key: 'ctrl+s', description: 'Skills picker', screens: ['home'] },
   { id: 'settings', key: 'ctrl+,', description: 'Settings', screens: ALL_SCREENS },
-  { id: 'close-overlay', key: 'esc', description: 'Close overlay', screens: ALL_SCREENS },
+  // Workflow spends esc on the stop sheet; an open overlay states its own esc inside its border,
+  // so listing the key twice on one screen would give one chord two published meanings.
   {
-    id: 'toggle-diff',
-    key: 'ctrl+d',
-    description: 'Toggle diff; attached detaches',
-    screens: ['workflow'],
+    id: 'close-overlay',
+    key: 'esc',
+    description: 'Close overlay',
+    screens: ['home', 'setup'],
   },
-  {
-    id: 'cost-drilldown',
-    key: 'ctrl+g',
-    description: 'Cost drilldown',
-    screens: ['workflow'],
-  },
+  { id: 'toggle-diff', key: 'ctrl+d', description: 'Toggle diff', screens: ['workflow'] },
   {
     id: 'scroll',
     key: 'shift+↑/↓, pgup/pgdn, home/end',
@@ -77,7 +67,6 @@ const SHORTCUTS: ShortcutInfo[] = [
     description: 'Expand activity rows',
     screens: ['workflow'],
   },
-  { id: 'continue', key: 'enter', description: 'Continue', screens: ['summary'] },
 ];
 
 export function getShortcutKey(id: string): string | null {

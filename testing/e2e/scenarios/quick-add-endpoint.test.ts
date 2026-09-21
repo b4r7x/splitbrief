@@ -9,7 +9,10 @@ import { runE2eWorkflow, setupE2eScenario } from '../helpers/harness.js';
 const scenario = {
   name: 'quick mode - add endpoint',
   cassetteName: 'quick-add-endpoint',
-  feature: 'add GET /api/health endpoint',
+  // Spelled without the leading slash: the planner context packet reads an
+  // explicitly named path as project evidence, and an absolute path can never
+  // be read, so the run would refuse to dispatch.
+  feature: 'add GET api/health endpoint',
   mode: 'quick' as const,
   config: makeE2eScenarioConfig('quick'),
 };

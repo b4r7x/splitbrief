@@ -17,6 +17,7 @@ import type { CliPlannerAdapter } from '../runners/cli-tools/contract.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import {
+  createSessionResumeState,
   isSessionExpiredError,
   sessionResumeExpiredError,
   sessionResumeMismatchError,
@@ -33,6 +34,8 @@ import { assertCliStartGate } from '../runners/start-gate.js';
 import { processError } from '../../lib/process/errors.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
 import { createQuestionAccumulator } from '../parsers/question.js';
+import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
+import { TIMEOUTS } from '../../core/pipeline-spec/timeouts.js';
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
 function cliNotFoundMessage(descriptor: CliPlannerAdapter['descriptor']): string {
@@ -61,6 +64,11 @@ export function createCliPlanner(
   const command = adapter.descriptor.command;
   const notFoundMessage = cliNotFoundMessage(adapter.descriptor);
   const { supportsSessionResume, supportsEffort } = adapter;
+
+  // The only thread a CLI resumes is one it reported itself. The SPLITBRIEF session
+  // id is not a tool thread id, so it never reaches --resume.
+  const nativeSession = createSessionResumeState();
+  nativeSession.capture(initialSessionId ?? null);
 
   const effort = plannerCfg.effort;
   const variant = plannerCfg.variant;
@@ -136,11 +144,12 @@ export function createCliPlanner(
           sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg, 'planner')),
         ),
         cwd: projectDir,
-        timeoutMs: timeout ?? CLI_NO_DEADLINE_MS,
+        timeoutMs:
+          timeout ?? (callContext.role === 'review' ? TIMEOUTS.reviewerMs : CLI_NO_DEADLINE_MS),
         signal: effectiveSignal,
       },
       prompt,
-      callContext,
+      callContext: withCliInvocationIdentity({ runner: plannerCfg, callContext, executable }),
       onOutput,
       onCallEvent,
       onSessionId:
@@ -150,6 +159,7 @@ export function createCliPlanner(
                 unexpectedResumeSessionId = id;
                 return;
               }
+              nativeSession.capture(id);
               callbacks.onSessionId?.(id);
             }
           : undefined,
@@ -214,7 +224,7 @@ export function createCliPlanner(
     const detached = callContext.sessionScope?.kind === 'detached-fresh';
     const resumeId =
       supportsSessionResume && accessMode !== 'write-files' && !detached
-        ? (callbacks.sessionId ?? initialSessionId ?? null)
+        ? nativeSession.getResumeId()
         : null;
     try {
       return await finish(
@@ -231,6 +241,7 @@ export function createCliPlanner(
       );
     } catch (err) {
       if (resumeId !== null && isSessionExpiredError(err)) {
+        nativeSession.capture(null);
         callbacks.onSessionExpired?.(resumeId);
       }
       throw err;

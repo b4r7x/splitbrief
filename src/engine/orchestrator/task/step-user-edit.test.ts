@@ -286,7 +286,7 @@ describe('runSingleTask — user edits', () => {
       reason: 'approval-promotion-conflict',
       taskId: 'T001',
       files: ['src/race.ts'],
-      availableActions: ['skip-current-task', 'pause-run', 'abort-workflow'],
+      availableActions: ['skip-current-task', 'pause-run', 'end-run'],
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'approval-promotion-conflict',

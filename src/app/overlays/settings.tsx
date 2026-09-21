@@ -10,41 +10,43 @@ import {
 } from '../../components/pickers/scroll-window.js';
 import { ListRow } from '../../components/list-row.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
+import { RuleHeader } from '../../components/rule-header.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
-import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import type { PageNavigationContext } from '../../hooks/use-filterable-list.js';
 import { displayValue } from '../../features/settings/presentation.js';
 import {
   buildSettingsItems,
-  settingsItemDescription,
   settingsItemSection,
   type SettingsItem,
 } from '../../features/settings/items.js';
+import { CURRENT_MARKER, helpTextRows, settingsHelpLines } from '../../features/settings/help.js';
+import { parseSettingsFocus } from '../../features/settings/focus.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { hintFor, useSettingsEditor } from '../../features/settings/hooks/editor.js';
-import { CrewRowView, CrewSpine, CrewVerdictLine } from '../../features/crew/row-view.js';
+import { CrewRowView, CrewVerdictLine } from '../../features/crew/row-view.js';
 import { planSeatBlock } from '../../features/crew/format.js';
 import { crewActivate, crewVerdict } from '../../features/crew/rows.js';
+import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { useStores } from '../../stores/use-stores.js';
 import { FilterInput } from '../../components/filter-input.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
-import { wrapPathAware } from '../../utils/wrap.js';
 import { glyph } from '../../lib/glyphs.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 
 const DESCRIPTION_MIN_TERMINAL_ROWS = 19;
-const BASE_CHROME_ROWS = 10;
-const DESCRIPTION_ROWS = 4;
-const PANEL_DENSITY: OverlayDensity = 'roomy';
+const BASE_CHROME_ROWS = 9;
+/** One blank row at the least, the labelled rule, and the three help rows `helpTextRows` caps at. */
+const DESCRIPTION_ROWS = 5;
+const FORM_DENSITY: OverlayDensity = 'roomy';
 /** The `Crew` header above the block and the scroll indicator under it. */
 const CREW_BLOCK_RESERVED_ROWS = 2;
-/** An overlay focus of this shape reproduces a typed filter instead of naming a row. */
-const FOCUS_FILTER_PREFIX = 'filter:';
+/** Below this the blank row between sections costs a setting, so the sections close up. */
+const SECTION_GAP_MIN_ROWS = 18;
 
 function isReviewSeat(item: SettingsItem): boolean {
-  return item.kind === 'crew' && item.row.kind === 'seat' && item.row.id === 'review';
+  return item.kind === 'crew' && item.row.id === 'review';
 }
 
 export function SettingsOverlay() {
@@ -54,8 +56,9 @@ export function SettingsOverlay() {
   const detectedContextLength = configStore.use((state) => state.detectedContextLength);
   const [{ focus }, { cols, rows }] = useStores(overlayStore, terminalSizeStore);
 
+  const { initialKey, initialFilter } = parseSettingsFocus(focus);
   const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
-  const rect = overlayRect({ cols, rows, density: PANEL_DENSITY });
+  const rect = overlayRect({ cols, rows, density: FORM_DENSITY });
   const listBudget = availableRows({
     rows: rect.maxOuterRows,
     chromeRows: BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0),
@@ -70,27 +73,22 @@ export function SettingsOverlay() {
     innerWidth: rect.innerWidth,
     rowBudget: listBudget - CREW_BLOCK_RESERVED_ROWS,
   });
-  const planner = readActiveRunner({ config, role: 'planner' });
-  /** The rail never scrolls out from under a seat row that matches. */
+  /** Keeps the crew block pinned at the head of the list. */
   const pinnedHead = items.filter((item) => item.kind === 'crew').length;
 
-  const listSection = { by: settingsItemSection, gapBetweenSections: true as const };
-  /** Spines are the block's own gap rows, so a filtered list — no longer the block — loses them. */
-  const decorationsFor = (list: SettingsItem[]) => ({
-    before: (item: SettingsItem, index: number) =>
-      layout.spines &&
-      list.length === items.length &&
-      item.kind === 'crew' &&
-      item.row.kind === 'seat' &&
-      list[index - 1]?.kind === 'crew',
+  const listSection = {
+    by: settingsItemSection,
+    gapBetweenSections: listBudget >= SECTION_GAP_MIN_ROWS,
+  };
+  const decorations = {
     after: (item: SettingsItem) => layout.verdict && isReviewSeat(item),
-  });
+  };
   const windowInput = (list: SettingsItem[], selectedIndex: number) => ({
     items: list,
     selectedIndex,
     rowBudget: listBudget,
     section: listSection,
-    decorations: decorationsFor(list),
+    decorations,
     pinnedHead,
   });
   const getPageSize = ({ filtered, selectedIndex }: PageNavigationContext<SettingsItem>) =>
@@ -99,10 +97,6 @@ export function SettingsOverlay() {
     ).length;
   const canActOnIndex = (filtered: SettingsItem[], index: number) =>
     isItemIndexVisible(windowInput(filtered, index));
-
-  const focusFilter = focus?.startsWith(FOCUS_FILTER_PREFIX)
-    ? focus.slice(FOCUS_FILTER_PREFIX.length)
-    : undefined;
 
   const {
     filter,
@@ -116,8 +110,8 @@ export function SettingsOverlay() {
   } = useSettingsEditor({
     config,
     items,
-    initialKey: focusFilter === undefined ? focus : undefined,
-    initialFilter: focusFilter,
+    initialKey,
+    initialFilter,
     onClose: overlayStore.close,
     onActivateCrew: (item) => {
       crewActivate({ target: item, config });
@@ -136,14 +130,28 @@ export function SettingsOverlay() {
 
   const verdictLine =
     verdict === undefined ? null : <CrewVerdictLine verdict={verdict} width={rect.innerWidth} />;
-  const decorations = decorationsFor(filtered);
 
-  return (
-    <OverlayPanel title="Settings" hint={hintText} density={PANEL_DENSITY}>
-      <Box marginBottom={1}>
-        <FilterInput filter={filter} />
-      </Box>
+  const selectedValue =
+    selectedItem !== undefined && selectedItem.kind === 'setting'
+      ? getValue(selectedItem.def)
+      : undefined;
+  const detail =
+    selectedItem === undefined
+      ? undefined
+      : {
+          label:
+            selectedItem.kind === 'crew'
+              ? CREW_SEAT_LABELS[selectedItem.row.id]
+              : (selectedItem.def.readLabel?.(config) ?? selectedItem.def.label),
+          lines: settingsHelpLines({ item: selectedItem, value: selectedValue }),
+        };
+  const help = showDescription && detail !== undefined ? detail : null;
+  const helpRows = help === null ? [] : helpTextRows(help.lines, rect.innerWidth);
+  /** The help block is bottom-anchored: its rule never touches the last row of the list. */
+  const helpSpacerRows = Math.max(1, DESCRIPTION_ROWS - 1 - helpRows.length);
 
+  const listBody = (
+    <>
       <ListViewport
         items={filtered}
         selectedIndex={effectiveIndex}
@@ -156,8 +164,6 @@ export function SettingsOverlay() {
           renderHeader: (section) => <Text color={t.textDim}>{section}</Text>,
         }}
         decorations={{
-          hasBefore: decorations.before,
-          renderBefore: () => <CrewSpine />,
           hasAfter: decorations.after,
           renderAfter: () => verdictLine,
         }}
@@ -169,7 +175,6 @@ export function SettingsOverlay() {
                 layout={layout}
                 isCursor={isCursor}
                 width={rect.innerWidth}
-                planner={planner}
               />
             );
           }
@@ -202,6 +207,7 @@ export function SettingsOverlay() {
               label={label}
               state={isCursor ? 'active' : 'default'}
               metadata={boolTrue ? undefined : displayValue(def, value, { detectedContextLength })}
+              metadataColor={t.text}
               selected={boolTrue ? true : undefined}
               width={rect.innerWidth}
             />
@@ -210,18 +216,38 @@ export function SettingsOverlay() {
       />
 
       {filtered.length === 0 && <Text color={t.textDim}>No settings match filter</Text>}
+    </>
+  );
 
-      {showDescription && selectedItem && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color={t.border}>{glyph('divider').repeat(rect.innerWidth)}</Text>
-          <Box height={2} width={rect.innerWidth} overflow="hidden">
-            <Text color={t.textDim}>
-              {wrapPathAware(
-                settingsItemDescription({ item: selectedItem, config }),
-                rect.innerWidth,
+  return (
+    <OverlayPanel title="Settings" hint={hintText} titleSpacing="tight" density={FORM_DENSITY}>
+      <Box marginBottom={1}>
+        <FilterInput filter={filter} />
+      </Box>
+
+      {listBody}
+
+      {help && (
+        <Box
+          flexDirection="column"
+          height={DESCRIPTION_ROWS}
+          width={rect.innerWidth}
+          overflow="hidden"
+        >
+          <Box height={helpSpacerRows} flexShrink={0} />
+          <RuleHeader label={help.label} width={rect.innerWidth} />
+          {helpRows.map((row, index) => (
+            <Box key={`help-${index}`} height={1} flexShrink={0} overflow="hidden">
+              {row.current === true ? (
+                <>
+                  <Text color={t.text}>{row.text}</Text>
+                  <Text color={t.textDim}>{` ${CURRENT_MARKER}`}</Text>
+                </>
+              ) : (
+                <Text color={t.textDim}>{row.text}</Text>
               )}
-            </Text>
-          </Box>
+            </Box>
+          ))}
         </Box>
       )}
     </OverlayPanel>

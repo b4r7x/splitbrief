@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findRuntimeCommand, suggestRuntimeCommand } from './lookup.js';
+import { findRuntimeCommand, rankClosedOptions, suggestRuntimeCommand } from './lookup.js';
 import type { RuntimeCommandDef } from './types.js';
 
 const COMMANDS: RuntimeCommandDef[] = [
@@ -27,7 +27,6 @@ const COMMANDS: RuntimeCommandDef[] = [
     name: '/settings',
     label: 'Settings',
     description: '',
-    aliases: [{ name: '/config' }],
     category: 'navigate',
     validScreens: ['home'],
     handler: () => {},
@@ -37,7 +36,6 @@ const COMMANDS: RuntimeCommandDef[] = [
     name: '/crew',
     label: 'Crew',
     description: '',
-    aliases: [{ name: '/planner', args: 'plan' }],
     category: 'crew',
     validScreens: ['home'],
     handler: () => {},
@@ -55,19 +53,11 @@ const COMMANDS: RuntimeCommandDef[] = [
 
 describe('findRuntimeCommand', () => {
   it('resolves a command by its own name', () => {
-    expect(findRuntimeCommand(COMMANDS, '/settings')?.command.name).toBe('/settings');
+    expect(findRuntimeCommand(COMMANDS, '/settings')?.name).toBe('/settings');
   });
 
-  it('resolves an alias to its command and carries the arguments the alias names', () => {
-    const match = findRuntimeCommand(COMMANDS, '/planner');
-    expect(match?.command.name).toBe('/crew');
-    expect(match?.aliasArgs).toBe('plan');
-  });
-
-  it('leaves the arguments empty for an alias that names none', () => {
-    const match = findRuntimeCommand(COMMANDS, '/config');
-    expect(match?.command.name).toBe('/settings');
-    expect(match?.aliasArgs).toBeUndefined();
+  it('resolves a command typed in another case', () => {
+    expect(findRuntimeCommand(COMMANDS, '/Crew')?.name).toBe('/crew');
   });
 
   it('returns null for a name no command answers to', () => {
@@ -86,5 +76,26 @@ describe('suggestRuntimeCommand', () => {
 
   it('matches without a leading slash', () => {
     expect(suggestRuntimeCommand(COMMANDS, 'hlp')?.name).toBe('/help');
+  });
+});
+
+describe('rankClosedOptions', () => {
+  const options = ['quick', 'standard', 'audit'];
+  const descriptions = {
+    quick: 'one planner call, no gates',
+    standard: 'ordinary feature work',
+    audit: 'large, risky work that needs a security review',
+  };
+
+  it('returns every option in input order for the empty query', () => {
+    expect(rankClosedOptions(options, descriptions, '')).toEqual(options);
+  });
+
+  it('matches description text', () => {
+    expect(rankClosedOptions(options, descriptions, 'sec')).toEqual(['audit']);
+  });
+
+  it('drops options the query does not match', () => {
+    expect(rankClosedOptions(options, undefined, 'quic')).toEqual(['quick']);
   });
 });

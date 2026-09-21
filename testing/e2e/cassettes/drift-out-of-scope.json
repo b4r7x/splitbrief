@@ -126,7 +126,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"```typescript\\nexport type ParsedConfig = {\\n  name: string;\\n  enabled: boolean;\\n};\\n\\nexport function parseConfig(input: string): ParsedConfig {\\n  const values = new Map<string, string>();\\n  const pairs = input.split(';').map(part => part.trim()).filter(Boolean);\\n\\n  for (const pair of pairs) {\\n    const separator = pair.indexOf('=');\\n    if (separator === -1) continue;\\n    values.set(pair.slice(0, separator).trim(), pair.slice(separator + 1).trim());\\n  }\\n\\n  return {\\n    name: values.get('name') ?? 'default',\\n    enabled: values.get('enabled') === 'true',\\n  };\\n}\\n```\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":465,\"completion_tokens\":128}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"version\\\":1,\\\"files\\\":[{\\\"path\\\":\\\"src/config-parser.ts\\\",\\\"action\\\":\\\"create\\\",\\\"content\\\":\\\"export type ParsedConfig = {\\\\n  name: string;\\\\n  enabled: boolean;\\\\n};\\\\n\\\\nexport function parseConfig(input: string): ParsedConfig {\\\\n  const values = new Map<string, string>();\\\\n  const pairs = input.split(';').map((part) => part.trim()).filter(Boolean);\\\\n\\\\n  for (const pair of pairs) {\\\\n    const separator = pair.indexOf('=');\\\\n    if (separator === -1) continue;\\\\n    values.set(pair.slice(0, separator).trim(), pair.slice(separator + 1).trim());\\\\n  }\\\\n\\\\n  return {\\\\n    name: values.get('name') ?? 'default',\\\\n    enabled: values.get('enabled') === 'true',\\\\n  };\\\\n}\\\\n\\\"}]}\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":465,\"completion_tokens\":128}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 930
@@ -148,7 +148,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":295,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\\n\\n### Verdict\\npass\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":295,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 630

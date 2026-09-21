@@ -1,5 +1,6 @@
 import { ALL_SCREENS, seatPickerOverlayFor } from '../../../navigation/types.js';
 import { CREW_SEAT_ROLES } from '../../../crew/seats.js';
+import { describeModeShape } from '../../../pipeline-spec/mode-shape.js';
 import {
   RETIRED_WORKFLOW_MODE,
   WORKFLOW_MODES,
@@ -19,11 +20,6 @@ export function crewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
     {
       kind: 'arg',
       name: '/crew',
-      aliases: [
-        { name: '/planner', args: 'plan' },
-        { name: '/implementer', args: 'build' },
-        { name: '/reviewer', args: 'review' },
-      ],
       label: 'crew',
       description: 'Who fills each seat',
       category: 'crew',
@@ -48,11 +44,20 @@ export function crewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
       label: 'mode',
       description: 'Workflow mode',
       category: 'crew',
-      args: { kind: 'closed', options: WORKFLOW_MODES, optional: true },
+      args: {
+        kind: 'closed',
+        options: WORKFLOW_MODES,
+        optionDescriptions: Object.fromEntries(
+          WORKFLOW_MODES.map((mode) => [mode, describeModeShape(mode, { gateNames: true })]),
+        ),
+        optionHints: { [ctx.getWorkflowMode()]: 'current' },
+        optional: true,
+      },
       validScreens: ALL_SCREENS,
       handler: async (args) => {
         if (!args) {
-          ctx.openOverlay('mode-selector');
+          // Bare `/mode` stays in the composer: the option rows are the picker.
+          ctx.prefillComposer('/mode ');
           return;
         }
         const requested = args.trim().toLowerCase();

@@ -14,8 +14,28 @@ describe('workflow scroll shortcut', () => {
     expect(getShortcutsForScreen('workflow').some((s) => s.id === 'toggle-sidebar')).toBe(false);
   });
 
+  it('no duplicate chord', () => {
+    for (const screen of ['home', 'workflow', 'setup'] as const) {
+      const keys = getShortcutsForScreen(screen, { inputMode: 'review' }).map((s) => s.key);
+      expect(new Set(keys).size, `${screen} advertises one meaning per chord`).toBe(keys.length);
+    }
+  });
+
+  it('spells the workflow stop keys as one press each', () => {
+    const workflow = getShortcutsForScreen('workflow');
+
+    expect(workflow.find((s) => s.id === 'stop')).toMatchObject({
+      key: 'esc',
+      description: 'Options → stop → back to sessions',
+    });
+    expect(workflow.find((s) => s.id === 'exit')).toMatchObject({
+      key: 'ctrl+c',
+      description: 'Stop; press again to quit',
+    });
+  });
+
   it('uses lowercase key labels throughout the help registry', () => {
-    const screens: readonly Screen[] = ['home', 'workflow', 'summary', 'setup'];
+    const screens: readonly Screen[] = ['home', 'workflow', 'setup'];
     const labels = screens.flatMap((screen) =>
       getShortcutsForScreen(screen, { inputMode: 'review' }).map((shortcut) => shortcut.key),
     );
@@ -26,7 +46,6 @@ describe('workflow scroll shortcut', () => {
         'ctrl+k',
         'ctrl+/',
         'ctrl+q',
-        'esc esc',
         'ctrl+r',
         'ctrl+s',
         'ctrl+,',
@@ -35,7 +54,6 @@ describe('workflow scroll shortcut', () => {
         'ctrl+e',
         'shift+↑/↓, pgup/pgdn, home/end',
         '/activity, ctrl+a',
-        'enter',
       ]),
     );
     expect(labels.some((label) => /[A-Z]/.test(label))).toBe(false);

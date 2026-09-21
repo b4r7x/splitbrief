@@ -30,8 +30,6 @@ function breakdownFor(reviewer?: { tool: string; model?: string }) {
   return calculateCostBreakdown(
     {
       tokenUsage: usage,
-      totalTasks: 1,
-      escalatedCount: 0,
       plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',

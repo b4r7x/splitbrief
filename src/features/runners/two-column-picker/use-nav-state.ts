@@ -163,6 +163,19 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     if (hasSelectableRight) setActiveColumn('right');
   };
 
+  const moveLeft = (direction: 1 | -1) => {
+    if (params.maxVisible <= 0 || leftCol.items.length === 0) return;
+    setActiveColumn('left');
+    setSelectedLeftKey(null);
+    resetRight(leftCol.moveBy(direction));
+  };
+
+  const moveRight = (direction: 1 | -1) => {
+    if (params.maxVisible <= 0 || filteredRight.length === 0) return;
+    setActiveColumn('right');
+    rightCol.moveBy(direction);
+  };
+
   const cycleRight = (index: number): CycleOutcome => {
     if (params.maxVisible <= 0) return 'none';
     const item = filteredRight[index];
@@ -280,6 +293,8 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     terminalPane,
     isOnCustomItem: rightActive && isOnVirtual,
     currentRightIsCustom,
+    moveLeft,
+    moveRight,
     activateLeft,
     activateRight,
     cycleRight,

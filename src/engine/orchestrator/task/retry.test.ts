@@ -17,6 +17,7 @@ import {
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
+import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
@@ -227,7 +228,7 @@ describe('retryAndRecord — retry budget', () => {
     expect(ledger?.tasks[0]?.observedEvidence).toContain('test failed (pre-existing)');
   });
 
-  it('exhausts local retry budget and persists recovery when escalation also fails', async () => {
+  it('exhausts the retry budget and persists recovery without handing the brief to the planner', async () => {
     const task = makeTask({ id: 'T001' });
     let state = implementingState([task]);
     state = transition(state, { type: 'START_TASK', taskId: task.id });
@@ -241,13 +242,12 @@ describe('retryAndRecord — retry budget', () => {
       error: 'tsc failed again',
       usage: { inputTokens: 20, outputTokens: 10 },
     });
+    const escalateFull = vi.fn();
     const planner = makePlanner({
       escalateHint: vi
         .fn()
         .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
-      escalateFull: vi
-        .fn()
-        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+      escalateFull,
     });
     const implementer = makeImplementer({ retry });
 
@@ -279,8 +279,11 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.state.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
-      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'abort-workflow'],
+      // 2 local retries plus the hinted retry, every one of them the worker's.
+      attempts: 3,
+      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
     });
+    expect(escalateFull).not.toHaveBeenCalled();
     expect(loadState(wctx)?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
@@ -290,6 +293,55 @@ describe('retryAndRecord — retry budget', () => {
     expect(complete).toBeUndefined();
     const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
     expect(retryEvents.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('error event on exhaustion', async () => {
+    const task = makeTask({ id: 'T001' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+
+    const { bus, events: busEvents } = makeBusRecorder();
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
+    });
+    const planner = makePlanner({
+      escalateHint: vi
+        .fn()
+        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
+    });
+
+    const wctx = makeWorkflowContext({
+      implementer,
+      planner,
+      bus,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { maxRetries: 2 },
+      }),
+    });
+
+    const res = await retryAndRecord({
+      wctx,
+      task,
+      initialError: 'initial tsc failure',
+      state,
+      taskStartTime: Date.now(),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(res.completed).toBe(false);
+    const errorIndex = busEvents.findIndex(
+      (e) => e.type === 'error' && e.code === 'retry_exhausted' && e.category === 'recovery',
+    );
+    const promptedIndex = busEvents.findIndex((e) => e.type === 'recovery_prompted');
+    expect(errorIndex).toBeGreaterThanOrEqual(0);
+    expect(promptedIndex).toBeGreaterThan(errorIndex);
+
+    const ledger = readEvidenceLedger(wctx);
+    expect(ledger?.tasks.find((t) => t.id === 'T001')?.status).toBe('failed');
   });
 });
 
@@ -335,7 +387,7 @@ describe('retryAndRecord — recovery stop points', () => {
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
-      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'abort-workflow'],
+      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
@@ -346,9 +398,51 @@ describe('retryAndRecord — recovery stop points', () => {
         type: 'recovery_prompted',
         reason: 'retry-exhausted',
         taskId: 'T001',
-        availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'abort-workflow'],
+        availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
       }),
     );
+  });
+
+  it('a thrown escalation still records failed evidence', async () => {
+    const { projectDir, sessionId } = setupProject();
+
+    const task = makeTask({ id: 'T001' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+
+    const planner = makePlanner({
+      escalateHint: vi.fn().mockRejectedValueOnce(new Error('planner crashed')),
+    });
+    const implementer = makeImplementer({ retry: vi.fn() });
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      bus: makeBusRecorder().bus,
+      planner,
+      implementer,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { maxRetries: 0 },
+      }),
+    });
+
+    const result = await retryAndRecord({
+      wctx,
+      task,
+      initialError: 'initial validation failed',
+      state,
+      taskStartTime: Date.now(),
+      taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.completed).toBe(false);
+    expect(
+      readEvidenceLedger({ projectDir, sessionId })?.tasks.find((t) => t.id === 'T001'),
+    ).toMatchObject({ status: 'failed', method: 'failed' });
   });
 
   it('returns without raising recovery when retry or escalation throws an AbortError', async () => {
@@ -476,12 +570,19 @@ describe('retryAndRecord — escalated-intermediate booking identity', () => {
     state = transition(state, { type: 'START_TASK', taskId: task.id });
     state = transition(state, { type: 'TASK_SENT' });
 
-    const code = '```typescript\nexport const fixed = true;\n```';
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      makeOpenAiSseResponse([
-        { content: code },
-        { usage: { prompt_tokens: 400, completion_tokens: 200 } },
-      ]),
+    const code = JSON.stringify({
+      version: 1,
+      files: [
+        { path: 'src/intermediate.ts', action: 'create', content: 'export const fixed = true;\n' },
+      ],
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      withLocalCatalog(['x-ai/grok-4-fast'], () =>
+        makeOpenAiSseResponse([
+          { content: code },
+          { usage: { prompt_tokens: 400, completion_tokens: 200 } },
+        ]),
+      ),
     );
 
     // Local retries all fail so escalation reaches the intermediate tier.

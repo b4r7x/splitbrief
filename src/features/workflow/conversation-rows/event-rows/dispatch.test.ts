@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
 import { formatModelName } from '../../../../core/model-display.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
@@ -85,7 +86,7 @@ function suppressedRunnerCallEvent(type: (typeof suppressedRunnerCallTypes)[numb
           severity: 'warning',
           source: 'provider',
           surface: 'activity',
-          fingerprint: 'rw-safe:1',
+          fingerprint: 'rw:1',
           message: 'provider warning',
         },
       };
@@ -167,7 +168,7 @@ describe('event row dispatch', () => {
         .map(rowText)
         .join('\n');
 
-      expect(text).toContain('Workflow cancelled');
+      expect(text).toContain('Build failed');
       expect(text).not.toContain('Resume');
       expect(text).not.toContain('splitbrief continue');
     },
@@ -195,11 +196,11 @@ describe('event row dispatch', () => {
   });
 
   it.each([
-    ['continued', 'success'],
-    ['retry-current-task', 'success'],
-    ['skipped-current-task', 'textDim'],
-    ['aborted', 'error'],
-  ] as const)('tones recovery_resolved outcome %s as %s', (outcome, tone) => {
+    ['continued', 'Continued', 'success'],
+    ['retry-current-task', 'Tried again', 'success'],
+    ['skipped-current-task', 'Skipped current task', 'textDim'],
+    ['aborted', 'Ended run', 'error'],
+  ] as const)('tones recovery_resolved outcome %s as %s', (outcome, outcomeLabel, tone) => {
     const event: EngineEventOf<'recovery_resolved'> = {
       type: 'recovery_resolved',
       ts: 0,
@@ -223,7 +224,7 @@ describe('event row dispatch', () => {
     if (topRow !== undefined) {
       expect(rowText(topRow)).not.toContain('┌');
     }
-    expect(rows.map(rowText).join('\n')).toContain(`${outcome} via retry-same-worker`);
+    expect(rows.map(rowText).join('\n')).toContain(`${outcomeLabel} via Try again`);
   });
 
   it('redacts secrets in planner, warning, and user display rows', () => {
@@ -351,7 +352,7 @@ describe('event row dispatch', () => {
     });
 
     expect(rows.map(rowText)).toEqual([
-      'Implementer activity  1 update  [OpenAI Codex CLI]',
+      `${CREW_SEAT_LABELS.build} activity  1 update  [OpenAI Codex CLI]`,
       activityLine('RUN', 'npm run typecheck'),
     ]);
     expect(rows[0]?.kind).toBe('activity');
@@ -391,7 +392,7 @@ describe('event row dispatch', () => {
 
     expect(text).toBe(
       [
-        'Plan activity  1 update  [OpenAI Codex CLI]',
+        `${CREW_SEAT_LABELS.plan} activity  1 update  [OpenAI Codex CLI]`,
         activityLine('READ', 'CLAUDE.md :1-260'),
       ].join('\n'),
     );
@@ -431,7 +432,7 @@ describe('event row dispatch', () => {
     expect(text).not.toContain(secret);
   });
 
-  it('renders task routing reasons instead of generic cost posture noise', () => {
+  it('renders the routing reason on a task-start row', () => {
     const event: EngineEventOf<'task_started'> = {
       type: 'task_started',
       ts: 0,
@@ -447,7 +448,6 @@ describe('event row dispatch', () => {
       contextFit: 'tight',
       estimatedTokens: 95_000,
       contextLength: 100_000,
-      costPosture: 'Selected unknown cost tier via cheapest-capable routing',
       routingReason: 'current code reduced to fit cheap-cloud context',
     };
 
@@ -463,7 +463,6 @@ describe('event row dispatch', () => {
     expect(text.replace(/\s+/g, ' ')).toContain(
       'why current code reduced to fit cheap-cloud context',
     );
-    expect(text).not.toContain('cost Selected unknown cost tier');
     expect(lines.every((line) => line.length <= 52)).toBe(true);
   });
 
@@ -514,18 +513,6 @@ describe('event row dispatch', () => {
       body: 'disk write boundary exceeded',
     },
     {
-      name: 'budget_exceeded',
-      event: {
-        type: 'budget_exceeded',
-        ts: 0,
-        phase: 'implementing',
-        currentCost: 12,
-        maxBudget: 10,
-      },
-      stateWord: 'budget',
-      body: 'Exceeded',
-    },
-    {
       name: 'recovery_action_failed',
       event: {
         type: 'recovery_action_failed',
@@ -536,7 +523,7 @@ describe('event row dispatch', () => {
         action: 'retry-same-worker',
         message: 'worker unavailable',
       },
-      stateWord: 'recovery',
+      stateWord: 'Recovery',
       body: 'worker unavailable',
     },
     {
@@ -637,6 +624,174 @@ describe('event row dispatch', () => {
     for (const row of rows.slice(1)) expect(row.kind).toBe('message');
   });
 
+  it('renders answered structured questions as voice-coded q/a pairs', () => {
+    const block = eventRowBlock({
+      event: {
+        type: 'user_message',
+        ts: 1,
+        phase: 'clarifying',
+        text: '1. What should be refactored? Give a file/module/feature name or area of the codebase.\nI want you to first review the changes and then after review make tasks of fixes for implementer\n\n2. What kind of refactor?\nSimplify/clean up existing code',
+        qa: [
+          {
+            question:
+              'What should be refactored? Give a file/module/feature name or area of the codebase.',
+            answer:
+              'I want you to first review the changes and then after review make tasks of fixes for implementer',
+          },
+          { question: 'What kind of refactor?', answer: 'Simplify/clean up existing code' },
+        ],
+      },
+      globalIndex: 4,
+      ctx: { width: 60, viewportRows: 40, streaming },
+      expanded: false,
+    });
+    const rows = block?.createRows(0, block.rowCount) ?? [];
+    const texts = rows.map(rowText);
+
+    expect(texts).toEqual([
+      'Answered · 2 questions',
+      '1. What should be refactored? Give a file/module/feature ',
+      '   name or area of the codebase.',
+      'I want you to first review the changes and then after ',
+      'review make tasks of fixes for implementer',
+      '2. What kind of refactor?',
+      'Simplify/clean up existing code',
+    ]);
+    expect(rows[0]?.kind).toBe('prompt');
+    expect(rows[0]?.segments[0]?.tone).toBe('textDim');
+    expect(rows[0]?.segments[0]?.bold).toBe(true);
+    expect(rows[0]?.segments[1]?.tone).toBe('planner');
+    expect(rows[0]?.segments[1]?.bold).toBe(true);
+    expect(rows[1]?.segments[0]?.text).toBe('1.');
+    expect(rows[1]?.segments[0]?.tone).toBe('planner');
+    expect(rows[1]?.segments[0]?.bold).toBe(true);
+    expect(rows[1]?.segments[1]?.tone).toBeUndefined();
+    expect(rows[1]?.segments[2]?.tone).toBe('planner');
+    expect(rows[1]?.segments[2]?.bold).not.toBe(true);
+    expect(rows[2]?.segments[0]?.tone).toBe('planner');
+    expect(rows.slice(1, 3).every((rowValue) => rowValue.segments[0]?.tone === 'planner')).toBe(
+      true,
+    );
+    expect(rows.slice(3, 5).every((rowValue) => rowValue.segments[0]?.tone === 'text')).toBe(true);
+    expect(rows.slice(3, 5).every((rowValue) => rowValue.segments[0]?.bold === false)).toBe(true);
+
+    expect(rows.filter((rowValue) => rowValue.kind === 'prompt')).toHaveLength(1);
+    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 60)).toBe(true);
+  });
+
+  it('starts a wrapped continuation on the column of the line it continues', () => {
+    // At 59 columns the `trim: false` wrapper wedges its break space onto the head of the
+    // continuation line, one cell past the line above. The block trims it back so the question's
+    // continuation keeps the gutter column and the answer's continuation keeps the content column.
+    const rows = eventRows({
+      event: {
+        type: 'user_message',
+        ts: 0,
+        phase: 'clarifying',
+        text: 'x',
+        qa: [
+          {
+            question:
+              'What should be refactored? Give a file/module/feature name or area of the codebase.',
+            answer:
+              'I want you to first review the changes and then after review make tasks of fixes for implementer',
+          },
+          { question: 'What kind of refactor?', answer: 'Simplify/clean up existing code' },
+        ],
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 59, viewportRows: 40, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual([
+      'Answered · 2 questions',
+      '1. What should be refactored? Give a file/module/feature',
+      '   name or area of the codebase.',
+      'I want you to first review the changes and then after',
+      'review make tasks of fixes for implementer',
+      '2. What kind of refactor?',
+      'Simplify/clean up existing code',
+    ]);
+  });
+
+  it('labels a single answered question in the singular', () => {
+    const rows = eventRows({
+      event: {
+        type: 'user_message',
+        ts: 0,
+        phase: 'clarifying',
+        text: '1. Which module?\nsrc/auth.ts',
+        qa: [{ question: 'Which module?', answer: 'src/auth.ts' }],
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual(['Answered · 1 question', '1. Which module?', 'src/auth.ts']);
+  });
+
+  it('pulls a stranded wrap word down so no line ends the block as one lone word', () => {
+    const rows = eventRows({
+      event: {
+        type: 'user_message',
+        ts: 0,
+        phase: 'clarifying',
+        text: '1. What should be refactored? Give a file/module/feature name or area of the codebase.\nReview',
+        qa: [
+          {
+            question:
+              'What should be refactored? Give a file/module/feature name or area of the codebase.',
+            answer: 'Review',
+          },
+        ],
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual([
+      'Answered · 1 question',
+      '1. What should be refactored? Give a file/module/feature name or area of',
+      '   the codebase.',
+      'Review',
+    ]);
+  });
+
+  it('aligns every number to the widest label so questions share one column, and starts every answer on the content column', () => {
+    const rows = eventRows({
+      event: {
+        type: 'user_message',
+        ts: 0,
+        phase: 'clarifying',
+        text: 'x',
+        qa: Array.from({ length: 11 }, (_, index) => ({
+          question: `Question ${index + 1}?`,
+          answer: `Answer ${index + 1}`,
+        })),
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 40, streaming },
+    });
+
+    // `11.` is the widest label, so every number pads to its width plus one space and every
+    // question hangs at that shared column. Each answer carries no mark, so it starts on the
+    // content column with no leading indent. The bold numbers alone separate the pairs — no blank
+    // rows between them.
+    const expected = [
+      'Answered · 11 questions',
+      ...Array.from({ length: 11 }, (_, index) =>
+        index === 0
+          ? ['1.  Question 1?', 'Answer 1']
+          : [`${`${index + 1}.`.padEnd(4)}Question ${index + 1}?`, `Answer ${index + 1}`],
+      ).flat(),
+    ];
+    expect(rows.map(rowText)).toEqual(expected);
+  });
+
   it('renders user_message rows without the heavy-angle prompt marker', () => {
     const text = eventRows({
       event: {
@@ -675,6 +830,27 @@ describe('event row dispatch', () => {
     );
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((rowValue) => rowValue.markerTone === 'warning')).toBe(true);
+  });
+
+  it('task_retry counts attempts the way the build block does', () => {
+    const event: EngineEventOf<'task_retry'> = {
+      type: 'task_retry',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      attempt: 1,
+      maxRetries: 2,
+      error: 'tests failed',
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText).join('\n')).toContain('attempt 2 of 3');
   });
 
   it('message_queued renders a Queued header above the message text', () => {
@@ -898,5 +1074,64 @@ describe('validate failure output', () => {
     });
 
     expect(rows.some((rowValue) => rowValue.kind === 'callout-body')).toBe(false);
+  });
+
+  const exemptValidate: EngineEvent = {
+    type: 'validate',
+    ts: 0,
+    phase: 'validating-task',
+    taskId: taskId('T002'),
+    status: 'done',
+    passed: true,
+    exempt: true,
+    stages: { typecheck: true, lint: false, test: false },
+    attempted: { typecheck: true, lint: true, test: true },
+    skipped: { test: true },
+    skippedReason: { test: 'no affected test file found' },
+    duration: 1_800,
+  };
+
+  it('keeps the stage notes off the one-line summary strip', () => {
+    const rows = eventRows({
+      event: exemptValidate,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 78, viewportRows: 20, streaming },
+    });
+    const texts = rows.map(rowText);
+
+    expect(texts[0]).toContain('validate');
+    expect(texts[0]).not.toContain('skipped');
+    expect(texts.slice(1)).toContain(
+      'lint pre-existing failure, test skipped (no affected test file found)',
+    );
+  });
+
+  // Appended to the strip, the reason a gate never ran was the first thing a narrow terminal cut.
+  it('wraps the stage notes rather than cutting the reason at a narrow width', () => {
+    const rows = eventRows({
+      event: exemptValidate,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 44, viewportRows: 20, streaming },
+    });
+    const notes = rows.map(rowText).slice(1).join('').replace(/\s+/g, ' ').trim();
+
+    expect(notes).toBe('lint pre-existing failure, test skipped (no affected test file found)');
+    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 44)).toBe(true);
+  });
+
+  it('names a run the user stopped apart from one that fell over', () => {
+    const stopped = eventRows({
+      event: { type: 'workflow_cancelled', ts: 0, phase: 'implementing', reason: 'user_cancelled' },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+
+    expect(stopped).toContain('Stopped by you');
+    expect(stopped).not.toContain('Build failed');
   });
 });

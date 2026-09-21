@@ -1,0 +1,163 @@
+import { spawn } from 'node:child_process';
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import YAML from 'yaml';
+import { copyScenarioFixture } from '../../../evals/runner.js';
+import { addEndpointScenario } from '../../../evals/scenarios/add-endpoint.js';
+import { SPLITBRIEF_DIR, sessionDir, sessionsRoot } from '../../../src/core/paths.js';
+import type { Config } from '../../../src/core/schemas/config.js';
+import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
+import { catalogTool } from './live-harness.js';
+import {
+  type FixtureRow,
+  type FixtureRowSeats,
+  resolveFixtureRowSeats,
+} from '../live/fixture-rows.js';
+
+const REPO_ROOT = resolve(import.meta.dirname, '../../..');
+
+const SKIP_DIRS: ReadonlySet<string> = new Set(['node_modules', SPLITBRIEF_DIR, '.git']);
+
+export type FixtureRunResult = Readonly<{
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  projectDir: string;
+  sessionDir: string;
+  durationMs: number;
+  tmpDir: string;
+}>;
+
+export async function runFixtureRow(row: FixtureRow): Promise<FixtureRunResult> {
+  if (process.env.SPLITBRIEF_REAL_CLI_E2E !== '1') {
+    throw new Error('Live fixture row invoked without SPLITBRIEF_REAL_CLI_E2E=1.');
+  }
+  const seats = resolveFixtureRowSeats(row);
+  const { tmpDir, projectDir } = copyScenarioFixture(addEndpointScenario, 'baseline');
+  // No trailing slash: `copyScenarioFixture` links node_modules, and git reads a
+  // symlink as a file, which a directory-only pattern never matches.
+  createTestGitRepo(projectDir, {
+    '.gitignore': 'node_modules\n',
+    ...collectRepoFiles(projectDir),
+  });
+  mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
+  writeFileSync(
+    join(projectDir, SPLITBRIEF_DIR, 'config.yaml'),
+    YAML.stringify(fixtureConfig(row, seats)),
+    'utf-8',
+  );
+  const stateHome = join(tmpDir, 'state');
+  mkdirSync(stateHome, { recursive: true });
+
+  const startedAt = Date.now();
+  const outcome = await spawnCli({
+    args: [
+      '--import',
+      'tsx',
+      'src/cli.ts',
+      'start',
+      '--plain',
+      '--mode',
+      row.mode,
+      '--approve',
+      'none',
+      '--allow-unverified-auth',
+      '--project',
+      projectDir,
+      row.feature,
+    ],
+    stateHome,
+    timeoutMs: row.timeoutMs,
+  });
+
+  return {
+    ...outcome,
+    projectDir,
+    sessionDir: resolveSessionDir(projectDir),
+    durationMs: Date.now() - startedAt,
+    tmpDir,
+  };
+}
+
+function fixtureConfig(row: FixtureRow, seats: FixtureRowSeats): Config {
+  return makeConfig({
+    planner: { kind: 'cli', tool: catalogTool(seats.plan.tool), model: seats.plan.model },
+    implementer: { kind: 'cli', tool: catalogTool(seats.build.tool), model: seats.build.model },
+    reviewer: { kind: 'cli', tool: catalogTool(seats.review.tool), model: seats.review.model },
+    validation: { typecheck: true, lint: false, test: true, testCommand: 'npm test' },
+    workflow: {
+      mode: row.mode,
+      approve: 'none',
+      maxRetries: 1,
+    },
+  });
+}
+
+function collectRepoFiles(root: string, prefix = ''): Record<string, string> {
+  const files: Record<string, string> = {};
+  for (const entry of readdirSync(join(root, prefix), { withFileTypes: true })) {
+    if (SKIP_DIRS.has(entry.name)) continue;
+    const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) Object.assign(files, collectRepoFiles(root, path));
+    else if (entry.isFile()) files[path] = readFileSync(join(root, path), 'utf-8');
+  }
+  return files;
+}
+
+function spawnCli(opts: {
+  args: readonly string[];
+  stateHome: string;
+  timeoutMs: number;
+}): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+  return new Promise((settle) => {
+    const child = spawn(process.execPath, [...opts.args], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, XDG_STATE_HOME: opts.stateHome },
+      stdio: 'pipe',
+      // Detached so the deadline can reap the CLI's own tool subprocesses with
+      // one signal to the group; a bare child.kill leaves them running.
+      detached: true,
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf-8');
+    child.stderr.setEncoding('utf-8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    const deadline = setTimeout(() => killTree(child.pid), opts.timeoutMs);
+    child.on('close', (code) => {
+      clearTimeout(deadline);
+      settle({ exitCode: code, stdout, stderr });
+    });
+  });
+}
+
+function killTree(pid: number | undefined): void {
+  if (pid === undefined) return;
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch {
+    // The group is already gone; the close handler settles the run either way.
+  }
+}
+
+/** A completed run clears `.splitbrief/active`, so the newest session dir is the fallback. */
+function resolveSessionDir(projectDir: string): string {
+  const active = readActive(projectDir);
+  if (active !== null) return sessionDir(projectDir, active);
+  const root = sessionsRoot(projectDir);
+  const newest = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(root, entry.name))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
+  if (newest === undefined) {
+    throw new Error(`Live fixture run wrote no session directory under ${root}.`);
+  }
+  return newest;
+}

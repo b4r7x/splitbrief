@@ -10,6 +10,7 @@ export interface WorkflowTask {
   title: string;
   status: TaskStatus;
   file?: string;
+  files?: string[];
   action?: FileAction;
   route?: {
     profile?: string;
@@ -23,11 +24,18 @@ export interface WorkflowTask {
 // pair through this is what stops a missing field reaching the screen as the literal `undefined`.
 export function taskTargetLabel(task: WorkflowTask): string {
   if (task.file === undefined || task.file === '') return '';
-  return task.action === undefined ? task.file : `${task.file} (${task.action})`;
+  const anchor = task.action === undefined ? task.file : `${task.file} (${task.action})`;
+  // A slice writes more than one file, and the row has room for one. The anchor is the file the
+  // brief is named after; the rest are counted, in their own ` · ` token with the unit spelled, so
+  // the count cannot be read as part of the path it follows.
+  const extra = (task.files?.length ?? 1) - 1;
+  if (extra === 0) return anchor;
+  return `${anchor} · +${extra} ${extra === 1 ? 'file' : 'files'}`;
 }
 
 export interface TasksState {
   currentTask: number;
+  currentAttempt: number;
   totalTasks: number;
   taskCompletionTimes: number[];
   taskMap: Map<string, WorkflowTask>;
@@ -36,6 +44,7 @@ export interface TasksState {
 
 const initial: TasksState = {
   currentTask: 0,
+  currentAttempt: 1,
   totalTasks: 0,
   taskCompletionTimes: [],
   taskMap: new Map(),
@@ -60,7 +69,11 @@ export const tasksStore = {
 
 export interface TaskListView {
   items: readonly WorkflowTask[];
-  settled: number;
+  passed: number;
+  escalated: number;
+  failed: number;
+  /** Briefs that will not run again: the ones that passed plus the ones a higher rung finished. */
+  finished: number;
   total: number;
   unannounced: number;
 }
@@ -70,16 +83,45 @@ export interface TaskListView {
 // and the tail has no titles to list.
 export function selectTaskListView(state: TasksState): TaskListView {
   const total = Math.max(state.totalTasks, state.tasks.length);
-  let settled = 0;
+  // A brief that escalated did not pass its checks on the seat that was given it, so it is counted
+  // apart from the ones that did: the fraction on screen never flatters the run. It did finish
+  // though, on a higher rung, so `finished` is what a caller asks when it needs the work left.
+  let passed = 0;
+  let escalated = 0;
+  let failed = 0;
   for (const task of state.tasks) {
-    if (task.status === 'done' || task.status === 'escalated') settled += 1;
+    if (task.status === 'done') passed += 1;
+    else if (task.status === 'escalated') escalated += 1;
+    else if (task.status === 'failed') failed += 1;
   }
   return {
     items: state.tasks,
-    settled,
+    passed,
+    escalated,
+    failed,
+    finished: passed + escalated,
     total,
     unannounced: Math.max(0, total - state.tasks.length),
   };
+}
+
+export interface RunningBrief {
+  current: WorkflowTask | null;
+  next: WorkflowTask | null;
+}
+
+// The brief a stop would interrupt and the one it would not start. One derivation, so the stop
+// sheet, the byline and the park can never name a different pair.
+export function selectRunningBrief(state: TasksState): RunningBrief {
+  const index = state.tasks.findIndex((task) => task.status === 'in_progress');
+  if (index === -1) return { current: null, next: null };
+  return { current: state.tasks[index] ?? null, next: state.tasks[index + 1] ?? null };
+}
+
+/** The brief that follows a named one, which is what a boundary pause is holding back. */
+export function briefAfter(state: TasksState, taskId: string): WorkflowTask | null {
+  const index = state.tasks.findIndex((task) => task.id === taskId);
+  return index === -1 ? null : (state.tasks[index + 1] ?? null);
 }
 
 export function updateTaskMap(
@@ -112,6 +154,7 @@ export function updateTaskMap(
       title: event.title,
       status: 'in_progress',
       file: event.file,
+      ...(event.files === undefined ? {} : { files: [...event.files] }),
       action: event.action,
       ...(hasRoute && {
         route: {
@@ -159,17 +202,22 @@ export function updateTaskMap(
 export function updateTaskCounts(
   state: TasksState,
   event: EngineEvent,
-): Pick<TasksState, 'currentTask' | 'totalTasks' | 'taskCompletionTimes'> {
-  let { currentTask, totalTasks, taskCompletionTimes } = state;
+): Pick<TasksState, 'currentTask' | 'currentAttempt' | 'totalTasks' | 'taskCompletionTimes'> {
+  let { currentTask, currentAttempt, totalTasks, taskCompletionTimes } = state;
   if (event.type === 'tasks_planned') {
     totalTasks = event.total;
   }
   if (event.type === 'task_started') {
     currentTask = event.index + 1;
+    currentAttempt = 1;
     totalTasks = event.total;
+  }
+  // `attempt` counts the retries already spent, so the attempt now running is one past it.
+  if (event.type === 'task_retry') {
+    currentAttempt = event.attempt + 1;
   }
   if (event.type === 'task_completed') {
     taskCompletionTimes = [...taskCompletionTimes, event.duration];
   }
-  return { currentTask, totalTasks, taskCompletionTimes };
+  return { currentTask, currentAttempt, totalTasks, taskCompletionTimes };
 }

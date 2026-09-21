@@ -29,6 +29,14 @@ export interface ResolvedPricing {
   pricingMode: PricingMode;
   name: string;
   source: 'models-dev' | 'bundled-fallback' | 'unpriced';
+  /** The runner or provider id these rates were resolved for. */
+  provider: string;
+  /**
+   * The date the rate source itself publishes for these rates. Absent whenever
+   * the source publishes none: the lookup time is not a rate date, and a row's
+   * own last-changed date is not one either.
+   */
+  rateAsOf?: string;
 }
 
 // Persisted runs still name the identities this release removed, and the
@@ -45,11 +53,14 @@ export const LOCAL_PRICING: ResolvedPricing = {
   isPriced: false,
   pricingMode: 'unpriced-local',
   name: 'Local model',
+  provider: 'local',
   source: 'unpriced',
 };
 
 function makeUnpriced(providerId: string, name?: string): ResolvedPricing {
-  if (isProviderLocal(providerId)) return name ? { ...LOCAL_PRICING, name } : LOCAL_PRICING;
+  if (isProviderLocal(providerId)) {
+    return { ...LOCAL_PRICING, provider: providerId, ...(name !== undefined && { name }) };
+  }
   return {
     inputPer1M: 0,
     outputPer1M: 0,
@@ -57,6 +68,7 @@ function makeUnpriced(providerId: string, name?: string): ResolvedPricing {
     isPriced: false,
     pricingMode: pickUnpricedMode(providerId),
     name: name ?? providerId,
+    provider: providerId,
     source: 'unpriced',
   };
 }
@@ -90,6 +102,7 @@ export function getPricingMode(providerId: ProviderId): PricingMode {
 }
 
 function makePricedResult(opts: {
+  providerId: string;
   modelId: string;
   input: number;
   output: number;
@@ -97,8 +110,9 @@ function makePricedResult(opts: {
   cacheRead?: number | undefined;
   cacheWrite?: number | undefined;
   pricingTiers?: DetectedPricingTier[] | undefined;
+  rateAsOf?: string | undefined;
 }): ResolvedPricing {
-  const { modelId, input, output, source, cacheRead, cacheWrite, pricingTiers } = opts;
+  const { providerId, modelId, input, output, source, cacheRead, cacheWrite, pricingTiers } = opts;
   return {
     inputPer1M: input,
     outputPer1M: output,
@@ -109,7 +123,9 @@ function makePricedResult(opts: {
     isPriced: true,
     pricingMode: 'api-priced',
     name: modelId,
+    provider: providerId,
     source,
+    ...(opts.rateAsOf !== undefined && { rateAsOf: opts.rateAsOf }),
   };
 }
 
@@ -138,10 +154,14 @@ export function resolvePricing(
   const modelsDev = lookupCatalogModelByModelId(effectiveModelId, cache);
   if (modelsDev?.pricingInput !== undefined && modelsDev.pricingOutput !== undefined) {
     return makePricedResult({
+      providerId,
       modelId: effectiveModelId,
       input: modelsDev.pricingInput,
       output: modelsDev.pricingOutput,
       source: 'models-dev',
+      // Only a dated pricing record dates these rates. The catalog row's own
+      // last-changed date describes the row, not what the provider charged.
+      rateAsOf: modelsDev.pricingProvenance?.asOf,
       cacheRead: modelsDev.pricingCacheRead ?? bundled?.pricingCacheRead,
       cacheWrite: modelsDev.pricingCacheWrite ?? bundled?.pricingCacheWrite,
       pricingTiers: modelsDev.pricingTiers,
@@ -150,6 +170,7 @@ export function resolvePricing(
 
   if (bundled?.pricingInput !== undefined && bundled.pricingOutput !== undefined) {
     return makePricedResult({
+      providerId,
       modelId: effectiveModelId,
       input: bundled.pricingInput,
       output: bundled.pricingOutput,

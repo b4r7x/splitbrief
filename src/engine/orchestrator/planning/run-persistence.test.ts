@@ -4,17 +4,24 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   auto,
   prepareState,
-  runPhase as runPhaseHelper,
+  runPlanningTurn as runPhaseHelper,
   makePassingTask,
   makePassingPlanner,
   type RunOpts,
 } from '#testing/helpers/planning-phase.js';
 import { loadState } from '../../../core/state/persistence.js';
 import {
-  createTaskCompilationAttemptId,
+  createPlannerArtifactAttemptId,
   OwnedPlannerArtifactSchema,
-} from '../../../core/schemas/task-compilation.js';
-import type { PhaseResult, PlannerArtifactLogicalName } from '../../planners/types.js';
+} from '../../../core/schemas/planner-artifact.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type {
+  PhaseCallResult,
+  PhaseResult,
+  PlannerArtifactLogicalName,
+  PlannerDocumentCall,
+  RunPhaseInput,
+} from '../../planners/types.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 
 let dirs: string[] = [];
@@ -38,7 +45,7 @@ function phaseResult(
       semanticId: `test-${logicalName}`,
       programId: null,
       batchId: null,
-      attemptId: createTaskCompilationAttemptId(),
+      attemptId: createPlannerArtifactAttemptId(),
       logicalName,
       transport: 'stdout-final',
       text,
@@ -80,19 +87,27 @@ describe('runPlanningPhase — persistence', () => {
 
     const artifactSpec = '# Resolved Spec\n\nAdd authentication.\n';
     const artifactPlan = '# Resolved Plan\n\nUse JWT.\n';
-    const plan = vi.fn().mockResolvedValue({
+    const ARTIFACT_TEXT: Partial<Record<PlannerDocumentCall, string>> = {
       spec: artifactSpec,
       plan: artifactPlan,
-      tasks: [makePassingTask()],
-      usage: { inputTokens: 100, outputTokens: 50 },
-      phases: [
-        phaseResult('spec.md', artifactSpec, 'raw planner noise for spec'),
-        phaseResult('plan.md', artifactPlan, 'raw planner noise for plan'),
-      ],
+    };
+    const runPhaseMock = vi.fn(async ({ call }: RunPhaseInput): Promise<PhaseCallResult> => {
+      const text = ARTIFACT_TEXT[call];
+      if (text === undefined) return makePhaseCallResult({ call, tasks: [makePassingTask()] });
+      return {
+        kind: 'artifact',
+        text,
+        usage: { inputTokens: 100, outputTokens: 50 },
+        artifact: phaseResult(
+          call === 'spec' ? SPEC_FILE : PLAN_FILE,
+          text,
+          `raw planner noise for ${call}`,
+        ),
+      };
     });
 
     const { projectDir, sessionId } = await runPhase({
-      planner: makePassingPlanner({ plan }),
+      planner: makePassingPlanner({ runPhase: runPhaseMock }),
       config: makeConfig({ workflow: auto() }),
     });
 

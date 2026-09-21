@@ -198,4 +198,28 @@ describe('formatTasks', () => {
     expect(parsed[0]?.currentCode).toBe(currentCode);
     expect(parsed[0]?.typeDefs).toBe(typeDefs);
   });
+  it('round-trips files through tasks.md', () => {
+    const task = makeTask({
+      id: 'T001',
+      file: 'src/slice.ts',
+      files: ['src/slice.ts', 'src/slice.test.ts'],
+    });
+
+    const markdown = formatTasks([task]);
+    expect(markdown).toContain('files:\n  - src/slice.ts\n  - src/slice.test.ts');
+    expect(parseTasksStrict(markdown)[0]?.files).toEqual(['src/slice.ts', 'src/slice.test.ts']);
+  });
+
+  it.each([
+    ['comma', 'data/a,b.csv'],
+    ['bracket', 'app/[slug]/page.tsx'],
+  ] as const)('strict round-trips a files entry carrying a flow indicator (%s)', (_name, path) => {
+    const files = [path, 'src/c.ts'];
+    const task = makeTask({ id: 'T001', file: path, files });
+
+    const parsed = parseTasksStrict(formatTasks([task]));
+
+    expect(parsed[0]?.files).toEqual(files);
+    expect(parsed[0]?.file).toBe(path);
+  });
 });

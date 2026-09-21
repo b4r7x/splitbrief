@@ -2,15 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { Command, InvalidArgumentError } from 'commander';
 import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-catalog.js';
 import { IMPLEMENTER_CLI_TOOL_IDS } from '../core/runners/cli-tool-catalog.js';
-import { META_PROVIDER_IDS, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
+import { EFFORT_LEVELS, META_PROVIDER_IDS, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import {
   addWorkflowOptions,
-  assertModeFlagsExclusive,
-  parseBudgetOption,
+  parseGitRefOption,
   parseNumberOption,
   parseOutputFormatOption,
   parsePositiveIntegerOption,
+  parseRecoveryActionOption,
+  parseSeatSpecOption,
+  parseSkillIdsOption,
 } from './options.js';
 import { runCommand } from '#testing/helpers/commander.js';
 
@@ -24,6 +26,13 @@ function idsListedInHelp(label: string): string[] {
   const help = addWorkflowOptions(new Command()).helpInformation().replace(/\s+/g, ' ');
   const listed = new RegExp(`${label} \\(([^)]+)\\)`).exec(help)?.[1];
   if (listed === undefined) throw new Error(`no "${label}" entry in --help`);
+  return listed.split(', ');
+}
+
+function levelsListedInHelp(seat: string): string[] {
+  const help = addWorkflowOptions(new Command()).helpInformation().replace(/\s+/g, ' ');
+  const listed = new RegExp(`${seat} effort hint: ([^.]+)\\.`).exec(help)?.[1];
+  if (listed === undefined) throw new Error(`no "${seat} effort hint" entry in --help`);
   return listed.split(', ');
 }
 
@@ -49,28 +58,6 @@ describe('parsePositiveIntegerOption', () => {
   });
 });
 
-describe('parseBudgetOption', () => {
-  it('parses positive dollar amounts', () => {
-    expect(parseBudgetOption('2')).toBe(2);
-    expect(parseBudgetOption('2.50')).toBe(2.5);
-  });
-
-  it.each(['abc', '1abc', '', '   '])('rejects malformed budget %j', (value) => {
-    expect(() => parseBudgetOption(value)).toThrow(InvalidArgumentError);
-    expect(() => parseBudgetOption(value)).toThrow(/valid budget amount/);
-  });
-
-  it('rejects zero budget as non-positive', () => {
-    expect(() => parseBudgetOption('0')).toThrow(InvalidArgumentError);
-    expect(() => parseBudgetOption('0')).toThrow(/positive number/);
-  });
-
-  it('rejects negative budgets', () => {
-    expect(() => parseBudgetOption('-1')).toThrow(InvalidArgumentError);
-    expect(() => parseBudgetOption('-1')).toThrow(/valid budget amount/);
-  });
-});
-
 describe('parseOutputFormatOption', () => {
   it.each(['stream-json', 'jsonl', 'text', 'opencode'])('accepts %j', (value) => {
     expect(parseOutputFormatOption(value)).toBe(value);
@@ -83,18 +70,74 @@ describe('parseOutputFormatOption', () => {
   });
 });
 
-describe('assertModeFlagsExclusive', () => {
-  it('throws when both --json and --rpc are set', () => {
-    expect(() => assertModeFlagsExclusive({ json: true, rpc: true })).toThrow(/--json and --rpc/);
+describe('parseSeatSpecOption', () => {
+  it.each([
+    { spec: 'codex', expected: { tool: 'codex' } },
+    { spec: 'codex@high', expected: { tool: 'codex', effort: 'high' } },
+    {
+      spec: 'cmd:deepseek/deepseek-v4-flash',
+      expected: { tool: 'cmd', model: 'deepseek/deepseek-v4-flash' },
+    },
+    {
+      spec: 'opencode:opencode-go/kimi-k3@high',
+      expected: { tool: 'opencode', model: 'opencode-go/kimi-k3', effort: 'high' },
+    },
+    {
+      spec: 'cursor:gpt-5.3-codex-high',
+      expected: { tool: 'cursor', model: 'gpt-5.3-codex-high' },
+    },
+  ])('reads $spec', ({ spec, expected }) => {
+    expect(parseSeatSpecOption(spec)).toEqual(expected);
   });
 
-  it.each([
-    { json: true, rpc: false },
-    { json: false, rpc: true },
-    { json: false, rpc: false },
-    {},
-  ])('accepts %o', (opts) => {
-    expect(() => assertModeFlagsExclusive(opts)).not.toThrow();
+  it('splits on the first colon, so a model id may carry its own', () => {
+    expect(parseSeatSpecOption('api:openai:gpt-5')).toEqual({ tool: 'api', model: 'openai:gpt-5' });
+  });
+
+  it.each(['', '@high', ':model', 'codex:', 'codex@'])('rejects %j', (spec) => {
+    expect(() => parseSeatSpecOption(spec)).toThrow(InvalidArgumentError);
+  });
+});
+
+describe('parseRecoveryActionOption', () => {
+  it('maps the three continue actions to their RecoveryAction ids', () => {
+    expect(parseRecoveryActionOption('skip')).toEqual({ action: 'skip-current-task' });
+    expect(parseRecoveryActionOption('retry')).toEqual({ action: 'retry-same-worker' });
+    expect(parseRecoveryActionOption('switch-seat:codex')).toEqual({
+      action: 'switch-seat',
+      candidate: { tool: 'codex' },
+    });
+    expect(parseRecoveryActionOption('switch-seat:codex:gpt-5')).toEqual({
+      action: 'switch-seat',
+      candidate: { tool: 'codex', model: 'gpt-5' },
+    });
+  });
+
+  it('exits 2 on an action it does not offer', () => {
+    expect(() => parseRecoveryActionOption('abort')).toThrowError(
+      expect.objectContaining({ exitCode: 2 }),
+    );
+  });
+
+  it('registers --action on the workflow options', () => {
+    expect(parseWorkflowOptions(['--action', 'skip'])).toMatchObject({
+      action: { action: 'skip-current-task' },
+    });
+  });
+});
+
+describe('parseSkillIdsOption', () => {
+  it("--skills a,b parses to ['a','b']", () => {
+    expect(parseSkillIdsOption('a,b')).toEqual(['a', 'b']);
+    expect(parseSkillIdsOption(' a , b ')).toEqual(['a', 'b']);
+  });
+
+  it('rejects a list that names nothing', () => {
+    expect(() => parseSkillIdsOption(' , ')).toThrow(InvalidArgumentError);
+  });
+
+  it('registers --skills on the workflow options', () => {
+    expect(parseWorkflowOptions(['--skills', 'a,b'])).toMatchObject({ skills: ['a', 'b'] });
   });
 });
 
@@ -111,7 +154,7 @@ describe('--allow-repo-runners', () => {
   // The flag grants every shell/agent command the project config declares, not
   // only the repo-local ones, so the help must not say "repo-local".
   it('explains the headless grant it actually gives', () => {
-    const help = addWorkflowOptions(new Command()).helpInformation();
+    const help = addWorkflowOptions(new Command()).helpInformation().replace(/\s+/g, ' ');
 
     expect(help).toContain(
       'Grant this run the shell/agent runner commands the project config declares (headless use)',
@@ -145,6 +188,10 @@ describe('runner selection help', () => {
       'kilo-code',
       'cursor',
       'command-code',
+      'antigravity',
+      'ollama',
+      'lm-studio',
+      'llama-cpp',
       'shell',
       'agent',
     ]);
@@ -156,11 +203,34 @@ describe('runner selection help', () => {
       'kilo-code',
       'cursor',
       'command-code',
+      'antigravity',
       'ollama',
       'lm-studio',
+      'llama-cpp',
       'shell',
       'agent',
     ]);
+  });
+});
+
+describe('effort help', () => {
+  it.each(['Planner', 'Reviewer'])('%s effort hint enumerates every admitted level', (seat) => {
+    expect(levelsListedInHelp(seat)).toEqual([...EFFORT_LEVELS]);
+  });
+});
+
+describe('help layout', () => {
+  // Commander stops wrapping altogether once the widest term leaves a description fewer
+  // than minWidthToWrap columns, so one over-wide option added below un-wraps the whole
+  // list. Shared options only: an option a command declares for itself widens the same
+  // gutter and is out of this unit's reach.
+  it('wraps every shared workflow description inside an 80-column terminal', () => {
+    const command = addWorkflowOptions(new Command());
+    command.configureOutput({ getOutHelpWidth: () => 80 });
+
+    const lines = command.helpInformation().split('\n');
+
+    expect(lines.filter((line) => line.length > 80)).toEqual([]);
   });
 });
 
@@ -224,7 +294,7 @@ describe('reviewer seat flags', () => {
 });
 
 describe('removed --auto flag', () => {
-  it.each(['start', 'spec', 'resume', 'continue', 'last'])(
+  it.each(['start', 'spec', 'resume', 'continue'])(
     'rejects --auto on the %s command',
     async (command) => {
       const { exitCode, stderr } = await runCommand([command, '--auto', 'add health endpoint']);
@@ -233,4 +303,39 @@ describe('removed --auto flag', () => {
       expect(stderr).toMatch(/unknown option.*--auto/i);
     },
   );
+});
+
+describe('--plain and --json exclusivity', () => {
+  it.each(['start', 'resume', 'continue'])(
+    'rejects both output modes on the %s command with exit code 2',
+    async (command) => {
+      const { exitCode, stderr } = await runCommand([command, '--plain', '--json']);
+
+      expect(exitCode).toBe(2);
+      expect(stderr).toContain('--plain and --json cannot be combined');
+    },
+  );
+
+  it('accepts --plain on its own', () => {
+    const command = addWorkflowOptions(new Command());
+    command.parse(['node', 'splitbrief', '--plain']);
+
+    expect(command.opts().plain).toBe(true);
+    expect(command.opts().json).toBe(false);
+  });
+});
+
+describe('parseGitRefOption', () => {
+  it('returns a trimmed ref', () => {
+    expect(parseGitRefOption(' main ')).toBe('main');
+  });
+
+  it('rejects an option-shaped ref that git would read as a flag', () => {
+    expect(() => parseGitRefOption('--output=/tmp/steal.txt')).toThrow(InvalidArgumentError);
+    expect(() => parseGitRefOption('-p')).toThrow("cannot start with '-'");
+  });
+
+  it('rejects an empty ref', () => {
+    expect(() => parseGitRefOption('   ')).toThrow(InvalidArgumentError);
+  });
 });

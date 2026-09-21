@@ -1,14 +1,19 @@
+import { relative, resolve } from 'node:path';
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { ApprovalTier } from '../../../core/schemas/config.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
-import { matchesGlob, scopePathPatterns } from '../../../utils/path-patterns.js';
+import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
+import { isInsideRoot, isPathConfined } from '../../../lib/path-confinement.js';
+import { matchesGlob } from '../../../utils/path-patterns.js';
 
 export type TierMap = Partial<Record<ActionClass, ApprovalTier>>;
 
 export type ClassifyInput = {
   actionDescription: string;
-  taskFile: string;
-  taskInBounds: string[];
+  /** The exact file being written; classification and grant patterns prefer it over the prose. */
+  targetPath?: string | undefined;
+  taskFiles: readonly string[];
+  taskInBounds: readonly string[];
   dependsOnFiles: string[];
   projectDir: string;
   allowedPaths?: string[] | undefined;
@@ -67,15 +72,10 @@ function cleanToken(token: string): string {
 }
 
 function normalizeProjectPath(filePath: string, projectDir: string): string {
-  let normalized = filePath.replaceAll('\\', '/');
-  const normalizedProjectDir = projectDir.replaceAll('\\', '/').replace(/\/+$/, '');
-  if (normalized.startsWith(`${normalizedProjectDir}/`)) {
-    normalized = normalized.slice(normalizedProjectDir.length + 1);
-  }
-  if (normalized.startsWith('./')) {
-    normalized = normalized.slice(2);
-  }
-  return normalized;
+  const normalized = filePath.replaceAll('\\', '/');
+  const root = resolve(projectDir);
+  const target = resolve(root, normalized);
+  return isInsideRoot(root, target) ? relative(root, target) : normalized;
 }
 
 function hasPathLikeExtension(token: string): boolean {
@@ -105,88 +105,59 @@ function isPathLikeToken(token: string): boolean {
   );
 }
 
-function extractPath(desc: string, input: ClassifyInput): string | null {
-  const knownPaths = [input.taskFile, ...input.dependsOnFiles]
-    .map((file) => normalizeProjectPath(file, input.projectDir))
-    .filter(Boolean)
-    .sort((a, b) => b.length - a.length);
-  for (const filePath of knownPaths) {
-    if (desc.includes(filePath)) {
-      return filePath;
-    }
-  }
-
-  const tokens = desc.split(/\s+/).map(cleanToken);
-  for (const token of tokens) {
-    if (isPathLikeToken(token)) {
-      return normalizeProjectPath(token, input.projectDir);
-    }
-  }
-  return null;
-}
-
-function scopeEntryPatterns(entry: string): string[] {
-  const patterns = scopePathPatterns(entry);
-  if (patterns.length > 0) return patterns;
-  // scopePathPatterns drops bare filenames (no separator or wildcard); a
-  // whitespace-free entry is a literal pattern like `tsconfig.json`, not prose.
-  const trimmed = entry.trim();
-  return trimmed.length > 0 && !/\s/.test(trimmed) ? [trimmed] : [];
+function targetPaths(input: ClassifyInput): string[] {
+  const paths =
+    input.targetPath !== undefined
+      ? [input.targetPath]
+      : input.actionDescription.split(/\s+/).map(cleanToken).filter(isPathLikeToken);
+  return paths.map((path) => normalizeProjectPath(path, input.projectDir));
 }
 
 function isInScope(filePath: string, input: ClassifyInput): boolean {
   const normalized = normalizeProjectPath(filePath, input.projectDir);
-  if (normalized === normalizeProjectPath(input.taskFile, input.projectDir)) return true;
+  if (normalized === '' || !isPathConfined(normalized, input.projectDir)) return false;
   if (
-    input.dependsOnFiles
+    [...input.taskFiles, ...input.dependsOnFiles]
       .map((file) => normalizeProjectPath(file, input.projectDir))
       .includes(normalized)
   )
     return true;
-  if (
-    input.taskInBounds
-      .flatMap(scopeEntryPatterns)
-      .some((pattern) => matchesGlob(normalized, normalizeProjectPath(pattern, input.projectDir)))
-  )
-    return true;
+  if (isInDeclaredSet(normalized, input.taskInBounds)) return true;
   if (input.allowedPaths?.some((glob) => matchesGlob(normalized, glob))) return true;
   return false;
 }
 
 export function extractActionPattern(input: ClassifyInput): string {
-  const path = extractPath(input.actionDescription, input);
-  return path ?? input.actionDescription;
-}
-
-export function matchesActionPattern(filePathOrAction: string, pattern: string): boolean {
-  if (pattern === filePathOrAction) return true;
-  return matchesGlob(filePathOrAction, pattern);
+  const paths = targetPaths(input);
+  return paths.length === 1 && paths[0] !== undefined ? paths[0] : input.actionDescription;
 }
 
 export function classifyAction(input: ClassifyInput, tierOverrides?: TierMap): ClassifyResult {
-  const desc = input.actionDescription;
-  const lower = desc.toLowerCase();
+  const lower = input.actionDescription.toLowerCase();
 
   const startsWithRead =
+    input.targetPath === undefined &&
     !PATH_PREFIXES.some((p) => lower.startsWith(p)) &&
     ['read ', 'cat ', 'ls ', 'find ', 'grep '].some((p) => lower.startsWith(p));
   if (startsWithRead) {
     return { actionClass: 'read', tier: resolveTier('read', tierOverrides) };
   }
 
-  const hasWriteVerb = WRITE_VERBS.some((v) => lower.includes(v));
-  if (hasWriteVerb) {
-    const targetPath = extractPath(desc, input);
+  const isWrite = input.targetPath !== undefined || WRITE_VERBS.some((v) => lower.includes(v));
+  if (isWrite) {
+    const paths = targetPaths(input);
     if (
-      isControlPlanePath(normalizeProjectPath(input.taskFile, input.projectDir)) ||
-      (targetPath !== null && isControlPlanePath(targetPath))
+      input.taskFiles.some((file) =>
+        isControlPlanePath(normalizeProjectPath(file, input.projectDir)),
+      ) ||
+      paths.some(isControlPlanePath)
     ) {
       return { actionClass: 'destructive', tier: resolveTier('destructive', tierOverrides) };
     }
-    if (targetPath !== null && isKnownPackagePath(targetPath)) {
+    if (paths.some(isKnownPackagePath)) {
       return { actionClass: 'package_change', tier: resolveTier('package_change', tierOverrides) };
     }
-    if (targetPath !== null && isInScope(targetPath, input)) {
+    if (paths.length > 0 && paths.every((path) => isInScope(path, input))) {
       return { actionClass: 'write_in_scope', tier: resolveTier('write_in_scope', tierOverrides) };
     }
     return {

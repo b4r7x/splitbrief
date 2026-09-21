@@ -5,12 +5,22 @@ import { detectionStore } from '../../stores/project/detection.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { useStores } from '../../stores/use-stores.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
-import { formatSeatIdentity } from '../../core/crew/identity.js';
+import { CREW_SEAT_IDS, CREW_SEAT_LABELS, formatSeatIdentity } from '../../core/crew/identity.js';
+import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { getRunnerCommand } from '../../core/config/accessors/runner-config.js';
-import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../../core/providers/automatic-model.js';
+import {
+  AUTOMATIC_MODEL,
+  isAutomaticModel,
+  normalizeConfiguredModel,
+} from '../../core/providers/automatic-model.js';
 import { CLI_TOOL_IDS, hasNativeCliCatalog } from '../../core/runners/cli-tool-catalog.js';
-import { seatPickerLane, type SeatPickerRole } from '../../core/runners/seat-roles.js';
+import {
+  PICKER_ROLE_SEAT_IDS,
+  seatPickerLane,
+  type SeatPickerRole,
+} from '../../core/runners/seat-roles.js';
 import type { CliProviderAuth } from '../../core/discovery/detection.js';
+import { seatAxisFocusSeat } from '../../core/navigation/types.js';
 import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { includes } from '../../utils/type-guards.js';
 import type { ModelCatalogDiagnostic } from './picker-format.js';
@@ -27,7 +37,12 @@ import {
   inheritPlannerOption,
   type PickerOption,
 } from './model-catalog/options.js';
-import { buildRightRows, type CatalogLane, type RightRow } from './model-catalog/rows.js';
+import {
+  authMethodOffer,
+  buildRightRows,
+  type CatalogLane,
+  type RightRow,
+} from './model-catalog/rows.js';
 import { inheritsPlannerSeat } from './config-transforms.js';
 import type { Config } from '../../core/schemas/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -67,16 +82,14 @@ export interface PickerCatalog {
   discovery: Readonly<{ cold: boolean; refreshing: boolean }>;
   /** The user asked to see the wider catalog after a recovery row. */
   browseCatalog: boolean;
-  /** The in-flight variant selection inside the expanded model, committed only on Enter. */
-  variantDraft: string | null;
+  /** The in-flight axis value inside the expanded model, committed only on Enter. */
+  effortDraft: string | null;
+  /** Rows the tool's own listing produced, after family folding; the Auto row and custom rows are not among them. */
+  modelRowCount: number;
+  /** The in-flight option-family draft; the byline spells the id it names. */
+  optionDraftId: string | null;
   setCurrentItem: (item: PickerOption) => void;
 }
-
-const ROLE_LABELS: Record<SeatPickerRole, string> = {
-  planner: 'Planner',
-  implementer: 'Implementer',
-  reviewer: 'Reviewer',
-};
 
 const FOCUS_TOOL_PREFIX = 'tool:';
 
@@ -87,11 +100,10 @@ function laneOf(source: DiscoverySourceRefresh): CatalogLane {
 }
 
 /**
- * A `cli` tool outside the native-catalog set has no listing command at all, so
+ * A `cli` tool outside the native-catalog set cannot enumerate its models, so
  * the honest answer is "unsupported" rather than silence.
  */
 function deriveCatalogDiagnostic(
-  role: SeatPickerRole,
   item: PickerOption | undefined,
 ): ModelCatalogDiagnostic | undefined {
   if (item === undefined || item.kind !== 'cli' || !includes(CLI_TOOL_IDS, item.id)) {
@@ -99,7 +111,7 @@ function deriveCatalogDiagnostic(
   }
   const tool = item.id;
   if (!hasNativeCliCatalog(tool)) return { kind: 'unsupported' };
-  const runtime = modelCacheStore.getScopedCliCatalogRuntime({ role: seatPickerLane(role), tool });
+  const runtime = modelCacheStore.getCliCatalogRuntime({ tool });
   if (runtime === null || runtime === undefined) return { kind: 'not-probed' };
   if (runtime.failure === undefined) return undefined;
   return { kind: 'probe-failed', failure: runtime.failure };
@@ -117,6 +129,17 @@ function rowIndexForModel(rows: readonly RightRow[], persistedModel: string | un
     if (exact >= 0) return exact;
   }
   return 0;
+}
+
+/** The models the tool's own listing produced: an Auto row is an affordance and a custom row is the user's. */
+function countModelRows(rows: readonly RightRow[]): number {
+  return rows.filter(
+    (row) => row.kind === 'model' && row.provenance !== 'Custom' && !isAutomaticModel(row.model.id),
+  ).length;
+}
+
+function rowIndexForEffortAxis(rows: readonly RightRow[]): number {
+  return rows.findIndex((row) => row.kind === 'axis' && row.axis === 'effort');
 }
 
 function buildLeftItems(input: {
@@ -151,7 +174,8 @@ export function usePickerCatalog(
   const focus = overlayStore.use((s) => s.focus);
   const expandedModelId = pickerViewStore.use((s) => s.expandedModelId);
   const optionDraftId = pickerViewStore.use((s) => s.optionDraftId);
-  const variantDraft = pickerViewStore.use((s) => s.variantDraft);
+  const effortDraft = pickerViewStore.use((s) => s.effortDraft);
+  const authDraft = pickerViewStore.use((s) => s.authDraft);
   const browseCatalog = pickerViewStore.use((s) => s.browseCatalog);
 
   const [{ cliTools, providers, providerOutcomes, cliCatalogOutcomes, refresh }] =
@@ -183,6 +207,12 @@ export function usePickerCatalog(
     focusedTool === undefined ? -1 : items.findIndex((item) => item.id === focusedTool);
   const initialLeftIdx =
     focusedIndex >= 0 ? focusedIndex : configItemIndex >= 0 ? configItemIndex : preservedIndex;
+
+  const seatAxisSeat = seatAxisFocusSeat(focus);
+  const seatAxisFocused =
+    seatAxisSeat !== undefined &&
+    includes(CREW_SEAT_IDS, seatAxisSeat) &&
+    CREW_SEAT_ROLES[seatAxisSeat] === lane;
 
   const customModels = runnerConfig.customModels ?? [];
 
@@ -239,15 +269,18 @@ export function usePickerCatalog(
         customModels,
         browseCatalog,
         optionDraftId,
-        variantDraft,
+        effortDraft,
+        authMethod: authMethodOffer({ item, runner: runnerConfig }),
+        authDraft,
       }),
     };
   };
 
   const { models: rightModels, rows: rightRows } = catalogFor(currentItem);
+  const seatAxisIndex = seatAxisFocused ? rowIndexForEffortAxis(rightRows) : -1;
   const modelCounts = countModelOptions(rightModels);
   const catalogDiagnostic =
-    modelCounts.confirmed > 0 ? undefined : deriveCatalogDiagnostic(role, currentItem);
+    modelCounts.confirmed > 0 ? undefined : deriveCatalogDiagnostic(currentItem);
 
   // Every reset of the model column must land on the configured model, or
   // moving the tool cursor and confirming silently rewrites it with the pinned
@@ -278,10 +311,11 @@ export function usePickerCatalog(
     currentItem,
     selectedItemId: ownedItemId,
     initialLeftIdx,
-    initialRightIndex: rowIndexForModel(rightRows, currentModel),
+    initialRightIndex:
+      seatAxisIndex >= 0 ? seatAxisIndex : rowIndexForModel(rightRows, currentModel),
     resolveRightIndex,
-    focusModels: focusedIndex >= 0,
-    roleLabel: ROLE_LABELS[role],
+    focusModels: focusedIndex >= 0 || seatAxisFocused,
+    roleLabel: CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]],
     plannerIdentity: (() => {
       const plannerRunner = readActiveRunner({ config, role: 'planner' });
       const displayName = resolveSeatDisplayName(plannerRunner, 'planner', modelCacheStore);
@@ -299,7 +333,9 @@ export function usePickerCatalog(
     customModels,
     discovery,
     browseCatalog,
-    variantDraft,
+    effortDraft,
+    modelRowCount: countModelRows(rightRows),
+    optionDraftId,
     setCurrentItem: (item) => {
       if (selectedItemId !== undefined) return;
       setUncontrolledItemId(item.id);

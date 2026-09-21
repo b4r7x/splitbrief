@@ -77,14 +77,23 @@ const TASK_COMPLETION_METHODS = [
   'escalated-full',
   'failed',
   'skipped',
-  'mcp-tool',
 ] as const;
-export const TaskCompletionMethodSchema = z.enum(TASK_COMPLETION_METHODS);
+// 0.1.0 persisted 'mcp-tool' for a task the removed MCP tool marked done.
+// Nothing writes it any more, so reads map it onto the local completion it was.
+export const TaskCompletionMethodSchema = z.preprocess(
+  (value) => (value === 'mcp-tool' ? 'local' : value),
+  z.enum(TASK_COMPLETION_METHODS),
+);
 export type TaskCompletionMethod = z.infer<typeof TaskCompletionMethodSchema>;
 
 export const VALIDATION_STAGES = ['typecheck', 'lint', 'test'] as const;
 export const ValidationStageSchema = z.enum(VALIDATION_STAGES);
 export type ValidationStage = z.infer<typeof ValidationStageSchema>;
+
+export const REVIEW_VERDICTS = ['pass', 'pass_with_notes', 'fail'] as const;
+
+export const REVIEW_STATUSES = ['passed', 'failed'] as const;
+export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 
 export const RECOVERY_REASONS = [
   'implementation-error',
@@ -95,9 +104,18 @@ export const RECOVERY_REASONS = [
   'context-overflow',
   'user-edit-conflict',
   'approval-promotion-conflict',
-  'budget-paused',
-  'budget-exceeded',
   'dependency-blocked',
+  'scope-violation',
+  'implementer-recipe-invalid',
+  'runner-timeout-repeated',
+  'review-failed',
+  'approval-denied',
+  'snapshot-failed',
+  'planner-call-failed',
+  'planner-returned-no-briefs',
+  'constitution-check-failed',
+  'brief-review-no-progress',
+  'brief-quality-unrepaired',
 ] as const;
 export const RecoveryReasonSchema = z.enum(RECOVERY_REASONS);
 export type RecoveryReason = z.infer<typeof RecoveryReasonSchema>;
@@ -105,11 +123,14 @@ export type RecoveryReason = z.infer<typeof RecoveryReasonSchema>;
 export const RECOVERY_ACTIONS = [
   'retry-same-worker',
   'route-bigger-worker',
+  'switch-seat',
   'planner-split-rebase',
+  'revise',
+  'revise-spec',
   'continue',
   'skip-current-task',
   'pause-run',
-  'abort-workflow',
+  'end-run',
 ] as const;
 export const RecoveryActionSchema = z.enum(RECOVERY_ACTIONS);
 export type RecoveryAction = z.infer<typeof RecoveryActionSchema>;
@@ -117,10 +138,13 @@ export type RecoveryAction = z.infer<typeof RecoveryActionSchema>;
 export const PROMPTABLE_RECOVERY_ACTIONS: RecoveryAction[] = [
   'retry-same-worker',
   'route-bigger-worker',
+  'switch-seat',
+  'revise',
+  'revise-spec',
   'continue',
   'skip-current-task',
   'pause-run',
-  'abort-workflow',
+  'end-run',
 ];
 
 const RECOVERY_STATUSES = ['awaiting-user', 'paused', 'applying'] as const;
@@ -177,6 +201,10 @@ export const APPROVE_LEVELS = ['none', 'spec', 'plan', 'all', 'default'] as cons
 export const ApproveLevelSchema = z.enum(APPROVE_LEVELS);
 export type ApproveLevel = z.infer<typeof ApproveLevelSchema>;
 
+const BRIEF_REVIEW_PROMPT_KINDS = ['spec', 'plan', 'briefs', 'artifact'] as const;
+const BriefReviewPromptKindSchema = z.enum(BRIEF_REVIEW_PROMPT_KINDS);
+export type BriefReviewPromptKind = z.infer<typeof BriefReviewPromptKindSchema>;
+
 const ACTION_CLASSES = [
   'read',
   'write_in_scope',
@@ -196,9 +224,6 @@ export type CommitStrategy = z.infer<typeof CommitStrategySchema>;
 export const ISOLATION_STRATEGIES = ['worktree', 'staged-copy'] as const;
 export const IsolationStrategySchema = z.enum(ISOLATION_STRATEGIES);
 export type IsolationStrategy = z.infer<typeof IsolationStrategySchema>;
-
-export const SESSION_SCOPES = ['project', 'global'] as const;
-export const SessionScopeSchema = z.enum(SESSION_SCOPES);
 
 const OUTPUT_FORMATS = ['stream-json', 'jsonl', 'text', 'opencode'] as const;
 export const OutputFormatSchema = z.enum(OUTPUT_FORMATS);

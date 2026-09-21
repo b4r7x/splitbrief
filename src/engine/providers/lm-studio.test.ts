@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { describe, expect, it, vi } from 'vitest';
 import { createLmStudioProvider } from './lm-studio.js';
+import { DetectedModelSchema } from '../../core/discovery/detection.js';
 import { DISCOVERY_HTTP_TIMEOUT_MS } from '../constants.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
@@ -300,6 +301,86 @@ describe('createLmStudioProvider native inventory', () => {
         expect(await provider.listModels()).toEqual([]);
         expect(requests.map((request) => request.pathname)).toEqual(['/api/v1/models']);
         expect(requests[0]?.authorization).toBe('Bearer redirect-token');
+      },
+    );
+  });
+
+  it.each([
+    ['omitted loaded_instances', undefined, 'unknown'],
+    ['an explicitly empty instance array', [], 'not-loaded'],
+    [
+      'one reported instance',
+      [{ id: 'acme/local-coder', config: { context_length: 4_096 } }],
+      'loaded',
+    ],
+  ])(
+    'reports %s as %s without touching a load endpoint',
+    async (_case, loadedInstances, loadState) => {
+      await withLoopbackServer(
+        (request, response) => {
+          if (request.url === '/api/v1/models') {
+            sendJson(response, 200, {
+              models: [
+                {
+                  key: 'acme/local-coder',
+                  type: 'llm',
+                  max_context_length: 131_072,
+                  ...(loadedInstances === undefined ? {} : { loaded_instances: loadedInstances }),
+                },
+              ],
+            });
+            return;
+          }
+          sendJson(response, 500, { unexpected: request.url });
+        },
+        async ({ apiBase, requests }) => {
+          const models = await createLmStudioProvider({ apiBase }).listModelsWithMetadata();
+
+          expect(models[0]?.runtime?.loadState).toBe(loadState);
+          expect(models[0]?.capabilities).toContain(loadState);
+          expect(requests.map((request) => request.pathname)).toEqual(['/api/v1/models']);
+        },
+      );
+    },
+  );
+
+  it('keeps the native key selectable while preserving both instance identifiers and their contexts', async () => {
+    await withLoopbackServer(
+      (request, response) => {
+        if (request.url === '/api/v1/models') {
+          sendJson(response, 200, {
+            models: [
+              {
+                key: 'acme/local-coder-q4',
+                type: 'llm',
+                display_name: 'Acme Local Coder Q4',
+                max_context_length: 131_072,
+                capabilities: { trained_for_tool_use: false },
+                loaded_instances: [
+                  { id: 'acme/local-coder-q4', config: { context_length: 8_192 } },
+                  { id: 'acme/local-coder-q4:2', config: { context_length: 4_096 } },
+                ],
+              },
+            ],
+          });
+          return;
+        }
+        sendJson(response, 500, { unexpected: request.url });
+      },
+      async ({ apiBase, requests }) => {
+        const models = await createLmStudioProvider({ apiBase }).listModelsWithMetadata();
+
+        expect(models.map((model) => model.id)).toEqual(['acme/local-coder-q4']);
+        expect(models[0]?.supportsToolCalls).toBe(false);
+        expect(models[0]?.effectiveContextTokens).toBe(4_096);
+        expect(models[0]?.maximumContextTokens).toBe(131_072);
+        expect(models[0]?.runtime?.loadState).toBe('loaded');
+        expect(models[0]?.runtime?.instances).toEqual([
+          { id: 'acme/local-coder-q4', effectiveContextTokens: 8_192 },
+          { id: 'acme/local-coder-q4:2', effectiveContextTokens: 4_096 },
+        ]);
+        expect(DetectedModelSchema.safeParse(models[0]).success).toBe(true);
+        expect(requests.map((request) => request.pathname)).toEqual(['/api/v1/models']);
       },
     );
   });

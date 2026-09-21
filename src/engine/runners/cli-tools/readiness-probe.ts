@@ -8,6 +8,7 @@ import type {
 } from '../../../core/discovery/detection.js';
 import {
   CLI_TOOL_CATALOG,
+  cliAuthChannelPlatformSupported,
   selectCliAuthChannel,
   type CliAuthChannel,
   type CliAuthChannelId,
@@ -34,7 +35,9 @@ import {
 import {
   isDeclaredCliProbeContract,
   type CliDeclaredProbeContract,
+  type CliProbeCommand,
   type CliProbeContract,
+  type CliProbeOutput,
 } from './contract.js';
 import { isProviderOracleProbe, providerOracleCommand } from './provider-oracle.js';
 import { revalidateCliExecutableIdentity } from '../resolve-cli-executable.js';
@@ -62,7 +65,11 @@ export type ProbeDeclaredCliReadinessEvidenceOptions = Readonly<{
   authChannel?: CliAuthChannelId | undefined;
   enabled?: boolean | undefined;
   signal?: AbortSignal | undefined;
+  /** Receives the auth status run, so a catalog probe with the same argv can reuse its output. */
+  onAuthProbeRun?: ((run: AuthProbeRun) => void) | undefined;
 }>;
+
+export type AuthProbeRun = Readonly<{ command: CliProbeCommand; output: CliProbeOutput }>;
 
 /** `null` is an invalid requested channel; `undefined` is intentionally unselected. */
 function selectedAuthChannel(
@@ -80,6 +87,7 @@ async function declaredReadinessEvidence({
   probe,
   authChannel,
   signal,
+  onAuthProbeRun,
 }: Readonly<{
   executable: CliExecutableIdentity;
   neutralDir: string;
@@ -87,6 +95,7 @@ async function declaredReadinessEvidence({
   probe: CliDeclaredProbeContract;
   authChannel: CliAuthChannel | undefined;
   signal: AbortSignal | undefined;
+  onAuthProbeRun: ((run: AuthProbeRun) => void) | undefined;
 }>): Promise<CliReadinessProbeEvidence> {
   throwIfAborted(signal);
   const versionEnvironment = await probeEnvironment({
@@ -111,6 +120,7 @@ async function declaredReadinessEvidence({
     return { version: { kind: 'cancelled' }, auth: 'cancelled' };
   }
   if (authChannel === undefined) return { version, auth: 'not-selected' };
+  if (!cliAuthChannelPlatformSupported(authChannel)) return { version, auth: 'policy-denied' };
   const authProbe =
     probe.auth.kind === 'not-run' ||
     !declaredAuthProbeIsSafe({ tool, auth: probe.auth, version: probe.version })
@@ -153,6 +163,7 @@ async function declaredReadinessEvidence({
   if ((await revalidateCliExecutableIdentity(executable)) !== 'match') {
     return { version: { kind: 'cancelled' }, auth: 'cancelled' };
   }
+  onAuthProbeRun?.({ command: authProbe, output });
   if (isProviderOracleProbe({ tool, command: authProbe })) {
     return {
       version,
@@ -194,6 +205,7 @@ export async function probeDeclaredCliReadinessEvidence(
       probe: options.probe,
       authChannel,
       signal: options.signal,
+      onAuthProbeRun: options.onAuthProbeRun,
     });
   } finally {
     await rm(neutralDir, { recursive: true, force: true });

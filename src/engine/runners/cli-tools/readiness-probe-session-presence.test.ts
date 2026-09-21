@@ -2,15 +2,10 @@ import { chmod, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promi
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
-import {
-  capabilityTuple,
-  unverifiedConformanceProof,
-} from '#testing/helpers/factories/compiler-capability.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliProbeContract } from './contract.js';
 import { providerOracleAuthFact } from './provider-oracle.js';
 import { probeCliReadiness } from './readiness-probe.js';
-import { admitCompilerCapability } from '../compiler-capability.js';
 
 async function nodeExecutable(): Promise<CliExecutableIdentity> {
   const path = await realpath(process.execPath);
@@ -100,9 +95,9 @@ describe('session-state presence readiness', () => {
     vi.unstubAllEnvs();
   });
 
-  // On macOS the Claude Code and Cursor session credentials are keychain
-  // items, so no file in the staged environment can answer for them. The
-  // tool's own status command is the only authority — in both directions.
+  // On macOS the Claude Code, Cursor and Antigravity session credentials are
+  // keychain items, so no file in the staged environment can answer for them.
+  // The tool's own status command is the only authority — in both directions.
   //
   // Those channels are host-account on darwin alone, so the platform is forced
   // rather than the block skipped: the probe target is a node fixture and the
@@ -121,7 +116,7 @@ describe('session-state presence readiness', () => {
       setPlatform(hostPlatform);
     });
 
-    it.each(['claude-code', 'cursor'] as const)(
+    it.each(['claude-code', 'cursor', 'antigravity'] as const)(
       'asks %s itself, under the host account its keychain resolves through',
       async (tool) => {
         await withTempDir(`readiness-session-keychain-verified-${tool}`, async (hostHome) => {
@@ -416,6 +411,17 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
     vi.stubEnv('XDG_DATA_HOME', join(hostHome, 'xdg-data'));
   }
 
+  /**
+   * A provider-dependent channel keeps every `*_API_KEY` the process carries,
+   * so a machine that has one of its own would hand these cases a credential
+   * they never seeded. Blank them to make "no state reaches the oracle" mean it.
+   */
+  function stubNoProviderKeys(): void {
+    for (const key of Object.keys(process.env)) {
+      if (key.endsWith('_API_KEY')) vi.stubEnv(key, '');
+    }
+  }
+
   it.each(['opencode', 'kilo-code'] as const)(
     'verifies %s from a clean oracle listing over bridged data-dir state and surfaces facts',
     async (tool) => {
@@ -492,6 +498,7 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
       await withTempDir(`readiness-${tool}-oracle-absent`, async (hostHome) => {
         const executable = await oracleShim(hostHome, tool, reportBody(tool));
         stubHostState(hostHome);
+        stubNoProviderKeys();
 
         const result = await probeCliReadiness({
           tool,
@@ -505,30 +512,4 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
       });
     },
   );
-
-  it('a verified oracle listing never admits compiler capability without exact conformance', async () => {
-    await withTempDir('readiness-oracle-capability', async (hostHome) => {
-      await seedOracleState(hostHome, 'opencode');
-      const executable = await oracleShim(hostHome, 'opencode', reportBody('opencode'));
-      stubHostState(hostHome);
-
-      const result = await probeCliReadiness({
-        tool: 'opencode',
-        executable,
-        authChannel: 'provider-dependent',
-        probe: oracleContract('opencode'),
-        classifyVersion: () => 'compatible',
-      });
-
-      expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
-      const admission = admitCompilerCapability(
-        capabilityTuple('opencode', {
-          version: result.installedVersion ?? '',
-          conformance: unverifiedConformanceProof(),
-        }),
-      );
-      expect(admission.kind).toBe('refused');
-      if (admission.kind === 'refused') expect(admission.missing).toEqual(['conformance']);
-    });
-  });
 });

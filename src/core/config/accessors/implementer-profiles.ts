@@ -8,7 +8,6 @@ import type { Config } from '../../schemas/config.js';
 import type {
   ImplementerCapabilities,
   ImplementerConfig,
-  ImplementerCostTier,
   ImplementerProfileConfig,
   ImplementerProfilesConfig,
   ImplementerWriteMode,
@@ -27,7 +26,6 @@ export interface ResolvedImplementerCapabilities {
 export interface ResolvedImplementerProfile {
   name: string;
   label?: string | undefined;
-  costTier: ImplementerCostTier;
   capabilities: ResolvedImplementerCapabilities;
   config: ImplementerConfig;
   isDefault: boolean;
@@ -39,7 +37,7 @@ export interface ResolvedImplementerProfiles {
 }
 
 export function stripProfileMetadata(profile: ImplementerProfileConfig): ImplementerConfig {
-  const { label: _label, costTier: _costTier, capabilities: _capabilities, ...config } = profile;
+  const { label: _label, capabilities: _capabilities, ...config } = profile;
   return ImplementerConfigSchema.parse(config);
 }
 
@@ -56,7 +54,6 @@ function singleImplementerProfile(config: Config): ResolvedImplementerProfiles {
   const defaultProfile: ResolvedImplementerProfile = {
     name: 'default',
     label: 'Default implementer',
-    costTier: 'unknown',
     capabilities: resolveProfileCapabilities(config.implementer),
     config: config.implementer,
     isDefault: true,
@@ -78,7 +75,6 @@ export function resolveImplementerProfiles(config: Config): ResolvedImplementerP
       return {
         name,
         label: profile.label,
-        costTier: profile.costTier ?? 'unknown',
         capabilities: resolveProfileCapabilities(profileConfig, profile.capabilities),
         config: profileConfig,
         isDefault: name === defaultName,
@@ -100,7 +96,6 @@ export function mergeImplementerProfileMetadata(
   return ImplementerProfileConfigSchema.parse({
     ...updated,
     ...(existing.label !== undefined && { label: existing.label }),
-    ...(existing.costTier !== undefined && { costTier: existing.costTier }),
     ...(existing.capabilities !== undefined &&
       existing.kind === updated.kind && { capabilities: existing.capabilities }),
   });
@@ -131,6 +126,42 @@ export function updateDefaultImplementerConfig(
       profiles: {
         ...profiles.profiles,
         [defaultName]: mergeImplementerProfileMetadata(defaultProfile, updated),
+      },
+    },
+  };
+}
+
+/**
+ * Updates one named profile of the table; the `implementer` mirror follows only
+ * when that profile is the default. A config without a profile table has only
+ * the single implementer, which is updated whatever the name. `null` when the
+ * table has no profile of that name.
+ */
+export function updateNamedImplementerConfig(
+  config: Config,
+  profileName: string,
+  updater: (existing: ImplementerConfig) => ImplementerConfig,
+): Config | null {
+  const profiles = config.implementerProfiles;
+  const defaultName = profiles === undefined ? undefined : pickDefaultProfileName(profiles);
+  if (profiles === undefined || defaultName === undefined) {
+    return { ...config, implementer: updater(config.implementer) };
+  }
+
+  const profile = Object.hasOwn(profiles.profiles, profileName)
+    ? profiles.profiles[profileName]
+    : undefined;
+  if (profile === undefined) return null;
+
+  const updated = updater(stripProfileMetadata(profile));
+  return {
+    ...config,
+    ...(profileName === defaultName && { implementer: updated }),
+    implementerProfiles: {
+      ...profiles,
+      profiles: {
+        ...profiles.profiles,
+        [profileName]: mergeImplementerProfileMetadata(profile, updated),
       },
     },
   };

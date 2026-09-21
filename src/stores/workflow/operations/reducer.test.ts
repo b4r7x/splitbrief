@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
-import { protectEngineEventForConsumer } from '../../../engine/events/protection/protect.js';
 import type { RunnerCallWarningInput } from '../../../engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../../engine/calls/warnings.js';
 import { addEvent } from '../actions/event.js';
@@ -11,6 +9,33 @@ import { resetWorkflow } from '../actions/reset.js';
 import { MAX_COMPLETED_OPERATIONS } from './retention.js';
 import { operationsStore } from './state.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
+import { makeValidate } from '#testing/helpers/events/task.js';
+
+it('retains admitted load metadata when cancellation finishes API waiting and ignores late status', () => {
+  resetWorkflow();
+  const started = runnerStarted({ backendKind: 'api', runnerName: 'lm-studio' });
+  addEvent(started);
+  const runtime = {
+    ...started,
+    type: 'runner_call_runtime_status',
+    runtimeStatus: { phase: 'waiting-first-response', loadState: 'loaded', observedAt: 900 },
+  } satisfies EngineEventOf<'runner_call_runtime_status'>;
+  addEvent(runtime);
+  expect(operationsStore.get().active?.apiRuntimeStatus).toEqual(runtime.runtimeStatus);
+  markCancellationRequested({ ts: 1_200, reason: 'user_cancelled' });
+  addEvent({
+    ...runtime,
+    ts: 1_300,
+    runtimeStatus: { ...runtime.runtimeStatus, phase: 'streaming' },
+  });
+  expect(operationsStore.get().active).toBeNull();
+  expect(operationsStore.get().last?.apiRuntimeStatus).toEqual({
+    phase: 'finished',
+    loadState: 'loaded',
+    observedAt: 900,
+  });
+  resetWorkflow();
+});
 
 type RunnerCallFailureStatus = EngineEventOf<'runner_call_error'>['status'];
 
@@ -299,47 +324,6 @@ describe('operationsStore', () => {
     ]);
   });
 
-  it('groups transcript-off warnings by safe metadata without hidden message fingerprints', () => {
-    addEvent(runnerStarted());
-    const first = protectedRunnerWarning(
-      runnerWarning({
-        warning: {
-          code: 'provider_retry',
-          source: 'provider',
-          surface: 'status',
-          message: 'hidden retry detail one',
-        },
-      }),
-    );
-    const second = protectedRunnerWarning(
-      runnerWarning({
-        ts: 1_150,
-        sequence: 3,
-        warning: {
-          code: 'provider_retry',
-          source: 'provider',
-          surface: 'status',
-          message: 'hidden retry detail two',
-        },
-      }),
-    );
-
-    addEvent(first);
-    addEvent(second);
-
-    expect(operationsStore.get().byCallId.get('call-1')?.warnings).toEqual([
-      expect.objectContaining({
-        code: 'provider_retry',
-        fingerprint: expect.stringMatching(/^rw-safe:/),
-        count: 2,
-        latestMessage: TRANSCRIPT_OMITTED_MESSAGE,
-      }),
-    ]);
-    expect(JSON.stringify(operationsStore.get().byCallId.get('call-1')?.warnings)).not.toContain(
-      'hidden retry detail',
-    );
-  });
-
   it('does not merge different warnings that reuse a caller-supplied fingerprint', () => {
     addEvent(runnerStarted());
     addEvent(
@@ -524,17 +508,33 @@ describe('operationsStore', () => {
     });
     expect(JSON.stringify(operation)).not.toContain('abcdefghijklmnopqrst');
   });
-});
 
-function protectedRunnerWarning(
-  event: EngineEventOf<'runner_call_warning'>,
-): EngineEventOf<'runner_call_warning'> {
-  const protectedEvent = protectEngineEventForConsumer(event, {
-    context: 'ipc',
-    persistTranscript: false,
+  it('stamps a running gate stage with the time it started and keeps it across progress events', () => {
+    addEvent(
+      makeValidate({
+        ts: 5_000,
+        status: 'running',
+        activeStage: 'test',
+        commands: { test: 'npm test' },
+      }),
+    );
+    expect(operationsStore.get().validationStage).toEqual({
+      stage: 'test',
+      command: 'npm test',
+      stageStartedTs: 5_000,
+    });
+
+    addEvent(
+      makeValidate({
+        ts: 9_000,
+        status: 'running',
+        activeStage: 'test',
+        commands: { test: 'npm test' },
+      }),
+    );
+    expect(operationsStore.get().validationStage?.stageStartedTs).toBe(5_000);
+
+    addEvent(makeValidate({ ts: 12_000, status: 'done' }));
+    expect(operationsStore.get().validationStage).toBeNull();
   });
-  if (protectedEvent?.type !== 'runner_call_warning') {
-    throw new Error('Expected protected runner_call_warning event');
-  }
-  return protectedEvent;
-}
+});

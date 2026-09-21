@@ -26,7 +26,6 @@ function configWithProfiles(): Config {
           apiKey: 'test-key',
           model: 'active-profile-model',
           label: 'Preferred API',
-          costTier: 'frontier',
           capabilities: { writesFiles: 'extracted-code' },
         },
         dormant: {
@@ -34,7 +33,6 @@ function configWithProfiles(): Config {
           tool: 'codex',
           model: 'gpt-5-mini',
           label: 'Dormant profile',
-          costTier: 'standard',
           capabilities: { writesFiles: 'direct' },
         },
       },
@@ -98,7 +96,6 @@ describe('active runner accessors', () => {
     });
     expect(updated.implementerProfiles?.profiles.preferred).toMatchObject({
       label: 'Preferred API',
-      costTier: 'frontier',
       capabilities: { writesFiles: 'extracted-code' },
       model: 'updated-profile-model',
     });

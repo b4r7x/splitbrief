@@ -5,6 +5,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
+import { localCatalogResponse, withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
 import { createApiImplementer } from './api.js';
 
 const remoteImplementerSeat = {
@@ -18,6 +19,17 @@ const remoteImplementerSeat = {
 
 let projectDir: string;
 let fetchMock: ReturnType<typeof vi.fn>;
+
+const LOCAL_CATALOG = ['qwen2.5-coder:7b'];
+
+function mockCompletion(completion: () => Response): void {
+  fetchMock.mockImplementation(withLocalCatalog(LOCAL_CATALOG, completion));
+}
+
+/** The `file-bundle-v1` answer an api seat is prompted for. */
+function bundle(path: string, action: 'create' | 'modify', content: string): string {
+  return JSON.stringify({ version: 1, files: [{ path, action, content }] });
+}
 
 beforeEach(() => {
   projectDir = createTempDir('api-impl-test');
@@ -111,9 +123,9 @@ describe('api implementer — OpenAI-compatible path', () => {
     }
   });
 
-  it('writes extracted code to disk and returns success with usage', async () => {
-    const code = '```typescript\nexport function hello() {\n  return "hi";\n}\n```';
-    fetchMock.mockResolvedValue(
+  it('writes the bundled file to disk and returns success with usage', async () => {
+    const code = bundle('src/hello.ts', 'create', 'export function hello() {\n  return "hi";\n}\n');
+    mockCompletion(() =>
       makeOpenAiSseResponse([
         { content: code },
         { usage: { prompt_tokens: 100, completion_tokens: 50 } },
@@ -132,7 +144,19 @@ describe('api implementer — OpenAI-compatible path', () => {
     });
 
     expect(result.success).toBe(true);
-    if (result.success) expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+    if (result.success)
+      expect(result.usage).toEqual({
+        inputTokens: 100,
+        outputTokens: 50,
+        counterCoverage: {
+          input: 'partial',
+          output: 'partial',
+          cacheRead: 'missing',
+          cacheCreate: 'missing',
+          reasoning: 'missing',
+        },
+        providerTotals: { input: 100, output: 50 },
+      });
 
     const written = readFileSync(join(projectDir, 'src/hello.ts'), 'utf-8');
     expect(written).toContain('export function hello()');
@@ -140,7 +164,10 @@ describe('api implementer — OpenAI-compatible path', () => {
   });
 
   it('aborts an in-flight API call without writing the task file', async () => {
-    fetchMock.mockImplementation((_input: unknown, init?: { signal?: AbortSignal }) => {
+    fetchMock.mockImplementation((input: unknown, init?: { signal?: AbortSignal }) => {
+      if (String(input).includes('/api/')) {
+        return Promise.resolve(localCatalogResponse(input, LOCAL_CATALOG));
+      }
       return new Promise((_resolve, reject) => {
         const signal = init?.signal;
         if (!signal) return;
@@ -177,8 +204,8 @@ describe('api implementer — OpenAI-compatible path', () => {
     expect(existsSync(join(projectDir, 'src/signal.ts'))).toBe(false);
   });
 
-  it('returns failure when the stream response has no extractable code', async () => {
-    fetchMock.mockResolvedValue(
+  it('returns failure when the stream response is not a bundle', async () => {
+    mockCompletion(() =>
       makeOpenAiSseResponse([{ content: 'I think you should try writing this yourself.' }]),
     );
 
@@ -194,7 +221,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     });
 
     expect(result.success).toBe(false);
-    if (!result.success) expect(result.error).toMatch(/extract|code/i);
+    if (!result.success) expect(result.error).toBe('response is not a bare JSON bundle object');
     expect(existsSync(join(projectDir, 'src/nowrite.ts'))).toBe(false);
   });
 
@@ -269,10 +296,9 @@ describe('api implementer — OpenAI-compatible path', () => {
   });
 
   it('retry() succeeds for both retry kinds without putting temperature on the wire', async () => {
-    const code = '```ts\nexport const x = 1;\n```';
     fetchMock.mockResolvedValue(
       makeOpenAiSseResponse([
-        { content: code },
+        { content: bundle('src/retry.ts', 'create', 'export const x = 1;\n') },
         { usage: { prompt_tokens: 10, completion_tokens: 5 } },
       ]),
     );
@@ -300,9 +326,11 @@ describe('api implementer — OpenAI-compatible path', () => {
     expect(localBody.temperature).toBeUndefined();
 
     fetchMock.mockClear();
+    // The local retry created the file, so the hint retry rewrites what this
+    // same task left on disk.
     fetchMock.mockResolvedValue(
       makeOpenAiSseResponse([
-        { content: code },
+        { content: bundle('src/retry.ts', 'modify', 'export const x = 2;\n') },
         { usage: { prompt_tokens: 10, completion_tokens: 5 } },
       ]),
     );
@@ -346,7 +374,7 @@ describe('api implementer — OpenAI-compatible path', () => {
 
   async function capturedMaxTokens(contextLength: number): Promise<number> {
     const code = '```ts\nexport const x = 1;\n```';
-    fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
+    mockCompletion(() => makeOpenAiSseResponse([{ content: code }]));
 
     const cfg = makeConfig({ implementer: { contextLength } });
     const implementer = createApiImplementer(cfg);
@@ -360,7 +388,7 @@ describe('api implementer — OpenAI-compatible path', () => {
       onOutput: vi.fn(),
     });
 
-    const init = fetchMock.mock.calls.at(0)?.[1] as { body?: string } | undefined;
+    const init = fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined;
     const body = JSON.parse(String(init?.body)) as { max_tokens?: number };
     expect(typeof body.max_tokens).toBe('number');
     return body.max_tokens as number;
@@ -393,13 +421,12 @@ describe('api implementer — OpenAI-compatible path', () => {
 
     const init = fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined;
     const body = JSON.parse(String(init?.body)) as { max_tokens?: number };
-    // 32768 minus a small prompt still exceeds the conservative output cap, so the
-    // request lands exactly on it; an 8192 window would clamp below it.
-    expect(body.max_tokens).toBe(8192);
+    expect(body.max_tokens).toBeGreaterThanOrEqual(2048);
+    expect(body.max_tokens).toBeLessThan(8192);
   });
 
   it('sends the configured inline apiKey as the Authorization bearer token', async () => {
-    const code = '```ts\nexport const x = 1;\n```';
+    const code = bundle('src/or.ts', 'create', 'export const x = 1;\n');
     fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
 
     const cfg = makeConfig({

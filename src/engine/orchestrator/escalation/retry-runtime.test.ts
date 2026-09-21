@@ -71,7 +71,6 @@ function configWithProfiles() {
           offering: 'local' as const,
           apiBase: 'http://localhost:11434/v1',
           model: 'deepseek-chat',
-          costTier: 'cheap' as const,
           contextLength: 128_000,
         },
       },
@@ -106,7 +105,6 @@ function retryConfigWithContracts(
       env: definition.env,
       model: `${id}-model`,
       label: `${id} label`,
-      costTier: id === 'retry-id' ? ('frontier' as const) : ('cheap' as const),
       capabilities: {
         writesFiles: contract === 'output' ? ('extracted-code' as const) : ('direct' as const),
       },
@@ -285,10 +283,8 @@ describe('stateForRetryProfile', () => {
         apiBase: 'https://api.example.com/v1',
         apiKey: 'key',
         model: 'gpt-4',
-        costTier: 'frontier' as const,
         contextLength: 8192,
       },
-      costTier: 'frontier' as const,
       capabilities: { writesFiles: 'direct' as const },
       isDefault: false,
     };
@@ -302,7 +298,6 @@ describe('stateForRetryProfile', () => {
     const profile = {
       name: 'test',
       config: { kind: 'cli' as const, tool: 'opencode' as const },
-      costTier: 'local' as const,
       capabilities: { writesFiles: 'direct' as const },
       isDefault: false,
     };

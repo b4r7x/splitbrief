@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { glyph } from '../../lib/glyphs.js';
-import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { type CrewRow, crewRowKey } from '../../core/crew/rows.js';
@@ -16,15 +15,15 @@ import { BootManifest } from '../../features/runners/boot-manifest.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import {
   CREW_MARKER_GUTTER,
-  CREW_RAIL_WIDTH,
   planSeatBlock,
   type SeatBlockLayout,
 } from '../../features/crew/format.js';
 import { crewActivate } from '../../features/crew/rows.js';
 import { PresetRowView } from '../../features/crew/preset-row.js';
-import { CrewRowView, CrewSpine, CrewVerdictLine } from '../../features/crew/row-view.js';
+import { CrewRowView, CrewVerdictLine } from '../../features/crew/row-view.js';
 import { useCrew } from '../../features/crew/use-crew.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
+import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { refreshPickerDetection } from '../../features/runners/refresh-detection.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
 import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
@@ -32,6 +31,8 @@ import { observePreparationCleanup } from '../../features/start-preparation/obse
 import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { preparationStore } from '../../stores/navigation/preparation.js';
+import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
 import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
@@ -51,6 +52,7 @@ const PANEL_CHROME_ROWS = 4;
 /** The note line and the blank line under it. */
 const NOTE_BLOCK_ROWS = 2;
 export const PRESET_SECTION = 'Ready-made crews';
+const CREW_KEYS_HINT = `↑↓ navigate${SOFT_SEP}⏎ change seat${SOFT_SEP}esc quit`;
 const CREW_SECTION = 'Crew';
 const CONTINUE_SECTION = '';
 
@@ -60,8 +62,8 @@ type SetupItem =
   | Readonly<{ kind: 'continue'; key: string }>;
 
 /**
- * The panel yields in one order until it fits: the cross-lab verdict and the rail spines first
- * (inside `planSeatBlock`), then the section headers, then the blank rows between blocks, then the
+ * The panel yields in one order until it fits: the cross-lab verdict first (inside
+ * `planSeatBlock`), then the section headers, then the blank rows between blocks, then the
  * ready-made crews.
  */
 const LADDER = [
@@ -135,11 +137,20 @@ function sectionOf(item: SetupItem): string {
 /** Continue sits on the same left column as the preset and seat labels. */
 function continueText(isCursor: boolean): string {
   const gutter = isCursor ? `${glyph('liveBar')} ` : ' '.repeat(CREW_MARKER_GUTTER);
-  return `${gutter}${' '.repeat(CREW_RAIL_WIDTH)}Continue`;
+  return `${gutter}Continue`;
+}
+
+/** The three effects this screen spends: the check it submits, the record it reads back, and
+ * the detection retry its cold-discovery panel offers. */
+export interface SetupScreenDeps {
+  prepareExecution: typeof prepareExecution;
+  readRunRecord: typeof readRunRecord;
+  refreshPickerDetection: typeof refreshPickerDetection;
 }
 
 interface SetupScreenProps {
   prepare?: typeof prepareExecution | undefined;
+  deps?: SetupScreenDeps | undefined;
 }
 
 type SetupPreparationInput = Readonly<{
@@ -200,11 +211,15 @@ function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPan
 
 type CrewStepProps = Readonly<{
   note?: string | undefined;
+  /** The panel's fixed bottom row: the keys at rest, the preparation status while one runs. */
+  hint: string;
+  /** While the crew is being prepared the list takes no keys, so esc means cancel that attempt. */
+  inert?: boolean | undefined;
   onContinue: (config: Config) => void;
   onExit: () => void;
 }>;
 
-function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
+function CrewStep({ note, hint, inert = false, onContinue, onExit }: CrewStepProps) {
   const t = useTheme();
   const config = configStore.useConfig();
   const { rows: crewRows, verdict, presets } = useCrew();
@@ -241,7 +256,6 @@ function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
     0,
     ...presets.map((preset) => getTerminalCellWidth(preset.label)),
   );
-  const planner = readActiveRunner({ config, role: 'planner' });
 
   const list = useFilterableList<SetupItem>({
     items,
@@ -249,7 +263,7 @@ function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
     filterFn: () => true,
     shouldAppendChar: () => false,
     customKeys: (_input, key) => key.backspace || key.delete,
-    isActive: !hasOverlay,
+    isActive: !hasOverlay && !inert,
     pageSize: budget,
     onClose: onExit,
     onSelect: (item) => {
@@ -262,11 +276,7 @@ function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
   });
 
   return (
-    <OverlayPanel
-      title="Set up your crew"
-      density={CREW_PANEL_DENSITY}
-      hint={`↑↓ navigate${SOFT_SEP}⏎ select${SOFT_SEP}esc quit`}
-    >
+    <OverlayPanel title="Set up your crew" density={CREW_PANEL_DENSITY} hint={hint}>
       {note !== undefined && (
         <Box marginBottom={1}>
           <Text color={t.textDim} wrap="truncate-end">
@@ -286,12 +296,6 @@ function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
           headerFor: (label) => showHeaders && label !== CONTINUE_SECTION,
         }}
         decorations={{
-          hasBefore: (item, index) =>
-            layout.spines &&
-            item.kind === 'crew' &&
-            item.row.kind === 'seat' &&
-            list.filtered[index - 1]?.kind === 'crew',
-          renderBefore: () => <CrewSpine />,
           hasAfter: (item, index) =>
             layout.verdict && item.kind === 'crew' && list.filtered[index + 1]?.kind !== 'crew',
           renderAfter: () =>
@@ -315,7 +319,6 @@ function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
                   layout={layout}
                   isCursor={ctx.isCursor}
                   width={innerWidth}
-                  planner={planner}
                 />
               );
             case 'continue':
@@ -338,7 +341,14 @@ function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
   );
 }
 
-export function SetupScreen({ prepare = prepareExecution }: SetupScreenProps) {
+export function SetupScreen({ prepare, deps }: SetupScreenProps) {
+  // A supplied deps is the source of all three; without one the screen keeps the production
+  // functions, and `prepare` alone stays the narrower seam the existing tests pass.
+  const effects: SetupScreenDeps = deps ?? {
+    prepareExecution: prepare ?? prepareExecution,
+    readRunRecord,
+    refreshPickerDetection,
+  };
   const { exit } = useApp();
   const projectDir = configStore.use((state) => state.projectDir);
   const refresh = detectionStore.use((state) => state.refresh);
@@ -356,6 +366,13 @@ export function SetupScreen({ prepare = prepareExecution }: SetupScreenProps) {
     state.screen === 'setup' ? state.allowRepoRunners : undefined,
   );
   const approvalPending = approvalPromptStore.use((state) => state.status === 'pending');
+  const hasOverlay = overlayStore.use((state) => state.active !== 'none');
+  // Moving into work is the same wait as anywhere else: the crew panel stays where it is and its
+  // fixed hint row states the check, rather than a second fullscreen loader taking the screen.
+  const checkingStage = preparationStore.use((state) =>
+    state.kind === 'checking' ? state.stage : null,
+  );
+  const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
   const [step, setStep] = useState<Step>('discovery');
 
   const preparation = useStartPreparation<SetupPreparationInput>({
@@ -364,7 +381,7 @@ export function SetupScreen({ prepare = prepareExecution }: SetupScreenProps) {
       if (currentConfig === null) {
         return { kind: 'failed', error: appPreparationError.configNotLoaded() };
       }
-      return prepare({
+      return effects.prepareExecution({
         projectDir: input.projectDir,
         feature: input.feature,
         effectiveConfig: currentConfig,
@@ -380,6 +397,7 @@ export function SetupScreen({ prepare = prepareExecution }: SetupScreenProps) {
     onPrepared: (execution) => {
       routerStore.navigate({
         to: 'workflow',
+        run: effects.readRunRecord(execution.session.ref),
         execution: { kind: 'local', prepared: execution },
       });
     },
@@ -412,7 +430,7 @@ export function SetupScreen({ prepare = prepareExecution }: SetupScreenProps) {
 
   const retryDiscovery = () => {
     if (!projectDir) return;
-    void refreshPickerDetection(projectDir);
+    void effects.refreshPickerDetection(projectDir);
   };
 
   const cancelPreparation = () => {
@@ -421,6 +439,20 @@ export function SetupScreen({ prepare = prepareExecution }: SetupScreenProps) {
       setStep('crew');
     });
   };
+
+  const preparing = preparation.state.kind === 'preparing';
+  const preparationTakesPage =
+    preparation.state.kind === 'blocked' ||
+    preparation.state.kind === 'failed' ||
+    (preparing && approvalPending);
+
+  // Escape gives up this attempt and leaves the crew exactly as it was chosen.
+  useInput(
+    (_input, key) => {
+      if (key.escape) cancelPreparation();
+    },
+    { isActive: preparing && !preparationTakesPage && !hasOverlay },
+  );
 
   const finalize = async (finalConfig: Config) => {
     if (!projectDir) return;
@@ -442,7 +474,7 @@ export function SetupScreen({ prepare = prepareExecution }: SetupScreenProps) {
     routerStore.navigate({ to: 'home' });
   };
 
-  if (preparation.state.kind !== 'idle') {
+  if (preparationTakesPage) {
     return (
       <StartPreparationPanel
         state={preparation.state}
@@ -476,6 +508,12 @@ export function SetupScreen({ prepare = prepareExecution }: SetupScreenProps) {
   return (
     <CrewStep
       {...(rememberedStepLabel !== undefined && { note: rememberedStepLabel })}
+      hint={
+        checkingStage === null
+          ? CREW_KEYS_HINT
+          : `${preparationFrame} ${checkingStage}${preparing ? `${SOFT_SEP}esc cancel` : ''}`
+      }
+      inert={checkingStage !== null}
       onContinue={(current) => void finalize(current)}
       onExit={exit}
     />

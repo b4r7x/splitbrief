@@ -57,9 +57,9 @@ describe('pricing-resolver', () => {
   });
 
   describe('resolvePricing with model cache', () => {
-    it('returns LOCAL_PRICING for local providers', () => {
-      expect(resolvePricing('ollama')).toEqual(LOCAL_PRICING);
-      expect(resolvePricing('lm-studio')).toEqual(LOCAL_PRICING);
+    it('returns LOCAL_PRICING for local providers, on their own provider id', () => {
+      expect(resolvePricing('ollama')).toEqual({ ...LOCAL_PRICING, provider: 'ollama' });
+      expect(resolvePricing('lm-studio')).toEqual({ ...LOCAL_PRICING, provider: 'lm-studio' });
     });
 
     it('marks CLI tools as unpriced', () => {

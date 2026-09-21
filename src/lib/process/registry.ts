@@ -3,7 +3,7 @@ import { warnError } from '../warn.js';
 import { isNodeError, processError, type ProcessTerminationTarget } from './errors.js';
 import { readProcessStartTimeMs } from './start-time.js';
 
-const SIGKILL_DELAY_MS = 2000;
+export const SIGKILL_DELAY_MS = 2000;
 const REAP_POLL_MS = 10;
 const SIGNAL_DISAPPEARANCE_TIMEOUT_MS = 1000;
 const SIGKILL_REAP_TIMEOUT_MS = 1000;
@@ -25,6 +25,22 @@ const activeProcesses = new Map<ChildProcess, RegisteredProcess>();
 const processTerminations = new WeakMap<ChildProcess, Promise<void>>();
 let processLedger: ProcessLedger | null = null;
 let allProcessesCleanup: Promise<void> | null = null;
+const registryListeners = new Set<(count: number) => void>();
+
+export function onProcessRegistryChange(listener: (count: number) => void): () => void {
+  registryListeners.add(listener);
+  return () => {
+    registryListeners.delete(listener);
+  };
+}
+
+export function registeredProcessCount(): number {
+  return activeProcesses.size;
+}
+
+function notifyRegistryChange(): void {
+  for (const listener of registryListeners) listener(activeProcesses.size);
+}
 
 /**
  * Node's detached/process-group signalling is POSIX-only in this subsystem.
@@ -72,6 +88,7 @@ function registeredTargetIsAbsent(entry: RegisteredProcess): boolean {
 function releaseRegistration(entry: RegisteredProcess): void {
   if (activeProcesses.get(entry.proc) !== entry) return;
   activeProcesses.delete(entry.proc);
+  notifyRegistryChange();
   if (entry.releaseMonitor !== undefined) clearInterval(entry.releaseMonitor);
   if (!entry.ledgered || entry.ledger === null || entry.pid === undefined) return;
   try {
@@ -110,6 +127,7 @@ export function registerProcess(
     releaseMonitor: undefined,
   };
   activeProcesses.set(proc, entry);
+  notifyRegistryChange();
   if (ledger !== null && entry.pid !== undefined) {
     try {
       ledger.record(entry.pid, readProcessStartTimeMs(entry.pid));

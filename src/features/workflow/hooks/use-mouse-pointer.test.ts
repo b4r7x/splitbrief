@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import {
   _resetHoverThrottle,
   handleWorkflowMouseMove,
@@ -31,16 +32,23 @@ import { rowText } from '../conversation-rows/row-format/rows.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 
 const WORKFLOW_ROUTE = {
   screen: 'workflow',
+  run: makeRunRecord(),
   execution: {
-    kind: 'attached',
-    feature: 'feat',
-    sessionId: 'mouse-pointer-session',
-    attach: { sockPath: '/tmp/mouse-pointer.sock', authToken: 'test-token' },
+    kind: 'local',
+    prepared: makePreparedExecution({
+      projectDir: '/tmp/mouse-pointer-test',
+      sessionId: 'mouse-pointer-session',
+      feature: 'feat',
+      config: makeConfig(),
+      gates: () => [],
+    }),
   },
 } as const;
 
@@ -269,20 +277,20 @@ describe('workflow pointer handling', () => {
     expect(focusStore.get()).toBeNull();
   });
 
-  it('opens the cost drilldown when a registered footer zone is clicked', () => {
+  it('runs the click action of a registered footer zone', () => {
     routerStore.init(WORKFLOW_ROUTE);
     registerMouseZone({
-      id: 'cost',
+      id: 'footer',
       left: 60,
       right: 70,
       top: 28,
       bottom: 28,
       z: 10,
-      onClick: () => overlayStore.open('cost-drilldown'),
+      onClick: () => overlayStore.open('help'),
     });
     dispatchWorkflowPointer(pointerEvent('press', 65, 28));
 
-    expect(overlayStore.get().active).toBe('cost-drilldown');
+    expect(overlayStore.get().active).toBe('help');
   });
 
   it('blocks hover, transcript actions, and row zones behind an open completion menu', () => {

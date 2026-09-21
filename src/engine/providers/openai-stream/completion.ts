@@ -1,9 +1,18 @@
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
-import { timeoutError, withIdleTimeout } from '../../../utils/with-timeout.js';
 import { throwMappedError } from '../../streaming/stream-errors.js';
-import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../../constants.js';
+import {
+  isApiDeadlineError,
+  resolveApiDeadlinePolicy,
+  runWithApiDeadlines,
+} from '../api-deadlines.js';
 import { TRUNCATION_WARNING } from '../constants.js';
+import {
+  deriveApiRuntimeStatus,
+  type ApiRuntimeObservation,
+  type ApiRuntimeSignal,
+} from '../api-runtime-status.js';
+import { apiConnectionContextKey } from '../selected-model.js';
 import { attachImagesToLastUserMessage } from '../image-attach.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { error as createError } from '../../../utils/error.js';
@@ -26,6 +35,11 @@ import type {
   RunnerCallResult,
   RunnerCallUsage,
 } from '../../calls/types.js';
+import {
+  apiConnectionKey,
+  snapshotApiInvocationIdentity,
+  type ApiInvocationEvidence,
+} from '../../runners/invocation-identity.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { redactSecrets } from '../../../utils/redact.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -60,6 +74,11 @@ interface StreamCompletionOptions {
   callContext?: RunnerCallContext | undefined;
   credentialValues?: readonly string[] | undefined;
   policy?: OpenAICompatPolicy | undefined;
+  /** The seat's configured total budget; absent, the role's TIMEOUTS default applies. */
+  timeoutMs?: number | undefined;
+  /** Supplied by a dispatch that resolved its provider; absent, auth and billing stay unknown. */
+  invocationEvidence?: ApiInvocationEvidence | undefined;
+  runtimeObservation?: ApiRuntimeObservation | undefined;
 }
 
 let callSequence = 0;
@@ -327,37 +346,45 @@ export async function streamCompletion(
           },
         )
       : baseMessages;
-  const context = opts.callContext ?? openAiCallContext(model, endpoint);
+  const context: RunnerCallContext = opts.callContext ?? openAiCallContext(model, endpoint);
+  const invocationIdentity =
+    context.invocationIdentity ??
+    snapshotApiInvocationIdentity({
+      provider: endpoint?.provider,
+      model,
+      connectionKey:
+        endpoint?.apiBase === undefined
+          ? undefined
+          : apiConnectionKey(endpoint.provider, endpoint.apiBase),
+      dispatchAuthentication: opts.invocationEvidence?.dispatchAuthentication ?? 'unknown',
+      localityEvidence: opts.invocationEvidence?.localityEvidence,
+      now: Date.now(),
+    });
   const recorder = createRunnerCallRecorder({
-    context,
+    // This call makes exactly one provider request, so its usage is that request's.
+    context: { ...context, invocationIdentity, usageBoundary: 'single-request' },
     credentialValues,
     onEvent: opts.onCallEvent,
   });
-  let stream: AsyncIterable<unknown>;
-  try {
-    stream = await client.chat.completions.create(
-      {
-        model,
-        policy,
-        messages: toProviderMessages(finalMessages, policy),
-        ...temperatureField(policy, temperature),
-        stream: true,
-        ...usageField(policy),
-        ...tokenLimitFields(policy, maxTokens),
-        ...effortField(policy, effort),
+  const deadlines = resolveApiDeadlinePolicy({
+    role: context.role,
+    ...(opts.timeoutMs !== undefined && { timeoutMs: opts.timeoutMs }),
+  });
+  const runtimeSignals: ApiRuntimeSignal[] = [];
+  const runtimeObservation =
+    opts.runtimeObservation === undefined ? undefined : { ...opts.runtimeObservation };
+  function publishRuntime(signal: ApiRuntimeSignal): void {
+    if (runtimeSignals.includes(signal) || runtimeSignals.includes('settled')) return;
+    runtimeSignals.push(signal);
+    const status = deriveApiRuntimeStatus({
+      identity: {
+        contextKey: apiConnectionContextKey(endpoint?.provider ?? 'openai', endpoint?.apiBase),
+        selectionId: model,
       },
-      signal ? { signal } : undefined,
-    );
-  } catch (err: unknown) {
-    if (opts.signal?.aborted) {
-      recorder.finishFailed({
-        status: runnerCallInterruptedStatus(opts.signal),
-        error: runnerCallErrorFromUnknown(err, 'runner_interrupted', credentialValues),
-        nativeSessionId: null,
-      });
-      throwRedactedAbort(opts.signal, redactCredential);
-    }
-    finishOpenAiFailure(recorder, err, endpoint, null, credentialValues, redactCredential);
+      observation: runtimeObservation,
+      signals: runtimeSignals,
+    });
+    if (status !== null) recorder.runtimeStatus(status);
   }
 
   let usage: RunnerCallUsage | null = null;
@@ -373,12 +400,28 @@ export async function streamCompletion(
   let outputLimit: RunnerCallDeltaLimitResult['limit'] = null;
 
   try {
-    for await (const rawChunk of withIdleTimeout(
-      stream,
-      STREAM_IDLE_TIMEOUT_MS,
-      STREAM_IDLE_TIMEOUT_MESSAGE,
-    )) {
+    for await (const rawChunk of runWithApiDeadlines<unknown>({
+      policy: deadlines,
+      ...(signal !== undefined && { signal }),
+      createStream: (deadlineSignal) => {
+        publishRuntime('dispatched');
+        return client.chat.completions.create(
+          {
+            model,
+            policy,
+            messages: toProviderMessages(finalMessages, policy),
+            ...temperatureField(policy, temperature),
+            stream: true,
+            ...usageField(policy),
+            ...tokenLimitFields(policy, maxTokens),
+            ...effortField(policy, effort),
+          },
+          { signal: deadlineSignal },
+        );
+      },
+    })) {
       throwIfAborted(opts.signal);
+      publishRuntime('chunk');
       const parsedChunk = StreamChunkSchema.safeParse(rawChunk);
       if (!parsedChunk.success) {
         recordInvalidOpenAiChunk(recorder, rawChunk, parsedChunk.error.issues);
@@ -417,6 +460,7 @@ export async function streamCompletion(
       }
     }
   } catch (err: unknown) {
+    publishRuntime('settled');
     if (opts.signal?.aborted) {
       recorder.finishFailed({
         status: runnerCallInterruptedStatus(opts.signal),
@@ -429,10 +473,10 @@ export async function streamCompletion(
       });
       throwRedactedAbort(opts.signal, redactCredential);
     }
-    if (timeoutError.isIdle(err)) {
+    if (isApiDeadlineError(err)) {
       recorder.finishFailed({
         status: 'timeout',
-        error: { code: 'stream_idle_timeout', message: redactCredential(toErrorMessage(err)) },
+        error: { code: err.kind, message: redactCredential(toErrorMessage(err)) },
         usage,
         nativeSessionId: null,
       });
@@ -440,6 +484,7 @@ export async function streamCompletion(
     }
     finishOpenAiFailure(recorder, err, endpoint, usage, credentialValues, redactCredential);
   }
+  publishRuntime('settled');
 
   if (outputLimit !== null) {
     finishRunnerCallOutputLimit(recorder, outputLimit, { usage, nativeSessionId: null });

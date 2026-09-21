@@ -45,17 +45,24 @@ interface RowZoneProps {
   zoneId: string;
   z: number;
   onActivate: () => void;
+  onWheel?: ((direction: 'up' | 'down') => void) | undefined;
   children: ReactNode;
 }
 
-export function RowZone({ zoneId, z, onActivate, children }: RowZoneProps) {
+export function RowZone({ zoneId, z, onActivate, onWheel, children }: RowZoneProps) {
   const ref = useRef<DOMElement>(null);
   useLayoutEffect(() => {
     const node = ref.current;
     if (!node) return;
     const rect = measureRowSgr(node);
     if (!rect) return;
-    return registerMouseZone({ id: zoneId, ...rowZoneRect(rect), z, onClick: onActivate });
+    return registerMouseZone({
+      id: zoneId,
+      ...rowZoneRect(rect),
+      z,
+      onClick: onActivate,
+      ...(onWheel ? { onWheel } : {}),
+    });
   });
   return <Box ref={ref}>{children}</Box>;
 }

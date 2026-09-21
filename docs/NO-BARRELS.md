@@ -90,7 +90,7 @@ Shared type re-exports are not an exception. If `src/types/index.ts` re-exports 
 | `src/engine/orchestrator/index.ts` | FW-2 | Imported directly from orchestrator submodules. |
 | `src/engine/orchestrator/planning/index.ts` | FW-2 | Renamed to `planning/run.ts` — contained real dispatch code, not just re-exports. |
 | Engine skills barrel | FW-2 | Consumers import directly from `src/engine/skill-discovery.ts`. |
-| `src/components/summary/index.ts` | Features restructure | Summary components moved to `src/features/summary/components/`. |
+| `src/components/summary/index.ts` | Features restructure | Summary components moved into the workflow feature and later into `src/features/workflow/closed/`. |
 | `src/core/types/config-options.ts` (re-export block) | Batch 1A (2026-04) | ~12 `export type { X } from '../schemas/...'` lines re-exporting `PlannerConfig`, `ImplementerConfig`, workflow/planner config variants, and enum values. A disguised barrel by content — the filename was not `index.ts` but the re-exports made `config-options.ts` a second public surface. Consumers now import directly from `core/schemas/*`. |
 | `src/core/schemas/config.ts` tail (lines 43-46) | Batch 1A (2026-04) | `export type { PlannerConfig } from './planner-config.js'`, same for `ImplementerConfig`, plus `export { PlannerConfigSchema, ImplementerConfigSchema }`. Consumers now import from `planner-config.ts` / `implementer-config.ts` directly. |
 | `src/stores/discovery/model-cache.ts` line 5 | Batch 1A (2026-04) | `export type { DetectedModel } from '../../core/types/config-options.js'` — one-liner type re-export. Consumers now import `DetectedModel` from `core/types/config-options.ts` directly. |

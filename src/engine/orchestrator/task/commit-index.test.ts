@@ -1,22 +1,35 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { simpleGit } from 'simple-git';
-import { makeConfig } from '#testing/helpers/factories/config.js';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import {
   cleanupCommitTestProjects,
   firstCommitTask,
   makeCommitState,
-  setupCommitProject,
+  makeLegacyCommitConfig,
+  registerCommitTestDir,
 } from '#testing/helpers/orchestrator-commit.js';
-import {
-  getStagedFiles,
-  stageFiles,
-  resetIndexPreservingStaged,
-} from '../../../lib/git/staging.js';
+import { createTempDir } from '#testing/helpers/temp-dir.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
 import { validateCommitAndAdvance } from './commit.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
+
+const git = vi.hoisted(() => ({ calls: [] as string[] }));
+vi.mock('simple-git', () => ({
+  simpleGit: () =>
+    new Proxy(
+      {},
+      {
+        get: (_target, method) =>
+          method === 'then'
+            ? undefined
+            : async () => {
+                git.calls.push(String(method));
+                return '';
+              },
+      },
+    ),
+}));
 
 const acceptedAcceptance: ValidationAcceptance = {
   accepted: true,
@@ -24,53 +37,48 @@ const acceptedAcceptance: ValidationAcceptance = {
   blockingStages: [],
 };
 
+// Opaque stand-in for an index holding a partial staging split; never parsed or written by git.
+const PARTIAL_STAGED_INDEX = Buffer.from('DIRC\0\0\0\x02user-staged.txt\0hunk-1-of-2\0', 'binary');
+
 afterEach(() => {
   cleanupCommitTestProjects();
+  git.calls.length = 0;
 });
 
-describe('validateCommitAndAdvance — index staging', () => {
-  it('per-task: a pre-staged user split survives a commit failure', async () => {
-    const { projectDir, sessionId } = setupCommitProject();
-    const state = makeCommitState();
-    const taskFile = firstCommitTask(state).file;
-    const git = simpleGit(projectDir);
-    writeFileSync(join(projectDir, 'user-staged.txt'), 'staged by user');
-    writeFileSync(join(projectDir, 'user-unstaged.txt'), 'left unstaged');
-    await git.add(['--', 'user-staged.txt']);
-    mkdirSync(dirname(join(projectDir, taskFile)), { recursive: true });
-    writeFileSync(join(projectDir, taskFile), 'task output');
-    const { bus, events } = makeBusRecorder();
+describe('validateCommitAndAdvance — index preservation', () => {
+  for (const commitStrategy of ['per-task', 'checkpoint'] as const) {
+    it(`${commitStrategy}: completion leaves partially staged index bytes untouched`, async () => {
+      const projectDir = createTempDir('task-commit-index');
+      registerCommitTestDir(projectDir);
+      const sessionId = 'sess-commit';
+      ensureSessionDir(projectDir, sessionId);
+      const indexPath = join(projectDir, '.git', 'index');
+      mkdirSync(join(projectDir, '.git'), { recursive: true });
+      writeFileSync(indexPath, PARTIAL_STAGED_INDEX);
+      const mtimeBefore = statSync(indexPath).mtimeMs;
+      const state = makeCommitState();
+      const task = firstCommitTask(state);
+      const { bus, events } = makeBusRecorder();
 
-    const result = await validateCommitAndAdvance({
-      task: firstCommitTask(state),
-      acceptance: acceptedAcceptance,
-      projectDir,
-      sessionId,
-      config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
-      state,
-      bus,
-      method: 'local',
-      transitionType: 'VALIDATION_PASS',
-      taskChangedFiles: [taskFile],
-      gitOps: {
-        getStagedFiles,
-        stageFiles,
-        resetIndexPreservingStaged,
-        commitChanges: async () => {
-          throw new Error('commit boom');
-        },
-      },
+      const result = await validateCommitAndAdvance({
+        task,
+        acceptance: acceptedAcceptance,
+        projectDir,
+        sessionId,
+        config: makeLegacyCommitConfig({ commitStrategy }),
+        state,
+        bus,
+        method: 'local',
+        transitionType: 'VALIDATION_PASS',
+        taskChangedFiles: [task.file],
+      });
+
+      expect(result.completed).toBe(true);
+      expect(readFileSync(indexPath).equals(PARTIAL_STAGED_INDEX)).toBe(true);
+      expect(statSync(indexPath).mtimeMs).toBe(mtimeBefore);
+      expect(git.calls).toEqual([]);
+      expect(events.find((e) => e.type === 'git_commit')).toBeUndefined();
+      expect(events.find((e) => e.type === 'git_checkpoint')).toBeUndefined();
     });
-
-    expect(result.completed).toBe(true);
-    const warning = events.find((e) => e.type === 'warning');
-    expect(warning && warning.type === 'warning' ? warning.message : '').toContain(
-      'Failed to commit',
-    );
-    const stagedAfter = (await git.diff(['--cached', '--name-only']))
-      .trim()
-      .split('\n')
-      .filter(Boolean);
-    expect(stagedAfter).toEqual(['user-staged.txt']);
-  });
+  }
 });

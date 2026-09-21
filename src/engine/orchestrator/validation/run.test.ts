@@ -8,12 +8,20 @@ import type { EngineEvent, EngineEventOf } from '../../events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
+import {
+  ValidationBaselineSchema,
+  type DiscoveredValidation,
+} from '../../../core/schemas/workflow.js';
 import { processError } from '../../../lib/process/errors.js';
 import { makeConfig, makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
 
 function mkTask(file: string): Task {
   return makeTask({ file, action: 'modify' });
+}
+
+function writeTsProject(dir: string): void {
+  writeFileSync(join(dir, 'tsconfig.json'), '{}');
+  writeFileSync(join(dir, 'package.json'), '{"scripts":{"test":"vitest run"}}');
 }
 
 const fakeBus = { publish: () => {}, subscribe: () => () => {} };
@@ -138,6 +146,56 @@ describe('run-start baseline of pre-existing failures', () => {
     expect(acceptance.accepted).toBe(false);
   });
 
+  it('blocks a red stage whose failure keys are not the ones the baseline probe recorded', async () => {
+    const typeError = (stderr: string) => () =>
+      processError.exitCode({ command: 'tsc', code: 1, stderr, output: '' });
+    const validator = createValidator({
+      runCommand: makeCommandRunner(typeError('src/legacy.ts(3,1): error TS2322')()),
+      captureBaseline: true,
+    });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+
+    await validator.primeBaseline({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    const probedCommand = 'npx tsc --noEmit';
+    expect(
+      validator.decideAcceptance({
+        results: [
+          {
+            passed: false,
+            stage: 'typecheck',
+            command: probedCommand,
+            failureFiles: ['src/legacy.ts'],
+            error: 'src/legacy.ts(3,1): error TS2322',
+          },
+        ],
+        changedFiles: ['src/app.ts'],
+      }).exemptStages,
+    ).toContain('typecheck');
+
+    expect(
+      validator.decideAcceptance({
+        results: [
+          {
+            passed: false,
+            stage: 'typecheck',
+            command: probedCommand,
+            failureFiles: ['src/legacy.ts', 'src/other.ts'],
+            error: 'src/legacy.ts(3,1): error TS2322\nsrc/other.ts(9,2): error TS2345',
+          },
+        ],
+        changedFiles: ['src/app.ts'],
+      }).blockingStages,
+    ).toContain('typecheck');
+  });
+
   it('exempts a baseline-red stage when its evidence names no changed file, and blocks one that does', async () => {
     const typeError = () =>
       processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' });
@@ -194,9 +252,48 @@ describe('run-start baseline of pre-existing failures', () => {
     expect(blockingAcceptance.accepted).toBe(false);
   });
 
+  it('an exempt-accepted run publishes the validate event as passed, with exempt', async () => {
+    const typeError = () =>
+      processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' });
+    const validator = createValidator({
+      runCommand: makeCommandRunner(typeError(), typeError()),
+      captureBaseline: true,
+    });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+
+    await validator.primeBaseline({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+    await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus,
+      phase: 'validating-task',
+      changedFiles: ['src/app.ts'],
+    });
+
+    const done = events.find(
+      (event): event is EngineEventOf<'validate'> =>
+        event.type === 'validate' && event.status === 'done',
+    );
+    expect(done).toMatchObject({ passed: true, exempt: true });
+    expect('error' in (done ?? {})).toBe(false);
+  });
+
   it('probes the default test baseline against the affected test file, not the whole suite', async () => {
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
+    writeTsProject(tempDir);
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner, captureBaseline: true });
     const config = makeConfig({ typecheck: false, lint: false, test: true });
@@ -211,12 +308,13 @@ describe('run-start baseline of pre-existing failures', () => {
 
     const baselineProbe = runner.calls[0];
     expect(baselineProbe?.cmd).toBe('npm');
-    expect(baselineProbe?.args).toEqual(['test', '--', join(tempDir, 'src', 'foo.test.ts')]);
+    expect(baselineProbe?.args).toEqual(['test', '--', join('src', 'foo.test.ts')]);
   });
 
   it('attributes a fresh test failure to the task when the affected file passed at baseline', async () => {
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
+    writeTsProject(tempDir);
     const validator = createValidator({
       runCommand: makeCommandRunner(
         { stdout: 'ok', stderr: '', code: 0 },
@@ -253,6 +351,7 @@ describe('run-start baseline of pre-existing failures', () => {
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
     writeFileSync(join(tempDir, 'src', 'bar.test.ts'), '');
+    writeTsProject(tempDir);
     const validator = createValidator({
       runCommand: makeCommandRunner(
         processError.exitCode({
@@ -297,6 +396,7 @@ describe('run-start baseline of pre-existing failures', () => {
   it('still exempts the test stage when the task runs the same narrowed command as the baseline', async () => {
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
+    writeTsProject(tempDir);
     const validator = createValidator({
       runCommand: makeCommandRunner(
         processError.exitCode({
@@ -368,6 +468,107 @@ describe('run-start baseline of pre-existing failures', () => {
     });
     expect(acceptance.exemptStages).toEqual([]);
     expect(acceptance.blockingStages).toContain('lint');
+  });
+
+  it('pytest run narrows to the affected test file and exempts a baseline-red failure', async () => {
+    mkdirSync(join(tempDir, 'tests'), { recursive: true });
+    writeFileSync(join(tempDir, 'pyproject.toml'), '[project]\nname = "service"\n');
+    writeFileSync(join(tempDir, 'tests', 'service_test.py'), '');
+    const redSuite = () =>
+      processError.exitCode({
+        command: 'pytest',
+        code: 1,
+        stderr: '',
+        output: [
+          '=================================== FAILURES ===================================',
+          '_________________________________ test_uptime __________________________________',
+          '>       assert payload["uptime"] > 0',
+          'E       AssertionError: assert 0 > 0',
+          'tests/service_test.py:12: AssertionError',
+          '=========================== short test summary info ============================',
+          'FAILED tests/service_test.py::test_uptime - AssertionError: assert 0 > 0',
+          '1 failed, 3 passed in 0.42s',
+        ].join('\n'),
+      });
+    const runner = makeCommandRunner(redSuite(), redSuite());
+    const validator = createValidator({ runCommand: runner, captureBaseline: true });
+    const config = makeConfig({ typecheck: false, lint: false, test: true });
+
+    await validator.primeBaseline({
+      task: mkTask('src/service.py'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+    const results = await validator.runValidation({
+      task: mkTask('src/service.py'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+      changedFiles: ['src/service.py'],
+    });
+
+    expect(runner.calls[0]?.cmd).toBe('pytest');
+    expect(runner.calls[0]?.args).toEqual([join('tests', 'service_test.py')]);
+    expect(results.find((r) => r.stage === 'test')?.command).toBe(
+      `pytest ${join('tests', 'service_test.py')}`,
+    );
+    const acceptance = validator.decideAcceptance({ results, changedFiles: ['src/service.py'] });
+    expect(acceptance.exemptStages).toEqual(['test']);
+    expect(acceptance.accepted).toBe(true);
+  });
+
+  it('go test run narrows to the package and blocks a new failure in an untouched file', async () => {
+    mkdirSync(join(tempDir, 'pkg'), { recursive: true });
+    writeFileSync(join(tempDir, 'go.mod'), 'module example.com/app\n\ngo 1.23\n');
+    writeFileSync(join(tempDir, 'pkg', 'handler_test.go'), '');
+    const uptimeRed = '--- FAIL: TestUptime (0.00s)\n    uptime_test.go:12: got 0, want 1';
+    const routesRed = '--- FAIL: TestRoutes (0.00s)\n    routes_test.go:9: got "", want "ok"';
+    const redPackage = (failures: string) =>
+      processError.exitCode({
+        command: 'go',
+        code: 1,
+        stderr: '',
+        output: [failures, 'FAIL', 'FAIL\texample.com/app/pkg\t0.104s', 'FAIL'].join('\n'),
+      });
+    const runner = makeCommandRunner(
+      redPackage(uptimeRed),
+      redPackage(uptimeRed),
+      redPackage(`${uptimeRed}\n${routesRed}`),
+    );
+    const validator = createValidator({ runCommand: runner, captureBaseline: true });
+    const config = makeConfig({ typecheck: false, lint: false, test: true });
+    const run = () =>
+      validator.runValidation({
+        task: mkTask('pkg/handler.go'),
+        projectDir: tempDir,
+        config,
+        bus: fakeBus,
+        phase: 'implementing',
+        changedFiles: ['pkg/handler.go'],
+      });
+
+    await validator.primeBaseline({
+      task: mkTask('pkg/handler.go'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+    const kept = await run();
+    const regressed = await run();
+
+    expect(runner.calls[0]?.cmd).toBe('go');
+    expect(runner.calls[0]?.args).toEqual(['test', './pkg/']);
+    expect(
+      validator.decideAcceptance({ results: kept, changedFiles: ['pkg/handler.go'] }),
+    ).toMatchObject({ exemptStages: ['test'], accepted: true });
+    expect(regressed.find((r) => r.stage === 'test')?.failureFiles).toEqual([]);
+    expect(
+      validator.decideAcceptance({ results: regressed, changedFiles: ['pkg/handler.go'] }),
+    ).toMatchObject({ blockingStages: ['test'], accepted: false });
   });
 });
 
@@ -471,6 +672,7 @@ describe('baseline probe heartbeat', () => {
   it('reports the affected-test-narrowed test command actually run', async () => {
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
+    writeTsProject(tempDir);
     const validator = createValidator({
       runCommand: makeCommandRunner(),
       captureBaseline: true,
@@ -488,14 +690,13 @@ describe('baseline probe heartbeat', () => {
       phase: 'implementing',
     });
 
-    expect(capturedBaselineDone(events)?.commands?.test).toContain(
-      join(tempDir, 'src', 'foo.test.ts'),
-    );
+    expect(capturedBaselineDone(events)?.commands?.test).toContain(join('src', 'foo.test.ts'));
   });
 
   it('never reports a skipped stage as green, and progress agrees with done', async () => {
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
+    writeTsProject(tempDir);
     const validator = createValidator({
       runCommand: makeCommandRunner(processError.notFound('npm')),
       captureBaseline: true,
@@ -622,6 +823,7 @@ describe('validation pipeline', () => {
     const config = makeConfig({ test: false });
     mkdirSync(join(tempDir, 'tests'), { recursive: true });
     writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
+    writeTsProject(tempDir);
     const results = await validator.runValidation({
       task: mkTask('src/foo.ts'),
       projectDir: tempDir,
@@ -631,6 +833,60 @@ describe('validation pipeline', () => {
     });
     const testResult = results.find((r) => r.stage === 'test');
     expect(testResult).toBeUndefined();
+  });
+
+  it('a missing binary skips the stage and names its reason on the validate event', async () => {
+    validator = createValidator({ runCommand: makeCommandRunner(processError.notFound('npx')) });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+
+    const results = await validator.runValidation({
+      task: mkTask('src/main.ts'),
+      projectDir: tempDir,
+      config,
+      bus,
+      phase: 'validating-task',
+    });
+
+    expect(results[0]).toMatchObject({
+      skipped: true,
+      skippedReason: 'npx not found, skipping typecheck',
+    });
+    expect(
+      events.find(
+        (event): event is EngineEventOf<'validate'> =>
+          event.type === 'validate' && event.status === 'done',
+      )?.skippedReason,
+    ).toEqual({ typecheck: 'npx not found, skipping typecheck' });
+  });
+
+  it('never ticks a stage the step itself skipped, so progress agrees with done', async () => {
+    validator = createValidator({ runCommand: makeCommandRunner(processError.notFound('npx')) });
+    const config = makeConfig({ typecheck: true, lint: false, test: false });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+
+    await validator.runValidation({
+      task: mkTask('src/main.ts'),
+      projectDir: tempDir,
+      config,
+      bus,
+      phase: 'validating-task',
+    });
+
+    const validates = events.filter(
+      (event): event is EngineEventOf<'validate'> => event.type === 'validate',
+    );
+    const progress = validates.filter((event) => event.status === 'running');
+    const done = validates.find((event) => event.status === 'done');
+
+    expect(progress.at(-1)?.stages).toEqual({ typecheck: false, lint: false, test: false });
+    expect(done?.stages).toEqual(progress.at(-1)?.stages);
   });
 
   it('publishes the active validation command before the stage completes', async () => {
@@ -753,6 +1009,7 @@ describe('discovered validation sanitization', () => {
 
     mkdirSync(join(tempDir, 'tests'), { recursive: true });
     writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
+    writeTsProject(tempDir);
 
     const results = await validator.runValidation({
       task: mkTask('src/foo.ts'),
@@ -786,6 +1043,7 @@ describe('discovered validation sanitization', () => {
 
     mkdirSync(join(tempDir, 'tests'), { recursive: true });
     writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
+    writeTsProject(tempDir);
 
     await validator.runValidation({
       task: mkTask('src/foo.ts'),
@@ -826,5 +1084,156 @@ describe('discovered validation sanitization', () => {
     expect(runner.calls.length).toBeGreaterThan(0);
     expect(runner.calls[0]?.cmd).toBe('npx');
     expect(runner.calls[0]?.args).toContain('vitest');
+  });
+});
+
+describe('unrecognised stack', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir('val-unknown-stack');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  it('unknown stack never spawns npm', async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: true, lint: true, test: true });
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus,
+      phase: 'implementing',
+    });
+
+    expect(runner.calls).toEqual([]);
+    expect(results.map((r) => [r.stage, r.skipped, r.output])).toEqual([
+      ['typecheck', true, 'skipped typecheck: no typecheck command for an unrecognised stack'],
+      ['lint', true, 'skipped lint: no lint command for an unrecognised stack'],
+      ['test', true, 'skipped test: no test command for an unrecognised stack'],
+    ]);
+    const warnings = events.filter((e): e is EngineEventOf<'warning'> => e.type === 'warning');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ category: 'validation', code: 'no_gates_unknown_stack' });
+  });
+});
+
+describe('capture and baseline reuse', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir('val-capture');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  it('green stage keeps stderr tail', async () => {
+    const runner = makeCommandRunner({
+      stdout: 'checked 12 files',
+      stderr: 'warning: 1 deprecated rule',
+      code: 0,
+    });
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({
+      typecheck: true,
+      typecheckCommand: 'npm run typecheck',
+      lint: false,
+      test: false,
+    });
+
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(results[0]?.passed).toBe(true);
+    expect(results[0]?.output).toContain('checked 12 files');
+    expect(results[0]?.output).toContain('warning: 1 deprecated rule');
+  });
+
+  it('baseline is reused on resume', async () => {
+    const config = makeConfig({
+      typecheck: true,
+      typecheckCommand: 'npm run typecheck',
+      lint: false,
+      test: false,
+    });
+    const priorFailure = 'src/app.ts(12,5): error TS2322: Type mismatch';
+    const probeRunner = makeCommandRunner(
+      processError.exitCode({ command: 'tsc', code: 1, stderr: priorFailure, output: '' }),
+    );
+    const probed = await createValidator({
+      runCommand: probeRunner,
+      captureBaseline: true,
+    }).primeBaseline({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(probeRunner.calls).toHaveLength(1);
+    expect(probed).toEqual({
+      failingStages: ['typecheck'],
+      commands: { typecheck: 'npm run typecheck' },
+      failures: { typecheck: ['src/app.ts(12,5)'] },
+    });
+
+    const persistedBaseline = ValidationBaselineSchema.parse(JSON.parse(JSON.stringify(probed)));
+    const resumeRunner = makeCommandRunner();
+    const resumed = createValidator({ runCommand: resumeRunner, captureBaseline: true });
+    const reprimed = await resumed.primeBaseline({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+      persistedBaseline,
+    });
+
+    expect(resumeRunner.calls).toEqual([]);
+    expect(reprimed).toEqual(persistedBaseline);
+    expect(
+      resumed.decideAcceptance({
+        results: [
+          {
+            passed: false,
+            stage: 'typecheck',
+            command: 'npm run typecheck',
+            error: priorFailure,
+            failureFiles: [],
+          },
+        ],
+        changedFiles: ['src/app.ts'],
+      }).exemptStages,
+    ).toEqual(['typecheck']);
+    expect(
+      resumed.decideAcceptance({
+        results: [
+          {
+            passed: false,
+            stage: 'typecheck',
+            command: 'npm run typecheck',
+            error: 'src/other.ts(3,1): error TS2551: Unknown name',
+            failureFiles: [],
+          },
+        ],
+        changedFiles: ['src/app.ts'],
+      }).blockingStages,
+    ).toEqual(['typecheck']);
   });
 });

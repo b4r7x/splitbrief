@@ -10,6 +10,7 @@ import type {
   Phase,
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import type { AnsweredQuestion } from '../../core/schemas/question.js';
 import type {
   EngineEvent,
   EngineEventOf,
@@ -21,10 +22,11 @@ import type {
 } from '../events/types.js';
 import type { ValidationResult } from './validation/result.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
-import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 import type { UserEditConflict, TaskReviewRequest } from '../events/workflow-events.js';
+import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
+import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { labelError } from '../../utils/format-errors.js';
 import { redactSecrets } from '../../utils/redact.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
@@ -38,7 +40,6 @@ type BusContext = {
 interface OperationalMessageSafety {
   readonly category: string;
   readonly code: string;
-  readonly transcriptSafe: true;
 }
 
 interface PublishOperationalMessageOptions extends BusContext {
@@ -75,7 +76,12 @@ type ValidationPhase =
       activeStage?: ValidationResult['stage'] | undefined;
       commands?: ValidationStageCommands | undefined;
     }
-  | { phase: 'result'; results: ValidationResult[]; startTime: number };
+  | {
+      phase: 'result';
+      results: ValidationResult[];
+      startTime: number;
+      exempt?: boolean | undefined;
+    };
 
 export function createBusTextHandler(
   ctx: BusContext,
@@ -142,6 +148,7 @@ export function publishTaskStart(
     index: number;
     total: number;
     file: string;
+    files?: string[];
     action: 'create' | 'modify';
     tool?: string;
     model?: string;
@@ -152,7 +159,6 @@ export function publishTaskStart(
     contextLength?: number;
     currentCodeTruncated?: boolean;
     currentCodeContextMode?: CurrentCodeContextMode;
-    costPosture?: string;
     routingReason?: string;
   },
 ): void {
@@ -215,6 +221,7 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
   const stages: ValidationStages = { ...EMPTY_STAGES };
   const attempted: ValidationStageAttempts = { ...EMPTY_STAGES };
   const skipped: ValidationStageSkips = {};
+  const skippedReason: Record<string, string> = {};
   let failedError: string | undefined;
   let passed = true;
   const commands: ValidationStageCommands = {};
@@ -223,6 +230,7 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
     if (r.command !== undefined) commands[r.stage] = r.command;
     if (r.skipped) {
       skipped[r.stage] = true;
+      if (r.skippedReason !== undefined) skippedReason[r.stage] = r.skippedReason;
       continue;
     }
     if (r.stage === 'typecheck') stages.typecheck = r.passed;
@@ -234,18 +242,24 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
     }
   }
   const hasSkips = Object.keys(skipped).length > 0;
+  // An exempt-accepted task failed only on stages the baseline already failed: the run passed on
+  // its own terms, so it publishes `passed` with the exemption named, never a failure the task
+  // did not cause.
+  const exempt = !passed && opts.exempt === true;
   ctx.bus.publish({
     type: 'validate',
     ts: Date.now(),
     phase: ctx.phase,
     taskId,
     status: 'done',
-    passed,
+    passed: passed || exempt,
+    ...(exempt && { exempt: true }),
     stages,
     attempted,
     ...(hasValidationCommands(commands) && { commands }),
     ...(hasSkips && { skipped }),
-    ...(failedError !== undefined && { error: failedError }),
+    ...(Object.keys(skippedReason).length > 0 && { skippedReason }),
+    ...(!exempt && failedError !== undefined && { error: failedError }),
     duration: Date.now() - opts.startTime,
   });
 }
@@ -310,6 +324,7 @@ export function publishGitCommit(
   taskId: TaskId,
   message: string,
   file?: string,
+  files?: readonly string[],
 ): void {
   ctx.bus.publish({
     type: 'git_commit',
@@ -318,15 +333,12 @@ export function publishGitCommit(
     taskId,
     message,
     ...(file !== undefined && { file }),
+    ...(files !== undefined && { files: [...files] }),
   });
 }
 
 export function publishGitBranchCreated(ctx: BusContext, name: string): void {
   ctx.bus.publish({ type: 'git_branch_created', ts: Date.now(), phase: ctx.phase, name });
-}
-
-export function publishGitCheckpoint(ctx: BusContext, taskId: TaskId, tag: string): void {
-  ctx.bus.publish({ type: 'git_checkpoint', ts: Date.now(), phase: ctx.phase, taskId, tag });
 }
 
 export function publishRetry(
@@ -368,47 +380,6 @@ export function publishCostUpdate(ctx: BusContext, tokenUsage: TokenUsage): void
   ctx.bus.publish({ type: 'cost_update', ts: Date.now(), phase: ctx.phase, tokenUsage });
 }
 
-export function publishCostPrediction(ctx: BusContext, prediction: CostPrediction): void {
-  ctx.bus.publish({ type: 'cost_prediction', ts: Date.now(), phase: ctx.phase, prediction });
-}
-
-export function publishBudgetWarning(
-  opts: BusContext & { currentCost: number; maxBudget: number },
-): void {
-  opts.bus.publish({
-    type: 'budget_warning',
-    ts: Date.now(),
-    phase: opts.phase,
-    currentCost: opts.currentCost,
-    maxBudget: opts.maxBudget,
-  });
-}
-
-export function publishBudgetPaused(
-  opts: BusContext & { currentCost: number; maxBudget: number; threshold: number },
-): void {
-  opts.bus.publish({
-    type: 'budget_paused',
-    ts: Date.now(),
-    phase: opts.phase,
-    currentCost: opts.currentCost,
-    maxBudget: opts.maxBudget,
-    threshold: opts.threshold,
-  });
-}
-
-export function publishBudgetExceeded(
-  opts: BusContext & { currentCost: number; maxBudget: number },
-): void {
-  opts.bus.publish({
-    type: 'budget_exceeded',
-    ts: Date.now(),
-    phase: opts.phase,
-    currentCost: opts.currentCost,
-    maxBudget: opts.maxBudget,
-  });
-}
-
 export function publishError(options: PublishOperationalMessageOptions): void {
   const { bus, phase, message, safety } = options;
   bus.publish({
@@ -419,7 +390,6 @@ export function publishError(options: PublishOperationalMessageOptions): void {
     ...(safety !== undefined && {
       category: safety.category,
       code: safety.code,
-      transcriptSafe: safety.transcriptSafe,
     }),
   });
 }
@@ -435,7 +405,6 @@ export function publishWarning(options: PublishOperationalMessageOptions): void 
     ...(safety !== undefined && {
       category: safety.category,
       code: safety.code,
-      transcriptSafe: safety.transcriptSafe,
     }),
   });
 }
@@ -444,8 +413,14 @@ export function publishWarningFromError(ctx: BusContext, label: string, err: unk
   publishWarning({ ...ctx, message: labelError(label, err) });
 }
 
-export function publishUserMessage(ctx: BusContext, text: string): void {
-  ctx.bus.publish({ type: 'user_message', ts: Date.now(), phase: ctx.phase, text });
+export function publishUserMessage(ctx: BusContext, text: string, qa?: AnsweredQuestion[]): void {
+  ctx.bus.publish({
+    type: 'user_message',
+    ts: Date.now(),
+    phase: ctx.phase,
+    text,
+    ...(qa !== undefined && qa.length > 0 ? { qa } : {}),
+  });
 }
 
 export function publishUserEditConflict(
@@ -462,13 +437,19 @@ export function publishUserEditConflict(
   });
 }
 
-export function publishRecoveryPrompted(bus: EventBus, issue: RecoveryIssue): void {
+export function publishRecoveryPrompted(
+  bus: EventBus,
+  sessionId: string,
+  issue: RecoveryIssue,
+): void {
   bus.publish({
     type: 'recovery_prompted',
     ts: Date.now(),
     phase: issue.phase,
     issueId: issue.id,
     reason: issue.reason,
+    headline: formatRecoveryHeadline(issue),
+    resumeCommand: formatResumeCommand(sessionId, issue),
     ...(issue.taskId !== undefined && { taskId: issue.taskId }),
     files: issue.files,
     affectedTaskIds: issue.affectedTaskIds,

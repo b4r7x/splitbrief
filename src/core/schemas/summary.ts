@@ -1,33 +1,13 @@
 import { z } from 'zod';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
-import { TASK_CONTEXT_FITS, WorkflowModeSchema } from './enums.js';
+import { PhaseSchema, REVIEW_VERDICTS, WorkflowModeSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';
-import { API_OFFERINGS, type ApiOffering } from '../providers/api-provider-catalog.js';
+import { API_OFFERINGS } from '../providers/api-provider-catalog.js';
 import { RunnerBillingPostureSchema } from '../runners/runner-billing.js';
-
-export const ESTIMATE_CONTEXT_CONFIDENCES = [
-  'context-explicit',
-  'context-detected',
-  'context-known-catalog',
-  'context-cached-provider',
-  'context-conservative-fallback',
-  'profile-unavailable',
-] as const;
-export const EstimateContextConfidenceSchema = z.enum(ESTIMATE_CONTEXT_CONFIDENCES);
-
-export const ESTIMATE_PRICE_CONFIDENCES = [
-  'price-known',
-  'price-unknown',
-  'profile-unavailable',
-] as const;
-export const EstimatePriceConfidenceSchema = z.enum(ESTIMATE_PRICE_CONFIDENCES);
-
-export const ESTIMATE_UNKNOWN_COST_REASONS = [
-  'implementer-price-unknown',
-  'planner-price-unknown',
-  'profile-unavailable',
-] as const;
-export const EstimateUnknownCostReasonSchema = z.enum(ESTIMATE_UNKNOWN_COST_REASONS);
+import { RUNNER_CALL_ROLES } from '../runner-call-contract.js';
+import { UsageBoundarySchema } from './usage-evidence.js';
+import { InvocationIdentitySchema } from './invocation-identity.js';
+import { uniqueInOrder } from '../../utils/collections.js';
 
 export const ChainDriftSummarySchema = z.object({
   score: z.number().min(0).max(1),
@@ -59,12 +39,44 @@ export const ProviderCostSchema = z.object({
   cacheCreateTokens: z.number().nonnegative().optional(),
 });
 
+/**
+ * How a billing posture was established. Only an enforced or observed channel
+ * from the invocation itself, or proven local transport, is evidence: a tool's
+ * catalogued default and a configured preference are not. A record written
+ * before any of this was captured carries no provenance at all, which is
+ * `legacy-unattributed` — an unattributed figure, never an invoice.
+ */
+export const BILLING_ATTRIBUTION_BASES = [
+  'unknown',
+  'enforced-channel',
+  'observed-invocation',
+  'local-transport',
+  'legacy-unattributed',
+] as const;
+export const BillingAttributionSchema = z.object({
+  posture: RunnerBillingPostureSchema,
+  basis: z.enum(BILLING_ATTRIBUTION_BASES),
+  evidenceId: z.string().min(1).optional(),
+});
+export type BillingAttribution = z.infer<typeof BillingAttributionSchema>;
+
+const LEGACY_BILLING_ATTRIBUTION: BillingAttribution = {
+  posture: 'unknown',
+  basis: 'legacy-unattributed',
+};
+
 export const ProviderRunMetadataSchema = z.object({
   service: z.string(),
   offering: z.enum(API_OFFERINGS),
   normalizedEndpoint: z.string(),
   billing: RunnerBillingPostureSchema,
   asOf: z.string(),
+  /**
+   * What the run's own invocations proved about that billing posture. Absent on
+   * a record written before any of it was captured, which is provenance nobody
+   * has — `legacy-unattributed`, not a confirmed default.
+   */
+  billingAttribution: BillingAttributionSchema.optional(),
 });
 
 export const OfferingBillingPresentationSchema = z.object({
@@ -74,102 +86,113 @@ export const OfferingBillingPresentationSchema = z.object({
 export type ProviderRunMetadata = z.infer<typeof ProviderRunMetadataSchema>;
 export type OfferingBillingPresentation = z.infer<typeof OfferingBillingPresentationSchema>;
 
+/**
+ * Why an estimate is less than a complete catalog price. Only the blocking ones
+ * lower `completeness`; `reasoning-not-reported` records that a breakdown the
+ * provider never sent cannot be displayed, which does not make the generated
+ * total unpriceable.
+ */
+export const REQUEST_ESTIMATE_REASONS = [
+  'usage-not-reported',
+  'unpriced-model',
+  'aggregate-boundary',
+  'unknown-boundary',
+  'unknown-context-total',
+  'unknown-output-count',
+  'unknown-input-count',
+  'unknown-category-split',
+  'missing-cache-rate',
+  'reasoning-not-reported',
+] as const;
+export const RequestEstimateReasonSchema = z.enum(REQUEST_ESTIMATE_REASONS);
+
+export const REQUEST_ESTIMATE_BASES = ['catalog-estimate', 'unavailable'] as const;
+export const RequestEstimateBasisSchema = z.enum(REQUEST_ESTIMATE_BASES);
+
+export const REQUEST_ESTIMATE_COMPLETENESS = ['complete', 'partial', 'unavailable'] as const;
+export const RequestEstimateCompletenessSchema = z.enum(REQUEST_ESTIMATE_COMPLETENESS);
+
+/**
+ * One provider request, priced on its own. `amount` is the complete catalog
+ * price and is `null` whenever any rate or counter it needs is unknown;
+ * `knownSubtotal` is the part that could be priced, so an incomplete request
+ * reports what is known instead of reporting an unknown as zero.
+ */
+/**
+ * The rates one request was priced against, kept with the request so reopening
+ * the record reports what it was priced at rather than what the catalog says
+ * today. `capturedAt` is when those rates were looked up and says nothing about
+ * when they were published; only `rateAsOf` does, and only when the source that
+ * supplied them carries a date of its own.
+ */
+export const RateSnapshotSchema = z.object({
+  source: z.enum(['models-dev', 'bundled-fallback', 'unpriced']),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  inputPer1M: z.number().nonnegative(),
+  outputPer1M: z.number().nonnegative(),
+  cacheReadPer1M: z.number().nonnegative().optional(),
+  cacheWritePer1M: z.number().nonnegative().optional(),
+  selectedThresholdTokens: z.number().int().nonnegative().optional(),
+  capturedAt: z.number().int().nonnegative(),
+  rateAsOf: z.string().min(1).optional(),
+});
+export type RateSnapshot = z.infer<typeof RateSnapshotSchema>;
+
+export const RequestEstimateItemSchema = z.object({
+  callId: z.string().min(1),
+  taskId: TaskIdSchema.optional(),
+  attempt: z.number().int().nonnegative().optional(),
+  role: z.enum(RUNNER_CALL_ROLES),
+  model: z.string().min(1).optional(),
+  usageBoundary: UsageBoundarySchema,
+  amount: z.number().nonnegative().nullable(),
+  knownSubtotal: z.number().nonnegative(),
+  completeness: RequestEstimateCompletenessSchema,
+  reasons: z.array(RequestEstimateReasonSchema),
+  /** The rates this request was priced against, absent when none were resolved. */
+  rates: RateSnapshotSchema.optional(),
+  /** What this call proved about who paid for it. */
+  billing: BillingAttributionSchema.default(LEGACY_BILLING_ATTRIBUTION),
+  /** The call's own immutable identity, kept whole so two requests on one tool
+   * through different auth, models or rates stay two requests. */
+  invocationIdentity: InvocationIdentitySchema.optional(),
+});
+
+export const RequestEstimateSchema = z.object({
+  amount: z.number().nonnegative().nullable(),
+  currency: z.literal('USD'),
+  basis: RequestEstimateBasisSchema,
+  completeness: RequestEstimateCompletenessSchema,
+  knownSubtotal: z.number().nonnegative(),
+  reasons: z.array(RequestEstimateReasonSchema),
+  items: z.array(RequestEstimateItemSchema),
+});
+
 export const CostBreakdownSchema = z.object({
-  hypotheticalCost: z.number().nonnegative(),
   actualPlannerCost: z.number().nonnegative(),
   actualImplementerCost: z.number().nonnegative(),
   actualReviewerCost: z.number().nonnegative().optional(),
   totalActualCost: z.number().nonnegative(),
-  savingsAmount: z.number(),
-  savingsPercentage: z.number(),
-  localCompletionRate: z.number().nonnegative().max(1),
   hasPricedUsage: z.boolean().optional(),
   hasUnpricedUsage: z.boolean().optional(),
-  hasSavingsEstimate: z.boolean().optional(),
   isActualPlannerCostKnown: z.boolean().optional(),
   isActualImplementerCostKnown: z.boolean().optional(),
   isActualReviewerCostKnown: z.boolean().optional(),
   isTotalActualCostKnown: z.boolean().optional(),
-  isAllPlannerBaselineKnown: z.boolean().optional(),
   providerCosts: z.record(z.string(), ProviderCostSchema).optional(),
   /** Billing identity of every runner the run used, keyed by tool/provider id. */
   providerRunMetadata: z.record(z.string(), ProviderRunMetadataSchema).optional(),
   /** Offering-correct cost and billing labels for those runners. */
   offeringPresentations: z.record(z.string(), OfferingBillingPresentationSchema).optional(),
-  cacheReadSavings: z.number().nonnegative().optional(),
   cacheReadTokens: z.number().nonnegative().optional(),
   cacheWriteTokens: z.number().nonnegative().optional(),
-});
-
-export const PlannerEstimateReviewClassificationSchema = z.enum([
-  'ok',
-  'split-suggested',
-  'risk',
-  'needs-user-decision',
-]);
-
-export const PlannerEstimateReviewSchema = z.object({
-  extraPlannerCall: z.boolean(),
-  status: z.enum(['running', 'completed', 'unavailable']),
-  classification: PlannerEstimateReviewClassificationSchema.nullable(),
-  affectedTaskIds: z.array(z.string()),
-  reason: z.string().nullable(),
-  recommendedUserDecision: z.string().nullable(),
-  error: z.string().optional(),
-});
-
-export const CostPredictionSchema = z.object({
-  estimatedTasks: z.number().nonnegative(),
-  lowCost: z.number().nonnegative(),
-  expectedCost: z.number().nonnegative(),
-  highCost: z.number().nonnegative(),
-  plannerTool: z.string(),
-  implementerTool: z.string(),
-  deterministic: z
-    .object({
-      estimateScope: z.literal('prompt-input-only').optional(),
-      taskCount: z.number().int().nonnegative(),
-      taskFitCounts: z.object({
-        fits: z.number().int().nonnegative(),
-        tight: z.number().int().nonnegative(),
-        overflow: z.number().int().nonnegative(),
-        unknown: z.number().int().nonnegative(),
-      }),
-      contextConfidenceCounts: z.object({
-        contextExplicit: z.number().int().nonnegative(),
-        contextDetected: z.number().int().nonnegative(),
-        contextKnownCatalog: z.number().int().nonnegative(),
-        contextCachedProvider: z.number().int().nonnegative(),
-        contextConservativeFallback: z.number().int().nonnegative(),
-        profileUnavailable: z.number().int().nonnegative(),
-      }),
-      priceConfidenceCounts: z.object({
-        priceKnown: z.number().int().nonnegative(),
-        priceUnknown: z.number().int().nonnegative(),
-        profileUnavailable: z.number().int().nonnegative(),
-      }),
-      tasks: z.array(
-        z.object({
-          taskId: TaskIdSchema,
-          title: z.string(),
-          estimatedPromptTokens: z.number().int().nonnegative(),
-          selectedProfileId: z.string().nullable(),
-          contextFit: z.enum([...TASK_CONTEXT_FITS, 'unknown']),
-          contextConfidence: EstimateContextConfidenceSchema,
-          priceConfidence: EstimatePriceConfidenceSchema,
-          estimatedImplementerCost: z.number().nonnegative().nullable(),
-          hypotheticalPlannerCost: z.number().nonnegative().nullable(),
-        }),
-      ),
-      totals: z.object({
-        knownActualEstimate: z.number().nonnegative().nullable(),
-        hypotheticalAllPlanner: z.number().nonnegative().nullable(),
-        estimatedSavings: z.number().nullable(),
-        unknownCostReason: z.array(EstimateUnknownCostReasonSchema),
-      }),
-    })
-    .optional(),
-  plannerEstimateReview: PlannerEstimateReviewSchema.optional(),
+  /**
+   * Per-request catalog estimate. The numeric `actual*` fields above stay as
+   * they are for readers written before this field existed; they are a run-wide
+   * sum and cannot answer a request-tier question.
+   */
+  requestEstimate: RequestEstimateSchema.optional(),
 });
 
 export const CheckpointSummaryRollupSchema = z.object({
@@ -181,13 +204,11 @@ export const CheckpointSummaryRollupSchema = z.object({
   preFinalReviewId: z.string().nullable(),
   accepted: z.boolean().nullable(),
   rejected: z.boolean().nullable(),
-  diffCommand: z.string().nullable(),
-  restoreCommand: z.string().nullable(),
 });
 
 export const ReviewFinalReviewStatusSchema = z.enum(['written', 'failed', 'missing', 'skipped']);
 
-export const ReviewVerdictSchema = z.enum(['pass', 'pass_with_notes', 'fail']);
+export const ReviewVerdictSchema = z.enum(REVIEW_VERDICTS);
 
 export const ReviewFindingCountsSchema = z.object({
   critical: z.number().int().nonnegative(),
@@ -219,7 +240,6 @@ export const SummarySchema = z.object({
   failed: z.number().nonnegative(),
   totalTime: z.number().nonnegative(),
   tokenUsage: TokenUsageSchema,
-  estimatedCostSavings: z.string(),
   escalationRate: z.number().nonnegative(),
   taskBreakdown: z.array(TaskTokenUsageSchema).optional(),
   costBreakdown: CostBreakdownSchema.optional(),
@@ -244,19 +264,33 @@ export const SummarySchema = z.object({
   briefQuality: BriefQualitySummarySchema.optional(),
   driftSummary: DriftSummarySchema.optional(),
   chainDriftSummary: ChainDriftSummarySchema.optional(),
-  costPrediction: CostPredictionSchema.optional(),
   checkpointSummary: CheckpointSummaryRollupSchema.optional(),
   reviewPacket: ReviewPacketSummarySchema.optional(),
+  review: z
+    .object({
+      verdict: ReviewVerdictSchema.nullable(),
+      critical: z.number(),
+      warnings: z.number(),
+      notes: z.number(),
+    })
+    .optional(),
+  changedFiles: z.array(z.string()).optional(),
+  stoppedAt: z
+    .object({
+      taskId: TaskIdSchema,
+      partialFiles: z.array(z.string()),
+    })
+    .optional(),
+  phase: PhaseSchema.optional(),
 });
 
+export type BriefQualitySummary = z.infer<typeof BriefQualitySummarySchema>;
 export type CostBreakdown = z.infer<typeof CostBreakdownSchema>;
+export type RequestEstimate = z.infer<typeof RequestEstimateSchema>;
+export type RequestEstimateItem = z.infer<typeof RequestEstimateItemSchema>;
+export type RequestEstimateReason = z.infer<typeof RequestEstimateReasonSchema>;
+export type ReviewVerdict = z.infer<typeof ReviewVerdictSchema>;
 export type Summary = z.infer<typeof SummarySchema>;
-export type CostPrediction = z.infer<typeof CostPredictionSchema>;
-export type PlannerEstimateReviewClassification = z.infer<
-  typeof PlannerEstimateReviewClassificationSchema
->;
-export type PlannerEstimateReview = z.infer<typeof PlannerEstimateReviewSchema>;
-export type CheckpointSummaryRollup = z.infer<typeof CheckpointSummaryRollupSchema>;
 export type ReviewPacketSummary = z.infer<typeof ReviewPacketSummarySchema>;
 
 export interface CostKnownFlags {
@@ -264,7 +298,6 @@ export interface CostKnownFlags {
   implementerCostKnown: boolean;
   reviewerCostKnown?: boolean;
   totalCostKnown: boolean;
-  allPlannerBaselineKnown: boolean;
 }
 
 export function costKnownFlags(breakdown: CostBreakdown): CostKnownFlags {
@@ -275,8 +308,6 @@ export function costKnownFlags(breakdown: CostBreakdown): CostKnownFlags {
     breakdown.isActualImplementerCostKnown ?? !(breakdown.hasUnpricedUsage === true);
   const totalCostKnown =
     breakdown.isTotalActualCostKnown ?? (plannerCostKnown && implementerCostKnown);
-  const allPlannerBaselineKnown =
-    breakdown.isAllPlannerBaselineKnown ?? breakdown.hasSavingsEstimate ?? true;
   return {
     plannerCostKnown,
     implementerCostKnown,
@@ -284,11 +315,27 @@ export function costKnownFlags(breakdown: CostBreakdown): CostKnownFlags {
       reviewerCostKnown: breakdown.isActualReviewerCostKnown,
     }),
     totalCostKnown,
-    allPlannerBaselineKnown,
   };
 }
 
-const UNMETERED_OFFERINGS = new Set<ApiOffering>(['coding-subscription', 'local']);
+export const COST_AMOUNT_BASES = [
+  'catalog-estimate',
+  'unavailable',
+  'legacy-unattributed',
+] as const;
+export const CostAmountBasisSchema = z.enum(COST_AMOUNT_BASES);
+export type CostAmountBasis = z.infer<typeof CostAmountBasisSchema>;
+
+/**
+ * What a stored dollar figure is. A run that priced its requests carries the
+ * estimate's own basis; a run whose breakdown predates per-request pricing
+ * carries a sum with no provenance behind it, which is not an invoice and is
+ * not a catalog estimate either.
+ */
+export function costAmountBasis(breakdown: CostBreakdown | undefined): CostAmountBasis {
+  if (breakdown === undefined) return 'unavailable';
+  return breakdown.requestEstimate?.basis ?? 'legacy-unattributed';
+}
 
 /**
  * The single cost label that describes a whole run, available only when every
@@ -297,14 +344,14 @@ const UNMETERED_OFFERINGS = new Set<ApiOffering>(['coding-subscription', 'local'
  * any metered runner makes the dollar figure the honest answer again.
  */
 export function unmeteredRunCostLabel(breakdown: CostBreakdown): string | null {
-  const entries = Object.entries(breakdown.providerRunMetadata ?? {});
-  if (entries.length === 0) return null;
-  const labels = new Set<string>();
-  for (const [tool, metadata] of entries) {
-    if (!UNMETERED_OFFERINGS.has(metadata.offering)) return null;
-    const label = breakdown.offeringPresentations?.[tool]?.costLabel;
-    if (label === undefined) return null;
-    labels.add(label);
+  const items = breakdown.requestEstimate?.items;
+  if (items === undefined || items.length === 0) return null;
+  const labels: string[] = [];
+  for (const { billing } of items) {
+    if (billing.basis === 'unknown' || billing.basis === 'legacy-unattributed') return null;
+    if (billing.posture !== 'local' && billing.posture !== 'subscription-included') return null;
+    labels.push(billing.posture);
   }
-  return labels.size === 1 ? ([...labels][0] ?? null) : null;
+  const unique = uniqueInOrder(labels);
+  return unique.length === 0 ? null : unique.join(' · ');
 }

@@ -6,9 +6,9 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
-import type { IpcServer } from '../../../src/engine/ipc/server.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
+import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -19,11 +19,9 @@ const { routerStore } = await import('../../../src/stores/navigation/router.js')
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
 const { createInitialState, transition } = await import('../../../src/core/state/machine.js');
 const { saveState } = await import('../../../src/core/state/persistence.js');
+const { requestResume } = await import('../../../src/features/workflow/handlers.js');
 
 const ENTER = '\r';
-
-const ipcServers: IpcServer[] = [];
-const ipcTempDirs: string[] = [];
 
 function workflowStateInResearching(feature: string) {
   return transition(createInitialState(feature), { type: 'START' });
@@ -44,17 +42,13 @@ describe('WorkflowScreen lifecycle', () => {
     runWorkflow.mockReturnValue(new Promise<never>(() => {}));
   });
 
-  afterEach(async () => {
+  afterEach(() => {
     vi.unstubAllEnvs();
-    for (const server of ipcServers.splice(0)) {
-      await server.close().catch(() => undefined);
-    }
-    for (const dir of ipcTempDirs.splice(0)) cleanupTempDir(dir);
     resetAllStores();
     routerStore.init({ screen: 'home' });
   });
 
-  it('routes completion with the prepared session id without reading ambient session state', async () => {
+  it('settles the finished run in place, on the screen it never left', async () => {
     const projectDir = createTempDir('workflow-screen-complete');
     try {
       const summary = makeSummary({ feature: 'generated completion id' });
@@ -62,6 +56,7 @@ describe('WorkflowScreen lifecycle', () => {
         opts.callbacks.onComplete(summary);
         return summary;
       });
+
       const config = makeConfig();
       const prepared = prepareWorkflowExecution({
         projectDir,
@@ -73,6 +68,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
+        run: readRunRecord(prepared.session.ref),
         execution: { kind: 'local', prepared },
       });
 
@@ -81,17 +77,16 @@ describe('WorkflowScreen lifecycle', () => {
       );
 
       await vi.waitFor(() => {
-        expect(routerStore.get().screen).toBe('summary');
+        const settled = routerStore.get();
+        expect(settled.screen === 'workflow' && settled.execution.kind).toBe('at-rest');
       });
 
       const firstCall = runWorkflow.mock.calls[0];
       if (!firstCall) throw new Error('expected runWorkflow to be called');
       const route = routerStore.get();
       expect(firstCall[0].prepared).toBe(prepared);
-      if (route.screen === 'summary') {
-        expect(route.summary).toEqual(summary);
-        expect(route.sessionId).toBe(prepared.session.ref.sessionId);
-        expect(route.status).toBe('complete');
+      if (route.screen === 'workflow') {
+        expect(route.run.ref.sessionId).toBe(prepared.session.ref.sessionId);
       }
 
       ui.unmount();
@@ -100,7 +95,7 @@ describe('WorkflowScreen lifecycle', () => {
     }
   });
 
-  it('routes final-review failures as interrupted summaries instead of defaulting to complete', async () => {
+  it('settles a failed final review at rest rather than leaving a live-looking screen', async () => {
     const projectDir = createTempDir('workflow-screen-final-review-failed');
     try {
       const summary = makeSummary({ feature: 'final review failure' });
@@ -123,6 +118,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
+        run: readRunRecord(prepared.session.ref),
         execution: { kind: 'local', prepared },
       });
 
@@ -131,13 +127,13 @@ describe('WorkflowScreen lifecycle', () => {
       );
 
       await vi.waitFor(() => {
-        expect(routerStore.get().screen).toBe('summary');
+        const settled = routerStore.get();
+        expect(settled.screen === 'workflow' && settled.execution.kind).toBe('at-rest');
       });
 
       const route = routerStore.get();
-      if (route.screen === 'summary') {
-        expect(route.summary).toEqual(summary);
-        expect(route.status).toBe('interrupted');
+      if (route.screen === 'workflow') {
+        expect(route.run.status.kind).toBe('open');
       }
 
       ui.unmount();
@@ -164,6 +160,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
+        run: readRunRecord(prepared.session.ref),
         execution: { kind: 'local', prepared },
       });
 
@@ -194,7 +191,7 @@ describe('WorkflowScreen lifecycle', () => {
     }
   });
 
-  it('keeps Enter resume available for a cancelled state that is resumable for this session', async () => {
+  it('resumes a cancelled resumable session through /resume, never a blank Enter', async () => {
     const projectDir = createTempDir('workflow-screen-cancel-resumable');
     try {
       const sessionId = 'cancelled-planning';
@@ -212,6 +209,7 @@ describe('WorkflowScreen lifecycle', () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
+        run: readRunRecord(prepared.session.ref),
         execution: { kind: 'local', prepared },
       });
 
@@ -229,7 +227,13 @@ describe('WorkflowScreen lifecycle', () => {
       });
       await flushEffects();
 
+      // Blank Enter never restarts a run: the keystroke the composer takes by accident must not
+      // be the one that starts work.
       ui.stdin.write(ENTER);
+      await tick(20);
+      expect(runWorkflow).toHaveBeenCalledTimes(1);
+
+      requestResume('');
 
       await vi.waitFor(() => {
         expect(runWorkflow).toHaveBeenCalledTimes(2);

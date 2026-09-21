@@ -11,6 +11,7 @@ import {
 const ALL_FIELDS: EditableBriefField[] = [
   'title',
   'file',
+  'files',
   'description',
   'signature',
   'currentCode',
@@ -90,6 +91,18 @@ describe('writeField', () => {
     const task = richTask();
     const next = writeField(task, 'constraints', 'keep this\n\n   \nand this');
     expect(next.constraints).toEqual(['keep this', 'and this']);
+  });
+
+  it('files field round-trips and re-anchors on the first entry', () => {
+    const task = richTask();
+    expect(readField(task, 'files')).toBe('src/greet.ts');
+
+    const next = writeField(task, 'files', 'src/greet.ts\nsrc/greet.test.ts');
+    expect(next.files).toEqual(['src/greet.ts', 'src/greet.test.ts']);
+    expect(readField(next, 'files')).toBe('src/greet.ts\nsrc/greet.test.ts');
+
+    const reanchored = writeField(next, 'files', 'src/greet.test.ts\nsrc/greet.ts');
+    expect(reanchored.file).toBe('src/greet.test.ts');
   });
 
   it('writes nested scope buckets without touching the sibling bucket', () => {

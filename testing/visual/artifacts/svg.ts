@@ -37,7 +37,7 @@ export const SVG_BASELINE_PX = 13;
 
 export const SVG_RENDERER_METADATA: RendererMetadata = RendererMetadataSchema.parse({
   name: 'splitbrief-cell-svg',
-  version: '1.0.0',
+  version: '1.1.0',
   fontFamily: SVG_FONT_FAMILY,
   cellWidthPx: SVG_CELL_WIDTH_PX,
   cellHeightPx: SVG_CELL_HEIGHT_PX,
@@ -75,7 +75,8 @@ export function renderCellGridSvg(gridInput: CellGrid): string {
         backgrounds.push(renderBackground({ cell, row, column, color: colors.background }));
       }
       if (cell.grapheme !== ' ' && !cell.style.invisible) {
-        text.push(renderText({ cell, row, column, color: colors.foreground }));
+        const options = { cell, row, column, color: colors.foreground };
+        text.push(renderBlockElement(options) ?? renderText(options));
       }
     }
   }
@@ -85,7 +86,7 @@ export function renderCellGridSvg(gridInput: CellGrid): string {
       renderer: SVG_RENDERER_METADATA.name,
       rendererVersion: SVG_RENDERER_METADATA.version,
       fontFamily: SVG_FONT_FAMILY,
-      glyphPolicy: 'monospace-font-fallback',
+      glyphPolicy: 'monospace-font-fallback+block-elements-as-rects',
       hyperlinkPolicy: 'non-interactive-kind-only',
     }),
   );
@@ -109,6 +110,54 @@ function renderBackground(options: {
 }): string {
   const { cell, row, column, color } = options;
   return `  <rect x="${column * SVG_CELL_WIDTH_PX}" y="${row * SVG_CELL_HEIGHT_PX}" width="${cell.width * SVG_CELL_WIDTH_PX}" height="${SVG_CELL_HEIGHT_PX}" fill="${color}"/>`;
+}
+
+// A terminal paints the Block Elements itself, as exact fractions of the cell, so a column of them
+// is one unbroken line. A font's own glyphs fall short of the row — Menlo's by a couple of pixels —
+// which would show a border this product draws whole as a dashed one. The capture draws them the
+// way a terminal does; anything outside the solid families (the shades, the quadrants) still goes
+// through the font.
+function blockElementRect(grapheme: string): readonly [number, number, number, number] | null {
+  const code = grapheme.codePointAt(0) ?? 0;
+  if (code === 0x2580) return [0, 0, 1, 1 / 2];
+  if (code >= 0x2581 && code <= 0x2588) {
+    const height = (code - 0x2580) / 8;
+    return [0, 1 - height, 1, height];
+  }
+  if (code >= 0x2589 && code <= 0x258f) return [0, 0, (0x2590 - code) / 8, 1];
+  if (code === 0x2590) return [1 / 2, 0, 1 / 2, 1];
+  if (code === 0x2594) return [0, 0, 1, 1 / 8];
+  if (code === 0x2595) return [7 / 8, 0, 1 / 8, 1];
+  return null;
+}
+
+function renderBlockElement(options: {
+  readonly cell: Extract<Cell, { readonly continuation: false }>;
+  readonly row: number;
+  readonly column: number;
+  readonly color: string;
+}): string | null {
+  const { cell, row, column, color } = options;
+  const fraction = blockElementRect(cell.grapheme);
+  if (fraction === null) return null;
+  const [x, y, width, height] = fraction;
+  const cellWidth = cell.width * SVG_CELL_WIDTH_PX;
+  const attributes = [
+    `x="${formatPx(column * SVG_CELL_WIDTH_PX + x * cellWidth)}"`,
+    `y="${formatPx((row + y) * SVG_CELL_HEIGHT_PX)}"`,
+    `width="${formatPx(width * cellWidth)}"`,
+    `height="${formatPx(height * SVG_CELL_HEIGHT_PX)}"`,
+    `fill="${color}"`,
+    ...(cell.style.dim ? ['opacity="0.65"'] : []),
+    `data-row="${row}"`,
+    `data-column="${column}"`,
+    `data-cell-width="${cell.width}"`,
+  ];
+  return `  <rect ${attributes.join(' ')}/>`;
+}
+
+function formatPx(value: number): string {
+  return Number(value.toFixed(3)).toString();
 }
 
 function renderText(options: {

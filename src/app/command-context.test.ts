@@ -1,4 +1,5 @@
 import { createElement } from 'react';
+import { realpathSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   installClipboardExecFixture,
@@ -7,9 +8,11 @@ import {
   restoreClipboardExecFixture,
 } from '#testing/helpers/clipboard-exec-fixture.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { routerStore } from '../stores/navigation/router.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { EngineEventOf } from '../engine/events/types.js';
 import type { RewindTarget } from '../core/state/build-rewind-action.js';
@@ -27,16 +30,17 @@ import {
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
 import { configStore } from '../stores/project/config.js';
+import { composerDraftStore } from '../stores/ui/composer-draft.js';
+import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { skillsStore } from '../stores/project/skills.js';
 import type { SkillMeta } from '../core/skills/types.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
+import { tasksStore } from '../stores/workflow/tasks.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
-import { routerStore } from '../stores/navigation/router.js';
-import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import {
   buildCommandContext,
@@ -92,6 +96,23 @@ function seedExpandableActivityBatch(): string {
 }
 
 describe('buildCommandContext', () => {
+  it('routes an image command into the composer draft instead of pending attachments', () => {
+    projectDir = createTempDir('app-command-context-image');
+    const imagePath = `${projectDir}/shot.png`;
+    writeFileSync(imagePath, 'png-bytes');
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+    configStore.__testReset({ projectDir, config, diskConfig: config });
+
+    const result = build().insertImage?.(imagePath);
+
+    expect(result).toEqual({ ok: true, path: realpathSync(imagePath) });
+    expect(composerDraftStore.get().request).toMatchObject({
+      kind: 'image',
+      attachment: { path: realpathSync(imagePath) },
+    });
+    expect(attachmentsStore.peek()).toEqual([]);
+  });
+
   it('delegates queue clearing to the live workflow handler', () => {
     setClearQueueHandler(() => ({ status: 'cleared', count: 2 }));
 
@@ -152,7 +173,7 @@ describe('buildCommandContext', () => {
   });
 
   it('toggles the workflow sidebar through the controls store', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    terminalSizeStore.__testReset({ cols: 160, rows: 45, isSmall: false });
     const ctx = build();
 
     // The sidebar ships on, so the first toggle is the one that hides it.
@@ -173,27 +194,45 @@ describe('buildCommandContext', () => {
     expect(controlsStore.get().sidebarVisible).toBe(true);
   });
 
-  it('is not attached for an in-process session', () => {
-    expect(build().isAttached).toBe(false);
+  it('does not report the workflow sidebar as shown at the layout breakpoint', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+
+    expect(build().toggleSidebar()).toEqual({
+      status: 'unavailable',
+      message: 'Sidebar is hidden on small terminals.',
+    });
+    expect(controlsStore.get().sidebarVisible).toBe(true);
   });
 
-  it('hides local-only workflow mutation commands when attached', () => {
+  it('does not report a sidebar on a run that has closed', () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
     routerStore.init({
       screen: 'workflow',
-      execution: {
-        kind: 'attached',
-        feature: 'feat',
-        sessionId: 's1',
-        attach: { sockPath: '/tmp/s.sock', authToken: 'tok' },
-      },
+      run: makeRunRecord({ status: { kind: 'closed', as: 'complete' } }),
+      execution: { kind: 'at-rest' },
     });
 
-    const names = createRuntimeCommands(build()).map((cmd) => cmd.name);
+    expect(build().toggleSidebar()).toEqual({
+      status: 'unavailable',
+      message: 'A closed run has no sidebar.',
+    });
+    expect(controlsStore.get().sidebarVisible).toBe(true);
+  });
 
-    expect(names).not.toContain('/yolo');
-    expect(names).not.toContain('/revise-spec');
-    expect(names).not.toContain('/attach');
-    expect(names).toContain('/copy');
+  it('lists the planned briefs in plan order from the tasks store', () => {
+    tasksStore.__testReset({
+      tasks: [
+        { id: 'T001', title: 'first', status: 'done' },
+        { id: 'T002', title: 'second', status: 'in_progress' },
+        { id: 'T003', title: 'third', status: 'pending' },
+      ],
+    });
+
+    expect(build().listBriefs()).toEqual([
+      { id: 'T001', status: 'done' },
+      { id: 'T002', status: 'in_progress' },
+      { id: 'T003', status: 'pending' },
+    ]);
   });
 
   it('refreshDetection derives current settings instead of reusing prior service dependencies', async () => {
@@ -304,7 +343,7 @@ describe('buildCommandContext skills ports', () => {
     ]);
   });
 
-  it('lists each skill as an id, name and description', () => {
+  it('lists each skill as an id, name, description and whether it is attached', () => {
     skillsStore.setAvailable([skill('project-a', 'project'), skill('global-a', 'global')]);
     skillsStore.setSelected(new Set(['project-a']));
 
@@ -313,11 +352,13 @@ describe('buildCommandContext skills ports', () => {
         id: 'project-a',
         name: 'project-a name',
         description: 'project-a description',
+        attached: true,
       },
       {
         id: 'global-a',
         name: 'global-a name',
         description: 'global-a description',
+        attached: false,
       },
     ]);
   });

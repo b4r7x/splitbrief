@@ -11,7 +11,7 @@ Testing in this repo means exercising observable behaviour — rendered output, 
 | Never `vi.mock()` a sibling module (`./`, `../`) | Couples the test to the file layout, not the contract | Import the real module |
 | No `vi.spyOn` on internal module functions | It re-asserts the call graph | Observe returned state / emitted event |
 | Fewer, longer tests beat many micro-tests | One flow = one user-visible behaviour | Cache lifecycle in one `it`, not four `describe`s |
-| Don't re-test the framework / compiler | `useState`, `assertNever`, Zod `.strict()`, V8's `Error.captureStackTrace` already have tests | Skip `toBeInstanceOf(Function)` on a typed interface; skip `expect(err.stack).toContain(file)` |
+| Don't re-test the framework / type checker | `useState`, `assertNever`, Zod `.strict()`, V8's `Error.captureStackTrace` already have tests | Skip `toBeInstanceOf(Function)` on a typed interface; skip `expect(err.stack).toContain(file)` |
 | Don't re-assert a literal you just set up | `tsc` already proves passthrough | Test the transformation, not the echo |
 | Don't copy production helpers into test files | Production can drift from the copy; tests re-implement instead of observe | Export the helper from source and import it |
 | Prefer observable-state assertions over DI call-count assertions | Call counts observe wiring; state observes behaviour | Assert on store contents / files on disk / emitted events, not `toHaveBeenCalledTimes` |
@@ -79,16 +79,16 @@ SPLITBRIEF_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/
 
 `conversation-flow-hover.perf.test.tsx` covers hover-only re-renders on a large real-store transcript: repeated `hoverStore` updates must stay bounded and must not change transcript text apart from the focus glyph. Run it only with `SPLITBRIEF_PERF=1` as above.
 
-`runner-large-output.perf.test.ts` covers large runner stdout without a trailing newline and multi-megabyte stderr flood behavior through the real subprocess collector. `events-store-cap.perf.test.ts` covers capped workflow event ingestion and retained merged-text size after multi-megabyte planner text input. `event-sinks-throughput.perf.test.ts` covers protected JSONL, stdout JSON, and session-tree sink throughput. There is no automated fullscreen-vs-inline replay perf harness yet; use the manual TUI smoke checklist below for fullscreen replay behavior until a stable local harness exists.
+`runner-large-output.perf.test.ts` covers large runner stdout without a trailing newline and multi-megabyte stderr flood behavior through the real subprocess collector. `events-store-cap.perf.test.ts` covers capped workflow event ingestion and retained merged-text size after multi-megabyte planner text input. `event-sinks-throughput.perf.test.ts` covers JSONL and stdout-JSON sink throughput. There is no automated fullscreen-vs-inline replay perf harness yet; use the manual TUI smoke checklist below for fullscreen replay behavior until a stable local harness exists.
 
 **Fixtures vs factories.** Split by kind:
 - `testing/fixtures/<domain>/` = read-only **bytes on disk**. Consumers read via `fs.readFile`.
 - `testing/helpers/factories/<domain>.ts` = pure **TypeScript constructors** returning typed objects with overrides. No I/O.
 - **Rule of two:** data stays inline inside one test file until a second test needs it. Promotion happens on the second consumer, not the first.
 
-**Feature sub-components get a colocated test when they carry behaviour.** A sub-component that renders a visible affordance off branching state — an approval prompt, a cost drilldown, a brief review scorecard, a pipeline bar — is tested next to its `*.tsx` against `lastFrame()` and observable store state, the same way `src/features/workflow/components/` and `src/features/summary/components/` already are. Styling-only or pure-passthrough sub-components stay covered transitively through the page seam (`app/screens/<x>.tsx` / `app/overlays/<x>.tsx`); do not add a "does not crash" test for them. Shared primitives in `src/components/` (`MultilineInput` → `input/multiline-input.test.tsx`, `ScrollWindow` → `pickers/scroll-window.test.ts`, `SessionRow` → `session-row.test.tsx`) carry their own colocated tests — their cost amortises across consumers. A primitive whose behaviour lives in a backing hook is covered through that hook's test instead (`FilterableList` via `src/hooks/use-filterable-list.test.tsx`).
+**Feature sub-components get a colocated test when they carry behaviour.** A sub-component that renders a visible affordance off branching state — an approval prompt, a brief review scorecard, a pipeline bar — is tested next to its `*.tsx` against `lastFrame()` and observable store state, the same way `src/features/workflow/components/` already is. Styling-only or pure-passthrough sub-components stay covered transitively through the page seam (`app/screens/<x>.tsx` / `app/overlays/<x>.tsx`); do not add a "does not crash" test for them. Shared primitives in `src/components/` (`MultilineInput` → `input/multiline-input.test.tsx`, `ScrollWindow` → `pickers/scroll-window.test.ts`, `SessionRow` → `session-row.test.tsx`) carry their own colocated tests — their cost amortises across consumers. A primitive whose behaviour lives in a backing hook is covered through that hook's test instead (`FilterableList` via `src/hooks/use-filterable-list.test.tsx`).
 
-**Decision-bearing orchestrator modules get a colocated test.** A module in `src/engine/orchestrator/` that makes a decision or owns observable control-flow behaviour — budget/cost gating, escalation tiers, queue drain order, signal-handler cleanup, planning-phase routing, recovery actions, the task loop and step — is unit-tested next to its source against its returned decision and the events it emits. This is why `escalation/step.test.ts`, `queue/submit.test.ts`, `signals.test.ts`, `planning/*.test.ts`, `recovery/*.test.ts`, `task/loop-*.test.ts`, `task/step.test.ts`, and `run/workflow.test.ts` (the same files the Recovery flow section below tells you to run) all exist. The `runWorkflow()` integration seam under `testing/integration/orchestrator/` covers the composition of these modules across a full multi-phase run, not the per-module decision. Reserve it for behaviour that only emerges from wiring several modules together (a phase progressing, a task pausing before overwriting a user edit, a workflow completing). Trivial glue with no branch of its own — a function that only forwards to an already-tested helper — stays covered transitively at that seam.
+**Decision-bearing orchestrator modules get a colocated test.** A module in `src/engine/orchestrator/` that makes a decision or owns observable control-flow behaviour — escalation tiers, queue drain order, signal-handler cleanup, planning-phase routing, recovery actions, the task loop and step — is unit-tested next to its source against its returned decision and the events it emits. This is why `escalation/step.test.ts`, `queue/submit.test.ts`, `signals.test.ts`, `planning/*.test.ts`, `recovery/*.test.ts`, `task/loop-*.test.ts`, `task/step.test.ts`, and `run/workflow.test.ts` (the same files the Recovery flow section below tells you to run) all exist. The `runWorkflow()` integration seam under `testing/integration/orchestrator/` covers the composition of these modules across a full multi-phase run, not the per-module decision. Reserve it for behaviour that only emerges from wiring several modules together (a phase progressing, a task pausing before overwriting a user edit, a workflow completing). Trivial glue with no branch of its own — a function that only forwards to an already-tested helper — stays covered transitively at that seam.
 
 **CLI-protocol full-loop tests.** `testing/integration/orchestrator/full-loop-opencode-cli.test.ts`, `full-loop-codex-cli.test.ts`, and `full-loop-claude-code-cli.test.ts` drive `runWorkflow()` end to end against fake binaries that speak each tool's real protocol terminal (opencode `step_finish`, codex `turn.completed`, claude-code stream-json `result`). They pin that turn/result usage reaches the run summary's `tokenUsage` buckets — cache-adjusted for codex — and the first `taskBreakdown` entry, with the prompt transport (argv positional for codex, stdin for claude-code) exercised against the real arg vector. They cannot detect adapter/binary version drift by construction; that gap is covered by the gated real-binary smoke in `testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts` (run with `npm run test:e2e:live:smoke`; the replay e2e config never collects it), which also asserts the real run records non-zero implementer input tokens.
 
@@ -108,7 +108,7 @@ Colocated support files under `src/**` that import `vitest` or another dev-only 
 
 Cost-aware implementer routing, user-edit conflict handling, and the brief review gate follow the same rule: test the decision contract, not the private call graph.
 
-**Routing and context fit.** Public pure helpers are valid unit-test targets when they encode product policy. Examples: context-window classification, prompt-size estimation, profile ordering, cheapest-capable selection, and no-capable-profile failure. These tests should assert the returned decision object, selected profile, rejection reasons, and fit status. Do not spy on internal sort helpers or duplicate the full prompt formatter in the test.
+**Routing and context fit.** Public pure helpers are valid unit-test targets when they encode product policy. Examples: context-window classification, prompt-size estimation, profile ordering, capable-profile selection, and no-capable-profile failure. These tests should assert the returned decision object, selected profile, rejection reasons, and fit status. Do not spy on internal sort helpers or duplicate the full prompt formatter in the test.
 
 **User-edit conflicts.** Conflict tests should set up real task/file ownership data and assert the public classification or emitted event: conflict kind, affected task ids, `safeToContinue`, and available actions. Do not assert that a particular detector function was called. Orchestrator-level coverage belongs at the task loop or `runWorkflow()` seam when the behavior is "pause before overwriting the user" or "continue on unrelated external edits."
 
@@ -116,22 +116,19 @@ Cost-aware implementer routing, user-edit conflict handling, and the brief revie
 
 **Brief field editor CAS.** Rendered ownership, save gate, stdin suppression, multi-field save, and submit-in-flight behavior belong in `testing/integration/ui/brief-field-editor-ownership.test.ts` (`.test.ts` with `createElement`, not a colocated `.tsx` owner). Pure `editorStore` transitions (scroll, layout reflow, token capture) stay in `src/stores/ui/editor.test.ts`. `readSessionFileConfined` cases at the editor read boundary live in `src/core/sessions/confinement.test.ts`. The `useFieldSessionOwned` hook contract stays in `src/features/editor/use-field-session-owned.test.tsx`.
 
-**Input history persistence.** Debounced `~/.splitbrief/history` writes, teardown, and transcript-off prompt redaction at the composer persistence boundary stay in `src/stores/ui/persistence.test.ts`. Cross-artifact transcript-off privacy (`runWorkflow()` with `persistTranscript: false` — session ids, lockfile, summaries, HTML export, `ps`, branch names) belongs in `testing/integration/orchestrator/transcript-off-session-artifacts.test.ts`.
+**Input history persistence.** Debounced `~/.splitbrief/history` writes and teardown at the composer persistence boundary stay in `src/stores/ui/persistence.test.ts`.
 
 **Hooks and wrappers.** No new `renderHook` tests for trivial wrappers, selector hooks, or `useState` / `useEffect` plumbing. Extract behavior-bearing logic into a public pure helper and test that helper, or cover the hook through the feature/component that uses it. Thin wrappers that only call an already-tested helper should not receive dedicated tests.
 
-**Recovery flow.** Recovery tests should assert persisted `pendingRecovery`, emitted recovery events, headless JSON, prompt text/parser behavior, and file/evidence effects. In a dirty or shared checkout, do not run broad orchestration suites that exercise product git behavior (`git add`/commit/checkpoint helpers). Prefer the focused recovery files:
+**Recovery flow.** Recovery tests should assert persisted `pendingRecovery`, emitted recovery events, headless JSON, prompt text/parser behavior, and file/evidence effects. In a dirty or shared checkout, do not run broad orchestration suites that exercise legacy Git-writing test fixtures. Prefer the focused recovery files:
 
 ```bash
 npm test -- src/core/schemas/recovery.test.ts
 npm test -- src/core/schemas/workflow.test.ts
 npm test -- src/core/schemas/enums.test.ts
 npm test -- src/core/state/machine.test.ts
-npm test -- src/core/state/persistence.test.ts src/core/sessions/log-writer.test.ts src/core/transcript-policy.test.ts
+npm test -- src/core/state/persistence.test.ts src/core/sessions/log-writer.test.ts src/core/payload-bounds.test.ts
 npm test -- src/engine/orchestrator/recovery/actions.test.ts src/engine/orchestrator/recovery/actions-persistence.test.ts src/engine/orchestrator/recovery/builders/task.test.ts src/engine/orchestrator/recovery/builders/workflow.test.ts
-npm test -- src/engine/orchestrator/budget/check.test.ts
-npm test -- src/engine/orchestrator/budget/knownness.test.ts
-npm test -- src/engine/orchestrator/budget/enforce.test.ts
 npm test -- src/engine/orchestrator/task/loop-happy-path.test.ts
 npm test -- src/engine/orchestrator/task/step.test.ts
 npm test -- src/engine/orchestrator/run/workflow.test.ts
@@ -143,13 +140,13 @@ npm test -- src/features/workflow/user-edit-conflict-prompt.test.ts
 
 Full `npm test` is appropriate only when it is safe for the checkout and the validation owner accepts suites that may create git history in temporary repos.
 
-## Compiler conformance testing
+## Planner conformance testing
 
-Planner and compiler conformance is deterministic CI, not a live smoke. The production factory path must prove, per backend and exact version: the effective read-only role, filesystem containment, exact current-call output, final-response semantics, detached sessions, the hard call envelope, hostile configuration handling, credential isolation, and zero dispatch on failed preflight. "Planner mode does not grant artifact authority." A mode flag (`--agent plan`, `--permission-mode plan`, `--sandbox read-only`) is what the tool is told; the conformance harness proves what the tool did. Tests may not treat a flag or an argv snapshot as effect proof.
+Planner conformance is deterministic CI, not a live smoke. "Planner mode does not grant artifact authority." A mode flag (`--agent plan`, `--permission-mode plan`, `--sandbox read-only`) is what the tool is told; the conformance harness proves what the tool did. Tests may not treat a flag or an argv snapshot as effect proof.
 
-The black-box rows live in `testing/integration/orchestrator/runner-capability-matrix.test.ts` and `testing/integration/orchestrator/planner-effect-matrix.test.ts`, with the effect fixtures in `src/engine/runners/cli-tools/contract-harness-effects.test.ts` and the refusal matrix in `src/engine/runners/compiler-unsupported-backends.test.ts`. They drive the production factory against subprocess shims that speak each tool's real protocol terminal, with sentinel files and nonce edits as the observable effects, and the unsupported rows must prove zero spawns. The doc-parity gate in `testing/docs/planners-and-implementers.test.ts` pins the admitted matrix to the runtime catalog.
+The black-box rows live in `testing/integration/orchestrator/runner-capability-matrix.test.ts` and `testing/integration/orchestrator/planner-effect-matrix.test.ts`, with the effect fixtures in `src/engine/runners/cli-tools/contract-harness-effects.test.ts`. They drive the production factory against subprocess shims that speak each tool's real protocol terminal, with sentinel files and nonce edits as the observable effects. The doc-parity gate in `testing/docs/planners-and-implementers.test.ts` pins the admitted matrix to the runtime catalog.
 
-Live authenticated checks (`npm run test:e2e:live:smoke`, `testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts`) are opt-in drift evidence: they verify reality on a real machine with real credentials and never replace the deterministic matrix as the admission proof. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) for the support table and role vectors.
+Live authenticated checks (`npm run test:e2e:live:smoke`, `testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts`) are opt-in drift evidence: they verify reality on a real machine with real credentials and never replace the deterministic matrix as the admission proof. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#planner-artifact-ownership) for the transport and role contract.
 
 ## Live CLI e2e tier
 
@@ -157,15 +154,35 @@ Above that single smoke sits a paid tier that drives whole workflows through rea
 
 Two switches gate it. `SPLITBRIEF_REAL_CLI_E2E=1` is the master switch; nothing live runs without it. `SPLITBRIEF_REAL_CLI_TIER` selects `easy` (the default when unset), `heavy`, or `all`.
 
-The separation from replay e2e is physical, not conventional: the live scenarios and the real-CLI smoke are excluded from `testing/e2e/vitest.e2e.config.ts` and collected only by `testing/e2e/vitest.live.config.ts`. `npm run test:e2e` — the step `test-ci`, `release-check`, and the ci.yml `e2e-replay` job run — cannot collect a billable case even with `SPLITBRIEF_REAL_CLI_E2E=1` ambient in the environment. Reaching the tier takes the live config, which only `npm run test:e2e:live`, `npm run test:e2e:live:heavy`, and `npm run test:e2e:live:smoke` pass.
+The separation from replay e2e is physical, not conventional: the live scenarios and the real-CLI smoke are excluded from `testing/e2e/vitest.e2e.config.ts` and collected only by `testing/e2e/vitest.live.config.ts`. `npm run test:e2e` — the step `test-ci`, `release-check`, and the ci.yml `e2e-replay` job run — cannot collect a billable case even with `SPLITBRIEF_REAL_CLI_E2E=1` ambient in the environment. Reaching the tier takes the live config, which only `npm run test:e2e:live`, `npm run test:e2e:live:heavy`, `npm run test:e2e:live:smoke`, `npm run test:e2e:release`, and `npm run test:e2e:publish` pass.
 
 Skipping is two-layered. With the env unset every case reports skipped and the run exits `0`. With it set, a tool whose readiness detection is not `ready` — binary missing from `PATH`, not logged in — skips with a reason instead of failing, so a partial toolbox still runs what it can.
 
 Model pins are cheap by default: `claude-code` → `haiku`, `codex` → `gpt-5.6-luna`, `opencode` → the first free id discovered from `opencode models` at run time, `command-code` → `deepseek/deepseek-v4-flash`. Each is overridable via `SPLITBRIEF_REAL_CLI_<TOOL>_MODEL`. A ceiling refuses any pin whose tokens include `opus`, `fable`, or `sol` outright, so a mistyped env var cannot burn credits on a frontier model.
 
-Easy runs `quick` mode — one planner call plus one implementer call — under a `workflow.maxBudget` of $0.05, with a 300 s per-case timeout. Heavy runs `standard` mode with a compiled brief and a final review held by the planner, under a `workflow.maxBudget` of $0.50, with a 900 s per-case timeout. Both ceilings come from `MAX_BUDGET_USD` in the harness and are enforced by the orchestrator's budget guard, which stops a run that crosses one and pauses a run whose spend cannot be priced. The per-case vitest timeout is the only wall-clock bound.
+Easy runs `quick` mode — one planner call plus one implementer call — with a 300 s per-case timeout. Heavy runs `standard` mode with a compiled brief and a final review held by the planner, with a 900 s per-case timeout. The per-case vitest timeout is the only bound.
 
 Like `real-cli-planner-implementer-smoke.test.ts`, the live tier is opt-in drift evidence, never the admission proof.
+
+### Fixture loop row
+
+`testing/e2e/scenarios/live/fixture-loop.test.ts` runs the whole loop over the rows of `testing/e2e/live/fixture-rows.ts` — `fixture-quick-claude-cmd-codex` (`quick`, $0.05, 300 s) and `fixture-standard-claude-cmd-codex` (`standard`, $0.50, 900 s), both planning with `claude-code`, building with `command-code` and reviewing with `codex` — against a copy of the `add-endpoint` eval fixture, through the real binary in `--plain` mode. It needs two switches: `SPLITBRIEF_REAL_CLI_E2E=1` and `SPLITBRIEF_LIVE_FIXTURE=1`, both set by `npm run test:e2e:live:fixture`. With either unset every row is `it.skip`, the reason is printed, and the file exits `0`. Readiness gating goes through the same `gateLiveMatrixRow` as the release matrix, so `SPLITBRIEF_LIVE_SKIP` skips a row whose tool is missing instead of failing it. Every outcome — pass, fail, or skip — appends a row to the same manifest; a passing row also copies `tasks.md`, `evidence.json`, `drift-report.json` and `review.md` beside `summary.json` and `session.jsonl`.
+
+What a row proves lives in `testing/e2e/helpers/run-dir-assertions.ts`, four assertions over the finished run: `assertPlainStdout` (every stdout line matches the `--plain` grammar and none parses as JSON; `phase: implementing`, `review: passed` and a `done:` line within the mode's brief cap are all present), `assertSessionDir` (brief count inside the row's range with at least one `modify`, non-empty `spec.md`/`plan.md` in standard, `brief-quality.json` passed, evidence ledger and drift report parse with drift `passed`, a `pass`/`pass_with_notes` verdict, `summary.json` complete with every task done locally on non-zero implementer tokens, and the `runner_call_started` counts per role with no `implementer_wrote_nothing` and no `runner_call_error`), `assertFixtureQuality` (the scenario's own quality checks against the built project) and `assertWorkingTree` (nothing outside the declared `files` and `.splitbrief/` changed). The module carries a colocated test against a synthetic session dir (`run-dir-assertions.test.ts`), so `npm test` covers the assertions without spawning a CLI. The row itself is drift evidence like the tiers above — [RELEASING.md](./RELEASING.md) says when it may become a gate.
+
+The skills' shell scripts are proven the same deterministic way, not by the live tier: `testing/integration/skills/wait-attempt.test.ts` and `testing/integration/skills/splitbrief-gate.test.ts` drive `skills/splitbrief-run/scripts/*.sh` under `sh` in a temp run dir with real child processes — exit 0, exit 1, a `--deadline 2` timeout that kills the group, a pre-existing `.done`, a missing pid file, a halt phrase in the log tail, `--reconcile`, and one stop-gate case per host. They run under `npm test`.
+
+### Release matrix
+
+Above the easy/heavy pairs sits the release matrix: `testing/e2e/scenarios/live/release-matrix.test.ts` runs one row per entry of `testing/e2e/live/matrix.ts` — `{ id, mode, plan, build, review?, task }` — covering every workflow mode (`quick`, `standard`, `speckit`), a same-tool canary for every CLI tool in the catalog, and cross-vendor pairs where the plan and build tools differ. Seats resolve their pin through the same `liveModelPin` table as the tiers below.
+
+Its switch is `SPLITBRIEF_RELEASE_LIVE=1` (the npm script `test:e2e:release` sets `SPLITBRIEF_REAL_CLI_E2E=1` itself); unset, the file prints `skipped: SPLITBRIEF_RELEASE_LIVE not set` and every row exits skipped. Readiness is stricter here than in the tier below: a tool that is missing or not `ready` fails its row unless its id is listed in the comma-separated `SPLITBRIEF_LIVE_SKIP` allow-list, in which case the row skips with a reason.
+
+Every row — pass, fail, or skip — is appended to `.test-artifacts/live/manifest.json` with its resolved seats, outcome, reason, totals, and duration, and each row's `summary.json` and `session.jsonl` are copied to `.test-artifacts/live/<row-id>/`. [RELEASING.md](./RELEASING.md) defines when a release may be cut from that manifest.
+
+### Publish smoke
+
+`testing/e2e/scenarios/live/publish-smoke.test.ts` is the one-row pre-publish check: the shipped crew pinned in code — `claude-code` · `opus` plans and reviews, `claude-code` · `sonnet` builds — through `runReleaseMatrixRow` on the `quick` tier task, so the row is gated, configured, asserted and recorded exactly like a release-matrix row, plus two assertions read back from the copied artifacts: `summary.json` status `complete` and a `pass` / `pass_with_notes` verdict in `review.md`. Its switch is `SPLITBRIEF_PUBLISH_LIVE=1`, set by `npm run test:e2e:publish` together with `SPLITBRIEF_REAL_CLI_E2E=1`; unset, the file prints `skipped: SPLITBRIEF_PUBLISH_LIVE not set` and exits `0`. The pins sit above the live cost ceiling on purpose, which is why the row bypasses `liveModelPin` and never runs under the easy, heavy or release switches. One `quick` run under the 300 s ceiling.
 
 ## How to add an integration test
 
@@ -218,14 +235,14 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 
 it('quick mode completes one task via local implementer', async () => {
   const task = makeTask();
-  const { planner } = fauxPlanner({ plans: [{ tasks: [task] }] });
+  const { planner } = fauxPlanner({ phases: [{ tasks: [task] }] });
   const { implementer } = fauxImplementer({ steps: [{ success: true, output: 'done' }] });
   const events: EngineEvent[] = [];
   await runWorkflow({
     feature: 'add hello module',
     projectDir,
     config: makeConfig(),
-    callbacks: { /* gating stubs: onApprovalNeeded, onQuestionAsked, ... */ },
+    callbacks: { /* gating stubs: onApprovalNeeded, onPlannerReply, ... */ },
     sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
     // The fakes MUST go through `_planner` / `_implementer` (RunWorkflowOptions).
     // Passing bare `planner` / `implementer` keys is silently ignored and spawns real subprocesses.
@@ -280,7 +297,7 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 - A test asserting width-dependent output must pass the viewport to `renderFeature` (`renderFeature(<WorkflowScreen />, { cols: 120, rows: 40 })`); without one it renders at the 100-column default.
 - Use `testing/helpers/temp-dir.ts:withTempDir()` for filesystem work. Never mock `node:fs`.
 - Use real `git` via `testing/helpers/git.ts:createTestGitRepo()`. Never stub `simple-git`.
-- **Zero new fakes.** Use `fauxPlanner` / `fauxImplementer` from `testing/helpers/faux/`. Extend them via `plans`, `steps`, `escalations`, `quickPlans`, or `retries`, not by copying their shape into a new file.
+- **Zero new fakes.** Use `fauxPlanner` / `fauxImplementer` from `testing/helpers/faux/`. Extend them via `phases`, `steps`, `escalations`, or `retries`, not by copying their shape into a new file.
 - **No `vi.mock()` on internal modules** (`./`, `../`). The sanctioned repo-wide targets are `node:fs/promises` (write-failure / `mkdtemp` interception), `node:fs` (`statSync` ENOENT simulation), and `ink` + `fullscreen-ink` (CLI integration tests only).
 - **Import `testing/helpers/**` from any test — under `src/**`, `testing/**`, or `evals/**` — via the `#testing/*` subpath import** (`import { makeConfig } from '#testing/helpers/factories/config.js'`), never a relative `../../helpers/...` or `../../../testing/helpers/...` path. The alias is defined once in `package.json` `imports` (`"#testing/*": "./testing/*"`), and gate 20 (`scripts/testing-helper-imports.ts`) fails any test in those three roots whose relative import resolves into `testing/helpers/**`.
 - Exit codes via `isCliError`. `commander.exitOverride()` throws; `runCommand()` catches and returns the exit code.
@@ -291,8 +308,7 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 
 **Planner (`fauxPlanner`):**
 
-- `plans` — each `plan()` call consumes the next entry (`tasks`, optional `spec` / `plan` / `usage`, or `throws`).
-- `quickPlans` — same shape for `quickPlan()`.
+- `phases` — each `runPhase()` call consumes the next entry (`tasks`, optional `usage`, or `throws`).
 - `escalations` — entries for `escalateHint()` and `escalateFull()` (`success`, `output`, `code`, `usage`, or `throws`).
 
 **Implementer (`fauxImplementer`):**
@@ -315,15 +331,14 @@ CLI command handlers accept an optional `deps` parameter for dependency injectio
 ```ts
 // src/cli/commands/start/types.ts
 export interface StartDeps {
-  spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;
   runHeadless: typeof runHeadless;
-  runRpc: typeof runRpc;
   initStores: typeof initStores;
   renderApp: typeof renderApp;
+  prepareExecution?: typeof prepareExecution | undefined;
 }
 
 // src/cli/commands/start/register.ts
-const defaultStartDeps: StartDeps = { spawnServer, runHeadless, runRpc, initStores, renderApp };
+export const defaultStartDeps: StartDeps = { runHeadless, initStores, renderApp, prepareExecution };
 
 export function registerStartCommand(program: Command, deps: StartDeps = defaultStartDeps): void { ... }
 ```
@@ -336,7 +351,7 @@ program.exitOverride();
 registerStartCommand(program, fakeDeps); // fakeDeps: StartDeps with stubbed renderApp/runHeadless/…
 ```
 
-**Commands using this pattern:** `start/register.ts` (`StartDeps` in `start/types.ts`) and `worktree.ts` (`WorktreeDeps`) expose `deps` on the `register*Command(program, deps = default)` signature itself. `attach.ts` (`AttachDeps`) and `last.ts` (`LastDeps`) keep `register*Command(program)` thin and inject `deps` one level down, on the internal helper (`attachCommand(…, deps = defaultDeps)`, `lastCommand(…, deps = defaultDeps)`).
+**Commands using this pattern:** `start/register.ts` (`StartDeps` in `start/types.ts`) exposes `deps` on the `registerStartCommand(program, deps = default)` signature itself. `continue/register.ts` takes the same shape — `registerContinueCommand(program, deps = defaultContinueDeps)` — and threads `ContinueDeps` down to the internal helper (`continueCommand(…, deps = defaultContinueDeps)`).
 
 **Rule:** `vi.mock` is now reserved for TRUE system boundaries only — `process.kill`, `execSync`, `node:net` sockets, and the sanctioned targets listed in [Test I/O and fixtures](#test-io-and-fixtures). All other test isolation uses the `Deps` interface pattern.
 
@@ -348,7 +363,7 @@ Orchestrator tests use **typed faux objects** that implement the real `Planner` 
 
 | Level | Seam | When to use |
 |---|---|---|
-| **L1: Faux objects** | `Planner` / `Implementer` interface | 90% of orchestrator tests. Declarative `plans` / `steps` arrays, no network, <50ms. |
+| **L1: Faux objects** | `Planner` / `Implementer` interface | 90% of orchestrator tests. Declarative `phases` / `steps` arrays, no network, <50ms. |
 | **L2: Faux HTTP server** | Localhost SSE (OpenAI / Anthropic protocol) | Testing `api.ts` runner: rate limits, malformed SSE, token accounting, effort parameters. Real fetch hits localhost. |
 
 ### L1 design
@@ -479,10 +494,10 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Real subprocess via `spawn(...)` against `/bin/echo`, `node -e '...'`, or a canned script. Do not mock `node:child_process`. The login-shell fallback in agent tests has a 30 s timeout for a reason; do not lower it.
 - Real git binary via `createTestGitRepo` (`testing/helpers/git.ts`). Do not stub `simple-git`.
 - Real HTTP via `http.createServer` for provider tests.
-- Data factories are TypeScript functions under `testing/helpers/factories/` — one file per domain (`factories/task.ts:makeTask`, `factories/config.ts:makeConfig`, `factories/session.ts:makeSession`, `factories/summary.ts:makeSummary`). On-disk artefacts live in `testing/fixtures/`; consumers reach them via a repo-root-relative path — either resolved from `import.meta.dirname` (`src/engine/hooks/dispatch.test.ts`) or from `process.cwd()` via `resolve('testing/fixtures/…')` (`src/engine/codebase/parse.test.ts`, `src/engine/codebase/repomap.test.ts`, `src/engine/hooks/load-module.test.ts`, and the `testing/fixtures/hooks/*.mjs` references in `dispatch.test.ts` / `run-pre.test.ts`).
+- Data factories are TypeScript functions under `testing/helpers/factories/` — one file per domain (`factories/task.ts:makeTask`, `factories/config.ts:makeConfig`, `factories/session.ts:makeSession`, `factories/summary.ts:makeSummary`). On-disk artefacts live in `testing/fixtures/`; consumers reach them via a repo-root-relative path resolved from `import.meta.dirname` (`src/engine/providers/cli-model-catalog.test.ts`, `src/engine/codebase/parse.test.ts`, `src/engine/codebase/repomap.test.ts`), not from `process.cwd()`.
 - Every config artefact this repository ships is loaded by the real `loadConfig` in `testing/ci/shipped-configs.test.ts`: the committed `evals/fixtures/*/.splitbrief/config.yaml` projects, the committed examples under `testing/fixtures/configs/`, and what `initConfig` / `writeConfig` themselves write. Add a new example by dropping a `.yaml` file into `testing/fixtures/configs/` — the glob picks it up.
 - Every ```` ```yaml ```` fence in `README.md` or any `docs/*.md` that names a top-level `ConfigSchema` key is loaded by the real `loadConfig` in `testing/docs/configuration.test.ts` — whole configs as written, section fragments under a `version: 3` header, which is how a reader pastes them. The doc tree is enumerated, so a new doc is covered the moment it exists. The same gate asserts every documented `kind: api` block spells out `service` and `offering`, because the loader's default merge would otherwise let an `ollama` example pass while omitting them. Pseudo-YAML opts out with `<!-- config-shape-sketch -->` and nothing else does.
-- Sanctioned `vi.mock` targets (whole repo): `node:fs/promises` (write-failure and `mkdtemp` interception — `engine/ipc/heartbeat.test.ts`, `engine/orchestrator/approval/staged-project-failure.test.ts`), `node:fs` (`statSync` ENOENT simulation — `core/state/persistence.test.ts`), `ink` + `fullscreen-ink` (CLI integration tests only — suppresses `waitUntilExit()` / `withFullScreen` so commander handlers run to completion without a TTY; all other exports preserved). Anything else is a bug.
+- Sanctioned `vi.mock` targets (whole repo): `node:fs/promises` (write-failure and `mkdtemp` interception — `engine/orchestrator/run/heartbeat.test.ts`, `engine/orchestrator/approval/staged-project-failure.test.ts`), `node:fs` (`statSync` ENOENT simulation — `core/state/persistence.test.ts`), `ink` + `fullscreen-ink` (CLI integration tests only — suppresses `waitUntilExit()` / `withFullScreen` so commander handlers run to completion without a TTY; all other exports preserved). Anything else is a bug.
 
 ## Pre-merge PR checklist
 
@@ -503,7 +518,7 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Re-exports (we have zero barrels anyway; see [`NO-BARRELS.md`](./NO-BARRELS.md)).
 - Thin wrappers that only delegate to an already-tested function.
 - Zod schema literal accept/reject — covered once in `src/core/schemas/runner-fields.test.ts`; do not duplicate.
-- Discriminated-union accessors enforced by `assertNever` — the compiler already enforces exhaustiveness.
+- Discriminated-union accessors enforced by `assertNever` — `tsc` already enforces exhaustiveness.
 - Styling-only components with no conditional logic.
 - Library internals (`Array.prototype.filter`, `fzf.find`, Zod `.strict()`).
 
@@ -546,6 +561,34 @@ The visual gallery renders the production `App`, router, screens, and overlays a
 
 Use it when changing Ink layout, copy, color, terminal controls, responsive behavior, or a semantic crop. The ordinary test suite checks the contracts under `testing/visual/`. The gallery command writes artifacts that a person or Codex can inspect.
 
+### Interactive preview
+
+Open the gallery chooser in an interactive terminal, or open a scenario directly:
+
+```bash
+npm run tui-preview
+npm run tui-preview -- --scenario home-empty
+npm run tui-preview -- --list
+```
+
+`--list` prints each scenario's ID, title, declared viewports and element IDs without mounting Ink. Interactive mode requires both stdin and stdout to be TTYs. The chooser uses the same catalog and fixture session as image capture, then mounts the production `App` so you can type, open overlays and exercise the screen's supported interactions.
+
+| Key | Action |
+|---|---|
+| `↑` / `↓`, then `Enter` | Choose and open a scenario. |
+| `F2` | Leave the scenario and return to the chooser. |
+| `F5` | Recreate the selected fixture at the current declared viewport, discarding preview changes. |
+| `F6` | Cycle the scenario's declared viewports. In the chooser, `←` / `→` also cycle them. |
+| `Ctrl+Q` | Quit the preview and release its terminal and fixture resources. |
+
+These controls are reserved by the preview. Other input reaches the rendered screen; `Esc`, `q` and `/quit` are not substitutes for the preview's return or exit controls. `F6` resizes an open scenario in place when the next declared size fits; use `F5` when you also need fresh fixture state.
+
+The selected catalog viewport determines application layout. Your terminal must be at least that wide and tall; a larger host does not enlarge the declared viewport. If the selected size does not fit, the preview stays in the chooser with a size warning. Shrinking the host below an open viewport closes that fixture and returns to the chooser. Enlarge the terminal or choose a smaller declared viewport, then press `Enter` to reopen it.
+
+Preview interaction ports in `testing/visual/gallery/fixture-session.ts` keep configuration edits in fixture state, simulate preparation and connection checks, and confine run reads to the fixture project. Connection Retry returns synthetic catalog data; it does not contact a server. Operations without a fixture implementation report `Unavailable in preview` or decline the action instead of invoking real execution. Clipboard export, image attachment, discovery refresh and run snapshot actions are among those restricted operations. The preview does not call a model, log in, start a server or authorize Git writes. It is a UI exercise, not evidence that a live runner or server works.
+
+Use `tui-shots` below for saved PNGs and cell diagnostics. Interactive preview does not replace capture review or the separate manual real-terminal selection check.
+
 ### Commands and selection
 
 List the catalog without mounting the app:
@@ -578,6 +621,20 @@ The profile owns the colour level of the capture, so `unicode-color` writes styl
 Repeat `--scenario`, `--viewport`, or `--element` to select more than one value. The command validates the complete selection before it mounts a fixture. With no filters, it captures every catalog scenario at all three viewports, including each full frame and every declared crop.
 
 The run directory is content-addressed from the normalized selection. Repeating the same command replaces that run atomically, so a failed or narrower rerun cannot leave stale success records in its manifest.
+
+**The run screen's own scenarios.** There is no summary screen, so the four `summary-*` scenarios are gone. Seven scenarios cover the run screen when nothing is running on it, all under the `workflow` screen with the standard viewport matrix and the elements `header` / `transcript` / `composer`:
+
+| Scenario | What it shows |
+|---|---|
+| `workflow-at-rest-paused` | paused mid-brief; `× build` on the rail, `Paused at T003 · type a correction or ⏎ to continue` |
+| `workflow-at-rest-halted` | a quota halt; `✗ build`, `Halted · Usage limit on ollama · ⏎ to decide` |
+| `workflow-at-rest-waiting-gate` | parked at the spec gate; `Waiting at the spec gate · ⏎ to reopen it` |
+| `workflow-closed-complete-ready` | five `●`, the `Closed ─` block, `Keep it with /run accept…` |
+| `workflow-closed-complete-needs-attention` | the same block with a failing review and a dirty scope |
+| `workflow-closed-ended` | a run somebody ended inside T003; `× Ended · Build 2/5 · stopped in T003` |
+| `workflow-replayed-history` | the transcript read back from `testing/fixtures/session-log/run.jsonl` |
+
+The at-rest fixtures go through the production path: the fixture copies a real log into the session dir, calls `hydrateRun`, and inits the route at rest. Nothing is staged into the stores by hand.
 
 ### Artifact layout
 
@@ -636,7 +693,7 @@ The gallery test owns the frame-geometry gate: it mounts the `workflow-implement
 
 ### Fixture-only CI policy
 
-CI uses synthetic fixtures only. It does not read live sessions, user prompts, provider credentials, real transcripts, or the contents of a developer's current project. The representative CI smoke captures a bounded fixture at `80x24`; the complete catalog remains a local command because it creates many raster files.
+CI uses synthetic fixtures only. It does not read live sessions, user prompts, provider credentials, real transcripts, or the contents of a developer's current project, and no captured fixture reads the operator's `~/.claude.json` model option cache — every visual fixture pins it before the first render. The representative CI smoke captures a bounded fixture at `80x24`; the complete catalog remains a local command because it creates many raster files.
 
 The fixtures still use the production app composition. They reset stores, seed bounded data, mount one scenario, wait for its semantic checkpoint, capture it, unmount it, and only then start the next scenario. This tests real screen and overlay composition without network access.
 
@@ -654,7 +711,7 @@ The harness spawns at fixed `100x30` dimensions and mounts the production `App` 
 
 PTY teardown awaits child reaping before listeners, timers, and temporary roots are disposed.
 
-`node-pty@1.1.0` is a tooling-only optional dependency in `optionalDependencies`. An ordinary `npm install` or `npm ci` may attempt to install its native binary. Use `npm ci --omit=optional` when that native tool is not wanted.
+`node-pty@1.1.0` is a tooling-only development dependency. An ordinary `npm install` or `npm ci` may install its native binary. Runtime-only installations can omit development dependencies with `npm ci --omit=dev`; running this test requires the development dependencies.
 
 The command loads `node-pty` dynamically. In optional mode, only setup failures (`module-unavailable`, pre-spawn `api-incompatible`, or `spawn-failed`) print `PTY behavior SKIP` and exit `0`. Once a process boundary exists, every failure is fatal. A complete run prints `PTY behavior PASS`; fatal failures print `PTY behavior failed` and exit nonzero. Node 22 is required. Some platforms may also need a working native toolchain or a compatible prebuilt `node-pty` binary.
 
@@ -668,11 +725,26 @@ Ask Codex to read the manifest before comparing files. The manifest distinguishe
 
 ## Manual smoke checklist
 
-`npm run test-ci` covers the vast majority of the surface. `npm run release-check` is the fast pre-PR gate — `format:check → typecheck → lint → vitest (no coverage) → e2e replay → invariants` — and `npm run test-ci` is the exhaustive form that additionally runs `test:coverage`, whose thresholds now also run nightly in `.github/workflows/nightly-coverage.yml`. A handful of flows need a real TTY, a fresh checkout, or an external process and therefore live outside the automated suite. Run the checks below after a fresh install or any change that touches the CLI entry point, the TUI mount, hook dispatch, or the OTel sink.
+`npm run test-ci` covers the vast majority of the surface. `npm run release-check` is the fast pre-PR gate — `format:check → typecheck → lint → vitest (no coverage) → e2e replay → invariants → skills:check` — and `npm run test-ci` is the exhaustive form that additionally runs `test:coverage`, whose thresholds now also run nightly in `.github/workflows/nightly-coverage.yml`. A handful of flows need a real TTY, a fresh checkout, or an external process and therefore live outside the automated suite. Run the checks below after a fresh install or any change that touches the CLI entry point, the TUI mount, or hook dispatch.
+
+### Headless terminal interaction
+
+`npm run test:terminal` starts the app through `/bin/zsh` in a real PTY connected to xterm.js in headless Chromium. Playwright drives the terminal's virtual pointer, so the test does not move the desktop cursor, open an editor window or require macOS Accessibility/Screen Recording. Install its browser once with `npx --no-install playwright install chromium` if Chromium is unavailable.
+
+The test uses the production fullscreen renderer for both App and Composer. It checks visible drag highlighting, exact copied text, composer draft selection, updates during a live workflow drag, wheel scrolling, and a Unicode copy/paste round trip. The production clipboard adapter invokes a private test executable on `PATH`, which captures its input without changing the system clipboard. A separate native-selection control uses xterm's copy-event handler. Reports and screenshots are saved under `.test-artifacts/terminal-browser/`. Exit codes are `0` for success, `1` for a product failure, and `2` for a setup or harness failure. A failing product interaction stays a failure even when the control passes. This harness proves xterm.js behavior through zsh; it does not certify native macOS shortcut dispatch or other terminal applications by changing `TERM`.
+
+The run also saves `tracking-selected.ansi`, the real production output up to a selected workflow frame. Replay it in actual Ghostty/Kitty engines without opening a window:
+
+```bash
+node testing/integration/cli/terminal-browser/terminal-engine-compat.mjs ghostty /path/to/ghostty-vt.wasm /path/to/tracking-selected.ansi
+node testing/integration/cli/terminal-browser/terminal-engine-compat.mjs kitty /path/to/kitty /path/to/tracking-selected.ansi
+```
+
+Use official artifacts: the probe was checked against Ghostty's `tip` VT WASM and Kitty 0.48.2's macOS executable. The Ghostty probe verifies rendered text and its selection API; Kitty feeds the recording through its VT parser and checks forwarded Cmd+C/Ctrl+C encodings. These engine checks complement the application E2E. Native window shortcut dispatch and the OS clipboard remain a separate boundary.
 
 ### M1. TUI smoke (full interactive render)
 
-Ink needs a real TTY; the agent test runner cannot drive it. Manual steps:
+Ink needs a real TTY; automated terminal tests provide one through a PTY. The following manual smoke additionally checks the installed terminal and a full workflow:
 
 ```bash
 mkdir /tmp/smoke-tui && cd /tmp/smoke-tui
@@ -702,29 +774,19 @@ node dist/cli.js start --json --mode quick "smoke feature"
 
 Verify: NDJSON on stdout, first line is `readiness_report`, the first model-backed workflow event is `workflow_started`, last workflow event is `workflow_complete`, and the process exits `0`. If `--json` is unrecognized, run `npm run build` — stale `dist/` is the most common cause.
 
-### M3. block-secrets hook
+### M3. Completion leaves Git untouched
 
-Enable `commitStrategy: per-task` + `hooks.builtin.block-secrets: true` and have the implementer write `AKIAIOSFODNN7EXAMPLE` into the target file:
+The M3 completion fixture asserts that no staging, commit, or index-checkpoint operation is requested.
 
-```bash
-node dist/cli.js start --json --mode quick "add secret file"
-```
-
-Verify: a `warning` event with `pre_commit blocked ... AWS access key` fires, no `git_commit` event is emitted, HEAD is unchanged, and `task_completed` still advances (non-fatal skip).
-
-### M4. OTel activation
-
-Any of the three paths below should emit `splitbrief.workflow`, `splitbrief.phase.*`, and `splitbrief.task` spans on stdout:
+`src/engine/orchestrator/task/commit.test.ts` replaces `simple-git` with a recording mock. Accepted completion advances the task and records its outcome; rejected completion does not advance. The fixture asserts that neither path calls Git or emits `git_commit`/`git_checkpoint`. Its temporary directories contain state files, not committed repositories.
 
 ```bash
-OTEL_TRACES_EXPORTER=console   node dist/cli.js start --json --mode quick "otel test"
-SPLITBRIEF_OTEL_EXPORTER=console  node dist/cli.js start --json --mode quick "otel test"
-node dist/cli.js start --otel-exporter=console --json --mode quick "otel test"
+npx --no-install vitest run src/engine/orchestrator/task/commit.test.ts
 ```
 
-See [`OTEL.md` §Design decisions](./OTEL.md) for why the bootstrap has to run before commander parses.
+Inspect test setup and transitive imports before running any recipe. The full `release-check`, `test-ci`, e2e and broad orchestration suites still include fixtures that stage or commit temporary repositories. They are not permitted under a no-Git-mutations instruction, even in a fresh checkout; run only inspected, explicitly selected safe tests in that environment. The full gate remains unverified until an authorized operator runs it.
 
-### M5. Fresh checkout + install
+### M4. Fresh checkout + install
 
 ```bash
 rsync -a --exclude=node_modules --exclude=dist --exclude=.git . /tmp/splitbrief-fresh/
@@ -732,7 +794,13 @@ cd /tmp/splitbrief-fresh
 npm ci && npm run test-ci
 ```
 
-Verify: install completes, `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants) is green.
+Verify: install completes, `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants → skills:check) is green.
+
+## Import-integrity audit
+
+`node scripts/dangling-imports.mjs` resolves every relative `import`/`export … from` and dynamic `import()` in `src/`, `testing/` and `scripts/` — tracked and untracked alike — against the filesystem, accounting for the ESM `.js`-for-`.ts` suffix. String and template-literal example imports (fixtures, prompt templates) are skipped. It prints `clean — <n> files scanned` and exits `0` when nothing dangles; otherwise it lists each `file:line -> specifier` and exits `1`.
+
+Run it after a move, rename or deletion pass: `tsc` reports the same breakage, but this audit is safe to run when the typecheck gate itself is unavailable, and it covers files no tsconfig includes.
 
 ## References
 

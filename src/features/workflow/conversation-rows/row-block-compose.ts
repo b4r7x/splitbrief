@@ -6,7 +6,7 @@ import type {
 } from './types.js';
 import { cardRowsLayout, cardRowsWindow } from './row-format/label-card.js';
 import { row, type RowInput } from './row-format/rows.js';
-import { sanitizeRowDisplayText, wrappedRowTexts } from './row-format/text.js';
+import { sanitizeRowDisplayText, wrappedProseTexts } from './row-format/text.js';
 import { wrapWidthFor } from './row-markers.js';
 
 export function rowsBlock(
@@ -216,7 +216,7 @@ function isActiveKind(kind: ConversationRowKind | undefined): boolean {
 // shape re-wrapped every line from the top of the event on each createRows call, so a long tool
 // output cost its full length on every scroll step.
 function eventWrappedLines(text: string, width: number): string[] {
-  return text.split('\n').flatMap((rawLine) => wrappedRowTexts(rawLine, width));
+  return text.split('\n').flatMap((rawLine) => wrappedProseTexts(rawLine, width));
 }
 
 function eventWrappedRowsWindow(input: {

@@ -101,10 +101,10 @@ export function assertNoLiveSessionForCli(projectDir: string): void {
  * printed: withholding it on every headless run left `spec` telling the reader
  * to resolve blockers it had not printed.
  */
-export function preparedExecutionOrThrow(
-  outcome: PreparationOutcome,
+export function preparedExecutionOrThrow<Execution = PreparedExecution>(
+  outcome: PreparationOutcome<Execution>,
   stdout: 'prose' | 'structured',
-): PreparedExecution {
+): Execution {
   switch (outcome.kind) {
     case 'prepared':
       return outcome.execution;
@@ -131,6 +131,9 @@ export function cliPreparationPolicy(
 export function cliPreparationPolicy(
   input: CliPreparationPolicyInput & Readonly<{ purpose: 'new-workflow' | 'spec' }>,
 ): Extract<PreparationPolicy, { purpose: 'new-workflow' | 'spec' }>;
+export function cliPreparationPolicy(
+  input: CliPreparationPolicyInput & Readonly<{ purpose: 'review' }>,
+): Extract<PreparationPolicy, { purpose: 'review' }>;
 export function cliPreparationPolicy(input: CliPreparationPolicyInput): PreparationPolicy {
   return {
     purpose: input.purpose,
@@ -150,33 +153,34 @@ export function cliPreparationPolicy(input: CliPreparationPolicyInput): Preparat
   };
 }
 
-export async function prepareStartExecution(
-  input: Readonly<{
-    projectDir: string;
-    feature: string;
-    plannerContext?: string | undefined;
-    worktreeName?: string | undefined;
-    opts: WorkflowOpts;
-    transport: 'interactive' | 'json' | 'rpc';
-    defaultApprove?: 'none' | undefined;
-    emitReadiness: (report: ReadinessReport) => void;
-    prepare?: typeof prepareExecution | undefined;
-    /**
-     * Interactive starts mount the TUI before preparation resolves. Ink owns the
-     * alternate screen buffer and erases it on exit, so every outcome that prints
-     * a blocker report or throws hands the terminal back through this hook first.
-     */
-    releaseTerminal?: (() => Promise<void>) | undefined;
-  }>,
-): Promise<PreparedExecution> {
+type StartPreparationInput = Readonly<{
+  projectDir: string;
+  feature: string;
+  plannerContext?: string | undefined;
+  opts: WorkflowOpts;
+  transport: 'interactive' | 'headless';
+  defaultApprove?: 'none' | undefined;
+  emitReadiness: (report: ReadinessReport) => void;
+  prepare?: typeof prepareExecution | undefined;
+  signal?: AbortSignal | undefined;
+}>;
+
+/**
+ * The outcome of a start preparation, before any of it reaches the terminal. An interactive start
+ * hands this to the shared preparation coordinator, which decides whether the attempt still owns
+ * the screen when it settles.
+ */
+export async function prepareStartOutcome(
+  input: StartPreparationInput,
+): Promise<PreparationOutcome> {
   const config = resolveRunConfig({
     projectDir: input.projectDir,
     opts: input.opts,
     ...(input.defaultApprove !== undefined && { defaultApprove: input.defaultApprove }),
   });
-  if (input.transport === 'json') assertHeadlessTaskReviewDisabled(config);
+  if (input.transport === 'headless') assertHeadlessTaskReviewDisabled(config);
   clearStaleSessionForCli(input.projectDir);
-  const interaction = input.transport === 'interactive' ? 'interactive' : 'headless';
+  const interaction = input.transport;
   const outcome = await (input.prepare ?? prepareExecution)({
     projectDir: input.projectDir,
     feature: input.feature,
@@ -186,9 +190,8 @@ export async function prepareStartExecution(
       interaction,
       opts: input.opts,
     }),
-    signal: new AbortController().signal,
+    signal: input.signal ?? new AbortController().signal,
     ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
-    ...(input.worktreeName !== undefined && { worktreeName: input.worktreeName }),
   });
   if (outcome.kind !== 'aborted') {
     const report = outcome.kind === 'prepared' ? outcome.execution.report : outcome.report;
@@ -201,9 +204,14 @@ export async function prepareStartExecution(
       }
     }
   }
-  if (outcome.kind !== 'prepared') await input.releaseTerminal?.();
+  return outcome;
+}
+
+export async function prepareStartExecution(
+  input: StartPreparationInput,
+): Promise<PreparedExecution> {
   return preparedExecutionOrThrow(
-    outcome,
+    await prepareStartOutcome(input),
     input.transport === 'interactive' ? 'prose' : 'structured',
   );
 }

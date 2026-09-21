@@ -80,8 +80,8 @@ describe('tasksStore — via addEvent', () => {
     addEvent(makeTaskComplete({ taskId: taskId('T005'), method: 'escalated-hint' }));
     expect(tasksStore.get().taskMap.get('T005')!.status).toBe('escalated');
 
-    addEvent(makeTaskStart({ taskId: taskId('T003'), title: 'Tool task' }));
-    addEvent(makeTaskComplete({ taskId: taskId('T003'), method: 'mcp-tool' }));
+    addEvent(makeTaskStart({ taskId: taskId('T003'), title: 'Locally completed task' }));
+    addEvent(makeTaskComplete({ taskId: taskId('T003'), method: 'local' }));
     expect(tasksStore.get().taskMap.get('T003')!.status).toBe('done');
   });
 
@@ -109,9 +109,11 @@ describe('tasksStore — via addEvent', () => {
       model: 'gpt-5.6',
     });
 
+    // A retry changes only the attempt counter; the task map and its route are the same objects.
     const beforeRetry = tasksStore.get();
     addEvent(makeRetry({ taskId: taskId('T001') }));
-    expect(tasksStore.get()).toBe(beforeRetry);
+    expect(tasksStore.get().taskMap).toBe(beforeRetry.taskMap);
+    expect(tasksStore.get().currentAttempt).toBe(2);
 
     addEvent(makeTaskComplete({ taskId: taskId('T001') }));
     expect(tasksStore.get().taskMap.get('T001')?.route).toEqual({
@@ -292,6 +294,30 @@ describe('tasks_planned', () => {
     );
   });
 
+  it('taskTargetLabel counts the rest of a slice in its own token, with the unit', () => {
+    expect(
+      taskTargetLabel({
+        id: 'T001',
+        title: 'Slice',
+        status: 'in_progress',
+        file: 'src/a.ts',
+        files: ['src/a.ts', 'src/b.ts', 'src/c.ts'],
+        action: 'modify',
+      }),
+    ).toBe('src/a.ts (modify) · +2 files');
+
+    expect(
+      taskTargetLabel({
+        id: 'T001',
+        title: 'Slice',
+        status: 'in_progress',
+        file: 'src/a.ts',
+        files: ['src/a.ts', 'src/b.ts'],
+        action: 'modify',
+      }),
+    ).toBe('src/a.ts (modify) · +1 file');
+  });
+
   it('agrees with the total task_started carries, so the header cannot flicker', () => {
     addEvent(makeTasksPlanned(3));
     expect(tasksStore.get().totalTasks).toBe(3);
@@ -313,12 +339,12 @@ describe('selectTaskListView', () => {
     const view = selectTaskListView(tasksStore.get());
 
     expect(view.total).toBe(5);
-    expect(view.settled).toBe(1);
+    expect(view.passed).toBe(1);
     expect(view.unannounced).toBe(3);
     expect(view.items.map((task) => task.id)).toEqual(['T001', 'T002']);
   });
 
-  it('counts escalated tasks as settled and leaves running ones out', () => {
+  it('escalated not settled: passed excludes escalated', () => {
     addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'First', index: 0, total: 3 }));
     addEvent(
       makeTaskComplete({ taskId: taskId('T001'), title: 'First', method: 'escalated-full' }),
@@ -327,13 +353,15 @@ describe('selectTaskListView', () => {
 
     const view = selectTaskListView(tasksStore.get());
 
-    expect(view.settled).toBe(1);
+    expect(view.passed).toBe(0);
+    expect(view.escalated).toBe(1);
     expect(view.total).toBe(3);
   });
 
   it('never reports a total below the tasks it already holds', () => {
     const view = selectTaskListView({
       currentTask: 0,
+      currentAttempt: 1,
       totalTasks: 0,
       taskCompletionTimes: [],
       taskMap: new Map(),

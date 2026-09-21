@@ -2,7 +2,8 @@ import { fuzzyMatchExtended } from './fuzzy-match.js';
 import { COMMAND_CATEGORIES } from '../../core/runtime/commands/types.js';
 import type { CommandCategory } from '../../core/runtime/commands/types.js';
 
-export type PaletteSource = 'command' | 'task' | 'session' | 'custom';
+export type CategorizedPaletteSource = 'command' | 'skill';
+export type PaletteSource = CategorizedPaletteSource | 'task' | 'session' | 'custom';
 
 export type PaletteAction =
   | { kind: 'run'; run: () => void | Promise<void> }
@@ -11,25 +12,33 @@ export type PaletteAction =
 export interface PaletteCommandItem {
   label: string;
   description: string;
+  /** The argument grammar, carried apart from the description so a row can drop it whole. */
+  hint: string | null;
   shortcut: string | null;
   category: CommandCategory;
   action: PaletteAction;
 }
 
+/** A discovered skill, ranked beside the command rows: `⏎` attaches or detaches it. */
+export type PaletteSkillItem = Omit<PaletteCommandItem, 'shortcut'> & { id: string };
+
 interface PaletteCandidateBase {
   id: string;
   label: string;
   description: string;
+  hint: string | null;
   shortcut: string | null;
   action: PaletteAction;
 }
 
-// Only command rows carry a category; the discriminant lets a `category === null` check narrow a
-// row to the sources that need a source-name header.
+// Only command and skill rows carry a category; the discriminant lets a `category === null` check
+// narrow a row to the sources that need a source-name header. A skill row sections with the
+// commands but keeps a source of its own so its `Skill · <name>` label takes its own width instead
+// of the command column's.
 type PaletteCandidate = PaletteCandidateBase &
   (
-    | { source: 'command'; category: CommandCategory }
-    | { source: Exclude<PaletteSource, 'command'>; category: null }
+    | { source: CategorizedPaletteSource; category: CommandCategory }
+    | { source: Exclude<PaletteSource, CategorizedPaletteSource>; category: null }
   );
 
 export type PaletteResult = PaletteCandidate & { score: number; mruRank: number };
@@ -39,6 +48,7 @@ type PaletteItemAction = { action: () => void | Promise<void> };
 export type PaletteInputs = {
   query: string;
   commandItems: PaletteCommandItem[];
+  skillItems: PaletteSkillItem[];
   taskItems: Array<{ id: string; title: string } & PaletteItemAction>;
   sessionItems: Array<{ id: string; feature: string; status: string } & PaletteItemAction>;
   customItems: Array<{ id: string; label: string; description: string } & PaletteItemAction>;
@@ -58,9 +68,23 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       id: 'command:' + item.label,
       label: item.label,
       description: item.description,
+      hint: item.hint,
       source: 'command',
       category: item.category,
       shortcut: item.shortcut,
+      action: item.action,
+    });
+  }
+
+  for (const item of inputs.skillItems) {
+    candidates.push({
+      id: 'skill:' + item.id,
+      label: item.label,
+      description: item.description,
+      hint: item.hint,
+      source: 'skill',
+      category: item.category,
+      shortcut: null,
       action: item.action,
     });
   }
@@ -70,6 +94,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       id: 'task:' + item.id,
       label: item.title,
       description: 'task ' + item.id,
+      hint: null,
       source: 'task',
       category: null,
       shortcut: null,
@@ -82,6 +107,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       id: 'session:' + item.id,
       label: item.feature,
       description: item.status,
+      hint: null,
       source: 'session',
       category: null,
       shortcut: null,
@@ -94,6 +120,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       id: 'custom:' + item.id,
       label: item.label,
       description: item.description,
+      hint: null,
       source: 'custom',
       category: null,
       shortcut: null,
@@ -166,7 +193,11 @@ export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
   const scored: RankedPaletteResult[] = [];
 
   for (const [candidateOrder, candidate] of candidates.entries()) {
-    const target = [candidate.label, candidate.description, candidate.source].join(' ');
+    // The grammar is part of the target even though it is a cell of its own: typing `speckit`
+    // still has to find `/mode`.
+    const target = [candidate.label, candidate.description, candidate.hint ?? '', candidate.source]
+      .filter((part) => part !== '')
+      .join(' ');
     const match = fuzzyMatchExtended(terms, target);
     if (match === null) continue;
     scored.push({

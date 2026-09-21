@@ -39,7 +39,18 @@ describe('parseStreamLine', () => {
         channel: 'result',
         sessionId: 'sess-2',
         isResult: true,
-        usage: { inputTokens: 1000, outputTokens: 500 },
+        usage: {
+          inputTokens: 1000,
+          outputTokens: 500,
+          counterCoverage: {
+            input: 'reported',
+            output: 'partial',
+            cacheRead: 'missing',
+            cacheCreate: 'missing',
+            reasoning: 'missing',
+          },
+          providerTotals: { output: 500 },
+        },
         usageSemantics: 'final',
       },
     ],
@@ -221,4 +232,20 @@ describe('parseStreamLine', () => {
       isResult: true,
     });
   });
+});
+
+it('identifies actual native init independently from result session IDs', () => {
+  expect(
+    parseStreamLine(jsonLine({ type: 'system', subtype: 'init', session_id: 'sess-1' })),
+  ).toMatchObject({ isSessionInit: true, sessionId: 'sess-1' });
+  expect(
+    parseStreamLine(
+      jsonLine({
+        type: 'result',
+        session_id: 'sess-1',
+        is_error: true,
+        result: 'session not found',
+      }),
+    ).isSessionInit,
+  ).toBeUndefined();
 });

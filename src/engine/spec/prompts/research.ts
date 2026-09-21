@@ -1,4 +1,5 @@
-import { buildPrompt, instructionsSection } from './builder.js';
+import { PLANNER_DOCUMENT_SECTIONS } from '../../../core/pipeline-spec/planner-documents.js';
+import { plannerConversationSection, buildPrompt, instructionsSection } from './builder.js';
 
 export function buildResearchPrompt(
   feature: string,
@@ -10,6 +11,7 @@ export function buildResearchPrompt(
     intro:
       'You are preparing to implement a new feature. Before writing any specification, you need to deeply understand the existing codebase.',
     sections: [
+      plannerConversationSection,
       { heading: 'Specification', body: feature },
       {
         heading: 'Project Context',
@@ -40,49 +42,32 @@ export function buildResearchPrompt(
         heading: 'Output Format',
         body: `Write a structured research report in markdown with these sections:
 
-### Project Overview
+### ${PLANNER_DOCUMENT_SECTIONS.research[0]}
 Brief summary of what the project does and how it's built.
 
-### Architecture
+### ${PLANNER_DOCUMENT_SECTIONS.research[1]}
 Key modules, their responsibilities, and how they interact.
 
-### Relevant Code
+### ${PLANNER_DOCUMENT_SECTIONS.research[2]}
 Files and functions directly relevant to the requested feature. Include file paths and brief descriptions.
 
-### Patterns to Follow
+### ${PLANNER_DOCUMENT_SECTIONS.research[3]}
 Coding patterns, conventions, and styles found in the codebase that new code must match.
 
-### Dependencies & Constraints
+### ${PLANNER_DOCUMENT_SECTIONS.research[4]}
 Technical constraints, runtime requirements, and existing limitations.
 
-### Implementation Considerations
+### ${PLANNER_DOCUMENT_SECTIONS.research[5]}
 Initial thoughts on how the feature might fit into the existing architecture.
 
-### Validation Tools
+### ${PLANNER_DOCUMENT_SECTIONS.research[6]}
 
 Identify the project's validation toolchain by reading config files:
 - **Language**: Primary programming language as a lowercase name from project manifests and source files
 - **Type checker**: Command to run type checking (e.g., \`cargo check\`, \`mypy src/\`, \`go vet ./...\`), or "none"
 - **Linter**: Command to run linting (e.g., \`npx biome check\`, \`cargo clippy\`, \`ruff check\`, \`golangci-lint run\`), or "none"
-- **Test runner**: Command to run tests (e.g., \`npm test\`, \`cargo test\`, \`pytest\`, \`go test ./...\`)
+- **Test runner**: Command to run tests (e.g., \`cargo test\`, \`pytest\`, \`go test ./...\`, the project's own test script)
 - **Test file pattern**: How test files are named (e.g., \`*_test.go\`, \`test_*.py\`, colocated unit-test suffixes)`,
-      },
-      {
-        heading: 'User Interaction',
-        body: `After completing your research, if you identify important decisions or design ambiguities that would benefit from user input, embed them as interactive questions using this exact format:
-
-<!-- Q:{"id":"unique_id","type":"choice","text":"Your question here?","options":["Option 1","Option 2","Option 3"],"default":0} -->
-
-Question types:
-- "choice": Multiple choice with options array (default is index)
-- "input": Free text answer (default is suggested text)
-- "confirm": Yes/no (default is boolean)
-
-Rules:
-- Maximum 5 questions
-- Only ask about decisions that materially impact the spec
-- Base questions on what you found in the codebase (not generic)
-- If you found the answer in the codebase, don't ask — just use it`,
       },
     ],
   });

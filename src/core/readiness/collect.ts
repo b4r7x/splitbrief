@@ -9,12 +9,7 @@ import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
 import { readActive } from '../sessions/active-pointer.js';
 import { isSessionLive } from '../sessions/liveness.js';
 import { isInternalGitStatusPath } from '../paths.js';
-import {
-  isGitRepo,
-  hasCommits,
-  getInProgressGitOp,
-  hasCommitterIdentity,
-} from '../../lib/git/repository.js';
+import { isGitRepo, hasCommits, getInProgressGitOp } from '../../lib/git/repository.js';
 import { getGitStatus } from '../../lib/git/files.js';
 import { getCurrentBranch } from '../../lib/git/refs.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -28,7 +23,7 @@ import {
   selectNextAction,
 } from './status.js';
 import type { Config } from '../schemas/config.js';
-import type { ApproveLevel, CommitStrategy } from '../schemas/enums.js';
+import type { ApproveLevel } from '../schemas/enums.js';
 import { cliReadinessCheckId, type CliReadinessResult } from '../schemas/readiness.js';
 import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import type { WorkflowOpts } from '../types/config-options.js';
@@ -123,11 +118,7 @@ export async function collectReadiness(
   const configExists = existsSync(configFile);
   const loaded = loadReadinessConfig(options, configFile, configExists);
   const packageScripts = readPackageScripts(options.projectDir);
-  const repo = await readRepoPosture(
-    options.projectDir,
-    loaded.config?.workflow.git?.commitStrategy,
-    options.resumeSession,
-  );
+  const repo = await readRepoPosture(options.projectDir, options.resumeSession);
   let cliReadiness = options.cliReadiness;
   if (cliReadiness === undefined && loaded.config && options.detectCliReadiness) {
     try {
@@ -289,7 +280,6 @@ function readPackageScripts(projectDir: string): PackageScriptsReadinessInput {
 
 async function readRepoPosture(
   projectDir: string,
-  commitStrategy?: CommitStrategy | undefined,
   resumeSession?: SessionRef | undefined,
 ): Promise<RepoReadinessInput> {
   const repoExists = await isGitRepo(projectDir).catch(() => false);
@@ -330,10 +320,6 @@ async function readRepoPosture(
     activeSession !== null &&
     resumeSession?.projectDir === projectDir &&
     resumeSession.sessionId === activeSession;
-  const commitsConfigured = commitStrategy !== undefined && commitStrategy !== 'none';
-  const committerIdentityConfigured = commitsConfigured
-    ? await hasCommitterIdentity(projectDir).catch(() => true)
-    : undefined;
 
   return {
     isGitRepo: true,
@@ -342,8 +328,6 @@ async function readRepoPosture(
     untrackedFiles,
     onDetachedHead,
     inProgressGitOp,
-    ...(commitStrategy !== undefined && { commitStrategy }),
-    ...(committerIdentityConfigured !== undefined && { committerIdentityConfigured }),
     ...(activeSession !== null &&
       !activeSessionBelongsToResume && {
         activeSession,

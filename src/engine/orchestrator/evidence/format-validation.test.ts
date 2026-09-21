@@ -49,6 +49,29 @@ describe('formatValidationEvidenceForPrompt', () => {
     expect(formatted).toContain('1 test failed');
   });
 
+  it('prints a skipped stage as skipped with its reason', () => {
+    const task = makeTask({ id: 'T001' });
+    const ledger = withUpdatedTask(
+      createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] }),
+      task.id,
+      (entry) => ({
+        ...entry,
+        validation: [
+          {
+            stage: 'test',
+            passed: true,
+            skipped: true,
+            skippedReason: 'no affected test file found',
+          },
+        ],
+      }),
+    );
+
+    const formatted = formatValidationEvidenceForPrompt(ledger);
+    expect(formatted).toContain('- test: skipped (no affected test file found)');
+    expect(formatted).not.toContain('passed');
+  });
+
   it('returns undefined without a ledger or without any recorded validation', () => {
     expect(formatValidationEvidenceForPrompt(null)).toBeUndefined();
 

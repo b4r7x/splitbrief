@@ -1,11 +1,11 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { ListRow } from '../../../components/list-row.js';
-import { SOFT_SEP } from '../../../components/separators.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { availableRows } from '../../../components/pickers/scroll-window.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { SingleColumnPicker } from '../../../components/pickers/single-column.js';
@@ -30,11 +30,12 @@ export interface PreviewContext<L, R> {
   leftItem: L | undefined;
   rightItem: R | null;
   isOnCustomItem: boolean;
+  /** Cells the byline may spend: the panel width the preview line is rendered at. */
+  bylineBudget: number;
 }
 
 export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: string }> {
   title: string;
-  subtitle?: string | undefined;
   stepLabel?: string | undefined;
   initialColumn?: 'left' | 'right' | undefined;
   leftProps: LeftColumnProps<L>;
@@ -63,16 +64,27 @@ function getHint(input: {
   nav: { isOnCustomItem: boolean; currentRightIsCustom: boolean };
   hasRefresh: boolean;
   maxVisible: number;
+  width: number;
   expandedHint?: string | undefined;
 }): string {
   const { kind, nav, hasRefresh, maxVisible } = input;
   if (maxVisible <= 0) {
     return `Terminal too short${SOFT_SEP}esc cancel`;
   }
-  const refreshHint = hasRefresh ? `${SOFT_SEP}ctrl+r refresh` : '';
+  const fitHint = (action: string, escapeHint: string, columns: boolean): string => {
+    const navigation = [...(columns ? ['←→ column'] : []), '↑↓ select'];
+    const extras = [
+      ...(nav.currentRightIsCustom ? ['ctrl+d delete'] : []),
+      ...(hasRefresh ? ['ctrl+r refresh'] : []),
+    ];
+    const compose = (navigationHints: string[], extraHints: string[]) =>
+      [...navigationHints, action, escapeHint, ...extraHints].filter(Boolean).join(SOFT_SEP);
+    const candidates = [compose(navigation, extras), compose([], extras), compose([], [])];
+    return candidates.find((hint) => getTerminalCellWidth(hint) <= input.width) ?? compose([], []);
+  };
   if (kind === 'terminal') {
     const verb = input.terminalVerb ?? 'select';
-    return `↑↓ select${SOFT_SEP}⏎ ${verb}${SOFT_SEP}esc cancel${refreshHint}`;
+    return fitHint(`⏎ ${verb}`, 'esc cancel', false);
   }
   if (kind === 'expanded') {
     // The launcher is pinned above the expansion and answers for itself, so the
@@ -80,16 +92,33 @@ function getHint(input: {
     const lead = nav.isOnCustomItem ? '⏎ add custom' : (input.expandedHint ?? '⏎ choose route');
     // An empty lead is a row with no verb of its own; it drops its slot rather
     // than opening the line with a separator that reads as a missing key.
-    const parts = [lead, 'esc collapse', '←→ column', '↑↓ select'].filter((part) => part !== '');
-    return `${parts.join(SOFT_SEP)}${refreshHint}`;
+    return fitHint(lead, 'esc collapse', true);
   }
   if (nav.isOnCustomItem) {
-    return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ add custom${SOFT_SEP}esc cancel${refreshHint}`;
+    return fitHint('⏎ add custom', 'esc cancel', true);
   }
-  if (nav.currentRightIsCustom) {
-    return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ confirm${SOFT_SEP}ctrl+d delete${SOFT_SEP}esc cancel${refreshHint}`;
+  return fitHint('⏎ confirm', 'esc cancel', true);
+}
+
+/**
+ * A value line breaks at its own separators — never inside a segment, and never leaving the
+ * separator hanging at a line end — so `Claude Code CLI · claude-sonnet-4` reads as two whole lines
+ * on a card too narrow for one.
+ */
+function wrapValueLine(text: string, width: number): string[] {
+  if (getTerminalCellWidth(text) <= width) return [text];
+  const lines: string[] = [];
+  let current = '';
+  for (const segment of text.split(SOFT_SEP)) {
+    const candidate = current === '' ? segment : `${current}${SOFT_SEP}${segment}`;
+    if (current !== '' && getTerminalCellWidth(candidate) > width) {
+      lines.push(current);
+      current = segment;
+      continue;
+    }
+    current = candidate;
   }
-  return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ confirm${SOFT_SEP}esc cancel${refreshHint}`;
+  return current === '' ? lines : [...lines, current];
 }
 
 /**
@@ -109,6 +138,9 @@ function TerminalPaneCard({
   // Only the widest viewport has room to spend a second row on a wrapped
   // sentence; below it the card truncates so the box keeps its line count.
   const wrap = contentWidth >= CARD_WRAP_MIN_WIDTH ? 'wrap' : 'truncate-end';
+  const rows = pane.lines.flatMap((line) =>
+    typeof line === 'string' ? [line] : wrapValueLine(line.whole, contentWidth),
+  );
   return (
     <Box
       flexDirection="column"
@@ -122,7 +154,7 @@ function TerminalPaneCard({
     >
       <Text color={t.text}>{sanitizeTerminalDisplayText(pane.label)}</Text>
       <Box height={1} />
-      {pane.lines.map((line, i) =>
+      {rows.map((line, i) =>
         line === '' ? (
           <Box key={`blank-${i}`} height={1} />
         ) : (
@@ -174,7 +206,6 @@ export function buildRightDisplay<R extends { id: string }>(
 
 export function TwoColumnPicker<L extends FilterableItem, R extends { id: string }>({
   title,
-  subtitle,
   stepLabel,
   initialColumn = 'left',
   leftProps,
@@ -229,6 +260,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     nav,
     hasRefresh: !!onRefresh,
     maxVisible,
+    width: totalBoxWidth,
     expandedHint: rightProps.expandedHint?.(
       rightCurrent && isRealRightItem(rightCurrent) ? rightCurrent : undefined,
     ),
@@ -242,11 +274,13 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           leftItem: nav.left.currentItem,
           rightItem: rightCurrent && isRealRightItem(rightCurrent) ? rightCurrent : null,
           isOnCustomItem: nav.isOnCustomItem,
+          bylineBudget: totalBoxWidth,
         });
   const previewText =
     rawPreview === undefined ? undefined : sanitizeTerminalDisplayText(rawPreview);
   const showPreview = previewText !== undefined && previewText !== '' && cols > PREVIEW_MIN_COLS;
   const leftEmptyText = `No ${(leftProps.label ?? 'items').toLowerCase()} match`;
+  const wheelStep = (direction: 'up' | 'down'): 1 | -1 => (direction === 'up' ? -1 : 1);
 
   return (
     <Box
@@ -259,7 +293,6 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
       <Box width={totalBoxWidth} marginBottom={1} justifyContent="space-between">
         <Box>
           <Text color={t.accent}>{title}</Text>
-          {subtitle ? <Text color={t.textDim}>{`${SOFT_SEP}${subtitle}`}</Text> : null}
         </Box>
         {stepLabel ? <Text color={t.textDim}>{stepLabel}</Text> : null}
       </Box>
@@ -277,6 +310,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
             contentMaxWidth={leftContentWidth}
             emptyText={leftEmptyText}
             onRowActivate={nav.activateLeft}
+            onWheel={(direction) => nav.moveLeft(wheelStep(direction))}
             rowZonePrefix="runner-left"
             rowZoneZ={ROW_ZONE_Z_OVERLAY}
             renderRow={(item, isCursor, maxWidth) => {
@@ -320,6 +354,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
                 if (nav.cycleRight(slot.navIndex) === 'stepped') return;
                 nav.activateRight(slot.navIndex);
               }}
+              onWheel={(direction) => nav.moveRight(wheelStep(direction))}
               rowZonePrefix="runner-right"
               rowZoneZ={ROW_ZONE_Z_OVERLAY}
               renderRow={(slot, isCursor, maxWidth) => {
@@ -339,7 +374,6 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
                     <ListRow
                       label="+ Add custom model…"
                       state={isCursor ? 'active' : 'default'}
-                      defaultLead="dot"
                       width={maxWidth}
                     />
                   );
@@ -350,12 +384,12 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           )}
         </Box>
       </Box>
-      <Box width={totalBoxWidth} marginTop={1}>
-        <Text color={t.textDim} wrap="truncate-end">
+      <Box width={totalBoxWidth} height={2} overflow="hidden" marginTop={1}>
+        <Text color={t.textDim} wrap="wrap">
           {showPreview ? previewText : ' '}
         </Text>
       </Box>
-      <Box width={totalBoxWidth} marginTop={1}>
+      <Box width={totalBoxWidth}>
         <Text color={t.textDim} wrap="truncate-end">
           {hint}
         </Text>

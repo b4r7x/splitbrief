@@ -15,5 +15,6 @@ export function plannerCallbacksContextOf(wctx: WorkflowContext): PlannerCallbac
     ...(wctx.detectedContextLength !== undefined && {
       detectedContextLength: wctx.detectedContextLength,
     }),
+    ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),
   };
 }

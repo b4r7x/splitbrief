@@ -6,6 +6,7 @@ import {
   confinedUnlinkSync,
 } from '../../lib/confined-fs.js';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
+import { warnError } from '../../lib/warn.js';
 import {
   CliExecutableFingerprintSchema,
   CliAuthStateSchema,
@@ -24,11 +25,10 @@ import { getSplitbriefPath, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CacheVersionStringBaseSchema } from '../../core/schemas/cache-version.js';
 import { CliToolIdSchema } from '../../core/schemas/enums.js';
 import { CLI_AUTH_CHANNEL_IDS, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
-import type { RunnerRole } from '../../core/runners/seat-roles.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1_000;
-const DETECTION_CACHE_VERSION = 4;
+const DETECTION_CACHE_VERSION = 6;
 const MAX_CACHE_ENTRIES = 100;
 // The generated key embeds a percent-encoded project path plus two runner
 // contexts; a PATH_MAX-sized path alone can expand beyond 12 KiB.
@@ -97,17 +97,27 @@ const CachedModelIdSchema = z
   );
 
 /**
- * Presentation-only projection of a detected model. Pricing, modality, and
- * provenance fields stay memory-only; remembered rows only need identity,
- * sizing, and ordering to render a picker before the live refresh lands.
+ * Presentation-only projection of a detected model. Remembered rows carry
+ * identity, the tool's own display name and detail, sizing, ordering, the
+ * effort ladder and its default and the modality flags, so a cold start can
+ * paint the picker before the live refresh lands. The hidden flag is a public
+ * catalog value from the tool's own listing, not credential or account
+ * material.
  */
 const CachedModelSchema = z
   .object({
     id: CachedModelIdSchema,
+    displayName: z.string().min(1).max(256).optional(),
+    detail: z.string().min(1).max(512).optional(),
     contextLength: z.number().int().positive().optional(),
     releaseDate: z.iso.date().optional(),
     nativeOrder: z.number().int().nonnegative().optional(),
     nativeDefault: z.boolean().optional(),
+    nativeHidden: z.boolean().optional(),
+    nativeReasoningEfforts: z.array(z.string().trim().min(1).max(64)).max(32).readonly().optional(),
+    nativeDefaultReasoningEffort: z.string().trim().min(1).max(64).optional(),
+    supportsToolCalls: z.boolean().optional(),
+    outputModalities: z.array(z.string().min(1).max(32)).max(8).readonly().optional(),
     isFree: z.boolean().optional(),
   })
   .strict();
@@ -116,7 +126,6 @@ const CachedModelsSchema = z.array(CachedModelSchema).max(MAX_CACHED_MODELS_PER_
 
 const CachedCliCatalogSchema = z
   .object({
-    role: z.enum(['planner', 'implementer']),
     tool: CliToolIdSchema,
     models: CachedModelsSchema,
     probedAt: z.number().int().nonnegative(),
@@ -170,7 +179,6 @@ type CachedModel = z.infer<typeof CachedModelSchema>;
 
 /** Presentation-only remembered model catalog for one configured CLI runner. */
 export interface RememberedCliCatalog {
-  readonly role: RunnerRole;
   readonly tool: CliToolId;
   readonly models: readonly DetectedModel[];
   readonly probedAt: number;
@@ -245,6 +253,12 @@ function cachedModels(models: readonly DetectedModel[]): CachedModel[] {
     if (sanitized.length >= MAX_CACHED_MODELS_PER_ENTRY) break;
     const result = CachedModelSchema.safeParse({
       id: model.id,
+      ...(model.displayName === undefined || hasSensitiveCacheValue(model.displayName)
+        ? {}
+        : { displayName: model.displayName }),
+      ...(model.detail === undefined || hasSensitiveCacheValue(model.detail)
+        ? {}
+        : { detail: model.detail }),
       ...(model.contextLength === undefined ? {} : { contextLength: model.contextLength }),
       // A non-ISO release date drops the field, not the whole row.
       ...(model.releaseDate === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(model.releaseDate)
@@ -252,6 +266,19 @@ function cachedModels(models: readonly DetectedModel[]): CachedModel[] {
         : { releaseDate: model.releaseDate }),
       ...(model.nativeOrder === undefined ? {} : { nativeOrder: model.nativeOrder }),
       ...(model.nativeDefault === undefined ? {} : { nativeDefault: model.nativeDefault }),
+      ...(model.nativeHidden === undefined ? {} : { nativeHidden: model.nativeHidden }),
+      ...(model.nativeReasoningEfforts === undefined
+        ? {}
+        : { nativeReasoningEfforts: [...model.nativeReasoningEfforts] }),
+      ...(model.nativeDefaultReasoningEffort === undefined
+        ? {}
+        : { nativeDefaultReasoningEffort: model.nativeDefaultReasoningEffort }),
+      ...(model.supportsToolCalls === undefined
+        ? {}
+        : { supportsToolCalls: model.supportsToolCalls }),
+      ...(model.outputModalities === undefined
+        ? {}
+        : { outputModalities: [...model.outputModalities] }),
       ...(model.isFree === undefined ? {} : { isFree: model.isFree }),
     });
     if (result.success) sanitized.push(result.data);
@@ -274,7 +301,6 @@ function cachedProvider(
 
 function cachedCliCatalog(catalog: RememberedCliCatalog): z.input<typeof CachedCliCatalogSchema> {
   return {
-    role: catalog.role,
     tool: catalog.tool,
     models: cachedModels(catalog.models),
     probedAt: catalog.probedAt,
@@ -310,7 +336,12 @@ function buildCache(snapshot: DetectionCacheSnapshot): DetectionCache | null {
       ? {}
       : { cliCatalogs: snapshot.cliCatalogs.map(cachedCliCatalog) }),
   });
-  return result.success ? result.data : null;
+  if (result.success) return result.data;
+  // Field paths only: a rejected value is often the credential-shaped material
+  // the schema refused, so it must not travel into a diagnostic line.
+  const fields = result.error.issues.map((issue) => issue.path.join('.')).join(', ');
+  warnError(`detection cache: snapshot not remembered, rejected fields: ${fields}`);
+  return null;
 }
 
 function snapshotFromCache(cache: DetectionCache): DetectionCacheSnapshot | null {
@@ -404,6 +435,20 @@ export async function loadRememberedPresentationSnapshot(
   const snapshot = snapshotFromCache(cache);
   if (snapshot === null) return null;
   return { snapshot, foreignContext: cache.contextKey !== input.contextKey };
+}
+
+/**
+ * The remembered snapshot with no discovery context to compare against: a halt
+ * and a preparation both hold none — the run is stopping, or has not begun
+ * probing — so the record is read for what it remembers, whatever context it
+ * was probed under. Every row it yields is confirmed again before it is used.
+ */
+export async function loadRememberedSnapshot(
+  projectDir: string,
+): Promise<DetectionCacheSnapshot | null> {
+  const cache = await readCache(projectDir);
+  if (cache === null) return null;
+  return snapshotFromCache(cache);
 }
 
 export interface RememberedCliRuntime {

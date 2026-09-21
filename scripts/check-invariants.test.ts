@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInvariantGates } from './check-invariants.js';
 import { getInvariantGates, type Gate } from './invariants/gates.js';
-import { T065_RULES } from './invariants/t065-scan.js';
 
 function captureLog(): { lines: string[]; log: (line?: string) => void } {
   const lines: string[] = [];
@@ -164,6 +163,31 @@ describe('check-invariants', () => {
     expect(readFileSync('docs/INVARIANTS.md', 'utf8')).toContain('utils/type-guards');
   });
 
+  it('gate 17c ignores ESM import and export aliases but still counts a broad cast', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-gate-17c-'));
+    try {
+      writeFileSync(
+        join(root, 'aliases.ts'),
+        "import { MODES as MODES_SPEC } from './modes.js';\nexport { MODES_SPEC as MODES_TABLE };\n",
+      );
+      const [gate] = getInvariantGates('17c');
+      if (gate === undefined) throw new Error('gate 17c is not registered');
+      const retargeted = { ...gate, command: gate.command.replaceAll('src/', `${root}/`) };
+
+      expect(runInvariantGates([retargeted], undefined, captureLog().log)).toBe(0);
+
+      writeFileSync(join(root, 'cast.ts'), 'const seat = row as SeatRow;\n');
+      const withCast = captureLog();
+
+      expect(runInvariantGates([retargeted], undefined, withCast.log)).toBe(1);
+      expect(withCast.lines).toEqual([
+        expect.stringContaining('[17c] No incidental broad as-casts'),
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('registers architecture and transport gates 28 through 35', () => {
     const ids = ['28', '29', '30', '31', '32', '33', '34', '35'] as const;
     for (const id of ids) {
@@ -266,7 +290,6 @@ describe('check-invariants', () => {
         'features/home',
         'features/runners',
         'features/start-preparation',
-        'features/workflow/cost-drilldown',
         'components/overlays',
         'components/pickers',
       ]) {
@@ -329,33 +352,62 @@ describe('check-invariants', () => {
     }
   });
 
-  it('registers the path-aware T-065 controller-boundary gates', () => {
-    expect(T065_RULES).toHaveLength(10);
-    for (const id of ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45']) {
-      expect(getInvariantGates(id)).toHaveLength(1);
-    }
+  it('passes the run-contract gates 49 through 52 on the maintained tree', () => {
+    const gates = [
+      ...getInvariantGates('49'),
+      ...getInvariantGates('50'),
+      ...getInvariantGates('51'),
+      ...getInvariantGates('52'),
+    ];
+    expect(gates).toHaveLength(4);
+    const { lines, log } = captureLog();
+
+    expect(runInvariantGates(gates, undefined, log)).toBe(0);
+    expect(lines).toEqual(
+      gates.map((gate) => `  \u2713 [${gate.id}] ${gate.description}: 0 (expected 0) PASS`),
+    );
   });
 
-  it('fails a T-065 gate on a synthetic path instead of hiding its diagnostic', () => {
-    const root = mkdtempSync(join(tmpdir(), 'splitbrief-t065-gate-'));
+  it('gates 49 through 52 detect the retired vocabulary in a synthetic tree', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-run-contract-'));
     try {
-      mkdirSync(join(root, 'consumer'), { recursive: true });
+      for (const dir of ['core/state', 'core/sessions', 'core/schemas', 'features/workflow']) {
+        mkdirSync(join(root, dir), { recursive: true });
+      }
       writeFileSync(
-        join(root, 'consumer', 'bad.ts'),
-        "import { runBriefQualityGate } from '../engine/orchestrator/planning/brief-quality-gate.js';\nrunBriefQualityGate({ tasks: [] });\n",
+        join(root, 'core/state/machine.ts'),
+        "case 'REJECT_SPEC':\n  return resetToIdle(state);\n",
       );
-      const [gate] = getInvariantGates('40');
-      if (gate === undefined) throw new Error('T-065 quality gate is not registered');
+      writeFileSync(join(root, 'core/sessions/phases.ts'), 'export function isResumable() {}\n');
+      writeFileSync(
+        join(root, 'core/schemas/config.ts'),
+        'maxBudget: z.number(),\ncostTier: z.string(),\n',
+      );
+      writeFileSync(
+        join(root, 'features/workflow/driver.ts'),
+        "import { createEventBus } from '../../engine/events/bus.js';\n",
+      );
+      const gates = [
+        ...getInvariantGates('49'),
+        ...getInvariantGates('50'),
+        ...getInvariantGates('51'),
+        ...getInvariantGates('52'),
+      ].map((gate) => ({
+        ...gate,
+        command: gate.command
+          .replaceAll('src/features', `${root}/features`)
+          .replaceAll('src', root),
+      }));
       const { lines, log } = captureLog();
 
-      expect(
-        runInvariantGates(
-          [{ ...gate, command: gate.command.replace('src/', `${root}/`) }],
-          undefined,
-          log,
-        ),
-      ).toBe(1);
-      expect(lines[0]).toContain('[40]');
+      expect(runInvariantGates(gates, undefined, log)).toBe(4);
+      expect(lines).toEqual([
+        expect.stringContaining('[49]'),
+        expect.stringContaining('[50]'),
+        expect.stringContaining('[51]'),
+        expect.stringContaining('[52]'),
+      ]);
+      for (const line of lines) expect(line).toContain('FAIL');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

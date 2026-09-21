@@ -15,6 +15,7 @@ import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
+import { CREW_SEAT_LABELS } from '../../../src/core/crew/identity.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import {
   CLI_READINESS_STATES,
@@ -38,10 +39,7 @@ import {
 } from '../../../src/features/runners/model-catalog/options.js';
 import { deriveModelCatalogCapability } from '../../../src/features/runners/model-catalog/posture.js';
 import type { ModelOption } from '../../../src/features/runners/model-catalog/recency.js';
-import {
-  formatBillingLabel,
-  formatPickerStatusLabel,
-} from '../../../src/features/runners/picker-format.js';
+import { formatPickerStatusLabel } from '../../../src/features/runners/picker-format.js';
 import { PickerView } from '../../../src/features/runners/picker-view.js';
 import type { PickerActions } from '../../../src/features/runners/use-picker-actions.js';
 import type { PickerCatalog } from '../../../src/features/runners/use-picker-catalog.js';
@@ -66,7 +64,8 @@ function pickerItem(
 function makeActions(overrides: Partial<PickerActions> = {}): PickerActions {
   return {
     confirm: async () => {},
-    confirmProviderVariant: async () => {},
+    confirmProviderSelection: async () => {},
+    confirmAuthMethod: async () => {},
     leftChange: () => {},
     deleteRight: async () => {},
     chooseContract: () => {},
@@ -189,7 +188,7 @@ describe('runner picker semantics integration', () => {
       expect(plannerZones).toHaveLength(plannerCatalog.length);
       expect(plannerZones).toEqual(expect.arrayContaining(plannerCatalog.map((item) => item.id)));
       expect(plannerZones).toContain('cursor');
-      expect(plannerZones).not.toContain('antigravity');
+      expect(plannerZones).toContain('antigravity');
       expect(plannerCatalog.map((item) => item.id)).toEqual(
         expect.arrayContaining([
           'custom-command',
@@ -208,11 +207,14 @@ describe('runner picker semantics integration', () => {
       expect(implementerZones).toContain('ollama');
       expect(implementerZones).toContain('lm-studio');
       expect(implementerZones).toContain('cursor');
-      expect(implementerZones).not.toContain('antigravity');
-      expect(plannerZones).not.toContain('ollama');
-      expect(plannerZones).not.toContain('lm-studio');
+      expect(implementerZones).toContain('antigravity');
+      // Both local services are admitted in every seat, so the planner lane
+      // projects the same two rows the implementer lane does. Independence is
+      // the per-role projection above, not a difference in membership.
+      expect(plannerZones).toContain('ollama');
+      expect(plannerZones).toContain('lm-studio');
       expect(implementerCatalog.some((item) => item.id === 'ollama')).toBe(true);
-      expect(plannerCatalog.some((item) => item.id === 'ollama')).toBe(false);
+      expect(plannerCatalog.some((item) => item.id === 'ollama')).toBe(true);
       implementerUi.unmount();
     });
   });
@@ -290,10 +292,14 @@ describe('runner picker semantics integration', () => {
 
       const lmStudioFrame = await cursorOnto('lm-studio');
       expect(lmStudioFrame).toContain('Unavailable');
-      expect(lmStudioFrame).toContain('Start lm-studio and refresh detection.');
+      // A local server's row now opens its connection form, so its remedy is on that
+      // row's card: the instruction for starting the server, broken on words to the
+      // card's own width. The probe's own diagnostic waits in the form, under a check.
+      expect(lmStudioFrame).toContain('Start the LM Studio');
+      expect(lmStudioFrame).toContain('local server');
       const ollamaFrame = await cursorOnto('ollama');
       expect(ollamaFrame).toContain('Unavailable');
-      expect(ollamaFrame).toContain('Ollama is not running');
+      expect(ollamaFrame).toContain('Run `ollama serve`');
       ui.unmount();
     });
   });
@@ -337,7 +343,7 @@ describe('runner picker semantics integration', () => {
             tool: 'codex',
           });
         });
-        expect(feedbackStore.get().message).toContain('Planner set to');
+        expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.plan} set to`);
         ui.unmount();
       });
     });
@@ -444,7 +450,7 @@ describe('runner picker semantics integration', () => {
       }
     });
 
-    it('offers exactly one Auto row alongside the tool-chooses-the-model guidance', async () => {
+    it('leads a cli BUILD column with the price-routing row above the Auto row', async () => {
       const item = pickerItem(
         {
           id: 'codex',
@@ -470,6 +476,7 @@ describe('runner picker semantics integration', () => {
         customModels: [],
         currentItem: item,
       });
+      // `auto` hands the choice to the tool itself (F-001).
       expect(rightModels).toEqual([{ id: 'auto' }]);
 
       const ui = renderFeature(
@@ -481,13 +488,12 @@ describe('runner picker semantics integration', () => {
       );
       await flushEffects();
       const frame = frameText(ui);
-      // One row in the Models column plus the preview line that describes it.
-      expect(frame).toContain('Auto');
+      // The Auto row in the Models column, named as what it does.
+      expect(frame).toContain('auto');
       expect(frame).not.toContain('Add custom model');
       ui.unmount();
 
-      // With the tool column focused the Auto row still says who picks the
-      // model: it is the only row, and it carries the default word.
+      // With the tool column focused the Auto row still names itself.
       const guidanceUi = renderFeature(
         <PickerView
           role="implementer"
@@ -497,8 +503,8 @@ describe('runner picker semantics integration', () => {
       );
       await flushEffects();
       const guidanceFrame = frameText(guidanceUi);
-      expect(guidanceFrame).toContain('Auto');
-      expect(guidanceFrame).toContain('Default');
+      expect(guidanceFrame).toContain('auto');
+      expect(guidanceFrame).not.toContain('Default');
       guidanceUi.unmount();
     });
 
@@ -551,8 +557,8 @@ describe('runner picker semantics integration', () => {
       );
       await flushEffects();
       const discoveredFrame = frameText(discoveredUi);
-      expect(discoveredFrame).toContain('1 detected');
-      expect(discoveredFrame).toContain('GPT-4o');
+      expect(discoveredFrame).toContain('1 model');
+      expect(discoveredFrame).toContain('gpt-4o');
       discoveredUi.unmount();
     });
   });
@@ -604,7 +610,6 @@ describe('runner picker semantics integration', () => {
           },
           cliCatalogs: [
             {
-              role: 'planner',
               tool: 'codex',
               models: [{ id: 'gpt-5.4' }, { id: 'runtime-only-model' }],
               probedAt: 40,
@@ -777,9 +782,9 @@ describe('runner picker semantics integration', () => {
     it('renders every admitted CLI and API descriptor through shared semantic fields', async () => {
       seedReadyDetection();
       // The capability strip is the part of the byline truncation cuts first,
-      // so the billing posture is only on screen when the byline fits: a
-      // terminal at the widest overlay density, and a models.dev lane that has
-      // settled instead of spending that width on its own progress note.
+      // so the whole strip is only on screen when the byline fits: a terminal
+      // at the widest overlay density, and a models.dev lane that has settled
+      // instead of spending that width on its own progress note.
       modelCacheStore.hydrateModelsDevCatalog({ catalog: {}, fetchedAt: 1, validatedAt: 1 });
       terminalSizeStore.__testReset({ ...WIDE_VIEWPORT, isSmall: false });
       const ui = await renderPicker('implementer', WIDE_VIEWPORT);
@@ -800,7 +805,17 @@ describe('runner picker semantics integration', () => {
 
       collectClickableZones(WIDE_VIEWPORT).get('runner-left:claude-code')?.();
       await flushEffects();
-      expect(frameText(ui)).toContain(formatBillingLabel('subscription-included'));
+      ui.stdin.write('\u001B[D');
+      await flushEffects();
+      // A CLI's own login decides how it authenticates, so the byline ends on
+      // the capability strip: no billing word stands in for an unproven method.
+      const byline =
+        frameText(ui)
+          .split('\n')
+          .map((line) => line.trim())
+          .find((line) => line.startsWith('Claude Code CLI')) ?? '';
+      expect(byline).toContain('direct write · network · shell');
+      expect(byline.endsWith('auto approval')).toBe(true);
 
       expect(leftToolZoneIds(WIDE_VIEWPORT)).toHaveLength(
         buildPickerOptions(

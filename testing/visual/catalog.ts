@@ -12,30 +12,42 @@ import { CATALOG_SCHEMA_VERSION } from './contracts/schema-versions.js';
 const CHECKPOINT_TIMEOUT_MS = 10_000;
 
 export const VISUAL_CATALOG_VERSION = CATALOG_SCHEMA_VERSION;
-export const VISUAL_FIXTURE_VERSION = 1;
+export const VISUAL_FIXTURE_VERSION = 2;
 export const REQUIRED_VIEWPORTS: readonly Viewport[] = Object.freeze([
   viewport({ cols: 120, rows: 40 }),
   viewport({ cols: 80, rows: 24 }),
   viewport({ cols: 60, rows: 18 }),
 ]);
 
-export const BRIEF_RECOVERY_VIEWPORTS: readonly Viewport[] = Object.freeze([
-  viewport({ cols: 121, rows: 16 }),
-  viewport({ cols: 120, rows: 16 }),
-  viewport({ cols: 119, rows: 16 }),
-  viewport({ cols: 80, rows: 16 }),
-  viewport({ cols: 50, rows: 16 }),
-  viewport({ cols: 40, rows: 16 }),
+export const HOME_COLD_DETECTING_VIEWPORTS: readonly Viewport[] = Object.freeze([
+  viewport({ cols: 80, rows: 40 }),
 ]);
 
+// The build-progress block collapses onto two rows above 120 columns, and the sidebar only paints
+// past that breakpoint. One wide capture is what proves the two share the row budget.
+export const WIDE_VIEWPORTS: readonly Viewport[] = Object.freeze([
+  ...REQUIRED_VIEWPORTS,
+  viewport({ cols: 160, rows: 45 }),
+]);
+
+/**
+ * The run screen is the run's home live and at rest, so the gallery has to cover both: the stages
+ * a moving run passes through, and every way a run can sit still on that same screen.
+ */
 export const REQUIRED_WORKFLOW_CHECKPOINT_IDS = [
   'idle',
   'planning',
   'implementation',
   'review',
   'question',
-  'success',
   'failure',
+  'at-rest-paused',
+  'at-rest-halted',
+  'at-rest-waiting',
+  'closed-ready',
+  'closed-needs-attention',
+  'closed-ended',
+  'replayed',
 ] as const;
 
 export const REQUIRED_WORKFLOW_CHECKPOINT_KINDS = [
@@ -67,7 +79,7 @@ interface ScenarioInput {
   readonly surface: Surface;
   readonly checkpoint: CheckpointInput;
   readonly elements: readonly ElementInput[];
-  readonly viewports?: readonly Viewport[];
+  readonly viewports?: readonly Viewport[] | undefined;
 }
 
 function defineScenario(input: ScenarioInput): ScenarioDefinition {
@@ -99,20 +111,10 @@ function overlaySurface(overlay: OverlaySurface, underlyingScreen: Screen): Surf
   return { kind: 'overlay', overlay, underlyingScreen };
 }
 
-const BRIEF_RECOVERY_SCENARIOS = [
-  ['workflow-brief-recovery-zero-task-blocked', 'Zero-task contract blocked', 'CONTRACT BLOCKED'],
-  ['workflow-brief-recovery-storage-blocked', 'Storage-blocked contract', 'BECAUSE STORAGE'],
-  ['workflow-brief-recovery-task-blocked', 'Task-specific contract blocked', 'QUALITY ISSUE'],
-  ['workflow-brief-recovery-retrying-queued', 'Retrying with queued input', 'RETRYING'],
-  ['workflow-brief-recovery-unresolved', 'Unresolved retry', 'RETRY UNRESOLVED'],
-  ['workflow-brief-recovery-ready', 'Ready after repair', 'CONTRACT READY'],
-  ['workflow-brief-recovery-provider-failed', 'Provider failure', 'PROVIDER REFUSAL'],
-  ['workflow-brief-recovery-budget-blocked', 'Budget blocked', 'BUDGET REFUSAL'],
-] as const satisfies readonly (readonly [string, string, string])[];
-
 interface ScreenScenarioInput {
   readonly id: string;
   readonly title: string;
+  readonly viewports?: readonly Viewport[] | undefined;
 }
 
 const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
@@ -120,27 +122,125 @@ const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
   { id: 'home-reviewer', title: 'Home · reviewer seat configured' },
   { id: 'home-floor-collapsed', title: 'Home · one-token reviewer' },
   { id: 'home-cold', title: 'Home · detection still cold' },
+  {
+    id: 'home-cold-detecting',
+    title: 'Home · first tool check running',
+    viewports: HOME_COLD_DETECTING_VIEWPORTS,
+  },
 ];
 
 const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
-  home: HOME_SCENARIOS.map((home) =>
+  home: [
+    ...HOME_SCENARIOS.map((home) =>
+      defineScenario({
+        id: home.id,
+        title: home.title,
+        surface: screenSurface('home'),
+        viewports: home.viewports,
+        checkpoint: {
+          id: 'ready',
+          title: 'Ready for a feature',
+          kind: 'ready',
+          marker: 'Describe your feature…',
+        },
+        elements: [
+          { id: 'header', title: 'Home header' },
+          { id: 'hero', title: 'Home hero' },
+          { id: 'composer', title: 'Feature composer' },
+        ],
+      }),
+    ),
+    // The draft replaces the shared home placeholder, so this scenario waits on the open menu's
+    // own footer instead of reusing the `Describe your feature…` marker.
     defineScenario({
-      id: home.id,
-      title: home.title,
+      id: 'home-skills-completion',
+      title: 'Home · /skills completion menu',
       surface: screenSurface('home'),
       checkpoint: {
         id: 'ready',
-        title: 'Ready for a feature',
+        title: 'Skills completion open',
         kind: 'ready',
-        marker: 'No recent sessions',
+        marker: 'tab fill',
+      },
+      elements: [
+        { id: 'composer', title: 'Feature composer' },
+        { id: 'completion', title: 'Skills completion menu' },
+      ],
+    }),
+    // A check running behind a live composer: the status borrows the hint's row and the draft the
+    // operator submitted is still theirs to edit.
+    defineScenario({
+      id: 'home-preparing',
+      title: 'Home · checking tools beside a live draft',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Check running beside the composer',
+        kind: 'ready',
+        marker: 'Checking tools',
       },
       elements: [
         { id: 'header', title: 'Home header' },
-        { id: 'hero', title: 'Home hero' },
         { id: 'composer', title: 'Feature composer' },
       ],
     }),
-  ),
+    // The panel appears only when preparation needs an answer.
+    defineScenario({
+      id: 'home-preparation-failed',
+      title: 'Home · preparation failed with no blocker',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'failure',
+        title: 'Failed with warnings only',
+        kind: 'failure',
+        marker: 'Session ownership could not be taken over',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+    }),
+    // The composer carrying images inside its text: no separate attachment row, no extra height.
+    defineScenario({
+      id: 'home-preparation-blocked',
+      title: 'Home · preparation needs a local server',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'failure',
+        title: 'Offline server prevents start',
+        kind: 'failure',
+        marker: 'Ollama is not reachable',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+    }),
+    defineScenario({
+      id: 'home-draft-image',
+      title: 'Home · a draft with images at the caret',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Draft holding two images',
+        kind: 'ready',
+        marker: '[image #2]',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'home-mode-completion',
+      title: 'Home · /mode completion menu',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Mode completion open',
+        kind: 'ready',
+        marker: '0 gates',
+      },
+      elements: [
+        { id: 'composer', title: 'Feature composer' },
+        { id: 'completion', title: 'Mode completion menu' },
+      ],
+    }),
+  ],
   workflow: [
     defineScenario({
       id: 'workflow-idle',
@@ -179,6 +279,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-implementation',
       title: 'Workflow · implementation activity',
       surface: screenSurface('workflow'),
+      viewports: [...WIDE_VIEWPORTS, viewport({ cols: 220, rows: 45 })],
       checkpoint: {
         id: 'implementation',
         title: 'Implementation activity',
@@ -189,6 +290,54 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Implementation transcript' },
         { id: 'activity', title: 'Implementation activity block' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-retry',
+      title: 'Workflow · brief on its second attempt',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-retry',
+        title: 'Retried brief',
+        kind: 'implementation',
+        marker: 'attempt 2 of 3',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-validation',
+      title: 'Workflow · gate verdicts',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'validation',
+        title: 'Validation verdicts',
+        kind: 'implementation',
+        marker: 'lint pre-existing failure',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Validation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-escalated',
+      title: 'Workflow · escalated brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-escalated',
+        title: 'Escalated brief',
+        kind: 'implementation',
+        marker: '1 escalated',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
         { id: 'sidebar', title: 'Workflow sidebar' },
       ],
     }),
@@ -210,19 +359,339 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-approval-document',
+      title: 'Workflow · plan review gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'approval-document',
+        title: 'Document review gate',
+        kind: 'review',
+        marker: 'Approve plan and compile briefs',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'approval-panel', title: 'Document review panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-approval-permission',
+      title: 'Workflow · out-of-scope write gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'approval-permission',
+        title: 'Permission gate',
+        kind: 'review',
+        marker: "Write outside the brief's declared files:",
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'approval-panel', title: 'Permission panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-reviewing-briefs',
+      title: 'Workflow · briefs review gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'reviewing-briefs',
+        title: 'Briefs review gate',
+        kind: 'review',
+        marker: 'start the build',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Briefs transcript' },
+        { id: 'approval-panel', title: 'Briefs review panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-question',
       title: 'Workflow · clarification question',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'question',
         title: 'Clarification question',
         kind: 'question',
-        marker: 'Which fixture answer should be used?',
+        marker: 'Question 1 of 3',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Question transcript' },
         { id: 'question-panel', title: 'Question panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-question-input',
+      title: 'Workflow · answer inside the question',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'question-input',
+        title: 'Inline answer and separate instruction',
+        kind: 'question',
+        marker: 'Question 1 of 2',
+      },
+      elements: [
+        { id: 'question-panel', title: 'Question panel' },
+        { id: 'composer', title: 'New instruction' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-question-overflow',
+      title: 'Workflow · revisiting a long answer',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'question-overflow',
+        title: 'Previous answer with overflowing option',
+        kind: 'question',
+        marker: 'Question 2 of 3',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Question panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-planner-reply',
+      title: 'Workflow · ordinary planner reply',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'planner-reply',
+        title: 'Waiting for scope',
+        kind: 'question',
+        marker: 'Which module should change?',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planner reply' },
+        { id: 'composer', title: 'Reply composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-question-answered',
+      title: 'Workflow · answered structured questions',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'question-answered',
+        title: 'Answered structured questions',
+        kind: 'question',
+        marker: 'Simplify/clean up existing code',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Answered questions transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-task-review',
+      title: 'Workflow · task review without usage counts',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'task-review',
+        title: 'Task ready for review',
+        kind: 'question',
+        marker: 'ready for review',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Task review panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-paused-mid-brief',
+      title: 'Workflow · parked mid-brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'paused-mid-brief',
+        title: 'Parked mid-brief',
+        kind: 'question',
+        marker: 'Paused at T',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-paused-boundary',
+      title: 'Workflow · parked at a brief boundary',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'paused-boundary',
+        title: 'Parked at a boundary',
+        kind: 'question',
+        marker: 'Paused after T',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-quit-hint',
+      title: 'Workflow · quit confirmation',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'quit-hint',
+        title: 'Quit confirmation',
+        kind: 'ready',
+        marker: 'Press ctrl+c again to quit',
+      },
+      elements: [{ id: 'composer', title: 'Workflow composer' }],
+    }),
+    defineScenario({
+      id: 'workflow-stopping',
+      title: 'Workflow · stopping',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'stopping',
+        title: 'Stopping the run',
+        kind: 'implementation',
+        marker: 'Finishing cleanup and saving',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-paused',
+      title: 'Workflow · a paused run at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-paused',
+        title: 'Paused run at rest',
+        kind: 'ready',
+        marker: 'Paused at',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-halted',
+      title: 'Workflow · a halted run at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-halted',
+        title: 'Halted run at rest',
+        kind: 'ready',
+        marker: 'Halted',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-waiting-gate',
+      title: 'Workflow · a run parked at a gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-waiting',
+        title: 'Run waiting at a gate',
+        kind: 'ready',
+        marker: 'Waiting at the',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-complete-ready',
+      title: 'Workflow · closed and ready to keep',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-ready',
+        title: 'Closed run ready to keep',
+        kind: 'success',
+        marker: 'visual-closed-ready',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-complete-needs-attention',
+      title: 'Workflow · closed and needing attention',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-needs-attention',
+        title: 'Closed run needing attention',
+        kind: 'success',
+        marker: 'visual-closed-needs-attention',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-ended',
+      title: 'Workflow · ended by the user',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-ended',
+        title: 'Ended run',
+        kind: 'failure',
+        marker: 'visual-closed-ended',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-replayed-history',
+      title: 'Workflow · history replayed from the run log',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'replayed',
+        title: 'Replayed run history',
+        kind: 'ready',
+        marker: 'Interrupted',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-stopped',
+      title: 'Workflow · cancelled by the user',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'stopped',
+        title: 'Cancelled run',
+        kind: 'failure',
+        marker: 'Cancelled by you at T',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Stopped transcript' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -243,6 +712,54 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-usage-limit',
+      title: 'Workflow · quota halt and seat swap',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery',
+        title: 'Usage-limit recovery menu',
+        kind: 'question',
+        marker: 'Change BUILD tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-api-context-insufficient',
+      title: 'Workflow · a packet the plan seat was never given',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'api-context',
+        title: 'Insufficient-context recovery menu',
+        kind: 'question',
+        marker: 'Nothing was sent to PLAN',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // Re-entering a run at rest: the run keeps the screen and its byline row states the check.
+    defineScenario({
+      id: 'workflow-continuing',
+      title: 'Workflow · checking tools to continue a run',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Check running beside the composer',
+        kind: 'ready',
+        marker: 'Checking tools',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-command-argument',
       title: 'Workflow · command argument completion',
       surface: screenSurface('workflow'),
@@ -255,48 +772,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'composer', title: 'Workflow composer' },
         { id: 'completion', title: 'Command argument completion menu' },
-      ],
-    }),
-    ...BRIEF_RECOVERY_SCENARIOS.map(([id, title, marker]) =>
-      defineScenario({
-        id,
-        title: `Workflow · Brief recovery · ${title}`,
-        surface: screenSurface('workflow'),
-        viewports: BRIEF_RECOVERY_VIEWPORTS,
-        checkpoint: {
-          id: 'review',
-          title,
-          kind: 'review',
-          marker,
-        },
-        elements: [
-          { id: 'recovery-public-status', title: 'Recovery public status' },
-          { id: 'recovery-status', title: 'Recovery contract status' },
-          { id: 'recovery-evidence', title: 'Recovery evidence spine' },
-          { id: 'recovery-cause', title: 'Recovery cause explanation' },
-          { id: 'recovery-actions', title: 'Recovery action group' },
-          { id: 'recovery-composer', title: 'Recovery composer input' },
-          { id: 'recovery-body', title: 'Recovery workflow body' },
-          { id: 'recovery-sidebar', title: 'Recovery workflow sidebar' },
-        ],
-      }),
-    ),
-  ],
-  summary: [
-    defineScenario({
-      id: 'summary-success',
-      title: 'Summary · successful workflow',
-      surface: screenSurface('summary'),
-      checkpoint: {
-        id: 'success',
-        title: 'Successful summary',
-        kind: 'success',
-        marker: 'Visual fixture workflow complete',
-      },
-      elements: [
-        { id: 'header', title: 'Summary header' },
-        { id: 'summary-hero', title: 'Summary outcome' },
-        { id: 'summary-details', title: 'Summary details' },
       ],
     }),
   ],
@@ -350,7 +825,7 @@ function overlayGroup(input: OverlayGroupInput): readonly ScenarioDefinition[] {
   );
 }
 
-const PICKER_TITLE_MARKER = 'Tool & model';
+const PICKER_TITLE_MARKER = 'Tools';
 
 const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> = {
   help: overlayGroup({
@@ -380,7 +855,14 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     underlyingScreen: 'home',
     panelTitle: 'Skills panel',
     checkpointTitle: 'Skills ready',
-    scenarios: [{ id: 'overlay-skills', title: 'Overlay · skills', marker: 'Skills' }],
+    scenarios: [
+      {
+        id: 'overlay-skills',
+        title: 'Overlay · skills · no skills found',
+        marker: 'No skills found',
+      },
+      { id: 'overlay-skills-list', title: 'Overlay · skills', marker: 'Skills' },
+    ],
   }),
   settings: overlayGroup({
     overlay: 'settings',
@@ -400,6 +882,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Settings',
       },
       {
+        id: 'overlay-settings-crew-kilo-copilot',
+        title: 'Overlay · settings · Kilo plan seat, Copilot build seat',
+        marker: 'Settings',
+      },
+      {
         id: 'overlay-settings-floor-full',
         title: 'Overlay · settings · full crew at the floor',
         marker: 'Settings',
@@ -414,15 +901,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · settings · filtered to plan',
         marker: 'Settings',
       },
-    ],
-  }),
-  'mode-selector': overlayGroup({
-    overlay: 'mode-selector',
-    underlyingScreen: 'home',
-    panelTitle: 'Workflow mode panel',
-    checkpointTitle: 'Workflow mode ready',
-    scenarios: [
-      { id: 'overlay-mode-selector', title: 'Overlay · workflow mode', marker: 'Workflow mode' },
+      {
+        id: 'overlay-settings-filter-workflow',
+        title: 'Overlay · settings · filtered to the workflow section',
+        marker: 'Settings',
+      },
     ],
   }),
   'planner-picker': overlayGroup({
@@ -447,6 +930,16 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-picker-claude-effort',
+        title: 'Overlay · planner picker · Claude alias effort ladder',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-claude-effort-set',
+        title: 'Overlay · planner picker · Claude alias effort set',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-picker-provider-expanded-empty',
         title: 'Overlay · planner picker · routes with no signed-in provider',
         marker: PICKER_TITLE_MARKER,
@@ -467,6 +960,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-picker-browse-escape',
+        title: 'Overlay · implementer picker · browse the wider catalog',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-planner-picker-no-listing',
         title: 'Overlay · planner picker · tool without model listing',
         marker: PICKER_TITLE_MARKER,
@@ -477,9 +975,94 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-planner-picker-kilo-free',
+        title: 'Overlay · planner picker · Kilo free routes named apart',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-planner-picker-malformed',
         title: 'Overlay · planner picker · malformed probe output',
         marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-claude',
+        title: 'Overlay · planner picker · Claude Code alias rows',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-copilot',
+        title: 'Overlay · planner picker · GitHub Copilot models',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-command-code',
+        title: 'Overlay · planner picker · Command Code native rows',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-antigravity',
+        title: 'Overlay · planner picker · Antigravity effort axis',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-cursor',
+        title: 'Overlay · planner picker · Cursor Agent families',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-cursor-expanded',
+        title: 'Overlay · planner picker · Cursor family axes expanded',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-opencode-expanded',
+        title: 'Overlay · planner picker · OpenCode routes and axes expanded',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-opencode-expanded-drafted',
+        title: 'Overlay · planner picker · OpenCode axis drafted',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-custom-launcher',
+        title: 'Overlay · planner picker · add a custom command',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-local-server',
+        title: 'Overlay · planner picker · a local server that is not running',
+        marker: PICKER_TITLE_MARKER,
+      },
+      ...(
+        [
+          ['ollama', 'Ollama connection editor', 'Not checked yet'],
+          ['offline', 'server offline', 'Ollama is not reachable'],
+          ['timeout', 'catalog timeout', 'Ollama did not answer'],
+          ['unauthorized', 'token refused', 'LM Studio rejected the token'],
+          ['invalid', 'invalid endpoint', 'Ollama does not accept this address'],
+          ['unknown', 'unknown failure', 'Ollama did not say what failed'],
+          ['malformed', 'unreadable catalog', 'Ollama returned an unreadable catalog'],
+          ['empty', 'empty catalog', 'no models installed'],
+          ['missing', 'selected model absent', 'does not serve'],
+          ['loaded', 'model loaded', 'LM Studio answered'],
+          ['not-loaded', 'model not loaded', 'not loaded'],
+          ['listed', 'model listed, loading unknown', 'Ollama answered'],
+        ] as const
+      ).map(([id, title, marker]) => ({
+        id: `overlay-local-connection-${id}`,
+        title: `Overlay · local connection · ${title}`,
+        marker,
+      })),
+      {
+        id: 'overlay-picker-auth-config-owned',
+        title: 'Overlay · authentication owned by CLI configuration',
+        marker: 'CLI decides',
+      },
+      {
+        id: 'overlay-picker-auth-unsupported',
+        title: 'Overlay · configured authentication method without enforcement proof',
+        marker: 'unproven',
       },
       {
         id: 'overlay-picker-contract-choice',
@@ -505,6 +1088,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     checkpointTitle: 'Implementer picker ready',
     scenarios: [
       {
+        id: 'overlay-local-connection-lmstudio',
+        title: 'Overlay · BUILD · LM Studio connection editor',
+        marker: 'Not checked yet',
+      },
+      {
         id: 'overlay-implementer-picker',
         title: 'Overlay · implementer picker',
         marker: 'Add custom model',
@@ -518,15 +1106,36 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     checkpointTitle: 'Reviewer picker ready',
     scenarios: [
       {
+        id: 'overlay-local-connection-llamacpp',
+        title: 'Overlay · REVIEW · llama.cpp connection editor',
+        marker: 'Not checked yet',
+      },
+      {
         id: 'overlay-reviewer-picker-inherited',
         title: 'Overlay · reviewer picker · inherited from the planner',
-        marker: 'Reviewer',
+        marker: PICKER_TITLE_MARKER,
       },
       {
         id: 'overlay-reviewer-picker-tool',
         title: 'Overlay · reviewer picker · tool chosen',
-        marker: 'Reviewer',
+        marker: PICKER_TITLE_MARKER,
       },
+    ],
+  }),
+  'stop-sheet': overlayGroup({
+    overlay: 'stop-sheet',
+    underlyingScreen: 'workflow',
+    panelTitle: 'Stop options panel',
+    checkpointTitle: 'Stop sheet ready',
+    scenarios: [
+      { id: 'workflow-stop-sheet', title: 'Workflow · stop options', marker: 'Stop options' },
+      {
+        id: 'workflow-stop-menu-parked',
+        title: 'Workflow · parked options',
+        marker: 'Back to sessions',
+      },
+      { id: 'workflow-stop-menu-failed', title: 'Workflow · failed stop', marker: 'Retry stop' },
+      { id: 'workflow-stop-menu-pause', title: 'Workflow · pause option', marker: 'finish T002' },
     ],
   }),
   sessions: overlayGroup({
@@ -536,25 +1145,35 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     checkpointTitle: 'Sessions ready',
     scenarios: [{ id: 'overlay-sessions', title: 'Overlay · sessions', marker: 'Sessions' }],
   }),
+  'usage-details': overlayGroup({
+    overlay: 'usage-details',
+    underlyingScreen: 'workflow',
+    panelTitle: 'Usage details panel',
+    checkpointTitle: 'Usage details ready',
+    scenarios: [
+      {
+        id: 'overlay-usage-details',
+        title: 'Overlay · usage details · priced run',
+        marker: 'Usage details',
+      },
+      {
+        id: 'overlay-usage-details-legacy',
+        title: 'Overlay · usage details · sum recorded before per-request pricing',
+        marker: 'Usage details',
+      },
+      {
+        id: 'overlay-usage-context-insufficient',
+        title: 'Overlay · usage details · the context a halted review never had',
+        marker: 'Usage details',
+      },
+    ],
+  }),
   editor: overlayGroup({
     overlay: 'editor',
     underlyingScreen: 'workflow',
     panelTitle: 'Editor frame',
     checkpointTitle: 'Editor ready',
-    scenarios: [{ id: 'overlay-editor', title: 'Overlay · editor', marker: 'Visual fixture plan' }],
-  }),
-  'cost-drilldown': overlayGroup({
-    overlay: 'cost-drilldown',
-    underlyingScreen: 'workflow',
-    panelTitle: 'Cost breakdown panel',
-    checkpointTitle: 'Cost breakdown ready',
-    scenarios: [
-      {
-        id: 'overlay-cost-drilldown',
-        title: 'Overlay · cost breakdown',
-        marker: 'Cost · breakdown',
-      },
-    ],
+    scenarios: [{ id: 'overlay-editor', title: 'Overlay · editor', marker: 'Add greeting helper' }],
   }),
 };
 

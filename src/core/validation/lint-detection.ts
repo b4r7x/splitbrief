@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { isRecord } from '../../utils/type-guards.js';
-import { readPackageJson } from '../project-meta.js';
+import { packageScript } from '../project-meta.js';
 
 const ESLINT_CONFIG_FILES = [
   'eslint.config.js',
@@ -30,12 +29,8 @@ const RECOGNIZED_LINT_SCRIPT =
 const WRITING_LINT_SCRIPT = /(^|\s)--(fix|write|apply)\b/i;
 
 function hasRecognizedLintScript(projectDir: string): string | null {
-  const pkg = readPackageJson(projectDir);
-  if (pkg === null) return null;
-  const scripts = pkg['scripts'];
-  if (!isRecord(scripts)) return null;
-  const lint = scripts['lint'];
-  if (typeof lint !== 'string' || lint.trim() === '') return null;
+  const lint = packageScript(projectDir, 'lint');
+  if (lint === null) return null;
   if (!RECOGNIZED_LINT_SCRIPT.test(lint)) return null;
   if (WRITING_LINT_SCRIPT.test(lint)) return null;
   return 'npm run lint';

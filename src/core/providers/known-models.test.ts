@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   KNOWN_MODELS,
   PENDING_EVALUATION_CANDIDATE_IDS,
+  TOOL_EFFORT_LADDERS,
   type ModelRecommendation,
 } from './known-models.js';
 import {
@@ -12,6 +13,7 @@ import {
 import { AUTOMATIC_MODEL, normalizeConfiguredModel, resolveCliModel } from './automatic-model.js';
 import { resolveDefaultApiBase } from './catalog.js';
 import {
+  CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   cliModelPolicyViolations,
   getCliModelPolicy,
@@ -75,84 +77,127 @@ describe('KNOWN_MODELS cheap and local provider metadata', () => {
 describe('KNOWN_MODELS claude-code aliases', () => {
   const claudeCode = KNOWN_MODELS['claude-code'] ?? [];
 
-  it('offers every documented Claude Code alias', () => {
+  it('offers every alias the installed build validates, and nothing that is not one', () => {
     expect(claudeCode.map((model) => model.name)).toEqual([
-      'default',
-      'best',
-      'fable',
-      'opus',
       'sonnet',
+      'opus',
+      'fable',
       'haiku',
       'opusplan',
+      'best',
       'sonnet[1m]',
       'opus[1m]',
+      'fable[1m]',
     ]);
   });
 
   it('points each Claude Code alias at the anthropic catalog row it is enriched from', () => {
     expect(
-      claudeCode.map(({ name, catalogProvider, catalogModelId, contextLength }) => ({
+      claudeCode.map(({ name, catalogProvider, catalogModelId }) => ({
         name,
         catalogProvider,
         catalogModelId,
-        contextLength,
       })),
     ).toEqual([
-      {
-        name: 'default',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-sonnet-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'best',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-opus-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'fable',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-fable-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'opus',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-opus-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'sonnet',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-sonnet-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'haiku',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-haiku-4-5',
-        contextLength: 200_000,
-      },
-      {
-        name: 'opusplan',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-opus-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'sonnet[1m]',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-sonnet-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'opus[1m]',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-opus-5',
-        contextLength: 1_000_000,
-      },
+      { name: 'sonnet', catalogProvider: 'anthropic', catalogModelId: 'claude-sonnet-5' },
+      { name: 'opus', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
+      { name: 'fable', catalogProvider: 'anthropic', catalogModelId: 'claude-fable-5-1' },
+      { name: 'haiku', catalogProvider: 'anthropic', catalogModelId: 'claude-haiku-4-5' },
+      { name: 'opusplan', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
+      { name: 'best', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
+      { name: 'sonnet[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-sonnet-5' },
+      { name: 'opus[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
+      { name: 'fable[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-fable-5-1' },
     ]);
+  });
+
+  // Every alias carries the window its baked catalog record publishes, because that is what a
+  // row shows and what an `auto` seat floors to before models.dev loads. Strip them and the
+  // picker paints nine blank size cells on a cold start — three of them under a label that
+  // says `(1M)` — and an offline seat on `opus` budgets for Haiku's window.
+  it('carries the window Claude bakes for the model each alias resolves to', () => {
+    expect(claudeCode.map(({ name, contextLength }) => [name, contextLength])).toEqual([
+      ['sonnet', 1_000_000],
+      ['opus', 1_000_000],
+      ['fable', 1_000_000],
+      ['haiku', 200_000],
+      ['opusplan', 1_000_000],
+      ['best', 1_000_000],
+      ['sonnet[1m]', 1_000_000],
+      ['opus[1m]', 1_000_000],
+      ['fable[1m]', 1_000_000],
+    ]);
+  });
+
+  it('labels every alias with a word of its own', () => {
+    const labels = claudeCode.map((model) => model.displayName);
+
+    expect(labels).toEqual([
+      'Sonnet 5',
+      'Opus 5',
+      'Fable 5.1',
+      'Haiku 4.5',
+      'Opus 5 Plan Mode',
+      'Best',
+      'Sonnet 5 (1M)',
+      'Opus 5 (1M)',
+      'Fable 5.1 (1M)',
+    ]);
+    expect(new Set(labels).size).toBe(claudeCode.length);
+  });
+
+  it('versions every alias name except best', () => {
+    for (const model of claudeCode) {
+      if (model.name === 'best') continue;
+      expect(model.displayName, model.name).toMatch(/\d/);
+    }
+  });
+
+  it('glosses the behavioural and window aliases, and leaves the plain ones their window', () => {
+    const glossed = claudeCode.filter((model) => model.detail !== undefined);
+
+    expect(glossed.map((model) => model.name)).toEqual([
+      'opusplan',
+      'best',
+      'sonnet[1m]',
+      'opus[1m]',
+      'fable[1m]',
+    ]);
+    for (const model of glossed) {
+      expect(model.detail?.trim(), model.name).toBeTruthy();
+    }
+    expect(
+      claudeCode.filter((model) => model.detail === undefined).map((model) => model.name),
+    ).toEqual(['sonnet', 'opus', 'fable', 'haiku']);
+  });
+});
+
+describe('KNOWN_MODELS copilot bundled floor', () => {
+  const copilot = KNOWN_MODELS.copilot ?? [];
+
+  it("reads both rows from the github-copilot catalog, whose limits differ from the vendor's", () => {
+    expect(
+      copilot.map(({ name, catalogProvider, catalogModelId }) => ({
+        name,
+        catalogProvider,
+        catalogModelId,
+      })),
+    ).toEqual([
+      { name: 'claude-opus-5', catalogProvider: 'github-copilot', catalogModelId: 'claude-opus-5' },
+      { name: 'gpt-5.6-sol', catalogProvider: 'github-copilot', catalogModelId: 'gpt-5.6-sol' },
+    ]);
+  });
+
+  it('keeps a window on both rows because bundledMinimumWindow is the whole auto path', () => {
+    expect(copilot.map(({ name, contextLength }) => [name, contextLength])).toEqual([
+      ['claude-opus-5', 1_000_000],
+      ['gpt-5.6-sol', 1_050_000],
+    ]);
+  });
+
+  it('carries the window models.dev publishes, not the 272 000 pricing-tier boundary', () => {
+    expect(copilot.find((model) => model.name === 'gpt-5.6-sol')?.contextLength).toBe(1_050_000);
+    expect(copilot.every((model) => model.contextLength !== 272_000)).toBe(true);
   });
 });
 
@@ -208,11 +253,24 @@ describe('KNOWN_MODELS recommendation metadata', () => {
     }
   });
 
-  it('gives every admitted API provider exactly one default model', () => {
-    for (const providerId of KNOWN_API_PROVIDER_IDS) {
-      const defaults = (KNOWN_MODELS[providerId] ?? []).filter((model) => model.isDefault);
-      expect(defaults).toHaveLength(1);
-    }
+  // llama.cpp serves whatever gguf or alias its operator started it with, so
+  // the catalog ships no row for it and an `auto` seat is refused by name
+  // instead of inventing a model the server does not serve.
+  it('gives each admitted API provider that ships a catalog row its single default', () => {
+    expect(
+      Object.fromEntries(
+        KNOWN_API_PROVIDER_IDS.map((providerId) => [
+          providerId,
+          (KNOWN_MODELS[providerId] ?? [])
+            .filter((model) => model.isDefault)
+            .map((model) => model.name),
+        ]),
+      ),
+    ).toEqual({
+      ollama: ['qwen3-coder:30b'],
+      'lm-studio': ['qwen2.5-coder-7b'],
+      'llama-cpp': [],
+    });
   });
 
   it('does not expose retirement-date DashScope Coder models as selectable defaults', () => {
@@ -229,7 +287,6 @@ describe('automatic-selection sentinel coherence', () => {
   it('ships no catalog row that normalizes to the automatic sentinel', () => {
     for (const [providerId, models] of Object.entries(KNOWN_MODELS)) {
       for (const model of models ?? []) {
-        if (providerId === 'claude-code' && model.name === 'default') continue;
         expect(
           normalizeConfiguredModel(model.name, providerId),
           `${providerId}/${model.name}`,
@@ -271,11 +328,11 @@ describe('automatic-selection sentinel coherence', () => {
   });
 
   it.each([...ADMITTED_API_PROVIDER_IDS])(
-    'ships a default model %s can be configured with',
+    'configures %s with the exact model its own connection serves',
     (providerId) => {
       const descriptor = API_PROVIDER_CATALOG[providerId];
       const defaultModel = (KNOWN_MODELS[providerId] ?? []).find(({ isDefault }) => isDefault);
-      expect(defaultModel?.name, providerId).toBeTypeOf('string');
+      const model = defaultModel?.name ?? 'operator-started-model.gguf';
 
       const runner = {
         kind: 'api',
@@ -283,10 +340,89 @@ describe('automatic-selection sentinel coherence', () => {
         service: descriptor.service,
         offering: descriptor.offering,
         apiBase: resolveDefaultApiBase(providerId),
-        model: defaultModel?.name,
+        model,
       };
-      expect(descriptor.roles).toEqual(['implementer']);
+      expect(descriptor.roles).toEqual(['planner', 'implementer']);
       expect(ImplementerConfigSchema.safeParse(runner).success, providerId).toBe(true);
+
+      // Without a catalog default the sentinel has nothing to resolve to, so
+      // the seat is refused by name rather than filled with another model.
+      const automatic = ImplementerConfigSchema.safeParse({ ...runner, model: AUTOMATIC_MODEL });
+      expect(automatic.success, providerId).toBe(defaultModel !== undefined);
+      if (!automatic.success) {
+        expect(automatic.error.issues).toContainEqual(
+          expect.objectContaining({
+            path: ['model'],
+            message: `model "auto" cannot be resolved for API provider "${providerId}" — it has no catalog default; set an explicit model ID`,
+          }),
+        );
+      }
     },
   );
+});
+
+describe('TOOL_EFFORT_LADDERS', () => {
+  it('carries a ladder for exactly the five tools that publish their own effort levels', () => {
+    expect(Object.keys(TOOL_EFFORT_LADDERS).sort()).toEqual([
+      'antigravity',
+      'claude-code',
+      'codex',
+      'command-code',
+      'copilot',
+    ]);
+  });
+
+  it('spells every ladder exactly as the tool it was transcribed from printed it', () => {
+    expect(TOOL_EFFORT_LADDERS['claude-code']?.levels).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(TOOL_EFFORT_LADDERS.copilot?.levels).toEqual([
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(TOOL_EFFORT_LADDERS['command-code']?.levels).toEqual(['low', 'medium', 'high']);
+  });
+
+  it.each([
+    ['claude-code', 'claude --help'],
+    ['copilot', 'copilot --help'],
+    ['command-code', 'cmd --help'],
+  ] as const)('dates the command %s levels were read from', (tool, command) => {
+    expect(TOOL_EFFORT_LADDERS[tool]?.provenance).toContain(command);
+    expect(TOOL_EFFORT_LADDERS[tool]?.provenance).toMatch(/\d+(?:\.\d+)+ \(\d{4}-\d{2}-\d{2}\)/);
+  });
+
+  it('carries a ladder for every tool that spends its effort on its own flag', () => {
+    const flagTools = CLI_TOOL_IDS.filter(
+      (tool) => CLI_TOOL_CATALOG[tool].effortChannel === 'effort-flag',
+    );
+
+    for (const tool of flagTools) {
+      expect(TOOL_EFFORT_LADDERS[tool], tool).toBeDefined();
+    }
+  });
+
+  it('records the ladders their tools document as examples rather than closed sets', () => {
+    const openLadders = Object.entries(TOOL_EFFORT_LADDERS)
+      .filter(([, ladder]) => ladder?.exhaustive === false)
+      .map(([tool]) => tool);
+
+    // All three are per model: command-code says so in its own help text, codex publishes a
+    // different set per model — one of which names a rung (`ultra`) EFFORT_LEVELS cannot hold —
+    // and antigravity publishes no per-model list at all, so these ladders may order an offer
+    // but must never reject a carried value.
+    expect(openLadders).toEqual(['codex', 'command-code', 'antigravity']);
+    expect(TOOL_EFFORT_LADDERS['command-code']?.provenance).toContain('depends on the model');
+    expect(TOOL_EFFORT_LADDERS.codex?.provenance).toContain('supported_reasoning_levels');
+    expect(TOOL_EFFORT_LADDERS.antigravity?.provenance).toContain('no per-model level list');
+  });
 });

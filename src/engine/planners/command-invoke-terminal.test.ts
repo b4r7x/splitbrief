@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
 import {
-  createTaskCompilationAttemptId,
-  TaskCompilationSemanticIdSchema,
-} from '../../core/schemas/task-compilation.js';
+  createPlannerArtifactAttemptId,
+  PlannerArtifactSemanticIdSchema,
+} from '../../core/schemas/planner-artifact.js';
 import { beginDeclaredArtifactReview } from '../orchestrator/approval/planner-artifact.js';
 import { createStagedProject } from '../orchestrator/approval/staged-project.js';
 import {
@@ -121,8 +121,6 @@ describe('configured direct planner terminal cleanup', () => {
         beginDeclaredArtifactReview: async (artifactInput) => {
           const prepared = await beginDeclaredArtifactReview({
             ...artifactInput,
-            projectDir,
-            sessionId: 'planner-adapter-session',
             onApprovalNeeded,
           });
           return {
@@ -278,17 +276,15 @@ describe('configured direct planner terminal cleanup', () => {
   it('permits lease and stage cleanup after a real child exceeds the hard deadline', async () => {
     const { projectDir } = testProject('configured-direct-terminal-hard-timeout');
     const stage = await createStagedProject(projectDir);
-    const attemptId = createTaskCompilationAttemptId();
+    const attemptId = createPlannerArtifactAttemptId();
     const relativePath = `.splitbrief-runner/output/${attemptId}/result`;
     let approvalRequests = 0;
     const review = await beginDeclaredArtifactReview({
       stagedProjectDir: stage.projectDir,
-      projectDir,
-      sessionId: 'planner-adapter-session',
       callId: 'hard-timeout',
       declaredRedactionValues: [],
       provenance: {
-        semanticId: TaskCompilationSemanticIdSchema.parse('terminal-timeout-test'),
+        semanticId: PlannerArtifactSemanticIdSchema.parse('terminal-timeout-test'),
         programId: null,
         batchId: null,
         attemptId,

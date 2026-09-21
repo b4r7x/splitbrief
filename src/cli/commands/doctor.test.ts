@@ -122,7 +122,6 @@ function validConfigYaml(): string {
     'workflow:',
     '  approve: default',
     '  maxRetries: 3',
-    '  persistTranscript: true',
     '  mode: quick',
   ].join('\n');
 }
@@ -204,6 +203,8 @@ const CLAUDE_HELP_WITHOUT_PARTIAL_MESSAGES = [
   '  --verbose                  Override verbose mode',
   '  -r, --resume [sessionId]   Resume a conversation by session ID',
   '  --permission-mode <mode>   Permission mode for the session',
+  '  --disallowedTools <tools...>',
+  '                             Tools to block in this session',
   '  -h, --help                 Display help for command',
 ].join('\n');
 
@@ -365,7 +366,7 @@ describe('doctor command', () => {
     };
     const probe = parsed.report?.checks?.find((check) => check.id === 'validation.already-failing');
     expect(probe?.summary).toContain('test');
-    expect(probe?.details?.[0]).toContain('test: node -e "process.exit(1)"');
+    expect(probe?.details?.[0]).toContain("test: node -e 'process.exit(1)'");
     expect(probe?.details?.[1]).toContain('pre-run commands');
   });
 

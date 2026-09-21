@@ -4,28 +4,13 @@ import { reportConfigSaveFailure } from '../../../stores/project/save-feedback.j
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { SettingDef } from '../../../core/settings/catalog.js';
 import { matchesFilter } from '../presentation.js';
-import { settingsItemDescription, type SettingsItem } from '../items.js';
+import type { SettingsItem } from '../items.js';
 import { getConfigValue, applyEdits } from '../../../core/config/accessors/values.js';
-import {
-  readActiveRunner,
-  updateActiveRunner,
-} from '../../../core/config/accessors/active-runner.js';
-import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
-import { seatEffortChannel } from '../../../core/runners/capabilities.js';
-import { variantChoicesForModelId } from '../../../core/runners/variant-vocabulary.js';
-import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { configError } from '../../../core/config/errors.js';
 import { useFilterableList, type PageSize } from '../../../hooks/use-filterable-list.js';
 import { useEditBuffer } from './buffer.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { PlannerConfigSchema, type PlannerConfig } from '../../../core/schemas/planner-config.js';
-import {
-  ImplementerConfigSchema,
-  type ImplementerConfig,
-} from '../../../core/schemas/implementer-config.js';
-import type { EffortLevel } from '../../../core/schemas/enums.js';
 import { isTextEntryInput } from '../../../lib/terminal/text-entry.js';
-import { assertNever } from '../../../utils/type-guards.js';
 
 export type CrewSettingsItem = Extract<SettingsItem, { kind: 'crew' }>;
 
@@ -51,23 +36,13 @@ interface SettingsEditorState {
   activate: (index: number) => void;
 }
 
-/** Enter is advertised only on the rows where it does something. */
+/** Each row advertises the one key it answers to, in the word for what that key does to it. */
 export function hintFor(item: SettingsItem): string {
-  if (item.kind === 'setting') {
-    const kind = item.def.kind;
-    return kind === 'string' || kind === 'number' ? '⏎ edit' : 'space toggle';
-  }
-  switch (item.row.kind) {
-    case 'seat':
-      return '⏎ change seat';
-    case 'effort':
-      if (item.row.inherited || !item.row.deliverable || !item.row.editable) {
-        return '';
-      }
-      return 'space cycle';
-    default:
-      return assertNever(item.row);
-  }
+  if (item.kind === 'crew') return '⏎ change seat';
+  const kind = item.def.kind;
+  if (kind === 'enum') return 'space cycle';
+  if (kind === 'boolean') return 'space toggle';
+  return '⏎ edit';
 }
 
 function getCurrentConfig(): Config {
@@ -76,84 +51,8 @@ function getCurrentConfig(): Config {
   return current;
 }
 
-// The five levels this cycle offers today, written out so widening the schema enum cannot
-// silently add `none`/`minimal` — tokens the two `effort-flag` tools reject.
-const EFFORT_CYCLE: readonly (EffortLevel | undefined)[] = [
-  undefined,
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-];
-
-function nextEffort(current: EffortLevel | undefined): EffortLevel | undefined {
-  return EFFORT_CYCLE[(EFFORT_CYCLE.indexOf(current) + 1) % EFFORT_CYCLE.length];
-}
-
-function nextVariant(choices: readonly string[], current: string | undefined): string | undefined {
-  const cycle: readonly (string | undefined)[] = [undefined, ...choices];
-  return cycle[(cycle.indexOf(current) + 1) % cycle.length];
-}
-
-/** An unset effort must leave no key behind, so the cleared shape is re-parsed rather than widened. */
-function runnerWithEffort<T extends PlannerConfig | ImplementerConfig>(
-  existing: T,
-  effort: EffortLevel | undefined,
-): unknown {
-  if (effort !== undefined) return { ...existing, effort };
-  const { effort: _cleared, ...rest } = existing;
-  return rest;
-}
-
-function runnerWithVariant<T extends PlannerConfig | ImplementerConfig>(
-  existing: T,
-  variant: string | undefined,
-): unknown {
-  if (variant !== undefined) return { ...existing, variant };
-  const { variant: _cleared, ...rest } = existing;
-  return rest;
-}
-
-function configWithSeatEffort(
-  input: Readonly<{ config: Config; seatId: CrewSeatId; effort: EffortLevel | undefined }>,
-): Config {
-  const role = CREW_SEAT_ROLES[input.seatId];
-  if (role === 'implementer') {
-    return updateActiveRunner({
-      config: input.config,
-      role,
-      updater: (existing) =>
-        ImplementerConfigSchema.parse(runnerWithEffort(existing, input.effort)),
-    });
-  }
-  return updateActiveRunner({
-    config: input.config,
-    role,
-    updater: (existing) => PlannerConfigSchema.parse(runnerWithEffort(existing, input.effort)),
-  });
-}
-
-function configWithSeatVariant(
-  input: Readonly<{ config: Config; seatId: CrewSeatId; variant: string | undefined }>,
-): Config {
-  const role = CREW_SEAT_ROLES[input.seatId];
-  if (role === 'implementer') {
-    return updateActiveRunner({
-      config: input.config,
-      role,
-      updater: (existing) =>
-        ImplementerConfigSchema.parse(runnerWithVariant(existing, input.variant)),
-    });
-  }
-  return updateActiveRunner({
-    config: input.config,
-    role,
-    updater: (existing) => PlannerConfigSchema.parse(runnerWithVariant(existing, input.variant)),
-  });
-}
-
 function cyclesInPlace(item: SettingsItem): boolean {
-  if (item.kind === 'crew') return item.row.kind === 'effort';
+  if (item.kind === 'crew') return false;
   return item.def.kind === 'boolean' || item.def.kind === 'enum';
 }
 
@@ -212,44 +111,8 @@ export function useSettingsEditor({
     });
   };
 
-  const cycleEffort = (seatId: CrewSeatId) => {
-    enqueueSave(async () => {
-      const current = getCurrentConfig();
-      const role = CREW_SEAT_ROLES[seatId];
-      const runner = readActiveRunner({ config: current, role });
-      const channel = seatEffortChannel({ runner, role });
-      if (channel === 'effort-flag') {
-        await persist(
-          configWithSeatEffort({ config: current, seatId, effort: nextEffort(runner.effort) }),
-        );
-        return;
-      }
-      if (channel !== 'variant') return;
-      const choices = variantChoicesForModelId(runner.model);
-      if (choices.length === 0) return;
-      await persist(
-        configWithSeatVariant({
-          config: current,
-          seatId,
-          variant: nextVariant(choices, runner.variant),
-        }),
-      );
-    });
-  };
-
   const runItemAction = (item: SettingsItem) => {
-    if (item.kind === 'setting') {
-      toggleSetting(item.def);
-      return;
-    }
-    const row = item.row;
-    if (row.kind !== 'effort') return;
-    if (row.inherited) {
-      feedbackStore.setMessage(settingsItemDescription({ item, config }));
-      return;
-    }
-    if (!row.deliverable || !row.editable) return;
-    cycleEffort(row.seatId);
+    if (item.kind === 'setting') toggleSetting(item.def);
   };
 
   const runSelect = (item: SettingsItem) => {

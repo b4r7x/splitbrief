@@ -8,7 +8,6 @@ import type { EngineEventOf } from '../../../engine/events/types.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { completionStore } from '../../../stores/ui/completion.js';
-import { routerStore } from '../../../stores/navigation/router.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -102,7 +101,7 @@ describe('useWorkflowKeys', () => {
     questionPromptStore.reset();
   });
 
-  it('Ctrl+G opens the cost-drilldown overlay', async () => {
+  it('Ctrl+G opens no overlay now that the cost drilldown is gone', async () => {
     const ui = render(<Harness />);
     await tick(1);
     await tick(1);
@@ -113,7 +112,7 @@ describe('useWorkflowKeys', () => {
     await tick(1);
     await tick(1);
 
-    expect(overlayStore.get().active).toBe('cost-drilldown');
+    expect(overlayStore.get().active).toBe('none');
     ui.unmount();
   });
 
@@ -201,29 +200,6 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it('attached Ctrl+D does not toggle the latest workflow diff', async () => {
-    routerStore.init({
-      screen: 'workflow',
-      execution: {
-        kind: 'attached',
-        feature: 'attached test',
-        sessionId: 'attached-session',
-        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'token' },
-      },
-    });
-    const key = seedDiff();
-    const ui = render(<Harness />);
-    await tick(1);
-    await flushEffects();
-
-    ui.stdin.write(CTRL_D);
-    await tick(1);
-    await tick(1);
-
-    expect(conversationScrollStore.get().expandedDiffs.has(key)).toBe(false);
-    ui.unmount();
-  });
-
   it('plain a and A do not toggle activity expansion while composing', async () => {
     const key = seedExpandableActivityBatch();
     const ui = render(<Harness />);
@@ -237,19 +213,6 @@ describe('useWorkflowKeys', () => {
     await tick(1);
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(key)).toBe(false);
-    ui.unmount();
-  });
-
-  it("plain '$' does not open the cost-drilldown overlay while composing", async () => {
-    const ui = render(<Harness />);
-    await tick(1);
-    await flushEffects();
-
-    ui.stdin.write('$');
-    await tick(1);
-    await tick(1);
-
-    expect(overlayStore.get().active).toBe('none');
     ui.unmount();
   });
 
@@ -268,24 +231,24 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it('leaves cost-drilldown key handling to the overlay while it is open', async () => {
-    overlayStore.open('cost-drilldown');
+  it('leaves overlay key handling to the overlay while it is open', async () => {
+    overlayStore.open('help');
     const ui = render(<Harness />);
     await tick(1);
     await tick(1);
 
-    expect(overlayStore.get().active).toBe('cost-drilldown');
+    expect(overlayStore.get().active).toBe('help');
 
     await flushEffects();
     ui.stdin.write('x');
     await tick(1);
     await tick(1);
 
-    expect(overlayStore.get().active).toBe('cost-drilldown');
+    expect(overlayStore.get().active).toBe('help');
     ui.unmount();
   });
 
-  it('completion and non-cost overlays keep workflow chords and transcript scroll', async () => {
+  it('completion and open overlays keep workflow chords and transcript scroll', async () => {
     seedLongConversation();
     completionStore.setOpen(true);
     const ui = render(<Harness />);
@@ -625,8 +588,8 @@ describe('useWorkflowKeys suspended while a prompt is pending', () => {
     ui.unmount();
   });
 
-  it('does not close the cost-drilldown overlay with x while workflow keys are inactive', async () => {
-    overlayStore.open('cost-drilldown');
+  it('does not close an open overlay with x while workflow keys are inactive', async () => {
+    overlayStore.open('help');
     const ui = render(<Harness isActive={false} />);
     await tick(1);
     await flushEffects();
@@ -635,7 +598,7 @@ describe('useWorkflowKeys suspended while a prompt is pending', () => {
     await tick(1);
     await tick(1);
 
-    expect(overlayStore.get().active).toBe('cost-drilldown');
+    expect(overlayStore.get().active).toBe('help');
     ui.unmount();
   });
 });

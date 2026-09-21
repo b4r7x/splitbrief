@@ -4,30 +4,34 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import { PHASES } from '../../../core/schemas/enums.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import {
+  RAIL_STAGES,
+  getActiveRailStage,
+  getRailActiveIndex,
+  getRailStages,
+  isRailCurrent,
+  railIsHandoff,
+  railStageCompletionTimesFromPhaseFirstSeen,
+  railStageRole,
+} from '../../../core/rail-stages.js';
+import {
   RAIL_MARKER_SLOT_WIDTH,
   RAIL_SHORT_LABEL,
-  RAIL_STAGES,
   FIXED_CHROME_ROWS,
   WORKFLOW_CHROME_ORDER,
   WORKFLOW_CHROME_ROWS,
   chooseFormBVariant,
-  getActiveRailStage,
   getChromeContentWidth,
   getChromeHeight,
   getContentTopRow,
-  getRailActiveIndex,
+  getProgressRows,
   getRailDriftPassed,
-  getRailStages,
   getWorkflowChromeRows,
-  isRailCurrent,
   measureFormB,
   railConnectorWidth,
   railFormBLabel,
   railFormBSegmentWidth,
-  railIsHandoff,
-  railStageCompletionTimesFromPhaseFirstSeen,
-  railStageRole,
   selectRailForm,
+  WORKFLOW_GUTTER_X,
 } from './chrome-rows.js';
 
 function driftReport(passed: boolean, ts = 1): EngineEvent {
@@ -47,8 +51,12 @@ function plannerText(phase: Phase, ts = 1): EngineEvent {
 }
 
 describe('getChromeContentWidth', () => {
-  it('spans the full terminal width and clamps to one column', () => {
-    expect(getChromeContentWidth(120)).toBe(120);
+  it('keeps the one-cell transcript lead as the gutter on both edges', () => {
+    expect(WORKFLOW_GUTTER_X).toBe(1);
+  });
+
+  it('spans the width inside the gutter and clamps to one column', () => {
+    expect(getChromeContentWidth(120)).toBe(118);
     expect(getChromeContentWidth(0)).toBe(1);
   });
 });
@@ -74,6 +82,7 @@ describe('workflow chrome row contract', () => {
     expect(WORKFLOW_CHROME_ORDER).toEqual([
       'header',
       'header-divider',
+      'progress',
       'body',
       'footer-divider',
       'feedback',
@@ -146,7 +155,7 @@ describe('rail phase → stage map', () => {
     expect(stages.filter((s) => s.status === 'active')).toHaveLength(0);
     expect(stages.find((s) => s.stage === 'build')?.status).toBe('cancelled');
     expect(stages.find((s) => s.stage === 'briefs')?.status).toBe('done');
-    expect(stages.find((s) => s.stage === 'verify')?.status).toBe('pending');
+    expect(stages.find((s) => s.stage === 'review')?.status).toBe('pending');
   });
 });
 
@@ -160,19 +169,19 @@ describe('isRailCurrent', () => {
 });
 
 describe('railStageRole', () => {
-  it('binds spec/plan/briefs to planner, build to implementer, verify to validator', () => {
+  it('binds spec/plan/briefs to planner, build to implementer, review to validator', () => {
     expect(railStageRole('spec')).toBe('planner');
     expect(railStageRole('plan')).toBe('planner');
     expect(railStageRole('briefs')).toBe('planner');
     expect(railStageRole('build')).toBe('implementer');
-    expect(railStageRole('verify')).toBe('validator');
+    expect(railStageRole('review')).toBe('validator');
   });
 
-  it('marks the two role seams (briefs→build, build→verify) as handoffs', () => {
+  it('marks the two role seams (briefs→build, build→review) as handoffs', () => {
     expect(railIsHandoff('spec', 'plan')).toBe(false);
     expect(railIsHandoff('plan', 'briefs')).toBe(false);
     expect(railIsHandoff('briefs', 'build')).toBe(true);
-    expect(railIsHandoff('build', 'verify')).toBe(true);
+    expect(railIsHandoff('build', 'review')).toBe(true);
   });
 });
 
@@ -194,7 +203,7 @@ describe('rail Form-B width primitives', () => {
       plan: ['Plan', 'Pln'],
       briefs: ['Briefs', 'Brf'],
       build: ['Build', 'Bld'],
-      verify: ['Verify', 'Vfy'],
+      review: ['Review', 'Rvw'],
     };
     for (const stage of getRailStages('idle')) {
       const [full, short] = expected[stage.stage] ?? ['', ''];
@@ -235,9 +244,10 @@ describe('selectRailForm', () => {
     forceUnicodeGlyphs();
     const stages = getRailStages('implementing');
     const min = measureFormB(stages, { short: true }, 'unicode');
-    // contentWidth = cols; at exactly `min` it fits (B), one cell under it does not (C).
-    expect(selectRailForm({ phase: 'implementing', cols: min })).toBe('B');
-    expect(selectRailForm({ phase: 'implementing', cols: min - 1 })).toBe('C');
+    // The rail renders inside the gutter, so Form B holds while the width inside it seats the line
+    // and drops one cell below it. `min` cells inside the gutter need `min` + 2 terminal columns.
+    expect(selectRailForm({ phase: 'implementing', cols: min + 2 })).toBe('B');
+    expect(selectRailForm({ phase: 'implementing', cols: min + 1 })).toBe('C');
   });
 
   it('stays horizontal (Form B) on a wide terminal in every phase', () => {
@@ -294,5 +304,24 @@ describe('railStageCompletionTimesFromPhaseFirstSeen', () => {
       'reviewing-briefs': 200,
     });
     expect(times[0]).toBe(200);
+  });
+});
+
+describe('getProgressRows', () => {
+  it('budgets nothing outside the build and its review', () => {
+    expect(getProgressRows({ phase: 'planning', cols: 120 })).toBe(0);
+    expect(getProgressRows({ phase: 'idle', cols: 120 })).toBe(0);
+  });
+
+  it('collapses with the width inside the gutter while a brief is building', () => {
+    expect(getProgressRows({ phase: 'implementing', cols: 122 })).toBe(2);
+    expect(getProgressRows({ phase: 'implementing', cols: 120 })).toBe(4);
+    expect(getProgressRows({ phase: 'validating-task', cols: 82 })).toBe(4);
+    expect(getProgressRows({ phase: 'validating-task', cols: 80 })).toBe(5);
+    expect(getProgressRows({ phase: 'final-review', cols: 60 })).toBe(5);
+  });
+
+  it('leaves its rows to the chrome, so the body is measured around it', () => {
+    expect(getChromeHeight(3, 2)).toBe(getChromeHeight(3) + 2);
   });
 });

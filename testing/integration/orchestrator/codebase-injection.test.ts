@@ -10,6 +10,8 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import {
   makeWorkflowMetadata,
@@ -55,14 +57,13 @@ async function planWithCodebase(
 
   let context = opts.preseedContext;
   const planner = makePlanner({
-    quickPlan: vi.fn().mockImplementation(({ codebaseContext }) => {
-      context = codebaseContext;
-      return {
-        spec: '',
-        plan: '',
-        tasks: [makeTask()],
+    runPhase: vi.fn(async ({ call, inputs }: RunPhaseInput) => {
+      context = inputs.codebaseContext;
+      return makePhaseCallResult({
+        call,
         usage: { inputTokens: 50, outputTokens: 25 },
-      };
+        ...(call === 'tasks' ? { tasks: [makeTask()] } : {}),
+      });
     }),
   });
   const { callbacks } = makeCallbacks();
@@ -75,9 +76,8 @@ async function planWithCodebase(
     workflow: {
       mode: 'quick',
       approve: 'none',
-      persistTranscript: false,
     },
-    codebase: { enabled: opts.enabled, tokenBudget: 1000, cacheDir: '.splitbrief' },
+    codebase: { enabled: opts.enabled, tokenBudget: 1000 },
   });
 
   let state = createInitialState(opts.feature);
@@ -102,7 +102,7 @@ async function planWithCodebase(
 }
 
 describe('codebase context injection into planner', { timeout: 90_000 }, () => {
-  it('passes codebaseContext to planner.quickPlan when codebase.enabled is true', async () => {
+  it('passes codebaseContext to the planner call when codebase.enabled is true', async () => {
     const { context } = await planWithCodebase({
       name: 'codebase-inj',
       feature: 'add bar feature',
@@ -114,7 +114,7 @@ describe('codebase context injection into planner', { timeout: 90_000 }, () => {
     expect(context).toContain('sample.ts');
   });
 
-  it('passes undefined codebaseContext to planner.quickPlan when codebase.enabled is false', async () => {
+  it('passes undefined codebaseContext to the planner call when codebase.enabled is false', async () => {
     const { context } = await planWithCodebase({
       name: 'codebase-disabled',
       feature: 'add baz feature',

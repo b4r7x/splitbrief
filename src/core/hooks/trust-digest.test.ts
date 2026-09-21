@@ -43,61 +43,6 @@ describe('hashHooksConfig', () => {
     expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
   });
 
-  it('changes when a dynamically imported module hook dependency changes', () => {
-    mkdirSync(join(projectDir, 'hooks'), { recursive: true });
-    writeFileSync(
-      join(projectDir, 'hooks', 'policy.mjs'),
-      'export const policy = () => ({ kind: "allow" });',
-    );
-    writeFileSync(
-      join(projectDir, 'hooks', 'pre-task.mjs'),
-      "export default async (e, c) => (await import('./policy.mjs')).policy(e, c);\n",
-    );
-    const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }] };
-    const before = hashHooksConfig(projectDir, cfg);
-
-    writeFileSync(
-      join(projectDir, 'hooks', 'policy.mjs'),
-      'export const policy = () => ({ kind: "deny" });',
-    );
-
-    expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
-  });
-
-  it('changes when a required module hook dependency changes', () => {
-    mkdirSync(join(projectDir, 'hooks'), { recursive: true });
-    writeFileSync(join(projectDir, 'hooks', 'policy.cjs'), 'module.exports = { ok: true };\n');
-    writeFileSync(
-      join(projectDir, 'hooks', 'pre-task.cjs'),
-      "const p = require('./policy.cjs');\nmodule.exports = () => ({ kind: p.ok ? 'allow' : 'deny' });\n",
-    );
-    const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.cjs' }] };
-    const before = hashHooksConfig(projectDir, cfg);
-
-    writeFileSync(join(projectDir, 'hooks', 'policy.cjs'), 'module.exports = { ok: false };\n');
-
-    expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
-  });
-
-  it('hashes a non-literal dynamic dependency as a distinct unresolvable marker', () => {
-    mkdirSync(join(projectDir, 'hooks'), { recursive: true });
-    const staticModule = 'export default () => ({ kind: "allow" });\n';
-    const dynamicModule =
-      "const which = process.env.HOOK ?? './a.mjs';\nexport default async () => (await import(which)).default();\n";
-
-    writeFileSync(join(projectDir, 'hooks', 'pre-task.mjs'), staticModule);
-    const staticHash = hashHooksConfig(projectDir, {
-      pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }],
-    });
-
-    writeFileSync(join(projectDir, 'hooks', 'pre-task.mjs'), dynamicModule);
-    const dynamicHash = hashHooksConfig(projectDir, {
-      pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }],
-    });
-
-    expect(dynamicHash).not.toBe(staticHash);
-  });
-
   it('changes when a script referenced in a --flag=path command token changes', () => {
     mkdirSync(join(projectDir, 'hooks'), { recursive: true });
     writeFileSync(join(projectDir, 'hooks', 'rules.js'), 'export const v = 1;\n');

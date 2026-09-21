@@ -1,4 +1,4 @@
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState, QueuedMessage } from '../../../core/schemas/workflow.js';
 import type { EventBus } from '../../events/types.js';
 import { drainQueue } from '../queue/drain.js';
 import { formatDrainedMessages } from '../queue/prompt.js';
@@ -8,8 +8,11 @@ export function drainAndFormat(
   sessionId: string,
   state: WorkflowState,
   bus: EventBus,
-): { state: WorkflowState; prefix: string } {
+): { state: WorkflowState; prefix: string; messages: QueuedMessage[] } {
   const drain = drainQueue({ projectDir, sessionId, state, bus });
-  if (drain.messages.length === 0) return { state, prefix: '' };
-  return { state: drain.state, prefix: formatDrainedMessages(drain.messages) };
+  return {
+    state: drain.state,
+    prefix: formatDrainedMessages(drain.messages),
+    messages: drain.messages,
+  };
 }

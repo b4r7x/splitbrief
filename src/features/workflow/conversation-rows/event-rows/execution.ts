@@ -6,7 +6,11 @@ import type { ConversationRowBlock, ConversationRowTone, RowBuildContext } from 
 import { sanitizeRowDisplayText } from '../row-format/text.js';
 import { preformattedOutputBlock } from '../row-format/preformatted-block.js';
 import { segmentedRow } from '../row-format/rows.js';
-import { baselineValidationRow, validationSummarySegments } from '../event-format.js';
+import {
+  baselineValidationRow,
+  validationStageNotes,
+  validationSummarySegments,
+} from '../event-format.js';
 import { compositeBlock, rowsBlock, wrappedTextBlock } from '../row-block-compose.js';
 
 export function runningImplementerRowBlock(
@@ -88,11 +92,23 @@ export function validateRowBlock(
 ): ConversationRowBlock | null {
   const stage = failedValidationStage(event);
   const command = stage === undefined ? undefined : event.commands?.[stage];
+  // The strip is one line at every width, so a note appended to it is the first thing a narrow
+  // terminal cuts — and the words that keep the row honest are exactly the ones that must survive.
+  // They wrap on their own row, the way the baseline block carries its pre-existing sentence.
+  const notes = validationStageNotes(event);
 
   return compositeBlock(keyPrefix, [
     rowsBlock(keyPrefix, [
       segmentedRow(`${keyPrefix}-summary`, validationSummarySegments(event), 'message'),
     ]),
+    notes.length === 0
+      ? null
+      : wrappedTextBlock({
+          keyPrefix: `${keyPrefix}-notes`,
+          text: notes.join(', '),
+          width,
+          tone: 'textDim',
+        }),
     event.status === 'done' && !event.passed && event.error
       ? preformattedOutputBlock({
           keyPrefix: `${keyPrefix}-error`,

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { createInitialState } from '../../../core/state/machine.js';
+import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -11,12 +11,11 @@ import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import {
   TEST_METADATA,
   setupProject,
-  makePassingTask,
-  makePassingPlanner,
+  makeRecordingPlanner,
   seedRejectionEvidence,
   sequencedApproval,
   manual,
-  runPhase as runPhaseHelper,
+  runPlanningTurn as runPhaseHelper,
   type RunOpts,
 } from '#testing/helpers/planning-phase.js';
 
@@ -57,43 +56,28 @@ describe('runPlanningPhase — planner rejection context', () => {
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner: opts.planner,
-      state: { ...createInitialState(feature), phase: 'idle' },
+      state: transition(createInitialState(feature), { type: 'START' }),
       feature,
     });
     return result;
   }
 
   it('prepends prior rejection context to standard planner input by default', async () => {
-    const prompts: string[] = [];
-    const plan: Planner['plan'] = async (opts) => {
-      prompts.push(opts.feature);
-      return makePassingPlanner().plan(opts);
-    };
-    const planner = makePassingPlanner({ plan });
+    const { planner, calls } = makeRecordingPlanner();
 
     const result = await runSeededPlanning({
       workflow: { mode: 'standard' },
       planner,
     });
 
-    expect(result.disposition).toBe('parked');
-    expect(prompts).toEqual([expect.stringContaining('Previous rejections:')]);
-    expect(prompts[0]).toContain(rejectionSummary);
-    expect(prompts[0]).toContain(feature);
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(calls[0]?.inputs.promptPrefix).toContain('Previous rejections:');
+    expect(calls[0]?.inputs.promptPrefix).toContain(rejectionSummary);
+    expect(calls[0]?.inputs.feature).toContain(feature);
   });
 
   it('prepends prior rejection context to quick planner input when enabled', async () => {
-    const prompts: string[] = [];
-    const quickPlan: Planner['quickPlan'] = async (opts) => {
-      prompts.push(opts.feature);
-      return {
-        spec: '',
-        plan: '',
-        tasks: [makePassingTask('T099')],
-        usage: { inputTokens: 50, outputTokens: 25 },
-      };
-    };
-    const planner = makePassingPlanner({ quickPlan });
+    const { planner, calls } = makeRecordingPlanner();
 
     const result = await runSeededPlanning({
       workflow: { mode: 'quick' },
@@ -101,19 +85,14 @@ describe('runPlanningPhase — planner rejection context', () => {
       approval: { enabled: true, feedRejectionsToPlanner: true },
     });
 
-    expect(result.disposition).toBe('parked');
-    expect(prompts).toEqual([expect.stringContaining('Previous rejections:')]);
-    expect(prompts[0]).toContain(rejectionSummary);
-    expect(prompts[0]).toContain(feature);
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(calls[0]?.inputs.promptPrefix).toContain('Previous rejections:');
+    expect(calls[0]?.inputs.promptPrefix).toContain(rejectionSummary);
+    expect(calls[0]?.inputs.feature).toContain(feature);
   });
 
   it('does not include prior rejection context when feedRejectionsToPlanner is false', async () => {
-    const prompts: string[] = [];
-    const plan: Planner['plan'] = async (opts) => {
-      prompts.push(opts.feature);
-      return makePassingPlanner().plan(opts);
-    };
-    const planner = makePassingPlanner({ plan });
+    const { planner, calls } = makeRecordingPlanner();
 
     const result = await runSeededPlanning({
       workflow: { mode: 'standard' },
@@ -121,41 +100,39 @@ describe('runPlanningPhase — planner rejection context', () => {
       approval: { enabled: true, feedRejectionsToPlanner: false },
     });
 
-    expect(result.disposition).toBe('parked');
-    expect(prompts).toHaveLength(1);
-    expect(prompts[0]).not.toContain('Previous rejections:');
-    expect(prompts[0]).not.toContain(rejectionSummary);
-    expect(prompts[0]).toContain(feature);
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(calls[0]?.inputs.promptPrefix).toBeUndefined();
+    expect(calls[0]?.inputs.feature).toContain(feature);
   });
 });
 
-describe('runPlanningPhase — rejection paths', () => {
-  const rejectCases: Array<{
+describe('runPlanningPhase — end-run paths', () => {
+  const endRunCases: Array<{
     name: string;
     workflow: Partial<Config['workflow']>;
     approvals: readonly ApprovalReviewResult[];
     expectPhase?: WorkflowState['phase'];
   }> = [
     {
-      name: 'user rejects spec → cancelled, zero tasks, phase idle',
+      name: 'user ends the run at the spec gate → closed, phase unchanged',
       workflow: manual(),
-      approvals: [{ approved: false }],
-      expectPhase: 'idle',
+      approvals: [{ approved: false, action: 'end-run' }],
+      expectPhase: 'reviewing-spec',
     },
     {
-      name: 'user rejects plan (speckit mode) → cancelled',
+      name: 'user ends the run at the plan gate (speckit mode) → closed',
       workflow: manual('speckit'),
-      approvals: [{ approved: true }, { approved: false }],
+      approvals: [{ approved: true }, { approved: false, action: 'end-run' }],
     },
   ] as const;
 
-  it.each(rejectCases)('$name', async ({ workflow, approvals, expectPhase }) => {
+  it.each(endRunCases)('$name', async ({ workflow, approvals, expectPhase }) => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded: sequencedApproval(approvals) });
     const { result } = await runPhase({ callbacks, config: makeConfig({ workflow }) });
 
-    expect(result.disposition).toBe('terminal');
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'closed' });
+    expect(result.state.closed).toEqual({ at: expect.any(String), as: 'ended' });
     if (expectPhase !== undefined) {
-      expect(result.state.tasks).toHaveLength(0);
       expect(result.state.phase).toBe(expectPhase);
     }
   });

@@ -4,11 +4,8 @@ import type { EngineEventOf } from '../../../../engine/events/types.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text.js';
 import { configStore } from '../../../../stores/project/config.js';
 import type { ConversationRow } from '../types.js';
-import { glyph } from '../../../../lib/glyphs.js';
 import { rowText } from '../row-format/rows.js';
 import { artifactWrittenRowBlock } from './artifact-card.js';
-
-const FOOTER = glyph('treeLast');
 
 const PROJECT_DIR = '/repo';
 const SPEC_PATH = `${PROJECT_DIR}/.splitbrief/sessions/2026-08-10-add-tool-calling/spec.md`;
@@ -114,8 +111,7 @@ describe('artifactWrittenRowBlock', () => {
       'Tasks  2 lines',
       '  # Tasks',
       '  - T001 Add the tool contract',
-      '',
-      `  ${FOOTER} .splitbrief/sessions/2026-08-10-add-tool-calling/tasks.md`,
+      '  ↳ .splitbrief/sessions/2026-08-10-add-tool-calling/tasks.md',
     ]);
   });
 
@@ -129,7 +125,7 @@ describe('artifactWrittenRowBlock', () => {
     expect(body.segments.at(-1)?.tone).toBe('textDim');
     expect(rowText(body).trimStart().startsWith('## Heading with `code`')).toBe(true);
     expect(rowText(body).endsWith('…')).toBe(true);
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(3);
   });
 
   it('fits every row inside the space the row leading leaves', () => {
@@ -137,7 +133,7 @@ describe('artifactWrittenRowBlock', () => {
 
     for (const width of [40, 78, 110]) {
       for (const row of rowsFor(artifactEvent(), width)) {
-        expect(getTerminalCellWidth(rowText(row))).toBeLessThanOrEqual(width - 2);
+        expect(getTerminalCellWidth(rowText(row))).toBeLessThanOrEqual(width - 1);
       }
     }
   });

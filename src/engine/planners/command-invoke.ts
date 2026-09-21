@@ -9,7 +9,6 @@ import {
   invokeCommandBasedRunner,
   invokeCustomCommandBasedRunner,
 } from '../runners/command-based.js';
-import { COMPILER_SUPPORT_TABLE } from '../runners/compiler-capability.js';
 import { extractQuestionsFromStream } from '../parsers/question.js';
 import { createCommandExistsAvailability, DEFAULT_AVAILABILITY } from '../availability.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
@@ -26,9 +25,9 @@ import type { AdmittedCustomRunnerInvocation } from '../runners/custom-launchabi
 import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
 import { resolveCustomRunnerEnvironment } from '../runners/redaction.js';
 import {
-  TaskCompilationAttemptIdSchema,
-  TaskCompilationSemanticIdSchema,
-} from '../../core/schemas/task-compilation.js';
+  PlannerArtifactAttemptIdSchema,
+  PlannerArtifactSemanticIdSchema,
+} from '../../core/schemas/planner-artifact.js';
 import { error } from '../../utils/error.js';
 
 export function resolveCapabilities(
@@ -44,15 +43,11 @@ export function resolveCapabilities(
   };
 }
 
-/** Legacy `shell` and `agent` planner rows that are typed-unsupported in V1. */
-export type LegacyCommandPlannerBackend = 'agent' | 'shell';
-
 export type LegacyCommandInvokeOptions = Readonly<{
   command: string;
   args?: string[] | undefined;
   outputFormat?: OutputFormat | undefined;
   notFoundMessage: string;
-  backendId?: LegacyCommandPlannerBackend | undefined;
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
 }>;
@@ -66,57 +61,10 @@ export type LegacyCommandInvokeInput = Readonly<{
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
 }>;
 
-function isCompilerGradeContext(callContext: RunnerCallContext): boolean {
-  return (
-    callContext.transport?.kind === 'declared-file' ||
-    callContext.envelope !== undefined ||
-    callContext.operationEnvelope !== undefined ||
-    callContext.sessionScope?.kind === 'detached-fresh'
-  );
-}
-
-function legacyCompilerRefusal(
-  callContext: RunnerCallContext,
-  backendId: LegacyCommandPlannerBackend | undefined,
-): RunnerCallResult | null {
-  if (!isCompilerGradeContext(callContext)) return null;
-  const row = backendId === undefined ? undefined : COMPILER_SUPPORT_TABLE[backendId];
-  const reason =
-    row?.unsupportedReason ??
-    'legacy command planners lack compiler containment, final-response, and envelope conformance in V1';
-  const backend = backendId ?? 'legacy command';
-  return {
-    callId: callContext.callId,
-    attemptId: callContext.attemptId,
-    role: callContext.role,
-    backendKind: callContext.backendKind ?? 'cli',
-    status: 'unsupported_tool',
-    terminalStatus: 'unsupported_tool',
-    failureCode: 'task_compiler_capability_unsupported',
-    error: {
-      code: 'task_compiler_capability_unsupported',
-      message: `Compiler dispatch is not supported for the ${backend} planner in V1: ${reason}`,
-    },
-    partial: false,
-    startedAt: 0,
-    endedAt: 0,
-    durationMs: 0,
-    text: '',
-    usage: null,
-    nativeSessionId: null,
-    toolUses: [],
-    artifacts: [],
-    warnings: [],
-  };
-}
-
 export function createLegacyCommandInvoke(
   options: LegacyCommandInvokeOptions,
 ): (input: LegacyCommandInvokeInput) => Promise<RunnerCallResult> {
   return async (input) => {
-    const refusal = legacyCompilerRefusal(input.callContext, options.backendId);
-    if (refusal !== null) return refusal;
-
     const result = await invokeCommandBasedRunner({
       command: options.command,
       args: options.args ?? [],
@@ -151,7 +99,6 @@ export function createCommandBasedPlanner(
     outputFormat?: OutputFormat | undefined;
     idleWarnMs?: number | undefined;
     idleKillMs?: number | undefined;
-    compilerBackend?: LegacyCommandPlannerBackend | undefined;
   },
   label: string,
   overrides?: {
@@ -167,7 +114,6 @@ export function createCommandBasedPlanner(
     args: config.args,
     outputFormat: config.outputFormat,
     notFoundMessage,
-    ...(config.compilerBackend !== undefined && { backendId: config.compilerBackend }),
     ...(config.idleWarnMs !== undefined && { idleWarnMs: config.idleWarnMs }),
     ...(config.idleKillMs !== undefined && { idleKillMs: config.idleKillMs }),
   });
@@ -192,7 +138,7 @@ function declaredArtifactProvenance(
   callContext: RunnerCallContext,
   artifactFile: string | undefined,
 ): DeclaredArtifactProvenance {
-  const attemptId = TaskCompilationAttemptIdSchema.safeParse(callContext.attemptId);
+  const attemptId = PlannerArtifactAttemptIdSchema.safeParse(callContext.attemptId);
   if (!attemptId.success) {
     throw error(
       'custom-planner-artifact-invalid',
@@ -201,7 +147,7 @@ function declaredArtifactProvenance(
   }
   const relativePath = `.splitbrief-runner/output/${attemptId.data}/result`;
   return {
-    semanticId: TaskCompilationSemanticIdSchema.parse(
+    semanticId: PlannerArtifactSemanticIdSchema.parse(
       `planner-artifact-${artifactFile ?? 'result'}`,
     ),
     programId: null,

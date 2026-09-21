@@ -16,9 +16,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sessionDir } from '../../../core/paths.js';
 import {
-  createTaskCompilationAttemptId,
-  TaskCompilationSemanticIdSchema,
-} from '../../../core/schemas/task-compilation.js';
+  createPlannerArtifactAttemptId,
+  PlannerArtifactSemanticIdSchema,
+} from '../../../core/schemas/planner-artifact.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../../runners/types.js';
@@ -29,7 +29,7 @@ import type { IsolatedWorkspace } from '../isolation/types.js';
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const SESSION_ID = 'session-1';
 const CALL_ID = 'call-1';
-const ATTEMPT_ID = createTaskCompilationAttemptId();
+const ATTEMPT_ID = createPlannerArtifactAttemptId();
 const ARTIFACT_RELATIVE_PATH = `.splitbrief-runner/output/${ATTEMPT_ID}/result`;
 
 type ArtifactFixture = Readonly<{
@@ -97,12 +97,10 @@ async function beginReview(
 ): Promise<ReviewLease> {
   return beginDeclaredArtifactReview({
     stagedProjectDir: fixture.staged.projectDir,
-    projectDir: fixture.projectDir,
-    sessionId: SESSION_ID,
     callId: CALL_ID,
     declaredRedactionValues: options.declaredRedactionValues ?? [],
     provenance: {
-      semanticId: TaskCompilationSemanticIdSchema.parse('planner-artifact-test'),
+      semanticId: PlannerArtifactSemanticIdSchema.parse('planner-artifact-test'),
       programId: null,
       batchId: null,
       attemptId: ATTEMPT_ID,
@@ -396,12 +394,10 @@ describe('declared artifact review lease', () => {
       await expect(
         beginDeclaredArtifactReview({
           stagedProjectDir: fixture.staged.projectDir,
-          projectDir: fixture.projectDir,
-          sessionId: SESSION_ID,
           callId: '../outside',
           declaredRedactionValues: [],
           provenance: {
-            semanticId: TaskCompilationSemanticIdSchema.parse('planner-artifact-test'),
+            semanticId: PlannerArtifactSemanticIdSchema.parse('planner-artifact-test'),
             programId: null,
             batchId: null,
             attemptId: ATTEMPT_ID,

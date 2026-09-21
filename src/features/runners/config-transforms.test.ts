@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import YAML from 'yaml';
 import { fromYaml } from '../../core/config/load/transform.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
-import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { ConfigSchema } from '../../core/schemas/config.js';
 import type { Config } from '../../core/schemas/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -29,7 +28,6 @@ function makeBaseConfig(): Config {
       contextLength: 8192,
       temperature: 0.3,
     },
-    workflow: { persistTranscript: true },
   });
 }
 
@@ -39,23 +37,19 @@ function makeConfigWithOptionalSections(): Config {
     codebase: {
       enabled: true,
       tokenBudget: 1234,
-      cacheDir: '.splitbrief-cache',
       include: ['src/**'],
       exclude: ['dist/**'],
     },
     hooks: {
-      builtin: { snapshots: false },
-    },
-    otel: {
-      enabled: true,
-      serviceName: 'splitbrief-test',
-    },
-    snapshots: {
-      auto: {
-        preTask: true,
-        postTask: false,
-        preFinalReview: true,
-      },
+      pre_task: [
+        {
+          kind: 'command',
+          command: './scripts/pre-task.sh',
+          args: [],
+          timeout_ms: 30_000,
+          on_failure: 'warn',
+        },
+      ],
     },
     palette: {
       customActions: [
@@ -69,7 +63,6 @@ function makeConfigWithOptionalSections(): Config {
     },
     approval: {
       enabled: true,
-      headless: true,
       tiers: { read: 'auto', destructive: 'confirm' },
       feedRejectionsToPlanner: false,
     },
@@ -102,7 +95,6 @@ implementer_profiles:
       custom_models:
         - existing-model
       label: Active cloud
-      cost_tier: cheap
     dormant-local:
       kind: cli
       tool: codex
@@ -113,7 +105,6 @@ validation:
   test: true
 workflow:
   max_retries: 3
-  persist_transcript: true
   compaction_format: auto
 `),
     ),
@@ -221,6 +212,68 @@ describe('runner selection commits', () => {
     expect(updated.planner).toEqual({ kind: 'cli', tool: 'claude-code', model: 'auto' });
   });
 
+  it('drops a carried opencode variant the new model does not spell, with a notice', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'anthropic/claude-sonnet-5',
+        variant: 'max',
+      },
+    });
+
+    const { config: updated, notice } = commitImplementerSelection({
+      config,
+      selection: realPickerOption('implementer', 'opencode'),
+      model: { id: 'openai/gpt-5.6-luna' },
+      effortChoices: ['none', 'low', 'medium', 'high', 'xhigh'],
+    });
+
+    const implementer = updated.implementer as { variant?: string };
+    expect(implementer.variant).toBeUndefined();
+    expect(notice).toContain('max');
+  });
+
+  it("keeps a carried opencode variant the new model's ladder spells", () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'anthropic/claude-sonnet-5',
+        variant: 'max',
+      },
+    });
+
+    const { config: updated, notice } = commitImplementerSelection({
+      config,
+      selection: realPickerOption('implementer', 'opencode'),
+      model: { id: 'openai/gpt-5.6-luna' },
+      effortChoices: ['low', 'high', 'max'],
+    });
+
+    expect((updated.implementer as { variant?: string }).variant).toBe('max');
+    expect(notice).toBeUndefined();
+  });
+
+  it('keeps a carried opencode variant the new model does spell', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'anthropic/claude-sonnet-5',
+        variant: 'high',
+      },
+    });
+
+    const { config: updated } = commitImplementerSelection({
+      config,
+      selection: realPickerOption('implementer', 'opencode'),
+      model: { id: 'openai/gpt-5.6-luna' },
+    });
+
+    expect((updated.implementer as { variant?: string }).variant).toBe('high');
+  });
+
   it('persists an automatic CLI selection verbatim into a named implementer profile only', () => {
     const config = namedImplementerProfileConfig();
     const before = config.implementerProfiles?.profiles;
@@ -287,7 +340,6 @@ describe('runner selection commits', () => {
     expect(updated.planner).toEqual({
       kind: 'cli',
       tool: 'claude-code',
-      authChannel: defaultCliAuthChannel('claude-code').id,
       model: 'sonnet',
     });
   });
@@ -367,8 +419,6 @@ describe('runner selection commits', () => {
 
     expect(updated.codebase).toEqual(config.codebase);
     expect(updated.hooks).toEqual(config.hooks);
-    expect(updated.otel).toEqual(config.otel);
-    expect(updated.snapshots).toEqual(config.snapshots);
     expect(updated.palette).toEqual(config.palette);
     expect(updated.approval).toEqual(config.approval);
   });
@@ -436,7 +486,6 @@ describe('runner selection commits', () => {
       command: 'local-implementer --stdio',
       model: 'existing-model',
       label: 'Active cloud',
-      costTier: 'cheap',
     });
 
     for (const updated of [
@@ -453,17 +502,27 @@ describe('runner selection commits', () => {
 
 const OPENCODE_MODEL = 'openai/gpt-5.6';
 
+// The owner's route: absent from the retired provider table, so it had no ladder at all.
+const OPENCODE_ROUTE = 'opencode-go/gpt-5.6-luna';
+
 describe('effort and variant follow the seat channel', () => {
   function opencodePlanner(): Config {
     return makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: OPENCODE_MODEL } });
   }
 
+  function carriedVariantConfig(variant: string): Config {
+    return makeConfig({
+      planner: { kind: 'cli', tool: 'opencode', model: 'anthropic/claude-opus-4-8', variant },
+    });
+  }
+
   it.each([
     { seat: 'planner', tool: 'claude-code', modelId: 'auto', keepsEffort: true },
-    { seat: 'planner', tool: 'codex', modelId: 'auto', keepsEffort: false },
+    { seat: 'planner', tool: 'codex', modelId: 'auto', keepsEffort: true },
     { seat: 'planner', tool: 'opencode', modelId: OPENCODE_MODEL, keepsEffort: false },
     { seat: 'implementer', tool: 'claude-code', modelId: 'auto', keepsEffort: true },
-    { seat: 'implementer', tool: 'codex', modelId: 'auto', keepsEffort: false },
+    { seat: 'implementer', tool: 'codex', modelId: 'auto', keepsEffort: true },
+    { seat: 'implementer', tool: 'opencode', modelId: OPENCODE_MODEL, keepsEffort: false },
   ] as const)(
     'effort survives a $seat commit on $tool only when the tool channel is an effort flag',
     ({ seat, tool, modelId, keepsEffort }) => {
@@ -505,7 +564,7 @@ describe('effort and variant follow the seat channel', () => {
       role: 'planner',
       selection: realPickerOption('planner', 'opencode'),
       model: { id: OPENCODE_MODEL },
-      variant: 'high',
+      effort: 'high',
     });
 
     expect(updated.planner).toMatchObject({
@@ -517,17 +576,36 @@ describe('effort and variant follow the seat channel', () => {
     expect(notice).toBeUndefined();
   });
 
-  it('clears a variant on a seat with no variant channel and says so', () => {
+  // The picker offers one ladder per row whichever channel published it, so a level
+  // drafted on a flag seat has to land in the field that seat spends: `effort`.
+  it('writes a drafted level to the effort field on a flag-channel seat', () => {
     const { config: updated, notice } = commitImplementerSelection({
       config: makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'auto' } }),
       selection: realPickerOption('implementer', 'claude-code'),
       model: { id: 'auto' },
-      variant: 'xhigh',
+      effort: 'xhigh',
     });
 
+    expect(updated.implementer).toMatchObject({ effort: 'xhigh' });
     expect(updated.implementer).not.toHaveProperty('variant');
-    expect(notice).toContain('xhigh');
-    expect(notice).toContain(getProviderDisplayName('claude-code'));
+    expect(notice).toBeUndefined();
+  });
+
+  // A tool may publish a rung this config cannot spell — codex's `ultra`. Writing it
+  // would throw at the schema, so the commit drops it and says which one it dropped.
+  it('drops a drafted rung the config cannot spell instead of rejecting the save', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.6-codex' } }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'codex'),
+      model: { id: 'gpt-5.6-codex' },
+      effort: 'ultra',
+    });
+
+    expect(updated.planner).not.toHaveProperty('effort');
+    expect(updated.planner).not.toHaveProperty('variant');
+    expect(notice).toContain('Effort ultra');
+    expect(notice).toContain('gpt-5.6-codex');
   });
 
   it('reports both notices on one line when a seat change drops effort and variant together', () => {
@@ -544,7 +622,7 @@ describe('effort and variant follow the seat channel', () => {
     const { config: updated, notice } = commitPlannerTierSelection({
       config,
       role: 'planner',
-      selection: realPickerOption('planner', 'codex'),
+      selection: realPickerOption('planner', 'cursor'),
       model: { id: 'auto' },
     });
 
@@ -561,53 +639,117 @@ describe('effort and variant follow the seat channel', () => {
       role: 'planner',
       selection: realPickerOption('planner', 'opencode'),
       model: { id: OPENCODE_MODEL },
-      variant: 'my-house-preset',
+      effort: 'my-house-preset',
     });
 
     expect(updated.planner).toMatchObject({ variant: 'my-house-preset' });
     expect(notice).toBeUndefined();
   });
 
-  it('drops a carried variant the new model does not spell and says so', () => {
-    const config = makeConfig({
-      planner: {
-        kind: 'cli',
-        tool: 'opencode',
-        model: 'anthropic/claude-opus-4-8',
-        variant: 'max',
-      },
-    });
-
+  // The route the retired provider table had no entry for at all: unknown is not "rejected".
+  it('keeps a carried variant when no ladder is known', () => {
     const { config: updated, notice } = commitPlannerTierSelection({
-      config,
+      config: carriedVariantConfig('max'),
       role: 'planner',
       selection: realPickerOption('planner', 'opencode'),
-      model: { id: OPENCODE_MODEL },
+      model: { id: OPENCODE_ROUTE },
+    });
+
+    expect(updated.planner).toMatchObject({ model: OPENCODE_ROUTE, variant: 'max' });
+    expect(notice).toBeUndefined();
+  });
+
+  it("drops a carried variant the new model's ladder does not spell", () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: carriedVariantConfig('max'),
+      role: 'planner',
+      selection: realPickerOption('planner', 'opencode'),
+      model: { id: OPENCODE_ROUTE },
+      effortChoices: ['none', 'low', 'medium', 'high', 'xhigh'],
     });
 
     expect(updated.planner).not.toHaveProperty('variant');
     expect(notice).toContain('Variant max');
-    expect(notice).toContain(OPENCODE_MODEL);
+    expect(notice).toContain(OPENCODE_ROUTE);
   });
 
-  it('carries a variant both models spell', () => {
-    const config = makeConfig({
-      planner: {
-        kind: 'cli',
-        tool: 'opencode',
-        model: 'anthropic/claude-opus-4-8',
-        variant: 'high',
-      },
-    });
-
+  it("carries a variant the new model's ladder spells", () => {
     const { config: updated, notice } = commitPlannerTierSelection({
-      config,
+      config: carriedVariantConfig('high'),
       role: 'planner',
       selection: realPickerOption('planner', 'opencode'),
-      model: { id: OPENCODE_MODEL },
+      model: { id: OPENCODE_ROUTE },
+      effortChoices: ['none', 'low', 'medium', 'high', 'xhigh'],
     });
 
-    expect(updated.planner).toMatchObject({ model: OPENCODE_MODEL, variant: 'high' });
+    expect(updated.planner).toMatchObject({ model: OPENCODE_ROUTE, variant: 'high' });
+    expect(notice).toBeUndefined();
+  });
+
+  it("drops a carried effort the new model's ladder does not spell", () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'max' },
+      }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id: 'opus' },
+      effortChoices: ['low', 'medium', 'high'],
+    });
+
+    expect(updated.planner).not.toHaveProperty('effort');
+    expect(notice).toContain('Effort max');
+    expect(notice).toContain('opus');
+    // The level is missing, not the channel — claude-code has one.
+    expect(notice).not.toContain('effort channel');
+  });
+
+  it("keeps a carried effort the new model's ladder spells", () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
+      }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id: 'opus' },
+      effortChoices: ['low', 'medium', 'high'],
+    });
+
+    expect(updated.planner).toMatchObject({ effort: 'high' });
+    expect(notice).toBeUndefined();
+  });
+
+  // A model that answered with an empty ladder publishes no levels: that is a rejection,
+  // not silence, so it clears where an absent ladder keeps.
+  it('drops a carried effort when the new model publishes no ladder at all', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
+      }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id: 'opus' },
+      effortChoices: [],
+    });
+
+    expect(updated.planner).not.toHaveProperty('effort');
+    expect(notice).toContain('Effort high');
+    expect(notice).toContain('opus');
+    expect(notice).not.toContain('effort channel');
+  });
+
+  it('keeps a carried effort when the tool ladder is an example set', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'command-code', model: 'sonnet', effort: 'max' },
+      }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'command-code'),
+      model: { id: 'opus' },
+      effortChoices: ['low', 'medium', 'high'],
+    });
+
+    expect(updated.planner).toMatchObject({ effort: 'max' });
     expect(notice).toBeUndefined();
   });
 
@@ -630,6 +772,143 @@ describe('effort and variant follow the seat channel', () => {
 
     expect(updated.planner).toMatchObject({ variant: 'my-house-preset' });
     expect(notice).toBeUndefined();
+  });
+
+  it('writes a drafted level to effort and says nothing else on a flag-channel seat', () => {
+    const {
+      config: updated,
+      notice,
+      effort: kept,
+    } = commitPlannerTierSelection({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus' } }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id: 'opus' },
+      effort: 'high',
+    });
+
+    expect(updated.planner).toMatchObject({ effort: 'high' });
+    expect(updated.planner).not.toHaveProperty('variant');
+    expect(notice).toBeUndefined();
+    expect(kept).toBe('high');
+  });
+
+  it('writes a drafted level to variant and says nothing else on a variant-channel seat', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: OPENCODE_MODEL } }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'opencode'),
+      model: { id: 'openai/gpt-5.6-luna' },
+      effort: 'max',
+    });
+
+    expect(updated.planner).toMatchObject({ variant: 'max' });
+    expect(updated.planner).not.toHaveProperty('effort');
+    expect(notice).toBeUndefined();
+  });
+
+  it('lands a new level on an already-persisted tool and model', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'opencode', model: OPENCODE_MODEL, variant: 'low' },
+      }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'opencode'),
+      model: { id: OPENCODE_MODEL },
+      effort: 'high',
+    });
+
+    expect(updated.planner).toMatchObject({ variant: 'high' });
+    expect(notice).toBeUndefined();
+  });
+
+  it('drops the level and names the drop on a seat with no reasoning channel', () => {
+    const { config: updated, notice } = commitImplementerSelection({
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'opus' } }),
+      selection: realPickerOption('implementer', 'ollama'),
+      model: { id: 'llama3' },
+      effort: 'high',
+    });
+
+    expect(updated.implementer).not.toHaveProperty('effort');
+    expect(updated.implementer).not.toHaveProperty('variant');
+    expect(notice).toContain('high');
+    expect(notice).toContain('cleared');
+  });
+
+  it('clears the field when the commit asks for auto, and says nothing', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'high' },
+      }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id: 'opus' },
+      effort: null,
+    });
+
+    expect(updated.planner).not.toHaveProperty('effort');
+    expect(notice).toBeUndefined();
+  });
+
+  it('leaves the field alone when the commit carries no level', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'high' },
+      }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id: 'opus' },
+      effort: undefined,
+    });
+
+    expect(updated.planner).toMatchObject({ effort: 'high' });
+    expect(notice).toBeUndefined();
+  });
+
+  it('drops a level the schema cannot spell instead of rejecting the save', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus' } }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id: 'opus' },
+      effort: 'ludicrous',
+    });
+
+    expect(updated.planner).not.toHaveProperty('effort');
+    expect(notice).toContain('Effort ludicrous');
+    expect(notice).toContain('has no such level');
+    expect(notice).not.toContain('effort channel');
+  });
+
+  it('lets the model ladder reject a level the schema allows', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus' } }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id: 'opus' },
+      effort: 'max',
+      effortChoices: ['low', 'medium', 'high'],
+    });
+
+    expect(updated.planner).not.toHaveProperty('effort');
+    expect(notice).toContain('Effort max');
+    expect(notice).toContain('has no such level');
+    expect(notice).not.toContain('effort channel');
+  });
+
+  it('lets a real per-model ladder reject a level on a tool whose own ladder is only an example', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.6-codex' } }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'codex'),
+      model: { id: 'gpt-5.6-codex' },
+      effort: 'max',
+      effortChoices: ['low', 'medium', 'high'],
+    });
+
+    expect(updated.planner).not.toHaveProperty('effort');
+    expect(notice).toContain('Effort max');
   });
 });
 

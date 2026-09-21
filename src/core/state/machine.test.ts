@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { createInitialState, transition } from './machine.js';
-import { WorkflowStateSchema } from '../schemas/workflow.js';
 import {
   getCompletedTaskIds,
   getEscalatedTaskIds,
@@ -8,12 +7,6 @@ import {
   getSkippedTaskIds,
 } from './selectors.js';
 import type { QueuedMessage, WorkflowState } from '../schemas/workflow.js';
-import type { BriefGenerationRef, TaskExecutionPermit } from '../schemas/brief-owner.js';
-import type { RecoveryReceipt } from '../schemas/brief-recovery/attempt.js';
-import type {
-  NormalBriefRecoveryV1,
-  StorageBlockedBriefRecoveryV1,
-} from '../schemas/brief-recovery/document.js';
 import { taskId } from '../schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -28,221 +21,6 @@ function makeQueuedMessage(overrides: Partial<QueuedMessage> = {}): QueuedMessag
     nativeDeliveryState: 'pending',
     ...overrides,
   };
-}
-
-const BRIEF_HASH = 'a'.repeat(64);
-const REPORT_HASH = 'b'.repeat(64);
-
-function evidence(
-  path: string,
-  hash: string = BRIEF_HASH,
-): Readonly<{ revision: 1; hash: string; path: string }> {
-  return { revision: 1, hash, path };
-}
-
-type MatchingReport = NonNullable<NormalBriefRecoveryV1['matchingReport']>;
-
-function makeMatchingReport(overrides: Partial<MatchingReport> = {}): MatchingReport {
-  return {
-    briefHash: BRIEF_HASH,
-    report: evidence('brief-quality.json', REPORT_HASH),
-    ruleVersion: 'brief-quality-v1',
-    issues: [],
-    ...overrides,
-  };
-}
-
-function makeBriefRecovery(
-  status: NormalBriefRecoveryV1['status'] = 'ready',
-  overrides: Partial<NormalBriefRecoveryV1> = {},
-): NormalBriefRecoveryV1 {
-  const activeAttempt: RecoveryReceipt | null =
-    status === 'auto-repairing' || status === 'retrying' || status === 'unresolved'
-      ? status === 'unresolved'
-        ? {
-            epochId: 'epoch-1',
-            operationId: 'operation-1',
-            intentHash: BRIEF_HASH,
-            kind: 'manual-retry',
-            acceptedAt: '2026-01-01T00:00:00.000Z',
-            baseBrief: evidence('tasks.md'),
-            baseReport: evidence('brief-quality.json', REPORT_HASH),
-            frozenInputIds: [],
-            status: 'unresolved',
-            dispatchPossibility: 'possible',
-            requestId: 'request-1',
-            remoteObservation: 'unknown',
-            unresolvedAt: '2026-01-01T00:00:00.000Z',
-            reservation: {
-              accountingKey: {
-                sessionId: 'session-1',
-                epochId: 'epoch-1',
-                operationId: 'operation-1',
-                generation: 1,
-              },
-              amount: 0,
-              state: 'held',
-              usageApplied: false,
-              appliedUsage: null,
-              history: [
-                {
-                  state: 'held',
-                  at: '2026-01-01T00:00:00.000Z',
-                  reason: 'unresolved',
-                },
-              ],
-            },
-          }
-        : {
-            epochId: 'epoch-1',
-            operationId: 'operation-1',
-            intentHash: BRIEF_HASH,
-            kind: 'manual-retry',
-            acceptedAt: '2026-01-01T00:00:00.000Z',
-            baseBrief: evidence('tasks.md'),
-            baseReport: evidence('brief-quality.json', REPORT_HASH),
-            frozenInputIds: [],
-            status: 'accepted',
-            dispatchPossibility: 'none',
-            automaticAllowanceConsumed: true,
-            reservation: {
-              accountingKey: {
-                sessionId: 'session-1',
-                epochId: 'epoch-1',
-                operationId: 'operation-1',
-                generation: 1,
-              },
-              amount: 0,
-              state: 'reserved',
-              usageApplied: false,
-              appliedUsage: null,
-              history: [
-                {
-                  state: 'reserved',
-                  at: '2026-01-01T00:00:00.000Z',
-                  reason: 'accepted',
-                },
-              ],
-            },
-          }
-      : null;
-  return {
-    version: 1,
-    recoveryRevision: 1,
-    epochId: 'epoch-1',
-    origin: { mode: 'standard', entry: 'initial' },
-    continuation: {
-      version: 1,
-      kind: 'approval',
-      mode: 'standard',
-      entry: 'initial',
-    },
-    status,
-    activeBrief: evidence('tasks.md'),
-    matchingReport: makeMatchingReport(),
-    qualityPolicyVersion: 'brief-quality-v1',
-    automaticRepair: {
-      policy: 'existing-one-shot',
-      eligible: true,
-      consumed: true,
-      operationId: 'operation-1',
-    },
-    attempts: activeAttempt === null ? {} : { [activeAttempt.operationId]: activeAttempt },
-    activeOperationId: activeAttempt?.operationId ?? null,
-    inputs: [],
-    nextInputSequence: 1,
-    noProgress: { fingerprint: null, count: 0 },
-    evidenceHead: BRIEF_HASH,
-    outbox: [],
-    ...overrides,
-  };
-}
-
-const TEST_GENERATION: BriefGenerationRef = {
-  generationId: 'generation-1',
-  manifestDigest: 'manifest-1',
-  tasksDigest: 'tasks-1',
-  qualityDigest: 'quality-1',
-  programId: null,
-};
-
-function makeExecutionPermit(epochId: string): TaskExecutionPermit {
-  return {
-    version: 1,
-    epochId,
-    authorityRevision: 1,
-    generationId: TEST_GENERATION.generationId,
-    manifestDigest: TEST_GENERATION.manifestDigest,
-    tasksDigest: TEST_GENERATION.tasksDigest,
-    qualityDigest: TEST_GENERATION.qualityDigest,
-    approvalEvidence: evidence('brief-quality.json', REPORT_HASH),
-    issuedAt: '2026-01-01T00:00:00.000Z',
-  };
-}
-
-type OwnerReadyState = WorkflowState & {
-  authorityRevision: number;
-  generation: BriefGenerationRef;
-  permit: TaskExecutionPermit;
-  briefRecovery: NormalBriefRecoveryV1;
-};
-
-function makeOwnerReadyState(tasks: WorkflowState['tasks'] = []): OwnerReadyState {
-  const briefRecovery = makeBriefRecovery();
-  const permit = makeExecutionPermit(briefRecovery.epochId);
-  return {
-    ...createInitialState('feat'),
-    phase: 'reviewing-briefs',
-    tasks,
-    briefRecovery,
-    authorityRevision: 1,
-    generation: TEST_GENERATION,
-    permit,
-  };
-}
-
-function makeStorageBlockedRecovery(): StorageBlockedBriefRecoveryV1 {
-  return {
-    version: 1,
-    recoveryRevision: 1,
-    epochId: 'epoch-1',
-    origin: { mode: 'standard', entry: 'initial' },
-    continuation: {
-      version: 1,
-      kind: 'approval',
-      mode: 'standard',
-      entry: 'initial',
-    },
-    status: 'storage-blocked',
-    activeBrief: null,
-    storageEvidence: { code: 'brief_storage_invalid', artifactRef: 'tasks.md' },
-    evidenceHead: BRIEF_HASH,
-    outbox: [],
-  };
-}
-
-function expectBriefContractBlocked(run: () => unknown, reason: string): void {
-  let caught: unknown;
-  try {
-    run();
-  } catch (error) {
-    caught = error;
-  }
-  expect(caught).toMatchObject({
-    kind: 'brief_contract_blocked',
-    data: { reason },
-  });
-}
-
-function expectPersistedState(state: WorkflowState): void {
-  const persisted = WorkflowStateSchema.safeParse({
-    ...state,
-    stateVersion: 4,
-    stateRevision: state.stateRevision ?? 0,
-    stateFence: state.stateFence ?? { token: 0, ownerId: 'test-owner' },
-    briefRecovery: state.briefRecovery ?? null,
-  });
-  expect(persisted.success).toBe(true);
 }
 
 describe('createInitialState', () => {
@@ -276,7 +54,16 @@ describe('transition', () => {
     },
   );
 
-  it('REJECT_SPEC -> idle', () => {
+  it.each(['REJECT_SPEC', 'REJECT_PLAN', 'REJECT_BRIEFS', 'CONSTITUTION_CHECK_FAIL'] as const)(
+    'no longer accepts %s from any phase',
+    (type) => {
+      const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-spec' };
+
+      expect(() => transition(state, { type } as never)).toThrow(`Cannot apply ${type}`);
+    },
+  );
+
+  it('CLOSE_RUN records the close and leaves the phase and tasks alone', () => {
     const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -285,11 +72,54 @@ describe('transition', () => {
       currentTaskIndex: 1,
       attempt: 2,
     };
-    const next = transition(state, { type: 'REJECT_SPEC' });
-    expect(next.phase).toBe('idle');
-    expect(next.tasks).toEqual([]);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
+    const next = transition(
+      state,
+      { type: 'CLOSE_RUN' },
+      { now: new Date('2026-05-01T10:00:00Z') },
+    );
+    expect(next.closed).toEqual({ at: '2026-05-01T10:00:00.000Z', as: 'ended' });
+    expect(next.phase).toBe('reviewing-spec');
+    expect(next.tasks).toEqual(tasks);
+    expect(next.currentTaskIndex).toBe(1);
+    expect(next.attempt).toBe(2);
+  });
+
+  it('CLOSE_RUN takes the timestamp the caller gives it', () => {
+    const state = createInitialState('feat');
+    const next = transition(state, { type: 'CLOSE_RUN', at: '2026-01-02T03:04:05.000Z' });
+    expect(next.closed?.at).toBe('2026-01-02T03:04:05.000Z');
+  });
+
+  it('CLOSE_RUN clears the parked step and the pending recovery', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      pendingRecovery: makeRecoveryIssue(),
+      interruptedStep: {
+        step: { kind: 'planner', call: 'spec' },
+        source: 'user',
+        at: '2026-04-01T00:00:00.000Z',
+      },
+    };
+    const next = transition(state, { type: 'CLOSE_RUN' });
+    expect(next.pendingRecovery).toBeUndefined();
+    expect(next.interruptedStep).toBeUndefined();
+  });
+
+  it('a closed run refuses every transition but CLOSE_RUN', () => {
+    const closed: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      closed: { at: '2026-05-01T10:00:00.000Z', as: 'ended' },
+    };
+
+    expect(() => transition(closed, { type: 'ALL_DONE' })).toThrow(
+      'Cannot apply ALL_DONE: this run is closed.',
+    );
+    expect(() => transition(closed, { type: 'RESUME_STEP' })).toThrow(
+      'Cannot apply RESUME_STEP: this run is closed.',
+    );
+    expect(transition(closed, { type: 'CLOSE_RUN' }).closed?.as).toBe('ended');
   });
 
   it.each([
@@ -357,7 +187,7 @@ describe('transition', () => {
     expect(getEscalatedTaskIds(next)).toEqual(['T001']);
   });
 
-  it('CANCEL -> idle with tasks cleared and counters reset', () => {
+  it('CLOSE_RUN keeps the tasks and the feature it closed over', () => {
     const tasks = [makeTask({ id: 'T000', status: 'done' }), makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -366,41 +196,77 @@ describe('transition', () => {
       currentTaskIndex: 1,
       attempt: 2,
     };
-    const next = transition(state, { type: 'CANCEL' });
-    expect(next.phase).toBe('idle');
-    expect(next.tasks).toEqual([]);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
+    const next = transition(state, { type: 'CLOSE_RUN' });
+    expect(next.phase).toBe('implementing');
+    expect(next.tasks).toEqual(tasks);
+    expect(next.currentTaskIndex).toBe(1);
     expect(next.feature).toBe('feat');
   });
 
-  it('CANCEL clears awaitingContinue', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'implementing',
-      awaitingContinue: true,
-    };
-    const next = transition(state, { type: 'CANCEL' });
-    expect(next.awaitingContinue).toBe(false);
-  });
-
-  it('ABORT_TURN sets awaitingContinue to true', () => {
+  it('INTERRUPT_STEP records the step it cut and parks the run', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
     };
-    const next = transition(state, { type: 'ABORT_TURN' });
+    const next = transition(
+      state,
+      {
+        type: 'INTERRUPT_STEP',
+        step: { kind: 'brief', taskId: taskId('T001'), attempt: 2 },
+        source: 'user',
+        cut: 'mid-step',
+      },
+      { now: new Date('2026-05-01T10:00:00Z') },
+    );
+    expect(next.interruptedStep).toEqual({
+      step: { kind: 'brief', taskId: 'T001', attempt: 2 },
+      source: 'user',
+      cut: 'mid-step',
+      at: '2026-05-01T10:00:00.000Z',
+    });
     expect(next.awaitingContinue).toBe(true);
     expect(next.phase).toBe('implementing');
   });
 
-  it('CONTINUE_TURN clears awaitingContinue', () => {
+  it('INTERRUPT_STEP keeps a captured partial when the caller names one', () => {
+    const next = transition(createInitialState('feat'), {
+      type: 'INTERRUPT_STEP',
+      step: { kind: 'planner', call: 'research' },
+      source: 'watchdog',
+      cut: 'mid-step',
+      partialRef: { kind: 'session-log', index: 7 },
+    });
+    expect(next.interruptedStep?.partialRef).toEqual({ kind: 'session-log', index: 7 });
+    expect(next.interruptedStep?.source).toBe('watchdog');
+  });
+
+  it('INTERRUPT_STEP records a pause between briefs as a boundary cut', () => {
+    const next = transition(
+      { ...createInitialState('feat'), phase: 'implementing' },
+      {
+        type: 'INTERRUPT_STEP',
+        step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+        source: 'user',
+        cut: 'boundary',
+      },
+    );
+    expect(next.interruptedStep?.cut).toBe('boundary');
+    expect(next.awaitingContinue).toBe(true);
+  });
+
+  it('RESUME_STEP clears the parked step', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
       awaitingContinue: true,
+      interruptedStep: {
+        step: { kind: 'review', cycle: 1 },
+        source: 'user',
+        at: '2026-04-01T00:00:00.000Z',
+      },
     };
-    const next = transition(state, { type: 'CONTINUE_TURN' });
+    const next = transition(state, { type: 'RESUME_STEP' });
+    expect(next.interruptedStep).toBeUndefined();
     expect(next.awaitingContinue).toBe(false);
     expect(next.phase).toBe('implementing');
   });
@@ -424,20 +290,46 @@ describe('transition', () => {
     expect(next.messageQueue.map((message) => message.id)).toEqual(['msg-native', 'msg-drained']);
   });
 
-  it('REJECT_PLAN -> idle', () => {
-    const tasks = [makeTask({ id: 'T001' })];
+  it('DRAIN_QUEUE with ids acknowledges only the listed messages still pending delivery', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
-      phase: 'reviewing-plan',
-      tasks,
-      currentTaskIndex: 1,
-      attempt: 2,
+      messageQueue: [
+        makeQueuedMessage({ id: 'msg-a' }),
+        makeQueuedMessage({ id: 'msg-b' }),
+        makeQueuedMessage({ id: 'msg-injecting', nativeDeliveryState: 'injecting' }),
+      ],
     };
-    const next = transition(state, { type: 'REJECT_PLAN' });
-    expect(next.phase).toBe('idle');
-    expect(next.tasks).toEqual([]);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
+
+    const next = transition(state, { type: 'DRAIN_QUEUE', ids: ['msg-a', 'msg-injecting'] });
+
+    expect(
+      next.messageQueue.map((message) => [message.id, message.drainedAt !== undefined]),
+    ).toEqual([
+      ['msg-a', true],
+      ['msg-b', false],
+      ['msg-injecting', false],
+    ]);
+  });
+
+  it('DRAIN_QUEUE without ids acknowledges every message still pending delivery', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      messageQueue: [
+        makeQueuedMessage({ id: 'msg-a' }),
+        makeQueuedMessage({ id: 'msg-b' }),
+        makeQueuedMessage({ id: 'msg-injecting', nativeDeliveryState: 'injecting' }),
+      ],
+    };
+
+    const next = transition(state, { type: 'DRAIN_QUEUE' });
+
+    expect(
+      next.messageQueue.map((message) => [message.id, message.drainedAt !== undefined]),
+    ).toEqual([
+      ['msg-a', true],
+      ['msg-b', true],
+      ['msg-injecting', false],
+    ]);
   });
 
   it('HINT_FAIL -> stays in escalating', () => {
@@ -486,12 +378,12 @@ describe('transition', () => {
     expect(started.tasks[0]?.status).toBe('in_progress');
 
     const sent = transition(started, { type: 'TASK_SENT' });
-    const failed = transition(sent, { type: 'VALIDATION_FAIL' });
+    const failed = transition(sent, { type: 'VALIDATION_FAIL' }, { maxRetries: 3 });
     expect(failed.phase).toBe('implementing');
     expect(failed.attempt).toBe(3);
 
     const sentAgain = transition(failed, { type: 'TASK_SENT' });
-    const exhausted = transition(sentAgain, { type: 'VALIDATION_FAIL' });
+    const exhausted = transition(sentAgain, { type: 'VALIDATION_FAIL' }, { maxRetries: 3 });
     expect(exhausted.phase).toBe('escalating');
   });
 
@@ -530,27 +422,11 @@ describe('transition', () => {
     s = transition(s, { type: 'APPROVE_SPEC' });
     expect(s.phase).toBe('planning');
 
-    s = transition(s, { type: 'PLAN_DONE', tasks });
-    expect(s.phase).toBe('reviewing-plan');
-    expect(s.tasks).toEqual(tasks);
-
-    s = transition(s, {
-      type: 'BRIEF_ADMISSION_OPENED',
-      briefRecovery: makeBriefRecovery(),
-    });
-    const permit = makeExecutionPermit('epoch-1');
-    s = {
-      ...s,
-      authorityRevision: 1,
-      generation: TEST_GENERATION,
-      permit,
-    };
+    s = transition(s, { type: 'BRIEF_ADMISSION_OPENED' });
     expect(s.phase).toBe('reviewing-briefs');
-    s = transition(s, {
-      type: 'BEGIN_IMPLEMENTATION',
-      generation: TEST_GENERATION,
-      permit,
-    });
+
+    s = { ...s, tasks };
+    s = transition(s, { type: 'BEGIN_IMPLEMENTATION' });
     expect(s.phase).toBe('implementing');
     expect(s.currentTaskIndex).toBe(0);
 
@@ -571,7 +447,7 @@ describe('transition', () => {
     s = transition(s, { type: 'ALL_DONE' });
     expect(s.phase).toBe('final-review');
 
-    s = transition(s, { type: 'REVIEW_DONE' });
+    s = transition(s, { type: 'REVIEW_DONE', reviewStatus: 'passed' });
     expect(s.phase).toBe('complete');
 
     expect(s.feature).toBe('full-flow');
@@ -687,6 +563,44 @@ describe('transition', () => {
     expect(next.phase).toBe('clarifying');
   });
 
+  it.each(['idle', 'researching', 'specifying'] as const)(
+    'BEGIN_PLANNING enters planning from %s',
+    (phase) => {
+      const state: WorkflowState = { ...createInitialState('feat'), phase };
+      expect(transition(state, { type: 'BEGIN_PLANNING' }).phase).toBe('planning');
+    },
+  );
+
+  // A plan gate answered with a revision invalidates the briefs, so the step loop has to re-enter
+  // planning to compile them again from the plan the operator just changed.
+  it('BEGIN_PLANNING re-enters planning from a parked plan gate', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-plan' };
+    expect(transition(state, { type: 'BEGIN_PLANNING' }).phase).toBe('planning');
+  });
+
+  it('SPEC_CLARIFY_START enters clarifying from specifying', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'specifying' };
+    expect(transition(state, { type: 'SPEC_CLARIFY_START' }).phase).toBe('clarifying');
+  });
+
+  it('SPEC_DONE opens the spec gate from constitution-check', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'constitution-check' };
+    expect(transition(state, { type: 'SPEC_DONE' }).phase).toBe('reviewing-spec');
+  });
+
+  it('ANALYZE_START enters analyzing from planning', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'planning' };
+    expect(transition(state, { type: 'ANALYZE_START' }).phase).toBe('analyzing');
+  });
+
+  it('PLAN_DONE settles an approved spec gate whose plan is unchanged', () => {
+    const tasks = [makeTask({ id: 'T001' })];
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-spec' };
+    const next = transition(state, { type: 'PLAN_DONE', tasks });
+    expect(next.phase).toBe('reviewing-plan');
+    expect(next.tasks).toEqual(tasks);
+  });
+
   it('SPEC_CLARIFY_DONE -> constitution-check', () => {
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'clarifying' };
     const next = transition(state, { type: 'SPEC_CLARIFY_DONE' });
@@ -697,26 +611,6 @@ describe('transition', () => {
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'constitution-check' };
     const next = transition(state, { type: 'CONSTITUTION_CHECK_PASS' });
     expect(next.phase).toBe('planning');
-  });
-
-  it('CONSTITUTION_CHECK_FAIL -> idle and clears awaitingContinue', () => {
-    const tasks = [makeTask({ id: 'T001' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'constitution-check',
-      awaitingContinue: true,
-      tasks,
-      currentTaskIndex: 1,
-      attempt: 2,
-    };
-    const next = transition(state, {
-      type: 'CONSTITUTION_CHECK_FAIL',
-    });
-    expect(next.phase).toBe('idle');
-    expect(next.awaitingContinue).toBe(false);
-    expect(next.tasks).toEqual([]);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
   });
 
   it('ANALYZE_START -> analyzing', () => {
@@ -732,534 +626,50 @@ describe('transition', () => {
     );
   });
 
-  it('BEGIN_IMPLEMENTATION enters implementation with the exact persisted owner permit', () => {
-    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-    const state = {
-      ...makeOwnerReadyState(tasks),
-      currentTaskIndex: 3,
-      attempt: 2,
-    };
-    const next = transition(state, {
-      type: 'BEGIN_IMPLEMENTATION',
-      generation: TEST_GENERATION,
-      permit: state.permit,
-    });
-    expect(next.phase).toBe('implementing');
+  it('PLAN_DONE straight from researching enters reviewing-plan', () => {
+    const tasks = [makeTask({ id: 'T001' })];
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'researching' };
+    const next = transition(state, { type: 'PLAN_DONE', tasks });
+    expect(next.phase).toBe('reviewing-plan');
     expect(next.tasks).toEqual(tasks);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
-    expect(next.generation).toEqual(TEST_GENERATION);
-    expect(next.permit).toEqual(state.permit);
-    expect(next.briefRecovery?.status).toBe('ready');
   });
 
-  it('keeps readiness-blocked out of implementation until the persisted recovery is ready', () => {
-    const initial: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-briefs',
-      briefRecovery: makeBriefRecovery('ready'),
-    };
-    const blockedDecision = {
-      kind: 'blocked' as const,
-      fingerprint: 'c'.repeat(64),
-      briefHash: BRIEF_HASH,
-      reportHash: REPORT_HASH,
-      qualityPolicyVersion: 'brief-quality-v1',
-    };
-    const state = transition(initial, {
-      type: 'RECORD_BRIEF_READINESS',
-      decision: blockedDecision,
-    });
-    expect(state.briefRecovery).toMatchObject({
-      status: 'readiness-blocked',
-      readinessDecision: blockedDecision,
-    });
-    expectPersistedState(state);
-
-    let caught: unknown;
-    try {
-      transition(state, {
-        type: 'BEGIN_IMPLEMENTATION',
-        generation: TEST_GENERATION,
-        permit: makeExecutionPermit('epoch-1'),
-      });
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toMatchObject({
-      kind: 'brief_readiness_blocked',
-      data: { epochId: 'epoch-1' },
-    });
-
-    const overridden = transition(state, {
-      type: 'RECORD_BRIEF_READINESS',
-      decision: { ...blockedDecision, kind: 'override' },
-    });
-    expect(overridden.briefRecovery).toMatchObject({
-      status: 'ready',
-      readinessDecision: { ...blockedDecision, kind: 'override' },
-    });
-    expectPersistedState(overridden);
-    const permit = makeExecutionPermit('epoch-1');
-    const ownerReady = {
-      ...overridden,
-      authorityRevision: 1,
-      generation: TEST_GENERATION,
-      permit,
-    };
-    expect(
-      transition(ownerReady, {
-        type: 'BEGIN_IMPLEMENTATION',
-        generation: TEST_GENERATION,
-        permit,
-      }).phase,
-    ).toBe('implementing');
-  });
-
-  it.each(['passed', 'override'] as const)(
-    'rejects an unvalidated %s readiness decision',
-    (kind) => {
-      const state: WorkflowState = {
-        ...createInitialState('feat'),
-        phase: 'reviewing-briefs',
-        briefRecovery: makeBriefRecovery('readiness-blocked'),
-      };
-
-      expect(() =>
-        transition(state, {
-          type: 'RECORD_BRIEF_READINESS',
-          decision: {
-            kind,
-            fingerprint: 'c'.repeat(64),
-            briefHash: BRIEF_HASH,
-            reportHash: REPORT_HASH,
-            qualityPolicyVersion: 'brief-quality-v1',
-          },
-        }),
-      ).toThrow('readiness must be re-evaluated or explicitly overridden');
-    },
-  );
-
-  it('keeps warning-only quality issues non-blocking', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-briefs',
-      briefRecovery: makeBriefRecovery('ready', {
-        matchingReport: makeMatchingReport({
-          issues: [
-            {
-              code: 'readiness_hint',
-              severity: 'warning',
-              taskId: null,
-              message: 'A readiness hint is available.',
-            },
-          ],
-        }),
-      }),
-    };
-
-    const ownerState = {
-      ...state,
-      authorityRevision: 1,
-      generation: TEST_GENERATION,
-      permit: makeExecutionPermit(state.briefRecovery?.epochId ?? 'missing'),
-    };
-    expect(
-      transition(ownerState, {
-        type: 'BEGIN_IMPLEMENTATION',
-        generation: TEST_GENERATION,
-        permit: ownerState.permit,
-      }).phase,
-    ).toBe('implementing');
-  });
-
-  it.each([
-    ['checking', makeBriefRecovery('checking'), 'not-ready'],
-    ['auto-repairing', makeBriefRecovery('auto-repairing'), 'retry-in-flight'],
-    [
-      'quality errors',
-      makeBriefRecovery('blocked', {
-        matchingReport: makeMatchingReport({
-          issues: [
-            {
-              code: 'missing_steps',
-              severity: 'error',
-              taskId: 'T001',
-              message: 'Implementation steps are missing.',
-            },
-          ],
-        }),
-      }),
-      'quality-errors',
-    ],
-    [
-      'stale report',
-      makeBriefRecovery('ready', {
-        matchingReport: makeMatchingReport({ briefHash: REPORT_HASH }),
-      }),
-      'stale-report',
-    ],
-    ['retrying', makeBriefRecovery('retrying'), 'retry-in-flight'],
-    ['unresolved', makeBriefRecovery('unresolved'), 'unresolved-retry'],
-    ['storage blocked', makeStorageBlockedRecovery(), 'not-ready'],
-  ] as const)(
-    'blocks %s from BEGIN_IMPLEMENTATION with brief_contract_blocked',
-    (_label, briefRecovery, reason) => {
-      const state: WorkflowState = {
-        ...createInitialState('feat'),
-        phase: 'reviewing-briefs',
-        briefRecovery,
-      };
-
-      const before = structuredClone(state);
-      expectBriefContractBlocked(
-        () =>
-          transition(state, {
-            type: 'BEGIN_IMPLEMENTATION',
-            generation: TEST_GENERATION,
-            permit: makeExecutionPermit(briefRecovery.epochId),
-          }),
-        reason,
-      );
-      expect(state).toEqual(before);
-    },
-  );
-
-  it.each([
-    'checking',
-    'auto-repairing',
-    'blocked',
-    'retrying',
-    'unresolved',
-    'ready',
-    'readiness-blocked',
-  ] as const)('opens %s under reviewing-briefs', (status) => {
-    const recovery = makeBriefRecovery(status);
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-plan',
-    };
-
-    const next = transition(state, {
-      type: 'BRIEF_ADMISSION_OPENED',
-      briefRecovery: recovery,
-    });
-
-    expect(next.phase).toBe('reviewing-briefs');
-    expect(next.briefRecovery).toEqual(recovery);
-    expectPersistedState(next);
-  });
-
-  it('rejects a stale recovery epoch and a rejected archive cannot reopen', () => {
-    const current = makeBriefRecovery();
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-briefs',
-      briefRecovery: current,
-    };
-
-    expectBriefContractBlocked(
-      () =>
-        transition(state, {
-          type: 'BRIEF_ADMISSION_OPENED',
-          briefRecovery: { ...current, epochId: 'epoch-2' },
-        }),
-      'stale-report',
-    );
-
-    const rejected = transition(state, { type: 'REJECT_BRIEFS' });
-    expect(rejected.phase).toBe('idle');
-    expect(rejected.briefRecovery?.status).toBe('rejected');
-
-    expect(() =>
-      transition(rejected, {
-        type: 'BEGIN_IMPLEMENTATION',
-        generation: TEST_GENERATION,
-        permit: makeExecutionPermit(current.epochId),
-      }),
-    ).toThrow('Cannot apply BEGIN_IMPLEMENTATION');
-    expect(() =>
-      transition(rejected, {
-        type: 'BRIEF_ADMISSION_OPENED',
-        briefRecovery: current,
-      }),
-    ).toThrow('Cannot apply BRIEF_ADMISSION_OPENED');
-  });
-
-  it('REJECT_BRIEFS leaves an action-free archive until new workflow initialization', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-briefs',
-      tasks: [makeTask({ id: 'T001' })],
-      currentTaskIndex: 1,
-      attempt: 2,
-      briefRecovery: makeBriefRecovery('blocked'),
-    };
-
-    const rejected = transition(state, { type: 'REJECT_BRIEFS' });
-    expect(rejected).toMatchObject({
-      phase: 'idle',
-      tasks: [],
-      currentTaskIndex: 0,
-      attempt: 0,
-      briefRecovery: { status: 'rejected', activeOperationId: null },
-    });
-
-    const restarted = transition(rejected, { type: 'START' });
-    expect(restarted.phase).toBe('researching');
-    expect(restarted.briefRecovery).toBeNull();
-  });
-
-  it.each([
-    'checking',
-    'auto-repairing',
-    'blocked',
-    'retrying',
-    'unresolved',
-    'ready',
-    'readiness-blocked',
-    'rejected',
-  ] as const)(
-    'REJECT_BRIEFS round-trips a legal %s recovery through the persisted schema',
-    (status) => {
-      const state: WorkflowState = {
-        ...createInitialState('feat'),
-        phase: 'reviewing-briefs',
-        briefRecovery: makeBriefRecovery(status),
-      };
-
-      const rejected = transition(state, { type: 'REJECT_BRIEFS' });
-
-      expect(rejected.phase).toBe('idle');
-      expect(rejected.briefRecovery?.status).toBe('rejected');
-      expectPersistedState(rejected);
-    },
-  );
-
-  it('REJECT_BRIEFS converts storage-blocked recovery to a null-Brief rejected archive', () => {
-    const storageEvidence = {
-      code: 'brief_storage_invalid' as const,
-      artifactRef: 'tasks.md',
-    };
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-briefs',
-      briefRecovery: { ...makeStorageBlockedRecovery(), storageEvidence },
-    };
-
-    const rejected = transition(state, { type: 'REJECT_BRIEFS' });
-
-    expect(rejected).toMatchObject({
-      phase: 'idle',
-      briefRecovery: {
-        status: 'rejected',
-        activeBrief: null,
-        storageEvidence,
-      },
-    });
-    expectPersistedState(rejected);
-    const parsed = WorkflowStateSchema.parse({
-      ...rejected,
-      stateRevision: rejected.stateRevision ?? 0,
-      stateFence: rejected.stateFence ?? { token: 0, ownerId: 'test-owner' },
-      briefRecovery: rejected.briefRecovery ?? null,
-    });
-    expect(parsed.briefRecovery).toMatchObject({ activeBrief: null, storageEvidence });
-  });
-
-  it.each([
-    'checking',
-    'auto-repairing',
-    'blocked',
-    'retrying',
-    'unresolved',
-    'ready',
-    'readiness-blocked',
-  ] as const)('CANCEL clears non-terminal %s recovery before entering idle', (status) => {
-    const next = transition(
-      {
-        ...createInitialState('feat'),
-        phase: 'reviewing-briefs',
-        briefRecovery: makeBriefRecovery(status),
-      },
-      { type: 'CANCEL' },
-    );
-
-    expect(next.briefRecovery).toBeNull();
-    expectPersistedState(next);
-  });
-
-  it('BEGIN_IMPLEMENTATION -> implementing with index and attempt reset', () => {
+  it('PLAN_DONE from analyzing returns to reviewing-plan', () => {
     const tasks = [makeTask({ id: 'T001' })];
-    const state = makeOwnerReadyState(tasks);
-    const next = transition(state, {
-      type: 'BEGIN_IMPLEMENTATION',
-      generation: state.generation,
-      permit: state.permit,
-    });
-    expect(next.phase).toBe('implementing');
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'analyzing' };
+    const next = transition(state, { type: 'PLAN_DONE', tasks });
+    expect(next.phase).toBe('reviewing-plan');
+    expect(next.tasks).toEqual(tasks);
   });
 
-  it('REJECT_BRIEFS -> idle', () => {
+  it('RESEARCH_DONE from specifying stays in specifying', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'specifying' };
+    const next = transition(state, { type: 'RESEARCH_DONE' });
+    expect(next.phase).toBe('specifying');
+  });
+
+  it('PLAN_DONE from specifying enters reviewing-plan', () => {
     const tasks = [makeTask({ id: 'T001' })];
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'specifying' };
+    const next = transition(state, { type: 'PLAN_DONE', tasks });
+    expect(next.phase).toBe('reviewing-plan');
+    expect(next.tasks).toEqual(tasks);
+  });
+
+  it('BEGIN_IMPLEMENTATION enters implementing without a permit', () => {
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'reviewing-briefs',
       tasks,
-      briefRecovery: makeBriefRecovery('blocked'),
-      currentTaskIndex: 1,
+      currentTaskIndex: 3,
       attempt: 2,
     };
-    const next = transition(state, { type: 'REJECT_BRIEFS' });
-    expect(next.phase).toBe('idle');
-    expect(next.tasks).toEqual([]);
+    const next = transition(state, { type: 'BEGIN_IMPLEMENTATION' });
+    expect(next.phase).toBe('implementing');
+    expect(next.tasks).toEqual(tasks);
     expect(next.currentTaskIndex).toBe(0);
     expect(next.attempt).toBe(0);
-  });
-
-  it.each([null, undefined] as const)(
-    'BEGIN_IMPLEMENTATION fails closed when the current recovery proof is %s',
-    (missing) => {
-      const initial = createInitialState('feat');
-      const state: WorkflowState = {
-        ...initial,
-        phase: 'reviewing-briefs',
-        ...(missing === undefined ? {} : { briefRecovery: null }),
-      };
-      expectBriefContractBlocked(
-        () =>
-          transition(state, {
-            type: 'BEGIN_IMPLEMENTATION',
-            generation: TEST_GENERATION,
-            permit: makeExecutionPermit('epoch-1'),
-          }),
-        'missing-recovery',
-      );
-    },
-  );
-
-  it('rejects stale, missing, and mismatched owner permits', () => {
-    const state = makeOwnerReadyState([makeTask({ id: 'T001' })]);
-    const action = {
-      type: 'BEGIN_IMPLEMENTATION' as const,
-      generation: TEST_GENERATION,
-      permit: state.permit,
-    };
-    expect(transition(state, action).phase).toBe('implementing');
-    expect(() =>
-      transition(state, {
-        ...action,
-        permit: { ...action.permit, authorityRevision: 2 },
-      }),
-    ).toThrow('exact current owner-issued generation and execution permit');
-    expect(() => transition({ ...state, permit: null }, action)).toThrow(
-      'exact current owner-issued generation and execution permit',
-    );
-    expect(() =>
-      transition(state, {
-        ...action,
-        generation: { ...TEST_GENERATION, tasksDigest: 'tasks-2' },
-      }),
-    ).toThrow('exact current owner-issued generation and execution permit');
-  });
-
-  it('BEGIN_IMPLEMENTATION round-trips the ready legal path through the persisted schema', () => {
-    const tasks = [makeTask({ id: 'T001' })];
-    const state = makeOwnerReadyState(tasks);
-    expectPersistedState(state);
-    const next = transition(state, {
-      type: 'BEGIN_IMPLEMENTATION',
-      generation: state.generation,
-      permit: state.permit,
-    });
-    expectPersistedState(next);
-    expect(next.phase).toBe('implementing');
-    expect(next.briefRecovery?.status).toBe('ready');
-  });
-
-  it('BRIEF_ADMISSION_OPENED round-trips a storage-blocked recovery', () => {
-    const storage = transition(
-      { ...createInitialState('feat'), phase: 'reviewing-plan' },
-      { type: 'BRIEF_ADMISSION_OPENED', briefRecovery: makeStorageBlockedRecovery() },
-    );
-    expectPersistedState(storage);
-  });
-
-  it('blocks an otherwise clean report whose rule identity is stale', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-briefs',
-      briefRecovery: makeBriefRecovery('ready', {
-        matchingReport: makeMatchingReport({ ruleVersion: 'brief-quality-v0' }),
-      }),
-    };
-
-    expectBriefContractBlocked(
-      () =>
-        transition(state, {
-          type: 'BEGIN_IMPLEMENTATION',
-          generation: TEST_GENERATION,
-          permit: makeExecutionPermit(state.briefRecovery?.epochId ?? 'missing'),
-        }),
-      'stale-report',
-    );
-  });
-
-  it('blocks a ready report carrying an attempt from another epoch', () => {
-    const current = makeBriefRecovery('ready', {
-      attempts: {
-        'operation-1': {
-          epochId: 'epoch-2',
-          operationId: 'operation-1',
-          intentHash: BRIEF_HASH,
-          kind: 'manual-retry',
-          acceptedAt: '2026-01-01T00:00:00.000Z',
-          baseBrief: evidence('tasks.md'),
-          baseReport: evidence('brief-quality.json', REPORT_HASH),
-          frozenInputIds: [],
-          status: 'settled',
-          dispatchPossibility: 'none',
-          remoteObservation: 'not-dispatched',
-          resultId: 'result-1',
-          outcome: 'quality-failed',
-          providerCode: null,
-          usage: null,
-          settledAt: '2026-01-01T00:00:00.000Z',
-          candidate: null,
-          report: null,
-          reservation: {
-            accountingKey: {
-              sessionId: 'session-1',
-              epochId: 'epoch-2',
-              operationId: 'operation-1',
-              generation: 1,
-            },
-            amount: 0,
-            state: 'released',
-            usageApplied: false,
-            appliedUsage: null,
-            history: [{ state: 'released', at: '2026-01-01T00:00:00.000Z', reason: 'superseded' }],
-          },
-        },
-      },
-    });
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-briefs',
-      briefRecovery: current,
-    };
-
-    expectBriefContractBlocked(
-      () =>
-        transition(state, {
-          type: 'BEGIN_IMPLEMENTATION',
-          generation: TEST_GENERATION,
-          permit: makeExecutionPermit(current.epochId),
-        }),
-      'stale-report',
-    );
   });
 
   it('SET_PENDING_RECOVERY stores recovery overlay without changing phase', () => {
@@ -1395,5 +805,86 @@ describe('transition', () => {
     const next = transition(state, { type: 'FULL_SUCCESS' });
     expect(next.tasks[0]?.currentCode).toBeUndefined();
     expect(next.tasks[0]?.status).toBe('escalated');
+  });
+
+  it('UPDATE_TASK_CODE stores codeByFile and CLEAR_TASK_CODE clears both', () => {
+    const tasks = [makeTask({ id: 'T001' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+    };
+
+    const updated = transition(state, {
+      type: 'UPDATE_TASK_CODE',
+      taskId: tasks[0]!.id,
+      code: 'anchor code',
+      codeByFile: { 'src/a.ts': 'anchor code', 'src/b.ts': 'sibling code' },
+    });
+    expect(updated.tasks[0]?.currentCode).toBe('anchor code');
+    expect(updated.tasks[0]?.currentCodeByFile).toEqual({
+      'src/a.ts': 'anchor code',
+      'src/b.ts': 'sibling code',
+    });
+
+    const cleared = transition(updated, { type: 'CLEAR_TASK_CODE', taskId: tasks[0]!.id });
+    expect(cleared.tasks[0]?.currentCode).toBeUndefined();
+    expect(cleared.tasks[0]?.currentCodeByFile).toBeUndefined();
+  });
+
+  it('REVIEW_DONE records reviewStatus', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'final-review' };
+
+    expect(transition(state, { type: 'REVIEW_DONE', reviewStatus: 'passed' }).reviewStatus).toBe(
+      'passed',
+    );
+    expect(transition(state, { type: 'REVIEW_DONE', reviewStatus: 'failed' }).reviewStatus).toBe(
+      'failed',
+    );
+  });
+
+  it('REVIEW_FIX_START resets the named tasks to pending and returns to implementing', () => {
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done' }),
+      makeTask({ id: 'T002', status: 'done' }),
+      makeTask({ id: 'T003', status: 'done' }),
+    ];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'final-review',
+      tasks,
+      currentTaskIndex: 3,
+      attempt: 2,
+    };
+
+    const next = transition(state, {
+      type: 'REVIEW_FIX_START',
+      cycle: 1,
+      fixes: { T002: ['missing null guard'], T003: ['unhandled error'] },
+    });
+
+    expect(next.phase).toBe('implementing');
+    expect(next.tasks.map((t) => t.status)).toEqual(['done', 'pending', 'pending']);
+    expect(next.currentTaskIndex).toBe(1);
+    expect(next.attempt).toBe(0);
+    expect(next.reviewFixes).toEqual({
+      cycle: 1,
+      findings: { T002: ['missing null guard'], T003: ['unhandled error'] },
+    });
+  });
+
+  it('VALIDATION_PASS drops the completed task from reviewFixes findings', () => {
+    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      tasks,
+      currentTaskIndex: 0,
+      reviewFixes: { cycle: 1, findings: { T001: ['fix me'], T002: ['fix me too'] } },
+    };
+
+    const next = transition(state, { type: 'VALIDATION_PASS' });
+
+    expect(next.reviewFixes?.findings).toEqual({ T002: ['fix me too'] });
   });
 });

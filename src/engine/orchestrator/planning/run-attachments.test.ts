@@ -8,7 +8,7 @@ import {
   TEST_METADATA,
 } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
-import { createInitialState } from '../../../core/state/machine.js';
+import { createInitialState, transition } from '../../../core/state/machine.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { PlannerCapabilities } from '../../planners/types.js';
 import { runPlanningPhase } from './run.js';
@@ -56,7 +56,9 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
     });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    const initial = createInitialState('add a login form from this mockup');
+    const initial = transition(createInitialState('add a login form from this mockup'), {
+      type: 'START',
+    });
     const result = await runPlanningPhase({
       wctx: {
         projectDir,
@@ -69,7 +71,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
         drainPendingAttachments: () => [attachment],
       },
       planner,
-      state: { ...initial, phase: 'idle' },
+      state: initial,
       feature: 'add a login form from this mockup',
     });
     return { result, events, getSeenImages: () => seenImages };
@@ -78,7 +80,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
   it('supportsImages false → emits planner_attachments_dropped and strips before the backend call', async () => {
     const { result, events, getSeenImages } = await runQuickWithAttachment(false);
 
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('ready-for-tasks');
     const dropped = events.find((e) => e.type === 'planner_attachments_dropped');
     expect(dropped).toBeDefined();
     expect(dropped && 'count' in dropped ? dropped.count : 0).toBe(1);
@@ -89,7 +91,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
   it('supportsImages true → forwards attachments verbatim to the backend, no drop event', async () => {
     const { result, events, getSeenImages } = await runQuickWithAttachment(true);
 
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(events.find((e) => e.type === 'planner_attachments_dropped')).toBeUndefined();
     expect(getSeenImages()).toEqual([attachment]);
   });

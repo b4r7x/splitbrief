@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { baselineValidationRow, validationSummarySegments } from './event-format.js';
+import {
+  baselineValidationRow,
+  validationStageNotes,
+  validationSummarySegments,
+} from './event-format.js';
 
 function validateEvent(
   overrides: Partial<Extract<EngineEvent, { type: 'validate' }>>,
@@ -92,6 +96,60 @@ describe('validationSummarySegments', () => {
     expect(text).not.toContain('npm run lint');
     expect(text).not.toContain('npx tsc --noEmit');
     expect(getTerminalCellWidth(text)).toBeLessThan(60);
+  });
+
+  it('tones a baseline-exempt failure apart from a failure this task caused', () => {
+    const event = validateEvent({
+      exempt: true,
+      stages: { typecheck: true, lint: false, test: true },
+      attempted: { typecheck: true, lint: true, test: true },
+    });
+
+    expect(stageTone(event, 'lint')).toBe('warning');
+    expect(stageTone(event, 'typecheck')).toBe('success');
+  });
+});
+
+describe('validationStageNotes', () => {
+  it('names the reason a stage was skipped, the way the evidence ledger does', () => {
+    expect(
+      validationStageNotes(
+        validateEvent({
+          stages: { typecheck: true, lint: true, test: false },
+          skipped: { test: true },
+          skippedReason: { test: 'no affected test file found' },
+        }),
+      ),
+    ).toEqual(['test skipped (no affected test file found)']);
+  });
+
+  it('states a skip with no recorded reason without an empty bracket', () => {
+    expect(
+      validationStageNotes(
+        validateEvent({
+          stages: { typecheck: true, lint: true, test: false },
+          skipped: { test: true },
+        }),
+      ),
+    ).toEqual(['test skipped']);
+  });
+
+  it('names a baseline-exempt failure so the accepted run does not read as a green one', () => {
+    expect(
+      validationStageNotes(
+        validateEvent({
+          exempt: true,
+          stages: { typecheck: true, lint: false, test: false },
+          attempted: { typecheck: true, lint: true, test: true },
+          skipped: { test: true },
+          skippedReason: { test: 'no affected test file found' },
+        }),
+      ),
+    ).toEqual(['lint pre-existing failure', 'test skipped (no affected test file found)']);
+  });
+
+  it('says nothing when every stage ran and passed', () => {
+    expect(validationStageNotes(validateEvent({}))).toEqual([]);
   });
 });
 

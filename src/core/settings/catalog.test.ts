@@ -64,6 +64,30 @@ describe('SETTINGS_DEFS dead settings', () => {
   it('does not expose the no-op sessions.scope setting', () => {
     expect(SETTINGS_DEFS.some((def) => def.id === 'sessions.scope')).toBe(false);
   });
+
+  // SPLITBRIEF no longer stages or commits, so a commit strategy is not a choice the config even
+  // accepts any more — offering the row would hand the user a value that fails on save. Spend is
+  // read in `/usage` on request, not toggled for a main screen that no longer shows a figure.
+  it.each(['workflow.git.commitStrategy', 'workflow.showSpend'])(
+    'offers no row for the retired %s',
+    (id) => {
+      expect(SETTINGS_DEFS.some((def) => def.id === id)).toBe(false);
+    },
+  );
+
+  it('keeps the branch the run still creates and the ordinary workflow rows', () => {
+    const workflowIds = SETTINGS_DEFS.filter((def) => def.section === 'Workflow').map(
+      (def) => def.id,
+    );
+
+    expect(workflowIds).toEqual([
+      'workflow.mode',
+      'workflow.approve',
+      'workflow.maxRetries',
+      'workflow.compactionFormat',
+      'workflow.git.createBranch',
+    ]);
+  });
 });
 
 describe('SETTINGS_DEFS workflow compaction', () => {
@@ -77,14 +101,24 @@ describe('SETTINGS_DEFS workflow compaction', () => {
 });
 
 describe('SETTINGS_DEFS workflow.mode description', () => {
-  it("states each mode's real planner-call and gate cost", () => {
+  // The per-mode cost table is the help block's (`settingsHelpLines`), so the row itself says
+  // what the setting decides in one sentence instead of carrying three lines of table.
+  it('says in one line what the mode decides', () => {
     const def = SETTINGS_DEFS.find((d) => d.id === 'workflow.mode');
-    expect(def).toBeDefined();
-    expect(def?.description).toMatch(/quick \(1 call/);
-    expect(def?.description).toContain('standard');
-    expect(def?.description).toContain('speckit');
-    expect(def?.description).not.toContain('instant');
-    expect(def?.description).not.toContain('0 calls');
+
+    expect(def?.description).toBe(
+      'How many planner calls run before building, and how many gates stop for you',
+    );
+    expect(def?.description).not.toContain('\n');
+  });
+});
+
+describe('SETTINGS_DEFS unset labels', () => {
+  it('reads an unset test command as the stack default rather than a dash', () => {
+    const def = SETTINGS_DEFS.find((d) => d.id === 'validation.testCommand');
+
+    expect(def?.unsetLabel).toBe('auto');
+    expect(def?.description).toContain('auto');
   });
 });
 

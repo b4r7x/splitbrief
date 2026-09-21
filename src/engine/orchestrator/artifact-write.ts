@@ -1,12 +1,10 @@
 import type { SpecMetadata } from '../../core/paths-io.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { PLAN_FILE, RESEARCH_FILE, SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
-import type { BriefGenerationRef } from '../../core/schemas/brief-owner.js';
 import { admitPlanningArtifact } from '../spec/planning-artifact-admission.js';
 import type { EventBus } from '../events/types.js';
 import { publishArtifactWritten } from './artifact-card.js';
 import type { Phase } from '../../core/schemas/enums.js';
-import { error } from '../../utils/error.js';
 
 export type ArtifactKind = 'research' | 'spec' | 'plan' | 'task-briefs';
 
@@ -21,8 +19,6 @@ export type ArtifactWriteOptions = {
   text: string;
   metadata?: SpecMetadata | null | undefined;
   admission?: ArtifactAdmission | undefined;
-  /** Committed generation receipt; required for fixed-name Tasks projections. */
-  generation?: BriefGenerationRef | undefined;
 };
 
 export type ArtifactBatchItem = Readonly<{
@@ -38,7 +34,6 @@ export type ArtifactBatchWriteOptions = Readonly<{
   phase: Phase;
   items: readonly ArtifactBatchItem[];
   metadata?: SpecMetadata | null | undefined;
-  generation?: BriefGenerationRef | undefined;
 }>;
 
 const ARTIFACT_FILENAMES: Record<ArtifactKind, string> = {
@@ -59,24 +54,14 @@ type ArtifactPrepareOptions = Readonly<{
   text: string;
   metadata?: SpecMetadata | null | undefined;
   admission?: ArtifactAdmission | undefined;
-  generation?: BriefGenerationRef | undefined;
 }>;
 
 /**
  * Validate one artifact before any byte changes: spec and plan replacements
- * are admitted first, and fixed-name Tasks projections require the committed
- * generation receipt. The receipt gates the write and its event; execution
- * authority stays in the owner state, never in these files.
+ * are admitted first.
  */
 function prepareArtifact(opts: ArtifactPrepareOptions): PreparedArtifact {
   const filename = ARTIFACT_FILENAMES[opts.kind];
-  if (opts.kind === 'task-briefs' && opts.generation === undefined) {
-    throw error(
-      'artifact-projection-requires-generation',
-      'fixed tasks.md projections require a committed generation receipt',
-      { filename },
-    );
-  }
   if ((opts.kind === 'spec' || opts.kind === 'plan') && opts.admission !== 'already-admitted') {
     admitPlanningArtifact({
       phase: opts.kind === 'spec' ? 'specifying' : 'planning',
@@ -92,8 +77,7 @@ function prepareArtifact(opts: ArtifactPrepareOptions): PreparedArtifact {
  *
  * Spec and plan replacements are admitted before `writeSpecFile` can create a directory, mutate
  * a file, or publish an event. Callers that already admitted a planner phase can say so explicitly
- * to keep admission at its original boundary. Research skips planning admission; fixed Tasks
- * projections require a committed generation receipt.
+ * to keep admission at its original boundary. Research skips planning admission.
  */
 export function writeAndPublishArtifact(opts: ArtifactWriteOptions): void {
   const prepared = prepareArtifact(opts);
@@ -119,8 +103,7 @@ export function writeAndPublishArtifact(opts: ArtifactWriteOptions): void {
  * Every item is validated before any file is written, so an invalid later item
  * cannot expose a partial batch; files are written only after all items pass
  * and events are published only after every write succeeded. A projection
- * fault therefore never touches owner state and cannot authorize an older or
- * mixed generation.
+ * fault therefore never touches owner state.
  */
 export function writeAndPublishArtifacts(opts: ArtifactBatchWriteOptions): void {
   const prepared = opts.items.map((item) =>
@@ -129,7 +112,6 @@ export function writeAndPublishArtifacts(opts: ArtifactBatchWriteOptions): void 
       text: item.text,
       metadata: opts.metadata,
       admission: item.admission,
-      generation: opts.generation,
     }),
   );
   for (const item of prepared) {

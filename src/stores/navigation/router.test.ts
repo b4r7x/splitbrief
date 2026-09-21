@@ -1,27 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { routerStore } from './router.js';
 import { feedbackStore } from '../ui/feedback.js';
-import type { Summary } from '../../core/schemas/summary.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
 import type { NavigateArgs } from './router.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
-
-const dummySummary: Summary = {
-  feature: 'test',
-  totalTasks: 1,
-  completedByLocal: 1,
-  escalatedToPlanner: 0,
-  skipped: 0,
-  failed: 0,
-  totalTime: 1000,
-  tokenUsage: makeUsage(),
-  estimatedCostSavings: '$0.00',
-  escalationRate: 0,
-};
 
 function preparedExecution(feature: string): PreparedExecution {
   const sessionId = 'router-test-session';
@@ -60,7 +46,16 @@ function preparedExecution(feature: string): PreparedExecution {
 function localWorkflow(feature: string): NavigateArgs {
   return {
     to: 'workflow',
+    run: makeRunRecord(),
     execution: { kind: 'local', prepared: preparedExecution(feature) },
+  };
+}
+
+function atRestWorkflow(sessionId: string): NavigateArgs {
+  return {
+    to: 'workflow',
+    run: makeRunRecord({ ref: { projectDir: '/router-test', sessionId } }),
+    execution: { kind: 'at-rest' },
   };
 }
 
@@ -79,12 +74,14 @@ describe('routerStore', () => {
     }
   });
 
-  it('navigates workflow → summary', () => {
-    routerStore.navigate(localWorkflow('x'));
-    routerStore.navigate({ to: 'summary', summary: dummySummary, status: 'complete' });
+  it('opens a past run at rest from home', () => {
+    routerStore.navigate(atRestWorkflow('2026-09-14-past-run'));
     const s = routerStore.get();
-    expect(s.screen).toBe('summary');
-    if (s.screen === 'summary') expect(s.summary).toBe(dummySummary);
+    expect(s.screen).toBe('workflow');
+    if (s.screen === 'workflow') {
+      expect(s.execution.kind).toBe('at-rest');
+      expect(s.run.ref.sessionId).toBe('2026-09-14-past-run');
+    }
   });
 
   it('replaces a workflow route with an exactly prepared resumed workflow', () => {
@@ -98,27 +95,17 @@ describe('routerStore', () => {
     }
   });
 
-  it('navigates summary → home', () => {
+  it('navigates workflow → home', () => {
     routerStore.navigate(localWorkflow('x'));
-    routerStore.navigate({ to: 'summary', summary: dummySummary, status: 'complete' });
     routerStore.navigate({ to: 'home' });
     expect(routerStore.get().screen).toBe('home');
   });
 
-  it('navigates home → summary', () => {
-    routerStore.navigate({ to: 'summary', summary: dummySummary, status: 'complete' });
-    const s = routerStore.get();
-    expect(s.screen).toBe('summary');
-    if (s.screen === 'summary') expect(s.summary).toBe(dummySummary);
-  });
-
-  it('navigates setup → summary and clears prior navigation feedback', () => {
+  it('navigates setup → workflow and clears prior navigation feedback', () => {
     feedbackStore.setMessage('saved');
     routerStore.navigate({ to: 'setup' });
-    routerStore.navigate({ to: 'summary', summary: dummySummary, status: 'complete' });
-    const s = routerStore.get();
-    expect(s.screen).toBe('summary');
-    if (s.screen === 'summary') expect(s.summary).toBe(dummySummary);
+    routerStore.navigate(localWorkflow('from setup'));
+    expect(routerStore.get().screen).toBe('workflow');
     expect(feedbackStore.get().message).toBeNull();
     expect(feedbackStore.get().isError).toBe(false);
   });
@@ -132,50 +119,57 @@ describe('routerStore', () => {
     expect(feedbackStore.get().message).toMatch(/Cannot navigate from "workflow" to "setup"/);
   });
 
-  it('sessionId and status round-trip through navigate({ to: "summary" })', () => {
+  it('settles a local run in place: the same route, a new record, nothing running', () => {
     routerStore.navigate(localWorkflow('x'));
-    routerStore.navigate({
-      to: 'summary',
-      summary: dummySummary,
-      sessionId: 'abc',
-      status: 'failed',
-    });
-    const s = routerStore.get();
-    expect(s.screen).toBe('summary');
-    if (s.screen === 'summary') {
-      expect(s.sessionId).toBe('abc');
-      expect(s.status).toBe('failed');
+    const settled = makeRunRecord({ status: { kind: 'closed', as: 'complete' } });
+
+    routerStore.updateRun({ run: settled, execution: { kind: 'at-rest' } });
+
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen === 'workflow') {
+      expect(route.run).toBe(settled);
+      expect(route.execution.kind).toBe('at-rest');
     }
   });
 
-  it('replaces one summary route with another summary route', () => {
-    const nextSummary = { ...dummySummary, feature: 'replacement' };
-    routerStore.navigate({
-      to: 'summary',
-      summary: dummySummary,
-      sessionId: 'first',
-      status: 'complete',
-    });
-    routerStore.navigate({
-      to: 'summary',
-      summary: nextSummary,
-      sessionId: 'second',
-      status: 'interrupted',
-    });
+  it('keeps the execution when only the record changed', () => {
+    routerStore.navigate(localWorkflow('x'));
+    const accepted = makeRunRecord({ checkpoint: { kind: 'accepted' } });
 
-    const s = routerStore.get();
-    expect(s.screen).toBe('summary');
-    if (s.screen === 'summary') {
-      expect(s.summary).toBe(nextSummary);
-      expect(s.sessionId).toBe('second');
-      expect(s.status).toBe('interrupted');
+    routerStore.updateRun({ run: accepted });
+
+    const route = routerStore.get();
+    if (route.screen === 'workflow') {
+      expect(route.run.checkpoint).toEqual({ kind: 'accepted' });
+      expect(route.execution.kind).toBe('local');
     }
-    expect(feedbackStore.get().message).toBeNull();
   });
 
-  it('represents only prepared local or attached workflow routes', () => {
+  it('ignores a record update while another screen is showing', () => {
+    routerStore.updateRun({ run: makeRunRecord() });
+    expect(routerStore.get().screen).toBe('home');
+  });
+
+  it('ignores an older run update after another run was selected', () => {
+    routerStore.navigate(localWorkflow('current run'));
+    const current = routerStore.get();
+
+    routerStore.updateRun({
+      run: makeRunRecord({ ref: { projectDir: '/other-project', sessionId: 'other-run' } }),
+      execution: { kind: 'at-rest' },
+    });
+
+    expect(routerStore.get()).toBe(current);
+  });
+
+  it('represents only prepared local workflow routes', () => {
     const prepared = preparedExecution('resume');
-    routerStore.init({ screen: 'workflow', execution: { kind: 'local', prepared } });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord(),
+      execution: { kind: 'local', prepared },
+    });
 
     const local = routerStore.get();
     expect(local.screen).toBe('workflow');
@@ -183,25 +177,12 @@ describe('routerStore', () => {
       expect(local.execution.prepared).toBe(prepared);
     }
 
-    routerStore.init({
-      screen: 'workflow',
-      execution: {
-        kind: 'attached',
-        feature: 'remote workflow',
-        sessionId: 'attached-session',
-        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'token' },
-      },
-    });
-
-    const attached = routerStore.get();
-    expect(attached.screen).toBe('workflow');
-    if (attached.screen === 'workflow' && attached.execution.kind === 'attached') {
-      expect(attached.execution.feature).toBe('remote workflow');
-      expect(attached.execution.attach.sockPath).toBe('/tmp/splitbrief.sock');
-    }
-
-    // @ts-expect-error partial local workflow routes are forbidden
-    const partial: NavigateArgs = { to: 'workflow', execution: { kind: 'local' } };
+    const partial: NavigateArgs = {
+      to: 'workflow',
+      run: makeRunRecord(),
+      // @ts-expect-error partial local workflow routes are forbidden
+      execution: { kind: 'local' },
+    };
     expect(partial).toBeDefined();
   });
 });

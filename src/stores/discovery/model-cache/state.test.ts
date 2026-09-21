@@ -5,6 +5,7 @@ import type {
   DetectedModel,
   ProviderDetection,
 } from '../../../core/discovery/detection.js';
+import { readClaudeCodeModelOptions } from '../../../core/providers/claude-code-options.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { createDetectionService, type DetectionDeps } from '../../../engine/detection/service.js';
 import { resolveModelCatalog } from '../../../engine/providers/model/catalog.js';
@@ -83,7 +84,7 @@ const rememberedCliTool: CliToolDetection = {
 };
 
 function configuredOutcome(input: {
-  role: 'planner' | 'implementer';
+  role: 'planner' | 'implementer' | 'reviewer';
   contextKey: string;
   models?: readonly string[];
   failure?: 'privacy-filtered' | 'guardrail-filtered' | 'offline';
@@ -195,7 +196,6 @@ function publishConfigured(
 
 function cliCatalogAttempt(
   input: Readonly<{
-    role: 'planner' | 'implementer';
     tool: 'codex' | 'opencode';
     contextKey: string;
     models?: readonly string[] | undefined;
@@ -204,7 +204,6 @@ function cliCatalogAttempt(
 ): ScopedCliCatalogAttempt {
   return {
     connection: {
-      role: input.role,
       tool: input.tool,
       contextKey: input.contextKey,
     },
@@ -349,21 +348,20 @@ describe('modelCacheStore', () => {
       generation: 1,
       requestId: 1,
       contexts: scopedContexts,
-      cliCatalogs: [
-        { role: 'planner', tool: 'codex', models: [{ id: 'gpt-5.2-codex' }], probedAt: 40 },
-      ],
+      cliCatalogs: [{ tool: 'codex', models: [{ id: 'gpt-5.2-codex' }], probedAt: 40 }],
     });
     expect(hydrated).toBe(true);
 
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' }),
-    ).toMatchObject({ state: 'stale', models: [{ id: 'gpt-5.2-codex' }], fetchedAt: 40 });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      state: 'stale',
+      models: [{ id: 'gpt-5.2-codex' }],
+      fetchedAt: 40,
+    });
 
     expect(
       publishCliCatalogs(
         [
           cliCatalogAttempt({
-            role: 'planner',
             tool: 'codex',
             contextKey: 'live-context',
             models: ['gpt-6-codex'],
@@ -373,12 +371,12 @@ describe('modelCacheStore', () => {
       ),
     ).toBe(true);
 
-    const fresh = modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' });
+    const fresh = modelCacheStore.getCliCatalogRuntime({ tool: 'codex' });
     expect(fresh).toMatchObject({ state: 'fresh', models: [{ id: 'gpt-6-codex' }] });
     expect(fresh?.models).toHaveLength(1);
   });
 
-  it('reads the reviewer seat off the planner-scoped CLI catalog row', () => {
+  it('resolves any seat from the single row a tool has', () => {
     expect(
       modelCacheStore.hydrateDetection({
         providers: [],
@@ -388,15 +386,25 @@ describe('modelCacheStore', () => {
         generation: 1,
         requestId: 1,
         contexts: scopedContexts,
-        cliCatalogs: [
-          { role: 'planner', tool: 'codex', models: [{ id: 'gpt-5.2-codex' }], probedAt: 40 },
-        ],
+        cliCatalogs: [{ tool: 'codex', models: [{ id: 'gpt-5.2-codex' }], probedAt: 40 }],
       }),
     ).toBe(true);
 
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'reviewer', tool: 'codex' }),
-    ).toMatchObject({ state: 'stale', models: [{ id: 'gpt-5.2-codex' }], fetchedAt: 40 });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      state: 'stale',
+      models: [{ id: 'gpt-5.2-codex' }],
+      fetchedAt: 40,
+    });
+    for (const role of ['planner', 'implementer', 'reviewer'] as const) {
+      expect(
+        getRuntimeModelSnapshot({ providerId: 'codex', role, cache: modelCacheStore }),
+      ).toMatchObject({
+        providerId: 'codex',
+        entries: [{ id: 'gpt-5.2-codex' }],
+        isStale: true,
+      });
+    }
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'opencode' })).toBeUndefined();
   });
 
   it('never overwrites live CLI catalogs with a disk snapshot that hydrates late', () => {
@@ -404,7 +412,6 @@ describe('modelCacheStore', () => {
       publishCliCatalogs(
         [
           cliCatalogAttempt({
-            role: 'planner',
             tool: 'codex',
             contextKey: 'live-context',
             models: ['gpt-6-codex'],
@@ -422,15 +429,14 @@ describe('modelCacheStore', () => {
       generation: 1,
       requestId: 1,
       contexts: scopedContexts,
-      cliCatalogs: [
-        { role: 'planner', tool: 'codex', models: [{ id: 'remembered-old-codex' }], probedAt: 40 },
-      ],
+      cliCatalogs: [{ tool: 'codex', models: [{ id: 'remembered-old-codex' }], probedAt: 40 }],
     });
     expect(hydrated).toBe(true);
 
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' }),
-    ).toMatchObject({ state: 'fresh', models: [{ id: 'gpt-6-codex' }] });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      state: 'fresh',
+      models: [{ id: 'gpt-6-codex' }],
+    });
   });
 
   it('surfaces remembered provider rows as stale through the runtime snapshot', () => {
@@ -484,7 +490,7 @@ describe('modelCacheStore', () => {
     expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
   });
 
-  it('keeps remembered CLI rows role-scoped: no answer for the other role, no generic bleed', () => {
+  it('lets a remembered CLI row answer every seat but never the role-blind lookup', () => {
     expect(
       modelCacheStore.hydrateDetection({
         providers: [],
@@ -494,18 +500,16 @@ describe('modelCacheStore', () => {
         generation: 1,
         requestId: 1,
         contexts: scopedContexts,
-        cliCatalogs: [
-          { role: 'planner', tool: 'codex', models: [{ id: 'planner-codex-model' }], probedAt: 40 },
-        ],
+        cliCatalogs: [{ tool: 'codex', models: [{ id: 'remembered-codex-model' }], probedAt: 40 }],
       }),
     ).toBe(true);
 
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'implementer', tool: 'codex' }),
-    ).toBeUndefined();
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      state: 'stale',
+    });
     expect(
       getRuntimeModelSnapshot({ providerId: 'codex', role: 'implementer', cache: modelCacheStore }),
-    ).toBeNull();
+    ).toMatchObject({ entries: [{ id: 'remembered-codex-model' }] });
     expect(modelCacheStore.getProviderModels('codex')).toBeNull();
   });
 
@@ -538,6 +542,30 @@ describe('modelCacheStore', () => {
 
   it('returns null for Models.dev catalog before anything is cached', () => {
     expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
+  });
+
+  it('returns the pinned Claude Code options instead of reading the account cache', () => {
+    const pinned = [
+      { id: 'seam-a', displayName: 'Seam A' },
+      { id: 'seam-b', displayName: 'Seam B' },
+    ];
+    modelCacheStore.__testSetClaudeCodeModelOptions(pinned);
+
+    expect(modelCacheStore.getClaudeCodeModelOptions()).toEqual(pinned);
+  });
+
+  it('drops the pinned options on reset so production reads the account cache again', () => {
+    // Synthetic ids no `~/.claude.json` can hold, so the reset is falsifiable on
+    // a machine with an account cache and on one without.
+    const pinned = [{ id: 'seam-a' }, { id: 'seam-b' }];
+    modelCacheStore.__testSetClaudeCodeModelOptions(pinned);
+
+    modelCacheStore.reset();
+
+    expect(modelCacheStore.getClaudeCodeModelOptions()).not.toEqual(pinned);
+    // `toBe`, not `toEqual`: a severed `?? []` deep-equals the reader's own result on
+    // any machine with no account cache; the reader memoises, so identity holds on both.
+    expect(modelCacheStore.getClaudeCodeModelOptions()).toBe(readClaudeCodeModelOptions());
   });
 
   it('marks a remembered Models.dev catalog stale with the snapshot timestamps, not the read time', () => {
@@ -740,7 +768,7 @@ describe('modelCacheStore', () => {
     expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
   });
 
-  it('answers the reviewer seat from the planner-tier inventory it shares', () => {
+  it('answers the reviewer seat from its own published outcome, never from the planner row', () => {
     publishConfigured(
       [configuredOutcome({ role: 'planner', contextKey: 'planner-a', models: ['planner-model'] })],
       1,
@@ -748,24 +776,42 @@ describe('modelCacheStore', () => {
 
     expect(
       modelCacheStore.getScopedProviderRuntime({ role: 'reviewer', provider: 'ollama' }),
-    ).toMatchObject({ state: 'fresh', models: [{ id: 'planner-model' }] });
+    ).toBeNull();
+
+    publishConfigured(
+      [
+        configuredOutcome({ role: 'planner', contextKey: 'planner-a', models: ['planner-model'] }),
+        configuredOutcome({
+          role: 'reviewer',
+          contextKey: 'reviewer-a',
+          models: ['planner-model'],
+        }),
+      ],
+      2,
+    );
+
+    expect(
+      modelCacheStore.getScopedProviderRuntime({ role: 'reviewer', provider: 'ollama' }),
+    ).toMatchObject({
+      connection: { role: 'reviewer', contextKey: 'reviewer-a' },
+      state: 'fresh',
+      models: [{ id: 'planner-model' }],
+    });
   });
 
-  it('keeps CLI catalog failures and authoritative empty results isolated by exact role/tool/context', () => {
+  it('keeps CLI catalog failures and authoritative empty results isolated by exact tool/context', () => {
     expect(
       publishCliCatalogs(
         [
           cliCatalogAttempt({
-            role: 'planner',
             tool: 'codex',
-            contextKey: 'planner-codex-channel-a',
-            models: ['planner-last-good'],
+            contextKey: 'codex-channel-a',
+            models: ['codex-last-good'],
           }),
           cliCatalogAttempt({
-            role: 'implementer',
-            tool: 'codex',
-            contextKey: 'implementer-codex-channel-b',
-            models: ['implementer-last-good'],
+            tool: 'opencode',
+            contextKey: 'opencode-channel-b',
+            models: ['opencode-last-good'],
           }),
         ],
         1,
@@ -775,15 +821,13 @@ describe('modelCacheStore', () => {
       publishCliCatalogs(
         [
           cliCatalogAttempt({
-            role: 'planner',
             tool: 'codex',
-            contextKey: 'planner-codex-channel-a',
+            contextKey: 'codex-channel-a',
             failure: 'offline',
           }),
           cliCatalogAttempt({
-            role: 'implementer',
-            tool: 'codex',
-            contextKey: 'implementer-codex-channel-b',
+            tool: 'opencode',
+            contextKey: 'opencode-channel-b',
             models: [],
           }),
         ],
@@ -791,35 +835,33 @@ describe('modelCacheStore', () => {
       ),
     ).toBe(true);
 
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' }),
-    ).toMatchObject({
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
       state: 'stale',
-      models: [{ id: 'planner-last-good' }],
+      models: [{ id: 'codex-last-good' }],
       failure: 'offline',
       fetchedAt: 100,
       validatedAt: 200,
     });
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'implementer', tool: 'codex' }),
-    ).toMatchObject({ state: 'fresh', models: [], fetchedAt: 200 });
-    expect(modelCacheStore.getProviderModels('codex')).toBeNull();
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'opencode' })).toMatchObject({
+      state: 'fresh',
+      models: [],
+      fetchedAt: 200,
+    });
+    expect(modelCacheStore.getProviderModels('opencode')).toEqual([]);
   });
 
-  it('does not collapse two selected CLI channel contexts into a last-channel generic catalog', () => {
+  it('does not collapse two executable contexts of one tool into a last-context catalog', () => {
     expect(
       publishCliCatalogs(
         [
           cliCatalogAttempt({
-            role: 'planner',
             tool: 'opencode',
-            contextKey: 'planner-opencode-channel-a',
+            contextKey: 'opencode-channel-a',
             models: ['channel-a-model'],
           }),
           cliCatalogAttempt({
-            role: 'planner',
             tool: 'opencode',
-            contextKey: 'planner-opencode-channel-b',
+            contextKey: 'opencode-channel-b',
             models: ['channel-b-model'],
           }),
         ],
@@ -828,9 +870,7 @@ describe('modelCacheStore', () => {
     ).toBe(true);
 
     expect(modelCacheStore.getDetection().cliCatalogOutcomes).toHaveLength(2);
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'opencode' }),
-    ).toBeNull();
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'opencode' })).toBeNull();
     expect(modelCacheStore.getProviderModels('opencode')).toBeNull();
   });
 
@@ -845,7 +885,6 @@ describe('modelCacheStore', () => {
         result: cliCatalogResult(
           [
             cliCatalogAttempt({
-              role: 'planner',
               tool: 'codex',
               contextKey: 'old-executable-context',
               models: ['late-old-model'],
@@ -862,7 +901,6 @@ describe('modelCacheStore', () => {
         result: cliCatalogResult(
           [
             cliCatalogAttempt({
-              role: 'planner',
               tool: 'codex',
               contextKey: 'new-executable-context',
               models: ['current-model'],
@@ -875,9 +913,9 @@ describe('modelCacheStore', () => {
       }),
     ).toBe(true);
 
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' }),
-    ).toMatchObject({ models: [{ id: 'current-model' }] });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      models: [{ id: 'current-model' }],
+    });
     expect(JSON.stringify(modelCacheStore.getDetection())).not.toContain('late-old-model');
   });
 
@@ -920,16 +958,14 @@ describe('modelCacheStore', () => {
       publishCliCatalogs(
         [
           cliCatalogAttempt({
-            role: 'planner',
             tool: 'codex',
-            contextKey: 'planner-codex-a',
-            models: ['planner-codex-model'],
+            contextKey: 'codex-a',
+            models: ['codex-model'],
           }),
           cliCatalogAttempt({
-            role: 'implementer',
             tool: 'opencode',
-            contextKey: 'implementer-opencode-a',
-            models: ['implementer-opencode-model'],
+            contextKey: 'opencode-a',
+            models: ['opencode-model'],
           }),
         ],
         2,
@@ -938,21 +974,19 @@ describe('modelCacheStore', () => {
 
     modelCacheStore.beginRefresh({ contexts: switchedContexts });
 
-    const plannerCodex = modelCacheStore.getScopedCliCatalogRuntime({
-      role: 'planner',
-      tool: 'codex',
+    const codexRuntime = modelCacheStore.getCliCatalogRuntime({ tool: 'codex' });
+    expect(codexRuntime).toMatchObject({ state: 'stale', models: [{ id: 'codex-model' }] });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'opencode' })).toMatchObject({
+      state: 'stale',
+      models: [{ id: 'opencode-model' }],
     });
-    expect(plannerCodex).toMatchObject({ state: 'stale', models: [{ id: 'planner-codex-model' }] });
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'implementer', tool: 'opencode' }),
-    ).toMatchObject({ state: 'stale', models: [{ id: 'implementer-opencode-model' }] });
     const plannerOpenai = modelCacheStore.getScopedProviderRuntime({
       role: 'planner',
       provider: 'ollama',
     });
     expect(plannerOpenai).toMatchObject({ state: 'stale', models: [{ id: 'planner-openai' }] });
     // Nothing failed — the context moved — so no probe failure may be invented.
-    expect(plannerCodex?.failure).toBeUndefined();
+    expect(codexRuntime?.failure).toBeUndefined();
     expect(plannerOpenai?.failure).toBeUndefined();
     expect(plannerOpenai?.diagnostic).toBeUndefined();
   });
@@ -962,26 +996,21 @@ describe('modelCacheStore', () => {
       publishCliCatalogs(
         [
           cliCatalogAttempt({
-            role: 'planner',
             tool: 'codex',
-            contextKey: 'planner-codex-a',
-            models: ['planner-codex-model'],
+            contextKey: 'codex-a',
+            models: ['codex-model'],
           }),
         ],
         1,
       ),
     ).toBe(true);
     expect(modelCacheStore.get().cliCatalogsLoaded).toBe(true);
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'implementer', tool: 'codex' }),
-    ).toBeNull();
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'opencode' })).toBeNull();
 
     modelCacheStore.beginRefresh({ contexts: switchedContexts });
 
     expect(modelCacheStore.get().cliCatalogsLoaded).toBe(false);
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'implementer', tool: 'codex' }),
-    ).toBeUndefined();
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'opencode' })).toBeUndefined();
   });
 
   it('stops a role the new context has not probed from reading as an authoritative empty catalog', () => {
@@ -1010,9 +1039,8 @@ describe('modelCacheStore', () => {
       publishCliCatalogs(
         [
           cliCatalogAttempt({
-            role: 'implementer',
             tool: 'opencode',
-            contextKey: 'implementer-opencode-a',
+            contextKey: 'opencode-a',
             failure: 'malformed',
           }),
         ],
@@ -1029,37 +1057,34 @@ describe('modelCacheStore', () => {
       ],
       2,
     );
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'implementer', tool: 'opencode' }),
-    ).toMatchObject({ state: 'failed', failure: 'malformed' });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'opencode' })).toMatchObject({
+      state: 'failed',
+      failure: 'malformed',
+    });
 
     modelCacheStore.beginRefresh({ contexts: switchedContexts });
 
     // A failure is a verdict with no memory behind it; keeping it would report
     // a probe that never ran under the runner pair now selected.
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'implementer', tool: 'opencode' }),
-    ).toBeUndefined();
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'opencode' })).toBeUndefined();
     expect(
       modelCacheStore.getScopedProviderRuntime({ role: 'planner', provider: 'ollama' }),
     ).toBeUndefined();
   });
 
-  it('evicts a demoted row once the new context re-probes it and keeps the untouched role remembered', () => {
+  it('evicts a demoted row once the new context re-probes it and keeps the untouched tool remembered', () => {
     expect(
       publishCliCatalogs(
         [
           cliCatalogAttempt({
-            role: 'planner',
             tool: 'codex',
-            contextKey: 'planner-codex-a',
-            models: ['planner-codex-model'],
+            contextKey: 'codex-a',
+            models: ['codex-model'],
           }),
           cliCatalogAttempt({
-            role: 'implementer',
             tool: 'opencode',
-            contextKey: 'implementer-opencode-a',
-            models: ['implementer-opencode-model'],
+            contextKey: 'opencode-a',
+            models: ['opencode-model'],
           }),
         ],
         1,
@@ -1069,10 +1094,9 @@ describe('modelCacheStore', () => {
       publishCliCatalogs(
         [
           cliCatalogAttempt({
-            role: 'planner',
             tool: 'codex',
-            contextKey: 'planner-codex-b',
-            models: ['planner-codex-next'],
+            contextKey: 'codex-b',
+            models: ['codex-next'],
           }),
         ],
         2,
@@ -1080,14 +1104,16 @@ describe('modelCacheStore', () => {
       ),
     ).toBe(true);
 
-    // One row per role/tool: a demoted row must never shadow its live successor.
+    // One row per tool/context: a demoted row must never shadow its live successor.
     expect(modelCacheStore.getDetection().cliCatalogOutcomes).toHaveLength(2);
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' }),
-    ).toMatchObject({ state: 'fresh', models: [{ id: 'planner-codex-next' }] });
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'implementer', tool: 'opencode' }),
-    ).toMatchObject({ state: 'stale', models: [{ id: 'implementer-opencode-model' }] });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      state: 'fresh',
+      models: [{ id: 'codex-next' }],
+    });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'opencode' })).toMatchObject({
+      state: 'stale',
+      models: [{ id: 'opencode-model' }],
+    });
   });
 
   it('retains a same-context last success as stale on failure but leaves first and changed-context failures model-free', () => {
@@ -1365,7 +1391,6 @@ describe('modelCacheStore', () => {
       contexts: currentContexts,
       cliCatalogs: [
         {
-          role: 'planner' as const,
           tool: 'codex' as const,
           models: [{ id: 'remembered-codex-model' }],
           probedAt: 90,
@@ -1380,9 +1405,10 @@ describe('modelCacheStore', () => {
     expect(stateAfterHydrate.refresh.readiness.fetchedAt).toBe(50);
     expect(stateAfterHydrate.cliCatalogsLoaded).toBe(false);
     expect(modelCacheStore.getDetection().providers).toEqual([rememberedProvider]);
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' }),
-    ).toMatchObject({ state: 'stale', models: [{ id: 'remembered-codex-model' }] });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      state: 'stale',
+      models: [{ id: 'remembered-codex-model' }],
+    });
 
     const observedFetchedAts: (number | null)[] = [];
     const unsubscribe = modelCacheStore.subscribe(() => {
@@ -1406,7 +1432,6 @@ describe('modelCacheStore', () => {
     };
     const freshAttempts = [
       cliCatalogAttempt({
-        role: 'planner',
         tool: 'codex',
         contextKey: 'fresh-context',
         models: ['fresh-codex-model'],
@@ -1456,9 +1481,10 @@ describe('modelCacheStore', () => {
     expect(stateAfterPublish.cliCatalogsLoaded).toBe(true);
     expect(modelCacheStore.getDetection().providers).toEqual([freshProvider]);
     expect(modelCacheStore.getDetection().cliTools).toEqual([freshCliTool]);
-    expect(
-      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' }),
-    ).toMatchObject({ state: 'fresh', models: [{ id: 'fresh-codex-model' }] });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      state: 'fresh',
+      models: [{ id: 'fresh-codex-model' }],
+    });
 
     unsubscribe();
     expect(observedFetchedAts.length).toBeGreaterThan(0);

@@ -21,6 +21,10 @@ interface LifecycleBase {
   queueDepth: number;
   phaseFirstSeenTs: PhaseFirstSeenTs;
   stall: LifecycleStall;
+  /** When the run last produced any sign of life, so a silent seat can be named as silent. */
+  lastRunnerEventTs?: number | null;
+  /** When the attempt now running began, so its elapsed time is not the whole brief's. */
+  attemptStartedTs?: number | null;
 }
 
 interface IdleLifecycleState extends LifecycleBase {
@@ -59,14 +63,16 @@ interface InterruptedLifecycleState extends LifecycleBase {
   reason: null;
 }
 
+// A paused run read back from disk knows when it last did anything, so its clock can be frozen
+// there; a live park has no end yet and leaves both null.
 interface PausedLifecycleState extends LifecycleBase {
   phase: RunningPhase;
   status: 'paused';
   interruptParked: false;
   cancelled: false;
   startedAt: number | null;
-  endedAt: null;
-  durationMs: null;
+  endedAt: number | null;
+  durationMs: number | null;
   reason: null;
 }
 
@@ -120,6 +126,8 @@ const initial: LifecycleState = {
   queueDepth: 0,
   phaseFirstSeenTs: {},
   stall: null,
+  lastRunnerEventTs: null,
+  attemptStartedTs: null,
   startedAt: null,
   endedAt: null,
   durationMs: null,
@@ -142,7 +150,42 @@ export const lifecycleStore = {
   __testReset,
 };
 
+const RUNNER_HEARTBEAT_EVENT_TYPES = new Set<EngineEvent['type']>([
+  'runner_call_started',
+  'runner_call_activity',
+  'runner_call_usage',
+  'runner_call_warning',
+  'runner_call_completed',
+  'runner_call_error',
+  'planner_text',
+  'implementer_generate_running',
+  'implementer_generate_done',
+  'implementer_generate_failed',
+]);
+
+/** The two clocks the build-progress block reads: last sign of life, and this attempt's start. */
+function updateRunClocks(state: LifecycleState, event: EngineEvent): LifecycleState {
+  const lastRunnerEventTs = RUNNER_HEARTBEAT_EVENT_TYPES.has(event.type)
+    ? event.ts
+    : (state.lastRunnerEventTs ?? null);
+  const attemptStartedTs =
+    event.type === 'task_started' || event.type === 'task_retry'
+      ? event.ts
+      : (state.attemptStartedTs ?? null);
+  if (
+    lastRunnerEventTs === state.lastRunnerEventTs &&
+    attemptStartedTs === state.attemptStartedTs
+  ) {
+    return state;
+  }
+  return { ...state, lastRunnerEventTs, attemptStartedTs };
+}
+
 export function updatePhase(state: LifecycleState, event: EngineEvent): LifecycleState {
+  return updatePhaseOnly(updateRunClocks(state, event), event);
+}
+
+function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleState {
   if (isInfrastructurePhaseEvent(event)) return state;
   const phase = eventPhase(event);
 
@@ -179,10 +222,9 @@ export function updatePhase(state: LifecycleState, event: EngineEvent): Lifecycl
     );
   }
 
-  // Attach clients have no markInterruptRequested keypress path — the bus event
-  // is their only interrupt signal. The engine publishes it at the moment the
-  // continuation prompt parks, so the park is marked here too; the host's
-  // prompt-callbacks marks are idempotent re-marks.
+  // Attach clients have no keypress path of their own — the bus event is their only interrupt
+  // signal. The engine publishes it at the moment the continuation prompt parks, so the park is
+  // marked here; on the host the stop store owns that state instead.
   if (event.type === 'turn_interrupted') {
     return markLifecycleInterruptParked(
       markLifecycleInterrupted(applyRunningPhase(state, phase, event.ts)),
@@ -194,7 +236,11 @@ export function updatePhase(state: LifecycleState, event: EngineEvent): Lifecycl
   // call spawns while the turn is parked, and the host clears via
   // markInterruptResumed at the submit that triggers the resume.
   if (event.type === 'runner_call_started') {
-    return applyRunningPhase(clearLifecycleInterrupted(state), phase, event.ts);
+    return applyRunningPhase(
+      clearLifecyclePaused(clearLifecycleInterrupted(state)),
+      phase,
+      event.ts,
+    );
   }
 
   return applyRunningPhase(state, phase, event.ts);
@@ -292,6 +338,15 @@ export function clearLifecycleInterrupted(state: LifecycleState): LifecycleState
   return { ...state, status: 'running', interruptParked: false };
 }
 
+// A parked run has no event of its own to un-park it: the next call spawning is the proof that the
+// steer landed and the work carried on.
+export function clearLifecyclePaused(state: LifecycleState): LifecycleState {
+  if (state.status !== 'paused') return state;
+  // A run that is moving again has no end and no duration: the frozen clock a run at rest carried
+  // belongs to the pause it just left.
+  return { ...state, status: 'running', endedAt: null, durationMs: null };
+}
+
 function markLifecycleComplete(
   state: LifecycleState,
   endedAt: number,
@@ -343,6 +398,8 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       queueDepth,
       phaseFirstSeenTs,
       stall: null,
+      lastRunnerEventTs: null,
+      attemptStartedTs: null,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
@@ -360,6 +417,8 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       queueDepth,
       phaseFirstSeenTs,
       stall: null,
+      lastRunnerEventTs: null,
+      attemptStartedTs: null,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
@@ -416,6 +475,8 @@ function runningLifecycleState(input: {
   queueDepth: number;
   phaseFirstSeenTs: PhaseFirstSeenTs;
   startedAt: number | null;
+  lastRunnerEventTs?: number | null;
+  attemptStartedTs?: number | null;
 }): RunningLifecycleState {
   return {
     phase: runningPhase(input.phase),
@@ -425,6 +486,8 @@ function runningLifecycleState(input: {
     queueDepth: input.queueDepth,
     phaseFirstSeenTs: input.phaseFirstSeenTs,
     stall: null,
+    lastRunnerEventTs: input.lastRunnerEventTs ?? null,
+    attemptStartedTs: input.attemptStartedTs ?? null,
     startedAt: input.startedAt,
     endedAt: null,
     durationMs: null,

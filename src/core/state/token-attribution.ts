@@ -1,6 +1,6 @@
 import type { TokenUsage } from '../schemas/tokens.js';
 import type { Phase } from '../schemas/enums.js';
-import { phaseCostRole } from '../phases.js';
+import { phaseTokenRole } from '../phases.js';
 
 export interface PhaseTokenDelta {
   input: number;
@@ -38,8 +38,19 @@ export function attributePhaseTokenDelta(
         current.escalationOutput -
         previous.escalationOutput,
     ),
-    cacheRead: clampDelta((current.plannerCacheRead ?? 0) - (previous.plannerCacheRead ?? 0)),
-    cacheCreate: clampDelta((current.plannerCacheCreate ?? 0) - (previous.plannerCacheCreate ?? 0)),
+    // The escalator runs on the planner's runner, so its cache lands on the planner phase too.
+    cacheRead: clampDelta(
+      (current.plannerCacheRead ?? 0) -
+        (previous.plannerCacheRead ?? 0) +
+        (current.escalationCacheRead ?? 0) -
+        (previous.escalationCacheRead ?? 0),
+    ),
+    cacheCreate: clampDelta(
+      (current.plannerCacheCreate ?? 0) -
+        (previous.plannerCacheCreate ?? 0) +
+        (current.escalationCacheCreate ?? 0) -
+        (previous.escalationCacheCreate ?? 0),
+    ),
   };
   const implementerDelta: PhaseTokenDelta = {
     input: clampDelta(current.implementerInput - previous.implementerInput),
@@ -60,7 +71,7 @@ export function attributePhaseTokenDelta(
     ),
   };
 
-  const role = phaseCostRole(phase);
+  const role = phaseTokenRole(phase);
   return {
     planner: role === null ? ZERO_DELTA : plannerDelta,
     implementer: role === 'implementer' ? implementerDelta : ZERO_DELTA,

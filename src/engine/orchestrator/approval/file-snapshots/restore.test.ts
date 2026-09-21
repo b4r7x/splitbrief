@@ -58,7 +58,7 @@ describe('submodule (gitlink) handling', () => {
     }
   });
 
-  itUnix('restores a rejected gitlink by resetting the submodule working tree', async () => {
+  itUnix('reports a rejected gitlink for manual recovery without changing its index', async () => {
     const root = createTempDir('snapshot-gitlink-restore');
     try {
       const { project } = createSuperprojectWithSubmodule(root);
@@ -67,12 +67,12 @@ describe('submodule (gitlink) handling', () => {
       const snapshot = await getChangedFilesSnapshot(project);
       const result = await restoreDirtyFilesFromSnapshot(project, snapshot, ['sub']);
 
-      expect(result.restoredFiles).toEqual(['sub']);
-      expect(result.conflictedFiles).toEqual([]);
-      expect(readFileSync(join(project, 'sub', 'file.txt'), 'utf-8')).toBe('v1\n');
-      expect(execSync('git status --porcelain', { cwd: project, encoding: 'utf-8' }).trim()).toBe(
-        '',
-      );
+      expect(result.restoredFiles).toEqual([]);
+      expect(result.conflictedFiles).toEqual(['sub']);
+      expect(readFileSync(join(project, 'sub', 'file.txt'), 'utf-8')).toBe('v2\n');
+      expect(
+        execSync('git status --porcelain', { cwd: project, encoding: 'utf-8' }).trim(),
+      ).toContain('sub');
     } finally {
       cleanupTempDir(root);
     }
@@ -171,9 +171,10 @@ describe('restoreDirtyFilesFromSnapshot', () => {
       expect(existsSync(join(dir, 'added.ts'))).toBe(false);
       expect(result.restoredFiles).toEqual(['added.ts']);
       expect(result.conflictedFiles).toEqual([]);
-      // Restore is faithful to the base where the path was never indexed: the
-      // index entry is gone too, not left as a phantom staged deletion.
-      expect(execSync('git ls-files -- added.ts', { cwd: dir, encoding: 'utf-8' }).trim()).toBe('');
+      // Only the working tree is restored; the operator's index remains intact.
+      expect(execSync('git ls-files -- added.ts', { cwd: dir, encoding: 'utf-8' }).trim()).toBe(
+        'added.ts',
+      );
     } finally {
       cleanupTempDir(dir);
     }
@@ -196,10 +197,11 @@ describe('restoreDirtyFilesFromSnapshot', () => {
       rmSync(join(dir, 'src', 'added.ts'));
       symlinkSync(join(outside, 'victim.txt'), join(dir, 'src', 'added.ts'));
 
-      // A confinement escape is a non-recoverable boundary violation: it must
-      // propagate as a hard failure, not be downgraded to an ordinary conflict.
+      // A confinement escape is a non-recoverable boundary violation: the restore
+      // refuses to read through the symlink before resolving it and propagates
+      // the refusal as a hard failure, never downgrading it to a conflict.
       await expect(restoreDirtyFilesFromSnapshot(dir, snapshot, ['src/added.ts'])).rejects.toThrow(
-        /unsafe path/,
+        /refusing to read through symlink/,
       );
       expect(existsSync(join(outside, 'victim.txt'))).toBe(true);
     } finally {
@@ -222,10 +224,12 @@ describe('restore confined deletes', () => {
       writeFileSync(join(outside, 'victim.txt'), 'must-not-delete');
       symlinkSync(join(outside, 'victim.txt'), join(dir, 'src', 'temp.ts'));
 
+      // The delete refuses to read through the symlinked path rather than
+      // removing its target, and the refusal escapes as a hard failure.
       await expect(restoreDirtyFilesFromSnapshot(dir, snapshot, ['src/temp.ts'])).rejects.toThrow(
-        /unsafe path/,
+        /refusing to read through symlink/,
       );
-      expect(readFileSync(join(outside, 'victim.txt'), 'utf8')).toBe('must-not-delete');
+      expect(readFileSync(join(outside, 'victim.txt'), 'utf-8')).toBe('must-not-delete');
     } finally {
       cleanupTempDir(outside);
       cleanupTempDir(dir);

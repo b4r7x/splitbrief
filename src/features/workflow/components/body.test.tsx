@@ -12,6 +12,9 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
+import { REVIEW_MIN_ROWS } from '../layout/rect.js';
+import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { WorkflowBody } from './body.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 
@@ -80,7 +83,6 @@ describe('WorkflowBody brief review rendering', () => {
           sidebarWidth={34}
           inputMode={normalInputMode()}
           reviewFilePath={null}
-          phase="implementing"
           contentHeight={height}
           contentWidth={80}
         />,
@@ -101,7 +103,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={34}
         inputMode={reviewInputMode()}
         reviewFilePath="review.md"
-        phase="reviewing-plan"
         contentHeight={height}
         contentWidth={80}
       />,
@@ -113,10 +114,49 @@ describe('WorkflowBody brief review rendering', () => {
     ui.unmount();
   });
 
+  it('yields the region to the conversation when the frame cannot seat a document row', () => {
+    reviewStore.setReviewArtifact('# Review\n\nA review line.');
+    const ui = renderFeature(
+      <WorkflowBody
+        showSidebar={false}
+        sidebarWidth={0}
+        inputMode={reviewInputMode()}
+        reviewFilePath="review.md"
+        contentHeight={REVIEW_MIN_ROWS - 1}
+        contentWidth={80}
+      />,
+    );
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('no events yet');
+    expect(frame).not.toContain('Custom planner artifact');
+    ui.unmount();
+  });
+
+  it('renders the review frame with its title from the first height that seats a document row', () => {
+    reviewStore.setReviewArtifact('# Review\n\nA review line.');
+    const ui = renderFeature(
+      <WorkflowBody
+        showSidebar={false}
+        sidebarWidth={0}
+        inputMode={reviewInputMode()}
+        reviewFilePath="review.md"
+        contentHeight={REVIEW_MIN_ROWS}
+        contentWidth={80}
+      />,
+    );
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Custom planner artifact');
+    ui.unmount();
+  });
+
   it('lets the conversation, document, and brief panes reach the same body bottom', async () => {
     const contentHeight = 8;
     const sidebarWidth = 34;
-    const contentStartColumn = sidebarWidth + 2;
+    // The sidebar stands on the gutter line with its two-cell gap after it, and the review frame
+    // stands one gutter into the pane that follows.
+    const contentStartColumn = WORKFLOW_GUTTER_X + sidebarWidth + 2 + WORKFLOW_GUTTER_X;
     eventsStore.__testReset({
       events: [
         makePlannerText({
@@ -138,7 +178,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={sidebarWidth}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={contentHeight}
         contentWidth={80}
       />,
@@ -157,7 +196,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={sidebarWidth}
         inputMode={reviewInputMode()}
         reviewFilePath="review.md"
-        phase="reviewing-plan"
         contentHeight={contentHeight}
         contentWidth={80}
       />,
@@ -165,19 +203,19 @@ describe('WorkflowBody brief review rendering', () => {
     await flushEffects();
     const documentBottomRow = rightPaneBottomRow(ui.lastFrame() ?? '', contentStartColumn);
 
+    reviewStore.setReviewFile(briefPath);
     ui.rerender(
       <WorkflowBody
         showSidebar={true}
         sidebarWidth={sidebarWidth}
         inputMode={reviewInputMode()}
         reviewFilePath={briefPath}
-        phase="reviewing-briefs"
         contentHeight={contentHeight}
         contentWidth={80}
       />,
     );
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('task briefs');
+      expect(ui.lastFrame() ?? '').toContain('Review task');
     });
     const briefBottomRow = rightPaneBottomRow(ui.lastFrame() ?? '', contentStartColumn);
 
@@ -187,14 +225,13 @@ describe('WorkflowBody brief review rendering', () => {
     ui.unmount();
   });
 
-  it('renders conversation content flush against the terminal edge inside the main workflow body', () => {
+  it('renders conversation content on the gutter line, one lead cell in from the terminal edge', () => {
     const ui = renderFeature(
       <WorkflowBody
         showSidebar={false}
         sidebarWidth={0}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={4}
         contentWidth={40}
       />,
@@ -206,8 +243,10 @@ describe('WorkflowBody brief review rendering', () => {
 
     // No top-gap row: the body starts on its first line, directly under the header divider.
     expect(lines[0]).toContain('no events yet');
-    // Flush layout (WORKFLOW_CONTENT_PADDING_X = 0): the transcript text sits at column 0, no inset.
-    expect(row.startsWith('no events yet')).toBe(true);
+    // The empty state sits in the transcript's prose column: the gutter the chrome's boxes stand
+    // on, plus the mark slot every unmarked message row leaves blank ahead of its text.
+    expect(row.startsWith('no events yet')).toBe(false);
+    expect(row.indexOf('no events yet')).toBe(WORKFLOW_GUTTER_X + MARK_SLOT_CELLS);
 
     ui.unmount();
   });
@@ -219,7 +258,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={0}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={1}
         contentWidth={40}
       />,
@@ -251,7 +289,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={34}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={contentHeight}
         contentWidth={80}
       />,
@@ -262,7 +299,7 @@ describe('WorkflowBody brief review rendering', () => {
     const bottomBorderRow = contentHeight - 1;
 
     expect(lines).toHaveLength(contentHeight);
-    expect(lines[bottomBorderRow]?.[0]).toMatch(/[+└]/);
+    expect(lines[bottomBorderRow]?.[WORKFLOW_GUTTER_X]).toMatch(/[+└]/);
     expect(lastTranscriptLine).toBe(bottomBorderRow);
     expect(lines[lastTranscriptLine]).toContain('transcript-20');
 
@@ -284,7 +321,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={0}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={contentHeight}
         contentWidth={80}
       />,
@@ -307,7 +343,6 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={0}
         inputMode={questionInputMode('Task interrupted. Enter instructions to continue:')}
         reviewFilePath={null}
-        phase="implementing"
         contentHeight={4}
         contentWidth={80}
       />,
@@ -329,8 +364,7 @@ describe('WorkflowBody brief review rendering', () => {
         sidebarWidth={0}
         inputMode={normalInputMode()}
         reviewFilePath={null}
-        phase="implementing"
-        contentHeight={4}
+        contentHeight={REVIEW_MIN_ROWS}
         contentWidth={40}
         onScrollAbove={onScrollAbove}
         onScrollBelow={onScrollBelow}
@@ -344,9 +378,8 @@ describe('WorkflowBody brief review rendering', () => {
         showSidebar={false}
         sidebarWidth={0}
         inputMode={reviewInputMode()}
-        reviewFilePath={null}
-        phase="implementing"
-        contentHeight={4}
+        reviewFilePath="review.md"
+        contentHeight={REVIEW_MIN_ROWS}
         contentWidth={40}
         onScrollAbove={onScrollAbove}
         onScrollBelow={onScrollBelow}

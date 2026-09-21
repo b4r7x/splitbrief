@@ -1,28 +1,43 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { configStore } from '../../../stores/project/config.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
+import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { WorkflowFooter, WorkflowHeader } from './chrome.js';
 import { ConversationFlow } from './conversation-flow/flow.js';
 import type { RouteData } from '../../../stores/navigation/router.js';
 
-const RAIL_STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Verify'];
+const RAIL_STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Review'];
+// The workflow composer wears the round frame; its top-left corner is what marks the box's left
+// edge.
+const COMPOSER_TOP_LEFT = '╭';
 const WORKFLOW_ROUTE = {
   screen: 'workflow',
+  run: makeRunRecord(),
   execution: {
-    kind: 'attached',
-    feature: 'test feature',
-    sessionId: 'chrome-test-session',
-    attach: { sockPath: '/tmp/chrome-test.sock', authToken: 'test-token' },
+    kind: 'local',
+    prepared: makePreparedExecution({
+      projectDir: '/tmp/splitbrief-test',
+      sessionId: 'chrome-test-session',
+      feature: 'test feature',
+      config: makeConfig(),
+      gates: () => [],
+    }),
   },
 } satisfies RouteData;
 
@@ -120,6 +135,75 @@ describe('WorkflowFooter', () => {
     );
   }
 
+  // A run whose tokens carry a price: before /usage the footer painted `$3.00` next to the keys
+  // from exactly this fixture.
+  function seedPricedRun(): void {
+    tokensStore.__testReset({
+      localCount: 2,
+      tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
+    });
+    configStore.__testReset({
+      projectDir: '/tmp/splitbrief-test',
+      config: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'custom-endpoint',
+          model: 'priced-model',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
+        },
+      }),
+    });
+    modelCacheStore.hydrateModelsDevCatalog({
+      catalog: {
+        vendor: {
+          id: 'vendor',
+          models: { 'priced-model': { id: 'priced-model', cost: { input: 1, output: 2 } } },
+        },
+      },
+      fetchedAt: 1,
+      validatedAt: 1,
+    });
+  }
+
+  it('paints no money or token total for a priced run, with or without override keys', async () => {
+    seedPricedRun();
+    const { cols, rows } = terminalSizeStore.get();
+    const ui = renderFeature(
+      <WorkflowFooter
+        handleInput={() => {}}
+        onRuntimeCommand={() => {}}
+        commands={[]}
+        mode="normal"
+        inputHint=""
+        boxHintOverride={{ keys: 'ctrl+d diff' }}
+        disabled={false}
+      />,
+      { cols, rows },
+    );
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('ctrl+d diff');
+    expect(frame).not.toContain('$');
+    expect(frame).not.toContain('3.00');
+    expect(frame).not.toContain('1,000,000');
+    expect(frame).not.toMatch(/\btokens?\b/i);
+    ui.unmount();
+  });
+
+  it('keeps the done mark on a complete priced run and still names no amount', async () => {
+    seedPricedRun();
+    lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0, endedAt: 1 });
+    const ui = renderFooter();
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(glyph('check'));
+    expect(frame).not.toContain('$');
+    ui.unmount();
+  });
+
   it('appends a done token to the footer key cluster when the phase is complete', async () => {
     lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0, endedAt: 1 });
     const ui = renderFooter();
@@ -153,7 +237,7 @@ describe('WorkflowFooter', () => {
     ui.unmount();
   });
 
-  it('keeps the review composer at the full terminal width', async () => {
+  it('keeps the review composer at the full width inside the gutter', async () => {
     const cols = 160;
     terminalSizeStore.__testReset({ cols, rows: 30, isSmall: false });
     const ui = renderFooter({ mode: 'review', inputHint: 'y approve · c comment · q reject' });
@@ -161,10 +245,31 @@ describe('WorkflowFooter', () => {
 
     const topBorder = stripAnsiStyles(ui.lastFrame() ?? '')
       .split('\n')
-      .find((line) => line.startsWith('╭'));
+      .find((line) => line.trimStart().startsWith(COMPOSER_TOP_LEFT));
 
     expect(topBorder).toBeDefined();
-    expect(getTerminalCellWidth(topBorder ?? '')).toBe(cols);
+    // The box stands on the gutter line and stops one gutter short of the right edge.
+    expect(topBorder?.indexOf(COMPOSER_TOP_LEFT)).toBe(WORKFLOW_GUTTER_X);
+    expect(getTerminalCellWidth((topBorder ?? '').trimStart())).toBe(cols - WORKFLOW_GUTTER_X * 2);
+    ui.unmount();
+  });
+
+  it('puts the border, the live pip and the legend mark on the mark column, the keys on the text one', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    const ui = renderFooter();
+    await tick();
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const legend = lines.find((line) => line.includes('esc stop options')) ?? '';
+    const topBorder = lines.find((line) => line.includes(COMPOSER_TOP_LEFT)) ?? '';
+    const byline = lines.at(-1) ?? '';
+
+    expect(topBorder.indexOf(COMPOSER_TOP_LEFT)).toBe(WORKFLOW_GUTTER_X);
+    // A live byline opens with its pip, so it keeps the mark column the border stands on.
+    expect(byline.search(/\S/)).toBe(WORKFLOW_GUTTER_X);
+    // The legend's mark shares that column and its first key opens on the text column.
+    expect(legend.search(/\S/)).toBe(WORKFLOW_GUTTER_X);
+    expect(legend.indexOf('esc')).toBe(WORKFLOW_GUTTER_X + MARK_SLOT_CELLS);
     ui.unmount();
   });
 

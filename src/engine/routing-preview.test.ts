@@ -33,7 +33,6 @@ describe('buildRoutingPreviewMetadata', () => {
             kind: 'agent',
             command: 'cheap-worker',
             model: 'cheap-model',
-            costTier: 'cheap',
           },
           'standard-worker': {
             kind: 'api',
@@ -43,7 +42,6 @@ describe('buildRoutingPreviewMetadata', () => {
             apiBase: 'https://custom-endpoint.example/v1',
             apiKey: 'test-key',
             model: 'runtime-standard',
-            costTier: 'standard',
           },
         },
       },
@@ -58,10 +56,7 @@ describe('buildRoutingPreviewMetadata', () => {
     expect(metadata).toMatchObject({
       taskId: task.id,
       workerProfile: 'cheap-detected-worker',
-      selectedCostTier: 'cheap',
       contextLength: detectedContextLength,
-      costPosture:
-        'Selected cheap cost tier via cheapest-capable routing; rejected tiers: standard',
     });
   });
 

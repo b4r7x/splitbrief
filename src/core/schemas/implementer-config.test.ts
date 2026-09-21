@@ -4,7 +4,11 @@ import {
   PLANNER_API_PROVIDER_IDS,
 } from '../providers/api-provider-catalog.js';
 import { IMPLEMENTER_CLI_TOOL_IDS, PLANNER_CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
-import { ImplementerConfigSchema } from './implementer-config.js';
+import {
+  ImplementerConfigSchema,
+  ImplementerProfileConfigSchema,
+  ImplementerProfilesConfigSchema,
+} from './implementer-config.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import { ConfigSchema } from './config.js';
 import { createDefaultConfig } from '../config/load/defaults.js';
@@ -119,5 +123,34 @@ describe('ImplementerConfigSchema', () => {
         command: expect.objectContaining({ contract: 'direct', executable: './tools/apply' }),
       }),
     ]);
+  });
+});
+
+describe('ImplementerProfileConfigSchema', () => {
+  it('still accepts profiles naming a concrete model', () => {
+    const result = ImplementerProfileConfigSchema.safeParse({
+      kind: 'cli',
+      tool: 'kilo-code',
+      model: 'kilo/kilo-auto/free',
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('ImplementerProfilesConfigSchema', () => {
+  it('still fails when the default names an undefined profile', () => {
+    const result = ImplementerProfilesConfigSchema.safeParse({
+      default: 'ghost',
+      profiles: {
+        primary: { kind: 'cli', tool: 'kilo-code', model: 'kilo/kilo-auto/free' },
+      },
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues).toHaveLength(1);
+    expect(result.error.issues[0]?.path).toEqual(['default']);
+    expect(result.error.issues[0]?.message).toBe(
+      'Default implementer profile "ghost" is not defined',
+    );
   });
 });

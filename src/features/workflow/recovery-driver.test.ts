@@ -1,24 +1,27 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
-import { acquireStateAuthority } from '../../core/state/authority.js';
-import type { StateAuthorityReceipt } from '../../core/state/types.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
+import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import { taskId } from '../../core/schemas/task.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { reactivateExistingSession } from '../../core/sessions/active-pointer.js';
-import { saveState } from '../../core/state/persistence.js';
-import {
-  parsePreparedConfig,
-  type PreparedExecution,
-  type RunnerGate,
-} from '../../engine/runners/prepared-execution.js';
+import { loadState, saveState } from '../../core/state/persistence.js';
+import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import {
+  recoveryNoticeStore,
+  type RecoveryNoticeState,
+} from '../../stores/workflow/recovery-notice.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { createRecoveryDriver } from './recovery-driver.js';
+import { addTuiEvent } from './tui-sink.js';
 
 let dirs: string[] = [];
 
@@ -28,30 +31,32 @@ afterEach(() => {
   resetAllStores();
 });
 
-type RecoveryOverrides = Partial<ReturnType<typeof makeRecoveryIssue>>;
-
-function setupSession(recoveryOverrides: RecoveryOverrides = {}): {
-  projectDir: string;
-  sessionId: string;
-  authority: StateAuthorityReceipt;
+function setupSession(recoveryOverrides: Partial<RecoveryIssue> = {}): {
+  prepared: PreparedExecution;
+  state: WorkflowState;
 } {
   const projectDir = createTempDir('recovery-driver-test');
   dirs.push(projectDir);
   const sessionId = 'sess-recovery';
   ensureSessionDir(projectDir, sessionId);
-  const state = makeImplState([makeTask({ id: 'T001' })], {
+  const state = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
     pendingRecovery: makeRecoveryIssue(recoveryOverrides),
   });
   saveState({ projectDir, sessionId }, state);
-  const acquired = acquireStateAuthority({
-    ref: { projectDir, sessionId },
-    purpose: 'resume',
-    ownerId: 'recovery-driver-test-owner',
-    runId: 'recovery-driver-test-run',
-    acquisitionId: `recovery-driver-test-${recoveryOverrides.status ?? 'awaiting-user'}`,
+  const saved = loadState({ projectDir, sessionId });
+  if (saved === null) throw new Error('expected the recovery state to persist');
+  const prepared = makePreparedExecution({
+    projectDir,
+    sessionId,
+    feature: 'recovery test',
+    config: makeConfig({
+      planner: { kind: 'agent', command: 'test-planner' },
+      implementer: { kind: 'agent', command: 'test-implementer', model: 'test-model' },
+    }),
+    resumeState: saved,
+    active: reactivateExistingSession({ projectDir, sessionId }),
   });
-  if (acquired.kind !== 'fenced') throw new Error('expected a fenced recovery authority');
-  return { projectDir, sessionId, authority: acquired.receipt };
+  return { prepared, state: saved };
 }
 
 function makeInputMode(answers: string[]): {
@@ -76,79 +81,30 @@ function makeInputMode(answers: string[]): {
 }
 
 function runDriver(
-  projectDir: string,
-  sessionId: string,
+  prepared: PreparedExecution,
+  state: WorkflowState,
   inputMode: UseInputModeResult,
-  authority: StateAuthorityReceipt,
 ): ReturnType<ReturnType<typeof createRecoveryDriver>> {
-  const prepared = makePreparedExecution(projectDir, sessionId);
   const promptPendingRecovery = createRecoveryDriver({
     prepared,
-    authority,
     inputMode,
     abortedRef: { current: false },
+    sink: addTuiEvent,
     setInlineResume: () => {},
   });
   return promptPendingRecovery({
-    state: makeImplState([makeTask({ id: 'T001' })], { pendingRecovery: makeRecoveryIssue() }),
+    state,
     controller: new AbortController(),
     republishPrompt: false,
   });
 }
 
-function makePreparedExecution(projectDir: string, sessionId: string): PreparedExecution {
-  const ref = { projectDir, sessionId };
-  const config = parsePreparedConfig(
-    makeConfig({
-      planner: { kind: 'agent', command: 'test-planner' },
-      implementer: { kind: 'agent', command: 'test-implementer', model: 'test-model' },
-    }),
-  );
-  const preparationId = `recovery-${sessionId}`;
-  const gates = [
-    {
-      kind: 'agent',
-      slot: { role: 'planner' },
-      preparationId,
-      command: { kind: 'validated-config' },
-    },
-    {
-      kind: 'agent',
-      slot: { role: 'implementer', profile: 'default' },
-      preparationId,
-      command: { kind: 'validated-config' },
-    },
-  ] as const satisfies readonly RunnerGate[];
-  const active = reactivateExistingSession(ref);
-  return {
-    purpose: 'resume',
-    config,
-    preparationId,
-    report: {
-      generatedAt: '2026-08-04T00:00:00.000Z',
-      projectDir,
-      status: 'ready',
-      counts: { ok: gates.length, info: 0, warning: 0, blocker: 0 },
-      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-      sections: [],
-      metadata: {},
-    },
-    gates,
-    session: { kind: 'existing', ref, active },
-    runtime: {
-      feature: 'recovery test',
-      allowRepoRunners: false,
-      allowHooks: false,
-    },
-  };
-}
-
-describe('createRecoveryDriver — unparseable answers', () => {
+describe('createRecoveryDriver', () => {
   it('re-prompts with an error instead of applying a fallback action when the answer is unknown', async () => {
-    const { projectDir, sessionId, authority } = setupSession();
+    const { prepared, state } = setupSession();
     const { inputMode, feedbackAtPrompt } = makeInputMode(['not-a-real-action', 'pause']);
 
-    const result = await runDriver(projectDir, sessionId, inputMode, authority);
+    const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(2);
     expect(feedbackAtPrompt[0]).toEqual({ message: null, isError: false });
@@ -157,41 +113,72 @@ describe('createRecoveryDriver — unparseable answers', () => {
   });
 
   it('applies a valid action on the first answer without re-prompting', async () => {
-    const { projectDir, sessionId, authority } = setupSession();
+    const { prepared, state } = setupSession();
     const { inputMode, feedbackAtPrompt } = makeInputMode(['pause']);
 
-    const result = await runDriver(projectDir, sessionId, inputMode, authority);
+    const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(1);
     expect(result.shouldRun).toBe(false);
     expect(feedbackStore.get().message).toBe('Recovery paused. Resume with splitbrief resume.');
   });
 
-  it('reopens paused recovery and applies the selected action', async () => {
-    const { projectDir, sessionId, authority } = setupSession({
-      status: 'paused',
-      selectedAction: 'pause-run',
+  it('keeps the halt menu open when an action cannot be applied', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'review-failed',
+      taskId: taskId('T999'),
+      taskTitle: 'Missing review task',
+      files: [],
+      affectedTaskIds: [],
+      availableActions: ['retry-same-worker', 'pause-run'],
+      recommendedAction: 'retry-same-worker',
     });
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['retry-same-worker', 'pause']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(2);
+    expect(feedbackAtPrompt[1]?.isError).toBe(true);
+    expect(result.shouldRun).toBe(false);
+    expect(feedbackStore.get().message).toBe('Recovery paused. Resume with splitbrief resume.');
+  });
+
+  it('resumes the run on a retry and carries the selected worker as the profile override', async () => {
+    const { prepared, state } = setupSession();
+    const { inputMode } = makeInputMode(['retry-same-worker']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(result.state.tasks[0]?.status).toBe('pending');
+      expect(result.retryProfileOverride).toBe('local-qwen');
+      expect(result.retryProfileOverrideTaskId).toBe(taskId('T001'));
+    }
+  });
+
+  it('reopens paused recovery and applies the selected action', async () => {
+    const { prepared, state } = setupSession({ status: 'paused', selectedAction: 'pause-run' });
     const { inputMode, feedbackAtPrompt } = makeInputMode(['retry-same-worker']);
 
-    const result = await runDriver(projectDir, sessionId, inputMode, authority);
+    const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(1);
     expect(result.shouldRun).toBe(true);
     if (result.shouldRun) {
       expect(result.state.pendingRecovery).toBeUndefined();
-      expect(result.state.tasks[0]?.status).toBe('pending');
     }
   });
 
   it('replays an applying selected action without prompting', async () => {
-    const { projectDir, sessionId, authority } = setupSession({
+    const { prepared, state } = setupSession({
       status: 'applying',
       selectedAction: 'retry-same-worker',
     });
     const { inputMode, feedbackAtPrompt } = makeInputMode([]);
 
-    const result = await runDriver(projectDir, sessionId, inputMode, authority);
+    const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(0);
     expect(result.shouldRun).toBe(true);
@@ -199,5 +186,158 @@ describe('createRecoveryDriver — unparseable answers', () => {
       expect(result.state.pendingRecovery).toBeUndefined();
       expect(result.state.tasks[0]?.status).toBe('pending');
     }
+  });
+
+  it('hands a switch-seat choice back to the run and leaves the halt pending', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      recommendedAction: 'switch-seat',
+      switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code', model: 'opus' }] },
+    });
+    const { inputMode } = makeInputMode(['switch-seat']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.state.pendingRecovery).toBeDefined();
+      expect(result.switchSeat?.candidate).toEqual({ tool: 'claude-code', model: 'opus' });
+      expect(result.switchSeat?.policy.purpose).toBe('resume');
+      expect(result.retryProfileOverride).toBeUndefined();
+    }
+  });
+
+  it('takes the tool the pressed row named, not the first one offered', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      recommendedAction: 'switch-seat',
+      resetAt: '2026-07-13T17:00:00.000Z',
+      switchSeat: {
+        seat: 'build',
+        candidates: [{ tool: 'claude-code', model: 'opus' }, { tool: 'opencode' }],
+      },
+    });
+    const { inputMode } = makeInputMode(['w2']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.switchSeat?.candidate).toEqual({ tool: 'opencode' });
+    }
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
+  });
+
+  it('marks the halted seat for the header while the operator is answering', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      recommendedAction: 'switch-seat',
+      resetAt: '2026-07-13T17:00:00.000Z',
+      switchSeat: { seat: 'build', candidates: [{ tool: 'opencode' }] },
+    });
+    const noticeAtPrompt: Array<{ seat: string | null; resetAt: number | null; issue: unknown }> =
+      [];
+    const { inputMode } = makeInputMode(['a']);
+    const observed: UseInputModeResult = {
+      ...inputMode,
+      setQuestionMode: async (hint: string) => {
+        noticeAtPrompt.push({ ...recoveryNoticeStore.get() });
+        return inputMode.setQuestionMode(hint);
+      },
+    };
+
+    await runDriver(prepared, state, observed);
+
+    expect(noticeAtPrompt).toEqual([
+      {
+        seat: 'build',
+        resetAt: Date.parse('2026-07-13T17:00:00.000Z'),
+        issue: state.pendingRecovery,
+      },
+    ]);
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
+  });
+
+  it('publishes a halt that offers no other tool, with no seat for the bar to mark', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'review-failed',
+      taskId: undefined,
+      taskTitle: undefined,
+      seat: 'review',
+      files: [],
+      affectedTaskIds: [],
+      attempts: undefined,
+      maxAttempts: undefined,
+      message: 'The review seat was not given the context this call needs.',
+      facts: {
+        apiContextCode: 'insufficient-context',
+        apiContextSeat: 'review',
+        apiContextCause: 'input-budget',
+        apiContextRequiredTokens: 412_096,
+        apiContextAvailableTokens: 32_768,
+      },
+      availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+    });
+    const noticeAtPrompt: RecoveryNoticeState[] = [];
+    const { inputMode } = makeInputMode(['pause']);
+    const observed: UseInputModeResult = {
+      ...inputMode,
+      setQuestionMode: async (hint: string) => {
+        noticeAtPrompt.push({ ...recoveryNoticeStore.get() });
+        return inputMode.setQuestionMode(hint);
+      },
+    };
+
+    await runDriver(prepared, state, observed);
+
+    // No swap offer, so the header bar has no seat to annotate — but the halt itself is published,
+    // which is what the details surface reads while this process still holds it.
+    expect(noticeAtPrompt).toEqual([{ seat: null, resetAt: null, issue: state.pendingRecovery }]);
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
+  });
+
+  it('end run closes the run on the state and stops the loop', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'review-failed',
+      taskId: undefined,
+      availableActions: ['pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+    });
+    const { inputMode } = makeInputMode(['a']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(result.shouldRun).toBe(false);
+    expect(result.state?.closed?.as).toBe('ended');
+    expect(result.state?.pendingRecovery).toBeUndefined();
+    const persisted = loadState(prepared.session.ref);
+    expect(persisted?.closed?.as).toBe('ended');
+    expect(feedbackStore.get().message).toContain('Run ended');
+  });
+
+  it('revise asks for the correction and carries it into the queue', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'brief-review-no-progress',
+      taskId: undefined,
+      phase: 'reviewing-briefs',
+      availableActions: ['revise', 'end-run'],
+      recommendedAction: 'revise',
+    });
+    const { inputMode } = makeInputMode(['v', 'split the first brief']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(result.shouldRun).toBe(true);
+    expect(result.state?.pendingRecovery).toBeUndefined();
+    expect(result.state?.messageQueue.map((message) => message.text)).toEqual([
+      'split the first brief',
+    ]);
   });
 });

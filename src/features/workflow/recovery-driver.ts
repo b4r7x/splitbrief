@@ -1,30 +1,33 @@
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
+import type { RecoveryAction } from '../../core/schemas/enums.js';
+import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { StateAuthorityReceipt } from '../../core/state/types.js';
+import type { EventSink } from '../../engine/events/types.js';
+import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
+import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
+import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
+import type { SeatSwapChoice } from '../../engine/orchestrator/run/seat-swap.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
+import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { markWorkflowPaused } from '../../stores/workflow/actions/pause.js';
-import {
-  applySelectedRecoveryAction,
-  createRecoveryBus,
-  finalizeRecoveryResult,
-  loadPendingRecoveryState,
-  recoveryRetryTaskId,
-} from '../../engine/orchestrator/recovery/driver.js';
-import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
-import { createTuiSink } from './tui-sink.js';
-import { formatRecoveryPrompt, parseRecoveryActionAnswer } from './recovery-prompt.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
-import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
-import { refreshWorkflowAuthority } from '../../engine/orchestrator/run/authority.js';
+import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
+import {
+  formatRecoveryPrompt,
+  parseRecoveryActionAnswer,
+  switchSeatCandidateForAnswer,
+} from './recovery-prompt.js';
 
-export type PendingRecoveryResult =
+type PendingRecoveryResult =
   | {
       shouldRun: true;
       state: WorkflowState;
-      authority?: StateAuthorityReceipt | undefined;
       retryProfileOverride?: string | undefined;
       retryProfileOverrideTaskId?: TaskId | undefined;
+      switchSeat?: SeatSwapChoice | undefined;
     }
   | { shouldRun: false; state?: WorkflowState | undefined };
 
@@ -36,17 +39,66 @@ interface PromptPendingRecoveryArgs {
 
 interface RecoveryDriverOptions {
   prepared: PreparedExecution;
-  authority?: StateAuthorityReceipt | undefined;
   inputMode: UseInputModeResult;
   abortedRef: { current: boolean };
+  /** Where the panel's own events land on screen; the engine adds the session log. */
+  sink: EventSink;
   setInlineResume: (state: WorkflowState) => void;
 }
 
+/**
+ * The swapped-in tool is admitted under the same terms this interactive run was:
+ * the seat swap re-prepares the session, and a preparation the TUI drives is
+ * always interactive, discloses unverified auth and approves through the
+ * tiered-approval prompt.
+ */
+function seatSwapPolicy(prepared: PreparedExecution): SeatSwapChoice['policy'] {
+  return {
+    purpose: 'resume',
+    interaction: 'interactive',
+    unverifiedAuth: 'disclosed',
+    allowHooks: prepared.runtime.allowHooks,
+    allowRepoRunners: prepared.runtime.allowRepoRunners,
+    onTieredApproval: openApprovalPrompt,
+  };
+}
+
+/**
+ * The open halt, published for the rest of the screen while the operator reads the panel: the
+ * issue itself, plus the two things the header annotates the bar with — the halted seat and, when
+ * the runner named one, the clock its quota comes back on. Only the swap offer names a seat the
+ * header can mark, so a halt without an offer still publishes itself and leaves the bar alone.
+ */
+function openRecoveryNotice(issue: RecoveryIssue): void {
+  const resetAt = issue.resetAt === undefined ? Number.NaN : Date.parse(issue.resetAt);
+  recoveryNoticeStore.open({
+    seat: issue.switchSeat?.seat ?? null,
+    resetAt: Number.isFinite(resetAt) ? resetAt : null,
+    issue,
+  });
+}
+
+/**
+ * The one surface that resolves a halt in the TUI: it renders the pending
+ * recovery as a question, parses the operator's answer into a recovery action
+ * and applies it. A blocked action stays in this loop so the same halt remains
+ * actionable; a successful action either resumes on the returned state or stops.
+ *
+ * `switch-seat` is the exception it does not apply itself — taking that offer
+ * re-prepares the session on another tool, which only `runWorkflow` can do, so
+ * the choice travels back as `switchSeat` and the halt stays pending until the
+ * run resolves it.
+ *
+ * The halt is read once from the passed state and reused for the prompt text, the
+ * answer parse and the apply: a session has one running process, and that process
+ * is parked on this prompt, so nothing else can resolve or replace the halt while
+ * the operator is answering.
+ */
 export function createRecoveryDriver(
   opts: RecoveryDriverOptions,
 ): (args: PromptPendingRecoveryArgs) => Promise<PendingRecoveryResult> {
-  const { prepared, authority, inputMode, abortedRef, setInlineResume } = opts;
-  const { ref, active } = prepared.session;
+  const { prepared, inputMode, abortedRef, sink, setInlineResume } = opts;
+  const { ref } = prepared.session;
   const { projectDir, sessionId } = ref;
   const config = prepared.config;
 
@@ -55,109 +107,143 @@ export function createRecoveryDriver(
     controller,
     republishPrompt,
   }: PromptPendingRecoveryArgs): Promise<PendingRecoveryResult> {
-    const loaded = loadPendingRecoveryState(ref, state, authority);
-    if (!loaded.pending) return { shouldRun: true, state: loaded.state };
+    const issue = state.pendingRecovery;
+    if (issue === undefined) return { shouldRun: true, state };
 
-    const bus = createRecoveryBus({
-      projectDir,
-      sessionId,
-      persistTranscript: config.workflow.persistTranscript,
-      sinks: [createTuiSink({ persistTranscript: config.workflow.persistTranscript })],
-    });
+    const bus = createRecoveryBus({ projectDir, sessionId, sink });
+
+    // `revise` carries the operator's words to the planner, so the panel asks for
+    // them before it applies: an empty answer resolves the halt with no note.
+    const promptRecoveryComment = async (action: RecoveryAction): Promise<string> => {
+      if (action !== 'revise' && action !== 'revise-spec') return '';
+      return inputMode.setQuestionMode(
+        action === 'revise-spec'
+          ? 'What should the spec say instead? (enter sends no note)'
+          : 'What should the planner change? (enter sends no note)',
+      );
+    };
 
     const applyAction = (
-      currentState: WorkflowState,
-      action: NonNullable<typeof loaded.issue.selectedAction>,
-    ) => {
-      const currentIssue = currentState.pendingRecovery;
-      const selectedImplementerProfile = currentIssue?.selectedImplementerProfile;
-      const retryProfileOverrideTaskId = recoveryRetryTaskId(currentState);
-      const result = applySelectedRecoveryAction({
+      action: RecoveryAction,
+      answer = '',
+      comment = '',
+    ): PendingRecoveryResult | null => {
+      if (action === 'switch-seat') {
+        const candidate = switchSeatCandidateForAnswer(answer, issue.switchSeat);
+        if (candidate === undefined) {
+          feedbackStore.setError('No other tool is offered for this seat.');
+          openRecoveryNotice(issue);
+          return null;
+        }
+        recoveryNoticeStore.clear();
+        feedbackStore.reset();
+        return {
+          shouldRun: true,
+          state,
+          switchSeat: { candidate, policy: seatSwapPolicy(prepared) },
+        };
+      }
+
+      const retryProfileOverrideTaskId = issue.taskId ?? state.tasks[state.currentTaskIndex]?.id;
+      const result = applyRecoveryAction({
         projectDir,
         sessionId,
-        state: currentState,
+        state,
         action,
         bus,
         config,
-        ...(authority === undefined ? {} : { authority }),
+        mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+        ...(comment.trim() === '' ? {} : { comment }),
       });
 
       setInlineResume(result.state);
 
       if (!result.ok) {
         feedbackStore.setError(result.message);
-        return { shouldRun: false as const, state: result.state };
+        // The engine must stay parked on this halt. Returning shouldRun here re-enters the
+        // workflow with the same pending issue before the operator can choose another action.
+        openRecoveryNotice(issue);
+        return null;
       }
 
+      feedbackStore.reset();
+
       if (result.status === 'paused') {
+        recoveryNoticeStore.clear();
         markWorkflowPaused();
         feedbackStore.setMessage(
           `Recovery paused. Resume with ${SPLITBRIEF_IDENTITY.executable} resume.`,
         );
-        return { shouldRun: false as const, state: result.state };
+        return { shouldRun: false, state: result.state };
       }
 
-      if (result.status === 'aborted') {
-        finalizeRecoveryResult({
-          projectDir,
-          sessionId,
-          active,
-          state: result.state,
-          config,
-          status: result.status,
-        });
-        feedbackStore.setMessage('Workflow aborted.');
-        return { shouldRun: false as const, state: result.state };
+      if (result.status === 'closed') {
+        recoveryNoticeStore.clear();
+        // The close is on the state; the run loop finalizes the session from it —
+        // one summary, one receipt release, through the same path every other
+        // ending takes.
+        feedbackStore.setMessage('Run ended. The files it wrote are still on disk.');
+        return { shouldRun: false, state: result.state };
       }
 
-      const retryProfileOverride = result.implementerProfile ?? selectedImplementerProfile;
-      const retryOverrides =
-        retryProfileOverride !== undefined && result.status === 'retry-current-task'
-          ? {
-              retryProfileOverride,
-              ...(retryProfileOverrideTaskId !== undefined ? { retryProfileOverrideTaskId } : {}),
-            }
-          : {};
-      const nextAuthority =
-        authority === undefined
-          ? undefined
-          : refreshWorkflowAuthority(ref, authority, result.state);
+      recoveryNoticeStore.clear();
+      const retryProfileOverride = result.implementerProfile ?? issue.selectedImplementerProfile;
+      if (retryProfileOverride === undefined || result.status !== 'retry-current-task') {
+        return { shouldRun: true, state: result.state };
+      }
       return {
-        shouldRun: true as const,
+        shouldRun: true,
         state: result.state,
-        ...(nextAuthority === undefined ? {} : { authority: nextAuthority }),
-        ...retryOverrides,
+        retryProfileOverride,
+        ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
       };
     };
 
-    if (loaded.issue.status === 'applying') {
-      const action = loaded.issue.selectedAction;
-      if (action === undefined) {
+    if (issue.status === 'applying') {
+      const selected = issue.selectedAction;
+      if (selected !== undefined) {
+        const applied = applyAction(selected);
+        if (applied !== null) return applied;
+      } else {
         feedbackStore.setError('Recovery is applying but no action is selected.');
-        return { shouldRun: false, state: loaded.state };
       }
-      return applyAction(loaded.state, action);
     }
 
-    if (republishPrompt) publishRecoveryPrompted(bus, loaded.issue);
+    if (republishPrompt) publishRecoveryPrompted(bus, sessionId, issue);
+
+    openRecoveryNotice(issue);
 
     while (true) {
-      const promptLoaded = loadPendingRecoveryState(ref, loaded.state, authority);
-      const promptIssue = promptLoaded.pending ? promptLoaded.issue : loaded.issue;
-      const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(promptIssue));
+      const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));
       if (controller.signal.aborted || abortedRef.current) {
-        return { shouldRun: false, state: loaded.state };
+        return { shouldRun: false, state };
       }
-
-      const latest = loadPendingRecoveryState(ref, loaded.state, authority);
-      if (!latest.pending) return { shouldRun: true, state: latest.state };
-
-      const action = parseRecoveryActionAnswer(answer, latest.issue);
+      let action = parseRecoveryActionAnswer(answer, issue);
+      let correction = '';
+      if (action === null && answer.trim() !== '') {
+        const correctionAction =
+          issue.taskId === undefined && issue.availableActions.includes('retry-same-worker')
+            ? 'retry-same-worker'
+            : issue.availableActions.includes('revise')
+              ? 'revise'
+              : issue.availableActions.includes('revise-spec')
+                ? 'revise-spec'
+                : undefined;
+        if (correctionAction !== undefined) {
+          action = correctionAction;
+          correction = answer;
+        }
+      }
       if (action === null) {
         feedbackStore.setError('Unknown recovery action.');
         continue;
       }
-      return applyAction(latest.state, action);
+      const comment = correction === '' ? await promptRecoveryComment(action) : correction;
+      if (controller.signal.aborted || abortedRef.current) {
+        return { shouldRun: false, state };
+      }
+      const applied = applyAction(action, answer, comment);
+      if (applied !== null) return applied;
     }
   };
 }

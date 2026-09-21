@@ -2,6 +2,13 @@ import type { ReactNode } from 'react';
 import type { RightItemOrVirtual } from './virtual-items.js';
 
 /**
+ * A line of that card. A plain string is prose: at a width that cannot seat it the card truncates
+ * rather than spend a second row on it. A `whole` line is a value — a seat identity, a posture —
+ * which names nothing once it is cut, so it wraps at every width instead.
+ */
+export type TerminalPaneLine = string | Readonly<{ whole: string }>;
+
+/**
  * A left row that answers for itself: the right column becomes a read-only card
  * and Enter commits the row instead of advancing into an empty model column.
  */
@@ -9,7 +16,7 @@ export interface TerminalPane {
   label: string;
   /** The verb the hint promises for Enter on this row. */
   verb: string;
-  lines: string[];
+  lines: TerminalPaneLine[];
 }
 
 /** What Enter does on the highlighted right row. */
@@ -91,6 +98,8 @@ export interface TwoColumnNavState<L, R> {
   terminalPane: TerminalPane | undefined;
   isOnCustomItem: boolean;
   currentRightIsCustom: boolean;
+  moveLeft: (direction: 1 | -1) => void;
+  moveRight: (direction: 1 | -1) => void;
   activateLeft: (index: number) => void;
   activateRight: (index: number) => void;
   cycleRight: (index: number) => CycleOutcome;

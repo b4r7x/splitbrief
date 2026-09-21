@@ -1,5 +1,5 @@
 import type { DetectedModel } from '../../../core/discovery/detection.js';
-import { AUTOMATIC_MODEL } from '../../../core/providers/automatic-model.js';
+import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import {
   isApiProviderId,
   type ApiProviderId,
@@ -8,17 +8,21 @@ import type { KnownModel } from '../../../core/providers/known-models.js';
 import { KNOWN_MODELS } from '../../../core/providers/known-models.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
-import { CLI_TOOL_IDS, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_IDS,
+  isCliToolId,
+  type CliToolId,
+} from '../../../core/runners/cli-tool-catalog.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { ConfiguredProviderRuntime } from '../../detection/provider-outcomes.js';
 import type { ScopedCliCatalogRuntime } from '../../detection/cli-catalog-outcomes.js';
-import {
-  findCatalogModelByIdentity,
-  getModelsForProvider,
-  type ModelsDevProviderId,
-} from '../models-dev.js';
+import { findCatalogModelByIdentity, getModelsForProvider } from '../models-dev.js';
 import type { ClaudeCodeModelOption } from '../../../core/providers/claude-code-options.js';
-import { areExactModelSelectionIdsEqual, splitModelVendorPrefix } from './parsing.js';
+import {
+  areExactModelSelectionIdsEqual,
+  matchesModelsDevId,
+  splitModelVendorPrefix,
+} from './parsing.js';
 import { includes } from '../../../utils/type-guards.js';
 
 export interface ModelCacheAccessor {
@@ -33,9 +37,9 @@ export interface ModelCacheAccessor {
   getScopedProviderRuntime?(
     input: Readonly<{ role: ActiveRunnerRole; provider: ApiProviderId }>,
   ): ConfiguredProviderRuntime | null | undefined;
-  /** Exact role/tool/context CLI membership; null is authoritative absence. */
-  getScopedCliCatalogRuntime?(
-    input: Readonly<{ role: ActiveRunnerRole; tool: CliToolId }>,
+  /** Exact tool/context CLI membership; null is authoritative absence. */
+  getCliCatalogRuntime?(
+    input: Readonly<{ tool: CliToolId }>,
   ): ScopedCliCatalogRuntime | null | undefined;
   /** Claude Code's local `~/.claude.json` option cache; absent means no options. */
   getClaudeCodeModelOptions?(): readonly ClaudeCodeModelOption[];
@@ -57,36 +61,12 @@ export interface RuntimeModelSnapshot {
   readonly isStale: boolean;
 }
 
-interface ModelsDevCatalogSource {
-  readonly provider: ModelsDevProviderId;
-  readonly include?: (modelId: string) => boolean;
-}
-
-const OPENAI_TOOL_MODEL_RE = /^(gpt-|o\d|codex)/i;
-const OPENAI_NON_TOOL_MODEL_RE =
-  /^(text-embedding|gpt-image|whisper|tts-|omni-moderation|text-moderation|dall-e)/i;
-const CLAUDE_CODE_MODEL_RE = /^claude-(sonnet|opus|haiku|fable)-/i;
-
-const TOOL_MODELS_DEV_SOURCES: Partial<Record<ProviderId, readonly ModelsDevCatalogSource[]>> = {
-  'claude-code': [
-    { provider: 'anthropic', include: (modelId) => CLAUDE_CODE_MODEL_RE.test(modelId) },
-  ],
-  codex: [
-    {
-      provider: 'openai',
-      include: (modelId) =>
-        OPENAI_TOOL_MODEL_RE.test(modelId) && !OPENAI_NON_TOOL_MODEL_RE.test(modelId),
-    },
-  ],
-  copilot: [{ provider: 'copilot' }],
-  opencode: [{ provider: 'opencode' }],
-  'kilo-code': [{ provider: 'kilo-code' }],
-};
-
-function getModelsDevSources(providerId: ProviderId): readonly ModelsDevCatalogSource[] {
-  return TOOL_MODELS_DEV_SOURCES[providerId] ?? [{ provider: providerId }];
-}
-
+/**
+ * Shared by both lookup lanes, so both read through the `[1m]`/`[2m]` window suffix:
+ * `resolveExactModelsDevModel` over models.dev entries and `resolveExactRuntimeModel` over a
+ * runner's own listing. No listing ships a bracketed id today; one carrying both `x` and
+ * `x[1m]` would match twice and resolve as `ambiguous` rather than picking a side.
+ */
 function exactLookup(
   input: Readonly<{
     entries: readonly DetectedModel[];
@@ -96,7 +76,7 @@ function exactLookup(
 ): ExactModelLookup {
   const matches = input.entries.filter(
     (entry) =>
-      areExactModelSelectionIdsEqual({ left: entry.id, right: input.selectionId }) &&
+      matchesModelsDevId({ left: entry.id, right: input.selectionId }) &&
       (input.sourceProviderId === undefined || entry.providerId === input.sourceProviderId),
   );
   if (matches.length === 0) return { kind: 'not-found' };
@@ -134,8 +114,8 @@ export function getScopedRuntimeSnapshot(
 ): RuntimeModelSnapshot | undefined {
   if (input.role === undefined) return undefined;
   const cliTool = scopedCliTool(input.providerId);
-  if (cliTool !== null && input.cache.getScopedCliCatalogRuntime !== undefined) {
-    const runtime = input.cache.getScopedCliCatalogRuntime({ role: input.role, tool: cliTool });
+  if (cliTool !== null && input.cache.getCliCatalogRuntime !== undefined) {
+    const runtime = input.cache.getCliCatalogRuntime({ tool: cliTool });
     if (runtime === undefined) return undefined;
     return {
       providerId: cliTool,
@@ -178,18 +158,10 @@ export function getModelsDevEntries(
   providerId: ProviderId,
   cache: ModelCacheAccessor,
 ): DetectedModel[] {
+  if (isCliToolId(providerId)) return [];
   const catalog = cache.getModelsDevCatalog();
   if (!catalog) return [];
-
-  const entries = new Map<string, DetectedModel>();
-  for (const source of getModelsDevSources(providerId)) {
-    for (const entry of getModelsForProvider(catalog, source.provider)) {
-      if (source.include !== undefined && !source.include(entry.id)) continue;
-      const owner = entry.providerId ?? source.provider;
-      entries.set(`${owner}\u0000${entry.id}`, entry);
-    }
-  }
-  return [...entries.values()];
+  return getModelsForProvider(catalog, providerId);
 }
 
 export function resolveExactModelsDevModel(
@@ -297,12 +269,11 @@ function getDefaultKnownModel(providerId: ProviderId): KnownModel | undefined {
   return getBundledModels(providerId).find((entry) => entry.isDefault);
 }
 
-function isAutomaticSelection(modelId: string | undefined): boolean {
-  return modelId === AUTOMATIC_MODEL;
-}
-
 export function getEffectiveModelId(providerId: ProviderId, modelId?: string): string | undefined {
-  if (modelId !== undefined && modelId.trim() !== '' && !isAutomaticSelection(modelId)) {
+  // Provider-aware: claude-code's legacy `default` alias means automatic too, so a seat still
+  // carrying it must not be resolved as a model literally named `default`. A provider-blind
+  // comparison here left such a seat with no context window at all once the `default` row went.
+  if (modelId !== undefined && modelId.trim() !== '' && !isAutomaticModel(modelId, providerId)) {
     return modelId;
   }
 

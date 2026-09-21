@@ -9,7 +9,7 @@ import { conversationScrollStore } from '../../../stores/workflow/conversation-s
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { PROMPT_ZONE_Z } from '../components/approval-prompt.js';
-import { RAIL_STAGES } from '../layout/chrome-rows.js';
+import { RAIL_STAGES } from '../../../core/rail-stages.js';
 import { hitBriefTaskRow, hitRailStage, hitTranscriptRow } from '../layout/hit-test.js';
 import {
   readBriefListSnapshot,
@@ -69,7 +69,7 @@ function scrollToRailStage(stageIndex: number): void {
   const target = activeIndex >= RAIL_STAGES.length ? RAIL_STAGES.length - 1 : activeIndex;
   const snapshot = readConversationScrollSnapshot();
   conversationScrollStore.scrollToBottom(snapshot.renderableCount);
-  // The transcript runs oldest to newest while the rail runs Plan to Verify: stage 0 anchors to the top
+  // The transcript runs oldest to newest while the rail runs Plan to Review: stage 0 anchors to the top
   // (maxOffset), the current stage to the just-set bottom. An in-between stage lands proportionally
   // on its slice of the transcript instead of collapsing every click to top-or-bottom.
   if (stageIndex >= target) return;

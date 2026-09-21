@@ -1,11 +1,24 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
-import { symlinkSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmod, mkdtemp, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
+import { type Dirent, symlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { simpleGit } from 'simple-git';
 import { collectTrackedFiles, hashFile } from './files.js';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, readdir: vi.fn(actual.readdir) };
+});
+
+function fakeDirent(name: string, kind: 'file' | 'dir'): Dirent<NonSharedBuffer> {
+  return {
+    name,
+    isDirectory: () => kind === 'dir',
+    isSymbolicLink: () => false,
+  } as unknown as Dirent<NonSharedBuffer>;
+}
 
 let tmp: string;
 
@@ -52,6 +65,48 @@ describe('collectTrackedFiles', () => {
     expect(files.some((f) => f.startsWith('.splitbrief/'))).toBe(false);
     expect(files.some((f) => f.startsWith('node_modules/'))).toBe(false);
     expect(files).toContain('src.ts');
+  });
+
+  it('excludes .git/, .splitbrief/, and node_modules/ at any depth', async () => {
+    await mkdir(join(tmp, 'packages', 'app', 'node_modules', 'foo'), { recursive: true });
+    await mkdir(join(tmp, 'packages', 'app', '.git'), { recursive: true });
+    await mkdir(join(tmp, 'packages', 'app', '.splitbrief'), { recursive: true });
+    await writeFile(join(tmp, 'packages', 'app', 'node_modules', 'foo', 'index.js'), '');
+    await writeFile(join(tmp, 'packages', 'app', '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    await writeFile(join(tmp, 'packages', 'app', '.splitbrief', 'state.json'), '{}');
+    await writeFile(join(tmp, 'packages', 'app', 'src.ts'), 'export {}');
+
+    const files = await collectTrackedFiles(tmp);
+    expect(files).toEqual(['packages/app/src.ts']);
+  });
+
+  it('never enters a directory the project ignores', async () => {
+    await initGitRepo(tmp);
+    await writeFile(join(tmp, '.gitignore'), 'target/\n');
+    await mkdir(join(tmp, 'target', 'deep'), { recursive: true });
+    await writeFile(join(tmp, 'target', 'deep', 'artifact.bin'), '');
+    await writeFile(join(tmp, 'main.rs'), 'fn main() {}');
+    // Unreadable: descending into it would throw instead of being filtered later.
+    await chmod(join(tmp, 'target'), 0o000);
+    try {
+      const files = await collectTrackedFiles(tmp);
+      expect(files).toContain('main.rs');
+      expect(files.some((file) => file.startsWith('target/'))).toBe(false);
+    } finally {
+      await chmod(join(tmp, 'target'), 0o700);
+    }
+  });
+
+  it('collects a directory with more entries than one spread argument list holds', async () => {
+    await initGitRepo(tmp);
+    const big = Array.from({ length: 200_000 }, (_, index) => fakeDirent(`f${index}`, 'file'));
+    vi.mocked(readdir)
+      .mockImplementationOnce(async () => [fakeDirent('big', 'dir')])
+      .mockImplementationOnce(async () => big);
+
+    const files = await collectTrackedFiles(tmp);
+    expect(files).toHaveLength(big.length);
+    expect(files[0]).toBe('big/f0');
   });
 
   it('excludes paths matched by .gitignore directory patterns', async () => {

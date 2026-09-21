@@ -3,7 +3,7 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runLocalRetries } from './local-retries.js';
-import { FULL_TIER, HINT_TIER, INTERMEDIATE_TIER, runEscalationTier } from './tier.js';
+import { HINT_TIER, INTERMEDIATE_TIER, runEscalationTier } from './tier.js';
 import type { EscalationContext, RetryResult, RetryStepOutcome } from './types.js';
 import { failedRetry } from './types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
@@ -13,9 +13,11 @@ import {
   buildRetryExhaustedRecoveryIssue,
   buildRunnerUnauthenticatedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
+  recoveryBuilderForRunnerOutcome,
   routeBiggerProfileFromDecision,
 } from '../recovery/builders/task.js';
 import { raisePendingRecovery } from '../state-ops.js';
+import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { nowIso } from '../../../utils/format-time.js';
 
 type HandleRetryOptions = {
@@ -28,12 +30,13 @@ type HandleRetryOptions = {
   dependsOnFiles?: string[];
   profileOverride?: string | undefined;
   profileOverrideTaskId?: TaskId | undefined;
+  undeclaredWrites?: 'reject' | 'gate' | undefined;
 };
 
 /**
- * A signed-out runner halts the ladder: the next tier would silently hand
- * the task to the planner at planner prices, which is exactly the failure
- * an expired login must not cause. Raise the login recovery and stop.
+ * A signed-out runner halts the ladder: the next rung would spend a planner
+ * call on a brief no retry can land until the login is fixed. Raise the login
+ * recovery and stop.
  */
 function unauthenticatedHalt(
   ctx: EscalationContext,
@@ -64,19 +67,24 @@ function unauthenticatedHalt(
 
 /**
  * A quota-exhausted runner halts the ladder for the same reason a signed-out
- * one does — the next tier would silently do implementer work at planner
- * prices. The recovery names the reset time when the tool reported one and
- * offers the profile switch instead of a pointless re-login.
+ * one does — the next rung would spend a planner call on a retry the quota
+ * blocks anyway. The recovery names the reset time when the tool reported one
+ * and offers the profile switch instead of a pointless re-login.
  */
-function usageLimitHalt(
+async function usageLimitHalt(
   ctx: EscalationContext,
   task: Task,
   stepOutcome: RetryStepOutcome,
-): { state: WorkflowState; result: RetryResult } | null {
+): Promise<{ state: WorkflowState; result: RetryResult } | null> {
   const failure = stepOutcome.lastFailure;
   if (failure?.outcome !== 'usage-limit') return null;
   const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
   const routeBiggerProfile = routeBiggerProfileFromDecision(ctx.routingDecision);
+  const seatSwap = await loadSeatSwapContext({
+    projectDir: ctx.projectDir,
+    seat: 'build',
+    runner: failure.runner,
+  });
   const issue = buildRunnerUsageLimitRecoveryIssue({
     task,
     phase: stepOutcome.state.phase,
@@ -86,6 +94,7 @@ function usageLimitHalt(
     maxAttempts: ctx.config.workflow.maxRetries,
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
     ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
+    ...(seatSwap !== undefined && { seatSwap }),
     createdAt: nowIso(),
   });
   publishError({
@@ -97,12 +106,56 @@ function usageLimitHalt(
   return { state: nextState, result: failedRetry(stepOutcome.attempts) };
 }
 
-function runnerHalt(
+/**
+ * An outcome the recovery builders recognise as a runner defect halts the
+ * ladder for the same reason the auth and quota halts do — the next rung would
+ * pay a planner call to hint around the same defect.
+ */
+async function runnerDefectHalt(
   ctx: EscalationContext,
   task: Task,
   stepOutcome: RetryStepOutcome,
-): { state: WorkflowState; result: RetryResult } | null {
-  return unauthenticatedHalt(ctx, task, stepOutcome) ?? usageLimitHalt(ctx, task, stepOutcome);
+): Promise<{ state: WorkflowState; result: RetryResult } | null> {
+  const failure = stepOutcome.lastFailure;
+  if (failure === undefined) return null;
+  const build = recoveryBuilderForRunnerOutcome(failure.outcome);
+  if (build === undefined) return null;
+  const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
+  const routeBiggerProfile = routeBiggerProfileFromDecision(ctx.routingDecision);
+  const seatSwap = await loadSeatSwapContext({
+    projectDir: ctx.projectDir,
+    seat: 'build',
+    runner: failure.runner,
+  });
+  const issue = build({
+    task,
+    phase: stepOutcome.state.phase,
+    runner: failure.runner,
+    toolMessage: stepOutcome.lastError,
+    attempts: stepOutcome.attempts,
+    maxAttempts: ctx.config.workflow.maxRetries,
+    ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
+    ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
+    ...(seatSwap !== undefined && { seatSwap }),
+    createdAt: nowIso(),
+  });
+  publishError({ bus: ctx.bus, phase: stepOutcome.state.phase, message: issue.message });
+  return {
+    state: raisePendingRecovery(ctx, stepOutcome.state, issue),
+    result: failedRetry(stepOutcome.attempts),
+  };
+}
+
+async function runnerHalt(
+  ctx: EscalationContext,
+  task: Task,
+  stepOutcome: RetryStepOutcome,
+): Promise<{ state: WorkflowState; result: RetryResult } | null> {
+  const unauthenticated = unauthenticatedHalt(ctx, task, stepOutcome);
+  if (unauthenticated) return unauthenticated;
+  const defect = await runnerDefectHalt(ctx, task, stepOutcome);
+  if (defect) return defect;
+  return usageLimitHalt(ctx, task, stepOutcome);
 }
 
 export async function handleRetryAndEscalation(
@@ -131,6 +184,7 @@ export async function handleRetryAndEscalation(
     ...(opts.profileOverrideTaskId !== undefined && {
       retryProfileOverrideTaskId: opts.profileOverrideTaskId,
     }),
+    ...(opts.undeclaredWrites !== undefined && { undeclaredWrites: opts.undeclaredWrites }),
   };
 
   const retries = await runLocalRetries({
@@ -147,7 +201,7 @@ export async function handleRetryAndEscalation(
       result: failedRetry(retries.attempts),
     };
 
-  const retriesHalt = runnerHalt(ctx, retries.task, retries);
+  const retriesHalt = await runnerHalt(ctx, retries.task, retries);
   if (retriesHalt) return retriesHalt;
 
   if (ctx.config.hooks) {
@@ -203,7 +257,7 @@ export async function handleRetryAndEscalation(
       result: failedRetry(tier0.attempts),
     };
 
-  const tier0Halt = runnerHalt(ctx, tier0.task, tier0);
+  const tier0Halt = await runnerHalt(ctx, tier0.task, tier0);
   if (tier0Halt) return tier0Halt;
 
   const tier1 = await runEscalationTier(HINT_TIER, {
@@ -221,18 +275,11 @@ export async function handleRetryAndEscalation(
       result: failedRetry(tier1.attempts),
     };
 
-  const tier1Halt = runnerHalt(ctx, tier1.task, tier1);
+  const tier1Halt = await runnerHalt(ctx, tier1.task, tier1);
   if (tier1Halt) return tier1Halt;
 
-  const tier2 = await runEscalationTier(FULL_TIER, {
-    ctx,
-    task: tier1.task,
-    state: tier1.state,
-    lastError: tier1.lastError,
-    priorAttempts: tier1.attempts,
-  });
-  return {
-    state: tier2.state,
-    result: tier2.result ?? failedRetry(tier2.attempts),
-  };
+  // The hint rung is the last one: the planner advises, it never takes the
+  // brief over and writes the code itself. Exhaustion hands the brief to the
+  // retry-exhausted recovery with the attempts the implementer actually spent.
+  return { state: tier1.state, result: failedRetry(tier1.attempts) };
 }

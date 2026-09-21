@@ -1,55 +1,42 @@
-import { join } from 'node:path';
 import { setupWorkflow } from '../../setup.js';
 import { initStores } from '../../init-stores.js';
 import { renderApp } from '../../render/app.js';
 import { cliError } from '../../errors.js';
-import { assertNotWindows } from '../../windows-guard.js';
-import { checkServerStatus } from '../../../engine/ipc/lockfile.js';
-import { printCrashDiagnostic } from '../../crash-diagnostic.js';
-import { sessionDir, IPC_SOCK_FILE } from '../../../core/paths.js';
-import { loadOwnerWorkflowState } from '../../../core/state/resume-hydration.js';
-import { assertModeFlagsExclusive, assertWorktreeStartOnly } from '../../options.js';
-import { assertAttachOwner, assertServerIdentity, renderAttachClient } from '../attach.js';
+import { loadRunRecord } from '../../../core/sessions/run-record.js';
+import { defaultRunRecordDeps } from '../../../core/sessions/run-record-io.js';
 import { runHeadless } from '../../headless.js';
-import { runRpc } from '../../rpc/run/host.js';
 import { resolveSessionAlias } from '../../sessions/aliases.js';
-import { findSingleRunningSession } from '../../sessions/single-running.js';
 import { assertSessionExists } from '../../sessions/resolve.js';
 import { readActive } from '../../../core/sessions/active-pointer.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
-import type { SessionRef } from '../../../core/types/session-ref.js';
-import type { assertStateAuthority, readStateAuthority } from '../../../core/state/authority.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { RecoveryActionOption } from '../../options.js';
+import { resolveRunConfig } from '../../build-overrides.js';
+import { createEventBus } from '../../../engine/events/bus.js';
+import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions.js';
 import { resumeSavedSession } from './resume.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 
 export interface ContinueDeps {
-  checkServerStatus: typeof checkServerStatus;
   initStores: typeof initStores;
   renderApp: typeof renderApp;
   runHeadless: typeof runHeadless;
-  runRpc: typeof runRpc;
   setupWorkflow: typeof setupWorkflow;
-  printCrashDiagnostic: typeof printCrashDiagnostic;
   prepareExecution: typeof prepareExecution;
-  readStateAuthority?: typeof readStateAuthority;
-  assertStateAuthority?: typeof assertStateAuthority;
 }
 
 export const defaultContinueDeps: ContinueDeps = {
-  checkServerStatus,
   initStores,
   renderApp,
   runHeadless,
-  runRpc,
   setupWorkflow,
-  printCrashDiagnostic,
   prepareExecution,
 };
 
 async function resolveTargetSession(
   sessionInput: string | undefined,
   projectDir: string,
-  deps: ContinueDeps,
 ): Promise<string> {
   const resolved = await resolveSessionAlias(sessionInput, projectDir);
   if (resolved !== undefined) {
@@ -60,70 +47,50 @@ async function resolveTargetSession(
   const active = readActive(projectDir);
   if (active) return active;
 
-  const result = await findSingleRunningSession(projectDir, deps);
-  if (result.kind === 'single') return result.id;
-  if (result.kind === 'multiple') {
-    throw cliError(
-      `multiple sessions found (${result.ids.join(', ')}); pass a session ID or use \`splitbrief ps\` to list them.`,
-      1,
-    );
-  }
   throw cliError('no session to continue; start one with `splitbrief start`.', 1);
+}
+
+type ContinueOpts = { projectDir: string } & WorkflowOpts & {
+    action?: RecoveryActionOption | undefined;
+  };
+
+/**
+ * `--action` answers the pending recovery before the run re-enters: the same
+ * transition the TUI panel applies, taken from the resume line an earlier halt
+ * printed. A blocked action is the operator's error, not the run's.
+ */
+function applyPendingRecoveryAction(args: {
+  sessionId: string;
+  state: WorkflowState;
+  action: RecoveryActionOption;
+  opts: ContinueOpts;
+}): { state: WorkflowState; config?: Config } {
+  const projectDir = args.opts.projectDir;
+  const result = applyRecoveryAction({
+    projectDir,
+    sessionId: args.sessionId,
+    state: args.state,
+    action: args.action.action,
+    bus: createEventBus(),
+    config: resolveRunConfig({ projectDir, opts: args.opts }),
+    ...(args.action.candidate !== undefined && { candidate: args.action.candidate }),
+  });
+  if (!result.ok) throw cliError(result.message, 1);
+  return {
+    state: result.state,
+    ...(result.switchedConfig !== undefined && { config: result.switchedConfig }),
+  };
 }
 
 export async function continueCommand(
   sessionInput: string | undefined,
-  opts: { projectDir: string } & WorkflowOpts,
+  opts: ContinueOpts,
   deps: ContinueDeps = defaultContinueDeps,
 ): Promise<void> {
-  assertModeFlagsExclusive(opts);
-  assertWorktreeStartOnly(opts);
+  const sessionId = await resolveTargetSession(sessionInput, opts.projectDir);
 
-  const sessionId = await resolveTargetSession(sessionInput, opts.projectDir, deps);
-  const sessDir = sessionDir(opts.projectDir, sessionId);
-
-  const status = await deps.checkServerStatus(sessDir);
-
-  if (status.alive) {
-    assertNotWindows();
-    if (opts.rpc) throw cliError('--rpc cannot attach to a running detached session yet.');
-    const ref: SessionRef = { projectDir: opts.projectDir, sessionId };
-    const authority = assertAttachOwner(ref, {
-      ...(deps.readStateAuthority !== undefined && {
-        readStateAuthority: deps.readStateAuthority,
-      }),
-      ...(deps.assertStateAuthority !== undefined && {
-        assertStateAuthority: deps.assertStateAuthority,
-      }),
-    });
-    const server = assertServerIdentity(sessionId, status, authority);
-    const { useFullscreen, useMouse, useHover } = await deps.setupWorkflow(opts);
-    await renderAttachClient(
-      {
-        projectDir: opts.projectDir,
-        sessionId,
-        feature: server.feature,
-        sockPath: join(sessDir, IPC_SOCK_FILE),
-        authToken: server.authToken,
-      },
-      deps,
-      { fullscreen: useFullscreen, mouse: useMouse, hover: useHover },
-    );
-    return;
-  }
-
-  if (status.processAlive) {
-    throw cliError(
-      `server process ${status.data?.pid} exists but is unresponsive — kill it first`,
-      1,
-    );
-  }
-
-  if (status.crashed) {
-    await deps.printCrashDiagnostic(sessDir, status);
-  }
-
-  const hydrated = loadOwnerWorkflowState({ projectDir: opts.projectDir, sessionId });
+  const record = loadRunRecord({ projectDir: opts.projectDir, sessionId }, defaultRunRecordDeps());
+  const hydrated = record.hydration;
 
   if (hydrated.kind === 'invalid') {
     throw cliError(
@@ -139,11 +106,33 @@ export async function continueCommand(
     );
   }
 
+  if (record.status.kind === 'running') {
+    throw cliError(`session '${sessionId}' is still running — stop it before continuing.`, 1);
+  }
+
+  const resumed =
+    opts.action === undefined
+      ? { state: hydrated.state }
+      : applyPendingRecoveryAction({
+          sessionId,
+          state: hydrated.state,
+          action: opts.action,
+          opts,
+        });
+
+  // `end-run` is the one action that does not carry the run on: the close is
+  // recorded and there is nothing left to re-enter.
+  if (resumed.state.closed !== undefined) {
+    console.log(`Run ${sessionId} closed. The files it wrote are still on disk.`);
+    return;
+  }
+
   await resumeSavedSession({
     projectDir: opts.projectDir,
     sessionId,
-    state: hydrated.state,
+    state: resumed.state,
     opts,
+    ...(resumed.config !== undefined && { config: resumed.config }),
     deps,
   });
 }

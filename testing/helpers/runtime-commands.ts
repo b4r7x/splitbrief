@@ -16,6 +16,8 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     navigate: noop,
     quit: noop,
     setWorkflowMode: noopSaved,
+    getWorkflowMode: () => 'standard',
+    prefillComposer: noop,
     setFeedbackMessage: noop,
     setFeedbackError: noop,
     refreshDetection: async () => ({
@@ -30,21 +32,21 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     refreshProjectFiles: noop,
     listSkills: () => [],
     toggleSkill: () => ({ status: 'unknown' as const }),
-    refreshSkills: noop,
+    refreshSkills: async () => {},
     getCurrentPhase: () => 'idle',
     requestRewind: noopTrue,
     requestTaskRedo: noopTrue,
+    resumeRun: noopTrue,
+    endRun: noopTrue,
     getQueueDepth: () => 0,
     clearQueue: () => ({ status: 'cleared', count: 0 }),
     attachImage: () => ({ ok: false, reason: 'not-image' }),
     detachImage: () => false,
     listAttachments: () => [],
-    writeHandoff: async () => ({ outputDir: '/fake' }),
     listApprovals: () => [],
     clearApprovals: () => 0,
-    getApprovalEnabled: () => true,
-    setApprovalEnabled: noop,
     acceptRunSnapshot: async () => ({ snapshotId: 'snap-accepted', isFirstSnapshot: false }),
+    refreshRun: noop,
     rejectRunSnapshot: async () => ({
       status: 'rejected',
       snapshotId: 'snap-run',
@@ -53,11 +55,10 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
       conflictedPaths: [],
       missingSnapshotFiles: [],
     }),
-    compactTranscript: async () => ({ status: 'compacted', summary: 'summary', entriesRemoved: 3 }),
-    exportSession: async () => ({ status: 'ok', path: '/fake/report.html' }),
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
     toggleLatestDiff: () => ({ status: 'toggled', expanded: true }),
+    listBriefs: () => [],
     toggleSidebar: () => ({ status: 'toggled', visible: true }),
     copyTarget: async () => 'empty',
     ...overrides,
@@ -67,14 +68,13 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
 export function runCommandInTest(args: {
   commands: RuntimeCommandDef[];
   raw: string;
-  screen: 'home' | 'workflow' | 'summary' | 'setup';
+  screen: 'home' | 'workflow' | 'setup';
   phase?: Phase;
   onError: (msg: string) => void;
 }): Promise<void> {
   return executeRuntimeCommand(args.commands, args.raw, {
     screen: args.screen,
     phase: args.phase ?? 'idle',
-    attached: false,
     plannerSupportsImages: true,
     onError: args.onError,
   });

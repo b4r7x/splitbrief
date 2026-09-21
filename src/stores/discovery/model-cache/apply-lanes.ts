@@ -2,6 +2,7 @@ import type { ProviderDetection } from '../../../core/discovery/detection.js';
 import { PROVIDER_IDS, type ProviderId } from '../../../core/schemas/enums.js';
 import type { DetectionLanePublication } from '../../../engine/detection/lane-channel.js';
 import type { ModelsDevRefreshOutcome } from '../../../engine/detection/models-dev-lane.js';
+import type { ConfiguredProviderConnection } from '../../../engine/detection/provider-outcomes.js';
 import type {
   CliModelSnapshot,
   DetectionProjection,
@@ -61,9 +62,10 @@ function staleProviderModelCaches(
 }
 
 /**
- * A context change invalidates authority, not memory. Rows are keyed by
- * role + tool, so a remembered `implementer/opencode` catalog is still the right
- * data for `implementer/opencode` after the *planner* changes, and the models.dev
+ * A context change invalidates authority, not memory. CLI catalog rows are
+ * keyed by tool and executable context, and provider rows by full connection, so a
+ * remembered `opencode` catalog is still the right data for `opencode` after
+ * the *planner* changes, and the models.dev
  * catalog never depended on the runner context at all. Demote everything the new
  * context has not re-probed instead of dropping it, so the last known catalog
  * stays on screen while the lanes run. A `failed` row is the exception: it is a
@@ -73,10 +75,19 @@ function staleProviderModelCaches(
 export function demotedForContextChange(
   current: ModelCacheState,
   observedAt: number,
+  configuredConnections?: readonly ConfiguredProviderConnection[],
 ): ModelCacheState {
   const providerOutcomes = staleConfiguredProviderRuntimes({
     previous: configuredProviderValues(current.configuredProviders).filter(
-      (runtime) => runtime.state !== 'failed',
+      (runtime) =>
+        runtime.state !== 'failed' &&
+        (configuredConnections === undefined ||
+          configuredConnections.some(
+            (connection) =>
+              connection.role === runtime.connection.role &&
+              connection.provider === runtime.connection.provider &&
+              connection.contextKey === runtime.connection.contextKey,
+          )),
     ),
     observedAt,
   });

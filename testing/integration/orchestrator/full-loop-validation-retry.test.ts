@@ -10,6 +10,8 @@ import {
   makeImplementer,
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -83,14 +85,15 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
     });
 
     const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Spec\n\nCreate a retry-validated module.',
-        plan: '# Plan\n\nCreate the module and pass validation.',
-        tasks: [task],
-        usage: { inputTokens: 140, outputTokens: 90 },
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          usage: { inputTokens: 140, outputTokens: 90 },
+          ...(call === 'tasks' ? { tasks: [task] } : {}),
+        }),
+      ),
       review: vi.fn().mockResolvedValue({
-        text: '# Final review\n\nValidation passed after one local retry.',
+        text: '# Final review\n\nValidation passed after one local retry.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },
       }),
     });
@@ -140,7 +143,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         mode: 'standard',
         approve: 'none',
         maxRetries: 1,
-        persistTranscript: true,
       },
     });
     const summary = await runWorkflow({
@@ -210,12 +212,13 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
     });
 
     const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Spec\n\nCreate a module with hint escalation.',
-        plan: '# Plan\n\nCreate the module and fix it with a hint when needed.',
-        tasks: [task],
-        usage: { inputTokens: 140, outputTokens: 90 },
-      }),
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          usage: { inputTokens: 140, outputTokens: 90 },
+          ...(call === 'tasks' ? { tasks: [task] } : {}),
+        }),
+      ),
       escalateHint: vi.fn().mockResolvedValue({
         success: true,
         output: 'Use the from-retry marker expected by validate.mjs.',
@@ -223,7 +226,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         usage: { inputTokens: 50, outputTokens: 20 },
       }),
       review: vi.fn().mockResolvedValue({
-        text: '# Final review\n\nHint escalation produced a passing implementation.',
+        text: '# Final review\n\nHint escalation produced a passing implementation.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },
       }),
     });
@@ -279,7 +282,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         mode: 'standard',
         approve: 'none',
         maxRetries: 1,
-        persistTranscript: true,
       },
     });
     const summary = await runWorkflow({

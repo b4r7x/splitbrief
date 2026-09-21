@@ -9,6 +9,9 @@ import {
   renameSync,
   realpathSync,
   rmSync,
+  openSync,
+  readSync,
+  closeSync,
 } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { readFile, lstat, writeFile, rename, rm } from 'node:fs/promises';
@@ -50,13 +53,6 @@ export const fsError = {
   symlinkWrite: (filePath: string) =>
     error('fs-symlink-write', `refusing to write through symlink: ${filePath}`, { filePath }),
   isSymlinkWrite: matches('fs-symlink-write'),
-  sockPathTooLong: (sockPath: string, bytes: number, maxBytes: number) =>
-    error(
-      'fs-sock-path-too-long',
-      `IPC socket path is ${bytes} bytes, exceeding the ${maxBytes}-byte unix-domain limit: ${sockPath}. Use a shorter project directory or worktree name.`,
-      { sockPath, bytes, maxBytes },
-    ),
-  isSockPathTooLong: matches('fs-sock-path-too-long'),
 } as const;
 
 export function rejectSymlinkTarget(filePath: string): void {
@@ -196,6 +192,35 @@ export function readJsonl<T>(
     if (parsed !== null) results.push(parsed);
   }
   return results;
+}
+
+/**
+ * Every line of a file, without holding the file in memory. The synchronous
+ * summary paths cannot await the streaming reader in core/sessions, and a
+ * session log is the one file large enough for the difference to matter.
+ */
+export function forEachLineSync(filePath: string, onLine: (line: string) => void): void {
+  const fd = openSync(filePath, 'r');
+  const buffer = Buffer.alloc(64 * 1024);
+  let leftover = '';
+  try {
+    let bytesRead = readSync(fd, buffer, 0, buffer.length, null);
+    while (bytesRead > 0) {
+      const chunk = leftover + buffer.toString('utf8', 0, bytesRead);
+      let start = 0;
+      for (let i = 0; i < chunk.length; i++) {
+        if (chunk.charCodeAt(i) === 10) {
+          onLine(chunk.slice(start, i));
+          start = i + 1;
+        }
+      }
+      leftover = chunk.slice(start);
+      bytesRead = readSync(fd, buffer, 0, buffer.length, null);
+    }
+    if (leftover.length > 0) onLine(leftover);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export type JsonlLine =

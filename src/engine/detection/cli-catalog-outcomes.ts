@@ -2,15 +2,13 @@ import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import { CliExecutableReceiptSchema, type DetectedModel } from '../../core/discovery/detection.js';
 import type { ProbeOutcome, ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
 import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
-import type { RunnerRole } from '../../core/runners/seat-roles.js';
 
 /**
- * A catalog belongs to a single selected runner, not merely to a CLI name.
+ * A catalog belongs to one CLI executable, not to a seat.
  * `contextKey` is opaque: the executable receipt stays in this module's
  * process-local token table and is never returned, logged, or persisted.
  */
 export interface ScopedCliCatalogConnection {
-  readonly role: RunnerRole;
   readonly tool: CliToolId;
   readonly contextKey: string;
 }
@@ -59,7 +57,6 @@ function opaqueExecutableToken(executable: unknown): string | null {
  */
 export function scopedCliCatalogConnection(
   input: Readonly<{
-    role: RunnerRole;
     tool: CliToolId;
     runnerContextKey: string;
     /** Parsed as a rich receipt at this privacy boundary; legacy identities never qualify. */
@@ -69,20 +66,19 @@ export function scopedCliCatalogConnection(
   const executableToken =
     input.executable === undefined ? undefined : opaqueExecutableToken(input.executable);
   return {
-    role: input.role,
     tool: input.tool,
     contextKey: `${input.runnerContextKey}|${executableToken ?? 'cli-executable-unresolved'}`,
   };
 }
 
-export function scopedCliCatalogRoleKey(
-  connection: Pick<ScopedCliCatalogConnection, 'role' | 'tool'>,
+export function scopedCliCatalogToolKey(
+  connection: Pick<ScopedCliCatalogConnection, 'tool'>,
 ): string {
-  return `${connection.role}\u0000${connection.tool}`;
+  return connection.tool;
 }
 
 export function scopedCliCatalogConnectionKey(connection: ScopedCliCatalogConnection): string {
-  return `${scopedCliCatalogRoleKey(connection)}\u0000${connection.contextKey}`;
+  return `${scopedCliCatalogToolKey(connection)}\u0000${connection.contextKey}`;
 }
 
 function cloneConnection(connection: ScopedCliCatalogConnection): ScopedCliCatalogConnection {
@@ -160,7 +156,7 @@ function failedRuntime(
 }
 
 /**
- * Reconciles each full role/tool/context connection independently. A failure
+ * Reconciles each full tool/context connection independently. A failure
  * can retain only that exact connection's earlier models; a valid empty
  * success is therefore authoritative for exactly one connection.
  */
@@ -171,8 +167,8 @@ export function reconcileScopedCliCatalogAttempts(
     observedAt: number;
   }>,
 ): ScopedCliCatalogRuntime[] {
-  const observedRoleKeys = new Set(
-    input.attempts.map((attempt) => scopedCliCatalogRoleKey(attempt.connection)),
+  const observedToolKeys = new Set(
+    input.attempts.map((attempt) => scopedCliCatalogToolKey(attempt.connection)),
   );
   const observedConnectionKeys = new Set(
     input.attempts.map((attempt) => scopedCliCatalogConnectionKey(attempt.connection)),
@@ -183,9 +179,9 @@ export function reconcileScopedCliCatalogAttempts(
   const next = new Map(
     input.previous
       .filter((runtime) => {
-        const roleKey = scopedCliCatalogRoleKey(runtime.connection);
+        const toolKey = scopedCliCatalogToolKey(runtime.connection);
         return (
-          !observedRoleKeys.has(roleKey) ||
+          !observedToolKeys.has(toolKey) ||
           observedConnectionKeys.has(scopedCliCatalogConnectionKey(runtime.connection))
         );
       })
@@ -212,22 +208,8 @@ export function reconcileScopedCliCatalogAttempts(
   return [...next.values()].map(cloneScopedCliCatalogRuntime);
 }
 
-/** Returns null for both no exact entry and an ambiguous generic lookup. */
-export function findScopedCliCatalogRuntime(
-  runtimes: readonly ScopedCliCatalogRuntime[],
-  connection: Pick<ScopedCliCatalogConnection, 'role' | 'tool'>,
-): ScopedCliCatalogRuntime | null {
-  const roleKey = scopedCliCatalogRoleKey(connection);
-  const matches = runtimes.filter(
-    (runtime) => scopedCliCatalogRoleKey(runtime.connection) === roleKey,
-  );
-  return matches.length === 1 && matches[0] !== undefined
-    ? cloneScopedCliCatalogRuntime(matches[0])
-    : null;
-}
-
-/** Generic tool lookup is valid only when there is exactly one unambiguous row. */
-export function findGenericCliCatalogRuntime(
+/** Returns null for both no entry and an ambiguous lookup across two executables. */
+export function findCliCatalogRuntime(
   runtimes: readonly ScopedCliCatalogRuntime[],
   tool: CliToolId,
 ): ScopedCliCatalogRuntime | null {

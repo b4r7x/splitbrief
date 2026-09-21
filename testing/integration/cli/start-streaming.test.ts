@@ -12,8 +12,10 @@ import { registerStartCommand } from '../../../src/cli/commands/start/register.j
 import type { StartDeps } from '../../../src/cli/commands/start/types.js';
 import { SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
 import { runHeadless } from '../../../src/cli/headless.js';
-import { readLockfile, checkServerStatus } from '../../../src/engine/ipc/lockfile.js';
+import { readLockfile, checkSessionLiveness } from '../../../src/core/sessions/lockfile.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 
 setupStartCommandIntegration();
 
@@ -37,16 +39,15 @@ describe('start command — liveness record', () => {
     let midRunPid: number | undefined;
     let midRunExitedAt: number | undefined;
     const planner = makePlanner({
-      quickPlan: vi.fn().mockImplementation(async () => {
-        const lock = await readLockfile(sessionDir(tmp, onlySessionId(tmp)));
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) => {
+        const lock = readLockfile(sessionDir(tmp, onlySessionId(tmp)));
         midRunPid = lock?.pid;
         midRunExitedAt = lock?.exitedAt;
-        return {
-          spec: '',
-          plan: '',
+        return makePhaseCallResult({
+          call,
           tasks: [],
           usage: { inputTokens: 50, outputTokens: 25 },
-        };
+        });
       }),
     });
     const implementer = makeImplementer();
@@ -74,7 +75,7 @@ describe('start command — liveness record', () => {
       ]),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Workflow failed'),
+      message: expect.stringContaining('Recovery required (planner-returned-no-briefs)'),
     });
 
     const sessionId = onlySessionId(tmp);
@@ -83,13 +84,13 @@ describe('start command — liveness record', () => {
     expect(midRunPid).toBe(process.pid);
     expect(midRunExitedAt).toBeUndefined();
 
-    let status = await checkServerStatus(dir);
+    let status = checkSessionLiveness(dir);
     for (let i = 0; i < 50 && status.alive; i++) {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      status = await checkServerStatus(dir);
+      status = checkSessionLiveness(dir);
     }
     expect(status.alive).toBe(false);
-    const lock = await readLockfile(dir);
+    const lock = readLockfile(dir);
     expect(lock?.exitedAt).toBeDefined();
   });
 });

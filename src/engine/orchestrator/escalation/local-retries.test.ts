@@ -3,6 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
+import { TIMEOUTS } from '../../../core/pipeline-spec/timeouts.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
@@ -233,5 +234,100 @@ describe('handleRetryAndEscalation — aborted implementer call', () => {
     expect(escalateFull).not.toHaveBeenCalled();
     expect(events.filter((e) => e.type === 'escalate')).toEqual([]);
     expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
+  });
+});
+
+describe('runLocalRetries — outcomes no further attempt can fix', () => {
+  it('two consecutive timeouts halt', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const retry = vi.fn().mockResolvedValue({
+      success: false,
+      output: '',
+      error: 'implementer timed out',
+      outcome: 'timeout',
+    });
+    const implementer = makeImplementer({ retry });
+    const { bus } = makeBusRecorder();
+
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
+
+    expect(retry).toHaveBeenCalledTimes(TIMEOUTS.consecutiveTimeoutsHalt);
+    expect(outcome.lastFailure?.outcome).toBe('runner-timeout-repeated');
+    expect(outcome.result).toBeUndefined();
+  });
+
+  it('a timeout followed by an ordinary failure resets the consecutive counter', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const retry = vi
+      .fn()
+      .mockResolvedValueOnce({
+        success: false,
+        output: '',
+        error: 'implementer timed out',
+        outcome: 'timeout',
+      })
+      .mockResolvedValue({ success: false, output: '', error: 'still broken' });
+    const implementer = makeImplementer({ retry });
+    const { bus } = makeBusRecorder();
+
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
+
+    expect(retry).toHaveBeenCalledTimes(3);
+    expect(outcome.lastFailure?.outcome).toBeUndefined();
+  });
+
+  it('implementer-recipe-invalid does not consume a retry', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const retry = vi.fn().mockResolvedValue({
+      success: false,
+      output: '',
+      error: "error: unknown option '--nope'",
+      outcome: 'implementer-recipe-invalid',
+    });
+    const implementer = makeImplementer({ retry });
+    const { bus } = makeBusRecorder();
+
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
+
+    // The remaining two of the three configured retries are left unspent.
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(outcome.lastFailure?.outcome).toBe('implementer-recipe-invalid');
+  });
+
+  it('missing-model stops the local retries', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const retry = vi.fn().mockResolvedValue({
+      success: false,
+      output: '',
+      error: 'model not found: gpt-nope',
+      outcome: 'missing-model',
+    });
+    const implementer = makeImplementer({ retry });
+    const { bus } = makeBusRecorder();
+
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
+
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(outcome.lastFailure?.outcome).toBe('missing-model');
   });
 });

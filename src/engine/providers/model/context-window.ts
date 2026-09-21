@@ -4,10 +4,12 @@ import {
   findKnownModel,
   getBundledModels,
   getEffectiveModelId,
+  lookupCatalogModelByModelId,
   lookupModelsDevModel,
   lookupRuntimeModel,
   type ModelCacheAccessor,
 } from './resolution.js';
+import { isCliToolId } from '../../../core/runners/cli-tool-catalog.js';
 
 export type ContextWindowSource = 'models-dev' | 'runtime' | 'known-catalog' | 'automatic-catalog';
 
@@ -50,9 +52,19 @@ export function resolveRunnerContextWindow(
     if (runtime?.contextLength !== undefined) {
       return { contextLength: runtime.contextLength, source: 'runtime' };
     }
+
+    // A CLI tool owns no catalog vendor, so its pinned model is only found by
+    // identity — the same lane pricing uses for a vendorless runner.
+    if (isCliToolId(input.providerId)) {
+      const byIdentity = lookupCatalogModelByModelId(modelId, input.cache);
+      if (byIdentity?.contextLength !== undefined) {
+        return { contextLength: byIdentity.contextLength, source: 'models-dev' };
+      }
+    }
   }
 
   const known = findKnownModel(input.providerId, modelId);
+
   if (known?.contextLength !== undefined) {
     return { contextLength: known.contextLength, source: 'known-catalog' };
   }

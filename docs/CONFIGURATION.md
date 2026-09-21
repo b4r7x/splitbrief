@@ -1,8 +1,8 @@
 # SPLITBRIEF Configuration Reference
 
-Complete reference for `.splitbrief/config.yaml` — the single declarative file that wires SPLITBRIEF to your planner, reviewer, implementer, validation tools, workflow gates, hooks, snapshots, and observability.
+Complete reference for `.splitbrief/config.yaml` — the single declarative file that wires SPLITBRIEF to your planner, reviewer, implementer, validation tools, workflow gates, and hooks.
 
-This document is a field-by-field reference. For end-user mode semantics see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [REPOMAP.md](./REPOMAP.md); for OpenTelemetry export see [OTEL.md](./OTEL.md).
+This document is a field-by-field reference. For end-user mode semantics see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [REPOMAP.md](./REPOMAP.md).
 
 ---
 
@@ -30,21 +30,17 @@ implementerProfiles:
   default: local-qwen
   profiles: { local-qwen: { kind: api, ... }, cheap-cloud: { kind: api, ... } }
 validation:     { typecheck, lint, test, testCommand }
-workflow:       { mode, approve, maxRetries, git, isolation, maxBudget, ... }
-sessions:       { scope: project | global }
+workflow:       { mode, approve, maxRetries, git, isolation, ... }
+sessions:       { scope: project }
 escalation:     { enabled, intermediateProvider, intermediateModel }
-codebase:       { enabled, tokenBudget, cacheDir, include, exclude }
-hooks:          { builtin, pre_task, post_task, ... }
-otel:           { enabled, serviceName }
-snapshots:      { auto: { preTask, postTask, preFinalReview } }
+codebase:       { enabled, tokenBudget, include, exclude }
+hooks:          { pre_task, post_task, ... }
 palette:        { customActions: [...] }
-trust:          { customRenderers }
-approval:       { enabled, headless, tiers, feedRejectionsToPlanner }
-plannerEstimateReview: boolean
-autoSplitOverflow:     boolean
+approval:       { enabled, tiers, feedRejectionsToPlanner, allowedPaths }
+customCommands: { <id>: { label, contract, executable, argv, ... } }
 ```
 
-Top-level keys are **not** strict at the root — unknown keys are ignored. Most nested objects (`workflow` and its `git` / `speckit` blocks, `hooks`, `codebase`, `otel`, every runner config) are strict and will reject unknown fields.
+Top-level keys are **not** strict at the root — an unknown key is ignored — except the five keys this release removed (`otel`, `snapshots`, `trust`, `plannerEstimateReview`, `autoSplitOverflow`), which are named as load errors like any other removed key (§16). Most nested objects (`workflow` and its `git` / `speckit` blocks, `hooks`, `codebase`, `approval` and its `tiers` block, every runner config) are strict and will reject unknown fields.
 
 ---
 
@@ -75,46 +71,19 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 |---|---|---|---|
 | `model` | string | — | Model identifier, or `auto`. Planner: optional. Implementer: required for `api`, `shell`, and `agent`; optional for `cli`, where omitting `model` and writing `model: auto` are equivalent — both delegate to the tool's own default. |
 | `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. Pricing remains unknown unless models.dev, runtime provider metadata, or the bundled catalog supplies rates. |
-| `contextLength` | int > 0 | detected, else `32768` | Override the detected context window. Useful for self-hosted Ollama/LM Studio whose `/api/show` reports the wrong number. When neither configured nor detected, SPLITBRIEF assumes the single documented default `DEFAULT_UNKNOWN_CONTEXT_LENGTH` (32768, `src/core/tokens/context-length.ts`) for routing and budget sizing alike. |
+| `contextLength` | int > 0 | kind-dependent | Application budget override. Built-in local API calls use configured context, observed active context, then 8192; maximum model capacity is separate. CLI/legacy routing can use the 32768 conservative fallback. This field never changes the server. |
 | `temperature` | 0..2 | provider default | Sampling temperature. Honored only by the `api` kind (planner, reviewer, and implementer); the `cli`, `shell`, and `agent` kinds cannot pass it to their backend and drop it with a stderr warning. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
-| `timeout` | ms (≤ 600000) | unset → no total-call cap (output silence is guarded separately: the 60s `api` stream-idle guard or `idleWarnMs`/`idleKillMs` below — see Troubleshooting) | Total wall-clock budget for a single planner, reviewer, or implementer call; aborts the call when exceeded. Raise for long planner thinks; lower for cheap probe calls. |
+| `timeout` | ms (≤ 1200000) | API BUILD: 20 min; API PLAN/REVIEW: 10 min. CLI BUILD: 20 min; CLI REVIEW: 10 min; other CLI planning calls have no total-call default. | Total wall-clock budget for a call. API first-response and stream-idle deadlines also apply, each bounded by this total. Defaults come from `TIMEOUTS.implementerMs` / `TIMEOUTS.reviewerMs` (`src/core/pipeline-spec/timeouts.ts`). Two consecutive brief timeouts enter recovery. |
 | `idleWarnMs` | ms (≤ 3600000) | `300000` | Inactivity watchdog warn threshold: after this much output silence on a running call, the byline shows a "still working" warning; any stdout/stderr output clears it and resets the timer. |
 | `idleKillMs` | ms (≤ 3600000) | `1800000` | Inactivity watchdog kill threshold: at this much output silence the runner's process group is terminated (SIGTERM, then SIGKILL after a grace window) and the call is marked failed. For planner calls a retry prompt is offered; a failed implementer call feeds the task's retry/escalation ladder instead, whose retry prompts rebuild the full Task Brief per attempt. |
-| `effort` | `low\|medium\|high\|xhigh` | unset | Reasoning-effort hint. How a seat's effort intent reaches its tool is the seat's channel — `CliEffortChannel` (`src/core/runners/effort-channel.ts`), resolved by `seatEffortChannel` (`src/core/runners/capabilities.ts`) — and only one of the four channels carries this field. `cli` `claude-code` is channel `effort-flag`: it delivers this `EffortLevel` verbatim on its own `--effort` flag, on the planner, reviewer, and implementer seats. `cli` `opencode` is channel `variant`: it has a real effort channel, but it is a named preset delivered through the separate `variant` field on `--variant`, not through `effort`. `cli` `cursor` is channel `model-id`: effort is encoded in the selected model id's suffix, so there is no separate field to set — choose it in the model picker. `cli` `codex`, `copilot`, `kilo-code`, `command-code` and the `api`, `shell`, and `agent` kinds are channel `none`. `seatSupportsEffort` is now `seatEffortChannel(...) !== 'none'`; a caller that means "takes the `effort` field" tests for `effort-flag`. An undeliverable value is not sent: changing a seat in the TUI clears it and says so (`Effort <level> cleared: <tool> has no effort channel`) on every seat whose channel is not `effort-flag`, and a headless run drops it, with a `planner-effort`/`reviewer-effort: dropped` stderr warning on the planner and review seats, silently on the implementer seat. The same clearing and dropping applies to `variant` on a seat whose channel is not `variant`. |
-| `variant` | string | unset | The named execution preset of the `variant` channel — today `cli` `opencode`, delivered on `opencode run --variant <name>`. Free-form and persisted verbatim, because an opencode user can declare custom variants in `opencode.json` that no static enum could know. The built-in presets are per provider: OpenAI `none\|minimal\|low\|medium\|high\|xhigh`, Anthropic `high\|max`, Google `low\|high` (`OPENCODE_VARIANT_VOCABULARY`, `src/core/runners/variant-vocabulary.ts`). That table is keyed on the model id's first path segment, so `openai/gpt-5.6-luna` offers the OpenAI presets and a provider absent from the table offers no presets and emits no flag. `--variant` is a protected flag: configuring it through `args` is refused before spawn. |
+| `effort` | `none\|minimal\|low\|medium\|high\|xhigh\|max` | unset | Reasoning-effort hint. The union above is what config accepts; the levels a seat may actually use are the selected model's own ladder, not a fixed list per tool — the seat's tool accepts a subset and reports what it rejects. How a seat's effort intent reaches its tool is the seat's channel — `CliEffortChannel` (`src/core/runners/effort-channel.ts`), resolved by `seatEffortChannel` (`src/core/runners/capabilities.ts`) — and only one of the four channels carries this field. `cli` `claude-code`, `codex`, `copilot` and `command-code` are channel `effort-flag`: they deliver this `EffortLevel` verbatim on the tool's own effort argument, on the planner, reviewer, and implementer seats — `claude-code`, `copilot` and `command-code` emit `--effort <level>`, `codex` emits `-c model_reasoning_effort=<level>`. `cli` `opencode` and `kilo-code` are channel `variant`: they have a real effort channel, but it is a named preset delivered through the separate `variant` field on `--variant`, not through `effort`. `cli` `cursor` is channel `model-id`: effort is encoded in the selected model id's suffix, so there is no separate field to set — choose it in the model picker. Only the `api`, `shell`, and `agent` kinds are channel `none`. `seatSupportsEffort` is now `seatEffortChannel(...) !== 'none'`; a caller that means "takes the `effort` field" tests for `effort-flag`. An undeliverable value is not sent: changing a seat in the TUI clears it and says so (`Effort <level> cleared: <tool> has no effort channel`) on every seat whose channel is not `effort-flag`, and a headless run drops it, with a `planner-effort`/`reviewer-effort: dropped` stderr warning on the planner and review seats, silently on the implementer seat. The same clearing and dropping applies to `variant` on a seat whose channel is not `variant`. |
+| `variant` | string | unset | The named execution preset of the `variant` channel — today `cli` `opencode` and `kilo-code`, delivered on `opencode run --variant <name>` and `kilo run --variant <name>`. Free-form and persisted verbatim, because an opencode user can declare custom variants in `opencode.json` that no static enum could know. The presets are per model, not per provider: the picker offers the ladder the model itself publishes (`opencode models --verbose` or `kilo models --verbose` for a detected route), so `openai/gpt-5.6-luna` offers `none\|low\|medium\|high\|xhigh\|max` and a model that publishes none offers no presets, though a hand-written value is still sent. `--variant` is a protected flag: configuring it through `args` is refused before spawn. |
 
-`idleWarnMs` and `idleKillMs` apply to the `cli`, `shell`, and `agent` kinds only — `api` runners keep the 60s stream-idle guard, and their strict schema rejects both fields. The planner's optional estimate-review call is the one exception to the retry prompt above: an idle-kill there degrades gracefully to an unavailable review instead of parking one.
+`idleWarnMs` and `idleKillMs` apply to the `cli`, `shell`, and `agent` kinds only — `api` runners keep the 60s stream-idle guard, and their strict schema rejects both fields.
 
 ### Pricing metadata
 
-Pricing is resolved from cached `models.dev` metadata first when available, then from runtime provider metadata or the bundled catalog. `models.dev` context pricing tiers are preserved: flat base rates apply below the tier threshold, and the highest matching context tier applies when prompt/cache context reaches that threshold. Local-only unpriced runners are displayed as local/unpriced rather than dollar-priced. Picker lane order is separate from this ladder — native CLI, then models.dev, then bundled `KNOWN_MODELS` as an offline fallback — and does not reorder pricing or context lookup; see [Model catalog lanes](./PLANNERS-AND-IMPLEMENTERS.md#model-catalog-lanes).
-
-If an API-billed or otherwise paid runner has unknown model pricing and `workflow.maxBudget` is set, runtime budget tracking pauses instead of treating that usage as `$0`. Continue only after acknowledging unknown spend or configuring pricing.
-
-### Compiler capability
-
-Every planner mode crosses one capability boundary. The Task Brief compiler admits a backend only on an exact tuple: runtime identity, effective role vector, declared transport, terminal contract, containment profile, credential channel, envelope version, and a verified conformance proof (`admitCompilerCapability`, `src/engine/runners/compiler-capability.ts`). Standard and speckit run the compiler's detached fresh batches; quick stays single-call but accepts only a current-call result. A missing or unverified property returns the typed zero-dispatch refusal `task_compiler_capability_unsupported`, and no combination is downgraded to a weaker mode.
-
-Planner mode does not grant artifact authority, and no CLI flag proves read-only behavior. The production-factory conformance harness (`src/engine/runners/cli-tools/contract-harness.ts`) is what *can* prove the effective role, containment, and final-response contract, but its verdicts do not reach admission on their own: they are recorded by hand into `COMPILER_SUPPORT_TABLE`, and nothing reads a harness record when a claim is admitted. A run's claim carries that row's recorded vector plus two live host observations — the detected runtime version and containment-launcher availability.
-
-The V1 planner rows:
-
-| Planner backend | Tested runtime | V1 state | Transport | Credential channel |
-|---|---|---|---|---|
-| `kind: cli` tool `opencode` | 1.18.15 | required-baseline | current final response | session-copy |
-| `kind: cli` tool `claude-code` | 2.1.232 | conformance-gated | current final response | api-key, session-copy |
-| `kind: cli` tool `codex` | 0.147.0 | conformance-gated | exact declared-file lease | api-key, session-copy |
-| `kind: cli` tool `kilo-code` | 7.0.49 | conformance-gated | current final response | session-copy |
-| `kind: cli` tool `cursor` | — | unsupported | — | — |
-| `kind: cli` tool `command-code` | — | unsupported | — | — |
-| `kind: cli` tool `copilot` | — | unsupported | — | — |
-| `kind: api` | (versionless) | conformance-gated | current final response | api-key |
-| configured custom command | (versionless) | conformance-gated | staged stdout or exact declared-file lease | api-key |
-| `kind: shell` / `kind: agent` planner | — | unsupported | — | — |
-
-For supported backends, the tested version yields a full capability receipt, while other detected versions are admitted with runtime-drift evidence and a run warning. Versionless rows admit only an empty version claim, and the verified conformance proof carries the identity evidence. Conformance-gated rows stay inactive until their complete row passes; unsupported rows (Copilot, Cursor, Command Code, shell, agent) refuse with typed fail-closed zero dispatches regardless of what a candidate claims. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface. Authority-bearing options are adapter-owned and cannot be overridden.
-
-The two credential channels are `api-key` (the provider env var) and `session-copy` (exactly the tool's allowlisted credential files bridged into the disposable HOME/XDG roots — except for a keychain-backed channel, the Claude Code and Cursor Agent CLI `session` channels on macOS, whose child keeps the host `HOME` and `USER` because the login keychain resolves through them, on compiler calls as much as on any other planner call). See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) for the full support table, terminal contracts, and role vectors.
+Pricing is resolved from cached `models.dev` metadata first when available, then from runtime provider metadata or the bundled catalog. `models.dev` context pricing tiers are preserved: flat base rates apply below the tier threshold, and the highest matching context tier applies when prompt/cache context reaches that threshold. Local-only unpriced runners are displayed as local/unpriced rather than dollar-priced. Picker lane order is separate from this ladder — a CLI tool renders its own listing with the bundled `KNOWN_MODELS` aliases as the offline fallback, and an `api` runner adds models.dev rows beside its runtime list — and does not reorder pricing or context lookup; see [Model catalog lanes](./PLANNERS-AND-IMPLEMENTERS.md#model-catalog-lanes).
 
 ### `kind: cli`
 
@@ -122,10 +91,12 @@ Subprocess of a known coding-agent CLI. The wrapper handles auth, model selectio
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
-| `tool` | enum | yes | `claude-code` \| `codex` \| `opencode` \| `copilot` \| `kilo-code` \| `cursor` \| `command-code` |
+| `tool` | enum | yes | `claude-code` \| `codex` \| `opencode` \| `copilot` \| `kilo-code` \| `cursor` \| `command-code` \| `antigravity` |
 | `model` | string | no | A model ID, or `auto`. Omitting `model` and writing `model: auto` are equivalent: SPLITBRIEF passes no `--model` flag, so the tool uses whatever model its own configuration selects. |
 | `args` | string[] | no | Extra argv appended to the tool invocation. Every token is validated against the adapter-owned authority set: a flag that would override role, permissions, sandbox, cwd or added roots, config sources, tools, hooks/plugins/MCP, session selection, prompt transport, output format, terminal protocol, final-output path, updates, or approval behavior is refused before spawn. |
-| `outputFormat` | enum | no | `stream-json` \| `jsonl` \| `text` \| `opencode`. Selects the parser for the configured-command and legacy command paths. An admitted CLI's parser and terminal protocol are adapter-owned: the compiler path keeps the backend's native parser, and an implementer `outputFormat` that would replace a structured terminal contract refuses before spawn. |
+| `outputFormat` | enum | no | `stream-json` \| `jsonl` \| `text` \| `opencode`. Selects the parser for the configured-command and legacy command paths. An admitted CLI's parser and terminal protocol are adapter-owned: the backend's native parser stays authoritative, and an implementer `outputFormat` that would replace a structured terminal contract refuses before spawn. |
+
+Planner mode does not grant artifact authority, and no CLI flag proves read-only behavior. Authority-bearing options are adapter-owned and cannot be overridden; see [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#planner-artifact-ownership) for the transport, role and containment contract.
 
 YAML — minimal:
 
@@ -158,7 +129,7 @@ planner:
   variant: high
 ```
 
-**When to use:** you already pay for a Claude Code / Codex / OpenCode license and want SPLITBRIEF to drive it as a planner without separate API billing. Copilot, Cursor, and Command Code stay implementer-side in V1: their planner rows are compiler-unsupported and refuse with a typed zero-dispatch error (see [Compiler capability](#compiler-capability)).
+**When to use:** you already pay for a Claude Code / Codex / OpenCode license and want SPLITBRIEF to drive it as a planner without separate API billing. Copilot, Cursor and Command Code plan with their `--mode plan`/read-only recipes like every other CLI planner.
 
 ### `kind: api`
 
@@ -167,12 +138,12 @@ OpenAI-compatible HTTP endpoint.
 | Field | Type | Required | Description |
 |---|---|:---:|---|
 | `provider` | non-empty string | yes | `ollama` \| `lm-studio` \| any custom name |
-| `service` | non-empty string | yes | Billing/identity service behind the provider. Never inferred — write it out. For an admitted provider ID it must equal that ID's `API_PROVIDER_CATALOG` service (see the provider matrix in §20); a mismatch is a validation error. |
+| `service` | non-empty string | yes | Billing/identity service behind the provider. Never inferred — write it out. For an admitted provider ID it must equal that ID's `API_PROVIDER_CATALOG` service (see the provider matrix in §18); a mismatch is a validation error. |
 | `offering` | enum | yes | `payg` \| `free-quota` \| `coding-subscription` \| `local`. Never inferred — write it out. For an admitted provider ID it must equal that ID's catalog offering. |
 | `apiBase` | non-empty string | yes | Base URL. For known providers, see "Default API base URLs" below. |
-| `apiKey` | string | no | Omit it for the loopback providers, which take no credential — local `ollama` accepts exactly one reference, `apiKey: env:OLLAMA_LOCAL_API_KEY`, when its daemon requires authentication. A custom provider must carry an **inline** key: an `apiKey: env:VAR` reference is refused for a provider the catalog does not know (see [API-KEYS.md](./API-KEYS.md)). |
+| `apiKey` | string | no | Optional for local providers. When authentication is enabled, `ollama` accepts only `env:OLLAMA_LOCAL_API_KEY`; `lm-studio` and `llama-cpp` accept an environment-variable reference such as `env:MY_TOKEN`. The local connection form stores references, not secret values. A custom provider must carry an **inline** key: an `apiKey: env:VAR` reference is refused for a provider the catalog does not know (see [API-KEYS.md](./API-KEYS.md)). |
 
-Both admitted provider IDs (`ollama`, `lm-studio`) are implementer-only local daemons, so an `api` planner or reviewer is always a custom endpoint: pick your own `provider`/`service` name, declare `offering` and `apiBase`, and carry an inline `apiKey` (§20).
+Ollama and LM Studio support PLAN, BUILD, and REVIEW with independent configured endpoints and exact model IDs. The built-in `llama-cpp` connection profile supports the same seats. Each API block declares `provider`, `service`, `offering`, `apiBase` and its exact `model`; local authentication is optional.
 
 YAML — minimal (custom endpoint):
 
@@ -232,11 +203,9 @@ planner:
     supportsSessionResume: false
 ```
 
-Set `supportsSelfSummarisation: true` only for planner wrappers that can summarize an existing transcript through `planner.summarize()`. It enables `/compact-transcript`; unsupported planners report a clear message and leave the session log untouched.
+Set `supportsSelfSummarisation: true` only for planner wrappers that can summarize an existing transcript through `planner.summarize()`. It enables the resume-time transcript compaction governed by `workflow.compactionThreshold`; a planner without it leaves the persisted transcript untouched.
 
 **When to use:** wrapping a tool SPLITBRIEF doesn't ship adapters for, or piping through your own pre/post-processing layer.
-
-**Compiler status:** a `shell` planner is compiler-unsupported in V1, because the legacy shell planner lacks compiler containment and final-response conformance. Every planner mode refuses it with `task_compiler_capability_unsupported` and zero dispatches. The implementer role is unaffected.
 
 ### `kind: agent`
 
@@ -254,14 +223,12 @@ A `planner` or `reviewer` may also be `kind: agent`; both accept `capabilities` 
 
 **When to use:** integrating a tool whose contract is "I edit files, you check git diff" rather than "I print a unified diff".
 
-**Compiler status:** a `kind: agent` planner is compiler-unsupported in V1, because its ambient session-file behavior violates exact lease ownership. Every planner mode refuses it with `task_compiler_capability_unsupported` and zero dispatches. The implementer role is unaffected.
-
 ### Runner command trust
 
 Every `shell` and `agent` runner named in `.splitbrief/config.yaml` — planner, reviewer, implementer, or implementer profile — needs an explicit grant on the machine that runs it, before the first planner call.
 
 - **Interactive:** SPLITBRIEF prints the resolved executable path, the argv, the working directory, and the fact that the child inherits this process's environment, then asks you to type the confirmation phrase and a reason. Confirming writes an owner-only receipt to `~/.splitbrief/trust/custom-runners.json` (mode `0600`).
-- **Headless** (`--json`, `--rpc`, `--detach`): there is no prompt. The run is blocked unless a receipt already exists or you pass `--allow-repo-runners`, which grants that run only and persists nothing.
+- **Headless** (`--json` or `--plain`): there is no prompt. The run is blocked unless a receipt already exists or you pass `--allow-repo-runners`, which grants that run only and persists nothing.
 
 The receipt is keyed to the canonical path of *this* checkout and to a digest of the command tuple, so it never travels inside a clone, never applies to a second checkout of the same repository, and stops applying the moment the command, its argv, its declared environment references, or its watchdog thresholds change. Replacing the executable on disk invalidates it too: the receipt stores the executable's content digest.
 
@@ -276,7 +243,7 @@ Source: `src/core/providers/catalog.ts`.
 | `ollama` | `http://localhost:11434/v1` |
 | `lm-studio` | `http://localhost:1234/v1` |
 
-**See also:** §3 `implementer`, §11 environment variables, [API-KEYS.md](./API-KEYS.md).
+**See also:** §3 `implementer`, §13 environment variables, [API-KEYS.md](./API-KEYS.md).
 
 Custom OpenAI-compatible API providers are allowed when `service`, `offering`, and `apiBase` are all set — the same three fields every admitted provider ID also has to spell out, because nothing is back-filled at load. Because SPLITBRIEF cannot infer a safe environment variable name for unknown providers, custom providers must set `apiKey` explicitly and inline: an `apiKey: env:VAR` reference is refused for a provider the catalog does not know, so a config cannot point an unrecognized endpoint at one of your environment credentials.
 
@@ -286,7 +253,7 @@ Custom OpenAI-compatible API providers are allowed when `service`, `offering`, a
 
 Optional. `reviewer` names the runner that performs the final review of the run diff. Leave it out and the planner holds that seat, exactly as it did before the seat became assignable (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). Set it when you want the diff read by a model other than the one that planned it.
 
-The reviewer only reviews. Planning, Task Brief compilation, escalation, the planner estimate review, summarization and brief recovery stay on the planner whatever this block says.
+The reviewer only reviews. Planning, Task Brief compilation, escalation and summarization stay on the planner whatever this block says.
 
 ### Schema
 
@@ -295,17 +262,16 @@ Same discriminated union as `planner` — the four kinds, the same [common gener
 | `kind` | Write the same fields as | Notes |
 |---|---|---|
 | `cli` | [`kind: cli`](#kind-cli) | `tool` must be a planner-side CLI: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`. |
-| `api` | [`kind: api`](#kind-api) | `provider` must be admitted for the planner role. Both catalog IDs (`ollama`, `lm-studio`) are implementer-only, so this seat takes a custom provider. The identity triple `service` / `offering` / `apiBase` is required here too, plus an inline `apiKey`. |
+| `api` | [`kind: api`](#kind-api) | Built-in local providers support the review seat through the planner role. Declare `service`, `offering`, `apiBase` and the exact model independently for this seat. Custom remote providers require their own inline credential. |
 | `shell` | [`kind: shell`](#kind-shell) | Needs the same [runner command trust](#runner-command-trust) grant as a `shell` planner. |
 | `agent` | [`kind: agent`](#kind-agent) | Same trust grant. |
 
-The reviewer is a planner-tier seat and shares the planner's admission set, so a provider or tool that the planner may not use is rejected in this block too. The seat is built on the planner backends (`createReviewer`, `src/engine/runners/factory.ts`), so effort follows the same channel matrix as on the planner: `cli` `claude-code` takes the `effort` field on its own `--effort` flag, `cli` `opencode` takes a named preset in `variant` instead, `cli` `cursor` reads its effort out of the selected model id, and `cli` `codex`, `copilot`, `kilo-code`, `command-code`, `api`, `shell` and `agent` have no channel at all. An `effort` or `variant` the backend cannot deliver is cleared with a toast when the seat is changed in the TUI and dropped with a stderr warning headless; a `temperature` outside the `api` kind is likewise dropped with a stderr warning headless, but is carried forward untouched in the TUI. With no `reviewer` block the review seat inherits the planner's effort and shows it read-only; make the seat independent before changing it.
+The reviewer is a planner-tier seat and shares the planner's admission set, so a provider or tool that the planner may not use is rejected in this block too. The seat is built on the planner backends (`createReviewer`, `src/engine/runners/factory.ts`), so effort follows the same channel matrix as on the planner: `cli` `claude-code`, `codex`, `copilot` and `command-code` take the `effort` field on the tool's own effort argument, `cli` `opencode` and `kilo-code` take a named preset in `variant` instead, `cli` `cursor` reads its effort out of the selected model id, and only the `api`, `shell` and `agent` kinds have no channel at all. An `effort` or `variant` the backend cannot deliver is cleared with a toast when the seat is changed in the TUI and dropped with a stderr warning headless; a `temperature` outside the `api` kind is likewise dropped with a stderr warning headless, but is carried forward untouched in the TUI. With no `reviewer` block the review seat inherits the planner's effort and shows it read-only; make the seat independent before changing it.
 
 ### Falling back to the planner
 
-- **No `reviewer` block:** the planner runner performs the review. Review tokens are priced at the planner's rates and folded into the planner line in the summary and the cost drilldown.
+- **No `reviewer` block:** the planner runner performs the review. Review tokens are priced at the planner's rates and folded into the planner line in the run summary.
 - **A `reviewer` block:** the reviewer performs the review and gets its own priced line in both.
-- **Either way, `splitbrief stats` is unchanged:** it aggregates by provider, not by role, so a reviewer on its own provider simply shows up under that provider.
 - **A configured reviewer that fails admission** blocks the run before it starts, with a readiness blocker naming the reviewer seat. **A configured reviewer that fails mid-call** is reported as a failed review (`finalReviewStatus: "failed"` in the run summary, `finalReview.status` in the review packet), with the reviewer's identity in the error and the final-review evidence still recorded. SPLITBRIEF never silently hands the review back to the planner.
 
 ### YAML — cross-lab review
@@ -332,13 +298,13 @@ reviewer:
   model: auto
 ```
 
-**See also:** `/reviewer` and `/crew` in [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), and the `--reviewer-*` flags in [CLI-REFERENCE.md](./CLI-REFERENCE.md).
+**See also:** `/crew review` in [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), and the `--reviewer-*` flags in [CLI-REFERENCE.md](./CLI-REFERENCE.md).
 
 ---
 
 ## 3. `implementer`
 
-The implementer is the weaker of the two models. What makes a runner the implementer is the model behind it, not the transport SPLITBRIEF uses to reach it: a coding-agent CLI pointed at a cheaper model and an OpenAI-compatible API endpoint are equally first-class here, and SPLITBRIEF favors neither. They differ mechanically in one place — a `cli` or `agent` implementer writes files itself (`writesFiles: direct`), while an `api` or `shell` implementer returns file contents that SPLITBRIEF writes (`writesFiles: extracted-code`). Where a direct writer works before its changes reach your checkout is set by `workflow.isolation` (§5).
+The implementer is the weaker of the two models. What makes a runner the implementer is the model behind it, not the transport SPLITBRIEF uses to reach it: a coding-agent CLI pointed at a smaller model and an OpenAI-compatible API endpoint are equally first-class here, and SPLITBRIEF favors neither. They differ mechanically in one place — a `cli` or `agent` implementer writes files itself (`writesFiles: direct`), while an `api` or `shell` implementer returns file contents that SPLITBRIEF writes (`writesFiles: extracted-code`). Where a direct writer works before its changes reach your checkout is set by `workflow.isolation` (§5).
 
 Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, and `agent` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to delegate to the tool's own configured default; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `ollama` → `qwen3-coder:30b`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. Implementer write behavior (`extracted-code` vs `direct`) is not a choice: `capabilities.writesFiles` may be declared per profile under `implementerProfiles`, but it must match the runner kind's write mode, and config load rejects a mismatch.
 
@@ -354,7 +320,7 @@ implementer:
   model: qwen3-coder:30b
 ```
 
-YAML — a coding-agent CLI running a cheaper model than the planner:
+YAML — a coding-agent CLI running a smaller model than the planner:
 
 ```yaml
 implementer:
@@ -381,12 +347,18 @@ implementer:
   timeout: 240000
 ```
 
-`contextLength` is SPLITBRIEF's assumed input context window, used to size the prompt budget. When neither configured nor detected, every consumer — routing and the prompt and request budgets alike — resolves to the single documented default `DEFAULT_UNKNOWN_CONTEXT_LENGTH` (32768) in `src/core/tokens/context-length.ts`, so an omitted window never means "unlimited" to one consumer and a different number to another. A boot-probed window applies only to the default implementer profile; a sibling profile that declares no `contextLength` routes at the shared default. When no window is known, the model-resolution ladder in `src/engine/providers/model/context-window.ts` answers: the models.dev cache when hydrated, else the runtime snapshot, else the bundled catalog row for the pinned model, else — for a CLI tool under `model: auto`, which resolves to no model id — the smallest window the bundled catalog guarantees for that tool (automatic selection never adds a `--model` flag). It does **not** change a provider's real model context. For Ollama, configure the model/server `num_ctx` first; use `contextLength` or `SPLITBRIEF_CONTEXT_LENGTH` only to match or override SPLITBRIEF's detection. It is also **not** the per-response output cap — SPLITBRIEF clamps `max_tokens` to the model's max-output limit independently, so a large context window never produces an over-large output request.
+`contextLength` is an application budgeting input, not a server setting. The application context budget does not reconfigure the server or prove its active context capacity. For built-in local API seats, `resolveApplicationContextTokens` selects configured context, otherwise observed active context, otherwise the application default of 8192 tokens, then clamps that result to observed active and maximum context when known. The model's maximum context is a separate architectural ceiling and never substitutes for unknown active capacity. CLI and legacy routing metadata have their own conservative fallback (`DEFAULT_UNKNOWN_CONTEXT_LENGTH`); that does not replace the API dispatch budget.
+
+For PLAN and REVIEW, reserve 2048 output tokens and add an input-estimation margin of ceil(inputEstimate * 0.15). `measureApiBudget` includes message/request overhead, requires input plus the 15% margin plus output reserve to fit, and refuses before dispatch if it does not. BUILD reserves output for the complete declared text bundle, including modify baselines and new targets. The output cap is independently bounded; an absent maximum-output report uses the 8192-token application fallback. Each dispatch rechecks the seat's own endpoint and exact model.
+
+The first-response deadline defaults to 120000 ms and stream-idle to 60000 ms. `resolveApiDeadlinePolicy` clamps each to the total role timeout, which remains authoritative. First response means the first stream chunk; subsequent chunks reset idle timing. Cancellation closes the application request, but does not prove remote generation has stopped. SPLITBRIEF never reconfigures or unloads the server in response.
+
+`resolveEffectiveRequestOptions` records whether controls were sent, not configured, or omitted as unsupported. Current OpenAI-compatible policy sends the budgeted `max_tokens` but omits temperature, effort/reasoning controls and stream-usage requests. A configured value or retry temperature increment is not evidence that the server received it.
 
 **When to use:**
-- *Coding-agent CLI on a cheaper model* — you already pay for a Claude Code / Codex / Copilot subscription and want the implementer step to run there on a smaller model than the planner uses.
+- *Coding-agent CLI on a smaller model* — you already pay for a Claude Code / Codex / Copilot subscription and want the implementer step to run there on a smaller model than the planner uses.
 - *Cheap local API* — Ollama or LM Studio for cost-free iteration on small tasks.
-- *Mid-tier API* — a cheaper-than-frontier model behind your own custom endpoint.
+- *Mid-tier API* — a below-frontier model behind your own custom endpoint.
 - *Frontier* — the same model class as the planner when you want its quality for the implementer step too.
 
 **See also:** §2 `planner`, §6 `escalation` (for mid-tier fallback), [REPOMAP.md](./REPOMAP.md) (codebase context the implementer never sees, only the planner).
@@ -420,10 +392,9 @@ implementerProfiles:
       model: qwen2.5-coder:7b
       contextLength: 32768
       label: Local Qwen
-      costTier: local
       capabilities:
         writesFiles: extracted-code
-    cheap-cloud:
+    small-cloud:
       kind: api
       provider: custom-endpoint
       service: custom-endpoint
@@ -432,8 +403,7 @@ implementerProfiles:
       apiKey: <paste-your-endpoint-key>
       model: your-cheap-cloud-model
       contextLength: 131072
-      label: Cheap cloud
-      costTier: cheap
+      label: Small cloud
       capabilities:
         writesFiles: extracted-code
 ```
@@ -443,14 +413,13 @@ implementerProfiles:
 | Field | Type | Description |
 |---|---|---|
 | `label` | string | Optional display label for TUI/events. |
-| `costTier` | `local\|cheap\|standard\|frontier\|unknown` | Optional routing hint. Defaults to `unknown` in accessors when omitted. |
-| `capabilities.writesFiles` | `extracted-code\|direct` | Optional routing metadata. Defaults from runner kind: `api`/`shell` extract one file from stdout; `cli`/`agent` write directly. Explicit values must match the runner kind. |
+| `capabilities.writesFiles` | `extracted-code\|direct` | Optional routing metadata. Defaults from runner kind: `api` applies text file bundles, `shell` extracts legacy single-file output, and `cli`/`agent` write directly. Explicit values must match the runner kind. |
 
 If `implementerProfiles.default` is omitted, SPLITBRIEF resolves the default profile deterministically from the first profile name in sorted order. If `default` is set, it must name an existing profile.
 
-Task-start rows show the concrete routing reason when a worker is selected, and cost drilldown / `splitbrief explain` include richer routing and context data for post-run inspection.
+Task-start rows show the concrete routing reason when a worker is selected, and the run's recorded per-task metadata carries richer routing and context data for post-run inspection.
 
-When recovery offers `route-bigger-worker`, the issue names a target profile from this pool. Selecting that action resets only the current task and reruns it once with the named profile instead of the cheapest-capable routing choice.
+When recovery offers `route-bigger-worker`, the issue names a target profile from this pool. Selecting that action resets only the current task and reruns it once with the named profile instead of the routing choice.
 
 ---
 
@@ -470,6 +439,7 @@ validation: {
   lintCommand?:      string; // optional, non-empty
   testPattern?:      string; // optional, non-empty
   timeoutMs?:        number; // optional, int >= 1000, milliseconds
+  stack?: 'typescript' | 'javascript' | 'python' | 'go' | 'rust'; // optional
 }
 ```
 
@@ -480,11 +450,12 @@ validation: {
 | `typecheck` | boolean | `true` | Master switch for the type-checking stage |
 | `lint` | boolean | `true` | Master switch for the linting stage |
 | `test` | boolean | `true` | Master switch for the test stage |
-| `testCommand` | string | — | Argv-style override for the test command. When set, it runs **as-is** (the full suite) — shell operators and environment expansion are not interpreted, and no test-file argument is appended. When omitted, SPLITBRIEF resolves a command from discovered/heuristic project metadata, falling back to the built-in `npm test`; only that built-in fallback is scoped to the affected test (`npm test -- <test-file>`). |
-| `typecheckCommand` | string | — | Optional override for the type-checking command (e.g. `cargo check`, `go vet ./...`, `mypy src/`) |
-| `lintCommand` | string | — | Optional override for the linting command (e.g. `cargo clippy --no-deps`, `ruff check`) |
-| `testPattern` | string | — | Optional glob for finding test files (e.g. `*_test.go`, `test_*.py`). Defaults to TypeScript patterns (`*.test.ts`, `*.test.tsx`) |
+| `testCommand` | string | — | The escape hatch for the test stage: an argv-style command that runs **as-is** (the full suite) — shell operators and environment expansion are not interpreted, and no test-file argument is appended. When omitted, the stage resolves down the ladder below and a stack default is narrowed to the affected test file. |
+| `typecheckCommand` | string | — | The escape hatch for the type-checking stage (e.g. `cargo check`, `go vet ./...`, `mypy src/`). Same as-is semantics as `testCommand`. |
+| `lintCommand` | string | — | The escape hatch for the linting stage (e.g. `cargo clippy --no-deps`, `ruff check`). Same as-is semantics as `testCommand`. |
+| `testPattern` | string | — | Optional glob for finding test files (e.g. `*_test.go`, `test_*.py`). Overrides the stack's own patterns. |
 | `timeoutMs` | number | `600000` | Per-stage timeout in milliseconds (minimum `1000`) for each validation command, applying to the run-start baseline probe, the `doctor --probe-validation` diagnostic, and per-task validation. One red or slow stage can hold the loop for this long before the probe moves on. |
+| `stack` | enum | detected | Pin the validation stack instead of detecting it: `typescript`, `javascript`, `python`, `go`, or `rust`. Use it when a repo carries more than one marker file and the detection order picks the wrong one, or when the markers are missing entirely. |
 
 YAML — TypeScript project (default):
 
@@ -511,23 +482,26 @@ validation:
 
 ### How commands are resolved
 
-SPLITBRIEF resolves each validation stage through 4 layers, in priority order:
+SPLITBRIEF resolves each validation stage through one ladder — `config → manifest → discovered → stack default → none` — and takes the first rung that yields a command:
 
 1. **Project config** — `typecheckCommand`, `lintCommand`, `testCommand` override everything.
-2. **Planner-discovered** — during the research phase, the planner reads config files and reports the project's validation toolchain. This is persisted to `WorkflowState.discoveredValidation` and used if no project command override exists.
-3. **Heuristic fallback** — if no config or discovery exists, SPLITBRIEF looks at marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer the language and default commands.
-4. **Built-in defaults / graceful skip** — typecheck falls back to `npx tsc --noEmit` only on TypeScript projects (a `tsconfig.json` exists or `typescript` is a dependency) and skips otherwise, tests fall back to `npm test`, and lint skips when unresolved. A stage with no resolved command is recorded as skipped, and a run where every enabled stage is skipped emits a warning.
+2. **Manifest** — a `package.json` script named `typecheck` / `lint` / `test`, a `Makefile` or `justfile` target of that name, or the matching `pyproject.toml` section (`[tool.mypy]` → `mypy .`, `[tool.ruff]` → `ruff check .`, `[tool.pytest.ini_options]` → `pytest`). Deterministic, and read before any model output.
+3. **Planner-discovered** — during the research phase, the planner reads config files and reports the project's validation toolchain. Persisted to `WorkflowState.discoveredValidation`.
+4. **Stack default** — the row `detectStack` picked from `src/core/validation/stacks/` (`validation.stack` pins it): rust, go, python, typescript or javascript, in that marker order. Per-stack commands are tabulated in [FEATURES.md §Validation pipeline](./FEATURES.md#validation-pipeline--checkpoints).
+5. **None** — the stage is recorded as `skipped` with the reason `no <stage> command for an unrecognised stack`, never as passed. A run where every enabled stage is skipped that way emits a warning and prints `gates: NONE — review-only`; it still implements and still reviews, but nothing was verified by a gate. SPLITBRIEF never guesses `npm test` or `npx tsc --noEmit` on a project that is neither JavaScript nor TypeScript.
+
+A command from rung 4, or from rung 2 on a recognised stack, is narrowed to the brief's affected test files (`npm test -- <file>`, `pytest <file>`, `go test ./<pkg>/`, `cargo test -- <name>`). An explicit `*Command` from rung 1 and a discovered command from rung 3 run as written.
 
 Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `lint: false` skips lint regardless of whether a command is available.
 
 **When to use the toggles:**
 - Disable `test` for repos with no test suite.
 - Disable `lint` if your linter is enforced only at PR time (CI) and you want faster local iteration.
-- Leave `typecheck: true` for typed languages — it's the cheapest signal that the implementer wrote compilable code.
+- Leave `typecheck: true` for typed languages — it's the fastest signal that the implementer wrote compilable code.
 
 ### Baseline-relative acceptance
 
-A task's validation is judged against the run's baseline, not absolute repository health. Before the first task, SPLITBRIEF probes every enabled stage and records which are already red **and the exact command each probe ran**. When a task's validation then fails, a stage is exempt — and the task may still be accepted — only when all three hold: the stage was already red at baseline, the failing run used the same command the baseline probed, **and** its failure evidence names none of the task's changed files. The command binding matters most for `test`: with the built-in `npm test` fallback, each run is narrowed to the affected test file of the task at hand, so a baseline measured against the first task's test file never exempts a later task's failure in a different file. The exemption is per-stage and per-file: a stage that was green at baseline always blocks, and a new failure in a stage that was red at baseline still blocks when its evidence names a file the task touched. A skipped stage is never exempt and never blocks. The pipeline keeps running past a baseline-red stage instead of stopping, so the stages behind it still get a verdict, and an accepted task produces no retry prompt.
+A task's validation is judged against the run's baseline, not absolute repository health. Before the first task, SPLITBRIEF probes every enabled stage and records which are already red, **the exact command each probe ran**, and **the set of failures it saw** — one key per (file, message) pair. Baseline red is not a blanket exemption: a stage is exempt — and the task may still be accepted — only when all four hold: the stage was already red at baseline, the failing run used the same command the baseline probed, its failures after the attempt are a **subset** of the baseline's failure set, **and** its failure evidence names none of the task's changed files. A new failure in a file the task never touched (`b.ts` broken by a change to `a.ts`) is therefore not exempt and fails the stage. The command binding matters most for `test`: a stack-default test command is narrowed to the affected test file of the task at hand, so a baseline measured against the first task's test file never exempts a later task's failure in a different file. The exemption is per-stage and per-file: a stage that was green at baseline always blocks, and a new failure in a stage that was red at baseline still blocks when its evidence names a file the task touched. A skipped stage is never exempt and never blocks. The pipeline keeps running past a baseline-red stage instead of stopping, so the stages behind it still get a verdict, and an accepted task produces no retry prompt.
 
 **See also:** [WORKFLOW.md](./WORKFLOW.md) (where validation sits in the loop), `src/engine/orchestrator/validation/run.ts`.
 
@@ -535,7 +509,12 @@ A task's validation is judged against the run's baseline, not absolute repositor
 
 ## 5. `workflow`
 
-Mode, spec/plan document gates, retries, budget, git strategy, and brief-review style.
+Automatic staging, commits, and index checkpoints are not supported; commit changes manually.
+
+workflow.briefReview is currently ignored and deprecated; it does not enable an extra review step.
+
+
+Mode, spec/plan document gates, retries, git strategy, and brief-review style.
 
 ### Schema
 
@@ -549,7 +528,7 @@ workflow: {
 
   // Git
   git?: {
-    commitStrategy?:      'none' | 'checkpoint' | 'per-task';
+    commitStrategy?:      'none'; // deprecated input, stripped on load
     createBranch?:        boolean;
   };
 
@@ -558,22 +537,20 @@ workflow: {
 
   // Mode + brief review
   mode?:                  'quick' | 'standard' | 'speckit';
-  briefReview?:           'simple' | 'rich'; // 'rich' is deprecated and maps to simple review
+  briefReview?:           'simple';
   taskReview?:            'none' | 'failed' | 'every';
 
-  // Budget
-  maxBudget?:             number > 0;
-  budgetPauseThreshold?:  0..1;
   driftChainThreshold?:   0..1;
-  costGate?:              boolean; // default true
 
   // Speckit-only
   speckit?:               { minCoverage?: 0..1 };
 
   // Transcript
-  persistTranscript:      boolean; // default true
   compactionThreshold?:   number;  // int >= 10
   compactionFormat:       'auto' | 'freeform' | 'structured'; // default auto
+
+  // Compatibility only; no rendered effect
+  showSpend?:             boolean; // default true
 }
 ```
 
@@ -583,34 +560,31 @@ workflow: {
 |---|---|---|---|
 | `mode` | enum | `standard` | `quick` \| `standard` \| `speckit`. The retired `instant` still loads as `quick` with a deprecation warning; any other value fails validation. |
 | `approve` | enum | `default` | Spec/plan document gates: `none` (skip spec/plan gates; briefs review still runs in standard/speckit), `spec` (gate spec only), `plan` (gate plan only), `all` (gate both), `default` (per-mode default). |
-| `maxRetries` | int >= 0 | `3` | Per-task local retries before escalation kicks in |
-| `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (a session-scoped tagged stash per task — `splitbrief/<sessionId>/<taskId>` — no commits), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
+| `maxRetries` | int >= 0 | `2` | Per-task local retries before escalation kicks in, so a brief gets `1 + maxRetries` attempts. The default is `DEFAULT_LOCAL_RETRIES` (`src/core/pipeline-spec/retries.ts`), the same constant the Build progress block reads for `attempt <a> of <max>`. |
+| `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
 | `isolation` | enum | `worktree` | Where an implementer that writes files itself does its work before changes are promoted into the project: `worktree` (one linked git worktree per run) or `staged-copy` (a temporary copy of the project per task). Unused when the implementer returns file contents (`writesFiles: extracted-code`) — SPLITBRIEF writes those files into the project itself. |
-| `briefReview` | enum | `simple` | `simple` review. `rich` is deprecated, accepted for compatibility, and treated as `simple`. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` in the external editor. |
+| `briefReview` | deprecated | ignored | Compatibility input accepts only `simple`; `rich` is rejected. It does not control the existing brief approval gate or external editor. |
 | `taskReview` | enum | `none` | Per-task review gate after implementation: `none` (never pause), `failed` (pause only when a task fails, hits recovery, or its validation fails), `every` (pause after every advancing task). **Requires an interactive TUI run** — any value other than `none` is rejected at startup in headless mode (`src/cli/headless.ts`), so leave it `none` for CI. |
-| `maxBudget` | number > 0 | unset | USD ceiling. Workflow warns at 80%, pauses at `budgetPauseThreshold` (default `0.85`), stops at the hard cap, and pauses when paid usage has unknown pricing instead of treating it as `$0`. |
-| `budgetPauseThreshold` | 0..1 | `0.85` | Fraction of `maxBudget` at which to pause. e.g. `0.8` pauses at 80%. |
 | `driftChainThreshold` | 0..1 | `0.6` | Threshold used when omitted; higher = fewer drift-chain events. |
-| `costGate` | boolean | `true` | Pause for cost approval before implementation when a deterministic prompt-input estimate is available. Set `false` to skip the gate. The gate is always skipped in `quick` mode and when no deterministic estimate exists. Output, retries, validation reruns, and escalation are tracked at runtime. |
 | `speckit.minCoverage` | 0..1 | `0.9` | Speckit-mode spec/plan→task traceability threshold. The analyze phase emits a `warning` event when measured `specTaskCoverage` or `planTaskCoverage` falls below this value. Not a test-coverage gate. |
-| `persistTranscript` | boolean | `true` | Persist planner/user transcript text to `session.jsonl` for replay/audit, stateless resume context, and `/compact-transcript`. Set `false` to protect external consumer surfaces from prompt, answer, task prose, comments, retry errors, and feature text; see the transcript policy notes below. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
+| `showSpend` (`show_spend`) | compatibility boolean | `true` | Retained in config, with no main-screen rendered effect. The legacy `/copy cost` export returns `spend display is off` when false. Open `/usage` for usage details; there is no Show spend setting. |
 
 ### Per-mode defaults
 
-| Mode | Planner calls | Default `approve` | Default `briefReview` | Auto snapshots | Best for |
-|---|:---:|:---:|:---:|:---:|---|
-| `quick` | 1 | `none` | `simple` | off | Trivial edits and small tasks that still want a brief |
-| `standard` (default) | 4 | `spec` | `simple` | off | Ordinary feature work |
-| `speckit` | 6–7 | `all` | `simple` | off | Large, risky, externally visible |
+| Mode | Planner calls | Default `approve` | Best for |
+|---|:---:|:---:|---|
+| `quick` | 1 | `none` | Trivial edits and small tasks that still want a brief |
+| `standard` (default) | 4 | `spec` | Ordinary feature work |
+| `speckit` | 6–7 | `all` | Large, risky, externally visible |
 
 `approve: default` resolves to the table above via `resolveApproveLevel()` (`src/core/config/runtime/resolve.ts`).
 
 **Deprecated: `workflow.mode: instant`.** The `instant` mode was merged into `quick`. The string still parses — `WorkflowModeSchema` (`src/core/schemas/enums.ts`) preprocesses it to `quick` — so an existing config keeps loading unchanged, and `validateConfig` pushes a deprecation warning telling you to update the value. `--mode instant` behaves the same way and warns on stderr. Nothing writes `instant` any more; update the file to `quick` to silence the notice.
 
-`briefReview` has no per-mode default — it falls back to `simple` in every mode unless set explicitly (`config.workflow.briefReview ?? 'simple'`). `rich` is deprecated and ignored/mapped to `simple`; keep or set `simple` and use the external editor commands for text edits.
+`briefReview` remains a compatibility field; omit it from new configurations. The existing brief gate and external editor are independent of this field.
 
 ### Implementer isolation
 
@@ -623,24 +597,14 @@ An implementer whose runner writes files itself (`writesFiles: direct` — the `
 
 **Worktree isolation is a file boundary, not a security boundary.** The worktree shares your git repository, your hooks, and your configuration, and it runs on the same machine, as the same user, against the same ports, databases, and network. It keeps the implementer from writing into your checkout mid-run; it does not constrain what the implementer's tool can execute. Neither strategy applies a shell or network sandbox. The workspace environment's PATH is widened to the linked `node_modules/.bin`, resolved to its real path inside the project — the widening is visible in the child's environment, not hidden behind the symlink.
 
-A run's worktree is created once per run and reused across tasks and retries (a marker carrying the session id is what makes an isolation directory the session's own). It lives outside both `.git/` and the project root — under `$XDG_STATE_HOME/splitbrief/trees/<repo-key>/<session-id>` (or `~/.local/state/splitbrief/trees/<repo-key>/<session-id>` when `XDG_STATE_HOME` is unset), keyed by the first twelve hex characters of `sha256(realpath(git rev-parse --git-common-dir))` — because direct-writing CLIs refuse paths under `.git/` as sensitive and a project-rooted test glob would otherwise walk into the second copy and count every test twice. See [WORKTREES.md](./WORKTREES.md) §Run isolation. When the run ends, the worktree is removed with force and its branch deleted if nothing unpromoted remains; a run that ends with unpromoted work keeps the worktree and reports the retention, so interrupted work survives there for recovery — `git worktree list` and `splitbrief ps` show the path.
+A run's worktree is created once per run and reused across tasks and retries (a marker carrying the session id is what makes an isolation directory the session's own). It lives outside both `.git/` and the project root — under `$XDG_STATE_HOME/splitbrief/trees/<repo-key>/<session-id>` (or `~/.local/state/splitbrief/trees/<repo-key>/<session-id>` when `XDG_STATE_HOME` is unset), keyed by the first twelve hex characters of `sha256(realpath(git rev-parse --git-common-dir))` — because direct-writing CLIs refuse paths under `.git/` as sensitive and a project-rooted test glob would otherwise walk into the second copy and count every test twice. See [HOW-IT-WORKS.md §Isolation and promotion](./HOW-IT-WORKS.md#isolation-and-promotion). When the run ends, the worktree is removed with force and its branch deleted if nothing unpromoted remains; a run that ends with unpromoted work keeps the worktree and reports the retention, so interrupted work survives there for recovery — `git worktree list` shows the path.
 
 This setting does not move validation. The deterministic typecheck → lint → test pipeline (§4) runs in the real project directory after promotion, and that pipeline plus the planner's review is what decides whether a task is correct. An implementer that can also run checks in its own directory raises the first-pass rate; it is never the authority on correctness. The dependency link is a symlink, which git records as a file, so the common `node_modules/` pattern — which matches directories only — would leave it untracked inside the worktree. When your repository already ignores its own `node_modules`, SPLITBRIEF adds a rooted `/node_modules` line to the repository's `.git/info/exclude` — the exclude file git shares between your checkout and every linked worktree — so the link stays out of change detection. The line is written under a `# splitbrief run isolation <session id>` marker and taken back out when the run's isolation is disposed, so your checkout is left exactly as it was found and a run that dies mid-flight leaves a block naming the session that wrote it. While it stands it changes nothing for your checkout, because your own rules already ignored that directory. A repository that does not ignore `node_modules` at all is left untouched and the run falls back to `staged-copy` rather than let the link pollute change detection.
-
-`splitbrief start --worktree` is a different thing: it relocates the whole run — planner, session state, and implementer — into `.trees/<slug>` before the workflow begins. `workflow.isolation` governs where the implementer writes inside whatever project directory the run resolved to. See [WORKTREES.md](./WORKTREES.md).
 
 ```yaml
 workflow:
   isolation: worktree
 ```
-
-### Transcript persistence policy
-
-`persistTranscript: false` is a consumer-boundary policy, not a sandbox. Protected surfaces omit or replace prompt/answer text in `session.jsonl`, `--json` stdout, IPC live/replay traffic, RPC status/events, MCP session metadata and `state.json` reads, headless recovery output, summary JSON, summary UI data, exported HTML, recent-session/active-session metadata, `ps`, `resume` / `continue` / `status` CLI console output, generated session ids, generated branch names, OpenTelemetry attributes, task tree rows, input history, and `git_commit` event messages. A bare `splitbrief start --worktree` also uses an opaque `session-<hex>` worktree/branch slug instead of the feature slug. Per-task git commit subjects use task ids and control metadata only.
-
-The UI and machine consumers still receive safe control data: phase, task ids/status, queue depth, cost/usage numbers, allowed recovery actions, approval tiers, runner/model identifiers, safe runner activity labels, compact runner status, and bounded operational warnings/errors. Runner-call warning/error text, approval or revision comments, retry errors, task titles/reasons, task-review prose, queued-message text, and cost-prediction task prose are replaced with `[transcript omitted]` or removed. Raw runner expansion is disabled: protected runner activity forces `rawAvailable:false` and omits `expandId`, so `raw` markers disappear instead of pointing at hidden payloads.
-
-The workflow still writes product artifacts such as `research.md`, `spec.md`, `plan.md`, `tasks.md`, `brief-quality.json`, `brief-readiness.json`, validation outputs, changed source files, and evidence files when those phases produce them. Those files are intentionally review artifacts and can contain the requested work; `persistTranscript:false` does not redact project outputs or make the working tree private.
 
 ### YAML examples
 
@@ -649,26 +613,21 @@ Minimal (rely on per-mode defaults):
 ```yaml
 workflow:
   mode: standard
-  maxRetries: 3
+  maxRetries: 2
 ```
 
-Speckit with budget and manual commits:
+Speckit with manual commits:
 
 ```yaml
 workflow:
   mode: speckit
   approve: all
-  maxRetries: 3
-  briefReview: simple
-  maxBudget: 5.00
-  budgetPauseThreshold: 0.8
+  maxRetries: 2
   driftChainThreshold: 0.6
   git:
-    commitStrategy: none
     createBranch: false
   speckit:
     minCoverage: 0.8
-  persistTranscript: true
 ```
 
 Headless CI:
@@ -678,19 +637,11 @@ workflow:
   mode: quick
   approve: none
   maxRetries: 2
-  git: { commitStrategy: none }
-  persistTranscript: false
 ```
 
 **When to use what:**
 - `git.createBranch: true` — when running SPLITBRIEF in CI or against `main` and you don't want the changes landing on the current branch.
-- `git.commitStrategy: none` — the default and recommended setting for manual review; SPLITBRIEF leaves changes unstaged so you can review and commit them yourself.
 - `isolation: worktree` — the default, and the only strategy where the implementer can run the project's own typecheck, lint, and tests before handing work back. Choose `staged-copy` only when a linked git worktree is not workable for your setup.
-- `maxBudget` — always set this for API-billed runs. It's your stop-loss.
-- `budgetPauseThreshold` — set for unattended runs so you can intervene before the hard ceiling. Unknown paid pricing pauses regardless of the threshold because the runtime cannot prove spend against the cap.
-- `briefReview: simple` — the supported brief review mode. Legacy `briefReview: rich` configs are accepted but mapped to `simple`. Use `Ctrl+E`, `e`, `edit`, `E`, or `edit-file` to edit the persisted Task Brief in the external editor.
-- `persistTranscript: true` — keep this enabled if you want stateless resume reconstruction and manual transcript compaction. `/compact-transcript` appends a summary entry and keeps recent turns verbatim; it does not delete old log lines.
-- `persistTranscript: false` — use when logs, machine-readable output, attach/RPC replay, summaries, telemetry, SPLITBRIEF input history, session names, generated commit messages, and raw runner expansion targets must not expose prompt or answer text. Pending queue state is still stored in `state.json`, but queued-message text is stripped from protected consumers and stateless resume cannot rebuild transcript context if native session resume is unavailable.
 
 **See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) (`/mode` runtime override). Workflow approval level is set with `--approve` or `workflow.approve`.
 
@@ -698,7 +649,7 @@ workflow:
 
 ## 6. `escalation`
 
-When a task fails locally past `maxRetries`, SPLITBRIEF escalates through a tier ladder: **tier 0** retries with the "intermediate" mid-tier model configured here, then **tier 1** has the planner write a hint, then **tier 2** hands the task to the planner ("full escalation"). The intermediate tier runs only when `intermediateProvider` is set.
+After `maxRetries`, the optional tier 0 intermediate worker retries, then tier 1 asks the planner for a hint and retries with the implementer. Exhaustion enters explicit recovery. The planner never automatically takes over code-writing implementation.
 
 ### Schema
 
@@ -726,9 +677,9 @@ escalation:
 
 **Editing from the TUI.** The intermediate tier is configured in YAML only. The Crew section of Settings exposes planner, implementer, and reviewer seats; it has no escalation row or picker. Set `enabled: false` in YAML to disable the tier while retaining its provider and model configuration.
 
-**When to use:** you run a cheap implementer (a small local model, or a cheap model behind your own endpoint) and want a "10x cheaper than the planner but smarter than the implementer" stop along the way before paying for an Opus retry. Skip if your implementer is already frontier-class. Setting `intermediateProvider` is enough to turn the tier on; add `enabled: false` only when you want to keep the provider config but bypass the tier.
+**When to use:** you run a small implementer (a local model, or a small model behind your own endpoint) and want a stop that is stronger than the implementer but weaker than the planner before the task reaches the planner itself. Skip if your implementer is already frontier-class. Setting `intermediateProvider` is enough to turn the tier on; add `enabled: false` only when you want to keep the provider config but bypass the tier.
 
-**Budget knownness.** Escalation and recovery provider calls follow the same knownness rules as every other paid call. Unknown provider cost is not zero. Without `workflow.maxBudget`, a bounded operation with missing pricing is admitted as a provider-dependent reservation: USD stays absent or unknown, never `0`, until the price resolves. With `maxBudget` configured, unknown price or spend refuses before dispatch with `brief_budget_unknown` instead of being guessed at. A pre-acceptance refusal consumes no allowance and makes no provider call.
+**Pricing knownness.** Escalation and recovery provider calls follow the same knownness rules as every other call. Unknown provider cost is not zero. A call whose price does not resolve leaves the run's USD figure absent or unknown, never `0`, and SPLITBRIEF never invents a rate to fill the gap.
 
 ---
 
@@ -742,7 +693,6 @@ Repo-map context block injected into planner prompts. Detailed semantics: [REPOM
 codebase: {
   enabled:     boolean;            // default true
   tokenBudget: int 1..50000;       // default 4000
-  cacheDir:    string;             // default ".splitbrief"
   include?:    string[];           // glob patterns
   exclude?:    string[];           // regex strings
 }
@@ -754,7 +704,6 @@ codebase: {
 |---|---|---|---|
 | `enabled` | boolean | `true` | Emit `<repo-map>` block to planner |
 | `tokenBudget` | int 1..50000 | `4000` | Tokens reserved for the block. PageRank picks the top N symbols that fit. |
-| `cacheDir` | string | `.splitbrief` | Where to put `repomap.sqlite` |
 | `include` | string[] | walks `.ts`/`.tsx` | Glob patterns relative to project root |
 | `exclude` | string[] | test files + `dist/` + `node_modules/` | **Regex strings** (note: not globs) |
 
@@ -764,7 +713,6 @@ YAML:
 codebase:
   enabled: true
   tokenBudget: 6000
-  cacheDir: .splitbrief
   include:
     - "src/**/*.ts"
     - "src/**/*.tsx"
@@ -789,46 +737,27 @@ Workflow lifecycle hooks. Quick overview here; full schema, trust model, and sub
 
 ```ts
 hooks: {
-  builtin?:         Record<string, boolean>;
   pre_planning?:    HookEntry[];
   pre_task?:        HookEntry[];
   post_task?:       HookEntry[];
   pre_validation?:  HookEntry[];
   post_validation?: HookEntry[];
-  pre_commit?:      HookEntry[];
-  post_commit?:     HookEntry[];
+  pre_commit?:      []; // retired; nonempty entries rejected
+  post_commit?:     []; // retired; nonempty entries rejected
   pre_escalation?:  HookEntry[];
-  pre_compact?:     HookEntry[];   // reserved
   on_error?:        HookEntry[];
+  on_halt?:         HookEntry[];
   on_complete?:     HookEntry[];
 }
 
 type HookEntry =
-  | { kind?: 'command'; name?: string; command: string; args?: string[];
-      timeout_ms?: number; on_failure?: 'block' | 'warn' | 'ignore' }
-  | { kind: 'module'; name?: string; path: string;
-      timeout_ms?: number; on_failure?: 'block' | 'warn' | 'ignore' };
+  { kind?: 'command'; name?: string; command: string; args?: string[];
+    timeout_ms?: number; on_failure?: 'block' | 'warn' | 'ignore' };
 ```
 
 `HookEntry` is preprocessed: a bare object without `kind` is treated as `kind: 'command'`. `command` rejects bare `sh` / `bash` / `/bin/sh` / `/bin/bash` — use a script file.
 
-### Built-in toggles
-
-| Built-in | Default | Description |
-|---|---|---|
-| `prettier-on-change` | off | Run `prettier --write` on touched files in `post_task` |
-| `block-secrets` | off | Reject commits/diffs containing common secret patterns in `pre_commit`; warns (rather than silently passing) when a listed file cannot be scanned |
-
-YAML — minimal:
-
-```yaml
-hooks:
-  builtin:
-    prettier-on-change: true
-    block-secrets: true
-```
-
-YAML — custom commands:
+YAML:
 
 ```yaml
 hooks:
@@ -852,127 +781,20 @@ hooks:
 
 ---
 
-## 9. `otel`
+## 9. `approval`
 
-OpenTelemetry span sink. Full details: [OTEL.md](./OTEL.md).
-
-### Schema
-
-```ts
-otel: {
-  enabled:     boolean; // default false
-  serviceName: string;  // default "splitbrief"
-}
-```
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `enabled` | boolean | `false` | Install the OTel span sink. Requires bootstrapping an exporter (see env vars). |
-| `serviceName` | string | `splitbrief` | Tracer/instrumentation scope name used when creating spans |
-
-YAML:
-
-```yaml
-otel:
-  enabled: true
-  serviceName: splitbrief-prod
-```
-
-Exporter selection — set **one** of:
-- `OTEL_TRACES_EXPORTER=console` — built-in console span exporter (debugging).
-- `SPLITBRIEF_OTEL_EXPORTER=console` — alias for the same.
-- `--otel-exporter console` — CLI flag, same effect.
-
-For OTLP HTTP/gRPC exporters, provide your own in-process provider bootstrap or add support to `src/lib/otel.ts`; only `console` is built in.
-
-**When to use:** wire SPLITBRIEF into your existing observability stack to track per-task duration, planner vs implementer cost, escalation rates.
-
-**See also:** [OTEL.md](./OTEL.md).
-
----
-
-## 10. `snapshots`
-
-Automatic git/working-tree snapshots before/after key transitions. All triggers default off; failures emit a warning event and never abort the run.
-
-### Schema
-
-```ts
-snapshots: {
-  auto?: {
-    preTask?:        boolean;
-    postTask?:       boolean;
-    preFinalReview?: boolean;
-  };
-}
-```
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `auto.preTask` | boolean | `false` | Snapshot immediately before each task starts |
-| `auto.postTask` | boolean | `false` | Snapshot immediately after each task completes successfully |
-| `auto.preFinalReview` | boolean | `false` | Snapshot before the final review runs |
-
-YAML:
-
-```yaml
-snapshots:
-  auto:
-    preTask: true
-    postTask: true
-    preFinalReview: false
-```
-
-Manual snapshots are always available via `splitbrief snapshot create`.
-
-**When to use:** running unattended jobs where you want a rollback point at every checkpoint, independent of `git.commitStrategy`.
-
----
-
-## 11. `trust`
-
-Repo-local extension trust.
-
-### Schema
-
-```ts
-trust: {
-  customRenderers?: boolean;   // default false
-}
-```
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `customRenderers` | boolean | `false` | Allow `splitbrief handoff <custom-target>` to import `.splitbrief/handoff-renderers/<target>.ts` or `.js`. |
-
-YAML:
-
-```yaml
-trust:
-  customRenderers: true
-```
-
-Leave this off unless you trust the repository. `splitbrief handoff --list` can discover custom targets without this setting. Executing a custom target requires either this setting or the per-command `--allow-custom-renderer` flag.
-
----
-
-## 12. `approval`
-
-Tiered approval system for declared file writes. It sits orthogonal to `workflow.approve`, which controls spec/plan gates.
+Tiered approval system for declared file writes. It sits orthogonal to `workflow.approve`, which controls spec/plan gates. Both the block and its `tiers` sub-block are strict: an unknown key fails the load.
 
 ### Schema
 
 ```ts
 approval: {
   enabled:                    boolean;        // default true
-  headless?:                  boolean;
   tiers?: {
     read?:                ApprovalTier;
     write_in_scope?:      ApprovalTier;
-    validation?:          ApprovalTier;
     write_out_of_scope?:  ApprovalTier;
     destructive?:         ApprovalTier;
-    network?:             ApprovalTier;
     package_change?:      ApprovalTier;
   };
   feedRejectionsToPlanner:    boolean;        // default true
@@ -984,7 +806,6 @@ type ApprovalTier = 'auto' | 'sticky' | 'confirm';
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | boolean | `true` | Master toggle for file-write tiered approval |
-| `headless` | boolean | unset | Force `confirm` tiers to default-deny rather than block. Use in CI. |
 | `tiers.<op>` | enum | per-op default | `auto` (no prompt), `sticky` (prompt once, remember), `confirm` (prompt every time) |
 | `feedRejectionsToPlanner` | boolean | `true` | When the user rejects an op, send the rejection back to the planner so it can adapt. |
 
@@ -1009,7 +830,7 @@ Supported glob patterns: exact match (`src/config.ts`), recursive directory (`sr
 
 Note: `allowedPaths` only affects the action *class* (`write_in_scope` vs `write_out_of_scope`), not the *tier*. If you override `approval.tiers.write_in_scope: 'sticky'`, writes to allowed paths will still prompt once per session.
 
-**Tier keys:** `read`, `write_in_scope`, `validation`, `write_out_of_scope`, `destructive`, `network`, `package_change`. The current file-write classifier emits `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, and `package_change`. `validation` and `network` remain accepted config keys for compatibility; they do not sandbox validation, shell commands, or network access.
+**Tier keys:** `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `package_change` — the five classes the file-write classifier emits. The block is strict: any other key fails the load. There is no tier for validation, shell commands, or network access; SPLITBRIEF does not sandbox those.
 
 YAML — strict:
 
@@ -1029,7 +850,7 @@ approval:
 
 ---
 
-## 13. `palette`
+## 10. `palette`
 
 Custom slash-command actions for the in-TUI command palette.
 
@@ -1054,10 +875,10 @@ palette:
     - id: accept-run
       label: "Accept current run"
       description: "Mark the current run state as accepted"
-      command: /accept-run
-    - id: handoff-claude
-      label: "Write Claude handoff"
-      command: /handoff claude-code
+      command: /run accept
+    - id: quick-mode
+      label: "Switch to quick mode"
+      command: /mode quick
 ```
 
 **When to use:** surfacing project-specific runbook actions inside SPLITBRIEF's TUI without leaving the session.
@@ -1066,40 +887,88 @@ palette:
 
 ---
 
-## 14. `sessions`, `plannerEstimateReview`, `autoSplitOverflow`
+## 11. `sessions`
 
-These are top-level fields (siblings of `workflow`, not nested under it).
+A top-level field (a sibling of `workflow`, not nested under it).
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `sessions.scope` | enum | `project` | Accepted by the schema for future session backends. Current workflow commands write session state under `<projectDir>/.splitbrief`. |
-| `plannerEstimateReview` | boolean | `false` | Spend one extra planner call to sanity-check the deterministic per-task prompt-input estimate before implementation. The planner classifies it (`ok` / `split-suggested` / `risk` / `needs-user-decision`), flags affected task ids, and the verdict is surfaced in the cost-prediction chrome. Skipped on resume; requires a deterministic estimate. |
-| `autoSplitOverflow` | boolean | `false` | After the cost gate, automatically split tasks that overflow the implementer's context budget (or that the planner review flags as too large) into smaller child tasks before implementation. Splits that would drop acceptance criteria, dependencies, or produce too many children are skipped with a warning. |
+| `sessions.scope` | enum | `project` | `project` is the only accepted value. Workflow commands write session state under `<projectDir>/.splitbrief`. |
 
 ```yaml
 sessions:
-  scope: global
-plannerEstimateReview: true
-autoSplitOverflow: true
+  scope: project
 ```
 
 ---
 
-## 15. Environment variables
+## 12. `customCommands`
 
-Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/lib/otel.ts`, `src/engine/providers/registry.ts`, `src/engine/providers/client/metadata.ts`, `src/features/workflow/review-parser.ts`.
+Named `shell` and `agent` runners, declared once and reused by any seat. An entry is the execution tuple SPLITBRIEF spawns — one literal executable plus literal argv — kept out of the seat blocks so the planner, reviewer, and implementer can all point at the same audited command. Schema: `src/core/config/custom-commands.ts`.
+
+### Schema
+
+```ts
+customCommands: {
+  [id: string]: {          // id: lowercase letters, digits, hyphens; starts with a letter
+    label:         string;
+    contract:      'output' | 'direct';
+    executable:    string;
+    argv?:         string[];
+    outputFormat?: 'stream-json' | 'jsonl' | 'text' | 'opencode';
+    idleWarnMs?:   number;
+    idleKillMs?:   number;
+    env?:          string[];
+  };
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `label` | string | — | Display name in the runner picker and trust prompts |
+| `contract` | enum | — | `output` is the `shell` contract (prompt on stdin, result parsed from stdout); `direct` is the `agent` contract (the subprocess writes files itself and stdout is ignored) |
+| `executable` | string | — | One literal executable path. Shell metacharacters, `$VAR`, backticks and newlines are rejected — this is spawned directly, never through a shell |
+| `argv` | string[] | `[]` | Literal arguments. An interpreter command string (`sh -c …`) is rejected; the prompt travels on stdin and never appears here |
+| `outputFormat` | enum | `text` | stdout parser for the `output` contract |
+| `idleWarnMs` | number | `RUNNER_IDLE_WARN_MS` | Warn when the process has produced nothing for this long |
+| `idleKillMs` | number | `RUNNER_IDLE_KILL_MS` | Kill the process after this much silence; must be at least `idleWarnMs` |
+| `env` | string[] | `[]` | Uppercase environment variable names to forward. Credentials belong here, never in `executable` or `argv` — a credential-shaped literal fails the load |
+
+Two entries that normalize to the same execution tuple are rejected, so one command has exactly one id.
+
+```yaml
+customCommands:
+  local-agent:
+    label: Local agent
+    contract: direct
+    executable: /usr/local/bin/my-agent
+    argv: ['--repo', '.']
+    idleWarnMs: 120000
+    idleKillMs: 600000
+    env: ['MY_AGENT_TOKEN']
+```
+
+**When to use:** a home-grown tool that should be selectable in the picker like a known CLI, or one command shared by more than one seat. A one-off runner can still be declared inline on the seat with `kind: shell` / `kind: agent`.
+
+---
+
+## 13. Environment variables
+
+Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/engine/providers/registry.ts`, `src/engine/providers/client/metadata.ts`, `src/features/workflow/review-parser.ts`.
 
 ### Provider authentication
 
+CLI method selection requires exact tool/platform/version invocation-enforcement evidence. The current matrix is empty: an explicit `session` or `api-key` selection is refused; omit `authChannel` and configure authentication through the host CLI. Provider and model routes do not select or prove a billing method.
+
 | Variable | Provider | Notes |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | `cli` `claude-code` | Feeds the tool's `api-key` auth channel; unset it to run on the tool's own session credentials. |
-| `OPENAI_API_KEY` | `cli` `codex` | Feeds the tool's `api-key` auth channel. |
-| `GH_TOKEN` / `GITHUB_TOKEN` | `cli` `copilot` | Feeds the tool's `api-key` auth channel. |
-| `CURSOR_API_KEY` | `cli` `cursor` | Feeds the tool's `api-key` auth channel. |
+| `ANTHROPIC_API_KEY` | `cli` `claude-code` | A credential the host CLI may use. Its own configuration determines the method; this does not prove API billing. |
+| `OPENAI_API_KEY` | `cli` `codex` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
+| `GH_TOKEN` / `GITHUB_TOKEN` | `cli` `copilot` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
+| `CURSOR_API_KEY` | `cli` `cursor` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
 | `OLLAMA_LOCAL_API_KEY` | local `ollama` daemon | Optional. Only use it through `apiKey: env:OLLAMA_LOCAL_API_KEY` when your loopback daemon requires authentication. |
 
-Neither admitted `api` provider has a credential env var: both are loopback daemons. A custom provider has no inferable env var name either, so it must set `service`, `offering`, `apiBase`, and an inline `apiKey` in YAML — an `apiKey: env:VAR` reference is refused for a provider the catalog does not know. `cli` `command-code` has no credential environment variable — its published CLI documentation names none, so it authenticates only through its own `cmd login` session, which the sandbox bridges as files.
+The three admitted local providers have no default credential environment variable; they are loopback connections with optional explicit authentication. A custom provider has no inferable env var name either, so it must set `service`, `offering`, `apiBase`, and an inline `apiKey` in YAML — an `apiKey: env:VAR` reference is refused for a provider the catalog does not know. `cli` `command-code` has no credential environment variable — its published CLI documentation names none, so it authenticates only through its own `cmd login` session, which the sandbox bridges as files.
 
 ### Runtime overrides
 
@@ -1107,19 +976,11 @@ Neither admitted `api` provider has a credential env var: both are loopback daem
 |---|---|
 | `SPLITBRIEF_CONTEXT_LENGTH` | Override SPLITBRIEF's detected implementer context length (`src/engine/providers/capabilities.ts`). Applies only to the default implementer profile; profiles that declare no window otherwise route at the shared default. This sizes prompt budgets only; it does not change Ollama `num_ctx` or any provider-side model limit. |
 
-### Observability
-
-| Variable | Purpose |
-|---|---|
-| `OTEL_TRACES_EXPORTER` | Standard OTel — set to `console` to bootstrap the built-in `ConsoleSpanExporter`. |
-| `SPLITBRIEF_OTEL_EXPORTER` | Alias for the above (same values). |
-| Other `OTEL_*` | Read by your own OTel bootstrap/provider; SPLITBRIEF's built-in bootstrap only handles console exporter selection. |
-
 ### TUI / process
 
 | Variable | Purpose |
 |---|---|
-| `CI` | If truthy, suppress fullscreen/alternate-screen rendering. Use `--json` or `--rpc` when stdout must be machine-readable. |
+| `CI` | If truthy, suppress fullscreen/alternate-screen rendering. Use `--json` or `--plain` when stdout must be machine-readable. |
 | `SHELL` | Shell detection for spawn fallback (`src/lib/process/spawn/progress.ts`). |
 | `TERM_PROGRAM` | Kitty keyboard-protocol detection for advanced key bindings. |
 | `FORCE_HYPERLINK` | `1` (or any non-empty value other than `0`/`false`) forces OSC 8 hyperlink emission for markdown links; `0`/`false` forces plain styled labels; otherwise SPLITBRIEF sniffs `TERM_PROGRAM`/`VTE_VERSION`/`KITTY_WINDOW_ID`/`WT_SESSION`/`TERM` (Apple Terminal is excluded from auto-detection). The only configuration-surface change of the file-link feature — no YAML key (`src/lib/terminal/hyperlinks.ts`). |
@@ -1129,64 +990,59 @@ Neither admitted `api` provider has a credential env var: both are loopback daem
 
 ---
 
-## 16. CLI flags
+## 14. CLI flags
 
-Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `continue`, `last`) plus command-specific registrations. These flags **override** the matching config field for the current invocation only. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the canonical flag matrix.
+Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `continue`) plus command-specific registrations. These flags **override** the matching config field for the current invocation only. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the canonical flag matrix.
 
 | Flag | Purpose | Commands |
 |---|---|---|
-| `--approve <level>` | Spec/plan document gates: `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue, last |
-| `--mode <mode>` | `quick` \| `standard` \| `speckit` | start, spec, resume, continue, last; on `start --detach`, omitted `--mode` falls back to `workflow.mode` in config |
-| `--budget <amount>` | Dollar ceiling | start, resume, continue, last |
-| `--model <m>` | Alias for `--implementer-model` | start, resume, continue, last |
-| `--provider <p>` | Alias for `--implementer` | start, resume, continue, last |
-| `--planner <tool>` | Planner tool override | start, resume, continue, last |
-| `--planner-model <m>` | Planner model override | start, resume, continue, last |
-| `--planner-command <cmd>` | Custom planner command (kind=shell) | start, resume, continue, last |
-| `--planner-api-base <url>` | Planner API base URL (kind=api only; warns + ignored otherwise) | start, resume, continue, last |
-| `--planner-api-key-env <var>` | Planner API key env var, stored as `env:<var>` (kind=api only; warns + ignored otherwise) | start, resume, continue, last |
-| `--planner-args <arg>` | Append a planner CLI/shell arg (repeatable; kind=cli/shell/agent); authority-bearing flags are refused before spawn | start, resume, continue, last |
-| `--planner-output-format <format>` | Planner output format (`stream-json` \| `jsonl` \| `text` \| `opencode`); the compiler path keeps the backend's native parser and terminal protocol | start, resume, continue, last |
-| `--planner-context-length <tokens>` | Planner context length in tokens (kind=api only; sizes the request `max_tokens`, ignored by other kinds) | start, resume, continue, last |
-| `--planner-effort <level>` | Planner effort hint (`low` \| `medium` \| `high` \| `xhigh`) | start, resume, continue, last |
-| `--implementer <p>` | Implementer provider override | start, resume, continue, last |
-| `--implementer-model <m>` | Implementer model override | start, resume, continue, last |
-| `--implementer-command <cmd>` | Custom implementer command (kind=shell) | start, resume, continue, last |
-| `--implementer-api-base <url>` | Implementer API base URL (kind=api only; warns + ignored otherwise) | start, resume, continue, last |
-| `--implementer-api-key-env <var>` | Implementer API key env var, stored as `env:<var>` (kind=api only; warns + ignored otherwise) | start, resume, continue, last |
-| `--implementer-args <arg>` | Append an implementer CLI/shell arg (repeatable; kind=cli/shell/agent) | start, resume, continue, last |
-| `--implementer-output-format <format>` | Implementer output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue, last |
-| `--implementer-context-length <tokens>` | Implementer context length (tokens) | start, resume, continue, last |
-| `--reviewer <tool>` | Reviewer tool override | start, resume, continue, last |
-| `--reviewer-model <m>` | Reviewer model override | start, resume, continue, last |
-| `--reviewer-command <cmd>` | Custom reviewer command (kind=shell) | start, resume, continue, last |
-| `--reviewer-api-base <url>` | Reviewer API base URL (kind=api only; warns + ignored otherwise) | start, resume, continue, last |
-| `--reviewer-api-key-env <var>` | Reviewer API key env var, stored as `env:<var>` (kind=api only; warns + ignored otherwise) | start, resume, continue, last |
-| `--reviewer-args <arg>` | Append a reviewer CLI/shell arg (repeatable; kind=cli/shell/agent); authority-bearing flags are refused before spawn | start, resume, continue, last |
-| `--reviewer-output-format <format>` | Reviewer output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue, last |
-| `--reviewer-context-length <tokens>` | Reviewer context length in tokens (kind=api only; sizes the request `max_tokens`, ignored by other kinds) | start, resume, continue, last |
-| `--reviewer-effort <level>` | Reviewer effort hint (`low` \| `medium` \| `high` \| `xhigh`) | start, resume, continue, last |
+| `--approve <level>` | Spec/plan document gates: `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue |
+| `--mode <mode>` | `quick` \| `standard` \| `speckit` | start, spec, resume, continue |
+| `--model <m>` | Alias for `--implementer-model` | start, resume, continue |
+| `--provider <p>` | Alias for `--implementer` | start, resume, continue |
+| `--planner <tool>` | Planner tool override | start, resume, continue |
+| `--planner-model <m>` | Planner model override | start, resume, continue |
+| `--planner-command <cmd>` | Custom planner command (kind=shell) | start, resume, continue |
+| `--planner-api-base <url>` | Planner API base URL (kind=api only; warns + ignored otherwise) | start, resume, continue |
+| `--planner-api-key-env <var>` | Planner API key env var, stored as `env:<var>` (kind=api only; warns + ignored otherwise) | start, resume, continue |
+| `--planner-args <arg>` | Append a planner CLI/shell arg (repeatable; kind=cli/shell/agent); authority-bearing flags are refused before spawn | start, resume, continue |
+| `--planner-output-format <format>` | Planner output format (`stream-json` \| `jsonl` \| `text` \| `opencode`); an admitted CLI keeps its own native parser and terminal protocol | start, resume, continue |
+| `--planner-context-length <tokens>` | Planner context length in tokens (kind=api only; sizes the request `max_tokens`, ignored by other kinds) | start, resume, continue |
+| `--planner-effort <level>` | Planner effort hint (`none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max`). The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it. | start, resume, continue |
+| `--implementer <p>` | Implementer provider override | start, resume, continue |
+| `--implementer-model <m>` | Implementer model override | start, resume, continue |
+| `--implementer-command <cmd>` | Custom implementer command (kind=shell) | start, resume, continue |
+| `--implementer-api-base <url>` | Implementer API base URL (kind=api only; warns + ignored otherwise) | start, resume, continue |
+| `--implementer-api-key-env <var>` | Implementer API key env var, stored as `env:<var>` (kind=api only; warns + ignored otherwise) | start, resume, continue |
+| `--implementer-args <arg>` | Append an implementer CLI/shell arg (repeatable; kind=cli/shell/agent) | start, resume, continue |
+| `--implementer-output-format <format>` | Implementer output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue |
+| `--implementer-context-length <tokens>` | Implementer context length (tokens) | start, resume, continue |
+| `--reviewer <tool>` | Reviewer tool override | start, resume, continue |
+| `--reviewer-model <m>` | Reviewer model override | start, resume, continue |
+| `--reviewer-command <cmd>` | Custom reviewer command (kind=shell) | start, resume, continue |
+| `--reviewer-api-base <url>` | Reviewer API base URL (kind=api only; warns + ignored otherwise) | start, resume, continue |
+| `--reviewer-api-key-env <var>` | Reviewer API key env var, stored as `env:<var>` (kind=api only; warns + ignored otherwise) | start, resume, continue |
+| `--reviewer-args <arg>` | Append a reviewer CLI/shell arg (repeatable; kind=cli/shell/agent); authority-bearing flags are refused before spawn | start, resume, continue |
+| `--reviewer-output-format <format>` | Reviewer output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue |
+| `--reviewer-context-length <tokens>` | Reviewer context length in tokens (kind=api only; sizes the request `max_tokens`, ignored by other kinds) | start, resume, continue |
+| `--reviewer-effort <level>` | Reviewer effort hint (`none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max`). The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it. | start, resume, continue |
 | `--project <dir>` | Project directory (default cwd) | most commands |
-| `--no-fullscreen` | Disable alt-screen buffer | start, resume, continue, last, attach |
-| `--no-mouse` | Disable mouse tracking | start, resume, continue, last, attach |
-| `--hover` | Opt in to hover highlighting (requires mouse + fullscreen) | start, resume, continue, last, attach |
-| `--allow-hooks` | Trust hook config without prompting (CI) | start, resume, continue, last, spec |
-| `--allow-repo-runners` | Trust repo-local shell/agent runner execution from project config, including profiles and project-local PATH/script resolution | start, resume, continue, last, spec |
-| `--allow-unverified-auth` | Let a headless run proceed with unverified CLI authentication (no effect interactively) | start, resume, continue, last |
-| `--allow-custom-renderer` | Trust repo-local handoff renderer for this invocation | handoff |
-| `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue, last |
-| `--rpc` | Bidirectional NDJSON over stdin/stdout | start, resume, continue, last |
-| `--otel-exporter <name>` | Bootstrap built-in exporter (`console` only) | start, resume, continue, last |
-| `--worktree [name]` | Run in a linked git worktree; bare flag uses the feature slug unless `workflow.persistTranscript: false`, in which case it uses an opaque `session-<hex>` slug | start |
-| `--yolo` | Skip file-write tiered approval prompts for this session | start, resume, continue, last |
-| `--detach` | Spawn workflow as background IPC server | start |
+| `--no-fullscreen` | Disable alt-screen buffer | start, resume, continue |
+| `--no-mouse` | Disable mouse tracking | start, resume, continue |
+| `--hover` | Opt in to hover highlighting (requires mouse + fullscreen) | start, resume, continue |
+| `--allow-hooks` | Trust hook config without prompting (CI) | start, resume, continue, spec |
+| `--allow-repo-runners` | Trust repo-local shell/agent runner execution from project config, including profiles and project-local PATH/script resolution | start, resume, continue, spec |
+| `--allow-unverified-auth` | Let a headless run proceed with unverified CLI authentication (no effect interactively) | start, resume, continue |
+| `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue |
+| `--plain` | Headless: one plain line per phase, task, review and completion (`phase:`, `task T00N: done\|failed (<gates>)`, `review:`, `done:`), no TUI. Refuses to run alongside `--json` (exit `2`) | start, resume, continue |
+| `--yolo` | Skip file-write tiered approval prompts for this session | start, resume, continue |
+| `--skills <ids>` | Comma-separated planner-skill ids to attach (unknown id → exit `2`) | start (headless), resume, continue |
+| `--action <action>` | Apply an action to the pending recovery before continuing: `skip`, `retry`, or `switch-seat:<tool>[:<model>]` | continue |
 | `--reconfigure` | Overwrite existing config | init |
-| `--history` | Show cost history across sessions | status |
-| `-p, --project <dir>` | Project directory | `export` |
 
 ---
 
-## 17. Validation behavior
+## 15. Validation behavior
 
 Config is validated on every load (`src/core/config/load/io.ts:loadConfig`).
 
@@ -1195,15 +1051,15 @@ Config is validated on every load (`src/core/config/load/io.ts:loadConfig`).
   - Config file permission warning on POSIX (`config-file-permissions`; see §1 **Permissions**).
   - A `shell` or `agent` runner passing `{prompt}` through argv instead of stdin (`securityWarnings`, `src/core/config/load/validation/warnings.ts`).
 
-Unknown top-level keys are tolerated; unknown nested keys in strict blocks (`workflow` and its `git` / `speckit` blocks, `hooks`, `codebase`, `otel`, every runner config, `PlannerCapabilities`) fail validation. Each unrecognized key is reported at its own dotted path — `workflow.autoApproveSpec: Unknown config key …`, not just `workflow`.
+Unknown top-level keys are tolerated, apart from the five removed ones named in §16, which fail the load; unknown nested keys in strict blocks (`workflow` and its `git` / `speckit` blocks, `hooks`, `codebase`, `approval` and its `tiers` block, every runner config, `PlannerCapabilities`) fail validation. Each unrecognized key is reported at its own dotted path — `workflow.autoApproveSpec: Unknown config key …`, not just `workflow` — and every error found in one load is reported together, one line per path, so a config with several problems is not corrected one attempt at a time.
 
 ---
 
-## 18. Config version
+## 16. Config version
 
 `version: 3` is the only accepted schema version. A config carrying any other version — or none at all — is rejected at load with `Unsupported config version: <value>. Supported: 3.` Run `splitbrief init --reconfigure` to write a current config; there is no in-memory upgrade path.
 
-Fields that older shapes used are gone rather than aliased — `workflow.autoApproveSpec` / `workflow.autoApprovePlan` are replaced by `workflow.approve`, top-level `workflow.commitStrategy` by `workflow.git.commitStrategy`, and `workflow.mode: full` by `workflow.mode: speckit`. Configs still carrying the old spellings fail validation with the offending path named.
+Fields that older shapes used are gone rather than aliased — `workflow.autoApproveSpec` / `workflow.autoApprovePlan` are replaced by `workflow.approve`, `workflow.commitStrategy` and `workflow.git.commitStrategy` by manual commits, and `workflow.mode: full` by `workflow.mode: speckit`. These old fields and values fail validation with the offending path named, except `workflow.git.commitStrategy: none`: it loads with a deprecation warning and is removed from the resolved config. Delete the retired field when updating your config.
 
 ### Removed identities
 
@@ -1212,20 +1068,58 @@ Runner identities that a `version: 3` config once accepted are rejected by name,
 | You had | Load error | Migration |
 |---|---|---|
 | `kind: agent-sdk` | `Runner kind "agent-sdk" was removed; use kind cli, api, shell, or agent.` | `kind: api` against your own endpoint — set `provider`/`service` to your own name, plus `offering`, `apiBase`, and an inline `apiKey`. |
-| `provider:` `anthropic`, `deepseek`, `groq`, `ollama-cloud`, `openai`, `openrouter`, `together` | `API provider "<id>" was removed; only "ollama" and "lm-studio" are built in. Configure it as a custom endpoint: set provider/service to your own name plus apiBase and an inline apiKey (docs/CONFIGURATION.md).` | Same custom-endpoint shape as above — see [`kind: api`](#kind-api). The removed id is refused even though custom names are otherwise free, so pick a new one. |
+| `provider:` `anthropic`, `deepseek`, `groq`, `ollama-cloud`, `openai`, `openrouter`, `together` | `API provider "<id>" was removed; only "ollama", "lm-studio", "llama-cpp" are built in. Configure it as a custom endpoint: set provider/service to your own name plus apiBase and an inline apiKey (docs/CONFIGURATION.md).` | Same custom-endpoint shape as above — see [`kind: api`](#kind-api). The removed id is refused even though custom names are otherwise free, so pick a new one. |
 | `tool: aider` | `CLI tool "aider" was removed; supported tools are <the tools that seat accepts>.` | No replacement — choose another `cli` tool, or drive Aider as a `shell` runner. |
+
+### Removed config keys
+
+Twenty-one shapes that a `version: 3` config once carried are gone: eighteen removed keys, plus three
+removed **values** of keys that still exist (`workflow.briefReview: rich`, a hook entry's
+`kind: module`, `sessions.scope: global`). There is no version bump and no migration pass — every
+one of them fails the load. One load names them all: `validateConfig`
+(`src/core/config/load/validation/config.ts`) collects every error and the thrown message carries one
+`  <path>: <message>` line per offending path, so a config carrying several is told about all of them
+in a single run rather than one per attempt. That holds for a removed **top-level** key as well: the
+root object is not strict (§15), so an unrelated stale root key is still tolerated, but the five
+removed root keys are named explicitly (`REMOVED_TOP_LEVEL_KEYS`), so a stale `otel:` block has to be
+deleted rather than left to rot. Every replacement below is the whole migration; nothing reads the old
+key.
+
+| You had | On load | Replacement |
+|---|---|---|
+| `workflow.persistTranscript` | rejected — `workflow.persistTranscript: Unknown config key …` | None. The transcript and `session.jsonl` are always written; persistence is no longer a policy. |
+| `workflow.briefReview: rich` | rejected — `Invalid input: expected "simple"` | Omit the field; `simple` is accepted only for compatibility and ignored. |
+| `hooks.builtin` | rejected — `hooks.builtin: Unknown config key …` | None. The built-in hook bundle is gone; write the check as an ordinary `kind: command` hook (§8). |
+| `hooks.pre_compact` | rejected — `hooks.pre_compact: Unknown config key …` | None. Transcript compaction is automatic and fires no hook; `HOOK_EVENTS` is the eleven events in §8. |
+| hook entry `kind: module` | rejected — `Invalid input: expected "command"` | `kind: command` — an executable and argv, the only hook kind. |
+| `approval.headless` | rejected — `approval.headless: Unknown config key …` | None, and this is a **behaviour change**: a run with no reply channel (`--json`, `--plain`) already fails closed on its own, and a run that has one is now always prompted. See §9. |
+| `approval.tiers.network` | rejected — `approval.tiers.network: Unknown config key …` | None. There is no network tier and never was a network sandbox; the five tiers in §9 are all of them. |
+| `approval.tiers.validation` | rejected — `approval.tiers.validation: Unknown config key …` | None. Validation is gated by `validation.*` (§4), not by an approval tier. |
+| `codebase.cacheDir` | rejected — `codebase.cacheDir: Unknown config key …` | None. The repo-map cache is always `.splitbrief/`. |
+| `sessions.scope: global` | rejected — `Invalid input: expected "project"` | `scope: project` — sessions live under the project's `.splitbrief/`. |
+| `trust` (the whole block, `trust.customRenderers`) | rejected — `trust: Unknown config key …` | None. Custom renderers are gone; nothing reads the flag. |
+| `otel` (the whole block) | rejected — `otel: Unknown config key …` | None. The OpenTelemetry sink, its packages and `--otel-exporter` are gone; use the JSON event stream (`--json`) or a `post_task` hook. |
+| `snapshots` (the whole block, including `snapshots.auto.*`) | rejected — `snapshots: Unknown config key …` | None. Snapshots are still taken as the baseline for change detection and for `/run reject`; the trigger points are fixed, not configurable, and there is no `splitbrief snapshot` command. A run captures its baseline before the first task and records one run snapshot at the end for `/run reject` to roll back to (see [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md)). |
+| `plannerEstimateReview` | rejected — `plannerEstimateReview: Unknown config key …` | None. The estimate-review gate is gone; the brief-approval gate (§5 `approve`) is the remaining stop before implementation. |
+| `autoSplitOverflow` | rejected — `autoSplitOverflow: Unknown config key …` | None. An overflowing task is reported rather than split automatically; re-plan or narrow the feature description. |
+| `workflow.maxBudget` (`max_budget`) | rejected — `workflow.maxBudget: Unknown config key …` | None. Budget gates are gone; a run reports what it spent and stops when you stop it. |
+| `workflow.budgetPauseThreshold` (`budget_pause_threshold`) | rejected — `workflow.budgetPauseThreshold: Unknown config key …` | None. There is no budget pause to threshold. |
+| `workflow.costGate` (`cost_gate`) | rejected — `workflow.costGate: Unknown config key …` | None. The cost-approval gate is gone; the brief-approval gate (§5 `approve`) is the remaining stop before implementation. |
+| `implementerProfiles.profiles.*.costTier` (`cost_tier`) | rejected — `cost_tier: Unknown config key …` | None. Routing is by capability — context window, then name — never by price. |
+| `implementerProfiles.profiles.*.pricePer1M` (`price_per1_m`) | rejected — `price_per1_m: Unknown config key …` | None. Profiles carry no price. |
+| `implementer.model: auto:cheapest` | rejected — `Unknown model …` from the runner, since the marker is no longer parsed | Name a concrete model, or `auto` to delegate to the tool's own default. |
 
 ---
 
-## 19. Full production example
+## 17. Full production example
 
-A representative config: Claude Code subscription as planner, a small local LM Studio model as implementer, mid-tier escalation to a larger local Ollama model, budget caps, snapshots, hooks, OTel, and tiered approval. Use it as a starting point, then adjust credentials, budgets, hooks, and approval tiers for your environment.
+A representative config: Claude Code subscription as planner, a small local LM Studio model as implementer, mid-tier escalation to a larger local Ollama model, hooks, and tiered approval. Use it as a starting point, then adjust credentials, hooks, and approval tiers for your environment.
 
 <!-- config-example: full-production -->
 ```yaml
 version: 3
 
-# ---------- Planner: Claude Code subscription (no API billing) ----------
+# ---------- Planner: host-configured Claude Code ----------
 planner:
   kind: cli
   tool: claude-code
@@ -1255,18 +1149,13 @@ validation:
   test: true
   testCommand: npm test -- --run --reporter=dot
 
-# ---------- Workflow: speckit, all gates, manual commits, budget cap ----------
+# ---------- Workflow: speckit, all gates, manual commits ----------
 workflow:
   mode: speckit
   approve: all
-  briefReview: simple
-  maxRetries: 3
-  maxBudget: 5.00
-  budgetPauseThreshold: 0.8
+  maxRetries: 2
   driftChainThreshold: 0.6
-  persistTranscript: true
   git:
-    commitStrategy: none
     createBranch: false
   isolation: worktree
   speckit:
@@ -1282,7 +1171,6 @@ escalation:
 codebase:
   enabled: true
   tokenBudget: 6000
-  cacheDir: .splitbrief
   include:
     - "src/**/*.ts"
     - "src/**/*.tsx"
@@ -1294,9 +1182,6 @@ codebase:
 
 # ---------- Hooks: format, secret-scan, notify ----------
 hooks:
-  builtin:
-    prettier-on-change: true
-    block-secrets: true
   pre_task:
     - command: ./scripts/snapshot-external-state.sh
       timeout_ms: 15000
@@ -1314,18 +1199,6 @@ hooks:
       timeout_ms: 60000
       on_failure: warn
 
-# ---------- Auto snapshots at every checkpoint ----------
-snapshots:
-  auto:
-    preTask: true
-    postTask: true
-    preFinalReview: true
-
-# ---------- OpenTelemetry span sink ----------
-otel:
-  enabled: true
-  serviceName: splitbrief-prod
-
 # ---------- Tiered approval: prompt on out-of-scope/control-plane writes ----------
 approval:
   enabled: true
@@ -1340,12 +1213,12 @@ approval:
 # ---------- Custom palette actions ----------
 palette:
   customActions:
-    - id: handoff-claude
-      label: "Write Claude handoff"
-      command: /handoff claude-code
+    - id: quick-mode
+      label: "Switch to quick mode"
+      command: /mode quick
     - id: accept-run
       label: "Accept current run"
-      command: /accept-run
+      command: /run accept
 
 # ---------- Sessions ----------
 sessions:
@@ -1354,8 +1227,7 @@ sessions:
 
 What this run needs locally (never commit credential values):
 - A running LM Studio daemon on `localhost:1234` (implementer) and a running Ollama daemon on `localhost:11434` (escalation) — neither takes a credential
-- `ANTHROPIC_API_KEY` only if you drive Claude Code through its `api-key` auth channel instead of its own session credentials
-- `OTEL_TRACES_EXPORTER=console` for the built-in shortcut, or an in-process provider bootstrap for non-console exporters; standard `OTEL_*` alone is not enough
+- CLI credentials according to the host tool’s configuration; explicit unproven method selection is refused
 
 Then:
 
@@ -1363,11 +1235,9 @@ Then:
 splitbrief start --allow-hooks "your feature description"
 ```
 
-In the compiler path, that Claude Code planner yields a full capability receipt on tested version 2.1.232 when its conformance row is verified; other detected versions are admitted with runtime-drift evidence and a run warning. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface. Implementer rows are unaffected by compiler gating.
-
 ---
 
-## 20. Admitted API providers
+## 18. Admitted API providers
 
 Canonical reference for every first-class `kind: api` provider in SPLITBRIEF. Source descriptors: `src/core/providers/api-provider-catalog.ts`. Credential handling: [API-KEYS.md](./API-KEYS.md).
 
@@ -1390,20 +1260,19 @@ Credential prefix or env presence validates the configured offering but **never 
 <!-- api-provider-matrix -->
 | Provider | Service | Offering | Normalized endpoint | Credential env | Prefix validation | Roles | Billing |
 |---|---|---|---|---|---|---|---|
-| ollama | ollama | local | `http://localhost:11434/v1` | — | — | implementer | local |
-| lm-studio | lm-studio | local | `http://localhost:1234/v1` | — | — | implementer | local |
+| ollama | ollama | local | `http://localhost:11434/v1` | — | — | planner, implementer | local |
+| lm-studio | lm-studio | local | `http://localhost:1234/v1` | — | — | planner, implementer | local |
+| llama-cpp | llama-cpp | local | `http://localhost:8080/v1` | — | — | planner, implementer | local |
 
-**Role restriction:** both admitted providers are implementer-only. Configuring either as `planner` or `reviewer` fails schema validation; a planner-side `kind: api` seat is a custom endpoint (see below).
+**Roles:** every admitted provider is available to PLAN, BUILD and REVIEW (the reviewer is a planner-tier seat), each seat keeping its own `apiBase` and exact model. `llama-cpp` is a **beta** connection profile on the shared OpenAI-compatible transport: it reads the catalog your `llama-server` already serves and ships no bundled model row, so its `model` is always explicit.
 
 Local `ollama` talks only to a loopback daemon and normally omits `apiKey`; if that daemon requires authentication, the only accepted reference is `apiKey: env:OLLAMA_LOCAL_API_KEY`. `OLLAMA_API_KEY` is never resolved or sent to local Ollama.
 
 **Deferred / not admitted:** researched subscription coding plans, retired consumer CLI entitlements, generic self-hosted OpenAI-compatible shims, and every other candidate without a PASS verdict have **no** first-class provider ID, descriptor, or support row here. Verdict-pending offerings remain absent until a credentialed production gate passes. Per-offering verdicts and dates: [Excluded API offerings](#excluded-api-offerings). Excluded CLI candidates: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#excluded-researched-candidates).
 
-**Compiler-path identity.** As a Task Brief planner, a `kind: api` endpoint is versionless and conformance-gated: admission carries no runtime version, and the verified conformance proof is the identity evidence. The credential channel is `api-key` (the endpoint's own inline key), and no capability receipt records a secret. The compiler support table, terminal contracts, and containment profiles live in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
-
 ### Bundled model catalog (T-081 runtime state)
 
-`KNOWN_MODELS` (`src/core/providers/known-models.ts`) is the offline picker fallback. Live native CLI or models.dev rows hide `bundled-suggestion` placements in the picker (`buildRightRows`); `resolveModelCatalog` still emits them. Pricing and context stay on models.dev first, as in [Pricing metadata](#pricing-metadata).
+`KNOWN_MODELS` (`src/core/providers/known-models.ts`) is the offline picker fallback. Live native CLI rows — or, for an `api` provider, models.dev rows — hide `bundled-suggestion` placements in the picker (`buildRightRows`); `resolveModelCatalog` still emits them. For `api` runners pricing and context stay on models.dev first, as in [Pricing metadata](#pricing-metadata); a CLI tool's context comes from its own listing or this table.
 
 Recommendation labels mirror `src/core/providers/known-models.ts`. A row becomes **`recommended`** only after T-080 records five-scenario evaluation metrics for it. No credentialed evaluation run exists, so every bundled row is **`compatible-only`** — selectable, with no SPLITBRIEF quality claim.
 
@@ -1413,9 +1282,41 @@ Recommendation labels mirror `src/core/providers/known-models.ts`. A row becomes
 | ollama | qwen3-coder:30b | compatible-only | Local default; context limit discovered from the daemon — not hard-coded. T-080: OMIT-NOT-APPLICABLE. |
 | lm-studio | qwen2.5-coder-7b | compatible-only | Local default; context limit discovered from the daemon. T-080: OMIT-NOT-APPLICABLE. |
 
+### Independent local seats
+
+Start each server externally. No provider executable needs to be installed on the SPLITBRIEF host. Use the configured loopback address, choose the exact model ID returned by that server, and use Retry to check again after fixing the connection. SPLITBRIEF does not start, download, load, unload or silently replace a model. A listed model and an observed loaded model are separate facts; unknown load or context state remains unknown.
+
+This example uses three independent servers and model IDs. Replace each model with an exact ID that its own server reports. The reviewer is optional; omitting it uses the planner's runner.
+
+<!-- config-api-three-seats: local -->
+```yaml
+version: 3
+planner:
+  kind: api
+  provider: ollama
+  service: ollama
+  offering: local
+  apiBase: http://localhost:11434/v1
+  model: qwen3-coder:30b
+implementer:
+  kind: api
+  provider: lm-studio
+  service: lm-studio
+  offering: local
+  apiBase: http://localhost:1234/v1
+  model: qwen2.5-coder-7b
+reviewer:
+  kind: api
+  provider: llama-cpp
+  service: llama-cpp
+  offering: local
+  apiBase: http://localhost:8080/v1
+  model: Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
+```
+
 ### Minimal YAML per admitted provider
 
-Both admitted providers are loopback daemons that take no credential: omit `apiKey` entirely. Local `ollama` accepts exactly one reference when its daemon requires authentication (`apiKey: env:OLLAMA_LOCAL_API_KEY`). Anything remote is a custom provider with an inline key — see [Generic remote OpenAI-compatible endpoint](#generic-remote-openai-compatible-endpoint) below.
+Every admitted provider is a loopback server that takes no credential by default: omit `apiKey` entirely. A `llama-server` started with an API key accepts an explicit `apiKey`, still only on its loopback endpoint. Local `ollama` accepts exactly one reference when its daemon requires authentication (`apiKey: env:OLLAMA_LOCAL_API_KEY`). Anything remote is a custom provider with an inline key — see [Generic remote OpenAI-compatible endpoint](#generic-remote-openai-compatible-endpoint) below.
 
 <!-- config-api-minimal: ollama -->
 ```yaml
@@ -1438,6 +1339,19 @@ implementer:
   apiBase: http://localhost:1234/v1
   model: qwen2.5-coder-7b
 ```
+
+<!-- config-api-minimal: llama-cpp -->
+```yaml
+implementer:
+  kind: api
+  provider: llama-cpp
+  service: llama-cpp
+  offering: local
+  apiBase: http://localhost:8080/v1
+  model: Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
+```
+
+The `model` is the exact id your server reports at `GET /v1/models` — the alias of a single-model server, or one entry of a router's list. There is no bundled default and `model: auto` is refused by name.
 
 ### Generic remote OpenAI-compatible endpoint
 
@@ -1496,16 +1410,15 @@ These researched offerings have **dated blocked verdicts** — no first-class pr
 
 ---
 
-## 21. See also
+## 19. See also
 
 - [PRINCIPLES.md](./PRINCIPLES.md) — one-page rule index
-- [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) — planner/implementer pipeline, compiler capability and conformance
-- [TESTING.md](./TESTING.md) — testing contract, compiler conformance rows
+- [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) — planner/implementer pipeline and runner matrix
+- [TESTING.md](./TESTING.md) — testing contract
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — runner contracts, orchestrator loop, event model
 - [WORKFLOW.md](./WORKFLOW.md) — mode + approval semantics in depth
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — hook events, `HookEntry` schema, trust model
 - [REPOMAP.md](./REPOMAP.md) — `codebase.*` semantics, PageRank, cache
-- [OTEL.md](./OTEL.md) — span hierarchy, exporter setup
 - [API-KEYS.md](./API-KEYS.md) — secret handling and redaction
 - [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — runtime overrides and palette commands
 - [DEBUGGING.md](./DEBUGGING.md) — diagnosing config load failures

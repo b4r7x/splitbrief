@@ -56,7 +56,7 @@ describe('handleApprovalTimeUserEditConflict', () => {
       metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       validator: {
-        primeBaseline: async () => {},
+        primeBaseline: async () => undefined,
         runValidation: async () => [],
         decideAcceptance: ({ results, changedFiles }) =>
           decideValidationAcceptance({

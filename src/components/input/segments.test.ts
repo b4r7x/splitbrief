@@ -2,6 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { buildSegments } from './segments.js';
 
 describe('buildSegments', () => {
+  it('keeps a visible caret before an empty focused placeholder', () => {
+    const result = buildSegments({
+      value: '',
+      cursorIndex: 0,
+      placeholder: 'Type your answer…',
+      focus: true,
+      keepPlaceholderWhileFocused: true,
+      showCursor: true,
+      tabSize: 4,
+    });
+
+    expect(result.preCursor).toEqual([
+      { value: ' ', type: 'cursor' },
+      { value: 'Type your answer…', type: 'placeholder' },
+    ]);
+    expect(result.postCursor).toEqual([]);
+  });
+
   it('does not synthesize a current-line highlight when no highlight is requested', () => {
     const result = buildSegments({
       value: 'first line wraps visually into another row',

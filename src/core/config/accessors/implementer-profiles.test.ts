@@ -19,7 +19,6 @@ describe('resolveImplementerProfiles', () => {
     expect(resolved.defaultProfile).toMatchObject({
       name: 'default',
       label: 'Default implementer',
-      costTier: 'unknown',
       capabilities: { writesFiles: 'extracted-code' },
       config: config.implementer,
       isDefault: true,
@@ -41,7 +40,6 @@ describe('resolveImplementerProfiles', () => {
           model: 'qwen/qwen3-coder',
           contextLength: 131072,
           label: 'Cheap cloud',
-          costTier: 'cheap',
         },
         'local-qwen': {
           kind: 'api',
@@ -51,7 +49,6 @@ describe('resolveImplementerProfiles', () => {
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen2.5-coder:7b',
           contextLength: 32768,
-          costTier: 'local',
         },
       },
     });
@@ -116,7 +113,6 @@ describe('resolveImplementerProfiles', () => {
           tool: 'codex',
           model: 'gpt-5-mini',
           contextLength: 200000,
-          costTier: 'standard',
         },
       },
     });

@@ -5,13 +5,32 @@ import {
   type CalculateTaskUsageCostOptions,
 } from './task-usage.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { ZERO_TOKEN_USAGE } from '../../../core/schemas/tokens.js';
-import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
+import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import {
+  CallUsageEvidenceSchema,
+  type CallUsageEvidence,
+} from '../../../core/schemas/usage-evidence.js';
+import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
+import { PRICED_CATALOG, makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 // Pricing follows the model, so a metered seat needs a catalog to rate against.
-// The worker endpoint's model prices input/output but carries no cache rate,
-// which is the contrast several cases below depend on.
-const cache = makePricedModelCache();
+// `metered-1-10` is the directional counter-example: at $1/MTok in and $10/MTok
+// out, an output-heavy million tokens costs ten times an input-heavy one, so a
+// run-wide ratio and the observed split can never agree.
+const catalog: ModelsDevCatalog = {
+  ...PRICED_CATALOG,
+  acme: {
+    id: 'acme',
+    models: {
+      'metered-1-10': {
+        id: 'metered-1-10',
+        cost: { input: 1, output: 10 },
+        limit: { context: 1_000_000 },
+      },
+    },
+  },
+};
+const cache = makeModelCacheAccessor({ catalog });
 
 function taskCost(opts: CalculateTaskUsageCostOptions): number {
   return calculateTaskUsageCost({ ...opts, cache });
@@ -21,497 +40,340 @@ function taskCostKnown(opts: CalculateTaskUsageCostOptions): boolean {
   return isTaskUsageCostKnown({ ...opts, cache });
 }
 
-describe('calculateTaskUsageCost', () => {
-  it('returns 0 for local implementer with no escalation', () => {
-    const task = {
-      taskId: taskId('T001'),
-      taskTitle: 'test',
-      method: 'local' as const,
-      implementerTokens: 1000,
-      escalationTokens: 0,
-      retryCount: 0,
-    };
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 500,
-      implementerOutput: 500,
-      escalationInput: 0,
-      escalationOutput: 0,
-    };
-    const cost = taskCost({
-      task: task,
-      tokenUsage: globalUsage,
-      implementerTool: 'ollama',
-      plannerTool: 'claude-code',
-    });
-    expect(cost).toBe(0);
-  });
-
-  it('calculates cost using blended rate from global token ratio', () => {
-    const task = {
-      taskId: taskId('T001'),
-      taskTitle: 'test',
-      method: 'local' as const,
-      implementerTokens: 300_000,
-      escalationTokens: 0,
-      retryCount: 0,
-    };
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 200_000,
-      implementerOutput: 100_000,
-      escalationInput: 0,
-      escalationOutput: 0,
-    };
-    const cost = taskCost({
-      task: task,
-      tokenUsage: globalUsage,
-      implementerTool: 'custom-worker-api',
-      implementerModel: 'deepseek-v4-flash',
-      plannerTool: 'claude-code',
-    });
-    expect(cost).toBeCloseTo((0.14 * 200_000) / 1_000_000 + (0.28 * 100_000) / 1_000_000, 6);
-  });
-
-  it('includes escalation cost when escalation tokens present', () => {
-    const task = {
-      taskId: taskId('T001'),
-      taskTitle: 'test',
-      method: 'escalated-full' as const,
-      implementerTokens: 1000,
-      escalationTokens: 150_000,
-      retryCount: 2,
-    };
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 500,
-      implementerOutput: 500,
-      escalationInput: 100_000,
-      escalationOutput: 50_000,
-    };
-    const cost = taskCost({
-      task: task,
-      tokenUsage: globalUsage,
-      implementerTool: 'ollama',
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-    });
-    expect(cost).toBeGreaterThan(0);
-  });
-
-  it('includes escalation planner cache read/create in per-task cost', () => {
-    const task = {
-      taskId: taskId('T001'),
-      taskTitle: 'test',
-      method: 'escalated-full' as const,
-      implementerTokens: 0,
-      escalationTokens: 150_000,
-      escalationCacheReadTokens: 1_000_000,
-      escalationCacheCreateTokens: 1_000_000,
-      retryCount: 0,
-    };
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 100_000,
-      escalationOutput: 50_000,
-      plannerCacheRead: 1_000_000,
-      plannerCacheCreate: 1_000_000,
-    };
-
-    const cost = taskCost({
-      task,
-      tokenUsage: globalUsage,
-      implementerTool: 'ollama',
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-    });
-
-    expect(cost).toBeCloseTo(3.4, 6);
-  });
-
-  it('does not allocate planner-phase cache to an escalated task with explicit-zero cache fields', () => {
-    const task = {
-      taskId: taskId('T001'),
-      taskTitle: 'test',
-      method: 'escalated-full' as const,
-      implementerTokens: 0,
-      escalationTokens: 150_000,
-      escalationCacheReadTokens: 0,
-      escalationCacheCreateTokens: 0,
-      retryCount: 0,
-    };
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 100_000,
-      escalationOutput: 50_000,
-      plannerCacheRead: 1_000_000,
-      plannerCacheCreate: 1_000_000,
-    };
-
-    const cost = taskCost({
-      task,
-      tokenUsage: globalUsage,
-      implementerTool: 'ollama',
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-    });
-
-    // 100k input @ $2/MTok + 50k output @ $10/MTok = $0.20 + $0.50 = $0.70, with no cache dollars.
-    expect(cost).toBeCloseTo(0.7, 6);
-  });
-
-  it('uses planner model pricing for per-task escalation attribution', () => {
-    const task = {
-      taskId: taskId('T001'),
-      taskTitle: 'test',
-      method: 'escalated-full' as const,
-      implementerTokens: 0,
-      escalationTokens: 150_000,
-      retryCount: 1,
-    };
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 100_000,
-      escalationOutput: 50_000,
-    };
-
-    const sonnetCost = taskCost({
-      task: task,
-      tokenUsage: globalUsage,
-      implementerTool: 'ollama',
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-    });
-    const opusCost = taskCost({
-      task: task,
-      tokenUsage: globalUsage,
-      implementerTool: 'ollama',
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-opus-5',
-    });
-
-    expect(sonnetCost).toBeCloseTo(0.7, 6);
-    expect(opusCost).toBeCloseTo(1.75, 6);
-  });
-
-  it('attributes uneven exact cache fields per task: exact-0 and exact-1M against a shared 1M global', () => {
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 600_000,
-      implementerOutput: 400_000,
-      escalationInput: 0,
-      escalationOutput: 0,
-      implementerCacheRead: 1_000_000,
-      implementerCacheCreate: 0,
-    };
-    // Both tasks account for half the global implementer tokens, so proportional allocation would
-    // charge each 500k cache read ($0.10). Exact fields split it unevenly: one carries none, the
-    // other carries the full 1M.
-    const noCacheTask = {
-      taskId: taskId('T001'),
-      taskTitle: 'exact-zero-cache',
-      method: 'local' as const,
-      implementerTokens: 500_000,
-      escalationTokens: 0,
-      implementerCacheReadTokens: 0,
-      implementerCacheCreateTokens: 0,
-      retryCount: 0,
-    };
-    const fullCacheTask = {
-      taskId: taskId('T002'),
-      taskTitle: 'exact-full-cache',
-      method: 'local' as const,
-      implementerTokens: 500_000,
-      escalationTokens: 0,
-      implementerCacheReadTokens: 1_000_000,
-      implementerCacheCreateTokens: 0,
-      retryCount: 0,
-    };
-
-    const args = {
-      tokenUsage: globalUsage,
-      implementerTool: 'custom-planner-api',
-      plannerTool: 'claude-code',
-      implementerModel: 'claude-sonnet-5',
-    };
-    const noCacheCost = taskCost({ ...args, task: noCacheTask });
-    const fullCacheCost = taskCost({ ...args, task: fullCacheTask });
-
-    // Base each leg: 300k input @ $2/MTok ($0.60) + 200k output @ $10/MTok ($2.00) = $2.60.
-    // Exact attribution: exact-zero leg = $2.60, exact-1M leg = $2.60 + 1M @ $0.20/MTok = $2.80.
-    // Proportional allocation would have charged both legs the same $2.70 (500k cache each).
-    expect(noCacheCost).toBeCloseTo(2.6, 6);
-    expect(fullCacheCost).toBeCloseTo(2.8, 6);
-    expect(fullCacheCost - noCacheCost).toBeCloseTo(0.2, 6);
-  });
-
-  it('returns cost 0 when all global token totals are zero', () => {
-    const task = {
-      taskId: taskId('T001'),
-      taskTitle: 'test',
-      method: 'local' as const,
-      implementerTokens: 0,
-      escalationTokens: 0,
-      retryCount: 0,
-    };
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    };
-    const cost = taskCost({
-      task: task,
-      tokenUsage: globalUsage,
-      implementerTool: 'ollama',
-      plannerTool: 'claude-code',
-    });
-    expect(cost).toBe(0);
-  });
-
-  it('charges every task the same blended rate, so cost scales with its token share', () => {
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 600_000,
-      implementerOutput: 400_000,
-      escalationInput: 0,
-      escalationOutput: 0,
-    };
-    const heavyTask = {
-      taskId: taskId('T001'),
-      taskTitle: 'heavy',
-      method: 'local' as const,
-      implementerTokens: 800_000,
-      escalationTokens: 0,
-      retryCount: 0,
-    };
-    const lightTask = {
-      taskId: taskId('T002'),
-      taskTitle: 'light',
-      method: 'local' as const,
-      implementerTokens: 200_000,
-      escalationTokens: 0,
-      retryCount: 0,
-    };
-
-    const heavyCost = taskCost({
-      task: heavyTask,
-      tokenUsage: globalUsage,
-      implementerTool: 'custom-worker-api',
-      implementerModel: 'deepseek-v4-flash',
-      plannerTool: 'claude-code',
-    });
-    const lightCost = taskCost({
-      task: lightTask,
-      tokenUsage: globalUsage,
-      implementerTool: 'custom-worker-api',
-      implementerModel: 'deepseek-v4-flash',
-      plannerTool: 'claude-code',
-    });
-
-    // Per-task cost uses blended rate × task tokens — tasks with more tokens cost proportionally more
-    expect(heavyCost / lightCost).toBeCloseTo(800_000 / 200_000, 5);
-    // Both use the same blended cost-per-token derived from global input/output ratio
-    expect(heavyCost / 800_000).toBeCloseTo(lightCost / 200_000, 10);
-  });
-});
-
-describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost', () => {
-  it('reports unknown when a legacy implementer record allocates cache tokens a priced-but-cache-unpriced tool cannot price', () => {
-    const task = {
-      taskId: taskId('T001'),
-      taskTitle: 'legacy-no-cache-fields',
-      method: 'local' as const,
-      implementerTokens: 500_000,
-      escalationTokens: 0,
-      retryCount: 0,
-    };
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 600_000,
-      implementerOutput: 400_000,
-      escalationInput: 0,
-      escalationOutput: 0,
-      implementerCacheRead: 1_000_000,
-    };
-
-    const args = {
-      task,
-      tokenUsage: globalUsage,
-      implementerTool: 'custom-worker-api',
-      plannerTool: 'claude-code',
-      implementerModel: 'deepseek-v4-flash',
-    };
-
-    // The worker endpoint's model prices input/output but has no cache rate, so calculateTaskUsageCost silently drops
-    // the allocated cache-read cost — a finite, partial number. isTaskUsageCostKnown must surface
-    // that the figure is incomplete by pricing the SAME allocated cache tokens.
-    expect(taskCost(args)).toBeGreaterThan(0);
-    expect(taskCostKnown(args)).toBe(false);
-  });
-
-  it('reports known when an implementer record carries explicit-zero cache fields (no cache to price)', () => {
-    const task = {
-      taskId: taskId('T001'),
-      taskTitle: 'explicit-zero-cache',
-      method: 'local' as const,
-      implementerTokens: 500_000,
-      escalationTokens: 0,
-      implementerCacheReadTokens: 0,
-      implementerCacheCreateTokens: 0,
-      retryCount: 0,
-    };
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 600_000,
-      implementerOutput: 400_000,
-      escalationInput: 0,
-      escalationOutput: 0,
-      implementerCacheRead: 1_000_000,
-    };
-
-    expect(
-      taskCostKnown({
-        task,
-        tokenUsage: globalUsage,
-        implementerTool: 'custom-worker-api',
-        plannerTool: 'claude-code',
-        implementerModel: 'deepseek-v4-flash',
-      }),
-    ).toBe(true);
-  });
-
-  it('reports unknown when a legacy escalated record allocates planner cache a cache-unpriced planner cannot price', () => {
-    const task = {
-      taskId: taskId('T001'),
-      taskTitle: 'legacy-escalation',
-      method: 'escalated-full' as const,
-      implementerTokens: 0,
-      escalationTokens: 150_000,
-      retryCount: 0,
-    };
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 100_000,
-      escalationOutput: 50_000,
-      plannerCacheRead: 1_000_000,
-    };
-
-    expect(
-      taskCostKnown({
-        task,
-        tokenUsage: globalUsage,
-        implementerTool: 'ollama',
-        plannerTool: 'custom-worker-api',
-        plannerModel: 'deepseek-v4-flash',
-      }),
-    ).toBe(false);
-  });
-
-  it('reports known when both legs are fully priced including cache rates', () => {
-    const task = {
-      taskId: taskId('T001'),
-      taskTitle: 'fully-priced',
-      method: 'escalated-full' as const,
-      implementerTokens: 0,
-      escalationTokens: 150_000,
-      escalationCacheReadTokens: 1_000_000,
-      escalationCacheCreateTokens: 0,
-      retryCount: 0,
-    };
-    const globalUsage = {
-      ...ZERO_TOKEN_USAGE,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 100_000,
-      escalationOutput: 50_000,
-      plannerCacheRead: 1_000_000,
-    };
-
-    expect(
-      taskCostKnown({
-        task,
-        tokenUsage: globalUsage,
-        implementerTool: 'ollama',
-        plannerTool: 'custom-planner-api',
-        plannerModel: 'claude-sonnet-5',
-      }),
-    ).toBe(true);
-  });
-});
-
-describe('reviewer cache fold', () => {
-  const escalatedTask = {
+function makeTaskUsage(overrides: Partial<TaskTokenUsage>): TaskTokenUsage {
+  return {
     taskId: taskId('T001'),
-    taskTitle: 'escalated',
-    method: 'escalated-full' as const,
+    taskTitle: 'test',
+    method: 'local',
     implementerTokens: 0,
-    escalationTokens: 100_000,
+    escalationTokens: 0,
     retryCount: 0,
+    ...overrides,
   };
-  const args = {
-    task: escalatedTask,
+}
+
+// Every category reported, so the request itself is complete and only the
+// attribution under test can make it incomplete.
+const FULLY_REPORTED = {
+  input: 'reported',
+  output: 'reported',
+  cacheRead: 'reported',
+  cacheCreate: 'reported',
+  reasoning: 'reported',
+} as const;
+
+function makeCall(overrides: {
+  callId: string;
+  attempt: number;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  taskId?: string;
+  role?: CallUsageEvidence['role'];
+}): CallUsageEvidence {
+  return CallUsageEvidenceSchema.parse({
+    callId: overrides.callId,
+    taskId: overrides.taskId ?? 'T001',
+    attempt: overrides.attempt,
+    role: overrides.role ?? 'implementer',
+    backendKind: 'api',
+    runnerName: 'custom-worker-api',
+    model: overrides.model,
+    usageBoundary: 'single-request',
+    usage: {
+      inputTokens: overrides.inputTokens,
+      outputTokens: overrides.outputTokens,
+      cacheReadTokens: 0,
+      cacheCreateTokens: 0,
+      reasoningTokens: 0,
+      counterCoverage: FULLY_REPORTED,
+    },
+  });
+}
+
+describe('calculateTaskUsageCost — observed direction, never a run-wide share', () => {
+  // Two tasks of a million implementer tokens each: one local and all input, one
+  // metered and all output. A run-wide ratio would hand each a 500k/500k share
+  // and charge the metered leg $0.50 + $5.00 = $5.50. The observed split charges
+  // it its own million output tokens, and leaves the local million where it was
+  // spent.
+  const localInputHeavy = makeTaskUsage({
+    taskId: taskId('T001'),
+    taskTitle: 'local input-heavy',
+    implementerTokens: 1_000_000,
+    implementerInputTokens: 1_000_000,
+    implementerOutputTokens: 0,
+    implementerCacheReadTokens: 0,
+    implementerCacheCreateTokens: 0,
+    tool: 'ollama',
+    model: 'qwen-local',
+  });
+  const meteredOutputHeavy = makeTaskUsage({
+    taskId: taskId('T002'),
+    taskTitle: 'metered output-heavy',
+    implementerTokens: 1_000_000,
+    implementerInputTokens: 0,
+    implementerOutputTokens: 1_000_000,
+    implementerCacheReadTokens: 0,
+    implementerCacheCreateTokens: 0,
+    tool: 'custom-worker-api',
+    model: 'metered-1-10',
+  });
+  const seats = { implementerTool: 'custom-worker-api', plannerTool: 'claude-code' };
+
+  it('charges the metered task its observed output, not a share of the run', () => {
+    expect(taskCost({ ...seats, task: meteredOutputHeavy })).toBeCloseTo(10, 10);
+    expect(taskCost({ ...seats, task: meteredOutputHeavy })).not.toBeCloseTo(5.5, 6);
+    expect(taskCostKnown({ ...seats, task: meteredOutputHeavy })).toBe(true);
+  });
+
+  it('leaves the local task on its own provider, unpriced', () => {
+    expect(taskCost({ ...seats, task: localInputHeavy })).toBe(0);
+    expect(taskCostKnown({ ...seats, task: localInputHeavy })).toBe(false);
+  });
+
+  it('prices nothing for a task that spent nothing', () => {
+    const task = makeTaskUsage({
+      implementerInputTokens: 0,
+      implementerOutputTokens: 0,
+      implementerCacheReadTokens: 0,
+      implementerCacheCreateTokens: 0,
+    });
+    expect(taskCost({ ...seats, task })).toBe(0);
+    expect(taskCostKnown({ ...seats, task })).toBe(true);
+  });
+
+  it('prices the reasoning the provider reported at the output rate, once', () => {
+    const task = makeTaskUsage({
+      implementerTokens: 1_000_000,
+      implementerInputTokens: 1_000_000,
+      implementerOutputTokens: 0,
+      implementerReasoningTokens: 1_000_000,
+      implementerCacheReadTokens: 0,
+      implementerCacheCreateTokens: 0,
+      tool: 'custom-worker-api',
+      model: 'metered-1-10',
+    });
+    // 1M input @ $1/MTok + 1M reasoning @ the $10/MTok output rate.
+    expect(taskCost({ ...seats, task })).toBeCloseTo(11, 10);
+  });
+});
+
+describe('calculateTaskUsageCost — escalation leg', () => {
+  const seats = {
     implementerTool: 'ollama',
     plannerTool: 'custom-planner-api',
     plannerModel: 'claude-sonnet-5',
   };
-  const baseUsage = {
-    ...ZERO_TOKEN_USAGE,
-    implementerInput: 0,
-    implementerOutput: 0,
-    escalationInput: 60_000,
-    escalationOutput: 40_000,
-  };
-
-  it('allocates escalation cache from the same pool as before the reviewer bucket existed', () => {
-    const withReviewerBucket = taskCost({
-      ...args,
-      tokenUsage: {
-        ...baseUsage,
-        plannerCacheRead: 200_000,
-        plannerCacheCreate: 50_000,
-        reviewerCacheRead: 300_000,
-        reviewerCacheCreate: 25_000,
-      },
-    });
-    const preChange = taskCost({
-      ...args,
-      tokenUsage: {
-        ...baseUsage,
-        plannerCacheRead: 500_000,
-        plannerCacheCreate: 75_000,
-      },
-    });
-
-    expect(withReviewerBucket).toBe(preChange);
+  const escalated = makeTaskUsage({
+    method: 'escalated-full',
+    escalationTokens: 150_000,
+    escalationInputTokens: 100_000,
+    escalationOutputTokens: 50_000,
+    escalationCacheReadTokens: 0,
+    escalationCacheCreateTokens: 0,
   });
 
-  it('keeps a configured reviewer cache out of the escalation allocation', () => {
-    const configuredReviewer = taskCost({
-      ...args,
-      tokenUsage: {
-        ...baseUsage,
-        plannerCacheRead: 200_000,
-        plannerCacheCreate: 50_000,
-        reviewerCacheRead: 300_000,
-        reviewerCacheCreate: 25_000,
-      },
-      reviewerTool: 'custom-worker-api',
+  it('prices escalation at the planner model from the escalation counters', () => {
+    // 100k input @ $2/MTok + 50k output @ $10/MTok.
+    expect(taskCost({ ...seats, task: escalated })).toBeCloseTo(0.7, 10);
+    expect(taskCost({ ...seats, plannerModel: 'claude-opus-5', task: escalated })).toBeCloseTo(
+      1.75,
+      10,
+    );
+  });
+
+  it('charges the escalation cache the task recorded, and nothing it did not', () => {
+    const withCache = makeTaskUsage({
+      ...escalated,
+      escalationCacheReadTokens: 1_000_000,
+      escalationCacheCreateTokens: 1_000_000,
     });
-    const plannerCacheOnly = taskCost({
-      ...args,
-      tokenUsage: { ...baseUsage, plannerCacheRead: 200_000, plannerCacheCreate: 50_000 },
+    // $0.70 + 1M read @ $0.20/MTok + 1M write @ $2.50/MTok.
+    expect(taskCost({ ...seats, task: withCache })).toBeCloseTo(3.4, 10);
+    expect(taskCost({ ...seats, task: escalated })).toBeCloseTo(0.7, 10);
+  });
+
+  it('adds implementer and escalation legs', () => {
+    const both = makeTaskUsage({
+      ...escalated,
+      implementerTokens: 150_000,
+      implementerInputTokens: 100_000,
+      implementerOutputTokens: 50_000,
+      implementerCacheReadTokens: 0,
+      implementerCacheCreateTokens: 0,
+      tool: 'custom-worker-api',
+      model: 'metered-1-10',
+    });
+    // Implementer 100k @ $1/MTok + 50k @ $10/MTok = $0.60, escalation $0.70.
+    expect(taskCost({ ...seats, task: both })).toBeCloseTo(1.3, 10);
+  });
+});
+
+describe('isTaskUsageCostKnown', () => {
+  const seats = { implementerTool: 'custom-worker-api', plannerTool: 'claude-code' };
+
+  it('reports a combined-only implementer record incomplete, with no cost at all', () => {
+    const legacy = makeTaskUsage({
+      taskTitle: 'combined-only',
+      implementerTokens: 500_000,
+      tool: 'custom-worker-api',
+      model: 'metered-1-10',
     });
 
-    expect(configuredReviewer).toBe(plannerCacheOnly);
+    expect(taskCostKnown({ ...seats, task: legacy })).toBe(false);
+    // Nothing is imputed: not a direction, not a cache split, not a dollar.
+    expect(taskCost({ ...seats, task: legacy })).toBe(0);
+
+    // The same tokens price exactly once the record says which way they went.
+    const observed = makeTaskUsage({
+      ...legacy,
+      implementerInputTokens: 400_000,
+      implementerOutputTokens: 100_000,
+      implementerCacheReadTokens: 0,
+      implementerCacheCreateTokens: 0,
+    });
+    expect(taskCostKnown({ ...seats, task: observed })).toBe(true);
+    expect(taskCost({ ...seats, task: observed })).toBeCloseTo(1.4, 10);
+  });
+
+  it('reports a combined-only escalation record incomplete', () => {
+    const legacy = makeTaskUsage({
+      method: 'escalated-full',
+      escalationTokens: 150_000,
+    });
+    expect(
+      taskCostKnown({
+        ...seats,
+        plannerTool: 'custom-planner-api',
+        plannerModel: 'claude-sonnet-5',
+        task: legacy,
+      }),
+    ).toBe(false);
+  });
+
+  it('reports unknown when a cache-unpriced model cannot price the cache the task recorded', () => {
+    const task = makeTaskUsage({
+      implementerTokens: 1_000_000,
+      implementerInputTokens: 600_000,
+      implementerOutputTokens: 400_000,
+      implementerCacheReadTokens: 1_000_000,
+      implementerCacheCreateTokens: 0,
+      model: 'deepseek-v4-flash',
+    });
+
+    // The flash model prices input/output but carries no cache rate, so the
+    // figure is finite and partial — knownness is what has to say so.
+    expect(taskCost({ ...seats, task })).toBeGreaterThan(0);
+    expect(taskCostKnown({ ...seats, task })).toBe(false);
+  });
+
+  it('reports known when the task recorded no cache to price', () => {
+    const task = makeTaskUsage({
+      implementerTokens: 1_000_000,
+      implementerInputTokens: 600_000,
+      implementerOutputTokens: 400_000,
+      implementerCacheReadTokens: 0,
+      implementerCacheCreateTokens: 0,
+      model: 'deepseek-v4-flash',
+    });
+    expect(taskCostKnown({ ...seats, task })).toBe(true);
+  });
+});
+
+describe('call evidence attribution', () => {
+  const seats = {
+    implementerTool: 'custom-worker-api',
+    implementerModel: 'claude-opus-5',
+    plannerTool: 'claude-code',
+  };
+  // The seat is on opus now; the two attempts that ran were not.
+  const retried = makeTaskUsage({
+    taskTitle: 'retried on two models',
+    implementerTokens: 2_000_000,
+    implementerInputTokens: 1_000_000,
+    implementerOutputTokens: 1_000_000,
+    implementerCacheReadTokens: 0,
+    implementerCacheCreateTokens: 0,
+    retryCount: 1,
+    tool: 'custom-worker-api',
+    model: 'claude-opus-5',
+  });
+  const callEvidence = [
+    makeCall({
+      callId: 'c1',
+      attempt: 0,
+      model: 'deepseek-v4-flash',
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+    }),
+    makeCall({
+      callId: 'c2',
+      attempt: 1,
+      model: 'claude-sonnet-5',
+      inputTokens: 0,
+      outputTokens: 1_000_000,
+    }),
+  ];
+
+  it('keeps each attempt on the model that served it', () => {
+    // 1M input on flash @ $0.14/MTok + 1M output on sonnet @ $10/MTok.
+    expect(taskCost({ ...seats, task: retried, callEvidence })).toBeCloseTo(10.14, 10);
+    expect(taskCostKnown({ ...seats, task: retried, callEvidence })).toBe(true);
+    // Never the current seat's opus rates on the whole two million.
+    expect(taskCost({ ...seats, task: retried, callEvidence })).not.toBeCloseTo(30, 6);
+    // Nor the record's own single identity, which knows only the last attempt.
+    expect(taskCost({ ...seats, task: retried })).toBeCloseTo(30, 10);
+  });
+
+  it('reads only the calls that named this task', () => {
+    const otherTask = callEvidence.map((call) => ({ ...call, taskId: taskId('T009') }));
+    // Unattributed calls cannot be priced using the current task seat.
+    expect(taskCost({ ...seats, task: retried, callEvidence: otherTask })).toBe(0);
+    expect(taskCostKnown({ ...seats, task: retried, callEvidence: otherTask })).toBe(false);
+  });
+
+  it('reports unknown when a call could not be priced', () => {
+    const unpriceable = [
+      makeCall({
+        callId: 'c1',
+        attempt: 0,
+        model: 'private-model',
+        inputTokens: 500,
+        outputTokens: 0,
+      }),
+    ];
+    expect(taskCostKnown({ ...seats, task: retried, callEvidence: unpriceable })).toBe(false);
+    expect(taskCost({ ...seats, task: retried, callEvidence: unpriceable })).toBe(0);
+  });
+
+  it('prices the escalation leg from the escalation calls', () => {
+    const escalated = makeTaskUsage({
+      method: 'escalated-full',
+      escalationTokens: 150_000,
+      escalationInputTokens: 100_000,
+      escalationOutputTokens: 50_000,
+      escalationCacheReadTokens: 0,
+      escalationCacheCreateTokens: 0,
+    });
+    const escalationCalls = [
+      makeCall({
+        callId: 'e1',
+        attempt: 0,
+        role: 'escalation',
+        model: 'claude-sonnet-5',
+        inputTokens: 100_000,
+        outputTokens: 50_000,
+      }),
+    ];
+    expect(
+      taskCost({
+        ...seats,
+        plannerTool: 'custom-planner-api',
+        plannerModel: 'claude-opus-5',
+        task: escalated,
+        callEvidence: escalationCalls,
+      }),
+    ).toBeCloseTo(0.7, 10);
   });
 });

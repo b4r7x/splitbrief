@@ -1,27 +1,35 @@
-import { join } from 'node:path';
 import { useRef } from 'react';
 import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
-import { requestRewind, requestClearQueue } from '../features/workflow/handlers.js';
+import {
+  requestClearQueue,
+  requestEndRun,
+  requestQuit,
+  requestResume,
+  requestRewind,
+} from '../features/workflow/handlers.js';
 import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
 import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
-import { createTuiSink } from '../features/workflow/tui-sink.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
+import { getWorkflowSidebarWidth } from '../features/workflow/layout/rect.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
 import type { Config } from '../core/schemas/config.js';
 import type { Screen } from '../core/navigation/types.js';
 import { configStore } from '../stores/project/config.js';
 import { overlayStore } from '../stores/ui/overlay.js';
+import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { tasksStore } from '../stores/workflow/tasks.js';
 import { projectFilesStore } from '../stores/ui/project-files.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { refreshSkills } from './refresh-skills.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
+import { resolveAttachment } from '../core/attachments/resolve.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
@@ -29,6 +37,7 @@ import { detectionStore } from '../stores/project/detection.js';
 import { readActive } from '../core/sessions/active-pointer.js';
 import type { RewindTarget } from '../core/state/build-rewind-action.js';
 import type {
+  AttachImageResult,
   CopyResult,
   CopyTarget,
   QueueClearCommandResult,
@@ -45,12 +54,8 @@ import { detectedModelFact, seatSupportsImages } from '../core/runners/capabilit
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
-import { sessionDir } from '../core/paths.js';
-import { writeHandoffPack } from '../engine/handoff/write.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
-import { createEventBus } from '../engine/events/bus.js';
-import { performManualCompaction } from '../engine/orchestrator/transcript/compaction.js';
-import { writeSessionHtmlReport } from '../engine/export/collect.js';
+import { readRunRecord } from '../core/sessions/run-record-io.js';
 import {
   readApprovalsStore,
   mutateApprovalsStore,
@@ -86,12 +91,7 @@ const appCommandContextError = {
 } as const;
 
 function routeSessionId(route: RouteData, projectDir: string): string | null {
-  if (route.screen === 'workflow') {
-    return route.execution.kind === 'local'
-      ? route.execution.prepared.session.ref.sessionId
-      : route.execution.sessionId;
-  }
-  if (route.screen === 'summary' && route.sessionId) return route.sessionId;
+  if (route.screen === 'workflow') return route.run.ref.sessionId;
   return readActive(projectDir);
 }
 
@@ -101,6 +101,14 @@ function plannerSupportsImages(config: Config | null): boolean {
     runner: config.planner,
     detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
   });
+}
+
+function insertImageIntoComposer(input: Parameters<typeof attachImage>[0]): AttachImageResult {
+  if (!input.supportsImages) return { ok: false, reason: 'no-vision' };
+  const result = resolveAttachment({ input: input.path, projectDir: input.projectDir });
+  if (!result.ok) return { ok: false, reason: result.reason };
+  composerDraftStore.requestImage(result.attachment);
+  return { ok: true, path: result.attachment.path };
 }
 
 function conversationPageStep(viewportHeight: number): number {
@@ -183,6 +191,7 @@ function listSkills(): readonly SkillCommandOption[] {
     id: skill.id,
     name: skill.name,
     description: skill.description,
+    attached: selected.has(skill.id),
   }));
 }
 
@@ -190,10 +199,8 @@ function toggleSkill(id: string): SkillToggleResult {
   const { available, selected } = skillsStore.get();
   const skill = available.find((candidate) => candidate.id === id);
   if (skill === undefined) return { status: 'unknown' };
-  const next = new Set(selected);
-  const wasSelected = next.delete(id);
-  if (!wasSelected) next.add(id);
-  skillsStore.setSelected(next);
+  const wasSelected = selected.has(id);
+  skillsStore.toggleSelected(id);
   return { status: wasSelected ? 'deselected' : 'selected', name: skill.name };
 }
 
@@ -214,13 +221,9 @@ export function buildCommandContext({
   workflow: WorkflowCommandPorts;
 }): RuntimeCommandContext {
   const route = routerStore.get();
-  const prepared =
-    route.screen === 'workflow' && route.execution.kind === 'local'
-      ? route.execution.prepared
-      : null;
-  const projectDir = prepared?.session.ref.projectDir ?? configStore.get().projectDir;
+  const projectDir =
+    route.screen === 'workflow' ? route.run.ref.projectDir : configStore.get().projectDir;
   return createCommandContext({
-    isAttached: route.screen === 'workflow' && route.execution.kind === 'attached',
     projectDir: () => projectDir,
     getConfig: () => configStore.get().config,
     saveConfig: async (config): Promise<RuntimeConfigSaveResult> => {
@@ -248,13 +251,12 @@ export function buildCommandContext({
           };
       }
     },
-    setApprovalEnabled: configStore.setApprovalEnabled,
     getSessionId: () => routeSessionId(route, projectDir),
     noActiveSession: appCommandContextError.noActiveSession,
-    exportMissingSession: () => ({ status: 'error', error: 'No active session for /export' }),
     openOverlay: overlayStore.open,
     navigateHome: () => routerStore.navigate({ to: 'home' }),
-    quit: exit,
+    quit: () => requestQuit(exit),
+    prefillComposer: composerDraftStore.request,
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => {
@@ -275,21 +277,15 @@ export function buildCommandContext({
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: workflow.requestRewind,
     requestTaskRedo: (taskId) => workflow.requestRewind({ target: 'task', taskId }),
+    resumeRun: () => requestResume(''),
+    endRun: requestEndRun,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: workflow.requestClearQueue,
+    insertImage: insertImageIntoComposer,
     attachImage,
     plannerSupportsImages: () => plannerSupportsImages(configStore.get().config),
     detachImage,
     listAttachments,
-    writeHandoff: ({ projectDir, sessionId, target, taskId }) =>
-      writeHandoffPack({
-        projectDir,
-        sessionId,
-        target,
-        outDir: join(sessionDir(projectDir, sessionId), 'handoffs', target),
-        ...(taskId !== undefined && { selectedTaskIds: [taskId] }),
-        mode: 'overwrite',
-      }),
     listApprovals: (projectDir) => readApprovalsStore(projectDir).grants,
     clearApprovals: (projectDir, scope) => {
       let removed = 0;
@@ -302,31 +298,32 @@ export function buildCommandContext({
     },
     acceptRunSnapshot,
     rejectRunSnapshot,
-    compactTranscript: () => {
-      if (prepared === null) {
-        throw appCommandContextError.noActiveSession('/compact-transcript');
-      }
-      const bus = createEventBus();
-      bus.subscribe(
-        createTuiSink({ persistTranscript: prepared.config.workflow.persistTranscript }),
-      );
-      return performManualCompaction({
-        config: prepared.config,
-        ref: prepared.session.ref,
-        preparationId: prepared.preparationId,
-        gates: prepared.gates,
-        bus,
-      });
+    refreshRun: () => {
+      const route = routerStore.get();
+      if (route.screen !== 'workflow') return;
+      routerStore.updateRun({ run: readRunRecord(route.run.ref) });
     },
-    exportSession: async (projectDir, sessionId) =>
-      writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId),
     scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),
     toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.findLatestActivityBatchKey),
     toggleLatestDiff: () => toggleLatestDiff(workflow.findLatestDiffKey),
+    listBriefs: () => tasksStore.get().tasks.map(({ id, status }) => ({ id, status })),
     copyTarget: (target) => copyTarget(target, workflow.resolveCopyValue),
     toggleSidebar: () => {
-      if (terminalSizeStore.get().isSmall) {
+      // The layout owns the breakpoint: at exactly 120 columns `isSmall` is false while
+      // `getWorkflowSidebarWidth` is 0, so only the layout can say whether a column will paint.
+      const { cols } = terminalSizeStore.get();
+      if (getWorkflowSidebarWidth({ cols, sidebarVisible: true }) === 0) {
         return { status: 'unavailable', message: 'Sidebar is hidden on small terminals.' };
+      }
+      // A closed run takes the whole width and states its crew and its briefs in the block at the
+      // end of its transcript, so there is no column for this to open.
+      const current = routerStore.get();
+      if (
+        current.screen === 'workflow' &&
+        current.execution.kind === 'at-rest' &&
+        current.run.status.kind === 'closed'
+      ) {
+        return { status: 'unavailable', message: 'A closed run has no sidebar.' };
       }
       controlsStore.toggleSidebar();
       const visible = controlsStore.get().sidebarVisible;
@@ -340,32 +337,43 @@ export function buildCommandContext({
 
 type Phase = ReturnType<typeof lifecycleStore.get>['phase'];
 
-export function useRuntimeCommands({ exit, phase }: { exit: () => void; phase: Phase }) {
-  const ctx = buildCommandContext({
-    exit,
-    workflow: {
-      requestRewind,
-      requestClearQueue,
-      findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
-      findLatestDiffKey: () => findLatestRenderableDiffKey(getSections()),
-      readScrollMetrics: readConversationScrollSnapshot,
-      resolveCopyValue,
-    },
-  });
-  // The command list embeds the skill id set as `/skills`'s closed options, so it has to be
-  // rebuilt whenever a rescan or a toggle changes the store.
+export function useRuntimeCommands({
+  exit,
+  phase,
+  createContext,
+}: {
+  exit: () => void;
+  phase: Phase;
+  /** A supplied context replaces the production one outright; the registry is unchanged. */
+  createContext?: (() => RuntimeCommandContext) | undefined;
+}) {
+  const ctx =
+    createContext === undefined
+      ? buildCommandContext({
+          exit,
+          workflow: {
+            requestRewind,
+            requestClearQueue,
+            findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
+            findLatestDiffKey: () => findLatestRenderableDiffKey(getSections()),
+            readScrollMetrics: readConversationScrollSnapshot,
+            resolveCopyValue,
+          },
+        })
+      : createContext();
+  // The command list embeds the skill id set as `/skills`'s closed options and the current mode as
+  // `/mode`'s `current` hint, so it has to be rebuilt whenever either store changes.
   skillsStore.use((s) => s);
+  configStore.use((s) => s.config?.workflow.mode);
   const commands = createRuntimeCommands(ctx);
   const runtimeChainRef = useRef(Promise.resolve());
   const handleRuntimeCommand = (raw: string, from: Screen) => {
-    const route = routerStore.get();
     const config = configStore.get().config;
     runtimeChainRef.current = runtimeChainRef.current
       .then(() =>
         executeRuntimeCommand(commands, raw, {
           screen: from,
           phase,
-          attached: route.screen === 'workflow' && route.execution.kind === 'attached',
           plannerSupportsImages: plannerSupportsImages(config),
           onError: feedbackStore.setError,
         }),

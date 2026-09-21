@@ -5,6 +5,7 @@ import { readSpecFileOrEmpty, type SpecMetadata } from '../../../core/paths-io.j
 import { SPEC_FILE, PLAN_FILE } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
 import type { Planner } from '../../planners/types.js';
+import { withPerCallAbort } from '../cancellable-call.js';
 import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { writeAndPublishArtifact } from '../artifact-write.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
@@ -29,40 +30,28 @@ type ApprovalLoopOptions = {
   bus: EventBus;
   state: WorkflowState;
   signal?: AbortSignal | undefined;
-  persistTranscript: boolean;
   specMetadata?: SpecMetadata | null | undefined;
   sinks?: WorkflowSinks | undefined;
 };
 
 export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
   state: WorkflowState;
-  rejected: boolean;
+  closed: boolean;
   regenerated: boolean;
   aborted?: boolean | undefined;
 }> {
-  const {
-    type,
-    filePath,
-    planner,
-    projectDir,
-    sessionId,
-    callbacks,
-    bus,
-    signal,
-    persistTranscript,
-  } = opts;
+  const { type, filePath, planner, projectDir, sessionId, callbacks, bus, signal } = opts;
   let { state } = opts;
   let regenerated = false;
-  const rejectType = type === 'spec' ? 'REJECT_SPEC' : 'REJECT_PLAN';
   const isSpec = type === 'spec';
-  const rejectedEvent = isSpec ? ('spec_rejected' as const) : ('plan_rejected' as const);
+  const closedEvent = isSpec ? ('spec_rejected' as const) : ('plan_rejected' as const);
   const regeneratedEvent = isSpec ? ('spec_regenerated' as const) : ('plan_regenerated' as const);
   const filename = type === 'spec' ? SPEC_FILE : PLAN_FILE;
   const regenerationPhase = type === 'spec' ? ('specifying' as const) : ('planning' as const);
   let snapshot = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
 
   while (true) {
-    if (signal?.aborted) return { state, rejected: false, regenerated, aborted: true };
+    if (signal?.aborted) return { state, closed: false, regenerated, aborted: true };
     const queue = readQueueForPrompt({ projectDir, sessionId, state });
     if (queue.messages.length > 0) {
       try {
@@ -94,7 +83,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
           });
         } catch (err) {
           if (signal?.aborted || isAbortError(err))
-            return { state, rejected: false, regenerated, aborted: true };
+            return { state, closed: false, regenerated, aborted: true };
           throw err;
         }
         state = addUsageAndSave(
@@ -134,7 +123,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
     }
 
     const result = await callbacks.onApprovalNeeded(type, filePath);
-    if (signal?.aborted) return { state, rejected: false, regenerated, aborted: true };
+    if (signal?.aborted) return { state, closed: false, regenerated, aborted: true };
     if (!result.approved && result.action === 'edit') {
       const edited = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
       if (edited !== snapshot) {
@@ -149,11 +138,11 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
       }
       continue;
     }
-    if (!result.approved && result.action !== 'revise') {
-      state = transitionAndSave({ projectDir, sessionId }, state, { type: rejectType });
+    if (!result.approved && result.action === 'end-run') {
+      state = transitionAndSave({ projectDir, sessionId }, state, { type: 'CLOSE_RUN' });
       publishPlannerStatus(bus, state, 'done');
-      bus.publish({ type: rejectedEvent, ts: Date.now(), phase: state.phase });
-      return { state, rejected: true, regenerated };
+      bus.publish({ type: closedEvent, ts: Date.now(), phase: state.phase });
+      return { state, closed: true, regenerated };
     }
     if (result.approved) {
       const edited = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
@@ -166,10 +155,12 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
           comment: `(edited ${filename})`,
         });
       }
-      return { state, rejected: false, regenerated };
+      return { state, closed: false, regenerated };
     }
 
-    const comment = result.comment;
+    // Anything that is not an answer re-opens the gate rather than ending the run.
+    const comment = result.action === 'revise' ? result.comment.trim() : '';
+    if (comment === '') continue;
     appendMessage(
       { projectDir, sessionId },
       {
@@ -177,7 +168,6 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
         phase: type === 'spec' ? 'reviewing-spec' : 'reviewing-plan',
         text: comment,
       },
-      { persistTranscript },
     );
 
     const current = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
@@ -204,7 +194,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
       });
     } catch (err) {
       if (signal?.aborted || isAbortError(err))
-        return { state, rejected: false, regenerated, aborted: true };
+        return { state, closed: false, regenerated, aborted: true };
       throw err;
     }
     state = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', regenResult.usage);
@@ -239,14 +229,6 @@ async function runLiveRegenerate(opts: {
   signal?: AbortSignal | undefined;
   sinks?: WorkflowSinks | undefined;
 }): Promise<Awaited<ReturnType<Planner['regenerate']>>> {
-  const controller = opts.sinks ? new AbortController() : null;
-  const signal = controller
-    ? opts.signal === undefined
-      ? controller.signal
-      : AbortSignal.any([opts.signal, controller.signal])
-    : opts.signal;
-
-  if (controller) opts.sinks?.setAbortHandler(() => controller.abort());
   publishPlannerStatus(opts.bus, { ...opts.state, phase: opts.statusPhase }, 'running');
   opts.bus.publish({
     type: 'planner_heartbeat',
@@ -258,18 +240,22 @@ async function runLiveRegenerate(opts: {
   } satisfies EngineEventOf<'planner_heartbeat'>);
 
   try {
-    return await opts.planner.regenerate({
-      prompt: opts.prompt,
-      projectDir: opts.projectDir,
-      callbacks: {
-        // The reply is the regenerated document itself; it reaches the transcript as the
-        // artifact card published once it is written, never as a body paste.
-        onOutput: () => {},
-        signal,
-      },
+    return await withPerCallAbort({
+      sinks: opts.sinks,
+      signal: opts.signal,
+      run: (signal) =>
+        opts.planner.regenerate({
+          prompt: opts.prompt,
+          projectDir: opts.projectDir,
+          callbacks: {
+            // The reply is the regenerated document itself; it reaches the transcript as the
+            // artifact card published once it is written, never as a body paste.
+            onOutput: () => {},
+            signal,
+          },
+        }),
     });
   } finally {
-    opts.sinks?.setAbortHandler(null);
     publishPlannerStatus(opts.bus, { ...opts.state, phase: opts.statusPhase }, 'done');
   }
 }

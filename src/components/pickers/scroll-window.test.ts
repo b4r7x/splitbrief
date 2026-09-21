@@ -3,6 +3,7 @@ import {
   availableRows,
   computeListDisplayWindow,
   isItemIndexVisible,
+  keepInViewOffset,
   windowSlice,
 } from './scroll-window.js';
 
@@ -54,6 +55,31 @@ describe('windowSlice', () => {
   });
 });
 
+describe('keepInViewOffset', () => {
+  function offset(previous: number, index: number, totalItems = items.length): number {
+    return keepInViewOffset({ previous, index, windowSize: 5, totalItems });
+  }
+
+  it('holds the offset while the index stays inside the window', () => {
+    expect(offset(0, 4)).toBe(0);
+    expect(offset(1, 3)).toBe(1);
+  });
+
+  it('moves by the least that brings the index back into view', () => {
+    expect(offset(0, 5)).toBe(1);
+    expect(offset(10, 9)).toBe(9);
+  });
+
+  it('lands on the last window when the selection wraps to the end', () => {
+    expect(offset(0, 29)).toBe(25);
+  });
+
+  it('pins to the start when every item fits or no row is budgeted', () => {
+    expect(offset(3, 3, 4)).toBe(0);
+    expect(keepInViewOffset({ previous: 3, index: 20, windowSize: 0, totalItems: 30 })).toBe(0);
+  });
+});
+
 describe('computeListDisplayWindow', () => {
   it('shows every item without indicators when all display rows fit', () => {
     const window = computeListDisplayWindow({
@@ -78,7 +104,7 @@ describe('computeListDisplayWindow', () => {
     expect(window.visibleSlots.at(-1)).toMatchObject({ kind: 'indicator', direction: 'down' });
   });
 
-  it('counts section headers and gaps inside the row budget', () => {
+  it('counts section headers inside the row budget and drops a gap with no row under it', () => {
     const window = computeListDisplayWindow({
       items: [
         { id: 'p1', scope: 'project' },
@@ -97,7 +123,6 @@ describe('computeListDisplayWindow', () => {
       'header',
       'item',
       'item',
-      'gap',
       'indicator',
     ]);
     expect(window.visibleSlots[0]).toEqual({
@@ -105,7 +130,32 @@ describe('computeListDisplayWindow', () => {
       itemIndex: 0,
       section: 'project',
     });
-    expect(window.visibleSlots[3]).toEqual({ kind: 'gap', itemIndex: 2 });
+  });
+
+  it('never ends the window on a section header whose rows are below the fold', () => {
+    const window = computeListDisplayWindow({
+      items: [
+        { id: 'p1', scope: 'project' },
+        { id: 'p2', scope: 'project' },
+        { id: 'p3', scope: 'project' },
+        { id: 'g1', scope: 'global' },
+        { id: 'g2', scope: 'global' },
+      ],
+      selectedIndex: 0,
+      rowBudget: 7,
+      section: {
+        by: (item) => item.scope,
+        gapBetweenSections: true,
+      },
+    });
+
+    expect(window.visibleSlots.map((slot) => slot.kind)).toEqual([
+      'header',
+      'item',
+      'item',
+      'item',
+      'indicator',
+    ]);
   });
 });
 

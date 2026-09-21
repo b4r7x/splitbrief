@@ -148,7 +148,7 @@ describe('composer mode routing', () => {
     ui.stdin.write(ENTER);
     await flushEffects();
 
-    expect(submits).toEqual(['   ']);
+    expect(submits).toEqual(['']);
     expect(emptySubmits).toEqual([]);
 
     ui.unmount();
@@ -204,7 +204,7 @@ describe('Composer question-mode transition', () => {
     resetAllStores();
   });
 
-  it('does not submit stale normal-mode text after switching into question mode', async () => {
+  it('keeps an unsent normal-mode draft through a flip into question mode, submitting it only on Enter', async () => {
     const submits: string[] = [];
     const baseProps: Omit<ComponentProps<typeof Composer>, 'mode'> = {
       commands: [],
@@ -222,13 +222,18 @@ describe('Composer question-mode transition', () => {
 
     ui.rerender(<Composer {...baseProps} mode="question" />);
     await tick(20);
-    expect(ui.lastFrame()).not.toContain('stale normal text');
+    // The flip neither clears the draft nor submits it as an answer: one unsent session draft spans
+    // both modes, and only a new question (questionEpoch advance) discards text typed for the old one.
+    expect(ui.lastFrame()).toContain('stale normal text');
+    expect(submits).toEqual([]);
 
     await flushEffects();
     ui.stdin.write('\r');
     await tick(20);
 
-    expect(submits).not.toContain('stale normal text');
+    // A bare Enter submits it once, as the answer it now sits in — visibly, not silently.
+    expect(submits).toEqual(['stale normal text']);
+    expect(ui.lastFrame()).not.toContain('stale normal text');
     ui.unmount();
   });
 });

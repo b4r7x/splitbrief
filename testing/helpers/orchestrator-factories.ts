@@ -4,13 +4,14 @@ import type {
   WorkflowContext,
   WorkflowSinks,
 } from '../../src/engine/orchestrator/types.js';
-import type { Planner } from '../../src/engine/planners/types.js';
+import type { Planner, RunPhaseInput } from '../../src/engine/planners/types.js';
 import type { Implementer } from '../../src/engine/implementers/types.js';
 import {
   createImplementer,
   type ImplementerCreationOptions,
 } from '../../src/engine/runners/factory.js';
 import { makeTask } from './factories/task.js';
+import { makePhaseCallResult } from './factories/phase-call.js';
 import { createEventBus } from '../../src/engine/events/bus.js';
 import type { EngineEvent, EventBus } from '../../src/engine/events/types.js';
 import { createValidator } from '../../src/engine/orchestrator/validation/run.js';
@@ -84,7 +85,6 @@ export function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): {
   return {
     callbacks: {
       onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
-      onCostApprovalNeeded: vi.fn().mockResolvedValue(true),
       onComplete: vi.fn(),
       ...overrides,
     },
@@ -93,19 +93,15 @@ export function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): {
 
 export function makePlanner(overrides?: Partial<Planner>): Planner {
   return {
-    plan: vi.fn().mockResolvedValue({
-      spec: '# Spec',
-      plan: '# Plan',
-      tasks: [makeTask()],
-      usage: { inputTokens: 100, outputTokens: 50 },
-    }),
-    quickPlan: vi.fn().mockResolvedValue({
-      spec: '',
-      plan: '',
-      tasks: [makeTask()],
-      usage: { inputTokens: 50, outputTokens: 25 },
-    }),
-    regenerate: vi.fn().mockResolvedValue({ text: 'regenerated', usage: null }),
+    runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+      makePhaseCallResult({
+        call,
+        ...(call === 'tasks'
+          ? { tasks: [makeTask()], usage: { inputTokens: 100, outputTokens: 50 } }
+          : {}),
+      }),
+    ),
+    regenerate: vi.fn().mockResolvedValue({ text: '# Regenerated\n\nUpdated.', usage: null }),
     escalateHint: vi
       .fn()
       .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
@@ -114,7 +110,7 @@ export function makePlanner(overrides?: Partial<Planner>): Planner {
       .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     isAvailable: vi.fn().mockResolvedValue(true),
     getVersion: vi.fn().mockResolvedValue('1.0'),
-    review: vi.fn().mockResolvedValue({ text: '', usage: null }),
+    review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
     summarize: vi.fn().mockResolvedValue({ text: '', usage: null }),
     capabilities: {
       supportsConversationalPlanning: false,

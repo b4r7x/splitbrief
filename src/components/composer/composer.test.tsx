@@ -1,21 +1,28 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { renderDockedComposer } from '#testing/helpers/composer.js';
 import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { glyph } from '../../lib/glyphs.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
+import { createDraftDocument } from '../../core/composer/document.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
-import { inputHistoryStore } from '../../stores/ui/input-history.js';
+import { getInputHistoryDocuments, inputHistoryStore } from '../../stores/ui/input-history.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
-import { Composer } from './composer.js';
+import { tokensStore } from '../../stores/workflow/tokens.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { COMMANDS_ONLY_NOTICE, Composer } from './composer.js';
 
 describe('Composer blocking-question isolation', () => {
   beforeEach(() => {
@@ -51,7 +58,7 @@ describe('Composer blocking-question isolation', () => {
     ui.unmount();
   });
 
-  it('does not carry an unfinished question answer back into normal mode', async () => {
+  it('keeps an unfinished answer as the unsent draft when the mode flips back to normal', async () => {
     const submissions: string[] = [];
     const composer = (mode: 'normal' | 'question') => (
       <Composer
@@ -71,12 +78,15 @@ describe('Composer blocking-question isolation', () => {
 
     ui.rerender(composer('normal'));
     await flushEffects();
-    expect(ui.lastFrame()).not.toContain('unfinished answer');
+    // The flip neither clears the draft nor submits it as an answer: the text stays put, unsent.
+    expect(ui.lastFrame()).toContain('unfinished answer');
+    expect(submissions).toEqual([]);
 
-    await flushEffects();
+    // A bare Enter submits it once, as the normal instruction it now sits in — visibly, not silently.
     ui.stdin.write('\r');
     await flushEffects();
-    expect(submissions).not.toContain('unfinished answer');
+    expect(submissions).toEqual(['unfinished answer']);
+    expect(ui.lastFrame()).not.toContain('unfinished answer');
     ui.unmount();
   });
 });
@@ -98,6 +108,29 @@ describe('Composer submit draft retention', () => {
   beforeEach(() => {
     resetAllStores();
     terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+  });
+
+  it('preserves a burst of separate character events before submitting', async () => {
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    const text = 'headless composer input λ漢字';
+    for (const character of text) ui.stdin.write(character);
+    await flushEffects();
+    expect(ui.lastFrame()).toContain(text);
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(submissions).toEqual([text]);
+    ui.unmount();
   });
 
   it('clears the submitted draft by default', async () => {
@@ -186,6 +219,84 @@ describe('Composer submit draft retention', () => {
     await flushEffects();
 
     expect(ui.lastFrame()).toContain('⠋');
+    ui.unmount();
+  });
+});
+
+describe('Composer submit trimming', () => {
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+  });
+
+  it('trims leading and trailing whitespace from a submitted draft', async () => {
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('  padded feature  ');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(submissions).toEqual(['padded feature']);
+    expect(getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'home' })).toEqual([
+      createDraftDocument('padded feature'),
+    ]);
+    ui.unmount();
+  });
+
+  it('trims a question answer at the submit boundary', async () => {
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="question"
+        hint="Blocking question"
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('  spaced answer  ');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(submissions).toEqual(['spaced answer']);
+    ui.unmount();
+  });
+
+  it('keeps interior blank lines while trimming the ends', async () => {
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    composerDraftStore.requestDocument(
+      createDraftDocument('  fix the parser\n\nthen the tests\n\n'),
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(submissions).toEqual(['fix the parser\n\nthen the tests']);
     ui.unmount();
   });
 });
@@ -279,7 +390,7 @@ describe('Composer image attach gate', () => {
     ui.unmount();
   });
 
-  it('attaches the drop when the planner is a CLI tool', async () => {
+  it('puts the dropped image in the draft as an atom the plan seat can see', async () => {
     configStore.__testReset({
       projectDir,
       config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
@@ -288,9 +399,346 @@ describe('Composer image attach gate', () => {
     await flushEffects();
     await dropImage(ui);
 
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('[image #1]');
+    // Nothing is pending until the draft is sent: the document is where the image lives.
+    expect(attachmentsStore.peek()).toEqual([]);
+    ui.unmount();
+  });
+
+  it('applies an /image insertion at the caret and preserves submission order', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        homeHint={HOME_HINT}
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('A');
+    await flushEffects();
+
+    composerDraftStore.requestImage({
+      id: 'command-image',
+      kind: 'image',
+      path: imagePath,
+      mimeType: 'image/png',
+      sizeBytes: 9,
+    });
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('A[image #1]');
+    expect(attachmentsStore.peek()).toEqual([]);
+
+    ui.stdin.write('B');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(attachmentsStore.peek().map((attachment) => attachment.id)).toEqual(['command-image']);
+    expect(submissions[0]).toMatch(/^A\[image:command-image\]B/);
+    ui.unmount();
+  });
+
+  it('sends the images of the draft in document order, around their text', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const second = join(projectDir, 'second.png');
+    writeFileSync(second, 'png-bytes');
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        homeHint={HOME_HINT}
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('A');
+    await flushEffects();
+    await dropImage(ui);
+    ui.stdin.write('B');
+    await flushEffects();
+    ui.stdin.write(`"${second}"`);
+    await flushEffects();
+    ui.stdin.write('C');
+    await flushEffects();
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('A[image #1]B[image #2]C');
+
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(attachmentsStore.peek().map((a) => normalizeMacTmpPath(a.path))).toEqual([
+      normalizeMacTmpPath(imagePath),
+      normalizeMacTmpPath(second),
+    ]);
+    const sent = submissions[0] ?? '';
+    const [firstRef, secondRef] = attachmentsStore.peek().map((a) => `[image:${a.id}]`);
+    expect(sent.startsWith(`A${firstRef}B${secondRef}C`)).toBe(true);
+    expect(sent).toContain(`${firstRef} = attached image 1`);
+    expect(sent).toContain(`${secondRef} = attached image 2`);
+    ui.unmount();
+  });
+
+  it('drops the image where the caret is, not at the end of the draft', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const ui = renderComposer();
+    await flushEffects();
+    ui.stdin.write('AB');
+    await flushEffects();
+    ui.stdin.write('\x1b[D');
+    await flushEffects();
+    await dropImage(ui);
+    ui.stdin.write('X');
+    await flushEffects();
+
+    // The atom went in at the caret, and the caret came out on its far side — `B` still trails it
+    // (the rendered caret cell sits between `X` and `B`).
+    const line = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(line).toContain('A[image #1]X');
+    expect(line).toMatch(/A\[image #1\]X\s?B/);
+    ui.unmount();
+  });
+
+  it('does not reuse the drop caret when history recalls the next draft', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    inputHistoryStore.hydrate(['an earlier prompt']);
+    const ui = renderComposer();
+    await flushEffects();
+    ui.stdin.write('AB');
+    await flushEffects();
+    ui.stdin.write('\x1b[D');
+    await flushEffects();
+    await dropImage(ui);
+
+    ui.stdin.write('\x1b[A');
+    await flushEffects();
+    ui.stdin.write('!');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('an earlier prompt!');
+    });
+    ui.unmount();
+  });
+
+  it('removes exactly the image whose atom backspace took, and keeps the other', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const second = join(projectDir, 'second.png');
+    writeFileSync(second, 'png-bytes');
+    const ui = renderComposer();
+    await flushEffects();
+    await dropImage(ui);
+    ui.stdin.write(`"${second}"`);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('[image #1][image #2]');
+
+    // The caret sits after the second atom: one backspace takes all of it and nothing else.
+    ui.stdin.write('\x7f');
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('[image #1]');
+    expect(frame).not.toContain('[image #2]');
+
+    ui.stdin.write('\r');
+    await flushEffects();
     expect(attachmentsStore.peek().map((a) => normalizeMacTmpPath(a.path))).toEqual([
       normalizeMacTmpPath(imagePath),
     ]);
+    ui.unmount();
+  });
+
+  it('recalls the pasted text and its image after the screen has come and gone', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const submissions: string[] = [];
+    const home = () => (
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        homeHint={HOME_HINT}
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />
+    );
+
+    const first = renderFeature(home());
+    await flushEffects();
+    first.stdin.write('line 1\nline 2\nline 3\nline 4\nline 5');
+    await flushEffects();
+    await dropImage(first);
+    first.stdin.write(' look');
+    await flushEffects();
+    expect(stripAnsiStyles(first.lastFrame() ?? '')).toContain('[paste #1 +5 lines]');
+    first.stdin.write('\r');
+    await flushEffects();
+    first.unmount();
+
+    // The workflow screen takes over and the home composer is unmounted with it.
+    const away = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        onSubmit={() => {}}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    away.unmount();
+
+    const second = renderFeature(home());
+    await flushEffects();
+    second.stdin.write('\x1b[A');
+    await flushEffects();
+
+    const frame = stripAnsiStyles(second.lastFrame() ?? '');
+    expect(frame).toContain('line 5');
+    expect(frame).toContain('[image #1]');
+    expect(frame).not.toContain('[paste');
+
+    second.stdin.write('\r');
+    await flushEffects();
+    expect(submissions).toHaveLength(2);
+    expect(submissions[1]).toBe(submissions[0]);
+    expect(submissions[1]).toContain('line 1\nline 2\nline 3\nline 4\nline 5');
+    expect(submissions[1]).not.toContain('[paste');
+    second.unmount();
+  });
+
+  it('leaves no collapsed-paste marker over the draft history recalls next', async () => {
+    const RECALLED = 'rewrite the brief compiler so its header stops parsing its own body';
+    inputHistoryStore.hydrate([RECALLED]);
+    const ui = renderComposer();
+    await flushEffects();
+    ui.stdin.write('line 1\nline 2\nline 3\nline 4\nline 5');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('[paste #1 +5 lines]');
+
+    // The collapsed paste is one row, so the up arrow reaches the history rather than a line above.
+    ui.stdin.write('\x1b[A');
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('rewrite the brief compiler');
+    expect(frame).not.toContain('[paste');
+    ui.unmount();
+  });
+
+  it('carries an image dropped into an answer through with that answer', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="question"
+        hint="Which panel?"
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('this one');
+    await flushEffects();
+    await dropImage(ui);
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    const parked = attachmentsStore.peek();
+    expect(parked.map((a) => normalizeMacTmpPath(a.path))).toEqual([
+      normalizeMacTmpPath(imagePath),
+    ]);
+    expect(submissions[0]).toContain(`this one[image:${parked[0]?.id}]`);
+    ui.unmount();
+  });
+
+  it('leaves an image the /image command parked for the run on a text-only send', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    attachmentsStore.add({
+      id: 'from-command',
+      kind: 'image',
+      path: imagePath,
+      mimeType: 'image/png',
+      sizeBytes: 1,
+    });
+    const ui = renderComposer();
+    await flushEffects();
+    ui.stdin.write('no image in this one');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(attachmentsStore.peek().map((a) => a.id)).toEqual(['from-command']);
+    ui.unmount();
+  });
+
+  it('keeps the draft and its images when the seat refuses them at submit', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        homeHint={HOME_HINT}
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('look at this');
+    await flushEffects();
+    await dropImage(ui);
+
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'shell', command: 'my-planner' } }),
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(submissions).toEqual([]);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('look at this[image #1]');
+    expect(frame).toContain('/crew plan');
     ui.unmount();
   });
 
@@ -468,20 +916,19 @@ describe('Composer attachment affordances', () => {
     ui.unmount();
   });
 
-  it('pops the last attachment chip on backspace when the draft is empty', async () => {
+  it('paints no attachment row above the box for images the run already holds', async () => {
     attachmentsStore.add(attachment('first'));
     attachmentsStore.add(attachment('second'));
     const ui = renderComposer('normal');
     await flushEffects();
 
-    ui.stdin.write(BACKSPACE);
-    await flushEffects();
-
-    expect(attachmentsStore.get().pending.map((a) => a.id)).toEqual(['first']);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).not.toContain('first.png');
+    expect(frame).not.toContain('📎');
     ui.unmount();
   });
 
-  it('leaves attachments alone when backspace edits a non-empty draft', async () => {
+  it('leaves the run images alone when backspace edits a non-empty draft', async () => {
     attachmentsStore.add(attachment('first'));
     attachmentsStore.add(attachment('second'));
     const ui = renderComposer('normal');
@@ -499,10 +946,10 @@ describe('Composer attachment affordances', () => {
     ui.unmount();
   });
 
-  it('does not pop a chip while a review gate is armed', async () => {
+  it('takes no image off the run on backspace into an empty draft', async () => {
     attachmentsStore.add(attachment('first'));
     attachmentsStore.add(attachment('second'));
-    const ui = renderComposer('review');
+    const ui = renderComposer('normal');
     await flushEffects();
 
     ui.stdin.write(BACKSPACE);
@@ -619,4 +1066,222 @@ describe('Composer workflow width', () => {
       ui.unmount();
     },
   );
+});
+describe('Composer commands-only input', () => {
+  let projectDir: string;
+  let imagePath: string;
+
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 100, rows: 24 });
+    projectDir = createTempDir('composer-commands-only');
+    imagePath = join(projectDir, 'shot.png');
+    writeFileSync(imagePath, 'png-bytes');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(projectDir);
+  });
+
+  function renderCommandsOnly() {
+    return renderDockedComposer({
+      commands: [],
+      currentScreen: 'home',
+      mode: 'normal',
+      hint: '',
+      commandsOnly: true,
+      onRuntimeCommand: () => {},
+    });
+  }
+
+  it('says why a typed letter goes nowhere and leaves the draft empty', async () => {
+    const ui = renderCommandsOnly();
+    await flushEffects();
+    ui.stdin.write('z');
+    await flushEffects();
+
+    expect(feedbackStore.get().message).toBe('Only /commands here · ⏎ on an empty line goes home');
+    expect(feedbackStore.get().isError).toBe(false);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('z');
+    ui.unmount();
+  });
+
+  it('takes a slash and every letter typed after it', async () => {
+    const ui = renderCommandsOnly();
+    await flushEffects();
+    ui.stdin.write('/');
+    await flushEffects();
+    for (const letter of ['s', 'e', 'a', 't']) {
+      ui.stdin.write(letter);
+      await flushEffects();
+    }
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/seat');
+    expect(feedbackStore.get().message).toBeNull();
+    ui.unmount();
+  });
+
+  it('swallows a pasted line that does not open with a slash', async () => {
+    const ui = renderCommandsOnly();
+    await flushEffects();
+    ui.stdin.write('zebra stripes');
+    await flushEffects();
+
+    expect(feedbackStore.get().message).toBe(COMMANDS_ONLY_NOTICE);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('zebra');
+    ui.unmount();
+  });
+
+  it('refuses a prefilled draft that is not a command and keeps it for editing', async () => {
+    const ui = renderCommandsOnly();
+    await flushEffects();
+    composerDraftStore.request('rewrite the validator');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('rewrite the validator');
+
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(feedbackStore.get().message).toBe(COMMANDS_ONLY_NOTICE);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('rewrite the validator');
+    ui.unmount();
+  });
+
+  it('attaches nothing from a dropped image while it takes commands only', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const ui = renderCommandsOnly();
+    await flushEffects();
+    ui.stdin.write(`"${imagePath}"`);
+    await flushEffects();
+
+    expect(attachmentsStore.peek()).toEqual([]);
+    ui.unmount();
+  });
+
+  it('keeps the drop affordance off the hint line while it takes commands only', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        homeHint="/help · /settings"
+        commandsOnly
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('/help · /settings');
+    expect(frame).not.toContain('drop an image');
+    ui.unmount();
+  });
+});
+
+describe('Composer in-box hints', () => {
+  function promptRow(frame: string): string | undefined {
+    return stripAnsiStyles(frame)
+      .split('\n')
+      .find((line) => line.includes(glyph('prompt')));
+  }
+
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+    // A run whose tokens carry a price, so an amount would be painted if the box still asked for
+    // one. The composer reads no usage at all: /usage is the only surface that names it.
+    tokensStore.__testReset({
+      localCount: 2,
+      tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
+    });
+    configStore.__testReset({
+      projectDir: '/tmp/composer-hints-test',
+      config: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'custom-endpoint',
+          model: 'priced-model',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
+        },
+      }),
+    });
+    modelCacheStore.hydrateModelsDevCatalog({
+      catalog: {
+        vendor: {
+          id: 'vendor',
+          models: { 'priced-model': { id: 'priced-model', cost: { input: 1, output: 2 } } },
+        },
+      },
+      fetchedAt: 1,
+      validatedAt: 1,
+    });
+  });
+
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  it('paints the keys hint and no money or token total beside the caret', async () => {
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        boxHints={{ keys: 'ctrl+d diff' }}
+        onSubmit={() => {}}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('ctrl+d diff');
+    expect(frame).not.toContain('$');
+    expect(frame).not.toContain('3.00');
+    expect(frame).not.toContain('1,000,000');
+    expect(frame).not.toMatch(/\btokens?\b/i);
+    ui.unmount();
+  });
+
+  it('leaves the hint zone unclaimed when the box carries no keys', async () => {
+    async function promptRowFor(boxHints: { keys: string } | undefined): Promise<string> {
+      const ui = renderFeature(
+        <Composer
+          commands={[]}
+          currentScreen="workflow"
+          mode="normal"
+          hint=""
+          boxHints={boxHints}
+          onSubmit={() => {}}
+          onRuntimeCommand={() => {}}
+        />,
+      );
+      await flushEffects();
+      const row = promptRow(ui.lastFrame() ?? '') ?? '';
+      ui.unmount();
+      return row;
+    }
+
+    const hinted = await promptRowFor({ keys: 'ctrl+d diff' });
+    const emptied = await promptRowFor({ keys: '' });
+    const absent = await promptRowFor(undefined);
+
+    expect(hinted).toContain('ctrl+d diff');
+    // An emptied hint zone must not survive as an invisible element that still charges its margin:
+    // it has to paint exactly what no hint at all paints.
+    expect(emptied).toBe(absent);
+    expect(emptied).not.toBe(hinted);
+    expect(getTerminalCellWidth(emptied)).toBe(getTerminalCellWidth(hinted));
+  });
 });

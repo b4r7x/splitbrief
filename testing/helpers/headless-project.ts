@@ -7,7 +7,6 @@ import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../src/core/paths.js';
 import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../src/core/config/accessors/reviewer-runner.js';
 import { loadConfig } from '../../src/core/config/load/io.js';
-import { configForSessionTranscriptPolicy } from '../../src/core/sessions/io.js';
 import { reactivateExistingSession } from '../../src/core/sessions/active-pointer.js';
 import type { WorkflowState } from '../../src/core/schemas/workflow.js';
 import {
@@ -23,9 +22,7 @@ export function preparedHeadlessExecution(input: {
   purpose?: PreparedExecution['purpose'];
 }): PreparedExecution {
   const ref = { projectDir: input.projectDir, sessionId: input.sessionId };
-  const config = parsePreparedConfig(
-    configForSessionTranscriptPolicy(loadConfig(input.projectDir).config, ref),
-  );
+  const config = parsePreparedConfig(loadConfig(input.projectDir).config);
   const active = reactivateExistingSession(ref);
   const preparationId = `headless-test-${input.sessionId}`;
   const configuredReviewer = configuredReviewerRunner(config);
@@ -70,39 +67,6 @@ export function writeHeadlessConfigYaml(projectDir: string, yamlLines: string[])
   chmodSync(filePath, 0o600);
 }
 
-export function writeBudgetHeadlessConfigYaml(projectDir: string, pauseThreshold = 0.85): void {
-  writeHeadlessConfigYaml(projectDir, [
-    'version: 3',
-    'planner:',
-    '  kind: api',
-    '  provider: custom-planner-api',
-    '  service: custom-planner-api',
-    '  offering: payg',
-    '  model: claude-sonnet-4-6',
-    '  api_base: https://api.planner.example/v1',
-    '  api_key: test-key',
-    'implementer:',
-    '  kind: api',
-    '  provider: custom-planner-api',
-    '  service: custom-planner-api',
-    '  offering: payg',
-    '  model: claude-sonnet-4-6',
-    '  api_base: https://api.planner.example/v1',
-    '  api_key: test-key',
-    'validation:',
-    '  typecheck: false',
-    '  lint: false',
-    '  test: false',
-    '  test_command: "noop"',
-    'workflow:',
-    '  mode: quick',
-    '  approve: none',
-    '  persist_transcript: false',
-    '  max_budget: 20',
-    `  budget_pause_threshold: ${pauseThreshold}`,
-  ]);
-}
-
 export function writeMinimalHeadlessConfigYaml(
   projectDir: string,
   opts?: { reviewerTool: string },
@@ -130,44 +94,11 @@ export function writeMinimalHeadlessConfigYaml(
     '  approve: none',
     '  mode: quick',
     '  task_review: none',
-    '  persist_transcript: false',
-  ]);
-}
-
-export function writeCurrentTranscriptHeadlessConfigYaml(projectDir: string): void {
-  writeHeadlessConfigYaml(projectDir, [
-    'version: 3',
-    'planner:',
-    '  kind: cli',
-    '  tool: claude-code',
-    'implementer:',
-    '  kind: api',
-    '  provider: ollama',
-    '  service: ollama',
-    '  offering: local',
-    '  api_base: http://localhost:11434/v1',
-    '  model: qwen2.5-coder:7b',
-    '  context_length: 32768',
-    'validation:',
-    '  typecheck: false',
-    '  lint: false',
-    '  test: false',
-    '  test_command: "noop"',
-    'workflow:',
-    '  approve: none',
-    '  mode: quick',
-    '  persist_transcript: true',
   ]);
 }
 
 export function createHeadlessGitProject(tempPrefix: string): string {
   const projectDir = createTempDir(tempPrefix);
   createTestGitRepo(projectDir);
-  return projectDir;
-}
-
-export function setupBudgetHeadlessProject(pauseThreshold = 0.85): string {
-  const projectDir = createHeadlessGitProject('headless-budget-test');
-  writeBudgetHeadlessConfigYaml(projectDir, pauseThreshold);
   return projectDir;
 }

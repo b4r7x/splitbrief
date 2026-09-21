@@ -13,12 +13,15 @@ import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { TwoColumnPicker } from './two-column-picker/picker.js';
+import { seatAxisFocus, seatAxisFocusSeat } from '../../core/navigation/types.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
-import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
+import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
+import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { PickerOption } from './model-catalog/options.js';
 import type { RightRow } from './model-catalog/rows.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-outcomes.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../engine/providers/model/catalog.js';
 
 /** The models behind the rows the picker actually renders. */
 function rowModels(rows: readonly RightRow[]) {
@@ -79,7 +82,7 @@ function publishConfirmedCodexList() {
       catalog: CODEX_MODELS_DEV,
       cliModels: [
         {
-          connection: { role: 'planner', tool: 'codex', contextKey: 'c' },
+          connection: { tool: 'codex', contextKey: 'c' },
           outcome: { kind: 'success', value: [{ id: 'gpt-5-codex' }] },
         },
       ],
@@ -92,6 +95,11 @@ let capturedRightRows: RightRow[] = [];
 
 function RowsProbe() {
   capturedRightRows = usePickerCatalog('planner', 0, 'codex').rightRows;
+  return <Text>rows</Text>;
+}
+
+function OllamaRowsProbe() {
+  capturedRightRows = usePickerCatalog('implementer', 0, 'ollama').rightRows;
   return <Text>rows</Text>;
 }
 
@@ -227,12 +235,16 @@ describe('usePickerCatalog', () => {
 
     const reviewer = renderFeature(<CurrentSelectionProbe role="reviewer" />);
     await tick(20);
-    expect(reviewer.lastFrame()).toContain('Reviewer|claude-code|reviewer-model');
+    expect(reviewer.lastFrame()).toContain(
+      `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS.reviewer]}|claude-code|reviewer-model`,
+    );
     reviewer.unmount();
 
     const planner = renderFeature(<CurrentSelectionProbe role="planner" />);
     await tick(20);
-    expect(planner.lastFrame()).toContain('Planner|codex|planner-model');
+    expect(planner.lastFrame()).toContain(
+      `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS.planner]}|codex|planner-model`,
+    );
     planner.unmount();
   });
 
@@ -390,7 +402,7 @@ describe('usePickerCatalog', () => {
     // An empty catalog drops the model from every lane, so the only row left
     // naming it is the recovery row the configured selection earns.
     expect(projection).toEqual({
-      model: expect.objectContaining({ membership: 'custom', isRecovery: true }),
+      model: expect.objectContaining({ membership: 'custom' }),
       detected: 0,
       counts: expect.objectContaining({ confirmed: 0, stale: 0 }),
     });
@@ -568,17 +580,58 @@ describe('usePickerCatalog', () => {
 
     const ui = renderFeature(<AxisProbe />);
     await tick(20);
-    expect(ui.lastFrame()).toContain('effort=High,speed=Standard');
+    expect(ui.lastFrame()).toContain('effort=high,fast=off');
 
     pickerViewStore.setOptionDraftId('zeta-max-fast');
     await tick(20);
-    expect(ui.lastFrame()).toContain('effort=Max,speed=Fast');
+    expect(ui.lastFrame()).toContain('effort=max,fast=on');
+    ui.unmount();
+  });
+
+  it('raises no effort axis on an api seat, whose channel has no field to write one', async () => {
+    // The provider publishes a ladder, but an api seat drops the level on save, so
+    // offering one here would draft a value the commit cannot keep.
+    const zeta = [{ id: 'zeta', nativeReasoningEfforts: ['low', 'high'] }];
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'zeta',
+        },
+      }),
+    });
+    detectionStore.setDetection({
+      cliTools: [],
+      providers: [{ provider: 'ollama', available: true, isLocal: true, models: zeta }],
+    });
+    modelCacheStore.setProviderModels('ollama', zeta);
+    pickerViewStore.expand('zeta');
+
+    function LadderProbe() {
+      const catalog = usePickerCatalog('implementer', 0, 'ollama');
+      return (
+        <Text>
+          {catalog.rightRows
+            .filter((row) => row.kind === 'axis')
+            .map((row) => row.axis)
+            .join(',') || 'no-axis-rows'}
+        </Text>
+      );
+    }
+
+    const ui = renderFeature(<LadderProbe />);
+    await tick(20);
+
+    expect(ui.lastFrame()).toContain('no-axis-rows');
     ui.unmount();
   });
 
   it('passes the drafted variant through to the row builder', async () => {
-    // The variant axis is synthetic: nothing in the model id spells it, so the
-    // store's draft is the only thing that can put a value on the row.
+    // The variant axis is synthetic: nothing in the model id spells it, so the model's
+    // own published ladder raises the row and the store's draft puts a value on it.
     const request = detectionStore.beginRefresh({
       contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
     });
@@ -590,8 +643,11 @@ describe('usePickerCatalog', () => {
         catalog: {},
         cliModels: [
           {
-            connection: { role: 'planner', tool: 'opencode', contextKey: 'c' },
-            outcome: { kind: 'success', value: [{ id: 'anthropic/claude-sonnet-4' }] },
+            connection: { tool: 'opencode', contextKey: 'c' },
+            outcome: {
+              kind: 'success',
+              value: [{ id: 'anthropic/claude-sonnet-4', nativeReasoningEfforts: ['high', 'max'] }],
+            },
           },
         ],
         generation: 1,
@@ -604,21 +660,21 @@ describe('usePickerCatalog', () => {
       const catalog = usePickerCatalog('planner', 0, 'opencode');
       variantRow = catalog.rightRows.find(
         (row): row is Extract<RightRow, { kind: 'axis' }> =>
-          row.kind === 'axis' && row.axis === 'variant',
+          row.kind === 'axis' && row.axis === 'effort',
       );
-      return <Text>{catalog.variantDraft ?? 'none'}</Text>;
+      return <Text>{catalog.effortDraft ?? 'none'}</Text>;
     }
 
     const ui = renderFeature(<VariantProbe />);
     await tick(20);
 
     expect(ui.lastFrame()).toContain('max');
-    expect(variantRow).toMatchObject({ axis: 'variant', value: 'max' });
+    expect(variantRow).toMatchObject({ axis: 'effort', value: 'max' });
 
-    pickerViewStore.setVariantDraft('high');
+    pickerViewStore.setEffortDraft('high');
     await tick(20);
 
-    expect(variantRow).toMatchObject({ axis: 'variant', value: 'high' });
+    expect(variantRow).toMatchObject({ axis: 'effort', value: 'high' });
     ui.unmount();
   });
 
@@ -640,7 +696,7 @@ describe('usePickerCatalog', () => {
     ui.unmount();
   });
 
-  it('drops models.dev suggestions once the native cli-models probe confirms a list', async () => {
+  it('replaces the bundled fallback with the native list and never shows models.dev rows', async () => {
     modelCacheStore.hydrateModelsDevCatalog({
       catalog: CODEX_MODELS_DEV,
       fetchedAt: 100,
@@ -666,13 +722,18 @@ describe('usePickerCatalog', () => {
     const ui = renderFeature(<CodexCatalogProbe />);
     await tick(20);
 
+    // Before the probe the column falls back to the bundled table. A CLI tool never renders
+    // models.dev rows (REQ-B08), so the hydrated catalog contributes none of its ids.
     const preProbeRows = rowModels(catalogSnapshot?.rightRows ?? []);
     const preProbeIds = preProbeRows.map((model) => model.id);
-    expect(preProbeIds).toContain('gpt-5-codex');
-    expect(preProbeIds).toContain('gpt-4o');
-    expect(preProbeIds).toContain('gpt-4.5-preview');
-    expect(preProbeIds).toContain('o3-mini');
+    expect(preProbeRows.some((model) => model.membership === 'bundled-suggestion')).toBe(true);
+    for (const catalogOnlyId of ['gpt-4o', 'gpt-4.5-preview', 'o3-mini']) {
+      expect(preProbeIds, catalogOnlyId).not.toContain(catalogOnlyId);
+    }
     expect(preProbeRows.filter((m) => m.membership === 'confirmed')).toHaveLength(0);
+    expect(preProbeRows.filter((m) => m.membership === CATALOG_SUGGESTION_MEMBERSHIP)).toHaveLength(
+      0,
+    );
 
     const request = detectionStore.beginRefresh({
       contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
@@ -685,7 +746,7 @@ describe('usePickerCatalog', () => {
         catalog: null,
         cliModels: [
           {
-            connection: { role: 'planner', tool: 'codex', contextKey: 'c' },
+            connection: { tool: 'codex', contextKey: 'c' },
             outcome: { kind: 'success', value: [{ id: 'gpt-5-codex' }] },
           },
         ],
@@ -706,12 +767,14 @@ describe('usePickerCatalog', () => {
     expect(confirmedRows).toHaveLength(1);
     expect(confirmedRows[0]?.id).toBe('gpt-5-codex');
     expect(confirmedRows[0]?.isDetected).toBe(true);
-    expect(postProbeRows.filter((row) => row.membership === 'catalog-suggestion')).toHaveLength(0);
+    expect(
+      postProbeRows.filter((row) => row.membership === CATALOG_SUGGESTION_MEMBERSHIP),
+    ).toHaveLength(0);
 
     ui.unmount();
   });
 
-  it('offers a browse-catalog row when the configured model is missing from the list', async () => {
+  it('offers no browse-catalog row when the configured model is merely missing from the list', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
@@ -723,11 +786,48 @@ describe('usePickerCatalog', () => {
     const ui = renderFeature(<RowsProbe />);
     await tick(20);
 
-    expect(capturedRightRows.at(-1)).toMatchObject({ kind: 'action', action: 'browse-catalog' });
+    expect(capturedRightRows.some((row) => row.kind === 'action')).toBe(false);
     ui.unmount();
   });
 
-  it('widens the rows once the store says the catalog is being browsed', async () => {
+  it('offers the browse-catalog row where browsing widens: an api runner whose bundled row the live lane hides', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+        },
+      }),
+    });
+    detectionStore.setDetection({
+      cliTools: [],
+      providers: [{ provider: 'ollama', available: true, isLocal: true, models: [] }],
+    });
+    modelCacheStore.hydrateModelsDevCatalog({
+      catalog: {
+        ollama: { id: 'ollama', models: { 'llama-9': { id: 'llama-9', name: 'Llama 9' } } },
+      },
+      fetchedAt: 1,
+      validatedAt: 1,
+    });
+
+    const ui = renderFeature(<OllamaRowsProbe />);
+    await tick(20);
+
+    expect(rowModels(capturedRightRows).map((model) => model.id)).not.toContain('qwen3-coder:30b');
+    expect(capturedRightRows.at(-1)).toMatchObject({ kind: 'action', action: 'browse-catalog' });
+
+    pickerViewStore.setBrowseCatalog(true);
+    await tick(20);
+
+    expect(rowModels(capturedRightRows).map((model) => model.id)).toContain('qwen3-coder:30b');
+    expect(capturedRightRows.some((row) => row.kind === 'action')).toBe(false);
+    ui.unmount();
+  });
+
+  it('keeps a cli tool on its native rows once the catalog is being browsed', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
@@ -743,8 +843,10 @@ describe('usePickerCatalog', () => {
     pickerViewStore.setBrowseCatalog(true);
     await tick(20);
 
+    // Browsing retires the escape row. It reopens no lane for a CLI tool: its rows are its own
+    // listing plus the bundled table, and models.dev is not a lane it ever reads (REQ-B08).
     expect(capturedRightRows.some((row) => row.kind === 'action')).toBe(false);
-    expect(rowModels(capturedRightRows).length).toBeGreaterThan(narrowModelCount);
+    expect(rowModels(capturedRightRows).length).toBe(narrowModelCount);
     ui.unmount();
   });
 });
@@ -846,7 +948,7 @@ describe('usePickerCatalog right-column entry point', () => {
         catalog: {},
         cliModels: [
           {
-            connection: { role: 'planner', tool: 'kilo-code', contextKey: 'c' },
+            connection: { tool: 'kilo-code', contextKey: 'c' },
             outcome: { kind: 'success', value: KILO_MODELS.map((id) => ({ id })) },
           },
         ],
@@ -868,5 +970,116 @@ describe('usePickerCatalog right-column entry point', () => {
 
     expect(seen?.leftId).toBe('codex');
     ui.unmount();
+  });
+});
+
+describe('usePickerCatalog seat-axis landing', () => {
+  let landing: {
+    rightIndex: number;
+    rowKind: string | undefined;
+    axisName: string | undefined;
+    modelId: string | undefined;
+    focusModels: boolean;
+    axisIndex: number;
+    modelIndex: number;
+  } | null = null;
+
+  function AxisProbe() {
+    const catalog = usePickerCatalog('planner', 0, null);
+    const row = catalog.rightRows[catalog.initialRightIndex];
+    landing = {
+      rightIndex: catalog.initialRightIndex,
+      rowKind: row?.kind,
+      axisName: row?.kind === 'axis' ? row.axis : undefined,
+      modelId: row?.kind === 'model' ? row.model.id : undefined,
+      focusModels: catalog.focusModels,
+      axisIndex: catalog.rightRows.findIndex((r) => r.kind === 'axis' && r.axis === 'effort'),
+      modelIndex: catalog.rightRows.findIndex(
+        (r) => r.kind === 'model' && r.model.id === catalog.currentModel,
+      ),
+    };
+    return <Text>probe</Text>;
+  }
+
+  beforeEach(() => {
+    landing = null;
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus' },
+      }),
+    });
+    detectionStore.reset();
+    modelCacheStore.reset();
+    overlayStore.reset();
+    pickerViewStore.reset();
+    seedDetections();
+  });
+
+  it('lands on the effort axis when the token names this picker seat', () => {
+    pickerViewStore.expand('opus');
+    overlayStore.setFocus(seatAxisFocus('plan'));
+    const ui = renderFeature(<AxisProbe />);
+
+    expect(landing?.axisIndex).toBeGreaterThanOrEqual(0);
+    expect(landing?.rightIndex).toBe(landing?.axisIndex);
+    expect(landing?.rowKind).toBe('axis');
+    expect(landing?.axisName).toBe('effort');
+    expect(landing?.focusModels).toBe(true);
+    ui.unmount();
+  });
+
+  it('falls back to the persisted model row when there is no axis row', () => {
+    overlayStore.setFocus(seatAxisFocus('plan'));
+    const ui = renderFeature(<AxisProbe />);
+
+    expect(landing?.axisIndex).toBe(-1);
+    expect(landing?.rowKind).toBe('model');
+    expect(landing?.modelId).toBe('opus');
+    expect(landing?.rightIndex).toBe(landing?.modelIndex);
+    expect(landing?.focusModels).toBe(true);
+    ui.unmount();
+  });
+
+  it('a token naming another seat changes nothing', () => {
+    pickerViewStore.expand('opus');
+    overlayStore.setFocus(seatAxisFocus('build'));
+    const ui = renderFeature(<AxisProbe />);
+
+    expect(landing?.axisIndex).toBeGreaterThanOrEqual(0);
+    expect(landing?.rightIndex).not.toBe(landing?.axisIndex);
+    expect(landing?.rightIndex).toBe(landing?.modelIndex);
+    expect(landing?.rowKind).toBe('model');
+    expect(landing?.modelId).toBe('opus');
+    expect(landing?.focusModels).toBe(false);
+    ui.unmount();
+  });
+
+  it('a token that merely ends in :effort changes nothing', () => {
+    pickerViewStore.expand('opus');
+    // 'effort:plan' is Settings' own crew-row key, not this grammar.
+    overlayStore.setFocus('effort:plan');
+    const ui = renderFeature(<AxisProbe />);
+
+    expect(landing?.axisIndex).toBeGreaterThanOrEqual(0);
+    expect(landing?.rightIndex).not.toBe(landing?.axisIndex);
+    expect(landing?.rightIndex).toBe(landing?.modelIndex);
+    expect(landing?.rowKind).toBe('model');
+    expect(landing?.focusModels).toBe(false);
+    ui.unmount();
+  });
+
+  it('the helpers spell and parse one grammar', () => {
+    expect(seatAxisFocus('plan')).toBe('seat:plan:effort');
+    expect(seatAxisFocusSeat('seat:plan:effort')).toBe('plan');
+    expect(seatAxisFocusSeat('seat:build:effort')).toBe('build');
+  });
+
+  it('the helpers reject every token that is not ours', () => {
+    expect(seatAxisFocusSeat(undefined)).toBeUndefined();
+    expect(seatAxisFocusSeat('effort:plan')).toBeUndefined();
+    expect(seatAxisFocusSeat('tool:claude-code')).toBeUndefined();
+    expect(seatAxisFocusSeat('seat:plan')).toBeUndefined();
+    expect(seatAxisFocusSeat('seat::effort')).toBeUndefined();
   });
 });

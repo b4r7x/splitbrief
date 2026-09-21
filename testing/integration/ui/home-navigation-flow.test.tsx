@@ -13,6 +13,7 @@ import { saveSummary } from '../../../src/core/sessions/io.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { configStore } from '../../../src/stores/project/config.js';
+import { sessionsStore } from '../../../src/stores/project/sessions.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { inputHistoryStore } from '../../../src/stores/ui/input-history.js';
@@ -56,7 +57,7 @@ function seedInterruptedSession(
     makeSession({
       id: sessionId,
       feature,
-      status: 'interrupted',
+      status: 'open',
       summary: null,
       startedAt,
     }),
@@ -65,6 +66,7 @@ function seedInterruptedSession(
     { projectDir, sessionId },
     { ...createInitialState(feature), phase: 'implementing' as const },
   );
+  sessionsStore.load(projectDir);
 }
 
 describe('home navigation flow (through real App)', () => {
@@ -108,9 +110,10 @@ describe('home navigation flow (through real App)', () => {
     trustHome = '';
   });
 
-  it('Ctrl+R then Enter resumes the focused session on the workflow screen', async () => {
+  it('Ctrl+R then Enter opens the focused session on the workflow screen', async () => {
     seedInterruptedSession(projectDir, 'resume-me', 'resume feature', 1_700_000_500);
 
+    sessionsStore.load(projectDir);
     const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await tick(20);
 
@@ -125,15 +128,15 @@ describe('home navigation flow (through real App)', () => {
     }, SESSION_FILTER_WAIT_MS);
 
     const route = routerStore.get();
-    if (route.screen !== 'workflow' || route.execution.kind !== 'local') {
-      throw new Error('expected a local workflow route');
+    if (route.screen !== 'workflow' || route.execution.kind !== 'at-rest') {
+      throw new Error('expected a workflow route at rest');
     }
-    expect(route.execution.prepared.session.ref.sessionId).toBe('resume-me');
+    expect(route.run.ref.sessionId).toBe('resume-me');
 
     ui.unmount();
   });
 
-  it('opens summary for a completed session and Esc returns home', async () => {
+  it('opens a finished run at rest and Esc returns home', async () => {
     const summary = makeSummary({ feature: 'completed feature' });
     saveSummary(
       { projectDir, sessionId: 'summary-me' },
@@ -146,6 +149,7 @@ describe('home navigation flow (through real App)', () => {
       }),
     );
 
+    sessionsStore.load(projectDir);
     const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await tick(20);
 
@@ -153,13 +157,14 @@ describe('home navigation flow (through real App)', () => {
     await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
-      expect(routerStore.get().screen).toBe('summary');
+      expect(routerStore.get().screen).toBe('workflow');
     });
 
     const route = routerStore.get();
-    if (route.screen === 'summary') {
-      expect(route.sessionId).toBe('summary-me');
-      expect(route.summary).toEqual(summary);
+    if (route.screen === 'workflow') {
+      expect(route.run.ref.sessionId).toBe('summary-me');
+      expect(route.run.summary).toEqual(summary);
+      expect(route.execution.kind).toBe('at-rest');
     }
 
     await flushEffects();
@@ -176,6 +181,7 @@ describe('home navigation flow (through real App)', () => {
       seedInterruptedSession(projectDir, `focus-${i}`, `focus feature ${i}`, 1_700_000_000 + i);
     }
 
+    sessionsStore.load(projectDir);
     const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await tick(20);
 
@@ -192,10 +198,10 @@ describe('home navigation flow (through real App)', () => {
       expect(routerStore.get().screen).toBe('workflow');
     }, SESSION_FILTER_WAIT_MS);
     const route = routerStore.get();
-    if (route.screen !== 'workflow' || route.execution.kind !== 'local') {
-      throw new Error('expected a local workflow route');
+    if (route.screen !== 'workflow' || route.execution.kind !== 'at-rest') {
+      throw new Error('expected a workflow route at rest');
     }
-    expect(route.execution.prepared.session.ref.sessionId).toBe('focus-1');
+    expect(route.run.ref.sessionId).toBe('focus-1');
 
     ui.unmount();
   });
@@ -205,6 +211,7 @@ describe('home navigation flow (through real App)', () => {
       seedInterruptedSession(projectDir, `focus-${i}`, `focus feature ${i}`, 1_700_000_000 + i);
     }
 
+    sessionsStore.load(projectDir);
     const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await tick(20);
 
@@ -233,6 +240,7 @@ describe('home navigation flow (through real App)', () => {
     }
     inputHistoryStore.push('recalled prompt');
 
+    sessionsStore.load(projectDir);
     const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await flushEffects();
 
@@ -244,35 +252,48 @@ describe('home navigation flow (through real App)', () => {
     ui.unmount();
   });
 
-  it('after a resume error expires, Down then Enter opens the next valid session', async () => {
+  it('opens a run whose state cannot be read, then Down then Enter opens the next one', async () => {
     saveSummary(
       { projectDir, sessionId: 'no-state' },
       makeSession({
         id: 'no-state',
         feature: 'orphan feature',
-        status: 'interrupted',
+        status: 'open',
         summary: null,
         startedAt: 1_700_000_700,
       }),
     );
     seedInterruptedSession(projectDir, 'recover-me', 'recover feature', 1_700_000_600);
 
+    sessionsStore.load(projectDir);
     const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await tick(20);
 
     await focusRecentSessions(ui);
     await flushEffects();
     ui.stdin.write(ENTER);
+
+    // A run that left nothing readable behind still opens: the screen says so in its byline
+    // rather than refusing to show the run at all.
     await vi.waitFor(() => {
-      expect(sessionSelectStore.get().error).toContain('usable owner receipt');
+      expect({ screen: routerStore.get().screen, error: sessionSelectStore.get().error }).toEqual({
+        screen: 'workflow',
+        error: null,
+      });
+    }, SESSION_FILTER_WAIT_MS);
+    const orphan = routerStore.get();
+    if (orphan.screen !== 'workflow' || orphan.execution.kind !== 'at-rest') {
+      throw new Error('expected a workflow route at rest');
+    }
+    expect(orphan.run.ref.sessionId).toBe('no-state');
+    expect(orphan.run.hydration.kind).not.toBe('loaded');
+
+    ui.stdin.write(ESC);
+    await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('home');
-    });
+    }, SESSION_FILTER_WAIT_MS);
 
-    await tick(3100);
-    await vi.waitFor(() => {
-      expect(sessionSelectStore.get().error).toBeNull();
-    });
-
+    await focusRecentSessions(ui);
     await flushEffects();
     ui.stdin.write(ARROW_DOWN);
     await flushEffects();
@@ -282,10 +303,10 @@ describe('home navigation flow (through real App)', () => {
       expect(routerStore.get().screen).toBe('workflow');
     }, SESSION_FILTER_WAIT_MS);
     const route = routerStore.get();
-    if (route.screen !== 'workflow' || route.execution.kind !== 'local') {
-      throw new Error('expected a local workflow route');
+    if (route.screen !== 'workflow' || route.execution.kind !== 'at-rest') {
+      throw new Error('expected a workflow route at rest');
     }
-    expect(route.execution.prepared.session.ref.sessionId).toBe('recover-me');
+    expect(route.run.ref.sessionId).toBe('recover-me');
 
     ui.unmount();
   });

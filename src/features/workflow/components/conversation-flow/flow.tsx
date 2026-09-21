@@ -1,22 +1,28 @@
 import { useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
-import { TaskSummary } from '../task-summary.js';
+import { TaskSummary } from '../../../../components/task-summary.js';
 import { getScrollWindowState } from '../../layout/scroll-window.js';
 import { getWorkflowSidebarWidth } from '../../layout/rect.js';
 import { controlsStore } from '../../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
+import { recoveryNoticeStore } from '../../../../stores/workflow/recovery-notice.js';
+import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.js';
+import { deriveWorkflowDisplay } from '../../display/workflow-status.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
+import { transcriptTailStore } from '../../../../stores/workflow/transcript-tail.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { selectTaskListView, tasksStore } from '../../../../stores/workflow/tasks.js';
 import type { TaskListView } from '../../../../stores/workflow/tasks.js';
 import { useSections } from '../../../../stores/workflow/actions/sections.js';
 import { useStores } from '../../../../stores/use-stores.js';
+import type { ConversationRowBlock } from '../../conversation-rows/types.js';
 import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../../conversation-rows/viewport.js';
 import { row } from '../../conversation-rows/row-format/rows.js';
-import { SOFT_SEP } from '../../../../components/separators.js';
+import { rowLeadingCells } from '../../conversation-rows/row-markers.js';
+import { SOFT_SEP } from '../../../../core/separators.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { ConversationRowView } from './row-view.js';
 import {
@@ -30,6 +36,8 @@ interface ConversationFlowProps {
   contentWidth: number;
   onScrollAbove?: ((label: string) => void) | undefined;
   onScrollBelow?: ((label: string) => void) | undefined;
+  /** Blocks appended after the run's own events, inside this one scroller. */
+  tail?: readonly ConversationRowBlock[] | undefined;
 }
 
 // Without a sidebar this header is the only place the transcript states how far the run has got, so
@@ -37,7 +45,7 @@ interface ConversationFlowProps {
 // sidebar's own headings: a heading whose first character is a letter, above rows whose first
 // character is a symbol, differs in kind rather than in shape, and no glyph tier can collapse that.
 function taskListLabel(view: TaskListView): string {
-  return view.total > 0 ? `Completed ${view.settled}/${view.total}` : 'Completed';
+  return view.total > 0 ? `Completed ${view.passed}/${view.total}` : 'Completed';
 }
 
 function computeScrollBannerLabel(
@@ -56,6 +64,7 @@ export function ConversationFlow({
   contentWidth,
   onScrollAbove,
   onScrollBelow,
+  tail,
 }: ConversationFlowProps) {
   const t = useTheme();
   const [
@@ -71,6 +80,8 @@ export function ConversationFlow({
     tasks,
     controls,
     terminalSize,
+    recovery,
+    approval,
   ] = useStores(
     conversationScrollStore,
     streamingOutputStore,
@@ -78,8 +89,17 @@ export function ConversationFlow({
     tasksStore,
     controlsStore,
     terminalSizeStore,
+    recoveryNoticeStore,
+    approvalPromptStore,
   );
-  const isRunning = lifecycle.status === 'running';
+  const display = deriveWorkflowDisplay({
+    status: lifecycle.status,
+    cancelled: lifecycle.cancelled,
+    pendingQuestion: controls.inputMode !== 'normal',
+    pendingRecovery: recovery.issue !== null,
+    pendingApproval: approval.status === 'pending',
+  });
+  const isRunning = display.animate;
   const sections = useSections();
   const viewportHeight = Math.max(0, height);
   const cols = conversationWidth;
@@ -95,9 +115,11 @@ export function ConversationFlow({
       cols: terminalSize.cols,
       sidebarVisible: controls.sidebarVisible,
     }) > 0;
-  const pendingTasks = sidebarShowsTasks
-    ? []
-    : tasks.tasks.filter((task) => task.status === 'pending');
+  // A run that has closed has nothing queued: the briefs it never reached are already listed, in
+  // the block that accounts for it, as the briefs it never reached.
+  const closed = tail !== undefined && tail.length > 0;
+  const pendingTasks =
+    sidebarShowsTasks || closed ? [] : tasks.tasks.filter((task) => task.status === 'pending');
   const viewportSplit = splitConversationViewport({
     viewportHeight,
     sections,
@@ -128,6 +150,7 @@ export function ConversationFlow({
     renderableCountAtScroll,
     heightAtScroll,
     streaming,
+    ...(tail !== undefined && { tail }),
   });
 
   const visibleActiveRowKey =
@@ -151,6 +174,15 @@ export function ConversationFlow({
   // The transcript pane sizes to its rows so a short run does not leave a hole above whatever
   // follows it. The empty-state line is a row too, and a zero-height pane would clip it.
   const showsEmptyState = rows.length === 0 && completedItems.length === 0;
+
+  // The keyboard measures the transcript from the stores, so what the tail adds has to reach it
+  // or `home` and `end` stop at the last event the run wrote.
+  const tailRows = (tail ?? []).reduce((sum, block) => sum + block.rowCount, 0);
+  const tailUnits = (tail ?? []).reduce((sum, block) => sum + block.renderableUnits, 0);
+  useEffect(() => {
+    transcriptTailStore.setMetrics({ rowCount: tailRows, renderableUnits: tailUnits });
+    return () => transcriptTailStore.setMetrics({ rowCount: 0, renderableUnits: 0 });
+  }, [tailRows, tailUnits]);
 
   useEffect(() => {
     onScrollAbove?.(above);
@@ -177,7 +209,13 @@ export function ConversationFlow({
         >
           {(focusedSummaryIndex) => (
             <>
-              <Box height={1} width={conversationWidth} overflow="hidden" flexShrink={0}>
+              <Box
+                height={1}
+                width={conversationWidth}
+                overflow="hidden"
+                flexShrink={0}
+                marginLeft={rowLeadingCells('message')}
+              >
                 <Text color={t.textDim}>{taskListLabel(taskListView)}</Text>
               </Box>
               {visibleCompletedItems.map((item, position) => (
@@ -189,9 +227,9 @@ export function ConversationFlow({
                 >
                   <TaskSummary
                     width={conversationWidth}
-                    index={item.index}
+                    id={`T${item.index}`}
                     title={item.title}
-                    method={item.method}
+                    state={{ kind: 'settled', method: item.method }}
                     retries={item.retries}
                     duration={item.duration}
                     file={item.file}
@@ -213,7 +251,11 @@ export function ConversationFlow({
         flexShrink={0}
       >
         <Box width="100%" flexDirection="column" flexShrink={0}>
-          {showsEmptyState && <Text color={t.textDim}>no events yet</Text>}
+          {showsEmptyState && (
+            <Box marginLeft={rowLeadingCells('message')}>
+              <Text color={t.textDim}>no events yet</Text>
+            </Box>
+          )}
           <ConversationTranscriptRows
             rows={rows}
             stickyLeadingLines={stickyLeadingLines}
@@ -227,7 +269,13 @@ export function ConversationFlow({
               its chrome. A bare run of circles under a stretch of blank rows announces nothing;
               the air belongs above the label and the label belongs against its rows. */}
           <Box height={1} width={conversationWidth} flexShrink={0} />
-          <Box height={1} width={conversationWidth} overflow="hidden" flexShrink={0}>
+          <Box
+            height={1}
+            width={conversationWidth}
+            overflow="hidden"
+            flexShrink={0}
+            marginLeft={rowLeadingCells('message')}
+          >
             <Text color={t.textDim}>{`Queued ${pendingTasks.length}`}</Text>
           </Box>
           {queuedRows.map((queuedRow) => (

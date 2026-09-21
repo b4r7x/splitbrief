@@ -68,6 +68,7 @@ export function redactRunnerCallEventInput(
           }),
         },
       };
+    case 'call_runtime_status':
     case 'call_started':
     case 'call_usage':
     case 'call_stalled':

@@ -110,7 +110,18 @@ describe('invokeCommandBasedRunner with timeout', () => {
       projectDir: process.cwd(),
     });
     expect(result.stdout).toBe('done');
-    expect(result.usage).toEqual({ inputTokens: 11, outputTokens: 7 });
+    expect(result.usage).toEqual({
+      inputTokens: 11,
+      outputTokens: 7,
+      counterCoverage: {
+        input: 'reported',
+        output: 'partial',
+        cacheRead: 'missing',
+        cacheCreate: 'missing',
+        reasoning: 'missing',
+      },
+      providerTotals: { output: 7 },
+    });
   });
 
   it('uses final stream-json result text instead of assistant draft text', async () => {

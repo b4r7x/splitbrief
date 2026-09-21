@@ -1,4 +1,5 @@
 import { assertNever } from '../../utils/type-guards.js';
+import type { CrewSeatId } from '../crew/identity.js';
 
 export type RunnerRole = 'planner' | 'implementer';
 
@@ -11,6 +12,13 @@ export const SEAT_PICKER_ROLES = ['planner', 'implementer', 'reviewer'] as const
 
 /** The config seats the tool/model picker can edit. */
 export type SeatPickerRole = (typeof SEAT_PICKER_ROLES)[number];
+
+/** The crew seat a picker role edits; the inverse of `CREW_SEAT_ROLES` in `src/core/crew/seats.ts`. */
+export const PICKER_ROLE_SEAT_IDS: Readonly<Record<SeatPickerRole, CrewSeatId>> = {
+  planner: 'plan',
+  implementer: 'build',
+  reviewer: 'review',
+};
 
 /** The config seat a picker role reads its catalog and policies from. */
 export function seatPickerLane(role: SeatPickerRole): ActiveRunnerRole {

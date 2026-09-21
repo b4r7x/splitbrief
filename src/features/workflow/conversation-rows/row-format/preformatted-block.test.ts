@@ -87,7 +87,9 @@ describe('preformattedOutputBlock', () => {
     for (const width of [40, 78, 110]) {
       const rows = rowsOf(build({ width }));
       for (const row of rows) {
-        expect(getTerminalCellWidth(rowText(row))).toBeLessThanOrEqual(width - 2);
+        expect(getTerminalCellWidth(rowText(row))).toBeLessThanOrEqual(
+          wrapWidthFor('callout-body', width),
+        );
       }
     }
   });
@@ -134,7 +136,7 @@ describe('preformattedOutputBlock', () => {
       // The rule is decoration, so it is re-laid, never cut. A narrow width may still cut the
       // filename ahead of it — that is real content, so the ellipsis there is honest.
       expect(banner.endsWith('━')).toBe(true);
-      expect(getTerminalCellWidth(banner)).toBe(width - 2);
+      expect(getTerminalCellWidth(banner)).toBe(wrapWidthFor('callout-body', width));
     }
 
     const wide = textAt(rowsOf(build({ width: 110 })), 1);
@@ -333,8 +335,10 @@ describe('preformattedOutputBlock', () => {
     const rows = rowsOf(build({ text: long, width: 78, maxLines: 30 }));
     const body = rows.filter((row) => row.kind === 'callout-body');
 
+    // Pinned, not recomputed from the production wrap width: deriving the remainder with the same
+    // primitive the block uses moved both sides together and let a wrap-width regression hide here.
     expect(body.filter((row) => rowText(row).includes('z'))).toHaveLength(30);
-    expect(textAt(rows, -1)).toBe(`${FOOTER} + 14 more lines`);
+    expect(textAt(rows, -1)).toBe(`${FOOTER} + 15 more lines`);
   });
 
   // The cut is decided by line count before any line is measured, so a capture far larger than the

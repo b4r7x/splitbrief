@@ -7,8 +7,7 @@ import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { emptyActiveChain } from './chain-state.js';
 import { SESSION_ARTIFACT_FILES } from './analyze.js';
 import { clamp01 } from '../../../utils/math.js';
-import { matchesActionPattern } from '../approval/action-classifier.js';
-import { taskAcceptedPatterns } from '../task-scope.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 
 export type DriftChainUpdate = {
   state: DriftChainState;
@@ -32,13 +31,13 @@ export type PerTaskOutOfBoundsInput = {
 export function computePerTaskOutOfBounds(input: PerTaskOutOfBoundsInput): Set<string> {
   if (input.taskChangedFiles.length === 0) return new Set();
 
-  const acceptedPatterns = input.tasks.flatMap(taskAcceptedPatterns);
+  const acceptedPatterns = input.tasks.flatMap((task) => [...taskDeclaredPatterns(task)]);
   const preRunBaseline = new Set(input.preRunChangedFiles);
 
   const result = new Set<string>();
 
   for (const file of [...new Set(input.taskChangedFiles)].sort()) {
-    if (acceptedPatterns.some((pattern) => matchesActionPattern(file, pattern))) continue;
+    if (isInDeclaredSet(file, acceptedPatterns)) continue;
     if (SESSION_ARTIFACT_FILES.has(file)) continue;
     if (preRunBaseline.has(file) && !input.runAttributedFiles.has(file)) continue;
     result.add(file);

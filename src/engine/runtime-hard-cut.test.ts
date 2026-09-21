@@ -23,8 +23,8 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { DetectionCacheSnapshot } from './detection/cache.js';
 import { loadDetectionCacheSnapshot, saveDetectionCache } from './detection/cache.js';
 import { detectCapabilities } from './providers/capabilities.js';
-import { createWorktree } from './worktree/create.js';
-import { removeWorktree } from './worktree/remove.js';
+import { createWorktree } from './orchestrator/isolation/create-worktree.js';
+import { removeWorktree } from './orchestrator/isolation/remove-worktree.js';
 
 const HARD_CUT_CONTEXT = 'runtime-hard-cut-context-v1';
 

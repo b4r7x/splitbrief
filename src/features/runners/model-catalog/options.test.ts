@@ -64,7 +64,6 @@ describe('role membership', () => {
     const plannerIds = plannerItems.map((item) => item.id);
     const implementerIds = implementerItems.map((item) => item.id);
 
-    expect(plannerIds).not.toEqual(implementerIds);
     expect(plannerIds).toEqual(
       expect.arrayContaining([
         'custom-command',
@@ -79,8 +78,8 @@ describe('role membership', () => {
         ...IMPLEMENTER_API_PROVIDER_IDS,
       ]),
     );
-    expect(plannerIds).not.toContain('ollama');
-    expect(plannerIds).not.toContain('lm-studio');
+    expect(plannerIds).toContain('ollama');
+    expect(plannerIds).toContain('lm-studio');
     expect(implementerIds).toContain('ollama');
     expect(implementerIds).toContain('lm-studio');
     expect(plannerItems.every((item) => item.roles.includes('planner'))).toBe(true);
@@ -135,8 +134,11 @@ describe('effort channel projection', () => {
     expect(seatRow('planner', 'cursor').effortChannel).toBe('model-id');
   });
 
-  it('gives a channel-less tool and an api provider no channel', () => {
-    expect(seatRow('planner', 'codex').effortChannel).toBeUndefined();
+  it("names the codex option's effort-flag channel", () => {
+    expect(seatRow('planner', 'codex').effortChannel).toBe('effort-flag');
+  });
+
+  it('gives an api provider no channel', () => {
     expect(seatRow('implementer', 'ollama').effortChannel).toBeUndefined();
   });
 });
@@ -186,7 +188,10 @@ describe('status projection', () => {
       const lmStudio = options.find((item) => item.id === 'lm-studio');
       expect(lmStudio?.status).toEqual({
         state: 'unauthenticated',
-        remediation: 'Configure credentials and refresh detection.',
+        remediation:
+          failure === 'missing-credential'
+            ? 'Configure credentials and refresh detection.'
+            : 'lm-studio rejected the configured key.',
       });
       expect(lmStudio?.available).toBe(false);
     },

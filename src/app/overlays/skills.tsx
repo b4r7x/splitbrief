@@ -4,14 +4,16 @@ import { useTheme } from '../../components/theme.js';
 import type { SkillMeta } from '../../core/skills/types.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
 import { ListRow } from '../../components/list-row.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { useStores } from '../../stores/use-stores.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import {
-  GLOBAL_SKILL_SCAN_PATH_LABELS,
+  GLOBAL_SKILL_SCAN_PATHS,
   PROJECT_SKILL_SCAN_PATH_LABELS,
 } from '../../core/skills/scan-paths.js';
 
@@ -27,12 +29,60 @@ const SECTION_LABELS = {
   global: 'Global',
 } as const;
 
+const OVERLAY_DENSITY = 'roomy';
+
+// The roots sit side by side, headed by their scope, so the placeholder is as tall as the longer
+// list rather than their sum: 17 roots stacked overran the panel at every viewport. Project rows
+// carry their `./` anchor; the global rows cannot carry theirs — a `~/` prefix is a host-path shape
+// the gallery frame contract rejects (testing/visual/contracts/path-policy.ts) — so their scope
+// header states it instead.
 const SCAN_GROUPS = [
   { label: SECTION_LABELS.project, paths: PROJECT_SKILL_SCAN_PATH_LABELS },
-  { label: SECTION_LABELS.global, paths: GLOBAL_SKILL_SCAN_PATH_LABELS },
+  { label: SECTION_LABELS.global, paths: GLOBAL_SKILL_SCAN_PATHS },
 ];
 
-const SCAN_LABEL_COL = 9;
+const SCAN_COL_GAP = 2;
+
+// Rows the panel spends on the title, the filter and the hint plus the blank lines between them.
+// Measured at the 60x18 floor, where the frame holds 8 placeholder rows; taller viewports have
+// slack, so the same subtraction stays inside the frame there too.
+const PLACEHOLDER_CHROME_ROWS = 6;
+
+function ScanRoots() {
+  const t = useTheme();
+  const [{ cols, rows }] = useStores(terminalSizeStore);
+  const budget =
+    overlayRect({ cols, rows, density: OVERLAY_DENSITY }).innerRows - PLACEHOLDER_CHROME_ROWS;
+  const longest = Math.max(...SCAN_GROUPS.map((group) => group.paths.length));
+  // The lead line and the scope headers take two rows; the overflow count takes a third when the
+  // roots do not all fit.
+  const shown = longest <= budget - 2 ? longest : Math.max(0, budget - 3);
+  const hidden = SCAN_GROUPS.reduce(
+    (total, group) => total + Math.max(0, group.paths.length - shown),
+    0,
+  );
+
+  return (
+    <Box flexDirection="column">
+      <Text color={t.textDim}>No skills found. Scanned, in precedence order:</Text>
+      <Box gap={SCAN_COL_GAP}>
+        {SCAN_GROUPS.map((group) => (
+          <Box key={group.label} flexDirection="column">
+            <Text color={t.textDim}>{group.label}</Text>
+            {group.paths.slice(0, shown).map((path) => (
+              <Text key={path} color={t.textDim}>
+                {path}
+              </Text>
+            ))}
+          </Box>
+        ))}
+      </Box>
+      {hidden > 0 ? (
+        <Text color={t.textDim}>{`+${hidden} more${SOFT_SEP}resize to see all`}</Text>
+      ) : null}
+    </Box>
+  );
+}
 
 interface SkillRowProps {
   skill: SkillMeta;
@@ -106,7 +156,7 @@ export function SkillsPicker() {
       title={`Skills${SOFT_SEP}${checked.size} selected`}
       hint={hintText}
       chromeRows={12}
-      density="roomy"
+      density={OVERLAY_DENSITY}
       customKeys={(
         input,
         key,
@@ -149,27 +199,7 @@ export function SkillsPicker() {
         return false;
       }}
       placeholder={
-        skills.length === 0 ? (
-          <Box flexDirection="column">
-            <Text color={t.textDim}>No skills found. Scanned, in precedence order:</Text>
-            {SCAN_GROUPS.map((group) => (
-              <Box key={group.label}>
-                <Box width={SCAN_LABEL_COL}>
-                  <Text color={t.textDim}>{group.label}</Text>
-                </Box>
-                <Box flexDirection="column">
-                  {group.paths.map((path) => (
-                    <Text key={path} color={t.textDim}>
-                      {path}
-                    </Text>
-                  ))}
-                </Box>
-              </Box>
-            ))}
-          </Box>
-        ) : (
-          <Text color={t.textDim}>No matching skills</Text>
-        )
+        skills.length === 0 ? <ScanRoots /> : <Text color={t.textDim}>No matching skills</Text>
       }
       section={{
         by: (skill) => skill.scope,

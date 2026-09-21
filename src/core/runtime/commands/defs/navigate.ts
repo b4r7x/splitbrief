@@ -38,19 +38,26 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
         optionDescriptions: Object.fromEntries(
           skills.map((skill) => [
             skill.id,
-            skill.description ? `${skill.name} — ${skill.description}` : skill.name,
+            [skill.name === skill.id ? '' : skill.name, skill.description]
+              .filter(Boolean)
+              .join(' — '),
           ]),
+        ),
+        optionHints: Object.fromEntries(
+          skills.filter((skill) => skill.attached).map((skill) => [skill.id, 'attached']),
         ),
         // A machine can hold hundreds of skills; spelling every id into a row would swamp the
         // palette description, which is also its fuzzy-match target.
         hint: '<skill-id …>',
         optional: true,
+        multi: true,
+        match: 'fuzzy',
       },
       validScreens: ALL_SCREENS,
-      handler: (args) => {
+      handler: async (args) => {
+        await ctx.refreshSkills();
         const tokens = args?.trim().split(/\s+/).filter(Boolean) ?? [];
         if (tokens.length === 0) {
-          ctx.refreshSkills();
           ctx.openOverlay('skills');
           return;
         }
@@ -89,7 +96,6 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
     {
       kind: 'noarg',
       name: '/settings',
-      aliases: [{ name: '/config' }],
       label: 'settings',
       description: 'Crew, validation, workflow',
       shortcut: getShortcutKey('settings'),
@@ -103,7 +109,7 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       label: 'home',
       description: 'Return to home screen',
       category: 'navigate',
-      validScreens: ['workflow', 'summary'],
+      validScreens: ['workflow'],
       handler: () => ctx.navigate('home'),
     },
     {

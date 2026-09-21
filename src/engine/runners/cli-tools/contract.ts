@@ -207,6 +207,8 @@ type CliAdapterContract<
   environment: Readonly<Record<string, string>>;
   outputContract: CliOutputContract;
   parse: (line: string) => readonly CliProtocolEvent[];
+  /** Allocated once per invocation when protocol usage spans several records. */
+  createParser?: (() => (line: string) => readonly CliProtocolEvent[]) | undefined;
   terminal: (input: CliTerminalInput) => CliProtocolTerminalEvent;
   probe: CliProbeContract;
   /** The positive REQ-018 allowlist this role's adapter owns; absent means none declared. */
@@ -259,5 +261,6 @@ export type CliProcessAdapter = Readonly<{
   }) => CliArgumentValidation;
   outputContract: CliOutputContract;
   parse: (line: string) => readonly CliProtocolEvent[];
+  createParser?: (() => (line: string) => readonly CliProtocolEvent[]) | undefined;
   terminal: (input: CliTerminalInput) => CliProtocolTerminalEvent;
 }>;

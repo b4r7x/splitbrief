@@ -1,24 +1,16 @@
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   ANTIGRAVITY_CLI_ADMISSION_VERDICT,
-  ANTIGRAVITY_CLI_CANDIDATE_PATHS,
-  CLI_COMPILER_EVIDENCE,
   CLI_TOOL_IDS,
   CURSOR_CLI_ADMISSION_VERDICT,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
+  hasNativeCliCatalog,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { resolveRepoPath as productionResolveRepoPath } from '../../../core/runners/candidate-admission.js';
-import { COMPILER_SUPPORT_TABLE } from '../compiler-capability.js';
 import {
-  bindCompilerRuntimeEvidence,
-  type CompilerRuntimeEvidence,
-} from '../compiler-runtime-evidence.js';
-import { resolveCustomExecutable } from '../resolve-cli-executable.js';
-import {
-  admitCliCompilerRuntime,
   CLI_IMPLEMENTER_ADAPTERS,
   CLI_PLANNER_ADAPTERS,
   lookupCliImplementerAdapter,
@@ -30,9 +22,9 @@ import { isDeclaredCliProbeContract } from './contract.js';
 import {
   nativeCliCatalogToDetectedModels,
   parseCommandCodeNativeModelCatalog,
+  parseCopilotHelpConfigCatalog,
   parseCursorModels,
 } from '../../providers/cli-model-catalog.js';
-import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../../../..');
 const CURSOR_LIST_MODELS_FIXTURE = readFileSync(
@@ -46,6 +38,10 @@ const COMMAND_CODE_LIST_MODELS_FIXTURE = readFileSync(
   join(REPO_ROOT, 'testing/fixtures/command-code/list-models.txt'),
   'utf8',
 );
+const COPILOT_HELP_CONFIG_FIXTURE = readFileSync(
+  join(REPO_ROOT, 'testing/fixtures/copilot/help-config.txt'),
+  'utf8',
+);
 // Every CLI fixture opens with two provenance lines — the invocation and a
 // `# version:` note — that the recorded process never printed.
 const COMMAND_CODE_STATUS_FIXTURE = readFileSync(
@@ -56,39 +52,9 @@ const COMMAND_CODE_STATUS_FIXTURE = readFileSync(
   .slice(2)
   .join('\n');
 
-const itUnix = process.platform === 'win32' ? it.skip : it;
-let dirs: string[] = [];
-
-function makeExecutable(path: string, body = '#!/bin/sh\nexit 0\n'): void {
-  writeFileSync(path, body, { mode: 0o755 });
-  chmodSync(path, 0o755);
-}
-
-async function bindExactOpenCodeRuntime(): Promise<CompilerRuntimeEvidence> {
-  const projectDir = createTempDir('registry-compiler-runtime-project');
-  const binDir = createTempDir('registry-compiler-runtime-bin');
-  dirs.push(projectDir, binDir);
-  const executable = join(binDir, 'vendor-cli');
-  makeExecutable(executable);
-  const resolution = await resolveCustomExecutable({ command: executable, projectDir });
-  if (resolution.kind !== 'resolved') throw new Error('fixture executable did not resolve');
-  const admission = bindCompilerRuntimeEvidence({
-    backend: 'opencode',
-    executable: resolution.executable,
-    version: '1.18.15',
-  });
-  if (admission.kind !== 'bound') throw new Error('fixture runtime did not bind');
-  return admission.evidence;
-}
-
 function resolveRepoPath(relativePath: string): string {
   return join(REPO_ROOT, relativePath);
 }
-
-afterEach(() => {
-  for (const dir of dirs) cleanupTempDir(dir);
-  dirs = [];
-});
 
 describe('CLI role registries', () => {
   it('resolves production repo root to the workspace package.json', () => {
@@ -114,18 +80,15 @@ describe('CLI role registries', () => {
     }
   });
 
-  it('keeps Cursor admitted in the catalog and Antigravity omitted until its adapter lands', () => {
+  it('keeps Cursor and Antigravity admitted in the catalog and in both adapter maps', () => {
     expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('PASS');
-    expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
-
-    for (const relativePath of ANTIGRAVITY_CLI_CANDIDATE_PATHS) {
-      expect(existsSync(resolveRepoPath(relativePath))).toBe(false);
-    }
+    expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('PASS');
 
     expect(CLI_TOOL_IDS).toContain('cursor');
     expect(CLI_TOOL_IDS).toContain('command-code');
-    expect('antigravity' in CLI_PLANNER_ADAPTERS).toBe(false);
-    expect('antigravity' in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
+    expect(CLI_TOOL_IDS).toContain('antigravity');
+    expect('antigravity' in CLI_PLANNER_ADAPTERS).toBe(true);
+    expect('antigravity' in CLI_IMPLEMENTER_ADAPTERS).toBe(true);
   });
 });
 
@@ -138,14 +101,14 @@ describe('CLI registry lookup', () => {
     expect(lookupCliImplementerAdapter('opencode')).toBe(CLI_IMPLEMENTER_ADAPTERS.opencode);
   });
 
-  it.each(['antigravity', 'kiro', 'unknown-cli'])(
+  it.each(['kiro', 'gemini', 'unknown-cli'])(
     'rejects unsupported planner lookup for %s before spawn',
     (toolId) => {
       expect(() => lookupCliPlannerAdapter(toolId)).toThrow(/has no planner configuration/);
     },
   );
 
-  it.each(['antigravity', 'kiro', 'unknown-cli'])(
+  it.each(['kiro', 'gemini', 'unknown-cli'])(
     'rejects unsupported implementer lookup for %s before spawn',
     (toolId) => {
       expect(() => lookupCliImplementerAdapter(toolId)).toThrow(/has no implementer configuration/);
@@ -190,6 +153,24 @@ describe('admitted readiness probe contracts', () => {
         }
       }
     }
+  });
+
+  it('declares a catalog probe for exactly the tools admitted to execute one', () => {
+    const declaredKinds = Object.fromEntries(
+      CLI_TOOL_IDS.map((tool) => {
+        const probe = lookupCliReadinessProbe({ tool, role: 'planner' });
+        if (!isDeclaredCliProbeContract(probe)) {
+          throw new Error(`${tool} exposes no declared probe contract`);
+        }
+        return [tool, probe.declared.catalog.kind];
+      }),
+    );
+
+    expect(declaredKinds).toEqual(
+      Object.fromEntries(
+        CLI_TOOL_IDS.map((tool) => [tool, hasNativeCliCatalog(tool) ? 'catalog' : 'not-run']),
+      ),
+    );
   });
 
   it('owns and freezes every reachable declared catalog operation', () => {
@@ -494,6 +475,40 @@ describe('admitted readiness probe contracts', () => {
     });
   });
 
+  it('binds Copilot to its own help-config listing as the declared catalog probe', () => {
+    const planner = lookupCliReadinessProbe({ tool: 'copilot', role: 'planner' });
+    expect(isDeclaredCliProbeContract(planner)).toBe(true);
+    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Copilot probe');
+
+    expect(planner.declared.catalog).toMatchObject({
+      kind: 'catalog',
+      command: ['copilot', 'help', 'config'],
+    });
+    if (planner.declared.catalog.kind === 'not-run') {
+      throw new Error('expected Copilot catalog probe');
+    }
+
+    const catalog = parseCopilotHelpConfigCatalog(COPILOT_HELP_CONFIG_FIXTURE);
+    if (catalog === null) throw new Error('copilot help-config fixture failed to parse');
+
+    const parsed = planner.declared.catalog.parse({
+      stdout: COPILOT_HELP_CONFIG_FIXTURE,
+      stderr: '',
+      exitCode: 0,
+      timedOut: false,
+      outputExceeded: false,
+    });
+
+    expect(parsed).toEqual({ kind: 'success', value: nativeCliCatalogToDetectedModels(catalog) });
+    if (parsed.kind !== 'success') throw new Error('expected the Copilot fixture to parse');
+
+    const ids = parsed.value.map((model) => model.id);
+    expect(ids).toHaveLength(25);
+    expect(ids[0]).toBe('claude-sonnet-5');
+    expect(ids.at(-1)).toBe('kimi-k2.7-code');
+    expect(ids).toContain('claude-opus-4.8-fast');
+  });
+
   it('treats a Command Code exit code 3 as missing and the recorded status payload as verified', () => {
     const planner = lookupCliReadinessProbe({ tool: 'command-code', role: 'planner' });
     expect(isDeclaredCliProbeContract(planner)).toBe(true);
@@ -587,117 +602,4 @@ describe('admitted readiness probe contracts', () => {
     expect(parseCursorModels('Available models\n\n')).toBeNull();
     expect(parseCursorModels('')).toBeNull();
   });
-});
-
-describe('CLI compiler support rows', () => {
-  it('covers every catalogued tool and requires a runtime version exactly when supported', () => {
-    expect(Object.keys(CLI_COMPILER_EVIDENCE)).toEqual([...CLI_TOOL_IDS]);
-    for (const id of CLI_TOOL_IDS) {
-      const evidence = CLI_COMPILER_EVIDENCE[id];
-      const row = COMPILER_SUPPORT_TABLE[id];
-      const supported = evidence.state !== 'unsupported';
-      expect({ tool: id, versionRequired: row.versionRequired }).toEqual({
-        tool: id,
-        versionRequired: supported,
-      });
-      expect({ tool: id, containable: row.containmentProfiles.length > 0 }).toEqual({
-        tool: id,
-        containable: supported,
-      });
-      expect({ tool: id, credentialed: row.credentialChannels.length > 0 }).toEqual({
-        tool: id,
-        credentialed: supported,
-      });
-    }
-  });
-});
-
-describe('admitCliCompilerRuntime', () => {
-  itUnix('admits the bound exact runtime through the catalog evidence identity', async () => {
-    const runtime = await bindExactOpenCodeRuntime();
-
-    const admission = admitCliCompilerRuntime({ tool: 'opencode', runtime });
-
-    expect(admission.kind).toBe('admitted');
-    if (admission.kind !== 'admitted') return;
-    expect(admission.evidence).toBe(CLI_COMPILER_EVIDENCE.opencode);
-  });
-
-  itUnix('admits drifted evidence for supported tools', async () => {
-    const runtime = await bindExactOpenCodeRuntime();
-    const driftedRuntime: CompilerRuntimeEvidence = {
-      ...runtime,
-      runtimeVersion: '1.18.16',
-      versionObservation: 'drifted',
-    };
-
-    const admission = admitCliCompilerRuntime({ tool: 'opencode', runtime: driftedRuntime });
-
-    expect(admission.kind).toBe('admitted');
-    if (admission.kind !== 'admitted') return;
-    expect(admission.evidence).toBe(CLI_COMPILER_EVIDENCE.opencode);
-  });
-
-  itUnix('refuses a forward runtime version before readiness', async () => {
-    const runtime = await bindExactOpenCodeRuntime();
-
-    const admission = admitCliCompilerRuntime({
-      tool: 'opencode',
-      runtime: { ...runtime, version: '1.18.16' },
-    });
-
-    expect(admission.kind).toBe('refused');
-    if (admission.kind !== 'refused') return;
-    expect(admission.failure.code).toBe('task_compiler_capability_unsupported');
-    expect(admission.missing).toEqual(['version']);
-  });
-
-  itUnix(
-    'refuses protocol, fixture, transport, and backend drift against the catalog',
-    async () => {
-      const runtime = await bindExactOpenCodeRuntime();
-      const rows: Array<{
-        override: Partial<CompilerRuntimeEvidence>;
-        missing: readonly string[];
-      }> = [
-        {
-          override: { terminalContract: 'opencode-final-message-v2' },
-          missing: ['terminalContract'],
-        },
-        { override: { fixtureDate: '2026-08-14' }, missing: ['fixtureDate'] },
-        { override: { transports: ['declared-file'] }, missing: ['transport'] },
-        { override: { backend: 'codex' }, missing: ['backend'] },
-      ];
-
-      for (const { override, missing } of rows) {
-        const admission = admitCliCompilerRuntime({
-          tool: 'opencode',
-          runtime: { ...runtime, ...override },
-        });
-
-        expect(admission.kind).toBe('refused');
-        if (admission.kind !== 'refused') continue;
-        expect(admission.failure.code).toBe('task_compiler_capability_unsupported');
-        expect(admission.missing).toEqual(missing);
-      }
-    },
-  );
-
-  itUnix.each(['copilot', 'cursor'] as const)(
-    'refuses the loader-only %s adapter even with exact claimed evidence',
-    async (tool) => {
-      const runtime = await bindExactOpenCodeRuntime();
-
-      const admission = admitCliCompilerRuntime({
-        tool,
-        runtime: { ...runtime, backend: tool },
-      });
-
-      expect(admission.kind).toBe('refused');
-      if (admission.kind !== 'refused') return;
-      expect(admission.failure.code).toBe('task_compiler_capability_unsupported');
-      expect(admission.missing).toEqual(['backend']);
-      expect(admission.failure.message).toContain(tool);
-    },
-  );
 });

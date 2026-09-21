@@ -14,6 +14,12 @@ export type RunnerAvailabilityVerdict =
   | Readonly<{ state: 'available' }>
   | Readonly<{ state: 'unavailable'; diagnostic: string }>
   | Readonly<{ state: 'no-models' }>
+  /** The server answered with a catalog that does not carry the selected model. */
+  | Readonly<{ state: 'missing-model'; selectionId: string }>
+  /** The connection did not answer within the readiness budget. */
+  | Readonly<{ state: 'timeout'; diagnostic: string }>
+  /** The server answered and rejected the configured authentication. */
+  | Readonly<{ state: 'unauthorized'; diagnostic: string }>
   | Readonly<{ state: 'missing-credential'; credentialEnv?: string | undefined }>
   | Readonly<{ state: 'not-probed'; diagnostic: string }>;
 
@@ -35,9 +41,11 @@ type LocalApiProvider = Extract<
 const LOCAL_PROVIDER_STARTUP: Readonly<Record<LocalApiProvider['id'], string>> = {
   ollama: 'Run `ollama serve`',
   'lm-studio': 'Start the LM Studio local server',
+  'llama-cpp': 'Start the llama.cpp server (`llama-server`)',
 };
 
-function localProviderStartup(provider: string): string | undefined {
+/** The one wording for how an operator starts each local server; the picker mirrors it. */
+export function localProviderStartup(provider: string): string | undefined {
   const descriptor = getApiProviderDescriptor(provider);
   if (descriptor === undefined || descriptor.offering !== 'local') return undefined;
   return LOCAL_PROVIDER_STARTUP[descriptor.id];
@@ -104,6 +112,24 @@ function availabilityCopy(fact: RunnerAvailabilityFact, label: string): Availabi
       return {
         summary: `${label} answered${atEndpoint(fact)} but offers no models.`,
         fix: `Install a model for ${fact.provider}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
+      };
+    case 'missing-model':
+      return {
+        summary: `${label} answered${atEndpoint(fact)} but does not serve "${verdict.selectionId}".`,
+        // Readiness never substitutes another model the catalog happens to carry.
+        fix: `Select a model ${fact.provider} serves, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
+      };
+    case 'timeout':
+      return {
+        summary: `${label} did not answer in time${atEndpoint(fact)}.`,
+        details: [`Probe: ${verdict.diagnostic}`],
+        fix: unavailableFix(fact),
+      };
+    case 'unauthorized':
+      return {
+        summary: `${label} rejected the configured credential${atEndpoint(fact)}.`,
+        details: [`Probe: ${verdict.diagnostic}`],
+        fix: `Check the credential for ${fact.provider}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
       };
     case 'missing-credential':
       return {

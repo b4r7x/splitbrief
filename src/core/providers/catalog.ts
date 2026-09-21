@@ -104,6 +104,7 @@ export const PROVIDER_CATALOG: Readonly<Record<ProviderId, ProviderInfo>> = Obje
   'kilo-code': providerInfoFromCliDescriptor(CLI_TOOL_CATALOG['kilo-code']),
   cursor: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.cursor),
   'command-code': providerInfoFromCliDescriptor(CLI_TOOL_CATALOG['command-code']),
+  antigravity: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.antigravity),
   ...apiProviderInfoCatalog(),
   ...META_PROVIDER_INFO,
 });

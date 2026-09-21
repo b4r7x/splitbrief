@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateCostBreakdown,
   describeOfferingBillingPresentation,
-  formatOfferingAwareExtraCost,
   resolveProviderRunMetadata,
 } from './breakdown.js';
 import type { ProviderRunMetadata } from '../../../core/schemas/summary.js';
@@ -21,97 +20,6 @@ function breakdown(opts: Parameters<typeof calculateCostBreakdown>[0]) {
 }
 
 describe('calculateCostBreakdown', () => {
-  it('all local (0 escalations) yields 100% localCompletionRate and positive savings', () => {
-    const usage = makeUsage({
-      plannerInput: 100_000,
-      plannerOutput: 50_000,
-      implementerInput: 1_000_000,
-      implementerOutput: 500_000,
-    });
-    const result = breakdown({
-      tokenUsage: usage,
-      totalTasks: 5,
-      escalatedCount: 0,
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerTool: 'custom-worker-api',
-      implementerModel: 'deepseek-v4-flash',
-    });
-    expect(result.localCompletionRate).toBe(1);
-    expect(result.savingsPercentage).toBeGreaterThan(0);
-  });
-
-  it('all escalated yields 0% localCompletionRate', () => {
-    const usage = makeUsage({
-      plannerInput: 500_000,
-      plannerOutput: 200_000,
-      escalationInput: 1_000_000,
-      escalationOutput: 500_000,
-    });
-    const result = breakdown({
-      tokenUsage: usage,
-      totalTasks: 3,
-      escalatedCount: 3,
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerTool: 'ollama',
-    });
-    expect(result.localCompletionRate).toBe(0);
-  });
-
-  it('mixed (5 local, 2 escalated out of 7) yields ~71.4% localCompletionRate', () => {
-    const usage = makeUsage({
-      implementerInput: 500_000,
-      implementerOutput: 200_000,
-      escalationInput: 100_000,
-      escalationOutput: 50_000,
-    });
-    const result = breakdown({
-      tokenUsage: usage,
-      totalTasks: 7,
-      escalatedCount: 2,
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerTool: 'ollama',
-    });
-    expect(Math.abs(result.localCompletionRate - 0.7142857142857143)).toBeLessThan(0.001);
-  });
-
-  it('zero tasks yields 0% localCompletionRate without division by zero', () => {
-    const usage = makeUsage();
-    const result = breakdown({
-      tokenUsage: usage,
-      totalTasks: 0,
-      escalatedCount: 0,
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerTool: 'ollama',
-    });
-    expect(result.localCompletionRate).toBe(0);
-    expect(result.savingsAmount).toBe(0);
-    expect(Number.isFinite(result.savingsPercentage)).toBe(true);
-  });
-
-  it('planner spend does not reduce implementer savings', () => {
-    const usage = makeUsage({
-      plannerInput: 10_000_000,
-      plannerOutput: 5_000_000,
-      implementerInput: 100,
-      implementerOutput: 50,
-    });
-    const result = breakdown({
-      tokenUsage: usage,
-      totalTasks: 1,
-      escalatedCount: 0,
-      plannerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerTool: 'custom-worker-api',
-      implementerModel: 'deepseek-v4-flash',
-    });
-    expect(result.savingsAmount).toBeCloseTo(0.000672, 10);
-    expect(result.savingsPercentage).toBeGreaterThan(0);
-  });
-
   it('treats CLI + local workflows as unpriced', () => {
     const usage = makeUsage({
       plannerInput: 100_000,
@@ -122,8 +30,6 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 5,
-      escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
     });
@@ -131,7 +37,6 @@ describe('calculateCostBreakdown', () => {
     expect(result.totalActualCost).toBe(0);
     expect(result.providerCosts).toBeUndefined();
     expect(result.hasPricedUsage).toBe(false);
-    expect(result.hasSavingsEstimate).toBe(false);
     expect(result.hasUnpricedUsage).toBe(true);
   });
 
@@ -145,8 +50,6 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 5,
-      escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
@@ -162,10 +65,9 @@ describe('calculateCostBreakdown', () => {
     expect(result.actualPlannerCost).toBe(0);
     expect(result.actualImplementerCost).toBeGreaterThan(0);
     expect(result.hasPricedUsage).toBe(true);
-    expect(result.hasSavingsEstimate).toBe(false);
   });
 
-  it('computes savings only when the all-planner baseline is priced', () => {
+  it('treats a shell planner as unpriced-meta', () => {
     const usage = makeUsage({
       plannerInput: 100_000,
       plannerOutput: 50_000,
@@ -175,116 +77,10 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 3,
-      escalatedCount: 1,
-      plannerTool: 'custom-planner-api',
-      implementerTool: 'custom-worker-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerModel: 'deepseek-v4-flash',
-    });
-
-    expect(result.actualPlannerCost).toBeGreaterThan(0);
-    expect(result.actualImplementerCost).toBeGreaterThan(0);
-    expect(result.hasSavingsEstimate).toBe(true);
-
-    expect(result.savingsAmount).toBeCloseTo(result.hypotheticalCost - result.totalActualCost, 10);
-    expect(result.savingsAmount).toBeGreaterThan(0);
-
-    expect(result.savingsPercentage).toBeCloseTo(
-      (result.savingsAmount / result.hypotheticalCost) * 100,
-      10,
-    );
-
-    expect(result.providerCosts).toEqual({
-      'custom-planner-api': {
-        inputTokens: 100_000,
-        outputTokens: 50_000,
-        cost: result.actualPlannerCost,
-      },
-      'custom-worker-api': {
-        inputTokens: 500_000,
-        outputTokens: 200_000,
-        cost: result.actualImplementerCost,
-      },
-    });
-  });
-
-  it('preserves negative savings when routed execution is more expensive than all-planner', () => {
-    const usage = makeUsage({
-      implementerInput: 1_000_000,
-      implementerOutput: 1_000_000,
-    });
-
-    const result = breakdown({
-      tokenUsage: usage,
-      totalTasks: 1,
-      escalatedCount: 0,
-      plannerTool: 'custom-worker-api',
-      plannerModel: 'deepseek-v4-flash',
-      implementerTool: 'custom-planner-api',
-      implementerModel: 'claude-sonnet-5',
-    });
-
-    expect(result.hasSavingsEstimate).toBe(true);
-    expect(result.savingsAmount).toBeCloseTo(result.hypotheticalCost - result.totalActualCost, 10);
-    expect(result.savingsAmount).toBeLessThan(0);
-    expect(result.savingsPercentage).toBeLessThan(0);
-  });
-
-  it('all-planner baseline includes planner spend without changing savings amount', () => {
-    const sharedImplementer = { implementerInput: 500_000, implementerOutput: 200_000 };
-
-    const low = breakdown({
-      tokenUsage: makeUsage({ plannerInput: 10_000, plannerOutput: 5_000, ...sharedImplementer }),
-      totalTasks: 1,
-      escalatedCount: 0,
-      plannerTool: 'custom-planner-api',
-      implementerTool: 'custom-worker-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerModel: 'deepseek-v4-flash',
-    });
-
-    const high = breakdown({
-      tokenUsage: makeUsage({
-        plannerInput: 1_000_000,
-        plannerOutput: 500_000,
-        ...sharedImplementer,
-      }),
-      totalTasks: 1,
-      escalatedCount: 0,
-      plannerTool: 'custom-planner-api',
-      implementerTool: 'custom-worker-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerModel: 'deepseek-v4-flash',
-    });
-
-    expect(high.hypotheticalCost).toBeGreaterThan(low.hypotheticalCost);
-    expect(low.savingsAmount).toBeCloseTo(high.savingsAmount, 10);
-    expect(low.hypotheticalCost).toBeCloseTo(
-      low.actualPlannerCost + low.savingsAmount + low.actualImplementerCost,
-      10,
-    );
-  });
-
-  it('treats a shell planner as unpriced-meta with no savings estimate', () => {
-    const usage = makeUsage({
-      plannerInput: 100_000,
-      plannerOutput: 50_000,
-      implementerInput: 500_000,
-      implementerOutput: 200_000,
-    });
-
-    const result = breakdown({
-      tokenUsage: usage,
-      totalTasks: 3,
-      escalatedCount: 0,
       plannerTool: 'shell',
       implementerTool: 'ollama',
     });
 
-    expect(result.hasSavingsEstimate).toBe(false);
-    expect(result.savingsAmount).toBe(0);
-    expect(result.hypotheticalCost).toBe(0);
     expect(result.totalActualCost).toBe(0);
   });
 
@@ -298,8 +94,6 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 2,
-      escalatedCount: 0,
       plannerTool: 'custom-worker-api',
       implementerTool: 'custom-worker-api',
       plannerModel: 'deepseek-v4-flash',
@@ -323,8 +117,6 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 2,
-      escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
@@ -334,6 +126,8 @@ describe('calculateCostBreakdown', () => {
           taskTitle: 'local task',
           method: 'local',
           implementerTokens: 1_000_000,
+          implementerInputTokens: 500_000,
+          implementerOutputTokens: 500_000,
           escalationTokens: 0,
           retryCount: 0,
           tool: 'ollama',
@@ -344,6 +138,8 @@ describe('calculateCostBreakdown', () => {
           taskTitle: 'paid task',
           method: 'local',
           implementerTokens: 1_000_000,
+          implementerInputTokens: 500_000,
+          implementerOutputTokens: 500_000,
           escalationTokens: 0,
           retryCount: 0,
           tool: 'custom-worker-api',
@@ -370,8 +166,6 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 1,
-      escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
@@ -381,6 +175,8 @@ describe('calculateCostBreakdown', () => {
           taskTitle: 'unknown task',
           method: 'local',
           implementerTokens: 2_000_000,
+          implementerInputTokens: 1_000_000,
+          implementerOutputTokens: 1_000_000,
           escalationTokens: 0,
           retryCount: 0,
           tool: 'custom-agent',
@@ -407,8 +203,6 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 1,
-      escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
@@ -418,6 +212,8 @@ describe('calculateCostBreakdown', () => {
           taskTitle: 'paid auto task',
           method: 'local',
           implementerTokens: 1_000_000,
+          implementerInputTokens: 500_000,
+          implementerOutputTokens: 500_000,
           escalationTokens: 0,
           retryCount: 0,
           tool: 'custom-worker-api',
@@ -439,8 +235,6 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 1,
-      escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
       implementerModel: 'qwen-local',
@@ -450,6 +244,8 @@ describe('calculateCostBreakdown', () => {
           taskTitle: 'paid task',
           method: 'local',
           implementerTokens: 1_000_000,
+          implementerInputTokens: 500_000,
+          implementerOutputTokens: 500_000,
           escalationTokens: 0,
           retryCount: 0,
           tool: 'custom-worker-api',
@@ -470,8 +266,6 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 2,
-      escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
@@ -496,8 +290,6 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 2,
-      escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
@@ -507,6 +299,8 @@ describe('calculateCostBreakdown', () => {
           taskTitle: 'escalated task',
           method: 'escalated-full',
           implementerTokens: 500_000,
+          implementerInputTokens: 250_000,
+          implementerOutputTokens: 250_000,
           escalationTokens: 0,
           retryCount: 0,
           tool: 'custom-planner-api',
@@ -537,8 +331,6 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 1,
-      escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
       taskBreakdowns: [
@@ -579,8 +371,6 @@ describe('calculateCostBreakdown', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 0,
-      escalatedCount: 0,
       plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
@@ -641,8 +431,6 @@ describe('offering billing metadata', () => {
     expect(presentation.costLabel).toBe('subscription-included');
     expect(presentation.billingLabel).toBe('subscription-included');
     expect(presentation.costLabel).not.toMatch(/\$0 extra|free|local/i);
-    expect(formatOfferingAwareExtraCost(metadata!, 0)).toBeNull();
-    expect(formatOfferingAwareExtraCost(metadata!, 1.25)).toBeNull();
   });
 
   it('describes free quota as variable', () => {
@@ -687,8 +475,6 @@ describe('offering billing metadata', () => {
 
     const result = breakdown({
       tokenUsage: usage,
-      totalTasks: 1,
-      escalatedCount: 0,
       plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
@@ -721,8 +507,6 @@ describe('summary persistence', () => {
         implementerInput: 200_000,
         implementerOutput: 100_000,
       }),
-      totalTasks: 2,
-      escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
@@ -737,103 +521,6 @@ describe('summary persistence', () => {
     expect(parsed.offeringPresentations?.['claude-code']?.costLabel).toBe('subscription-included');
     expect(parsed.providerRunMetadata).toEqual(result.providerRunMetadata);
     expect(parsed.offeringPresentations).toEqual(result.offeringPresentations);
-  });
-});
-
-describe('cache pricing', () => {
-  it('calculateCostBreakdown with cacheRead tokens + priced provider returns correct cacheReadSavings', () => {
-    // Sonnet 5: input=$2/MTok, cacheRead=$0.20/MTok => savings=$1.80/MTok of cache reads
-    const usage = makeUsage({
-      plannerInput: 100_000,
-      plannerOutput: 50_000,
-      implementerInput: 500_000,
-      implementerOutput: 200_000,
-      plannerCacheRead: 1_000_000,
-    });
-
-    const result = breakdown({
-      tokenUsage: usage,
-      totalTasks: 3,
-      escalatedCount: 0,
-      plannerTool: 'custom-planner-api',
-      implementerTool: 'custom-worker-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerModel: 'deepseek-v4-flash',
-    });
-
-    // 1_000_000 cache read tokens at (2.00 - 0.20) = $1.80/MTok = $1.80 savings
-    expect(result.cacheReadSavings).toBeCloseTo(1.8, 10);
-    expect(result.cacheReadTokens).toBe(1_000_000);
-  });
-
-  it('calculateCostBreakdown with cacheRead tokens + unpriced provider returns no cacheReadSavings', () => {
-    const usage = makeUsage({
-      plannerInput: 100_000,
-      plannerOutput: 50_000,
-      implementerInput: 500_000,
-      implementerOutput: 200_000,
-      plannerCacheRead: 1_000_000,
-    });
-
-    // claude-code is unpriced-cli — no cacheReadPer1M
-    const result = breakdown({
-      tokenUsage: usage,
-      totalTasks: 3,
-      escalatedCount: 0,
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-    });
-
-    expect(result.cacheReadSavings).toBeUndefined();
-    expect(result.cacheReadTokens).toBe(1_000_000);
-  });
-
-  it('calculateCostBreakdown without cacheRead tokens returns no cacheReadSavings (backward compat)', () => {
-    const usage = makeUsage({
-      plannerInput: 100_000,
-      plannerOutput: 50_000,
-      implementerInput: 500_000,
-      implementerOutput: 200_000,
-    });
-
-    const result = breakdown({
-      tokenUsage: usage,
-      totalTasks: 3,
-      escalatedCount: 0,
-      plannerTool: 'custom-planner-api',
-      implementerTool: 'custom-worker-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerModel: 'deepseek-v4-flash',
-    });
-
-    expect(result.cacheReadSavings).toBeUndefined();
-    expect(result.cacheReadTokens).toBeUndefined();
-    expect(result.cacheWriteTokens).toBeUndefined();
-  });
-
-  it('calculateCostBreakdown accumulates cache savings across both planner and implementer', () => {
-    const usage = makeUsage({
-      plannerInput: 100_000,
-      plannerOutput: 50_000,
-      implementerInput: 200_000,
-      implementerOutput: 80_000,
-      plannerCacheRead: 500_000,
-      implementerCacheRead: 500_000,
-    });
-
-    const result = breakdown({
-      tokenUsage: usage,
-      totalTasks: 2,
-      escalatedCount: 0,
-      plannerTool: 'custom-planner-api',
-      implementerTool: 'custom-planner-api',
-      plannerModel: 'claude-sonnet-5',
-      implementerModel: 'claude-sonnet-5',
-    });
-
-    // (500k + 500k) @ $1.80/MTok = $1.80 total
-    expect(result.cacheReadSavings).toBeCloseTo(1.8, 10);
-    expect(result.cacheReadTokens).toBe(1_000_000);
   });
 });
 
@@ -855,8 +542,6 @@ describe('reviewer pricing', () => {
         implementerInput: 400_000,
         implementerOutput: 100_000,
       }),
-      totalTasks: 4,
-      escalatedCount: 0,
       ...meteredSeats,
     });
     const preChange = breakdown({
@@ -866,8 +551,6 @@ describe('reviewer pricing', () => {
         implementerInput: 400_000,
         implementerOutput: 100_000,
       }),
-      totalTasks: 4,
-      escalatedCount: 0,
       ...meteredSeats,
     });
 
@@ -882,8 +565,6 @@ describe('reviewer pricing', () => {
         reviewerInput: 20_000,
         reviewerOutput: 5_000,
       }),
-      totalTasks: 1,
-      escalatedCount: 0,
       plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
@@ -892,8 +573,6 @@ describe('reviewer pricing', () => {
     });
     const reviewerAlone = breakdown({
       tokenUsage: makeUsage({ plannerInput: 20_000, plannerOutput: 5_000 }),
-      totalTasks: 1,
-      escalatedCount: 0,
       plannerTool: 'custom-worker-api',
       plannerModel: 'deepseek-v4-flash',
       implementerTool: 'ollama',
@@ -909,25 +588,5 @@ describe('reviewer pricing', () => {
       result.actualPlannerCost + result.actualImplementerCost + reviewerAlone.actualPlannerCost,
       10,
     );
-  });
-
-  it('suppresses the savings estimate when the configured reviewer is unpriced', () => {
-    const result = breakdown({
-      tokenUsage: makeUsage({
-        plannerInput: 100_000,
-        plannerOutput: 40_000,
-        reviewerInput: 20_000,
-        reviewerOutput: 5_000,
-        implementerInput: 400_000,
-        implementerOutput: 100_000,
-      }),
-      totalTasks: 4,
-      escalatedCount: 0,
-      ...meteredSeats,
-      reviewerTool: 'opencode',
-    });
-
-    expect(result.isTotalActualCostKnown).toBe(false);
-    expect(result.hasSavingsEstimate).toBe(false);
   });
 });

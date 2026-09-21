@@ -11,9 +11,11 @@ SPLITBRIEF is a CLI that splits AI coding work across two roles:
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and compiles the request into a Task Brief, with optional supporting spec/plan artifacts when the work needs more structure.
 - An **implementer** — a weaker **model**, reached either as a CLI tool running a cheap model or as an API model (Ollama, LM Studio, a custom endpoint) — does the *typing*: turns each task from the list into code, one task at a time. Both transports are first-class; SPLITBRIEF favours neither.
 
-The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Git commit strategies are optional and off by default; the default leaves changes unstaged for manual review.
+The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Git staging and commits belong to the user.
 
 The goal is a change that holds up: the tool that wrote the code never signs it off, and a deterministic pipeline — not the implementer's own opinion — decides whether the task passed. Lower total cost follows from the split; it is a reported outcome, not the promise.
+
+The **pipeline spec** (`src/core/pipeline-spec/`) is where that pipeline's countable rules live — the modes and their brief caps, the retry count, the escalation ladder, the timeouts, the gate order, the halt signatures, the review cycle cap. The orchestrator imports them and the portable agent skills are rendered from them, so the two cannot drift; `npm run skills:check` fails when they do.
 
 ---
 
@@ -28,7 +30,7 @@ The "smart" side. Its responsibilities, in order:
 3. **Write supporting docs when needed** — `spec.md` and `plan.md` for larger, riskier, or more ambiguous work.
 4. **Write `tasks.md`** — the transport format that carries one or more Task Briefs to the implementer.
 5. **Review** the entire diff at the end against the Task Brief and any supporting spec.
-6. **Escalate** — when the implementer fails a task 3× in a row, escalation runs through an optional paid intermediate model, then the planner either hints or takes over and fixes the task itself.
+6. **Escalate** — when the implementer fails a task 3× in a row, escalation runs through an optional paid intermediate model, then a planner hint helps the implementer retry. Exhaustion enters explicit recovery.
 
 The planner also supports **clarifying questions**: it can pause and ask the user questions before finalizing the Task Brief and any supporting spec (only for backends that support this — see `capabilities.supportsConversationalPlanning` on `Planner` in `src/engine/planners/types.ts`).
 
@@ -49,8 +51,8 @@ The middle layer. Zero React, zero Ink — pure logic in `src/engine/orchestrato
 - The state machine (see `docs/WORKFLOW.md`).
 - Disk writes (`tasks.md` as Task Brief transport, mode-dependent planning artifacts such as `research.md`, `spec.md`, and `plan.md`, `sessions/<id>/state.json`, `sessions/<id>/session.jsonl`).
 - Validation pipeline (`typecheck → lint → tests`).
-- Optional git checkpoint/commit strategy when explicitly configured.
-- Event emission through the EventBus to subscribed sinks: TUI, JSONL, session tree, stdout JSON, OTel, and hooks.
+- Filesystem snapshots and manual Git review. An index checkpoint is a retired Git feature; filesystem snapshots remain supported.
+- Event emission through the EventBus to subscribed sinks: TUI, JSONL, logger, stdout JSON, and hooks.
 
 ---
 
@@ -60,7 +62,7 @@ Both the planner and the implementer are configured with a `kind` field. There a
 
 | Kind | What it is | Example | Write mode as implementer | When to use |
 |------|-----------|---------|---------------------------|-------------|
-| `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor` | `direct` | Default planner path; uses existing subscriptions. As an implementer, one of the two first-class transports — a known tool pointed at a cheaper model |
+| `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor` | `direct` | Default planner path; uses existing subscriptions. As an implementer, one of the two first-class transports — a known tool pointed at a smaller model |
 | `api` | Any OpenAI-compatible HTTP endpoint | Ollama, LM Studio, custom endpoint | `extracted-code` | The other first-class implementer transport — a weaker model behind an endpoint, local or remote |
 | `shell` | An arbitrary command. Prompt → stdin, code → stdout. No shell/network sandbox | Any custom script | `extracted-code` | Users who want to plug in a tool we don't know |
 | `agent` | A command that writes files directly to disk. No stdout extraction or shell/network sandbox | A complete coding agent used as an implementer | `direct` | When the tool handles file writing itself |
@@ -99,14 +101,26 @@ idle
  │   └─► reviewing-plan   (waiting for user, speckit-only by default)
  ├─► implementing      (implementer is working on current task)
  │   └─► validating-task  (typecheck → lint → tests running)
- │       └─► escalating   (validation failed 3× → planner takes over)
+ │       └─► escalating   (retries exhausted → worker/help path, then recovery)
  ├─► final-review      (review seat reads whole diff vs Task Brief/supporting spec)
  └─► complete
 ```
 
-**Live phases** (single Ctrl-C aborts the active call): `researching`, `specifying`, `planning`, `implementing`, `escalating`, and `final-review`.
+**Live phases** (Stop now aborts the active call): `researching`, `specifying`, `planning`, `implementing`, `escalating`, and `final-review`.
 
-**Resumable phases** (saved state can continue from here): `planning`, `implementing`, `final-review` — the `RESUMABLE_PHASES` set in `src/core/phases.ts` — plus any phase with `awaitingContinue: true`. Every other phase (the review/gate phases, `analyzing`, `validating-task`, `escalating`, and the generative phases `researching`/`specifying`) is **not resumable** without `awaitingContinue` — if a cold crash wiped the process mid-stream, the stream is lost and the only safe behaviour is to restart the feature.
+**Run status** (`src/core/sessions/run-status.ts`): the one vocabulary for how a run stands — `running` (a process still holds it), `open` (it came to rest and can be picked up) or `closed` (`complete` when the final review passed, `ended` when the user closed it). `deriveRunStatus` is the only place that decides, from the saved state, the lockfile and the artifacts on disk; every listing, guard and screen reads it rather than inferring its own.
+
+**Stop reason**: why an open run came to rest — `paused` (at a boundary or mid-step), `waiting` (on the spec, plan or briefs gate), `halted` (a pending recovery), `failed` (the run recorded a failure) or `interrupted` (nothing said why). The session listing carries it as `stop` and the row spells it as one word.
+
+**Step** (`StepRef`, `src/core/schemas/run-step.ts`): a place in the run — a planner call (`research`, `spec`, `plan`, `tasks`, `clarify`, `constitution`, `analyze`), a gate (`spec`, `plan`, `briefs`), a brief (`taskId` plus `attempt`) or a review cycle. `resumeStep(state, artifacts)` names the step a run picks up at; the first missing planner artifact in the mode's order decides when the run never reached a gate.
+
+**Closed**: the one thing that stops a run being continuable. `state.closed` is written by `CLOSE_RUN` — the **End run** row on the stop sheet, the same row on a document gate, the `end-run` recovery action, `/end` — and a run that passed its final review closes as `complete`. A closed run keeps every file it wrote; closing reverts nothing.
+
+**Continuing a run**: `continueRun` (`src/engine/orchestrator/run/continue.ts`) is the one path. A park this process still holds settles in place; a run at rest is re-entered on its saved state with what the operator typed riding along as a *steer*, folded into the step's own prompt rather than replacing it. A cold crash mid-generation loses the stream, not the run: the step loop picks up at the first artifact it has not written.
+
+**Continuation / steer**: the operator's words for the step a stop cut. A continuation never replaces the step's prompt — `composeContinuation` (`src/engine/spec/prompts/continuation.ts`) trails the partial and the steer behind the real prompt, and the planner with a native session gets one extra user turn on the conversation it already ran the step on.
+
+**`awaitingContinue`**: the boolean the state carried before `interruptedStep` existed. It still parses and still reads as parked, but `interruptedStep` is the field that says *which* step and *where* the cut landed.
 
 ---
 
@@ -114,10 +128,14 @@ idle
 
 A **Task Brief** is the atomic semantic unit of implementation. It is transported in `tasks.md` and parsed into structured objects by `src/engine/spec/tasks/parse.ts`.
 
+- **slice** — what one brief covers: one verifiable change, which may span more than one file. The planner budgets a slice at no more than five files and roughly 150–200 changed lines for a mid-tier implementer, and splits wherever a gate can pass independently. One file is the smallest slice, not the required one.
+- **declared set** — the paths a slice may write: its `files`, plus every path token its `scope.inBounds` and `scope.approvedOutOfBounds` bullets name. One module answers "may this brief write this path" for every consumer — `src/core/scope/declared-set.ts` — and a write outside the set is a scope violation, not a judgement call.
+
 Task fields (`src/core/schemas/task.ts`):
 
 - `id` — branded `TaskId`, unique inside a workflow
-- `file` — path to the file the task edits or creates
+- `file` — the slice's anchor path; the file the task creates or modifies
+- `files` — every path the slice writes, the anchor among them; absent means `[file]`
 - `action` — file operation: `create` or `modify`
 - `description` — longer task body
 - `signature` — language-appropriate function, interface, or type signature hint
@@ -136,6 +154,8 @@ Task briefs are topologically sorted on dependency. Each task is independently p
 
 Runs after every implementer response. Defined in `src/engine/orchestrator/validation/run.ts`.
 
+A **stack** is the language toolchain the project's gates come from — one of five registered rows (TypeScript, JavaScript, Python, Go, Rust) in `src/core/validation/stacks/`, each naming that language's typecheck, lint and test commands and the file patterns that detect it. A command resolves through `config → manifest → discovered → stack default → none`; a project that matches no stack runs review-only and says so (`gates: NONE — review-only`).
+
 1. **Type-check** — the configured, discovered, or heuristic command. The built-in `npx tsc --noEmit` default applies only on TypeScript projects (a `tsconfig.json` exists or `typescript` is a dependency); on other languages the stage is skipped when nothing else resolves.
 2. **Lint** — the configured, discovered, or heuristic command; the stage is skipped when no lint command resolves.
 3. **Tests** — the configured, discovered, or heuristic command, falling back to `npm test`.
@@ -152,11 +172,11 @@ Each step stops at the first failure *attributable to the task* and reports it b
 
 On validation failure:
 
-- **Attempts 1–3**: the implementer retries with the same entire context but a slightly higher temperature (+0.1 per attempt). No planner involvement.
-- **After 3rd failure**: escalate through the tiers in order.
+- **Local retries**: the implementer retries with the same entire context with configured retry temperature changes only where the transport supports them, up to `workflow.maxRetries` times (default 2). No planner involvement.
+- **After the last retry**: escalate through the tiers in order.
   - **Tier 0 — intermediate model** (only when `escalation.intermediateProvider` is configured and `escalation.enabled` is not `false`): a paid mid-tier API model retries the task before the planner is involved.
   - **Tier 1 — hint escalation** (if the planner supports it — see `supportsHintEscalation`): planner reads the error, returns a short hint, implementer retries once with the hint.
-  - **Tier 2 — full escalation**: planner takes over and writes the code itself. The task is marked `escalated` (not `done`) in the summary so you can see cost impact.
+  - **Recovery** follows the exhausted worker/help path. Historical full-tier outcomes remain readable; the planner never automatically takes over code-writing implementation.
 
 Escalation logic: `src/engine/orchestrator/escalation/handle.ts`.
 
@@ -183,13 +203,9 @@ Implementation: `src/engine/orchestrator/approval/loop.ts` via `callbacks.onAppr
 
 ## Clarifying questions
 
-During `specifying`, a conversation-capable planner can emit inline questions to the user. These come through as `<!-- Q:{JSON} -->` markers in the planner's output and are parsed by `src/engine/parsers/question.ts`.
+Every planning document step can return a conversation reply before its artifact is complete. Ordinary prose stays in the conversation. Optional `<!-- Q:{JSON} -->` markers supply up to five structured questions per turn; `src/engine/parsers/question.ts` parses them.
 
-Up to 5 questions per run. User can answer each, type `skip` to skip one, or type `done` to stop accepting questions.
-
-Answered questions are appended to `spec.md` under a `## Clarifications` section when a supporting spec exists. On the next planner call (regenerate or plan phase), the planner sees them as part of the supporting-spec context.
-
-Since spec 008, clarification answers also route through the same queue as user-initiated interjections (see §Queue & Interjection). Planners that implement `injectUserTurn()` receive the answer immediately; other planners drain it at the next phase boundary.
+The pending call, reply and answers are persisted in `state.pendingPlannerConversation` before waiting or continuing. An answer continues the same step, using the planner's native session when available. No placeholder document is written, and stopping leaves the question pending. Completed documents incorporate the decisions; the session log keeps the conversation. See [WORKFLOW.md](./WORKFLOW.md#clarification-questions).
 
 ---
 
@@ -205,7 +221,7 @@ Skills are planner-only. The implementer never sees them — its prompts are der
 
 A **SPLITBRIEF session** is one self-contained piece of work from initial feature prompt to final summary. Every session lives in its own folder under `.splitbrief/sessions/<session-id>/`, where `<session-id>` has the form `<ISO-date>-<slug>` (e.g. `2026-04-14-add-email-validator`). Same-day slug collisions get a `-N` suffix (`2026-04-14-add-email-validator-2`).
 
-Foreground sessions are pointed to by `.splitbrief/active`, a plain text file containing the session-id. Only **one foreground session can be active at a time** in a given project directory — `splitbrief start` fails if `.splitbrief/active` already points at a live session. Detached sessions use lockfiles instead. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.splitbrief/` per working directory.
+The active session is pointed to by `.splitbrief/active`, a plain text file containing the session-id. Only **one session can be active at a time** in a given project directory — `splitbrief start` fails if `.splitbrief/active` already points at a live session. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.splitbrief/` per working directory.
 
 This is distinct from a **planner session** — e.g. the `session_id` Claude Code stream-json emits — which is a backend-specific conversation handle. Planner session ids are persisted inside `state.json` so they can be reused on resume (see `docs/WORKFLOW.md` §1.5). One SPLITBRIEF session may own several planner session ids over its lifetime (e.g. if the first expired and a fresh one was opened on resume).
 
@@ -220,13 +236,17 @@ Flow:
 3. For backends that expose a native session with mid-conversation inject (Claude Code via `--session-id`), each queued message is *also* dispatched as a parallel `user` turn into the live session. The planner sees it on its next model turn without waiting for our orchestrator to start a new phase.
 4. Queue drains at safe-points only, never mid-model-output.
 
-**Scope:** the queue is **planner-only**. Implementers (small local models) do not receive queued messages. Mid-task interjection is explicitly disallowed because small models lose coherence when their single-shot task prompt is perturbed. If the user needs to change something during implementation, they abort the current task (Ctrl-C) and use `/redo-task <id>` after updating the spec.
+**Scope:** the queue is **planner-only**. Implementers (small local models) do not receive queued messages. Mid-task interjection is explicitly disallowed because small models lose coherence when their single-shot task prompt is perturbed. If the user needs to change something during implementation, they stop the current task (`ctrl+c`) and use `/redo-task <id>` after updating the spec.
 
 **Message origin.** Each `QueuedMessage` carries an `origin` discriminator: `'user-input'` for text the user typed directly, and `'clarification'` for answers routed from the clarification Q&A flow. The drain block formats them differently: clarification answers use `[clarification answer during <phase>]\nQ: ...\nA: ...\n[/clarification answer]` while user-initiated interjections use the generic `[user also says during <phase>]` wrapper.
 
+## Stop sheet
+
+The **stop menu** opens above the composer after `esc` during a live run, preserving the draft and visible transcript. It offers **Stop now**, **Pause after this brief** (or **Keep running** when requested), and **End run**. `↑↓` selects, `Enter` executes, a second `esc` stops now, and `Tab` dismisses. Stopping preserves partial changes and allows continuation; End run explicitly closes the run.
+
 ## Awaiting-continue
 
-A **sub-state** entered after the user aborts a live model call (single Ctrl-C). Characteristics:
+A **sub-state** entered after the user stops a live model call (Stop now). Characteristics:
 
 - Workflow phase stays what it was (`researching` / `specifying` / `planning` / `implementing` / `escalating` / `final-review`). The abort does **not** reset the phase.
 - Partial planner output up to the abort point is preserved in `session.jsonl` with `interrupted: true`.
@@ -259,26 +279,26 @@ The engine publishes every observable step as an `EngineEvent` on a single `Even
 
 - **EngineEvent** — the type-dispatched event contract (snake_case `type`, mandatory `ts: number`, usually `phase: Phase`) defined as `EngineEventSchema` in `src/engine/events/schema.ts`; the `EngineEvent` alias (`z.infer`) is re-exported from `src/engine/events/types.ts`. `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed` are phase-less. Single source of truth for every workflow event that crosses the engine boundary. Extended by adding a new Zod member to the contract — no separate registration step. The legacy `TuiEvent` / `OrchestratorEvent` types were removed in the 2026-04-20 release.
 - **EventBus** — synchronous pub/sub port declared in `src/engine/events/types.ts`, created by `createEventBus()`. `publish(event)` fans out to every subscribed sink inline, in registration order; a throw in one sink is caught and swallowed so it does not break fan-out to the others. Sinks that want operator-visible failures must publish their own warning before throwing.
-- **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract, so ordering is preserved and a slow sink can delay later sinks. Shipped sinks: `jsonlSink`, `treeRecorderSink`, optional `tuiSink`, optional `stdoutJsonSink`, optional `otelSink`, and optional hook sink.
-- **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'reviewing-briefs' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Phase-bearing `EngineEvent` variants carry the current `phase` so sinks (OTel span hierarchy, hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
+- **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract, so ordering is preserved and a slow sink can delay later sinks. Shipped sinks: `jsonlSink`, `loggerSink`, optional `tuiSink`, optional `stdoutJsonSink`, and optional hook sink.
+- **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'reviewing-briefs' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Phase-bearing `EngineEvent` variants carry the current `phase` so sinks (hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
 
-Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onCostApprovalNeeded`, `onUserEditConflict`, `onTieredApproval`, `onTaskReviewNeeded`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Budget pressure is not gated by a callback: it publishes `budget_*` events and pauses through the recovery channel. Use the bus for broadcast; use callbacks for gates.
+Gating callbacks (`onApprovalNeeded`, `onPlannerReply`, `onContinuationNeeded`, `onUserEditConflict`, `onTieredApproval`, `onTaskReviewNeeded`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Use the bus for broadcast; use callbacks for gates.
 
 ## Headless mode
 
-`splitbrief start --json "feature"` runs the workflow without the Ink TUI. Workflow host callbacks are stubbed: review gates approve, clarifications and continuations answer empty, and budget pause/exceeded recovery exits non-zero. File-write tiered approvals are not auto-approved and can fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
+`splitbrief start --json "feature"` runs the workflow without the Ink TUI. Workflow host callbacks are stubbed: review gates approve, and clarifications and continuations answer empty. File-write tiered approvals are not auto-approved and can fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
 
 ## Hooks (workflow)
 
-Workflow lifecycle hooks let users run custom commands or in-process modules at well-known moments (pre/post task, pre/post commit, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.splitbrief/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
+Workflow lifecycle hooks let users run custom commands at well-known moments (pre/post task and validation, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.splitbrief/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
 
-- **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_commit' | 'post_commit' | 'pre_escalation' | 'pre_compact' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
-- **HookEntry** — one configured hook: discriminated on `kind: 'command' | 'module'`. `command` entries carry `{ command, args, timeout_ms, on_failure }`; `module` entries carry `{ path, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is bounded at 300_000 ms with a 30_000 ms default.
-- **HooksConfig** — the `hooks:` section of `.splitbrief/config.yaml`: a map from `HookEvent` to `HookEntry[]`, plus an optional `builtin: Record<string, boolean>` toggles block for shipped hooks (e.g. `prettier-on-change`, `block-secrets`).
+- **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_escalation' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
+- **HookEntry** — one configured hook, `kind: 'command'`, carrying `{ command, args, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is bounded at 300_000 ms with a 30_000 ms default.
+- **HooksConfig** — the `hooks:` section of `.splitbrief/config.yaml`: a map from `HookEvent` to `HookEntry[]`.
 
 ## Hook trust
 
-First-time trust gate for hook configs. `src/core/hooks/trust-digest.ts` computes a hash from the hook section plus module hook file digests and `src/core/hooks/trust.ts` holds the grant against that hash; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time, showing each hook's executable, the absolute path it resolves to here, and its argv, then asking `Trust these hooks for this project? [y/N]`. Answering `y` writes a receipt to `~/.splitbrief/trust/hooks.json` keyed by the canonical path of this checkout, so the grant belongs to this machine and this checkout and a repository can neither ship nor forge one. Any edit to the hooks section or module hook files invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise SPLITBRIEF refuses to start. This prevents silent RCE via a config or hook-file edit.
+First-time trust gate for hook configs. `src/core/hooks/trust-digest.ts` computes a hash from the hook section and `src/core/hooks/trust.ts` holds the grant against that hash; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time, showing each hook's executable, the absolute path it resolves to here, and its argv, then asking `Trust these hooks for this project? [y/N]`. Answering `y` writes a receipt to `~/.splitbrief/trust/hooks.json` keyed by the canonical path of this checkout, so the grant belongs to this machine and this checkout and a repository can neither ship nor forge one. Any edit to the hooks section invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise SPLITBRIEF refuses to start. This prevents silent RCE via a config edit.
 
 ## Repo-map
 
@@ -318,8 +338,8 @@ Key rules:
 - `state.json` is what `splitbrief resume` reads to rebuild the in-memory `WorkflowState`. It is overwritten on every phase transition.
 - `summary.json` is written exactly once, at end-of-run.
 - `session.jsonl` is append-only and the single source of truth for history (see "Events & messages" below).
-- `tasks.md` is the human-readable Task Brief transport. `research.md`, `spec.md`, `plan.md`, and speckit artifacts are supporting artifacts written when the corresponding planner phase produces them. They are **always** written when produced, regardless of `workflow.persistTranscript`.
-- `.splitbrief/active` holds the session-id for foreground sessions that should block another same-directory `splitbrief start`. Detached sessions use lockfiles instead.
+- `tasks.md` is the human-readable Task Brief transport. `research.md`, `spec.md`, `plan.md`, and speckit artifacts are supporting artifacts written when the corresponding planner phase produces them. They are **always** written when produced.
+- `.splitbrief/active` holds the session-id of the session that should block another same-directory `splitbrief start`.
 
 ---
 
@@ -340,7 +360,7 @@ Entries come in three **kinds**, distinguished by the `kind` field:
 ```
 
 - `kind: "event"` — operational metadata. Workflow lifecycle, phase transitions, validation results, escalation triggers, artifact writes, errors. Small, always logged.
-- `kind: "message"` — conversation content. User prompts, planner text chunks, clarification Q&A, approval comments, planner reviews. Text-heavy, **opt-outable** via `workflow.persistTranscript: false` (default `true`).
+- `kind: "message"` — conversation content. User prompts, planner text chunks, clarification Q&A, approval comments, planner reviews. Text-heavy.
 - `kind: "summary"` — compaction output. Contains `text`, `summarizedUpTo`, optional `tokenEstimate`, and optional `structured` data. Resume uses the latest summary as a synthetic message, then loads later messages.
 
 Filtering happens at read time: `lines.filter(l => l.kind === 'message')`. There is no separate file for events vs. messages — this is deliberate. A log is a chronological stream, and splitting it would force consumers to merge-sort at every read while opening new crash-atomicity problems. This is the same design Claude Code uses (`~/.claude/projects/<cwd>/<id>.jsonl`), and the same pattern event-sourcing frameworks settle on.

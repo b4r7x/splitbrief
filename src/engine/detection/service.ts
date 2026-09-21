@@ -20,7 +20,10 @@ import {
   cloneProviderDetection,
 } from '../../core/discovery/clone-detection.js';
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
-import { cloneConfiguredProviderOutcome } from './provider-outcomes.js';
+import {
+  cloneConfiguredProviderOutcome,
+  type ConfiguredProviderConnection,
+} from './provider-outcomes.js';
 import { cloneScopedCliCatalogAttempt } from './cli-catalog-outcomes.js';
 import { createLaneChannel, type DetectionLaneListener, type LaneChannel } from './lane-channel.js';
 import {
@@ -46,6 +49,8 @@ export interface ResolvedDetectionSourceContexts {
   readonly readiness: string;
   readonly modelsDev: string;
   readonly cliModels: string;
+  /** Current seat connections, so a refresh cannot show another endpoint's rows. */
+  readonly configuredProviders?: readonly ConfiguredProviderConnection[] | undefined;
 }
 
 export interface DetectionLaneRequest {
@@ -106,9 +111,9 @@ export interface DetectionService {
 }
 
 const READINESS_TTL_MS = 5 * 60 * 1_000;
-// Native catalog results are executable-identity-bound; do not reuse a TTL
-// snapshot before the resolver has established the current identity again.
-const CLI_MODELS_TTL_MS = 0;
+// The catalog lane is keyed by tool and executable context, so a snapshot
+// inside the window belongs to the same executable that produced it.
+const CLI_MODELS_TTL_MS = 5 * 60 * 1_000;
 const EMPTY_CLI_MODELS: CliModelSnapshot = [];
 const EMPTY_PROJECTION: DetectionProjection = { providers: [], cliTools: [] };
 const fallbackDependencyContext = createOpaqueIdFactory('unconfigured-deps');
@@ -287,7 +292,6 @@ export function createDetectionService() {
       attempt.outcome.kind === 'success'
         ? [
             {
-              role: attempt.connection.role,
               tool: attempt.connection.tool,
               models: attempt.outcome.value.map(cloneDetectedModel),
               probedAt,

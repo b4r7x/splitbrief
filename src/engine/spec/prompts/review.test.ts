@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildFinalReviewPrompt } from './review.js';
+import { buildFinalReviewPrompt, truncateDiffForPrompt } from './review.js';
 
 const SPEC = '## Spec\nAdd a hello function.';
 const TASK_BRIEFS = '## Task T001\nAdd the hello export.';
@@ -50,5 +50,20 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain(
       'state that validation output was not recorded instead of asserting results',
     );
+  });
+});
+
+describe('truncateDiffForPrompt', () => {
+  it('returns a diff inside the budget unchanged', () => {
+    expect(truncateDiffForPrompt(DIFF)).toBe(DIFF);
+  });
+
+  it('annotates the omitted characters once the budget is exceeded', () => {
+    const diff = 'x'.repeat(100_010);
+
+    const truncated = truncateDiffForPrompt(diff);
+
+    expect(truncated).toContain('[... diff truncated, 10 characters omitted ...]');
+    expect(truncated.startsWith('x'.repeat(100_000))).toBe(true);
   });
 });

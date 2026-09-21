@@ -13,7 +13,6 @@ export function createAgentPlanner(config: Config): Planner {
       outputFormat: plannerCfg.outputFormat ?? 'text',
       idleWarnMs: plannerCfg.idleWarnMs,
       idleKillMs: plannerCfg.idleKillMs,
-      compilerBackend: 'agent',
     },
     'Agent planner',
     {

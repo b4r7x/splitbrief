@@ -1,18 +1,25 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
+import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import type { CliAuthMethod } from '../../core/runners/cli-tool-catalog.js';
 
 export type PickerSubView =
   | { kind: 'picker' }
   | { kind: 'custom-command-contract'; refocusKind?: CustomCommandRunnerKind | undefined }
   | { kind: 'custom-command'; intendedKind: CustomCommandRunnerKind }
-  | { kind: 'custom-model' };
+  | { kind: 'custom-model' }
+  /** The local server's own address, token and catalog; the seat is the picker's. */
+  | { kind: 'local-connection'; provider: ApiProviderId };
 
 export interface PickerViewState {
   view: PickerSubView;
   preservedLeftIndex: number;
   expandedModelId: string | null;
   optionDraftId: string | null;
-  variantDraft: string | null;
+  /** The drafted axis value, whichever field the seat's channel will store it in. */
+  effortDraft: string | null;
+  /** The drafted authentication method; `host-configured` unsets the seat's own field. */
+  authDraft: CliAuthMethod | 'host-configured' | null;
   draft: string | null;
   browseCatalog: boolean;
 }
@@ -22,7 +29,8 @@ const initial: PickerViewState = {
   preservedLeftIndex: 0,
   expandedModelId: null,
   optionDraftId: null,
-  variantDraft: null,
+  effortDraft: null,
+  authDraft: null,
   draft: null,
   browseCatalog: false,
 };
@@ -45,26 +53,35 @@ function close() {
   );
 }
 
-function expand(modelId: string, optionDraftId?: string, variantDraft?: string | null) {
+function expand(modelId: string, optionDraftId?: string, effortDraft?: string | null) {
   store.set((s) => {
     const nextDraft = optionDraftId === undefined ? s.optionDraftId : optionDraftId;
-    const nextVariant = variantDraft === undefined ? s.variantDraft : variantDraft;
+    const nextEffort = effortDraft === undefined ? s.effortDraft : effortDraft;
     if (
       s.expandedModelId === modelId &&
       s.optionDraftId === nextDraft &&
-      s.variantDraft === nextVariant
+      s.effortDraft === nextEffort
     ) {
       return s;
     }
-    return { ...s, expandedModelId: modelId, optionDraftId: nextDraft, variantDraft: nextVariant };
+    return { ...s, expandedModelId: modelId, optionDraftId: nextDraft, effortDraft: nextEffort };
   });
 }
 
 function collapse() {
   store.set((s) =>
-    s.expandedModelId === null && s.optionDraftId === null && s.variantDraft === null
+    s.expandedModelId === null &&
+    s.optionDraftId === null &&
+    s.effortDraft === null &&
+    s.authDraft === null
       ? s
-      : { ...s, expandedModelId: null, optionDraftId: null, variantDraft: null },
+      : {
+          ...s,
+          expandedModelId: null,
+          optionDraftId: null,
+          effortDraft: null,
+          authDraft: null,
+        },
   );
 }
 
@@ -72,8 +89,12 @@ function setOptionDraftId(optionDraftId: string) {
   store.set((s) => (s.optionDraftId === optionDraftId ? s : { ...s, optionDraftId }));
 }
 
-function setVariantDraft(variantDraft: string | null) {
-  store.set((s) => (s.variantDraft === variantDraft ? s : { ...s, variantDraft }));
+function setEffortDraft(effortDraft: string | null) {
+  store.set((s) => (s.effortDraft === effortDraft ? s : { ...s, effortDraft }));
+}
+
+function setAuthDraft(authDraft: CliAuthMethod | 'host-configured' | null) {
+  store.set((s) => (s.authDraft === authDraft ? s : { ...s, authDraft }));
 }
 
 function setDraft(draft: string) {
@@ -91,7 +112,8 @@ export const pickerViewStore = {
   expand,
   collapse,
   setOptionDraftId,
-  setVariantDraft,
+  setEffortDraft,
+  setAuthDraft,
   setDraft,
   setBrowseCatalog,
 };

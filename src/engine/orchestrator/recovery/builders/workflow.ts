@@ -4,11 +4,10 @@ import type { Task } from '../../../../core/schemas/task.js';
 import type { UserEditConflict } from '../../../events/workflow-events.js';
 import { uniqueSortedIds } from '../../../../utils/collections.js';
 import type { RecoveryBuilderBase } from './issue.js';
-import { budgetPercentOf, formatCostFact, formatPercent } from '../../../../core/formatting.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
 import { userEditActionToRecoveryAction } from '../../../../core/recovery/user-edit-actions.js';
 import { chooseRecommended, chooseUserEditRecommendation, orderedActions } from './actions.js';
-import { fileConflictDetails, taskFiles } from './details.js';
+import { fileConflictDetails } from './details.js';
 
 export interface UserEditConflictRecoveryOptions extends RecoveryBuilderBase {
   conflict: UserEditConflict;
@@ -20,17 +19,6 @@ export interface ApprovalPromotionConflictRecoveryOptions extends RecoveryBuilde
   conflict: UserEditConflict;
   currentTask?: Task | undefined;
   phase?: Phase | undefined;
-}
-
-export interface BudgetRecoveryOptions extends RecoveryBuilderBase {
-  currentCost: number;
-  maxBudget: number;
-  phase?: Phase | undefined;
-  threshold?: number | undefined;
-  projectedCost?: number | undefined;
-  blockedStep?: string | undefined;
-  nextTask?: Task | undefined;
-  allowSkipNextTask?: boolean | undefined;
 }
 
 export function buildUserEditConflictRecoveryIssue(
@@ -113,84 +101,6 @@ export function buildApprovalPromotionConflictRecoveryIssue(
     }),
     availableActions: actions,
     recommendedAction: chooseRecommended(actions, ['pause-run']),
-    createdAt: opts.createdAt,
-  });
-}
-
-export function buildBudgetPausedRecoveryIssue(opts: BudgetRecoveryOptions): RecoveryIssue {
-  const phase = opts.phase ?? 'implementing';
-  const belowMaxBudget = opts.currentCost < opts.maxBudget;
-  const actions = orderedActions([
-    belowMaxBudget ? 'continue' : undefined,
-    opts.allowSkipNextTask && opts.nextTask ? 'skip-current-task' : undefined,
-    'pause-run',
-    'abort-workflow',
-  ]);
-  const budgetPercent = budgetPercentOf(opts.currentCost, opts.maxBudget);
-
-  return createRecoveryIssue({
-    id: opts.id,
-    reason: 'budget-paused',
-    phase,
-    task: opts.nextTask,
-    files: opts.nextTask ? taskFiles(opts.nextTask) : [],
-    affectedTaskIds: opts.nextTask ? [opts.nextTask.id] : [],
-    message: `Budget pause at ${formatPercent(budgetPercent)}`,
-    details: [
-      `Spent ${formatCostFact(opts.currentCost)} of ${formatCostFact(opts.maxBudget)}`,
-      ...(opts.projectedCost !== undefined
-        ? [`Projected cost: ${formatCostFact(opts.projectedCost)}`]
-        : []),
-      ...(opts.blockedStep !== undefined ? [`Blocked step: ${opts.blockedStep}`] : []),
-      ...(opts.threshold !== undefined
-        ? [`Pause threshold: ${formatPercent(opts.threshold * 100)}`]
-        : []),
-    ],
-    facts: compactFacts({
-      currentCost: opts.currentCost,
-      maxBudget: opts.maxBudget,
-      budgetPercent,
-      projectedCost: opts.projectedCost,
-      threshold: opts.threshold,
-      blockedStep: opts.blockedStep,
-      belowMaxBudget,
-    }),
-    availableActions: actions,
-    recommendedAction: chooseRecommended(actions, ['pause-run', 'continue']),
-    createdAt: opts.createdAt,
-  });
-}
-
-export function buildBudgetExceededRecoveryIssue(opts: BudgetRecoveryOptions): RecoveryIssue {
-  const phase = opts.phase ?? 'implementing';
-  const budgetPercent = budgetPercentOf(opts.currentCost, opts.maxBudget);
-  const actions = orderedActions(['pause-run', 'abort-workflow']);
-
-  return createRecoveryIssue({
-    id: opts.id,
-    reason: 'budget-exceeded',
-    phase,
-    task: opts.nextTask,
-    files: opts.nextTask ? taskFiles(opts.nextTask) : [],
-    affectedTaskIds: opts.nextTask ? [opts.nextTask.id] : [],
-    message: `Budget exceeded at ${formatPercent(budgetPercent)}`,
-    details: [
-      `Spent ${formatCostFact(opts.currentCost)} of ${formatCostFact(opts.maxBudget)}`,
-      ...(opts.projectedCost !== undefined
-        ? [`Projected cost: ${formatCostFact(opts.projectedCost)}`]
-        : []),
-      ...(opts.blockedStep !== undefined ? [`Blocked step: ${opts.blockedStep}`] : []),
-      'Continuing requires a separate raise-budget flow.',
-    ],
-    facts: compactFacts({
-      currentCost: opts.currentCost,
-      maxBudget: opts.maxBudget,
-      budgetPercent,
-      projectedCost: opts.projectedCost,
-      blockedStep: opts.blockedStep,
-    }),
-    availableActions: actions,
-    recommendedAction: 'pause-run',
     createdAt: opts.createdAt,
   });
 }

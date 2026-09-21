@@ -4,11 +4,13 @@ import type { WorkflowState } from '../schemas/workflow.js';
 import { WorkflowStateSchema, WORKFLOW_STATE_VERSION } from '../schemas/workflow.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { LEGACY_STATE_VERSION, legacyWorkflowStateSchema } from './migration/legacy-state.js';
+import { mapV3StateToV4 } from './migration/map-v3.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR, STATE_FILE, sessionDir } from '../paths.js';
 import {
   cacheRevision,
   cacheStateSnapshot,
   cachedStateFor,
+  classifyStateVersion,
   forgetCachedState,
   readRawState,
   serializedState,
@@ -85,6 +87,20 @@ export function loadState(ref: SessionRef): WorkflowState | null {
   if (!record) {
     warnStderr('Warning: state file is not an object, ignoring');
     return null;
+  }
+  if (record.stateVersion === LEGACY_STATE_VERSION) {
+    const classification = classifyStateVersion(raw);
+    if (classification.kind !== 'v3') {
+      warnStderr('Warning: state file failed schema validation, ignoring');
+      return null;
+    }
+    const state = mapV3StateToV4({ ref, state: classification.state, stateRevision: 1 });
+    if (state === null) {
+      warnStderr('Warning: state file failed schema validation, ignoring');
+      return null;
+    }
+    cacheStateSnapshot(cacheKey, stat.mtimeMs, stat.size, state);
+    return state;
   }
   if (record.stateVersion !== WORKFLOW_STATE_VERSION) {
     warnStderr(

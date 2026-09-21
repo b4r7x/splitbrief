@@ -1,5 +1,10 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { Box } from 'ink';
+import { StopMenu } from '../../features/workflow/stop/menu.js';
+import { readStopMenuRows, stopMenuLayout } from '../../features/workflow/stop/options.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
+import { stopStore } from '../../stores/workflow/stop.js';
+import { tasksStore } from '../../stores/workflow/tasks.js';
 import type {
   RuntimeCommandDef,
   CopyResult,
@@ -7,23 +12,21 @@ import type {
 } from '../../core/runtime/commands/types.js';
 import type { Focus } from '../../stores/ui/focus.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
-import { CostApprovalPromptConnected } from '../../features/workflow/components/cost-approval-prompt.js';
 import { QuestionPrompt } from '../../features/workflow/components/question-prompt.js';
 import { ScreenShell } from '../../components/screen-shell.js';
-import { Divider } from '../../features/workflow/components/divider.js';
+import { Divider } from '../../components/divider.js';
+import { useTheme } from '../../components/theme.js';
 import { WorkflowBody } from '../../features/workflow/components/body.js';
 import { WorkflowFooter, WorkflowHeader } from '../../features/workflow/components/chrome.js';
-import {
-  DEFAULT_REVIEW_ACTION_ID,
-  getReviewActionCommand,
-  nextReviewActionId,
-  type SelectableReviewActionId,
-} from '../../features/workflow/components/brief-review/review-actions.js';
 import {
   useWorkflowScreen,
   type WorkflowScreenDeps,
 } from '../../features/workflow/hooks/workflow-screen/use-model.js';
+import { closedTranscriptBlock } from '../../features/workflow/closed/block.js';
+import { closedHeader } from '../../features/workflow/closed/header.js';
+import { bylineText, legendText, openRunByline } from '../../features/workflow/closed/byline.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { preparationStore } from '../../stores/navigation/preparation.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { focusStore } from '../../stores/ui/focus.js';
@@ -35,8 +38,29 @@ import {
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
 } from '../../features/workflow/layout/rect.js';
-import { selectRailForm } from '../../features/workflow/layout/chrome-rows.js';
+import {
+  getChromeContentWidth,
+  getProgressRows,
+  selectRailForm,
+  WORKFLOW_GUTTER_X,
+} from '../../features/workflow/layout/chrome-rows.js';
+import { BuildProgressBlock } from '../../features/workflow/components/build-progress.js';
 import { getWorkflowPromptRows } from '../../features/workflow/prompt-rows/workflow.js';
+import {
+  reviewArtifactForPhase,
+  reviewDocumentOptions,
+} from '../../features/workflow/prompt-rows/approval.js';
+import { reviewKeysStore } from '../../stores/ui/review-keys.js';
+import { composerDraftStore } from '../../stores/ui/composer-draft.js';
+import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
+import { questionOptions, questionPromptStore } from '../../stores/question-prompt/prompt.js';
+import { formatRecoveryPrompt } from '../../features/workflow/recovery-prompt.js';
+import { REVIEW_COMMENT_DRAFT } from '../../core/keybindings/review.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
+import { clamp } from '../../utils/math.js';
+import { sessionSelectDeps } from '../prepare-resume.js';
+import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
+import type { listProjectFiles } from '../../lib/file-listing.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
@@ -44,6 +68,8 @@ interface WorkflowScreenProps {
   copyTarget?: ((target: CopyTarget) => Promise<CopyResult>) | undefined;
   canCopyFocused?: ((focus: Focus | null) => boolean) | undefined;
   deps?: WorkflowScreenDeps | undefined;
+  readClipboardImage?: typeof readClipboardImage | undefined;
+  listProjectFiles?: typeof listProjectFiles | undefined;
 }
 
 export function WorkflowScreen({
@@ -52,86 +78,220 @@ export function WorkflowScreen({
   copyTarget,
   canCopyFocused,
   deps,
+  readClipboardImage,
+  listProjectFiles,
 }: WorkflowScreenProps) {
+  const theme = useTheme();
   const [input, terminal] = useStores(inputHeightStore, terminalSizeStore);
   const { cols, rows } = terminal;
+  useStores(stopStore, tasksStore);
+  const stopMenuOpen = overlayStore.use((state) => state.active === 'stop-sheet');
   const inputRows = input.rows;
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
   const [scrollAboveLabel, setScrollAboveLabel] = useState('');
   const [scrollBelowLabel, setScrollBelowLabel] = useState('');
-  const activeReviewActionIdRef = useRef<SelectableReviewActionId>(DEFAULT_REVIEW_ACTION_ID);
-  const reviewActionKeyboardEngagedRef = useRef(false);
+  const [reviewSelected, setReviewSelected] = useState(0);
+  const reviewKeysArmed = reviewKeysStore.use((state) => state.armed);
   const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
   const briefFocus = focusStore.use((focus) => focus);
+  const recoveryIssue = recoveryNoticeStore.use((state) => state.issue);
+  const questionState = questionPromptStore.use((state) => state);
+  const plannerQuestions = questionState.questions;
 
-  const model = useWorkflowScreen({ onRuntimeCommand, copyTarget, canCopyFocused, deps });
-  const documentReviewActive =
-    model.inputMode.mode === 'review' &&
-    (model.phase === 'reviewing-plan' || model.phase === 'reviewing-spec');
-  const reviewYankActive =
-    model.phase === 'reviewing-briefs' && (canCopyFocused?.(briefFocus) ?? false);
-
-  const resetReviewActionSelection = (): void => {
-    reviewActionKeyboardEngagedRef.current = false;
-    activeReviewActionIdRef.current = DEFAULT_REVIEW_ACTION_ID;
-  };
+  const model = useWorkflowScreen({
+    onRuntimeCommand,
+    copyTarget,
+    canCopyFocused,
+    // Continuing a run at rest re-prepares its tools through the app's own preparation root,
+    // which is where every other seat preparation in the TUI already goes.
+    deps: { ...deps, sessionSelect: deps?.sessionSelect ?? sessionSelectDeps },
+  });
+  const briefListReview = model.phase === 'reviewing-briefs';
+  const reviewArtifact =
+    model.inputMode.mode === 'review' && !model.promptPending && !model.hasOverlay
+      ? reviewArtifactForPhase(model.phase)
+      : null;
+  // A draft in the composer is what turns the letters back into text, so the same flag decides
+  // whether the panel advertises them or the two keys a comment answers to.
+  const reviewCommenting = reviewArtifact !== null && !reviewKeysArmed;
+  const reviewYankActive = briefListReview && (canCopyFocused?.(briefFocus) ?? false);
 
   useLayoutEffect(() => {
-    resetReviewActionSelection();
-  }, [documentReviewActive, reviewOwnerToken]);
+    setReviewSelected(0);
+  }, [reviewArtifact, reviewOwnerToken]);
 
   const handleReviewBoundaryNavigate = (direction: 'up' | 'down'): boolean => {
-    if (model.phase === 'reviewing-briefs') {
-      return model.navigateBriefReview(direction);
-    }
-    if (!documentReviewActive || model.hasOverlay || model.promptPending) return false;
-    const next = nextReviewActionId(
-      activeReviewActionIdRef.current,
-      direction === 'down' ? 'next' : 'previous',
-    );
-    activeReviewActionIdRef.current = next;
-    reviewActionKeyboardEngagedRef.current = true;
+    // A focused brief answers the arrows first; with no list under the gate they move the cursor,
+    // which is the only thing every document gate has to move.
+    if (briefListReview && model.navigateBriefReview(direction)) return true;
+    if (reviewArtifact === null) return false;
+    const lastRow = reviewDocumentOptions(reviewArtifact).length - 1;
+    setReviewSelected((index) => clamp(index + (direction === 'down' ? 1 : -1), 0, lastRow));
     return true;
   };
 
+  const structuredQuestion =
+    model.inputMode.mode === 'question' && (plannerQuestions?.length ?? 0) > 0;
+
+  const answerQuestion = (text: string): void => {
+    const state = questionPromptStore.get();
+    if (Date.now() - state.openedAt < PROMPT_TYPEAHEAD_GRACE_MS) return;
+    const answered = questionPromptStore.answer(text);
+    if (answered !== undefined) void model.handleInput(answered.text);
+  };
+  const composeAnswer = (): void => {
+    const state = questionPromptStore.get();
+    const question = state.questions?.[state.index];
+    if (question) questionPromptStore.select(questionOptions(question).length);
+    questionPromptStore.setFocus('answer');
+  };
+  const returnToQuestion = (): void => {
+    const state = questionPromptStore.get();
+    const question = state.questions?.[state.index];
+    const options = question ? questionOptions(question) : [];
+    questionPromptStore.setFocus(
+      options.length === 0 || state.drafts[state.index]?.selected === options.length
+        ? 'answer'
+        : 'menu',
+    );
+  };
   const handleFooterInput = (text: string): void => {
-    if (documentReviewActive && reviewActionKeyboardEngagedRef.current && text.trim() === '') {
-      const command = getReviewActionCommand(activeReviewActionIdRef.current);
-      resetReviewActionSelection();
-      void model.handleInput(command);
+    if (structuredQuestion) {
+      if (text.trim() !== '') void model.handleInput(text);
       return;
     }
-    if (text.length > 0) resetReviewActionSelection();
+    if (reviewArtifact !== null && text.trim() === '') {
+      const row = reviewDocumentOptions(reviewArtifact)[reviewSelected];
+      // The comment row hands the keyboard to the composer the same way the `c` accelerator does:
+      // one prefilled draft, so there is one spelling of a review comment and not two.
+      if (row === undefined || row.command === 'comment') {
+        composerDraftStore.request(REVIEW_COMMENT_DRAFT);
+        return;
+      }
+      void model.handleInput(row.command);
+      return;
+    }
     void model.handleInput(text);
   };
 
+  // A closed run's account is the block at the end of its transcript: it names the crew that ran
+  // and the briefs that landed. The sidebar would answer both again from today's config, so the
+  // closed presentation takes the whole width instead of contradicting itself in a column.
+  const sidebarWanted = sidebarVisible && !model.closed;
   const sidebarWidth = getWorkflowSidebarWidth({
     cols,
-    sidebarVisible,
+    sidebarVisible: sidebarWanted,
   });
   const showSidebar = sidebarWidth > 0;
   const questionHint = model.inputMode.mode === 'question' ? model.inputMode.hint : null;
+  const recoveryPromptOpen =
+    recoveryIssue !== null &&
+    questionHint !== null &&
+    questionHint === formatRecoveryPrompt(recoveryIssue);
+  const recoveryFocusKey = `${recoveryIssue?.id ?? ''}:${model.inputMode.questionEpoch}`;
+  const [recoveryFocus, setRecoveryFocus] = useState<{
+    key: string;
+    menu: boolean;
+  } | null>(null);
+  useLayoutEffect(() => {
+    setRecoveryFocus((previous) => {
+      if (!recoveryPromptOpen) return null;
+      return previous?.key === recoveryFocusKey ? previous : { key: recoveryFocusKey, menu: true };
+    });
+  }, [recoveryFocusKey, recoveryPromptOpen]);
+  const recoveryMenuFocused = recoveryPromptOpen
+    ? recoveryFocus?.key === recoveryFocusKey
+      ? recoveryFocus.menu
+      : true
+    : false;
   const railForm = selectRailForm({ phase: model.phase, cols });
+  const requestedPromptRows = stopMenuOpen
+    ? stopMenuLayout(readStopMenuRows(), cols).height
+    : getWorkflowPromptRows({
+        approvalState: model.approvalPromptState,
+        questionHint,
+        reviewArtifact,
+        recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
+        questions: plannerQuestions,
+        questionIndex: questionState.index,
+        questionWriting: questionState.focus === 'answer',
+        cols,
+      });
+  // A gate on screen is the only thing to act on, and it needs every row it can get. The build
+  // block stands down while one is open rather than clipping the panel that is waiting on an answer.
+  const progressRows =
+    requestedPromptRows > 0 || model.atRestRecord !== undefined
+      ? 0
+      : getProgressRows({
+          phase: model.phase,
+          cols,
+          cancelled: model.cancelled || recoveryIssue !== null,
+        });
   const promptRows = clampWorkflowPromptRows({
     rows,
     inputRows,
-    promptRows: getWorkflowPromptRows({
-      approvalState: model.approvalPromptState,
-      costApprovalState: model.costApprovalState,
-      questionHint,
-      cols,
-    }),
+    progressRows,
+    promptRows: requestedPromptRows,
   });
   const promptBoxRows = model.promptPending ? Math.max(1, promptRows) : promptRows;
   const contentHeight = getWorkflowViewportHeight({
     rows,
     inputRows,
+    progressRows,
     promptRows: promptBoxRows,
   });
   const contentWidth = getWorkflowContentWidth({
     cols,
-    sidebarVisible,
+    sidebarVisible: sidebarWanted,
   });
+
+  // The closed run's ledger is the tail of its own transcript: one scroller, the verdict below the
+  // last event the run wrote. The header names the crew that ran it, so the block names it only
+  // when the line could not afford all three seats.
+  const closedChrome =
+    model.closedView === null ? null : closedHeader({ view: model.closedView, cols });
+  const transcriptTail =
+    model.closed && model.atRestRecord !== undefined
+      ? [
+          closedTranscriptBlock({
+            view: model.closedView,
+            width: contentWidth,
+            theme,
+            crewNamed: closedChrome?.crewNamed ?? false,
+          }),
+        ]
+      : undefined;
+
+  // The at-rest byline carries no pip, so it opens on the text column and its budget is what is
+  // left of the chrome row past the mark slot.
+  const bylineWidth = getChromeContentWidth(cols);
+  const byline =
+    model.atRestRecord === undefined
+      ? undefined
+      : model.closedView !== null
+        ? bylineText(model.closedView, bylineWidth)
+        : openRunByline({
+            status: model.atRestRecord.status,
+            continuable: model.continuable,
+            width: bylineWidth,
+          });
+  // A check running for this run owns Escape and says so on the byline, so the legend above the
+  // composer does not offer it for going home at the same time.
+  const checking = preparationStore.use((state) => state.kind === 'checking');
+  // A check that stopped covers this screen with the problem panel. The composer under it keeps its
+  // draft but takes no keys, so the panel's own retry, back and scroll keys mean one thing each.
+  const covered = preparationStore.use(
+    (state) => state.kind === 'blocked' || state.kind === 'failed',
+  );
+  const legend =
+    model.atRestRecord === undefined
+      ? model.inputHint
+      : legendText({
+          overflow: scrollAboveLabel !== '' || scrollBelowLabel !== '',
+          width: getChromeContentWidth(cols),
+          canGoHome: !checking,
+        });
+
   return (
     <ScreenShell
       header={
@@ -139,43 +299,62 @@ export function WorkflowScreen({
           startedAt={model.startedAt}
           scrollAboveLabel={scrollAboveLabel}
           railForm={railForm}
-        />
+          {...(model.railStages !== undefined && { stages: model.railStages })}
+          {...(closedChrome !== null && { seatLine: closedChrome.seatLine })}
+        >
+          {progressRows > 0 && <BuildProgressBlock cols={cols} />}
+        </WorkflowHeader>
       }
       footer={
-        <>
+        <Box flexDirection="column" width="100%" flexShrink={0}>
           <Divider width={cols} tone="textDim" label={scrollBelowLabel} />
           <WorkflowFooter
+            compactInput={stopMenuOpen}
+            beforeComposer={stopMenuOpen ? <StopMenu height={promptBoxRows} /> : undefined}
             handleInput={handleFooterInput}
+            readClipboardImage={readClipboardImage}
+            listProjectFiles={listProjectFiles}
             onEmptySubmit={model.onEmptySubmit}
             onRuntimeCommand={model.handleRuntimeCommand}
             commands={commands}
             mode={model.inputMode.mode}
-            inputHint={model.inputHint}
-            questionEpoch={model.questionEpoch}
-            feedbackHint={model.feedbackHint}
-            boxHintOverride={model.boxHintOverride}
-            waitingForUser={
-              model.inputMode.mode !== 'normal' || model.approvalPending || model.costPending
+            inputHint={
+              recoveryPromptOpen
+                ? 'Type a correction, or tab to choose an action…'
+                : structuredQuestion
+                  ? 'New instruction — replaces these questions…'
+                  : plannerQuestions !== undefined
+                    ? model.inputMode.hint
+                    : model.inputHint
             }
+            questionPanelFocused={structuredQuestion && questionState.focus !== 'composer'}
+            onReturnToQuestion={structuredQuestion ? returnToQuestion : undefined}
+            questionEpoch={model.questionEpoch}
+            feedbackHint={legend}
+            commandsOnly={model.commandsOnly}
+            waitingForUser={model.inputMode.mode !== 'normal' || model.promptPending}
+            {...(recoveryPromptOpen
+              ? {
+                  recoveryMenuFocused,
+                  onToggleRecoveryMenu: () => {
+                    setRecoveryFocus({ key: recoveryFocusKey, menu: !recoveryMenuFocused });
+                  },
+                }
+              : {})}
             onReviewBoundaryNavigate={handleReviewBoundaryNavigate}
-            {...(documentReviewActive
+            {...(byline !== undefined && { byline })}
+            {...(reviewArtifact !== null
               ? {
                   onEditShortcut: () => {
-                    resetReviewActionSelection();
                     void model.handleInput('edit-file');
                   },
-                  onReviewInteraction: resetReviewActionSelection,
                 }
               : {})}
             reviewYankActive={reviewYankActive}
             reviewEpoch={model.inputMode.mode === 'review' ? reviewOwnerToken : undefined}
-            disabled={
-              model.hasOverlay ||
-              model.promptPending ||
-              (model.isAttachedClient && !model.ipcConnected)
-            }
+            disabled={model.hasOverlay || model.promptPending || covered}
           />
-        </>
+        </Box>
       }
     >
       <WorkflowBody
@@ -183,18 +362,57 @@ export function WorkflowScreen({
         sidebarWidth={sidebarWidth}
         inputMode={model.inputMode}
         reviewFilePath={model.reviewFilePath}
-        recovery={model.recovery}
-        phase={model.phase}
         contentHeight={contentHeight}
         contentWidth={contentWidth}
         onScrollAbove={setScrollAboveLabel}
         onScrollBelow={setScrollBelowLabel}
+        {...(transcriptTail !== undefined && { transcriptTail })}
       />
-      <Box height={promptBoxRows} overflow="hidden" flexDirection="column" flexShrink={0}>
-        {model.approvalPending && <ApprovalPrompt clampedBoxRows={promptBoxRows} />}
-        {model.costPending && <CostApprovalPromptConnected clampedBoxRows={promptBoxRows} />}
-        {model.inputMode.mode === 'question' && (
-          <QuestionPrompt hint={model.inputMode.hint} width={cols} clampedBoxRows={promptBoxRows} />
+      <Box
+        height={stopMenuOpen ? 0 : promptBoxRows}
+        overflow="hidden"
+        flexDirection="column"
+        flexShrink={0}
+        paddingX={WORKFLOW_GUTTER_X}
+      >
+        {!stopMenuOpen && (model.promptPending || reviewArtifact !== null) && (
+          <ApprovalPrompt
+            clampedBoxRows={promptBoxRows}
+            {...(reviewArtifact === null
+              ? {}
+              : {
+                  review: {
+                    artifact: reviewArtifact,
+                    selectedIndex: reviewSelected,
+                    commenting: reviewCommenting,
+                  },
+                })}
+          />
+        )}
+        {!stopMenuOpen && model.inputMode.mode === 'question' && (
+          <QuestionPrompt
+            key={recoveryFocusKey}
+            hint={model.inputMode.hint}
+            width={getChromeContentWidth(cols)}
+            clampedBoxRows={promptBoxRows}
+            recoveryIssue={recoveryPromptOpen ? recoveryIssue : null}
+            recoveryMenuFocused={recoveryMenuFocused}
+            onRecoveryFocusChange={(menuFocused) => {
+              setRecoveryFocus({ key: recoveryFocusKey, menu: menuFocused });
+            }}
+            onRecoveryResolve={(answer) => model.inputMode.resolve(answer)}
+            questions={plannerQuestions}
+            planner={
+              structuredQuestion
+                ? {
+                    disabled: model.hasOverlay || model.promptPending || covered,
+                    onAnswer: answerQuestion,
+                    onCompose: composeAnswer,
+                    onPrevious: () => questionPromptStore.previous(),
+                  }
+                : undefined
+            }
+          />
         )}
       </Box>
     </ScreenShell>

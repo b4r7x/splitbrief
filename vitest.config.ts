@@ -47,6 +47,9 @@ export default defineConfig({
             'scripts/**/*.test.{ts,tsx}',
             'testing/{architecture,ci,docs,rebrand}/**/*.test.{ts,tsx}',
             'testing/compat/**/*.test.{ts,tsx}',
+            // Helpers only — testing/e2e/scenarios is the replay and live tier that
+            // `npm run test:e2e` and `npm run test:e2e:live` own.
+            'testing/e2e/helpers/**/*.test.{ts,tsx}',
             'testing/integration/**/*.test.{ts,tsx}',
             'testing/helpers/**/*.test.{ts,tsx}',
             'testing/visual/**/*.test.{ts,tsx}',
@@ -56,10 +59,11 @@ export default defineConfig({
           setupFiles: [stateHomeSetup],
           environment: 'node',
           globals: false,
-          // Coverage instrumentation + fork contention regularly blows past the
-          // interactive 10s budget; keep local `npm test` snappy.
-          testTimeout: underCoverage ? 40_000 : 10_000,
-          hookTimeout: underCoverage ? 60_000 : 10_000,
+          // Coverage instrumentation + fork contention regularly blows past a
+          // 10s budget on the full 1,000-file run; 30s keeps a stuck test visible
+          // while letting real-timer and subprocess tests survive a loaded box.
+          testTimeout: underCoverage ? 40_000 : 30_000,
+          hookTimeout: underCoverage ? 60_000 : 30_000,
           pool: 'forks',
           maxWorkers: 4,
         },

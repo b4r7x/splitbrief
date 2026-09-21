@@ -9,16 +9,17 @@ import {
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
-import { variantChoicesForModelId } from '../../core/runners/variant-vocabulary.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../engine/providers/model/catalog.js';
 import { buildRightModels, countModelOptions } from './model-catalog/catalog.js';
 import { BROWSE_CATALOG_TEXT, type RightRow } from './model-catalog/rows.js';
+import { formatCatalogDiagnostic } from './picker-format.js';
 import { PickerView } from './picker-view.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
@@ -49,6 +50,9 @@ describe('PickerView model confirmation', () => {
       status: { state: 'ready', remediation: null },
       available: true,
       isCurrent: true,
+      // The seat's own channel, as the real item carries it: it decides whether the
+      // rows this fixture derives keep the ladder codex publishes.
+      effortChannel: 'effort-flag',
     },
     true,
   );
@@ -93,14 +97,17 @@ describe('PickerView model confirmation', () => {
     terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
     modelCacheStore.reset();
     overlayStore.reset();
+    pickerViewStore.reset();
   });
 
   // The synthesized Auto row sits at index 0, so any reset that ignores the
-  // configured model turns a confirmation into a silent rewrite to `auto`.
+  // configured model acts on `auto` instead. The configured model publishes an
+  // effort ladder, so Enter opens its expansion rather than saving it outright —
+  // an Auto row, which has none, would have been saved on the spot.
   it.each([
     ['enter on the tool, then enter on the model', ['\r', '\r']],
     ['arrow away and back, then enter twice', ['\u001B[B', '\u001B[A', '\r', '\r']],
-  ])('re-confirms the configured model after %s', async (_name, keys) => {
+  ])('re-opens the configured model after %s', async (_name, keys) => {
     const confirmed: Array<string | null> = [];
     const actions = makeActions();
     actions.confirm = async (_selection, model) => {
@@ -118,7 +125,8 @@ describe('PickerView model confirmation', () => {
       await flushEffects();
     }
 
-    expect(confirmed).toEqual(['gpt-5.4']);
+    expect(pickerViewStore.get().expandedModelId).toBe('gpt-5.4');
+    expect(confirmed).toEqual([]);
     ui.unmount();
   });
 });
@@ -141,7 +149,7 @@ describe('PickerView previews', () => {
       available: true,
       version: '1.0.0',
     });
-    const model: ModelOption = { id: 'gpt-4o', contextLength: 128_000 };
+    const model: ModelOption = { id: 'gpt-4o', displayName: 'GPT-4o', contextLength: 128_000 };
 
     const catalog: PickerCatalog = pickerCatalog({
       browseCatalog: false,
@@ -158,14 +166,15 @@ describe('PickerView previews', () => {
     );
     await flushEffects();
     const initialFrame = ui.lastFrame() ?? '';
-    expect(initialFrame).toContain('Planner');
-    expect(initialFrame).toContain('Tool & model');
+    expect(initialFrame).toContain('PLAN');
+    expect(initialFrame).toContain('tool, model, effort');
     expect(initialFrame).toContain('Tools');
     expect(initialFrame).toContain('Models');
     expect(initialFrame).toContain(`OpenCode${SOFT_SEP}1.0.0`);
-    expect(initialFrame).toContain('Direct write');
-    expect(initialFrame).toContain('Subscription included');
-    expect(initialFrame).toContain('1 detected');
+    expect(initialFrame).toContain('direct write');
+    expect(initialFrame).toContain('subscription');
+    expect(initialFrame).toContain('1 model');
+    expect(initialFrame).toContain('from opencode models --verbose');
 
     await flushEffects();
     ui.stdin.write('\u001B[C');
@@ -200,7 +209,7 @@ describe('PickerView previews', () => {
     );
     const suggestions: ModelOption[] = ['gpt-6.1', 'gpt-6.1-mini', 'gpt-6.1-nano'].map((id) => ({
       id,
-      membership: 'catalog-suggestion',
+      membership: CATALOG_SUGGESTION_MEMBERSHIP,
     }));
 
     const catalog: PickerCatalog = pickerCatalog({
@@ -219,10 +228,13 @@ describe('PickerView previews', () => {
     );
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
-    // The byline counts what the rows actually are; the suggestions are named
-    // as suggestions instead of being passed off as a detected catalog.
-    expect(frame).toContain('3 models');
+    expect(frame).toContain(
+      formatCatalogDiagnostic({ kind: 'probe-failed', failure: 'missing-credential' }, 'Codex'),
+    );
+    expect(frame).not.toContain('3 models');
     expect(frame).not.toContain('detected');
+    expect(frame).not.toContain('network');
+    expect(frame).not.toContain('local');
     ui.unmount();
   });
 
@@ -315,6 +327,7 @@ describe('PickerView previews', () => {
       modelCounts: zeroCounts,
     });
 
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
     const ui = renderFeature(
       <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
     );
@@ -322,7 +335,7 @@ describe('PickerView previews', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Auth required');
     expect(frame).toContain('Set ANTHROPIC_API_KEY');
-    expect(frame).toContain('API metered');
+    expect(frame).toContain('metered');
     ui.unmount();
   });
 
@@ -422,14 +435,15 @@ describe('PickerView previews', () => {
       <PickerView role="reviewer" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
-    expect(ui.lastFrame() ?? '').toContain('Tool & model');
+    expect(ui.lastFrame() ?? '').toContain('REVIEW');
     ui.unmount();
 
     const implementerUi = renderFeature(
       <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
-    expect(implementerUi.lastFrame() ?? '').not.toContain('Tool & model');
+    expect(implementerUi.lastFrame() ?? '').toContain('BUILD');
+    expect(implementerUi.lastFrame() ?? '').not.toContain('REVIEW');
     implementerUi.unmount();
   });
 });
@@ -573,7 +587,7 @@ describe('PickerView browse-catalog escape', () => {
     return [
       {
         kind: 'model',
-        model: { id: 'gpt-9-turbo', displayName: 'GPT-9 Turbo', isRecovery: true },
+        model: { id: 'gpt-9-turbo', displayName: 'GPT-9 Turbo' },
         provenance: 'Known',
         section: '',
         expanded,
@@ -612,7 +626,7 @@ describe('PickerView browse-catalog escape', () => {
     actions.confirm = async (_selection, model) => {
       saved.push(model?.id ?? 'none');
     };
-    actions.confirmProviderVariant = async (fullId) => {
+    actions.confirmProviderSelection = async (fullId) => {
       saved.push(fullId);
     };
 
@@ -681,8 +695,8 @@ describe('PickerView variant axis', () => {
     available: true,
   });
 
-  // The ladder under test is the tool's own vocabulary, not a fixture's copy of it.
-  const openaiPresets = variantChoicesForModelId('openai/gpt-5.6');
+  // The ladder `opencode models openai --verbose` publishes for this model.
+  const openaiPresets = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
   function opencodeModel(variantChoices: readonly string[]): ModelOption {
     return {
@@ -714,7 +728,7 @@ describe('PickerView variant axis', () => {
           roleLabel: 'Planner',
           modelCounts: { ...zeroCounts, confirmed: 1 },
           browseCatalog: false,
-          variantDraft: null,
+          effortDraft: null,
         })}
         actions={input.actions}
       />,
@@ -751,7 +765,7 @@ describe('PickerView variant axis', () => {
     for (let step = 0; step <= openaiPresets.length; step++) {
       ui.stdin.write(' ');
       await flushEffects();
-      walked.push(pickerViewStore.get().variantDraft);
+      walked.push(pickerViewStore.get().effortDraft);
     }
 
     // Unset heads the ladder and the walk returns to it, so a draft is never a trap.
@@ -761,10 +775,10 @@ describe('PickerView variant axis', () => {
   });
 
   it('confirms model and variant together', async () => {
-    const confirmed: Array<[string, string | undefined]> = [];
+    const confirmed: Array<[string, string | null | undefined]> = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId, variant) => {
-      confirmed.push([fullId, variant]);
+    actions.confirmProviderSelection = async (fullId, effort) => {
+      confirmed.push([fullId, effort]);
     };
     pickerViewStore.expand('openai/gpt-5.6');
     const ui = renderOpencode({
@@ -782,7 +796,8 @@ describe('PickerView variant axis', () => {
     ui.stdin.write('\r');
     await flushEffects();
 
-    expect(confirmed).toEqual([['openai/gpt-5.6', 'minimal']]);
+    // Two Space presses walk unset → none → low, the ladder's first two rungs.
+    expect(confirmed).toEqual([['openai/gpt-5.6', 'low']]);
     ui.unmount();
   });
 
@@ -802,12 +817,12 @@ describe('PickerView variant axis', () => {
 
     ui.stdin.write(' ');
     await flushEffects();
-    expect(pickerViewStore.get().variantDraft).toBe('high');
+    expect(pickerViewStore.get().effortDraft).toBe('high');
 
     ui.stdin.write(' ');
     await flushEffects();
     // The preset can be taken back the way the byline says.
-    expect(pickerViewStore.get().variantDraft).toBeNull();
+    expect(pickerViewStore.get().effortDraft).toBeNull();
     expect(pickerViewStore.get().expandedModelId).toBe('openai/gpt-5.6');
     ui.unmount();
   });
@@ -815,7 +830,7 @@ describe('PickerView variant axis', () => {
   it('expands a single-variant model that offers presets', async () => {
     const confirmed: string[] = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId) => {
+    actions.confirmProviderSelection = async (fullId) => {
       confirmed.push(fullId);
     };
     const ui = renderOpencode({
@@ -835,7 +850,7 @@ describe('PickerView variant axis', () => {
     expect(pickerViewStore.get().expandedModelId).toBe('openai/gpt-5.6');
     // The ladder opens where the seat already stands, so a confirm that never
     // touches it saves the variant that was there.
-    expect(pickerViewStore.get().variantDraft).toBe('high');
+    expect(pickerViewStore.get().effortDraft).toBe('high');
     ui.unmount();
   });
 
@@ -858,14 +873,14 @@ describe('PickerView variant axis', () => {
   }
 
   it('drops a drafted preset when confirming a route that spells none', async () => {
-    const confirmed: Array<[string, string | undefined]> = [];
+    const confirmed: Array<[string, string | null | undefined]> = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId, variant) => {
-      confirmed.push([fullId, variant]);
+    actions.confirmProviderSelection = async (fullId, effort) => {
+      confirmed.push([fullId, effort]);
     };
     const model = mergedRoutes();
     pickerViewStore.expand(model.id);
-    pickerViewStore.setVariantDraft('minimal');
+    pickerViewStore.setEffortDraft('minimal');
     const ui = renderFeature(
       <PickerView
         role="planner"
@@ -881,7 +896,7 @@ describe('PickerView variant axis', () => {
           roleLabel: 'Planner',
           modelCounts: { ...zeroCounts, confirmed: 1 },
           browseCatalog: false,
-          variantDraft: 'minimal',
+          effortDraft: 'minimal',
         })}
         actions={actions}
       />,
@@ -890,8 +905,8 @@ describe('PickerView variant axis', () => {
 
     // The ladder belongs to the openai block; the openrouter route grows none.
     const lines = (ui.lastFrame() ?? '').split('\n');
-    expect(lines.filter((line) => line.includes('─ variant'))).toHaveLength(1);
-    expect(lines.findIndex((line) => line.includes('─ variant'))).toBeLessThan(
+    expect(lines.filter((line) => line.includes('─ effort'))).toHaveLength(1);
+    expect(lines.findIndex((line) => line.includes('─ effort'))).toBeLessThan(
       lines.findIndex((line) => line.includes('openrouter')),
     );
     ui.stdin.write('\r');
@@ -923,7 +938,7 @@ describe('PickerView variant axis', () => {
           roleLabel: 'Planner',
           modelCounts: { ...zeroCounts, confirmed: 1 },
           browseCatalog: false,
-          variantDraft: null,
+          effortDraft: null,
         })}
         actions={makeActions()}
       />,
@@ -934,7 +949,7 @@ describe('PickerView variant axis', () => {
 
     // The seat runs `variant: high`, but this row has no ladder to open it on.
     expect(pickerViewStore.get().expandedModelId).toBe(model.id);
-    expect(pickerViewStore.get().variantDraft).toBeNull();
+    expect(pickerViewStore.get().effortDraft).toBeNull();
     ui.unmount();
   });
 
@@ -962,7 +977,7 @@ describe('PickerView variant axis', () => {
           roleLabel: 'Planner',
           modelCounts: { ...zeroCounts, confirmed: 1 },
           browseCatalog: false,
-          variantDraft: null,
+          effortDraft: null,
         })}
         actions={makeActions()}
       />,
@@ -974,7 +989,7 @@ describe('PickerView variant axis', () => {
     const parent = lines.findIndex((line) => line.includes('GPT-5.6 Luna'));
 
     expect(frame).not.toContain('variant');
-    expect(lines.findIndex((line) => line.includes('─ speed'))).toBe(parent + 1);
+    expect(lines.findIndex((line) => line.includes('─ fast'))).toBe(parent + 1);
     expect(bylineOf(ui)).toContain(`space cycle${SOFT_SEP}⏎ confirm`);
     ui.unmount();
   });

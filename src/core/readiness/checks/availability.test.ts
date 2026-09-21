@@ -112,6 +112,74 @@ describe('runner availability checks', () => {
     });
   });
 
+  it('blocks a catalog that answers without the selected model, and names it', () => {
+    const [check] = availabilityChecks(ollamaConfig(), [
+      defaultImplementerFact({ state: 'missing-model', selectionId: 'qwen3-coder:30b' }),
+    ]);
+
+    expect(check).toMatchObject({
+      severity: 'blocker',
+      nextAction: 'prepare-runner',
+      summary:
+        'Default implementer ollama (qwen3-coder:30b) answered at http://localhost:11434/v1 but does not serve "qwen3-coder:30b".',
+      fix: 'Select a model ollama serves, or configure a different implementer, then run `splitbrief doctor` again.',
+      metadata: { availability: 'missing-model' },
+    });
+  });
+
+  it('keeps a timed-out connection distinct from an empty catalog and an unreached one', () => {
+    const [check] = availabilityChecks(ollamaConfig(), [
+      defaultImplementerFact({ state: 'timeout', diagnostic: 'The operation timed out' }),
+    ]);
+
+    expect(check).toMatchObject({
+      severity: 'blocker',
+      summary:
+        'Default implementer ollama (qwen3-coder:30b) did not answer in time at http://localhost:11434/v1.',
+      details: ['Probe: The operation timed out'],
+      fix: 'Run `ollama serve`, or configure a different implementer, then run `splitbrief doctor` again.',
+      metadata: { availability: 'timeout' },
+    });
+  });
+
+  it('reports a rejected credential as its own outcome, not as an absent one', () => {
+    const [check] = availabilityChecks(ollamaConfig(), [
+      defaultImplementerFact({ state: 'unauthorized', diagnostic: 'HTTP 401' }),
+    ]);
+
+    expect(check).toMatchObject({
+      severity: 'blocker',
+      summary:
+        'Default implementer ollama (qwen3-coder:30b) rejected the configured credential at http://localhost:11434/v1.',
+      details: ['Probe: HTTP 401'],
+      fix: 'Check the credential for ollama, or configure a different implementer, then run `splitbrief doctor` again.',
+      metadata: { availability: 'unauthorized' },
+    });
+  });
+
+  it('gives every unhealthy outcome its own check id, summary and availability', () => {
+    const outcomes: RunnerAvailabilityFact['verdict'][] = [
+      { state: 'no-models' },
+      { state: 'missing-model', selectionId: 'qwen3-coder:30b' },
+      { state: 'timeout', diagnostic: 'The operation timed out' },
+      { state: 'unauthorized', diagnostic: 'HTTP 401' },
+      { state: 'unavailable', diagnostic: 'fetch failed' },
+    ];
+
+    const summaries = outcomes.map(
+      (verdict) => availabilityChecks(ollamaConfig(), [defaultImplementerFact(verdict)])[0],
+    );
+
+    expect(summaries.map((check) => check?.metadata?.['availability'])).toEqual([
+      'no-models',
+      'missing-model',
+      'timeout',
+      'unauthorized',
+      'unavailable',
+    ]);
+    expect(new Set(summaries.map((check) => check?.summary)).size).toBe(outcomes.length);
+  });
+
   it('reports a probe that could not run as not probed, never as available', () => {
     const [check] = availabilityChecks(ollamaConfig(), [
       defaultImplementerFact({

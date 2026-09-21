@@ -32,7 +32,6 @@ function RowSegment({ segment }: { segment: ConversationRowSegment }) {
   );
 }
 
-const ACTIVE_DOT_GLYPH = `${glyph('statusInProgress')} `;
 const ACTIVE_DOT_INTERVAL_MS = 500;
 
 function ActiveDot({ theme, leadingWidth }: { theme: Theme; leadingWidth: number }) {
@@ -48,7 +47,7 @@ function ActiveDot({ theme, leadingWidth }: { theme: Theme; leadingWidth: number
   const lit = reduced || on;
   return (
     <Text color={lit ? theme.text : theme.textDim} bold={lit}>
-      {alignLeadingWithinWidth(ACTIVE_DOT_GLYPH, leadingWidth)}
+      {alignLeadingWithinWidth(`${glyph('statusInProgress')} `, leadingWidth)}
     </Text>
   );
 }
@@ -78,8 +77,11 @@ function RowLeading({
   const isHeaderMarker =
     (kind === 'activity' || kind === 'task-header') && headerContinuation !== true;
   const isPulsingDot = isHeaderMarker && lifecycle === 'live';
+  // A settled brief leaves the transcript for the completed list, so a task header still on screen
+  // belongs to a brief the run is inside. It wears the in-progress mark the sidebar gives the same
+  // brief even when the pulse has moved on to the activity below it; only an activity settles.
   const status: RowMarkerStatus =
-    lifecycle === 'queued' ? 'queued' : isPulsingDot ? 'live' : 'done';
+    lifecycle === 'queued' ? 'queued' : isPulsingDot || kind === 'task-header' ? 'live' : 'done';
   const leading = rowLeading(leadingKind, status);
   const leadingWidth = rowLeadingCells(leadingKind);
 
@@ -115,7 +117,7 @@ function markerColorFor(row: ConversationRow, lifecycle: RowLifecycle, t: Theme)
   if (row.kind === 'activity' || row.kind === 'callout-top' || row.kind === 'callout-body') {
     return colorForTone(row.segments[0]?.tone, t);
   }
-  if (row.kind === 'task-header') return t.success;
+  if (row.kind === 'task-header') return t.text;
   return t.textDim;
 }
 
@@ -129,6 +131,13 @@ export function ConversationRowView({
   focused?: boolean;
 }) {
   const t = useTheme();
+  if (row.node !== undefined) {
+    return (
+      <Box height={1} overflow="hidden" flexShrink={0}>
+        {row.node}
+      </Box>
+    );
+  }
   const markerColor = markerColorFor(row, lifecycle, t);
   const codeBg = row.codeBg === true ? t.markdown.codeBg : undefined;
   const content = (

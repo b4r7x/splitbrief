@@ -133,26 +133,69 @@ export function resolveCliVersion(
   return findCliDetection(detections, tool)?.installedVersion ?? undefined;
 }
 
+function unverifiedQualification(descriptor: ApiProviderDescriptor): PickerOptionStatus {
+  return {
+    state: 'unverified',
+    remediation: `${descriptor.service} has no passing provider conformance evidence as of ${descriptor.asOf}. Select a verified provider, or re-run \`scripts/provider-conformance.ts\` with a credential to qualify it.`,
+  };
+}
+
 /**
  * A catalog qualification is an admission verdict, so it outranks a live
  * availability probe: a reachable endpoint and a present credential never
  * upgrade a provider that conformance left unverified or incompatible.
+ *
+ * An admitted local `beta` profile is the one qualification that does not gate:
+ * it runs on the shared transport against a server the operator owns, so it
+ * reaches its own connection and catalog facts. The descriptor still reads
+ * `beta` — nothing here rewrites a qualification to verified, and a remote or
+ * `unknown` beta stays gated.
  */
 function compatibilityStatus(descriptor: ApiProviderDescriptor): PickerOptionStatus | null {
   switch (descriptor.compatibility) {
     case 'verified':
       return null;
+    case 'beta':
+      return descriptor.locality === 'local' ? null : unverifiedQualification(descriptor);
     case 'incompatible':
       return {
         state: 'incompatible',
         remediation: `${descriptor.service} failed provider conformance as of ${descriptor.asOf}. Select a verified provider.`,
       };
     default:
-      return {
-        state: 'unverified',
-        remediation: `${descriptor.service} has no passing provider conformance evidence as of ${descriptor.asOf}. Select a verified provider, or re-run \`scripts/provider-conformance.ts\` with a credential to qualify it.`,
-      };
+      return unverifiedQualification(descriptor);
   }
+}
+
+/**
+ * A loopback server publishes no content policy of its own, so its 403 is the
+ * key the operator configured on it being refused, exactly as its 401 is.
+ * Remote providers keep policy denials on the availability axis.
+ */
+function isCredentialRejection(
+  descriptor: Pick<ApiProviderDescriptor, 'locality'>,
+  failure: ProviderDetection['failure'],
+): boolean {
+  if (failure === 'invalid-credential') return true;
+  return failure === 'policy-denied' && descriptor.locality === 'local';
+}
+
+function rejectedCredentialRemediation(
+  descriptor: Pick<ApiProviderDescriptor, 'service' | 'credentialEnv'>,
+): string {
+  return descriptor.credentialEnv
+    ? `Key found in ${descriptor.credentialEnv} but ${descriptor.service} rejected it.`
+    : `${descriptor.service} rejected the configured key.`;
+}
+
+/**
+ * Only a provider that demands a key can be unauthenticated for lacking one.
+ * On a no-auth or optional-key server an offline, timed-out, malformed or
+ * failed request is a server problem, and inventing a credential would not
+ * repair it.
+ */
+function requiresCredential(descriptor: Pick<ApiProviderDescriptor, 'authDiscoveryMode'>): boolean {
+  return descriptor.authDiscoveryMode === 'api-key-unverified';
 }
 
 export function deriveApiStatus(
@@ -184,21 +227,20 @@ export function deriveApiStatus(
     return { state: 'ready', remediation: null };
   }
 
+  // A rejected credential is an auth problem, not reachability: the picker must
+  // say "replace the key". This outranks the local fallback below, which would
+  // otherwise tell an operator whose running server refused the key to start it.
+  if (isCredentialRejection(descriptor, providerDetection?.failure)) {
+    return {
+      state: 'unauthenticated',
+      remediation: rejectedCredentialRemediation(descriptor),
+    };
+  }
+
   if (descriptor.offering === 'local') {
     return {
       state: 'unavailable',
       remediation: providerDetection?.error ?? `Start ${descriptor.service} and refresh detection.`,
-    };
-  }
-
-  // A rejected credential is an auth problem, not reachability: the picker must
-  // say "replace the key", while offline/timeout stay unavailable below.
-  if (providerDetection?.failure === 'invalid-credential') {
-    return {
-      state: 'unauthenticated',
-      remediation: descriptor.credentialEnv
-        ? `Key found in ${descriptor.credentialEnv} but ${descriptor.service} rejected it.`
-        : `${descriptor.service} rejected the configured key.`,
     };
   }
 
@@ -227,13 +269,27 @@ function credentialRemediation(descriptor: Pick<ApiProviderDescriptor, 'credenti
 
 function configuredProviderStatus(
   input: Readonly<{
-    descriptor: Pick<ApiProviderDescriptor, 'service' | 'credentialEnv'>;
+    descriptor: Pick<
+      ApiProviderDescriptor,
+      'service' | 'credentialEnv' | 'locality' | 'authDiscoveryMode'
+    >;
     runtime: ConfiguredProviderRuntime;
     fallbackCredential: () => boolean;
   }>,
 ): PickerOptionStatus {
   const { descriptor, runtime } = input;
-  if (runtime.state === 'fresh') return { state: 'ready', remediation: null };
+  if (runtime.state === 'fresh') {
+    // A server that answered with nothing installed is reachable, and the
+    // parent reads that from the connection facts. It still holds no model to
+    // select, so the picker must not offer the row as ready.
+    if (runtime.catalog === 'empty') {
+      return {
+        state: 'unavailable',
+        remediation: `${descriptor.service} is reachable but lists no models. Install or load one, then refresh detection.`,
+      };
+    }
+    return { state: 'ready', remediation: null };
+  }
   if (runtime.state === 'stale') {
     return {
       state: 'unavailable',
@@ -243,8 +299,9 @@ function configuredProviderStatus(
 
   switch (runtime.failure) {
     case 'missing-credential':
-    case 'invalid-credential':
       return { state: 'unauthenticated', remediation: credentialRemediation(descriptor) };
+    case 'invalid-credential':
+      return { state: 'unauthenticated', remediation: rejectedCredentialRemediation(descriptor) };
     case 'privacy-filtered':
       return {
         state: 'unavailable',
@@ -261,6 +318,12 @@ function configuredProviderStatus(
         remediation: `Configure a valid ${descriptor.service} endpoint, then refresh detection.`,
       };
     case 'policy-denied':
+      if (isCredentialRejection(descriptor, 'policy-denied')) {
+        return {
+          state: 'unauthenticated',
+          remediation: rejectedCredentialRemediation(descriptor),
+        };
+      }
       return {
         state: 'unavailable',
         remediation: `${descriptor.service} policy denied catalog access. Review provider policy and refresh detection.`,
@@ -270,7 +333,7 @@ function configuredProviderStatus(
     case 'malformed':
     case 'request-failed':
     case undefined:
-      if (!input.fallbackCredential()) {
+      if (requiresCredential(descriptor) && !input.fallbackCredential()) {
         return { state: 'unauthenticated', remediation: credentialRemediation(descriptor) };
       }
       return {

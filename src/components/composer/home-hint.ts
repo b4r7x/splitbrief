@@ -1,6 +1,6 @@
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
-import { SOFT_SEP } from '../separators.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import {
   fitFeedbackMessage,
   matchKnownFeedbackMessage,

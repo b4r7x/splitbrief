@@ -1,3 +1,4 @@
+import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import {
   sanitizeTerminalDisplayText,
@@ -117,11 +118,11 @@ export function runnerActivityRoleLabel(
 ): string {
   switch (role) {
     case 'planner':
-      return 'Plan';
+      return CREW_SEAT_LABELS.plan;
     case 'implementer':
-      return 'Implementer';
+      return CREW_SEAT_LABELS.build;
     case 'review':
-      return 'Review';
+      return CREW_SEAT_LABELS.review;
     case 'summary':
       return 'Summary';
     case 'compaction':

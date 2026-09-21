@@ -1,25 +1,44 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
+import { Box } from 'ink';
 import { render } from 'ink-testing-library';
-import { tick } from '#testing/helpers/ink.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
-import { markInterruptRequested } from '../../../stores/workflow/actions/interrupt.js';
-import { markInterruptResumed } from '../../../stores/workflow/actions/resume.js';
+import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
+import { markWorkflowResumed } from '../../../stores/workflow/actions/resume.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
+import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { getHeaderLayout, Header } from './header.js';
 
 const STARTED_AT = new Date(0).toISOString();
+/** Today's local 17:00: the note the bar shows for a same-day reset is the bare clock, in every timezone the suite runs in. */
+const RESET_AT = (() => {
+  const at = new Date();
+  at.setHours(17, 0, 0, 0);
+  return at.getTime();
+})();
+
+/** The halt behind the bar's note; the header reads only the seat and the clock beside it. */
+const QUOTA_HALT = makeRecoveryIssue({
+  reason: 'runner-usage-limit',
+  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+  recommendedAction: 'switch-seat',
+  switchSeat: { seat: 'build', candidates: [{ tool: 'opencode' }] },
+});
 
 function resetStores(): void {
+  recoveryNoticeStore.reset();
   terminalSizeStore.reset();
   lifecycleStore.reset();
   tasksStore.__testReset();
@@ -75,6 +94,16 @@ describe('Header — layout', () => {
   it('omits the seat line entirely when a wide rail leaves no room', () => {
     expect(getHeaderLayout({ cols: 60, railCells: 50, seatCells: 44 }).showSeats).toBe(false);
   });
+
+  it('keeps the rail its measured width when a long seat line shares the row', () => {
+    // The row cannot hand the rail a box narrower than its own measure: a squeezed rail blanks the
+    // label its cells were budgeted for, and at 120 columns a 60-cell seat line is the tightest
+    // tail that still shows.
+    const layout = getHeaderLayout({ cols: 120, railCells: 47, seatCells: 60 });
+
+    expect(layout.showSeats).toBe(true);
+    expect(layout.railWidth).toBeGreaterThanOrEqual(47);
+  });
 });
 
 describe('Header — seat line', () => {
@@ -98,14 +127,21 @@ describe('Header — seat line', () => {
     expect(frame).toContain('PLAN');
     expect(frame).toContain('BUILD');
     expect(frame).toContain('REVIEW');
-    expect(frame).toContain('Qwen 7B');
+    expect(frame).toContain('qwen2.5-coder:7b');
     expect(frame.slice(frame.indexOf('PLAN'))).not.toContain(glyph('connectorSame'));
+  });
+
+  it('gives up one seat name to the tight bar instead of hiding all three', async () => {
+    const frame = await seatFrame(110);
+
+    expect(frame).toContain('PLAN');
+    expect(frame).toContain('qwen2.5-coder:7b');
   });
 
   it('says the review seat borrows the planner when no reviewer is configured', async () => {
     const frame = await seatFrame(160);
 
-    expect(frame).toContain(PLANNER_INHERITANCE.short);
+    expect(frame).toContain(PLANNER_INHERITANCE.mark);
   });
 
   it('names the reviewer seat with its own runner when a reviewer is configured', async () => {
@@ -115,8 +151,8 @@ describe('Header — seat line', () => {
     );
 
     expect(frame).toContain('REVIEW');
-    expect(frame).toContain('Codex');
-    expect(frame).not.toContain(PLANNER_INHERITANCE.short);
+    expect(frame).toContain('gpt-5-codex');
+    expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
   });
 
   it('sanitizes hostile model ids in the visible seat line', async () => {
@@ -131,8 +167,56 @@ describe('Header — seat line', () => {
     await tick();
     const rawFrame = instance.lastFrame() ?? '';
 
-    expect(stripAnsiStyles(rawFrame)).toContain('Qwen Coder');
+    expect(stripAnsiStyles(rawFrame)).toContain('qwen-coder');
     expect(rawFrame).not.toContain(hostileSequence);
+    instance.unmount();
+  });
+
+  it('marks the halted seat with the clock its quota resets on', async () => {
+    resetStores();
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
+    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
+
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    await tick();
+    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
+
+    expect(frame).toContain('BUILD qwen2.5-coder:7b (resets 17:00)');
+    expect(frame.indexOf('(resets 17:00)')).toBeGreaterThan(frame.indexOf('BUILD'));
+    instance.unmount();
+  });
+
+  it('takes the reset clock off the bar once the halt is resolved', async () => {
+    resetStores();
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
+    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
+
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    await tick();
+    expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain('resets 17:00');
+
+    act(() => {
+      recoveryNoticeStore.clear();
+    });
+    await tick();
+
+    expect(stripAnsiStyles(instance.lastFrame() ?? '')).not.toContain('resets');
+    instance.unmount();
+  });
+
+  it('keeps the halted seat named and spends another seat when the note crowds the bar', async () => {
+    resetStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
+    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
+
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    await tick();
+    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
+
+    expect(frame).toContain('BUILD qwen2.5-coder:7b (resets 17:00)');
     instance.unmount();
   });
 
@@ -166,6 +250,37 @@ describe('Header — rail and elapsed', () => {
     expect(frame).toContain('Build');
     expect(frame).not.toContain('planning');
     instance.unmount();
+  });
+
+  it('paints the first stage label even when the seat line shares the row', async () => {
+    resetStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
+    lifecycleStore.__testReset({
+      phase: 'specifying',
+      status: 'running',
+      startedAt: Date.now(),
+    });
+
+    // The library's fixed 100-column stdout would lay the bar out at a width its store never
+    // named, so the exact-geometry probe mounts through the viewport-aware harness, inside the
+    // gutter the workflow header wraps the row in.
+    const ui = renderFeature(
+      <Box paddingX={WORKFLOW_GUTTER_X}>
+        <Header startedAt={new Date().toISOString()} />
+      </Box>,
+      { cols: 120, rows: 40 },
+    );
+    await tick();
+    const row = (stripAnsiStyles(ui.lastFrame()).split('\n')[0] ?? '').trimEnd();
+    ui.unmount();
+
+    // The active marker opens the rail on the gutter column the hit-test zones use, and its label
+    // follows one marker slot in. A budget error blanks `Spec` while keeping its cells.
+    expect(row.indexOf(glyph('stageActive'))).toBe(WORKFLOW_GUTTER_X);
+    expect(row).toContain(`${glyph('stageActive')} Spec`);
+    // The seat line and the clock stop short of the right gutter.
+    expect(row.length).toBeLessThanOrEqual(120 - WORKFLOW_GUTTER_X);
   });
 
   it('does not repeat the cancelled status word that the rail already owns', async () => {
@@ -227,14 +342,14 @@ describe('Header — rail and elapsed', () => {
     instance.unmount();
   });
 
-  it('renders elapsed time from replayed lifecycle start when attached to an older workflow', () => {
+  it('renders elapsed time from replayed lifecycle start when resuming an older workflow', () => {
     vi.useFakeTimers();
     vi.setSystemTime(61_000);
     addEvent({
       type: 'workflow_started',
       ts: 1_000,
       phase: 'planning',
-      feature: 'attached workflow',
+      feature: 'resumed workflow',
     });
 
     const instance = render(<Header startedAt={new Date(60_000).toISOString()} />);
@@ -266,7 +381,7 @@ describe('Header — rail and elapsed', () => {
     instance.unmount();
   });
 
-  it('freezes the elapsed clock while interrupted and resumes on resume', () => {
+  it('freezes the elapsed clock while parked and resumes on resume', () => {
     vi.useFakeTimers();
     vi.setSystemTime(5_000);
     lifecycleStore.__testReset({
@@ -284,7 +399,7 @@ describe('Header — rail and elapsed', () => {
     expect(instance.lastFrame() ?? '').toContain('0:10');
 
     act(() => {
-      markInterruptRequested();
+      markWorkflowPaused();
     });
     expect(instance.lastFrame() ?? '').toContain('0:10');
 
@@ -294,7 +409,7 @@ describe('Header — rail and elapsed', () => {
     expect(instance.lastFrame() ?? '').toContain('0:10');
 
     act(() => {
-      markInterruptResumed();
+      markWorkflowResumed();
     });
     expect(instance.lastFrame() ?? '').toContain('0:30');
 
