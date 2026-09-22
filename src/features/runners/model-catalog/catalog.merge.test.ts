@@ -1,7 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cursorDetectedModels } from '#testing/helpers/factories/cursor-models.js';
 import type { CliProviderAuthFact, DetectedModel } from '../../../core/discovery/detection.js';
 import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
+import {
+  nativeCliCatalogToDetectedModels,
+  parseKiloNativeModelCatalog,
+  parseOpenCodeNativeModelCatalog,
+} from '../../../engine/providers/cli-model-catalog.js';
 import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 import { buildRightModels, countModelOptions, modelRowMatchesId } from './catalog.js';
 import { isOptionFamily, routePrefixesOf } from './option-axis.js';
@@ -62,8 +69,8 @@ function cliCache(
 }
 
 const KILO_COLLISION: readonly DetectedModel[] = [
-  { id: 'kilo/ollama-cloud/deepseek-v4-flash', contextLength: 128_000, releaseDate: '2026-01-01' },
-  { id: 'kilo/opencode-go/deepseek-v4-flash', contextLength: 256_000, releaseDate: '2025-06-01' },
+  { id: 'ollama-cloud/deepseek-v4-flash', contextLength: 128_000, releaseDate: '2026-01-01' },
+  { id: 'opencode-go/deepseek-v4-flash', contextLength: 256_000, releaseDate: '2025-06-01' },
   { id: 'kilo/openrouter/deepseek-v4-flash-free' },
 ];
 
@@ -106,15 +113,15 @@ function findMergedRow(models: readonly ModelOption[]): ModelOption | undefined 
 }
 
 describe('provider variant merge', () => {
-  it('collapses same-bare-id enumerations into one row and keeps distinct ids apart', () => {
+  it('collapses one model id two providers serve into one row and keeps distinct ids apart', () => {
     const models = kiloModels();
 
     expect(models).toHaveLength(2);
     const merged = findMergedRow(models);
-    expect(merged?.id).toBe('kilo/ollama-cloud/deepseek-v4-flash');
+    expect(merged?.id).toBe('ollama-cloud/deepseek-v4-flash');
     expect(merged?.variants?.map((variant) => variant.fullId).toSorted()).toEqual([
-      'kilo/ollama-cloud/deepseek-v4-flash',
-      'kilo/opencode-go/deepseek-v4-flash',
+      'ollama-cloud/deepseek-v4-flash',
+      'opencode-go/deepseek-v4-flash',
     ]);
     expect(merged?.variants?.map((variant) => variant.tag).toSorted()).toEqual([
       'ollama-cloud',
@@ -133,12 +140,12 @@ describe('provider variant merge', () => {
     ]);
   });
 
-  it('counts variants, not merged rows', () => {
+  it('counts merged rows, not the routes they fold', () => {
     const models = kiloModels();
 
     expect(models).toHaveLength(2);
     expect(countModelOptions(models)).toEqual({
-      confirmed: 3,
+      confirmed: 2,
       stale: 0,
       suggestions: 0,
       bundled: 0,
@@ -169,12 +176,12 @@ describe('provider variant merge', () => {
     ]);
   });
 
-  it('counts variants, not merged rows, after the collapse', () => {
+  it('counts the one row a collapsed family draws', () => {
     const models = opencodeModels(LUNA_ROUTES);
 
     expect(models).toHaveLength(1);
     expect(countModelOptions(models)).toEqual({
-      confirmed: 3,
+      confirmed: 1,
       stale: 0,
       suggestions: 0,
       bundled: 0,
@@ -197,26 +204,26 @@ describe('provider variant merge', () => {
   });
 
   it('prefers the persisted variant id for the merged row', () => {
-    const models = kiloModels({ persistedModel: 'kilo/opencode-go/deepseek-v4-flash' });
+    const models = kiloModels({ persistedModel: 'opencode-go/deepseek-v4-flash' });
 
     const merged = findMergedRow(models);
-    expect(merged?.id).toBe('kilo/opencode-go/deepseek-v4-flash');
+    expect(merged?.id).toBe('opencode-go/deepseek-v4-flash');
   });
 
   it('folds a matching custom id into the merged row and prefers it as representative', () => {
     const models = buildRightModels({
       role: 'planner',
-      customModels: ['kilo/openrouter/deepseek-v4-flash'],
+      customModels: ['openrouter/deepseek-v4-flash'],
       currentItem: tool('kilo-code', { providerDependent: true }),
-      cache: cliCache('kilo-code', [{ id: 'kilo/ollama-cloud/deepseek-v4-flash' }]),
+      cache: cliCache('kilo-code', [{ id: 'ollama-cloud/deepseek-v4-flash' }]),
     });
 
     expect(models).toHaveLength(1);
-    const row = models.find((model) => model.id === 'kilo/openrouter/deepseek-v4-flash');
+    const row = models.find((model) => model.id === 'openrouter/deepseek-v4-flash');
     expect(row).toMatchObject({ isCustom: true, membership: 'confirmed', isDetected: true });
     expect(row?.variants?.map((variant) => variant.fullId).toSorted()).toEqual([
-      'kilo/ollama-cloud/deepseek-v4-flash',
-      'kilo/openrouter/deepseek-v4-flash',
+      'ollama-cloud/deepseek-v4-flash',
+      'openrouter/deepseek-v4-flash',
     ]);
     expect(countModelOptions(models)).toMatchObject({ confirmed: 1, custom: 1 });
   });
@@ -237,7 +244,7 @@ describe('provider variant merge', () => {
       isDetected: false,
     });
     // A remembered exact list is still the authority: no bundled row joins it.
-    expect(countModelOptions(staleModels)).toMatchObject({ confirmed: 0, stale: 2, bundled: 0 });
+    expect(countModelOptions(staleModels)).toMatchObject({ confirmed: 0, stale: 1, bundled: 0 });
 
     const freshModels = buildRightModels({
       role: 'planner',
@@ -256,7 +263,7 @@ describe('provider variant merge', () => {
       contextLength: 1_000_000,
     });
     expect(freshRow?.isStale).toBeUndefined();
-    expect(countModelOptions(freshModels)).toMatchObject({ confirmed: 2, stale: 0, bundled: 0 });
+    expect(countModelOptions(freshModels)).toMatchObject({ confirmed: 1, stale: 0, bundled: 0 });
   });
 
   it('sorts merged variants with configured-auth providers first', () => {
@@ -320,8 +327,8 @@ describe('provider variant merge', () => {
 
     expect(merged).toBeDefined();
     if (merged === undefined) return;
-    expect(modelRowMatchesId(merged, 'kilo/opencode-go/deepseek-v4-flash')).toBe(true);
-    expect(modelRowMatchesId(merged, 'kilo/ollama-cloud/deepseek-v4-flash')).toBe(true);
+    expect(modelRowMatchesId(merged, 'opencode-go/deepseek-v4-flash')).toBe(true);
+    expect(modelRowMatchesId(merged, 'ollama-cloud/deepseek-v4-flash')).toBe(true);
     expect(modelRowMatchesId(merged, 'kilo/openrouter/deepseek-v4-flash-free')).toBe(false);
     expect(modelRowMatchesId({ id: 'auto' }, 'auto')).toBe(true);
     expect(modelRowMatchesId({ id: 'auto' }, 'kilo/openrouter/auto')).toBe(false);
@@ -707,5 +714,120 @@ describe('catalog suggestions and confirmed merge', () => {
     expect(models.map((model) => model.id)).toEqual(['openai/gpt-5-codex']);
     expect(models[0]).toMatchObject({ membership: 'confirmed', isDetected: true });
     expect(countModelOptions(models)).toMatchObject({ confirmed: 1, suggestions: 0 });
+  });
+});
+
+const FIXTURES = join(import.meta.dirname, '../../../../testing/fixtures');
+
+// `opencode api GET /api/model` on opencode 2.0.14 verbatim, and a verbatim subset of
+// `kilo models --verbose` on kilo 7.0.49 (rule: testing/visual/fixtures/overlay-fixtures.ts).
+function capturedListing(toolId: 'opencode' | 'kilo-code'): readonly DetectedModel[] {
+  const stdout = readFileSync(
+    join(
+      FIXTURES,
+      toolId === 'opencode' ? 'opencode/api-model-full.json' : 'kilo/models-verbose.txt',
+    ),
+    'utf8',
+  );
+  const catalog =
+    toolId === 'opencode'
+      ? parseOpenCodeNativeModelCatalog(stdout)
+      : parseKiloNativeModelCatalog(stdout);
+  if (catalog === null) throw new Error(`the ${toolId} capture did not parse`);
+  return nativeCliCatalogToDetectedModels(catalog);
+}
+
+function capturedRows(toolId: 'opencode' | 'kilo-code', persistedModel?: string): ModelOption[] {
+  return buildRightModels({
+    role: 'planner',
+    customModels: [],
+    // The seat's own model is recovered only onto the seat's own tool.
+    currentItem: { ...tool(toolId, { providerDependent: true }), isCurrent: true },
+    cache: cliCache(toolId, capturedListing(toolId)),
+    ...(persistedModel === undefined ? {} : { persistedModel }),
+  });
+}
+
+function rowServing(rows: readonly ModelOption[], fullId: string): ModelOption | undefined {
+  return rows.find((row) => modelRowMatchesId(row, fullId));
+}
+
+describe('the captured listings, one row per model id', () => {
+  it('keys OpenCode routes on the model id, whatever each provider names it', () => {
+    const rows = capturedRows('opencode');
+    const kimi = rowServing(rows, 'opencode-go/kimi-k3');
+
+    expect(kimi?.variants?.map((variant) => variant.fullId)).toEqual([
+      'ollama-cloud/kimi-k3',
+      'opencode-go/kimi-k3',
+    ]);
+    // `ollama-cloud` prints the id in its name field; `opencode-go` names it.
+    expect(kimi?.displayName).toBe('Kimi K3');
+    expect(rowServing(rows, 'ollama-cloud/minimax-m3')?.displayName).toBe('MiniMax-M3');
+    expect(rowServing(rows, 'ollama-cloud/deepseek-v4-pro')?.displayName).toBe(
+      'DeepSeek V4 Pro (New)',
+    );
+    // `k3` is another id: its own row, not a third Kimi K3 route.
+    expect(rowServing(rows, 'kimi-code-plan-global/k3')?.variants?.map((v) => v.fullId)).toEqual([
+      'kimi-code-plan-global/k3',
+      'kimi-code-plan-cn/k3',
+    ]);
+    expect(rows.filter((row) => row.displayName === 'kimi-k3')).toEqual([]);
+  });
+
+  it('keys Kilo routes on the model id, so a gateway namespace keeps two ids apart', () => {
+    const rows = capturedRows('kilo-code');
+
+    expect(rowServing(rows, 'ollama-cloud/kimi-k3')).toMatchObject({
+      displayName: 'Kimi K3',
+      variants: [{ fullId: 'github-copilot/kimi-k3' }, { fullId: 'ollama-cloud/kimi-k3' }],
+    });
+    expect(rowServing(rows, 'kilo/kilo-auto/free')?.displayName).toBe('Auto Free');
+    expect(rowServing(rows, 'kilo/openrouter/free')?.displayName).toBe(
+      'OpenRouter Free Models Router',
+    );
+    expect(rowServing(rows, 'kilo/kilo-auto/free')).not.toBe(
+      rowServing(rows, 'kilo/openrouter/free'),
+    );
+  });
+
+  it('lands every listed route in exactly one row', () => {
+    for (const toolId of ['opencode', 'kilo-code'] as const) {
+      const rows = capturedRows(toolId);
+      const listed = rows.flatMap((row) =>
+        (row.variants ?? [{ fullId: row.id }]).map((variant) => variant.fullId),
+      );
+      expect(new Set(listed).size).toBe(listed.length);
+    }
+  });
+});
+
+describe('the captured listings, only models a seat can run', () => {
+  it('offers no model whose listing answers in another medium and takes no tool calls', () => {
+    const opencode = capturedRows('opencode').map((row) => row.id);
+    const kilo = capturedRows('kilo-code').map((row) => row.id);
+    const generators = [
+      'openai/chatgpt-image-latest',
+      'openai/gpt-image-1.5',
+      'openai/gpt-image-1-mini',
+      'openai/gpt-image-2',
+    ];
+
+    expect(opencode.filter((id) => generators.includes(id))).toEqual([]);
+    expect(kilo.filter((id) => generators.includes(id) || id.includes('lyria'))).toEqual([]);
+    // A realtime model answers in text and audio and takes tool calls: a seat can run it.
+    expect(opencode).toContain('openai/gpt-realtime-2.1');
+  });
+
+  it('keeps a text model without tool calls and says so on the row', () => {
+    const glm = capturedRows('kilo-code').find((row) => row.id === 'kilo/z-ai/glm-5.2:free');
+
+    expect(glm).toMatchObject({ displayName: 'Z.ai: GLM 5.2 (free)', supportsToolCalls: false });
+  });
+
+  it('keeps the row a seat already runs, whatever the listing says of it', () => {
+    const rows = capturedRows('opencode', 'openai/gpt-image-1.5');
+
+    expect(rows.map((row) => row.id)).toContain('openai/gpt-image-1.5');
   });
 });

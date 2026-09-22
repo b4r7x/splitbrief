@@ -223,7 +223,7 @@ describe('usePickerCatalog catalog diagnostic', () => {
     );
     expect(line).not.toContain('Network');
     expect(line).not.toContain('Provider dependent');
-    expect(line).not.toContain('from opencode models --verbose');
+    expect(line).not.toContain('from opencode api GET /api/model');
 
     ui.unmount();
   });

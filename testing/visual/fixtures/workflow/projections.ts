@@ -919,8 +919,9 @@ const usageLimitRecoveryIssue: RecoveryIssue = {
   resetAt: new Date(WORKFLOW_FIXTURE_RESET_AT).toISOString(),
   switchSeat: {
     seat: 'build',
-    // Keep six detected tools in the fixture so the Change tool picker proves it scrolls and
-    // reaches every candidate. Tool-only candidates match the readiness snapshot shape.
+    // Six detected tools: more than the three the text prompt names, so the panel's own height is
+    // proved to follow its action rows and not the offer. Tool-only candidates match the readiness
+    // snapshot shape — the model is chosen in the seat's picker, which taking the swap opens.
     candidates: [
       { tool: 'opencode' },
       { tool: 'codex' },

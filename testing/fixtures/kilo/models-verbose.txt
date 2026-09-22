@@ -1,3 +1,362 @@
+kilo/cohere/north-mini-code:free
+{
+  "id": "cohere/north-mini-code:free",
+  "providerID": "kilo",
+  "name": "Cohere: North Mini Code (free)",
+  "api": {
+    "id": "cohere/north-mini-code:free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "North Mini Code is Cohere's first agentic coding model and the debut of its North family. A sparse mixture-of-experts model with 30B total parameters and 3B active, it is optimized..."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 256000,
+    "output": 64000
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {
+    "instant": {
+      "reasoning": {
+        "enabled": false,
+        "effort": "none"
+      }
+    },
+    "thinking": {
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    }
+  }
+}
+kilo/google/lyria-3-clip-preview
+{
+  "id": "google/lyria-3-clip-preview",
+  "providerID": "kilo",
+  "name": "Google: Lyria 3 Clip Preview",
+  "api": {
+    "id": "google/lyria-3-clip-preview",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "30 second duration clips are priced at $0.04 per clip. Lyria 3 is Google's family of music generation models, available through the Gemini API. With Lyria 3, you can generate..."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 1048576,
+    "output": 65536
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": false,
+    "attachment": true,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": true,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {}
+}
+kilo/google/lyria-3-pro-preview
+{
+  "id": "google/lyria-3-pro-preview",
+  "providerID": "kilo",
+  "name": "Google: Lyria 3 Pro Preview",
+  "api": {
+    "id": "google/lyria-3-pro-preview",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "Full-length songs are priced at $0.08 per song. Lyria 3 is Google's family of music generation models, available through the Gemini API. With Lyria 3, you can generate high-quality, 48kHz..."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 1048576,
+    "output": 65536
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": false,
+    "attachment": true,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": true,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {}
+}
+kilo/inclusionai/ling-3.0-flash-fin:free
+{
+  "id": "inclusionai/ling-3.0-flash-fin:free",
+  "providerID": "kilo",
+  "name": "inclusionAI: Ling 3.0 Flash Fin (free)",
+  "api": {
+    "id": "inclusionai/ling-3.0-flash-fin:free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "Ling 3.0 Flash Fin is a finance-focused mixture-of-experts model from InclusionAI, built on Ling 3.0 Flash with 5.1B active parameters out of 124B total. It is designed for real-world investment..."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 262144,
+    "output": 32768
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {
+    "instant": {
+      "reasoning": {
+        "enabled": false,
+        "effort": "none"
+      }
+    },
+    "thinking": {
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    }
+  }
+}
+kilo/inclusionai/ling-3.0-flash-sante:free
+{
+  "id": "inclusionai/ling-3.0-flash-sante:free",
+  "providerID": "kilo",
+  "name": "inclusionAI: Ling 3.0 Flash Sante (free)",
+  "api": {
+    "id": "inclusionai/ling-3.0-flash-sante:free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "Ling 3.0 Flash Sante is a health and medicine-focused mixture-of-experts model from InclusionAI, built on Ling 3.0 Flash with 5.1B active parameters out of 124B total. It is designed for..."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 262144,
+    "output": 32768
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {
+    "instant": {
+      "reasoning": {
+        "enabled": false,
+        "effort": "none"
+      }
+    },
+    "thinking": {
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    }
+  }
+}
+kilo/inclusionai/ling-3.0-flash-vl:free
+{
+  "id": "inclusionai/ling-3.0-flash-vl:free",
+  "providerID": "kilo",
+  "name": "inclusionAI: Ling 3.0 Flash VL (free)",
+  "api": {
+    "id": "inclusionai/ling-3.0-flash-vl:free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "Ling 3.0 Flash VL builds on Ling 3.0 Flash (124B total / 5.5B active MoE from InclusionAI), further strengthening its language capabilities while adding native visual perception and advanced visual..."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 262144,
+    "output": 32768
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": true,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": true,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {
+    "instant": {
+      "reasoning": {
+        "enabled": false,
+        "effort": "none"
+      }
+    },
+    "thinking": {
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    }
+  },
+  "recommendedIndex": 6
+}
 kilo/kilo-auto/free
 {
   "id": "kilo-auto/free",
@@ -46,9 +405,195 @@ kilo/kilo-auto/free
     },
     "interleaved": false
   },
-  "release_date": "2026-09-10",
+  "release_date": "2026-09-22",
   "variants": {},
   "recommendedIndex": 1
+}
+kilo/liquid/lfm-2.5-2.6b:free
+{
+  "id": "liquid/lfm-2.5-2.6b:free",
+  "providerID": "kilo",
+  "name": "LiquidAI: LFM2.5-2.6B (free)",
+  "api": {
+    "id": "liquid/lfm-2.5-2.6b:free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "LFM2.5-2.6B is a compact reasoning model from Liquid AI. It is suited for agent workflows, data extraction, RAG, and long-context processing. Liquid advises against using it for agentic coding or..."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 65536,
+    "output": 8192
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {
+    "thinking": {
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    }
+  }
+}
+kilo/nvidia/nemotron-3.5-content-safety:free
+{
+  "id": "nvidia/nemotron-3.5-content-safety:free",
+  "providerID": "kilo",
+  "name": "NVIDIA: Nemotron 3.5 Content Safety (free)",
+  "api": {
+    "id": "nvidia/nemotron-3.5-content-safety:free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "NVIDIA Nemotron 3.5 Content Safety is a compact 4B-parameter multimodal guardrail model from NVIDIA, fine-tuned from Google Gemma-3-4B. It moderates both inputs to and responses from LLMs and VLMs, accepting...\n\n**Terms of service** For NVIDIA free endpoints (Super/Ultra/etc): Trial use only - do not submit personal or confidential data. Your use is logged for security purposes and to improve NVIDIA products and services. The logged session data for improvement purposes is not linked to your identity or any persistent identifier. For more information about our data processing practices, see our [Privacy Policy](https://www.nvidia.com/en-us/about-nvidia/privacy-policy/). By interacting with this endpoint, you consent to our collection, recording, and use of such information and the [NVIDIA API Trial Terms of Service](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf)."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 128000,
+    "output": 8192
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": true,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {
+    "instant": {
+      "reasoning": {
+        "enabled": false,
+        "effort": "none"
+      }
+    },
+    "thinking": {
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    }
+  }
+}
+kilo/nvidia/nemotron-3.5-lightning:free
+{
+  "id": "nvidia/nemotron-3.5-lightning:free",
+  "providerID": "kilo",
+  "name": "NVIDIA: Nemotron 3.5 Lightning (free)",
+  "api": {
+    "id": "nvidia/nemotron-3.5-lightning:free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "NVIDIA Nemotron 3.5 Lightning is an open mixture-of-experts model from NVIDIA, with 3B active parameters out of 30B total. It is suited for high-throughput agentic workloads and specialized tasks that...\n\n**Terms of service** For NVIDIA free endpoints (Super/Ultra/etc): Trial use only - do not submit personal or confidential data. Your use is logged for security purposes and to improve NVIDIA products and services. The logged session data for improvement purposes is not linked to your identity or any persistent identifier. For more information about our data processing practices, see our [Privacy Policy](https://www.nvidia.com/en-us/about-nvidia/privacy-policy/). By interacting with this endpoint, you consent to our collection, recording, and use of such information and the [NVIDIA API Trial Terms of Service](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf)."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 1000000,
+    "output": 65536
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {
+    "instant": {
+      "reasoning": {
+        "enabled": false,
+        "effort": "none"
+      }
+    },
+    "thinking": {
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    }
+  }
 }
 kilo/openrouter/free
 {
@@ -98,6 +643,1079 @@ kilo/openrouter/free
     },
     "interleaved": false
   },
-  "release_date": "2026-09-10",
+  "release_date": "2026-09-22",
+  "variants": {}
+}
+kilo/poolside/laguna-s-2.1:free
+{
+  "id": "poolside/laguna-s-2.1:free",
+  "providerID": "kilo",
+  "name": "Poolside: Laguna S 2.1 (free)",
+  "api": {
+    "id": "poolside/laguna-s-2.1:free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "Laguna S 2.1 is the latest coding agent model from [Poolside](<https://poolside.ai/>). Laguna S 2.1 is a 118B total parameter model with 8B active parameters, scoring 70.2% on Terminal-Bench 2.1 and..."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 262144,
+    "output": 32768
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {
+    "instant": {
+      "reasoning": {
+        "enabled": false,
+        "effort": "none"
+      }
+    },
+    "thinking": {
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    }
+  },
+  "recommendedIndex": 2
+}
+kilo/poolside/laguna-xs-2.1:free
+{
+  "id": "poolside/laguna-xs-2.1:free",
+  "providerID": "kilo",
+  "name": "Poolside: Laguna XS 2.1 (free)",
+  "api": {
+    "id": "poolside/laguna-xs-2.1:free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "Laguna XS 2.1 is the latest coding agent model in the 33B-A3B category from [Poolside](https://poolside.ai/) and a step forward from their Laguna XS.2 model (released in April 2026). It combines..."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 262144,
+    "output": 32768
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {
+    "instant": {
+      "reasoning": {
+        "enabled": false,
+        "effort": "none"
+      }
+    },
+    "thinking": {
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    }
+  }
+}
+kilo/z-ai/glm-5.2:free
+{
+  "id": "z-ai/glm-5.2:free",
+  "providerID": "kilo",
+  "name": "Z.ai: GLM 5.2 (free)",
+  "api": {
+    "id": "z-ai/glm-5.2:free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "GLM 5.2 is a large-scale reasoning model from Z.ai. It supports text input and output with a 1M-token context window, and is suited for long-horizon agent workflows, project-level software engineering,..."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 32768,
+    "output": 29491
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": false,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-22",
+  "variants": {
+    "none": {
+      "reasoning": {
+        "enabled": false,
+        "effort": "none"
+      }
+    },
+    "high": {
+      "reasoning": {
+        "enabled": true,
+        "effort": "high"
+      }
+    },
+    "xhigh": {
+      "reasoning": {
+        "enabled": true,
+        "effort": "xhigh"
+      }
+    }
+  }
+}
+alibaba-coding-plan/qwen3-coder-plus
+{
+  "id": "qwen3-coder-plus",
+  "providerID": "alibaba-coding-plan",
+  "name": "Qwen3 Coder Plus",
+  "family": "qwen",
+  "api": {
+    "id": "qwen3-coder-plus",
+    "url": "https://coding-intl.dashscope.aliyuncs.com/v1",
+    "npm": "@ai-sdk/openai-compatible"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 1000000,
+    "output": 65536
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": false,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2025-07-23",
+  "variants": {}
+}
+github-copilot/gpt-5.5
+{
+  "id": "gpt-5.5",
+  "providerID": "github-copilot",
+  "name": "GPT-5.5",
+  "family": "gpt",
+  "api": {
+    "id": "gpt-5.5",
+    "url": "https://api.githubcopilot.com",
+    "npm": "@ai-sdk/github-copilot"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 1050000,
+    "input": 922000,
+    "output": 128000
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": true,
+    "attachment": true,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": true
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-04-23",
+  "variants": {
+    "low": {
+      "reasoningEffort": "low",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    },
+    "medium": {
+      "reasoningEffort": "medium",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    },
+    "high": {
+      "reasoningEffort": "high",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    }
+  }
+}
+github-copilot/kimi-k3
+{
+  "id": "kimi-k3",
+  "providerID": "github-copilot",
+  "name": "Kimi K3",
+  "family": "kimi-k3",
+  "api": {
+    "id": "kimi-k3",
+    "url": "https://api.githubcopilot.com",
+    "npm": "@ai-sdk/github-copilot"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 1048576,
+    "output": 131072
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": true,
+    "attachment": true,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-07-16",
+  "variants": {}
+}
+kimi-code-plan-cn/k3
+{
+  "id": "k3",
+  "providerID": "kimi-code-plan-cn",
+  "name": "Kimi K3",
+  "family": "kimi-k3",
+  "api": {
+    "id": "k3",
+    "url": "https://api.kimi.com/coding/v1",
+    "npm": "@ai-sdk/openai-compatible"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 1048576,
+    "output": 131072
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": true,
+    "attachment": true,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": true,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": {
+      "field": "reasoning_content"
+    }
+  },
+  "release_date": "2026-07-16",
+  "variants": {
+    "low": {
+      "reasoningEffort": "low"
+    },
+    "medium": {
+      "reasoningEffort": "medium"
+    },
+    "high": {
+      "reasoningEffort": "high"
+    }
+  }
+}
+kimi-code-plan-global/k3
+{
+  "id": "k3",
+  "providerID": "kimi-code-plan-global",
+  "name": "Kimi K3",
+  "family": "kimi-k3",
+  "api": {
+    "id": "k3",
+    "url": "https://api.kimi.ai/coding/v1",
+    "npm": "@ai-sdk/openai-compatible"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 1048576,
+    "output": 131072
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": true,
+    "attachment": true,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": true,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": {
+      "field": "reasoning_content"
+    }
+  },
+  "release_date": "2026-07-16",
+  "variants": {
+    "low": {
+      "reasoningEffort": "low"
+    },
+    "medium": {
+      "reasoningEffort": "medium"
+    },
+    "high": {
+      "reasoningEffort": "high"
+    }
+  }
+}
+ollama-cloud/kimi-k3
+{
+  "id": "kimi-k3",
+  "providerID": "ollama-cloud",
+  "name": "kimi-k3",
+  "family": "kimi-k3",
+  "api": {
+    "id": "kimi-k3",
+    "url": "https://ollama.com/v1",
+    "npm": "@ai-sdk/openai-compatible"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 3,
+    "output": 15,
+    "cache": {
+      "read": 0.3,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 1048576,
+    "output": 131072
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": true,
+    "attachment": true,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-07-16",
+  "variants": {}
+}
+openai/chatgpt-image-latest
+{
+  "id": "chatgpt-image-latest",
+  "providerID": "openai",
+  "name": "chatgpt-image-latest",
+  "family": "gpt-image",
+  "api": {
+    "id": "chatgpt-image-latest",
+    "npm": "@ai-sdk/openai"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 0,
+    "input": 0,
+    "output": 0
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": false,
+    "attachment": true,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2025-12-16",
+  "variants": {}
+}
+openai/gpt-5.5
+{
+  "id": "gpt-5.5",
+  "providerID": "openai",
+  "name": "GPT-5.5",
+  "family": "gpt",
+  "api": {
+    "id": "gpt-5.5",
+    "npm": "@ai-sdk/openai"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 5,
+    "output": 30,
+    "cache": {
+      "read": 0.5,
+      "write": 0
+    },
+    "experimentalOver200K": {
+      "cache": {
+        "read": 1,
+        "write": 0
+      },
+      "input": 10,
+      "output": 45
+    }
+  },
+  "limit": {
+    "context": 1050000,
+    "input": 922000,
+    "output": 128000
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": true,
+    "attachment": true,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": true
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-04-23",
+  "variants": {
+    "none": {
+      "reasoningEffort": "none",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    },
+    "low": {
+      "reasoningEffort": "low",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    },
+    "medium": {
+      "reasoningEffort": "medium",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    },
+    "high": {
+      "reasoningEffort": "high",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    },
+    "xhigh": {
+      "reasoningEffort": "xhigh",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    }
+  }
+}
+openai/gpt-image-1-mini
+{
+  "id": "gpt-image-1-mini",
+  "providerID": "openai",
+  "name": "gpt-image-1-mini",
+  "family": "gpt-image",
+  "api": {
+    "id": "gpt-image-1-mini",
+    "npm": "@ai-sdk/openai"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 0,
+    "input": 0,
+    "output": 0
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": false,
+    "attachment": true,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2025-09-26",
+  "variants": {}
+}
+openai/gpt-image-1.5
+{
+  "id": "gpt-image-1.5",
+  "providerID": "openai",
+  "name": "gpt-image-1.5",
+  "family": "gpt-image",
+  "api": {
+    "id": "gpt-image-1.5",
+    "npm": "@ai-sdk/openai"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 0,
+    "input": 0,
+    "output": 0
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": false,
+    "attachment": true,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2025-11-25",
+  "variants": {}
+}
+openai/gpt-image-2
+{
+  "id": "gpt-image-2",
+  "providerID": "openai",
+  "name": "gpt-image-2",
+  "family": "gpt-image",
+  "api": {
+    "id": "gpt-image-2",
+    "npm": "@ai-sdk/openai"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 5,
+    "output": 30,
+    "cache": {
+      "read": 1.25,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 0,
+    "input": 0,
+    "output": 0
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": false,
+    "attachment": true,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": false,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-04-21",
+  "variants": {}
+}
+openai/gpt-realtime-2.1
+{
+  "id": "gpt-realtime-2.1",
+  "providerID": "openai",
+  "name": "GPT-Realtime-2.1",
+  "family": "gpt",
+  "api": {
+    "id": "gpt-realtime-2.1",
+    "npm": "@ai-sdk/openai"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 4,
+    "output": 24,
+    "cache": {
+      "read": 0.4,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 128000,
+    "input": 96000,
+    "output": 32000
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": true,
+    "attachment": true,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": true,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": true,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-07-06",
+  "variants": {
+    "none": {
+      "reasoningEffort": "none",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    },
+    "low": {
+      "reasoningEffort": "low",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    },
+    "medium": {
+      "reasoningEffort": "medium",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    },
+    "high": {
+      "reasoningEffort": "high",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    },
+    "xhigh": {
+      "reasoningEffort": "xhigh",
+      "reasoningSummary": "auto",
+      "include": [
+        "reasoning.encrypted_content"
+      ]
+    }
+  }
+}
+openai/text-embedding-3-large
+{
+  "id": "text-embedding-3-large",
+  "providerID": "openai",
+  "name": "text-embedding-3-large",
+  "family": "text-embedding",
+  "api": {
+    "id": "text-embedding-3-large",
+    "npm": "@ai-sdk/openai"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0.13,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 8191,
+    "output": 3072
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": false,
+    "attachment": false,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2024-01-25",
+  "variants": {}
+}
+openai/text-embedding-3-small
+{
+  "id": "text-embedding-3-small",
+  "providerID": "openai",
+  "name": "text-embedding-3-small",
+  "family": "text-embedding",
+  "api": {
+    "id": "text-embedding-3-small",
+    "npm": "@ai-sdk/openai"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0.02,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 8191,
+    "output": 1536
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": false,
+    "attachment": false,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2024-01-25",
+  "variants": {}
+}
+openai/text-embedding-ada-002
+{
+  "id": "text-embedding-ada-002",
+  "providerID": "openai",
+  "name": "text-embedding-ada-002",
+  "family": "text-embedding",
+  "api": {
+    "id": "text-embedding-ada-002",
+    "npm": "@ai-sdk/openai"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0.1,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 8192,
+    "output": 1536
+  },
+  "capabilities": {
+    "temperature": false,
+    "reasoning": false,
+    "attachment": false,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2022-12-15",
   "variants": {}
 }

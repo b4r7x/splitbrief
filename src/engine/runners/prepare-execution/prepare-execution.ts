@@ -312,6 +312,13 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
     config: admittedConfig,
     projectDir: input.projectDir,
     roles: availabilityRoles(input.policy.purpose),
+    installedVersions: Object.fromEntries(
+      gates.flatMap((gate) =>
+        gate.kind === 'cli' && gate.installedVersion !== undefined
+          ? [[gate.tool, gate.installedVersion]]
+          : [],
+      ),
+    ),
   });
   throwIfPreparationAborted(input.signal, trustPersisted);
   report = applyRunnerPreparationChecks(report, argVectorChecks);

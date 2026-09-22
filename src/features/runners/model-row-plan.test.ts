@@ -1,0 +1,168 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import { formatContextLength } from '../../core/formatting.js';
+import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import {
+  nativeCliCatalogToDetectedModels,
+  parseAntigravityModelCatalog,
+  parseCodexNativeModelCatalog,
+  parseCopilotHelpConfigCatalog,
+  parseCursorNativeModelCatalog,
+  parseKiloNativeModelCatalog,
+  parseOpenCodeNativeModelCatalog,
+  type NativeCliModelCatalog,
+} from '../../engine/providers/cli-model-catalog.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { buildRightModels } from './model-catalog/catalog.js';
+import { assemblePickerDescriptors, buildPickerOptions } from './model-catalog/options.js';
+import { buildRightRows, type RightRow } from './model-catalog/rows.js';
+import { planModelRows } from './model-row-plan.js';
+
+const FIXTURES = join(import.meta.dirname, '../../../testing/fixtures');
+
+/** The Models column's row width at 120, 80 and 60 terminal columns: the widths the gallery draws. */
+const ROW_WIDTHS = [47, 31, 21] as const;
+
+/** The chrome a row spends beside its label and cells: lead, disclosure and check. */
+const BARE_CHROME = 6;
+
+const CAPTURES: Readonly<
+  Record<string, readonly [string, (stdout: string) => NativeCliModelCatalog | null]>
+> = {
+  opencode: ['opencode/api-model-full.json', parseOpenCodeNativeModelCatalog],
+  'kilo-code': ['kilo/models-verbose.txt', parseKiloNativeModelCatalog],
+  cursor: ['cursor/list-models-2026.09.18.txt', parseCursorNativeModelCatalog],
+  codex: ['codex/debug-models-bundled.json', parseCodexNativeModelCatalog],
+  copilot: ['copilot/help-config-1.0.83.txt', parseCopilotHelpConfigCatalog],
+  antigravity: ['antigravity/models.txt', parseAntigravityModelCatalog],
+};
+
+/** The rows the picker builds from a tool's own captured listing, as the gallery feeds it. */
+function capturedRows(toolId: CliToolId): RightRow[] {
+  const capture = CAPTURES[toolId];
+  if (capture === undefined) throw new Error(`no capture for ${toolId}`);
+  const [path, parse] = capture;
+  const catalog = parse(readFileSync(join(FIXTURES, path), 'utf8'));
+  if (catalog === null) throw new Error(`the ${toolId} capture did not parse`);
+  const cache = makeModelCacheAccessor({
+    providerModels: { [toolId]: nativeCliCatalogToDetectedModels(catalog) },
+  });
+  const item = buildPickerOptions(
+    'planner',
+    assemblePickerDescriptors(),
+    { cliTools: [cliDetectionFor('ready', toolId)], providers: [], providerOutcomes: [] },
+    undefined,
+  ).find((option) => option.id === toolId);
+  const models = buildRightModels({ role: 'planner', customModels: [], currentItem: item, cache });
+  return buildRightRows({
+    models,
+    expandedModelId: null,
+    providerAuth: undefined,
+    hasOracle: false,
+    catalogLane: 'ready',
+    persistedModel: undefined,
+    customModels: [],
+    browseCatalog: false,
+  });
+}
+
+function modelIds(rows: readonly RightRow[]): string[] {
+  return rows.flatMap((row) => (row.kind === 'model' ? [row.model.id] : []));
+}
+
+describe('planModelRows on the captured listings', () => {
+  it.each(['opencode', 'kilo-code', 'cursor', 'codex', 'copilot', 'antigravity'] as const)(
+    'leaves no two %s rows reading alike at any width',
+    (toolId) => {
+      const rows = capturedRows(toolId);
+      for (const width of ROW_WIDTHS) {
+        const plan = planModelRows({ rows, width });
+        const labels = modelIds(rows).map((id) => plan.rows.get(id)?.label);
+        const repeated = labels.filter((label, index) => labels.indexOf(label) !== index);
+        expect({ width, repeated }).toEqual({ width, repeated: [] });
+      }
+    },
+  );
+
+  it('keeps the part that differs when three Kilo free routes share every word but one', () => {
+    const rows = capturedRows('kilo-code');
+    const ling = [
+      'kilo/inclusionai/ling-3.0-flash-fin:free',
+      'kilo/inclusionai/ling-3.0-flash-sante:free',
+      'kilo/inclusionai/ling-3.0-flash-vl:free',
+    ];
+    const at = (width: number) => {
+      const plan = planModelRows({ rows, width });
+      return ling.map((id) => plan.rows.get(id)?.label);
+    };
+
+    expect(at(47)).toEqual([
+      'Ling 3.0 Flash Fin (free)',
+      'Ling 3.0 Flash Sante (free)',
+      'Ling 3.0 Flash VL (free)',
+    ]);
+    for (const width of [31, 21]) {
+      const labels = at(width);
+      expect(new Set(labels).size).toBe(3);
+      expect(labels.map((label) => /Fin|Sant|VL/.exec(label ?? '')?.[0])).toEqual([
+        'Fin',
+        'Sant',
+        'VL',
+      ]);
+    }
+  });
+
+  it('gives up the leading words of a cut another name also starts with', () => {
+    const rows = capturedRows('copilot');
+    const plan = planModelRows({ rows, width: 21 });
+
+    expect(plan.rows.get('claude-fable-5.1')?.label).toBe('…fable-5.1');
+    expect(plan.rows.get('claude-fable-5')?.label).toBe('claude-fable-5');
+    expect(plan.rows.get('claude-sonnet-4.6')?.label).toBe('…sonnet-4.6');
+  });
+
+  it('tells two models apart by id where the listing names them alike', () => {
+    const rows = capturedRows('opencode');
+    const plan = planModelRows({ rows, width: 47 });
+
+    expect(plan.rows.get('ollama-cloud/kimi-k3')?.label).toBe('Kimi K3 · kimi-k3');
+    expect(plan.rows.get('kimi-code-plan-global/k3')?.label).toBe('Kimi K3 · k3');
+  });
+
+  it.each(['opencode', 'kilo-code', 'cursor', 'codex'] as const)(
+    'gives every %s row the size column or none of them, at each width',
+    (toolId) => {
+      const rows = capturedRows(toolId).flatMap((row) =>
+        row.kind === 'model' && row.model.contextLength !== undefined ? [row] : [],
+      );
+      for (const width of ROW_WIDTHS) {
+        const plan = planModelRows({ rows, width });
+        const shown = rows.map((row) =>
+          (plan.rows.get(row.model.id)?.metadata ?? '').includes(
+            formatContextLength(row.model.contextLength),
+          ),
+        );
+        expect({ width, mixed: new Set(shown).size > 1 }).toEqual({ width, mixed: false });
+      }
+    },
+  );
+
+  it('fits every label into the room its own cells leave', () => {
+    for (const toolId of ['opencode', 'kilo-code', 'cursor', 'codex'] as const) {
+      const rows = capturedRows(toolId);
+      for (const width of ROW_WIDTHS) {
+        for (const planned of planModelRows({ rows, width }).rows.values()) {
+          if (planned.path) continue;
+          const cells =
+            planned.metadata === undefined ? 0 : getTerminalCellWidth(planned.metadata) + 1;
+          expect(getTerminalCellWidth(planned.label)).toBeLessThanOrEqual(
+            width - BARE_CHROME - cells,
+          );
+        }
+      }
+    }
+  });
+});

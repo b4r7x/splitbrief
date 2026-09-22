@@ -9,7 +9,7 @@ const RECOVERY_PROMPT_BORDER_ROWS = 2;
 const RECOVERY_PROMPT_SEPARATOR_ROWS = 1;
 const RECOVERY_PROMPT_LEGEND_ROWS = 1;
 
-/** Full height for the inline picker, including the scrollable action/candidate list. */
+/** Full height for the inline picker, including the scrollable action list. */
 export function getRecoveryPromptRows(issue: RecoveryIssue, cols: number): number {
   // The menu renders inside the screen frame, so its text measure is the framed width.
   const width = Math.max(
@@ -18,12 +18,11 @@ export function getRecoveryPromptRows(issue: RecoveryIssue, cols: number): numbe
   );
   const summaryRows = Math.max(1, countPromptBodyRows(formatRecoveryPromptSummary(issue), width));
   const actionRows = Math.max(1, getRecoveryPromptActions(issue).length);
-  const candidateRows = issue.switchSeat?.candidates.length ?? 0;
   return (
     RECOVERY_PROMPT_BORDER_ROWS +
     summaryRows +
     RECOVERY_PROMPT_SEPARATOR_ROWS +
-    Math.max(actionRows, candidateRows) +
+    actionRows +
     RECOVERY_PROMPT_LEGEND_ROWS
   );
 }

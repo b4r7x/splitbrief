@@ -49,6 +49,15 @@ export function modelProviderAuthKey(id: string): string | undefined {
   return slash > 0 ? id.slice(0, slash).toLowerCase() : undefined;
 }
 
+/**
+ * What that account calls the model, the listing's own `id` field: `kilo/kilo-auto/free` →
+ * `kilo-auto/free`, `ollama-cloud/kimi-k3` → `kimi-k3`. An unprefixed id is its own.
+ */
+export function modelIdUnderProvider(id: string): string {
+  const slash = id.indexOf('/');
+  return slash > 0 ? id.slice(slash + 1) : id;
+}
+
 const PROVIDER_TAG_COMPACTIONS: Record<string, string> = { 'github-copilot': 'copilot' };
 
 /** Display tag for a provider prefix: its last segment, compacted for row width. */

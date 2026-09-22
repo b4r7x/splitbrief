@@ -70,6 +70,17 @@ export function sanitizeTerminalDisplayText(
   return redactSecrets(stripTerminalControls(text, opts));
 }
 
+/**
+ * A one-line label with its invisible format characters (`\p{Cf}`) removed and its spaces
+ * single. `stripTerminalControls` keeps them, because a ZWJ binds an emoji sequence in prose.
+ */
+export function normalizeDisplayLabel(text: string): string {
+  return stripTerminalControls(text)
+    .replace(/\p{Cf}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function sanitizeTerminalDiagnosticText(
   text: string,
   opts: TerminalDiagnosticTextOptions = {},

@@ -174,7 +174,7 @@ describe('PickerView previews', () => {
     expect(initialFrame).toContain('direct write');
     expect(initialFrame).toContain('subscription');
     expect(initialFrame).toContain('1 model');
-    expect(initialFrame).toContain('from opencode models --verbose');
+    expect(initialFrame).toContain('from opencode api GET /api/model');
 
     await flushEffects();
     ui.stdin.write('\u001B[C');

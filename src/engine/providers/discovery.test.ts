@@ -371,6 +371,47 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     expect(loggedArgs(kiloLog)).toEqual(['--version|', 'models|--verbose|--refresh|']);
   });
 
+  it('takes the OpenCode 2 api listing above the legacy threshold', async () => {
+    const opencodeLog = join(shimDir, 'opencode.args');
+    installCatalogShim('opencode', {
+      logPath: opencodeLog,
+      version: '2.0.14',
+      catalog: JSON.stringify({
+        data: [
+          { providerID: 'opencode-go', id: 'mimo-v2.6-flash' },
+          // An alias keeps its own `id` while repeating a sibling's `modelID`.
+          { providerID: 'openai', id: 'gpt-5.6-luna-fast', modelID: 'gpt-5.6-luna' },
+        ],
+      }),
+    });
+
+    const attempts = await discoverAllCliTools({
+      contexts: [context('opencode')],
+      projectDir,
+      resolveExecutable: exactResolver,
+    });
+
+    expect(successfulModels(attempts, 'opencode')?.map((model) => model.id)).toEqual([
+      'opencode-go/mimo-v2.6-flash',
+      'openai/gpt-5.6-luna-fast',
+    ]);
+    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'api|GET|/api/model|']);
+  });
+
+  it('sends no refresh argv on manual OpenCode 2 discovery, which has no refresh flag', async () => {
+    const opencodeLog = join(shimDir, 'opencode.args');
+    installCatalogShim('opencode', { logPath: opencodeLog, version: '2.0.14', catalog: '' });
+
+    await discoverAllCliTools({
+      contexts: [context('opencode')],
+      projectDir,
+      refresh: 'manual',
+      resolveExecutable: exactResolver,
+    });
+
+    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'api|GET|/api/model|']);
+  });
+
   it('uses only the selected channel while keeping ambient secrets and PATH shadows out', async () => {
     const hostileDir = createTempDir('discovery-hostile-shadow');
     const hostileMarker = join(hostileDir, 'executed');

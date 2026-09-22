@@ -143,19 +143,27 @@ function createProbe() {
  * opencode 2 runs a one-off call on a private server: the background service
  * it otherwise pairs with binds one fixed port, unreachable from a sandboxed
  * HOME. Releases below 2.0.0 reject the flag, as does an unknown release.
+ * opencode 2 also dropped `--variant`: the variant rides on the model as
+ * `provider/model#variant`, a form 1.x reads as part of the model id.
  */
-function runArgs(installedVersion: string | undefined): string[] {
+function runArgs(
+  input: Pick<OpenCodeImplementerBuildInput, 'installedVersion' | 'model' | 'variant'>,
+): string[] {
+  const { installedVersion, model, variant } = input;
   const standalone =
     installedVersion !== undefined &&
     classifyCliAdmittedVersion({ installedVersion, minimumAdmittedVersion: '2.0.0' }) ===
       'compatible';
-  return standalone ? ['run', '--standalone'] : ['run'];
+  const args = standalone ? ['run', '--standalone'] : ['run'];
+  if (model !== undefined) {
+    args.push('--model', standalone && variant !== undefined ? `${model}#${variant}` : model);
+  }
+  if (!standalone && variant !== undefined) args.push('--variant', variant);
+  return args;
 }
 
 function plannerBaseArgs(input: OpenCodePlannerBuildInput): string[] {
-  const args = runArgs(input.installedVersion);
-  if (input.model !== undefined) args.push('--model', input.model);
-  if (input.variant !== undefined) args.push('--variant', input.variant);
+  const args = runArgs(input);
   args.push('--format', 'json');
   args.push('--agent', input.mode === 'plan' ? 'plan' : 'build');
   args.push(input.prompt);
@@ -163,9 +171,7 @@ function plannerBaseArgs(input: OpenCodePlannerBuildInput): string[] {
 }
 
 function implementerBaseArgs(input: OpenCodeImplementerBuildInput): string[] {
-  const args = runArgs(input.installedVersion);
-  if (input.model !== undefined) args.push('--model', input.model);
-  if (input.variant !== undefined) args.push('--variant', input.variant);
+  const args = runArgs(input);
   args.push('--format', 'json', '--agent', 'build', input.prompt);
   return args;
 }

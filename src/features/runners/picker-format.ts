@@ -350,7 +350,7 @@ const LISTING_SOURCES: Readonly<Record<CliToolId, ListingSource>> = {
     unverifiedForPlan: false,
   },
   opencode: {
-    source: 'from opencode models --verbose',
+    source: 'from opencode api GET /api/model',
     rowNoun: 'model',
     rowNounPlural: 'models',
     unverifiedForPlan: false,
@@ -495,12 +495,17 @@ export function formatToolsByline(input: {
   });
 }
 
-/** The Models column answers for the highlighted row: its label, its exact id, what it has chosen, its size. */
+/**
+ * The Models column answers for the highlighted row: its label, its exact id, what it has chosen,
+ * its size — and, where its listing says so, that it takes no tool calls, which a seat's agent
+ * loop runs on.
+ */
 export function formatModelsByline(input: {
   label: string;
   id: string;
   axes: readonly string[];
   contextLength: number | undefined;
+  supportsToolCalls?: boolean | undefined;
   autoRow?: { toolName: string } | undefined;
 }): string {
   if (input.autoRow !== undefined) {
@@ -513,6 +518,7 @@ export function formatModelsByline(input: {
   parts.push(...input.axes);
   const size = formatContextLength(input.contextLength);
   if (size !== '') parts.push(size);
+  if (input.supportsToolCalls === false) parts.push('no tool calls');
   return parts.join(SOFT_SEP);
 }
 

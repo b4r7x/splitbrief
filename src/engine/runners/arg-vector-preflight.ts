@@ -300,6 +300,8 @@ export interface ArgVectorPreflightCheckInput {
   projectDir: string;
   /** The seats this run reaches; a seat the run never calls is not preflighted. */
   roles: readonly ActiveRunnerRole[];
+  /** The release readiness admitted per tool, so the vector is the one dispatch would build. */
+  installedVersions?: Readonly<Partial<Record<CliToolId, string>>> | undefined;
   runHelp?: (tool: CliToolId, argv: readonly string[]) => Promise<string | null>;
 }
 
@@ -316,6 +318,7 @@ export async function collectArgVectorPreflightChecks(
       args: input.config.planner.args,
       effort: input.config.planner.effort,
       variant: input.config.planner.variant,
+      installedVersion: input.installedVersions?.[input.config.planner.tool],
     });
   }
   if (input.roles.includes('reviewer')) {
@@ -328,6 +331,7 @@ export async function collectArgVectorPreflightChecks(
         args: reviewer.runner.args,
         effort: reviewer.runner.effort,
         variant: reviewer.runner.variant,
+        installedVersion: input.installedVersions?.[reviewer.runner.tool],
       });
     }
   }
@@ -347,6 +351,7 @@ export async function collectArgVectorPreflightChecks(
           args: profile.config.args,
           effort: profile.config.effort,
           variant: profile.config.variant,
+          installedVersion: input.installedVersions?.[profile.config.tool],
         });
       }
     }
@@ -365,6 +370,7 @@ type PreflightRunner = Readonly<{
   args: readonly string[] | undefined;
   effort: EffortLevel | undefined;
   variant: string | undefined;
+  installedVersion: string | undefined;
 }>;
 
 async function buildPreflightCheck(
@@ -481,6 +487,7 @@ function emittedArgVectors(runner: PreflightRunner): readonly PreflightVector[] 
           configuredArgs: runner.args ?? [],
           effort: runner.effort,
           variant: runner.variant,
+          installedVersion: runner.installedVersion,
         }),
       ];
     case 'reviewer': {
@@ -529,6 +536,7 @@ function plannerCommonArgs(
     configuredArgs: runner.args ?? [],
     effort: adapter.supportsEffort ? runner.effort : undefined,
     variant: runner.variant,
+    installedVersion: runner.installedVersion,
   };
 }
 

@@ -1,6 +1,6 @@
 ---
 name: splitbrief-add-feature
-description: Design flow for a new feature that is not yet covered by any spec under notes/superpowers/specs/. Use when the user wants to add a feature to SPLITBRIEF, extend the workflow, add a new backend, or change an architectural decision. Produces a new spec folder under notes/superpowers/specs/ with an execute-prompt.md and agent-briefs/ — not code.
+description: Design flow for a new feature that is not yet covered by any spec under notes/superpowers/specs/. Use when the user says "add a feature to SPLITBRIEF", "design a new SPLITBRIEF feature", or wants to extend the workflow, add a new backend, or change an architectural decision. Produces a new spec folder under notes/superpowers/specs/ with an execute-prompt.md and agent-briefs/ — not code.
 ---
 
 # Add a new feature to SPLITBRIEF

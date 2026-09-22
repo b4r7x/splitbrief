@@ -651,6 +651,28 @@ describe('formatModelsByline', () => {
     ).toBe(true);
   });
 
+  it('says so where the listing gives the model no tool calls', () => {
+    // `kilo models --verbose` on kilo 7.0.49: `z-ai/glm-5.2:free` answers in text, `toolcall: false`.
+    expect(
+      formatModelsByline({
+        label: 'Z.ai: GLM 5.2 (free)',
+        id: 'kilo/z-ai/glm-5.2:free',
+        axes: [],
+        contextLength: 32_768,
+        supportsToolCalls: false,
+      }),
+    ).toBe('Z.ai: GLM 5.2 (free) · kilo/z-ai/glm-5.2:free · 32K · no tool calls');
+    expect(
+      formatModelsByline({
+        label: 'GPT-5.5',
+        id: 'openai/gpt-5.5',
+        axes: [],
+        contextLength: undefined,
+        supportsToolCalls: true,
+      }),
+    ).toBe('GPT-5.5 · openai/gpt-5.5');
+  });
+
   it('names the tool on the Auto row', () => {
     expect(
       formatModelsByline({

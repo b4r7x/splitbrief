@@ -160,7 +160,7 @@ The separation from replay e2e is physical, not conventional: the live scenarios
 
 Skipping is two-layered. With the env unset every case reports skipped and the run exits `0`. With it set, a tool whose readiness detection is not `ready` — binary missing from `PATH`, not logged in — skips with a reason instead of failing, so a partial toolbox still runs what it can.
 
-Model pins are cheap by default: `claude-code` → `haiku`, `codex` → `gpt-5.6-luna`, `opencode` → the first free id discovered from `opencode models` at run time, `command-code` → `deepseek/deepseek-v4-flash`. Each is overridable via `SPLITBRIEF_REAL_CLI_<TOOL>_MODEL`. A ceiling refuses any pin whose tokens include `opus`, `fable`, or `sol` outright, so a mistyped env var cannot burn credits on a frontier model.
+Model pins are cheap by default: `claude-code` → `haiku`, `codex` → `gpt-5.6-luna`, `opencode` → the first free id discovered from `opencode api GET /api/model` at run time, `command-code` → `deepseek/deepseek-v4-flash`. Each is overridable via `SPLITBRIEF_REAL_CLI_<TOOL>_MODEL`. A ceiling refuses any pin whose tokens include `opus`, `fable`, or `sol` outright, so a mistyped env var cannot burn credits on a frontier model.
 
 Easy runs `quick` mode — one planner call plus one implementer call — with a 300 s per-case timeout. Heavy runs `standard` mode with a compiled brief and a final review held by the planner, with a 900 s per-case timeout. The per-case vitest timeout is the only bound.
 

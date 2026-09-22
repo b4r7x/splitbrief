@@ -135,6 +135,8 @@ Which runners keep a private HOME, and which do not:
 | Any runner on an `api-key` channel | private | none — the credential arrives as an environment variable |
 | Every `api`, `shell`, or `agent` runner | private | none |
 
+One probe, not a runner, also takes your real `HOME` and `USER`: OpenCode 2's model listing, `opencode api GET /api/model`. It is a read that its own server answers, and OpenCode runs keep the row above. The reason and the measured writes are in the catalog-probe exception of [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md).
+
 What the `host-account` child gains:
 
 - `~`-relative resolution lands in your real home, so a tool reading its own defaults there — `~/.ssh/config`, `~/.aws/credentials`, `~/.npmrc`, `~/.gitconfig` — finds the real file instead of an empty sandbox.

@@ -1,6 +1,7 @@
 import {
   invalidateCache,
   loadDetectionCacheSnapshot,
+  loadRememberedSnapshot,
   saveDetectionCache,
   type RememberedCliCatalog,
 } from './cache.js';
@@ -283,7 +284,7 @@ export function createDetectionService() {
       .join('|');
   }
 
-  function rememberedCliCatalogs(
+  function probedCliCatalogs(
     outcome: DetectionSourceOutcome<CliModelSnapshot>,
   ): RememberedCliCatalog[] {
     if (outcome.kind !== 'fresh') return [];
@@ -299,6 +300,19 @@ export function createDetectionService() {
           ]
         : [],
     );
+  }
+
+  /**
+   * Only a successful listing replaces a tool's remembered catalog. A timeout or
+   * any other failure keeps the last one with its own `probedAt`, which is how a
+   * reader knows the rows are stale rather than confirmed.
+   */
+  function rememberedCliCatalogs(
+    probed: readonly RememberedCliCatalog[],
+    previous: readonly RememberedCliCatalog[],
+  ): RememberedCliCatalog[] {
+    const probedTools = new Set(probed.map((catalog) => catalog.tool));
+    return [...probed, ...previous.filter((catalog) => !probedTools.has(catalog.tool))];
   }
 
   function queueSave(
@@ -321,9 +335,11 @@ export function createDetectionService() {
     persistedRequestIds.add(requestId);
     const snapshot = input.outcome.snapshot;
     const projection = cloneProjection(snapshot.value);
-    const cliCatalogs = rememberedCliCatalogs(input.cliModels);
-    pendingSave = pendingSave.then(() =>
-      saveDetectionCache({
+    const probed = probedCliCatalogs(input.cliModels);
+    pendingSave = pendingSave.then(async () => {
+      const previous = (await loadRememberedSnapshot(projectDir))?.cliCatalogs ?? [];
+      const cliCatalogs = rememberedCliCatalogs(probed, previous);
+      await saveDetectionCache({
         projectDir,
         snapshot: {
           contextKey: snapshot.contextKey,
@@ -339,8 +355,8 @@ export function createDetectionService() {
           cliTools: projection.cliTools,
           ...(cliCatalogs.length === 0 ? {} : { cliCatalogs }),
         },
-      }),
-    );
+      });
+    });
   }
 
   async function load(

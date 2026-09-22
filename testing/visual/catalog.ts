@@ -943,11 +943,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
-        id: 'overlay-picker-provider-expanded-read',
-        title: 'Overlay · planner picker · routes with readable sign-in',
-        marker: PICKER_TITLE_MARKER,
-      },
-      {
         id: 'overlay-picker-claude-effort',
         title: 'Overlay · planner picker · Claude alias effort ladder',
         marker: PICKER_TITLE_MARKER,
@@ -1015,6 +1010,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-planner-picker-command-code',
         title: 'Overlay · planner picker · Command Code native rows',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-codex',
+        title: 'Overlay · planner picker · OpenAI Codex models',
         marker: PICKER_TITLE_MARKER,
       },
       {
@@ -1114,6 +1114,13 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-implementer-picker',
         title: 'Overlay · implementer picker',
         marker: 'Add custom model',
+      },
+      // The seat swap a quota halt offers opens this picker, on the tool it offered: the halt
+      // names a tool, the picker names the model, and there is no third surface between them.
+      {
+        id: 'overlay-picker-seat-swap',
+        title: 'Overlay · implementer picker · the tool a quota halt offered',
+        marker: PICKER_TITLE_MARKER,
       },
     ],
   }),

@@ -3,7 +3,7 @@ import { bestMembership } from './membership.js';
 import { peelOptionSuffix } from './option-merge.js';
 import {
   compactProviderTag,
-  modelBareId,
+  modelIdUnderProvider,
   modelProviderAuthKey,
   modelProviderPrefix,
   resolveProviderAuthState,
@@ -92,12 +92,12 @@ function mergeGroupRows(
     }
   }
 
-  const displayName =
-    representative.displayName ?? rows.find((row) => row.displayName !== undefined)?.displayName;
+  const displayName = groupDisplayName(rows);
 
   return {
     id: representative.id,
     ...(displayName !== undefined ? { displayName } : {}),
+    ...(rows.every((row) => row.supportsToolCalls === false) ? { supportsToolCalls: false } : {}),
     ...(rows.some((row) => row.isDefault) ? { isDefault: true } : {}),
     ...(membership === undefined ? {} : { membership }),
     ...(membership !== undefined && membership !== 'custom'
@@ -120,38 +120,28 @@ interface ProviderVariantGroup {
 type MergeSlot = Readonly<{ kind: 'row'; row: ModelOption }> | ProviderVariantGroup;
 
 /**
- * The tool's own listing decides. `kilo models --verbose` prints one bare id
- * twice — `kilo/kilo-auto/free` as `Auto Free` and `kilo/openrouter/free` as
- * `OpenRouter Free Models Router` — two different models, while a model
- * reached through two providers carries the same name in both rows. A row
- * with no name makes no claim.
+ * One model, one name, whichever route the seat runs: the first name the listing gives it that is
+ * more than its id — `ollama-cloud` prints `kimi-k3` where `opencode-go` prints `Kimi K3`, and an
+ * id in the name field names nothing — else the first name it gives at all.
  */
-function conflictingFamilyIds(models: readonly ModelOption[]): Set<string> {
-  const nameByFamily = new Map<string, string>();
-  const conflicting = new Set<string>();
-  for (const row of models) {
-    if (modelProviderPrefix(row.id) === undefined) continue;
-    const name = row.displayName?.trim();
-    if (name === undefined || name === '') continue;
-    const familyId = peelOptionSuffix(modelBareId(row.id)).familyId;
-    const seen = nameByFamily.get(familyId);
-    if (seen === undefined) nameByFamily.set(familyId, name);
-    else if (seen !== name) conflicting.add(familyId);
-  }
-  return conflicting;
+function groupDisplayName(rows: readonly ModelOption[]): string | undefined {
+  const named = rows.filter((row) => row.displayName !== undefined);
+  const real = named.find((row) => row.displayName !== modelIdUnderProvider(row.id));
+  return (real ?? named[0])?.displayName;
 }
 
 /**
- * Collapses rows of a provider-dependent tool whose bare ids share an option
- * family into one row per model, keeping each group at its most-recent member's
- * position. Unprefixed ids never join a group.
- * Rows the tool names differently are different models; they never share a key.
+ * Collapses rows of a provider-dependent tool into one row per model, keeping each group at its
+ * most-recent member's position. A route is `<provider>/<model id>`, the listing's own two fields,
+ * so rows join on the model id's option family, never on its last path segment: `kilo/kilo-auto/free`
+ * and `kilo/openrouter/free` are two models Kilo lists, while `ollama-cloud/kimi-k3` and
+ * `opencode-go/kimi-k3` are one model two providers serve under different names. Unprefixed ids
+ * never join a group.
  */
 export function mergeProviderVariants(
   models: readonly ModelOption[],
   ctx: ProviderMergeContext,
 ): ModelOption[] {
-  const conflicting = conflictingFamilyIds(models);
   const groups = new Map<string, ProviderVariantGroup>();
   const slots: MergeSlot[] = [];
   for (const row of models) {
@@ -160,8 +150,7 @@ export function mergeProviderVariants(
       slots.push({ kind: 'row', row });
       continue;
     }
-    const bareFamilyId = peelOptionSuffix(modelBareId(row.id)).familyId;
-    const familyId = conflicting.has(bareFamilyId) ? row.id : bareFamilyId;
+    const familyId = peelOptionSuffix(modelIdUnderProvider(row.id)).familyId;
     const existing = groups.get(familyId);
     if (existing !== undefined) {
       existing.rest.push({ row, prefix });

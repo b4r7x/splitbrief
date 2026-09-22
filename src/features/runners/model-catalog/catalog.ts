@@ -8,7 +8,6 @@ import {
   CATALOG_SUGGESTION_MEMBERSHIP,
   resolveModelCatalog,
   type ResolvedModelCatalogEntry,
-  type ResolvedModelMembership,
 } from '../../../engine/providers/model/catalog.js';
 import {
   canonicalModelBucket,
@@ -16,8 +15,10 @@ import {
   type ModelIdentity,
 } from '../../../core/providers/canonical-model-id.js';
 import { resolveModelDisplayName } from '../../../core/discovery/model-catalog.js';
+import { isCliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
-import { assertNever } from '../../../utils/type-guards.js';
+import { EFFORT_LEVELS } from '../../../core/schemas/enums.js';
+import { assertNever, includes } from '../../../utils/type-guards.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 import type { PickerOption } from './options.js';
 import { mergeOptionFamilies } from './option-merge.js';
@@ -37,8 +38,9 @@ export interface PickerModelCounts {
 }
 
 /**
- * Counts state enumeration truth: a provider-merged row contributes one tally
- * per variant, so "N models detected" never deflates when rows collapse.
+ * One tally per row, never per id: a row is one model, and the ids it folds are its options or
+ * its routes, which its own chip counts. Every count the picker states is therefore a count of rows
+ * the list shows — Cursor's 240 ids are 37 models, and no line may call them 240.
  */
 export function countModelOptions(models: readonly ModelOption[]): PickerModelCounts {
   let confirmed = 0;
@@ -47,13 +49,9 @@ export function countModelOptions(models: readonly ModelOption[]): PickerModelCo
   let bundled = 0;
   let custom = 0;
 
-  const tally = (
-    membership: ResolvedModelMembership | undefined,
-    isCustom: boolean | undefined,
-    isAccountOption: boolean | undefined,
-  ): void => {
-    if (isCustom === true || membership === 'custom') custom += 1;
-    switch (membership) {
+  for (const model of models) {
+    if (model.isCustom === true || model.membership === 'custom') custom += 1;
+    switch (model.membership) {
       case 'confirmed':
         confirmed += 1;
         break;
@@ -64,23 +62,12 @@ export function countModelOptions(models: readonly ModelOption[]): PickerModelCo
         suggestions += 1;
         break;
       case 'bundled-suggestion':
-        // An account-cache option is one operator's saved selection, not a documented
-        // alias; an option merge folds it into a family row, so the marker rides the variant.
-        if (isAccountOption !== true) bundled += 1;
+        // An account-cache option is one operator's saved selection, not a documented alias.
+        if (model.isAccountOption !== true) bundled += 1;
         break;
       case 'custom':
       case undefined:
         break;
-    }
-  };
-
-  for (const model of models) {
-    if (model.variants === undefined || model.variants.length === 0) {
-      tally(model.membership, model.isCustom, model.isAccountOption);
-      continue;
-    }
-    for (const variant of model.variants) {
-      tally(variant.membership ?? model.membership, variant.isCustom, variant.isAccountOption);
     }
   }
 
@@ -108,19 +95,29 @@ function mergeModelOptions(custom: ModelOption[], known: ModelOption[]): ModelOp
   return sortModelsByRecency([...byId.values()]);
 }
 
-/** A row no catalog knows anything about says so, rather than leaving its metadata column blank. */
+/**
+ * A row no catalog knows anything about says so, rather than leaving its metadata column blank —
+ * where a catalog is what the row is looked up in. A CLI tool's own listing is its catalog, so a row
+ * it lists without a size lacks nothing a lookup could have found.
+ */
 const NO_CATALOG_ENTRY_DETAIL = 'no catalog entry';
 
 function toModelOption(entry: ReturnType<typeof resolveModelCatalog>[number]): ModelOption {
   const displayName = resolveModelDisplayName(entry);
   const isNamed = displayName !== entry.id;
   const knowsNothing =
-    !isNamed && entry.contextLength === undefined && entry.releaseDate === undefined;
+    !isCliToolId(entry.runnerId) &&
+    !isNamed &&
+    entry.contextLength === undefined &&
+    entry.releaseDate === undefined;
   const detail = entry.detail ?? (knowsNothing ? NO_CATALOG_ENTRY_DETAIL : undefined);
   return {
     id: entry.id,
     ...(isNamed ? { displayName } : {}),
     ...(detail === undefined ? {} : { detail }),
+    ...(entry.supportsToolCalls === undefined
+      ? {}
+      : { supportsToolCalls: entry.supportsToolCalls }),
     ...(entry.catalogModelId === undefined ? {} : { catalogModelId: entry.catalogModelId }),
     isDefault: entry.isDefault,
     isDetected: entry.membership === 'confirmed',
@@ -156,7 +153,7 @@ function bucketOf(
 /**
  * Two runtime rows are two routes the tool really offers — `anthropic/x` and
  * `openrouter/anthropic/x` bill differently — so they collapse only on an exact
- * id, and `mergeProviderVariants` owns the multi-route row. Everything
+ * id, and `mergeProviderVariants` decides which routes are one model. Everything
  * speculative folds into whatever the runtime lane already names.
  */
 function dedupeAgainstRuntime(
@@ -199,9 +196,15 @@ export function resolveAndSort(
     configuredSelectionId: options.configuredSelectionId,
     browseCatalog: options.browseCatalog,
   });
+  // A model no seat can run never reaches here — `isChatCapable` drops it at the engine. A hidden
+  // one can run, so it leaves only this picker, and a seat already on one keeps its row. codex
+  // still runs a hidden slug through `-m`.
+  const offered = entries.filter(
+    (entry) => entry.nativeHidden !== true || entry.selectionId === options.configuredSelectionId,
+  );
   // Two lanes may spell one id with different owners; the picker lists a selection once.
   const byId = new Map<string, ModelOption>();
-  for (const row of dedupeAgainstRuntime(entries).map(toModelOption)) {
+  for (const row of dedupeAgainstRuntime(offered).map(toModelOption)) {
     if (!byId.has(row.id)) byId.set(row.id, row);
   }
   return sortModelsByRecency([...byId.values()]);
@@ -250,6 +253,19 @@ function withRowEffortChoices(
 }
 
 /**
+ * An effort flag takes one of the effort levels and nothing else. codex 0.154.0 lists `ultra` on
+ * five models, which the save path refuses, so the ladder does not offer it. A variant is the tool's
+ * own string, not an effort level, so a variant seat's ladder stays as its listing spells it.
+ */
+function withEffortLevelsOnly(row: ModelOption): ModelOption {
+  if (row.effortChoices === undefined) return row;
+  return {
+    ...row,
+    effortChoices: row.effortChoices.filter((choice) => includes(EFFORT_LEVELS, choice)),
+  };
+}
+
+/**
  * A published ladder is an offer only where the seat can spend the rung it drafts:
  * `variant` writes it to the seat's `variant`, per route; `effort-flag` to its `effort`,
  * per row. A `model-id` seat spells its effort inside the model id and an api, shell or
@@ -266,7 +282,7 @@ function withSpendableLadders(
     case 'variant':
       return rows.map((row) => withRouteEffortChoices(row, laddersById));
     case 'effort-flag':
-      return rows.map((row) => withRowEffortChoices(row, laddersById));
+      return rows.map((row) => withEffortLevelsOnly(withRowEffortChoices(row, laddersById)));
     case 'model-id':
     case 'none':
     case undefined:

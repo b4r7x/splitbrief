@@ -194,6 +194,9 @@ function mergeOptionGroup(
     id: representative.id,
     displayName,
     ...(vendorTag === undefined ? {} : { vendorTag }),
+    ...(members.every((row) => row.supportsToolCalls === false)
+      ? { supportsToolCalls: false }
+      : {}),
     ...(members.some((row) => row.isDefault) ? { isDefault: true } : {}),
     ...(membership === undefined ? {} : { membership }),
     ...(membership !== undefined && membership !== 'custom'

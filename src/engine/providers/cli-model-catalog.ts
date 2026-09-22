@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { DetectedModel } from '../../core/discovery/detection.js';
-import { stripTerminalControls } from '../../utils/display-text.js';
+import { normalizeDisplayLabel, stripTerminalControls } from '../../utils/display-text.js';
 
 export type NativeCliCatalogTool =
   | 'codex'
@@ -23,6 +23,7 @@ export interface NativeCliModelCatalogEntry {
   readonly contextWindow?: number | undefined;
   readonly supportsToolCalls?: boolean | undefined;
   readonly outputModalities?: readonly string[] | undefined;
+  readonly capabilities?: readonly string[] | undefined;
 }
 
 export interface NativeCliModelCatalog {
@@ -33,18 +34,29 @@ export interface NativeCliModelCatalog {
 const PROVIDER_QUALIFIED_SELECTION_ID_PATTERN = /^[^\s/][^\s]*(?:\/[^\s/][^\s]*)+$/;
 const CATALOG_HEADING_PATTERN = /^(?:available\s+)?models?\s*:?$/i;
 const CURSOR_MODEL_LINE = /^(\S+) - (.+)$/;
+// `cursor-agent --list-models` closes a row with one marker group, `current` before
+// `default` (`auto - Auto (current, default)`). Verified in the 2026.09.18 bundle.
+const CURSOR_MARKER_SUFFIX = /\s*\(((?:current|default)(?:, (?:current|default))?)\)$/;
 // `cmd --list-models` aligns a bare selection id against a capability blurb with
 // a run of spaces, and only first-party ids drop the `provider/` prefix. The id
 // shape rejects the provider headings, the `cmd --model …` usage examples and
 // the trailing `Docs:` line, none of which are selectable.
 const COMMAND_CODE_MODEL_LINE =
   /^([a-z0-9][a-z0-9.-]*(?::[a-z0-9][a-z0-9.-]*)?(?:\/[a-z0-9][a-z0-9.-]*(?::[a-z0-9][a-z0-9.-]*)?)*) {2,}(.+)$/i;
+// The footer closes the counted coding list. cmd 1.62.1 prints its "Decision models
+// (headless only)" after it: they answer a JSON query, not a coding prompt.
+const COMMAND_CODE_FOOTER = /^Docs:\s+https:\/\/commandcode\.ai\/docs\/reference\/cli\/models\/?$/;
 // `copilot help config` prints the `--model` enum as quoted bullets under its
 // `model` key, and a blank line separates the last bullet from the next config
 // key, so the first non-bullet line ends the enum rather than interrupting it.
 const COPILOT_MODEL_KEY_LINE = /^`model`:/;
 const COPILOT_MODEL_BULLET = /^-\s+"([^"]+)"$/;
 const NATIVE_DEFAULT_SUFFIX = /\s*\(default\)$/i;
+// opencode and kilo list `text-embedding-3-small` and its siblings with text output and
+// no tool calls; only `family` says the model answers with vectors. `type:embedding` is
+// the fact the catalog's chat filter already reads from LM Studio.
+const EMBEDDING_FAMILY = 'text-embedding';
+const EMBEDDING_CAPABILITIES: readonly string[] = ['type:embedding'];
 
 const CodexReasoningEffortSchema: z.ZodType<string> = z
   .union([
@@ -69,6 +81,7 @@ const CodexNativeModelSchema = z
     isDefault: z.boolean().optional(),
     hidden: z.boolean().optional(),
     is_hidden: z.boolean().optional(),
+    visibility: z.string().trim().min(1).optional(),
     context_window: z.number().int().positive().optional(),
     contextWindow: z.number().int().positive().optional(),
     reasoning_efforts: z.array(CodexReasoningEffortSchema).optional(),
@@ -86,12 +99,13 @@ const CodexNativeCatalogSchema = z
 
 type CodexNativeModel = z.infer<typeof CodexNativeModelSchema>;
 
-// `opencode models --verbose` and `kilo models --verbose` print a
+// `opencode models --verbose` (1.x) and `kilo models --verbose` print a
 // provider-qualified id, then the model's JSON object closed by a `}` at
 // column 0. Verified against opencode 1.18.15 and kilo 7.0.49.
 const VerboseModelBlockSchema = z
   .object({
     name: z.string().trim().min(1).optional(),
+    family: z.string().optional(),
     limit: z
       .object({ context: z.number().int().nonnegative().optional() })
       .passthrough()
@@ -100,12 +114,35 @@ const VerboseModelBlockSchema = z
     capabilities: z
       .object({
         toolcall: z.boolean().optional(),
-        output: z.object({ text: z.boolean().optional() }).passthrough().optional(),
+        output: z.record(z.string(), z.boolean()).optional(),
       })
       .passthrough()
       .optional(),
   })
   .passthrough();
+
+const OpenCodeApiModelSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    providerID: z.string().trim().min(1),
+    name: z.string().trim().min(1).optional(),
+    family: z.string().optional(),
+    variants: z.array(z.object({ id: z.string().trim().min(1) }).passthrough()).optional(),
+    capabilities: z
+      .object({
+        tools: z.boolean().optional(),
+        output: z.array(z.string().trim().min(1)).optional(),
+      })
+      .passthrough()
+      .optional(),
+    limit: z
+      .object({ context: z.number().int().nonnegative().optional() })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+const OpenCodeApiCatalogSchema = z.object({ data: z.array(OpenCodeApiModelSchema) }).passthrough();
 
 function distinct<T>(
   values: readonly (T | undefined)[],
@@ -146,7 +183,12 @@ function codexNativeEntry(
     input.model.name,
   ]);
   const nativeDefault = distinct([input.model.is_default, input.model.isDefault]);
-  const nativeHidden = distinct([input.model.hidden, input.model.is_hidden]);
+  // `codex debug models` spells `hidden` as `visibility`: its picker shows only `list`.
+  const nativeHidden = distinct([
+    input.model.hidden,
+    input.model.is_hidden,
+    input.model.visibility === undefined ? undefined : input.model.visibility !== 'list',
+  ]);
   const contextWindow = distinct([input.model.context_window, input.model.contextWindow]);
   const nativeDefaultReasoningEffort = input.model.default_reasoning_level;
   const nativeReasoningEfforts = distinct(
@@ -215,13 +257,21 @@ function verboseBlockFields(
   const context = block.data.limit?.context;
   const variants = block.data.variants;
   const toolcall = block.data.capabilities?.toolcall;
-  const outputText = block.data.capabilities?.output?.text;
+  // kilo 7.0.49 declares every output as a flag: text, audio, image, video, pdf.
+  const output = block.data.capabilities?.output;
   return {
     ...(block.data.name === undefined ? {} : { displayName: block.data.name }),
     ...(context === undefined || context === 0 ? {} : { contextWindow: context }),
     ...(variants === undefined ? {} : { nativeReasoningEfforts: Object.keys(variants) }),
     ...(toolcall === undefined ? {} : { supportsToolCalls: toolcall }),
-    ...(outputText === undefined ? {} : { outputModalities: outputText ? ['text'] : [] }),
+    ...(output === undefined
+      ? {}
+      : {
+          outputModalities: Object.entries(output).flatMap(([modality, declared]) =>
+            declared ? [modality] : [],
+          ),
+        }),
+    ...(block.data.family === EMBEDDING_FAMILY ? { capabilities: EMBEDDING_CAPABILITIES } : {}),
   };
 }
 
@@ -268,12 +318,12 @@ function parseDashSeparatedLines(
     const selectionId = match[1];
     const listedName = match[2];
     if (selectionId === undefined || listedName === undefined) continue;
-    const nativeDefault = NATIVE_DEFAULT_SUFFIX.test(listedName);
-    const stripped = listedName.replace(NATIVE_DEFAULT_SUFFIX, '').trimEnd();
+    const markers = CURSOR_MARKER_SUFFIX.exec(listedName)?.[1]?.split(', ') ?? [];
+    const displayName = normalizeDisplayLabel(listedName.replace(CURSOR_MARKER_SUFFIX, ''));
     entries.push({
       selectionId,
-      displayName: nativeDefault && stripped.length > 0 ? stripped : listedName,
-      ...(nativeDefault ? { nativeDefault: true } : {}),
+      ...(displayName.length === 0 ? {} : { displayName }),
+      ...(markers.includes('default') ? { nativeDefault: true } : {}),
     });
   }
   return entries.length === 0 ? null : catalogFromEntries({ tool: input.tool, entries });
@@ -298,7 +348,48 @@ export function parseCodexNativeModelCatalog(stdout: string): NativeCliModelCata
   return catalogFromEntries({ tool: 'codex', entries });
 }
 
+// `opencode api GET /api/model` asks the background service for every model it
+// serves. It is the only listing opencode 2 answers from a directory it has not
+// indexed: `opencode models` prints nothing there on first call, and a
+// `--standalone` server enumerates nothing at all.
+//
+// `id` is the selectable name and `modelID` the upstream model it routes to, so
+// an alias repeats a sibling's `modelID` (`gpt-5.6-luna-fast` routes to
+// `gpt-5.6-luna`). Keying on `modelID` collapsed 118 rows to 105. `providerID/id`
+// reproduces `opencode models` exactly. Verified against opencode 2.0.14.
 export function parseOpenCodeNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {
+  let json: unknown;
+  try {
+    json = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  const parsed = OpenCodeApiCatalogSchema.safeParse(json);
+  if (!parsed.success) return null;
+
+  const entries = parsed.data.data.map((model) => {
+    const context = model.limit?.context;
+    const toolcall = model.capabilities?.tools;
+    const output = model.capabilities?.output;
+    return {
+      selectionId: `${model.providerID}/${model.id}`,
+      ...(model.name === undefined ? {} : { displayName: model.name }),
+      ...(context === undefined || context === 0 ? {} : { contextWindow: context }),
+      ...(model.variants === undefined
+        ? {}
+        : { nativeReasoningEfforts: model.variants.map((variant) => variant.id) }),
+      ...(toolcall === undefined ? {} : { supportsToolCalls: toolcall }),
+      ...(output === undefined ? {} : { outputModalities: output }),
+      ...(model.family === EMBEDDING_FAMILY ? { capabilities: EMBEDDING_CAPABILITIES } : {}),
+    };
+  });
+  return entries.length === 0 ? null : catalogFromEntries({ tool: 'opencode', entries });
+}
+
+// opencode 1.x listed models itself; `api` arrived with the 2.x server. A 1.x
+// install is still a fully admitted seat (`minimumAdmittedVersion` 0.5.0), and
+// npm's `opencode-ai` tops out at 1.18.32, so this is a live path, not history.
+export function parseOpenCodeVerboseModelCatalog(stdout: string): NativeCliModelCatalog | null {
   return parseProviderQualifiedLines({ tool: 'opencode', stdout });
 }
 
@@ -313,6 +404,7 @@ export function parseCursorNativeModelCatalog(stdout: string): NativeCliModelCat
 export function parseCommandCodeNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {
   const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
   for (const line of cleanCatalogLines(stdout)) {
+    if (COMMAND_CODE_FOOTER.test(line)) break;
     if (isCatalogHeading(line)) continue;
     const match = COMMAND_CODE_MODEL_LINE.exec(line);
     const selectionId = match?.[1];
@@ -328,21 +420,16 @@ export function parseCommandCodeNativeModelCatalog(stdout: string): NativeCliMod
   return entries.length === 0 ? null : catalogFromEntries({ tool: 'command-code', entries });
 }
 
-/** The native count and final footer prove the listing finished even if shutdown stalls. */
+/** The native count and the footer that closes the list prove it finished even if shutdown stalls. */
 export function parseCompleteCommandCodeNativeModelCatalog(
   stdout: string,
 ): NativeCliModelCatalog | null {
   const lines = cleanCatalogLines(stdout);
-  const footer = lines.findLast((line) => line.length > 0);
   const counts = lines.flatMap((line) => {
     const match = /^Available models\s*·\s*(\d+) models$/i.exec(line);
     return match === null ? [] : [Number(match[1])];
   });
-  if (
-    counts.length !== 1 ||
-    !/^Docs:\s+https:\/\/commandcode\.ai\/docs\/reference\/cli\/models\/?$/.test(footer ?? '')
-  )
-    return null;
+  if (counts.length !== 1 || !lines.some((line) => COMMAND_CODE_FOOTER.test(line))) return null;
   const catalog = parseCommandCodeNativeModelCatalog(stdout);
   return catalog !== null && catalog.models.length === counts[0] ? catalog : null;
 }
@@ -402,6 +489,7 @@ export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog)
     ...(model.outputModalities === undefined
       ? {}
       : { outputModalities: [...model.outputModalities] }),
+    ...(model.capabilities === undefined ? {} : { capabilities: [...model.capabilities] }),
   }));
 }
 

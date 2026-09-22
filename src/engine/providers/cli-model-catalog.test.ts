@@ -1,16 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DetectedModelSchema } from '../../core/discovery/detection.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import { type DetectedModel, DetectedModelSchema } from '../../core/discovery/detection.js';
+import { resolveModelCatalog } from './model/catalog.js';
 import {
   nativeCliCatalogToDetectedModels,
   parseAntigravityModelCatalog,
   parseCodexNativeModelCatalog,
   parseCommandCodeNativeModelCatalog,
+  parseCompleteCommandCodeNativeModelCatalog,
   parseCopilotHelpConfigCatalog,
   parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
+  parseOpenCodeVerboseModelCatalog,
+  type NativeCliModelCatalog,
 } from './cli-model-catalog.js';
 
 // Two-model slice of `codex debug models --bundled` (codex-cli 0.153.3, captured 2026-09-08).
@@ -126,19 +131,19 @@ describe('native CLI model catalogs', () => {
     ).toBeNull();
   });
 
-  it('retains exact provider-qualified OpenCode and Kilo selections without accepting generic text', () => {
+  it('retains exact provider-qualified Kilo selections without accepting generic text', () => {
     expect(
-      parseOpenCodeNativeModelCatalog(
+      parseKiloNativeModelCatalog(
         '\u001B[2mModels\u001B[0m\nanthropic/claude-sonnet-4-6\ncustom/provider/model@2026-08-01',
       ),
     ).toEqual({
-      tool: 'opencode',
+      tool: 'kilo-code',
       models: [
         { selectionId: 'anthropic/claude-sonnet-4-6', nativeOrder: 0 },
         { selectionId: 'custom/provider/model@2026-08-01', nativeOrder: 1 },
       ],
     });
-    expect(parseOpenCodeNativeModelCatalog('model one')).toBeNull();
+    expect(parseKiloNativeModelCatalog('model one')).toBeNull();
 
     expect(
       parseKiloNativeModelCatalog('kilo/anthropic/claude-sonnet-4-6\nkilo/custom/model'),
@@ -180,6 +185,70 @@ describe('native CLI model catalogs', () => {
     );
   });
 
+  // Captured verbatim with `opencode api GET /api/model` on opencode 2.0.14;
+  // five models of the 118 the service served, entries unchanged.
+  it('reads the per-model ladder, catalog name and context window from the api listing', () => {
+    const stdout = readFileSync(
+      join(import.meta.dirname, '../../../testing/fixtures/opencode/api-model.json'),
+      'utf-8',
+    );
+
+    const catalog = parseOpenCodeNativeModelCatalog(stdout);
+    if (catalog === null) throw new Error('Expected the OpenCode api listing to parse');
+
+    const lunaLadder = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
+    expect(catalog.models).toEqual([
+      {
+        selectionId: 'openai/gpt-5.6-luna',
+        nativeOrder: 0,
+        displayName: 'GPT-5.6 Luna',
+        contextWindow: 1_050_000,
+        nativeReasoningEfforts: lunaLadder,
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+      },
+      // An alias keeps its own `id` and repeats the sibling's `modelID`; keying
+      // the selection on `modelID` would drop it onto the row above.
+      {
+        selectionId: 'openai/gpt-5.6-luna-fast',
+        nativeOrder: 1,
+        displayName: 'GPT-5.6 Luna Fast',
+        contextWindow: 1_050_000,
+        nativeReasoningEfforts: lunaLadder,
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+      },
+      {
+        selectionId: 'opencode-go/gpt-5.6-luna',
+        nativeOrder: 2,
+        displayName: 'GPT-5.6 Luna',
+        contextWindow: 1_050_000,
+        nativeReasoningEfforts: lunaLadder,
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+      },
+      {
+        selectionId: 'opencode-go/minimax-m3',
+        nativeOrder: 3,
+        displayName: 'MiniMax-M3',
+        contextWindow: 1_000_000,
+        nativeReasoningEfforts: ['none', 'thinking'],
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+      },
+      {
+        selectionId: 'opencode-go/qwen3.7-max',
+        nativeOrder: 4,
+        displayName: 'Qwen3.7 Max',
+        contextWindow: 1_000_000,
+        nativeReasoningEfforts: [],
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+      },
+    ]);
+  });
+
+  // opencode 1.x is still an admitted seat, so its listing keeps a test.
   // Captured verbatim with `opencode models openai --verbose` and
   // `opencode models opencode-go --verbose` on opencode 1.18.15.
   it('reads the per-model ladder, catalog name and context window from a verbose listing', () => {
@@ -188,7 +257,7 @@ describe('native CLI model catalogs', () => {
       'utf-8',
     );
 
-    const catalog = parseOpenCodeNativeModelCatalog(stdout);
+    const catalog = parseOpenCodeVerboseModelCatalog(stdout);
     if (catalog === null) throw new Error('Expected the verbose OpenCode listing to parse');
 
     const lunaLadder = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -245,6 +314,37 @@ describe('native CLI model catalogs', () => {
     expect(catalog.models[0]?.nativeReasoningEfforts).not.toContain('minimal');
   });
 
+  it('keeps an OpenCode row that publishes no context window or text output', () => {
+    // `openai/gpt-image-2` (opencode 2.0.14) publishes `"context": 0` and an
+    // image-only output: the row is real, the window is not.
+    expect(
+      parseOpenCodeNativeModelCatalog(
+        JSON.stringify({
+          data: [
+            {
+              id: 'gpt-image-2',
+              providerID: 'openai',
+              name: 'gpt-image-2',
+              capabilities: { tools: false, output: ['image'] },
+              limit: { context: 0 },
+            },
+          ],
+        }),
+      ),
+    ).toEqual({
+      tool: 'opencode',
+      models: [
+        {
+          selectionId: 'openai/gpt-image-2',
+          nativeOrder: 0,
+          displayName: 'gpt-image-2',
+          supportsToolCalls: false,
+          outputModalities: ['image'],
+        },
+      ],
+    });
+  });
+
   it('reads verbose capabilities into supportsToolCalls and outputModalities', () => {
     const catalog = parseKiloNativeModelCatalog(
       [
@@ -278,6 +378,89 @@ describe('native CLI model catalogs', () => {
         outputModalities: ['text'],
       },
     ]);
+  });
+
+  describe('embedding family', () => {
+    const embeddingIds = (catalog: NativeCliModelCatalog | null) =>
+      catalog?.models
+        .filter((model) => model.capabilities?.includes('type:embedding'))
+        .map((model) => model.selectionId);
+    const opencode = parseOpenCodeNativeModelCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/opencode/api-model-full.json'),
+        'utf-8',
+      ),
+    );
+    const kilo = parseKiloNativeModelCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/kilo/models-verbose.txt'),
+        'utf-8',
+      ),
+    );
+
+    it('marks exactly the `text-embedding` family rows of real opencode and kilo listings', () => {
+      expect(opencode?.models).toHaveLength(118);
+      expect(embeddingIds(opencode)).toEqual([
+        'openai/text-embedding-3-small',
+        'openai/text-embedding-3-large',
+        'openai/text-embedding-ada-002',
+      ]);
+      expect(kilo?.models).toHaveLength(29);
+      expect(embeddingIds(kilo)).toEqual([
+        'openai/text-embedding-3-large',
+        'openai/text-embedding-3-small',
+        'openai/text-embedding-ada-002',
+      ]);
+    });
+
+    it('gives the catalog chat filter the fact that drops the embedding rows', () => {
+      const embedding = [
+        'openai/text-embedding-3-large',
+        'openai/text-embedding-3-small',
+        'openai/text-embedding-ada-002',
+      ];
+      for (const [tool, catalog] of [
+        ['opencode', opencode],
+        ['kilo-code', kilo],
+      ] as const) {
+        if (catalog === null) throw new Error(`Expected the ${tool} listing to parse`);
+        const offered = (models: DetectedModel[]) =>
+          resolveModelCatalog(tool, {
+            cache: makeModelCacheAccessor({ providerModels: { [tool]: models } }),
+          })
+            .filter((row) => row.source === 'runtime')
+            .map((row) => row.selectionId);
+        const detected = nativeCliCatalogToDetectedModels(catalog);
+        const unmarked = detected.map(({ capabilities: _fact, ...model }) => model);
+
+        expect(embedding.filter((id) => offered(detected).includes(id))).toEqual([]);
+        expect(embedding.filter((id) => offered(unmarked).includes(id))).toEqual(embedding);
+      }
+    });
+  });
+
+  it('keeps every output modality a real kilo 7.0.49 verbose block declares', () => {
+    const catalog = parseKiloNativeModelCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/kilo/models-verbose.txt'),
+        'utf-8',
+      ),
+    );
+    if (catalog === null) throw new Error('Expected the kilo 7.0.49 verbose listing to parse');
+
+    const beyondText = catalog.models.filter((model) => model.outputModalities?.join() !== 'text');
+    expect(catalog.models).toHaveLength(29);
+    expect(
+      Object.fromEntries(beyondText.map((model) => [model.selectionId, model.outputModalities])),
+    ).toEqual({
+      'kilo/google/lyria-3-clip-preview': ['text', 'audio'],
+      'kilo/google/lyria-3-pro-preview': ['text', 'audio'],
+      'openai/chatgpt-image-latest': ['text', 'image'],
+      'openai/gpt-image-1-mini': ['text', 'image'],
+      'openai/gpt-image-1.5': ['text', 'image'],
+      'openai/gpt-image-2': ['image'],
+      'openai/gpt-realtime-2.1': ['text', 'audio'],
+    });
   });
 
   it('reads a verbose block limit and drops its cost from kilo entries and detected models', () => {
@@ -388,7 +571,7 @@ describe('native CLI model catalogs', () => {
 
   it('keeps bare id rows beside verbose block rows in one listing', () => {
     expect(
-      parseOpenCodeNativeModelCatalog(
+      parseKiloNativeModelCatalog(
         [
           'opencode-go/qwen3.7-max',
           'openai/gpt-5.6-luna',
@@ -400,7 +583,7 @@ describe('native CLI model catalogs', () => {
         ].join('\n'),
       ),
     ).toEqual({
-      tool: 'opencode',
+      tool: 'kilo-code',
       models: [
         { selectionId: 'opencode-go/qwen3.7-max', nativeOrder: 0 },
         {
@@ -435,14 +618,24 @@ describe('native CLI model catalogs', () => {
 
   it('fails closed when a verbose block is truncated, is not JSON, or drifts in shape', () => {
     expect(
-      parseOpenCodeNativeModelCatalog('openai/gpt-5.6-luna\n{\n  "name": "GPT-5.6 Luna",'),
+      parseKiloNativeModelCatalog('kilo/openai/gpt-5.6-luna\n{\n  "name": "GPT-5.6 Luna",'),
     ).toBeNull();
     expect(parseKiloNativeModelCatalog('kilo/openai/gpt-5.6-luna\n{\n  "name": ,\n}')).toBeNull();
     expect(
-      parseOpenCodeNativeModelCatalog(
-        'openai/gpt-5.6-luna\n{\n  "limit": { "context": "500000" }\n}',
+      parseKiloNativeModelCatalog(
+        'kilo/openai/gpt-5.6-luna\n{\n  "limit": { "context": "500000" }\n}',
       ),
     ).toBeNull();
+  });
+
+  it('fails closed when the OpenCode listing is help text, drifts in shape, or is empty', () => {
+    expect(parseOpenCodeNativeModelCatalog('DESCRIPTION\n  List all available models')).toBeNull();
+    expect(
+      parseOpenCodeNativeModelCatalog(JSON.stringify({ data: [{ modelID: 'mimo-v2.6-flash' }] })),
+    ).toBeNull();
+    // opencode 2.0.14 answers a directory it has not indexed with an empty list
+    // and exit 0. An empty catalog is a failed probe, not a tool with no models.
+    expect(parseOpenCodeNativeModelCatalog(JSON.stringify({ data: [] }))).toBeNull();
   });
 
   it('parses Cursor id-dash-name rows from the admitted listing fixture', () => {
@@ -611,6 +804,142 @@ describe('native CLI model catalogs', () => {
 
     expect(cursor.models.filter((model) => model.nativeDefault === true)).toHaveLength(1);
     expect(commandCode.models.filter((model) => model.nativeDefault === true)).toHaveLength(1);
+  });
+
+  describe('cursor-agent 2026.09.18', () => {
+    const fixture = (name: string) =>
+      readFileSync(join(import.meta.dirname, '../../../testing/fixtures/cursor', name), 'utf-8');
+
+    it('reads the default out of the `(current, default)` marker group and drops the group', () => {
+      const catalog = parseCursorNativeModelCatalog(fixture('list-models-2026.09.18.txt'));
+      if (catalog === null) throw new Error('Expected the 2026.09.18 Cursor listing to parse');
+
+      expect(catalog.models).toHaveLength(241);
+      expect(catalog.models[0]).toEqual({
+        selectionId: 'auto',
+        displayName: 'Auto',
+        nativeOrder: 0,
+        nativeDefault: true,
+      });
+      expect(catalog.models.filter((model) => model.nativeDefault === true)).toHaveLength(1);
+      expect(
+        catalog.models.find((model) => model.selectionId === 'claude-fable-5-1-high')?.displayName,
+      ).toBe('Claude Fable 5.1 1M (NO ZDR)');
+    });
+
+    it('drops a `(current)` marker from a row the local config selects', () => {
+      const catalog = parseCursorNativeModelCatalog(fixture('list-models-2026.09.18-current.txt'));
+      if (catalog === null) throw new Error('Expected the 2026.09.18 Cursor listing to parse');
+
+      expect(catalog.models.find((model) => model.selectionId === 'gpt-5.2')).toEqual({
+        selectionId: 'gpt-5.2',
+        displayName: 'GPT-5.2',
+        nativeOrder: 9,
+      });
+      expect(
+        catalog.models.filter((model) => model.nativeDefault === true).map((m) => m.selectionId),
+      ).toEqual(['auto']);
+      expect(
+        catalog.models.some((model) => /\((?:current|default)/.test(model.displayName ?? '')),
+      ).toBe(false);
+    });
+
+    it('strips the zero-width spaces and doubled space from the Grok 4.7 names', () => {
+      const catalog = parseCursorNativeModelCatalog(fixture('list-models-2026.09.18.txt'));
+      if (catalog === null) throw new Error('Expected the 2026.09.18 Cursor listing to parse');
+
+      expect(
+        catalog.models
+          .filter((model) => model.selectionId.startsWith('grok-4.7-'))
+          .map((model) => model.displayName),
+      ).toEqual([
+        'Grok 4.7 Low',
+        'Grok 4.7 Low Fast',
+        'Grok 4.7 Medium',
+        'Grok 4.7 Medium Fast',
+        'Grok 4.7 High',
+        'Grok 4.7 High Fast',
+        'Grok 4.7 Extra High',
+        'Grok 4.7 Extra High Fast',
+      ]);
+      expect(
+        catalog.models.filter((model) => /\p{Cf}| {2}/u.test(model.displayName ?? '')),
+      ).toEqual([]);
+    });
+  });
+
+  describe('cmd 1.62.1', () => {
+    const stdout = readFileSync(
+      join(import.meta.dirname, '../../../testing/fixtures/command-code/list-models-1.62.1.txt'),
+      'utf-8',
+    );
+
+    it('lists the 77 coding models the header counts and not the headless decision model', () => {
+      const catalog = parseCommandCodeNativeModelCatalog(stdout);
+      if (catalog === null) throw new Error('Expected the cmd 1.62.1 listing to parse');
+
+      expect(catalog.models).toHaveLength(77);
+      expect(catalog.models.at(-1)?.selectionId).toBe('xai/grok-4.7');
+      expect(catalog.models.some((model) => model.selectionId === 'typesafe/jev')).toBe(false);
+      expect(catalog.models.some((model) => model.detail?.includes('cmd -p'))).toBe(false);
+      expect(
+        catalog.models.filter((model) => model.nativeDefault === true).map((m) => m.selectionId),
+      ).toEqual(['deepseek/deepseek-v4-flash']);
+    });
+
+    it('proves the listing complete although the decision note follows the footer', () => {
+      // The probe times out on every cmd run, so this timeout rescue is the path that loads it.
+      const rescued = parseCompleteCommandCodeNativeModelCatalog(stdout);
+      expect(rescued).toEqual(parseCommandCodeNativeModelCatalog(stdout));
+      expect(rescued?.models).toHaveLength(77);
+      expect(rescued?.models.some((model) => model.selectionId === 'typesafe/jev')).toBe(false);
+      expect(
+        parseCompleteCommandCodeNativeModelCatalog(
+          stdout.replace('xai/grok-4.7 ', 'xai grok-4.7 '),
+        ),
+      ).toBeNull();
+    });
+  });
+
+  describe('codex 0.154.0 visibility', () => {
+    const stdout = readFileSync(
+      join(import.meta.dirname, '../../../testing/fixtures/codex/debug-models-bundled.json'),
+      'utf-8',
+    );
+
+    it('marks every model codex keeps off its own picker as hidden', () => {
+      const catalog = parseCodexNativeModelCatalog(stdout);
+      if (catalog === null) throw new Error('Expected the codex 0.154.0 bundled listing to parse');
+
+      expect(catalog.models).toHaveLength(11);
+      expect(
+        catalog.models.filter((model) => model.nativeHidden === true).map((m) => m.selectionId),
+      ).toEqual([
+        'gpt-daybreak-blue-latest',
+        'gpt-daybreak-red-latest',
+        'gpt-5.4',
+        'gpt-5.4-mini',
+        'codex-auto-review',
+      ]);
+      expect(
+        catalog.models.filter((model) => model.nativeHidden === false).map((m) => m.selectionId),
+      ).toEqual([
+        'gpt-6-astra',
+        'gpt-5.6-sol',
+        'gpt-5.6-terra',
+        'gpt-5.6-luna',
+        'gpt-5.5',
+        'gpt-5.2',
+      ]);
+    });
+
+    it('fails closed when `visibility` contradicts `hidden`', () => {
+      expect(
+        parseCodexNativeModelCatalog(
+          JSON.stringify({ models: [{ slug: 'gpt-5.4', hidden: false, visibility: 'hide' }] }),
+        ),
+      ).toBeNull();
+    });
   });
 
   it("a cataloged codex model's contextLength equals its context_window; routing does not use the 32768 fallback for it", () => {

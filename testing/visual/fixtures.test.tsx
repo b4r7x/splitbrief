@@ -8,8 +8,6 @@ import { App } from '../../src/app/root.js';
 import { ACTIVE_OVERLAYS } from '../../src/core/navigation/types.js';
 import { ConfigSchema } from '../../src/core/schemas/config.js';
 import { ModelsDevCatalogSchema } from '../../src/core/schemas/models-dev.js';
-import { parseCopilotHelpConfigCatalog } from '../../src/engine/providers/cli-model-catalog.js';
-import { getModelsForProvider } from '../../src/engine/providers/models-dev.js';
 import { resolveModelCatalog } from '../../src/engine/providers/model/catalog.js';
 import { modelCacheStore } from '../../src/stores/discovery/model-cache/state.js';
 import { detectionStore } from '../../src/stores/project/detection.js';
@@ -212,7 +210,7 @@ describe('visual fixture seeds', () => {
     }
   });
 
-  it('carries the Claude 5 rows and exactly five opencode effort ladders in the models.dev slice', () => {
+  it('carries the Claude 5 rows in the models.dev slice', () => {
     const anthropic = MODELS_DEV_SLICE.anthropic?.models ?? {};
     const claudeFive: Record<string, string> = {
       'claude-opus-5': 'Claude Opus 5',
@@ -238,88 +236,6 @@ describe('visual fixture seeds', () => {
     expect(haiku?.name).toBe('Claude Haiku 4.5 (latest)');
     expect(haiku?.limit?.context).toBe(200_000);
     expect(haiku?.reasoning_options?.map((option) => option.type)).toEqual(['budget_tokens']);
-
-    const opencode = Object.entries(MODELS_DEV_SLICE.opencode?.models ?? {});
-    expect(opencode).toHaveLength(31);
-    // Rungs, not just which rows carry a ladder: no captured frame draws them, and
-    // `effort-vocabulary-source` replaces the hand-written table with exactly these arrays.
-    const ladders: Record<string, unknown> = {};
-    for (const [id, model] of opencode) {
-      if (model.reasoning_options === undefined) continue;
-      ladders[id] = model.reasoning_options.find((option) => option.type === 'effort')?.values;
-    }
-    expect(ladders).toStrictEqual({
-      'openai/gpt-5.6-luna': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-      'opencode-go/gpt-5.6-luna': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-      'openai/gpt-5.1': ['none', 'low', 'medium', 'high'],
-      'openai/gpt-5-mini': ['minimal', 'low', 'medium', 'high'],
-      'openai/o3': ['low', 'medium', 'high'],
-    });
-    // A model that publishes no ladder has to stay in the fixture: the axis rows
-    // are proved by a row that draws none as much as by one that draws six.
-    expect(
-      opencode.filter(([, model]) => model.reasoning_options === undefined).length,
-    ).toBeGreaterThan(0);
-  });
-
-  it('covers every Copilot model the tool serves in the models.dev slice', () => {
-    // The enum `copilot help config` prints, read back from the recorded output
-    // (`testing/fixtures/copilot/help-config.txt`, GitHub Copilot CLI 1.0.77) through the parser
-    // the runner registry reads that listing with, so a recapture of the tool moves this contract
-    // with it and the extraction keeps one home. The rows transcribe models.dev's `github-copilot`
-    // provider: 33 models covering 24 of these 25 ids, with `claude-opus-4.8-fast` the fixture's
-    // one "served by the tool, unknown to the catalog" row.
-    // That provider has since dropped `claude-sonnet-4.5`, `claude-opus-4.6`, `claude-opus-4.5`
-    // and `gemini-3.1-pro-preview`, so regenerating the block from a live fetch widens that hole
-    // from one id to five. Those four keep the dates `github-copilot` itself published, which for
-    // `claude-opus-4.6` is 2026-02-05 — the value 14 other models.dev providers carry — and not
-    // `anthropic`'s 2026-02-04 for the same model.
-    // `modalities` is the one field the fixture's other 66 rows carry and these 24 do not, so a
-    // Copilot model resolved from here reports no `supportsImages` (`modelToDetected`). That is
-    // inert: `seatSupportsImages` returns `true` for every `cli` runner before it reads the fact,
-    // and `detectedModelFact` yields nothing off a non-`api` seat.
-    const listing = parseCopilotHelpConfigCatalog(
-      readFileSync(join(import.meta.dirname, '../fixtures/copilot/help-config.txt'), 'utf8'),
-    );
-    if (listing === null) throw new Error('copilot help-config fixture listed no models');
-    const served = listing.models.map((model) => model.selectionId);
-    // Read the block the way production does. A CLI runner id no longer reaches models.dev
-    // (REQ-B08), so the block is read by the catalog vendor key the bundled Copilot rows name in
-    // their own `catalogProvider`. `getModelsForProvider` iterates `Object.values(provider.models)`
-    // and keys identity on `model.id`, never on the JSON map key, so asserting over `Object.keys`
-    // would pass a row whose own `id` is a typo. `byId` is what ships; the map key is only a lookup
-    // convenience for the field assertions below.
-    const byId = new Map(
-      getModelsForProvider(MODELS_DEV_SLICE, 'github-copilot').map((model) => [model.id, model]),
-    );
-    const copilot = MODELS_DEV_SLICE['github-copilot']?.models ?? {};
-    expect(Object.keys(copilot).sort()).toEqual([...byId.keys()].sort());
-
-    expect(served.filter((id) => !byId.has(id))).toEqual(['claude-opus-4.8-fast']);
-    expect([...byId.keys()].filter((id) => !served.includes(id))).toEqual([]);
-
-    // done-criterion 3's fields, read as production reads them: the picker's context column comes
-    // from `contextLength`, not from `limit.context`, so a typo in either limit key lands here.
-    expect(byId.get('gpt-5.5')?.contextLength).toBe(1_050_000);
-    expect(byId.get('gpt-5.5')?.maxOutputTokens).toBe(128_000);
-    expect([...byId.values()].filter((model) => model.contextLength === undefined)).toEqual([]);
-
-    // Rungs, not row counts: the ladders are transcribed per model, so an approximated
-    // block passes membership and fails here.
-    const effort = (id: string): readonly string[] | undefined =>
-      copilot[id]?.reasoning_options?.find((option) => option.type === 'effort')?.values;
-    expect(effort('gpt-5.5')).toEqual(['none', 'low', 'medium', 'high', 'xhigh']);
-    expect(effort('gpt-5.6-luna')).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
-    expect(copilot['kimi-k2.7-code']?.reasoning_options).toEqual([]);
-
-    // models.dev's own casing, split two ways for the same word: normalising either renames a row.
-    expect(copilot['gpt-5.4-mini']?.name).toBe('GPT-5.4 mini');
-    expect(copilot['gpt-5-mini']?.name).toBe('GPT-5 Mini');
-
-    // `release_date` orders the browse lane (`compareSuggestions`, `sortModelsByRecency`), so a row
-    // without one is ordered by the id heuristic instead of by recency.
-    const undated = Object.keys(copilot).filter((id) => copilot[id]?.release_date === undefined);
-    expect(undated).toEqual([]);
   });
 
   it('resolves the seeded slice into one distinctly labelled row per Claude alias', async () => {

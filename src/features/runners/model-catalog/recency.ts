@@ -49,6 +49,8 @@ export interface ModelOption {
   contextLength?: number | undefined;
   /** A vendor-supplied flag about the model that is not part of its name, e.g. `no ZDR`. */
   vendorTag?: string | undefined;
+  /** The listing's own word on tool calls; a merged row says `false` only when every member does. */
+  supportsToolCalls?: boolean | undefined;
   /**
    * The effort ladder this model's own source publishes — the tool's `--verbose`
    * listing, models.dev `reasoning_options`, or the tool's documented flag ladder.

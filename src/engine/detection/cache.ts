@@ -102,7 +102,10 @@ const CachedModelIdSchema = z
  * effort ladder and its default and the modality flags, so a cold start can
  * paint the picker before the live refresh lands. The hidden flag is a public
  * catalog value from the tool's own listing, not credential or account
- * material.
+ * material. Capability facts ride along so a cold start drops the embedding
+ * rows a live refresh would drop. An optional field needs no version bump: a
+ * record without it still parses, and an older build's strict schema rejects a
+ * record with it, which it reads as no record at all — what a bump would do.
  */
 const CachedModelSchema = z
   .object({
@@ -118,6 +121,7 @@ const CachedModelSchema = z
     nativeDefaultReasoningEffort: z.string().trim().min(1).max(64).optional(),
     supportsToolCalls: z.boolean().optional(),
     outputModalities: z.array(z.string().min(1).max(32)).max(8).readonly().optional(),
+    capabilities: z.array(z.string().trim().min(1).max(64)).max(32).optional(),
     isFree: z.boolean().optional(),
   })
   .strict();
@@ -279,6 +283,7 @@ function cachedModels(models: readonly DetectedModel[]): CachedModel[] {
       ...(model.outputModalities === undefined
         ? {}
         : { outputModalities: [...model.outputModalities] }),
+      ...(model.capabilities === undefined ? {} : { capabilities: [...model.capabilities] }),
       ...(model.isFree === undefined ? {} : { isFree: model.isFree }),
     });
     if (result.success) sanitized.push(result.data);

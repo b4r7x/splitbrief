@@ -73,7 +73,6 @@ async function rowFrame(row: RightRow, maxWidth: number, currentModel?: string):
       isCursor: false,
       maxWidth,
       currentModel,
-      sectioned: false,
       auth: AUTH,
     }),
   );
@@ -301,7 +300,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 40,
         currentModel: undefined,
-        sectioned: false,
         auth: AUTH,
       }),
     );
@@ -317,7 +315,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 40,
         currentModel: undefined,
-        sectioned: false,
         auth: AUTH,
       }),
     );
@@ -337,7 +334,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 60,
         currentModel: undefined,
-        sectioned: false,
         auth: AUTH,
       }),
     );
@@ -357,7 +353,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 60,
         currentModel: undefined,
-        sectioned: false,
         auth: AUTH,
       }),
     );
@@ -373,7 +368,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 60,
         currentModel: undefined,
-        sectioned: false,
         auth: AUTH,
       }),
     );
@@ -390,7 +384,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 60,
         currentModel: undefined,
-        sectioned: false,
         auth: AUTH,
       }),
     );
@@ -403,14 +396,13 @@ describe('runner row grammar', () => {
   });
 
   it('renders tool decides on the Auto row, not Default, inside a section and outside one', async () => {
-    for (const sectioned of [true, false]) {
+    for (const section of ['Custom', '']) {
       const ui = renderFeature(
         renderModelRow({
-          row: modelRow({ id: 'auto' }, 'Known'),
+          row: modelRow({ id: 'auto' }, 'Known', section),
           isCursor: false,
           maxWidth: 40,
           currentModel: 'auto',
-          sectioned,
           auth: AUTH,
         }),
       );
@@ -450,7 +442,6 @@ describe('runner row grammar', () => {
       isCursor: false,
       maxWidth: 34,
       currentModel: undefined,
-      sectioned: false,
       auth: AUTH,
     }).props;
     expect(squeezed.label).toBe('Fable 5.1');
@@ -463,7 +454,6 @@ describe('runner row grammar', () => {
       isCursor: false,
       maxWidth: 60,
       currentModel: undefined,
-      sectioned: false,
       auth: AUTH,
     }).props;
     expect(bare.label).toBe('Best');
@@ -477,7 +467,6 @@ describe('runner row grammar', () => {
       isCursor: false,
       maxWidth: 60,
       currentModel: undefined,
-      sectioned: false,
       auth: AUTH,
     });
     expect(el.props.label).toBe('Opus 5');
@@ -503,7 +492,6 @@ describe('runner row grammar', () => {
       isCursor: false,
       maxWidth: 80,
       currentModel: undefined,
-      sectioned: false,
       auth: AUTH,
     });
     expect(el.props.label).toBe('Claude Fable 5.1');
@@ -524,7 +512,6 @@ describe('runner row grammar', () => {
       isCursor: false,
       maxWidth: 40,
       currentModel: undefined,
-      sectioned: false,
       auth: AUTH,
     });
     expect(withSize.props.metadata).toBe('1M');
@@ -535,7 +522,6 @@ describe('runner row grammar', () => {
       isCursor: false,
       maxWidth: 40,
       currentModel: undefined,
-      sectioned: false,
       auth: AUTH,
     });
     expect(empty.props.metadata).toBeUndefined();
@@ -549,7 +535,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 40,
         currentModel: undefined,
-        sectioned: true,
         auth: AUTH,
       }),
     );
@@ -681,7 +666,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: 60,
           currentModel: undefined,
-          sectioned: false,
           auth: AUTH,
         }),
       );
@@ -711,7 +695,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: 60,
           currentModel: 'gpt-5.6-luna-high-fast',
-          sectioned: false,
           auth: AUTH,
         }),
       );
@@ -742,7 +725,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: 60,
           currentModel: 'gpt-5.6-luna-high',
-          sectioned: false,
           auth: AUTH,
         }),
       );
@@ -759,7 +741,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: 60,
           currentModel: 'gpt-5.6-luna-high',
-          sectioned: false,
           auth: AUTH,
         }),
       );
@@ -816,7 +797,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 32,
         currentModel: 'cursor-grok-4.6-low',
-        sectioned: false,
         auth: AUTH,
       }).props;
       expect(squeezed.label).toBe('Cursor Grok 4.6');
@@ -839,7 +819,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 60,
         currentModel: undefined,
-        sectioned: false,
         auth: AUTH,
       }).props;
       expect(wide.metadata).toContain('2 options');
@@ -850,7 +829,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 32,
         currentModel: undefined,
-        sectioned: false,
         auth: AUTH,
       }).props;
       expect(squeezed.metadata).toContain('200K');
@@ -869,7 +847,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: 21,
           currentModel: undefined,
-          sectioned: false,
           auth: AUTH,
         }),
       );
@@ -901,7 +878,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: width,
           currentModel: 'gpt-5.6-luna-high',
-          sectioned: false,
           auth: AUTH,
         }),
       );
@@ -911,7 +887,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: width,
           currentModel: undefined,
-          sectioned: false,
           auth: AUTH,
         }),
       );
@@ -921,7 +896,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: width,
           currentModel: undefined,
-          sectioned: false,
           auth: AUTH,
         }),
       );
@@ -1003,7 +977,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: 60,
           currentModel: undefined,
-          sectioned: false,
           auth: AUTH,
         }),
       );
@@ -1018,7 +991,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: 60,
           currentModel: undefined,
-          sectioned: false,
           auth: AUTH,
         }),
       );
@@ -1165,7 +1137,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: 60,
           currentModel: undefined,
-          sectioned: true,
           auth: AUTH,
         }),
       );
@@ -1184,7 +1155,6 @@ describe('runner row grammar', () => {
           isCursor: false,
           maxWidth: 60,
           currentModel: 'kilo/openrouter/gpt-5.6',
-          sectioned: false,
           auth: AUTH,
         }),
       );
@@ -1235,7 +1205,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 40,
         currentModel: undefined,
-        sectioned: false,
         auth: AUTH,
       }),
     );
@@ -1249,7 +1218,6 @@ describe('runner row grammar', () => {
         isCursor: false,
         maxWidth: 40,
         currentModel: undefined,
-        sectioned: false,
         auth: AUTH,
       }),
     );

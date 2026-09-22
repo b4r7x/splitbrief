@@ -14,7 +14,7 @@ const openaiLunaFamily: ModelOption = {
 };
 
 describe('mergeProviderVariants', () => {
-  it('keeps two models the tool names differently as separate rows', () => {
+  it('keeps two model ids one provider lists apart though their last segments agree', () => {
     const rows = mergeProviderVariants(
       [
         { id: 'kilo/kilo-auto/free', displayName: 'Auto Free' },
@@ -33,22 +33,22 @@ describe('mergeProviderVariants', () => {
   it('merges two rows the tool names identically', () => {
     const rows = mergeProviderVariants(
       [
-        { id: 'kilo/ollama-cloud/deepseek-v4-flash', displayName: 'DeepSeek V4 Flash' },
-        { id: 'kilo/opencode-go/deepseek-v4-flash', displayName: 'DeepSeek V4 Flash' },
+        { id: 'ollama-cloud/deepseek-v4-flash', displayName: 'DeepSeek V4 Flash' },
+        { id: 'opencode-go/deepseek-v4-flash', displayName: 'DeepSeek V4 Flash' },
       ],
       ctx,
     );
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.variants?.map((variant) => variant.fullId)).toEqual([
-      'kilo/ollama-cloud/deepseek-v4-flash',
-      'kilo/opencode-go/deepseek-v4-flash',
+      'ollama-cloud/deepseek-v4-flash',
+      'opencode-go/deepseek-v4-flash',
     ]);
   });
 
-  it('merges two unnamed rows that share a bare id', () => {
+  it('merges two unnamed rows that share a model id', () => {
     const rows = mergeProviderVariants(
-      [{ id: 'kilo/ollama-cloud/deepseek-v4-flash' }, { id: 'kilo/opencode-go/deepseek-v4-flash' }],
+      [{ id: 'ollama-cloud/deepseek-v4-flash' }, { id: 'opencode-go/deepseek-v4-flash' }],
       ctx,
     );
 

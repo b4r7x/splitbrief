@@ -83,7 +83,7 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
   },
   opencode: {
     transport: 'argv',
-    versionLine: canonicalVersionLine('opencode', '2.0.12'),
+    versionLine: canonicalVersionLine('opencode', '2.0.14'),
     successLines: ['{"type":"text","part":{"type":"text","text":"ok"}}'],
     authArgv: ['auth'],
   },

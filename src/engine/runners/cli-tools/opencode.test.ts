@@ -246,6 +246,52 @@ describe('OpenCode role adapters', () => {
     ]);
   });
 
+  it('folds the variant into the model from 2.0.0 on, which rejects --variant', () => {
+    const seat = (installedVersion: string) => ({
+      prompt: PROMPT,
+      model: 'opencode-go/mimo-v2.6-flash',
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
+      variant: 'thinking',
+      installedVersion,
+    });
+    const planner = (installedVersion: string) =>
+      opencodePlannerAdapter.buildArgs({
+        ...seat(installedVersion),
+        mode: 'plan',
+        sessionId: null,
+        effort: undefined,
+      });
+
+    expect(planner('2.0.14').slice(0, 4)).toEqual([
+      'run',
+      '--standalone',
+      '--model',
+      'opencode-go/mimo-v2.6-flash#thinking',
+    ]);
+    expect(opencodeImplementerAdapter.buildArgs(seat('2.0.14')).slice(0, 4)).toEqual([
+      'run',
+      '--standalone',
+      '--model',
+      'opencode-go/mimo-v2.6-flash#thinking',
+    ]);
+    expect(planner('2.0.14')).not.toContain('--variant');
+    expect(planner('1.18.32').slice(0, 5)).toEqual([
+      'run',
+      '--model',
+      'opencode-go/mimo-v2.6-flash',
+      '--variant',
+      'thinking',
+    ]);
+    expect(opencodeImplementerAdapter.buildArgs(seat('1.18.32')).slice(0, 5)).toEqual([
+      'run',
+      '--model',
+      'opencode-go/mimo-v2.6-flash',
+      '--variant',
+      'thinking',
+    ]);
+  });
+
   it('omits the flag entirely when no variant is configured', () => {
     expect(plannerArgs('openai/gpt-5.6-luna', 'plan', [])).not.toContain('--variant');
     expect(implementerArgs('openai/gpt-5.6-luna', [])).not.toContain('--variant');

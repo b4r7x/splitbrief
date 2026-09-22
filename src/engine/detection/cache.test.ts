@@ -247,6 +247,25 @@ describe('detection cache', () => {
     });
   });
 
+  it('round-trips an embedding capability fact so a cold start can drop that row', async () => {
+    const models = [
+      { id: 'openai/gpt-5.6-luna' },
+      { id: 'openai/text-embedding-3-large', capabilities: ['type:embedding'] },
+    ];
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({
+        cliCatalogs: [{ tool: 'opencode', models, probedAt: 1_786_000_000_500 }],
+      }),
+    });
+
+    const snapshot = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(snapshot?.cliCatalogs?.[0]?.models).toEqual(models);
+  });
+
   it('drops a non-ISO release date but keeps the model row', async () => {
     await saveDetectionCache({
       projectDir: tempDir,

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { useState } from 'react';
 import { Text } from 'ink';
 import { useInput } from 'ink';
@@ -22,6 +24,14 @@ import type { RightRow } from './model-catalog/rows.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-outcomes.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../engine/providers/model/catalog.js';
+import {
+  nativeCliCatalogToDetectedModels,
+  parseCursorNativeModelCatalog,
+  parseOpenCodeNativeModelCatalog,
+  type NativeCliModelCatalog,
+} from '../../engine/providers/cli-model-catalog.js';
+import { formatModelCatalogGuidance, formatToolsByline } from './picker-format.js';
+import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 
 /** The models behind the rows the picker actually renders. */
 function rowModels(rows: readonly RightRow[]) {
@@ -1081,5 +1091,110 @@ describe('usePickerCatalog seat-axis landing', () => {
     expect(seatAxisFocusSeat('tool:claude-code')).toBeUndefined();
     expect(seatAxisFocusSeat('seat:plan')).toBeUndefined();
     expect(seatAxisFocusSeat('seat::effort')).toBeUndefined();
+  });
+});
+
+/** A tool's own captured listing, published the way detection publishes it. */
+function publishCapturedListing(
+  tool: 'opencode' | 'cursor',
+  path: string,
+  parse: (stdout: string) => NativeCliModelCatalog | null,
+) {
+  const catalog = parse(
+    readFileSync(join(import.meta.dirname, '../../../testing/fixtures', path), 'utf8'),
+  );
+  if (catalog === null) throw new Error(`the ${tool} capture did not parse`);
+  const request = detectionStore.beginRefresh({
+    contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
+  });
+  detectionStore.publish({
+    request,
+    result: {
+      providers: [],
+      cliTools: [cliDetectionFor('ready', tool)],
+      catalog: {},
+      cliModels: [
+        {
+          connection: { tool, contextKey: 'c' },
+          outcome: { kind: 'success', value: nativeCliCatalogToDetectedModels(catalog) },
+        },
+      ],
+      generation: 1,
+    },
+  });
+}
+
+describe('usePickerCatalog count', () => {
+  beforeEach(() => {
+    configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
+    detectionStore.reset();
+    modelCacheStore.reset();
+    overlayStore.reset();
+    pickerViewStore.reset();
+  });
+
+  it('counts the rows the list shows, not the models it leaves out', async () => {
+    // `opencode api GET /api/model` on opencode 2.0.14: 118 models, four of them image ones.
+    publishCapturedListing(
+      'opencode',
+      'opencode/api-model-full.json',
+      parseOpenCodeNativeModelCatalog,
+    );
+    let catalog: ReturnType<typeof usePickerCatalog> | undefined;
+    function CountProbe() {
+      catalog = usePickerCatalog('planner', 0, 'opencode');
+      return <Text>count</Text>;
+    }
+
+    const ui = renderFeature(<CountProbe />);
+    await tick(20);
+
+    const shown = rowModels(catalog?.rightRows ?? []).filter(
+      (model) => !isAutomaticModel(model.id),
+    );
+    expect(shown.map((model) => model.id)).not.toContain('openai/gpt-image-1.5');
+    expect(catalog?.modelRowCount).toBe(shown.length);
+    ui.unmount();
+  });
+
+  it("states one count for Cursor's 240 ids: the 37 models its rows show", async () => {
+    // `cursor-agent --list-models` 2026.09.18: 241 lines, its own `auto` among them.
+    publishCapturedListing(
+      'cursor',
+      'cursor/list-models-2026.09.18.txt',
+      parseCursorNativeModelCatalog,
+    );
+    let catalog: ReturnType<typeof usePickerCatalog> | undefined;
+    function CountProbe() {
+      catalog = usePickerCatalog('planner', 0, 'cursor');
+      return <Text>count</Text>;
+    }
+
+    const ui = renderFeature(<CountProbe />);
+    await tick(20);
+
+    const item = catalog?.currentItem;
+    if (catalog === undefined || item === undefined) throw new Error('no cursor catalog');
+    expect(catalog.modelRowCount).toBe(37);
+    expect(formatModelCatalogGuidance(item, catalog.modelCounts).headline).toContain(
+      '37 models detected',
+    );
+    expect(
+      formatToolsByline({
+        toolName: item.displayName,
+        version: undefined,
+        modelCount: catalog.modelRowCount,
+        rowNoun: 'model',
+        rowNounPlural: 'models',
+        source: undefined,
+        unverifiedForPlan: false,
+        diagnostic: undefined,
+        lane: 'ready',
+        capabilities: [],
+        billing: item.billing,
+        budget: 200,
+      }),
+    ).toContain('37 models');
+    ui.unmount();
   });
 });

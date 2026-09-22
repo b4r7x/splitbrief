@@ -7,6 +7,7 @@ import {
   parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
+  parseOpenCodeVerboseModelCatalog,
   type NativeCliModelCatalog,
 } from '../../providers/cli-model-catalog.js';
 import {
@@ -15,9 +16,11 @@ import {
   PLANNER_CLI_TOOL_IDS,
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
+import type { DetectedModel } from '../../../core/discovery/detection.js';
 import type { RunnerRole } from '../../../core/runners/seat-roles.js';
 import type { PlannerCliToolId, ImplementerCliToolId } from '../../../core/schemas/enums.js';
 import { includes, isRecord } from '../../../utils/type-guards.js';
+import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../../constants.js';
 import { runnerConfigError } from '../errors.js';
 import { antigravityImplementerAdapter, antigravityPlannerAdapter } from './antigravity.js';
 import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './claude-code.js';
@@ -42,6 +45,7 @@ import type {
   CliProbeCommand,
   CliProbeContract,
   CliProbeOutput,
+  CliProbeParser,
   CliVersionProbe,
 } from './contract.js';
 
@@ -397,30 +401,54 @@ function frozenProbeContract(
   });
 }
 
+function catalogParse(parser: NativeCatalogParser): CliProbeParser<readonly DetectedModel[]> {
+  return (output) => {
+    const catalog = parser(output.stdout);
+    return catalog === null
+      ? { kind: 'malformed' }
+      : { kind: 'success', value: nativeCliCatalogToDetectedModels(catalog) };
+  };
+}
+
 function structuralCatalogProbe(
   input: Readonly<{
     command: readonly [string, ...string[]];
     parser: NativeCatalogParser;
     manualCommand?: readonly [string, ...string[]] | undefined;
+    hostState?: 'host-account' | undefined;
+    timeoutMs?: number | undefined;
+    legacy?: Readonly<{
+      belowVersion: string;
+      command: readonly [string, ...string[]];
+      manualCommand?: readonly [string, ...string[]] | undefined;
+      parser: NativeCatalogParser;
+    }>;
   }>,
 ): Exclude<CliCatalogProbe, { kind: 'not-run' }> {
   const command = ownedProbeCommand(input.command);
   const manualCommand =
     input.manualCommand === undefined ? undefined : ownedProbeCommand(input.manualCommand);
-  const parser = input.parser;
   return {
     kind: 'catalog',
     command,
     cwd: 'neutral',
-    timeoutMs: CODEX_NATIVE_MODEL_CATALOG_PROBE.timeoutMs,
+    timeoutMs: input.timeoutMs ?? CODEX_NATIVE_MODEL_CATALOG_PROBE.timeoutMs,
     maxOutputBytes: CODEX_NATIVE_MODEL_CATALOG_PROBE.maxOutputBytes,
     ...(manualCommand === undefined ? {} : { manualCommand }),
-    parse: (output) => {
-      const catalog = parser(output.stdout);
-      return catalog === null
-        ? { kind: 'malformed' }
-        : { kind: 'success', value: nativeCliCatalogToDetectedModels(catalog) };
-    },
+    ...(input.hostState === undefined ? {} : { hostState: input.hostState }),
+    ...(input.legacy === undefined
+      ? {}
+      : {
+          legacy: {
+            belowVersion: input.legacy.belowVersion,
+            command: ownedProbeCommand(input.legacy.command),
+            ...(input.legacy.manualCommand === undefined
+              ? {}
+              : { manualCommand: ownedProbeCommand(input.legacy.manualCommand) }),
+            parse: catalogParse(input.legacy.parser),
+          },
+        }),
+    parse: catalogParse(input.parser),
   };
 }
 
@@ -433,15 +461,31 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
       });
     case 'opencode':
       return structuralCatalogProbe({
-        command: ['opencode', 'models', '--verbose'],
-        manualCommand: ['opencode', 'models', '--verbose', '--refresh'],
+        command: ['opencode', 'api', 'GET', '/api/model'],
+        // opencode 2 serves `model.list` from its own server, which materializes
+        // a directory's providers on first sight and cannot see an `env`-type
+        // provider connection the sandbox strips. See docs/AUTH-METHOD-MATRIX.md.
+        hostState: 'host-account',
         parser: parseOpenCodeNativeModelCatalog,
+        // 2.x has no refresh flag — `opencode models` takes only `--standalone`
+        // and `--server` — so a manual refresh re-runs this GET, which is a real
+        // refresh: the server rebuilds its snapshot reactively and answers live.
+        legacy: {
+          belowVersion: '2.0.0',
+          command: ['opencode', 'models', '--verbose'],
+          manualCommand: ['opencode', 'models', '--verbose', '--refresh'],
+          parser: parseOpenCodeVerboseModelCatalog,
+        },
       });
     case 'kilo-code':
       return structuralCatalogProbe({
         command: ['kilo', 'models', '--verbose'],
         manualCommand: ['kilo', 'models', '--verbose', '--refresh'],
         parser: parseKiloNativeModelCatalog,
+        // Each probe starts kilo in a fresh sandbox home, where it migrates its
+        // database and downloads an 11 MB cache before it lists: 1.7 s idle,
+        // 3.8 s measured under ordinary desktop load, past 5 s at TUI startup.
+        timeoutMs: DISCOVERY_SUBPROCESS_TIMEOUT_MS,
       });
     case 'cursor':
       return structuralCatalogProbe({

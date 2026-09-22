@@ -3,6 +3,7 @@ import {
   DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS,
   getTerminalCellWidth,
   iterateTerminalGraphemes,
+  normalizeDisplayLabel,
   padTerminalDisplayTextEnd,
   sanitizeTerminalDisplayText,
   sanitizeTerminalDiagnosticText,
@@ -29,6 +30,18 @@ describe('sanitizeTerminalDisplayText', () => {
 
     expect(sanitizeTerminalDisplayText(text, { preserveLineBreaks: true })).toBe(
       'first line\nTOKEN=***REDACTED***\nlast',
+    );
+  });
+});
+
+describe('normalizeDisplayLabel', () => {
+  it('drops format characters and doubled spaces cursor-agent 2026.09.18 prints in a name', () => {
+    expect(normalizeDisplayLabel('Grok 4.7  Low Fast\u200b\u200b')).toBe('Grok 4.7 Low Fast');
+  });
+
+  it('drops every Cf character, not only the zero-width space', () => {
+    expect(normalizeDisplayLabel('\ufeffGPT\u00ad-5\u2060.5\u202e \u001b[2m1M\u001b[22m')).toBe(
+      'GPT-5.5 1M',
     );
   });
 });

@@ -12,6 +12,9 @@ import type {
 } from '../../../engine/detection/cli-catalog-outcomes.js';
 import { deepFreeze } from './freeze.js';
 
+/** The context a catalog remembered on disk hydrates under: no live executable backs it. */
+export const REMEMBERED_CLI_CATALOG_CONTEXT = 'remembered-detection-cache';
+
 function cliCatalogConnectionKey(connection: ScopedCliCatalogConnection): string {
   return `${connection.tool}\u0000${connection.contextKey}`;
 }
@@ -93,7 +96,14 @@ function reconcileCliCatalogAttempts(
       key,
       runtimeFromCliCatalogAttempt({
         attempt,
-        previous: previousByConnection.get(key),
+        previous:
+          previousByConnection.get(key) ??
+          previousByConnection.get(
+            cliCatalogConnectionKey({
+              tool: attempt.connection.tool,
+              contextKey: REMEMBERED_CLI_CATALOG_CONTEXT,
+            }),
+          ),
         observedAt: input.observedAt,
       }),
     );

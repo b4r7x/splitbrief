@@ -9,7 +9,7 @@ import type { CliReadinessFacts } from '../../core/schemas/readiness.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { detectionContextKey } from './types.js';
-import { saveDetectionCache } from './cache.js';
+import { loadRememberedSnapshot, saveDetectionCache } from './cache.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev-cache.js';
@@ -608,6 +608,50 @@ describe('createDetectionService', () => {
         probedAt: expect.any(Number),
       },
     ]);
+  });
+
+  it('keeps a remembered catalog, stale, when a later probe of that tool times out', async () => {
+    const clock = createClock();
+    const remembered = [{ id: 'deepseek/deepseek-v4-flash' }, { id: 'moonshotai/kimi-k3' }];
+    let outcome: 'success' | 'timeout' = 'success';
+    const deps = makeDeps({
+      now: clock.now,
+      sourceContexts: sourceContexts(),
+      discoverAllCliTools: async () => [
+        {
+          connection: { tool: 'command-code', contextKey: 'command-code-context' },
+          outcome:
+            outcome === 'success' ? { kind: 'success', value: remembered } : { kind: 'timeout' },
+        },
+        {
+          connection: { tool: 'codex', contextKey: 'codex-context' },
+          outcome: { kind: 'success', value: [{ id: `codex-${outcome}` }] },
+        },
+      ],
+    });
+
+    await service.loadDetection({ deps, projectDir: tempDir });
+    await service.getPendingSave();
+    const probedAt = clock.now();
+    clock.advance(60_000);
+    outcome = 'timeout';
+    const restarted = createDetectionService();
+    const result = await restarted.refreshDetection({ deps, projectDir: tempDir });
+    await restarted.getPendingSave();
+
+    expect(result.cliModels).toMatchObject([
+      { connection: { tool: 'command-code' }, outcome: { kind: 'timeout' } },
+      { connection: { tool: 'codex' }, outcome: { kind: 'success' } },
+    ]);
+    const snapshot = await loadRememberedSnapshot(tempDir);
+    expect(snapshot?.fetchedAt).toBe(probedAt + 60_000);
+    expect(snapshot?.cliCatalogs).toEqual(
+      expect.arrayContaining([
+        { tool: 'codex', models: [{ id: 'codex-timeout' }], probedAt: probedAt + 60_000 },
+        { tool: 'command-code', models: remembered, probedAt },
+      ]),
+    );
+    expect(snapshot?.cliCatalogs).toHaveLength(2);
   });
 
   it('reuses the cli-models snapshot inside its TTL instead of re-probing', async () => {

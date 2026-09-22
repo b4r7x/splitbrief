@@ -43,6 +43,7 @@ import { isCanonicalCliDeclaredProbe } from '../runners/cli-tools/registry.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import type {
   CliCatalogProbe,
+  CliCatalogProbeLegacy,
   CliDeclaredProbeContract,
   CliProbeCommand,
   CliProbeOutput,
@@ -60,6 +61,14 @@ const CATALOG_ADMISSION_MAX_AGE_MS = 30_000;
 const CATALOG_PROBE_TIMEOUT_CEILING_MS = DISCOVERY_SUBPROCESS_TIMEOUT_MS;
 const CATALOG_PROBE_OUTPUT_CEILING_BYTES = 4 * 1024 * 1024;
 const CATALOG_PROBE_TIMED_OUT = Symbol('splitbrief.catalogProbeTimedOut');
+/**
+ * Command Code prints its listing in half a second, then flushes telemetry for
+ * five to ten more before it exits, so every probe outlived its budget. Its own
+ * `isTelemetryEnabled` honours `DO_NOT_TRACK`, and with it the process exits
+ * with the listing.
+ */
+const CATALOG_PROBE_ENV: Readonly<Partial<Record<CliToolId, Readonly<Record<string, string>>>>> =
+  Object.freeze({ 'command-code': Object.freeze({ DO_NOT_TRACK: '1' }) });
 const FORBIDDEN_CATALOG_PROBE_ARGUMENTS = new Set([
   'download',
   'exec',
@@ -100,7 +109,7 @@ type CatalogProbeEnvironment = Readonly<{
   credentialMayBePresent: boolean;
 }>;
 
-function hasForbiddenCatalogArgument(command: CliProbeCommand): boolean {
+function hasForbiddenCatalogArgument(command: Readonly<{ command: readonly string[] }>): boolean {
   return command.command.slice(1).some((argument) => {
     const normalized = argument.toLowerCase();
     return (
@@ -129,15 +138,31 @@ function declaredCatalogProbeIsSafe(
   ) {
     return false;
   }
+  if (catalog.legacy !== undefined && !legacyCatalogProbeIsSafe(tool, catalog.legacy)) {
+    return false;
+  }
   if (catalog.manualCommand === undefined) return true;
   if (tool !== 'opencode' && tool !== 'kilo-code') return false;
+  return refreshOnlyManualCommand(catalog.command, catalog.manualCommand);
+}
+
+function refreshOnlyManualCommand(
+  command: readonly string[],
+  manualCommand: readonly string[],
+): boolean {
   return (
-    catalog.manualCommand.length === catalog.command.length + 1 &&
-    catalog.manualCommand
-      .slice(0, -1)
-      .every((argument, index) => argument === catalog.command[index]) &&
-    catalog.manualCommand.at(-1) === '--refresh'
+    manualCommand.length === command.length + 1 &&
+    manualCommand.slice(0, -1).every((argument, index) => argument === command[index]) &&
+    manualCommand.at(-1) === '--refresh'
   );
+}
+
+/** The legacy argv is fixed declaration too, so it answers to the same two rules. */
+function legacyCatalogProbeIsSafe(tool: CliToolId, legacy: CliCatalogProbeLegacy): boolean {
+  if (hasForbiddenCatalogArgument({ command: legacy.command })) return false;
+  if (legacy.manualCommand === undefined) return true;
+  if (tool !== 'opencode' && tool !== 'kilo-code') return false;
+  return refreshOnlyManualCommand(legacy.command, legacy.manualCommand);
 }
 
 function immutableProbeCommand(
@@ -162,6 +187,36 @@ function immutableCatalogProbe(
     ...(probe.manualCommand === undefined
       ? {}
       : { manualCommand: immutableProbeCommand(probe.manualCommand) }),
+  });
+}
+
+/** A release below the probe's legacy threshold takes the legacy listing; an unread version takes the declared one. */
+function catalogProbeForVersion(
+  tool: CliToolId,
+  probe: Exclude<CliCatalogProbe, { kind: 'not-run' }>,
+  installedVersion: string,
+): Exclude<CliCatalogProbe, { kind: 'not-run' }> {
+  const legacy = probe.legacy;
+  if (legacy === undefined) return probe;
+  const below =
+    classifyCliAdmittedVersion({
+      installedVersion,
+      minimumAdmittedVersion: legacy.belowVersion,
+      versionScheme: CLI_TOOL_CATALOG[tool].compatibility.versionScheme,
+    }) === 'incompatible';
+  if (!below) return probe;
+  // The legacy listing is one the sandbox already served, so the host-account
+  // posture the newer server needs is dropped rather than carried down.
+  return Object.freeze({
+    kind: 'catalog',
+    command: immutableProbeCommand(legacy.command),
+    cwd: probe.cwd,
+    timeoutMs: probe.timeoutMs,
+    maxOutputBytes: probe.maxOutputBytes,
+    ...(legacy.manualCommand === undefined
+      ? {}
+      : { manualCommand: immutableProbeCommand(legacy.manualCommand) }),
+    parse: legacy.parse,
   });
 }
 
@@ -243,11 +298,16 @@ function catalogRuntimePath(): string {
 async function catalogProbeEnvironment(
   operation: AdmittedCatalogOperation,
   neutralDir: string,
+  declaredHostState: 'host-account' | undefined,
 ): Promise<CatalogProbeEnvironment> {
-  const { selectedCli, hostState, preserveEnvKeys } = cliChannelStaging(
-    operation.context.id,
-    operation.authChannel,
-  );
+  const {
+    selectedCli,
+    hostState: channelHostState,
+    preserveEnvKeys,
+  } = cliChannelStaging(operation.context.id, operation.authChannel);
+  // A listing the credential sandbox cannot answer runs with the host account.
+  // Only this probe reads it; dispatch keeps the channel's own staging.
+  const hostState = declaredHostState ?? channelHostState;
   const env = await createSandboxEnv({
     projectDir: neutralDir,
     preserveEnvKeys,
@@ -261,6 +321,7 @@ async function catalogProbeEnvironment(
   return {
     env: {
       ...env,
+      ...CATALOG_PROBE_ENV[operation.context.id],
       PATH: prependCliExecutableDirectory({
         executablePath: operation.executable.path,
         safeRuntimePath: catalogRuntimePath(),
@@ -424,7 +485,10 @@ export async function probeContextCatalog(
   ) {
     return { kind: 'unsupported' };
   }
-  const probe = selectedCatalogProbe(operation.probe, operation.refresh);
+  const probe = selectedCatalogProbe(
+    catalogProbeForVersion(operation.context.id, operation.probe, operation.installedVersion),
+    operation.refresh,
+  );
   // Immediately before dispatch, re-read the runtime receipt from disk
   // (content digest included): the admitted identity/cache namespace must
   // still match the executable that will run, so a fake loader, a replaced
@@ -437,7 +501,7 @@ export async function probeContextCatalog(
   if (reRead.kind !== 'resolved') return { kind: 'cancelled' };
   const neutralDir = await mkdtemp(join(tmpdir(), 'splitbrief-catalog-'));
   try {
-    const environment = await catalogProbeEnvironment(operation, neutralDir);
+    const environment = await catalogProbeEnvironment(operation, neutralDir, probe.hostState);
     throwIfAborted(input.signal);
     if (
       !environment.credentialMayBePresent &&

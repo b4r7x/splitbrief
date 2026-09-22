@@ -21,7 +21,6 @@ import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';
 import { formatModelName } from '../../core/model-display.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import { isOptionFamily, optionDraftOf, routeDraftOf } from './model-catalog/option-axis.js';
-import { sharedModelNamespace } from './model-catalog/provider-axis.js';
 import {
   AUTH_METHOD_WORDS,
   rightRowKey,
@@ -54,6 +53,7 @@ import {
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
 import { localConnectionProvider } from './local-connection-form.js';
+import { planModelRows, type ModelRowPlan } from './model-row-plan.js';
 import { renderToolRow, renderModelRow } from './tool-row.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import {
@@ -235,9 +235,13 @@ export function PickerView({
   };
 
   const rightRows = keyRows(catalog.rightRows);
-  const modelNamespace = sharedModelNamespace(
-    catalog.rightRows.flatMap((row) => (row.kind === 'model' ? [row.model.id] : [])),
-  );
+  // Every row of the column is drawn at one width and the plan answers for the whole list, so it
+  // is made once per render, at the width the first row asks for.
+  let rowPlan: ModelRowPlan | undefined;
+  const rowPlanAt = (width: number): ModelRowPlan => {
+    if (rowPlan?.width !== width) rowPlan = planModelRows({ rows: catalog.rightRows, width });
+    return rowPlan;
+  };
 
   const resolvePreview = (ctx: PreviewContext<PickerOption, KeyedRightRow>): string | undefined => {
     const tool = ctx.leftItem ?? catalog.currentItem;
@@ -327,6 +331,7 @@ export function PickerView({
         id,
         axes: modelBylineAxes({ model, id, effortDraft: catalog.effortDraft }),
         contextLength: model.contextLength,
+        supportsToolCalls: model.supportsToolCalls,
       });
     };
     const status = bylineDiagnostic({
@@ -427,9 +432,8 @@ export function PickerView({
             isCursor,
             maxWidth,
             currentModel: catalog.currentModel,
-            sectioned: sectionOf(row) !== undefined,
             auth: authContext,
-            namespace: modelNamespace,
+            plan: rowPlanAt(maxWidth),
           }),
       }}
     />

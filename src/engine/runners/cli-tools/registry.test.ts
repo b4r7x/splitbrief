@@ -199,15 +199,18 @@ describe('admitted readiness probe contracts', () => {
     expect(catalog.parse).toBe(originalParser);
     expect(catalog.timeoutMs).toBe(CODEX_NATIVE_MODEL_CATALOG_PROBE.timeoutMs);
 
-    const manualProbe = lookupCliReadinessProbe({ tool: 'opencode', role: 'planner' });
-    expect(isDeclaredCliProbeContract(manualProbe)).toBe(true);
-    if (!isDeclaredCliProbeContract(manualProbe)) return;
-    const manualCatalog = manualProbe.declared.catalog;
+    const kiloProbe = lookupCliReadinessProbe({ tool: 'kilo-code', role: 'planner' });
+    expect(isDeclaredCliProbeContract(kiloProbe)).toBe(true);
+    if (!isDeclaredCliProbeContract(kiloProbe)) return;
+    const manualCatalog = kiloProbe.declared.catalog;
     if (manualCatalog.kind === 'not-run' || manualCatalog.manualCommand === undefined) return;
 
     expect(Reflect.set(manualCatalog.manualCommand, 0, 'attacker')).toBe(false);
-    expect(manualCatalog.manualCommand).toEqual(['opencode', 'models', '--verbose', '--refresh']);
+    expect(manualCatalog.manualCommand).toEqual(['kilo', 'models', '--verbose', '--refresh']);
 
+    const manualProbe = lookupCliReadinessProbe({ tool: 'opencode', role: 'planner' });
+    expect(isDeclaredCliProbeContract(manualProbe)).toBe(true);
+    if (!isDeclaredCliProbeContract(manualProbe)) return;
     const manualAuth = manualProbe.declared.auth;
     if (manualAuth.kind === 'not-run' || manualAuth.legacy === undefined) return;
     expect(Reflect.set(manualAuth.legacy.command, 0, 'attacker')).toBe(false);
@@ -338,14 +341,16 @@ describe('admitted readiness probe contracts', () => {
     });
     expect(opencode.declared.catalog).toMatchObject({
       kind: 'catalog',
-      command: ['opencode', 'models', '--verbose'],
-      manualCommand: ['opencode', 'models', '--verbose', '--refresh'],
+      command: ['opencode', 'api', 'GET', '/api/model'],
     });
     expect(kilo.declared.catalog).toMatchObject({
       kind: 'catalog',
       command: ['kilo', 'models', '--verbose'],
       manualCommand: ['kilo', 'models', '--verbose', '--refresh'],
+      timeoutMs: 10_000,
     });
+    expect(codex.declared.catalog).toMatchObject({ timeoutMs: 5_000 });
+    expect(opencode.declared.catalog).toMatchObject({ timeoutMs: 5_000 });
     if (
       codex.declared.catalog.kind === 'not-run' ||
       opencode.declared.catalog.kind === 'not-run' ||

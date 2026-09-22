@@ -788,6 +788,58 @@ describe('doctor command', () => {
     expect(toErrorMessage(captured)).toContain('runners.cli.claude-code.arg-vector.planner');
   });
 
+  it('checks the opencode vector for the release readiness detected, as dispatch builds it', async () => {
+    initGitRepo(tmp);
+    writeConfig(
+      tmp,
+      validConfigYaml()
+        .replace('  tool: claude-code', '  tool: opencode')
+        .replace(
+          /implementer:\n(?: {2}.*\n)+/,
+          'implementer:\n  kind: cli\n  tool: opencode\n  model: opencode-go/deepseek-v4-flash\n  variant: high\n',
+        ),
+    );
+    const opencodeReadiness = deriveCliReadiness({
+      tool: 'opencode',
+      enabled: true,
+      installation: 'installed',
+      executable: {
+        path: '/usr/local/bin/opencode',
+        fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 },
+      },
+      trust: 'trusted',
+      installedVersion: '2.0.14',
+      testedVersion: CLI_TOOL_CATALOG.opencode.compatibility.testedVersion,
+      compatibility: 'compatible',
+      auth: 'authenticated',
+      probedAt: 1,
+    });
+    const v2RunHelp = readFileSync(
+      join(import.meta.dirname, '../../../testing/fixtures/cli-help/opencode-v2-run-help.txt'),
+      'utf8',
+    );
+    const writes = captureStdout();
+
+    await runDoctor(
+      ['--project', tmp, '--json'],
+      async () => [opencodeReadiness],
+      async () => v2RunHelp,
+      undefined,
+      async () => [],
+    ).catch(() => undefined);
+
+    const checks =
+      (JSON.parse(writes.join('').trim()) as { report?: { checks?: ReadinessCheck[] } }).report
+        ?.checks ?? [];
+    const argVector = checks.find(
+      (check) => check.id === 'runners.cli.opencode.arg-vector.implementer',
+    );
+    expect(argVector?.severity).toBe('ok');
+    expect(argVector?.details).toEqual([
+      'Emitted argv: run --standalone --model opencode-go/deepseek-v4-flash#high --format json --agent build <PROMPT>',
+    ]);
+  });
+
   it('reports no arg-vector blocker when the installed binary yields no help text', async () => {
     initGitRepo(tmp);
 

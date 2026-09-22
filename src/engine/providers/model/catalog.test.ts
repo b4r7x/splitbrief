@@ -1,4 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  nativeCliCatalogToDetectedModels,
+  parseKiloNativeModelCatalog,
+  parseOpenCodeNativeModelCatalog,
+} from '../cli-model-catalog.js';
 import { formatModelName } from '../../../core/model-display.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP, resolveModelCatalog } from './catalog.js';
@@ -219,6 +226,55 @@ describe('runner-owned catalog resolution', () => {
     expect(ids).toContain('openai/gpt-5.4');
     expect(ids).not.toContain('openai/text-embedding-3-large');
     expect(ids).not.toContain('openai/gpt-image-2');
+  });
+
+  it('drops the image and music generators the captured listings list, and nothing else', () => {
+    const listing = (toolId: 'opencode' | 'kilo-code') => {
+      const path =
+        toolId === 'opencode' ? 'opencode/api-model-full.json' : 'kilo/models-verbose.txt';
+      const stdout = readFileSync(
+        join(import.meta.dirname, '../../../../testing/fixtures', path),
+        'utf8',
+      );
+      const catalog =
+        toolId === 'opencode'
+          ? parseOpenCodeNativeModelCatalog(stdout)
+          : parseKiloNativeModelCatalog(stdout);
+      if (catalog === null) throw new Error(`the ${toolId} capture did not parse`);
+      return nativeCliCatalogToDetectedModels(catalog);
+    };
+    const offered = (toolId: 'opencode' | 'kilo-code') => {
+      const models = listing(toolId);
+      const kept = new Set(
+        resolveModelCatalog(toolId, {
+          cache: makeModelCacheAccessor({ providerModels: { [toolId]: models } }),
+        }).map((row) => row.selectionId),
+      );
+      return models.map((model) => model.id).filter((id) => !kept.has(id));
+    };
+
+    // opencode 2.0.14: three text+image models without tool calls, one image-only, three embeddings.
+    expect(offered('opencode').toSorted()).toEqual([
+      'openai/chatgpt-image-latest',
+      'openai/gpt-image-1-mini',
+      'openai/gpt-image-1.5',
+      'openai/gpt-image-2',
+      'openai/text-embedding-3-large',
+      'openai/text-embedding-3-small',
+      'openai/text-embedding-ada-002',
+    ]);
+    // kilo 7.0.49 adds the two Lyria music models; its content-safety model answers in text alone.
+    expect(offered('kilo-code').toSorted()).toEqual([
+      'kilo/google/lyria-3-clip-preview',
+      'kilo/google/lyria-3-pro-preview',
+      'openai/chatgpt-image-latest',
+      'openai/gpt-image-1-mini',
+      'openai/gpt-image-1.5',
+      'openai/gpt-image-2',
+      'openai/text-embedding-3-large',
+      'openai/text-embedding-3-small',
+      'openai/text-embedding-ada-002',
+    ]);
   });
 
   it('keeps same-text runtime rows with different owners, aliases, and snapshots separate', () => {

@@ -6,8 +6,6 @@ import { getQuestionPromptRows } from '../prompt-rows/question.js';
 import { getRecoveryPromptRows } from '../prompt-rows/recovery.js';
 import { QuestionPrompt } from './question-prompt.js';
 
-const ARROW_DOWN = '\u001b[B';
-
 const RAW_TOKEN = 'abcdefghijklmnopqrstuvwxyz1234567890abcdef';
 const MULTILINE_HINT = [
   'Task review: T001 - Run command',
@@ -34,7 +32,7 @@ describe('QuestionPrompt', () => {
     ui.unmount();
   });
 
-  it('opens the complete tool list and resolves the selected candidate', async () => {
+  it('resolves the seat swap in one press and lists no tool of its own', async () => {
     const onResolve = vi.fn();
     const issue = makeRecoveryIssue({
       id: 'recovery-six-tools',
@@ -71,22 +69,14 @@ describe('QuestionPrompt', () => {
     expect(stripAnsiStyles(ui.lastFrame())).toContain('Change BUILD tool');
     expect(stripAnsiStyles(ui.lastFrame())).not.toContain('more ready tools');
 
+    // Six tools were offered and the panel names none of them: the driver answers `w` by opening
+    // the seat's picker, where a tool is chosen beside the model it will run.
     ui.stdin.write('\r');
     await flushEffects();
-    const toolsFrame = stripAnsiStyles(ui.lastFrame());
-    expect(toolsFrame).toContain('OpenCode CLI');
-    expect(toolsFrame).not.toContain('Kilo Code CLI');
-    expect(toolsFrame).not.toContain('more ready tools');
-
-    for (let index = 0; index < 5; index += 1) {
-      ui.stdin.write(ARROW_DOWN);
-      await flushEffects();
-    }
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('Kilo Code CLI');
-    ui.stdin.write('\r');
-    await flushEffects();
-
-    expect(onResolve).toHaveBeenCalledExactlyOnceWith('w6');
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(onResolve).toHaveBeenCalledExactlyOnceWith('w');
+    expect(frame).not.toContain('OpenCode CLI');
+    expect(frame).not.toContain('Kilo Code CLI');
     ui.unmount();
   });
 });

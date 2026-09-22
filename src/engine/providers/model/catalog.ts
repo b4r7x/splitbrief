@@ -87,14 +87,19 @@ const EMBEDDING_TYPE_FACTS = new Set([
 
 /**
  * Only the model's own positive evidence disqualifies it: a type fact naming an embedding
- * model, or output modalities that name no text. Tool-call training is not that evidence —
- * a local text model that was never trained on tools still answers an API contract that
- * sends none, and dropping it made a working LM Studio model unselectable (REQ-046).
+ * model, output modalities that name no text, or output in another medium from a model that
+ * takes no tool calls — an image or music generator, which a seat's tool cannot run. Tool-call
+ * training alone is not that evidence — a local text model that was never trained on tools
+ * still answers an API contract that sends none, and dropping it made a working LM Studio
+ * model unselectable (REQ-046).
  */
 function isChatCapable(model: DetectedModel): boolean {
   const facts = model.capabilities ?? [];
   if (facts.some((fact) => EMBEDDING_TYPE_FACTS.has(fact.trim().toLowerCase()))) return false;
-  return model.outputModalities === undefined || model.outputModalities.includes('text');
+  const output = model.outputModalities;
+  if (output === undefined) return true;
+  if (!output.includes('text')) return false;
+  return model.supportsToolCalls !== false || output.every((medium) => medium === 'text');
 }
 
 function entryKey(input: Readonly<{ owner: string; selectionId: string }>): string {

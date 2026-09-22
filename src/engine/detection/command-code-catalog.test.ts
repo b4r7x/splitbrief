@@ -24,6 +24,13 @@ describe.runIf(process.platform !== 'win32')('Command Code catalog completion', 
       expected: 'success',
     },
     {
+      label: 'complete listing followed by the cmd 1.62.1 decision-model note',
+      stdout: `${listing}\nDecision models (headless only)\ntypesafe/jev  typed questions in, probabilities out\n`,
+      stderr: '',
+      exit: null,
+      expected: 'success',
+    },
+    {
       label: 'partial row count',
       stdout: listing.replace('provider/second  Second model\n', ''),
       stderr: '',
@@ -107,4 +114,39 @@ describe.runIf(process.platform !== 'win32')('Command Code catalog completion', 
     },
     15_000,
   );
+
+  it('turns telemetry off, so a listing with a stderr note ends before its budget', async () => {
+    await withTempDir('command-code-catalog', async (directory) => {
+      const shim = join(directory, 'cmd');
+      await writeFile(
+        shim,
+        [
+          `#!${process.execPath}`,
+          "if (process.argv.includes('--version') || process.argv.includes('-v')) { console.log('1.54.2'); process.exit(0); }",
+          "if (!process.argv.includes('--list-models')) process.exit(1);",
+          `process.stdout.write(${JSON.stringify(listing)});`,
+          "process.stderr.write('Fetching available models...\\n');",
+          "if (process.env.DO_NOT_TRACK !== '1') setInterval(() => {}, 1000);",
+        ].join('\n'),
+      );
+      await chmod(shim, 0o755);
+      const executable = await resolveCliExecutable({
+        command: shim,
+        projectDir: '/neutral/project',
+      });
+      const evidence = await detectRunnerEvidence({
+        context: {
+          role: 'planner',
+          kind: 'cli',
+          id: 'command-code',
+          credentialPresent: false,
+          configGeneration: 'catalog-telemetry-test',
+        },
+        resolveExecutable: async () => executable,
+        includeCatalog: true,
+        now: () => 200,
+      });
+      expect(evidence.catalog.kind).toBe('success');
+    });
+  }, 15_000);
 });

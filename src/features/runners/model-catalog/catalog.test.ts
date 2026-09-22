@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   KNOWN_MODELS,
@@ -12,6 +14,14 @@ import {
 } from '../../../engine/providers/model/resolution.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
+import {
+  nativeCliCatalogToDetectedModels,
+  parseCodexNativeModelCatalog,
+  parseCopilotHelpConfigCatalog,
+  parseKiloNativeModelCatalog,
+  type NativeCliModelCatalog,
+} from '../../../engine/providers/cli-model-catalog.js';
+import type { DetectedModel } from '../../../core/discovery/detection.js';
 import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 
 function pickerItem(
@@ -326,6 +336,82 @@ describe('duplicate model rows', () => {
   });
 });
 
+function capturedDetectedModels(
+  path: string,
+  parse: (stdout: string) => NativeCliModelCatalog | null,
+): DetectedModel[] {
+  const catalog = parse(
+    readFileSync(join(import.meta.dirname, '../../../../testing/fixtures', path), 'utf-8'),
+  );
+  if (catalog === null) throw new Error(`${path} did not parse`);
+  return nativeCliCatalogToDetectedModels(catalog);
+}
+
+describe('an effort ladder offers only what the seat can save', () => {
+  function seat(id: string, effortChannel: 'effort-flag' | 'variant', isCurrent = false) {
+    return {
+      ...cliItem(id, 'optional'),
+      effortChannel,
+      ...(isCurrent ? { isCurrent: true } : {}),
+      ...(effortChannel === 'variant' ? { providerDependent: true } : {}),
+    };
+  }
+
+  it('drops codex ultra from an effort-flag ladder and keeps the levels beside it', () => {
+    // `codex debug models --bundled` on codex-cli 0.154.0 lists `ultra` on five models.
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        codex: capturedDetectedModels(
+          'codex/debug-models-bundled.json',
+          parseCodexNativeModelCatalog,
+        ),
+      },
+    });
+    const ladders = (persistedModel?: string) =>
+      new Map(
+        buildRightModels({
+          role: 'planner',
+          customModels: [],
+          currentItem: seat('codex', 'effort-flag', persistedModel !== undefined),
+          cache,
+          persistedModel,
+        }).map((row) => [row.id, row.effortChoices]),
+      );
+    const shown = ladders();
+    const hidden = ladders('gpt-daybreak-blue-latest');
+
+    for (const ladder of [
+      shown.get('gpt-6-astra'),
+      shown.get('gpt-5.6-sol'),
+      shown.get('gpt-5.6-terra'),
+      hidden.get('gpt-daybreak-blue-latest'),
+    ]) {
+      expect(ladder).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    }
+    expect(shown.get('gpt-5.5')).toEqual(['low', 'medium', 'high', 'xhigh']);
+  });
+
+  it("keeps every variant a variant seat's listing declares", () => {
+    // `kilo models --verbose` on kilo 7.0.49: the tool's own variant names, not effort levels.
+    const listing = capturedDetectedModels('kilo/models-verbose.txt', parseKiloNativeModelCatalog);
+    const cache = makeModelCacheAccessor({ providerModels: { 'kilo-code': listing } });
+    const id = 'kilo/cohere/north-mini-code:free';
+    const declared = listing.find((model) => model.id === id)?.nativeReasoningEfforts;
+
+    const row = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: seat('kilo-code', 'variant'),
+      cache,
+    }).find((model) => model.id === id);
+
+    expect(declared).toContain('instant');
+    expect(row?.variants?.find((variant) => variant.fullId === id)?.variantChoices).toEqual(
+      declared,
+    );
+  });
+});
+
 describe('auto is a selection policy, never catalog data', () => {
   it('emits exactly one metadata-free Auto row at the top of an optional CLI column', () => {
     const models = buildRightModels({
@@ -421,6 +507,36 @@ describe('auto is a selection policy, never catalog data', () => {
   it('never lets an auto row back into the resolved model catalog', () => {
     expect(resolveAndSort('copilot', 'implementer').map((model) => model.id)).not.toContain('auto');
     expect(resolveAndSort('codex', 'planner').map((model) => model.id)).not.toContain('auto');
+  });
+
+  it('does not offer a model codex hides, except the one the seat already runs', () => {
+    const catalog = parseCodexNativeModelCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../../testing/fixtures/codex/debug-models-bundled.json'),
+        'utf-8',
+      ),
+    );
+    if (catalog === null) throw new Error('Expected the codex 0.154.0 bundled listing to parse');
+    const cache = makeModelCacheAccessor({
+      providerModels: { codex: nativeCliCatalogToDetectedModels(catalog) },
+    });
+    const hidden = [
+      'gpt-daybreak-blue-latest',
+      'gpt-daybreak-red-latest',
+      'gpt-5.4',
+      'gpt-5.4-mini',
+      'codex-auto-review',
+    ];
+
+    const offered = resolveAndSort('codex', 'planner', cache).map((model) => model.id);
+    expect(offered).toHaveLength(6);
+    expect(offered.filter((id) => hidden.includes(id))).toEqual([]);
+
+    const seated = resolveAndSort('codex', 'planner', cache, { configuredSelectionId: 'gpt-5.4' });
+    expect(seated.map((model) => model.id).filter((id) => hidden.includes(id))).toEqual([
+      'gpt-5.4',
+    ]);
+    expect(seated.find((model) => model.id === 'gpt-5.4')?.displayName).toBe('GPT-5.4');
   });
 });
 
@@ -862,15 +978,44 @@ describe('toModelOption displayName precedence', () => {
     expect(sonnet === undefined ? false : 'detail' in sonnet).toBe(false);
   });
 
-  it('row without catalog entry says no catalog entry', () => {
-    const cache = makeModelCacheAccessor({ providerModels: { codex: [{ id: 'mystery-7b' }] } });
+  it('an api row no catalog knows says no catalog entry', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ({
+        connection: { role: 'implementer', provider: 'ollama', contextKey: 'implementer-context' },
+        state: 'fresh',
+        catalog: 'populated',
+        models: [{ id: 'mystery-7b' }],
+        fetchedAt: 1,
+        validatedAt: 2,
+      }),
+    };
 
-    const row = resolveAndSort('codex', 'implementer', cache).find(
+    const row = resolveAndSort('ollama', 'implementer', cache).find(
       (model) => model.id === 'mystery-7b',
     );
 
     expect(row).toMatchObject({ id: 'mystery-7b', detail: 'no catalog entry' });
     expect(row?.displayName).toBeUndefined();
+  });
+
+  it("a CLI tool's own listing is its catalog, so its bare rows carry no catalog word", () => {
+    const catalog = parseCopilotHelpConfigCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../../testing/fixtures/copilot/help-config-1.0.83.txt'),
+        'utf-8',
+      ),
+    );
+    if (catalog === null) throw new Error('Expected the copilot 1.0.83 enum to parse');
+    const cache = makeModelCacheAccessor({
+      providerModels: { copilot: nativeCliCatalogToDetectedModels(catalog) },
+    });
+
+    const rows = resolveAndSort('copilot', 'implementer', cache);
+
+    expect(rows.map((row) => row.id)).toContain('claude-sonnet-5');
+    expect(rows.filter((row) => row.detail !== undefined)).toEqual([]);
   });
 
   it('no id appears twice', () => {

@@ -685,6 +685,46 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     ]);
   });
 
+  const opencodeImplementerChecks = (installedVersion: string, helpFixture: string) =>
+    collectArgVectorPreflightChecks({
+      config: makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'opencode',
+          model: 'opencode-go/deepseek-v4-flash',
+          variant: 'high',
+        },
+      }),
+      projectDir: '/project',
+      roles: ['implementer'],
+      installedVersions: { opencode: installedVersion },
+      runHelp: async () => readFileSync(join(CLI_HELP_FIXTURES, helpFixture), 'utf8'),
+    });
+
+  it('checks the vector dispatch builds for the admitted opencode 2 release', async () => {
+    const checks = await opencodeImplementerChecks('2.0.14', 'opencode-v2-run-help.txt');
+
+    expect(checks[0]).toMatchObject({
+      id: 'runners.cli.opencode.arg-vector.implementer',
+      severity: 'ok',
+    });
+    expect(checks[0]?.details).toEqual([
+      'Emitted argv: run --standalone --model opencode-go/deepseek-v4-flash#high --format json --agent build <PROMPT>',
+    ]);
+  });
+
+  it('keeps --variant and no --standalone for an admitted release below 2.0.0', async () => {
+    const checks = await opencodeImplementerChecks('1.18.32', 'opencode-run-help.txt');
+
+    expect(checks[0]).toMatchObject({
+      id: 'runners.cli.opencode.arg-vector.implementer',
+      severity: 'ok',
+    });
+    expect(checks[0]?.details).toEqual([
+      'Emitted argv: run --model opencode-go/deepseek-v4-flash --variant high --format json --agent build <PROMPT>',
+    ]);
+  });
+
   it('refuses a configured added-roots override before any help probe (REQ-018)', async () => {
     const configuredArgs = ['--add-dir', '/srv/shared-context'];
     let helpSpawns = 0;

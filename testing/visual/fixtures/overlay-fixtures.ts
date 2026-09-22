@@ -19,7 +19,10 @@ import type {
 import {
   nativeCliCatalogToDetectedModels,
   parseAntigravityModelCatalog,
+  parseCodexNativeModelCatalog,
+  parseCommandCodeNativeModelCatalog,
   parseCopilotHelpConfigCatalog,
+  parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
 } from '../../../src/engine/providers/cli-model-catalog.js';
@@ -49,7 +52,6 @@ import { routerStore, type RouteData } from '../../../src/stores/navigation/rout
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
 import { scenarioId } from '../contracts/identifiers.js';
-import { cursorDetectedModels } from '../../helpers/factories/cursor-models.js';
 import { cliDetectionFor } from '../../helpers/factories/detection.js';
 import { makeSession } from '../../helpers/factories/session.js';
 import { makeSummary } from '../../helpers/factories/summary.js';
@@ -97,22 +99,20 @@ const OPENCODE_ROUTED_MODEL = 'openai/gpt-5.6-luna';
 /** Opens the picker on OpenCode with the model column live, as the frames show. */
 const OPENCODE_FOCUS = 'tool:opencode';
 
-function fixtureIds(name: string): string[] {
-  return readFileSync(join(import.meta.dirname, '../../fixtures/', name), 'utf8')
-    .split('\n')
-    .filter((line) => line.trim() !== '');
-}
-
-function opencodeVerboseModels(): readonly DetectedModel[] {
+// The whole of `opencode api GET /api/model` on opencode 2.0.14, the listing the probe reads, with
+// `location.directory` neutralised. `api-model.json` beside it is the five-row parser fixture.
+function opencodeApiModels(): readonly DetectedModel[] {
   const stdout = readFileSync(
-    join(import.meta.dirname, '../../fixtures/opencode/models-verbose.txt'),
+    join(import.meta.dirname, '../../fixtures/opencode/api-model-full.json'),
     'utf8',
   );
   const catalog = parseOpenCodeNativeModelCatalog(stdout);
-  if (catalog === null) throw new Error('opencode/models-verbose.txt did not parse');
+  if (catalog === null) throw new Error('opencode/api-model-full.json did not parse');
   return nativeCliCatalogToDetectedModels(catalog);
 }
 
+// `kilo models --verbose` on kilo 7.0.49, 29 of its 132 blocks verbatim: each model a test names,
+// enough free routes to scroll the kilo-free picker at 120x40, and one model per provider prefix.
 function kiloVerboseModels(): readonly DetectedModel[] {
   const stdout = readFileSync(
     join(import.meta.dirname, '../../fixtures/kilo/models-verbose.txt'),
@@ -125,11 +125,43 @@ function kiloVerboseModels(): readonly DetectedModel[] {
 
 function copilotHelpConfigModels(): readonly DetectedModel[] {
   const stdout = readFileSync(
-    join(import.meta.dirname, '../../fixtures/copilot/help-config.txt'),
+    join(import.meta.dirname, '../../fixtures/copilot/help-config-1.0.83.txt'),
     'utf8',
   );
   const catalog = parseCopilotHelpConfigCatalog(stdout);
-  if (catalog === null) throw new Error('copilot/help-config.txt did not parse');
+  if (catalog === null) throw new Error('copilot/help-config-1.0.83.txt did not parse');
+  return nativeCliCatalogToDetectedModels(catalog);
+}
+
+function commandCodeListModels(): readonly DetectedModel[] {
+  const stdout = readFileSync(
+    join(import.meta.dirname, '../../fixtures/command-code/list-models-1.62.1.txt'),
+    'utf8',
+  );
+  const catalog = parseCommandCodeNativeModelCatalog(stdout);
+  if (catalog === null) throw new Error('command-code/list-models-1.62.1.txt did not parse');
+  return nativeCliCatalogToDetectedModels(catalog);
+}
+
+function cursorListModels(): readonly DetectedModel[] {
+  const stdout = readFileSync(
+    join(import.meta.dirname, '../../fixtures/cursor/list-models-2026.09.18.txt'),
+    'utf8',
+  );
+  const catalog = parseCursorNativeModelCatalog(stdout);
+  if (catalog === null) throw new Error('cursor/list-models-2026.09.18.txt did not parse');
+  return nativeCliCatalogToDetectedModels(catalog);
+}
+
+// `codex debug models --bundled` on codex-cli 0.154.0 with only the fields the codex schema reads.
+// Its prompt text and tool settings are dropped as unread. Re-capture when the schema reads more.
+function codexBundledModels(): readonly DetectedModel[] {
+  const stdout = readFileSync(
+    join(import.meta.dirname, '../../fixtures/codex/debug-models-bundled.json'),
+    'utf8',
+  );
+  const catalog = parseCodexNativeModelCatalog(stdout);
+  if (catalog === null) throw new Error('codex/debug-models-bundled.json did not parse');
   return nativeCliCatalogToDetectedModels(catalog);
 }
 
@@ -139,14 +171,6 @@ function modelsDevSlice(): ReturnType<typeof ModelsDevCatalogSchema.parse> {
     'utf8',
   );
   return ModelsDevCatalogSchema.parse(JSON.parse(raw));
-}
-
-function hydrateSlice(): void {
-  modelCacheStore.hydrateModelsDevCatalog({
-    catalog: modelsDevSlice(),
-    fetchedAt: VISUAL_PUBLISHED_AT,
-    validatedAt: VISUAL_PUBLISHED_AT,
-  });
 }
 
 function catalogAttempt(input: {
@@ -274,39 +298,31 @@ function seedConfig(overrides?: VisualConfigOverrides): OverlaySeed {
   return () => seedVisualConfig(overrides);
 }
 
-function seedOpencodeCatalog(extraModels: readonly DetectedModel[] = []): void {
-  // OpenCode's routes are one fact: the `opencode` provider block of the
-  // models.dev slice. A second hand-written list drifts from it silently, since
-  // an unmatched id just renders without metadata.
-  const routes = modelsDevSlice().opencode?.models;
-  if (routes === undefined) throw new Error('models-dev-slice.json has no opencode provider');
-  seedConfig({ planner: { kind: 'cli', tool: 'opencode', model: OPENCODE_ROUTED_MODEL } })();
-  const extras = new Map(extraModels.map((model) => [model.id, model]));
-  const routeIds = Object.keys(routes);
+/** OpenCode detected ready, with every route its own listing serves and nothing else. */
+function seedOpencodeReady(): void {
+  // OpenCode's routes are one fact: its own listing. The probe reads it, so the
+  // window, ladder and name of each row come with it and no second list can drift.
   publishVisualDiscovery({
     cliTools: [cliDetectionFor('ready', 'opencode')],
     cliModels: [
       catalogAttempt({
         tool: 'opencode',
-        outcome: {
-          kind: 'success',
-          value: [
-            ...routeIds.map((id) => extras.get(id) ?? { id }),
-            ...extraModels.filter((model) => routeIds.some((id) => model.id.startsWith(`${id}-`))),
-          ],
-        },
+        outcome: { kind: 'success', value: opencodeApiModels() },
       }),
     ],
   });
-  hydrateSlice();
+}
+
+function seedOpencodeCatalog(): void {
+  seedConfig({ planner: { kind: 'cli', tool: 'opencode', model: OPENCODE_ROUTED_MODEL } })();
+  seedOpencodeReady();
 }
 
 function seedProviderAuth(
   arm: 'read' | 'empty' | 'unreadable',
   reason: CliProviderAuthUnreadableReason = 'parse-failure',
-  extraModels: readonly DetectedModel[] = [],
 ): void {
-  seedOpencodeCatalog(extraModels);
+  seedOpencodeCatalog();
   const providerAuth: CliProviderAuth =
     arm === 'read'
       ? { kind: 'read', facts: [{ provider: 'OpenAI', source: 'api' }] }
@@ -393,44 +409,8 @@ function seedCopilotNativeListing(): void {
   const persisted = models[0]?.id ?? 'gpt-5.6-luna';
   seedConfig({ planner: { kind: 'cli', tool: 'copilot', model: persisted } })();
   publishVisualDiscovery({
-    cliTools: [cliDetectionFor('ready', 'copilot')],
+    cliTools: [cliDetectionFor('ready', 'copilot', { installedVersion: '1.0.83' })],
     cliModels: [catalogAttempt({ tool: 'copilot', outcome: { kind: 'success', value: models } })],
-    modelsDev: { catalog: modelsDevSlice() },
-  });
-}
-
-// Three native rows: one models.dev knows by its bare id under another owner, one it does not know
-// at all, and one from a vendor it has never heard of. Between them the picker has to show a
-// catalog name, a bare id, and the words for "no catalog entry" on the same list.
-const COMMAND_CODE_MODELS: readonly DetectedModel[] = [
-  {
-    id: 'deepseek/deepseek-v4-flash',
-    nativeOrder: 0,
-    detail: 'fast hybrid-attention reasoning',
-    nativeDefault: true,
-  },
-  { id: 'deepseek/deepseek-v4', nativeOrder: 1 },
-  { id: 'acme/private-preview-1', nativeOrder: 2 },
-];
-
-// models.dev serves DeepSeek under its own vendor id; the shared slice carries the model only under
-// Ollama Cloud, so the vendor the picker looks up is added here rather than widening the slice.
-function commandCodeModelsDevCatalog(): ReturnType<typeof ModelsDevCatalogSchema.parse> {
-  return ModelsDevCatalogSchema.parse({
-    ...modelsDevSlice(),
-    deepseek: {
-      id: 'deepseek',
-      name: 'DeepSeek',
-      models: {
-        'deepseek-v4-flash': {
-          id: 'deepseek-v4-flash',
-          name: 'DeepSeek V4 Flash',
-          limit: { context: 128_000, output: 64_000 },
-          release_date: '2026-01-12',
-          modalities: { input: ['text'], output: ['text'] },
-        },
-      },
-    },
   });
 }
 
@@ -439,14 +419,22 @@ function seedCommandCodeNativeListing(): void {
     planner: { kind: 'cli', tool: 'command-code', model: 'deepseek/deepseek-v4-flash' },
   })();
   publishVisualDiscovery({
-    cliTools: [cliDetectionFor('ready', 'command-code')],
+    cliTools: [cliDetectionFor('ready', 'command-code', { installedVersion: '1.62.1' })],
     cliModels: [
       catalogAttempt({
         tool: 'command-code',
-        outcome: { kind: 'success', value: [...COMMAND_CODE_MODELS] },
+        outcome: { kind: 'success', value: commandCodeListModels() },
       }),
     ],
-    modelsDev: { catalog: commandCodeModelsDevCatalog() },
+  });
+}
+
+function seedCodexNativeListing(): void {
+  const models = codexBundledModels();
+  seedConfig({ planner: { kind: 'cli', tool: 'codex', model: models[0]?.id ?? 'gpt-6-astra' } })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'codex', { installedVersion: '0.154.0' })],
+    cliModels: [catalogAttempt({ tool: 'codex', outcome: { kind: 'success', value: models } })],
   });
 }
 
@@ -483,16 +471,17 @@ function seedAntigravityNativeListing(): void {
   });
 }
 
+/** A model Kilo serves through more than one provider, so its row merges them. */
+const KILO_ROUTED_MODEL = 'github-copilot/gpt-5.5';
+
 function seedKiloConfirmed(): void {
-  const ids = fixtureIds('kilo-models-7.0.49.txt');
-  const persisted = ids[4] ?? ids[0] ?? 'kilo/kilo-auto/free';
-  seedConfig({ planner: { kind: 'cli', tool: 'kilo-code', model: persisted } })();
+  seedConfig({ planner: { kind: 'cli', tool: 'kilo-code', model: KILO_ROUTED_MODEL } })();
   publishVisualDiscovery({
-    cliTools: [cliDetectionFor('ready', 'kilo-code')],
+    cliTools: [cliDetectionFor('ready', 'kilo-code', { installedVersion: '7.0.49' })],
     cliModels: [
       catalogAttempt({
         tool: 'kilo-code',
-        outcome: { kind: 'success', value: ids.map((id) => ({ id })) },
+        outcome: { kind: 'success', value: kiloVerboseModels() },
       }),
     ],
   });
@@ -504,7 +493,7 @@ function seedKiloFreeRoutes(): void {
     planner: { kind: 'cli', tool: 'kilo-code', model: 'kilo/kilo-auto/free' },
   })();
   publishVisualDiscovery({
-    cliTools: [cliDetectionFor('ready', 'kilo-code')],
+    cliTools: [cliDetectionFor('ready', 'kilo-code', { installedVersion: '7.0.49' })],
     cliModels: [catalogAttempt({ tool: 'kilo-code', outcome: { kind: 'success', value: models } })],
   });
 }
@@ -525,11 +514,11 @@ const CURSOR_FAMILY_DRAFT = 'gpt-5.6-sol-xhigh-fast';
 function seedCursorConfirmed(persisted: string): void {
   seedConfig({ planner: { kind: 'cli', tool: 'cursor', model: persisted } })();
   publishVisualDiscovery({
-    cliTools: [cliDetectionFor('ready', 'cursor')],
+    cliTools: [cliDetectionFor('ready', 'cursor', { installedVersion: '2026.09.18-9a7762b' })],
     cliModels: [
       catalogAttempt({
         tool: 'cursor',
-        outcome: { kind: 'success', value: cursorDetectedModels() },
+        outcome: { kind: 'success', value: cursorListModels() },
       }),
     ],
   });
@@ -707,20 +696,11 @@ const createPlannerPickerCatalogFixture: FixtureFactory = () =>
     seed: seedOpencodeCatalog,
     focus: OPENCODE_FOCUS,
   });
-const createProviderExpandedReadFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'planner-picker',
-    seed: () => {
-      seedProviderAuth('read');
-      pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
-    },
-    focus: OPENCODE_FOCUS,
-  });
 const createOpencodeExpandedFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
     seed: () => {
-      seedProviderAuth('read', 'parse-failure', opencodeVerboseModels());
+      seedProviderAuth('read');
       pickerViewStore.expand(OPENCODE_ROUTED_MODEL, OPENCODE_ROUTED_MODEL);
     },
     focus: OPENCODE_FOCUS,
@@ -729,7 +709,7 @@ const createOpencodeExpandedDraftedFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
     seed: () => {
-      seedProviderAuth('read', 'parse-failure', opencodeVerboseModels());
+      seedProviderAuth('read');
       pickerViewStore.expand(OPENCODE_ROUTED_MODEL, OPENCODE_ROUTED_MODEL, 'max');
     },
     focus: OPENCODE_FOCUS,
@@ -844,6 +824,12 @@ const createPlannerPickerCommandCodeFixture: FixtureFactory = () =>
     seed: seedCommandCodeNativeListing,
     focus: 'tool:command-code',
   });
+const createPlannerPickerCodexFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedCodexNativeListing,
+    focus: 'tool:codex',
+  });
 const createPlannerPickerAntigravityFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -955,15 +941,19 @@ function localConnectionFixture(
   return { ...fixture, connectionOutcome: outcome, afterMount: (write) => write('\r') };
 }
 
-const createAuthConfigOwnedFixture: FixtureFactory = () =>
-  createOverlayFixture({
+// The cursor opens on the expanded model row; one step down lands it on the auth row, whose
+// byline is the frame's subject.
+const createAuthConfigOwnedFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
     overlay: 'planner-picker',
     focus: OPENCODE_FOCUS,
     seed: () => {
       seedProviderAuth('read');
       pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
     },
-  });
+  }),
+  afterMount: (write) => write('\x1b[B'),
+});
 
 const createAuthUnsupportedFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -1003,6 +993,16 @@ const createCustomModelFixture: FixtureFactory = () =>
   });
 const createImplementerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'implementer-picker' });
+// What a quota halt opens when the operator takes its seat swap: the seat's own picker, preselected
+// on the tool the halt offered. `pickSwappedSeat` opens this exact overlay and focus token. A halt
+// only ever offers a tool its readiness pass found ready, so the preselected row is seeded ready —
+// an `Unavailable` one could never have been offered.
+const createSeatSwapPickerFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'implementer-picker',
+    seed: seedOpencodeReady,
+    focus: OPENCODE_FOCUS,
+  });
 const createPickerBrowseEscapeFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'implementer-picker',
@@ -1342,7 +1342,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-filter-workflow'), createSettingsFilterWorkflowFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
   [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],
-  [scenarioId('overlay-picker-provider-expanded-read'), createProviderExpandedReadFixture],
   [scenarioId('overlay-picker-opencode-expanded'), createOpencodeExpandedFixture],
   [scenarioId('overlay-picker-opencode-expanded-drafted'), createOpencodeExpandedDraftedFixture],
   [scenarioId('overlay-picker-claude-effort'), createClaudeEffortFixture],
@@ -1361,6 +1360,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-claude'), createPlannerPickerClaudeFixture],
   [scenarioId('overlay-planner-picker-copilot'), createPlannerPickerCopilotFixture],
   [scenarioId('overlay-planner-picker-command-code'), createPlannerPickerCommandCodeFixture],
+  [scenarioId('overlay-planner-picker-codex'), createPlannerPickerCodexFixture],
   [scenarioId('overlay-planner-picker-antigravity'), createPlannerPickerAntigravityFixture],
   [scenarioId('overlay-planner-picker-cursor'), createPlannerPickerCursorFixture],
   [scenarioId('overlay-picker-cursor-expanded'), createCursorExpandedFixture],
@@ -1440,6 +1440,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-custom-command'), createCustomCommandFixture],
   [scenarioId('overlay-picker-custom-model'), createCustomModelFixture],
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
+  [scenarioId('overlay-picker-seat-swap'), createSeatSwapPickerFixture],
   [scenarioId('overlay-picker-browse-escape'), createPickerBrowseEscapeFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],

@@ -199,7 +199,7 @@ function cliCatalogAttempt(
     tool: 'codex' | 'opencode';
     contextKey: string;
     models?: readonly string[] | undefined;
-    failure?: 'offline' | 'malformed' | undefined;
+    failure?: 'offline' | 'malformed' | 'timeout' | undefined;
   }>,
 ): ScopedCliCatalogAttempt {
   return {
@@ -374,6 +374,35 @@ describe('modelCacheStore', () => {
     const fresh = modelCacheStore.getCliCatalogRuntime({ tool: 'codex' });
     expect(fresh).toMatchObject({ state: 'fresh', models: [{ id: 'gpt-6-codex' }] });
     expect(fresh?.models).toHaveLength(1);
+  });
+
+  it('keeps a remembered CLI catalog, stale from its probe time, when the first live probe times out', () => {
+    modelCacheStore.hydrateDetection({
+      providers: [],
+      cliTools: [],
+      fetchedAt: 50,
+      validatedAt: 60,
+      generation: 1,
+      requestId: 1,
+      contexts: scopedContexts,
+      cliCatalogs: [{ tool: 'codex', models: [{ id: 'gpt-5.2-codex' }], probedAt: 40 }],
+    });
+
+    expect(
+      publishCliCatalogs(
+        [cliCatalogAttempt({ tool: 'codex', contextKey: 'live-context', failure: 'timeout' })],
+        2,
+      ),
+    ).toBe(true);
+
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toEqual({
+      connection: { tool: 'codex', contextKey: 'live-context' },
+      state: 'stale',
+      models: [{ id: 'gpt-5.2-codex' }],
+      fetchedAt: 40,
+      validatedAt: 200,
+      failure: 'timeout',
+    });
   });
 
   it('resolves any seat from the single row a tool has', () => {

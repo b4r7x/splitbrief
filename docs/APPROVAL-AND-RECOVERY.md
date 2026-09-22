@@ -231,7 +231,7 @@ When a recovery-worthy event happens, the orchestrator builds a `RecoveryIssue` 
 
 `route-bigger-worker` — Same as retry, but the recovery issue carries a `routeBiggerProfile` fact. The orchestrator uses this profile name to create a more capable implementer for the retry. Blocked if the profile doesn't exist in config.
 
-`switch-seat` — Offered when another ready detected tool can take the blocked seat. The inline recovery menu above the composer starts on the recommended action. Use Up/Down and Enter to choose; **Change PLAN tool** (or BUILD/REVIEW) opens a scrollable list containing every offered candidate. Escape returns to the action list without changing the seat. Candidate labels use the shared seat-identity formatter.
+`switch-seat` — Offered when another ready detected tool can take the blocked seat. The inline recovery menu above the composer starts on the recommended action. Use Up/Down and Enter to choose; **Change PLAN tool** (or BUILD/REVIEW) opens that seat's own picker — the same overlay Settings and Setup open — with the cursor on the first offered tool, so the tool and the model beside it are chosen in one place. The panel lists no tools of its own. Escape in the picker returns to the action list without changing the seat.
 
 Tab switches focus between the menu and composer. Space pauses only while the action menu owns focus and pause is available; while typing, it inserts a space. A correction in the composer accompanies a retry of the current planner step. The footer and activity indicators show the stopped or waiting state until work actually resumes.
 

@@ -469,10 +469,10 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     ],
     compatibility: compatibility({
       installUrl: 'https://opencode.ai',
-      testedVersion: '2.0.12',
+      testedVersion: '2.0.14',
       minimumAdmittedVersion: '0.5.0',
       versionScheme: 'semver',
-      asOf: '2026-09-21',
+      asOf: '2026-09-22',
     }),
     authDiscoveryMode: 'provider-dependent-unverified',
     modelDiscoveryMode: 'native-cli',

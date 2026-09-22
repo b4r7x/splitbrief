@@ -65,7 +65,7 @@ Redirecting stderr matters: the TUI runs on the alternate screen, and a fatal er
 | Spec gate (`reviewing-spec`) | `.splitbrief/sessions/<id>/spec.md`: scope, out of scope, acceptance criteria | `y` approve, `c` request changes, `e` edit |
 | Plan gate (`reviewing-plan`, only with `approve: all`) | `plan.md` | `y` |
 | Briefs gate (`reviewing-briefs`) | `tasks.md`: one module group per brief, no new knobs, no brief planning for a red gate; per-brief declared-file bytes against the argv limit | `y` |
-| Recovery panel | the reason line and the file list | type the action letter and `⏎`; on a task halt the letters are the action, free text is dropped |
+| Recovery panel | the reason line and the file list | type the action letter and `⏎`; on a task halt the letters are the action, free text is dropped; `w` (switch seat) opens the halted seat's picker on the offered tool, where tool and model are chosen |
 | Stop sheet | — | `esc` opens it, `esc` again stops resumably, `ctrl+c` twice quits after the stop settles |
 
 Headless: `$SB start --plain --approve none --yolo "<sentence>" @tasks.md`. Gates auto-approve, a planner question ends the run with `input_required`, and `kill -INT <pid>` parks the run cleanly (exit 0, status `open · paused`).

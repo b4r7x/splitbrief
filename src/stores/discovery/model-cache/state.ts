@@ -30,6 +30,7 @@ import {
   cloneScopedCliCatalogRuntime,
   findCliCatalogRuntime,
   freezeCliCatalogs,
+  REMEMBERED_CLI_CATALOG_CONTEXT,
 } from './reconcile-cli-catalogs.js';
 import {
   cloneConfiguredProviderRuntime,
@@ -217,7 +218,7 @@ export const modelCacheStore = {
             (entry): ScopedCliCatalogRuntime => ({
               connection: {
                 tool: entry.tool,
-                contextKey: 'remembered-detection-cache',
+                contextKey: REMEMBERED_CLI_CATALOG_CONTEXT,
               },
               state: 'stale',
               models: entry.models.map(cloneDetectedModel),

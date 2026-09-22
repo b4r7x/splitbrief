@@ -1,0 +1,451 @@
+{
+  "location": {
+    "directory": "/tmp/project"
+  },
+  "data": [
+    {
+      "id": "gpt-5.6-luna",
+      "modelID": "gpt-5.6-luna",
+      "providerID": "openai",
+      "family": "gpt-luna",
+      "name": "GPT-5.6 Luna",
+      "package": "@opencode/ai/providers/openai",
+      "settings": {},
+      "capabilities": {
+        "tools": true,
+        "input": ["text", "image", "pdf"],
+        "output": ["text"]
+      },
+      "variants": [
+        {
+          "id": "none",
+          "settings": {
+            "reasoningEffort": "none",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "low",
+          "settings": {
+            "reasoningEffort": "low",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "medium",
+          "settings": {
+            "reasoningEffort": "medium",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "high",
+          "settings": {
+            "reasoningEffort": "high",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "xhigh",
+          "settings": {
+            "reasoningEffort": "xhigh",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "max",
+          "settings": {
+            "reasoningEffort": "max",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        }
+      ],
+      "time": {
+        "released": 1783555200000
+      },
+      "cost": [
+        {
+          "input": 0.2,
+          "output": 1.2,
+          "cache": {
+            "read": 0.02,
+            "write": 0.25
+          }
+        },
+        {
+          "tier": {
+            "type": "context",
+            "size": 272000
+          },
+          "input": 0.4,
+          "output": 1.8,
+          "cache": {
+            "read": 0.04,
+            "write": 0.5
+          }
+        },
+        {
+          "tier": {
+            "type": "context",
+            "size": 200000
+          },
+          "input": 0.4,
+          "output": 1.8,
+          "cache": {
+            "read": 0.04,
+            "write": 0.5
+          }
+        }
+      ],
+      "status": "active",
+      "enabled": true,
+      "limit": {
+        "context": 1050000,
+        "input": 922000,
+        "output": 128000
+      }
+    },
+    {
+      "id": "gpt-5.6-luna-fast",
+      "modelID": "gpt-5.6-luna",
+      "providerID": "openai",
+      "family": "gpt-luna",
+      "name": "GPT-5.6 Luna Fast",
+      "package": "@opencode/ai/providers/openai",
+      "settings": {},
+      "body": {
+        "service_tier": "priority"
+      },
+      "capabilities": {
+        "tools": true,
+        "input": ["text", "image", "pdf"],
+        "output": ["text"]
+      },
+      "variants": [
+        {
+          "id": "none",
+          "settings": {
+            "reasoningEffort": "none",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "low",
+          "settings": {
+            "reasoningEffort": "low",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "medium",
+          "settings": {
+            "reasoningEffort": "medium",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "high",
+          "settings": {
+            "reasoningEffort": "high",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "xhigh",
+          "settings": {
+            "reasoningEffort": "xhigh",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "max",
+          "settings": {
+            "reasoningEffort": "max",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        }
+      ],
+      "time": {
+        "released": 1783555200000
+      },
+      "cost": [
+        {
+          "input": 0.4,
+          "output": 2.4,
+          "cache": {
+            "read": 0.04,
+            "write": 0.5
+          }
+        },
+        {
+          "tier": {
+            "type": "context",
+            "size": 272000
+          },
+          "input": 0.4,
+          "output": 1.8,
+          "cache": {
+            "read": 0.04,
+            "write": 0.5
+          }
+        },
+        {
+          "tier": {
+            "type": "context",
+            "size": 200000
+          },
+          "input": 0.4,
+          "output": 1.8,
+          "cache": {
+            "read": 0.04,
+            "write": 0.5
+          }
+        }
+      ],
+      "status": "active",
+      "enabled": true,
+      "limit": {
+        "context": 1050000,
+        "input": 922000,
+        "output": 128000
+      }
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "modelID": "gpt-5.6-luna",
+      "providerID": "opencode-go",
+      "family": "gpt-luna",
+      "name": "GPT-5.6 Luna",
+      "package": "@opencode/ai/providers/openai",
+      "settings": {
+        "baseURL": "https://opencode.ai/zen/go/v1"
+      },
+      "capabilities": {
+        "tools": true,
+        "input": ["text", "image", "pdf"],
+        "output": ["text"]
+      },
+      "variants": [
+        {
+          "id": "none",
+          "settings": {
+            "reasoningEffort": "none",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "low",
+          "settings": {
+            "reasoningEffort": "low",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "medium",
+          "settings": {
+            "reasoningEffort": "medium",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "high",
+          "settings": {
+            "reasoningEffort": "high",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "xhigh",
+          "settings": {
+            "reasoningEffort": "xhigh",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        },
+        {
+          "id": "max",
+          "settings": {
+            "reasoningEffort": "max",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"]
+          }
+        }
+      ],
+      "time": {
+        "released": 1783555200000
+      },
+      "cost": [
+        {
+          "input": 0.2,
+          "output": 1.2,
+          "cache": {
+            "read": 0.02,
+            "write": 0.25
+          }
+        },
+        {
+          "tier": {
+            "type": "context",
+            "size": 272000
+          },
+          "input": 0.4,
+          "output": 1.8,
+          "cache": {
+            "read": 0.04,
+            "write": 0.5
+          }
+        },
+        {
+          "tier": {
+            "type": "context",
+            "size": 200000
+          },
+          "input": 0.4,
+          "output": 1.8,
+          "cache": {
+            "read": 0.04,
+            "write": 0.5
+          }
+        }
+      ],
+      "status": "active",
+      "enabled": true,
+      "limit": {
+        "context": 1050000,
+        "input": 922000,
+        "output": 128000
+      }
+    },
+    {
+      "id": "minimax-m3",
+      "modelID": "minimax-m3",
+      "providerID": "opencode-go",
+      "family": "minimax-m3",
+      "name": "MiniMax-M3",
+      "package": "@opencode/ai/providers/anthropic",
+      "settings": {
+        "baseURL": "https://opencode.ai/zen/go/v1"
+      },
+      "capabilities": {
+        "tools": true,
+        "input": ["text", "image", "video"],
+        "output": ["text"]
+      },
+      "variants": [
+        {
+          "id": "none",
+          "settings": {
+            "thinking": {
+              "type": "disabled"
+            }
+          }
+        },
+        {
+          "id": "thinking",
+          "settings": {
+            "thinking": {
+              "type": "adaptive",
+              "display": "summarized"
+            }
+          }
+        }
+      ],
+      "time": {
+        "released": 1780185600000
+      },
+      "cost": [
+        {
+          "input": 0.3,
+          "output": 1.2,
+          "cache": {
+            "read": 0.06,
+            "write": 0
+          }
+        },
+        {
+          "tier": {
+            "type": "context",
+            "size": 512000
+          },
+          "input": 0.6,
+          "output": 2.4,
+          "cache": {
+            "read": 0.12,
+            "write": 0
+          }
+        },
+        {
+          "tier": {
+            "type": "context",
+            "size": 200000
+          },
+          "input": 0.6,
+          "output": 2.4,
+          "cache": {
+            "read": 0.12,
+            "write": 0
+          }
+        }
+      ],
+      "status": "active",
+      "enabled": true,
+      "limit": {
+        "context": 1000000,
+        "output": 131072
+      }
+    },
+    {
+      "id": "qwen3.7-max",
+      "modelID": "qwen3.7-max",
+      "providerID": "opencode-go",
+      "family": "qwen3.7-max",
+      "name": "Qwen3.7 Max",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "https://opencode.ai/zen/go/v1",
+        "provider": "opencode-go"
+      },
+      "capabilities": {
+        "tools": true,
+        "input": ["text"],
+        "output": ["text"]
+      },
+      "variants": [],
+      "time": {
+        "released": 1779321600000
+      },
+      "cost": [
+        {
+          "input": 2.5,
+          "output": 7.5,
+          "cache": {
+            "read": 0.5,
+            "write": 3.125
+          }
+        }
+      ],
+      "status": "active",
+      "enabled": true,
+      "limit": {
+        "context": 1000000,
+        "output": 65536
+      }
+    }
+  ]
+}

@@ -996,6 +996,21 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 ---
 
+### Symptom: opencode shows no models in the picker
+
+**Likely cause:** OpenCode 2 no longer lists models itself. `opencode models` takes no `--verbose` on 2.x, and the list comes from OpenCode's background server, which answers nothing for a directory it has not indexed yet. SPLITBRIEF asks that server with `opencode api GET /api/model` and keeps `opencode models --verbose` for releases below 2.0.0, chosen by the installed version. The picker shows the list the last detection pass remembered in `.splitbrief/detection-cache.json`. A list taken before the upgrade, or by a SPLITBRIEF build that still ran the 1.x command against OpenCode 2, stays empty until a new pass replaces it, and the picker offers only its bundled rows under `No models listed` or `No models confirmed`.
+
+**Fix:**
+1. Run a detection refresh: `/refresh`, `ctrl+r` in the seat picker, or `r` on the Setup screen when its discovery check failed. The pass reads the installed version again, runs the listing that version serves and rewrites the cache.
+2. Do not expect a run to refresh it. Run preparation checks readiness only and never probes a catalog. The TUI runs one background pass at launch and none after that, so an upgrade made while it is open needs a refresh.
+3. If the refresh still lists nothing, run `opencode api GET /api/model` in the project directory. An empty `data` array means OpenCode itself serves no model there: check `opencode auth list`, sign in with `opencode auth login`, then refresh again.
+
+**Prevention:** Refresh detection after you upgrade OpenCode across 2.0.0.
+
+**See also:** [docs/SUBSYSTEMS.md](./SUBSYSTEMS.md) (detection), [docs/AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md) (why the listing runs with the host account).
+
+---
+
 ### Symptom: A slash command is not in the command palette
 
 **Likely cause:** The command's `validScreens` does not include the screen you are currently on. Slash commands are scoped per-screen by the catalog.

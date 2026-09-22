@@ -9,7 +9,7 @@ import {
   readinessBlockerMessage,
   serializeReadinessReportJson,
 } from '../../core/readiness/format.js';
-import type { ReadinessReport } from '../../core/readiness/types.js';
+import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import { CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
 import { cliReadinessCheckId } from '../../core/schemas/readiness.js';
 import {
@@ -42,6 +42,19 @@ const CLI_READINESS_CHECK_IDS: ReadonlySet<string> = new Set(
   CLI_TOOL_IDS.map((tool) => cliReadinessCheckId(tool)),
 );
 
+/** The release each compatible CLI reported, as the start gate would admit it. */
+function admittedVersions(checks: readonly ReadinessCheck[]): Record<string, string> {
+  return Object.fromEntries(
+    checks.flatMap(({ metadata }) =>
+      typeof metadata?.['tool'] === 'string' &&
+      typeof metadata['installedVersion'] === 'string' &&
+      metadata['compatibility'] === 'compatible'
+        ? [[metadata['tool'], metadata['installedVersion']]]
+        : [],
+    ),
+  );
+}
+
 /**
  * The arg-vector preflight is what execution preparation runs before the first
  * planner call; running it here makes that verdict inspectable without starting
@@ -72,10 +85,15 @@ async function withPreparationPreflights(options: {
   } = options;
   const config = collected.config;
   if (config === undefined) return collected.report;
+  const cliReadinessChecks = collected.report.sections
+    .filter((section) => section.id === 'runners')
+    .flatMap((section) => section.checks)
+    .filter((check) => CLI_READINESS_CHECK_IDS.has(check.id));
   const argVectorChecks = await collectArgVectorPreflightChecks({
     config,
     projectDir,
     roles: ['planner', 'implementer', 'reviewer'],
+    installedVersions: admittedVersions(cliReadinessChecks),
     ...(runHelp !== undefined && { runHelp }),
   });
   const consentChecks = await collectCustomRunnerConsentChecks({
@@ -91,10 +109,6 @@ async function withPreparationPreflights(options: {
           interaction,
         })
       : [];
-  const cliReadinessChecks = collected.report.sections
-    .filter((section) => section.id === 'runners')
-    .flatMap((section) => section.checks)
-    .filter((check) => CLI_READINESS_CHECK_IDS.has(check.id));
   return applyRunnerPreparationChecks(collected.report, [
     ...cliReadinessChecks,
     ...admissionChecks,

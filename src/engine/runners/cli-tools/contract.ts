@@ -125,6 +125,19 @@ export type CliAuthProbe =
         legacy?: CliAuthProbeLegacy | undefined;
       }>);
 
+/**
+ * The listing releases below `belowVersion` take instead of the declared one.
+ * Unlike the auth legacy it carries its own `parse`, because the two releases
+ * print different formats, and it inherits no `hostState`: a legacy listing the
+ * sandbox could already serve must not widen its posture.
+ */
+export type CliCatalogProbeLegacy = Readonly<{
+  belowVersion: string;
+  command: readonly [string, ...string[]];
+  manualCommand?: readonly [string, ...string[]] | undefined;
+  parse: CliProbeParser<readonly DetectedModel[]>;
+}>;
+
 export type CliCatalogProbe =
   | Readonly<{ kind: 'not-run' }>
   | (CliProbeCommand &
@@ -132,6 +145,13 @@ export type CliCatalogProbe =
         kind: 'catalog';
         /** A separately declared fixed manual command; never caller-mutated argv. */
         manualCommand?: readonly [string, ...string[]] | undefined;
+        /**
+         * Enumeration the credential sandbox cannot answer, so this listing runs
+         * with the host account instead of the channel's staging. Declared per
+         * tool and read only here: dispatch keeps the channel's own posture.
+         */
+        hostState?: 'host-account' | undefined;
+        legacy?: CliCatalogProbeLegacy | undefined;
         parse: CliProbeParser<readonly DetectedModel[]>;
       }>);
 

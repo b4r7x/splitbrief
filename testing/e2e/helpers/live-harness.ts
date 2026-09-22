@@ -155,7 +155,10 @@ export function liveModelPin(opts: {
 export function openCodeFreeModelId(): string | undefined {
   let stdout: string;
   try {
-    stdout = execFileSync('opencode', ['models'], { encoding: 'utf-8', timeout: 60_000 });
+    stdout = execFileSync('opencode', ['api', 'GET', '/api/model'], {
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
   } catch {
     return undefined;
   }
