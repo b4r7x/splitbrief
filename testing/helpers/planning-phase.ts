@@ -200,6 +200,7 @@ export type RunOpts = {
   rewindFeedback?: string | undefined;
   drainPendingAttachments?: (() => Attachment[]) | undefined;
   sinks?: WorkflowSinks & { abortTurn: () => boolean };
+  plannerContext?: string | undefined;
 };
 
 export async function runPlanningTurn(dirs: string[], opts: RunOpts = {}) {
@@ -222,6 +223,7 @@ export async function runPlanningTurn(dirs: string[], opts: RunOpts = {}) {
       ...(opts.drainPendingAttachments !== undefined && {
         drainPendingAttachments: opts.drainPendingAttachments,
       }),
+      ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
     },
     planner,
     state,

@@ -1,7 +1,9 @@
 import { useRef, useEffect, useEffectEvent, useState } from 'react';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
+import type { RunRecord } from '../../../core/sessions/run-record.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
+import { seatIdentitiesFromConfig, seatIdentityChanges } from '../../../core/state/seats.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -15,9 +17,10 @@ import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
+import { fileHaltIsStale } from '../../../engine/orchestrator/run/init.js';
 import type { SeatSwapChoice } from '../../../engine/orchestrator/run/seat-swap.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
-import type { WorkflowSinks } from '../../../engine/orchestrator/types.js';
+import type { OrchestratorCallbacks, WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import { addTuiEvent } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
@@ -31,8 +34,11 @@ import {
   setResumeHandler,
   setRewindHandler,
   clearAllHandlers,
+  cancelBoundaryPause,
   consumeBoundaryInterrupt,
   consumeBoundaryPause,
+  consumeSeatChange,
+  requestSeatChangeAtBoundary,
 } from '../handlers.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
@@ -73,6 +79,11 @@ interface UseRunLoopOptions {
   /** How this run is re-entered — the loop reads its state and the rewind path restarts through it. */
   continuation: UseRunContinueResult;
   runWorkflow?: RunWorkflowFn | undefined;
+  /**
+   * The path a bare ⏎ takes on a run at rest: re-prepare it from the saved config and re-enter it in
+   * place. A run that stopped itself at a brief boundary to pick up a changed seat continues here.
+   */
+  continueAtRest?: ((record: RunRecord) => void) | undefined;
 }
 
 interface UseRunLoopResult {
@@ -92,6 +103,7 @@ export function useRunLoop({
   inputMode,
   continuation,
   runWorkflow: runWorkflowFn = runWorkflow,
+  continueAtRest,
 }: UseRunLoopOptions): UseRunLoopResult {
   const abortedRef = useRef(false);
   const pendingRewindRef = useRef<PendingRewind | null>(null);
@@ -218,16 +230,48 @@ export function useRunLoop({
       settleRun(session.ref);
     };
 
+    // A taken seat swap re-prepares this session, and every later iteration belongs to
+    // the preparation the seats were actually built from — otherwise the next halt
+    // rebuilds the tool that hit its limit.
+    let preparedForRun = prepared;
+    // A seat saved under the running brief is picked up at the next brief boundary: the run
+    // stops itself there instead of parking, and continues the way a run at rest does, re-prepared
+    // from the saved config. The panel's own swap re-prepares at once and cancels the request.
+    const offConfig = configStore.subscribe(() => {
+      const config = configStore.get().config;
+      if (config === null || lifecycleStore.get().status !== 'running') return;
+      const changed = seatIdentityChanges(
+        seatIdentitiesFromConfig(preparedForRun.config),
+        seatIdentitiesFromConfig(config),
+      );
+      if (changed.length > 0) requestSeatChangeAtBoundary();
+    });
+    let seatChangedAtBoundary = false;
+    const promptCallbacks = buildPromptCallbacks({ inputMode, abortedRef, controller });
+    const callbacks: OrchestratorCallbacks = {
+      ...promptCallbacks,
+      onContinuationNeeded: async (partial, at) => {
+        if (at === 'boundary' && consumeSeatChange()) {
+          seatChangedAtBoundary = true;
+          controller.abort();
+          return '';
+        }
+        return (await promptCallbacks.onContinuationNeeded?.(partial, at)) ?? '';
+      },
+    };
+
     try {
       let retryProfileOverride: string | undefined;
       let retryProfileOverrideTaskId: TaskId | undefined;
       let switchSeat: SeatSwapChoice | undefined;
-      // A taken seat swap re-prepares this session, and every later iteration belongs to
-      // the preparation the seats were actually built from — otherwise the next halt
-      // rebuilds the tool that hit its limit.
-      let preparedForRun = prepared;
+      // A halt about files the operator has since put back is not a question any more: on this
+      // re-entry it travels into the engine, which resolves it and says so in the transcript.
+      // Asked once — a halt this run raises later is fresh by construction.
+      let staleHalt =
+        stateForRun?.pendingRecovery !== undefined &&
+        (await fileHaltIsStale(session.ref.projectDir, stateForRun));
       while (!isWorkflowAborted(controller, abortedRef)) {
-        if (stateForRun?.pendingRecovery !== undefined) {
+        if (stateForRun?.pendingRecovery !== undefined && !staleHalt) {
           const promptPendingRecovery = createRecoveryDriver({
             prepared: preparedForRun,
             inputMode,
@@ -269,7 +313,10 @@ export function useRunLoop({
           retryProfileOverride = recovery.retryProfileOverride;
           retryProfileOverrideTaskId = recovery.retryProfileOverrideTaskId;
           switchSeat = recovery.switchSeat;
+          steerForRun = recovery.steer ?? steerForRun;
         }
+
+        staleHalt = false;
 
         const storeStreamingSink: StreamingSink = {
           start: (tid) => streamingOutputStore.startStreaming(tid),
@@ -287,7 +334,7 @@ export function useRunLoop({
           drainPendingAttachments: () => attachmentsStore.drain(),
           streamingSink: storeStreamingSink,
           signal: controller.signal,
-          callbacks: buildPromptCallbacks({ inputMode, abortedRef, controller }),
+          callbacks,
           savedState: stateForRun,
           selectedSkills,
           ...(steerForRun !== undefined && { steer: steerForRun }),
@@ -298,6 +345,7 @@ export function useRunLoop({
           ...(switchSeat !== undefined && { switchSeat }),
           onSeatSwapped: (swappedPrepared) => {
             preparedForRun = swappedPrepared;
+            if (consumeSeatChange()) cancelBoundaryPause();
           },
         });
         retryProfileOverride = undefined;
@@ -308,7 +356,10 @@ export function useRunLoop({
         if (abortedRef.current) return;
         if (controller.signal.aborted) {
           if (stopStore.get().intent === 'end-run') await finishStoppedRun();
-          else settleRun(session.ref);
+          else if (seatChangedAtBoundary) {
+            stopStore.reset();
+            continueAtRest?.(settleRun(session.ref));
+          } else settleRun(session.ref);
           return;
         }
 
@@ -359,6 +410,8 @@ export function useRunLoop({
       } else {
         settleRun(session.ref);
       }
+    } finally {
+      offConfig();
     }
   });
 
@@ -405,7 +458,7 @@ export function useRunLoop({
   // The run loop returned: the run is at rest, on the screen it never left. One re-read of the
   // record is the whole hand-off — the screen paints open or closed from it, and the session list
   // shows what it shows everywhere else.
-  const settleRun = (ref: PreparedExecution['session']['ref']): void => {
+  const settleRun = (ref: PreparedExecution['session']['ref']): RunRecord => {
     const record = readRunRecord(ref);
     const wasStopping = stopStore.get().intent !== 'none';
     setStopHandler(null);
@@ -423,6 +476,7 @@ export function useRunLoop({
       if (routerStore.get().screen === 'workflow' && overlayStore.get().active === 'none')
         overlayStore.open('stop-sheet');
     }
+    return record;
   };
 
   return { startedAt, sessionId: prepared?.session.ref.sessionId };

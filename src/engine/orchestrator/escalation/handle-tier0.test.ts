@@ -527,7 +527,15 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     expect(retryAttempts).toEqual([1, 2]);
     expect(escalateTiers).toEqual([1]);
     // 2 local retries plus the hinted retry: every attempt was the implementer's.
-    expect(result).toEqual({ completed: false, method: 'failed', attempts: 3 });
+    expect(result).toEqual({
+      completed: false,
+      method: 'failed',
+      attempts: 3,
+      lastError: 'still broken',
+      plannerHint: 'hint',
+      hintRungRan: true,
+      plannerVerdict: 'answer',
+    });
     expect(escalateFull).not.toHaveBeenCalled();
   });
 });

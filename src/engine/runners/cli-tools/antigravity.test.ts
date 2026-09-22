@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import {
@@ -14,6 +16,17 @@ import {
 } from './antigravity.js';
 
 const PROMPT = CLI_PROMPT_SENTINEL;
+const STREAM_JSON_FIXTURE = join(
+  import.meta.dirname,
+  '../../../../testing/fixtures/antigravity/stream-json.ndjson',
+);
+
+function fixtureEvents() {
+  return readFileSync(STREAM_JSON_FIXTURE, 'utf8')
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .flatMap((line) => [...antigravityProtocolEvents(line)]);
+}
 
 function plannerArgs(
   options: {
@@ -56,7 +69,8 @@ describe('Antigravity role adapters', () => {
     expect(CLI_TOOL_CATALOG.antigravity.executableAliases).toEqual(['agy']);
     expect(CLI_TOOL_CATALOG.antigravity.effortChannel).toBe('effort-flag');
     expect(CLI_TOOL_CATALOG.antigravity.compatibility.versionScheme).toBe('semver');
-    expect(CLI_TOOL_CATALOG.antigravity.compatibility.testedVersion).toBe('1.2.2');
+    expect(CLI_TOOL_CATALOG.antigravity.compatibility.testedVersion).toBe('1.2.7');
+    expect(CLI_TOOL_CATALOG.antigravity.compatibility.evidence.asOf).toBe('2026-09-21');
   });
 
   it('probes the version with --version, the flag that prints the bare semver', () => {
@@ -72,6 +86,8 @@ describe('Antigravity role adapters', () => {
       'plan',
       '--print-timeout',
       '10m',
+      '--output-format',
+      'stream-json',
       '--model',
       'gemini-3-pro',
       '--effort',
@@ -86,24 +102,82 @@ describe('Antigravity role adapters', () => {
       '--dangerously-skip-permissions',
       '--print-timeout',
       '20m',
+      '--output-format',
+      'stream-json',
     ]);
   });
 
-  it('asks for no output format, because both seats read the stream with the text parser', () => {
-    expect(plannerArgs()).not.toContain('--output-format');
-    expect(implementerArgs()).not.toContain('--output-format');
+  it('asks both seats for the stream-json protocol so every step reaches the transcript', () => {
+    for (const args of [plannerArgs(), implementerArgs()]) {
+      expect(args[args.indexOf('--output-format') + 1]).toBe('stream-json');
+    }
   });
 
-  it('books the prose token line as the running total, not a delta to add up', () => {
-    const events = [
-      ...antigravityProtocolEvents('Tokens: 1.2k sent, 300 received'),
-      ...antigravityProtocolEvents('Tokens: 1.5k sent, 400 received'),
-    ];
+  it('replays the captured stream: session, paired tool steps, streamed text, per-step usage', () => {
+    const events = fixtureEvents();
+    const tools = events.filter((event) => event.type === 'tool-use');
+    const terminal = antigravityImplementerAdapter.terminal({
+      outputContract: antigravityImplementerAdapter.outputContract,
+      events,
+      stderr: '',
+      exitCode: 0,
+      signal: null,
+    });
 
-    expect(events).toEqual([
-      { type: 'usage', usage: { inputTokens: 1200, outputTokens: 300 }, semantics: 'final' },
-      { type: 'usage', usage: { inputTokens: 1500, outputTokens: 400 }, semantics: 'final' },
+    expect(events[0]).toEqual({
+      type: 'session',
+      nativeSessionId: '50328626-c5df-4301-9da7-dee7ce900271',
+    });
+    expect(tools.map((event) => [event.id, event.stage])).toEqual([
+      ['step-2', 'started'],
+      ['step-2', 'done'],
+      ['step-4', 'started'],
+      ['step-4', 'done'],
+      ['step-6', 'started'],
+      ['step-6', 'done'],
     ]);
+    const streamed = events
+      .flatMap((event) => (event.type === 'text' ? [event.text] : []))
+      .join('');
+    const semantics = events
+      .filter((event) => event.type === 'usage')
+      .map((event) => event.semantics);
+    expect(streamed).toBe('OK\n');
+    expect(semantics).toEqual(['delta', 'delta', 'delta', 'delta']);
+    expect(terminal).toEqual({
+      type: 'result',
+      status: 'completed',
+      text: 'OK\n',
+      usage: { inputTokens: 59864, outputTokens: 272, reasoningTokens: 999, cacheReadTokens: 0 },
+      nativeSessionId: '50328626-c5df-4301-9da7-dee7ce900271',
+      error: null,
+      partial: false,
+    });
+  });
+
+  it('hands back the result response as the text of both seats', () => {
+    const events = fixtureEvents();
+    for (const adapter of [antigravityPlannerAdapter, antigravityImplementerAdapter]) {
+      expect(
+        adapter.terminal({
+          outputContract: adapter.outputContract,
+          events,
+          stderr: '',
+          exitCode: 0,
+          signal: null,
+        }).text,
+      ).toBe('OK\n');
+    }
+  });
+
+  it('fails a non-SUCCESS result instead of completing on the exit code', () => {
+    const events = antigravityProtocolEvents(
+      JSON.stringify({
+        event: 'result',
+        result: { conversation_id: 'conv-1', status: 'ERROR', error: 'quota reached' },
+      }),
+    );
+
     expect(
       antigravityImplementerAdapter.terminal({
         outputContract: antigravityImplementerAdapter.outputContract,
@@ -111,8 +185,13 @@ describe('Antigravity role adapters', () => {
         stderr: '',
         exitCode: 0,
         signal: null,
-      }).usage,
-    ).toMatchObject({ inputTokens: 1500, outputTokens: 400 });
+      }),
+    ).toMatchObject({
+      status: 'failed',
+      nativeSessionId: 'conv-1',
+      error: { code: 'antigravity-result-failed', message: 'quota reached' },
+      partial: true,
+    });
   });
 
   it('appends configured args after the adapter-owned prefix', () => {
@@ -136,21 +215,22 @@ describe('Antigravity role adapters', () => {
     ).toMatchObject({ valid: false });
   });
 
-  it('parses text lines and closes on the process exit contract', () => {
-    expect(antigravityPlannerAdapter.outputContract).toEqual({
-      kind: 'text-exit',
-      successfulExitCodes: [0],
-    });
-    const events = [...antigravityProtocolEvents('the plan')];
-    const terminal = antigravityPlannerAdapter.terminal({
-      outputContract: antigravityPlannerAdapter.outputContract,
-      events,
-      stderr: '',
-      exitCode: 0,
-      signal: null,
-    });
-
-    expect(terminal).toMatchObject({ type: 'result', status: 'completed', text: 'the plan\n' });
+  it('requires the result frame as the terminal on both seats', () => {
+    for (const adapter of [antigravityPlannerAdapter, antigravityImplementerAdapter]) {
+      expect(adapter.outputContract).toEqual({
+        kind: 'structured-terminal',
+        terminalEvent: 'required',
+      });
+      expect(() =>
+        adapter.terminal({
+          outputContract: adapter.outputContract,
+          events: antigravityProtocolEvents('{"event":"init","conversation_id":"conv-1"}'),
+          stderr: '',
+          exitCode: 0,
+          signal: null,
+        }),
+      ).toThrow('Antigravity output ended without a terminal result');
+    }
   });
 
   it('publishes one conformance candidate per seat, each hashing its own raw contract', () => {
@@ -160,7 +240,12 @@ describe('Antigravity role adapters', () => {
     ]);
     for (const candidate of CLI_CONFORMANCE_CANDIDATES) {
       expect(contractSha256(candidate.rawContract)).toBe(candidate.contractSha256);
-      expect(candidate.rawContract.expectedRawTerminal).toBe('process-exit');
+      expect(candidate.rawContract.expectedRawTerminal).toBe('result');
+      expect(candidate.rawContract.asOf).toBe('2026-09-21');
+      expect(candidate.rawContract.rawInvocation.slice(-2)).toEqual([
+        '--output-format',
+        'stream-json',
+      ]);
     }
     expect(CLI_CONFORMANCE_CANDIDATES[0]?.contractSha256).not.toBe(
       CLI_CONFORMANCE_CANDIDATES[1]?.contractSha256,

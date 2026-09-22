@@ -11,6 +11,7 @@ import type {
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import type { AnsweredQuestion } from '../../core/schemas/question.js';
+import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type {
   EngineEvent,
   EngineEventOf,
@@ -103,7 +104,13 @@ export function publishPlannerStatus(
   bus: EventBus,
   state: WorkflowState,
   status: 'running' | 'done',
-  extra?: { duration?: number; summary?: string; tool?: string; model?: string },
+  extra?: {
+    duration?: number;
+    summary?: string;
+    tool?: string;
+    model?: string;
+    call?: PlannerCall;
+  },
 ): void {
   const tool = extra?.tool ?? state.plannerTool;
   const model = extra?.model ?? state.plannerModel;
@@ -116,6 +123,7 @@ export function publishPlannerStatus(
     ...(extra?.summary !== undefined && { summary: extra.summary }),
     ...(tool !== undefined && { tool }),
     ...(model !== undefined && { model }),
+    ...(extra?.call !== undefined && { call: extra.call }),
   });
 }
 

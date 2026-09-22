@@ -11,8 +11,12 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
+import { routerStore } from '../../stores/navigation/router.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import type { CliAuthMethod } from '../../core/runners/cli-tool-catalog.js';
 import type { SeatPickerRole } from '../../core/runners/seat-roles.js';
@@ -171,6 +175,8 @@ describe('usePickerActions', () => {
     overlayStore.reset();
     feedbackStore.reset();
     pickerViewStore.reset();
+    routerStore.reset();
+    lifecycleStore.__testReset();
   });
 
   afterEach(() => {
@@ -209,6 +215,37 @@ describe('usePickerActions', () => {
       expect(configStore.get().config?.planner).toMatchObject({ kind: 'cli', tool: 'codex' });
     });
     expect(configStore.get().config?.reviewer).toBeUndefined();
+    ui.unmount();
+  });
+
+  it('says a seat saved under a running brief lands after it', async () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
+    seed(config);
+    const prepared = makePreparedExecution({
+      projectDir,
+      sessionId: 'sess-live',
+      feature: 'live run',
+      config,
+    });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: prepared.session.ref }),
+      execution: { kind: 'local', prepared },
+    });
+    lifecycleStore.__testReset({ phase: 'implementing' });
+
+    const ui = renderFeature(
+      <ConfirmOnKeyProbe role="implementer" selection={realPickerOption('implementer', 'codex')} />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).toBe(
+        `${CREW_SEAT_LABELS.build} seat changes after this brief`,
+      );
+    });
+    expect(configStore.get().config?.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
     ui.unmount();
   });
 

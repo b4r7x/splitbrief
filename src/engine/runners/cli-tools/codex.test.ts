@@ -340,6 +340,29 @@ describe('Codex lossless prompt transport', () => {
 });
 
 describe('Codex JSONL protocol adapter', () => {
+  it('marks item.started tool items as started and item.completed ones as done', () => {
+    expect(
+      codexProtocolEvents(
+        JSON.stringify({
+          type: 'item.started',
+          item: { id: 'item_1', type: 'command_execution', command: 'npm test' },
+        }),
+      ),
+    ).toEqual([
+      { type: 'tool-use', stage: 'started', id: 'item_1', name: 'command_execution', input: {} },
+    ]);
+    expect(
+      codexProtocolEvents(
+        JSON.stringify({
+          type: 'item.completed',
+          item: { id: 'item_1', type: 'command_execution', output: 'ok' },
+        }),
+      ),
+    ).toEqual([
+      { type: 'tool-use', id: 'item_1', name: 'command_execution', input: {}, output: 'ok' },
+    ]);
+  });
+
   it('projects session, assistant text, usage, and a required terminal result', () => {
     const events = [
       ...codexProtocolEvents(JSON.stringify({ type: 'thread.started', thread_id: 'session-2' })),

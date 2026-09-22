@@ -27,7 +27,9 @@ export function isAutomaticModel(model: string | undefined, providerId?: string)
 /**
  * CLI automatic selection is structural, not catalog-driven: it resolves to no
  * model at all so the adapter omits `--model` and the tool uses whatever its own
- * configuration says. Never consult the model catalog here.
+ * configuration says, unless preparation resolved the tool's own selection into
+ * the prepared config (`readHostModelSelection`). Never consult the model
+ * catalog here.
  */
 export function resolveCliModel(model: string | undefined, tool?: string): string | undefined {
   const normalized = normalizeConfiguredModel(model, tool);

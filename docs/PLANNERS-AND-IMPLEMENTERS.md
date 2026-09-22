@@ -127,7 +127,7 @@ The orchestrator reads capabilities, not backend identity, to decide what's poss
 
 Two presets exist for common patterns:
 
-- `CONVERSATIONAL_CAPS` -- everything except `supportsHintEscalation`. Used by the Claude Code planner only; other CLI tools use `ONE_SHOT_API_CAPS` with `supportsSessionResume` / `supportsEffort` overridden from their adapter.
+- `CONVERSATIONAL_CAPS` -- every capability, `supportsHintEscalation` included. Used by the Claude Code planner only; other CLI tools use `ONE_SHOT_API_CAPS` with `supportsSessionResume` / `supportsEffort` overridden from their adapter.
 - `ONE_SHOT_API_CAPS` -- conversational planning off, session resume off, effort/images off, hint escalation on. Used verbatim by API backends, and as the override base by every non-Claude CLI tool.
 
 When a capability is missing, the orchestrator falls back. No session resume means context is rebuilt from the JSONL log. No conversational planning means no inline Q&A. No image support means attachments are dropped with a `planner_attachments_dropped` event.
@@ -407,7 +407,7 @@ The legacy fallback is `DEFAULT_UNKNOWN_CONTEXT_LENGTH = 32768` in `src/core/tok
 
 A boot-probed window applies only to the default implementer profile — the profile the probe ran for. A sibling profile uses its own model/configuration metadata; an API profile without known active or configured capacity uses the API application fallback.
 
-A CLI runner under `model: auto` — or with the model omitted — resolves to no model id, so its window is the smallest the bundled catalog guarantees for that tool (`resolveRunnerContextWindow`, `src/engine/providers/model/context-window.ts`); automatic selection never adds a `--model` flag.
+A CLI runner under `model: auto` — or with the model omitted — is resolved at preparation to the model the tool itself has selected on this host (`readHostModelSelection`, `src/engine/runners/host-model-selection.ts`), and the prepared config carries that id, so the window is that model's. When the tool exposes no readable selection, the seat stays on automatic selection, no `--model` flag is added, and the window is the smallest the bundled catalog guarantees for that tool (`resolveRunnerContextWindow`, `src/engine/providers/model/context-window.ts`).
 
 Routing between configured profiles is by capability, never by price: `compareProfileRouteRank` (`src/engine/orchestrator/context-routing/decision.ts`) ranks the capable profiles by context window, smallest sufficient window first, then by name. A routed selection names the profile and the fit it was chosen on: `Selected profile <name> (fits, estimated N/M tokens)`.
 
@@ -438,7 +438,7 @@ Pricing lookup keeps its ladder — cached models.dev first, then runtime metada
 
 `src/engine/planners/cli.ts`, `src/engine/implementers/cli.ts`
 
-Spawns a CLI tool as a subprocess. Supported tools: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`.
+Spawns a CLI tool as a subprocess. Supported tools: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`.
 
 Every planner call declares its transport before dispatch: the current call's final response (`stdout-final`) or an exact declared-file lease. The candidate is that call's authoritative final output; session files, project-root artifacts, markdown-linked paths, prose mentions, stderr, and earlier attempts are evidence at most, never content. Claude Code continues a session it already minted with `--resume`. Output is parsed line by line via each tool's protocol parser; a configured `outputFormat` cannot replace a structured terminal contract.
 
@@ -463,11 +463,11 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 | `kilo-code` | `kilo` | planner, implementer | 0.1.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent |
 | `cursor` | `cursor-agent` | planner, implementer | 2026.08.25-3e8eec8 | `calver` | 2026-08-27 | optional / optional | `native-cli` (`--list-models`) | subscription-included |
 | `command-code` | `cmd` | planner, implementer | 1.39.2 | `semver` | 2026-09-01 | optional / optional | `native-cli` (`--list-models`) | subscription-included |
-| `antigravity` | `agy` | planner, implementer | 1.2.2 | `semver` | 2026-09-14 | optional / optional | `native-cli` (`agy models`) | subscription-included |
+| `antigravity` | `agy` | planner, implementer | 1.2.7 | `semver` | 2026-09-21 | optional / optional | `native-cli` (`agy models`) | subscription-included |
 
 **Command Code's row was captured from the real binary on 2026-09-01 against `cmd` 1.39.2**, replacing the hand-authored fixtures that stood in for it. The raw `cli-conformance` leg passes; the production leg records `OMIT` because the conformance sandbox gives the child a fresh `HOME` and never bridges host CLI session state, so a `session`-auth tool reaches the CLI unauthenticated. That gap is the harness's, not the adapter's — the adapter's own argv was replayed against the authenticated binary and its terminal `result` frame parses. See `testing/fixtures/command-code/README.md` for the recorded evidence and the remaining gap.
 
-`cursor` executable aliases are `cursor-agent` / `agent`. Command Code's binary is `cmd` with no alternate alias, and its credentials come from `cmd login`; there is no API-key environment channel. Antigravity's binary is `agy`, `agy --version` prints a bare semver (`1.2.2`, captured 2026-09-14 — `agy --help` prints no version at all), and `agy models` is both its auth probe and its model listing: one `<id>\t<display name>` row per effort variant (`gemini-3.8-flash-high`), merged into one picker row per model. The seat spends its effort on `--effort` (`effortChannel: 'effort-flag'`), not through the id suffix. The reviewer seat uses planner backends (the same admission set).
+`cursor` executable aliases are `cursor-agent` / `agent`. Command Code's binary is `cmd` with no alternate alias, and its credentials come from `cmd login`; there is no API-key environment channel. Antigravity's binary is `agy`, `agy --version` prints a bare semver (`1.2.7`, captured 2026-09-21 — `agy --help` prints no version at all), and `agy models` is both its auth probe and its model listing: one `<id>\t<display name>` row per effort variant (`gemini-3.8-flash-high`), merged into one picker row per model. The seat spends its effort on `--effort` (`effortChannel: 'effort-flag'`), not through the id suffix. The reviewer seat uses planner backends (the same admission set).
 
 ##### Posture, trust, and auth
 
@@ -524,7 +524,7 @@ implementer:
   model: claude-sonnet-4-20250514
 ```
 
-Swap `tool` and `model` for any admitted CLI. Omit `model`, or write `model: auto`, to use the CLI's automatic selection — both spellings pass no `--model` flag, so the tool keeps its own configured model. Tools with `backend-default` or `auto-only` model policy (none in the current admitted set) accept model absence or `auto` and reject an explicit model ID or `customModels` before spawn.
+Swap `tool` and `model` for any admitted CLI. Omit `model`, or write `model: auto`, to follow the CLI's own selection: at preparation SPLITBRIEF reads the model that tool has selected on this machine from the tool's own config or state and passes it as `--model` (the five readable sources are tabled in [CONFIGURATION.md](./CONFIGURATION.md)). The YAML keeps saying `auto`, which is the operator's intent, while the run's own record — `workflow_config`, `seats.json`, the task start — names the resolved id. `cursor`, `copilot` and `command-code` expose no selection file, so they keep the tool's own default and readiness carries a warning saying so. Tools with `backend-default` or `auto-only` model policy (none in the current admitted set) accept model absence or `auto` and reject an explicit model ID or `customModels` before spawn.
 
 ##### Blocked admission candidates (OMIT)
 
@@ -602,12 +602,28 @@ The role vector is pinned and effect-verified per backend. A role that is missin
 | Backend | Planner role | Implementer role |
 |---|---|---|
 | `opencode` | `--agent plan` | `--agent build` |
-| `kilo-code` | `--agent plan` | `--agent code --auto` |
+| `kilo-code` | `--format json --agent plan` | `--format json --agent code --auto` |
 | `claude-code` | `--permission-mode plan` (Read, Glob, Grep, Plan only) | `--permission-mode acceptEdits` |
 | `codex` | `--sandbox read-only --ask-for-approval never` exec, ambient config and rules ignored, ephemeral detached | `--sandbox workspace-write --ask-for-approval never` in the staged checkout |
 | `cursor` | `--print --output-format stream-json --mode plan --trust` | `--print --output-format stream-json --force --trust` |
+| `copilot` | `-p --plan --allow-all-tools --no-ask-user --output-format json` | `-p --allow-all --output-format json` |
 | `command-code` | `-p --output-format json --trust --skip-onboarding --permission-mode plan` | `-p --output-format json --trust --skip-onboarding --yolo` |
-| `antigravity` | `-p --mode plan --print-timeout 10m` | `-p --dangerously-skip-permissions --print-timeout 20m` |
+| `antigravity` | `-p --mode plan --print-timeout 10m --output-format stream-json` | `-p --dangerously-skip-permissions --print-timeout 20m --output-format stream-json` |
+
+**Output protocol.** Every admitted tool is spawned in a machine-readable output mode and parsed into the same protocol events, so tool calls, assistant text and token usage arrive while the call is still running rather than in one block at the end. A `tool-use` event carries `stage: 'started'` when the call begins and no stage when it completes (`src/engine/runners/cli-tools/contract.ts`); the idle watchdog measures the gaps between frames, so a streaming tool is never mistaken for a stalled one.
+
+| Backend | Output flag | Parser | Text deltas | Tool calls | Usage | Session id |
+|---|---|---|---|---|---|---|
+| `opencode` | `--format json` | `streaming/parse-opencode.ts` | yes | started + done | yes | yes |
+| `kilo-code` | `--format json` (both roles) | `streaming/parse-opencode.ts` | yes | started + done | yes | yes |
+| `claude-code` | `--output-format stream-json --verbose --include-partial-messages` | `streaming/parse-stream-json.ts` | yes | started + done | yes | yes |
+| `codex` | `--json` | `codexProtocolEvents` (`cli-tools/codex.ts`) | yes | started + done | yes | yes |
+| `cursor` | `--output-format stream-json` | `parseCursorRecord` (`cli-tools/cursor.ts`) | yes | started + done | yes | yes |
+| `copilot` | `--output-format json` (both roles) | `streaming/parse-copilot.ts` | yes | started + done | yes | yes |
+| `command-code` | `--output-format json` | `commandCodeProtocolEvents` (`cli-tools/command-code.ts`) | no — final text only | done only | final only | yes |
+| `antigravity` | `--output-format stream-json` (both roles) | `streaming/parse-antigravity.ts` | yes | started + done | yes | yes |
+
+Antigravity's per-step `usage` is the usage of that response step and its `result` usage is the turn total, so step usage is emitted as a delta and the terminal usage is taken from the explicit result — the accumulator never counts a turn twice.
 
 A planner never gains canonical write authority. Candidates stay non-canonical until the authoritative generation commit; the fixed `tasks.md`, `brief-quality.json`, `spec.md`, and `plan.md` files are compatibility projections of that generation. See [WORKFLOW.md](./WORKFLOW.md) for the generation, permit, and disposition flow.
 

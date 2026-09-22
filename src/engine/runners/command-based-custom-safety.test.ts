@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import { runnerCallEventToSessionLogEntry } from '../calls/session-log.js';
@@ -229,32 +230,35 @@ describe('invokeCustomCommandBasedRunner safety', () => {
     expectNoDeclaredValues(observation, [canary]);
   });
 
-  it('treats default stdout, stderr, line, and combined output limits as fatal', async () => {
+  // Per-channel retention bounds truncate what is kept; only the process-wide output
+  // budget ends the call. An over-long line is reported and the call carries on.
+  it('treats the process output budget as fatal and an over-long line as a warning', async () => {
     const canary = 'output-budget-value-canary-3ef9';
+    const MB = 1024 * 1024;
     const scenarios = [
       {
         name: 'stdout',
-        script:
-          'process.stdout.write("secret-" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");process.stdout.write("\\n".repeat(1024 * 1024 + 1));',
-        code: /^runner_process_output_limit$/,
+        script: `process.stdout.write("secret-" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");process.stdout.write("x".repeat(64 * ${MB} + 1));`,
+        status: 'truncated',
+        code: 'runner_process_output_limit',
       },
       {
         name: 'stderr',
-        script:
-          'process.stderr.write("secret-" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");process.stderr.write("\\n".repeat(256 * 1024 + 1));',
-        code: /^runner_process_output_limit$/,
-      },
-      {
-        name: 'line',
-        script:
-          'process.stdout.write("secret-" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");process.stdout.write("x".repeat(1024 * 1024 + 1));',
-        code: /^(?:stdout_line_overflow|runner_process_output_limit)$/,
+        script: `process.stderr.write("secret-" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");process.stderr.write("x".repeat(64 * ${MB} + 1));`,
+        status: 'truncated',
+        code: 'runner_process_output_limit',
       },
       {
         name: 'combined',
-        script:
-          'process.stdout.write("\\n".repeat(1024 * 1024));process.stderr.write("\\n".repeat(256 * 1024));',
-        code: /^runner_process_output_limit$/,
+        script: `process.stdout.write("x".repeat(40 * ${MB}));process.stderr.write("y".repeat(25 * ${MB}));`,
+        status: 'truncated',
+        code: 'runner_process_output_limit',
+      },
+      {
+        name: 'line',
+        script: `process.stdout.write("secret-" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");process.stdout.write("x".repeat(${MB} + 1) + "\\n");`,
+        status: 'completed',
+        code: 'stdout_line_overflow',
       },
     ] as const;
 
@@ -271,15 +275,16 @@ describe('invokeCustomCommandBasedRunner safety', () => {
       });
 
       expect(observation.failure, scenario.name).toBeUndefined();
-      expect(observation.result, scenario.name).toMatchObject({
-        status: 'truncated',
-        error: { code: expect.stringMatching(scenario.code) },
-      });
+      expect(observation.result, scenario.name).toMatchObject({ status: scenario.status });
+      const warnings = observation.events.flatMap((event) =>
+        event.type === 'call_warning' ? [event.warning.code] : [],
+      );
+      expect(warnings, scenario.name).toContain(scenario.code);
       expectNoDeclaredValues(observation, [canary]);
     }
   });
 
-  it('reaps an output-limited custom child before its delayed side effect can run', {
+  it('reaps a budget-breaching custom child before its delayed side effect can run', {
     timeout: 30_000,
   }, async () => {
     await withTempDir('custom runner output limit cleanup', async (projectDir) => {
@@ -292,8 +297,8 @@ describe('invokeCustomCommandBasedRunner safety', () => {
               '-e',
               [
                 'const fs = require("node:fs");',
-                "process.stdout.write('x'.repeat(1_400_000));",
-                `setTimeout(() => fs.writeFileSync(${JSON.stringify(delayedEffect)}, "late"), 1_000);`,
+                `process.stdout.write('x'.repeat(64 * 1024 * 1024 + 1));`,
+                `setTimeout(() => fs.writeFileSync(${JSON.stringify(delayedEffect)}, "late"), 2_500);`,
                 'setInterval(() => undefined, 1_000);',
               ].join(''),
             ],
@@ -308,10 +313,10 @@ describe('invokeCustomCommandBasedRunner safety', () => {
       expect(observation.failure).toBeUndefined();
       expect(observation.result).toMatchObject({
         status: 'truncated',
-        error: {
-          code: expect.stringMatching(/^(?:stdout_line_overflow|runner_process_output_limit)$/),
-        },
+        error: { code: 'runner_process_output_limit' },
       });
+      // Past the moment the child scheduled its write: a surviving child would have run it.
+      await delay(4_000);
       expect(existsSync(delayedEffect)).toBe(false);
     });
   });

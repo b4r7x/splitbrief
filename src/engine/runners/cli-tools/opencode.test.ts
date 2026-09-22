@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import {
@@ -10,6 +12,10 @@ import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 
 const PROMPT = CLI_PROMPT_SENTINEL;
 const PROJECT_DIR = process.cwd();
+const STREAM_JSON_FIXTURE = join(
+  import.meta.dirname,
+  '../../../../testing/fixtures/opencode/stream-json.ndjson',
+);
 
 function plannerArgs(
   model: string | undefined,
@@ -427,6 +433,55 @@ describe('OpenCode JSON envelope adapter', () => {
       name: 'read',
       input: { path: 'src/a.ts' },
       output: 'ok',
+    });
+  });
+
+  it('marks a running tool part as started and the captured completed part as done', () => {
+    expect(
+      opencodeProtocolEvents(
+        JSON.stringify({
+          type: 'tool_use',
+          sessionID: 'ses-open',
+          part: {
+            type: 'tool',
+            callID: 'bash_0',
+            tool: 'bash',
+            state: { status: 'running', input: { command: 'npm test' } },
+          },
+        }),
+      ),
+    ).toContainEqual({
+      type: 'tool-use',
+      stage: 'started',
+      id: 'bash_0',
+      name: 'bash',
+      input: { command: 'npm test' },
+    });
+
+    const captured = readFileSync(STREAM_JSON_FIXTURE, 'utf8')
+      .split('\n')
+      .filter((line) => line.length > 0)
+      .flatMap((line) => [...opencodeProtocolEvents(line)]);
+    expect(captured).toContainEqual({
+      type: 'tool-use',
+      id: 'call_c568a8ee89a44c3dbf494d2d',
+      name: 'read',
+      input: { path: 'README.md' },
+      output: expect.stringContaining('This is a throwaway probe repository for opencode.'),
+    });
+    expect(captured.some((event) => event.type === 'warning')).toBe(false);
+    expect(
+      opencodePlannerAdapter.terminal({
+        outputContract: opencodePlannerAdapter.outputContract,
+        events: captured,
+        stderr: '',
+        exitCode: 0,
+        signal: null,
+      }),
+    ).toMatchObject({
+      status: 'completed',
+      text: 'OK',
+      nativeSessionId: 'ses_f3b8e6d96ffeVsgNHwMBiToqhx',
     });
   });
 

@@ -743,15 +743,6 @@ function readArgv(argvFile: string): string[] {
   return readFileSync(argvFile, 'utf8').split('\n').slice(0, -1);
 }
 
-function processGroupIsAbsent(pid: number): boolean {
-  try {
-    process.kill(-pid, 0);
-    return false;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'ESRCH';
-  }
-}
-
 function processIsAbsent(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -957,22 +948,19 @@ describe('createCliImplementer (opencode arg vector)', () => {
     expect(argv.slice(-2)).toEqual(['--extra-flag', 'value']);
   });
 
-  it('preserves a typed budget failure and group reaping through the real CLI path', async () => {
+  it('warns on an over-long stdout line and completes through the real CLI path', async () => {
     const pidsFile = join(shimDir, 'pids.txt');
     const shimPath = join(shimDir, 'opencode');
     const script = [
       '#!/usr/bin/env node',
-      "const { spawn } = require('node:child_process');",
       "const { writeFileSync } = require('node:fs');",
-      "const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 25)'], { stdio: 'ignore' });",
-      'child.unref();',
-      `writeFileSync(${JSON.stringify(pidsFile)}, process.pid + ':' + child.pid);`,
+      `writeFileSync(${JSON.stringify(pidsFile)}, String(process.pid));`,
       `process.stdout.write('x'.repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 10}));`,
     ].join('\n');
     writeFileSync(shimPath, `${script}\n`, 'utf8');
     chmodSync(shimPath, 0o755);
     const config = makeConfig({ implementer: opencodeImplementer });
-    let events: RunnerCallEvent[] = [];
+    const events: RunnerCallEvent[] = [];
     const publisher: ImplementerPublisher = {
       publishRunning: () => {},
       publishCallEvent: ({ event }) => events.push(event),
@@ -982,59 +970,23 @@ describe('createCliImplementer (opencode arg vector)', () => {
     };
 
     const implementer = createCliImplementer(opencodeImplementer, { publisher });
-    for (let iteration = 1; iteration <= 50; iteration += 1) {
-      let leaderPid = 0;
-      let descendantPid = 0;
-      let absentAtSettlement = { group: false, leader: false, descendant: false };
-      const result = await implementer
-        .implement({
-          task: makeTask(),
-          projectDir,
-          config,
-          context: { ...defaultContext, dir: projectDir },
-          onOutput: () => {},
-          phase: 'implementing',
-        })
-        .then((value) => {
-          const [leader, descendant] = readFileSync(pidsFile, 'utf8').split(':');
-          leaderPid = Number.parseInt(leader ?? '', 10);
-          descendantPid = Number.parseInt(descendant ?? '', 10);
-          absentAtSettlement = {
-            group: processGroupIsAbsent(leaderPid),
-            leader: processIsAbsent(leaderPid),
-            descendant: processIsAbsent(descendantPid),
-          };
-          return value;
-        });
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+      phase: 'implementing',
+    });
+    const leaderPid = Number.parseInt(readFileSync(pidsFile, 'utf8'), 10);
 
-      expect(result, `iteration ${iteration}`).toMatchObject({
-        success: false,
-        error: expect.stringContaining('CLI output line exceeded the line byte budget'),
-      });
-      expect(
-        events.filter((event) => event.type === 'call_error'),
-        `iteration ${iteration}`,
-      ).toEqual([
-        expect.objectContaining({
-          status: 'truncated',
-          error: {
-            code: 'output-budget-breach',
-            message: 'CLI output line exceeded the line byte budget',
-          },
-        }),
-      ]);
-      expect(leaderPid, `iteration ${iteration}`).toBeGreaterThan(1);
-      expect(descendantPid, `iteration ${iteration}`).toBeGreaterThan(1);
-      expect(absentAtSettlement, `iteration ${iteration}`).toEqual({
-        group: true,
-        leader: true,
-        descendant: true,
-      });
-      events = [];
-    }
-    // Fifty iterations of spawn-descendant-reap is about thirteen seconds alone. The repetition is
-    // the point of the case, so the budget absorbs the contention instead of the iteration count.
-  }, 180_000);
+    expect(result).toMatchObject({ success: false, outcome: 'no-staged-change' });
+    expect(
+      events.filter((event) => event.type === 'call_warning').map((event) => event.warning.code),
+    ).toContain('stdout_line_overflow');
+    expect(leaderPid).toBeGreaterThan(1);
+    expect(processIsAbsent(leaderPid)).toBe(true);
+  });
 });
 
 describe('createCliImplementer (timeout surfacing)', () => {

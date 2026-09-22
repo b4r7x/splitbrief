@@ -62,6 +62,8 @@ export type CliProtocolEvent =
       name: string;
       input: Readonly<Record<string, unknown>>;
       output?: unknown;
+      /** `started` records the call as it begins; absent means the call is done. */
+      stage?: 'started' | 'done' | undefined;
     }>
   | Readonly<{ type: 'warning'; code: string; message: string }>
   | CliProtocolTerminalEvent;

@@ -257,6 +257,12 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   },
   task_retry: { phase: 'implementing', taskId: 'T001', attempt: 1, maxRetries: 2, error: 'boom' },
   task_escalating: { phase: 'escalating', taskId: 'T001' },
+  task_scope_widened: {
+    phase: 'escalating',
+    taskId: 'T001',
+    paths: ['src/b.ts'],
+    reason: 'b consumes the export',
+  },
   task_full_fail: { phase: 'implementing', taskId: 'T001', reason: 'retries exhausted' },
   review_fix_started: { phase: 'final-review', cycle: 1, taskIds: ['T001'] },
   task_tokens: {

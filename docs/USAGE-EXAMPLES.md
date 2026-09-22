@@ -712,7 +712,7 @@ task T003: done (typecheck lint test)
 phase: final-review
 phase: complete
 review: passed
-done: 3 tasks, 128.4k tokens
+done: 3 tasks
 ```
 
 The count in the closing line is the number of tasks this run completed, so a resumed run reports only the tasks it ran itself.
@@ -767,7 +767,7 @@ phase: implementing
 task T003: done (typecheck lint test)
 phase: final-review
 review: passed
-done: 2 tasks, 96.1k tokens
+done: 2 tasks
 ```
 
 **The three actions `continue` can take:**

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  EffortLevelSchema,
   PhaseSchema,
   RecoveryActionSchema,
   RecoveryReasonSchema,
@@ -19,11 +20,14 @@ export const RecoveryFactSchema = z.union([z.string(), z.number(), z.boolean(), 
  * One seat a quota-blocked run could move to: a detected, ready tool other
  * than the one that hit the limit. The model is present only when the
  * candidate names a specific one; absent means the seat keeps its own default.
+ * The effort and variant are present when the picker chose them for the swap.
  */
 export const SeatSwapCandidateSchema = z
   .object({
     tool: z.string().min(1),
     model: z.string().min(1).optional(),
+    effort: EffortLevelSchema.optional(),
+    variant: z.string().min(1).optional(),
   })
   .strict();
 

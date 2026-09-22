@@ -52,6 +52,17 @@ describe('promptBodyRows', () => {
     expect(renderedRows[0]?.startsWith('r')).toBe(true);
   });
 
+  it('hangs a wrapped fact under its own first line', () => {
+    const sentence = 'Adjust the plan seat with /crew plan or Settings, then /resume and retry.';
+    const prompt = ['recovery needed', '', sentence].join('\n');
+    const rows = promptBodyRows(prompt, 48);
+    const factLines = rows.filter((row) => row.kind === 'facts-line');
+
+    expect(factLines.length).toBeGreaterThan(1);
+    for (const line of factLines) expect(line.text.startsWith('  ')).toBe(true);
+    expect(factLines.map((line) => line.text.trim()).join(' ')).toBe(sentence);
+  });
+
   it('wraps an odd trailing grid fact through the same counted body rows', () => {
     const headline = `${passHeadlinePrefix()}t3 ready for review`;
     const prompt = [

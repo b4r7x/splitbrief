@@ -107,6 +107,7 @@ const checkpointPredicates = [
   [checkpointId('replayed'), includesAll()],
   [checkpointId('failure'), includesAll(WORKFLOW_FIXTURE_TEXT.failure, 'Build failed')],
   [checkpointId('recovery'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
+  [checkpointId('retry-exhausted'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
   [checkpointId('api-context'), includesAll(WORKFLOW_FIXTURE_TEXT.apiContext, 'Try again')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 

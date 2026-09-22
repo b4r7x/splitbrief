@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { CliExecutableReceiptSchema } from '../../../core/discovery/detection.js';
@@ -33,7 +33,17 @@ const executable = CliExecutableReceiptSchema.parse({
 
 const directories: string[] = [];
 
+// A cli seat with no model makes preparation read the model the tool selected on this host, so
+// each case gets a host holding only what it wrote there.
+beforeEach(() => {
+  const home = createTempDir('start-preparation-home');
+  directories.push(home);
+  vi.stubEnv('HOME', home);
+  vi.stubEnv('XDG_CONFIG_HOME', join(home, '.config'));
+});
+
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const directory of directories.splice(0)) cleanupTempDir(directory);
 });
 

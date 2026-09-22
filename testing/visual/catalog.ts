@@ -728,6 +728,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-retry-exhausted',
+      title: 'Workflow · a brief that could not be landed',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'retry-exhausted',
+        title: 'Retry-exhausted recovery menu',
+        kind: 'question',
+        // The headline is the one line the panel keeps at 60x18, where the row budget
+        // leaves room for the actions and nothing else.
+        marker: 'exhausted recovery retries',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-api-context-insufficient',
       title: 'Workflow · a packet the plan seat was never given',
       surface: screenSurface('workflow'),

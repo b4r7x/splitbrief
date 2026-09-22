@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   framingForAttempt,
+  HAND_BACK_MAX_CHARS,
   HINT_ERROR_TEMPLATE,
   LADDER,
   MAX_HINT_ERROR_LENGTH,
@@ -28,7 +29,15 @@ describe('LADDER', () => {
   });
 
   it('marks only the intermediate rung optional', () => {
-    expect(LADDER.filter((rung) => rung.optional).map((rung) => rung.id)).toEqual(['intermediate']);
+    expect(LADDER.filter((rung) => rung.optional === true).map((rung) => rung.id)).toEqual([
+      'intermediate',
+    ]);
+  });
+
+  it('marks takeover as the only rung the engine does not run', () => {
+    expect(LADDER.filter((rung) => rung.engine === false).map((rung) => rung.id)).toEqual([
+      'takeover',
+    ]);
   });
 });
 
@@ -50,5 +59,9 @@ describe('HINT_ERROR_TEMPLATE', () => {
       'boom\n\n## Hints from senior reviewer:\ntry x',
     );
     expect(MAX_HINT_ERROR_LENGTH).toBe(4000);
+  });
+
+  it('bounds the implementer hand-back at 2000 characters', () => {
+    expect(HAND_BACK_MAX_CHARS).toBe(2000);
   });
 });

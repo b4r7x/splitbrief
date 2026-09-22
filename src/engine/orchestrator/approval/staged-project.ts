@@ -178,6 +178,22 @@ async function entryToPromote(opts: {
   return { kind: 'file', bytes, sha256: sha256Hex(bytes), mode: staged.mode };
 }
 
+/**
+ * The target already holds exactly what this promotion would write. That is a promotion that
+ * already happened — the operator applied the same change, or an earlier attempt got there —
+ * and rewriting it would only fail the acquisition recheck.
+ */
+async function targetHoldsStagedEntry(opts: {
+  targetProjectDir: string;
+  stagedProjectDir: string;
+  file: string;
+}): Promise<boolean> {
+  const staged = await entryToPromote(opts);
+  const current = await readConfinedEntry(opts.targetProjectDir, opts.file);
+  if (staged.kind === 'absent') return current.kind === 'absent';
+  return current.kind === 'file' && current.sha256 === staged.sha256;
+}
+
 export async function promoteStagedChanges(opts: {
   targetProjectDir: string;
   stagedProjectDir: string;
@@ -194,15 +210,18 @@ export async function promoteStagedChanges(opts: {
   if (targetBaseline === undefined) return { promotedFiles: [], conflictedFiles: [...files] };
 
   const preflight = await Promise.all(
-    files.map(
-      async (file): Promise<string | null> =>
-        (await matchesAcquisitionBaseline(targetProjectDir, file, targetBaseline)) ? null : file,
-    ),
+    files.map(async (file): Promise<'ok' | 'settled' | 'conflict'> => {
+      if (await matchesAcquisitionBaseline(targetProjectDir, file, targetBaseline)) return 'ok';
+      return (await targetHoldsStagedEntry({ targetProjectDir, stagedProjectDir, file }))
+        ? 'settled'
+        : 'conflict';
+    }),
   );
-  const conflictedFiles = preflight.filter((file): file is string => file !== null);
+  const conflictedFiles = files.filter((_, index) => preflight[index] === 'conflict');
   if (conflictedFiles.length > 0) {
     return { promotedFiles: [], conflictedFiles };
   }
+  const settledFiles = new Set(files.filter((_, index) => preflight[index] === 'settled'));
 
   const promotedFiles: string[] = [];
   const appliedFiles: EvidencePromotedFile[] = [];
@@ -212,11 +231,13 @@ export async function promoteStagedChanges(opts: {
       const entry = await entryToPromote({ targetProjectDir, stagedProjectDir, file });
       // Recheck after preparing bytes and mode, immediately before replacement.
       // A filesystem rename is atomic, but is not a portable compare-and-swap.
-      await writeConfinedEntry(targetProjectDir, file, entry, async () => {
-        if (!(await matchesAcquisitionBaseline(targetProjectDir, file, targetBaseline))) {
-          throw conflict;
-        }
-      });
+      if (!settledFiles.has(file)) {
+        await writeConfinedEntry(targetProjectDir, file, entry, async () => {
+          if (!(await matchesAcquisitionBaseline(targetProjectDir, file, targetBaseline))) {
+            throw conflict;
+          }
+        });
+      }
       appliedFiles.push(
         entry.kind === 'file'
           ? { path: file, sha256: entry.sha256, mode: entry.mode & 0o777 }

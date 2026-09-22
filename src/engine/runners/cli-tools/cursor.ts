@@ -169,6 +169,34 @@ function parseCursorRecord(record: Record<string, unknown>): readonly CliProtoco
     case 'user':
     case 'thinking':
       return [];
+    case 'tool_call': {
+      // The one `<name>ToolCall` key under `tool_call` carries the args and, once done, the result.
+      const toolCall = isRecord(record.tool_call) ? record.tool_call : null;
+      const key =
+        toolCall === null
+          ? undefined
+          : Object.keys(toolCall).find((candidate) => candidate.endsWith('ToolCall'));
+      const call = toolCall !== null && key !== undefined ? toolCall[key] : undefined;
+      if (key === undefined || !isRecord(call)) {
+        return [protocolFailure('malformed-cursor-record', 'Cursor tool call record is malformed')];
+      }
+      const id = optionalString(record.call_id, { trim: true, nonEmpty: true }) ?? null;
+      const name = key.slice(0, -'ToolCall'.length);
+      const input = isRecord(call.args) ? { ...call.args } : {};
+      if (record.subtype === 'started') {
+        return [{ type: 'tool-use', stage: 'started', id, name, input }];
+      }
+      return [
+        {
+          type: 'tool-use',
+          stage: 'done',
+          id,
+          name,
+          input,
+          ...(call.result !== undefined && { output: call.result }),
+        },
+      ];
+    }
     case 'assistant': {
       if (!isRecord(record.message)) {
         return [protocolFailure('malformed-cursor-record', 'Cursor message record is malformed')];

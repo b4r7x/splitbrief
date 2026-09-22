@@ -245,8 +245,13 @@ function parseToolInputDelta(inputDelta: string | undefined): Record<string, unk
 
 function toolUseDetails(name: string, input: Record<string, unknown> | null): ActivityDetails {
   const normalized = name.toLowerCase();
-  const filePath = stringInput(input, 'file_path') ?? stringInput(input, 'path');
-  const command = stringInput(input, 'command') ?? stringInput(input, 'cmd');
+  const filePath =
+    stringInput(input, 'file_path') ??
+    stringInput(input, 'path') ??
+    stringInput(input, 'AbsolutePath') ??
+    stringInput(input, 'TargetFile');
+  const command =
+    stringInput(input, 'command') ?? stringInput(input, 'cmd') ?? stringInput(input, 'CommandLine');
   const pattern =
     stringInput(input, 'pattern') ?? stringInput(input, 'regex') ?? stringInput(input, 'query');
   const agentType = stringInput(input, 'subagent_type') ?? stringInput(input, 'agent_type');
@@ -333,7 +338,12 @@ function safeCallTarget(url: string | undefined): string | null {
 }
 
 function isCommandTool(name: string): boolean {
-  return name.includes('bash') || name.includes('shell') || name.includes('exec');
+  return (
+    name.includes('bash') ||
+    name.includes('shell') ||
+    name.includes('exec') ||
+    name.includes('command')
+  );
 }
 
 function isReadTool(name: string): boolean {
@@ -341,7 +351,7 @@ function isReadTool(name: string): boolean {
 }
 
 function isWriteTool(name: string): boolean {
-  return name.includes('edit') || name.includes('write');
+  return name.includes('edit') || name.includes('write') || name.includes('replace');
 }
 
 function isPatchTool(name: string): boolean {

@@ -1,7 +1,15 @@
 import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
+import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
+import type { CrewSeatId } from '../../core/crew/identity.js';
+import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
+import {
+  seatPickerOverlayFor,
+  toolRowFocus,
+  type OverlayType,
+} from '../../core/navigation/types.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
-import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EventSink } from '../../engine/events/types.js';
@@ -11,7 +19,9 @@ import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.
 import type { SeatSwapChoice } from '../../engine/orchestrator/run/seat-swap.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../stores/workflow/actions/pause.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
@@ -28,6 +38,8 @@ type PendingRecoveryResult =
       retryProfileOverride?: string | undefined;
       retryProfileOverrideTaskId?: TaskId | undefined;
       switchSeat?: SeatSwapChoice | undefined;
+      /** The operator's typed correction, to seed the next call's prompt. */
+      steer?: string | undefined;
     }
   | { shouldRun: false; state?: WorkflowState | undefined };
 
@@ -78,6 +90,58 @@ function openRecoveryNotice(issue: RecoveryIssue): void {
   });
 }
 
+/** Resolves once the picker has closed, or the run is aborted while it is open. */
+function overlayClosed(overlay: OverlayType, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    let unsubscribe = (): void => {};
+    const settle = (): void => {
+      unsubscribe();
+      signal.removeEventListener('abort', settle);
+      resolve();
+    };
+    unsubscribe = overlayStore.subscribe(() => {
+      if (overlayStore.get().active !== overlay) settle();
+    });
+    signal.addEventListener('abort', settle);
+    if (signal.aborted || overlayStore.get().active !== overlay) settle();
+  });
+}
+
+/** The seat as the config of record has it now; a seat that runs no CLI tool cannot be swapped. */
+function seatOfRecord(seat: CrewSeatId): SeatSwapCandidate | undefined {
+  const config = configStore.get().config;
+  if (config === null) return undefined;
+  const runner = readActiveRunner({ config, role: CREW_SEAT_ROLES[seat] });
+  if (runner.kind !== 'cli') return undefined;
+  return {
+    tool: runner.tool,
+    ...(runner.model !== undefined && { model: runner.model }),
+    ...(runner.effort !== undefined && { effort: runner.effort }),
+    ...(runner.variant !== undefined && { variant: runner.variant }),
+  };
+}
+
+/**
+ * The offered tool is preselected in the seat's own picker, the one place a seat's model and
+ * effort are chosen. The picker writes the config of record and the swap is read back from it;
+ * a picker closed on the seat it opened on is a cancelled swap.
+ */
+async function pickSwappedSeat(
+  seat: CrewSeatId,
+  tool: string,
+  signal: AbortSignal,
+): Promise<SeatSwapCandidate | undefined> {
+  const before = seatOfRecord(seat);
+  const overlay = seatPickerOverlayFor(CREW_SEAT_ROLES[seat]);
+  overlayStore.open(overlay, toolRowFocus(tool));
+  await overlayClosed(overlay, signal);
+  const after = seatOfRecord(seat);
+  if (after === undefined || (after.tool === before?.tool && after.model === before?.model)) {
+    return undefined;
+  }
+  return after;
+}
+
 /**
  * The one surface that resolves a halt in the TUI: it renders the pending
  * recovery as a question, parses the operator's answer into a recovery action
@@ -123,15 +187,23 @@ export function createRecoveryDriver(
       );
     };
 
-    const applyAction = (
+    const applyAction = async (
       action: RecoveryAction,
       answer = '',
       comment = '',
-    ): PendingRecoveryResult | null => {
+      steer = '',
+    ): Promise<PendingRecoveryResult | null> => {
       if (action === 'switch-seat') {
-        const candidate = switchSeatCandidateForAnswer(answer, issue.switchSeat);
-        if (candidate === undefined) {
+        const offer = issue.switchSeat;
+        const offered = switchSeatCandidateForAnswer(answer, offer);
+        if (offer === undefined || offered === undefined) {
           feedbackStore.setError('No other tool is offered for this seat.');
+          openRecoveryNotice(issue);
+          return null;
+        }
+        const candidate = await pickSwappedSeat(offer.seat, offered.tool, controller.signal);
+        if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
+        if (candidate === undefined) {
           openRecoveryNotice(issue);
           return null;
         }
@@ -187,22 +259,27 @@ export function createRecoveryDriver(
       }
 
       recoveryNoticeStore.clear();
+      // A replayed brief takes the typed words as its steer; a seat-level retry and a
+      // revise already carried them to the planner as the comment.
+      const steered =
+        result.status === 'retry-current-task' && steer.trim() !== '' ? { steer } : {};
       const retryProfileOverride = result.implementerProfile ?? issue.selectedImplementerProfile;
       if (retryProfileOverride === undefined || result.status !== 'retry-current-task') {
-        return { shouldRun: true, state: result.state };
+        return { shouldRun: true, state: result.state, ...steered };
       }
       return {
         shouldRun: true,
         state: result.state,
         retryProfileOverride,
         ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
+        ...steered,
       };
     };
 
     if (issue.status === 'applying') {
       const selected = issue.selectedAction;
       if (selected !== undefined) {
-        const applied = applyAction(selected);
+        const applied = await applyAction(selected);
         if (applied !== null) return applied;
       } else {
         feedbackStore.setError('Recovery is applying but no action is selected.');
@@ -221,14 +298,13 @@ export function createRecoveryDriver(
       let action = parseRecoveryActionAnswer(answer, issue);
       let correction = '';
       if (action === null && answer.trim() !== '') {
-        const correctionAction =
-          issue.taskId === undefined && issue.availableActions.includes('retry-same-worker')
-            ? 'retry-same-worker'
-            : issue.availableActions.includes('revise')
-              ? 'revise'
-              : issue.availableActions.includes('revise-spec')
-                ? 'revise-spec'
-                : undefined;
+        const correctionAction = issue.availableActions.includes('retry-same-worker')
+          ? 'retry-same-worker'
+          : issue.availableActions.includes('revise')
+            ? 'revise'
+            : issue.availableActions.includes('revise-spec')
+              ? 'revise-spec'
+              : undefined;
         if (correctionAction !== undefined) {
           action = correctionAction;
           correction = answer;
@@ -242,7 +318,7 @@ export function createRecoveryDriver(
       if (controller.signal.aborted || abortedRef.current) {
         return { shouldRun: false, state };
       }
-      const applied = applyAction(action, answer, comment);
+      const applied = await applyAction(action, answer, comment, correction);
       if (applied !== null) return applied;
     }
   };

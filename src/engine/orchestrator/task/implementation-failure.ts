@@ -18,6 +18,7 @@ import {
 } from '../recovery/builders/task.js';
 import { isExtractedCodeApprovalRaceError } from '../../implementers/pipeline/extracted-code.js';
 import { handleApprovalTimeUserEditConflict } from '../escalation/approval-conflict.js';
+import { boundedHandBack } from '../escalation/types.js';
 import { retryAndRecord } from './retry.js';
 import { runChainAnalysisSafe } from './analyze-drift.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
@@ -196,10 +197,19 @@ export async function handleFailedImplementation(opts: {
     });
     return state;
   }
+  const outcome = implState.implResult.outcome;
+  const handBack = boundedHandBack(implState.implResult.output);
   const retry = await retryAndRecord({
     wctx,
     task,
     initialError: implState.implResult.error ?? 'Implementation failed to produce valid code',
+    ...(outcome !== undefined && {
+      initialFailure: {
+        outcome,
+        runner: wctx.config.implementer,
+        ...(handBack !== undefined && { handBack }),
+      },
+    }),
     state,
     taskStartTime,
     taskStartSnapshot,

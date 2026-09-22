@@ -13,8 +13,12 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { RecoveryActionOption } from '../../options.js';
 import { resolveRunConfig } from '../../build-overrides.js';
+import { CONFIG_RELATIVE_PATH } from '../../../core/config/load/document.js';
+import { loadConfig, writeConfig, writeConfigDocument } from '../../../core/config/load/io.js';
+import { CREW_SEAT_IDS, CREW_SEAT_LABELS, type CrewSeatId } from '../../../core/crew/identity.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions.js';
+import { deriveConfigEdits } from '../../../stores/project/config-persistence.js';
 import { resumeSavedSession } from './resume.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 
@@ -82,6 +86,41 @@ function applyPendingRecoveryAction(args: {
   };
 }
 
+const SEAT_OF_YAML_KEY: Readonly<Record<string, CrewSeatId>> = {
+  planner: 'plan',
+  implementer: 'build',
+  implementer_profiles: 'build',
+  reviewer: 'review',
+};
+
+/**
+ * A seat the command line or a switch-seat action moved becomes the config of record, so the
+ * next continue lands on it without the flag. The file keeps its comments; a project without
+ * one gets the resolved config. Reported on stderr, where the seat notices already go.
+ */
+function recordSeatsOfRecord(projectDir: string, config: Config): void {
+  const { config: persisted, rawYaml, revision } = loadConfig(projectDir);
+  const withSeats: Config = {
+    ...persisted,
+    planner: config.planner,
+    implementer: config.implementer,
+    ...(config.implementerProfiles !== undefined && {
+      implementerProfiles: config.implementerProfiles,
+    }),
+    ...(config.reviewer !== undefined && { reviewer: config.reviewer }),
+  };
+  const edits = deriveConfigEdits(persisted, withSeats);
+  if (edits.length === 0) return;
+  if (revision === null) writeConfig(projectDir, withSeats);
+  else writeConfigDocument(projectDir, rawYaml, edits);
+  const moved = new Set(edits.map((edit) => SEAT_OF_YAML_KEY[edit.path[0] ?? '']));
+  for (const seat of CREW_SEAT_IDS) {
+    if (moved.has(seat)) {
+      console.warn(`${CREW_SEAT_LABELS[seat]} seat recorded in ${CONFIG_RELATIVE_PATH}`);
+    }
+  }
+}
+
 export async function continueCommand(
   sessionInput: string | undefined,
   opts: ContinueOpts,
@@ -127,12 +166,15 @@ export async function continueCommand(
     return;
   }
 
+  const config = resumed.config ?? resolveRunConfig({ projectDir: opts.projectDir, opts });
+  recordSeatsOfRecord(opts.projectDir, config);
+
   await resumeSavedSession({
     projectDir: opts.projectDir,
     sessionId,
     state: resumed.state,
     opts,
-    ...(resumed.config !== undefined && { config: resumed.config }),
+    config,
     deps,
   });
 }

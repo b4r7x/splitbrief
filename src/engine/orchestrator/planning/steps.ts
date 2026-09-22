@@ -190,7 +190,7 @@ export async function runPlanningSteps(
         }
         const entering = enteringAction(state.phase, step.phase);
         if (entering !== null) state = transitionAndSave(ref, state, entering);
-        publishPlannerStatus(bus, state, 'running');
+        publishPlannerStatus(bus, state, 'running', { call: step.call });
 
         if (isPlannerDocumentCall(step.call)) {
           // Messages queued while the last call ran lead this call's prompt.

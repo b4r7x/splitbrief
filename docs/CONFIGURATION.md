@@ -69,7 +69,7 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `model` | string | — | Model identifier, or `auto`. Planner: optional. Implementer: required for `api`, `shell`, and `agent`; optional for `cli`, where omitting `model` and writing `model: auto` are equivalent — both delegate to the tool's own default. |
+| `model` | string | — | Model identifier, or `auto`. Planner: optional. Implementer: required for `api`, `shell`, and `agent`; optional for `cli`, where omitting `model` and writing `model: auto` are equivalent — both mean the model the tool itself has selected on this machine, read at preparation (see `kind: cli` below). |
 | `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. Pricing remains unknown unless models.dev, runtime provider metadata, or the bundled catalog supplies rates. |
 | `contextLength` | int > 0 | kind-dependent | Application budget override. Built-in local API calls use configured context, observed active context, then 8192; maximum model capacity is separate. CLI/legacy routing can use the 32768 conservative fallback. This field never changes the server. |
 | `temperature` | 0..2 | provider default | Sampling temperature. Honored only by the `api` kind (planner, reviewer, and implementer); the `cli`, `shell`, and `agent` kinds cannot pass it to their backend and drop it with a stderr warning. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
@@ -92,9 +92,20 @@ Subprocess of a known coding-agent CLI. The wrapper handles auth, model selectio
 | Field | Type | Required | Description |
 |---|---|:---:|---|
 | `tool` | enum | yes | `claude-code` \| `codex` \| `opencode` \| `copilot` \| `kilo-code` \| `cursor` \| `command-code` \| `antigravity` |
-| `model` | string | no | A model ID, or `auto`. Omitting `model` and writing `model: auto` are equivalent: SPLITBRIEF passes no `--model` flag, so the tool uses whatever model its own configuration selects. |
+| `model` | string | no | A model ID, or `auto`. Omitting `model` and writing `model: auto` are equivalent: both mean the model the tool itself has selected on this machine, which SPLITBRIEF reads at preparation and passes as `--model`. |
 | `args` | string[] | no | Extra argv appended to the tool invocation. Every token is validated against the adapter-owned authority set: a flag that would override role, permissions, sandbox, cwd or added roots, config sources, tools, hooks/plugins/MCP, session selection, prompt transport, output format, terminal protocol, final-output path, updates, or approval behavior is refused before spawn. |
 | `outputFormat` | enum | no | `stream-json` \| `jsonl` \| `text` \| `opencode`. Selects the parser for the configured-command and legacy command paths. An admitted CLI's parser and terminal protocol are adapter-owned: the backend's native parser stays authoritative, and an implementer `outputFormat` that would replace a structured terminal contract refuses before spawn. |
+
+**What `model: auto` resolves to.** At preparation SPLITBRIEF reads the model the tool itself has selected on this host and starts the seat on it explicitly (`readHostModelSelection`, `src/engine/runners/host-model-selection.ts`), passing it as `--model`. The YAML is never rewritten: it keeps `auto`, which is the operator's intent, while the run's own record — `workflow_config`, `seats.json` and each task start — names the model that was resolved. A missing or unparseable file is not an error: the seat keeps automatic selection, no `--model` flag is passed, and readiness carries a warning saying the tool's own default applies.
+
+| tool | where the selection is read | what is read |
+|---|---|---|
+| `opencode` | `$XDG_CONFIG_HOME/opencode/opencode.json` or `.jsonc` (`~/.config/opencode/…`), else `$XDG_STATE_HOME/opencode/model.json` (`~/.local/state/opencode/model.json`) | the config file's `model`, else `recent[0]` as `<providerID>/<modelID>` |
+| `kilo-code` | the same layout under the name `kilo` | the same |
+| `codex` | `~/.codex/config.toml` | the top-level `model = "…"`, before any `[section]` |
+| `claude-code` | `~/.claude/settings.json` | the `model` string |
+| `antigravity` | `~/.gemini/antigravity-cli/settings.json` | the `model` display name, matched to its catalog id |
+| `cursor`, `copilot`, `command-code` | — | nothing: no selection file is known, so the tool's own default applies and readiness warns |
 
 Planner mode does not grant artifact authority, and no CLI flag proves read-only behavior. Authority-bearing options are adapter-owned and cannot be overridden; see [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#planner-artifact-ownership) for the transport, role and containment contract.
 
@@ -306,7 +317,7 @@ reviewer:
 
 The implementer is the weaker of the two models. What makes a runner the implementer is the model behind it, not the transport SPLITBRIEF uses to reach it: a coding-agent CLI pointed at a smaller model and an OpenAI-compatible API endpoint are equally first-class here, and SPLITBRIEF favors neither. They differ mechanically in one place — a `cli` or `agent` implementer writes files itself (`writesFiles: direct`), while an `api` or `shell` implementer returns file contents that SPLITBRIEF writes (`writesFiles: extracted-code`). Where a direct writer works before its changes reach your checkout is set by `workflow.isolation` (§5).
 
-Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, and `agent` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to delegate to the tool's own configured default; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `ollama` → `qwen3-coder:30b`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. Implementer write behavior (`extracted-code` vs `direct`) is not a choice: `capabilities.writesFiles` may be declared per profile under `implementerProfiles`, but it must match the runner kind's write mode, and config load rejects a mismatch.
+Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, and `agent` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to follow the tool's own selection, which preparation reads from the tool's own config or state and passes as `--model`; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `ollama` → `qwen3-coder:30b`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. Implementer write behavior (`extracted-code` vs `direct`) is not a choice: `capabilities.writesFiles` may be declared per profile under `implementerProfiles`, but it must match the runner kind's write mode, and config load rejects a mismatch.
 
 YAML — minimal (local Ollama):
 
@@ -425,7 +436,7 @@ When recovery offers `route-bigger-worker`, the issue names a target profile fro
 
 ## 4. `validation`
 
-What runs after every implementer task. The three master switches (`typecheck`, `lint`, `test`) are **required** in the schema; the loader fills them from `createDefaultConfig()` if absent. The command overrides are all optional and let you pin exact validation commands per project.
+What runs after every implementer task. The three master switches (`typecheck`, `lint`, `test`) are **required** in the schema; the loader fills them from `createDefaultConfig()` if absent. The command overrides are all optional and let you pin exact validation commands per project. When the lint stage is on, the brief's own changed files are formatted first with the project's own formatter — `npx biome format --write` when a Biome config file is present, `npx prettier --write` when a Prettier config is, and nothing when neither is; a formatter that exits non-zero is one warning (`validation_format_failed`) and the lint stage runs regardless.
 
 ### Schema
 

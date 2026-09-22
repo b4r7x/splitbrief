@@ -63,11 +63,16 @@ function toProtocolEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
       semantics: parsed.usageSemantics ?? 'delta',
     });
   }
-  for (const toolUse of [
-    ...(parsed.toolUse ?? []),
-    ...(parsed.toolUseStart ?? []),
-    ...(parsed.toolUseDone ?? []),
-  ]) {
+  for (const toolUse of parsed.toolUseStart ?? []) {
+    events.push({
+      type: 'tool-use',
+      stage: 'started',
+      id: toolUse.id ?? null,
+      name: toolUse.name,
+      input: { ...toolUse.input },
+    });
+  }
+  for (const toolUse of [...(parsed.toolUse ?? []), ...(parsed.toolUseDone ?? [])]) {
     events.push({
       type: 'tool-use',
       id: toolUse.id ?? null,

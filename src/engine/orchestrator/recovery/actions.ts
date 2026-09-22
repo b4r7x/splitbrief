@@ -472,10 +472,10 @@ export function applySwitchSeatRecoveryAction(
     });
   }
 
+  // The tool has to be one the halt offered; the model, effort and variant are the
+  // operator's choice in the seat's picker, which the offer never enumerates.
   const chosen = opts.candidate ?? first;
-  const offered = offer.candidates.some(
-    (candidate) => candidate.tool === chosen.tool && candidate.model === chosen.model,
-  );
+  const offered = offer.candidates.some((candidate) => candidate.tool === chosen.tool);
   if (!offered) {
     return blockRecoveryAction({
       ...opts,

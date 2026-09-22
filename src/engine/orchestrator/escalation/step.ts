@@ -1,6 +1,6 @@
 import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { formatValidationError } from '../validation/format-error.js';
-import { addUsageAndSave, raisePendingRecovery } from '../state-ops.js';
+import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { buildScopeViolationRecoveryIssue } from '../recovery/builders/task.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
@@ -11,7 +11,7 @@ import { createRetryRuntime, stateForRetryProfile } from './retry-runtime.js';
 import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
 import { handleApprovalTimeUserEditConflict } from './approval-conflict.js';
 import { validateAndCommit } from './validate-and-commit.js';
-import { failedRetry } from './types.js';
+import { boundedHandBack, failedRetry } from './types.js';
 import type { RetryStepOpts, RetryStepOutcome } from './types.js';
 import type { AppliedFile, BundleApplyResult } from '../../implementers/file-bundle.js';
 import type { PartialPromotionDetail } from '../approval/gate-and-promote.js';
@@ -167,15 +167,21 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
 
   if (!retryResult.success) {
     workspace.cleanup();
+    const handBack = boundedHandBack(retryResult.output);
     return {
       state,
       task,
-      lastError: retryResult.error ?? retryFailureFallback,
+      // An attempt that changed nothing failed on the error it was given, not on its own words.
+      lastError:
+        retryResult.outcome === 'no-staged-change'
+          ? lastError
+          : (retryResult.error ?? retryFailureFallback),
       attempts,
       ...(retryResult.outcome !== undefined && {
         lastFailure: {
           outcome: retryResult.outcome,
           runner: retryResult.runner ?? retryRuntime.config.implementer,
+          ...(handBack !== undefined && { handBack }),
         },
       }),
     };
@@ -285,6 +291,27 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   }
   state = gateResult.state;
   const actualChangedFiles = gateResult.changedFiles;
+  const widening = opts.scopeWidening;
+  if (widening !== undefined) {
+    const widened = actualChangedFiles.filter((file) => widening.paths.includes(file));
+    if (widened.length > 0) {
+      state = transitionAndSave(ctx, state, {
+        type: 'WIDEN_TASK_SCOPE',
+        taskId: task.id,
+        paths: widened,
+        reason: widening.reason,
+      });
+      task = state.tasks.find((entry) => entry.id === task.id) ?? task;
+      ctx.bus.publish({
+        type: 'task_scope_widened',
+        ts: Date.now(),
+        phase: state.phase,
+        taskId: task.id,
+        paths: widened,
+        reason: widening.reason,
+      });
+    }
+  }
   if (applyResult !== undefined) {
     const targetResult = await targetApplyReceipt({
       projectDir: ctx.projectDir,

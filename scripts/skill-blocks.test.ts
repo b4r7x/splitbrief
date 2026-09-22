@@ -15,7 +15,7 @@ const SENTINELS: Record<string, string> = {
   gates: 'uv run pytest',
   'modes-table': '| `speckit` | 6-7 | 12 | spec, plan, briefs |',
   caps: 'at most 5 files',
-  'body-order': '5. `### Current Code`',
+  'body-order': '`### Current Code` is never sent to a direct writer',
   'closing-line': 'Edit <file>, <second file> directly in the working directory.',
   'scope-rule': 'Revert your changes to',
   'baseline-rule': '`baseline-sha.txt`',
@@ -31,7 +31,7 @@ const SENTINELS: Record<string, string> = {
   'recipe:claude-code': '--permission-mode acceptEdits < $P',
   'recipe:codex': '--sandbox read-only',
   'recipe:opencode': '--agent plan "$(cat $P)"',
-  'recipe:copilot': '--allow-all >',
+  'recipe:copilot': '--allow-all --output-format json >',
   'recipe:kilo-code': '--agent code --auto',
   'recipe:cursor': '--mode plan --trust',
   'recipe:command-code': '--yolo -m $M --effort $E',
@@ -44,6 +44,15 @@ describe('skill-blocks', () => {
     for (const [id, sentinel] of Object.entries(SENTINELS)) {
       expect(renderBlock(id), id).toContain(sentinel);
     }
+  });
+
+  it('lists the direct-writer body without Current Code and renumbers what follows', () => {
+    const order = renderBlock('body-order') ?? '';
+    expect(order).not.toMatch(/^\d+\. `### Current Code`$/m);
+    expect(order).toContain('4. `### Pattern`');
+    expect(order).toContain('5. `### Implementation Steps`');
+    expect(order).toContain('10. `### Constraints`');
+    expect(order).not.toContain('11.');
   });
 
   it('applies the skill substitutions to the implementer preamble', () => {

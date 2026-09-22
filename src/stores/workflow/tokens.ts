@@ -318,6 +318,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'tasks_planned':
     case 'task_retry':
     case 'task_escalating':
+    case 'task_scope_widened':
     case 'task_full_fail':
     case 'task_review_needed':
     case 'hint_failed':

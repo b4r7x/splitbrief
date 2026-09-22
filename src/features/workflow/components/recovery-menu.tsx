@@ -4,6 +4,8 @@ import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import { formatSeatCandidateIdentity } from '../../../core/crew/identity.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
+import { SOFT_SEP } from '../../../core/separators.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { useTheme } from '../../../components/theme.js';
 import { ListRow } from '../../../components/list-row.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
@@ -12,6 +14,7 @@ import { PromptBody } from './prompt-body.js';
 import {
   formatRecoveryPromptSummary,
   getRecoveryPromptActions,
+  recoveryActionKey,
   recoveryActionLabel,
   recommendedRecoveryAction,
 } from '../recovery-prompt.js';
@@ -44,16 +47,14 @@ function actionItems(issue: RecoveryIssue): ActionItem[] {
   }));
 }
 
-function actionAnswer(action: RecoveryAction): string {
-  if (action === 'pause-run') return 'space';
-  if (action === 'switch-seat') return 'w';
-  if (action === 'retry-same-worker') return 'r';
-  if (action === 'route-bigger-worker') return 'b';
-  if (action === 'planner-split-rebase') return 'p';
-  if (action === 'revise' || action === 'revise-spec') return 'v';
-  if (action === 'continue') return 'c';
-  if (action === 'skip-current-task') return 's';
-  return 'a';
+// The keys are the only instructions the panel gives, so a legend wider than the panel drops the
+// clause it can spare whole — truncation would cut the last key, which is the way out, in half.
+const LEGEND_SPARE_INDEX = 2;
+
+function fitLegend(clauses: readonly string[], width: number): string {
+  const full = clauses.join(SOFT_SEP);
+  if (getTerminalCellWidth(full) <= width) return full;
+  return clauses.filter((_, index) => index !== LEGEND_SPARE_INDEX).join(SOFT_SEP);
 }
 
 function renderAction(item: ActionItem, selected: boolean, recommended: boolean, width: number) {
@@ -114,18 +115,19 @@ export function RecoveryMenu({
   );
   const listBudget = Math.max(1, innerHeight - summaryHeight - 2);
 
+  const chooseAction = (item: ActionItem): void => {
+    if (item.action === 'switch-seat' && candidates.length > 0) {
+      setView('tools');
+      return;
+    }
+    onResolve(recoveryActionKey(item.action));
+  };
   const actionSelection = useStaticSelector({
     items: actions,
     initialIndex: initialAction,
     isActive: focused && view === 'actions',
     keyOf: (item) => item.action,
-    onSelect: (item) => {
-      if (item.action === 'switch-seat' && candidates.length > 0) {
-        setView('tools');
-        return;
-      }
-      onResolve(actionAnswer(item.action));
-    },
+    onSelect: chooseAction,
   });
   const candidateSelection = useStaticSelector({
     items: candidates,
@@ -145,6 +147,13 @@ export function RecoveryMenu({
         onResolve('space');
         return;
       }
+      // A letter is the row's own key; one that matches no offered row does nothing.
+      if (view === 'actions' && input.length === 1 && !key.ctrl && !key.meta) {
+        const letter = input.toLowerCase();
+        const item = actions.find((entry) => recoveryActionKey(entry.action) === letter);
+        if (item !== undefined) chooseAction(item);
+        return;
+      }
       if (key.tab || (key.shift && key.tab)) {
         onFocusChange(false);
       }
@@ -152,10 +161,12 @@ export function RecoveryMenu({
     { isActive: focused },
   );
 
-  const legend =
+  const legend = fitLegend(
     view === 'tools'
-      ? '↑↓ select · ⏎ choose · esc back · tab type a reply'
-      : '↑↓ select · ⏎ choose · tab type a reply';
+      ? ['↑↓ select', '⏎ choose', 'esc back', 'tab type a reply']
+      : ['↑↓ select', '⏎ choose', 'letter key acts', 'tab type a reply'],
+    innerWidth,
+  );
   return (
     <Box
       flexDirection="column"

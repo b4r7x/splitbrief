@@ -6,7 +6,6 @@ import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
-import { parseTextLine } from '../../streaming/parse-text.js';
 import { parseCopilotLine } from '../../streaming/parse-copilot.js';
 
 const COPILOT_ID = 'copilot' as const;
@@ -67,7 +66,17 @@ function toProtocolEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
   }
   if (parsed.sessionId !== undefined)
     events.push({ type: 'session', nativeSessionId: parsed.sessionId });
-  for (const toolUse of [...(parsed.toolUse ?? []), ...(parsed.toolUseDone ?? [])]) {
+  // parse-copilot files `tool.execution_start` under `toolUse`: the call is beginning.
+  for (const toolUse of parsed.toolUse ?? []) {
+    events.push({
+      type: 'tool-use',
+      stage: 'started',
+      id: toolUse.id ?? null,
+      name: toolUse.name,
+      input: { ...toolUse.input },
+    });
+  }
+  for (const toolUse of parsed.toolUseDone ?? []) {
     events.push({
       type: 'tool-use',
       id: toolUse.id ?? null,
@@ -87,7 +96,7 @@ export function copilotPlannerProtocolEvents(line: string): readonly CliProtocol
 }
 
 export function copilotImplementerProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  return toProtocolEvents(parseTextLine(line));
+  return toProtocolEvents(parseCopilotLine(line));
 }
 
 function terminal(input: { events: readonly CliProtocolEvent[] }): CopilotTerminalEvent {
@@ -129,6 +138,8 @@ function implementerBaseArgs(input: CopilotImplementerBuildInput): string[] {
     '-p',
     input.prompt,
     '--allow-all',
+    '--output-format',
+    'json',
   ];
 }
 
@@ -195,7 +206,7 @@ export type RawCopilotCliContract = Readonly<{
   rawInvocation: readonly string[];
   promptTransport: 'argv';
   expectedRawTerminal: 'process-exit';
-  asOf: '2026-07-31';
+  asOf: '2026-09-21';
 }>;
 
 export type CopilotCliConformanceCandidate = Readonly<{
@@ -224,10 +235,10 @@ function rawContract(role: 'planner' | 'implementer'): RawCopilotCliContract {
             '--output-format',
             'json',
           ]
-        : ['-p', CLI_PROMPT_SENTINEL, '--allow-all'],
+        : ['-p', CLI_PROMPT_SENTINEL, '--allow-all', '--output-format', 'json'],
     promptTransport: 'argv',
     expectedRawTerminal: 'process-exit',
-    asOf: '2026-07-31',
+    asOf: '2026-09-21',
   };
 }
 

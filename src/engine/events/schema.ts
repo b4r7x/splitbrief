@@ -17,7 +17,7 @@ import {
 import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
 import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
-import { StepCutSchema } from '../../core/schemas/run-step.js';
+import { PlannerCallSchema, StepCutSchema } from '../../core/schemas/run-step.js';
 import { TaskReviewRecoverySchema } from '../../core/schemas/recovery/schemas.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
 import { RewindEventVariantSchemas } from '../../core/state/rewind-event.js';
@@ -291,6 +291,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     model: z.string().optional(),
     duration: z.number().optional(),
     summary: z.string().optional(),
+    call: PlannerCallSchema.optional(),
   }),
   phaseEvent('planner_text').extend({
     text: z.string(),
@@ -484,6 +485,11 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     error: z.string(),
   }),
   phaseEvent('task_escalating').extend({ taskId: TaskIdSchema }),
+  phaseEvent('task_scope_widened').extend({
+    taskId: TaskIdSchema,
+    paths: stringArray,
+    reason: z.string(),
+  }),
   phaseEvent('task_full_fail').extend({ taskId: TaskIdSchema, reason: z.string().optional() }),
   phaseEvent('review_fix_started').extend({
     cycle: z.number().int(),

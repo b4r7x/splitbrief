@@ -5,6 +5,7 @@ import type { ValidationResult } from '../validation/result.js';
 import type { TaskStatus, ValidationStage } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
 import type { UndeclaredWritesPolicy } from '../../implementers/types.js';
+import type { RetryAttemptFailure } from '../escalation/types.js';
 
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
@@ -34,6 +35,8 @@ export type RetryAndRecordOptions = {
   initialValidation?: ValidationResult[] | undefined;
   initialChangedFiles?: string[] | undefined;
   initialExemptStages?: readonly ValidationStage[] | undefined;
+  /** How the first attempt ended, when it ended on a machine outcome. */
+  initialFailure?: RetryAttemptFailure | undefined;
   tokensBefore: TokenUsage;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
@@ -89,6 +92,7 @@ export async function retryAndRecord(
       profileOverride: retryProfileOverride,
       ...(opts.undeclaredWrites !== undefined && { undeclaredWrites: opts.undeclaredWrites }),
       ...(retryProfileOverride !== undefined && { profileOverrideTaskId: task.id }),
+      ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
     }));
   } catch (err) {
     if (isAbortError(err) || wctx.signal?.aborted) {
@@ -128,13 +132,21 @@ export async function retryAndRecord(
       const issue = buildRetryExhaustedRecoveryIssue({
         task,
         phase: nextState.phase,
-        validationResults: opts.initialValidation,
-        validationSummary: opts.initialValidation ? undefined : initialError,
+        ...(result.lastError === undefined
+          ? {
+              validationResults: opts.initialValidation,
+              validationSummary: opts.initialValidation ? undefined : initialError,
+            }
+          : { validationSummary: result.lastError }),
         attempts: result.attempts,
         maxAttempts: wctx.config.workflow.maxRetries,
         allowRetryOverride: true,
         selectedImplementerProfile: retryImplementerProfile,
         routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
+        ...(result.handBack !== undefined && { handBack: result.handBack }),
+        ...(result.plannerHint !== undefined && { plannerHint: result.plannerHint }),
+        ...(result.hintRungRan !== undefined && { hintRungRan: result.hintRungRan }),
+        ...(result.plannerVerdict !== undefined && { plannerVerdict: result.plannerVerdict }),
         createdAt: nowIso(),
       });
       publishError({

@@ -63,6 +63,7 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   success: 'Visual fixture workflow complete',
   failure: 'Synthetic runner failure: bounded fixture',
   recovery: 'Change BUILD tool',
+  retryExhausted: 'exhausted recovery retries',
   apiContext: 'Nothing was sent to PLAN',
 });
 
@@ -144,6 +145,7 @@ const WORKFLOW_STOPPING_ID = scenarioId('workflow-stopping');
 const WORKFLOW_STOPPED_ID = scenarioId('workflow-stopped');
 const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
 const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
+const WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID = scenarioId('workflow-recovery-retry-exhausted');
 const WORKFLOW_API_CONTEXT_ID = scenarioId('workflow-api-context-insufficient');
 
 const idleProjection: WorkflowFixtureProjection = {
@@ -198,6 +200,7 @@ const planningProjection: WorkflowFixtureProjection = {
       status: 'running',
       tool: 'claude-code',
       model: 'fixture-planner-v1',
+      call: 'tasks',
     },
     {
       type: 'planner_text',
@@ -959,6 +962,51 @@ const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
 };
 
 /**
+ * A brief the ladder could not land: the last error the brief died on, the attempts spelled out
+ * as local retries plus the hinted one, both voices — what the implementer said before it stopped
+ * and what the planner answered — and the verdict the planner reached on the brief itself.
+ */
+const retryExhaustedRecoveryIssue: RecoveryIssue = {
+  id: 'rec_visual_retry_exhausted',
+  reason: 'retry-exhausted',
+  phase: 'escalating',
+  status: 'awaiting-user',
+  taskId: WORKFLOW_FIXTURE_TASK_ID,
+  taskTitle: WORKFLOW_FIXTURE_TEXT.implementationTask,
+  files: [WORKFLOW_FIXTURE_REVIEW_FILE],
+  affectedTaskIds: [WORKFLOW_FIXTURE_TASK_ID],
+  message: `${WORKFLOW_FIXTURE_TASK_ID} exhausted recovery retries`,
+  details: [
+    "Validation: error TS2339: Property 'stop' is missing on Projection.",
+    'Attempts: 4 (3 local, then 1 with planner hints)',
+    'Implementer said: no stop field on Projection, so I wrote nothing.',
+    'Planner said: The field is optional; read it via the registry.',
+    'Planner verdict: the brief itself is wrong — Projection never declared stop',
+  ],
+  attempts: 4,
+  maxAttempts: 3,
+  selectedImplementerProfile: 'local-fixture',
+  facts: {
+    validationSummary: "error TS2339: Property 'stop' is missing on Projection.",
+    allowRetryOverride: true,
+    hintRungRan: true,
+    plannerVerdict: 'brief',
+  },
+  availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
+  recommendedAction: 'retry-same-worker',
+  createdAt: new Date(FIXED_TS).toISOString(),
+};
+
+const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  resumeState: haltedResumeState(retryExhaustedRecoveryIssue),
+};
+
+/**
  * A plan packet the seat was never given: the halt the engine persists carries the cause, the
  * sections and the figures, and the panel shows only the first two. The run is still in planning,
  * so there is no brief to replay and the retry re-issues the seat's own step.
@@ -1112,6 +1160,7 @@ const projections = [
   stoppedProjection,
   failureProjection,
   usageLimitRecoveryProjection,
+  retryExhaustedRecoveryProjection,
   apiContextRecoveryProjection,
 ] as const;
 

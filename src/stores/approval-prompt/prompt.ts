@@ -1,5 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
 import { createPromptChannel } from '../channels/prompt.js';
+import { markWaitEnded, markWaitStarted } from '../workflow/actions/wait.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 
 export type ApprovalPromptState =
@@ -22,9 +23,17 @@ const _approvalPromptInternal = { set: store.set, get: store.get };
 
 const channel = createPromptChannel<TieredApprovalRequest, TieredApprovalResponse>({
   get: () => _approvalPromptInternal.get(),
-  setPending: (request, resolve) =>
-    _approvalPromptInternal.set({ status: 'pending', request, resolve }),
-  setIdle: () => _approvalPromptInternal.set({ status: 'idle' }),
+  setPending: (request, resolve) => {
+    _approvalPromptInternal.set({ status: 'pending', request, resolve });
+    markWaitStarted();
+  },
+  // A close with nothing pending is a sweep on the way out of a screen, not the end of a wait
+  // some other prompt still owns.
+  setIdle: () => {
+    const pending = _approvalPromptInternal.get().status === 'pending';
+    _approvalPromptInternal.set({ status: 'idle' });
+    if (pending) markWaitEnded();
+  },
   supersededValue: { decision: 'deny', reason: 'superseded' },
   cancelledValue: { decision: 'deny', reason: 'user_cancelled' },
 });

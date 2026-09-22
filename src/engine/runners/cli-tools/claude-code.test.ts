@@ -347,6 +347,43 @@ describe('Claude Code stream protocol adapter', () => {
     });
   });
 
+  it('marks a content_block_start tool_use as started before the assistant record completes it', () => {
+    expect(
+      claudeProtocolEvents(
+        JSON.stringify({
+          type: 'stream_event',
+          session_id: 'session-4',
+          event: {
+            type: 'content_block_start',
+            index: 1,
+            content_block: { type: 'tool_use', id: 'toolu_1', name: 'Read', input: {} },
+          },
+        }),
+      ),
+    ).toEqual([
+      { type: 'session', nativeSessionId: 'session-4' },
+      { type: 'tool-use', stage: 'started', id: 'toolu_1', name: 'Read', input: {} },
+    ]);
+    expect(
+      claudeProtocolEvents(
+        JSON.stringify({
+          type: 'assistant',
+          session_id: 'session-4',
+          message: {
+            content: [
+              { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: 'src/a.ts' } },
+            ],
+          },
+        }),
+      ),
+    ).toContainEqual({
+      type: 'tool-use',
+      id: 'toolu_1',
+      name: 'Read',
+      input: { file_path: 'src/a.ts' },
+    });
+  });
+
   it('retains explicit failure terminals and bounded parser warnings', () => {
     const failure = claudeProtocolEvents(
       JSON.stringify({ type: 'result', is_error: true, result: 'request failed' }),

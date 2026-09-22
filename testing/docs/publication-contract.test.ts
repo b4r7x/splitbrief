@@ -84,7 +84,11 @@ const claims = [
     'A role that is missing, overridden, falls back, prompts interactively, or cannot be verified makes the backend unsupported for that role.',
   ],
   ['roles-opencode-plan-build', 'planners', '| `opencode` | `--agent plan` | `--agent build` |'],
-  ['roles-kilo-plan-code', 'planners', '| `kilo-code` | `--agent plan` | `--agent code --auto` |'],
+  [
+    'roles-kilo-plan-code',
+    'planners',
+    '| `kilo-code` | `--format json --agent plan` | `--format json --agent code --auto` |',
+  ],
   [
     'roles-claude-plan-acceptEdits',
     'planners',

@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import YAML from 'yaml';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { continueCommand } from './command.js';
 import type { ContinueDeps } from './command.js';
+import { writeConfig } from '../../../core/config/load/io.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -349,6 +351,54 @@ describe('continueCommand', () => {
       expect(resumed, testCase.id).toBeDefined();
       expect(resumed?.state?.pendingRecovery, testCase.id).toBeUndefined();
     }
+  });
+
+  it('records a seat the command line moved in the config of record, comments kept', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-seat-of-record';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    writeState(sessDir, 'implementing');
+    writeConfig(projectDir, makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }));
+    const configFile = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
+    writeFileSync(configFile, `# the crew of record\n${readFileSync(configFile, 'utf8')}`);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // `mockRestore` clears the recorded calls, so they are read before it runs.
+    let warnings: string[] = [];
+
+    try {
+      await continueCommand(
+        sessionId,
+        { projectDir, json: true, implementerModel: 'gpt-6-astra' },
+        deps,
+      );
+      warnings = warnSpy.mock.calls.map((call) => call.join(' '));
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    const yaml = readFileSync(configFile, 'utf8');
+    expect(yaml).toContain('# the crew of record');
+    expect(YAML.parse(yaml)).toMatchObject({
+      implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' },
+    });
+    expect(warnings).toContain('BUILD seat recorded in .splitbrief/config.yaml');
+    expect(headlessRuns).toHaveLength(1);
+  });
+
+  it('leaves the config of record alone when no seat moved', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-seat-unchanged';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    writeState(sessDir, 'implementing');
+    writeConfig(projectDir, makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }));
+    const configFile = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
+    const before = readFileSync(configFile, 'utf8');
+
+    await continueCommand(sessionId, { projectDir, json: true }, deps);
+
+    expect(readFileSync(configFile, 'utf8')).toBe(before);
   });
 
   it('closes the run on --action end-run and never re-enters it', async () => {

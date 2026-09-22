@@ -22,6 +22,7 @@ export type PromptBodyLine =
   | { kind: 'note'; text: string };
 
 const BLANK_ROW: PromptBodyLine = { kind: 'blank' };
+const FACT_INDENT = '  ';
 
 function clean(text: string, multiline = false): string {
   return sanitizeTerminalDisplayText(text, { preserveLineBreaks: multiline });
@@ -98,10 +99,12 @@ function wrappedMessageLines(text: string, width: number): PromptBodyLine[] {
     .map((line) => ({ kind: 'message-line', text: line }));
 }
 
+// A fact that outruns its width keeps its own column: the continuation hangs under the first
+// line rather than starting at the border, so a wrapped fact still reads as one fact.
 function wrappedFactLines(item: string, width: number): PromptBodyLine[] {
-  return wrapHard(`  ${clean(item, true)}`, width)
+  return wrapHard(clean(item, true), Math.max(1, width - FACT_INDENT.length))
     .split('\n')
-    .map((line) => ({ kind: 'facts-line', text: line }));
+    .map((line) => ({ kind: 'facts-line', text: `${FACT_INDENT}${line}` }));
 }
 
 function factRows(row: Extract<PromptRow, { kind: 'facts' }>, width: number): PromptBodyLine[] {

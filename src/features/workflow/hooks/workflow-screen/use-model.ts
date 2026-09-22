@@ -80,6 +80,32 @@ export function useWorkflowScreen({
     reviewStore,
   );
 
+  const atRestRecord = execution?.kind === 'at-rest' ? record : undefined;
+
+  // One continuation path for a run at rest: the engine decides whether the run can be picked up,
+  // the preparation attempt re-enters it in place, and the screen never moves.
+  const continueAtRest = (text: string, run = atRestRecord): void => {
+    const sessionSelect = deps?.sessionSelect;
+    if (run === undefined || sessionSelect === undefined) return;
+    const outcome = continueRun({
+      ref: run.ref,
+      ...(text.trim() === '' ? {} : { steer: text }),
+      deps: {
+        resumeParked: () => false,
+        loadState: hydrateResume,
+        restart: ({ state, steer }) => {
+          void continueRunInPlace({
+            record: run,
+            state,
+            ...(steer !== undefined && { steer }),
+            deps: sessionSelect,
+          });
+        },
+      },
+    });
+    if (outcome.kind === 'refused') feedbackStore.setError(outcome.message);
+  };
+
   const continuation = useRunContinue({ prepared, inputMode });
   const runner = useRunLoop({
     prepared,
@@ -88,6 +114,7 @@ export function useWorkflowScreen({
     inputMode,
     continuation,
     runWorkflow: deps?.runWorkflow,
+    continueAtRest: (run) => continueAtRest('', run),
   });
 
   const approvalPromptState = approvalPromptStore.use((s) => s);
@@ -114,35 +141,10 @@ export function useWorkflowScreen({
 
   const parked = stopStore.use((s) => s.phase === 'parked');
 
-  const atRestRecord = execution?.kind === 'at-rest' ? record : undefined;
   const composer = atRestRecord === undefined ? null : atRestComposer(atRestRecord);
   const closedView =
     atRestRecord === undefined ? null : deriveSummaryView({ record: atRestRecord, showSpend });
   const closed = atRestRecord !== undefined && atRestRecord.status.kind === 'closed';
-
-  // One continuation path for a run at rest: the engine decides whether the run can be picked up,
-  // the preparation attempt re-enters it in place, and the screen never moves.
-  const continueAtRest = (text: string): void => {
-    const sessionSelect = deps?.sessionSelect;
-    if (atRestRecord === undefined || sessionSelect === undefined) return;
-    const outcome = continueRun({
-      ref: atRestRecord.ref,
-      ...(text.trim() === '' ? {} : { steer: text }),
-      deps: {
-        resumeParked: () => false,
-        loadState: hydrateResume,
-        restart: ({ state, steer }) => {
-          void continueRunInPlace({
-            record: atRestRecord,
-            state,
-            ...(steer !== undefined && { steer }),
-            deps: sessionSelect,
-          });
-        },
-      },
-    });
-    if (outcome.kind === 'refused') feedbackStore.setError(outcome.message);
-  };
 
   const resumeAtRest = useEffectEvent(continueAtRest);
   useEffect(() => {

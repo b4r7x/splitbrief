@@ -1,5 +1,6 @@
 import { eventPhase, isInfrastructurePhaseEvent } from '../../core/event-phase.js';
 import type { Phase } from '../../core/schemas/enums.js';
+import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { createStore, storeBase } from '../create-store.js';
 
@@ -25,6 +26,12 @@ interface LifecycleBase {
   lastRunnerEventTs?: number | null;
   /** When the attempt now running began, so its elapsed time is not the whole brief's. */
   attemptStartedTs?: number | null;
+  /** The planner call the phase is on, when the engine named one: a phase can hold two. */
+  plannerCall?: PlannerCall | null;
+  /** When the run started waiting on the user, so that time stays out of the stage clock. */
+  waitingSince?: number | null;
+  /** Time already spent waiting on the user, by the phase it was spent in. */
+  waitedMs?: Readonly<Partial<Record<Phase, number>>>;
 }
 
 interface IdleLifecycleState extends LifecycleBase {
@@ -128,6 +135,9 @@ const initial: LifecycleState = {
   stall: null,
   lastRunnerEventTs: null,
   attemptStartedTs: null,
+  plannerCall: null,
+  waitingSince: null,
+  waitedMs: {},
   startedAt: null,
   endedAt: null,
   durationMs: null,
@@ -181,8 +191,16 @@ function updateRunClocks(state: LifecycleState, event: EngineEvent): LifecycleSt
   return { ...state, lastRunnerEventTs, attemptStartedTs };
 }
 
+// The status event is the whole truth about the call: a running status names the call it opens,
+// and one that names none — a gate, a side call, a done — means no document call is running.
+function updatePlannerCall(state: LifecycleState, event: EngineEvent): LifecycleState {
+  if (event.type !== 'planner_status') return state;
+  const plannerCall = event.status === 'running' ? (event.call ?? null) : null;
+  return plannerCall === (state.plannerCall ?? null) ? state : { ...state, plannerCall };
+}
+
 export function updatePhase(state: LifecycleState, event: EngineEvent): LifecycleState {
-  return updatePhaseOnly(updateRunClocks(state, event), event);
+  return updatePlannerCall(updatePhaseOnly(updateRunClocks(state, event), event), event);
 }
 
 function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleState {
@@ -326,6 +344,20 @@ export function markLifecycleInterrupted(state: LifecycleState): LifecycleState 
 export function markLifecyclePaused(state: LifecycleState): LifecycleState {
   if (state.status !== 'running' && state.status !== 'interrupted') return state;
   return { ...state, status: 'paused', interruptParked: false, stall: null };
+}
+
+// A wait is the run's clock stopping on the user: a question, a review gate, an approval. One wait
+// is open at a time, and a prompt that supersedes another keeps the same wait open.
+export function markLifecycleWaitStarted(state: LifecycleState, ts: number): LifecycleState {
+  if (state.status !== 'running' || (state.waitingSince ?? null) !== null) return state;
+  return { ...state, waitingSince: ts };
+}
+
+export function markLifecycleWaitEnded(state: LifecycleState, ts: number): LifecycleState {
+  const since = state.waitingSince ?? null;
+  if (since === null) return state;
+  const waited = (state.waitedMs?.[state.phase] ?? 0) + Math.max(0, ts - since);
+  return { ...state, waitingSince: null, waitedMs: { ...state.waitedMs, [state.phase]: waited } };
 }
 
 export function markLifecycleInterruptParked(state: LifecycleState): LifecycleState {
@@ -488,6 +520,9 @@ function runningLifecycleState(input: {
     stall: null,
     lastRunnerEventTs: input.lastRunnerEventTs ?? null,
     attemptStartedTs: input.attemptStartedTs ?? null,
+    plannerCall: null,
+    waitingSince: null,
+    waitedMs: {},
     startedAt: input.startedAt,
     endedAt: null,
     durationMs: null,

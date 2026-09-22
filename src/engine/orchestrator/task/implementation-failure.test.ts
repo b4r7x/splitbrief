@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
-import { makeBusRecorder, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeImplementer,
+  makePlanner,
+} from '#testing/helpers/orchestrator-factories.js';
 import {
   cleanupTaskProjects,
   makeTaskWorkflowContext as makeWorkflowContext,
@@ -113,6 +117,50 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
 
     expect(implementer.retry).not.toHaveBeenCalled();
     expect(next.pendingRecovery?.reason).toBe('runner-timeout-repeated');
+  });
+});
+
+describe('handleFailedImplementation — a stop with a hand-back goes to the planner first', () => {
+  it('forwards the tail of the implementer output and skips the local rung', async () => {
+    const task = makeTask({ id: 'T001' });
+    const state = implementingState([task]);
+    const implementer = makeImplementer({ retry: vi.fn() });
+    const hint = 'VERDICT: brief — the prop was removed in T000';
+    const escalateHint = vi
+      .fn()
+      .mockResolvedValue({ success: true, output: hint, code: null, usage: null });
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWorkflowContext({ implementer, planner: makePlanner({ escalateHint }), bus });
+
+    const next = await handleFailedImplementation({
+      wctx,
+      task,
+      state,
+      implState: implState({
+        success: false,
+        output: `${'x'.repeat(3000)}\nI could not find the prop.`,
+        outcome: 'no-staged-change',
+        error: 'exited without changing any files',
+      }),
+      taskStartTime: Date.now(),
+      taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(implementer.retry).not.toHaveBeenCalled();
+    expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
+    const handBack = escalateHint.mock.calls[0]?.[0]?.handBack;
+    expect(handBack).toHaveLength(2000);
+    expect(handBack?.endsWith('I could not find the prop.')).toBe(true);
+    expect(next.pendingRecovery).toMatchObject({ reason: 'retry-exhausted', taskId: 'T001' });
+    expect(next.pendingRecovery?.details).toContain(
+      'Planner verdict: the brief itself is wrong — the prop was removed in T000',
+    );
+    expect(next.pendingRecovery?.details.some((row) => row.startsWith('Implementer said:'))).toBe(
+      true,
+    );
   });
 });
 

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { updateNamedImplementerConfig } from '../../../core/config/accessors/implementer-profiles.js';
 import { applyRunnerPreparationChecks, collectReadiness } from '../../../core/readiness/collect.js';
 import { exemptLiveSessionBlocker } from '../../../core/readiness/checks/repo.js';
 import {
@@ -122,6 +123,37 @@ async function revalidateCliGates(
     }
   }
   return blockers;
+}
+
+/**
+ * A seat left on `auto` runs with the model its tool had selected on this host,
+ * named explicitly. The YAML and the config store keep the word `auto` — the
+ * operator's intent — while the run's own record, its argv and every surface
+ * downstream of preparation name the model that actually ran.
+ */
+function withEffectiveModels(config: PreparedConfig, gates: readonly RunnerGate[]): PreparedConfig {
+  let next: Config = config;
+  for (const gate of gates) {
+    if (gate.kind !== 'cli' || gate.effectiveModel === undefined) continue;
+    const model = gate.effectiveModel;
+    if (gate.slot.role === 'planner') {
+      next = { ...next, planner: { ...next.planner, model } };
+    } else if (gate.slot.role === 'implementer') {
+      const updated = updateNamedImplementerConfig(next, gate.slot.profile, (existing) => ({
+        ...existing,
+        model,
+      }));
+      if (updated !== null) next = updated;
+    } else if (gate.slot.role === 'reviewer') {
+      // With no reviewer block the planner holds the seat, and writing one here
+      // would hand the run a second seat it was never configured with.
+      next =
+        next.reviewer === undefined
+          ? { ...next, planner: { ...next.planner, model } }
+          : { ...next, reviewer: { ...next.reviewer, model } };
+    }
+  }
+  return next === config ? config : parsePreparedConfig(next);
 }
 
 /**
@@ -252,11 +284,10 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
   if (evaluated.some((slot) => slot.evaluation.kind === 'blocked')) {
     return { kind: 'blocked', report };
   }
-  const admittedConfig = config;
-
   const gates = evaluated.flatMap((slot) =>
     slot.evaluation.kind === 'admitted' ? [slot.evaluation.gate] : [],
   );
+  const admittedConfig = withEffectiveModels(config, gates);
   let revalidationBlockers: ReadinessCheck[];
   try {
     revalidationBlockers = await revalidateCliGates(gates, context);

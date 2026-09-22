@@ -66,7 +66,7 @@ export type PlannerCapabilities = {
 /** Preset for session-based conversational planners (Claude Code). */
 export const CONVERSATIONAL_CAPS: PlannerCapabilities = {
   supportsConversationalPlanning: true,
-  supportsHintEscalation: false,
+  supportsHintEscalation: true,
   supportsSessionResume: true,
   supportsEffort: true,
   supportsImages: true,
@@ -304,6 +304,8 @@ export interface EscalateOptions {
   fileIgnoreProjectDir?: string | undefined;
   /** Baseline the caller's workspace declares; sniffed from the directory when absent. */
   changeDetection?: ChangeDetectionKind | undefined;
+  /** The implementer's own account of why it stopped, when it gave one. */
+  handBack?: string | undefined;
 }
 
 export interface RegenerateOptions {

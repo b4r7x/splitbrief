@@ -327,6 +327,32 @@ describe('promoteStagedChanges', () => {
     }
   });
 
+  it('treats a target already holding the staged bytes as promoted, not as a conflict', async () => {
+    const projectDir = createTempDir('promote-project');
+    const stagedDir = createTempDir('promote-staged');
+    try {
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      mkdirSync(join(stagedDir, 'src'), { recursive: true });
+      writeFileSync(join(projectDir, 'src', 'app.ts'), 'original\n');
+      writeFileSync(join(stagedDir, 'src', 'app.ts'), 'staged\n');
+      const targetBaseline = await captureAcquisitionBaseline(projectDir);
+      writeFileSync(join(projectDir, 'src', 'app.ts'), 'staged\n');
+
+      const promoted = await promoteStagedChanges({
+        targetProjectDir: projectDir,
+        stagedProjectDir: stagedDir,
+        files: ['src/app.ts'],
+        targetBaseline,
+      });
+
+      expect(promoted).toEqual({ promotedFiles: ['src/app.ts'], conflictedFiles: [] });
+      expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('staged\n');
+    } finally {
+      cleanupTempDir(stagedDir);
+      cleanupTempDir(projectDir);
+    }
+  });
+
   it('rejects changed file paths that escape the target project', async () => {
     const targetRoot = createTempDir('promote-target-root');
     const stagedRoot = createTempDir('promote-staged-root');

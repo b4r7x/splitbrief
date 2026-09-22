@@ -5,7 +5,11 @@ import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types
 import { createChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './pipeline/run.js';
 import { processError } from '../../lib/process/errors.js';
-import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
+import {
+  CLI_NO_DEADLINE_MS,
+  invokeCliAdapter,
+  toCliEnvironment,
+} from '../runners/invoke-cli-adapter.js';
 import { CLI_PROMPT_SENTINEL } from '../runners/cli-tools/candidate-contract.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
@@ -208,7 +212,7 @@ export function createCliImplementer(
             promptTransport: adapter.promptTransport,
             environment: toCliEnvironment(env),
             cwd: projectDir,
-            ...(deadlineMs !== undefined && { timeoutMs: deadlineMs }),
+            timeoutMs: deadlineMs ?? CLI_NO_DEADLINE_MS,
             signal: composedSignal,
           },
           prompt,

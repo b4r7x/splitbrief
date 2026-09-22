@@ -8,6 +8,7 @@ import {
   implement,
 } from '#testing/helpers/configured-custom-implementer.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { CLI_RAW_OUTPUT_MAX_BYTES } from '../runners/cli-tools/process-invoke.js';
 
 const { temporaryDirectory, projectDirectory, runtimeHarness } =
   createConfiguredImplementerFixtures();
@@ -47,7 +48,7 @@ describe('createConfiguredCustomImplementer', () => {
     expect(existsSync(harness.stages[0] ?? '')).toBe(false);
   });
 
-  it('discards output-limit text and cleans the child stage without replacing an existing target', {
+  it('discards output past the 64 MB raw ceiling and cleans the child stage without replacing an existing target', {
     timeout: 30_000,
   }, async () => {
     const projectDir = projectDirectory('configured-implementer-output-limit');
@@ -63,7 +64,7 @@ describe('createConfiguredCustomImplementer', () => {
           [
             `require('node:fs').writeFileSync(${JSON.stringify(childStarted)}, 'started');`,
             "process.stdout.write('```ts\\nexport const shouldNotApply = true;\\n```\\n');",
-            "process.stdout.write('x'.repeat(1_400_000));",
+            `const chunk = 'x'.repeat(1_000_000); for (let i = 0; i < ${Math.ceil(CLI_RAW_OUTPUT_MAX_BYTES / 1_000_000) + 1}; i += 1) process.stdout.write(chunk);`,
           ].join(''),
         ],
       }),
@@ -79,7 +80,7 @@ describe('createConfiguredCustomImplementer', () => {
     expect(existsSync(harness.stages[0] ?? '')).toBe(false);
   });
 
-  it('does not promote direct staged writes after a configured output-limit breach', {
+  it('does not promote direct staged writes after the 64 MB raw ceiling', {
     timeout: 30_000,
   }, async () => {
     const authorizationProjectDir = projectDirectory('configured-implementer-output-limit-auth');
@@ -99,7 +100,7 @@ describe('createConfiguredCustomImplementer', () => {
             `fs.writeFileSync(${JSON.stringify(childStarted)}, 'started');`,
             "fs.writeFileSync('src/should-not-promote.ts', 'export const stagedOnly = true;\\n');",
             "process.stdout.write('```ts\\nexport const shouldNotApply = true;\\n```\\n');",
-            "process.stdout.write('x'.repeat(1_400_000));",
+            `const chunk = 'x'.repeat(1_000_000); for (let i = 0; i < ${Math.ceil(CLI_RAW_OUTPUT_MAX_BYTES / 1_000_000) + 1}; i += 1) process.stdout.write(chunk);`,
           ].join(''),
         ],
       }),

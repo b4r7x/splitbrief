@@ -1,10 +1,9 @@
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
-import { parseTextLine } from '../../streaming/parse-text.js';
+import { parseAntigravityLine } from '../../streaming/parse-antigravity.js';
+import { error } from '../../../utils/error.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
-import { finalGroupTerminal } from './final-group.js';
-import { textLineEvents } from './text-line-events.js';
 import { validateCliArgs } from './validate-args.js';
 
 const ANTIGRAVITY_ID = 'antigravity' as const;
@@ -15,6 +14,7 @@ const ANTIGRAVITY_PROMPT_TRANSPORT = Object.freeze({
   placement: 'positional',
 } as const);
 const ANTIGRAVITY_VERSION_ARGS = Object.freeze(['--version'] as const);
+const ANTIGRAVITY_OUTPUT_ARGS = Object.freeze(['--output-format', 'stream-json'] as const);
 const ANTIGRAVITY_IMPLEMENTER_TIMEOUT = '20m';
 const ANTIGRAVITY_PLANNER_TIMEOUT = '10m';
 
@@ -33,6 +33,7 @@ type AntigravityPlannerBuildInput = Parameters<CliPlannerAdapter<'antigravity'>[
 type AntigravityImplementerBuildInput = Parameters<
   CliImplementerAdapter<'antigravity'>['buildArgs']
 >[0];
+type AntigravityTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
 
 function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: readonly string[] }) {
   return validateCliArgs({
@@ -60,6 +61,7 @@ function plannerBaseArgs(input: AntigravityPlannerBuildInput): string[] {
     'plan',
     '--print-timeout',
     ANTIGRAVITY_PLANNER_TIMEOUT,
+    ...ANTIGRAVITY_OUTPUT_ARGS,
     ...generationArgs(input),
   ];
 }
@@ -71,6 +73,7 @@ function implementerBaseArgs(input: AntigravityImplementerBuildInput): string[] 
     '--dangerously-skip-permissions',
     '--print-timeout',
     ANTIGRAVITY_IMPLEMENTER_TIMEOUT,
+    ...ANTIGRAVITY_OUTPUT_ARGS,
     ...generationArgs(input),
   ];
 }
@@ -93,7 +96,22 @@ function createProbe() {
 }
 
 export function antigravityProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  return textLineEvents(parseTextLine(line));
+  return parseAntigravityLine(line);
+}
+
+function antigravityTerminal(input: {
+  events: readonly CliProtocolEvent[];
+}): AntigravityTerminalEvent {
+  const terminal = input.events.findLast(
+    (event): event is AntigravityTerminalEvent => event.type === 'result',
+  );
+  if (terminal === undefined) {
+    throw error(
+      'antigravity-protocol-failure',
+      'Antigravity output ended without a terminal result',
+    );
+  }
+  return terminal;
 }
 
 function createPlannerAdapter(): CliPlannerAdapter<'antigravity'> {
@@ -107,9 +125,9 @@ function createPlannerAdapter(): CliPlannerAdapter<'antigravity'> {
     buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],
     validateArgs,
     environment: {},
-    outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
+    outputContract: { kind: 'structured-terminal', terminalEvent: 'required' },
     parse: antigravityProtocolEvents,
-    terminal: (input) => finalGroupTerminal({ events: input.events, includeFinalGroupText: true }),
+    terminal: antigravityTerminal,
     probe: createProbe(),
   };
 }
@@ -123,9 +141,9 @@ function createImplementerAdapter(): CliImplementerAdapter<'antigravity'> {
     buildArgs: (input) => [...implementerBaseArgs(input), ...input.configuredArgs],
     validateArgs,
     environment: {},
-    outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
+    outputContract: { kind: 'structured-terminal', terminalEvent: 'required' },
     parse: antigravityProtocolEvents,
-    terminal: (input) => finalGroupTerminal({ events: input.events, includeFinalGroupText: false }),
+    terminal: antigravityTerminal,
     probe: createProbe(),
   };
 }
@@ -141,8 +159,8 @@ export type RawAntigravityCliContract = Readonly<{
   auth: Readonly<{ kind: 'none'; env: readonly [] }>;
   rawInvocation: readonly string[];
   promptTransport: 'argv';
-  expectedRawTerminal: 'process-exit';
-  asOf: '2026-09-14';
+  expectedRawTerminal: 'result';
+  asOf: '2026-09-21';
 }>;
 
 export type AntigravityCliConformanceCandidate = Readonly<{
@@ -170,6 +188,7 @@ function rawContract(role: 'planner' | 'implementer'): RawAntigravityCliContract
             'plan',
             '--print-timeout',
             ANTIGRAVITY_PLANNER_TIMEOUT,
+            ...ANTIGRAVITY_OUTPUT_ARGS,
           ]
         : [
             '-p',
@@ -177,10 +196,11 @@ function rawContract(role: 'planner' | 'implementer'): RawAntigravityCliContract
             '--dangerously-skip-permissions',
             '--print-timeout',
             ANTIGRAVITY_IMPLEMENTER_TIMEOUT,
+            ...ANTIGRAVITY_OUTPUT_ARGS,
           ],
     promptTransport: 'argv',
-    expectedRawTerminal: 'process-exit',
-    asOf: '2026-09-14',
+    expectedRawTerminal: 'result',
+    asOf: '2026-09-21',
   };
 }
 

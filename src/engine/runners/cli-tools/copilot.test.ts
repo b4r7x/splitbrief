@@ -136,6 +136,8 @@ describe('Copilot role adapters', () => {
       '-p',
       PROMPT,
       '--allow-all',
+      '--output-format',
+      'json',
       '--label',
       'fixture',
     ]);
@@ -144,6 +146,17 @@ describe('Copilot role adapters', () => {
     ).toEqual({
       valid: true,
     });
+    expect(CLI_CONFORMANCE_CANDIDATES[1]?.rawContract.rawInvocation).toEqual([
+      '-p',
+      PROMPT,
+      '--allow-all',
+      '--output-format',
+      'json',
+    ]);
+    expect(CLI_CONFORMANCE_CANDIDATES.map((candidate) => candidate.rawContract.asOf)).toEqual([
+      '2026-09-21',
+      '2026-09-21',
+    ]);
   });
 
   it('sends the reasoning effort the seat configured, beside the model, on both roles', () => {
@@ -363,6 +376,7 @@ describe('Copilot JSON and text protocol adapters', () => {
     });
     expect(events).toContainEqual({
       type: 'tool-use',
+      stage: 'started',
       id: null,
       name: 'read_file',
       input: { path: 'src/a.ts' },
@@ -386,9 +400,34 @@ describe('Copilot JSON and text protocol adapters', () => {
     ]);
   });
 
-  it('uses bounded text completion for implementer output without inventing a terminal event', () => {
+  it('reads implementer json like the planner (unverified live: policy-denied account)', () => {
+    const events = [
+      ...copilotImplementerProtocolEvents(
+        JSON.stringify({ type: 'session.start', data: { sessionId: 'sess-43' } }),
+      ),
+      ...copilotImplementerProtocolEvents(
+        JSON.stringify({
+          type: 'tool.execution_start',
+          data: { id: 'call-1', name: 'edit_file', input: { path: 'src/a.ts' } },
+        }),
+      ),
+      ...copilotImplementerProtocolEvents(
+        JSON.stringify({ type: 'assistant.message', data: { text: 'edited staged files' } }),
+      ),
+    ];
+    expect(events).toEqual([
+      { type: 'session', nativeSessionId: 'sess-43' },
+      {
+        type: 'tool-use',
+        stage: 'started',
+        id: 'call-1',
+        name: 'edit_file',
+        input: { path: 'src/a.ts' },
+      },
+      { type: 'text', channel: 'assistant', text: 'edited staged files' },
+    ]);
     expect(copilotImplementerProtocolEvents('edited staged files')).toEqual([
-      { type: 'text', channel: 'stdout', text: 'edited staged files\n' },
+      expect.objectContaining({ type: 'warning', code: 'malformed_copilot' }),
     ]);
     expect(copilotImplementerAdapter.outputContract).toEqual({
       kind: 'text-exit',
@@ -396,7 +435,7 @@ describe('Copilot JSON and text protocol adapters', () => {
     });
     const terminal = copilotImplementerAdapter.terminal({
       outputContract: copilotImplementerAdapter.outputContract,
-      events: copilotImplementerProtocolEvents('edited staged files'),
+      events,
       stderr: '',
       exitCode: 0,
       signal: null,
@@ -405,7 +444,7 @@ describe('Copilot JSON and text protocol adapters', () => {
       type: 'result',
       status: 'completed',
       usage: null,
-      nativeSessionId: null,
+      nativeSessionId: 'sess-43',
       error: null,
       partial: false,
     });

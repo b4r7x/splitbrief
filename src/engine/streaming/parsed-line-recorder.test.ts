@@ -212,7 +212,9 @@ describe('createParsedLineRecorder', () => {
     );
   });
 
-  it('warns once and does not finish the call when feeding 5 000 assistant lines', () => {
+  // The per-event output cap was dropped, so a long stream of small lines is a healthy
+  // call: only the byte bound can truncate it, and 200 KB is far below it.
+  it('streams 5 000 assistant lines unwarned and does not finish the call', () => {
     const { events, parsed, recorder } = createHarness();
 
     for (let i = 0; i < 5_000; i++) {
@@ -227,7 +229,7 @@ describe('createParsedLineRecorder', () => {
     const warnings = events.filter(
       (event) => event.type === 'call_warning' && event.warning.code === 'runner_output_text_limit',
     );
-    expect(warnings).toHaveLength(1);
+    expect(warnings).toHaveLength(0);
   });
 
   it('warns once when feeding 3 MB of assistant text in 200 chunks', () => {

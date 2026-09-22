@@ -39,6 +39,7 @@ export type StateAction =
   | { type: 'SKIP_TASK'; taskId: TaskId }
   | { type: 'UPDATE_TASK_CODE'; taskId: TaskId; code: string; codeByFile?: Record<string, string> }
   | { type: 'CLEAR_TASK_CODE'; taskId: TaskId }
+  | { type: 'WIDEN_TASK_SCOPE'; taskId: TaskId; paths: string[]; reason: string }
   | { type: 'ALL_DONE' }
   | { type: 'REVIEW_DONE'; reviewStatus: ReviewStatus }
   | { type: 'REVIEW_FIX_START'; fixes: Record<string, string[]>; cycle: number }

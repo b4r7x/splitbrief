@@ -44,7 +44,11 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     });
   }
 
-  const advisory = adviseMode(opts.feature, mode);
+  // The advisor reads what the planner reads: the sentence plus the `@file` context it carries.
+  const advisory = adviseMode(
+    [opts.feature, wctx.plannerContext].filter(Boolean).join('\n\n'),
+    mode,
+  );
   if (advisory.kind !== 'none') {
     wctx.bus.publish({
       type: 'mode_advice',

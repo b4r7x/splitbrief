@@ -1237,3 +1237,116 @@ describe('capture and baseline reuse', () => {
     ).toEqual(['typecheck']);
   });
 });
+describe('formatting the changed files before the lint stage', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir('val-format');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  const lintOnly = makeConfig({ typecheck: false, lint: true, test: false });
+
+  it("formats the brief's changed files before the lint command runs", async () => {
+    writeTsProject(tempDir);
+    writeFileSync(join(tempDir, 'biome.json'), '{}');
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus: fakeBus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts', 'README.md'],
+    });
+
+    expect(runner.calls.map((call) => [call.cmd, ...call.args].join(' '))).toEqual([
+      'npx biome format --write src/app.ts',
+      'npx biome check .',
+    ]);
+    expect(results.map((r) => [r.stage, r.passed])).toEqual([['lint', true]]);
+  });
+
+  it('runs no formatter when the project has only a lint config', async () => {
+    writeTsProject(tempDir);
+    writeFileSync(join(tempDir, '.eslintrc.json'), '{}');
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+
+    await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus: fakeBus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts'],
+    });
+
+    expect(runner.calls.map((call) => [call.cmd, ...call.args].join(' '))).toEqual([
+      'npx eslint .',
+    ]);
+  });
+
+  it('warns once and lints anyway when the formatter exits non-zero', async () => {
+    writeTsProject(tempDir);
+    writeFileSync(join(tempDir, 'biome.json'), '{}');
+    const runner = makeCommandRunner(
+      processError.exitCode({
+        command: 'npx biome format --write src/app.ts',
+        code: 1,
+        stderr: 'unparseable source',
+        output: '',
+      }),
+      { stdout: 'ok', stderr: '', code: 0 },
+    );
+    const validator = createValidator({ runCommand: runner });
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+
+    const results = await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts'],
+    });
+
+    expect(runner.calls.map((call) => [call.cmd, ...call.args].join(' '))).toEqual([
+      'npx biome format --write src/app.ts',
+      'npx biome check .',
+    ]);
+    const warnings = events.filter((e): e is EngineEventOf<'warning'> => e.type === 'warning');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      category: 'validation',
+      code: 'validation_format_failed',
+    });
+    expect(results.find((r) => r.stage === 'lint')?.passed).toBe(true);
+  });
+
+  it('never formats during the baseline probe', async () => {
+    writeTsProject(tempDir);
+    writeFileSync(join(tempDir, 'biome.json'), '{}');
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner, captureBaseline: true });
+
+    await validator.primeBaseline({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(runner.calls.map((call) => [call.cmd, ...call.args].join(' '))).toEqual([
+      'npx biome check .',
+    ]);
+  });
+});

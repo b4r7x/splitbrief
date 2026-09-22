@@ -51,6 +51,8 @@ Prefer these stable identifiers in automation and log correlation. Remediation s
 | Provider returned quota or rate-limit pressure (for example HTTP 429). | `quota-rate-limit` | Wait for quota or rate limits to reset, reduce request volume, or switch providers, then run `splitbrief doctor` again. |
 | Runner configuration contains mutually exclusive CLI arguments. | `conflicting-args` | Remove conflicting runner arguments from the config, then run `splitbrief doctor` again. |
 
+A quota that runs out mid-run is not a readiness failure and is not answered here: the run raises a `runner-usage-limit` recovery, and that panel offers `switch-seat` — its recommended action whenever the last readiness pass saw another ready tool for that seat — beside `pause-run` (wait for the reset the message names), `route-bigger-worker`, skip and end. Every admitted tool's own limit wording is recognised: codex, Claude Code, antigravity (`Individual quota reached … Resets in 2h6m30s`, on stderr beside exit 0 and again beside exit 3), opencode 2.x (the flat `provider.quota` error envelope), command-code (`You've reached your weekly usage limit`) and the Gemini API body behind antigravity (`RESOURCE_EXHAUSTED`). Copilot is the exception: its wording has not been captured from a live run, so it classifies only through the generic 429 and rate-limit patterns.
+
 ### Runner `state` outcomes (workflow commands)
 
 During `start`, `spec`, `resume`, and other planner/implementer invocations, distinguishable subprocess outcomes use `state` (not readiness `stateId`). Remediation strings match `src/engine/runners/errors.ts`.

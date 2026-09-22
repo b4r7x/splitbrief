@@ -2,13 +2,11 @@ import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { ParsedLine } from '../types.js';
 import { envelopeErrorDetail } from '../../streaming/error-envelope.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
-import { parseTextLine } from '../../streaming/parse-text.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { finalGroupTerminal } from './final-group.js';
-import { textLineEvents } from './text-line-events.js';
 import { validateCliArgs } from './validate-args.js';
 
 const KILO_ID = 'kilo-code' as const;
@@ -65,11 +63,16 @@ function structuredEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
       semantics: parsed.usageSemantics ?? 'delta',
     });
   }
-  for (const toolUse of [
-    ...(parsed.toolUse ?? []),
-    ...(parsed.toolUseStart ?? []),
-    ...(parsed.toolUseDone ?? []),
-  ]) {
+  for (const toolUse of parsed.toolUseStart ?? []) {
+    events.push({
+      type: 'tool-use',
+      stage: 'started',
+      id: toolUse.id ?? null,
+      name: toolUse.name,
+      input: { ...toolUse.input },
+    });
+  }
+  for (const toolUse of [...(parsed.toolUse ?? []), ...(parsed.toolUseDone ?? [])]) {
     events.push({
       type: 'tool-use',
       id: toolUse.id ?? null,
@@ -119,7 +122,7 @@ export function kiloPlannerProtocolEvents(line: string): readonly CliProtocolEve
 }
 
 export function kiloImplementerProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  return textLineEvents(parseTextLine(line));
+  return structuredErrorEnvelope(line) ?? structuredEvents(parseOpencodeLine(line));
 }
 
 function plannerBaseArgs(input: KiloPlannerBuildInput): string[] {
@@ -139,6 +142,8 @@ function implementerBaseArgs(input: KiloImplementerBuildInput): string[] {
     'run',
     ...(input.model === undefined ? [] : ['--model', input.model]),
     ...(input.variant === undefined ? [] : ['--variant', input.variant]),
+    '--format',
+    'json',
     '--agent',
     'code',
     '--auto',
@@ -209,7 +214,7 @@ export type RawKiloCliContract = Readonly<{
   rawInvocation: readonly string[];
   promptTransport: 'argv';
   expectedRawTerminal: 'process-exit';
-  asOf: '2026-07-31';
+  asOf: '2026-09-21';
 }>;
 
 export type KiloCliConformanceCandidate = Readonly<{
@@ -230,10 +235,10 @@ function rawContract(role: 'planner' | 'implementer'): RawKiloCliContract {
     rawInvocation:
       role === 'planner'
         ? ['run', '--format', 'json', '--agent', 'plan', CLI_PROMPT_SENTINEL]
-        : ['run', '--agent', 'code', '--auto', CLI_PROMPT_SENTINEL],
+        : ['run', '--format', 'json', '--agent', 'code', '--auto', CLI_PROMPT_SENTINEL],
     promptTransport: 'argv',
     expectedRawTerminal: 'process-exit',
-    asOf: '2026-07-31',
+    asOf: '2026-09-21',
   };
 }
 

@@ -63,7 +63,7 @@ function plainStdout(): string {
     'task T002: done (typecheck test)',
     'phase: final-review',
     'review: passed',
-    'done: 2 tasks, 41.2k tokens',
+    'done: 2 tasks',
     '',
   ].join('\n');
 }

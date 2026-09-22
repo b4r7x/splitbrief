@@ -72,6 +72,11 @@ const ACTION_KEYS: Record<RecoveryAction, string> = {
   'end-run': 'a',
 };
 
+/** The one key an action answers to, on the picker row and as a typed letter. */
+export function recoveryActionKey(action: RecoveryAction): string {
+  return ACTION_KEYS[action];
+}
+
 export const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
   'retry-same-worker': ['r', 'retry', 'retry same worker', 'retry-same-worker'],
   'route-bigger-worker': ['b', 'bigger', 'route', 'route bigger', 'route-bigger-worker'],
@@ -490,11 +495,18 @@ export function stripRecoveryResetClause(text: string): string {
   return text.replace(RESET_CLAUSE, '');
 }
 
+/**
+ * The widest halt a builder writes is retry-exhausted: the last check, the attempts, the bigger
+ * worker on offer, what the implementer said, what the planner answered, and the planner's
+ * verdict. The budget covers all six, so the two voices are never the rows that fall off.
+ */
+const MAX_DETAIL_LINES = 6;
+
 function formatDetailLines(issue: RecoveryIssue): string[] {
   const dropQuotedReset = resetNote(issue) !== undefined;
   return issue.details
     .filter((detail) => !detail.startsWith('Worker profile:'))
-    .slice(0, 4)
+    .slice(0, MAX_DETAIL_LINES)
     .map(formatDetailLine)
     .map((detail) => (dropQuotedReset ? stripRecoveryResetClause(detail) : detail));
 }

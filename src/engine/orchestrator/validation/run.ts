@@ -15,6 +15,7 @@ import {
   readManifestCommands,
   type ManifestCommands,
 } from '../../../core/validation/manifest-commands.js';
+import { detectFormatFixCommand } from '../../../core/validation/lint-detection.js';
 import { buildTestArgs, detectStack } from '../../../core/validation/stacks/registry.js';
 import type { Stack } from '../../../core/validation/stacks/types.js';
 import {
@@ -22,6 +23,8 @@ import {
   type ResolvedCommand,
 } from '../../../core/validation/stage-command.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
+import { labelError } from '../../../utils/format-errors.js';
+import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { publishValidation, publishValidationBaseline, publishWarning } from '../events.js';
 import { decideValidationAcceptance, type ValidationAcceptance } from './acceptance.js';
 import { extractFailureKeys } from './extract-failure-keys.js';
@@ -33,6 +36,7 @@ import type {
   PrimeBaselineOptions,
   RunValidationOptions,
   ValidationBaseline,
+  ValidationCommandRunner,
   Validator,
   ValidatorDeps,
 } from './types.js';
@@ -102,6 +106,45 @@ function fromPersistedBaseline(persisted: PersistedValidationBaseline): Validati
     commands: persisted.commands,
     failures,
   };
+}
+
+const FORMATTABLE_FILE = /\.(c|m)?[jt]sx?$|\.(json|jsonc|css)$/;
+
+const FORMAT_FAILED_WARNING = {
+  category: 'validation',
+  code: 'validation_format_failed',
+} as const;
+
+// Layout the implementer left unformatted fails lint and costs an attempt, so the
+// project's own formatter runs first. Only the brief's own changed files are
+// rewritten: nothing outside its scope mutates and change attribution holds.
+async function formatChangedFiles(opts: {
+  ctx: StageContext;
+  changedFiles: readonly string[];
+  runCommand: ValidationCommandRunner;
+  signal: AbortSignal | undefined;
+}): Promise<string | null> {
+  const command = detectFormatFixCommand(opts.ctx.projectDir);
+  if (command === null) return null;
+  const files = opts.changedFiles.filter((file) => FORMATTABLE_FILE.test(file));
+  if (files.length === 0) return null;
+  const parts = parseShellCommand(command);
+  const cmd = parts[0];
+  if (cmd === undefined) return null;
+  try {
+    await opts.runCommand(cmd, [...parts.slice(1), ...files], {
+      cwd: opts.ctx.projectDir,
+      timeout: resolveValidationTimeout(opts.ctx.config),
+      label: 'format',
+      signal: opts.signal,
+    });
+    return null;
+  } catch (err) {
+    return labelError(
+      `Formatting the changed files with ${command} failed; the lint stage ran anyway`,
+      err,
+    );
+  }
 }
 
 function planStage(stage: ValidationStage, task: Task, ctx: StageContext): StagePlan {
@@ -183,11 +226,13 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
   ): Promise<{
     results: ValidationResult[];
     skipReasons: Partial<Record<ValidationStage, string>>;
+    formatWarning?: string;
   }> {
     const results: ValidationResult[] = [];
     const skipReasons: Partial<Record<ValidationStage, string>> = {};
     const stages: ValidationStages = { typecheck: false, lint: false, test: false };
     const commands: ValidationStageCommands = {};
+    let formatWarning: string | undefined;
 
     for (const stage of GATE_ORDER) {
       if (!ctx.config.validation[stage]) continue;
@@ -199,6 +244,15 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       }
       commands[stage] = plan.command;
       onProgress?.({ stages: { ...stages }, activeStage: stage, commands: { ...commands } });
+      if (stage === 'lint' && changedFiles !== undefined && changedFiles.length > 0) {
+        const failed = await formatChangedFiles({
+          ctx,
+          changedFiles,
+          runCommand: commandRunner,
+          signal,
+        });
+        if (failed !== null) formatWarning = failed;
+      }
       const result = await runValidationStep({
         stage,
         cmd: plan.resolved.cmd,
@@ -214,7 +268,9 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       });
       results.push(result);
       if (!result.passed) {
-        if (!baseline?.failingStages.has(stage)) return { results, skipReasons };
+        if (!baseline?.failingStages.has(stage)) {
+          return { results, skipReasons, ...(formatWarning !== undefined && { formatWarning }) };
+        }
         onProgress?.({ stages: { ...stages }, commands: { ...commands } });
         continue;
       }
@@ -224,7 +280,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       onProgress?.({ stages: { ...stages }, commands: { ...commands } });
     }
 
-    return { results, skipReasons };
+    return { results, skipReasons, ...(formatWarning !== undefined && { formatWarning }) };
   }
 
   async function primeBaseline(
@@ -283,7 +339,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     const startTime = Date.now();
     publishValidation({ bus: bus, phase: phase }, taskId, { phase: 'start' });
     const ctx = buildStageContext(projectDir, config, discoveredValidation);
-    const { results, skipReasons } = await validateTask(
+    const { results, skipReasons, formatWarning } = await validateTask(
       task,
       ctx,
       opts.changedFiles,
@@ -298,6 +354,15 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         });
       },
     );
+    if (formatWarning !== undefined) {
+      publishWarning({
+        bus: bus,
+        phase: phase,
+        taskId,
+        message: formatWarning,
+        safety: FORMAT_FAILED_WARNING,
+      });
+    }
     const acceptance = decideAcceptance({ results, changedFiles: opts.changedFiles ?? [] });
     publishValidation({ bus: bus, phase: phase }, taskId, {
       phase: 'result',

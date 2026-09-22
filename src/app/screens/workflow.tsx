@@ -3,6 +3,7 @@ import { Box } from 'ink';
 import { StopMenu } from '../../features/workflow/stop/menu.js';
 import { readStopMenuRows, stopMenuLayout } from '../../features/workflow/stop/options.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import type {
@@ -55,6 +56,7 @@ import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { questionOptions, questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import { formatRecoveryPrompt } from '../../features/workflow/recovery-prompt.js';
+import { queuePlaceholder } from '../../features/workflow/input-hints.js';
 import { REVIEW_COMMENT_DRAFT } from '../../core/keybindings/review.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { clamp } from '../../utils/math.js';
@@ -86,6 +88,8 @@ export function WorkflowScreen({
   const { cols, rows } = terminal;
   useStores(stopStore, tasksStore);
   const stopMenuOpen = overlayStore.use((state) => state.active === 'stop-sheet');
+  const running = lifecycleStore.use((state) => state.status === 'running');
+  const stopping = stopStore.use((state) => state.intent !== 'none');
   const inputRows = input.rows;
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
   const [scrollAboveLabel, setScrollAboveLabel] = useState('');
@@ -327,6 +331,12 @@ export function WorkflowScreen({
                     ? model.inputMode.hint
                     : model.inputHint
             }
+            placeholder={queuePlaceholder({
+              phase: model.phase,
+              inputMode: model.inputMode.mode,
+              running,
+              stopping,
+            })}
             questionPanelFocused={structuredQuestion && questionState.focus !== 'composer'}
             onReturnToQuestion={structuredQuestion ? returnToQuestion : undefined}
             questionEpoch={model.questionEpoch}

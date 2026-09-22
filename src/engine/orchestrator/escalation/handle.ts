@@ -4,7 +4,12 @@ import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runLocalRetries } from './local-retries.js';
 import { HINT_TIER, INTERMEDIATE_TIER, runEscalationTier } from './tier.js';
-import type { EscalationContext, RetryResult, RetryStepOutcome } from './types.js';
+import type {
+  EscalationContext,
+  RetryAttemptFailure,
+  RetryResult,
+  RetryStepOutcome,
+} from './types.js';
 import { failedRetry } from './types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { publishError, publishWarning, publishWarningFromError } from '../events.js';
@@ -31,7 +36,13 @@ type HandleRetryOptions = {
   profileOverride?: string | undefined;
   profileOverrideTaskId?: TaskId | undefined;
   undeclaredWrites?: 'reject' | 'gate' | undefined;
+  /** How the first attempt ended, when it ended on a machine outcome. */
+  initialFailure?: RetryAttemptFailure | undefined;
 };
+
+function handBackOf(outcome: RetryStepOutcome): string | undefined {
+  return outcome.lastFailure?.handBack;
+}
 
 /**
  * A signed-out runner halts the ladder: the next rung would spend a planner
@@ -187,12 +198,24 @@ export async function handleRetryAndEscalation(
     ...(opts.undeclaredWrites !== undefined && { undeclaredWrites: opts.undeclaredWrites }),
   };
 
-  const retries = await runLocalRetries({
-    ctx,
-    task,
-    state: currentState,
-    lastError: initialError,
-  });
+  const hintCapable = ctx.planner.capabilities.supportsHintEscalation;
+  // A first attempt that stopped and said why is adjudicated by the planner, not
+  // answered with the same retry; without a planner that can hint, the local
+  // rung keeps its one turn.
+  const initialFailure = opts.initialFailure;
+  const stopForPlanner =
+    hintCapable &&
+    initialFailure?.outcome === 'no-staged-change' &&
+    initialFailure.handBack !== undefined;
+  const retries: RetryStepOutcome = stopForPlanner
+    ? {
+        state: currentState,
+        task,
+        lastError: initialError,
+        attempts: 0,
+        lastFailure: initialFailure,
+      }
+    : await runLocalRetries({ ctx, task, state: currentState, lastError: initialError });
   if (retries.result) return { state: retries.state, result: retries.result };
 
   if (ctx.signal?.aborted)
@@ -242,13 +265,15 @@ export async function handleRetryAndEscalation(
     }
   }
 
-  const tier0 = await runEscalationTier(INTERMEDIATE_TIER, {
-    ctx,
-    task: retries.task,
-    state: retries.state,
-    lastError: retries.lastError,
-    priorAttempts: retries.attempts,
-  });
+  const tier0 = stopForPlanner
+    ? retries
+    : await runEscalationTier(INTERMEDIATE_TIER, {
+        ctx,
+        task: retries.task,
+        state: retries.state,
+        lastError: retries.lastError,
+        priorAttempts: retries.attempts,
+      });
   if (tier0.result) return { state: tier0.state, result: tier0.result };
 
   if (ctx.signal?.aborted)
@@ -260,13 +285,19 @@ export async function handleRetryAndEscalation(
   const tier0Halt = await runnerHalt(ctx, tier0.task, tier0);
   if (tier0Halt) return tier0Halt;
 
-  const tier1 = await runEscalationTier(HINT_TIER, {
-    ctx,
-    task: tier0.task,
-    state: tier0.state,
-    lastError: tier0.lastError,
-    priorAttempts: tier0.attempts,
-  });
+  // A skipped tier 0 returns a fresh outcome with no failure of its own, so the
+  // surviving hand-back is the local rung's.
+  const tier0HandBack = handBackOf(tier0) ?? handBackOf(retries);
+  const tier1 = hintCapable
+    ? await runEscalationTier(HINT_TIER, {
+        ctx,
+        task: tier0.task,
+        state: tier0.state,
+        lastError: tier0.lastError,
+        priorAttempts: tier0.attempts,
+        ...(tier0HandBack !== undefined && { handBack: tier0HandBack }),
+      })
+    : tier0;
   if (tier1.result) return { state: tier1.state, result: tier1.result };
 
   if (ctx.signal?.aborted)
@@ -280,6 +311,17 @@ export async function handleRetryAndEscalation(
 
   // The hint rung is the last one: the planner advises, it never takes the
   // brief over and writes the code itself. Exhaustion hands the brief to the
-  // retry-exhausted recovery with the attempts the implementer actually spent.
-  return { state: tier1.state, result: failedRetry(tier1.attempts) };
+  // retry-exhausted recovery with the attempts the implementer actually spent
+  // and the last rung's error, hand-back and planner answer.
+  const handBack = handBackOf(tier1) ?? tier0HandBack;
+  return {
+    state: tier1.state,
+    result: failedRetry(tier1.attempts, {
+      lastError: tier1.lastError,
+      ...(handBack !== undefined && { handBack }),
+      ...(tier1.plannerHint !== undefined && { plannerHint: tier1.plannerHint }),
+      ...(tier1.attempts > tier0.attempts && { hintRungRan: true }),
+      ...(tier1.plannerVerdict !== undefined && { plannerVerdict: tier1.plannerVerdict }),
+    }),
+  };
 }

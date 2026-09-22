@@ -118,6 +118,36 @@ describe('projectRunnerCallActivity', () => {
     ).toMatchObject({ kind: 'warning', label: 'warning stderr' });
   });
 
+  it('labels Antigravity inputs: CommandLine runs, AbsolutePath reads, TargetFile edits', () => {
+    expect(
+      projectRunnerCallActivity(
+        runnerToolUse({
+          name: 'run_command',
+          inputDelta: '{"CommandLine":"pwd; ls -la README.md"}',
+        }),
+        1,
+      ),
+    ).toMatchObject({
+      kind: 'command',
+      label: 'running pwd; ls -la README.md',
+      target: 'pwd; ls -la README.md',
+    });
+    expect(
+      projectRunnerCallActivity(
+        runnerToolUse({ name: 'view_file', inputDelta: '{"AbsolutePath":"/tmp/probe/README.md"}' }),
+        1,
+      ),
+    ).toMatchObject({ kind: 'read', label: 'reading /tmp/probe/README.md' });
+    for (const name of ['write_to_file', 'replace_file_content', 'multi_replace_file_content']) {
+      expect(
+        projectRunnerCallActivity(
+          runnerToolUse({ name, inputDelta: '{"TargetFile":"/tmp/probe/check.sh"}' }),
+          1,
+        ),
+      ).toMatchObject({ kind: 'write', label: 'editing /tmp/probe/check.sh' });
+    }
+  });
+
   it('ignores prompt-like tool fields and does not invent exploring labels', () => {
     const activity = projectRunnerCallActivity(
       runnerToolUse({

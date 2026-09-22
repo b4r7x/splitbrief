@@ -271,13 +271,16 @@ function codexToolEvent(
     trim: true,
     nonEmpty: true,
   });
+  if (terminal === 'started') {
+    return { type: 'tool-use', stage: 'started', id: id ?? null, name: itemType, input };
+  }
   const output = item.output ?? item.result ?? item.text ?? item.content ?? item.status;
   return {
     type: 'tool-use',
     id: id ?? null,
     name: itemType,
     input,
-    ...(terminal === 'completed' && output !== undefined ? { output } : {}),
+    ...(output !== undefined ? { output } : {}),
   };
 }
 

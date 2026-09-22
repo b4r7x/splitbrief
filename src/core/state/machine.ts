@@ -8,6 +8,7 @@ import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
 import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../scope/declared-set.js';
 import { transitionError } from './errors.js';
 
 const anytimeActions = [
@@ -20,6 +21,7 @@ const anytimeActions = [
   'REWIND_TO_SPEC',
   'REWIND_TO_PLAN',
   'CLEAR_REWIND_PENDING',
+  'WIDEN_TASK_SCOPE',
   'ENQUEUE_USER_MSG',
   'MARK_INJECTING_NATIVE',
   'MARK_DELIVERED_NATIVE',
@@ -116,6 +118,33 @@ function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
       const { currentCode: _currentCode, currentCodeByFile: _currentCodeByFile, ...rest } = t;
       return rest;
     }),
+  };
+}
+
+function widenTaskScope(
+  state: WorkflowState,
+  action: Extract<StateAction, { type: 'WIDEN_TASK_SCOPE' }>,
+): WorkflowState {
+  const task = state.tasks.find((t) => t.id === action.taskId);
+  if (task === undefined) return state;
+  const declared = taskDeclaredPatterns(task);
+  const added = [...new Set(action.paths)]
+    .filter((path) => !isInDeclaredSet(path, declared))
+    .map((path) => `\`${path}\` — planner-approved: ${action.reason}`);
+  if (added.length === 0) return state;
+  return {
+    ...state,
+    tasks: state.tasks.map((t) =>
+      t.id === action.taskId
+        ? {
+            ...t,
+            scope: {
+              ...t.scope,
+              approvedOutOfBounds: [...(t.scope?.approvedOutOfBounds ?? []), ...added],
+            },
+          }
+        : t,
+    ),
   };
 }
 
@@ -292,6 +321,9 @@ export function transition(
 
     case 'CLEAR_TASK_CODE':
       return stripCurrentCode(state, action.taskId);
+
+    case 'WIDEN_TASK_SCOPE':
+      return widenTaskScope(state, action);
 
     case 'ALL_DONE':
       return { ...state, phase: 'final-review' };

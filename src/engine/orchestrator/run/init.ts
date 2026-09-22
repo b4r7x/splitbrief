@@ -44,12 +44,17 @@ import { buildSummary, type SummaryBase } from '../summary/build.js';
 import {
   publishError,
   publishPlannerStatus,
+  publishRecoveryResolved,
   publishWorkflowConfig,
   publishUserMessage,
   publishWarning,
   publishWarningFromError,
   publishGitBranchCreated,
 } from '../events.js';
+import {
+  changedFilesSinceBaseline,
+  deserializeChangedFilesBaseline,
+} from '../changed-files-baseline.js';
 import { transitionAndSave } from '../state-ops.js';
 import {
   createContinuationHolder,
@@ -266,6 +271,10 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       setTrackedState(savedState);
     }
   }
+  if (savedState !== undefined) {
+    savedState = await resolveStaleFileHalt({ projectDir, sessionId, bus, state: savedState });
+    setTrackedState(savedState);
+  }
   if (
     savedState !== undefined &&
     savedState.pendingRecovery === undefined &&
@@ -361,6 +370,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       ...(opts.selectedSkills && opts.selectedSkills.length > 0
         ? { selectedSkills: opts.selectedSkills.map((s) => s.id) }
         : {}),
+      ...(runtime.plannerContext !== undefined && { plannerContext: runtime.plannerContext }),
     };
     state = transitionAndSave(
       { projectDir, sessionId },
@@ -405,6 +415,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   };
 
   const validator = createValidator({ captureBaseline: true });
+  // A continue carries no runtime `@file` context; the state kept the one the run started with.
+  const plannerContext = runtime.plannerContext ?? state.plannerContext;
   const wctx: WorkflowContext = {
     projectDir,
     sessionId,
@@ -438,7 +450,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       drainPendingAttachments: opts.drainPendingAttachments,
     }),
     ...(opts.streamingSink !== undefined && { streamingSink: opts.streamingSink }),
-    ...(runtime.plannerContext !== undefined && { plannerContext: runtime.plannerContext }),
+    ...(plannerContext !== undefined && { plannerContext }),
     continuation,
   };
 
@@ -489,6 +501,54 @@ async function resumeContinuation(
     ...(partial !== undefined && { partial }),
     ...(steer !== undefined && { steer }),
   });
+}
+
+const FILE_HALT_REASONS = new Set(['user-edit-conflict', 'approval-promotion-conflict']);
+
+/**
+ * A halt about files is only true while those files still differ from the baseline. The operator
+ * who reverted them answered the question by reverting, so the panel does not ask again either.
+ */
+export async function fileHaltIsStale(projectDir: string, state: WorkflowState): Promise<boolean> {
+  const issue = state.pendingRecovery;
+  if (issue === undefined || !FILE_HALT_REASONS.has(issue.reason)) return false;
+  if (state.changedFilesBaseline === undefined) return false;
+  try {
+    const changed = await changedFilesSinceBaseline(
+      projectDir,
+      deserializeChangedFilesBaseline(state.changedFilesBaseline),
+    );
+    return !changed.some((file) => issue.files.includes(file));
+  } catch {
+    return false;
+  }
+}
+
+/** The entry that acts on it: the run says the halt is over and continues. */
+async function resolveStaleFileHalt(args: {
+  projectDir: string;
+  sessionId: string;
+  bus: EventBus;
+  state: WorkflowState;
+}): Promise<WorkflowState> {
+  const { projectDir, sessionId, bus, state } = args;
+  const issue = state.pendingRecovery;
+  if (issue === undefined || !(await fileHaltIsStale(projectDir, state))) return state;
+
+  const resolved = transitionAndSave(
+    { projectDir, sessionId },
+    state,
+    { type: 'RESOLVE_PENDING_RECOVERY' },
+    { expectedRevision: state.stateRevision },
+  );
+  publishRecoveryResolved({ bus, issue, action: 'continue', outcome: 'continued' });
+  publishWarning({
+    bus,
+    phase: resolved.phase,
+    message: 'The files the halt named are back at the baseline; continuing.',
+    safety: { category: 'recovery', code: 'stale_file_halt_resolved' },
+  });
+  return resolved;
 }
 
 /**

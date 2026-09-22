@@ -267,6 +267,43 @@ describe('createRunnerCallRecorder', () => {
     ]);
   });
 
+  // A tool announcement replays input that `toolUseDone` carries again, so a run with hundreds of
+  // tool starts spends the delta budget on a diagnostic and must not lose its result to it. The
+  // streamed stage is the result's own text and still does.
+  it('keeps a call completed when announced tool input exhausts the delta budget', () => {
+    const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
+    for (let index = 0; index < 600; index += 1) {
+      recorder.toolUseDelta({
+        toolUseId: `tool-${index}`,
+        name: 'Write',
+        inputDelta: JSON.stringify({ path: `f${index}.ts`, content: 'x'.repeat(2048) }),
+        stage: 'started',
+      });
+    }
+
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(result.status).toBe('completed');
+    expect(result.error).toBeNull();
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: 'runner_call_tool_delta_limit' }),
+    ]);
+  });
+
+  it('truncates a call when streamed tool deltas exhaust the delta budget', () => {
+    const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
+    for (let index = 0; index < 600; index += 1) {
+      recorder.toolUseDelta({ toolUseId: 'tool-0', name: 'Write', inputDelta: 'x'.repeat(2048) });
+    }
+
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(result).toMatchObject({
+      status: 'truncated',
+      error: { code: 'runner_call_tool_delta_limit' },
+    });
+  });
+
   it('bounds direct tool payloads without truncating the call', () => {
     const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
     recorder.toolUseDone({

@@ -6,6 +6,8 @@ export type LadderRung = Readonly<{
   consumesRetry?: boolean;
   count?: 'DEFAULT_LOCAL_RETRIES';
   optional?: boolean;
+  /** False for a rung the skill runs but the engine has no call site for. */
+  engine?: boolean;
 }>;
 
 export const LADDER: readonly LadderRung[] = [
@@ -13,7 +15,7 @@ export const LADDER: readonly LadderRung[] = [
   { id: 'local', who: 'implementer', count: 'DEFAULT_LOCAL_RETRIES' },
   { id: 'intermediate', who: 'intermediate-implementer', optional: true },
   { id: 'hint', who: 'planner-then-implementer' },
-  { id: 'takeover', who: 'planner' },
+  { id: 'takeover', who: 'planner', engine: false },
 ];
 
 const FINAL_FRAMING = 'Multiple attempts have failed. Try a completely different approach:';
@@ -33,3 +35,6 @@ export function HINT_ERROR_TEMPLATE(error: string, hint: string): string {
 }
 
 export const MAX_HINT_ERROR_LENGTH = 4000;
+
+/** How much of an implementer's terminal text the hint prompt and the recovery panel carry. */
+export const HAND_BACK_MAX_CHARS = 2000;

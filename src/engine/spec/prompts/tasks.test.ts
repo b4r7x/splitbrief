@@ -1,6 +1,30 @@
 import { describe, it, expect } from 'vitest';
 import { buildLanguageContext } from './language-context.js';
-import { buildTasksPrompt } from './tasks.js';
+import { briefContract, buildTasksPrompt } from './tasks.js';
+
+describe('briefContract', () => {
+  const contract = briefContract(buildLanguageContext('typescript'));
+
+  it('forbids planning for a red gate and names the three ways out', () => {
+    expect(contract).toContain('leave typecheck, lint and tests green on its own');
+    expect(contract).toContain('widen');
+    expect(contract).toContain('backward compatible');
+    expect(contract).toContain('split');
+  });
+
+  it('makes a brief that removes an export name its consumers across src/ and testing/', () => {
+    expect(contract).toContain('`src/` and `testing/` alike');
+    expect(contract).toContain('colocated and sibling tests included');
+  });
+
+  it('keeps the nine numbered sections ahead of the rule', () => {
+    expect(contract).toContain('1. **Identity**');
+    expect(contract).toContain('9. **Evidence**');
+    expect(contract.indexOf('9. **Evidence**')).toBeLessThan(
+      contract.indexOf('Every brief must also leave typecheck'),
+    );
+  });
+});
 
 describe('buildTasksPrompt', () => {
   it('TypeScript project prompt keeps TypeScript conventions', () => {

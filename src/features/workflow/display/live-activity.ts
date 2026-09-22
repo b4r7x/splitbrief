@@ -1,4 +1,5 @@
-import type { Phase } from '../../../core/schemas/enums.js';
+import { PHASES, type Phase } from '../../../core/schemas/enums.js';
+import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { activeVerb } from './phase-verb.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
@@ -56,6 +57,8 @@ function railRoleTone(role: RailRole): ConversationRowTone {
 export interface LiveStatus {
   verb: string;
   stageStart: number;
+  /** Time the stage spent waiting on the user: its clock ran, the run did not. */
+  waitedMs: number;
   tone: ConversationRowTone;
 }
 
@@ -65,7 +68,9 @@ export function deriveLiveStatus(input: {
   cancelled: boolean;
   startedAt: number | null;
   phaseFirstSeenTs: Readonly<Partial<Record<Phase, number>>>;
+  waitedMs: Readonly<Partial<Record<Phase, number>>>;
   reviewerLabel: string | null;
+  plannerCall: PlannerCall | null;
 }): LiveStatus | null {
   if (input.status !== 'running') return null;
   if (input.cancelled) return null;
@@ -76,9 +81,15 @@ export function deriveLiveStatus(input: {
   const completionTimes = railStageCompletionTimesFromPhaseFirstSeen(input.phaseFirstSeenTs);
   const stageStart =
     activeIndex > 0 ? (completionTimes[activeIndex - 1] ?? 0) : (input.startedAt ?? 0);
+  const waitedMs = PHASES.reduce(
+    (total, phase) =>
+      getRailActiveIndex(phase) === activeIndex ? total + (input.waitedMs[phase] ?? 0) : total,
+    0,
+  );
   return {
-    verb: activeVerb(input.phase, input.reviewerLabel),
+    verb: activeVerb(input.phase, input.reviewerLabel, input.plannerCall),
     stageStart,
+    waitedMs,
     tone: railRoleTone(railStageRole(activeStage.stage)),
   };
 }

@@ -869,7 +869,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated` (the two `*_rejected` names predate the gate rewrite: a gate no longer rejects, and these now record that a gate ended the run rather than approving it — the wire name is kept so old logs replay), `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `brief_readiness_passed`, `brief_readiness_blocked`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received` (retained for back-compatibility so pre-merge sessions replay; nothing produces it since `instant` merged into `quick`)
 
 **Task lifecycle:**
-`task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed`, `hint_failed`, `review_fix_started`
+`task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_scope_widened`, `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed`, `hint_failed`, `review_fix_started`
 
 **Implementer (3):**
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`
@@ -893,7 +893,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `replay_started`, `replay_complete` — published only by `readRunEvents` (`src/engine/events/replay.ts`), which wraps a `session.jsonl` read back into an `EngineEvent[]` for `loadEvents` (`src/stores/workflow/actions/load.ts`). See [ENGINE.md](./ENGINE.md#replay).
 
 **Generic (2):**
-`warning`, `error` — both carry an optional `category` / `code` pair naming what produced them: `recovery` / `retry_exhausted` · `review_failed` · `recovery_pending_unresolved`, `skills` / `skills_truncated` (the selected skills exceeded the planner-prompt budget and were cut), `validation` / `no_gates_unknown_stack` (the project matches no validation stack, so the run is review-only).
+`warning`, `error` — both carry an optional `category` / `code` pair naming what produced them: `recovery` / `retry_exhausted` · `review_failed` · `recovery_pending_unresolved`, `skills` / `skills_truncated` (the selected skills exceeded the planner-prompt budget and were cut), `validation` / `no_gates_unknown_stack` (the project matches no validation stack, so the run is review-only) · `validation_format_failed` (the pre-lint formatting of the brief's changed files failed; the lint stage ran anyway).
 
 ### Exhaustive switch in conversation row rendering
 

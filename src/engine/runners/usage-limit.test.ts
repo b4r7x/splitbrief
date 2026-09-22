@@ -360,3 +360,42 @@ describe('end-to-end classification of the live codex limit records', () => {
     expect(outcome.state).toBe('usage-limit');
   });
 });
+
+// Captured live from `agy -p` (antigravity 1.2.7) on 2026-09-21: the retry after
+// the exit-0 hit, beside exit 3 and without the truncation suffix.
+const ANTIGRAVITY_QUOTA_EXIT_3 =
+  'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h3m48s.';
+// The diagnostic `opencodeProtocolEvents` derives from the 2.0.12 `provider.quota`
+// envelope; the envelope itself runs end-to-end in the describe above.
+const OPENCODE_QUOTA_MESSAGE = 'provider.quota: Go usage limit exceeded';
+// Captured live from `codex exec --json` on 2026-09-21 (the `error` record; the
+// `turn.failed` record that follows carries the same message).
+const CODEX_LIMIT_MESSAGE_2026_09_21 =
+  "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 24th, 2026 6:20 PM.";
+// Captured live from `cmd` (command-code) on 2026-09-21: the `run_error` event
+// message, then the `result.error` string of the same run.
+const COMMAND_CODE_RUN_ERROR =
+  "POST /alpha/generate → 429 error: You've reached your weekly usage limit for your plan. Your limit resets at 2026-09-23T15:50:48.385Z. Please wait for the window to reset or upgrade your plan to continue.";
+const COMMAND_CODE_RESULT_ERROR =
+  "Error: You've reached your weekly usage limit. Resets in 2d 1h (Wed 5:50 PM). Run /upgrade for a higher plan or /extra for on-demand credits.";
+// The documented Gemini API 429 body, serialized as the diagnostic.
+const GEMINI_QUOTA_METRIC_BODY =
+  '{"error":{"code":429,"message":"Quota exceeded for quota metric \'Generate Content API requests per minute\'","status":"RESOURCE_EXHAUSTED"}}';
+
+describe("every tool's captured limit line classifies usage-limit", () => {
+  // Copilot has no row: its quota wording was never captured (the probe account
+  // was policy-denied), so nothing here vouches for it.
+  it.each([
+    ['antigravity stderr beside exit 0', ANTIGRAVITY_QUOTA],
+    ['antigravity stderr beside exit 3', ANTIGRAVITY_QUOTA_EXIT_3],
+    ['opencode 2.0.12 provider.quota envelope', OPENCODE_QUOTA_MESSAGE],
+    ['codex error record', CODEX_LIMIT_MESSAGE_2026_09_21],
+    ['command-code run_error', COMMAND_CODE_RUN_ERROR],
+    ['command-code result.error', COMMAND_CODE_RESULT_ERROR],
+    ['Gemini API RESOURCE_EXHAUSTED body', GEMINI_QUOTA_METRIC_BODY],
+    ['Claude Code result text', CLAUDE_SESSION_LIMIT],
+  ])('%s', (_family, line) => {
+    expect(isUsageLimitDiagnostic(line)).toBe(true);
+    expect(isAuthFailureDiagnostic(line)).toBe(false);
+  });
+});

@@ -3,6 +3,7 @@ import type { InputMode } from '../../../core/navigation/types.js';
 import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
+import { markWaitEnded, markWaitStarted } from '../../../stores/workflow/actions/wait.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 
 export interface UseInputModeResult {
@@ -51,6 +52,7 @@ export function useInputMode(): UseInputModeResult {
       reviewResolverRef.current = resolve;
       setModeState((state) => ({ ...state, mode: 'review', hint: h }));
       controlsStore.setInputMode('review');
+      markWaitStarted();
     });
   };
 
@@ -66,6 +68,7 @@ export function useInputMode(): UseInputModeResult {
         questionEpoch: state.questionEpoch + 1,
       }));
       controlsStore.setInputMode('question');
+      markWaitStarted();
     });
   };
 
@@ -79,6 +82,7 @@ export function useInputMode(): UseInputModeResult {
     setModeState((state) => ({ ...state, mode: 'normal', hint: '' }));
     controlsStore.clearInputMode();
     questionPromptStore.clearHint();
+    markWaitEnded();
     if (answersReview) {
       const resolver = reviewResolverRef.current;
       reviewResolverRef.current = null;
@@ -102,6 +106,7 @@ export function useInputMode(): UseInputModeResult {
     setModeState((state) => ({ ...state, mode: 'normal', hint: '' }));
     controlsStore.clearInputMode();
     questionPromptStore.clearHint();
+    markWaitEnded();
     reviewResolver?.({ approved: false });
     questionRejector?.(WORKFLOW_USER_CANCELLED_ABORT_REASON);
   };
@@ -115,6 +120,7 @@ export function useInputMode(): UseInputModeResult {
       questionRejectorRef.current = null;
       controlsStore.clearInputMode();
       questionPromptStore.clearHint();
+      markWaitEnded();
     };
   }, []);
 

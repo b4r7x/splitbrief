@@ -138,6 +138,7 @@ export type PlannerCallbacksContext = Pick<
   | 'sinks'
   | 'drainPendingAttachments'
   | 'modelCache'
+  | 'plannerContext'
   | 'detectedContextLength'
   | 'continuation'
 >;

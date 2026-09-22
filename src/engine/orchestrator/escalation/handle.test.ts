@@ -140,8 +140,17 @@ describe('handleRetryAndEscalation', () => {
       currentState: state,
     });
 
-    // Local retry (1) exhausted → hint tier retry (2) → the ladder ends there.
-    expect(result).toEqual({ completed: false, method: 'failed', attempts: 2 });
+    // Local retry (1) exhausted → hint tier retry (2) → the ladder ends there,
+    // carrying the last rung's error and the planner's answer.
+    expect(result).toEqual({
+      completed: false,
+      method: 'failed',
+      attempts: 2,
+      lastError: 'still broken',
+      plannerHint: 'use x',
+      hintRungRan: true,
+      plannerVerdict: 'answer',
+    });
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeDefined();
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 2)).toBeUndefined();
     expect(escalateFull).not.toHaveBeenCalled();
@@ -466,10 +475,208 @@ describe('handleRetryAndEscalation', () => {
       currentState: stateWithTask,
     });
 
-    expect(result).toEqual({ completed: false, method: 'failed', attempts: 2 });
+    expect(result).toMatchObject({ completed: false, method: 'failed', attempts: 2 });
     expect(escalateFull).not.toHaveBeenCalled();
     expect(finalState.currentTaskIndex).toBe(0);
     expect(finalState.tasks[0]?.status).toBe('pending');
+  });
+
+  it('a no-change retry ends the local rung early and the hinted retry carries the hint out', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const implementer = makeImplementer({
+      retry: vi
+        .fn()
+        .mockResolvedValueOnce({
+          success: false,
+          output: 'I could not find it.',
+          error: 'exited without changing any files',
+          outcome: 'no-staged-change',
+        })
+        .mockResolvedValue({ success: false, output: '', error: 'still broken' }),
+    });
+    const escalateHint = vi
+      .fn()
+      .mockResolvedValue({ success: true, output: 'use a default', code: null, usage: null });
+
+    const { result } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        planner: makePlanner({ escalateHint }),
+        callbacks,
+        implementer,
+        bus,
+      }),
+      task: makeTask(),
+      initialError: 'type error',
+      currentState: makeValidatingState(),
+    });
+
+    expect(implementer.retry).toHaveBeenCalledTimes(2);
+    expect(escalateHint).toHaveBeenCalledTimes(1);
+    expect(escalateHint).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'type error', handBack: 'I could not find it.' }),
+    );
+    expect(result).toEqual({
+      completed: false,
+      method: 'failed',
+      attempts: 2,
+      lastError: 'still broken',
+      handBack: 'I could not find it.',
+      plannerHint: 'use a default',
+      hintRungRan: true,
+      plannerVerdict: 'answer',
+    });
+  });
+
+  it('an empty hint spends no implementer attempt and keeps the error the brief died on', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: 'I could not find it.',
+        error: 'exited without changing any files',
+        outcome: 'no-staged-change',
+      }),
+    });
+    const escalateHint = vi
+      .fn()
+      .mockResolvedValue({ success: false, output: '', code: null, usage: null });
+
+    const { result } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        planner: makePlanner({ escalateHint }),
+        callbacks,
+        implementer,
+        bus,
+      }),
+      task: makeTask(),
+      initialError: 'type error',
+      currentState: makeValidatingState(),
+    });
+
+    expect(implementer.retry).toHaveBeenCalledTimes(1);
+    expect(escalateHint).toHaveBeenCalledTimes(1);
+    expect(busEvents.filter((e) => e.type === 'escalate')).toEqual([]);
+    expect(result).toEqual({
+      completed: false,
+      method: 'failed',
+      attempts: 1,
+      lastError: 'type error',
+      handBack: 'I could not find it.',
+    });
+  });
+
+  it('a planner that cannot hint gets no hint rung at all', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
+    });
+    const escalateHint = vi.fn();
+    const planner = makePlanner({
+      escalateHint,
+      capabilities: { ...makePlanner().capabilities, supportsHintEscalation: false },
+    });
+
+    const { result } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
+        planner,
+        callbacks,
+        implementer,
+        bus,
+      }),
+      task: makeTask(),
+      initialError: 'type error',
+      currentState: makeValidatingState(),
+    });
+
+    expect(escalateHint).not.toHaveBeenCalled();
+    expect(busEvents.find((e) => e.type === 'task_escalating')).toBeUndefined();
+    expect(busEvents.find((e) => e.type === 'escalate')).toBeUndefined();
+    expect(
+      busEvents.find(
+        (e) => e.type === 'planner_status' && e.status === 'running' && e.phase === 'escalating',
+      ),
+    ).toBeUndefined();
+    expect(result).toEqual({
+      completed: false,
+      method: 'failed',
+      attempts: 1,
+      lastError: 'still broken',
+    });
+  });
+
+  it('a first attempt that stopped with a hand-back goes to the planner before any retry', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { bus, events: busEvents } = makeBusRecorder();
+    const config = makeNoValidationConfig({
+      workflow: defaultWorkflow,
+      escalation: {
+        intermediateProvider: 'ollama',
+        intermediateModel: 'x-ai/grok-4',
+        enabled: true,
+      },
+    });
+    const implementer = makeImplementer({ retry: vi.fn() });
+    const hint = 'VERDICT: brief — the consumer is out of scope';
+    const escalateHint = vi
+      .fn()
+      .mockResolvedValue({ success: true, output: hint, code: null, usage: null });
+    const createImplementer = vi.fn();
+
+    const { result, state } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config,
+        planner: makePlanner({ escalateHint }),
+        callbacks,
+        implementer,
+        createImplementer,
+        bus,
+      }),
+      task: makeTask(),
+      initialError: 'exited without changing any files',
+      initialFailure: {
+        outcome: 'no-staged-change',
+        runner: config.implementer,
+        handBack: 'May I edit src/consumer.ts?',
+      },
+      currentState: makeValidatingState(),
+    });
+
+    expect(implementer.retry).not.toHaveBeenCalled();
+    expect(createImplementer).not.toHaveBeenCalled();
+    expect(busEvents.filter((e) => e.type === 'task_retry')).toEqual([]);
+    expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 0)).toBeUndefined();
+    expect(escalateHint).toHaveBeenCalledTimes(1);
+    expect(escalateHint).toHaveBeenCalledWith(
+      expect.objectContaining({ handBack: 'May I edit src/consumer.ts?' }),
+    );
+    expect(result).toEqual({
+      completed: false,
+      method: 'failed',
+      attempts: 0,
+      lastError: 'exited without changing any files',
+      handBack: 'May I edit src/consumer.ts?',
+      plannerHint: hint,
+      plannerVerdict: 'brief',
+    });
+    expect(state.pendingRecovery).toBeUndefined();
   });
 
   it('pre_escalation deny skips the escalation tiers and attributes the retry-exhausted recovery message to the hook', async () => {

@@ -49,7 +49,9 @@ function derivationLoopMs(state: LifecycleState): number {
     cancelled: state.cancelled,
     startedAt: state.startedAt,
     phaseFirstSeenTs: state.phaseFirstSeenTs,
+    waitedMs: state.waitedMs ?? {},
     reviewerLabel: null,
+    plannerCall: state.plannerCall ?? null,
   };
   let live = 0;
   const derivations = (): void => {

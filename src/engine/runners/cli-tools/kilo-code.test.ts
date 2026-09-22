@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
@@ -12,6 +14,10 @@ import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 
 const PROMPT = CLI_PROMPT_SENTINEL;
 const PROJECT_DIR = process.cwd();
+const STREAM_JSON_FIXTURE = join(
+  import.meta.dirname,
+  '../../../../testing/fixtures/kilo/stream-json.ndjson',
+);
 
 function plannerArgs(
   model: string | undefined,
@@ -72,7 +78,19 @@ describe('Kilo Code role adapters', () => {
     const plannerRaw = CLI_CONFORMANCE_CANDIDATES[0]?.rawContract.rawInvocation ?? [];
     const implementerRaw = CLI_CONFORMANCE_CANDIDATES[1]?.rawContract.rawInvocation ?? [];
     expect(plannerRaw.slice(0, 6)).toEqual(['run', '--format', 'json', '--agent', 'plan', PROMPT]);
-    expect(implementerRaw).toEqual(['run', '--agent', 'code', '--auto', PROMPT]);
+    expect(implementerRaw).toEqual([
+      'run',
+      '--format',
+      'json',
+      '--agent',
+      'code',
+      '--auto',
+      PROMPT,
+    ]);
+    expect(CLI_CONFORMANCE_CANDIDATES.map((candidate) => candidate.rawContract.asOf)).toEqual([
+      '2026-09-21',
+      '2026-09-21',
+    ]);
     expect(CLI_CONFORMANCE_CANDIDATES[0]?.contractSha256).not.toBe(
       CLI_CONFORMANCE_CANDIDATES[1]?.contractSha256,
     );
@@ -145,6 +163,8 @@ describe('Kilo Code role adapters', () => {
       'run',
       '--model',
       'qwen2.5-coder:7b',
+      '--format',
+      'json',
       '--agent',
       'code',
       '--auto',
@@ -364,10 +384,45 @@ describe('Kilo Code planner JSON adapter', () => {
   });
 });
 
-describe('Kilo Code implementer text adapter', () => {
-  it('preserves text completion without inventing a structured terminal', () => {
-    expect(kiloImplementerProtocolEvents('Kilo changed the files')).toEqual([
-      { type: 'text', channel: 'stdout', text: 'Kilo changed the files\n' },
+describe('Kilo Code implementer JSON adapter', () => {
+  it('reads the same json stream as the planner: a running tool starts, a completed one is done', () => {
+    const running = JSON.stringify({
+      type: 'tool_use',
+      sessionID: 'ses-kilo',
+      part: {
+        type: 'tool',
+        callID: 'bash_0',
+        tool: 'bash',
+        state: { status: 'running', input: { command: 'npm test' } },
+      },
+    });
+    expect(kiloImplementerProtocolEvents(running)).toEqual([
+      { type: 'session', nativeSessionId: 'ses-kilo' },
+      {
+        type: 'tool-use',
+        stage: 'started',
+        id: 'bash_0',
+        name: 'bash',
+        input: { command: 'npm test' },
+      },
+    ]);
+
+    const captured = readFileSync(STREAM_JSON_FIXTURE, 'utf8')
+      .split('\n')
+      .filter((line) => line.length > 0)
+      .flatMap((line) => [...kiloImplementerProtocolEvents(line)]);
+    expect(captured).toContainEqual({
+      type: 'tool-use',
+      id: 'call_26e1f12604394ca9aa13aedf',
+      name: 'read',
+      input: { filePath: '/tmp/probe/README.md' },
+      output: expect.stringContaining('This is a throwaway probe repository for kilo.'),
+    });
+    expect(captured).toContainEqual({ type: 'text', channel: 'assistant', text: 'OK' });
+    expect(captured.filter((event) => event.type === 'usage')).toHaveLength(2);
+    expect(captured.some((event) => event.type === 'warning')).toBe(false);
+    expect(kiloImplementerProtocolEvents('plain text line')).toEqual([
+      expect.objectContaining({ type: 'warning', code: 'malformed_opencode' }),
     ]);
   });
 });

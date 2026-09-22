@@ -7,7 +7,9 @@ const base = {
   cancelled: false,
   startedAt: 1000,
   phaseFirstSeenTs: {},
+  waitedMs: {},
   reviewerLabel: null,
+  plannerCall: null,
 };
 
 describe('deriveLiveStatus', () => {
@@ -43,7 +45,39 @@ describe('deriveLiveStatus', () => {
 
   it('carries the verb, the stage start, and the role tone for a live planner stage', () => {
     const status = deriveLiveStatus({ ...base, phase: 'researching' });
-    expect(status).toEqual({ verb: 'Researching…', stageStart: 1000, tone: 'planner' });
+    expect(status).toEqual({
+      verb: 'Researching…',
+      stageStart: 1000,
+      waitedMs: 0,
+      tone: 'planner',
+    });
+  });
+
+  it('names the planner call the plan stage is on', () => {
+    expect(deriveLiveStatus({ ...base, phase: 'planning', plannerCall: 'plan' })?.verb).toBe(
+      'Writing the plan…',
+    );
+    expect(deriveLiveStatus({ ...base, phase: 'planning', plannerCall: 'tasks' })?.verb).toBe(
+      'Compiling briefs…',
+    );
+    expect(deriveLiveStatus({ ...base, phase: 'planning' })?.verb).toBe('Planning…');
+  });
+
+  it('adds up the waits of the active stage only', () => {
+    const status = deriveLiveStatus({
+      ...base,
+      phase: 'specifying',
+      waitedMs: { researching: 4_000, specifying: 1_000, planning: 9_000, implementing: 500 },
+    });
+    expect(status?.waitedMs).toBe(5_000);
+
+    const build = deriveLiveStatus({
+      ...base,
+      phase: 'validating-task',
+      phaseFirstSeenTs: { implementing: 5_000 },
+      waitedMs: { researching: 4_000, implementing: 500 },
+    });
+    expect(build?.waitedMs).toBe(500);
   });
 
   it('uses the implementer tone during build and derives stage start from phaseFirstSeenTs', () => {

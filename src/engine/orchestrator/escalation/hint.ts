@@ -5,6 +5,7 @@ import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-c
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import type { GateAndPromoteOutcome } from '../approval/gate-and-promote.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
+import { parseHintVerdict } from '../../spec/prompts/escalation.js';
 import { withPerCallAbort } from '../cancellable-call.js';
 import {
   createBusTextHandler,
@@ -48,7 +49,6 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
     taskId: initialTask.id,
   });
 
-  publishEscalate({ bus: ctx.bus, phase: state.phase, taskId: initialTask.id, tier: 1 });
   const languageContext = buildProjectLanguageContext(
     ctx.projectDir,
     state.discoveredValidation?.language,
@@ -78,6 +78,7 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
           fileIgnoreProjectDir: ctx.projectDir,
           sandboxEnv: workspace.sandboxEnv,
           changeDetection: workspace.changeDetection,
+          ...(input.handBack !== undefined && { handBack: input.handBack }),
         }),
     });
   } catch (err) {
@@ -116,17 +117,30 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
   if (gateBlocked) return gateBlocked;
   state = gateResult.state;
 
-  if (tier1Result.output) {
-    reviewerHandler(tier1Result.output);
+  // No hint, no implementer call: the rung ends on the planner's silence and
+  // spends no attempt.
+  const hint = tier1Result.success ? tier1Result.output.trim() : '';
+  if (hint.length === 0) {
+    return { state, task: initialTask, lastError, attempts: priorAttempts };
+  }
+  publishEscalate({ bus: ctx.bus, phase: state.phase, taskId: initialTask.id, tier: 1, hint });
+  reviewerHandler(tier1Result.output);
+
+  const verdict = parseHintVerdict(hint);
+  if (verdict.kind === 'brief') {
+    return {
+      state,
+      task: initialTask,
+      lastError,
+      attempts: priorAttempts,
+      plannerHint: hint,
+      plannerVerdict: 'brief',
+    };
   }
 
-  const hintError = truncateByChars(
-    HINT_ERROR_TEMPLATE(lastError, tier1Result.output),
-    MAX_HINT_ERROR_LENGTH,
-  );
-
-  return runRetryStep({
-    ctx,
+  const hintError = truncateByChars(HINT_ERROR_TEMPLATE(lastError, hint), MAX_HINT_ERROR_LENGTH);
+  const outcome = await runRetryStep({
+    ctx: verdict.kind === 'widen' ? { ...ctx, undeclaredWrites: 'gate' } : ctx,
     task: initialTask,
     state,
     lastError: hintError,
@@ -137,6 +151,9 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
     usageCategory: 'implementer',
     retryFailureFallback: 'Tier-1 hint retry failed to produce valid code',
     profileOverride: ctx.retryProfileOverride,
+    ...(verdict.kind === 'widen' && {
+      scopeWidening: { paths: verdict.paths, reason: verdict.reason },
+    }),
     invokeRetry: makeImplementerRetryInvoker({
       context: ctx.context,
       kind: 'hint',
@@ -145,6 +162,7 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
       onOutput: retryHandler,
     }),
   });
+  return { ...outcome, plannerHint: hint, plannerVerdict: verdict.kind };
 }
 
 function handleHintTierGateOutcome(input: {

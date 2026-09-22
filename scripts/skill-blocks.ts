@@ -37,6 +37,7 @@ import {
   CLI_IMPLEMENTER_ADAPTERS,
   CLI_PLANNER_ADAPTERS,
 } from '../src/engine/runners/cli-tools/registry.js';
+import { TASK_BRIEF_HEADINGS } from '../src/engine/spec/headings.js';
 import { formatTaskPrompt } from '../src/engine/spec/prompt-formatter.js';
 import { buildEscalationPrompt, buildHintPrompt } from '../src/engine/spec/prompts/escalation.js';
 import { buildLanguageContext } from '../src/engine/spec/prompts/language-context.js';
@@ -347,8 +348,15 @@ function caps(): string {
   ].join('\n');
 }
 
+// The skill spawns direct writers only, and the CLI sends a direct writer no `### Current Code`.
 function bodyOrder(): string {
-  return BRIEF_SECTION_ORDER.map((heading, index) => `${index + 1}. \`${heading}\``).join('\n');
+  const currentCode = TASK_BRIEF_HEADINGS.currentCode.heading;
+  const headings = BRIEF_SECTION_ORDER.filter((heading) => heading !== currentCode);
+  return [
+    ...headings.map((heading, index) => `${index + 1}. \`${heading}\``),
+    '',
+    `\`${currentCode}\` is never sent to a direct writer: the tool reads the file itself.`,
+  ].join('\n');
 }
 
 function completionInstruction(files: readonly [string, ...string[]]): string {

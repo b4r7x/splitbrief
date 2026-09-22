@@ -224,6 +224,7 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
           toolUseId: toolUse.id ?? null,
           name: toolUse.name,
           inputDelta: JSON.stringify(toolUse.input),
+          stage: 'started',
         });
       }
     }

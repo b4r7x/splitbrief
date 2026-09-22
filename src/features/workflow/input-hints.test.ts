@@ -1,5 +1,36 @@
 import { describe, expect, it } from 'vitest';
-import { resolveInputHint, hintStateSeverity } from './input-hints.js';
+import { hintStateSeverity, queuePlaceholder, resolveInputHint } from './input-hints.js';
+
+describe('queuePlaceholder', () => {
+  const working = { inputMode: 'normal' as const, running: true, stopping: false };
+
+  it.each([
+    'researching',
+    'specifying',
+    'clarifying',
+    'constitution-check',
+    'planning',
+    'analyzing',
+  ] as const)('invites a message for the planner while %s', (phase) => {
+    expect(queuePlaceholder({ ...working, phase })).toBe('Queue a message for the planner…');
+  });
+
+  it.each(['implementing', 'validating-task', 'escalating', 'final-review'] as const)(
+    'leaves the composer its own brief placeholder while %s',
+    (phase) => {
+      expect(queuePlaceholder({ ...working, phase })).toBeUndefined();
+    },
+  );
+
+  it('says nothing while a prompt owns the composer, the run is parked, or it is stopping', () => {
+    const question = { ...working, phase: 'planning', inputMode: 'question' } as const;
+    const review = { ...working, phase: 'reviewing-spec', inputMode: 'review' } as const;
+    expect(queuePlaceholder(question)).toBeUndefined();
+    expect(queuePlaceholder(review)).toBeUndefined();
+    expect(queuePlaceholder({ ...working, phase: 'planning', running: false })).toBeUndefined();
+    expect(queuePlaceholder({ ...working, phase: 'planning', stopping: true })).toBeUndefined();
+  });
+});
 
 describe('resolveInputHint', () => {
   it.each(['review', 'question'] as const)(

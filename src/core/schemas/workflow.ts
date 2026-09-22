@@ -95,6 +95,9 @@ const WorkflowStateFields = {
   stateRevision: nonnegativeInteger,
   phase: PhaseSchema,
   feature: z.string(),
+  // The `@file` text the run was started with: the planner reads it on every call, so a
+  // continue that has no runtime copy of it restores this one.
+  plannerContext: z.string().optional(),
   currentTaskIndex: z.number().int().nonnegative(),
   attempt: z.number().int().nonnegative(),
   tasks: z.array(TaskSchema),

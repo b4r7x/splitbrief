@@ -101,6 +101,18 @@ describe('publishPlannerStatus', () => {
 
     expect(events[0]).toMatchObject({ tool: 'codex', model: 'sonnet-4' });
   });
+
+  it('names the planner call a running status is on, and omits it when none is named', () => {
+    const { bus, events } = makeBusRecorder();
+
+    publishPlannerStatus(bus, createInitialState('test'), 'running', { call: 'tasks' });
+    publishPlannerStatus(bus, createInitialState('test'), 'running');
+
+    expect(events[0]).toMatchObject({ type: 'planner_status', status: 'running', call: 'tasks' });
+    const bare = events[1];
+    if (!bare) throw new Error('expected two planner_status events');
+    expect('call' in bare).toBe(false);
+  });
 });
 
 describe('createImplementerPublisher', () => {

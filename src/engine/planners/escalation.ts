@@ -59,6 +59,7 @@ export async function escalateHint(
     task,
     error,
     languageContext ?? buildProjectLanguageContext(projectDir, undefined),
+    opts.handBack,
   );
   const useFiles = config.hintSuccessMode === 'files';
   const detect = useFiles ? createChangeDetector('Hint escalation') : null;

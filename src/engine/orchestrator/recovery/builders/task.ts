@@ -24,6 +24,7 @@ import type { ValidationResult } from '../../validation/result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import { runnerAuthDisplayName, runnerLoginInstruction } from '../../../runners/auth-failure.js';
 import { parseUsageLimitReset, usageLimitGuidance } from '../../../runners/usage-limit.js';
+import { parseHintVerdict, type HintVerdictKind } from '../../../spec/prompts/escalation.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
 import { includes } from '../../../../utils/type-guards.js';
 import type { RecoveryBuilderBase, TaskRecoveryContext } from './issue.js';
@@ -50,6 +51,10 @@ export interface ValidationRecoveryOptions extends RecoveryBuilderBase, TaskReco
 export interface RetryExhaustedRecoveryOptions extends ValidationRecoveryOptions {
   allowRetryOverride?: boolean | undefined;
   message?: string | undefined;
+  handBack?: string | undefined;
+  plannerHint?: string | undefined;
+  hintRungRan?: boolean | undefined;
+  plannerVerdict?: HintVerdictKind | undefined;
 }
 
 export interface ContextOverflowRecoveryOptions extends RecoveryBuilderBase {
@@ -281,6 +286,8 @@ export function buildRetryExhaustedRecoveryIssue(
     'retry-same-worker',
     'pause-run',
   ]);
+  const verdict = opts.plannerHint === undefined ? undefined : parseHintVerdict(opts.plannerHint);
+  const diagnosis = verdict?.kind === 'brief' ? verdict.diagnosis : (opts.plannerHint ?? '');
 
   return createRecoveryIssue({
     id: opts.id,
@@ -293,9 +300,18 @@ export function buildRetryExhaustedRecoveryIssue(
     message: opts.message ?? `${opts.task.id} exhausted recovery retries`,
     details: [
       validation.detail,
-      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...attemptDetails(opts.attempts, opts.maxAttempts, { hintRungRan: opts.hintRungRan }),
       ...implementerDetails(opts.selectedImplementerProfile),
       ...routeBiggerDetails(opts),
+      ...(opts.handBack ? [`Implementer said: ${opts.handBack}`] : []),
+      ...(opts.plannerHint ? [`Planner said: ${opts.plannerHint}`] : []),
+      ...(opts.plannerVerdict === 'brief'
+        ? [
+            diagnosis === ''
+              ? 'Planner verdict: the brief itself is wrong'
+              : `Planner verdict: the brief itself is wrong — ${diagnosis}`,
+          ]
+        : []),
     ],
     attempts: opts.attempts,
     maxAttempts: opts.maxAttempts,
@@ -306,6 +322,8 @@ export function buildRetryExhaustedRecoveryIssue(
       allowRetryOverride: opts.allowRetryOverride,
       canRouteBigger: hasRouteBigger(opts),
       routeBiggerProfile: opts.routeBiggerProfile,
+      hintRungRan: opts.hintRungRan,
+      plannerVerdict: opts.plannerVerdict,
     }),
     availableActions: actions,
     recommendedAction,

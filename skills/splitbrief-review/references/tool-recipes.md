@@ -59,8 +59,8 @@ Timeouts:
 
 - binary `kilo` · version `kilo --version` · auth `kilo auth list` · models `kilo models` (`provider/model`) · effort = `--variant`
 <!-- generated: recipe:kilo-code -->
-- implementer: `nohup sh -c 'kilo run --model $M --variant $E --agent code --auto "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'kilo run --agent code --auto "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'kilo run --model $M --variant $E --format json --agent code --auto "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'kilo run --format json --agent code --auto "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - reviewer: `nohup sh -c 'kilo run --model $M --variant $E --format json --agent plan "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - reviewer (no model): `nohup sh -c 'kilo run --format json --agent plan "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
@@ -70,8 +70,8 @@ Timeouts:
 
 - binary `copilot` · version `copilot --version` · auth: no cheap probe — an auth signature in the first spawn's log halts · models: no listing · effort `low|medium|high`
 <!-- generated: recipe:copilot -->
-- implementer: `nohup sh -c 'copilot --model $M --effort $E -p "$(cat $P)" --allow-all > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'copilot -p "$(cat $P)" --allow-all > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'copilot --model $M --effort $E -p "$(cat $P)" --allow-all --output-format json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'copilot -p "$(cat $P)" --allow-all --output-format json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - reviewer: `nohup sh -c 'copilot --model $M --effort $E -p "$(cat $P)" --plan --allow-all-tools --no-ask-user --output-format json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - reviewer (no model): `nohup sh -c 'copilot -p "$(cat $P)" --plan --allow-all-tools --no-ask-user --output-format json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
@@ -104,10 +104,10 @@ Timeouts:
 
 - binary `agy` · version `agy --version` (`agy --help` prints none) · auth `agy models` (fails when signed out) · models `agy models` (`<id>\t<display name>`, one row per effort variant) · effort `low|medium|high`
 <!-- generated: recipe:antigravity -->
-- implementer: `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --print-timeout 20m --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --print-timeout 20m > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'agy -p "$(cat $P)" --mode plan --print-timeout 10m --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'agy -p "$(cat $P)" --mode plan --print-timeout 10m > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --print-timeout 20m --output-format stream-json --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --print-timeout 20m --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'agy -p "$(cat $P)" --mode plan --print-timeout 10m --output-format stream-json --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'agy -p "$(cat $P)" --mode plan --print-timeout 10m --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - terminal record: none — exit 0.
 

@@ -5,7 +5,8 @@ import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 import { changedFilesSinceBaseline, type ChangedFilesBaseline } from '../changed-files-baseline.js';
 import { classifyUserEditConflict, normalizeUserEditConflictAction } from './conflicts.js';
-import { publishUserEditConflict, publishWarningFromError } from '../events.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
+import { publishUserEditConflict, publishWarning, publishWarningFromError } from '../events.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { buildUserEditConflictRecoveryIssue } from '../recovery/builders/workflow.js';
@@ -22,7 +23,7 @@ export async function checkUserEditConflicts(opts: {
   baseline: ChangedFilesBaseline;
   acknowledgedUserEditFiles: Set<string>;
   setTrackedState: (s: WorkflowState) => void;
-}): Promise<{ state: WorkflowState; stopped: boolean }> {
+}): Promise<{ state: WorkflowState; stopped: boolean; absorbedFiles: string[] }> {
   const {
     projectDir,
     sessionId,
@@ -46,23 +47,42 @@ export async function checkUserEditConflicts(opts: {
       'Failed to check user edit conflicts',
       err,
     );
-    return { state, stopped: false };
+    return { state, stopped: false, absorbedFiles: [] };
   }
-  if (changedFiles.length === 0) return { state, stopped: false };
+  if (changedFiles.length === 0) return { state, stopped: false, absorbedFiles: [] };
+
+  // A brief still `in_progress` on entry is one this run already ran — a park or a promoted
+  // attempt. What it wrote inside its own declared set is its output, not a user edit: it is
+  // kept, remembered, and left out of the classification.
+  const own =
+    task.status === 'in_progress'
+      ? changedFiles.filter((file) => isInDeclaredSet(file, taskDeclaredPatterns(task)))
+      : [];
+  if (own.length > 0) {
+    for (const file of own) acknowledgedUserEditFiles.add(file);
+    publishWarning({
+      bus,
+      phase: state.phase,
+      taskId: task.id,
+      message: `Keeping ${task.id}'s own unfinished output: ${own.join(', ')}.`,
+      safety: { category: 'user-edit', code: 'own_partial_output_kept' },
+    });
+  }
+  const foreignFiles = changedFiles.filter((file) => !own.includes(file));
+  if (foreignFiles.length === 0) return { state, stopped: false, absorbedFiles: [] };
 
   const conflict = classifyUserEditConflict({
-    files: changedFiles,
+    files: foreignFiles,
     currentTask: task,
     allTasks: state.tasks,
     currentTaskIndex: taskIndex,
   });
 
   if (conflict.kind === 'unrelated') {
-    for (const fileConflict of conflict.fileConflicts) {
-      acknowledgedUserEditFiles.add(fileConflict.file);
-    }
+    const absorbedFiles = conflict.fileConflicts.map((fileConflict) => fileConflict.file);
+    for (const file of absorbedFiles) acknowledgedUserEditFiles.add(file);
     publishUserEditConflict({ bus: bus, phase: state.phase }, conflict, 'continue-unrelated');
-    return { state, stopped: false };
+    return { state, stopped: false, absorbedFiles };
   }
 
   let selectedAction: UserEditConflictAction;
@@ -90,12 +110,14 @@ export async function checkUserEditConflicts(opts: {
   publishUserEditConflict({ bus: bus, phase: state.phase }, conflict, selectedAction);
 
   if (selectedAction === 'continue-unrelated' && conflict.safeToContinue) {
-    for (const fileConflict of conflict.fileConflicts) {
-      if (fileConflict.kind === 'unrelated' || fileConflict.kind === 'future-task-stale-input') {
-        acknowledgedUserEditFiles.add(fileConflict.file);
-      }
-    }
-    return { state, stopped: false };
+    const absorbedFiles = conflict.fileConflicts
+      .filter(
+        (fileConflict) =>
+          fileConflict.kind === 'unrelated' || fileConflict.kind === 'future-task-stale-input',
+      )
+      .map((fileConflict) => fileConflict.file);
+    for (const file of absorbedFiles) acknowledgedUserEditFiles.add(file);
+    return { state, stopped: false, absorbedFiles };
   }
 
   const issue = buildUserEditConflictRecoveryIssue({
@@ -104,7 +126,11 @@ export async function checkUserEditConflicts(opts: {
     phase: state.phase,
     createdAt: nowIso(),
   });
-  return { state: raisePendingRecovery(scope, state, issue, setTrackedState), stopped: true };
+  return {
+    state: raisePendingRecovery(scope, state, issue, setTrackedState),
+    stopped: true,
+    absorbedFiles: [],
+  };
 }
 
 export async function detectValidationFailureUserEdit(opts: {

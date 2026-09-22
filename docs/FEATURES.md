@@ -108,7 +108,7 @@ splitbrief start --json "fix parser edge case"
 
 ### Validation pipeline + checkpoints
 
-**What it does.** After every implementer task, SPLITBRIEF runs typecheck → lint → test (in that order, stop on first failure). The commands are the ones the project's own stack uses, not a fixed TypeScript trio. On success it records evidence. Filesystem snapshots remain available; SPLITBRIEF never stages, commits or creates index checkpoints.
+**What it does.** After every implementer task, SPLITBRIEF runs typecheck → lint → test (in that order, stop on first failure). The commands are the ones the project's own stack uses, not a fixed TypeScript trio. Before the lint stage, the brief's own changed files are formatted with the project's own formatter — Biome when a Biome config is present, else Prettier when a Prettier config is — so layout the implementer left unformatted does not cost an attempt; a formatter that fails is one warning (`validation_format_failed`) and lint runs regardless. On success it records evidence. Filesystem snapshots remain available; SPLITBRIEF never stages, commits or creates index checkpoints.
 
 **Stack coverage.** The registry is `src/core/validation/stacks/`; `detectStack` picks the first row whose marker file exists, in this order:
 
@@ -140,7 +140,7 @@ Events: `validate`, `git_branch_created`. Historical `git_commit` and `git_check
 
 ### Retry + escalation logic
 
-**What it does.** A failing task retries up to `workflow.maxRetries` (default 2) before escalating. Escalation then runs the supported help tiers in order: **tier 0 — intermediate** (a paid mid-tier API model retries, only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`), **tier 1 — hint** (planner suggests a fix that the implementer applies, for backends with `supportsHintEscalation`). Exhaustion enters recovery; the planner never automatically writes the implementation.
+**What it does.** A failing task retries up to `workflow.maxRetries` (default 2) before escalating. Escalation then runs the supported help tiers in order: **tier 0 — intermediate** (a paid mid-tier API model retries, only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`), **tier 1 — hint** (the planner reads the failure and the implementer's hand-back and replies with a verdict: an answer to retry once with, a widening of the brief's approved files, or a finding that the brief itself is wrong). The hint tier exists only for backends whose capabilities carry `supportsHintEscalation`; for any other planner the rung is absent, not empty. An empty hint ends the rung with no implementer retry, and the local rung stops on the first attempt that read the feedback and still staged nothing. Exhaustion enters recovery; the planner never automatically writes the implementation.
 
 **How to use.** Tune `workflow.maxRetries` and the optional intermediate tier:
 
@@ -509,11 +509,11 @@ The fraction counts briefs that **passed their checks** — a started brief is n
 
 **What it does.** One byline under the composer carrying the run's live state, and the advisor signal below it when active.
 
-**Format.** The lead is the live status — `⠙ Implementing… 1m 12s`, `Waiting for you`, `Still working — silent 3m`, a stop state such as `Paused at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, `<n> queued`, the ETA, `git:<strategy>` (`git:branch+<strategy>` when the run created a branch), the advisor line (`advisor: consider quick · trivial edit`), `y copy` when the focused region has something to copy, and the worktree name.
+**Format.** The lead is the live status — `⠙ Implementing… 1m 12s`, `⠙ Writing the plan… 0m 41s` or `⠙ Compiling briefs… 1m 03s` during planning, named from the planner call the engine says it is on and falling back to `Planning…` when it names none, `Waiting for you`, `Still working — silent 3m`, a stop state such as `Paused at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, `<n> queued`, the ETA, `git:<strategy>` (`git:branch+<strategy>` when the run created a branch), the advisor line (`advisor: consider quick · trivial edit`), `y copy` when the focused region has something to copy, and the worktree name. The elapsed time is the stage's own: the minutes the run spent waiting on you — a planner question, an approval gate — are recorded per phase and subtracted, so answering a question does not make the next brief look slow.
 
 **Steer, queue, interrupt.** The composer means a different thing in each state, and its placeholder says which:
 
-- **Queue** — while a brief is building, the placeholder reads `Queue a message for after this brief…`; text you send waits for the next safe boundary. `/queue show` and `/queue clear` inspect and discard what is pending.
+- **Queue** — while a planning call is running, the placeholder reads `Queue a message for the planner…`; while a brief is building, it reads `Queue a message for after this brief…`; text you send waits for the next safe boundary. `/queue show` and `/queue clear` inspect and discard what is pending.
 - **Steer** — while the run is parked (`Stop now`, or an interrupted call), the hint reads `type instructions, enter to send and resume`; text you send steers the resumed run. A blank Enter never resumes.
 - **Interrupt** — `ctrl+c` stops the run at once, `esc` opens the stop menu. Neither is reachable by typing.
 

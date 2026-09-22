@@ -31,7 +31,7 @@ export const CREW_SEAT_LABELS: Readonly<Record<CrewSeatId, string>> = {
 /** Seat labels are padded to this width so every identity column starts at one offset. */
 export const CREW_LABEL_WIDTH = 8;
 
-/** `model: auto` is this word on every surface, never a resolved catalog default. */
+/** `model: auto` stays this word on the configuration surfaces; a run's own record names the model the tool selected. */
 export const AUTO_MODEL_WORD = 'auto';
 
 export const PLANNER_INHERITANCE = Object.freeze({

@@ -30,6 +30,7 @@ import { cleanupTempDir as removeTempDir, createTempDir } from '#testing/helpers
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { runRetryStep } from './step.js';
+import type { RetryInvokeResult } from './types.js';
 
 let dirs: string[] = [];
 let stateHome = '';
@@ -599,6 +600,147 @@ describe('runRetryStep', () => {
     } finally {
       await isolation.dispose();
     }
+  });
+});
+
+describe('runRetryStep — a failed attempt keeps its story', () => {
+  async function runFailingRetry(
+    retryResult: Partial<RetryInvokeResult>,
+  ): Promise<Awaited<ReturnType<typeof runRetryStep>>> {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T040', file: 'src/story.ts' });
+    return runRetryStep({
+      ctx: {
+        ...makeWctx({ projectDir, sessionId, config: makeNoValidationConfig() }),
+        taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+        dependsOnFiles: [],
+      },
+      task,
+      state: makeImplState([task]),
+      lastError: 'tsc: Type X is not assignable to Y',
+      attempts: 1,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      usageCategory: 'implementer',
+      retryFailureFallback: 'retry failed',
+      invokeRetry: async () => ({ ...retryResult, success: false }),
+    });
+  }
+
+  it('keeps the incoming error and carries the hand-back when the attempt changed nothing', async () => {
+    const outcome = await runFailingRetry({
+      outcome: 'no-staged-change',
+      error: 'agy exited without changing any files',
+      output: 'I could not find the prop.',
+    });
+
+    expect(outcome.lastError).toBe('tsc: Type X is not assignable to Y');
+    expect(outcome.lastFailure).toMatchObject({
+      outcome: 'no-staged-change',
+      handBack: 'I could not find the prop.',
+    });
+    expect(outcome.result).toBeUndefined();
+  });
+
+  it('takes the attempt error for every other outcome', async () => {
+    const outcome = await runFailingRetry({ outcome: 'timeout', error: 'Runner timed out' });
+
+    expect(outcome.lastError).toBe('Runner timed out');
+    expect(outcome.lastFailure?.outcome).toBe('timeout');
+  });
+
+  it('carries no hand-back for whitespace output', async () => {
+    const outcome = await runFailingRetry({ outcome: 'no-staged-change', output: '   ' });
+
+    expect(outcome.lastFailure).toBeDefined();
+    expect(outcome.lastFailure !== undefined && 'handBack' in outcome.lastFailure).toBe(false);
+  });
+
+  it('bounds the hand-back to the last 2000 characters', async () => {
+    const output = `${'x'.repeat(4000)}${'y'.repeat(1000)}`;
+    const outcome = await runFailingRetry({ outcome: 'no-staged-change', output });
+
+    expect(outcome.lastFailure?.handBack?.length).toBe(2000);
+    expect(outcome.lastFailure?.handBack).toBe(output.slice(-2000));
+  });
+});
+
+describe('runRetryStep — planner-approved widening', () => {
+  async function runWidenedRetry(decision: 'allow' | 'deny') {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T031', file: 'src/main.ts' });
+    const state = makeImplState([task]);
+    const { callbacks } = makeCallbacks({
+      onTieredApproval: vi
+        .fn()
+        .mockResolvedValue(
+          decision === 'allow'
+            ? { decision: 'allow', scope: 'once' }
+            : { decision: 'deny', reason: 'out of scope' },
+        ),
+    });
+    const { bus, events } = makeBusRecorder();
+    const outcome = await runRetryStep({
+      ctx: {
+        ...makeWctx({
+          projectDir,
+          sessionId,
+          config: makeNoValidationConfig({
+            approval: { enabled: true, feedRejectionsToPlanner: false },
+            workflow: {},
+          }),
+          callbacks,
+          bus,
+        }),
+        taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+        dependsOnFiles: [],
+        undeclaredWrites: 'gate',
+      },
+      task,
+      state,
+      lastError: 'validation failed',
+      attempts: 1,
+      method: 'escalated-hint',
+      transitionType: 'HINT_SUCCESS',
+      usageCategory: 'implementer',
+      retryFailureFallback: 'retry failed',
+      scopeWidening: { paths: ['src/other.ts'], reason: 'consumer' },
+      invokeRetry: async ({ projectDir: runDir }) => {
+        mkdirSync(join(runDir, 'src'), { recursive: true });
+        writeFileSync(join(runDir, 'src/other.ts'), 'export const other = 1;\n');
+        return { success: true };
+      },
+    });
+    return { outcome, events, projectDir, sessionId };
+  }
+
+  it('records an allowed widening on the brief with the planner reason', async () => {
+    const { outcome, events, projectDir, sessionId } = await runWidenedRetry('allow');
+
+    const provenance = '`src/other.ts` — planner-approved: consumer';
+    expect(outcome.task.scope?.approvedOutOfBounds).toEqual([provenance]);
+    expect(outcome.state.tasks[0]?.scope?.approvedOutOfBounds).toEqual([provenance]);
+    expect(loadState({ projectDir, sessionId })?.tasks[0]?.scope?.approvedOutOfBounds).toEqual([
+      provenance,
+    ]);
+    expect(events.find((event) => event.type === 'task_scope_widened')).toMatchObject({
+      taskId: 'T031',
+      paths: ['src/other.ts'],
+      reason: 'consumer',
+    });
+    expect(outcome.result).toMatchObject({ completed: true, method: 'escalated-hint' });
+  });
+
+  it('records nothing on a denied write and raises the scope-violation recovery', async () => {
+    const { outcome, events } = await runWidenedRetry('deny');
+
+    expect(outcome.result).toEqual({ completed: false, method: 'failed', attempts: 1 });
+    expect(outcome.state.tasks[0]?.scope?.approvedOutOfBounds).toBeUndefined();
+    expect(events.find((event) => event.type === 'task_scope_widened')).toBeUndefined();
+    expect(events.find((event) => event.type === 'recovery_prompted')).toMatchObject({
+      reason: 'scope-violation',
+      taskId: 'T031',
+    });
   });
 });
 

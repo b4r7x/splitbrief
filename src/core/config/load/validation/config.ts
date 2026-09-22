@@ -62,6 +62,7 @@ function removedEntityErrors(config: Record<string, unknown>): ConfigError[] {
 // (src/engine/runners/cli-tools/output-format.ts), but a config that can never run
 // must fail at load, before any runner is built.
 export const STRUCTURED_TERMINAL_TOOL_IDS = [
+  'antigravity',
   'claude-code',
   'codex',
   'command-code',

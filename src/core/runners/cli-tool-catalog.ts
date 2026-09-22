@@ -655,10 +655,10 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://antigravity.google/docs/cli',
-      testedVersion: '1.2.2',
+      testedVersion: '1.2.7',
       minimumAdmittedVersion: '1.2.2',
       versionScheme: 'semver',
-      asOf: '2026-09-14',
+      asOf: '2026-09-21',
     }),
     authDiscoveryMode: 'status-unverified',
     modelDiscoveryMode: 'native-cli',

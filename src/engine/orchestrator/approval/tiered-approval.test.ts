@@ -11,6 +11,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { approvalsFile, SPLITBRIEF_DIR } from '../../../core/paths.js';
+import { createInitialState, transition } from '../../../core/state/machine.js';
 
 let dirs: string[] = [];
 
@@ -352,6 +353,43 @@ describe('gateAction', () => {
     expect(granted).toBeDefined();
     expect(granted?.scope).toBe('once');
     expect(granted?.confirmReason).toBe('cleaning stale fixtures');
+  });
+
+  it('a planner widening moves an undeclared path from write_out_of_scope to write_in_scope', async () => {
+    const task = makeTask({ id: 'T001', file: 'src/main.ts' });
+    const config = makeApprovalConfig({ enabled: true });
+    const before = makeBusRecorder();
+    const denied = await gateAction(
+      makeInput({
+        bus: before.bus,
+        config,
+        task,
+        taskId: task.id,
+        actionDescription: 'write src/other.ts',
+      }),
+    );
+    expect(denied.allow).toBe(false);
+    expect(before.events.find((e) => e.type === 'approval_prompted')?.actionClass).toBe(
+      'write_out_of_scope',
+    );
+
+    const widened =
+      transition(
+        { ...createInitialState('feat'), phase: 'escalating', tasks: [task] },
+        { type: 'WIDEN_TASK_SCOPE', taskId: task.id, paths: ['src/other.ts'], reason: 'consumer' },
+      ).tasks[0] ?? task;
+    const after = makeBusRecorder();
+    const allowed = await gateAction(
+      makeInput({
+        bus: after.bus,
+        config,
+        task: widened,
+        taskId: task.id,
+        actionDescription: 'write src/other.ts',
+      }),
+    );
+    expect(allowed.allow).toBe(true);
+    expect(after.events.some((e) => e.type === 'approval_prompted')).toBe(false);
   });
 
   it('sticky tier, session grant matches a different action description on same file (pattern match)', async () => {

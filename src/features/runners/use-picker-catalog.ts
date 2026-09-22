@@ -20,7 +20,7 @@ import {
   type SeatPickerRole,
 } from '../../core/runners/seat-roles.js';
 import type { CliProviderAuth } from '../../core/discovery/detection.js';
-import { seatAxisFocusSeat } from '../../core/navigation/types.js';
+import { seatAxisFocusSeat, toolRowFocusTool } from '../../core/navigation/types.js';
 import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { includes } from '../../utils/type-guards.js';
 import type { ModelCatalogDiagnostic } from './picker-format.js';
@@ -90,8 +90,6 @@ export interface PickerCatalog {
   optionDraftId: string | null;
   setCurrentItem: (item: PickerOption) => void;
 }
-
-const FOCUS_TOOL_PREFIX = 'tool:';
 
 function laneOf(source: DiscoverySourceRefresh): CatalogLane {
   if (source.refreshing || source.outcome === 'uninitialized') return 'pending';
@@ -200,9 +198,7 @@ export function usePickerCatalog(
   const configItemIndex = items.findIndex((item) => item.isCurrent);
   const configuredItem = configItemIndex >= 0 ? items[configItemIndex] : undefined;
   const preservedIndex = Math.min(preservedLeftIndex, Math.max(0, items.length - 1));
-  const focusedTool = focus?.startsWith(FOCUS_TOOL_PREFIX)
-    ? focus.slice(FOCUS_TOOL_PREFIX.length)
-    : undefined;
+  const focusedTool = toolRowFocusTool(focus);
   const focusedIndex =
     focusedTool === undefined ? -1 : items.findIndex((item) => item.id === focusedTool);
   const initialLeftIdx =

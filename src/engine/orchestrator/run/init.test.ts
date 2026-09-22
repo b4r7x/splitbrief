@@ -11,6 +11,7 @@ import {
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { createInitialState } from '../../../core/state/machine.js';
@@ -27,6 +28,10 @@ import type { EngineEvent, EventBus } from '../../events/types.js';
 import { createEventBus } from '../../events/bus.js';
 import { formatValidationError } from '../validation/format-error.js';
 import { loadState } from '../../../core/state/persistence.js';
+import {
+  captureChangedFilesBaseline,
+  serializeChangedFilesBaseline,
+} from '../changed-files-baseline.js';
 import { readSeatIdentities, writeSeatIdentities } from '../../../core/state/seats.js';
 import type { SummaryBase } from '../summary/build.js';
 import { initializeWorkflow } from './init.js';
@@ -53,6 +58,7 @@ async function preparedTestExecution(
     inputConfig: Config;
     allowHooks: boolean;
     allowRepoRunners?: boolean;
+    plannerContext?: string | undefined;
   }>,
 ): Promise<Readonly<{ config: Config; execution: PreparedExecution }>> {
   const hooks = input.inputConfig.hooks;
@@ -101,6 +107,7 @@ async function preparedTestExecution(
         feature: input.feature,
         allowHooks: input.allowHooks,
         allowRepoRunners: input.allowRepoRunners ?? false,
+        ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
       },
     },
   };
@@ -122,6 +129,7 @@ async function initializeTestWorkflow(
     eventBus?: EventBus;
     headless?: boolean;
     isolation?: RunIsolation;
+    plannerContext?: string | undefined;
   }>,
 ): Promise<{
   init: Awaited<ReturnType<typeof initializeWorkflow>>;
@@ -149,6 +157,7 @@ async function initializeTestWorkflow(
     feature: input.feature,
     inputConfig: config,
     allowHooks: true,
+    ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
   });
   const planner = input.plannerRunner ?? makePlanner();
   const implementer = makeImplementer();
@@ -719,6 +728,125 @@ describe('initializeWorkflow — seat record', () => {
       expect(warnings.join('\n')).toContain('the rest of the run uses the new seat');
       expect(readSeatIdentities({ projectDir, sessionId })?.plan).not.toBe(retired);
       expect(tracked.current?.plannerSessionId).toBeNull();
+    });
+  });
+});
+
+describe('initializeWorkflow — the @ context outlives the process', () => {
+  const CONTEXT = '# tasks.md\n- T001 wire the banner';
+
+  it('persists the context at start and hands it back on a continue that has none', async () => {
+    await withTempDir('splitbrief-init-planner-context', async (projectDir) => {
+      const feature = 'ship the banner';
+      const sessionId = 'session-init-planner-context';
+
+      const started = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        plannerContext: CONTEXT,
+      });
+
+      expect(started.init.ok).toBe(true);
+      if (!started.init.ok) return;
+      expect(started.init.wctx.plannerContext).toBe(CONTEXT);
+      const saved = loadState({ projectDir, sessionId });
+      expect(saved?.plannerContext).toBe(CONTEXT);
+      if (!saved) return;
+
+      const continued = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        savedState: saved,
+      });
+
+      expect(continued.init.ok).toBe(true);
+      if (!continued.init.ok) return;
+      expect(continued.init.wctx.plannerContext).toBe(CONTEXT);
+    });
+  });
+});
+
+describe('initializeWorkflow — a halt about files the operator put back', () => {
+  async function initWithFileHalt(
+    projectDir: string,
+    sessionId: string,
+    feature: string,
+    editAfterBaseline?: string,
+  ) {
+    const baseline = serializeChangedFilesBaseline(await captureChangedFilesBaseline(projectDir));
+    if (editAfterBaseline !== undefined) {
+      writeFileSync(join(projectDir, 'src/edited.ts'), editAfterBaseline);
+    }
+    const events: EngineEvent[] = [];
+    const result = await initializeTestWorkflow({
+      projectDir,
+      sessionId,
+      feature,
+      eventSink: (event) => events.push(event),
+      savedState: {
+        ...createInitialState(feature),
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001', file: 'src/edited.ts' })],
+        currentTaskIndex: 0,
+        changedFilesBaseline: baseline,
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'user-edit-conflict',
+          phase: 'implementing',
+          taskId: taskId('T001'),
+          files: ['src/edited.ts'],
+          availableActions: ['continue', 'pause-run', 'end-run'],
+          recommendedAction: 'continue',
+        }),
+      },
+    });
+    return { ...result, events };
+  }
+
+  it('resolves the halt and continues when the files are back at the baseline', async () => {
+    await withTempDir('splitbrief-init-stale-halt', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'src/edited.ts': 'original' });
+      const sessionId = 'session-init-stale-halt';
+
+      const { init, tracked, events } = await initWithFileHalt(
+        projectDir,
+        sessionId,
+        'continue past a halt the operator undid',
+      );
+
+      expect(init.ok).toBe(true);
+      expect(tracked.current?.pendingRecovery).toBeUndefined();
+      expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
+      expect(events.find((event) => event.type === 'recovery_resolved')).toMatchObject({
+        action: 'continue',
+        outcome: 'continued',
+      });
+      expect(
+        events
+          .filter((event): event is Extract<EngineEvent, { type: 'warning' }> => {
+            return event.type === 'warning';
+          })
+          .map((event) => event.message),
+      ).toContain('The files the halt named are back at the baseline; continuing.');
+    });
+  });
+
+  it('keeps the halt when the file still differs', async () => {
+    await withTempDir('splitbrief-init-live-halt', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'src/edited.ts': 'original' });
+      const sessionId = 'session-init-live-halt';
+
+      const { init, tracked, events } = await initWithFileHalt(
+        projectDir,
+        sessionId,
+        'keep a halt the operator has not undone',
+        'still edited',
+      );
+
+      expect(init.ok).toBe(true);
+      expect(tracked.current?.pendingRecovery).toMatchObject({ reason: 'user-edit-conflict' });
+      expect(events.find((event) => event.type === 'recovery_resolved')).toBeUndefined();
     });
   });
 });

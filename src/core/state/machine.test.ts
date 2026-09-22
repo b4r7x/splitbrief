@@ -534,6 +534,80 @@ describe('transition', () => {
     expect(next.rewindPending?.comment).toBeUndefined();
   });
 
+  it('WIDEN_TASK_SCOPE appends planner-approved paths to the task scope and nothing else', () => {
+    const tasks = [
+      makeTask({ id: 'T001', file: 'src/a.ts', scope: { inBounds: ['`src/a.ts`'] } }),
+      makeTask({ id: 'T002', file: 'src/b.ts' }),
+    ];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'escalating',
+      tasks,
+      currentTaskIndex: 0,
+      attempt: 2,
+    };
+    const next = transition(state, {
+      type: 'WIDEN_TASK_SCOPE',
+      taskId: taskId('T001'),
+      paths: ['src/consumer.ts'],
+      reason: 'consumer of the export',
+    });
+    expect(next.tasks[0]?.scope).toEqual({
+      inBounds: ['`src/a.ts`'],
+      approvedOutOfBounds: ['`src/consumer.ts` — planner-approved: consumer of the export'],
+    });
+    expect(next.tasks[1]).toBe(tasks[1]);
+    expect(next.phase).toBe('escalating');
+    expect(next.attempt).toBe(2);
+    expect(next.currentTaskIndex).toBe(0);
+  });
+
+  it('WIDEN_TASK_SCOPE skips paths the brief already licenses and unknown tasks', () => {
+    const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', scope: { inBounds: ['`src/b.ts`'] } })];
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing', tasks };
+    const once = transition(state, {
+      type: 'WIDEN_TASK_SCOPE',
+      taskId: taskId('T001'),
+      paths: ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/c.ts'],
+      reason: 'consumer',
+    });
+    expect(once.tasks[0]?.scope?.approvedOutOfBounds).toEqual([
+      '`src/c.ts` — planner-approved: consumer',
+    ]);
+    const twice = transition(once, {
+      type: 'WIDEN_TASK_SCOPE',
+      taskId: taskId('T001'),
+      paths: ['src/c.ts'],
+      reason: 'again',
+    });
+    expect(twice).toBe(once);
+    expect(
+      transition(state, {
+        type: 'WIDEN_TASK_SCOPE',
+        taskId: taskId('T999'),
+        paths: ['src/c.ts'],
+        reason: 'consumer',
+      }),
+    ).toBe(state);
+  });
+
+  it('WIDEN_TASK_SCOPE is refused on a closed run', () => {
+    const closed: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001' })],
+      closed: { at: '2026-05-01T10:00:00.000Z', as: 'ended' },
+    };
+    expect(() =>
+      transition(closed, {
+        type: 'WIDEN_TASK_SCOPE',
+        taskId: taskId('T001'),
+        paths: ['src/c.ts'],
+        reason: 'consumer',
+      }),
+    ).toThrow('Cannot apply WIDEN_TASK_SCOPE: this run is closed.');
+  });
+
   it('RESET_TASK does NOT set rewindPending', () => {
     const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {

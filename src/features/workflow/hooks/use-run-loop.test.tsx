@@ -10,6 +10,11 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { execFileSync } from 'node:child_process';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import {
+  captureChangedFilesBaseline,
+  serializeChangedFilesBaseline,
+} from '../../../engine/orchestrator/changed-files-baseline.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -29,9 +34,11 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
 import { configStore } from '../../../stores/project/config.js';
 import {
   abortTurn,
+  requestBoundaryPause,
   requestStopNow,
   requestCancel,
   requestRewind,
@@ -59,26 +66,36 @@ import type { RunWorkflowFn } from './use-run-loop.js';
 interface RunnerHandle {
   startedAt: string;
   handleResume: (injectedText?: string) => void;
+  /** Answers the question the recovery panel is asking, as the composer would. */
+  answer: (text: string) => void;
 }
 
 interface HarnessProps {
   prepared: PreparedExecution;
+  steer?: string | undefined;
   captureRunner?: { current: RunnerHandle | null };
   runWorkflow?: RunWorkflowFn | undefined;
+  continueAtRest?: ((record: RunRecord) => void) | undefined;
 }
 
-function Harness({ prepared, captureRunner, runWorkflow }: HarnessProps) {
+function Harness({ prepared, steer, captureRunner, runWorkflow, continueAtRest }: HarnessProps) {
   const inputMode = useInputMode();
   const continuation = useRunContinue({ prepared, inputMode });
   const runner = useRunLoop({
     prepared,
+    steer,
     inputMode,
     continuation,
     runWorkflow,
+    continueAtRest,
   });
   useEffect(() => {
     if (captureRunner)
-      captureRunner.current = { ...runner, handleResume: continuation.handleResume };
+      captureRunner.current = {
+        ...runner,
+        handleResume: continuation.handleResume,
+        answer: inputMode.resolve,
+      };
   });
   return (
     <Box>
@@ -135,6 +152,28 @@ async function flush(ms = 60) {
   await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
+/** A run halted on a brief whose panel offers a retry, saved where the loop reads it back. */
+function saveHaltedRun(sessionId: string): WorkflowState {
+  const halted = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+    pendingRecovery: makeRecoveryIssue(),
+  });
+  saveState({ projectDir, sessionId }, halted);
+  return halted;
+}
+
+async function answerRecoveryPanel(
+  captureRunner: NonNullable<HarnessProps['captureRunner']>,
+  text: string,
+): Promise<void> {
+  await vi.waitFor(() => {
+    expect(controlsStore.get().inputMode).toBe('question');
+  });
+  await flush();
+  const runner = captureRunner.current;
+  if (!runner) throw new Error('expected captureRunner.current to be populated');
+  runner.answer(text);
+}
+
 function userMessageEvents() {
   return eventsStore.get().events.filter((event) => event.type === 'user_message');
 }
@@ -156,6 +195,7 @@ beforeEach(() => {
   controlsStore.reset();
   feedbackStore.reset();
   configStore.__testReset();
+  overlayStore.reset();
   clearAllHandlers();
 });
 
@@ -166,6 +206,7 @@ afterEach(() => {
   controlsStore.reset();
   feedbackStore.reset();
   configStore.__testReset();
+  overlayStore.reset();
   cleanupTempDir(projectDir);
 });
 
@@ -805,6 +846,164 @@ describe('useRunLoop', () => {
     inst.unmount();
   });
 
+  it('seeds the correction typed at a halt into the next call, and only that call', async () => {
+    const sessionId = '2026-09-21-recovery-steer';
+    const halted = saveHaltedRun(sessionId);
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: halted,
+    });
+    const seen: (string | undefined)[] = [];
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
+      seen.push(options.steer);
+      // The first call halts again on the same brief; the second is answered with the keyword.
+      if (seen.length === 1) {
+        const current = loadState({ projectDir, sessionId });
+        if (!current) throw new Error('expected persisted state on disk');
+        saveState({ projectDir, sessionId }, { ...current, pendingRecovery: makeRecoveryIssue() });
+      }
+      return makeSummary();
+    });
+
+    const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowStub });
+    await answerRecoveryPanel(captureRunner, 'add a default');
+    await vi.waitFor(() => {
+      expect(seen).toEqual(['add a default']);
+    });
+
+    await answerRecoveryPanel(captureRunner, 'retry');
+    await vi.waitFor(() => {
+      expect(seen).toEqual(['add a default', undefined]);
+    });
+    expect(runWorkflowStub).toHaveBeenCalledTimes(2);
+
+    inst.unmount();
+  });
+
+  it('keeps the re-entry steer when the panel answer carries none', async () => {
+    const sessionId = '2026-09-21-recovery-keeps-steer';
+    const halted = saveHaltedRun(sessionId);
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: halted,
+    });
+    const seen: (string | undefined)[] = [];
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
+      seen.push(options.steer);
+      return makeSummary();
+    });
+
+    const inst = renderHarness({
+      prepared,
+      steer: 'original',
+      captureRunner,
+      runWorkflow: runWorkflowStub,
+    });
+    await answerRecoveryPanel(captureRunner, 'retry');
+    await vi.waitFor(() => {
+      expect(seen).toEqual(['original']);
+    });
+
+    inst.unmount();
+  });
+
+  it('settles the run without re-entering when the panel pauses it', async () => {
+    const sessionId = '2026-09-21-recovery-pauses';
+    const halted = saveHaltedRun(sessionId);
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: halted,
+    });
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
+
+    const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowStub });
+    await answerRecoveryPanel(captureRunner, 'pause');
+    await vi.waitFor(() => {
+      expect(settledRun()).not.toBeNull();
+    });
+    expect(runWorkflowStub).not.toHaveBeenCalled();
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery?.status).toBe('paused');
+
+    inst.unmount();
+  });
+
+  it('stops at the brief boundary and continues at rest when a seat changed under the run', async () => {
+    const sessionId = '2026-09-21-seat-change';
+    ensureSessionDir(projectDir, sessionId);
+    saveState(
+      { projectDir, sessionId },
+      { ...createInitialState('add auth'), phase: 'implementing' },
+    );
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+    const continueAtRest = vi.fn();
+    const { promise: seatChanged, resolve: seatChangedNow } = Promise.withResolvers<void>();
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
+      // The engine's side of a boundary pause: consume it and ask how to continue.
+      await seatChanged;
+      options.sinks.consumeBoundaryPause?.();
+      await options.callbacks.onContinuationNeeded?.('', 'boundary');
+      return makeSummary();
+    });
+
+    const inst = renderHarness({ prepared, continueAtRest, runWorkflow: runWorkflowStub });
+    await vi.waitFor(() => {
+      expect(runWorkflowStub).toHaveBeenCalledTimes(1);
+    });
+    lifecycleStore.__testReset({ phase: 'implementing' });
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }),
+    });
+    expect(stopStore.get().intent).toBe('pause-after-brief');
+
+    seatChangedNow();
+    await vi.waitFor(() => {
+      expect(continueAtRest).toHaveBeenCalledTimes(1);
+    });
+    expect(continueAtRest).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: { projectDir, sessionId } }),
+    );
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
+    expect(overlayStore.get().active).toBe('none');
+
+    inst.unmount();
+  });
+
+  it('settles a boundary pause as today when no seat changed', async () => {
+    const sessionId = '2026-09-21-boundary-pause';
+    ensureSessionDir(projectDir, sessionId);
+    saveState(
+      { projectDir, sessionId },
+      { ...createInitialState('add auth'), phase: 'implementing' },
+    );
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+    const continueAtRest = vi.fn();
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
+      requestBoundaryPause();
+      options.sinks.consumeBoundaryPause?.();
+      return makeSummary();
+    });
+
+    const inst = renderHarness({ prepared, continueAtRest, runWorkflow: runWorkflowStub });
+    await vi.waitFor(() => {
+      expect(settledRun()).not.toBeNull();
+    });
+
+    expect(continueAtRest).not.toHaveBeenCalled();
+    expect(stopStore.get().phase).toBe('parked');
+
+    inst.unmount();
+  });
+
   it('settles a park in place instead of re-entering the run', async () => {
     const sessionId = '2024-01-01-parked-continue';
     ensureSessionDir(projectDir, sessionId);
@@ -846,5 +1045,45 @@ describe('useRunLoop', () => {
 
     expect(abortTurn()).toBe(false);
     expect(requestRewind({ target: 'spec' })).toBe(false);
+  });
+
+  it('asks nothing about a file halt whose files are back at the baseline', async () => {
+    const sessionId = '2026-09-21-stale-file-halt';
+    ensureSessionDir(projectDir, sessionId);
+    const halted = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+      changedFilesBaseline: serializeChangedFilesBaseline(
+        await captureChangedFilesBaseline(projectDir),
+      ),
+      pendingRecovery: makeRecoveryIssue({
+        reason: 'user-edit-conflict',
+        files: ['src/reverted.ts'],
+        availableActions: ['continue', 'pause-run', 'end-run'],
+        recommendedAction: 'continue',
+      }),
+    });
+    saveState({ projectDir, sessionId }, halted);
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: halted,
+    });
+    // The engine's side of the same rule: init resolves the halt and the run proceeds.
+    const runWorkflowStub = vi.fn<RunWorkflowFn>(async () => {
+      const current = loadState({ projectDir, sessionId });
+      if (current) saveState({ projectDir, sessionId }, { ...current, pendingRecovery: undefined });
+      return makeSummary();
+    });
+
+    const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
+    await vi.waitFor(() => {
+      expect(settledRun()).not.toBeNull();
+    });
+
+    expect(runWorkflowStub).toHaveBeenCalledTimes(1);
+    expect(controlsStore.get().inputMode).not.toBe('question');
+    expect(runWorkflowStub.mock.calls[0]?.[0]?.savedState?.pendingRecovery).toBeDefined();
+
+    inst.unmount();
   });
 });

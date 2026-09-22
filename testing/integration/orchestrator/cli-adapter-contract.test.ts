@@ -120,8 +120,11 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
   },
   antigravity: {
     transport: 'argv',
-    versionLine: canonicalVersionLine('antigravity', '1.2.2'),
-    successLines: ['ok'],
+    versionLine: canonicalVersionLine('antigravity', '1.2.7'),
+    successLines: [
+      '{"event":"init","conversation_id":"50328626-c5df-4301-9da7-dee7ce900271","init":{"cwd":"/tmp/probe","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","command_status","define_subagent","delete_knowledge","execute_browser_javascript","find_by_name","finish","generate_image","grep_search","invoke_subagent","list_browser_pages","list_dir","list_permissions","list_resources","manage_inbox","manage_subagents","manage_task","multi_replace_file_content","notebook_edit","notebook_execution","open_browser_url","read_browser_page","read_resource","read_url_content","replace_file_content","run_command","schedule","search_web","sed_file","send_command_input","send_message","view_file","wait","wait_5_seconds","write_to_file"],"permission_mode":"always-proceed"}}',
+      '{"event":"result","result":{"conversation_id":"50328626-c5df-4301-9da7-dee7ce900271","status":"SUCCESS","response":"OK\\n","duration_seconds":9.536092,"num_turns":1,"usage":{"input_tokens":59864,"output_tokens":1271,"thinking_tokens":999,"cache_read_tokens":0,"total_tokens":61135}}}',
+    ],
     authArgv: ['models'],
   },
 };
@@ -736,8 +739,8 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         },
       });
       if (adapter.outputContract.kind === 'structured-terminal') {
-        expect(flood.status).toBe('truncated');
-        expect(flood.error?.code).toBe('output-budget-breach');
+        expect(flood.status).toBe('incomplete');
+        expect(flood.warnings.map((warning) => warning.code)).toContain('stdout_line_overflow');
       }
 
       installShim(fixture, 'success-direct');

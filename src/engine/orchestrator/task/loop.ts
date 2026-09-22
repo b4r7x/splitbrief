@@ -13,6 +13,7 @@ import { resolveImplementerProfiles } from '../../../core/config/accessors/imple
 import {
   captureChangedFilesBaseline,
   deserializeChangedFilesBaseline,
+  refreshChangedFilesBaseline,
   serializeChangedFilesBaseline,
   unreadableChangedFiles,
   withActiveTaskSnapshot,
@@ -66,13 +67,11 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     return synced;
   }
 
-  function persistTaskBreakdowns(): void {
-    state = { ...state, taskBreakdowns: [...taskBreakdowns] };
-    const nextState = syncBaselineIntoState();
+  function commitTrackedState(next: WorkflowState): WorkflowState {
     const committed = commitWorkflowState({
       ref: { projectDir, sessionId },
-      expected: nextState,
-      next: nextState,
+      expected: next,
+      next,
     });
     if (committed.kind === 'conflict') {
       throw error(
@@ -88,6 +87,12 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     }
     state = committed.state;
     setTrackedState(state);
+    return state;
+  }
+
+  function persistTaskBreakdowns(): void {
+    state = { ...state, taskBreakdowns: [...taskBreakdowns] };
+    commitTrackedState(syncBaselineIntoState());
   }
 
   const resolvedProfiles = resolveImplementerProfiles(config);
@@ -172,6 +177,16 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     state = preEditGate.state;
     if (preEditGate.stopped) {
       return { state, taskBreakdowns, status: preEditGate.cancelled ? 'cancelled' : 'stopped' };
+    }
+    // An acknowledged edit is the new floor: folding it in here is what keeps the next entry
+    // from asking about the same bytes again. No task snapshot exists yet, so none is lost.
+    if (preEditGate.absorbedFiles.length > 0) {
+      changedFilesBaseline = await refreshChangedFilesBaseline({
+        projectDir,
+        baseline: changedFilesBaseline,
+        absorbedFiles: new Set(preEditGate.absorbedFiles),
+      });
+      state = commitTrackedState(syncBaselineIntoState());
     }
 
     let refreshedTask = task;
@@ -261,8 +276,10 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       setTrackedState,
       setCurrentTask,
       onTaskStartSnapshot: (snapshotState, taskStartSnapshot) => {
+        // On disk, not only tracked: a crash or a park between here and the brief's end
+        // reads this snapshot back, and a rebase from the persisted head would lose it.
         changedFilesBaseline = withActiveTaskSnapshot(changedFilesBaseline, taskStartSnapshot);
-        return persistBaselineState(snapshotState);
+        return commitTrackedState(syncBaselineIntoState(snapshotState));
       },
       onTaskAcceptedFiles: (files) => {
         for (const file of files) taskAcceptedFiles.add(file);

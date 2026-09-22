@@ -39,6 +39,7 @@ const handlers: Partial<Handlers> = {};
 let abortHandlers: AbortHandler[] = [];
 let pendingBoundaryInterrupt = false;
 let pendingBoundaryPause = false;
+let pendingSeatChange = false;
 let departure: { kind: 'home' | 'quit'; run: () => void } | null = null;
 let unsubscribeDeparture: (() => void) | undefined;
 
@@ -55,6 +56,7 @@ export function clearAllHandlers(): void {
   abortHandlers = [];
   pendingBoundaryInterrupt = false;
   pendingBoundaryPause = false;
+  pendingSeatChange = false;
 }
 
 export function createAbortHandlerScope(): (h: AbortHandler | null) => void {
@@ -112,7 +114,23 @@ export function consumeBoundaryPause(): boolean {
 
 export function cancelBoundaryPause(): void {
   pendingBoundaryPause = false;
+  pendingSeatChange = false;
   stopStore.reset();
+}
+
+/**
+ * A seat changed under the running brief: the run pauses at the next brief boundary and
+ * is re-prepared from the saved config there, so the next brief starts on the new seat.
+ */
+export function requestSeatChangeAtBoundary(): void {
+  requestBoundaryPause();
+  pendingSeatChange = true;
+}
+
+export function consumeSeatChange(): boolean {
+  const pending = pendingSeatChange;
+  pendingSeatChange = false;
+  return pending;
 }
 
 // A stop that has nothing to stop is not announced: the byline would report a run terminating
@@ -126,6 +144,7 @@ export function requestStopNow(): boolean {
   // Announce before calling a handler: an already-idle operation may settle synchronously.
   stopStore.request(state.intent === 'end-run' ? 'end-run' : 'stop-now');
   pendingBoundaryPause = false;
+  pendingSeatChange = false;
   if (handlers.stop) handlers.stop();
   else if (!abortTurn()) requestBoundaryInterrupt();
   return true;

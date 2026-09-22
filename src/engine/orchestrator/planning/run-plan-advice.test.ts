@@ -79,3 +79,29 @@ describe('runPlanningPhase — plan-size advice', () => {
     expect(modeAdvice(events)).toEqual([]);
   });
 });
+
+describe('runPlanningPhase — the advisor reads the @ context', () => {
+  const VAGUE = 'rewrite the onboarding page copy for launch';
+  const CONTEXT = '## T001\n- the banner renders on mobile\n- `npm test` passes';
+
+  it('reports the missing validation hint when the sentence stands alone', async () => {
+    const { events } = await runPhaseHelper(dirs, {
+      feature: VAGUE,
+      config: makeConfig({ workflow: auto('standard') }),
+    });
+
+    expect(modeAdvice(events)).toMatchObject([
+      { kind: 'missing-context', missing: ['no validation hint'] },
+    ]);
+  });
+
+  it('is silent once the @ context supplies it', async () => {
+    const { events } = await runPhaseHelper(dirs, {
+      feature: VAGUE,
+      plannerContext: CONTEXT,
+      config: makeConfig({ workflow: auto('standard') }),
+    });
+
+    expect(modeAdvice(events)).toEqual([]);
+  });
+});

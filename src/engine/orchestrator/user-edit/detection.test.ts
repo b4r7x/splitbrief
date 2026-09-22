@@ -146,6 +146,44 @@ describe('checkUserEditConflicts', () => {
     });
   });
 
+  it("keeps a parked brief's own output and classifies only what it did not declare", async () => {
+    createTestGitRepo(projectDir, { 'src/current.ts': 'v1', 'notes.txt': 'note' });
+    const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/current.ts' });
+    const baseline = await captureChangedFilesBaseline(projectDir);
+    writeFileSync(join(projectDir, 'src/current.ts'), 'half written by the parked attempt');
+    writeFileSync(join(projectDir, 'notes.txt'), 'user edit');
+
+    const { result, events, acknowledgedUserEditFiles } = await runCheck({
+      tasks: [task],
+      baseline,
+    });
+
+    expect(result.stopped).toBe(false);
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(acknowledgedUserEditFiles.has('src/current.ts')).toBe(true);
+    expect(events.find((event) => event.type === 'warning')).toMatchObject({
+      code: 'own_partial_output_kept',
+      message: expect.stringContaining('src/current.ts'),
+    });
+    expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
+      conflict: { kind: 'unrelated', files: ['notes.txt'] },
+    });
+    expect(result.absorbedFiles).toEqual(['notes.txt']);
+  });
+
+  it("asks nothing when only the parked brief's own declared files changed", async () => {
+    createTestGitRepo(projectDir, { 'src/current.ts': 'v1' });
+    const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/current.ts' });
+    const baseline = await captureChangedFilesBaseline(projectDir);
+    writeFileSync(join(projectDir, 'src/current.ts'), 'half written by the parked attempt');
+
+    const { result, events } = await runCheck({ tasks: [task], baseline });
+
+    expect(result.stopped).toBe(false);
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
+  });
+
   it('raises no recovery issue when nothing changed since the baseline', async () => {
     createTestGitRepo(projectDir, { 'src/current.ts': 'v1' });
     const task = makeTask({ id: 'T001', file: 'src/current.ts' });

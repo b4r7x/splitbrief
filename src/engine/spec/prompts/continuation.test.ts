@@ -43,18 +43,34 @@ describe('composeContinuation', () => {
 });
 
 describe('continuationBlock', () => {
-  it('reports only the steer when the call was cut before it produced anything', () => {
-    const block = continuationBlock({ steer: 'use the smaller model' });
+  it('reports the absence of earlier output and the steer, claiming no interruption', () => {
+    const block = continuationBlock({ steer: 'add a default instead' });
 
-    expect(block).toContain('interrupted before this call');
-    expect(block).toContain('use the smaller model');
-    expect(block).not.toContain('Partial output');
+    expect(block).toBe(
+      '[Continuation] No output from an earlier attempt of this step is available. The user says: add a default instead',
+    );
+    expect(block).not.toContain('interrupted');
+  });
+
+  it('defaults the steer in the same sentence', () => {
+    expect(continuationBlock({})).toBe(
+      '[Continuation] No output from an earlier attempt of this step is available. The user says: continue from where you left off',
+    );
   });
 
   it('reports the partial when the attempt left one behind', () => {
-    const block = continuationBlock({ partial: 'half a spec', steer: 'finish' });
+    const block = continuationBlock({ partial: 'half a file', steer: 'finish it' });
 
-    expect(block).toContain('Partial output so far');
-    expect(block).toContain('half a spec');
+    expect(
+      block.startsWith('[Continuation] The previous attempt of this step was interrupted.'),
+    ).toBe(true);
+    expect(block).toContain('Partial output so far:');
+    expect(block).toContain('half a file');
+    expect(block).toContain('The user says: finish it');
+  });
+
+  it('never replaces the base prompt', () => {
+    const prompt = composeContinuation({ basePrompt: 'BASE', steer: 'x' });
+    expect(prompt.startsWith('BASE\n\n[Continuation]')).toBe(true);
   });
 });

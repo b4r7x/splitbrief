@@ -107,7 +107,9 @@ export function InputFooter({
           cancelled: lifecycle.cancelled,
           startedAt: lifecycle.startedAt,
           phaseFirstSeenTs: lifecycle.phaseFirstSeenTs,
+          waitedMs: lifecycle.waitedMs ?? {},
           reviewerLabel: reviewerSeat === '' ? null : reviewerSeat,
+          plannerCall: lifecycle.plannerCall ?? null,
         });
   const { frame } = useSpinnerFrame(display.animate || checkingStage !== null);
 
@@ -119,7 +121,7 @@ export function InputFooter({
   ]);
   const elapsed =
     liveStatus !== null && liveStatus.stageStart > 0
-      ? formatStageElapsed(Date.now() - liveStatus.stageStart)
+      ? formatStageElapsed(Date.now() - liveStatus.stageStart - liveStatus.waitedMs)
       : '';
   const liveLead =
     liveStatus !== null

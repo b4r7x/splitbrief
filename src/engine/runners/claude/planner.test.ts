@@ -433,7 +433,10 @@ process.stdout.write(JSON.stringify({ type: "result", result: "ok" }) + "\\n");
     expect(events.filter((event) => event.type === 'call_warning')).toHaveLength(1);
   });
 
-  it('caps many small assistant chunks before accumulating unbounded output', async () => {
+  // The 4096-event output cap was dropped: it ended healthy calls that simply
+  // streamed in small pieces. Only the byte bound remains, and 5000 one-character
+  // chunks are nowhere near it, so the whole reply reaches the caller.
+  it('streams many small assistant chunks in full, with no per-event cap', async () => {
     installClaudeNodeShim(
       shimDir,
       `
@@ -461,28 +464,19 @@ process.stdout.write(JSON.stringify({
     });
 
     expect(result.status).toBe('completed');
-    expect(result.text).toBe('x'.repeat(4096));
+    expect(result.text).toBe('x'.repeat(5000));
     const textEvents = events.filter((event) => event.type === 'call_text_delta');
     const errors = runnerCallErrors(events);
-    expect(chunks.join('')).toBe('x'.repeat(4096));
-    expect(textEvents).toHaveLength(4096);
+    expect(chunks.join('')).toBe('x'.repeat(5000));
+    expect(textEvents).toHaveLength(5000);
     expect(runnerCallTerminals(events)).toHaveLength(1);
     expect(errors).toHaveLength(0);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'call_warning',
-        warning: expect.objectContaining({
-          code: 'runner_output_text_limit',
-          message: expect.stringContaining('runner output text exceeded'),
-        }),
-      }),
-    );
     expect(
       events.filter(
         (event) =>
           event.type === 'call_warning' && event.warning.code === 'runner_output_text_limit',
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
   });
 
   it('emits session id and partial output before an interrupted stream rejects', async () => {

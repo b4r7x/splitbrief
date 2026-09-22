@@ -216,14 +216,22 @@ export async function invokeProcessCli(
         recorder.sessionId({ nativeSessionId: event.nativeSessionId });
         return;
       case 'tool-use':
-        recorder.toolUseDone({
-          toolUse: {
-            id: event.id,
+        if (event.stage === 'started') {
+          recorder.toolUseDelta({
+            toolUseId: event.id,
             name: event.name,
-            input: { ...event.input },
-            ...(event.output !== undefined && { output: event.output }),
-          },
-        });
+            inputDelta: JSON.stringify(event.input),
+          });
+        } else {
+          recorder.toolUseDone({
+            toolUse: {
+              id: event.id,
+              name: event.name,
+              input: { ...event.input },
+              ...(event.output !== undefined && { output: event.output }),
+            },
+          });
+        }
         return;
       case 'warning':
         recorder.warning({

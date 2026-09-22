@@ -82,7 +82,7 @@ ps -o rss=,etime= -p $(pgrep -f 'dist/cli.js' | head -1)
 
 Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_retry{attempt}`, `task_escalating`, `validate{status:"done",passed}`, `paused_external_changes`, `runner_call_stalled`, `workflow_complete{review}`.
 
-Silence is not death. A text-exit tool such as antigravity prints nothing while it reads files and calls tools, so `runner_call_stalled` after 5 minutes and a child at 0% CPU are normal; the idle watchdog kills only after 30 minutes. Before killing a child, look for its own activity trail: antigravity writes step records to `~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/logs/chunks/transcript_full/*.jsonl` (`ls -t … | head -1`, then `tail -1`); a record younger than a minute is a working agent.
+Silence now means no frames. Every admitted tool is spawned in a streaming output mode — antigravity included, on `--output-format stream-json` — so a working child emits a frame per step and the idle watchdog measures the gap between frames, not the gap between documents. `runner_call_stalled` therefore means the tool has printed nothing for 5 minutes, which is worth looking at rather than waiting out; the watchdog still kills only after 30 minutes. Before killing a child, look for its own activity trail: antigravity writes step records to `~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/logs/chunks/transcript_full/*.jsonl` (`ls -t … | head -1`, then `tail -1`); a record younger than a minute is a working agent.
 
 Memory: the process should sit in the hundreds of MB. Growth of more than a few MB per second is a leak; `kill -USR2 <pid>` writes a heap snapshot when the run was started with `NODE_OPTIONS=--heapsnapshot-signal=SIGUSR2`.
 
@@ -115,7 +115,9 @@ When the planner's output was lost by the tool but is in the log, rebuild the ar
 
 ## 5. Swapping a seat
 
-Between runs, edit `.splitbrief/config.yaml`. Inside a run, `/crew build` (or `plan`, `review`) opens the picker; from the shell, `continue --implementer <tool> --implementer-model <id>` or `--planner-model fable`. The CLI prints one line per changed seat; a moved plan seat drops the planner's native session and rebuilds context from the transcript. A stopped run continued on a different implementer simply builds the remaining briefs with it.
+Between runs, edit `.splitbrief/config.yaml`. Inside a run, `/crew build` (or `plan`, `review`) opens that seat's picker, where the tool, its model and its effort are all chosen; committing writes them to `.splitbrief/config.yaml` and the panel says `<SEAT> seat changes after this brief`. The change is taken at the next brief boundary, not mid-brief: the current brief finishes on the seat it started on, then the run re-prepares itself in place on the saved config, prints the seat change, and builds the next brief on the new seat.
+
+From the shell, `continue --implementer <tool> --implementer-model <id>` or `--planner-model fable`. Those flags are now the config of record too: the resulting seat block is written back to `.splitbrief/config.yaml` through the comment-preserving writer, and the CLI prints `<SEAT> seat recorded in .splitbrief/config.yaml` for each seat it moved. A moved plan seat drops the planner's native session and rebuilds context from the transcript. A stopped run continued on a different implementer simply builds the remaining briefs with it.
 
 ## 6. When to stop fixing and plan instead
 
@@ -123,19 +125,28 @@ A brief that fails the same way twice because of a fixed setting of the tool (a 
 
 ## 7. Smoke test: stop, continue, finish
 
-Zero tokens. A fixture repo with a `kind: shell` planner that prints fixed documents keyed off the prompt text, and a `kind: agent` implementer script that writes its file in two steps with a pause between them. The test spawns the built CLI headless, interrupts it inside the pause, continues the same session, and asserts the outcome.
+Zero tokens. A throwaway git repo whose planner and implementer are local node scripts (`testing/e2e/helpers/stop-continue-fixture.ts`): the planner is a `kind: shell` script that prints the one Task Brief, then the review reply, branching on the prompt's “Final Implementation Review” title; the implementer is a `kind: agent` script that writes its two declared files in two steps with a four-second hold between them. It has to be a direct writer — the brief declares two files, and an extracting runner can carry only one back — and its seat declares a `contextLength`, because routing refuses a profile whose window it cannot prove the brief fits.
+
+The CLI is spawned from source the way the live harness does it — `node --import tsx src/cli.ts …` through `spawnCli`, detached so one signal reaches the tool subprocess with it — so no build step stands between a fix and the smoke.
+
+The brief runs in the run's isolation worktree, so the marker the test waits on appears under the fixture's own state home, not in the project: nothing reaches the project until the brief's changes are promoted.
 
 ```
 testing/e2e/scenarios/stop-continue.test.ts   (sequential e2e project, testTimeout 120 s)
-  1. spawn  node dist/cli.js start --plain --mode quick --approve none --allow-repo-runners --project <fixture> "smoke"
-  2. wait   until the fixture's marker file from step one of the implementer exists
-  3. kill   -INT <pid>; expect exit 0; state.json: interruptedStep.cut === 'mid-step', task T001 in_progress
-  4. spawn  node dist/cli.js continue --plain --project <fixture>
-  5. assert stdout has `task T001: done`; state.json: tasks[0].status === 'done', attempt unchanged, no pendingRecovery
-  6. assert session.jsonl has no `paused_external_changes` with kind `current-task-conflict`
+  1. spawn  node --import tsx src/cli.ts start --plain --mode quick --approve none --allow-repo-runners --project <fixture> "smoke"
+  2. wait   until src/marker.ts appears under <stateHome>/splitbrief/trees (<= 45 s)
+  3. kill   the process group with SIGINT; expect exit 0; state.json: interruptedStep.cut === 'mid-step',
+            task T001 in_progress, no pendingRecovery, and src/greet.ts not in the project
+  4. spawn  node --import tsx src/cli.ts continue --plain --allow-repo-runners --project <fixture>
+  5. assert assertPlainStdout for quick mode, plus the lines `task T001: done (no gates)`, `review: passed`, `done: 1 tasks`
+  6. assert state.json: tasks[0].status === 'done', attempt unchanged from the park, no pendingRecovery
+  7. assert session.jsonl has no `paused_external_changes` with conflict kind `current-task-conflict`,
+            no `own_partial_output_kept` warning and no `Discarded …` warning, and src/greet.ts holds the written code
 ```
 
-A second case sends `SIGKILL` instead of `SIGINT` and asserts the brief restarts at attempt 0 with its declared files restored. An optional live tier behind `SPLITBRIEF_REAL_CLI_E2E=1` runs the same script with a real cheap seat (`claude-code` `sonnet` at low effort, or antigravity) and is never part of `release-check`.
+Step 7 is what a resumable park earns: the same attempt continues in the same worktree, so the marker it left stands, nothing is discarded, and nothing is mistaken for a user edit. `own_partial_output_kept` belongs to a brief whose partial reached the project, which an isolated run never produces.
+
+A second case sends `SIGKILL` to the group instead of `SIGINT`: the CLI reports no exit code and writes no `interruptedStep`, so the continued run starts the brief fresh, reseeds its worktree (`session.jsonl` carries `Discarded 1 unpromoted change(s) an earlier attempt left in the isolation worktree: src/marker.ts`), and still ends on `task T001: done` with `src/greet.ts` holding the written code. Both cases run inside `npm run test:e2e`; there is no live-seat tier of this smoke.
 
 ## 8. Record of the 2026-09-21 run
 

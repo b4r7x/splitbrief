@@ -12,7 +12,12 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import { loadState } from '../../../core/state/persistence.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import {
+  captureChangedFilesBaseline,
+  serializeChangedFilesBaseline,
+} from '../changed-files-baseline.js';
 import { runTaskLoop } from './loop.js';
 
 let dirs: string[] = [];
@@ -415,4 +420,93 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
     expect(events.find((event) => event.type === 'warning')).toBeUndefined();
   });
+
+  it('remembers an acknowledged edit, so a second entry on the same bytes asks nothing', async () => {
+    const { projectDir, sessionId } = setupProject();
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/current.ts'), 'original\n');
+    writeFileSync(join(projectDir, 'src/future.ts'), 'original\n');
+    const first = makeTask({ id: 'T001', file: 'src/current.ts' });
+    const second = makeTask({ id: 'T002', action: 'modify', file: 'src/future.ts' });
+    const baseline = await captureChangedFilesBaseline(projectDir);
+    writeFileSync(join(projectDir, 'src/future.ts'), 'user edit\n');
+
+    let stateAtBrief: WorkflowState | null = null;
+    const implementer = makeImplementer({
+      implement: vi
+        .fn()
+        .mockImplementation(async ({ task }: { task: ReturnType<typeof makeTask> }) => {
+          if (task.id === 'T001') stateAtBrief ??= loadState({ projectDir, sessionId });
+          writeFileSync(join(projectDir, task.file), `implementation for ${task.id}\n`);
+          return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+        }),
+    });
+    const onUserEditConflict = vi.fn().mockResolvedValue('continue-unrelated');
+    const { callbacks } = makeCallbacks({ onUserEditConflict });
+    const { bus } = makeBusRecorder();
+    // The loop continues a run whose head is on disk: absorbing the acknowledged edit
+    // commits against that head, so the fixture has to have written it.
+    const initialState: WorkflowState = {
+      ...makeImplState([first, second]),
+      changedFilesBaseline: serializeChangedFilesBaseline(baseline),
+    };
+    saveState({ projectDir, sessionId }, initialState);
+
+    await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        implementer,
+        bus,
+      }),
+      initialState,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(onUserEditConflict).toHaveBeenCalledTimes(1);
+    expect(stateAtBrief).not.toBeNull();
+    if (!stateAtBrief) return;
+
+    const secondAsk = vi.fn().mockResolvedValue('continue-unrelated');
+    const { callbacks: secondCallbacks } = makeCallbacks({ onUserEditConflict: secondAsk });
+    const { bus: secondBus, events } = makeBusRecorder();
+    // Re-entering the brief means re-entering from the head it left, the way a resume does,
+    // with the acknowledged edit still the bytes on disk.
+    saveState({ projectDir, sessionId }, stateAtBrief);
+    writeFileSync(join(projectDir, 'src/future.ts'), 'user edit\n');
+
+    const resumed = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks: secondCallbacks,
+        implementer: makeImplementer({
+          implement: vi
+            .fn()
+            .mockImplementation(async ({ task }: { task: ReturnType<typeof makeTask> }) => {
+              writeFileSync(join(projectDir, task.file), `implementation for ${task.id}\n`);
+              return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+            }),
+        }),
+        bus: secondBus,
+      }),
+      initialState: stateAtBrief,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(secondAsk).not.toHaveBeenCalled();
+    expect(resumed.state.pendingRecovery).toBeUndefined();
+    expect(
+      events.find(
+        (event) =>
+          event.type === 'paused_external_changes' &&
+          event.conflict?.kind === 'current-task-conflict',
+      ),
+    ).toBeUndefined();
+  }, 60_000);
 });

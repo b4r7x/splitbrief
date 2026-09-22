@@ -846,14 +846,14 @@ task T003: done (typecheck lint test)
 phase: final-review
 phase: complete
 review: passed
-done: 3 tasks, 128.4k tokens
+done: 3 tasks
 ```
 
 - `phase: <name>` — written once each time the run enters a new phase.
 - `task <id>: done|failed (<gates>)` — the gates are the validation stages that passed for that task, or `no gates` when validation was skipped and `skipped` for a task a recovery skipped. A task that wrote outside its declared files reads `task <id>: failed (effect-invalid: <paths>)`.
 - `gates: NONE — review-only` — written once, in place of per-task gate names, when the project's stack is unrecognised and no stage could resolve a command. The run still implements and still reviews; nothing was verified by a gate.
 - `review: passed|failed [(<n> blocking)]` — the final review verdict. `failed` means the reviewer still reported blocking findings after its fix cycles and carries their count; the command then exits `1` even though every task reached `done`.
-- `done: <n> tasks, <tokens>` — the closing line, written on completion whatever the review said. `<n>` counts the tasks that completed, not the length of the task list. Cost is reported in tokens: the event stream carries token counts, not prices.
+- `done: <n> tasks` — the closing line, written on completion whatever the review said. `<n>` counts the tasks that completed, not the length of the task list. The line carries no token count: token and money figures belong to the run's own record and `/usage`, not to the plain stream.
 
 Everything else the run emits is dropped — including `recovery_required`, which is a `--json` record. A halt no one is there to answer ends the plain stream: the failing task's `failed` line is the last line written, there is no `review:` or `done:` line, and the command exits 1. The halt itself is not silent — stderr carries the block below in both headless renderings.
 

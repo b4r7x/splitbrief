@@ -120,7 +120,16 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
       semantics: parsed.usageSemantics ?? (parsed.isResult ? 'final' : 'delta'),
     });
   }
-  for (const toolUse of [...(parsed.toolUse ?? [])]) {
+  for (const toolUse of parsed.toolUseStart ?? []) {
+    events.push({
+      type: 'tool-use',
+      stage: 'started',
+      id: toolUse.id ?? null,
+      name: toolUse.name,
+      input: { ...toolUse.input },
+    });
+  }
+  for (const toolUse of parsed.toolUse ?? []) {
     events.push({
       type: 'tool-use',
       id: toolUse.id ?? null,

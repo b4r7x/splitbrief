@@ -89,6 +89,8 @@ Every brief must cover these nine semantic sections, even when one is brief:
 7. **Constraints** — `### Constraints`: invariants, dependency rules, ESM imports with .js extensions, refusal conditions.
 8. **Escalation** — `### Escalation`: bullets describing when the implementer must stop and ask instead of guessing. Required whenever the brief contains plausible ambiguity.
 9. **Evidence** — `### Evidence`: REQUIRED bullets describing the reviewable proof that should exist when the brief is done (passing tests, validation output, changed files, behavioral note).
+
+Every brief must also leave typecheck, lint and tests green on its own. Never plan for a failing gate: when a change would break a sibling file, widen the brief's `files` to include it, keep the change backward compatible with an optional property and a default, or split the work so each brief lands whole. Before a brief deletes or renames an export, its `files` name every consumer found by searching the whole repository — `src/` and `testing/` alike, colocated and sibling tests included.
 <!-- /generated -->
 
 ## Critical Rules

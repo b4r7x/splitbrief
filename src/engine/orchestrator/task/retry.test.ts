@@ -25,7 +25,16 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { ValidationStage } from '../../../core/schemas/enums.js';
 import { decideValidationAcceptance } from '../validation/acceptance.js';
 import type { Validator } from '../validation/types.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
+import { handleRetryAndEscalation } from '../escalation/handle.js';
+import { failedRetry, type RetryResult } from '../escalation/types.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { retryAndRecord } from './retry.js';
+
+vi.mock('../escalation/handle.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../escalation/handle.js')>();
+  return { ...actual, handleRetryAndEscalation: vi.fn(actual.handleRetryAndEscalation) };
+});
 
 // Escalation tiers run a full recursive createStagedProject copy; under parallel
 // full-suite load that staged-copy IO can push these cases past the 10s default,
@@ -279,8 +288,8 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.state.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
-      // 2 local retries plus the hinted retry, every one of them the worker's.
-      attempts: 3,
+      // 2 local retries; the empty hint made no implementer call and spent no attempt.
+      attempts: 2,
       availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
     });
     expect(escalateFull).not.toHaveBeenCalled();
@@ -342,6 +351,90 @@ describe('retryAndRecord — retry budget', () => {
 
     const ledger = readEvidenceLedger(wctx);
     expect(ledger?.tasks.find((t) => t.id === 'T001')?.status).toBe('failed');
+  });
+});
+
+describe('retryAndRecord — the exhaustion issue', () => {
+  const lintFailure = { stage: 'lint' as const, passed: false, error: 'lint: unexpected any' };
+
+  function stubLadder(result: RetryResult, pendingRecovery?: RecoveryIssue) {
+    vi.mocked(handleRetryAndEscalation).mockImplementationOnce(async ({ currentState }) => ({
+      state: pendingRecovery === undefined ? currentState : { ...currentState, pendingRecovery },
+      result,
+    }));
+  }
+
+  async function exhaust(result: RetryResult, pendingRecovery?: RecoveryIssue) {
+    const task = makeTask({ id: 'T001' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWorkflowContext({ bus });
+    stubLadder(result, pendingRecovery);
+
+    const res = await retryAndRecord({
+      wctx,
+      task,
+      initialError: 'lint: unexpected any',
+      initialValidation: [lintFailure],
+      state,
+      taskStartTime: Date.now(),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+    return { res, events, wctx };
+  }
+
+  it('shows the error the brief actually died on and still records the first one', async () => {
+    const { res, wctx } = await exhaust(
+      failedRetry(3, { lastError: 'tsc: Type X is not assignable to Y' }),
+    );
+
+    expect(res.state.pendingRecovery?.details[0]).toBe(
+      'Validation: tsc: Type X is not assignable to Y',
+    );
+    expect(res.state.pendingRecovery?.facts?.validationSummary).toBe(
+      'tsc: Type X is not assignable to Y',
+    );
+    expect(JSON.stringify(res.state.pendingRecovery)).not.toContain('lint: unexpected any');
+    expect(readEvidenceLedger(wctx)?.tasks[0]?.validation?.[0]).toMatchObject({
+      stage: 'lint',
+      errorSummary: 'lint: unexpected any',
+      retryState: 'initial-failure',
+    });
+  });
+
+  it('falls back to the initial validation when the ladder names no last error', async () => {
+    const { res } = await exhaust(failedRetry(2));
+
+    expect(res.state.pendingRecovery?.details[0]).toBe(
+      'Validation lint failed: lint: unexpected any',
+    );
+    expect(res.state.pendingRecovery?.facts?.validationStage).toBe('lint');
+  });
+
+  it('hands the builder both voices and the hint-rung flag', async () => {
+    const { res } = await exhaust(
+      failedRetry(4, { lastError: 'E', handBack: 'H', plannerHint: 'P', hintRungRan: true }),
+    );
+
+    expect(res.state.pendingRecovery?.details).toEqual([
+      'Validation: E',
+      'Attempts: 4 (3 local, then 1 with planner hints)',
+      'Implementer said: H',
+      'Planner said: P',
+    ]);
+    expect(res.state.pendingRecovery?.facts?.hintRungRan).toBe(true);
+  });
+
+  it('leaves a recovery the ladder already raised untouched', async () => {
+    const existing = makeRecoveryIssue({ id: 'rec_from_the_ladder' });
+    const { res, events } = await exhaust(failedRetry(1, { lastError: 'E' }), existing);
+
+    expect(res.state.pendingRecovery).toBe(existing);
+    expect(events.find((e) => e.type === 'recovery_prompted')).toBeUndefined();
   });
 });
 

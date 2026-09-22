@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { packageScript } from '../project-meta.js';
 
@@ -18,6 +18,8 @@ const ESLINT_CONFIG_FILES = [
 ];
 
 const BIOME_CONFIG_FILES = ['biome.json', 'biome.jsonc'];
+
+const PRETTIER_CONFIG_FILE = /^(\.prettierrc|prettier\.config\.)/;
 
 const RECOGNIZED_LINT_SCRIPT =
   /\b(eslint|biome|oxlint|tslint|stylelint|prettier|knip|ruff|flake8|pylint|golangci-lint|clippy)\b/i;
@@ -49,6 +51,22 @@ export function detectLintCommand(projectDir: string): string | null {
   }
   if (BIOME_CONFIG_FILES.some((file) => existsSync(join(projectDir, file)))) {
     return 'npx biome check .';
+  }
+  return null;
+}
+
+// The lint stage formats the brief's changed files with the project's own
+// formatter before it runs, so a layout-only lint failure never costs an
+// attempt; only those files are rewritten, so attribution holds. ESLint
+// `--fix` rewrites semantics as well as layout and is never run.
+export function detectFormatFixCommand(projectDir: string): string | null {
+  if (BIOME_CONFIG_FILES.some((file) => existsSync(join(projectDir, file)))) {
+    return 'npx biome format --write';
+  }
+  // A project directory that is not there has no formatter, the way it has no linter.
+  if (!existsSync(projectDir)) return null;
+  if (readdirSync(projectDir).some((entry) => PRETTIER_CONFIG_FILE.test(entry))) {
+    return 'npx prettier --write';
   }
   return null;
 }

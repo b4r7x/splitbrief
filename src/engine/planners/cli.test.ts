@@ -862,7 +862,7 @@ Create the internal-state file.
         partial: true,
         error: {
           code: 'output-budget-breach',
-          message: expect.stringContaining('output budget'),
+          message: expect.stringContaining('more than 64 MB'),
         },
       },
     });

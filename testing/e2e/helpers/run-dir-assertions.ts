@@ -31,9 +31,9 @@ import { isRecord } from '../../../src/utils/type-guards.js';
 import type { FixtureMode } from '../live/fixture-rows.js';
 
 const PLAIN_LINE =
-  /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (passed|failed)( \(\d+ blocking\))?|done: \d+ tasks, .+ tokens|gates: NONE — review-only)$/;
+  /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (passed|failed)( \(\d+ blocking\))?|done: \d+ tasks|gates: NONE — review-only)$/;
 
-const DONE_LINE = /^done: (\d+) tasks, /;
+const DONE_LINE = /^done: (\d+) tasks$/;
 
 export type BriefTiming = Readonly<{ id: string; durationMs: number }>;
 

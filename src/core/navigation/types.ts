@@ -16,6 +16,19 @@ export function seatPickerOverlayFor(role: SeatPickerRole): (typeof SEAT_PICKER_
   return `${role}-picker`;
 }
 
+const TOOL_ROW_FOCUS_PREFIX = 'tool:';
+
+/** The focus token that lands the picker's cursor on one tool's row. */
+export function toolRowFocus(toolId: string): string {
+  return `${TOOL_ROW_FOCUS_PREFIX}${toolId}`;
+}
+
+/** The tool the token names, or undefined when the token is not one of ours. */
+export function toolRowFocusTool(focus: string | undefined): string | undefined {
+  if (focus === undefined || !focus.startsWith(TOOL_ROW_FOCUS_PREFIX)) return undefined;
+  return focus.slice(TOOL_ROW_FOCUS_PREFIX.length) || undefined;
+}
+
 const SEAT_AXIS_FOCUS_PREFIX = 'seat:';
 const SEAT_AXIS_FOCUS_SUFFIX = ':effort';
 

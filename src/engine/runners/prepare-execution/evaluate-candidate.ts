@@ -11,7 +11,9 @@ import {
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { admitCliAuthChannel } from '../../../core/runners/cli-auth-selection.js';
+import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { cliAuthRemediation } from '../../../core/schemas/readiness.js';
+import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { runnerDiscoveryContextKey } from '../../detection/runner-evidence.js';
@@ -22,21 +24,48 @@ import {
   inlineRunnerSecurityPosture,
   type ConfiguredCustomRunner,
 } from '../custom-trust.js';
+import { readHostModelSelection } from '../host-model-selection.js';
 import { resolveCliRunnerAuth } from '../sandbox-env.js';
 import { admitFreshCliStart, type FreshCliStartGateResult } from '../start-gate.js';
 import { throwIfPreparationAborted } from './abort-guard.js';
-import { admittedCheck, blockedCheck, type RunnerCandidate } from './runner-candidates.js';
+import {
+  admittedCheck,
+  blockedCheck,
+  warningCheck,
+  type PreparationWarning,
+  type RunnerCandidate,
+} from './runner-candidates.js';
 import type { PreparationContext, SlotEvaluation } from './types.js';
 
 const UNVERIFIED_AUTH_FIX =
   'Stored credentials prove presence, not a working session, so a headless start stays fail-closed. Pass --allow-unverified-auth to start anyway, or run interactively where unverified auth is disclosed.';
+
+const READINESS_RETRY_DELAY_MS = 1500;
+
+const RUN_THE_STATUS_COMMAND = 'Run it once yourself, then continue again.';
+
+function wait(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 function cliAdmissionFix(
   reason: Extract<FreshCliStartGateResult, { kind: 'denied' }>['reason'],
   tool: CliToolId,
   authChannel: CliAuthChannelId,
 ): string | undefined {
-  if (reason.kind === 'authentication') return cliAuthRemediation({ tool, authChannel });
+  if (reason.kind === 'authentication') {
+    return `${cliAuthRemediation({ tool, authChannel })} ${RUN_THE_STATUS_COMMAND}`;
+  }
   if (reason.kind === 'authentication-unverified') return UNVERIFIED_AUTH_FIX;
   if (reason.kind === 'installation') {
     const descriptor = CLI_TOOL_CATALOG[tool];
@@ -63,20 +92,44 @@ async function evaluateCli(
     configGeneration: contentIdentityId('config', context.config),
   };
   const expectedContextKey = runnerDiscoveryContextKey(discoveryContext);
-  const evidence = await context.deps.detectRunnerEvidence({
-    context: discoveryContext,
-    projectDir: context.projectDir,
-    signal: context.signal,
-  });
+  const detect = (): Promise<RunnerEvidence> =>
+    context.deps.detectRunnerEvidence({
+      context: discoveryContext,
+      projectDir: context.projectDir,
+      signal: context.signal,
+    });
+  const admit = (fresh: RunnerEvidence): FreshCliStartGateResult =>
+    admitFreshCliStart({
+      tool: candidate.runner.tool,
+      evidence: fresh,
+      expectedContextKey,
+      expectedSelectionId: candidate.runner.model ?? 'unselected',
+      interaction: context.policy.interaction,
+      unverifiedAuth: context.policy.unverifiedAuth,
+    });
+  let evidence = await detect();
   throwIfAborted(context.signal);
-  const admission = admitFreshCliStart({
-    tool: candidate.runner.tool,
-    evidence,
-    expectedContextKey,
-    expectedSelectionId: candidate.runner.model ?? 'unselected',
-    interaction: context.policy.interaction,
-    unverifiedAuth: context.policy.unverifiedAuth,
-  });
+  let admission = admit(evidence);
+  const warnings: PreparationWarning[] = [];
+  // A session channel's auth fact is whatever the tool's own status command
+  // answered a moment ago, and that command is cold on the first call of a
+  // continue: it can report no session for a host that has one. One denial is
+  // not evidence enough to refuse the seat the run is resuming.
+  if (
+    admission.kind === 'denied' &&
+    admission.reason.kind === 'authentication' &&
+    authChannel === 'session'
+  ) {
+    await wait(READINESS_RETRY_DELAY_MS, context.signal);
+    throwIfAborted(context.signal);
+    evidence = await detect();
+    throwIfAborted(context.signal);
+    admission = admit(evidence);
+    warnings.push({
+      code: 'readiness_probe_retried',
+      message: `${candidate.runner.tool} reported no session on the first probe and one ${READINESS_RETRY_DELAY_MS}ms later; the seat was admitted on the second.`,
+    });
+  }
   if (admission.kind === 'disclosure-required') {
     return {
       kind: 'blocked',
@@ -118,9 +171,38 @@ async function evaluateCli(
       ),
     };
   }
+  // `auto` is the operator's intent, not a model: the tool would resolve it
+  // from its own config, which the run's record and its argv cannot see. Read
+  // that selection here and name it, so every surface says what actually ran.
+  const details: string[] = [];
+  let effectiveModel: string | undefined;
+  const configuredModel = candidate.runner.model;
+  const declaredAuto =
+    configuredModel !== undefined && isAutomaticModel(configuredModel, candidate.runner.tool);
+  if (declaredAuto || configuredModel === undefined) {
+    const selection = await readHostModelSelection(
+      candidate.runner.tool,
+      process.env,
+      evidence.catalog.kind === 'success' ? evidence.catalog.value : undefined,
+    );
+    if (selection !== null) {
+      effectiveModel = selection.model;
+      details.push(`model: auto → ${selection.model} (from ${selection.source})`);
+    } else if (declaredAuto) {
+      // A seat that named no model never asked for one, so the tool's own
+      // default is the answer it wanted; only a declared `auto` is left unmet.
+      warnings.push({
+        code: 'host_model_selection_unreadable',
+        message: `model: auto — ${candidate.runner.tool} has no readable model selection; the tool's own default applies.`,
+      });
+    }
+  }
   return {
     kind: 'admitted',
-    check: admittedCheck(candidate.slot, candidate.runner.kind),
+    check:
+      warnings.length > 0
+        ? warningCheck(candidate.slot, candidate.runner.kind, warnings, details)
+        : admittedCheck(candidate.slot, candidate.runner.kind, details),
     gate: {
       kind: 'cli',
       slot: candidate.slot,
@@ -128,6 +210,7 @@ async function evaluateCli(
       tool: candidate.runner.tool,
       executable: admission.gate.executable,
       installedVersion: admission.gate.installedVersion,
+      ...(effectiveModel !== undefined && { effectiveModel }),
     },
   };
 }

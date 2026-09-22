@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -14,7 +14,9 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { reactivateExistingSession } from '../../core/sessions/active-pointer.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
+import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
 import {
   recoveryNoticeStore,
   type RecoveryNoticeState,
@@ -31,7 +33,10 @@ afterEach(() => {
   resetAllStores();
 });
 
-function setupSession(recoveryOverrides: Partial<RecoveryIssue> = {}): {
+function setupSession(
+  recoveryOverrides: Partial<RecoveryIssue> = {},
+  task = makeTask({ id: 'T001', status: 'failed' }),
+): {
   prepared: PreparedExecution;
   state: WorkflowState;
 } {
@@ -39,7 +44,7 @@ function setupSession(recoveryOverrides: Partial<RecoveryIssue> = {}): {
   dirs.push(projectDir);
   const sessionId = 'sess-recovery';
   ensureSessionDir(projectDir, sessionId);
-  const state = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+  const state = makeImplState([task], {
     pendingRecovery: makeRecoveryIssue(recoveryOverrides),
   });
   saveState({ projectDir, sessionId }, state);
@@ -80,6 +85,26 @@ function makeInputMode(answers: string[]): {
   return { inputMode, feedbackAtPrompt };
 }
 
+/**
+ * Drives the seat picker the driver opened for a swap: writes `implementer` to the config of
+ * record as the picker would, or leaves it alone, and closes the overlay.
+ */
+async function closeSeatPicker(
+  prepared: PreparedExecution,
+  implementer?: NonNullable<Parameters<typeof makeConfig>[0]>['implementer'],
+): Promise<void> {
+  await vi.waitFor(() => {
+    expect(overlayStore.get().active).toBe('implementer-picker');
+  });
+  if (implementer !== undefined) {
+    configStore.__testReset({
+      projectDir: prepared.session.ref.projectDir,
+      config: makeConfig({ planner: { kind: 'agent', command: 'test-planner' }, implementer }),
+    });
+  }
+  overlayStore.close();
+}
+
 function runDriver(
   prepared: PreparedExecution,
   state: WorkflowState,
@@ -100,18 +125,6 @@ function runDriver(
 }
 
 describe('createRecoveryDriver', () => {
-  it('re-prompts with an error instead of applying a fallback action when the answer is unknown', async () => {
-    const { prepared, state } = setupSession();
-    const { inputMode, feedbackAtPrompt } = makeInputMode(['not-a-real-action', 'pause']);
-
-    const result = await runDriver(prepared, state, inputMode);
-
-    expect(feedbackAtPrompt).toHaveLength(2);
-    expect(feedbackAtPrompt[0]).toEqual({ message: null, isError: false });
-    expect(feedbackAtPrompt[1]).toEqual({ message: 'Unknown recovery action.', isError: true });
-    expect(result.shouldRun).toBe(false);
-  });
-
   it('applies a valid action on the first answer without re-prompting', async () => {
     const { prepared, state } = setupSession();
     const { inputMode, feedbackAtPrompt } = makeInputMode(['pause']);
@@ -198,7 +211,9 @@ describe('createRecoveryDriver', () => {
     });
     const { inputMode } = makeInputMode(['switch-seat']);
 
-    const result = await runDriver(prepared, state, inputMode);
+    const pending = runDriver(prepared, state, inputMode);
+    await closeSeatPicker(prepared, { kind: 'cli', tool: 'claude-code', model: 'opus' });
+    const result = await pending;
 
     expect(result.shouldRun).toBe(true);
     if (result.shouldRun) {
@@ -207,6 +222,64 @@ describe('createRecoveryDriver', () => {
       expect(result.switchSeat?.policy.purpose).toBe('resume');
       expect(result.retryProfileOverride).toBeUndefined();
     }
+  });
+
+  it("opens the seat's picker on the offered tool and swaps to the model and effort it wrote", async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      recommendedAction: 'switch-seat',
+      switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
+    });
+    const { inputMode } = makeInputMode(['switch-seat']);
+
+    const pending = runDriver(prepared, state, inputMode);
+    await vi.waitFor(() => {
+      expect(overlayStore.get()).toMatchObject({
+        active: 'implementer-picker',
+        focus: 'tool:claude-code',
+      });
+    });
+    await closeSeatPicker(prepared, {
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'opus',
+      effort: 'high',
+      variant: 'thinking',
+    });
+    const result = await pending;
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.switchSeat?.candidate).toEqual({
+        tool: 'claude-code',
+        model: 'opus',
+        effort: 'high',
+        variant: 'thinking',
+      });
+    }
+    expect(recoveryNoticeStore.get().issue).toBeNull();
+  });
+
+  it('keeps the halt when the picker closes without changing the seat', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      recommendedAction: 'switch-seat',
+      switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
+    });
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['switch-seat', 'pause']);
+
+    const pending = runDriver(prepared, state, inputMode);
+    await closeSeatPicker(prepared);
+    const result = await pending;
+
+    expect(feedbackAtPrompt).toHaveLength(2);
+    expect(result.shouldRun).toBe(false);
+    expect(result.state?.pendingRecovery?.status).toBe('paused');
+    expect(loadState(prepared.session.ref)?.pendingRecovery).toBeDefined();
   });
 
   it('takes the tool the pressed row named, not the first one offered', async () => {
@@ -223,7 +296,12 @@ describe('createRecoveryDriver', () => {
     });
     const { inputMode } = makeInputMode(['w2']);
 
-    const result = await runDriver(prepared, state, inputMode);
+    const pending = runDriver(prepared, state, inputMode);
+    await vi.waitFor(() => {
+      expect(overlayStore.get().focus).toBe('tool:opencode');
+    });
+    await closeSeatPicker(prepared, { kind: 'cli', tool: 'opencode' });
+    const result = await pending;
 
     expect(result.shouldRun).toBe(true);
     if (result.shouldRun) {
@@ -320,6 +398,73 @@ describe('createRecoveryDriver', () => {
     const persisted = loadState(prepared.session.ref);
     expect(persisted?.closed?.as).toBe('ended');
     expect(feedbackStore.get().message).toContain('Run ended');
+  });
+
+  it('retries the brief with a typed correction as the steer', async () => {
+    const { prepared, state } = setupSession(
+      { taskId: taskId('T005'), affectedTaskIds: [taskId('T005')] },
+      makeTask({ id: 'T005', status: 'failed' }),
+    );
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['the prop is optional — add a default']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(1);
+    expect(feedbackStore.get().isError).toBe(false);
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.steer).toBe('the prop is optional — add a default');
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(result.state.tasks[0]?.status).toBe('pending');
+    }
+  });
+
+  it('carries no steer when the retry keyword itself is typed', async () => {
+    const { prepared, state } = setupSession();
+    const { inputMode } = makeInputMode(['retry']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) expect(result.steer).toBeUndefined();
+  });
+
+  it('refuses a sentence at a halt that offers nothing to carry it', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'review-failed',
+      taskId: undefined,
+      availableActions: ['pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+    });
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['make the prop optional', 'pause']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(2);
+    expect(feedbackAtPrompt[1]).toEqual({ message: 'Unknown recovery action.', isError: true });
+    expect(result.shouldRun).toBe(false);
+  });
+
+  it('turns a sentence at a planner halt into the revise note, not a steer', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'brief-review-no-progress',
+      taskId: undefined,
+      phase: 'reviewing-briefs',
+      availableActions: ['revise', 'end-run'],
+      recommendedAction: 'revise',
+    });
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['split the first brief']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(1);
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.steer).toBeUndefined();
+      expect(result.state.messageQueue.map((message) => message.text)).toEqual([
+        'split the first brief',
+      ]);
+    }
   });
 
   it('revise asks for the correction and carries it into the queue', async () => {

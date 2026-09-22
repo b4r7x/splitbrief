@@ -13,6 +13,8 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
+import { loadState } from '../../../core/state/persistence.js';
 import { createValidator } from '../validation/run.js';
 import { runTaskLoop } from './loop.js';
 
@@ -159,5 +161,40 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
     });
 
     expect(resumePrime.mock.calls[0]?.[0]?.persistedBaseline).toEqual(probed);
+  });
+
+  it('has the task-start snapshot on disk before the brief runs', async () => {
+    const { projectDir, sessionId } = setupGitSessionProject({
+      prefix: 'task-loop-snapshot-test',
+      sessionId: 'sess-snapshot',
+    });
+    dirs.push(projectDir);
+
+    let persisted: ChangedFilesSnapshot | undefined;
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async (opts) => {
+        persisted = loadState({ projectDir, sessionId })?.changedFilesBaseline?.activeTaskSnapshot;
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, opts.task.file), 'implementation\n');
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+
+    await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: {} }),
+        callbacks: makeCallbacks().callbacks,
+        implementer,
+        bus: makeBusRecorder().bus,
+      }),
+      initialState: makeImplState([makeTask({ id: 'T001', file: 'src/alpha.ts' })]),
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(persisted).toBeDefined();
+    expect(persisted?.head).toEqual(expect.any(String));
   });
 });

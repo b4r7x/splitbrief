@@ -482,6 +482,32 @@ describe('recovery prompt', () => {
     );
   });
 
+  // The retry-exhausted builder writes six rows at its widest, and the two voices plus the
+  // verdict are the last three. A tighter budget would drop exactly the evidence the halt is for.
+  it('keeps both voices and the verdict on the widest retry-exhausted halt', async () => {
+    const issue: RecoveryIssue = {
+      ...baseIssue,
+      reason: 'retry-exhausted',
+      phase: 'escalating',
+      message: 'T003 exhausted recovery retries',
+      details: [
+        'Validation test failed: npm test -- auth failed in src/auth/session.test.ts',
+        'Attempts: 4 (3 local, then 1 with planner hints)',
+        'Worker profile: local-qwen',
+        'Bigger worker available: cheap-cloud',
+        'Implementer said: the session type has no expiry field, so I stopped.',
+        'Planner said: VERDICT: brief — the brief names a field the type never had',
+        'Planner verdict: the brief itself is wrong — the brief names a field the type never had',
+      ],
+    };
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('Implementer said: the session type has no expiry field');
+    expect(visible).toContain('Planner said:');
+    expect(visible).toContain('Planner verdict: the brief itself is wrong');
+  });
+
   it('leaves a substantive review failure on the words it earned', async () => {
     const issue: RecoveryIssue = {
       id: 'rec_review_blocking',

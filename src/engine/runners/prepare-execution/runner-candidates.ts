@@ -52,12 +52,35 @@ function slotLabel(slot: RunnerConfigSlot): string {
   }
 }
 
-export function admittedCheck(slot: RunnerConfigSlot, kind: RunnerConfig['kind']): ReadinessCheck {
+export function admittedCheck(
+  slot: RunnerConfigSlot,
+  kind: RunnerConfig['kind'],
+  details: readonly string[] = [],
+): ReadinessCheck {
   return {
     id: `runners.preparation.${slotId(slot)}`,
     severity: 'ok',
     summary: `${slotLabel(slot)} passed fresh runner admission.`,
+    ...(details.length > 0 && { details: [...details] }),
     metadata: { role: slot.role, kind },
+  };
+}
+
+/** A seat that starts, with something about the start the operator should know. */
+export type PreparationWarning = Readonly<{ code: string; message: string }>;
+
+export function warningCheck(
+  slot: RunnerConfigSlot,
+  kind: RunnerConfig['kind'],
+  warnings: readonly PreparationWarning[],
+  details: readonly string[] = [],
+): ReadinessCheck {
+  return {
+    id: `runners.preparation.${slotId(slot)}`,
+    severity: 'warning',
+    summary: `${slotLabel(slot)} was admitted with warnings.`,
+    details: [...warnings.map((warning) => warning.message), ...details],
+    metadata: { role: slot.role, kind, warnings: warnings.map((warning) => warning.code) },
   };
 }
 

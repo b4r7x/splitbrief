@@ -51,6 +51,8 @@ export function configWithSwitchedSeat(
     kind: 'cli',
     tool: candidate.tool,
     ...(candidate.model !== undefined && { model: candidate.model }),
+    ...(candidate.effort !== undefined && { effort: candidate.effort }),
+    ...(candidate.variant !== undefined && { variant: candidate.variant }),
   };
   switch (seat) {
     case 'plan': {

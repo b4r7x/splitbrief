@@ -117,6 +117,16 @@ describe('retry ladder', () => {
         implementer: makeImplementer({
           retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
         }),
+        // A planner that says nothing ends the hint rung before it spends an
+        // attempt, so the rung only shows up in the ladder when it answers.
+        planner: makePlanner({
+          escalateHint: vi.fn().mockResolvedValue({
+            success: true,
+            output: 'Narrow the type at the call site.',
+            code: 0,
+            usage: null,
+          }),
+        }),
         bus,
       }),
       task,
@@ -136,11 +146,13 @@ describe('retry ladder', () => {
 });
 
 describe('timeouts', () => {
-  it('a configured runner timeout may reach the implementer deadline and no further', () => {
+  // The implementer deadline is a runtime bound, not a parse-time cap: a healthy
+  // call that outlives it is ended by the deadline, and an operator may configure
+  // a runner timeout past it. Only a non-positive timeout fails the schema.
+  it('a configured runner timeout may exceed the implementer deadline', () => {
     expect(GenerationCommonFields.timeout.safeParse(TIMEOUTS.implementerMs).success).toBe(true);
-    expect(GenerationCommonFields.timeout.safeParse(TIMEOUTS.implementerMs + 1).success).toBe(
-      false,
-    );
+    expect(GenerationCommonFields.timeout.safeParse(TIMEOUTS.implementerMs + 1).success).toBe(true);
+    expect(GenerationCommonFields.timeout.safeParse(0).success).toBe(false);
   });
 
   it('the process registry waits the pipeline spec grace period before SIGKILL', () => {

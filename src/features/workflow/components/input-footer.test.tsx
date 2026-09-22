@@ -26,8 +26,10 @@ import { BRAILLE_SPINNER_FRAMES, glyph } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { InputFooter } from './input-footer.js';
 
+import { makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { markWaitEnded, markWaitStarted } from '../../../stores/workflow/actions/wait.js';
 
 function publishAdvisory(advisory: AdvisorResult): void {
   if (advisory.kind === 'none') return;
@@ -239,6 +241,50 @@ describe('InputFooter', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toMatch(/Implementing… 0:\d\d/);
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('names the planner call the plan stage is on instead of one verb for both', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'planning',
+      startedAt: Date.now() - 90_000,
+      phaseFirstSeenTs: { planning: Date.now() - 30_000 },
+    });
+
+    addEvent(makePlannerStatus({ phase: 'planning', call: 'plan', ts: Date.now() }));
+    const plan = renderFeature(<InputFooter />);
+    expect(stripAnsiStyles(plan.lastFrame() ?? '')).toMatch(/Writing the plan… 0:\d\d/);
+    expect(plan.lastFrame() ?? '').not.toContain('briefs');
+    plan.unmount();
+
+    addEvent(makePlannerStatus({ phase: 'planning', call: 'tasks', ts: Date.now() }));
+    const tasks = renderFeature(<InputFooter />);
+    expect(stripAnsiStyles(tasks.lastFrame() ?? '')).toMatch(/Compiling briefs… 0:\d\d/);
+    tasks.unmount();
+
+    terminalSizeStore.reset();
+  });
+
+  it('keeps the time spent waiting on the user out of the live elapsed', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    const now = Date.now();
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'researching',
+      startedAt: now - 300_000,
+    });
+    markWaitStarted(now - 200_000);
+    markWaitEnded(now - 80_000);
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    // Five minutes on the clock, two of them waiting for an answer: the stage worked for three.
+    expect(frame).toMatch(/Researching… 3:0\d/);
 
     ui.unmount();
     terminalSizeStore.reset();

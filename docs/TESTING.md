@@ -148,6 +148,8 @@ The black-box rows live in `testing/integration/orchestrator/runner-capability-m
 
 Live authenticated checks (`npm run test:e2e:live:smoke`, `testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts`) are opt-in drift evidence: they verify reality on a real machine with real credentials and never replace the deterministic matrix as the admission proof. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#planner-artifact-ownership) for the transport and role contract.
 
+The stop/continue smoke lives in the e2e project too: `testing/e2e/scenarios/stop-continue.test.ts` spawns the CLI from source against a fixture repo whose planner and implementer are local scripts, so it proves stop → continue → finish at zero tokens and runs inside `npm run test:e2e` like any other replay scenario.
+
 ## Live CLI e2e tier
 
 Above that single smoke sits a paid tier that drives whole workflows through real installed CLIs. It lives in `testing/e2e/scenarios/live/easy-<tool>.test.ts` and `heavy-<tool>.test.ts` — one file per tool pair — sharing `testing/e2e/helpers/live-harness.ts`. A pair is the same tool in both the planner and the implementer seat, so a red test names exactly one tool.

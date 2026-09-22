@@ -92,6 +92,73 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     expect(override.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(override);
   });
+
+  const bothVoices = {
+    task: makeTask({ id: 'T012' }),
+    createdAt,
+    validationSummary: 'tsc failed',
+    attempts: 4,
+    maxAttempts: 3,
+    allowRetryOverride: true,
+  };
+
+  it('quotes both voices and spells the hinted attempt', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      ...bothVoices,
+      hintRungRan: true,
+      handBack: 'I could not find the prop.',
+      plannerHint: 'Add a default instead.',
+    });
+
+    expect(issue.details).toContain('Attempts: 4 (3 local, then 1 with planner hints)');
+    expect(issue.details).toContain('Implementer said: I could not find the prop.');
+    expect(issue.details).toContain('Planner said: Add a default instead.');
+    expect(issue.facts?.hintRungRan).toBe(true);
+    expect(issue.facts?.plannerVerdict).toBeUndefined();
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('adds no voice rows when neither party spoke', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({ ...bothVoices, hintRungRan: true });
+
+    expect(issue.details.some((row) => row.startsWith('Implementer said:'))).toBe(false);
+    expect(issue.details.some((row) => row.startsWith('Planner said:'))).toBe(false);
+  });
+
+  it('states a bare count and no hint-rung fact when the hint rung did not run', () => {
+    const issue = buildRetryExhaustedRecoveryIssue(bothVoices);
+
+    expect(issue.details).toContain('Attempts: 4');
+    expect(issue.details.some((row) => row.includes('4/3'))).toBe(false);
+    expect(issue.facts?.hintRungRan).toBeUndefined();
+  });
+
+  it('bounds a long hand-back row to the summary length', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      ...bothVoices,
+      handBack: 'x'.repeat(2000),
+    });
+    const row = issue.details.find((detail) => detail.startsWith('Implementer said:'));
+
+    expect(row?.length).toBeLessThanOrEqual(320);
+    expect(row?.endsWith('...')).toBe(true);
+  });
+
+  it('names the brief-is-wrong verdict with the planner diagnosis', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      ...bothVoices,
+      attempts: 1,
+      handBack: 'May I edit src/consumer.ts?',
+      plannerHint: 'VERDICT: brief — the export was already deleted\nNothing to retry.',
+      plannerVerdict: 'brief',
+    });
+
+    expect(issue.details).toContain(
+      'Planner verdict: the brief itself is wrong — the export was already deleted',
+    );
+    expect(issue.facts?.plannerVerdict).toBe('brief');
+    expectValidRecoveryIssue(issue);
+  });
 });
 
 describe('buildRunnerUsageLimitRecoveryIssue', () => {

@@ -21,6 +21,10 @@ const STREAM_JSON_FIXTURE = join(
   import.meta.dirname,
   '../../../../testing/fixtures/cursor/stream-json-plan.txt',
 );
+const TOOL_CALL_FIXTURE = join(
+  import.meta.dirname,
+  '../../../../testing/fixtures/cursor/stream-json-tool-call.ndjson',
+);
 
 function plannerArgs(mode: 'plan' | 'escalate', configuredArgs: readonly string[] = []) {
   return cursorPlannerAdapter.buildArgs({
@@ -43,15 +47,15 @@ function implementerArgs(configuredArgs: readonly string[] = []) {
   });
 }
 
-function fixtureNdjsonLines(): readonly string[] {
-  return readFileSync(STREAM_JSON_FIXTURE, 'utf8')
+function fixtureNdjsonLines(path = STREAM_JSON_FIXTURE): readonly string[] {
+  return readFileSync(path, 'utf8')
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter((line) => line.startsWith('{'));
 }
 
-function fixtureEvents() {
-  return fixtureNdjsonLines().flatMap((line) => [...cursorProtocolEvents(line)]);
+function fixtureEvents(path = STREAM_JSON_FIXTURE) {
+  return fixtureNdjsonLines(path).flatMap((line) => [...cursorProtocolEvents(line)]);
 }
 
 function terminalOf(events: ReturnType<typeof cursorProtocolEvents>) {
@@ -250,6 +254,47 @@ describe('Cursor role adapters', () => {
       error: null,
       partial: false,
     });
+  });
+
+  it('parses tool_call frames as started then done tool use, never as unknown records', () => {
+    const events = fixtureEvents(TOOL_CALL_FIXTURE);
+    const tools = events.filter((event) => event.type === 'tool-use');
+    const callId =
+      'call-cbe92e40-99f9-42f5-91ee-f88b71e06a19-0\nfc_de8fdf73-5707-9b40-8cb4-4f71a4a0d19e_0';
+
+    expect(events.some((event) => event.type === 'warning')).toBe(false);
+    expect(tools).toEqual([
+      {
+        type: 'tool-use',
+        stage: 'started',
+        id: callId,
+        name: 'read',
+        input: { path: '/tmp/probe/README.md' },
+      },
+      expect.objectContaining({
+        type: 'tool-use',
+        stage: 'done',
+        id: callId,
+        name: 'read',
+        input: { path: '/tmp/probe/README.md' },
+        output: expect.objectContaining({
+          success: expect.objectContaining({ totalLines: 4, path: '/tmp/probe/README.md' }),
+        }),
+      }),
+    ]);
+    expect(terminalOf(events)).toMatchObject({
+      status: 'completed',
+      text: 'OK',
+      nativeSessionId: '125e6abb-4caa-469d-93e2-81a46f53e8e8',
+    });
+    const bareCall = JSON.stringify({ type: 'tool_call', subtype: 'started', tool_call: {} });
+    expect(cursorProtocolEvents(bareCall)).toEqual([
+      expect.objectContaining({
+        type: 'result',
+        status: 'failed',
+        error: { code: 'malformed-cursor-record', message: 'Cursor tool call record is malformed' },
+      }),
+    ]);
   });
 
   it('usage maps to a TokenDelta', () => {

@@ -49,6 +49,25 @@ describe('configWithSwitchedSeat', () => {
     expect(switched?.planner).toEqual(config.planner);
   });
 
+  it("carries the picker's effort and variant into the runner block", () => {
+    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
+
+    const switched = configWithSwitchedSeat(config, 'build', {
+      tool: 'claude-code',
+      model: 'sonnet',
+      effort: 'high',
+      variant: 'thinking',
+    });
+
+    expect(switched?.implementer).toEqual({
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'sonnet',
+      effort: 'high',
+      variant: 'thinking',
+    });
+  });
+
   it('repoints the default profile the build seat is routed out of', () => {
     const config = makeConfig({
       implementer: { kind: 'cli', tool: 'codex' },

@@ -1,9 +1,15 @@
 import type { Phase } from '../../../core/schemas/enums.js';
+import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 // One vocabulary for what the run is doing right now: the byline says it as a heading, the build
-// block says it inside a sentence. Both read it here.
-export function activeVerb(phase: Phase, reviewerLabel: string | null): string {
+// block says it inside a sentence. Both read it here. The plan stage holds two planner calls, so
+// its verb names the call the engine said it is on.
+export function activeVerb(
+  phase: Phase,
+  reviewerLabel: string | null,
+  plannerCall: PlannerCall | null,
+): string {
   switch (phase) {
     case 'researching':
       return 'Researching…';
@@ -16,7 +22,9 @@ export function activeVerb(phase: Phase, reviewerLabel: string | null): string {
     case 'constitution-check':
       return 'Checking constitution…';
     case 'planning':
-      return 'Compiling briefs from spec…';
+      if (plannerCall === 'plan') return 'Writing the plan…';
+      if (plannerCall === 'tasks') return 'Compiling briefs…';
+      return 'Planning…';
     case 'reviewing-plan':
       return 'Reviewing plan…';
     case 'reviewing-briefs':
@@ -41,5 +49,5 @@ export function activeVerb(phase: Phase, reviewerLabel: string | null): string {
 
 /** The same verb inside a sentence: no capital, no ellipsis, no reviewer name. */
 export function inlineActiveVerb(phase: Phase): string {
-  return activeVerb(phase, null).replace('…', '').toLowerCase();
+  return activeVerb(phase, null, null).replace('…', '').toLowerCase();
 }

@@ -33,10 +33,10 @@ export function continuationBlock(input: Omit<ComposeContinuationInput, 'basePro
   const partial = input.partial?.trim() ?? '';
   const extra = input.extra?.trim() ?? '';
   const steer = input.steer?.trim() || DEFAULT_STEER;
-  // An interrupt the call never reached left nothing behind to report, so the
-  // note says what actually happened rather than inventing an attempt.
+  // This block also carries a correction typed at a halt, where nothing was
+  // interrupted — so the sentence reports the absence, not a cause.
   if (partial === '' && extra === '') {
-    return `[Continuation] The user interrupted before this call. They say: ${steer}`;
+    return `[Continuation] No output from an earlier attempt of this step is available. The user says: ${steer}`;
   }
   const blocks = ['[Continuation] The previous attempt of this step was interrupted.'];
   if (partial !== '') blocks.push(`Partial output so far:\n${trimPartial(partial)}`);

@@ -71,6 +71,7 @@ export function WorkflowFooter({
   commands,
   mode,
   inputHint,
+  placeholder,
   feedbackHint,
   boxHintOverride,
   commandsOnly,
@@ -98,6 +99,8 @@ export function WorkflowFooter({
   commands: RuntimeCommandDef[];
   mode: InputMode;
   inputHint: string;
+  /** What the composer invites while no hint owns it; absent, the composer keeps its own words. */
+  placeholder?: string | undefined;
   feedbackHint?: string | undefined;
   boxHintOverride?: ComposerBoxHintOverride | undefined;
   /** A stopped run that cannot be resumed has nothing to take but commands. */
@@ -142,7 +145,7 @@ export function WorkflowFooter({
         onRuntimeCommand={onRuntimeCommand}
         commands={commands}
         mode={mode}
-        hint={inputHint}
+        hint={inputHint === '' ? (placeholder ?? '') : inputHint}
         commandsOnly={commandsOnly}
         currentScreen="workflow"
         disabled={disabled || fieldEditorOpen || recoveryMenuFocused || questionPanelFocused}

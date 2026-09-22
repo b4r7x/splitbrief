@@ -1,8 +1,12 @@
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
+import { routerStore } from '../../stores/navigation/router.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
+import { seatIdentitiesFromConfig, seatIdentityChanges } from '../../core/state/seats.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -195,6 +199,23 @@ function writeSeatAuthChannel(
   }
 }
 
+/**
+ * A seat saved under a run this process is driving lands at the next brief boundary,
+ * where the run re-prepares from the saved config. A halt's own picker swaps the seat at
+ * once, so it is not announced as a boundary change.
+ */
+function changesRunningSeat(before: Config, after: Config): boolean {
+  const route = routerStore.get();
+  return (
+    route.screen === 'workflow' &&
+    route.execution.kind === 'local' &&
+    lifecycleStore.get().status === 'running' &&
+    recoveryNoticeStore.get().issue === null &&
+    seatIdentityChanges(seatIdentitiesFromConfig(before), seatIdentitiesFromConfig(after)).length >
+      0
+  );
+}
+
 /** A picker action runs unawaited; its failure has to reach the user here. */
 async function reportFailure(task: () => Promise<void>): Promise<void> {
   try {
@@ -274,7 +295,11 @@ export function usePickerActions(opts: {
   const commit = async (updated: Config, message: string) => {
     const result = await deps.saveConfig(updated);
     if (reportConfigSaveFailure(result)) return;
-    feedbackStore.setMessage(message);
+    feedbackStore.setMessage(
+      changesRunningSeat(config, updated)
+        ? `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat changes after this brief`
+        : message,
+    );
     overlayStore.close();
   };
 

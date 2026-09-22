@@ -72,6 +72,12 @@ export interface RunnerCallRecorder {
     toolUseId: string | null;
     name: string | null;
     inputDelta: string;
+    /**
+     * `started` replays the input a tool was announced with, which `toolUseDone` carries again in
+     * full, so a flood of starts is diagnostic like a done event. Only the streamed `delta` stage
+     * is the result's own text, so only it truncates the call.
+     */
+    stage?: 'started' | 'delta' | undefined;
     ts?: number | undefined;
   }) => void;
   toolUseDone: (opts: { toolUse: RunnerCallToolUse; ts?: number | undefined }) => void;
@@ -405,7 +411,12 @@ export function createRunnerCallRecorder(opts: {
           inputDelta: accepted.text,
         });
       }
-      if (accepted.limit !== null) noteLimit(accepted.limit, 'truncates-result');
+      if (accepted.limit !== null) {
+        noteLimit(
+          accepted.limit,
+          eventOpts.stage === 'started' ? 'diagnostic-only' : 'truncates-result',
+        );
+      }
     },
     toolUseDone: (eventOpts) => {
       if (toolUseDoneCount >= RUNNER_CALL_TOOL_USE_MAX_ITEMS) {

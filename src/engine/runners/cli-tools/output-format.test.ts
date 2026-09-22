@@ -98,6 +98,13 @@ describe('withOutputFormat', () => {
     );
 
     expect([...structured].sort()).toEqual([...STRUCTURED_TERMINAL_TOOL_IDS]);
+    expect([...STRUCTURED_TERMINAL_TOOL_IDS]).toEqual([
+      'antigravity',
+      'claude-code',
+      'codex',
+      'command-code',
+      'cursor',
+    ]);
   });
 
   it('rejects conflicting output flags and separator forms', () => {

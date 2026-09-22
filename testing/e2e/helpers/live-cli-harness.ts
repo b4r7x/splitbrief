@@ -106,10 +106,16 @@ function collectRepoFiles(root: string, prefix = ''): Record<string, string> {
   return files;
 }
 
-function spawnCli(opts: {
+export function spawnCli(opts: {
   args: readonly string[];
   stateHome: string;
   timeoutMs: number;
+  /**
+   * The group leader's pid, handed over as soon as it exists. The resolved value
+   * arrives only once the child has closed, which is too late to signal a run
+   * that is still going.
+   */
+  onSpawn?: ((pid: number | undefined) => void) | undefined;
 }): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
   return new Promise((settle) => {
     const child = spawn(process.execPath, [...opts.args], {
@@ -120,6 +126,7 @@ function spawnCli(opts: {
       // one signal to the group; a bare child.kill leaves them running.
       detached: true,
     });
+    opts.onSpawn?.(child.pid);
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf-8');

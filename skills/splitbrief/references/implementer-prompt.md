@@ -45,13 +45,14 @@ A single-file slice prints `### File: <brief file>` instead of the `### Files:` 
 2. `### Signature`
 3. `### Type Definitions`
 4. `### Pattern`
-5. `### Current Code`
-6. `### Implementation Steps`
-7. `### Tests`
-8. `### Scope`
-9. `### Escalation`
-10. `### Evidence`
-11. `### Constraints`
+5. `### Implementation Steps`
+6. `### Tests`
+7. `### Scope`
+8. `### Escalation`
+9. `### Evidence`
+10. `### Constraints`
+
+`### Current Code` is never sent to a direct writer: the tool reads the file itself.
 <!-- /generated -->
 
 Omit a heading whose section the brief does not have; never invent one. `### Tests` is bulleted and ends with the Validation commands list. The four closing constraints from references/brief-format.md are appended to `### Constraints` only when the brief does not already end with them (briefs written by `splitbrief-brief` carry them; a CLI `tasks.md` brief does not).
@@ -137,6 +138,8 @@ Drift entries are rendered as the revert instruction in references/gates.md, one
     1. **Root cause**: What specifically went wrong? Parse the error message and identify the exact issue.
     2. **Fix approach**: Describe the approach to fix it in plain language. Be specific -- mention exact function names, TypeScript type annotations, or patterns to use.
     3. **Common pitfall**: If this is a common mistake (e.g., missing .js extension, wrong import path, incorrect type), say so explicitly.
+
+    Begin your reply with exactly one line: `VERDICT: answer` when the implementer should retry with your diagnosis below; `VERDICT: widen <path>[, <path>…] — <reason>` when the brief must also be allowed to edit the named files (paths outside its declared set); `VERDICT: brief — <diagnosis>` when the brief itself is wrong and no retry can land it. When the implementer stopped with a question, decide whether the brief or the implementer is at fault and answer it.
 
     Do NOT write code. Only explain the diagnosis and approach.
 <!-- /generated -->

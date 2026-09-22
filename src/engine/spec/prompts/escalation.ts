@@ -7,6 +7,42 @@ import {
 } from './language-context.js';
 import { buildPrompt, fenced, instructionsSection, type PromptSection } from './builder.js';
 import { selectRelevantExamples, formatExamplesSection } from './escalation-examples.js';
+import { buildScopeLines } from '../formatter.js';
+
+export type HintVerdict =
+  | { kind: 'answer' }
+  | { kind: 'widen'; paths: string[]; reason: string }
+  | { kind: 'brief'; diagnosis: string };
+
+export type HintVerdictKind = HintVerdict['kind'];
+
+export const HINT_VERDICT_LINE = /^VERDICT:\s*(answer|widen|brief)\b\s*(.*)$/im;
+
+const VERDICT_REASON_SEPARATOR = /(?:^|\s+)[—–-](?:\s+|$)|:\s*/;
+
+function splitVerdictReason(rest: string): { head: string; reason: string } {
+  const separator = VERDICT_REASON_SEPARATOR.exec(rest);
+  if (separator === null) return { head: rest.trim(), reason: '' };
+  return {
+    head: rest.slice(0, separator.index).trim(),
+    reason: rest.slice(separator.index + separator[0].length).trim(),
+  };
+}
+
+/** The first `VERDICT:` line of a hint; no line, or a widening naming no path, reads `answer`. */
+export function parseHintVerdict(output: string): HintVerdict {
+  const match = HINT_VERDICT_LINE.exec(output);
+  if (match === null) return { kind: 'answer' };
+  const kind = match[1]?.toLowerCase();
+  const { head, reason } = splitVerdictReason(match[2] ?? '');
+  if (kind === 'brief') return { kind: 'brief', diagnosis: head === '' ? reason : head };
+  if (kind !== 'widen') return { kind: 'answer' };
+  const paths = head
+    .split(/[,\s]+/)
+    .map((path) => path.replace(/^`+|`+$/g, '').trim())
+    .filter((path) => path.length > 0);
+  return paths.length === 0 ? { kind: 'answer' } : { kind: 'widen', paths, reason };
+}
 
 function taskMetaSection(task: Task, ctx: LanguageContext): PromptSection {
   return {
@@ -42,6 +78,8 @@ function hintInstructions(ctx: LanguageContext): string {
 2. **Fix approach**: Describe the approach to fix it in plain language. Be specific -- mention exact function names, ${ctx.typeAnnotationStyle}, or patterns to use.
 3. **Common pitfall**: ${commonPitfall}
 
+Begin your reply with exactly one line: \`VERDICT: answer\` when the implementer should retry with your diagnosis below; \`VERDICT: widen <path>[, <path>…] — <reason>\` when the brief must also be allowed to edit the named files (paths outside its declared set); \`VERDICT: brief — <diagnosis>\` when the brief itself is wrong and no retry can land it. When the implementer stopped with a question, decide whether the brief or the implementer is at fault and answer it.
+
 Do NOT write code. Only explain the diagnosis and approach.`;
 }
 
@@ -49,6 +87,7 @@ export function buildHintPrompt(
   task: Task,
   error: string,
   languageContext?: LanguageContext,
+  handBack?: string,
 ): string {
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const examples = selectRelevantExamples(error, ctx);
@@ -57,6 +96,20 @@ export function buildHintPrompt(
     { heading: 'Constraints', body: constraintsBlock(task) },
     { heading: 'Validation Error', body: fenced(error) },
   ];
+  const handBackText = handBack?.trim() ?? '';
+  if (handBackText.length > 0) {
+    sections.push({ heading: 'Implementer hand-back', body: fenced(handBackText) });
+  }
+  const scopeLines = buildScopeLines(task.scope);
+  if (scopeLines.length > 0) {
+    sections.push({ heading: 'Scope', body: scopeLines.join('\n') });
+  }
+  if (task.escalation !== undefined && task.escalation.length > 0) {
+    sections.push({
+      heading: 'Escalation',
+      body: task.escalation.map((entry) => `- ${entry}`).join('\n'),
+    });
+  }
   if (examples.length > 0) {
     sections.push({ heading: 'Similar Issues', body: formatExamplesSection(examples) });
   }

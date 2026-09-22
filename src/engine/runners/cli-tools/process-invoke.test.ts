@@ -25,6 +25,7 @@ import type {
 } from './contract.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES, invokeProcessCli } from './process-invoke.js';
 import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
+import { antigravityImplementerAdapter } from './antigravity.js';
 import { codexImplementerAdapter } from './codex.js';
 import { opencodeImplementerAdapter, opencodeProtocolEvents } from './opencode.js';
 import { toCliEnvironment } from '../invoke-cli-adapter.js';
@@ -616,6 +617,26 @@ describe('invokeProcessCli', () => {
     });
   });
 
+  it('exit 3 with the antigravity quota line on stderr classifies usage-limit', async () => {
+    // Captured live from `agy -p` (antigravity 1.2.7) on 2026-09-21, the retry
+    // after a first hit that exited 0; a text-exit tool has no terminal to
+    // carry the diagnosis, so only the stderr tail can name the limit.
+    const line =
+      'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h3m48s.';
+    const result = await run(
+      adapter({ kind: 'stdin' }, { output: 'text' }),
+      invocation({
+        script: `process.stderr.write(${JSON.stringify(`${line}\n`)});process.exit(3)`,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'usage-limit', message: line },
+    });
+    expect(runnerCallOutcome(result).state).toBe('usage-limit');
+  });
+
   it('classifies a usage-limit phrase in the tail of stdout, not only stderr', async () => {
     const result = await run(
       adapter({ kind: 'stdin' }),
@@ -1116,4 +1137,81 @@ describe('invokeProcessCli', () => {
       });
     },
   );
+});
+
+describe('invokeProcessCli antigravity stream-json liveness', () => {
+  const FIXTURE = join(
+    import.meta.dirname,
+    '../../../../testing/fixtures/antigravity/stream-json.ndjson',
+  );
+  // The idle clock starts at spawn, so the warn threshold has to clear the shim's own start-up
+  // as well as the gaps under test — and start-up is what a loaded four-worker run stretches.
+  // The gaps keep their ratio to it: the streaming case sits far below, the stall case far above.
+  const idle = { warnMs: 2_000, killMs: 10_000 };
+
+  async function replay(dir: string, body: string, onEvent: (event: RunnerCallEvent) => void) {
+    const shimPath = join(dir, 'agy');
+    writeFileSync(shimPath, `#!/bin/bash\n${body}\n`, { mode: 0o755 });
+    chmodSync(shimPath, 0o755);
+    return invokeProcessCli(antigravityImplementerAdapter, {
+      invocation: {
+        executable: executableIdentity(shimPath),
+        args: ['<PROMPT>'],
+        promptTransport: antigravityImplementerAdapter.promptTransport,
+        environment: { PATH: process.env.PATH ?? '' },
+        cwd: dir,
+        timeoutMs: 15_000,
+        signal: undefined,
+      },
+      prompt: 'fixture prompt',
+      callContext,
+      idle,
+      onEvent,
+    });
+  }
+
+  itUnix('streams tool steps as delta then done and never stalls at 20 ms gaps', async () => {
+    await withTempDir('splitbrief-agy-stream', async (dir) => {
+      const events: RunnerCallEvent[] = [];
+      const script = `while IFS= read -r line; do printf '%s\\n' "$line"; sleep 0.02; done < ${JSON.stringify(FIXTURE)}`;
+      const result = await replay(dir, script, (event) => events.push(event));
+
+      expect(result).toMatchObject({
+        status: 'completed',
+        text: 'OK\n',
+        nativeSessionId: '50328626-c5df-4301-9da7-dee7ce900271',
+      });
+      const deltaIds = events.flatMap((event) =>
+        event.type === 'call_tool_use_delta' ? [event.toolUseId] : [],
+      );
+      const doneIds = events.flatMap((event) =>
+        event.type === 'call_tool_use_done' ? [event.toolUse.id] : [],
+      );
+      expect(deltaIds).toEqual(['step-2', 'step-4', 'step-6']);
+      expect(doneIds).toEqual(deltaIds);
+      for (const id of deltaIds) {
+        const started = events.findIndex(
+          (event) => event.type === 'call_tool_use_delta' && event.toolUseId === id,
+        );
+        const done = events.findIndex(
+          (event) => event.type === 'call_tool_use_done' && event.toolUse.id === id,
+        );
+        expect(started).toBeLessThan(done);
+      }
+      expect(events.some((event) => event.type === 'call_stalled')).toBe(false);
+    });
+  });
+
+  itUnix('reports one stall when a frame is followed by three seconds of silence', async () => {
+    await withTempDir('splitbrief-agy-stall', async (dir) => {
+      const events: RunnerCallEvent[] = [];
+      const fixture = JSON.stringify(FIXTURE);
+      const script = `head -n 1 ${fixture}\nsleep 3\ntail -n 1 ${fixture}`;
+      const result = await replay(dir, script, (event) => events.push(event));
+
+      expect(result.status).toBe('completed');
+      expect(events.filter((event) => event.type === 'call_stalled')).toHaveLength(1);
+      expect(events.filter((event) => event.type === 'call_stall_cleared')).toHaveLength(1);
+    });
+  });
 });

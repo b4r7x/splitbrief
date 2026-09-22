@@ -5,12 +5,22 @@ import { uniqueSorted } from '../../../../utils/collections.js';
 import { scopePathPatterns } from '../../../../utils/path-patterns.js';
 import { summarizeText } from './issue.js';
 
+const BANNER_LINE = /^\s*>/;
+
+/** npm prints its own banner above a script's real output; it is not the error. */
+function stripBannerLines(input: string): string {
+  const kept = input
+    .split('\n')
+    .filter((line) => line.trim().length > 0 && !BANNER_LINE.test(line));
+  return kept.length > 0 ? kept.join('\n') : input;
+}
+
 export function summarizeValidation(opts: {
   validationResults?: ValidationResult[] | undefined;
   validationSummary?: string | undefined;
 }): { detail: string; summary: string; stage?: ValidationResult['stage'] | undefined } {
   if (opts.validationSummary !== undefined && opts.validationSummary.trim().length > 0) {
-    const summary = summarizeText(opts.validationSummary);
+    const summary = summarizeText(stripBannerLines(opts.validationSummary));
     return { detail: `Validation: ${summary}`, summary };
   }
 
@@ -22,7 +32,9 @@ export function summarizeValidation(opts: {
     };
   }
 
-  const summary = summarizeText(failed.error || failed.output || `${failed.stage} failed`);
+  const summary = summarizeText(
+    stripBannerLines(failed.error || failed.output || `${failed.stage} failed`),
+  );
   return {
     detail: `Validation ${failed.stage} failed: ${summary}`,
     summary,
@@ -33,10 +45,15 @@ export function summarizeValidation(opts: {
 export function attemptDetails(
   attempts: number | undefined,
   maxAttempts: number | undefined,
+  opts: Readonly<{ hintRungRan?: boolean | undefined }> = {},
 ): string[] {
   if (attempts === undefined && maxAttempts === undefined) return [];
-  if (attempts !== undefined && maxAttempts !== undefined)
+  if (attempts !== undefined && opts.hintRungRan === true && attempts >= 2) {
+    return [`Attempts: ${attempts} (${attempts - 1} local, then 1 with planner hints)`];
+  }
+  if (attempts !== undefined && maxAttempts !== undefined && attempts <= maxAttempts) {
     return [`Attempts: ${attempts}/${maxAttempts}`];
+  }
   if (attempts !== undefined) return [`Attempts: ${attempts}`];
   return [`Max attempts: ${maxAttempts}`];
 }

@@ -55,6 +55,7 @@ type CtxOptions = {
   callbacks: OrchestratorCallbacks;
   hintWritesOutOfScope?: boolean;
   hintRejects?: boolean;
+  hintResult?: { success: boolean; output: string };
   signal?: AbortSignal;
 };
 
@@ -77,6 +78,7 @@ async function makeCtx(
     return {
       success: true,
       output: 'try importing foo',
+      ...opts.hintResult,
       code: null,
       usage: { inputTokens: 10, outputTokens: 5 },
     };
@@ -246,6 +248,128 @@ describe('runEscalationTier hint tier gate handling', () => {
     });
 
     expect(retryError).toBe(HINT_ERROR_TEMPLATE('validation failed', 'try importing foo'));
+  });
+
+  it('publishes the hint after the planner answers and returns it on the outcome', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { ctx, events } = await makeCtx(projectDir, sessionId, {
+      callbacks,
+      hintResult: { success: true, output: 'use a default' },
+    });
+    const task = makeTask();
+
+    const outcome = await runEscalationTier(HINT_TIER, {
+      ctx,
+      task,
+      state: makeImplState([task]),
+      lastError: 'validation failed',
+      priorAttempts: 1,
+    });
+
+    expect(ctx.implementer.retry).toHaveBeenCalledTimes(1);
+    const escalates = events.filter((e) => e.type === 'escalate');
+    expect(escalates).toHaveLength(1);
+    expect(escalates[0]).toMatchObject({ tier: 1, hint: 'use a default' });
+    expect(outcome.plannerHint).toBe('use a default');
+    expect(outcome.plannerVerdict).toBe('answer');
+    expect(outcome.attempts).toBe(2);
+  });
+
+  it.each([
+    { success: false, output: '' },
+    { success: true, output: '   \n  ' },
+  ])('ends the rung before the implementer on the hint %j', async (hintResult) => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { ctx, events } = await makeCtx(projectDir, sessionId, { callbacks, hintResult });
+    const task = makeTask();
+
+    const outcome = await runEscalationTier(HINT_TIER, {
+      ctx,
+      task,
+      state: makeImplState([task]),
+      lastError: 'validation failed',
+      priorAttempts: 1,
+    });
+
+    expect(ctx.implementer.retry).not.toHaveBeenCalled();
+    expect(events.filter((e) => e.type === 'escalate')).toEqual([]);
+    expect(outcome.result).toBeUndefined();
+    expect(outcome.lastError).toBe('validation failed');
+    expect(outcome.plannerHint).toBeUndefined();
+    expect(outcome.attempts).toBe(1);
+  });
+
+  it('hands the implementer hand-back to the planner', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { ctx, escalateHint } = await makeCtx(projectDir, sessionId, { callbacks });
+    const task = makeTask();
+
+    await runEscalationTier(HINT_TIER, {
+      ctx,
+      task,
+      state: makeImplState([task]),
+      lastError: 'validation failed',
+      priorAttempts: 0,
+      handBack: 'I could not find the prop.',
+    });
+
+    expect(escalateHint).toHaveBeenCalledWith(
+      expect.objectContaining({ handBack: 'I could not find the prop.' }),
+    );
+  });
+
+  it('a brief verdict makes no implementer call and carries the diagnosis out', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const hint = 'VERDICT: brief — the export was already deleted';
+    const { ctx, events } = await makeCtx(projectDir, sessionId, {
+      callbacks,
+      hintResult: { success: true, output: hint },
+    });
+    const task = makeTask();
+
+    const outcome = await runEscalationTier(HINT_TIER, {
+      ctx,
+      task,
+      state: makeImplState([task]),
+      lastError: 'validation failed',
+      priorAttempts: 1,
+    });
+
+    expect(ctx.implementer.retry).not.toHaveBeenCalled();
+    expect(outcome.result).toBeUndefined();
+    expect(outcome).toMatchObject({ plannerHint: hint, plannerVerdict: 'brief', attempts: 1 });
+    expect(events.find((e) => e.type === 'escalate')).toMatchObject({ tier: 1, hint });
+  });
+
+  it('a widen verdict runs the retry with the write gate open', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { ctx } = await makeCtx(projectDir, sessionId, {
+      callbacks,
+      hintResult: {
+        success: true,
+        output: 'VERDICT: widen src/other.ts — it consumes the export',
+      },
+    });
+    const task = makeTask();
+
+    const outcome = await runEscalationTier(HINT_TIER, {
+      ctx,
+      task,
+      state: makeImplState([task]),
+      lastError: 'validation failed',
+      priorAttempts: 0,
+    });
+
+    expect(ctx.implementer.retry).toHaveBeenCalledTimes(1);
+    expect(ctx.implementer.retry).toHaveBeenCalledWith(
+      expect.objectContaining({ undeclaredWrites: 'gate' }),
+    );
+    expect(outcome.plannerVerdict).toBe('widen');
   });
 
   it('aborts only the planner hint call through the registered handler', async () => {

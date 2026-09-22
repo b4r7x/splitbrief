@@ -23,6 +23,7 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'tasks_planned',
   'task_completed',
   'task_escalating',
+  'task_scope_widened',
   'task_tokens',
   'task_review_needed',
   'review_fix_started',

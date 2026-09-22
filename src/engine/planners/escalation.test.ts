@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TREES_DIR } from '../../core/paths.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
@@ -9,6 +9,65 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { buildLanguageContext } from '../spec/prompts/language-context.js';
 import { escalateHint } from './escalation.js';
+import { CONVERSATIONAL_CAPS } from './types.js';
+
+describe('escalateHint', () => {
+  const opts = {
+    task: makeTask(),
+    error: 'validation failed',
+    projectDir: '/tmp/never-read',
+    callbacks: { onOutput: () => {} },
+    languageContext: buildLanguageContext('typescript'),
+  };
+
+  it('declines without calling the backend when the planner cannot hint', async () => {
+    const invokeEscalate = vi.fn();
+
+    const result = await escalateHint(
+      { invokeEscalate, capabilities: { supportsHintEscalation: false } },
+      opts,
+    );
+
+    expect(result).toEqual({ success: false, output: '', code: null, usage: null });
+    expect(invokeEscalate).not.toHaveBeenCalled();
+  });
+
+  it('asks the backend once, read-only, and returns its text', async () => {
+    const invokeEscalate = vi
+      .fn()
+      .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text: 'use a default' }));
+
+    const result = await escalateHint(
+      { invokeEscalate, capabilities: { supportsHintEscalation: true } },
+      opts,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output).toBe('use a default');
+    expect(invokeEscalate).toHaveBeenCalledTimes(1);
+    expect(invokeEscalate).toHaveBeenCalledWith(
+      expect.objectContaining({ accessMode: 'read-only' }),
+    );
+  });
+
+  it('puts the implementer hand-back in the prompt', async () => {
+    const invokeEscalate = vi
+      .fn()
+      .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text: 'use a default' }));
+
+    await escalateHint(
+      { invokeEscalate, capabilities: { supportsHintEscalation: true } },
+      { ...opts, handBack: 'I could not find the prop.' },
+    );
+
+    expect(invokeEscalate.mock.calls[0]?.[0]?.prompt).toContain('I could not find the prop.');
+  });
+
+  it('the Claude Code preset can hint', () => {
+    expect(CONVERSATIONAL_CAPS.supportsHintEscalation).toBe(true);
+    expect(CONVERSATIONAL_CAPS.supportsConversationalPlanning).toBe(true);
+  });
+});
 
 let dirs: string[] = [];
 

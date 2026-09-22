@@ -34,6 +34,12 @@ export type RunnerGate =
         executable: CliExecutableReceipt;
         /** Absent when the gate was not built from readiness evidence (conformance harness). */
         installedVersion?: string | undefined;
+        /**
+         * What the seat's `auto` resolved to: the model this tool had selected
+         * on this host at preparation. Absent when the seat named a model, or
+         * when the tool keeps no selection this machine can read.
+         */
+        effectiveModel?: string | undefined;
       }>)
   | (RunnerGateBase & Readonly<{ kind: 'api'; provider: string; endpointOrigin: string }>)
   | (RunnerGateBase & Readonly<{ kind: 'shell'; command: CommandGate }>)

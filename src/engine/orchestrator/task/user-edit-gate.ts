@@ -19,7 +19,12 @@ export async function checkUserEditGate(opts: {
   taskBreakdowns: TaskTokenUsage[];
   routingDecision?: RoutingDecision | undefined;
   implementerProfile?: string | undefined;
-}): Promise<{ state: WorkflowState; stopped: boolean; cancelled: boolean }> {
+}): Promise<{
+  state: WorkflowState;
+  stopped: boolean;
+  cancelled: boolean;
+  absorbedFiles: string[];
+}> {
   const { wctx, reviewWctx, task, taskIndex, taskBreakdowns, setTrackedState } = opts;
   const { projectDir, sessionId, callbacks } = wctx;
   const conflictAction = await checkUserEditConflicts({
@@ -35,8 +40,9 @@ export async function checkUserEditGate(opts: {
     setTrackedState,
   });
   const state = conflictAction.state;
+  const absorbedFiles = conflictAction.absorbedFiles;
   if (!conflictAction.stopped) {
-    return { state, stopped: false, cancelled: false };
+    return { state, stopped: false, cancelled: false, absorbedFiles };
   }
   const review = await stopWithReview({
     wctx: reviewWctx,
@@ -49,5 +55,5 @@ export async function checkUserEditGate(opts: {
     routingDecision: opts.routingDecision,
     implementerProfile: opts.implementerProfile,
   });
-  return { state: review.state, stopped: true, cancelled: review.cancelled };
+  return { state: review.state, stopped: true, cancelled: review.cancelled, absorbedFiles };
 }

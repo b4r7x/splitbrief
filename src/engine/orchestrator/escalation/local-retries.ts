@@ -81,39 +81,31 @@ export async function runLocalRetries(
       maxRetries,
       error: lastError,
     };
-    if (state.phase === 'escalating') {
-      publishRetry(retryRow);
-      break;
-    }
+    publishRetry(retryRow);
+    if (state.phase === 'escalating') break;
 
-    let outcome: RetryStepOutcome;
-    try {
-      outcome = await runRetryStep({
-        ctx,
-        task,
-        state,
-        lastError,
-        attempts,
-        method: 'local',
-        transitionType: 'VALIDATION_PASS',
-        usageCategory: 'implementer',
-        retryFailureFallback: 'Retry failed to produce valid code',
-        profileOverride: ctx.retryProfileOverride,
-        invokeRetry: makeImplementerRetryInvoker({
-          context: ctx.context,
-          kind: 'local',
-          languageContext: buildProjectLanguageContext(
-            ctx.projectDir,
-            state.discoveredValidation?.language,
-          ),
-          phase: state.phase,
-          onOutput: textHandler,
-        }),
-      });
-    } catch (err) {
-      publishRetry(retryRow);
-      throw err;
-    }
+    const outcome: RetryStepOutcome = await runRetryStep({
+      ctx,
+      task,
+      state,
+      lastError,
+      attempts,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      usageCategory: 'implementer',
+      retryFailureFallback: 'Retry failed to produce valid code',
+      profileOverride: ctx.retryProfileOverride,
+      invokeRetry: makeImplementerRetryInvoker({
+        context: ctx.context,
+        kind: 'local',
+        languageContext: buildProjectLanguageContext(
+          ctx.projectDir,
+          state.discoveredValidation?.language,
+        ),
+        phase: state.phase,
+        onOutput: textHandler,
+      }),
+    });
 
     state = outcome.state;
     task = outcome.task;
@@ -132,12 +124,16 @@ export async function runLocalRetries(
       state = { ...state, attempt: attemptBefore };
       return { state, task, lastError, attempts, result: failedRetry(attempts) };
     }
-    publishRetry(retryRow);
     if (outcome.result) {
       return outcome;
     }
     const failure = outcome.lastFailure;
     if (failure !== undefined && haltsLocalRetries(failure.outcome)) {
+      return outcome;
+    }
+    // An implementer that read the feedback and still wrote nothing will write
+    // nothing again; the planner rung is the only thing left that can change it.
+    if (failure?.outcome === 'no-staged-change') {
       return outcome;
     }
     if (failure?.outcome !== 'timeout') {

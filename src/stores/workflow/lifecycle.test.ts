@@ -3,10 +3,14 @@ import {
   clearLifecycleInterrupted,
   lifecycleStore,
   markLifecycleInterrupted,
+  markLifecyclePaused,
+  markLifecycleWaitEnded,
+  markLifecycleWaitStarted,
   updateStall,
 } from './lifecycle.js';
 import { addEvent } from './actions/event.js';
 import { markWorkflowPaused } from './actions/pause.js';
+import { markWaitEnded, markWaitStarted } from './actions/wait.js';
 import { resetWorkflow } from './actions/reset.js';
 import { hydrateFromState } from './actions/hydrate.js';
 import { makePlannerStatus, makePlannerText } from '#testing/helpers/events/planner.js';
@@ -224,6 +228,78 @@ describe('lifecycleStore', () => {
       researching: 1_000,
       complete: 2_000,
     });
+  });
+
+  it('records the planner call a running status names and drops it when the call is over', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+    expect(lifecycleStore.get().plannerCall).toBeNull();
+
+    addEvent(makePlannerStatus({ phase: 'planning', ts: 2_000, call: 'plan' }));
+    expect(lifecycleStore.get().plannerCall).toBe('plan');
+
+    addEvent(makePlannerStatus({ phase: 'planning', ts: 3_000, call: 'tasks' }));
+    expect(lifecycleStore.get().plannerCall).toBe('tasks');
+
+    addEvent(makePlannerStatus({ phase: 'reviewing-plan', ts: 4_000 }));
+    expect(lifecycleStore.get().plannerCall).toBeNull();
+
+    addEvent(makePlannerStatus({ phase: 'planning', ts: 5_000, call: 'tasks' }));
+    addEvent(makePlannerStatus({ phase: 'planning', ts: 6_000, status: 'done', call: 'tasks' }));
+    expect(lifecycleStore.get().plannerCall).toBeNull();
+  });
+
+  it('forgets the planner call when a run starts over', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'planning', feature: 'test' });
+    addEvent(makePlannerStatus({ phase: 'planning', ts: 2_000, call: 'tasks' }));
+
+    addEvent({ type: 'workflow_started', ts: 5_000, phase: 'researching', feature: 'again' });
+
+    expect(lifecycleStore.get().plannerCall).toBeNull();
+  });
+});
+
+describe('waiting on the user', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('books each wait against the phase it happened in and adds waits up', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+    const running = lifecycleStore.get();
+
+    const waiting = markLifecycleWaitStarted(running, 2_000);
+    expect(waiting.waitingSince).toBe(2_000);
+    expect(markLifecycleWaitStarted(waiting, 2_500)).toBe(waiting);
+
+    const answered = markLifecycleWaitEnded(waiting, 5_000);
+    expect(answered).toMatchObject({ waitingSince: null, waitedMs: { researching: 3_000 } });
+    expect(markLifecycleWaitEnded(answered, 6_000)).toBe(answered);
+
+    const again = markLifecycleWaitEnded(markLifecycleWaitStarted(answered, 7_000), 8_000);
+    expect(again.waitedMs).toEqual({ researching: 4_000 });
+  });
+
+  it('keeps waits by phase, so a later phase of the same stage still carries them', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+    markWaitStarted(2_000);
+    markWaitEnded(3_000);
+    addEvent(makePlannerStatus({ phase: 'specifying', ts: 4_000 }));
+    markWaitStarted(5_000);
+    markWaitEnded(5_500);
+
+    expect(lifecycleStore.get().waitedMs).toEqual({ researching: 1_000, specifying: 500 });
+  });
+
+  it('only a running lifecycle waits, and a new run starts with no wait', () => {
+    const idle = lifecycleStore.get();
+    expect(markLifecycleWaitStarted(idle, 2_000)).toBe(idle);
+
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+    const paused = markLifecyclePaused(lifecycleStore.get());
+    expect(markLifecycleWaitStarted(paused, 2_000)).toBe(paused);
+
+    markWaitStarted(2_000);
+    markWaitEnded(3_000);
+    addEvent({ type: 'workflow_started', ts: 5_000, phase: 'researching', feature: 'again' });
+    expect(lifecycleStore.get()).toMatchObject({ waitingSince: null, waitedMs: {} });
   });
 });
 

@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { CliExecutableReceiptSchema } from '../../../core/discovery/detection.js';
@@ -42,6 +42,17 @@ const executable = CliExecutableReceiptSchema.parse({
 });
 
 const tempDirs: string[] = [];
+
+// A cli seat with no model, or `auto`, makes preparation read the model the tool selected on this
+// host. Left alone, every case below would take the developer's own `~/.codex/config.toml` or
+// `~/.claude/settings.json` and prepare a different config on each machine. The host each case
+// sees holds only what that case wrote into it; a case that needs its own re-stubs and wins.
+beforeEach(() => {
+  const home = createTempDir('prepare-execution-home');
+  tempDirs.push(home);
+  vi.stubEnv('HOME', home);
+  vi.stubEnv('XDG_CONFIG_HOME', join(home, '.config'));
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1579,5 +1590,58 @@ describe('prepareReviewExecution', () => {
     });
 
     expect(outcome.kind).toBe('blocked');
+  });
+});
+describe('a seat left on auto', () => {
+  it('prepares the model the tool has selected on this host while the config keeps auto', async () => {
+    const project = projectDir();
+    const home = projectDir();
+    mkdirSync(join(home, '.codex'), { recursive: true });
+    writeFileSync(join(home, '.codex', 'config.toml'), 'model = "gpt-6-astra"', 'utf8');
+    vi.stubEnv('HOME', home);
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'custom-endpoint',
+        apiBase: 'https://api.example.test/v1',
+        apiKey: 'sk-endpoint-test',
+        model: 'claude-opus-4-6',
+      },
+      implementer: { kind: 'cli', tool: 'codex', model: 'auto' },
+    });
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'resolve the host model selection',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: policy('new-workflow'),
+      deps: {
+        collectArgVectorPreflightChecks: async () => [],
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
+        resolveCliExecutableAliases: async () => ({
+          command: 'codex',
+          executable,
+          usedFallback: false,
+        }),
+        prepareNewSession: () => preparedSession(project, 'auto-model-session'),
+      },
+    });
+
+    expect(outcome.kind).toBe('prepared');
+    if (outcome.kind !== 'prepared') return;
+    expect(outcome.execution.config.implementer).toMatchObject({
+      kind: 'cli',
+      tool: 'codex',
+      model: 'gpt-6-astra',
+    });
+    expect(outcome.execution.gates).toContainEqual(
+      expect.objectContaining({
+        slot: { role: 'implementer', profile: 'default' },
+        effectiveModel: 'gpt-6-astra',
+      }),
+    );
+    expect(config.implementer).toMatchObject({ model: 'auto' });
   });
 });

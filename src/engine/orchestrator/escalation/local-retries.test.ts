@@ -48,12 +48,15 @@ function makeLocalRetriesCtx(opts: {
   implementer: ReturnType<typeof makeImplementer>;
   bus: ReturnType<typeof makeBusRecorder>['bus'];
   signal?: AbortSignal | undefined;
+  maxRetries?: number | undefined;
 }): EscalationContext {
   return {
     ...makeWctx({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
-      config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+      config: makeNoValidationConfig({
+        workflow: { maxRetries: opts.maxRetries ?? defaultWorkflow.maxRetries },
+      }),
       planner: makePlanner(),
       implementer: opts.implementer,
       bus: opts.bus,
@@ -84,7 +87,7 @@ describe('runLocalRetries — aborted outcomes', () => {
     expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
   });
 
-  it('charges neither the persisted attempt nor a retry row to an attempt the workflow aborted', async () => {
+  it('announces the aborted attempt on a retry row but rolls its persisted attempt back', async () => {
     const { projectDir, sessionId } = setupProject();
     const controller = new AbortController();
     let secondRetryEntered: () => void = () => {};
@@ -141,8 +144,33 @@ describe('runLocalRetries — aborted outcomes', () => {
     const retryAttempts = events
       .filter((e) => e.type === 'task_retry')
       .map((e) => (e.type === 'task_retry' ? e.attempt : -1));
-    expect(retryAttempts).toEqual([1]);
+    expect(retryAttempts).toEqual([1, 2]);
     expect(loadState({ projectDir, sessionId })?.attempt).toBe(1);
+  });
+
+  it('the retry row precedes the attempt it announces', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const order: string[] = [];
+    const retry = vi.fn().mockImplementation(async () => {
+      order.push('call');
+      return { success: false, output: '', error: 'still broken' };
+    });
+    const implementer = makeImplementer({ retry });
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe((event) => {
+      if (event.type === 'task_retry') order.push(`row ${event.attempt}`);
+    });
+
+    await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus, maxRetries: 2 }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
+
+    expect(order).toEqual(['row 1', 'call', 'row 2', 'call']);
+    const firstRow = events.find((e) => e.type === 'task_retry');
+    expect(firstRow?.type === 'task_retry' && firstRow.error).toBe('type error');
   });
 
   it('ordinary failures still consume exactly maxRetries retries', async () => {
@@ -307,6 +335,81 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
     // The remaining two of the three configured retries are left unspent.
     expect(retry).toHaveBeenCalledTimes(1);
     expect(outcome.lastFailure?.outcome).toBe('implementer-recipe-invalid');
+  });
+
+  it('a no-change attempt after feedback ends the local rung with its failure intact', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const retry = vi.fn().mockResolvedValue({
+      success: false,
+      output: 'I could not find the prop.',
+      error: 'agy exited without changing any files',
+      outcome: 'no-staged-change',
+    });
+    const implementer = makeImplementer({ retry });
+    const { bus } = makeBusRecorder();
+
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus, maxRetries: 2 }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
+
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(outcome.result).toBeUndefined();
+    expect(outcome.attempts).toBe(1);
+    expect(outcome.lastError).toBe('type error');
+    expect(outcome.lastFailure).toMatchObject({
+      outcome: 'no-staged-change',
+      handBack: 'I could not find the prop.',
+    });
+  });
+
+  it('ordinary failures still spend every local retry', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const retry = vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' });
+    const implementer = makeImplementer({ retry });
+    const { bus } = makeBusRecorder();
+
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus, maxRetries: 2 }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
+
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(outcome.attempts).toBe(2);
+  });
+
+  it('a timeout followed by a no-change attempt ends on the no-change outcome', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const retry = vi
+      .fn()
+      .mockResolvedValueOnce({
+        success: false,
+        output: '',
+        error: 'implementer timed out',
+        outcome: 'timeout',
+      })
+      .mockResolvedValueOnce({
+        success: false,
+        output: '',
+        error: 'exited without changing any files',
+        outcome: 'no-staged-change',
+      });
+    const implementer = makeImplementer({ retry });
+    const { bus } = makeBusRecorder();
+
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
+
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(outcome.lastFailure?.outcome).toBe('no-staged-change');
   });
 
   it('missing-model stops the local retries', async () => {
