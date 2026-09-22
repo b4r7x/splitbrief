@@ -27,8 +27,6 @@ const MESSAGE_OVERHEAD_TOKENS = 8;
 const REQUEST_OVERHEAD_TOKENS = 16;
 /** How far the character-ratio estimate is allowed to be wrong, as a share. */
 const ESTIMATION_MARGIN_RATIO = 0.15;
-/** Output cap when the provider reports no `maximumOutputTokens`. */
-const DEFAULT_OUTPUT_CAP_TOKENS = 8_192;
 /** The floor every role reserves, and what PLAN and REVIEW reserve. */
 export const BASE_OUTPUT_RESERVE_TOKENS = 2_048;
 /** Allowance for one declared `create` target, whose text has no baseline. */
@@ -72,7 +70,6 @@ export function measureApiBudget(options: MeasureApiBudgetOptions): ApiBudgetMea
     content + MESSAGE_OVERHEAD_TOKENS * messages.length + REQUEST_OVERHEAD_TOKENS;
   const estimationMargin = Math.ceil(inputEstimate * ESTIMATION_MARGIN_RATIO);
 
-  const outputCap = context.maximumOutputTokens ?? DEFAULT_OUTPUT_CAP_TOKENS;
   const applicationContextTokens = context.applicationContextTokens;
   const outputReserve =
     role === 'build'
@@ -80,29 +77,29 @@ export function measureApiBudget(options: MeasureApiBudgetOptions): ApiBudgetMea
       : BASE_OUTPUT_RESERVE_TOKENS;
 
   const minimumRequiredTokens = inputEstimate + estimationMargin + outputReserve;
+  const outputCap = context.maximumOutputTokens;
   const refusal = {
     inputEstimate,
     estimationMargin,
     requiredOutputTokens: outputReserve,
     applicationContextTokens,
-    outputCap,
+    ...(outputCap !== undefined && { outputCap }),
     minimumRequiredTokens,
   };
-  if (outputReserve > outputCap) {
+  if (outputCap !== undefined && outputReserve > outputCap) {
     return { kind: 'insufficient', reason: 'output', ...refusal };
   }
   if (minimumRequiredTokens > applicationContextTokens) {
     return { kind: 'insufficient', reason: 'input', ...refusal };
   }
-
+  const headroom = applicationContextTokens - inputEstimate - estimationMargin;
   return {
     kind: 'fits',
     inputEstimate,
     estimationMargin,
     outputReserve,
-    maxTokens: Math.min(outputCap, applicationContextTokens - inputEstimate - estimationMargin),
+    ...(outputCap !== undefined && { maxTokens: Math.min(outputCap, headroom), outputCap }),
     applicationContextTokens,
-    outputCap,
   };
 }
 
@@ -206,7 +203,7 @@ export const apiBudgetError = {
           requiredOutputTokens: measurement.requiredOutputTokens,
           requiredTokens: measurement.minimumRequiredTokens,
           availableTokens: measurement.applicationContextTokens,
-          outputCap: measurement.outputCap,
+          ...(measurement.outputCap !== undefined && { outputCap: measurement.outputCap }),
           ...(metadata?.budgetSource !== undefined && {
             budgetSource: metadata.budgetSource,
           }),
@@ -217,7 +214,9 @@ export const apiBudgetError = {
       : error(
           'api-context-budget-insufficient',
           measurement.reason === 'output'
-            ? `The ${seat} seat needs ${measurement.requiredOutputTokens} output tokens for this call, above the ${measurement.outputCap}-token output cap. Nothing was dispatched.`
+            ? measurement.outputCap !== undefined
+              ? `The ${seat} seat needs ${measurement.requiredOutputTokens} output tokens for this call, above the ${measurement.outputCap}-token output cap. Nothing was dispatched.`
+              : `The ${seat} seat needs ${measurement.requiredOutputTokens} output tokens for this call. Nothing was dispatched.`
             : `The ${seat} seat needs ${measurement.minimumRequiredTokens} tokens (${measurement.inputEstimate} estimated input, ${measurement.estimationMargin} margin, ${measurement.requiredOutputTokens} output reserve) and the application budget is ${measurement.applicationContextTokens}. Nothing was dispatched.`,
           { seat, ...measurement },
         ),

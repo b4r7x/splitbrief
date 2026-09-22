@@ -307,7 +307,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
   }, 60_000);
 
-  it('detects an edit made while the session was interrupted by seeding the persisted baseline on resume', async () => {
+  it('takes an edit made while the session was interrupted as the next brief starting point, seeding the persisted baseline on resume', async () => {
     const { projectDir, sessionId } = setupProject();
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/shared.ts'), 'original\n');
@@ -345,9 +345,17 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
 
     const resumeTask = makeTask({ id: 'T002', action: 'modify', file: 'src/shared.ts' });
     const resumeState = makeImplState([resumeTask], { changedFilesBaseline: persistedBaseline });
+    // Absorbing the edit commits against the state on disk, so the resume has to start from it.
+    saveState({ projectDir, sessionId }, resumeState);
 
     const { callbacks: resumeCallbacks } = makeCallbacks();
     const { bus: resumeBus, events } = makeBusRecorder();
+    const resumeImplementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        writeFileSync(join(projectDir, 'src/shared.ts'), 'implementation after the edit\n');
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
 
     const resumeResult = await runTaskLoop({
       wctx: makeWctx({
@@ -355,7 +363,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         sessionId,
         config: makeNoValidationConfig({ workflow: defaultWorkflow }),
         callbacks: resumeCallbacks,
-        implementer: makeImplementer(),
+        implementer: resumeImplementer,
         bus: resumeBus,
       }),
       initialState: resumeState,
@@ -363,16 +371,16 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(resumeResult.state.pendingRecovery).toMatchObject({
-      reason: 'user-edit-conflict',
-      taskId: 'T002',
-    });
+    expect(resumeResult.state.pendingRecovery).toBeUndefined();
+    expect(resumeResult.state.currentTaskIndex).toBe(1);
     expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
       type: 'paused_external_changes',
-      selectedAction: 'pause',
+      selectedAction: 'continue-unrelated',
       conflict: {
-        kind: 'current-task-conflict',
+        kind: 'future-task-stale-input',
         files: ['src/shared.ts'],
+        affectedTaskIds: ['T002'],
+        currentTaskId: 'T002',
       },
     });
   });

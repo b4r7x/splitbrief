@@ -290,17 +290,14 @@ describe('three-seat identity and budget', () => {
 
     catalogs.set('1234', [{ key: 'plan-model', activeContextTokens: 8_000 }]);
     await plan();
-    const roomy = dispatches.at(-1)?.maxTokens;
+    // A local catalog reports no output ceiling, so no cap rides along on either call;
+    // the refusal below is what proves the context was re-read rather than remembered.
+    expect(dispatches.at(-1)?.maxTokens).toBeUndefined();
 
     // The server reloaded the model with a smaller context between calls.
     catalogs.set('1234', [{ key: 'plan-model', activeContextTokens: 5_000 }]);
     await plan();
-    const cramped = dispatches.at(-1)?.maxTokens;
-
-    expect(roomy).toBeDefined();
-    expect(cramped).toBeDefined();
-    expect(cramped).toBeLessThan(roomy as number);
-    expect(cramped).toBe((roomy as number) - 3_000);
+    expect(dispatches.at(-1)?.maxTokens).toBeUndefined();
 
     catalogs.set('1234', [{ key: 'plan-model', activeContextTokens: 2_000 }]);
     await expect(plan()).rejects.toMatchObject({ kind: 'api-insufficient-context' });
@@ -362,8 +359,10 @@ describe('three-seat identity and budget', () => {
     });
 
     expect(result.success).toBe(false);
+    // With no output ceiling in the catalog there is no cap to breach: the seat refuses
+    // on its own figures, against the application budget.
     expect(result.error).toMatch(
-      /needs \d+ output tokens for this call, above the 8192-token output cap\. Nothing was dispatched\./,
+      /needs \d+ tokens \(\d+ estimated input, \d+ margin, \d+ output reserve\) and the application budget is \d+\. Nothing was dispatched\./,
     );
     expect(dispatches).toEqual([]);
   });

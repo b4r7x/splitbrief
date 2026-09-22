@@ -55,6 +55,7 @@ import {
   changedFilesSinceBaseline,
   deserializeChangedFilesBaseline,
 } from '../changed-files-baseline.js';
+import { classifyUserEditConflict } from '../user-edit/conflicts.js';
 import { transitionAndSave } from '../state-ops.js';
 import {
   createContinuationHolder,
@@ -506,8 +507,10 @@ async function resumeContinuation(
 const FILE_HALT_REASONS = new Set(['user-edit-conflict', 'approval-promotion-conflict']);
 
 /**
- * A halt about files is only true while those files still differ from the baseline. The operator
- * who reverted them answered the question by reverting, so the panel does not ask again either.
+ * A halt about files is only true while those files still differ from the baseline and the gate
+ * would still raise it. The operator who reverted them answered the question by reverting, and an
+ * edit to a brief that has not started is that brief's starting point, not a conflict — so the
+ * panel does not ask again either.
  */
 export async function fileHaltIsStale(projectDir: string, state: WorkflowState): Promise<boolean> {
   const issue = state.pendingRecovery;
@@ -518,7 +521,17 @@ export async function fileHaltIsStale(projectDir: string, state: WorkflowState):
       projectDir,
       deserializeChangedFilesBaseline(state.changedFilesBaseline),
     );
-    return !changed.some((file) => issue.files.includes(file));
+    if (!changed.some((file) => issue.files.includes(file))) return true;
+    if (issue.reason !== 'user-edit-conflict') return false;
+    const currentTask = state.tasks[state.currentTaskIndex];
+    if (currentTask === undefined) return false;
+    return classifyUserEditConflict({
+      files: changed,
+      currentTask,
+      currentTaskInFlight: currentTask.status === 'in_progress',
+      allTasks: state.tasks,
+      currentTaskIndex: state.currentTaskIndex,
+    }).safeToContinue;
   } catch {
     return false;
   }
@@ -545,7 +558,7 @@ async function resolveStaleFileHalt(args: {
   publishWarning({
     bus,
     phase: resolved.phase,
-    message: 'The files the halt named are back at the baseline; continuing.',
+    message: 'The files the halt named no longer block this brief; continuing.',
     safety: { category: 'recovery', code: 'stale_file_halt_resolved' },
   });
   return resolved;

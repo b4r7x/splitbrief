@@ -972,7 +972,7 @@ describe('runFinalReviewPhase', () => {
     expect(drift.changedFiles).toContain('src/from-unborn.ts');
   });
 
-  it('keeps the complete diff for drift while bounding the review prompt at 100,000 characters', async () => {
+  it('keeps the complete diff for drift while passing the full diff to the review prompt', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -1022,8 +1022,8 @@ describe('runFinalReviewPhase', () => {
     const promptDiff = reviewPrompts[0]
       ?.split('## Implementation Diff\n')[1]
       ?.split('\n## Deterministic Drift Report')[0];
-    expect(promptDiff).not.toContain(prohibitedMarker);
-    expect(promptDiff).toContain('diff truncated');
+    expect(promptDiff).toContain(prohibitedMarker);
+    expect(promptDiff).not.toContain('diff truncated');
   });
 
   it('unparseable verdict is re-asked once', async () => {

@@ -857,21 +857,35 @@ describe('createRunIsolation', () => {
     const dir = createTempDir('isolation-retain-unpromoted');
     try {
       createTestGitRepo(dir, { 'README.md': '# test\n' });
+      let cacheExistedAtAnnouncement: boolean | undefined;
       const retained: string[] = [];
       const handle = createRunIsolation({
         projectDir: dir,
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: (worktreeDir) => retained.push(worktreeDir),
+        onRetained: (worktreeDir) => {
+          cacheExistedAtAnnouncement = existsSync(
+            join(worktreeDir, SANDBOX_DIR, 'implementer', 'codex', 'npm-cache'),
+          );
+          retained.push(worktreeDir);
+        },
       });
 
       const ws = await acquireDirect(handle);
+      const roleRoot = join(ws.projectDir, SANDBOX_DIR, 'implementer', 'codex');
+      const npmCache = join(roleRoot, 'npm-cache');
+      mkdirSync(npmCache, { recursive: true });
+      writeFileSync(join(npmCache, 'cached-package.tgz'), 'cached\n');
       writeFileSync(join(ws.projectDir, 'unpromoted.txt'), 'work\n');
 
       await handle.dispose();
 
       expect(retained).toEqual([ws.projectDir]);
+      expect(cacheExistedAtAnnouncement).toBe(false);
+      expect(existsSync(join(npmCache, 'cached-package.tgz'))).toBe(false);
+      expect(existsSync(npmCache)).toBe(false);
+      expect(existsSync(join(ws.projectDir, 'unpromoted.txt'))).toBe(true);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
       expect((await createGitClient(dir).branch()).all).toContain(`splitbrief/${SLUG}`);
     } finally {

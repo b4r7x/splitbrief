@@ -308,7 +308,6 @@ splitbrief review --project ../service-a
 - The review seat resolves exactly once, through `resolveReviewerRunner`: a configured `reviewer:` block, or the planner holding the seat. `--reviewer` overrides that seat for this call only; nothing is written back to the config.
 - The reviewer runs in its tool's read-only mode (for Claude Code, `--permission-mode plan`).
 - A clean tree prints `nothing to review` and exits `0` before any runner is constructed — the command never spawns a tool with nothing to say.
-- A diff longer than 100,000 characters is truncated in the prompt with an explicit `[... diff truncated, N characters omitted ...]` marker; the file on disk holds the reviewer's full answer.
 - Reviewer output streams to stdout with terminal control sequences stripped, then the verdict, findings and the review path are printed.
 
 ---

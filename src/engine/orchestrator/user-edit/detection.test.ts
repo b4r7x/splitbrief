@@ -76,26 +76,28 @@ describe('checkUserEditConflicts', () => {
     expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
   });
 
-  it('pauses with an issue naming the file when the current task file was edited', async () => {
+  it('takes an edit to the file of a brief that has not started as its stale input', async () => {
     createTestGitRepo(projectDir, { 'src/current.ts': 'v1' });
     const task = makeTask({ id: 'T001', file: 'src/current.ts' });
     const baseline = await captureChangedFilesBaseline(projectDir);
     writeFileSync(join(projectDir, 'src/current.ts'), 'user edit');
 
-    const { result, events } = await runCheck({ tasks: [task], baseline });
-
-    expect(result.stopped).toBe(true);
-    expect(result.state.pendingRecovery).toMatchObject({
-      reason: 'user-edit-conflict',
-      taskId: 'T001',
-      files: ['src/current.ts'],
+    const { result, events, acknowledgedUserEditFiles } = await runCheck({
+      tasks: [task],
+      baseline,
     });
+
+    expect(result.stopped).toBe(false);
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.absorbedFiles).toEqual(['src/current.ts']);
+    expect(acknowledgedUserEditFiles.has('src/current.ts')).toBe(true);
     expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
       type: 'paused_external_changes',
-      selectedAction: 'pause',
+      selectedAction: 'continue-unrelated',
       conflict: {
-        kind: 'current-task-conflict',
+        kind: 'future-task-stale-input',
         files: ['src/current.ts'],
+        affectedTaskIds: ['T001'],
       },
     });
   });

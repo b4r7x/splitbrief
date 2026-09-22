@@ -8,6 +8,7 @@ describe('classifyUserEditConflict', () => {
     const conflict = classifyUserEditConflict({
       files: ['README.md'],
       currentTask,
+      currentTaskInFlight: false,
       allTasks: [currentTask],
       currentTaskIndex: 0,
     });
@@ -19,11 +20,12 @@ describe('classifyUserEditConflict', () => {
     expect(conflict.availableActions).toContain('continue-unrelated');
   });
 
-  it('classifies the current task file as blocking', () => {
+  it('classifies a file of the brief in flight as blocking', () => {
     const currentTask = makeTask({ id: 'T001', file: 'src/current.ts' });
     const conflict = classifyUserEditConflict({
       files: ['src/current.ts'],
       currentTask,
+      currentTaskInFlight: true,
       allTasks: [currentTask],
       currentTaskIndex: 0,
     });
@@ -32,6 +34,22 @@ describe('classifyUserEditConflict', () => {
     expect(conflict.safeToContinue).toBe(false);
     expect(conflict.affectedTaskIds).toEqual(['T001']);
     expect(conflict.availableActions).toEqual(['pause', 'skip-current-task', 'abort-workflow']);
+  });
+
+  it('classifies a file of a brief that has not started as its stale input', () => {
+    const currentTask = makeTask({ id: 'T001', file: 'src/current.ts' });
+    const conflict = classifyUserEditConflict({
+      files: ['src/current.ts'],
+      currentTask,
+      currentTaskInFlight: false,
+      allTasks: [currentTask],
+      currentTaskIndex: 0,
+    });
+
+    expect(conflict.kind).toBe('future-task-stale-input');
+    expect(conflict.safeToContinue).toBe(true);
+    expect(conflict.affectedTaskIds).toEqual(['T001']);
+    expect(conflict.availableActions).toEqual(['continue-unrelated', 'pause', 'abort-workflow']);
   });
 
   it('classifies a second declared file and a prose in-bounds bullet as current-task conflicts', () => {
@@ -44,6 +62,7 @@ describe('classifyUserEditConflict', () => {
     const conflict = classifyUserEditConflict({
       files: ['src/current.test.ts', 'src/x.ts'],
       currentTask,
+      currentTaskInFlight: true,
       allTasks: [currentTask],
       currentTaskIndex: 0,
     });
@@ -58,6 +77,7 @@ describe('classifyUserEditConflict', () => {
     const conflict = classifyUserEditConflict({
       files: ['src/future.ts'],
       currentTask,
+      currentTaskInFlight: false,
       allTasks: [currentTask, futureTask],
       currentTaskIndex: 0,
     });
@@ -78,6 +98,7 @@ describe('classifyUserEditConflict', () => {
     const conflict = classifyUserEditConflict({
       files: ['src/dependency.ts'],
       currentTask,
+      currentTaskInFlight: false,
       allTasks: [dependencyTask, currentTask],
       currentTaskIndex: 1,
     });

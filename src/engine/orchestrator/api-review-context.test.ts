@@ -416,7 +416,7 @@ describe('a REVIEW seat that reads no files of its own', () => {
     expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), REVIEW_FILE))).toBe(false);
   });
 
-  it('leaves a CLI reviewer on its own truncating prompt', async () => {
+  it('hands a CLI reviewer the whole diff, however long', async () => {
     const ref = setupRun({ ledger: false });
     universe.fullDiff = diffOfLength('src/big.ts', 150_000);
     universe.changedFiles = ['src/big.ts'];
@@ -425,7 +425,8 @@ describe('a REVIEW seat that reads no files of its own', () => {
     const result = await review({ ...ref, config: makeNoValidationConfig(), prompts });
 
     expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain('[... diff truncated,');
+    expect(prompts[0]).not.toContain('[... diff truncated,');
+    expect(prompts[0]).toContain(universe.fullDiff);
     expect(result.reviewStatus).toBe('written');
     expect(result.failure).toBeUndefined();
   });

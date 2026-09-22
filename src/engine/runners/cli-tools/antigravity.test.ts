@@ -16,6 +16,10 @@ import {
 } from './antigravity.js';
 
 const PROMPT = CLI_PROMPT_SENTINEL;
+const ANTIGRAVITY_PLANNER_CONTRACT_SHA256 =
+  '56b33c20557e384c26e6ba7a9ee8262d01d1115533025d26ad70d271e922cde7';
+const ANTIGRAVITY_IMPLEMENTER_CONTRACT_SHA256 =
+  '763d9d9b1c5c5d301150ea28a21329153af8c64cda77589310ee9031f29c591b';
 const STREAM_JSON_FIXTURE = join(
   import.meta.dirname,
   '../../../../testing/fixtures/antigravity/stream-json.ndjson',
@@ -78,14 +82,12 @@ describe('Antigravity role adapters', () => {
     expect(antigravityImplementerAdapter.probe?.version.command).toEqual(['agy', '--version']);
   });
 
-  it('builds the planner argv with the read-only plan mode and the 10-minute deadline', () => {
+  it('builds the planner argv with the read-only plan mode', () => {
     expect(plannerArgs({ model: 'gemini-3-pro', effort: 'high' })).toEqual([
       '-p',
       PROMPT,
       '--mode',
       'plan',
-      '--print-timeout',
-      '10m',
       '--output-format',
       'stream-json',
       '--model',
@@ -95,13 +97,11 @@ describe('Antigravity role adapters', () => {
     ]);
   });
 
-  it('builds the implementer argv with the write flag and the 20-minute deadline', () => {
+  it('builds the implementer argv with the write flag', () => {
     expect(implementerArgs()).toEqual([
       '-p',
       PROMPT,
       '--dangerously-skip-permissions',
-      '--print-timeout',
-      '20m',
       '--output-format',
       'stream-json',
     ]);
@@ -247,6 +247,10 @@ describe('Antigravity role adapters', () => {
         'stream-json',
       ]);
     }
+    expect(CLI_CONFORMANCE_CANDIDATES[0]?.contractSha256).toBe(ANTIGRAVITY_PLANNER_CONTRACT_SHA256);
+    expect(CLI_CONFORMANCE_CANDIDATES[1]?.contractSha256).toBe(
+      ANTIGRAVITY_IMPLEMENTER_CONTRACT_SHA256,
+    );
     expect(CLI_CONFORMANCE_CANDIDATES[0]?.contractSha256).not.toBe(
       CLI_CONFORMANCE_CANDIDATES[1]?.contractSha256,
     );

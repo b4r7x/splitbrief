@@ -20,7 +20,7 @@ import { createReviewer } from '../../engine/runners/factory.js';
 import { prepareReviewExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-runtime.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
-import { buildFinalReviewPrompt, truncateDiffForPrompt } from '../../engine/spec/prompts/review.js';
+import { buildFinalReviewPrompt } from '../../engine/spec/prompts/review.js';
 import { confinedWriteFile } from '../../lib/confined-fs.js';
 import { getCurrentDiff, getDiffSince } from '../../lib/git/diff.js';
 import { sanitizeTerminalDisplayText, stripTerminalControls } from '../../utils/display-text.js';
@@ -109,11 +109,10 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
       await ensureGitAndConfig(projectDir);
 
       const baseRef = opts.base;
-      const diff = truncateDiffForPrompt(
+      const diff =
         baseRef === undefined
           ? await withCliErrors(() => getCurrentDiff(projectDir, isInternalGitStatusPath))
-          : await withCliErrors(() => getDiffSince(projectDir, baseRef, isInternalGitStatusPath)),
-      );
+          : await withCliErrors(() => getDiffSince(projectDir, baseRef, isInternalGitStatusPath));
       if (diff.trim() === '') {
         console.log(NOTHING_TO_REVIEW);
         return;

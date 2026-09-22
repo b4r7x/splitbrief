@@ -199,6 +199,7 @@ describe('applyRecoveryAction: unsafe continue blocked', () => {
       conflict: classifyUserEditConflict({
         files: ['src/current.ts'],
         currentTask: conflictTask,
+        currentTaskInFlight: true,
         allTasks: [conflictTask],
         currentTaskIndex: 0,
       }),

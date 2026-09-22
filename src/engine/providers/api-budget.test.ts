@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimateBundleOutputReserve, measureApiBudget } from './api-budget.js';
+import { apiBudgetError, estimateBundleOutputReserve, measureApiBudget } from './api-budget.js';
 import type { ApiBudgetBuildTarget, ApiRuntimeContext } from './runtime-context.js';
 
 function context(overrides: Partial<ApiRuntimeContext> = {}): ApiRuntimeContext {
@@ -31,15 +31,15 @@ describe('measureApiBudget', () => {
       inputEstimate: 26,
       estimationMargin: 4,
       outputReserve: 2_048,
-      maxTokens: 8_162,
       applicationContextTokens: 8_192,
-      outputCap: 8_192,
     });
+    expect('maxTokens' in measurement).toBe(false);
+    expect('outputCap' in measurement).toBe(false);
   });
 
   it('admits a packet that fills the context exactly, with no negative maxTokens', () => {
     const measurement = measureApiBudget({
-      context: context(),
+      context: context({ maximumOutputTokens: 8_192 }),
       messages: userMessage(21_272),
       role: 'plan',
     });
@@ -69,9 +69,50 @@ describe('measureApiBudget', () => {
       estimationMargin: 802,
       requiredOutputTokens: 2_048,
       applicationContextTokens: 8_192,
-      outputCap: 8_192,
       minimumRequiredTokens: 8_193,
     });
+    expect('outputCap' in measurement).toBe(false);
+  });
+
+  it('clamps maxTokens against remaining context when maximumOutputTokens is reported', () => {
+    const measurement = measureApiBudget({
+      context: context({ maximumOutputTokens: 4_096, applicationContextTokens: 26 + 4 + 2_500 }),
+      messages: [{ role: 'user', content: 'hello' }],
+      role: 'plan',
+    });
+
+    expect(measurement).toEqual(
+      expect.objectContaining({
+        kind: 'fits',
+        maxTokens: 2_500,
+        outputCap: 4_096,
+      }),
+    );
+  });
+
+  it('refuses when reserve exceeds output cap and names the cap in the error message', () => {
+    const measurement = measureApiBudget({
+      context: context({ maximumOutputTokens: 512, applicationContextTokens: 131_072 }),
+      messages: [{ role: 'user', content: 'hello' }],
+      role: 'build',
+    });
+
+    expect(measurement).toEqual({
+      kind: 'insufficient',
+      reason: 'output',
+      inputEstimate: 26,
+      estimationMargin: 4,
+      requiredOutputTokens: 2_048,
+      applicationContextTokens: 131_072,
+      outputCap: 512,
+      minimumRequiredTokens: 2_078,
+    });
+
+    expect(measurement.kind).toBe('insufficient');
+    if (measurement.kind === 'insufficient') {
+      const err = apiBudgetError.contextInsufficient('implementer', measurement);
+      expect(err.message).toContain('above the 512-token output cap');
+    }
   });
 
   it('refuses a reserve larger than a known output cap instead of shrinking it', () => {

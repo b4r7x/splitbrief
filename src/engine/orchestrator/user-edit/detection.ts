@@ -74,6 +74,7 @@ export async function checkUserEditConflicts(opts: {
   const conflict = classifyUserEditConflict({
     files: foreignFiles,
     currentTask: task,
+    currentTaskInFlight: task.status === 'in_progress',
     allTasks: state.tasks,
     currentTaskIndex: taskIndex,
   });
@@ -163,9 +164,12 @@ export async function detectValidationFailureUserEdit(opts: {
   const foreignFiles = failingUniverse.filter((file) => !attributed.has(file));
   if (foreignFiles.length === 0) return { state, diverted: false };
 
+  // This path runs only after the brief's own validation failed, so the brief is in flight by
+  // construction — whatever the status on the task copy threaded down from the loop says.
   const conflict = classifyUserEditConflict({
     files: foreignFiles,
     currentTask: task,
+    currentTaskInFlight: true,
     allTasks: state.tasks,
     currentTaskIndex: taskIndex,
   });

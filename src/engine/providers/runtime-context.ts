@@ -171,9 +171,10 @@ export type ApiBudgetMeasurement =
       inputEstimate: number;
       estimationMargin: number;
       outputReserve: number;
-      maxTokens: number;
+      /** Absent when the catalog reports no output ceiling for the model. */
+      maxTokens?: number | undefined;
       applicationContextTokens: number;
-      outputCap: number;
+      outputCap?: number | undefined;
     }>
   | Readonly<{
       kind: 'insufficient';
@@ -182,6 +183,6 @@ export type ApiBudgetMeasurement =
       estimationMargin: number;
       requiredOutputTokens: number;
       applicationContextTokens: number;
-      outputCap: number;
+      outputCap?: number | undefined;
       minimumRequiredTokens: number;
     }>;

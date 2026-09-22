@@ -12,7 +12,7 @@ import { error } from '../../utils/error.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { isAbortError } from '../../utils/abort.js';
-import { buildFinalReviewPrompt, truncateDiffForPrompt } from '../spec/prompts/review.js';
+import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
 import { formatValidationEvidenceForPrompt } from './evidence/format-validation.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
@@ -216,7 +216,7 @@ export async function runFinalReviewPhase(opts: {
       const basePrompt = buildFinalReviewPrompt({
         spec,
         taskBriefs,
-        diff: truncateDiffForPrompt(fullDiff),
+        diff: fullDiff,
         driftReport: driftPromptSection,
         validationEvidence: validationPromptSection,
       });

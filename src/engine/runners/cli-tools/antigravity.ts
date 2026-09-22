@@ -15,8 +15,6 @@ const ANTIGRAVITY_PROMPT_TRANSPORT = Object.freeze({
 } as const);
 const ANTIGRAVITY_VERSION_ARGS = Object.freeze(['--version'] as const);
 const ANTIGRAVITY_OUTPUT_ARGS = Object.freeze(['--output-format', 'stream-json'] as const);
-const ANTIGRAVITY_IMPLEMENTER_TIMEOUT = '20m';
-const ANTIGRAVITY_PLANNER_TIMEOUT = '10m';
 
 const ANTIGRAVITY_PROTECTED_FLAGS = new Set([
   '-p',
@@ -59,8 +57,6 @@ function plannerBaseArgs(input: AntigravityPlannerBuildInput): string[] {
     input.prompt,
     '--mode',
     'plan',
-    '--print-timeout',
-    ANTIGRAVITY_PLANNER_TIMEOUT,
     ...ANTIGRAVITY_OUTPUT_ARGS,
     ...generationArgs(input),
   ];
@@ -71,8 +67,6 @@ function implementerBaseArgs(input: AntigravityImplementerBuildInput): string[] 
     '-p',
     input.prompt,
     '--dangerously-skip-permissions',
-    '--print-timeout',
-    ANTIGRAVITY_IMPLEMENTER_TIMEOUT,
     ...ANTIGRAVITY_OUTPUT_ARGS,
     ...generationArgs(input),
   ];
@@ -181,23 +175,8 @@ function rawContract(role: 'planner' | 'implementer'): RawAntigravityCliContract
     auth: { kind: 'none', env: [] },
     rawInvocation:
       role === 'planner'
-        ? [
-            '-p',
-            CLI_PROMPT_SENTINEL,
-            '--mode',
-            'plan',
-            '--print-timeout',
-            ANTIGRAVITY_PLANNER_TIMEOUT,
-            ...ANTIGRAVITY_OUTPUT_ARGS,
-          ]
-        : [
-            '-p',
-            CLI_PROMPT_SENTINEL,
-            '--dangerously-skip-permissions',
-            '--print-timeout',
-            ANTIGRAVITY_IMPLEMENTER_TIMEOUT,
-            ...ANTIGRAVITY_OUTPUT_ARGS,
-          ],
+        ? ['-p', CLI_PROMPT_SENTINEL, '--mode', 'plan', ...ANTIGRAVITY_OUTPUT_ARGS]
+        : ['-p', CLI_PROMPT_SENTINEL, '--dangerously-skip-permissions', ...ANTIGRAVITY_OUTPUT_ARGS],
     promptTransport: 'argv',
     expectedRawTerminal: 'result',
     asOf: '2026-09-21',

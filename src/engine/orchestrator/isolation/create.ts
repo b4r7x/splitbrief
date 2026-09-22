@@ -294,6 +294,7 @@ export function createRunIsolation(opts: {
         try {
           promotionProven = !(await hasUnpromotedWork(dir));
           if (!promotionProven) {
+            await pruneSandboxNpmCache(dir);
             onRetained(dir);
             return;
           }

@@ -23,6 +23,7 @@ describe('buildUserEditConflictRecoveryIssue', () => {
     const conflict = classifyUserEditConflict({
       files: ['src/current.ts'],
       currentTask: task,
+      currentTaskInFlight: true,
       allTasks: [task],
       currentTaskIndex: 0,
     });
@@ -50,6 +51,7 @@ describe('buildUserEditConflictRecoveryIssue', () => {
     const conflict = classifyUserEditConflict({
       files: ['README.md'],
       currentTask: task,
+      currentTaskInFlight: false,
       allTasks: [task],
       currentTaskIndex: 0,
     });
@@ -73,6 +75,7 @@ describe('buildUserEditConflictRecoveryIssue', () => {
     const conflict = classifyUserEditConflict({
       files: ['src/current.ts'],
       currentTask: task,
+      currentTaskInFlight: true,
       allTasks: [task],
       currentTaskIndex: 0,
     });

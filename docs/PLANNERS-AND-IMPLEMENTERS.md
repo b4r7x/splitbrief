@@ -608,7 +608,7 @@ The role vector is pinned and effect-verified per backend. A role that is missin
 | `cursor` | `--print --output-format stream-json --mode plan --trust` | `--print --output-format stream-json --force --trust` |
 | `copilot` | `-p --plan --allow-all-tools --no-ask-user --output-format json` | `-p --allow-all --output-format json` |
 | `command-code` | `-p --output-format json --trust --skip-onboarding --permission-mode plan` | `-p --output-format json --trust --skip-onboarding --yolo` |
-| `antigravity` | `-p --mode plan --print-timeout 10m --output-format stream-json` | `-p --dangerously-skip-permissions --print-timeout 20m --output-format stream-json` |
+| `antigravity` | `-p --mode plan --output-format stream-json` | `-p --dangerously-skip-permissions --output-format stream-json` |
 
 **Output protocol.** Every admitted tool is spawned in a machine-readable output mode and parsed into the same protocol events, so tool calls, assistant text and token usage arrive while the call is still running rather than in one block at the end. A `tool-use` event carries `stage: 'started'` when the call begins and no stage when it completes (`src/engine/runners/cli-tools/contract.ts`); the idle watchdog measures the gaps between frames, so a streaming tool is never mistaken for a stalled one.
 

@@ -774,6 +774,7 @@ describe('initializeWorkflow — a halt about files the operator put back', () =
     sessionId: string,
     feature: string,
     editAfterBaseline?: string,
+    taskStatus: 'pending' | 'in_progress' = 'pending',
   ) {
     const baseline = serializeChangedFilesBaseline(await captureChangedFilesBaseline(projectDir));
     if (editAfterBaseline !== undefined) {
@@ -788,7 +789,7 @@ describe('initializeWorkflow — a halt about files the operator put back', () =
       savedState: {
         ...createInitialState(feature),
         phase: 'implementing',
-        tasks: [makeTask({ id: 'T001', file: 'src/edited.ts' })],
+        tasks: [makeTask({ id: 'T001', status: taskStatus, file: 'src/edited.ts' })],
         currentTaskIndex: 0,
         changedFilesBaseline: baseline,
         pendingRecovery: makeRecoveryIssue({
@@ -828,11 +829,11 @@ describe('initializeWorkflow — a halt about files the operator put back', () =
             return event.type === 'warning';
           })
           .map((event) => event.message),
-      ).toContain('The files the halt named are back at the baseline; continuing.');
+      ).toContain('The files the halt named no longer block this brief; continuing.');
     });
   });
 
-  it('keeps the halt when the file still differs', async () => {
+  it('keeps the halt when the file still differs and the brief is in flight', async () => {
     await withTempDir('splitbrief-init-live-halt', async (projectDir) => {
       createTestGitRepo(projectDir, { 'src/edited.ts': 'original' });
       const sessionId = 'session-init-live-halt';
@@ -842,11 +843,34 @@ describe('initializeWorkflow — a halt about files the operator put back', () =
         sessionId,
         'keep a halt the operator has not undone',
         'still edited',
+        'in_progress',
       );
 
       expect(init.ok).toBe(true);
       expect(tracked.current?.pendingRecovery).toMatchObject({ reason: 'user-edit-conflict' });
       expect(events.find((event) => event.type === 'recovery_resolved')).toBeUndefined();
+    });
+  });
+
+  it('resolves the halt when the file still differs but the brief it names has not started', async () => {
+    await withTempDir('splitbrief-init-unstarted-halt', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'src/edited.ts': 'original' });
+      const sessionId = 'session-init-unstarted-halt';
+
+      const { init, tracked, events } = await initWithFileHalt(
+        projectDir,
+        sessionId,
+        'continue past a halt on a brief that has not started',
+        'still edited',
+      );
+
+      expect(init.ok).toBe(true);
+      expect(tracked.current?.pendingRecovery).toBeUndefined();
+      expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
+      expect(events.find((event) => event.type === 'recovery_resolved')).toMatchObject({
+        action: 'continue',
+        outcome: 'continued',
+      });
     });
   });
 });

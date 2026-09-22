@@ -35,7 +35,7 @@ const SENTINELS: Record<string, string> = {
   'recipe:kilo-code': '--agent code --auto',
   'recipe:cursor': '--mode plan --trust',
   'recipe:command-code': '--yolo -m $M --effort $E',
-  'recipe:antigravity': '--dangerously-skip-permissions --print-timeout 20m',
+  'recipe:antigravity': '--dangerously-skip-permissions --output-format stream-json',
 };
 
 describe('skill-blocks', () => {

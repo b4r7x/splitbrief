@@ -94,6 +94,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
       conflict: classifyUserEditConflict({
         files: ['README.md'],
         currentTask: task,
+        currentTaskInFlight: false,
         allTasks: [task],
         currentTaskIndex: 0,
       }),

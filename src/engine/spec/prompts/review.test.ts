@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildFinalReviewPrompt, truncateDiffForPrompt } from './review.js';
+import { buildFinalReviewPrompt } from './review.js';
 
 const SPEC = '## Spec\nAdd a hello function.';
 const TASK_BRIEFS = '## Task T001\nAdd the hello export.';
@@ -37,6 +37,9 @@ describe('buildFinalReviewPrompt', () => {
       validationEvidence: evidence,
     });
     expect(result).toContain('## Recorded Validation Output');
+    expect(result).toContain(
+      'The orchestrator ran these validation commands and recorded their output.',
+    );
     expect(result).toContain('Tests  4 passed (4)');
     expect(result).toContain(
       'quote the relevant line verbatim from the Recorded Validation Output section',
@@ -51,19 +54,18 @@ describe('buildFinalReviewPrompt', () => {
       'state that validation output was not recorded instead of asserting results',
     );
   });
-});
 
-describe('truncateDiffForPrompt', () => {
-  it('returns a diff inside the budget unchanged', () => {
-    expect(truncateDiffForPrompt(DIFF)).toBe(DIFF);
+  it('includes a 200,000-character diff with its final line and without truncation marker', () => {
+    const finalLine = '+last line of 200k diff';
+    const diff = `${'x'.repeat(200_000 - finalLine.length - 1)}\n${finalLine}`;
+    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff });
+    expect(result).toContain(finalLine);
+    expect(result).not.toContain('diff truncated');
   });
 
-  it('annotates the omitted characters once the budget is exceeded', () => {
-    const diff = 'x'.repeat(100_010);
-
-    const truncated = truncateDiffForPrompt(diff);
-
-    expect(truncated).toContain('[... diff truncated, 10 characters omitted ...]');
-    expect(truncated.startsWith('x'.repeat(100_000))).toBe(true);
+  it('contains a 500-character diff verbatim', () => {
+    const diff = '+'.repeat(500);
+    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff });
+    expect(result).toContain(diff);
   });
 });

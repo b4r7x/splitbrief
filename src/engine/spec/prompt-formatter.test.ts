@@ -276,8 +276,10 @@ describe('direct writer', () => {
       writesFiles: 'direct',
     });
 
+    expect(retry).toContain('boom');
     expect(retry).not.toContain('Current Code');
     expect(retry).not.toContain('export function x(): void {}');
+    expect(retry).not.toContain("it('x', () => {});");
     expect(retry).toContain('rephrased');
   });
 
@@ -307,6 +309,18 @@ describe('direct writer', () => {
     expect(prompt).toContain('### Current Code\nexport function x(): void {}');
     expect(prompt).toContain('### Current Code — src/x.test.ts');
     expect(retry).toContain('### Current Code — src/x.test.ts');
+  });
+
+  it('the file-bundle contract with direct writer still gets every file body', () => {
+    const prompt = formatTaskPrompt({
+      task,
+      context,
+      writesFiles: 'direct',
+      outputContract: 'file-bundle-v1',
+    });
+
+    expect(prompt).toContain('### Current Code\nexport function x(): void {}');
+    expect(prompt).toContain('### Current Code — src/x.test.ts');
   });
 });
 

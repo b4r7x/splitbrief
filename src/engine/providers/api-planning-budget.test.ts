@@ -180,7 +180,8 @@ describe('API planning wire budgets', () => {
       await plan();
       expect(probes).toBe(1);
       expect(requests).toHaveLength(1);
-      expect(requests[0]?.max_tokens).toBeGreaterThanOrEqual(2_048);
+      // The local catalog reports no output ceiling, so the call carries no cap.
+      expect(requests[0]?.max_tokens).toBeUndefined();
       const prompt = requests[0]?.messages.at(-1)?.content ?? '';
       expect(prompt).toContain('REQUIRED_SENTINEL');
       expect(prompt).toContain('OPTIONAL_SENTINEL');

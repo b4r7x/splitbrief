@@ -26,6 +26,7 @@ describe('jsonlSink', () => {
 
   function readLog(): Array<Record<string, unknown>> {
     const path = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+    if (!existsSync(path)) return [];
     return readFileSync(path, 'utf8')
       .split('\n')
       .filter(Boolean)
@@ -127,5 +128,211 @@ describe('jsonlSink', () => {
       code: 'session_log_degraded',
     });
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(true);
+  });
+
+  it('does not write runner_call_text_delta to session.jsonl', () => {
+    const sink = createJsonlSink({ projectDir, sessionId });
+    const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+
+    sink({
+      type: 'runner_call_text_delta',
+      ts: 100,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 1,
+      channel: 'assistant',
+      text: 'delta text',
+    });
+    expect(existsSync(logPath)).toBe(false);
+
+    sink({ type: 'workflow_started', ts: 101, phase: 'idle', feature: 'x' });
+    expect(existsSync(logPath)).toBe(true);
+    expect(readLog()).toHaveLength(1);
+
+    sink({
+      type: 'runner_call_text_delta',
+      ts: 102,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 2,
+      channel: 'assistant',
+      text: 'more delta',
+    });
+    expect(readLog()).toHaveLength(1);
+  });
+
+  it('does not write runner_call_tool_use with stage delta but writes stage done', () => {
+    const sink = createJsonlSink({ projectDir, sessionId });
+    const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+
+    sink({
+      type: 'runner_call_tool_use',
+      ts: 100,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 1,
+      stage: 'delta',
+      toolUseId: 'tool-1',
+      name: 'Bash',
+      inputDelta: '{"cmd":',
+    });
+    expect(existsSync(logPath)).toBe(false);
+
+    sink({
+      type: 'runner_call_tool_use',
+      ts: 101,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 2,
+      stage: 'done',
+      toolUse: { id: 'tool-1', name: 'Bash', input: { cmd: 'ls' } },
+    });
+    const lines = readLog();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.['type']).toBe('runner_call_tool_use');
+  });
+
+  it('does not write planner_heartbeat to session.jsonl', () => {
+    const sink = createJsonlSink({ projectDir, sessionId });
+    const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+
+    sink({
+      type: 'planner_heartbeat',
+      ts: 100,
+      phase: 'planning',
+      elapsedMs: 5000,
+      accumulatedTokens: 120,
+    });
+    expect(existsSync(logPath)).toBe(false);
+  });
+
+  it('writes each retained event kind as exactly one line with matching type', () => {
+    const sink = createJsonlSink({ projectDir, sessionId });
+    const events: EngineEvent[] = [
+      {
+        type: 'runner_call_activity',
+        ts: 100,
+        phase: 'implementing',
+        callId: 'call-1',
+        role: 'implementer',
+        backendKind: 'cli',
+        sequence: 1,
+        activityId: 'act-1',
+        stage: 'completed',
+        kind: 'command',
+        label: 'running tests',
+        redacted: false,
+      },
+      {
+        type: 'runner_call_started',
+        ts: 101,
+        phase: 'implementing',
+        callId: 'call-1',
+        role: 'implementer',
+        backendKind: 'cli',
+        sequence: 0,
+      },
+      {
+        type: 'runner_call_usage',
+        ts: 102,
+        phase: 'implementing',
+        callId: 'call-1',
+        role: 'implementer',
+        backendKind: 'cli',
+        sequence: 2,
+        usage: { inputTokens: 10, outputTokens: 5 },
+        semantics: 'final',
+      },
+      {
+        type: 'runner_call_completed',
+        ts: 103,
+        phase: 'implementing',
+        callId: 'call-1',
+        role: 'implementer',
+        backendKind: 'cli',
+        sequence: 3,
+        status: 'completed',
+        error: null,
+        partial: false,
+        startedAt: 100,
+        endedAt: 103,
+        durationMs: 3,
+        usage: null,
+        nativeSessionId: null,
+      },
+      {
+        type: 'runner_call_error',
+        ts: 104,
+        phase: 'implementing',
+        callId: 'call-1',
+        role: 'implementer',
+        backendKind: 'cli',
+        sequence: 4,
+        status: 'failed',
+        error: { code: 'exit_1', message: 'failed' },
+        partial: false,
+        startedAt: 100,
+        endedAt: 104,
+        durationMs: 4,
+        usage: null,
+        nativeSessionId: null,
+      },
+      {
+        type: 'planner_text',
+        ts: 105,
+        phase: 'planning',
+        text: 'plan text',
+      },
+    ];
+
+    for (const event of events) {
+      sink(event);
+    }
+
+    const lines = readLog();
+    expect(lines).toHaveLength(events.length);
+    expect(lines.map((l) => l['type'])).toEqual([
+      'runner_call_activity',
+      'runner_call_started',
+      'runner_call_usage',
+      'runner_call_completed',
+      'runner_call_error',
+      'planner_text',
+    ]);
+  });
+
+  it('bounds oversized planner_text strings before persisting', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const sink = createJsonlSink({ projectDir, sessionId });
+      sink({
+        type: 'planner_text',
+        ts: 100,
+        phase: 'planning',
+        text: 'x'.repeat(SESSION_LOG_MAX_ENTRY_BYTES + 1),
+      });
+
+      const path = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+      expect(existsSync(path)).toBe(true);
+      const lines = readLog();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]?.['type']).toBe('planner_text');
+      expect((lines[0]?.['data'] as Record<string, unknown>)?.['text']).toContain(
+        CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER,
+      );
+      expect(stderr).not.toHaveBeenCalledWith(
+        expect.stringContaining('failed to persist oversized log entry'),
+      );
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });

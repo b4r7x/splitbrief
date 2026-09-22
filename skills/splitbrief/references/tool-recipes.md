@@ -104,10 +104,10 @@ Timeouts:
 
 - binary `agy` · version `agy --version` (`agy --help` prints none) · auth `agy models` (fails when signed out) · models `agy models` (`<id>\t<display name>`, one row per effort variant) · effort `low|medium|high`
 <!-- generated: recipe:antigravity -->
-- implementer: `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --print-timeout 20m --output-format stream-json --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --print-timeout 20m --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'agy -p "$(cat $P)" --mode plan --print-timeout 10m --output-format stream-json --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'agy -p "$(cat $P)" --mode plan --print-timeout 10m --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --output-format stream-json --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'agy -p "$(cat $P)" --mode plan --output-format stream-json --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'agy -p "$(cat $P)" --mode plan --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - terminal record: none — exit 0.
 

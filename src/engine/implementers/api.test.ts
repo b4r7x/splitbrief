@@ -372,11 +372,11 @@ describe('api implementer — OpenAI-compatible path', () => {
     if (!result.success) expect(result.error).toMatch(/API implementer requires an explicit model/);
   });
 
-  async function capturedMaxTokens(contextLength: number): Promise<number> {
+  it('omits max_tokens when the catalog reports no output ceiling', async () => {
     const code = '```ts\nexport const x = 1;\n```';
     mockCompletion(() => makeOpenAiSseResponse([{ content: code }]));
 
-    const cfg = makeConfig({ implementer: { contextLength } });
+    const cfg = makeConfig({ implementer: { contextLength: 1_000_000 } });
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T007', file: 'src/clamp.ts', action: 'create' });
 
@@ -389,20 +389,12 @@ describe('api implementer — OpenAI-compatible path', () => {
     });
 
     const init = fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined;
-    const body = JSON.parse(String(init?.body)) as { max_tokens?: number };
-    expect(typeof body.max_tokens).toBe('number');
-    return body.max_tokens as number;
-  }
-
-  it('clamps max_tokens to the conservative output cap for a window-sized contextLength', async () => {
-    // A 1M context window must not become a 1M max_tokens — that 400s. The output
-    // budget is clamped to the conservative per-model cap regardless of window size.
-    const maxTokens = await capturedMaxTokens(1_000_000);
-    expect(maxTokens).toBeLessThanOrEqual(8192);
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    expect(body).not.toHaveProperty('max_tokens');
   });
 
   it('budgets the prompt against the shared default when no contextLength is declared', async () => {
-    const code = '```ts\nexport const x = 1;\n```';
+    const code = bundle('src/shared-default.ts', 'create', 'export const x = 1;\n');
     fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
 
     const cfg = makeConfig({
@@ -411,7 +403,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T018', file: 'src/shared-default.ts', action: 'create' });
 
-    await implementer.implement({
+    const result = await implementer.implement({
       task,
       projectDir,
       config: cfg,
@@ -419,10 +411,8 @@ describe('api implementer — OpenAI-compatible path', () => {
       onOutput: vi.fn(),
     });
 
-    const init = fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined;
-    const body = JSON.parse(String(init?.body)) as { max_tokens?: number };
-    expect(body.max_tokens).toBeGreaterThanOrEqual(2048);
-    expect(body.max_tokens).toBeLessThan(8192);
+    expect(result.success).toBe(true);
+    expect(fetchMock).toHaveBeenCalled();
   });
 
   it('sends the configured inline apiKey as the Authorization bearer token', async () => {

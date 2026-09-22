@@ -18,13 +18,17 @@ function fileMatchesTask(file: string, task: Task): boolean {
 function classifyFile(opts: {
   file: string;
   currentTask: Task;
+  currentTaskInFlight: boolean;
   allTasks: Task[];
   currentTaskIndex: number;
 }): UserEditConflictFile {
-  const { file, currentTask, allTasks, currentTaskIndex } = opts;
+  const { file, currentTask, currentTaskInFlight, allTasks, currentTaskIndex } = opts;
 
   if (fileMatchesTask(file, currentTask)) {
-    return { file, kind: 'current-task-conflict', affectedTaskIds: [currentTask.id] };
+    // A brief in flight has output to lose; a brief that has not started takes the edit as its
+    // starting point, the same stale compiled input as for any later brief.
+    const kind = currentTaskInFlight ? 'current-task-conflict' : 'future-task-stale-input';
+    return { file, kind, affectedTaskIds: [currentTask.id] };
   }
 
   const dependencyTaskIds = new Set(currentTask.dependsOn);
@@ -72,9 +76,14 @@ function actionsFor(kind: UserEditConflictKind): UserEditConflictAction[] {
   return [...DESTRUCTIVE_CONFLICT_ACTIONS];
 }
 
+/**
+ * `currentTaskInFlight` is the caller's own answer, never read off `currentTask.status`: the task
+ * object a caller holds mid-brief is a copy taken before `START_TASK` and still says `pending`.
+ */
 export function classifyUserEditConflict(opts: {
   files: string[];
   currentTask: Task;
+  currentTaskInFlight: boolean;
   allTasks: Task[];
   currentTaskIndex: number;
 }): UserEditConflict {

@@ -220,7 +220,7 @@ describe('createApiPlanner', () => {
   });
 
   it.each([['custom-endpoint'], ['ollama']] as const)(
-    'planner.contextLength drives the derived max_tokens for the %s api kind',
+    'omits max_tokens when the catalog reports no output ceiling for the %s api kind',
     async (provider) => {
       const cfg = makeApiPlannerConfig(provider);
       cfg.planner.contextLength = 5000;
@@ -233,11 +233,7 @@ describe('createApiPlanner', () => {
       });
 
       expect(receivedBodies).toHaveLength(1);
-      const body = receivedBodies[0] as unknown as { max_tokens?: number };
-      // contextLength 5000 minus the tiny prompt stays under the 8192 output cap,
-      // so the budget tracks the configured window rather than a hard-coded default.
-      expect(body.max_tokens).toBeLessThan(5000);
-      expect(body.max_tokens!).toBeGreaterThan(4096);
+      expect(receivedBodies[0]).not.toHaveProperty('max_tokens');
     },
   );
 
