@@ -1,7 +1,7 @@
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { createStreamParser } from '../../streaming/parse-stream-json.js';
-import { reconcileFinalText } from '../../streaming/final-text.js';
+import { appendMessage, reconcileFinalText } from '../../streaming/final-text.js';
 import { createQuestionAccumulator } from '../../parsers/question.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
 import {
@@ -12,11 +12,7 @@ import {
 } from '../../calls/status.js';
 import type { RunnerCallCredentialRedactor } from '../../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
-import {
-  createRunnerCallDeltaLimiter,
-  runnerCallLimitWarning,
-  type RunnerCallDeltaLimitResult,
-} from '../../calls/output-limit.js';
+import { createRunnerCallDeltaLimiter } from '../../calls/output-limit.js';
 import { processError } from '../../../lib/process/errors.js';
 import type { SpawnIdleOptions } from '../../../lib/process/spawn/lifecycle.js';
 import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../../core/schemas/runner-fields.js';
@@ -79,19 +75,27 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     contentBlockTools: new Map(),
   };
   const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
-  /** Assistant text streamed since the last completed content block. */
+  /** Main-loop text streamed since the last completed content block. */
   let blockText = '';
-  const textLimiter = createRunnerCallDeltaLimiter({
+  /** Main-loop text of the open message; the terminal `result` restates it. */
+  let messageText = '';
+  /**
+   * Main-loop text of the messages the open one continues: the message a
+   * `max_tokens` stop cut, and every message after it. Empty outside that chain.
+   */
+  let carriedText = '';
+  /** The open message resumes a `max_tokens` cut mid-thought and extends `carriedText` in place. */
+  let resumesCut = false;
+  /** The open message belongs to a chain a `max_tokens` stop opened. */
+  let inChain = false;
+  /** The last closed main-loop message that had text, behind its chain. */
+  let lastClosedText = '';
+  let messageStopReason: string | undefined;
+  /** Bounds only what streams live; the recorder bounds the call's text. */
+  const liveLimiter = createRunnerCallDeltaLimiter({
     code: 'runner_output_text_limit',
     label: 'runner output text',
   });
-  let limitWarned = false;
-
-  function noteLimitWarning(result: RunnerCallDeltaLimitResult): void {
-    if (result.limit === null || limitWarned) return;
-    limitWarned = true;
-    state.recorder.warning({ warning: runnerCallLimitWarning(result.limit) });
-  }
 
   function emitAssistantOutput(text: string): void {
     const safeText = redactCredential(text);
@@ -105,30 +109,31 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     }
   }
 
-  function acceptTextDelta(text: string): RunnerCallDeltaLimitResult {
-    const accepted = textLimiter.accept(text);
-    return { ...accepted, text: redactCredential(accepted.text) };
-  }
-
   function applyStreamText(
     channel: NonNullable<ReturnType<typeof parseStreamLine>['channel']>,
     text: string,
     partial = false,
   ): void {
-    const accepted = acceptTextDelta(text);
-    if (accepted.text.length > 0) {
-      state.recorder.text({
-        channel,
-        text: accepted.text,
-        ...(partial && { semantics: 'delta' as const }),
-      });
-      if (channel === 'assistant' || channel === 'stdout') {
-        state.text += accepted.text;
-        blockText += accepted.text;
-        emitAssistantOutput(accepted.text);
-      }
+    const safeText = redactCredential(text);
+    const isReply = channel === 'assistant' || channel === 'stdout';
+    if (isReply) {
+      // Kept whole, past the output budget, so a restatement is compared with
+      // what really streamed and the call's text keeps every carried message.
+      blockText += safeText;
+      messageText += safeText;
     }
-    noteLimitWarning(accepted);
+    // The recorder cuts the text past its budget and reports the cut only when
+    // the text the call ends with was cut, not narration a final text replaced.
+    state.recorder.text({
+      channel,
+      text: safeText,
+      ...(partial && { semantics: 'delta' as const }),
+    });
+    const live = liveLimiter.accept(safeText).text;
+    if (isReply && live.length > 0) {
+      state.text += live;
+      emitAssistantOutput(live);
+    }
   }
 
   /**
@@ -149,34 +154,53 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     blockText = '';
   }
 
+  /** The open chain ending on `message`, the open message's text or its restatement. */
+  function chainText(message: string): string {
+    return resumesCut ? carriedText + message : appendMessage(carriedText, message);
+  }
+
+  /**
+   * The call's text is the final message behind its chain; narration that ended
+   * on a tool call outside a chain streamed live and stays out of it.
+   */
+  function settleFinalText(finalText: string): void {
+    if (finalText !== state.text) {
+      state.recorder.text({ channel: 'result', text: finalText, semantics: 'final' });
+    }
+  }
+
+  /** `result.result` restates the final message only. */
   function applyResultText(text: string): void {
     const safeText = redactCredential(text);
     state.resultText = safeText;
     // Only a terminal `result` record carrying text can complete the call.
     state.sawResultText = true;
-    const reconciliation = reconcileFinalText(state.text, safeText);
-    if (reconciliation.kind === 'none') return;
-
-    const accepted = acceptTextDelta(reconciliation.text);
-    if (reconciliation.kind === 'full') {
-      if (accepted.text.length > 0) {
-        state.recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
-        emitAssistantOutput(accepted.text);
-      }
-      state.text = accepted.text;
-    } else if (reconciliation.kind === 'suffix') {
-      if (accepted.text.length > 0) {
-        state.recorder.text({ channel: 'assistant', text: accepted.text });
-        emitAssistantOutput(accepted.text);
-      }
-      state.text += accepted.text;
-    } else if (reconciliation.kind === 'replace') {
-      if (accepted.text.length > 0) {
-        state.recorder.text({ channel: 'result', text: accepted.text, semantics: 'final' });
-      }
-      state.text = accepted.text;
+    const reconciliation = reconcileFinalText(messageText, safeText);
+    if (reconciliation.kind === 'full' || reconciliation.kind === 'suffix') {
+      applyStreamText('assistant', reconciliation.text);
     }
-    noteLimitWarning(accepted);
+    settleFinalText(chainText(safeText));
+  }
+
+  /**
+   * claude-code answers a `max_tokens` stop with "Output token limit hit. Resume
+   * directly" and a new message that has every tool, so a cut document can go on
+   * after a tool call: the chain stays open through tool calls and closes on any
+   * other stop.
+   */
+  function applyMessageBoundary(parsed: ReturnType<typeof parseStreamLine>): void {
+    if (parsed.isMessageStart) {
+      const closed = chainText(messageText);
+      if (closed.length > 0) lastClosedText = closed;
+      const cut = messageStopReason === 'max_tokens';
+      const continues = cut || (inChain && messageStopReason === 'tool_use');
+      carriedText = continues ? closed : '';
+      resumesCut = cut;
+      inChain = continues;
+      messageText = '';
+      messageStopReason = undefined;
+    }
+    if (parsed.stopReason !== undefined) messageStopReason = parsed.stopReason;
   }
 
   function handleLine(line: string): void {
@@ -240,10 +264,15 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
       }
     }
 
+    if (!parsed.isSubagent) applyMessageBoundary(parsed);
+
     if (parsed.text && !parsed.isResult) {
-      // `final` text restates a block the partial-message deltas already
-      // streamed, so it replaces the accumulated text instead of extending it.
-      if (parsed.textSemantics === 'final') {
+      if (parsed.isSubagent) {
+        // A subagent's whole record shows live; it is not the planner's reply.
+        if (parsed.textSemantics === 'final') callbacks.onOutput(redactCredential(parsed.text));
+      } else if (parsed.textSemantics === 'final') {
+        // `final` text restates a block the partial-message deltas already
+        // streamed, so it replaces the accumulated text instead of extending it.
         applyAssistantMessage(parsed.text);
       } else {
         const channel = parsed.channel ?? 'assistant';
@@ -263,6 +292,12 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
       state.sawResult = true;
       if (parsed.text) {
         applyResultText(parsed.text);
+      } else if (!parsed.isError) {
+        // A result without text still ends the open message: it and its chain
+        // are the call's text, or the last message that had text when it had
+        // none, never the whole stream.
+        const open = chainText(messageText);
+        settleFinalText(open.length > 0 ? open : lastClosedText);
       }
     }
 

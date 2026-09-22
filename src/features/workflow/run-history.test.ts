@@ -10,6 +10,8 @@ import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { toEngineEventEntry } from '../../core/sessions/log-writer.js';
+import { eventRows } from '#testing/helpers/event-rows.js';
+import { rowText } from './conversation-rows/row-format/rows.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
 import { eventsStore } from '../../stores/workflow/events.js';
@@ -170,6 +172,73 @@ describe('hydrateRun', () => {
     expect(tasksStore.get().taskMap.get('T001')?.status).toBe('done');
     expect(tasksStore.get().taskMap.get('T002')).toBeUndefined();
     expect(tokensStore.get().tokenUsage).toBeNull();
+  });
+});
+
+describe('hydrateRun replaying a seat swap', () => {
+  function writeRawLog(lines: readonly string[]): void {
+    const dir = sessionDir(projectDir, SESSION_ID);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, SESSION_LOG_FILE), lines.map((line) => `${line}\n`).join(''));
+  }
+
+  async function replayedTranscript(): Promise<string> {
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: savedState() },
+      }),
+    );
+    return eventsStore
+      .get()
+      .events.flatMap((event, globalIndex) =>
+        eventRows({
+          event,
+          globalIndex,
+          expanded: false,
+          ctx: {
+            width: 80,
+            viewportRows: 20,
+            streaming: { taskId: null, lines: [], active: false },
+          },
+        }),
+      )
+      .map(rowText)
+      .join('\n');
+  }
+
+  it('names no seat for a swap a log recorded before the seat was on the event', async () => {
+    // Written by a build whose recovery events carried no seat.
+    writeRawLog([
+      '{"kind":"event","ts":"2026-09-01T10:00:00.000Z","type":"recovery_action_selected","phase":"planning","data":{"issueId":"rec-1","reason":"runner-usage-limit","action":"switch-seat"}}',
+      '{"kind":"event","ts":"2026-09-01T10:00:01.000Z","type":"recovery_resolved","phase":"planning","data":{"issueId":"rec-1","reason":"runner-usage-limit","action":"switch-seat","outcome":"continued"}}',
+    ]);
+
+    const text = await replayedTranscript();
+
+    expect(text).toContain('Selected Change tool for Runner usage limit');
+    expect(text).toContain('Continued via Change tool');
+    expect(text).not.toContain('Change BUILD tool');
+  });
+
+  it('names the seat a swap recorded', async () => {
+    const base = {
+      ts: 1_000,
+      phase: 'planning',
+      issueId: 'rec-1',
+      reason: 'runner-usage-limit',
+      action: 'switch-seat',
+      seat: 'plan',
+    } as const;
+    writeLog([
+      { type: 'recovery_action_selected', ...base },
+      { type: 'recovery_resolved', ...base, outcome: 'continued' },
+    ]);
+
+    const text = await replayedTranscript();
+
+    expect(text).toContain('Selected Change PLAN tool for Runner usage limit');
+    expect(text).toContain('Continued via Change PLAN tool');
   });
 });
 

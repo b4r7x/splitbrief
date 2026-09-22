@@ -19,6 +19,7 @@ import { TaskIdSchema } from '../../core/schemas/task.js';
 import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
 import { PlannerCallSchema, StepCutSchema } from '../../core/schemas/run-step.js';
 import { TaskReviewRecoverySchema } from '../../core/schemas/recovery/schemas.js';
+import { CREW_SEAT_IDS } from '../../core/crew/identity.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
 import { RewindEventVariantSchemas } from '../../core/state/rewind-event.js';
 import { RunnerCallTextChannelSchema } from '../../core/runner-call-contract.js';
@@ -44,6 +45,8 @@ import {
 
 const stringArray = z.array(z.string());
 const taskIdArray = z.array(TaskIdSchema);
+/** The seat a recovery event is about; absent on logs written before the field existed. */
+const recoverySeat = z.enum(CREW_SEAT_IDS).optional();
 
 function phaseEvent<T extends string>(type: T) {
   return z.looseObject({
@@ -271,17 +274,20 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     issueId: z.string(),
     reason: RecoveryReasonSchema,
     action: RecoveryActionSchema,
+    seat: recoverySeat,
   }),
   phaseEvent('recovery_action_failed').extend({
     issueId: z.string(),
     reason: RecoveryReasonSchema,
     action: RecoveryActionSchema,
+    seat: recoverySeat,
     message: z.string(),
   }),
   phaseEvent('recovery_resolved').extend({
     issueId: z.string(),
     reason: RecoveryReasonSchema,
     action: RecoveryActionSchema,
+    seat: recoverySeat,
     outcome: z.enum(['continued', 'retry-current-task', 'skipped-current-task', 'aborted']),
     implementerProfile: z.string().optional(),
   }),

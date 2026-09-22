@@ -161,6 +161,8 @@ type StartPreparationInput = Readonly<{
   transport: 'interactive' | 'headless';
   defaultApprove?: 'none' | undefined;
   emitReadiness: (report: ReadinessReport) => void;
+  /** Where an interactive start asks for runner trust; without one it asks on the terminal. */
+  onTieredApproval?: CustomRunnerAdmissionPolicy['onTieredApproval'];
   prepare?: typeof prepareExecution | undefined;
   signal?: AbortSignal | undefined;
 }>;
@@ -189,6 +191,7 @@ export async function prepareStartOutcome(
       purpose: 'new-workflow',
       interaction,
       opts: input.opts,
+      ...(input.onTieredApproval !== undefined && { onTieredApproval: input.onTieredApproval }),
     }),
     signal: input.signal ?? new AbortController().signal,
     ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),

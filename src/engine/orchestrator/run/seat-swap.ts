@@ -35,7 +35,7 @@ export type ApplyOfferedSeatSwapInput = Readonly<{
   signal?: AbortSignal | undefined;
   /** Called once the swap is admitted, with the preparation the seats are now built from. */
   onSeatSwapped?: ((prepared: PreparedExecution) => void) | undefined;
-  /** Test-only: inject the preparation call (the production path re-prepares for real). */
+  /** The preparation call; the run loop passes its own, so a swap prepares the way every re-entry does. */
   prepare?: typeof prepareExecution | undefined;
 }>;
 
@@ -54,9 +54,11 @@ export type ApplyOfferedSeatSwapInput = Readonly<{
  * cancelled is that cancellation and not a refusal, so it is not warned about
  * here; a failed one names its own error.
  *
- * An admitted swap hands its new preparation to `onSeatSwapped`: a caller that runs
- * this workflow again must re-run on that one, not on the seat that hit the limit.
- * The seat record itself is reconciled by `init` once the swapped config is in place.
+ * The TUI run loop applies the swap before it re-enters `runWorkflow`, and an admitted
+ * swap is that re-entry's only preparation: the seat that halted is never admitted again,
+ * so a tool that can no longer run cannot block the move away from it. The new preparation
+ * goes to `onSeatSwapped`, and every later pass runs on it, not on the seat that hit the
+ * limit. The seat record itself is reconciled by `init` once the swapped config is in place.
  */
 export async function applyOfferedSeatSwap(
   input: ApplyOfferedSeatSwapInput,

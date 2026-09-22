@@ -9,6 +9,7 @@ import {
   killProcess,
   abortProcess,
   processTreeReapingLimitation,
+  SIGKILL_DELAY_MS,
 } from '../registry.js';
 
 export const DEFAULT_PROCESS_OUTPUT_MAX_BYTES = 1024 * 1024;
@@ -102,6 +103,14 @@ export function isFatalSignal(value: unknown): value is SpawnPipeFatalSignal {
   );
 }
 
+function acceptsChunk(callback: () => SpawnPipeCallbackResult): boolean {
+  try {
+    return callback() === undefined;
+  } catch {
+    return false;
+  }
+}
+
 export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     // The POSIX detached process-group contract is what lets every fatal,
@@ -144,7 +153,8 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
           : 0;
     let outputBytesSeen = 0;
     let proc: ChildProcess;
-    let phase: 'active' | 'terminating' | 'settled' = 'active';
+    let phase: 'active' | 'draining' | 'terminating' | 'settled' = 'active';
+    const closed = Promise.withResolvers<void>();
     let stdinWriteComplete = opts.stdin === undefined;
     let stdinEndComplete = false;
     let removeAbortListener: (() => void) | undefined;
@@ -178,16 +188,33 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
         stderrMetadata,
       };
     };
+    const closedWithin = (graceMs: number) =>
+      new Promise<void>((resolveGrace) => {
+        const grace = setTimeout(resolveGrace, graceMs);
+        void closed.promise.then(() => {
+          clearTimeout(grace);
+          resolveGrace();
+        });
+      });
     const terminate = (
-      reason: { kind: 'fatal'; signal: SpawnPipeFatalSignal } | { kind: 'error'; error: unknown },
+      reason:
+        | { kind: 'fatal'; signal: SpawnPipeFatalSignal }
+        | { kind: 'error'; error: unknown }
+        | { kind: 'stdin-incomplete'; error: unknown },
     ) => {
       if (phase !== 'active') return;
-      phase = 'terminating';
       cleanup();
-      proc.stdout?.pause();
-      proc.stderr?.pause();
+      // A child that quits before it reads its prompt breaks the pipe under it
+      // while its last words (a usage limit, a dead login) are still in flight,
+      // so its output keeps reaching the callbacks until it closes.
+      const draining = reason.kind === 'stdin-incomplete';
+      phase = draining ? 'draining' : 'terminating';
+      if (!draining) {
+        proc.stdout?.pause();
+        proc.stderr?.pause();
+      }
       const settleTermination = (err: unknown, unregister: boolean) => {
-        if (phase !== 'terminating') return;
+        if (phase === 'settled') return;
         phase = 'settled';
         if (unregister) unregisterProcess(proc);
         reject(err);
@@ -195,14 +222,25 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       // A reaping failure is the one outcome that must replace the first cause:
       // the tree could not be verified dead, and the caller has to know that
       // rather than trusting a terminal classification.
-      void killProcess(proc, { group: opts.detached ?? false }).then(
-        () =>
-          settleTermination(
-            reason.kind === 'fatal' ? fatalOutcome(reason.signal) : reason.error,
-            true,
-          ),
-        (err) => settleTermination(err, false),
-      );
+      void killProcess(proc, { group: opts.detached ?? false })
+        .then(() => (draining ? closedWithin(SIGKILL_DELAY_MS) : undefined))
+        .then(
+          () =>
+            settleTermination(
+              reason.kind === 'fatal' ? fatalOutcome(reason.signal) : reason.error,
+              true,
+            ),
+          (err) => settleTermination(err, false),
+        );
+    };
+    // Drained output only feeds the caller's diagnosis: the stdin failure is
+    // already the outcome, so a failing callback or a spent output budget ends
+    // delivery while the pipes still run to their close.
+    const drainChunk = (callback: () => SpawnPipeCallbackResult) => {
+      const accepted = acceptsChunk(callback);
+      if (!accepted || (outputBudgetBytes !== undefined && outputBytesSeen >= outputBudgetBytes)) {
+        phase = 'terminating';
+      }
     };
     const terminateFatal = (signal: SpawnPipeFatalSignal) => {
       terminate({ kind: 'fatal', signal });
@@ -290,6 +328,10 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     stdout.on('data', (chunk: string) => {
       partialStdout.append(chunk);
       outputBytesSeen += Buffer.byteLength(chunk, 'utf8');
+      if (phase === 'draining') {
+        drainChunk(() => opts.onStdout(chunk));
+        return;
+      }
       if (!noteIdleOutput()) return;
       // The recording callback runs before the byte-budget kill so the
       // recorder's cumulative accounting observes the chunk and its own
@@ -302,6 +344,10 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     stderr.on('data', (chunk: string) => {
       partialStderr.append(chunk);
       outputBytesSeen += Buffer.byteLength(chunk, 'utf8');
+      if (phase === 'draining') {
+        drainChunk(() => opts.onStderr(chunk));
+        return;
+      }
       if (!noteIdleOutput()) return;
       if (!invokeGuarded(() => opts.onStderr(chunk))) return;
       if (outputBudgetBytes !== undefined && outputBytesSeen >= outputBudgetBytes) {
@@ -320,13 +366,14 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     });
 
     proc.on('close', (code, signal) => {
+      closed.resolve();
       clearIdleTimers();
       if (phase !== 'active') {
         unregisterProcess(proc);
         return;
       }
       if (opts.stdin !== undefined && (!stdinWriteComplete || !stdinEndComplete)) {
-        terminate({ kind: 'error', error: spawnPipeError.stdinIncomplete() });
+        terminate({ kind: 'stdin-incomplete', error: spawnPipeError.stdinIncomplete() });
         return;
       }
       unregisterProcess(proc);
@@ -347,10 +394,11 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
 
     stdin.on('error', (err: NodeJS.ErrnoException) => {
       if (opts.stdin === undefined && err.code === 'EPIPE') return;
-      terminate({
-        kind: 'error',
-        error: opts.stdin === undefined ? err : spawnPipeError.stdinIncomplete(err),
-      });
+      terminate(
+        opts.stdin === undefined
+          ? { kind: 'error', error: err }
+          : { kind: 'stdin-incomplete', error: spawnPipeError.stdinIncomplete(err) },
+      );
     });
 
     if (opts.signal !== undefined) {
@@ -392,7 +440,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
 
     stdin.write(opts.stdin, (err) => {
       if (err) {
-        terminate({ kind: 'error', error: spawnPipeError.stdinIncomplete(err) });
+        terminate({ kind: 'stdin-incomplete', error: spawnPipeError.stdinIncomplete(err) });
         return;
       }
       stdinWriteComplete = true;

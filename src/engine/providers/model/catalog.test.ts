@@ -629,9 +629,9 @@ describe('runner-owned catalog resolution', () => {
         anthropic: {
           id: 'anthropic',
           models: {
-            'claude-opus-5': {
-              id: 'claude-opus-5',
-              name: 'Claude Opus 5',
+            'claude-opus-5-5': {
+              id: 'claude-opus-5-5',
+              name: 'Claude Opus 5.5',
               limit: { context: 1_000_000 },
             },
             'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
@@ -656,11 +656,11 @@ describe('runner-owned catalog resolution', () => {
       ].sort(),
     );
     expect(rows.every((row) => row.membership === 'bundled-suggestion')).toBe(true);
-    // Four aliases resolve to this one models.dev row, so the alias's own label has to survive
-    // the merge or all four paint `Claude Opus 5`. The number is still models.dev's.
+    // Three aliases resolve to this one models.dev row, so the alias's own label has to survive
+    // the merge or all three paint `Claude Opus 5.5`. The number is still models.dev's.
     expect(rows.find((row) => row.selectionId === 'opus')).toMatchObject({
       source: 'bundled-fallback',
-      displayName: 'Opus 5',
+      displayName: 'Opus 5.5',
       contextLength: 1_000_000,
     });
   });
@@ -761,21 +761,25 @@ describe('runner-owned catalog resolution', () => {
   it('keeps an account option that several aliases could answer to as its own row', () => {
     const cache = makeModelCacheAccessor({
       claudeCodeOptions: [
-        { id: 'claude-opus-5', displayName: 'Claude Opus 5', description: 'the account entry' },
+        {
+          id: 'claude-opus-5-5',
+          displayName: 'Claude Opus 5.5',
+          description: 'the account entry',
+        },
       ],
     });
 
     const rows = resolveModelCatalog('claude-code', { cache });
 
-    // `opus`, `opusplan` and `best` all resolve to this id, so no single alias row is the one
-    // the entry names. Folding it would delete a selectable row and gloss whichever alias
-    // happened to be declared first.
+    // `opus` and `opusplan` both resolve to this id, so no single alias row is the one the
+    // entry names. Folding it would delete a selectable row and gloss whichever alias happened
+    // to be declared first.
     expect(rows).toHaveLength(10);
-    expect(rows.find((row) => row.selectionId === 'claude-opus-5')).toMatchObject({
+    expect(rows.find((row) => row.selectionId === 'claude-opus-5-5')).toMatchObject({
       source: 'account-options',
       detail: 'the account entry',
     });
-    for (const alias of ['opus', 'opusplan', 'best']) {
+    for (const alias of ['opus', 'opusplan']) {
       expect(rows.find((row) => row.selectionId === alias)?.detail, alias).not.toBe(
         'the account entry',
       );
@@ -876,7 +880,7 @@ describe('runner-owned catalog resolution', () => {
       catalogModelId: 'claude-fable-5-1',
     });
     expect(rows.find((row) => row.selectionId === 'opusplan')).toMatchObject({
-      catalogModelId: 'claude-opus-5',
+      catalogModelId: 'claude-opus-5-5',
     });
     // Copilot's bundled rows are their own catalog ids, so they restate nothing.
     expect(resolveModelCatalog('copilot').every((row) => row.catalogModelId === undefined)).toBe(

@@ -860,7 +860,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `paused_external_changes`, `turn_interrupted` — the pause event. It carries `source` (`user` | `watchdog`) and `at`, where the stop landed: `mid-step` inside a call, `boundary` between two briefs. One event covers both parks; the position is the only difference.
 
 **Recovery:**
-`recovery_prompted`, `recovery_action_selected`, `recovery_action_failed`, `recovery_resolved`
+`recovery_prompted`, `recovery_action_selected`, `recovery_action_failed`, `recovery_resolved`. The last three carry an optional `seat` (`plan` | `build` | `review`), the seat the halt stopped, so a transcript row names it; a log written before the field existed replays without it and its row names no seat.
 
 **Planner stream:**
 `planner_status`, `planner_text`, `planner_heartbeat`
@@ -936,8 +936,8 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
         ├── drift-chains.json       Chained-drift detector state
         ├── brief-quality.json      Latest brief-quality report
         ├── brief-readiness.json    Latest brief-readiness report (when the gate ran)
-        ├── summary.json            Final aggregates (written once at end-of-run, carrying the
-        │                            derived run status, phase and mode)
+        ├── summary.json            Final aggregates (written at the end of each pass, carrying the
+        │                            derived run status, phase and mode; a resume drops the old stop)
         ├── seats.json               The crew the run last ran with
         ├── run-ledger.json          Run snapshot + accept/reject decision
         └── snapshots/

@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -65,7 +67,10 @@ describe('Router overlays', () => {
 
 /** The run the usage overlay opens over: read back from disk, so nothing is running behind it. */
 const REPLAYED_RUN = makeRunRecord({
-  ref: { projectDir: '/tmp/project', sessionId: '2026-09-14-usage' },
+  ref: {
+    projectDir: join(process.env.XDG_STATE_HOME ?? tmpdir(), 'router-usage'),
+    sessionId: '2026-09-14-usage',
+  },
   feature: 'Route the usage details overlay',
   status: {
     kind: 'open',

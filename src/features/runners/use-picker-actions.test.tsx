@@ -335,9 +335,11 @@ describe('usePickerActions', () => {
     ui.unmount();
   });
 
-  it('closes the browsed catalog when the tool cursor moves', async () => {
+  it('closes the browsed catalog and drops the drafts when the tool cursor moves', async () => {
     seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
     pickerViewStore.setBrowseCatalog(true);
+    pickerViewStore.setEffortDraft('max');
+    pickerViewStore.setAuthDraft('api-key');
 
     const ui = renderFeature(
       <LeftChangeOnKeyProbe role="planner" selection={realPickerOption('planner', 'codex')} />,
@@ -346,7 +348,37 @@ describe('usePickerActions', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(pickerViewStore.get().browseCatalog).toBe(false);
+      expect(pickerViewStore.get()).toMatchObject({
+        browseCatalog: false,
+        effortDraft: null,
+        authDraft: null,
+      });
+    });
+    ui.unmount();
+  });
+
+  // The tool column reports its current tool once on mount; nothing moved, so a draft the
+  // picker was opened with has to survive it.
+  it('keeps every draft when the column reports the tool that is already current', async () => {
+    seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
+    pickerViewStore.setBrowseCatalog(true);
+    pickerViewStore.setEffortDraft('max');
+    pickerViewStore.setAuthDraft('api-key');
+
+    const ui = renderFeature(
+      <LeftChangeOnKeyProbe
+        role="planner"
+        selection={realPickerOption('planner', 'claude-code')}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(pickerViewStore.get()).toMatchObject({
+      browseCatalog: true,
+      effortDraft: 'max',
+      authDraft: 'api-key',
     });
     ui.unmount();
   });

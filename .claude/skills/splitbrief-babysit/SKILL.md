@@ -7,17 +7,19 @@ description: Supervised dogfooding run — one agent launches the built SPLITBRI
 
 The built CLI runs on its own repository. Read `docs/DOGFOODING.md` for the engine semantics; this skill is the supervision protocol on top of it — who holds what context, and who fixes what.
 
-## Three roles, three contexts
+## Roles and contexts
 
 Context discipline is the point. A babysitter that also edits `src/` burns its watch context on diffs and loses the run; an orchestrator that reads `session.jsonl` dies on a 52 MB file.
 
 | Role | Context | Does | Never |
 |---|---|---|---|
-| **Orchestrator** (this session) | near-empty, kept that way | spawns agents, reads their reports, decides what is a tool defect | reads `session.jsonl`; edits `src/`; drives tmux |
-| **Babysitter** (one long-lived subagent) | the whole run | launches in tmux, watches, answers planner questions, gates, `[c] continue`, recovery panels; stops **resumably** on a tool defect and reports up | edits `src/`; ends the run on its own |
-| **Fixer** (one fresh subagent per defect) | one defect only | researches, makes the minimal `src/` change, runs the colocated tests **plus the affected suites**, `npm run build`, reports | touches the run; touches a second defect |
+| **Orchestrator** (this session) | near-empty, kept that way | spawns agents, reads their reports, decides what is a tool defect, sends "continue" | reads `session.jsonl`; edits `src/`; drives tmux |
+| **Babysitter** (one long-lived subagent) | the whole run | launches in tmux, watches, answers planner questions, gates, `[c] continue`, recovery panels; stops **resumably** on a tool defect and reports up with evidence | edits `src/`; ends the run on its own |
+| **Diagnosis** (fresh, one per defect) | one defect | reads code and trails; names the cause at `file:line`, the minimal fix shape, the tests that must pass, the blast radius | edits anything |
+| **Implementation** (fresh) | the diagnosis | the minimal change, in an isolated git worktree while a run is live; the colocated test **plus the affected suites** | re-diagnoses; touches the run or a second defect |
+| **Validation** (fresh) | the diagnosis and the diff | checks the fix against the diagnosis, real behaviour and every gate; ends **MERGEABLE** or **NOT MERGEABLE** | reuses an earlier agent's context |
 
-The babysitter is resumed by message with its context intact — never respawned. Only after a fixer reports green does the babysitter `continue`.
+The babysitter is resumed by message with its context intact — never respawned. Every subagent works in its own scratchpad subfolder: the root is shared, and one agent overwrote another's script on 2026-09-23.
 
 ## The babysitter drives the TUI as a real user would
 
@@ -57,28 +59,39 @@ The task is a file under `.splitbrief/inbox/<date>-<slug>/tasks.md`, attached wi
 tmux, so the pane is readable and typeable. stderr redirected to a file: the TUI runs on the alternate screen and a fatal error printed there vanishes when the screen restores.
 
 ```bash
-SCR=<scratchpad>
+SCR=<scratchpad>/babysitter          # the agent's own subfolder
+T=sb2                                # one tmux session per run: a name `tmux ls` does not list
 cat > "$SCR/launch.sh" <<EOF
 #!/usr/bin/env bash
 cd $PWD
-node $PWD/dist/cli.js start --mode standard "<one sentence>" @.splitbrief/inbox/<run>/tasks.md 2>>"$SCR/splitbrief.stderr"
+node $PWD/dist/cli.js "\$@" 2>>"$SCR/splitbrief.stderr"
 echo "SPLITBRIEF EXIT CODE: \$?"
 sleep 100000
 EOF
 chmod +x "$SCR/launch.sh"
-tmux kill-session -t sb 2>/dev/null; tmux new-session -d -s sb -x 140 -y 45 "$SCR/launch.sh"
+tmux new-session -d -s $T -x 140 -y 45 "$SCR/launch.sh start --mode standard '<one sentence>' @.splitbrief/inbox/<run>/tasks.md"
 ```
 
-`.nuke/run-scripts/` holds `wait.sh`, `answer.sh`, `waitexit.sh` — copy into the scratchpad and set the session name.
+Never kill a tmux session that holds a parked run you still need; the snippet in `docs/DOGFOODING.md` kills `sb`, so do not copy it verbatim. Other agents' scratch TUIs run in their own sessions against scratch projects — leave them alone.
+
+`.nuke/run-scripts/` holds `wait.sh`, `answer.sh`, `waitexit.sh`. Copy them into `$SCR`, replace the hard-coded `sb` with `$T` and the `cd` path with the checkout, and export `SB_SESSION=<run-id>`.
 
 ## Watch loop
+
+**The babysitter never ends its turn while a run is live.** It sits in a foreground `wait.sh 240` loop and acts on what each call prints. Bound each wait at 240 s: a message from the orchestrator reaches a subagent only between its tool calls, so a longer wait delays an instruction by the whole wait. Never watch with a background command that re-invokes the babysitter later — the pane goes unwatched in between. A turn ends in three cases only, and every message the babysitter sends names its case:
+
+1. it stopped the run resumably on a tool defect and waits for "continue";
+2. the run reached its review and it waits for the owner's commit and the go;
+3. the run is parked or complete.
+
+For a look outside `wait.sh`:
 
 ```bash
 ID=$(jq -r .sessionId .splitbrief/active); S=.splitbrief/sessions/$ID
 jq -r '.phase, (.pendingRecovery.reason // "-"), ([.tasks[] | .id + ":" + .status] | join(" "))' $S/state.json
 tail -n 0 -F $S/session.jsonl | jq --unbuffered -r '(.type // .kind) as $t | select($t | test("text_delta|planner_text|activity|tool_use|usage|heartbeat|cost_update") | not) | .ts + " " + $t + " " + ((.data // {}) | del(.diff, .excerpt, .text) | tostring)[0:240]'
-tmux capture-pane -t sb -p | sed 's/[[:space:]]*$//' | grep -v '^$' | tail -16
-ps -o rss=,etime= -p $(pgrep -f 'dist/cli.js' | head -1)
+tmux capture-pane -t $T -p | sed 's/[[:space:]]*$//' | grep -v '^$' | tail -16
+ps -o rss=,etime= -p $(pgrep -P "$(tmux display -p -t $T '#{pane_pid}')" -f dist/cli.js)
 ```
 
 `session.jsonl` reached 52 MB on one run. **Never read it whole; always filter.**
@@ -98,7 +111,7 @@ Every row below is keyboard work in the pane — that is the point, not a conven
 | Planner question | `↑↓` choose, `⏎` next, `tab` writes a free answer, last `⏎` sends |
 | Spec / plan / briefs gate | read the artifact in the session dir first, then `y` |
 | Inline external-edit prompt (`[c] continue`) | `answer.sh c` |
-| Bordered recovery panel ("letter key acts") | `tmux send-keys -t sb <letter>`; `⏎` takes the highlighted row |
+| Bordered recovery panel ("letter key acts") | `tmux send-keys -t $T <letter>`; `⏎` takes the highlighted row. `r` is Try again; `w` opens the halted seat's own picker on the offered tool in one press |
 | Out-of-bounds write approval | allow "this operation only" for a colocated test, a doc the brief names, or a sibling in the brief's module group; otherwise ask the owner |
 | Stop sheet | `esc` opens, `esc` again stops resumably, `ctrl+c` twice quits after the stop settles |
 
@@ -109,14 +122,19 @@ Every row below is keyboard work in the pane — that is the point, not a conven
 At every failure, ask *who* failed.
 
 - **The run owns model mistakes and brief mistakes.** The ladder retries; the panel offers retry / skip / seat switch. Let it.
-- **The operator owns tool mistakes**: a crash, a limit that ended a healthy call, a parser that dropped a document, a gate that lied, a halt with no way through. Those are fixed **now, in this session**, because the next brief hits the same code.
+- **The operator owns tool mistakes**: a crash, a limit that ended a healthy call, a parser that dropped a document, a gate that lied, a halt with no way through. Those are fixed **now, in this session**, because the next brief hits the same code. Planning is no exception: a tool defect found during planning means stop, fix, resume, because the planning artifacts would carry it.
 
-```bash
-# 1. babysitter stops resumably: esc esc  (or ctrl+c ctrl+c, or kill -INT <pid>)
-# 2. fixer: minimal src/ change, colocated tests + the affected suites
-# 3. fixer: npm run build
-# 4. babysitter: $SB continue $ID
 ```
+1. babysitter      stops resumably (esc esc), reports the defect with evidence — turn-end case 1
+2. diagnosis       names the cause and the fix shape; edits nothing
+3. implementation  the minimal change from the diagnosis, in an isolated git worktree
+4. validation      a fresh agent; only MERGEABLE moves on
+5. orchestrator    the diff merges at the commit window, the owner commits, the run resumes (Resume semantics)
+```
+
+The worktree keeps the run's source baseline untouched while a run is live; `.claude/worktrees/` is gitignored, so it never reads as drift. The validation runs its gates on a real worktree outside `.claude/`: Biome and knip ignore `.claude/` paths, so a gate run in an agent worktree checks nothing.
+
+A catalog or model claim is verified by set equality, never by a count — "exit 0 and a plausible count" hid a parser that collapsed 118 rows to 105. The four checks: the tool's own listing against production discovery (missing, extra, duplicates); every metadata field per row; the rows the live picker shows; the argv the child receives.
 
 Record each one in the plan's "Live defects" with `file:line` evidence. That list is how the next context knows what is already known.
 
@@ -124,9 +142,12 @@ Per-brief validation runs only the colocated tests, so it cannot see a break out
 
 ## Usage limits
 
-When the implementer's provider limit hits, **SPLITBRIEF itself must notice and switch the seat inside the tool** to the declared fallback — a *named* model, never `model: auto`. On 2026-09-21 `auto` ran Grok 4.7 at $3.03 instead of the intended model.
+A provider limit is the run's business, not a tool defect. **SPLITBRIEF itself must notice it**, halt with `runner-usage-limit` and offer the answers in the recovery panel. There is no automatic seat switch; the babysitter answers the panel.
 
-If the in-tool switch does not happen, that is a tool defect, not an operator chore. Fix the whole detect → switch path (`HALT_SIGNATURES.usage` in `src/core/pipeline-spec/halts.ts`, the `switch-seat` offer in `src/engine/orchestrator/recovery/actions.ts`), rebuild, `continue`, then **verify the switch still holds after the resume**. Do not paper over it by hand-editing the config.
+- **Implementer limit.** Take `switch-seat` as in the worked example above, onto the declared fallback — a *named* model, never `model: auto`. On 2026-09-21 `auto` ran Grok 4.7 at $3.03 instead of the intended model.
+- **Claude limit.** The planner and reviewer seats and the orchestrator's own agents draw on one Claude account, so the limit stops both sides. Answer **Try again** once; if it fails on the same limit, leave the panel open and report the reset time. A usage-limited subagent is resumed by message once the limit clears.
+
+If the halt or the offer does not come, that is a tool defect, not an operator chore. Fix the whole detect → offer path (`HALT_SIGNATURES.usage` in `src/core/pipeline-spec/halts.ts`, the `switch-seat` offer in `src/engine/orchestrator/recovery/actions.ts`), resume, then **verify the switch still holds after the resume**. Do not paper over it by hand-editing the config.
 
 ## Resume semantics
 
@@ -143,7 +164,19 @@ If the in-tool switch does not happen, that is a tool defect, not an operator ch
 
 `switch-seat:<tool>:<model>` accepts any non-empty model string with no catalog check (`parseSeatSpecOption`, `src/cli/options.ts:66`), so a typo surfaces late as a `missing-model` halt.
 
-A seat taken through the panel **is** the config of record: the picker saves through `transactConfigDocument`, so the switch survives the next continue with no YAML mirroring. Code the run promotes for its own benefit does not reach the *running* orchestrator — that needs stop → build → continue.
+A seat taken through the panel **is** the config of record: the picker saves through `transactConfigDocument`, so the switch survives the next continue with no YAML mirroring.
+
+**New code needs a fresh process.** The at-rest `⏎` keeps the old build in memory. After any `src/` change — a merged fix, a commit, code the run promoted for its own benefit — resume like this:
+
+```bash
+# pane: esc esc (stop resumably), then ctrl+c ctrl+c; wait until it prints SPLITBRIEF EXIT CODE
+npm run build
+tmux respawn-pane -k -t $T "$SCR/launch.sh continue $ID"
+```
+
+**The commit window.** The drift baseline is captured when the task loop first starts, not at run start (`captureChangedFilesBaseline` while `state.changedFilesBaseline` is unset, `src/engine/orchestrator/task/loop.ts:110-113`). So validated diffs merge, and the owner commits, while the run holds before implementation: at the briefs gate, or parked in planning. After the loop starts, a merge or a commit turns into drift for every brief (run A: 219 false findings), so a fix found then stays in its worktree until the owner decides.
+
+In-TUI recovery answers on a `start`-launched run (retry, skip, switch seat, rewind) threw `Internal invariant: … a new-workflow run requires a freshly allocated session` until the 2026-09-23 fix. Seeing it again is a regression: stop and report. The at-rest `⏎` and CLI `continue` always build a fresh `resume` and are the safe way on.
 
 ## Standing prohibitions
 

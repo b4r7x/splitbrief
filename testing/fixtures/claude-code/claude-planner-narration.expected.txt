@@ -1,0 +1,5 @@
+# Spec: Verify and finish the honest ladder (B1–B10)
+
+## Overview
+Items B1–B10 of `.splitbrief/inbox/2026-09-21-honest-ladder/tasks.md` are in the tree at HEAD `eaf8cd53`, and every gate passes. Verification still found defects that break or weaken most of them:
+- Tool-start frames can end a healthy call as `truncated`.

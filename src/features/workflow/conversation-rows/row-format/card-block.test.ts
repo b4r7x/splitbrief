@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getTerminalCellWidth } from '../../../../utils/display-text.js';
+import { rowLeadingCells, wrapWidthFor } from '../row-markers.js';
 import { prepareCardRows } from './card-block.js';
 
 function rowsOf(input: Parameters<typeof prepareCardRows>[0]) {
@@ -118,5 +119,71 @@ describe('prepareCardRows', () => {
 
     expect(bodyRows.map((row) => row.segments.at(-1)?.text ?? '')).toEqual(['界', '👩‍💻']);
     expect(card.createRows(1, 2)).toEqual(bodyRows.slice(0, 1));
+  });
+});
+
+describe('prepareCardRows wraps on whole words', () => {
+  function bodyTexts(text: string, width: number): string[] {
+    const card = prepareCardRows({
+      keyPrefix: 'card',
+      label: 'error',
+      bodyPrefix: '',
+      bodyLines: [{ text }],
+      width,
+    });
+    return card
+      .createRows(1, card.rowCount)
+      .map((row) => row.segments.map((segment) => segment.text).join(''));
+  }
+
+  // The two planner halts whose callouts broke "swit|ch" at 120 columns and "fix t|his" at 80.
+  it.each([
+    [
+      'Codex',
+      'Planning failed. Codex hit its usage limit — logging in again will not fix this. Wait for the limit to reset or switch the planner, then start again.',
+    ],
+    [
+      'Claude Code',
+      'Planning failed. Claude Code hit its usage limit — logging in again will not fix this. The limit resets at 5:00 PM; wait for it or switch the planner.',
+    ],
+  ])('breaks the %s halt only between words, at every width', (_tool, text) => {
+    for (let width = 30; width <= 120; width += 1) {
+      const lines = bodyTexts(text, width);
+
+      expect(lines.join(' '), `width ${width}`).toBe(text);
+      for (const line of lines) {
+        expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(wrapWidthFor('card-body', width));
+      }
+    }
+  });
+
+  it('keeps a CJK phrase whole where it fits and breaks one wider than the row by whole cells', () => {
+    const lines = bodyTexts(
+      '計画は失敗しました 使用量の上限に達しました',
+      18 + rowLeadingCells('card-body'),
+    );
+
+    expect(lines).toEqual(['計画は失敗しました', '使用量の上限に達し', 'ました']);
+  });
+
+  it('keeps emoji graphemes and the words around them whole', () => {
+    const lines = bodyTexts(
+      'wait 👩‍💻 for the ⚠️ reset 🇵🇱 then switch',
+      14 + rowLeadingCells('card-body'),
+    );
+
+    expect(lines).toEqual(['wait 👩‍💻 for', 'the ⚠️ reset', '🇵🇱 then switch']);
+    for (const line of lines) expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(14);
+  });
+
+  it('measures a zero-width space the way the row paints it', () => {
+    const word = 'ab\u200bcd';
+    const lines = bodyTexts(
+      Array.from({ length: 6 }, () => word).join(' '),
+      10 + rowLeadingCells('card-body'),
+    );
+
+    for (const line of lines) expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(10);
+    expect(lines.join(' ').split(' ')).toEqual(Array.from({ length: 6 }, () => word));
   });
 });

@@ -358,11 +358,11 @@ describe('an effort ladder offers only what the seat can save', () => {
   }
 
   it('drops codex ultra from an effort-flag ladder and keeps the levels beside it', () => {
-    // `codex debug models --bundled` on codex-cli 0.154.0 lists `ultra` on five models.
+    // `codex debug models` on codex-cli 0.155.1 lists `ultra` on four models.
     const cache = makeModelCacheAccessor({
       providerModels: {
         codex: capturedDetectedModels(
-          'codex/debug-models-bundled.json',
+          'codex/debug-models-0.155.1.json',
           parseCodexNativeModelCatalog,
         ),
       },
@@ -378,13 +378,15 @@ describe('an effort ladder offers only what the seat can save', () => {
         }).map((row) => [row.id, row.effortChoices]),
       );
     const shown = ladders();
-    const hidden = ladders('gpt-daybreak-blue-latest');
+    const hidden = ladders('gpt-reserve');
 
     for (const ladder of [
       shown.get('gpt-6-astra'),
+      shown.get('gpt-6-sol'),
+      shown.get('gpt-6-luna'),
       shown.get('gpt-5.6-sol'),
       shown.get('gpt-5.6-terra'),
-      hidden.get('gpt-daybreak-blue-latest'),
+      hidden.get('gpt-reserve'),
     ]) {
       expect(ladder).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
     }
@@ -512,31 +514,27 @@ describe('auto is a selection policy, never catalog data', () => {
   it('does not offer a model codex hides, except the one the seat already runs', () => {
     const catalog = parseCodexNativeModelCatalog(
       readFileSync(
-        join(import.meta.dirname, '../../../../testing/fixtures/codex/debug-models-bundled.json'),
+        join(import.meta.dirname, '../../../../testing/fixtures/codex/debug-models-0.155.1.json'),
         'utf-8',
       ),
     );
-    if (catalog === null) throw new Error('Expected the codex 0.154.0 bundled listing to parse');
+    if (catalog === null) throw new Error('Expected the codex 0.155.1 listing to parse');
     const cache = makeModelCacheAccessor({
       providerModels: { codex: nativeCliCatalogToDetectedModels(catalog) },
     });
-    const hidden = [
-      'gpt-daybreak-blue-latest',
-      'gpt-daybreak-red-latest',
-      'gpt-5.4',
-      'gpt-5.4-mini',
-      'codex-auto-review',
-    ];
+    const hidden = ['gpt-reserve', 'codex-auto-review'];
 
     const offered = resolveAndSort('codex', 'planner', cache).map((model) => model.id);
-    expect(offered).toHaveLength(6);
+    expect(offered).toHaveLength(7);
     expect(offered.filter((id) => hidden.includes(id))).toEqual([]);
 
-    const seated = resolveAndSort('codex', 'planner', cache, { configuredSelectionId: 'gpt-5.4' });
+    const seated = resolveAndSort('codex', 'planner', cache, {
+      configuredSelectionId: 'gpt-reserve',
+    });
     expect(seated.map((model) => model.id).filter((id) => hidden.includes(id))).toEqual([
-      'gpt-5.4',
+      'gpt-reserve',
     ]);
-    expect(seated.find((model) => model.id === 'gpt-5.4')?.displayName).toBe('GPT-5.4');
+    expect(seated.find((model) => model.id === 'gpt-reserve')?.displayName).toBe('GPT-Reserve');
   });
 });
 

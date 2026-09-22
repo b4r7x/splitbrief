@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -78,7 +80,10 @@ const RESUME_STATE = {
 
 /** The run the resume tests open at rest and then continue in place. */
 const AT_REST_RUN = makeRunRecord({
-  ref: { projectDir: '/tmp/preparation-composer', sessionId: '2026-09-16-resume' },
+  ref: {
+    projectDir: join(process.env.XDG_STATE_HOME ?? tmpdir(), 'preparation-composer'),
+    sessionId: '2026-09-16-resume',
+  },
   feature: RESUME_STATE.feature,
   hydration: { kind: 'loaded', state: RESUME_STATE },
   status: {

@@ -128,8 +128,10 @@ export async function resumeSavedSession(args: {
     return;
   }
 
+  // The cursor points one past the last brief once every brief has settled.
+  const position = Math.min(state.currentTaskIndex + 1, state.tasks.length);
   console.log(
-    `Resuming: ${stripTerminalControls(state.feature)} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`,
+    `Resuming: ${stripTerminalControls(state.feature)} (phase: ${state.phase}, task ${position}/${state.tasks.length})`,
   );
   const renderOptions = await deps.setupWorkflow(opts);
   await deps.initStores(projectDir, opts);

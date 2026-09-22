@@ -186,13 +186,16 @@ describe('production-factory effect conformance', () => {
     }
   });
 
+  // The call's budget starts before the spawn, and a loaded box can start the shim after a short
+  // one ends. Only the shim that never ends gets a budget; the others are waited on until they
+  // exit, however late they start.
   it.each([
-    ['failure', 'exit 1', /exit(ed with code)? 1/i],
-    ['timeout', 'while :; do sleep 1; done', /timed out|timeout/i],
-    ['crash', 'kill -9 $$', /signal SIGKILL|signal-exit/i],
+    ['failure', 'exit 1', undefined, /exit(ed with code)? 1/i],
+    ['timeout', 'while :; do sleep 1; done', 1_500, /timed out|timeout/i],
+    ['crash', 'kill -9 $$', undefined, /signal SIGKILL|signal-exit/i],
   ] as const)(
     'classifies the %s implementer terminal outcome as an effect rejection',
-    async (_label, body, reasonPattern) => {
+    async (_label, body, timeoutMs, reasonPattern) => {
       const scenario = await effectScenario('implementer-outcome');
       try {
         const outcome = await runEffect({
@@ -200,7 +203,7 @@ describe('production-factory effect conformance', () => {
           body,
           effect: { kind: 'direct-write', file: 'src/hello.ts', nonceContent: NONCE },
           task: makeTask(),
-          timeoutMs: 1_500,
+          timeoutMs,
           ...scenario,
         });
         expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);

@@ -14,6 +14,16 @@ export function seatEffortChannel(
   return runnerEffortChannel(input.runner);
 }
 
+/** The level the seat already runs, read from the field its own channel spends. */
+export function seatConfiguredEffort(
+  input: Readonly<{ runner: RunnerConfig; role: ActiveRunnerRole }>,
+): string | null {
+  const channel = seatEffortChannel(input);
+  if (channel === 'effort-flag') return input.runner.effort ?? null;
+  if (channel === 'variant') return input.runner.variant ?? null;
+  return null;
+}
+
 /**
  * Only OpenAI-compatible endpoints hold the API seat, so the models.dev
  * `modalities.input ∋ 'image'` fact detection carries is the whole answer.

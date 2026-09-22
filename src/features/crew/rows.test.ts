@@ -53,6 +53,18 @@ describe('crew row activation', () => {
     expect(pickerViewStore.get().expandedModelId).toBe('claude-sonnet-4');
   });
 
+  it('opens the expanded row on the effort the seat already runs', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+    });
+    const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
+    if (plan === undefined) throw new Error('No plan seat row.');
+
+    crewActivate({ target: { kind: 'crew', row: plan }, config });
+
+    expect(pickerViewStore.get()).toMatchObject({ expandedModelId: 'opus', effortDraft: 'max' });
+  });
+
   it('opens the reviewer picker for the review seat row with its own token', () => {
     const config = makeConfig();
     const review = deriveCrewRows({ config }).find((row) => row.id === 'review');

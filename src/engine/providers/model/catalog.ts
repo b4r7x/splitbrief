@@ -523,7 +523,7 @@ function indexNamesSameModel(index: CanonicalIndex, identity: ModelIdentity): bo
  * Claude writes its own account cache in resolved form — the model id the alias points at plus
  * the alias's own window suffix (`fable[1m]` → `claude-fable-5-1[1m]`). An entry spelled that way
  * names an alias the list already shows, so it folds into that row instead of painting a second —
- * but only when one alias answers to it. Three aliases resolve to `claude-opus-5`, and folding
+ * but only when one alias answers to it. Two aliases resolve to `claude-opus-5-5`, and folding
  * into whichever is declared first would delete a selectable row and gloss an arbitrary sibling.
  * The suffix is read off the alias verbatim rather than matched: which brackets exist is
  * `parsing.ts`'s vocabulary, and a second copy of it here would be a build behind the day one

@@ -1,3 +1,5 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
@@ -9,12 +11,20 @@ import { loadConfig, writeConfig } from '../../core/config/load/io.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { CliToolDetection } from '../../core/discovery/detection.js';
+import { deriveCrewRows } from '../../core/crew/rows.js';
+import { crewActivate } from '../../features/crew/rows.js';
+import {
+  defaultPickerEffectDeps,
+  type PickerEffectDeps,
+} from '../../features/runners/use-picker-actions.js';
 import type { ScopedCliCatalogAttempt } from '../../engine/detection/cli-catalog-outcomes.js';
 import type { DetectionServiceResult } from '../../engine/detection/service.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
-import { configStore } from '../../stores/project/config.js';
+import { type ConfigSaveResult, configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { listRowLead } from '../../components/list-row.js';
@@ -34,6 +44,17 @@ const showsBothRoutes = (frame: string) =>
 const ESC = '\u001B';
 const ARROW_DOWN = `${ESC}[B`;
 const ARROW_UP = `${ESC}[A`;
+const ARROW_RIGHT = `${ESC}[C`;
+const ARROW_LEFT = `${ESC}[D`;
+
+const SAVED: ConfigSaveResult = {
+  kind: 'saved',
+  ok: true,
+  revision: {
+    rawSha256: 'runners-overlay-fixture',
+    fileIdentity: { dev: 0n, ino: 0n, size: 0n, mtimeNs: 0n },
+  },
+};
 
 async function openContractChoice(ui: ReturnType<typeof renderFeature>) {
   await vi.waitFor(() => {
@@ -633,9 +654,9 @@ describe('ToolModelPicker model catalog', () => {
           id: 'anthropic',
           name: 'Anthropic',
           models: {
-            'claude-opus-5': {
-              id: 'claude-opus-5',
-              name: 'Claude Opus 5',
+            'claude-opus-5-5': {
+              id: 'claude-opus-5-5',
+              name: 'Claude Opus 5.5',
               limit: { context: 1_000_000 },
             },
             'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
@@ -653,9 +674,292 @@ describe('ToolModelPicker model catalog', () => {
 
     const after = checkedModelLines(frameText(ui));
     expect(after).toHaveLength(1);
-    expect(after.join('')).toContain('Opus 5');
-    expect(after.join('')).not.toContain('Claude Opus 5');
+    expect(after.join('')).toContain('Opus 5.5');
+    expect(after.join('')).not.toContain('Claude Opus 5.5');
     expect(modelColumnLines(frameText(ui))).toHaveLength(aliasRowCount);
+    ui.unmount();
+  });
+
+  const MAX_SEAT = makeConfig({
+    planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+  });
+
+  function openFromPlanCrewRow(saveConfig = defaultPickerEffectDeps.saveConfig) {
+    configStore.__testReset({ projectDir: '/tmp/project', config: MAX_SEAT });
+    const plan = deriveCrewRows({ config: MAX_SEAT }).find((row) => row.id === 'plan');
+    if (plan === undefined) throw new Error('No plan seat row.');
+    crewActivate({ target: { kind: 'crew', row: plan }, config: MAX_SEAT });
+    return renderFeature(
+      <ToolModelPicker role="planner" deps={{ ...defaultPickerEffectDeps, saveConfig }} />,
+    );
+  }
+
+  const effortAxisLine = (ui: ReturnType<typeof renderFeature>) =>
+    frameText(ui)
+      .split('\n')
+      .find((line) => line.includes(`${glyph('divider')} effort`));
+
+  it('opens on the effort the seat runs when its crew row expanded the model', async () => {
+    const ui = openFromPlanCrewRow();
+    await tick(20);
+
+    expect(effortAxisLine(ui)).toContain('max');
+    ui.unmount();
+  });
+
+  it('reads and saves the seat effort again after the cursor leaves the tool and returns', async () => {
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
+    });
+    const saveConfig = vi.fn<PickerEffectDeps['saveConfig']>(async () => SAVED);
+    const ui = openFromPlanCrewRow(saveConfig);
+    await tick(20);
+
+    for (const key of [ARROW_LEFT, ARROW_DOWN, ARROW_UP, ARROW_RIGHT]) {
+      ui.stdin.write(key);
+      await tick(20);
+    }
+    expect(effortAxisLine(ui)).toContain('max');
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(saveConfig.mock.calls.at(-1)?.[0].planner).toMatchObject({ effort: 'max' });
+    });
+    ui.unmount();
+  });
+});
+
+describe('ToolModelPicker custom model entry', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus' } }),
+    });
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+    });
+  });
+
+  it("offers the seat's own tool ids, not another tool's", async () => {
+    pickerViewStore.open({ kind: 'custom-model' });
+    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    await tick(20);
+    const frame = frameText(ui);
+
+    expect(frame).toContain('Model id for Claude Code CLI');
+    expect(frame).toMatch(/e\.g\. claude-[a-z0-9-]+/);
+    expect(frame).not.toContain('llama3.3');
+    expect(frame).not.toContain('qwen3-coder');
+    ui.unmount();
+  });
+});
+
+describe('ToolModelPicker leaving a text-output shell seat', () => {
+  let projectDir: string;
+  // The seat the e2e and PTY harnesses run: a configured command whose stdout is plain text.
+  const shellPlanner = {
+    kind: 'shell',
+    command: 'true',
+    outputFormat: 'text',
+    model: 'shell',
+    contextLength: 32_768,
+  } as const;
+
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    _resetMouseZones();
+    terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
+    projectDir = createTempDir('runners-shell-seat');
+    writeConfig(projectDir, { ...createDefaultConfig(), planner: shellPlanner });
+    configStore.load(projectDir);
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+    });
+  });
+
+  afterEach(() => {
+    configStore.__testReset();
+    cleanupTempDir(projectDir);
+  });
+
+  function openFromPlanCrewRow(deps: PickerEffectDeps = defaultPickerEffectDeps) {
+    const config = loadConfig(projectDir).config;
+    const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
+    if (plan === undefined) throw new Error('No plan seat row.');
+    crewActivate({ target: { kind: 'crew', row: plan }, config });
+    return renderFeature(<ToolModelPicker role="planner" deps={deps} />);
+  }
+
+  // Tool, then the Sonnet row, whose Enter opens its effort axis, whose Enter commits.
+  async function chooseClaudeSonnet(ui: ReturnType<typeof renderFeature>) {
+    const active = listRowLead('active');
+    const steps: readonly (readonly [string, string])[] = [
+      ['Claude Code', `${active}Claude Code CLI`],
+      ['\r', 'Sonnet 5'],
+      [ARROW_DOWN, `${active}Sonnet 5`],
+      ['\r', `${glyph('divider')} effort`],
+    ];
+    await flushEffects();
+    for (const [key, shown] of steps) {
+      ui.stdin.write(key);
+      await vi.waitFor(() => {
+        expect(frameText(ui)).toContain(shown);
+      });
+      await flushEffects();
+    }
+    ui.stdin.write('\r');
+  }
+
+  it('commits the new tool and model and drops the shell-only fields', async () => {
+    const ui = openFromPlanCrewRow();
+    await chooseClaudeSonnet(ui);
+
+    await vi.waitFor(() => {
+      expect(loadConfig(projectDir).config.planner).toEqual({
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'sonnet',
+      });
+      expect(feedbackStore.get()).toMatchObject({
+        message: 'PLAN set to: Claude Code CLI · sonnet',
+        isError: false,
+      });
+    });
+    ui.unmount();
+  });
+
+  it('shows a refused save in the picker, which the overlay would otherwise hide', async () => {
+    const saveConfig = vi.fn<PickerEffectDeps['saveConfig']>(async () => ({
+      kind: 'failure',
+      ok: false,
+      error: new Error('Failed to save config to .splitbrief/config.yaml'),
+    }));
+    const ui = openFromPlanCrewRow({ ...defaultPickerEffectDeps, saveConfig });
+    await flushEffects();
+    ui.stdin.write('Claude Code');
+    await vi.waitFor(() => {
+      expect(frameText(ui)).toContain(`${listRowLead('active')}Claude Code CLI`);
+    });
+    await flushEffects();
+    ui.stdin.write('\r'); // select the tool; the cursor lands on the auto row
+    await vi.waitFor(() => {
+      expect(frameText(ui)).toContain(`${listRowLead('active')}auto`);
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(frameText(ui)).toContain('Failed to save config');
+    });
+    expect(frameText(ui)).toContain('Models');
+    expect(loadConfig(projectDir).config.planner).toMatchObject(shellPlanner);
+    ui.unmount();
+  });
+
+  it('names a failed save on an axis confirm instead of dropping it', async () => {
+    const saveConfig = vi.fn<PickerEffectDeps['saveConfig']>(async () => {
+      throw new Error('disk is read-only');
+    });
+    const ui = openFromPlanCrewRow({ ...defaultPickerEffectDeps, saveConfig });
+    await chooseClaudeSonnet(ui);
+
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toMatchObject({ message: 'disk is read-only', isError: true });
+    });
+    expect(saveConfig).toHaveBeenCalledTimes(1);
+    expect(loadConfig(projectDir).config.planner).toMatchObject(shellPlanner);
+    ui.unmount();
+  });
+});
+
+// The seat a live check could not leave: written by hand, so its keys are camelCase, with an
+// absolute script outside the project and no model. The save deleted `output_format` and left the
+// file's `outputFormat` beside `kind: cli`, which validation refused.
+describe('ToolModelPicker leaving a hand-written shell seat', () => {
+  let projectDir: string;
+  let outside: string;
+
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    _resetMouseZones();
+    terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
+    outside = createTempDir('runners-limit-planner');
+    const script = join(outside, 'limit-planner.sh');
+    writeFileSync(script, '#!/bin/sh\ncat >/dev/null; exit 1\n', { mode: 0o755 });
+    projectDir = createTempDir('runners-hand-written-seat');
+    mkdirSync(join(projectDir, '.splitbrief'));
+    writeFileSync(
+      join(projectDir, '.splitbrief', 'config.yaml'),
+      [
+        'version: 3',
+        'planner:',
+        '  kind: shell',
+        `  command: ${script}`,
+        '  outputFormat: text',
+        'implementer:',
+        '  kind: cli',
+        '  tool: claude-code',
+        '  model: haiku',
+        'validation:',
+        '  typecheck: false',
+        '  lint: false',
+        '  test: false',
+        'workflow:',
+        '  mode: quick',
+        '',
+      ].join('\n'),
+    );
+    configStore.load(projectDir);
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+    });
+  });
+
+  afterEach(() => {
+    configStore.__testReset();
+    cleanupTempDir(projectDir);
+    cleanupTempDir(outside);
+  });
+
+  it('saves the Claude Code auto row the crew row opened it on', async () => {
+    const config = loadConfig(projectDir).config;
+    const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
+    if (plan === undefined) throw new Error('No plan seat row.');
+    crewActivate({ target: { kind: 'crew', row: plan }, config });
+    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    await flushEffects();
+    ui.stdin.write(ARROW_DOWN);
+    await vi.waitFor(() => {
+      expect(frameText(ui)).toContain(`${listRowLead('active')}Claude Code CLI`);
+    });
+    await flushEffects();
+    ui.stdin.write('\r'); // the tool; the cursor lands on the auto row
+    await vi.waitFor(() => {
+      expect(frameText(ui)).toContain(`${listRowLead('active')}auto`);
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(loadConfig(projectDir).config.planner).toEqual({
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'auto',
+      });
+    });
+    const written = readFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'utf8');
+    expect(written).not.toMatch(/output_?[fF]ormat/);
+    expect(written).not.toContain('command:');
+    expect(feedbackStore.get().isError).toBe(false);
     ui.unmount();
   });
 });

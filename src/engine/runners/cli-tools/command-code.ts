@@ -107,7 +107,7 @@ function createProbe() {
       maxOutputBytes: 4_096,
     },
     auth: {
-      command: [COMMAND_CODE_COMMAND, 'status', '--json'],
+      command: [COMMAND_CODE_COMMAND, 'status', '--json', '--no-auto-update'],
       cwd: 'neutral',
       timeoutMs: 5_000,
       maxOutputBytes: 4_096,

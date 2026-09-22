@@ -21,6 +21,14 @@ import {
 } from '../../../core/sessions/active-pointer.js';
 import type { PreparationOutcome } from '../../../engine/runners/prepared-execution.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
+import {
+  approvalPromptStore,
+  closeApprovalPrompt,
+} from '../../../stores/approval-prompt/prompt.js';
+import type {
+  TieredApprovalRequest,
+  TieredApprovalResponse,
+} from '../../../core/approval/types.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { runInteractiveStart } from './interactive.js';
 import * as readinessModule from './readiness.js';
@@ -206,6 +214,48 @@ describe('runInteractiveStart', () => {
 
     await expect(run).rejects.toThrow(/Run readiness blocked/u);
     expect(events).toEqual(['mounted', 'restored', 'blockers']);
+  });
+
+  it('asks for runner trust on the panel inside the TUI, not on the terminal behind it', async () => {
+    vi.spyOn(setupModule, 'setupWorkflow').mockResolvedValue({
+      projectDir: tmp,
+      useFullscreen: false,
+      useMouse: false,
+      useHover: false,
+    });
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const request: TieredApprovalRequest = {
+      tier: 'confirm',
+      actionClass: 'network',
+      actionDescription: 'Run the configured shell planner',
+      phase: 'planning',
+    };
+    let answered: TieredApprovalResponse | undefined;
+
+    const run = runInteractiveStart(
+      makeDispatch({
+        feature: 'ship it',
+        deps: {
+          runHeadless: vi.fn(),
+          initStores: async () => {},
+          renderApp: renderAppFake,
+          prepareExecution: async (input) => {
+            answered = await input.policy.onTieredApproval?.(request);
+            return { kind: 'blocked', report: blockedReport(tmp) };
+          },
+        },
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(approvalPromptStore.get()).toMatchObject({ status: 'pending', request });
+    });
+    expect(stderr).not.toHaveBeenCalledWith(expect.stringContaining(request.actionDescription));
+    closeApprovalPrompt({ decision: 'deny', reason: 'not now' });
+
+    await expect(run).rejects.toThrow(/Run readiness blocked/u);
+    expect(answered).toEqual({ decision: 'deny', reason: 'not now' });
   });
 });
 

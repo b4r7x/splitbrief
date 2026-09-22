@@ -728,6 +728,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-plan-seat',
+      title: 'Workflow · quota halt on the plan seat',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-plan',
+        title: 'Plan-seat usage-limit recovery menu',
+        kind: 'question',
+        marker: 'Change PLAN tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-plan-swapped',
+      title: 'Workflow · plan seat moved to another tool',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-plan-swapped',
+        title: 'Plan-seat swap in the transcript',
+        kind: 'planning',
+        marker: 'Change PLAN tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Recovery transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-retry-exhausted',
       title: 'Workflow · a brief that could not be landed',
       surface: screenSurface('workflow'),
@@ -905,6 +937,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Settings',
       },
       {
+        id: 'overlay-settings-claude-alias',
+        title: 'Overlay · settings · Claude alias plan seat',
+        marker: 'Settings',
+      },
+      {
         id: 'overlay-settings-floor-full',
         title: 'Overlay · settings · full crew at the floor',
         marker: 'Settings',
@@ -950,6 +987,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-picker-claude-effort-set',
         title: 'Overlay · planner picker · Claude alias effort set',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-claude-effort-returned',
+        title: 'Overlay · planner picker · Claude alias effort after the cursor returns',
         marker: PICKER_TITLE_MARKER,
       },
       {
@@ -1096,6 +1138,21 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-picker-custom-model',
         title: 'Overlay · planner picker · custom model entry',
         marker: 'Custom model',
+      },
+      {
+        id: 'overlay-picker-custom-model-claude',
+        title: 'Overlay · planner picker · custom model entry, Claude Code ids',
+        marker: 'Model id for Claude Code',
+      },
+      {
+        id: 'overlay-picker-custom-model-kilo',
+        title: 'Overlay · planner picker · custom model entry, Kilo Code ids',
+        marker: 'Model id for Kilo Code',
+      },
+      {
+        id: 'overlay-picker-save-refused',
+        title: 'Overlay · planner picker · a save the config refused',
+        marker: 'Failed to save config',
       },
     ],
   }),

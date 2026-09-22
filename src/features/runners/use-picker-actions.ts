@@ -36,6 +36,7 @@ import {
   type LocalConnectionSeat,
 } from './local-connection-form.js';
 import { applyCliAuthChoice } from '../../core/runners/cli-auth-selection.js';
+import { seatConfiguredEffort } from '../../core/runners/capabilities.js';
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
@@ -410,16 +411,18 @@ export function usePickerActions(opts: {
         );
       });
     },
-    async confirmProviderSelection(fullId: string, effort?: string | null | undefined) {
-      const item = runnerItemOf(catalog.currentItem);
-      if (item === undefined) return;
-      await saveModelSelection(
-        item,
-        fullId,
-        needsSignInVariantNote(item, fullId),
-        effort,
-        rowEffortLadder(catalog.rightRows, fullId),
-      );
+    confirmProviderSelection(fullId: string, effort?: string | null | undefined) {
+      return reportFailure(async () => {
+        const item = runnerItemOf(catalog.currentItem);
+        if (item === undefined) return;
+        await saveModelSelection(
+          item,
+          fullId,
+          needsSignInVariantNote(item, fullId),
+          effort,
+          rowEffortLadder(catalog.rightRows, fullId),
+        );
+      });
     },
     confirmAuthMethod(method: CliAuthMethod | 'host-configured') {
       return reportFailure(async () => {
@@ -431,10 +434,22 @@ export function usePickerActions(opts: {
     },
     leftChange(item: PickerOption) {
       // A catalog opened for one tool must not follow the cursor onto the next, and
-      // neither may a preset or a method drafted from the tool the cursor left.
-      pickerViewStore.setBrowseCatalog(false);
-      pickerViewStore.setEffortDraft(null);
-      pickerViewStore.setAuthDraft(null);
+      // neither may a preset or a method drafted from the tool the cursor left. The
+      // column's mount notice names the tool already current, which the cursor never
+      // left, so the level a crew row opened the picker on survives the first paint.
+      // Back on the seat's own tool, the ladder reads the level the seat runs again.
+      if (item.id !== catalog.currentItem?.id) {
+        pickerViewStore.setBrowseCatalog(false);
+        pickerViewStore.setEffortDraft(
+          item.isCurrent === true
+            ? seatConfiguredEffort({
+                runner: readActiveRunner({ config, role: seatRole }),
+                role: seatRole,
+              })
+            : null,
+        );
+        pickerViewStore.setAuthDraft(null);
+      }
       catalog.setCurrentItem(item);
     },
     browseCatalog() {

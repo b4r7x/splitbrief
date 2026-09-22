@@ -5,7 +5,7 @@ import {
   clearActiveReceipt,
   type ActiveSessionReceipt,
 } from '../../../core/sessions/active-pointer.js';
-import { saveSummary } from '../../../core/sessions/io.js';
+import { readSession, saveSummary } from '../../../core/sessions/io.js';
 import { artifactPresence } from '../../../core/sessions/run-record-io.js';
 import {
   deriveRunStatus,
@@ -113,6 +113,18 @@ export function finalizeEndedRun(
     state,
   });
   return summary;
+}
+
+/**
+ * A resumed run is running again, so the stop its last pass wrote is no longer true. The record
+ * drops it as the pass starts rather than when it ends: until then `summary.json` — and a listing
+ * that falls back to it when the state cannot be read — would go on reporting the old stop.
+ */
+export function reopenSessionRecord(ref: SessionRef): void {
+  const session = readSession(ref);
+  if (session?.status !== 'open' || session.stop === undefined) return;
+  const { stop: _stop, ...running } = session;
+  saveSummary(ref, running);
 }
 
 export function saveFinalSession(opts: SaveFinalSessionOpts): void {

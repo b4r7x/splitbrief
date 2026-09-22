@@ -12,6 +12,7 @@ import {
   configRevisionsMatch,
   ensureConfigGitignore,
   readConfigDocument,
+  applyConfigDocumentEdits,
   renderConfigDocumentEdits,
   type ConfigDocumentEdit,
   type ConfigDocumentSnapshot,
@@ -269,14 +270,7 @@ export function writeConfigDocument(
   edits: readonly ConfigDocumentEdit[],
 ): string {
   const doc = parseDocument(rawYaml);
-  for (const { path, value } of edits) {
-    if (path.length === 0) continue;
-    if (value === undefined) {
-      doc.deleteIn(path);
-    } else {
-      doc.setIn(path, value);
-    }
-  }
+  applyConfigDocumentEdits(doc, edits);
   const text = doc.toString();
   ensureConfigGitignore(projectDir);
   confinedEnsureDir(projectDir, SPLITBRIEF_DIR);

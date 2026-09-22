@@ -1,5 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
 import { readActiveRunnerLens } from '../../core/config/accessors/active-runner.js';
+import { contentIdentityId } from '../../core/config/accessors/content-identity.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import {
   projectRunnerDiscoveryContext,
@@ -236,7 +237,12 @@ function sourceContext(
     authChannel: seats.map((seat) => seat.authChannel ?? 'none').join(':'),
     endpointOrigin: seats.map((seat) => seat.endpointOrigin ?? 'none').join(':'),
     credentialDomain: seats.map(runnerDiscoveryContextKey).join(':'),
-    configGeneration: [input.projectDir, ...seats.map((seat) => seat.configGeneration)].join(':'),
+    // The path enters the key as a digest: a folder named `my-local-app` is a
+    // project name, not the private identifier the cache's key scan refuses.
+    configGeneration: [
+      contentIdentityId('project', input.projectDir),
+      ...seats.map((seat) => seat.configGeneration),
+    ].join(':'),
   });
 }
 

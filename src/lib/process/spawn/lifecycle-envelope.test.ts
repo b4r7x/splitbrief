@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { processError } from '../errors.js';
-import { killAllProcesses } from '../registry.js';
-import { isFatalSignal, spawnPipe, type SpawnPipeFatalSignal } from './lifecycle.js';
+import { killAllProcesses, SIGKILL_DELAY_MS } from '../registry.js';
+import {
+  isFatalSignal,
+  spawnPipe,
+  spawnPipeError,
+  type SpawnPipeFatalSignal,
+} from './lifecycle.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -19,12 +25,26 @@ function processIsAbsent(pid: number): boolean {
 
 const silent = 'setInterval(()=>{},1000)';
 
+// Holds this event loop, and with it the parent's first stdin write, until the
+// child is a zombie: proof that it quit before it could read anything.
+function blockUntilExited(pid: number): void {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const stat = execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' });
+    if (stat.trim().startsWith('Z')) return;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+  }
+  throw new Error(`child ${pid} did not exit`);
+}
+
 function pipe(opts: {
   script: string;
   env?: NodeJS.ProcessEnv | undefined;
   idle?: { warnMs: number; killMs: number } | undefined;
   signal?: AbortSignal | undefined;
+  stdin?: string | undefined;
   onStdout?: (chunk: string) => SpawnPipeFatalSignal | undefined;
+  onStderr?: (chunk: string) => undefined;
   onSpawned?: ((pid: number) => void) | undefined;
 }) {
   return spawnPipe({
@@ -35,8 +55,9 @@ function pipe(opts: {
     detached: true,
     signal: opts.signal,
     idle: opts.idle,
+    stdin: opts.stdin,
     onStdout: opts.onStdout ?? (() => undefined),
-    onStderr: () => undefined,
+    onStderr: opts.onStderr ?? (() => undefined),
     onSpawned: (proc) => {
       if (proc.pid !== undefined) opts.onSpawned?.(proc.pid);
     },
@@ -209,5 +230,109 @@ describe('spawnPipe lifecycle termination', () => {
       remediation: 'fixture limit reached',
     });
     expect(processIsAbsent(pid)).toBe(true);
+  });
+});
+
+describe('spawnPipe stdin failure', () => {
+  const limitLine = 'error: Individual quota reached. Resets in 2h6m30s.';
+  const writeLimitAndExit = `require('node:fs').writeSync(2,${JSON.stringify(`${limitLine}\n`)});process.exit(1)`;
+
+  afterEach(async () => {
+    await killAllProcesses();
+  });
+
+  itUnix('delivers the stderr of a child that exits before the first stdin write', async () => {
+    let pid = 0;
+    let stderr = '';
+    const pending = pipe({
+      script: writeLimitAndExit,
+      stdin: 'prompt',
+      onStderr: (chunk) => {
+        stderr += chunk;
+      },
+      onSpawned: (spawnedPid) => {
+        pid = spawnedPid;
+        blockUntilExited(spawnedPid);
+      },
+    });
+
+    await expect(pending).rejects.toSatisfy(spawnPipeError.isStdinIncomplete);
+    expect(stderr).toContain(limitLine);
+    expect(processIsAbsent(pid)).toBe(true);
+  });
+
+  itUnix('kills a child that stays alive after it closes its stdin', async () => {
+    let pid = 0;
+    let stderr = '';
+    const pending = pipe({
+      script:
+        "const fs=require('node:fs');fs.writeSync(2,'closing stdin\\n');fs.closeSync(0);setInterval(()=>{},1000)",
+      stdin: 'x'.repeat(8 * 1024 * 1024),
+      onStderr: (chunk) => {
+        stderr += chunk;
+      },
+      onSpawned: (spawnedPid) => {
+        pid = spawnedPid;
+      },
+    });
+
+    await expect(pending).rejects.toSatisfy(spawnPipeError.isStdinIncomplete);
+    expect(stderr).toContain('closing stdin');
+    expect(processIsAbsent(pid)).toBe(true);
+  });
+
+  itUnix(
+    'stops waiting for the close after the kill grace when a descendant holds stderr open',
+    async () => {
+      let stderr = '';
+      let drainStartedAt = 0;
+      const pending = pipe({
+        script: [
+          "const {spawn}=require('node:child_process')",
+          "const holder=spawn(process.execPath,['-e','setTimeout(()=>{},10000)'],{detached:true,stdio:['ignore','ignore','inherit']})",
+          "require('node:fs').writeSync(2,'holder:'+holder.pid+'\\n')",
+          writeLimitAndExit,
+        ].join(';'),
+        stdin: 'prompt',
+        onStderr: (chunk) => {
+          stderr += chunk;
+        },
+        onSpawned: (spawnedPid) => {
+          blockUntilExited(spawnedPid);
+          drainStartedAt = performance.now();
+        },
+      });
+
+      try {
+        await expect(pending).rejects.toSatisfy(spawnPipeError.isStdinIncomplete);
+        expect(performance.now() - drainStartedAt).toBeGreaterThanOrEqual(SIGKILL_DELAY_MS - 50);
+        expect(stderr).toContain(limitLine);
+      } finally {
+        const holderPid = Number(/holder:(\d+)/.exec(stderr)?.[1]);
+        if (holderPid > 1) process.kill(holderPid, 'SIGKILL');
+      }
+    },
+    15_000,
+  );
+
+  itUnix('resolves a child that reads its whole prompt with every byte it wrote', async () => {
+    let stdout = '';
+    let stderr = '';
+    const result = await pipe({
+      script:
+        "let v='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>v+=c);process.stdin.on('end',()=>{process.stdout.write(v);process.stderr.write('read')})",
+      stdin: 'the prompt',
+      onStdout: (chunk) => {
+        stdout += chunk;
+        return undefined;
+      },
+      onStderr: (chunk) => {
+        stderr += chunk;
+      },
+    });
+
+    expect(result).toEqual({ code: 0, signal: null });
+    expect(stdout).toBe('the prompt');
+    expect(stderr).toBe('read');
   });
 });

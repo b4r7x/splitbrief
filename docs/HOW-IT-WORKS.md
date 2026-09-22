@@ -207,7 +207,7 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 **`research.md`, `spec.md`, `plan.md`, `tasks.md`** — planning artifacts, written once at the end of each planning phase when the selected mode produces them. The user reviews applicable artifacts during approval gates.
 
-**`summary.json`** — final cost, timing, task outcomes. Written once at workflow end by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle/finalize.ts`), which also clears the `.splitbrief/active` lock file.
+**`summary.json`** — final cost, timing, task outcomes. Written at the end of each pass by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle/finalize.ts`), which also clears the `.splitbrief/active` lock file once the run is closed. A resumed pass drops the stop the last pass recorded as it starts (`reopenSessionRecord`).
 
 **`snapshots/`** — the content-addressed working-tree snapshot `/run accept` records, plus the run ledger marking the run accepted. There are no configurable trigger points and no pre-run baseline.
 

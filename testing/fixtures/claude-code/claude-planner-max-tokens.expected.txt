@@ -1,0 +1,12 @@
+I have everything needed. Here is the complete `tasks.md`.
+
+# Task Briefs — Lean orchestrator: no usage-policy caps, an honest retry ladder
+
+## Phase 1 — Part A
+…
+tional `handBack` to `EscalateOptions` so the implementer's own account of why it stopped can reach the hint prompt, and---
+id: T025
+title: Claude Code can produce hints, and the hand-back has a channel
+action: modify
+file: src/engine/planners/types.ts
+files: [src/engine/planners/types.ts, src/engine/planners/escalation.ts, src/engine/planners/base.test.ts, src/engine/planners/claude-code.test.ts]

@@ -17,6 +17,7 @@ import { getSections } from '../stores/workflow/actions/sections.js';
 import type { Config } from '../core/schemas/config.js';
 import type { Screen } from '../core/navigation/types.js';
 import { configStore } from '../stores/project/config.js';
+import { formatConfigSaveFailure } from '../stores/project/save-feedback.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
@@ -247,7 +248,7 @@ export function buildCommandContext({
           return {
             kind: 'failure',
             ok: false,
-            errorMessage: `Failed to save config: ${result.error.message}`,
+            errorMessage: formatConfigSaveFailure(result.error),
           };
       }
     },

@@ -20,7 +20,7 @@ import {
   type RouteAuthState,
   type TreeLead,
 } from './model-catalog/rows.js';
-import { renderModelRow, renderToolRow } from './tool-row.js';
+import { renderModelRow, renderToolRow, toolStatusesFit } from './tool-row.js';
 
 const AUTH = { hasOracle: false, providerAuth: undefined };
 
@@ -136,6 +136,7 @@ describe('runner row grammar', () => {
         maxWidth: 40,
         currentCommand: undefined,
         currentCommandKind: undefined,
+        showStatus: true,
       }),
     );
     await tick(20);
@@ -182,6 +183,7 @@ describe('runner row grammar', () => {
           maxWidth: 60,
           currentCommand: undefined,
           currentCommandKind: undefined,
+          showStatus: true,
         }),
       );
       await tick(20);
@@ -190,6 +192,67 @@ describe('runner row grammar', () => {
       expect(frame).toContain(label);
       ui.unmount();
     }
+  });
+
+  describe('tool column status words', () => {
+    const tool = (id: string, displayName: string, status: PickerOption['status']) =>
+      pickerItem({
+        id,
+        displayName,
+        kind: 'cli',
+        roles: ['planner', 'implementer'],
+        modelPolicy: 'optional',
+        billing: 'subscription-included',
+        permissions: readyPermissions,
+        status,
+        available: status.state === 'ready',
+        version: '1.2.0',
+      });
+    const unavailable = { state: 'unavailable', remediation: 'Install it.' } as const;
+    const items = [
+      tool('command-code', 'Command Code CLI', unavailable),
+      tool('kilo-code', 'Kilo Code CLI', unavailable),
+      tool('codex', 'OpenAI Codex CLI', { state: 'ready', remediation: null }),
+    ];
+
+    // 20 cells is the tool column's row at a 60x18 terminal, 32 at 80x24.
+    it('keeps every status word or none, never one row at a time', () => {
+      expect(toolStatusesFit(items, 20)).toBe(false);
+      expect(toolStatusesFit(items, 32)).toBe(true);
+    });
+
+    it('hides a status together with any version, so the row never reads as ready', async () => {
+      forceUnicodeGlyphs();
+      const hidden = [
+        { ...(items[0] as PickerOption), available: true },
+        items[2] as PickerOption,
+      ].map((item) =>
+        renderFeature(
+          renderToolRow({
+            item,
+            isCursor: false,
+            isSelected: false,
+            isContext: false,
+            maxWidth: 20,
+            currentCommand: undefined,
+            currentCommandKind: undefined,
+            showStatus: false,
+          }),
+        ),
+      );
+      await tick(20);
+      const [statusLine, readyLine] = hidden.map(
+        (ui) => stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '',
+      );
+
+      expect(statusLine).toContain('Command Code CLI');
+      expect(statusLine).not.toContain('Unavailable');
+      expect(statusLine).not.toContain('1.2.0');
+      // A version is outranked by the name it belongs to: it goes before the name sheds a word.
+      expect(readyLine).toContain('OpenAI Codex CLI');
+      expect(readyLine).not.toContain('1.2.0');
+      for (const ui of hidden) ui.unmount();
+    });
   });
 
   it('keeps the current marker visible when the configured runner is not ready', async () => {
@@ -214,6 +277,7 @@ describe('runner row grammar', () => {
         maxWidth: 50,
         currentCommand: undefined,
         currentCommandKind: undefined,
+        showStatus: true,
       }),
     );
     await tick(20);
@@ -245,6 +309,7 @@ describe('runner row grammar', () => {
         maxWidth: 40,
         currentCommand: undefined,
         currentCommandKind: undefined,
+        showStatus: true,
       }),
     );
     await tick(20);
@@ -286,6 +351,7 @@ describe('runner row grammar', () => {
       maxWidth: 40,
       currentCommand: undefined,
       currentCommandKind: undefined,
+      showStatus: true,
     } as const;
     const unavailableColor = renderToolRow({ item: unavailable, ...rowArgs }).props.metadataColor;
     const readyColor = renderToolRow({ item: ready, ...rowArgs }).props.metadataColor;
@@ -450,18 +516,21 @@ describe('runner row grammar', () => {
 
     // A row with no size or detail carries the id alone.
     const bare = renderModelRow({
-      row: modelRow({ id: 'best', displayName: 'Best', catalogModelId: 'claude-opus-5' }, 'Known'),
+      row: modelRow(
+        { id: 'best', displayName: 'Best', catalogModelId: 'claude-fable-5-1' },
+        'Known',
+      ),
       isCursor: false,
       maxWidth: 60,
       currentModel: undefined,
       auth: AUTH,
     }).props;
     expect(bare.label).toBe('Best');
-    expect(bare.metadata).toBe('claude-opus-5');
+    expect(bare.metadata).toBe('claude-fable-5-1');
   });
 
   it('puts a detail string in the metadata cell, not the label', async () => {
-    const row = modelRow({ id: 'opus', displayName: 'Opus 5', detail: 'opus · 1M' }, 'Known');
+    const row = modelRow({ id: 'opus', displayName: 'Opus 5.5', detail: 'opus · 1M' }, 'Known');
     const el = renderModelRow({
       row,
       isCursor: false,
@@ -469,11 +538,11 @@ describe('runner row grammar', () => {
       currentModel: undefined,
       auth: AUTH,
     });
-    expect(el.props.label).toBe('Opus 5');
+    expect(el.props.label).toBe('Opus 5.5');
     expect(el.props.metadata).toBe('opus · 1M');
     expect(el.props.label).not.toContain('opus · 1M');
     const line = await rowLine(row, 60);
-    expect(line).toContain('Opus 5');
+    expect(line).toContain('Opus 5.5');
     expect(line).toContain('opus · 1M');
   });
 
@@ -582,6 +651,7 @@ describe('runner row grammar', () => {
         maxWidth: 40,
         currentCommand: undefined,
         currentCommandKind: undefined,
+        showStatus: true,
       }),
     );
     await tick();
@@ -622,6 +692,7 @@ describe('runner row grammar', () => {
       maxWidth: 40,
       currentCommand: undefined,
       currentCommandKind: undefined,
+      showStatus: true,
     } as const;
     expect(renderToolRow({ item: launcher, ...rowArgs }).props.defaultLead).toBe('blank');
     expect(renderToolRow({ item: tool, ...rowArgs }).props.defaultLead).toBe('dot');
@@ -631,6 +702,7 @@ describe('runner row grammar', () => {
         ...rowArgs,
         currentCommand: 'my-tool --json',
         currentCommandKind: 'shell',
+        showStatus: true,
       }).props.defaultLead,
     ).toBe('dot');
 
@@ -1040,7 +1112,7 @@ describe('runner row grammar', () => {
     it('gives a variant-less row with a ladder a disclosure chevron, and one without none', async () => {
       const withLadder: ModelOption = {
         id: 'opus',
-        displayName: 'Opus 5',
+        displayName: 'Opus 5.5',
         membership: 'confirmed',
         contextLength: 1_000_000,
         effortChoices: ['low', 'medium', 'high'],
@@ -1064,7 +1136,7 @@ describe('runner row grammar', () => {
     it('opens the chevron on an expanded flag-channel row', async () => {
       const withLadder: ModelOption = {
         id: 'opus',
-        displayName: 'Opus 5',
+        displayName: 'Opus 5.5',
         membership: 'confirmed',
         contextLength: 1_000_000,
         effortChoices: ['low', 'medium', 'high'],
@@ -1082,7 +1154,7 @@ describe('runner row grammar', () => {
     it('puts the flag-channel chevron after the metadata and before the check', async () => {
       const withLadder: ModelOption = {
         id: 'opus',
-        displayName: 'Opus 5',
+        displayName: 'Opus 5.5',
         membership: 'confirmed',
         contextLength: 1_000_000,
         effortChoices: ['low', 'medium', 'high'],
@@ -1190,6 +1262,7 @@ describe('runner row grammar', () => {
           maxWidth: 40,
           currentCommand: 'my-tool --json',
           currentCommandKind: kind,
+          showStatus: true,
         }),
       );
       await tick();
@@ -1249,6 +1322,7 @@ describe('runner row grammar', () => {
         maxWidth: 50,
         currentCommand: undefined,
         currentCommandKind: undefined,
+        showStatus: true,
       }),
     );
     await tick(20);
@@ -1268,6 +1342,7 @@ describe('runner row grammar', () => {
         maxWidth: 50,
         currentCommand: undefined,
         currentCommandKind: undefined,
+        showStatus: true,
       }),
     );
     await tick(20);
@@ -1318,6 +1393,49 @@ describe('runner row grammar', () => {
       const line = await rowLine(row, 24);
       expect(line).toContain(ELLIPSIS);
       expect(line).not.toContain('opencode-go-plus-a-long-provider-tag');
+    });
+
+    // 22 cells is the model column's row at a 60x18 terminal, 31 at 80x24.
+    it('keeps the effort level whole at the narrowest picker', async () => {
+      const gemini: ModelOption = {
+        id: 'gemini-3.8-flash-medium',
+        displayName: 'Gemini 3.8 Flash',
+      };
+      const line = await rowLine(axisRow(gemini, 'effort', 'medium', true), 22);
+
+      expect(line).toMatch(/effort +medium/);
+      expect(line).not.toContain(ELLIPSIS);
+    });
+
+    it('sheds the credential source whole rather than cutting into the sign-in word', async () => {
+      const line = await rowLine(routeRow({ kind: 'configured', source: 'api' }), 31);
+
+      expect(line).toContain('openai');
+      expect(line).toContain('signed in');
+      expect(line).not.toContain('api key');
+      expect(line).not.toContain(ELLIPSIS);
+    });
+
+    it('keeps a route provider whole and gives up its sign-in word first', async () => {
+      const row: RightRow = {
+        kind: 'route',
+        model: { id: 'openai/gpt-5.6' },
+        variant: {
+          fullId: 'opencode-go/gpt-5.6',
+          providerPrefix: 'opencode-go',
+          tag: 'opencode-go',
+        },
+        last: true,
+        auth: { kind: 'needs-sign-in' },
+        tree: { depth: 1, parentContinues: false },
+      };
+      const narrow = await rowLine(row, 22);
+      const roomy = await rowLine(row, 31);
+
+      expect(narrow).toContain('opencode-go');
+      expect(narrow).not.toContain('sign');
+      expect(narrow).not.toContain(ELLIPSIS);
+      expect(roomy).toMatch(/opencode-go +needs sign-in/);
     });
 
     it('checks only the persisted route among siblings', async () => {

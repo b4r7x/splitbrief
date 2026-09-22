@@ -100,7 +100,7 @@ export function eventRowBlock(options: {
       return borderedCardRowsBlock({
         keyPrefix,
         label: 'Recovery',
-        value: `Selected ${recoveryActionLabel(event.action)} for ${sentenceCaseIdentifier(event.reason)}`,
+        value: `Selected ${recoveryActionLabel(event.action, { seat: event.seat })} for ${sentenceCaseIdentifier(event.reason)}`,
         width: ctx.width,
         labelTone: 'textDim',
       });
@@ -108,7 +108,7 @@ export function eventRowBlock(options: {
       return borderedCardRowsBlock({
         keyPrefix,
         label: 'Recovery',
-        value: `${recoveryActionLabel(event.action)} blocked: ${event.message}`,
+        value: `${recoveryActionLabel(event.action, { seat: event.seat })} blocked: ${event.message}`,
         width: ctx.width,
         labelTone: 'error',
         valueTone: 'textDim',
@@ -117,7 +117,7 @@ export function eventRowBlock(options: {
       return borderedCardRowsBlock({
         keyPrefix,
         label: 'Recovery',
-        value: `${recoveryOutcomeLabel(event.outcome)} via ${recoveryActionLabel(event.action)}${event.implementerProfile ? ` · ${event.implementerProfile}` : ''}`,
+        value: `${recoveryOutcomeLabel(event.outcome)} via ${recoveryActionLabel(event.action, { seat: event.seat })}${event.implementerProfile ? ` · ${event.implementerProfile}` : ''}`,
         width: ctx.width,
         labelTone: recoveryResolvedTone(event.outcome),
         valueTone: recoveryResolvedTone(event.outcome),

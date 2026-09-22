@@ -47,6 +47,14 @@ function transformKeys(
   return obj;
 }
 
+/**
+ * The key the loader reads a YAML key as, beneath a parent path already in its loaded spelling.
+ * `outputFormat` and `output_format` load as one key; where a map carries both, the later wins.
+ */
+export function loadedKey(key: string, loadedPath: readonly string[]): string {
+  return transformKey(key, snakeToCamel, loadedPath);
+}
+
 export function fromYaml(obj: unknown): Record<string, unknown> {
   return narrowRecord(transformKeys(obj, snakeToCamel)) ?? {};
 }

@@ -227,6 +227,56 @@ describe('event row dispatch', () => {
     expect(rows.map(rowText).join('\n')).toContain(`${outcomeLabel} via Try again`);
   });
 
+  describe('a seat swap names the seat the halt stopped', () => {
+    function swapRowsText(seat: 'plan' | 'build' | 'review' | undefined): string {
+      const base = {
+        ts: 0,
+        phase: 'planning',
+        issueId: 'issue-1',
+        reason: 'runner-usage-limit',
+        action: 'switch-seat',
+        ...(seat !== undefined && { seat }),
+      } as const;
+      const events: EngineEvent[] = [
+        { type: 'recovery_action_selected', ...base },
+        { type: 'recovery_action_failed', ...base, message: 'codex is not ready' },
+        { type: 'recovery_resolved', ...base, outcome: 'continued' },
+      ];
+      return events
+        .flatMap((event, globalIndex) =>
+          eventRows({
+            event,
+            globalIndex,
+            expanded: false,
+            ctx: { width: 80, viewportRows: 20, streaming },
+          }),
+        )
+        .map(rowText)
+        .join('\n');
+    }
+
+    it.each([
+      ['plan', 'Change PLAN tool'],
+      ['build', 'Change BUILD tool'],
+      ['review', 'Change REVIEW tool'],
+    ] as const)('on the %s seat', (seat, label) => {
+      const text = swapRowsText(seat);
+
+      expect(text).toContain(`Selected ${label} for Runner usage limit`);
+      expect(text).toContain(`${label} blocked: codex is not ready`);
+      expect(text).toContain(`Continued via ${label}`);
+    });
+
+    it('names no seat on an event recorded before the seat was', () => {
+      const text = swapRowsText(undefined);
+
+      expect(text).toContain('Selected Change tool for Runner usage limit');
+      expect(text).toContain('Change tool blocked: codex is not ready');
+      expect(text).toContain('Continued via Change tool');
+      expect(text).not.toMatch(/Change (PLAN|BUILD|REVIEW) tool/);
+    });
+  });
+
   it('redacts secrets in planner, warning, and user display rows', () => {
     const secret = 'sk-abcdefghijklmnopqrstuvwxyz';
     const jwt =

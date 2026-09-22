@@ -473,8 +473,7 @@ process.stdout.write(JSON.stringify({
     expect(errors).toHaveLength(0);
     expect(
       events.filter(
-        (event) =>
-          event.type === 'call_warning' && event.warning.code === 'runner_output_text_limit',
+        (event) => event.type === 'call_warning' && event.warning.code.endsWith('_text_limit'),
       ),
     ).toHaveLength(0);
   });

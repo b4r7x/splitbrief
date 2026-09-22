@@ -513,6 +513,58 @@ describe('detection cache', () => {
     ).resolves.toMatchObject({ contextKey });
   });
 
+  it.each(['my-local-app', 'ai-model-server', 'my-private-app', 'team-account-service'])(
+    'remembers detection for a project folder named %s',
+    async (folder) => {
+      const projectDir = join(tempDir, 'work', folder);
+      await mkdir(projectDir, { recursive: true });
+      const contextKey = detectionContextsForCurrentConfig({
+        config: createDefaultConfig(),
+        projectDir,
+      }).readiness;
+      expect(contextKey).not.toContain(folder);
+
+      await saveDetectionCache({
+        projectDir,
+        snapshot: cacheSnapshot({
+          contextKey,
+          cliTools: [cliDetectionFor('ready', 'claude-code')],
+        }),
+      });
+
+      await expect(loadDetectionCacheSnapshot({ projectDir, contextKey })).resolves.toMatchObject({
+        contextKey,
+      });
+    },
+  );
+
+  it('still refuses a digest-shaped model id in a project folder named my-local-app', async () => {
+    const projectDir = join(tempDir, 'work', 'my-local-app');
+    await mkdir(projectDir, { recursive: true });
+    const contextKey = detectionContextsForCurrentConfig({
+      config: {
+        ...createDefaultConfig(),
+        planner: {
+          kind: 'api',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
+          offering: 'payg',
+          apiBase: 'https://custom-endpoint.example/v1',
+          apiKey: 'env:CUSTOM_ENDPOINT_API_KEY',
+          model: 'f'.repeat(64),
+        },
+      },
+      projectDir,
+    }).readiness;
+
+    await saveDetectionCache({
+      projectDir,
+      snapshot: cacheSnapshot({ contextKey, cliTools: [cliDetectionFor('ready', 'claude-code')] }),
+    });
+
+    await expect(loadDetectionCacheSnapshot({ projectDir, contextKey })).resolves.toBeNull();
+  });
+
   it('still refuses a context carrying real credential material', async () => {
     const contextKey = 'detection-context-v1|darwin|api-key|sk-live-abcdefghijklmnop';
 

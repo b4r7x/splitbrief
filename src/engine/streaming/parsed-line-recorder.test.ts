@@ -227,23 +227,41 @@ describe('createParsedLineRecorder', () => {
     expect(recorder.hasTerminal()).toBe(true);
 
     const warnings = events.filter(
-      (event) => event.type === 'call_warning' && event.warning.code === 'runner_output_text_limit',
+      (event) => event.type === 'call_warning' && event.warning.code.endsWith('_text_limit'),
     );
     expect(warnings).toHaveLength(0);
   });
 
-  it('warns once when feeding 3 MB of assistant text in 200 chunks', () => {
-    const { events, parsed } = createHarness();
+  it('warns once, at the end, when 3 MB of assistant text is the text the call ends with', () => {
+    const { events, parsed, recorder } = createHarness();
 
     const chunk = 'x'.repeat(15_000);
     for (let i = 0; i < 200; i++) {
       parsed.apply({ text: chunk, channel: 'assistant' });
     }
+    expect(events.some((event) => event.type === 'call_warning')).toBe(false);
+    const result = recorder.finishCompleted();
 
     const warnings = events.filter(
-      (event) => event.type === 'call_warning' && event.warning.code === 'runner_output_text_limit',
+      (event) => event.type === 'call_warning' && event.warning.code === 'runner_call_text_limit',
     );
     expect(warnings).toHaveLength(1);
+    expect(result.status).toBe('truncated');
     expect(parsed.text.length).toBeLessThanOrEqual(1024 * 1024);
+  });
+
+  it('does not warn about 3 MB of narration a final text that fits replaced', () => {
+    const { events, parsed, recorder } = createHarness();
+
+    const chunk = 'x'.repeat(15_000);
+    for (let i = 0; i < 200; i++) {
+      parsed.apply({ text: chunk, channel: 'assistant' });
+    }
+    parsed.apply({ text: 'VERDICT: widen a.ts — r', channel: 'result' });
+    const result = recorder.finishCompleted();
+
+    expect(result).toMatchObject({ status: 'completed', text: 'VERDICT: widen a.ts — r' });
+    expect(result.warnings).toEqual([]);
+    expect(events.some((event) => event.type === 'call_warning')).toBe(false);
   });
 });

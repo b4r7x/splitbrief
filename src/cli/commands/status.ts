@@ -31,9 +31,10 @@ export function registerStatusCommand(program: Command): void {
         );
         const phaseSuffix = state.awaitingContinue ? ` ${ansis.yellow('(awaiting continue)')}` : '';
         console.log(`${ansis.dim('Phase:')}    ${ansis.bold(state.phase)}${phaseSuffix}`);
-        console.log(
-          `${ansis.dim('Task:')}     ${state.currentTaskIndex + 1}/${state.tasks.length}`,
-        );
+        // The cursor points one past the last brief once every brief has settled, so the
+        // position is the brief it names, never a brief the run does not have.
+        const position = Math.min(state.currentTaskIndex + 1, state.tasks.length);
+        console.log(`${ansis.dim('Task:')}     ${position}/${state.tasks.length}`);
         console.log(`${ansis.dim('Started:')}  ${state.startedAt}`);
         console.log(`${ansis.dim('Session:')}  ${sessionId}`);
 

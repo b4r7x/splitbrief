@@ -10,6 +10,7 @@ import type { CrewRow } from '../../core/crew/rows.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { seatAxisFocus, seatPickerOverlayFor } from '../../core/navigation/types.js';
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../../core/providers/automatic-model.js';
+import { seatConfiguredEffort } from '../../core/runners/capabilities.js';
 import type { Config } from '../../core/schemas/config.js';
 import { configStore } from '../../stores/project/config.js';
 import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
@@ -70,7 +71,10 @@ function openCrewRow(row: CrewRow, config: Config): CrewActivation {
     runner.model,
     runner.kind === 'cli' ? runner.tool : undefined,
   );
-  if (model !== undefined && model !== AUTOMATIC_MODEL) pickerViewStore.expand(model);
+  if (model !== undefined && model !== AUTOMATIC_MODEL) {
+    const effort = seatConfiguredEffort({ runner, role: CREW_SEAT_ROLES[seatId] });
+    pickerViewStore.expand(model, undefined, effort);
+  }
   overlayStore.open(seatPickerOverlayFor(CREW_SEAT_ROLES[seatId]), seatAxisFocus(seatId));
   return { kind: 'opened' };
 }

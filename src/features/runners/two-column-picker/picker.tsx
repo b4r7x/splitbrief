@@ -5,7 +5,12 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { availableRows } from '../../../components/pickers/scroll-window.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import {
+  ELLIPSIS,
+  getTerminalCellWidth,
+  sanitizeTerminalDisplayText,
+} from '../../../utils/display-text.js';
+import { wrapOnWords } from '../picker-format.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { SingleColumnPicker } from '../../../components/pickers/single-column.js';
@@ -44,9 +49,27 @@ export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: 
   onCancel: () => void;
   onRefresh?: (() => void) | undefined;
   preview?: ((ctx: PreviewContext<L, R>) => string | undefined) | undefined;
+  /**
+   * An error standing right now, such as a save the config refused. The overlay hides the
+   * composer that would carry it, so it takes the byline until it clears.
+   */
+  error?: string | undefined;
 }
 
 const PREVIEW_MIN_COLS = 50;
+/** The byline's rows: the preview's, and an error's when one stands. */
+const BYLINE_ROWS = 2;
+
+/** An error broken on words into the byline's rows; words left over end its last row in an ellipsis. */
+function errorLines(message: string, cells: number): string[] {
+  const { lines, cut } = wrapOnWords(message, cells, BYLINE_ROWS);
+  if (!cut) return lines;
+  const words = (lines.at(-1) ?? '').split(' ');
+  while (words.length > 1 && getTerminalCellWidth(`${words.join(' ')}${ELLIPSIS}`) > cells) {
+    words.pop();
+  }
+  return [...lines.slice(0, -1), `${words.join(' ')}${ELLIPSIS}`];
+}
 
 const INNER_PADDING = 4;
 /** Below this card width the instruction line truncates instead of wrapping. */
@@ -214,6 +237,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   onCancel,
   onRefresh,
   preview,
+  error,
 }: TwoColumnPickerProps<L, R>) {
   const t = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
@@ -375,6 +399,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
                       label="+ Add custom model…"
                       state={isCursor ? 'active' : 'default'}
                       width={maxWidth}
+                      keepWhole="label"
                     />
                   );
                 }
@@ -384,10 +409,24 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           )}
         </Box>
       </Box>
-      <Box width={totalBoxWidth} height={2} overflow="hidden" marginTop={1}>
-        <Text color={t.textDim} wrap="wrap">
-          {showPreview ? previewText : ' '}
-        </Text>
+      <Box
+        width={totalBoxWidth}
+        height={BYLINE_ROWS}
+        overflow="hidden"
+        marginTop={1}
+        flexDirection="column"
+      >
+        {error === undefined ? (
+          <Text color={t.textDim} wrap="wrap">
+            {showPreview ? previewText : ' '}
+          </Text>
+        ) : (
+          errorLines(sanitizeTerminalDisplayText(error), totalBoxWidth).map((line) => (
+            <Text key={line} color={t.error} wrap="truncate-end">
+              {line}
+            </Text>
+          ))
+        )}
       </Box>
       <Box width={totalBoxWidth}>
         <Text color={t.textDim} wrap="truncate-end">

@@ -26,7 +26,7 @@ import {
 import type { ResumeContextHolder, WorkflowContext } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary/build.js';
 import { publishError, publishWarning } from '../events.js';
-import { saveFinalSession } from '../session-lifecycle/finalize.js';
+import { reopenSessionRecord, saveFinalSession } from '../session-lifecycle/finalize.js';
 import { withShutdownHandlers } from '../session-lifecycle/shutdown.js';
 import { installQueueHandler } from '../session-lifecycle/install-queue.js';
 import { createRunIsolation } from '../isolation/create.js';
@@ -62,12 +62,15 @@ function resolveSessionStart(savedState: WorkflowState | undefined): number {
 /**
  * A new-workflow run applies START, which the state machine accepts only from
  * `idle`. `prepareNewSession` allocates a session directory that cannot already
- * exist (a non-recursive mkdir plus an exclusive ownership marker), and the only
- * other path that carries a resume state — a seat swap — is typed `purpose:
- * 'resume'`, so no caller can reach here over a started session. Refusing before
- * the run touches liveness, isolation, or state keeps that an internal invariant
- * instead of a transition error raised half-way into a session it then marks
- * failed.
+ * exist (a non-recursive mkdir plus an exclusive ownership marker), so a
+ * new-workflow preparation serves only the run that starts its session. Every
+ * later entry into that session is a resume: the TUI run loop prepares the
+ * session again as `purpose: 'resume'` before it re-enters a run it started (a
+ * halt answered in process, a rewind, a restart), and a seat swap, a continue at
+ * rest and the CLI `continue` are resume preparations already. Refusing before
+ * the run touches liveness, isolation, or state keeps a caller that breaks this
+ * rule an internal invariant instead of a transition error raised half-way into
+ * a session it then marks failed.
  */
 function assertNewWorkflowSessionUnstarted(
   ref: Readonly<{ projectDir: string; sessionId: string }>,
@@ -124,7 +127,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       ...(opts.modelCache !== undefined && { pricingCache: opts.modelCache }),
     };
   };
-  let summaryBase = seatIdentityOf(config);
+  const summaryBase = seatIdentityOf(config);
 
   const metadata: SpecMetadata = {
     plannerTool: summaryBase.plannerTool,
@@ -134,10 +137,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
   };
 
-  // A seat swap re-prepares this same session, which mints a new active-pointer
-  // receipt; finalization must clear the pointer with the receipt that is
-  // actually on disk, not the one this run started with.
-  let activeSession = session.active;
   let trackedState: WorkflowState | undefined;
   let currentTask: Pick<Task, 'file' | 'files' | 'action'> | undefined;
   let result: Summary | undefined;
@@ -275,6 +274,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
               ? null
               : readWorkflowStateHead({ projectDir, sessionId });
           savedState = savedStateResult?.state;
+          if (opts.prepared.purpose !== 'new-workflow') reopenSessionRecord(ref);
           trackedState = savedState ?? createInitialState(feature);
           const resumeHolder: ResumeContextHolder = { messages: [] };
           const init = await initializeWorkflow({
@@ -296,10 +296,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             return;
           }
 
-          activeSession = init.prepared.session.active;
-          // A seat swap re-prepared the run on a switched config; every summary
-          // from here on names the seat the run is actually running.
-          summaryBase = seatIdentityOf(init.prepared.config);
           workflowBus = init.wctx.bus;
           const callPublisher: PlannerCallPublisherContext = {
             bus: init.wctx.bus,
@@ -443,7 +439,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         saveFinalSession({
           projectDir,
           sessionId,
-          active: activeSession,
+          active: session.active,
           feature,
           startTime,
           summary,
@@ -456,7 +452,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     saveFinalSession({
       projectDir,
       sessionId,
-      active: activeSession,
+      active: session.active,
       feature,
       startTime,
       summary: result,

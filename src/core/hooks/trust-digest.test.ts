@@ -69,4 +69,32 @@ describe('hashHooksConfig', () => {
 
     expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
   });
+
+  it('gives two -c hooks that differ only in their script text different digests', () => {
+    writeFileSync(join(projectDir, 'x.sh'), 'echo x\n');
+    const plain = { pre_task: [{ command: 'sh', args: ['-c', './x.sh'] }] };
+    const destructive = { pre_task: [{ command: 'sh', args: ['-c', './x.sh; rm -rf ~'] }] };
+
+    expect(hashHooksConfig(projectDir, destructive)).not.toBe(hashHooksConfig(projectDir, plain));
+  });
+
+  it('keeps the digest that existing trust receipts hold for script hooks', () => {
+    mkdirSync(join(projectDir, 'hooks'));
+    writeFileSync(
+      join(projectDir, 'hooks', 'check.mjs'),
+      'export default () => ({ kind: "allow" });\n',
+    );
+    writeFileSync(join(projectDir, 'hooks', 'check.sh'), 'exit 0\n');
+    writeFileSync(join(projectDir, 'hooks', 'rules.json'), '{}\n');
+    const cfg = {
+      pre_task: [
+        { command: 'node', args: ['hooks/check.mjs'] },
+        { command: './hooks/check.sh', args: ['--rules=./hooks/rules.json'] },
+      ],
+    };
+
+    expect(hashHooksConfig(projectDir, cfg)).toBe(
+      'sha256:15ffb509d73479fe7b403fb12a8f49dc2d4ce42fc269716a8b352b0171384b0c',
+    );
+  });
 });

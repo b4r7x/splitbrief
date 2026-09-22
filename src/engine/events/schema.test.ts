@@ -605,6 +605,32 @@ describe('parseEngineEvent', () => {
     ).toBeNull();
   });
 
+  it.each([
+    { type: 'recovery_action_selected' },
+    { type: 'recovery_action_failed', message: 'blocked' },
+    { type: 'recovery_resolved', outcome: 'continued' },
+  ] as const)(
+    '$type names the halted seat, and a log written before the seat still parses',
+    (variant) => {
+      const base = {
+        ts: 1,
+        phase: 'planning',
+        issueId: 'issue-1',
+        reason: 'runner-usage-limit',
+        action: 'switch-seat',
+        ...variant,
+      } as const;
+
+      const old = parseEngineEvent(base);
+      expect(old).toEqual(expect.objectContaining({ type: variant.type }));
+      expect(old).not.toHaveProperty('seat');
+      expect(parseEngineEvent({ ...base, seat: 'plan' })).toEqual(
+        expect.objectContaining({ type: variant.type, seat: 'plan' }),
+      );
+      expect(parseEngineEvent({ ...base, seat: 'desk' })).toBeNull();
+    },
+  );
+
   it('publishing brief_quality_failed still parses as a public event', () => {
     expect(
       parseEngineEvent({

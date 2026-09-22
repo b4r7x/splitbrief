@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import {
+  executableName,
+  isPosixShellCommandStringOption,
+} from '../trust/interpreter-command-string.js';
 
 export const HOOK_EVENTS = [
   'pre_planning',
@@ -47,32 +51,30 @@ export const HookOutcomeSchema = z.discriminatedUnion('kind', [
 ]);
 export type HookOutcome = z.infer<typeof HookOutcomeSchema>;
 
-const FORBIDDEN_SHELL_COMMANDS = new Set([
-  'sh',
+const FORBIDDEN_SHELL_NAMES = new Set([
+  'ash',
   'bash',
-  'zsh',
+  'cmd',
+  'csh',
   'dash',
+  'env',
   'fish',
   'ksh',
-  'csh',
-  'tcsh',
+  'mksh',
   'powershell',
   'pwsh',
-  'cmd',
-  'cmd.exe',
-  '/bin/sh',
-  '/bin/bash',
-  '/bin/zsh',
-  '/bin/dash',
-  '/bin/fish',
-  '/bin/ksh',
-  '/usr/bin/env',
-  '/usr/bin/bash',
-  '/usr/bin/zsh',
-  '/usr/bin/sh',
+  'sh',
+  'tcsh',
+  'zsh',
 ]);
 
-const SHELL_EVALUATION_FLAGS = new Set(['-c', '--command', '/c', '/C']);
+function isShellLauncher(value: string): boolean {
+  return FORBIDDEN_SHELL_NAMES.has(executableName(value));
+}
+
+function enablesShellEvaluation(arg: string): boolean {
+  return arg === '/c' || arg === '/C' || isPosixShellCommandStringOption(arg);
+}
 
 const HookCommandEntrySchema = z
   .strictObject({
@@ -84,7 +86,7 @@ const HookCommandEntrySchema = z
     on_failure: FailureModeSchema.default('warn'),
   })
   .superRefine((entry, ctx) => {
-    if (FORBIDDEN_SHELL_COMMANDS.has(entry.command)) {
+    if (isShellLauncher(entry.command)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: `inline shell '${entry.command}' is not allowed as hook command — use a script file`,
@@ -94,14 +96,14 @@ const HookCommandEntrySchema = z
     for (let i = 0; i < entry.args.length; i++) {
       const arg = entry.args[i];
       if (arg === undefined) continue;
-      if (SHELL_EVALUATION_FLAGS.has(arg)) {
+      if (enablesShellEvaluation(arg)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `flag '${arg}' enables shell evaluation and is not allowed in hook args — use a script file`,
           path: ['args', i],
         });
       }
-      if (FORBIDDEN_SHELL_COMMANDS.has(arg)) {
+      if (isShellLauncher(arg)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `shell '${arg}' is not allowed in hook args — use a script file`,

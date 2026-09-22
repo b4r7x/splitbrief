@@ -63,6 +63,7 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   success: 'Visual fixture workflow complete',
   failure: 'Synthetic runner failure: bounded fixture',
   recovery: 'Change BUILD tool',
+  recoveryPlan: 'Change PLAN tool',
   retryExhausted: 'exhausted recovery retries',
   apiContext: 'Nothing was sent to PLAN',
 });
@@ -147,6 +148,8 @@ const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
 const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
 const WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID = scenarioId('workflow-recovery-retry-exhausted');
 const WORKFLOW_API_CONTEXT_ID = scenarioId('workflow-api-context-insufficient');
+const WORKFLOW_RECOVERY_PLAN_SEAT_ID = scenarioId('workflow-recovery-plan-seat');
+const WORKFLOW_RECOVERY_PLAN_SWAPPED_ID = scenarioId('workflow-recovery-plan-swapped');
 
 const idleProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IDLE_ID,
@@ -1050,6 +1053,91 @@ const apiContextRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
+/**
+ * The plan seat out of quota mid-plan: the halt is about the seat, not a brief, and offers the
+ * seat's other ready tools. Every surface that names the move names PLAN, never the build seat.
+ */
+const planUsageLimitRecoveryIssue: RecoveryIssue = {
+  id: 'rec_visual_plan_usage_limit',
+  reason: 'runner-usage-limit',
+  seat: 'plan',
+  phase: 'planning',
+  status: 'awaiting-user',
+  files: [],
+  affectedTaskIds: [],
+  message:
+    'Planning failed. Claude Code hit its usage limit — logging in again will not fix this. The limit resets at 5:00 PM; wait for it or switch the planner.',
+  details: ['Claude Code reported: usage limit reached · resets 5pm'],
+  resetAt: new Date(WORKFLOW_FIXTURE_RESET_AT).toISOString(),
+  switchSeat: { seat: 'plan', candidates: [{ tool: 'codex' }, { tool: 'opencode' }] },
+  facts: { tool: 'Claude Code' },
+  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+  recommendedAction: 'switch-seat',
+  createdAt: new Date(FIXED_TS).toISOString(),
+};
+
+const planSeatRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_PLAN_SEAT_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  resumeState: makeWorkflowState({
+    feature: WORKFLOW_FEATURE,
+    phase: 'planning',
+    pendingRecovery: planUsageLimitRecoveryIssue,
+  }),
+};
+
+const planSeatHalt = {
+  phase: 'planning',
+  issueId: 'rec_visual_plan_swapped',
+  reason: 'runner-usage-limit',
+} as const;
+const planSeatSwap = { ...planSeatHalt, action: 'switch-seat', seat: 'plan' } as const;
+
+/**
+ * A plan seat that ran out on Codex and was moved onto Claude Code, the planner this fixture's
+ * config names — so the header, which reads the seat of record, shows the seat after the swap.
+ */
+const planSeatSwappedProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_PLAN_SWAPPED_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+    {
+      type: 'error',
+      ts: FIXED_TS + 100,
+      phase: 'planning',
+      message:
+        'Planning failed. Codex hit its usage limit — logging in again will not fix this. Wait for the limit to reset or switch the planner, then start again.',
+    },
+    {
+      type: 'recovery_prompted',
+      ts: FIXED_TS + 200,
+      ...planSeatHalt,
+      files: [],
+      affectedTaskIds: [],
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      recommendedAction: 'switch-seat',
+      headline: 'Usage limit on Codex',
+      resumeCommand: 'splitbrief continue visual-workflow --action switch-seat:claude-code',
+    },
+    { type: 'recovery_action_selected', ts: FIXED_TS + 300, ...planSeatSwap },
+    { type: 'recovery_resolved', ts: FIXED_TS + 400, ...planSeatSwap, outcome: 'continued' },
+    {
+      type: 'planner_status',
+      ts: FIXED_TS + 500,
+      phase: 'planning',
+      status: 'running',
+      tool: 'claude-code',
+      model: 'claude-sonnet-4',
+    },
+  ],
+};
+
 const STOPPED_RUN_EVENTS: readonly EngineEvent[] = [
   {
     type: 'workflow_started',
@@ -1163,6 +1251,8 @@ const projections = [
   usageLimitRecoveryProjection,
   retryExhaustedRecoveryProjection,
   apiContextRecoveryProjection,
+  planSeatRecoveryProjection,
+  planSeatSwappedProjection,
 ] as const;
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =

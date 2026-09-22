@@ -1,10 +1,9 @@
 import {
   getTerminalCellWidth,
-  iterateTerminalGraphemes,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
-  wrapTerminalGraphemes,
 } from '../../../../utils/display-text.js';
+import { wrapPathAware } from '../../../../utils/wrap.js';
 import { wrapWidthFor } from '../row-markers.js';
 import type {
   ConversationRow,
@@ -19,38 +18,6 @@ const CARD_MIN_WIDTH = 10;
 
 function displayWidth(text: string): number {
   return getTerminalCellWidth(text);
-}
-
-function hardWrappedDisplayLines(text: string, width: number): string[] {
-  const maxWidth = Math.max(1, width);
-  const lines: string[] = [];
-  let line = '';
-  let lineWidth = 0;
-
-  const emitLine = (): void => {
-    lines.push(line);
-    line = '';
-    lineWidth = 0;
-  };
-
-  for (const sourceLine of text.split('\n')) {
-    wrapTerminalGraphemes({
-      graphemes: iterateTerminalGraphemes(sourceLine),
-      maxWidth,
-      initialWidth: lineWidth,
-      flush: () => {
-        emitLine();
-        return lineWidth;
-      },
-      append: (grapheme) => {
-        line += grapheme;
-        lineWidth += displayWidth(grapheme);
-      },
-    });
-    emitLine();
-  }
-
-  return lines;
 }
 
 export interface CardBodyLineInput {
@@ -199,10 +166,11 @@ export function prepareCardRows(input: CardBlockInput): PreparedCardRows {
     return {
       body,
       segments,
-      lines: hardWrappedDisplayLines(
+      // Whole words, measured in the cells the rows paint: only a word wider than the row breaks.
+      lines: wrapPathAware(
         sanitizeRowDisplayText(segments.map((segment) => segment.text).join('')),
         bodyWrapWidth,
-      ),
+      ).split('\n'),
     };
   });
   const rowCount = bodies.reduce((count, entry) => count + entry.lines.length, 1);

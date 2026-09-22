@@ -150,6 +150,30 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
     expect(output.join('')).toBe(messages.join(''));
   });
 
+  itUnix(
+    'reprints a final text that differs from the stream by more than line breaks',
+    async () => {
+      const messages = ['Reading a.ts.', 'VERDICT: widen a.ts — r'];
+      const final = 'Reading a.ts.\n\nVERDICT: widen a.ts, b.ts — r';
+      const { result, output } = await run({
+        script: EMIT_ALL,
+        lines: [
+          ...messages.map((text) =>
+            JSON.stringify({
+              type: 'assistant',
+              session_id: SESSION_ID,
+              message: { content: [{ type: 'text', text }] },
+            }),
+          ),
+          JSON.stringify({ type: 'result', session_id: SESSION_ID, result: final }),
+        ],
+      });
+
+      expect(result).toMatchObject({ status: 'completed', text: final });
+      expect(output.join('')).toBe(`${messages.join('')}${final}`);
+    },
+  );
+
   itUnix('stays live while the runner emits only session-bearing thinking frames', async () => {
     const silent = Array.from({ length: SILENT_FRAME_COUNT }, (_, index) =>
       thinkingDelta(`step ${index}`),

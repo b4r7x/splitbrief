@@ -25,6 +25,10 @@ const TOOL_CALL_FIXTURE = join(
   import.meta.dirname,
   '../../../../testing/fixtures/cursor/stream-json-tool-call.ndjson',
 );
+const NARRATED_VERDICT_FIXTURE = join(
+  import.meta.dirname,
+  '../../../../testing/fixtures/cursor/stream-json-narrated-verdict.ndjson',
+);
 
 function plannerArgs(mode: 'plan' | 'escalate', configuredArgs: readonly string[] = []) {
   return cursorPlannerAdapter.buildArgs({
@@ -211,6 +215,23 @@ describe('Cursor role adapters', () => {
     ).toEqual({ valid: false, conflicts: ['-H'] });
   });
 
+  it('refuses --stream-partial-output: its deltas carry no field that joins them into one message', () => {
+    const vectors = [
+      { validate: cursorPlannerAdapter.validateArgs, base: plannerArgs('plan') },
+      { validate: cursorPlannerAdapter.validateArgs, base: plannerArgs('escalate') },
+      { validate: cursorImplementerAdapter.validateArgs, base: implementerArgs() },
+    ];
+    for (const { validate, base } of vectors) {
+      expect(base).not.toContain('--stream-partial-output');
+      for (const configured of [['--stream-partial-output'], ['--stream-partial-output=true']]) {
+        expect(validate({ invocationArgs: [...base, ...configured], baseArgs: base })).toEqual({
+          valid: false,
+          conflicts: ['--stream-partial-output'],
+        });
+      }
+    }
+  });
+
   it('retains explicit failure terminals and malformed JSON', () => {
     const isError = cursorProtocolEvents(
       JSON.stringify({
@@ -295,6 +316,12 @@ describe('Cursor role adapters', () => {
         error: { code: 'malformed-cursor-record', message: 'Cursor tool call record is malformed' },
       }),
     ]);
+  });
+
+  it('keeps the whole message after the last tool call, with its verdict line on a line of its own', () => {
+    expect(terminalOf(fixtureEvents(NARRATED_VERDICT_FIXTURE)).text).toBe(
+      'The first word of notes.txt is alpha.\nVERDICT: PASS',
+    );
   });
 
   it('usage maps to a TokenDelta', () => {

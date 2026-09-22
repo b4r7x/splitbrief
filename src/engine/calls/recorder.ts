@@ -145,14 +145,15 @@ export function createRunnerCallRecorder(opts: {
     label: 'runner call tool deltas',
   });
 
-  function emit(input: RunnerCallEventInput): void {
+  /** An event the result does not keep still reaches the feed. */
+  function emit(input: RunnerCallEventInput, retain = true): void {
     const event = validateRunnerCallEvent(redactRunnerCallEventInput(input, redactCredential));
     if (hasTerminalEvent && !isRunnerCallTerminalEvent(event)) return;
     if (isRunnerCallTerminalEvent(event)) {
       if (hasTerminalEvent) return;
       hasTerminalEvent = true;
     }
-    events.push(event);
+    if (retain) events.push(event);
     opts.onEvent?.(event);
   }
 
@@ -221,6 +222,9 @@ export function createRunnerCallRecorder(opts: {
       code: redactCredential(finishOpts.error.code),
       message: boundedRunnerCallMessage(finishOpts.error.message, opts.credentialValues),
     };
+    // Judged on the text the call ends with: a final text that fits replaced
+    // whatever the budget cut from the narration streamed before it.
+    if (textLimiter.limit !== null) noteLimit(textLimiter.limit, 'truncates-result');
     emitStderrFailureWarning();
     emit(
       runnerCallErrorEvent(context, {
@@ -379,7 +383,7 @@ export function createRunnerCallRecorder(opts: {
           ...(eventOpts.semantics !== undefined && { semantics: eventOpts.semantics }),
         });
       }
-      if (accepted.limit !== null) noteLimit(accepted.limit, 'truncates-result');
+      if (accepted.limit !== null && resultLimit === null) resultLimit = accepted.limit;
     },
     stderr: (eventOpts) => {
       const accepted = stderrLimiter.accept(redactCredential(eventOpts.text));
@@ -419,7 +423,10 @@ export function createRunnerCallRecorder(opts: {
       }
     },
     toolUseDone: (eventOpts) => {
-      if (toolUseDoneCount >= RUNNER_CALL_TOOL_USE_MAX_ITEMS) {
+      // Past the cap the result keeps the tool results it has, and the feed
+      // still hears every completion: a call does not go quiet at its 257th.
+      const kept = toolUseDoneCount < RUNNER_CALL_TOOL_USE_MAX_ITEMS;
+      if (!kept) {
         noteLimit(
           itemLimit({
             code: 'runner_call_tool_use_count_limit',
@@ -429,20 +436,22 @@ export function createRunnerCallRecorder(opts: {
           }),
           'diagnostic-only',
         );
-        return;
       }
       const bounded = boundRunnerCallToolUse(
         redactRunnerCallToolUse(eventOpts.toolUse, redactCredential),
       );
       toolUseDoneCount += 1;
       if (bounded.limit !== null) noteLimit(bounded.limit, 'diagnostic-only');
-      emit({
-        type: 'call_tool_use_done',
-        ts: eventOpts.ts ?? Date.now(),
-        ...context,
-        channel: 'tool',
-        toolUse: bounded.value,
-      });
+      emit(
+        {
+          type: 'call_tool_use_done',
+          ts: eventOpts.ts ?? Date.now(),
+          ...context,
+          channel: 'tool',
+          toolUse: bounded.value,
+        },
+        kept,
+      );
     },
     usage: (eventOpts) =>
       emit({

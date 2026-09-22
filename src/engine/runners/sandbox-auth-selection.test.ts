@@ -33,7 +33,7 @@ type Staged = Readonly<{ apiKey: string; session: 'bridged' | 'none' }>;
 /**
  * A `codex` that records, per invocation, which of the two competing
  * credentials its staged environment handed it, then answers like the tool:
- * logged in when it holds either one, and a one-model bundled catalog.
+ * logged in when it holds either one, and a one-model catalog.
  */
 async function installCodexShim(root: string, logDir: string) {
   const directory = join(root, 'bin');
@@ -126,7 +126,7 @@ describe('one auth selection for readiness, catalog and dispatch', () => {
         expect(evidence.auth).toBe('verified');
         expect(evidence.catalog).toMatchObject({ kind: 'success' });
         expect(await stagedBy(logDir, 'login_status')).toEqual(expected);
-        expect(await stagedBy(logDir, 'debug_models_--bundled')).toEqual(expected);
+        expect(await stagedBy(logDir, 'debug_models')).toEqual(expected);
         const dispatchHome = String(dispatch.HOME);
         const dispatchSession = (await readdir(join(dispatchHome, '.codex')).catch(() => []))
           .length;
@@ -158,7 +158,7 @@ describe('one auth selection for readiness, catalog and dispatch', () => {
         expect(evidence.auth).toBe('missing');
         expect(evidence.catalog).toEqual({ kind: 'missing-credential' });
         expect(await stagedBy(logDir, 'login_status')).toBeUndefined();
-        expect(await stagedBy(logDir, 'debug_models_--bundled')).toBeUndefined();
+        expect(await stagedBy(logDir, 'debug_models')).toBeUndefined();
       });
     },
     60_000,

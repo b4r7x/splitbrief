@@ -15,7 +15,8 @@ import {
   parseOpenCodeNativeModelCatalog,
   type NativeCliModelCatalog,
 } from '../../engine/providers/cli-model-catalog.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { ELLIPSIS, getTerminalCellWidth } from '../../utils/display-text.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { buildRightModels } from './model-catalog/catalog.js';
 import { assemblePickerDescriptors, buildPickerOptions } from './model-catalog/options.js';
 import { buildRightRows, type RightRow } from './model-catalog/rows.js';
@@ -35,7 +36,7 @@ const CAPTURES: Readonly<
   opencode: ['opencode/api-model-full.json', parseOpenCodeNativeModelCatalog],
   'kilo-code': ['kilo/models-verbose.txt', parseKiloNativeModelCatalog],
   cursor: ['cursor/list-models-2026.09.18.txt', parseCursorNativeModelCatalog],
-  codex: ['codex/debug-models-bundled.json', parseCodexNativeModelCatalog],
+  codex: ['codex/debug-models-0.155.1.json', parseCodexNativeModelCatalog],
   copilot: ['copilot/help-config-1.0.83.txt', parseCopilotHelpConfigCatalog],
   antigravity: ['antigravity/models.txt', parseAntigravityModelCatalog],
 };
@@ -113,6 +114,61 @@ describe('planModelRows on the captured listings', () => {
         'VL',
       ]);
     }
+  });
+
+  it.each(['opencode', 'kilo-code', 'cursor', 'codex', 'copilot', 'antigravity'] as const)(
+    'cuts no %s model name inside a word',
+    (toolId) => {
+      const rows = capturedRows(toolId).flatMap((row) => (row.kind === 'model' ? [row] : []));
+      // The spellings a row's name is built from: its own, the vendor a gateway prepends shed,
+      // and a twin's, which adds the id the provider gives it.
+      const namesOf = (model: (typeof rows)[number]['model']): string[] =>
+        [model.displayName, model.id]
+          .filter((name): name is string => name !== undefined)
+          .flatMap((name) => [name, name.replace(/^[^:()]{1,24}: /, '')])
+          .flatMap((name) => [name, `${name}${SOFT_SEP}${model.id.split('/').at(-1)}`]);
+      for (const width of ROW_WIDTHS) {
+        const plan = planModelRows({ rows, width });
+        for (const { model } of rows) {
+          const label = plan.rows.get(model.id)?.label ?? '';
+          if (!label.endsWith(ELLIPSIS)) continue;
+          const head = label.slice(0, -ELLIPSIS.length);
+          const wholeWords = namesOf(model).some(
+            (name) => name.startsWith(head) && /^[\s:(/-]/.test(name.slice(head.length)),
+          );
+          // Telling rows apart outranks whole words: a head is cut inside a word only where its
+          // whole words read like another row's.
+          const wordHead = head.replace(/[^\s:(/-]*$/, '').replace(/[\s:(/-]+$/, '');
+          const sharedWordHead = rows.some(
+            (other) =>
+              other.model.id !== model.id &&
+              namesOf(other.model).some((name) => name.startsWith(wordHead)),
+          );
+          expect({ width, label, wholeWords: wholeWords || sharedWordHead }).toEqual({
+            width,
+            label,
+            wholeWords: true,
+          });
+        }
+      }
+    },
+  );
+
+  it('cuts inside a word only where every whole-word form reads like another row', () => {
+    const plan = planModelRows({ rows: capturedRows('kilo-code'), width: 21 });
+    const labels = [...plan.rows.values()].map((row) => row.label);
+
+    // `…(free)` would be every free route; `Nemotron 3.5…` is also the Content Safety model.
+    expect(labels).toContain(`Nemotron 3.5 L${ELLIPSIS}`);
+    expect(labels).not.toContain(`${ELLIPSIS}(free)`);
+  });
+
+  it('names a model family by its whole words where a word would not fit', () => {
+    const plan = planModelRows({ rows: capturedRows('antigravity'), width: 21 });
+    const labels = [...plan.rows.values()].map((row) => row.label);
+
+    expect(labels).toContain(`Gemini 3.8${ELLIPSIS}`);
+    expect(labels.some((label) => label.includes(`Fla${ELLIPSIS}`))).toBe(false);
   });
 
   it('gives up the leading words of a cut another name also starts with', () => {

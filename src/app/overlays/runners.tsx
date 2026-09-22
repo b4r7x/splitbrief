@@ -15,6 +15,7 @@ import {
   type PickerEffectDeps,
 } from '../../features/runners/use-picker-actions.js';
 import { PickerView } from '../../features/runners/picker-view.js';
+import { customModelEntryCopy } from '../../features/runners/picker-format.js';
 import { LocalConnectionForm } from '../../features/runners/local-connection-form.js';
 import { TextInputOverlay } from '../../features/runners/text-input-overlay.js';
 import { ContractChoiceOverlay } from '../../features/runners/contract-choice-overlay.js';
@@ -116,13 +117,14 @@ export function ToolModelPicker({ role, deps = defaultPickerEffectDeps }: ToolMo
   }
 
   if (view.kind === 'custom-model' && item !== undefined) {
+    const entry = customModelEntryCopy({ rows: catalog.rightRows, toolId: item.id });
     return (
       <TextInputOverlay
         title="Custom model"
         role={role}
         label={`Model id for ${item.displayName}`}
-        placeholder="e.g. my-org/custom-model or llama3.3:latest"
-        examples={['llama3.3:70b-instruct-q4_K_M', 'qwen3-coder:30b', 'openai/gpt-5.6-sol']}
+        placeholder={entry.placeholder}
+        examples={entry.examples}
         onSubmit={actions.customModel}
       />
     );

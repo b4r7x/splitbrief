@@ -85,6 +85,18 @@ function installHangingShim(command: string, pidFile: string): void {
   installShim(command, [`echo $$ > ${JSON.stringify(pidFile)}`, 'exec /bin/sleep 30'].join('\n'));
 }
 
+/** Polls on a real interval: `vi.waitFor` advances the frozen probe clock. */
+function waitForPidLine(path: string): Promise<number> {
+  return new Promise((resolve) => {
+    const poll = setInterval(() => {
+      const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
+      if (!text.endsWith('\n')) return;
+      clearInterval(poll);
+      resolve(Number.parseInt(text, 10));
+    }, 10);
+  });
+}
+
 function loggedArgs(logPath: string): string[] {
   return existsSync(logPath)
     ? readFileSync(logPath, 'utf8').trim().split('\n').filter(Boolean)
@@ -133,6 +145,11 @@ function successfulModels(
 }
 
 beforeEach(() => {
+  // Every probe runs under a wall-clock budget that starts at spawn, and a
+  // loaded box can start a shim after it ends: the probe then kills a shim that
+  // never ran, and the case reads an empty log. With only timeouts frozen, each
+  // outcome here comes from what the shim printed; child events stay real.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   shimDir = createTempDir('discovery-shim');
   projectDir = createTempDir('discovery-project');
   originalPath = process.env.PATH;
@@ -140,6 +157,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   if (originalPath === undefined) delete process.env.PATH;
   else process.env.PATH = originalPath;
   if (originalOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
@@ -207,7 +225,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       'kilo/anthropic/claude-3-5-sonnet',
       'kilo/openai/gpt-4o',
     ]);
-    expect(loggedArgs(codexLog)).toEqual(['--version|', 'debug|models|--bundled|']);
+    expect(loggedArgs(codexLog)).toEqual(['--version|', 'debug|models|']);
     expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'models|--verbose|']);
     expect(loggedArgs(kiloLog)).toEqual(['--version|', 'models|--verbose|']);
     const catalogCwd = readFileSync(opencodeCwdLog, 'utf8').trim();
@@ -257,7 +275,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     });
 
     expect(attemptFor(attempts, 'codex')?.outcome.kind).not.toBe('unsupported');
-    expect(loggedArgs(logPath)).toEqual(['--version|', 'debug|models|--bundled|']);
+    expect(loggedArgs(logPath)).toEqual(['--version|', 'debug|models|']);
   });
 
   for (const tool of ['codex', 'opencode', 'kilo-code'] as const) {
@@ -266,7 +284,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     const canonicalVersionOutput = (version: string) =>
       versionLabel === undefined ? version : `${versionLabel} ${version}`;
     const admittedVersion = tool === 'codex' ? '0.40.0' : tool === 'opencode' ? '0.5.0' : '0.1.0';
-    const catalogArgv = tool === 'codex' ? 'debug|models|--bundled|' : 'models|--verbose|';
+    const catalogArgv = tool === 'codex' ? 'debug|models|' : 'models|--verbose|';
     const catalog =
       tool === 'codex'
         ? JSON.stringify({ models: [{ id: 'admitted-model' }] })
@@ -348,7 +366,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     });
 
     expect(attemptFor(attempts, 'codex')?.outcome).toEqual({ kind: 'malformed' });
-    expect(loggedArgs(logPath)).toEqual(['--version|', 'debug|models|--bundled|']);
+    expect(loggedArgs(logPath)).toEqual(['--version|', 'debug|models|']);
   });
 
   it('allows fixed refresh argv only on manual OpenCode and Kilo discovery', async () => {
@@ -366,7 +384,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       resolveExecutable: exactResolver,
     });
 
-    expect(loggedArgs(codexLog)).toEqual(['--version|', 'debug|models|--bundled|']);
+    expect(loggedArgs(codexLog)).toEqual(['--version|', 'debug|models|']);
     expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'models|--verbose|--refresh|']);
     expect(loggedArgs(kiloLog)).toEqual(['--version|', 'models|--verbose|--refresh|']);
   });
@@ -466,7 +484,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     });
 
     expect(attemptFor(attempts, 'codex')?.outcome).toEqual({ kind: 'cancelled' });
-    expect(loggedArgs(logPath)).toEqual(['--version|', 'debug|models|--bundled|']);
+    expect(loggedArgs(logPath)).toEqual(['--version|', 'debug|models|']);
     expect(JSON.stringify(attempts)).not.toContain('must-not-publish');
   });
 
@@ -480,13 +498,12 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       resolveExecutable: exactResolver,
       signal: controller.signal,
     });
-    await vi.waitFor(() => expect(existsSync(pidFile)).toBe(true));
+    const pid = await waitForPidLine(pidFile);
     controller.abort();
 
     await expect(pending).rejects.toThrow(/abort/i);
-    const pid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
     await vi.waitFor(() => {
       expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
     });
-  }, 5_000);
+  });
 });

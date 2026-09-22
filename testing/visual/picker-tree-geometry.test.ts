@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { glyph } from '../../src/lib/glyphs.js';
-import { getTerminalCellWidth } from '../../src/utils/display-text.js';
+import { ELLIPSIS, getTerminalCellWidth } from '../../src/utils/display-text.js';
 import { findVisualScenario } from './catalog.js';
 import type { Cell } from './contracts/cells.js';
 import { viewport, type Viewport } from './contracts/geometry.js';
@@ -164,21 +164,34 @@ describe('picker tree geometry', () => {
           }
           expect(modelAbove).toBeDefined();
           if (modelAbove === undefined) continue;
-          if (geometryCase.sizeCell === 'kept') {
+          if (geometryCase.sizeCell === 'dropped') {
             expect(
-              lastInkColumnBefore(entry.row, trailingColumn),
-              "a child's value ends where its parent's size cell ends",
-            ).toBe(lastInkColumnBefore(modelAbove.row, trailingColumn));
-            continue;
+              lastInkColumnBefore(modelAbove.row, trailingColumn),
+              'the list drops the size cell for every row at this width, so the parent ends at its label',
+            ).toBeLessThan(trailingColumn - 2);
           }
+          // A child's value ends on the parent's size-cell edge, or, with no parent cell, two cells
+          // before the chevron. Words outrank that edge: a value too wide for it runs on into the
+          // blank chevron and check cells, and one that still does not fit is given up whole,
+          // leaving the child's one-word label.
+          const valueEdge =
+            geometryCase.sizeCell === 'kept'
+              ? lastInkColumnBefore(modelAbove.row, trailingColumn)
+              : trailingColumn - 2;
+          const end = lastInkColumnBefore(entry.row, trailingColumn);
+          if (end === undefined || valueEdge === undefined) {
+            throw new Error('a child row or its parent paints nothing before the chevron');
+          }
+          const words = lineOf(entry.row.slice(entry.column + 3, trailingColumn)).trim();
+          expect(lineOf(entry.row.slice(entry.column)), 'a child row cuts no word').not.toContain(
+            ELLIPSIS,
+          );
           expect(
-            lastInkColumnBefore(modelAbove.row, trailingColumn),
-            'the list drops the size cell for every row at this width, so the parent ends at its label',
-          ).toBeLessThan(trailingColumn - 2);
-          expect(
-            lastInkColumnBefore(entry.row, trailingColumn),
-            "with no parent cell, a child's value keeps the metadata edge two cells before the chevron",
-          ).toBe(trailingColumn - 2);
+            end === valueEdge ||
+              end === trailingColumn - 1 ||
+              (end < valueEdge && !words.includes(' ')),
+            `a child's value ends on the value edge, runs on past it, or goes whole: ${words}`,
+          ).toBe(true);
         }
       } finally {
         await handle.unmount();

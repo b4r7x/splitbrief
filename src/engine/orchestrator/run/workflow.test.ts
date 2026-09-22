@@ -44,6 +44,7 @@ import { ORPHAN_SESSION_GRACE_MS } from '../../../core/sessions/orphans.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import { readSession, saveSummary } from '../../../core/sessions/io.js';
 import {
   reactivateExistingSession,
   readActive,
@@ -720,6 +721,47 @@ describe('runWorkflow — smoke', () => {
     expect(readFileSync(stateFile(ref))).toEqual(before);
     expect(planner.isAvailable).not.toHaveBeenCalled();
     expect(planner.runPhase).not.toHaveBeenCalled();
+  });
+
+  it('drops the stop the halted pass recorded once the run is resumed', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'resumed-halt-sid';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const resumed = makeImplStateWithMetadata([makeTask({ id: 'T001' })]);
+    saveState(ref, resumed);
+    saveSummary(ref, {
+      id: sessionId,
+      feature: 'resumed halt',
+      startedAt: 1,
+      completedAt: 2,
+      stateVersion: resumed.stateVersion,
+      status: 'open',
+      summary: null,
+      stop: 'halted',
+    });
+    let stopWhileRunning: string | undefined = 'not read';
+    const planner = makePlanner({
+      isAvailable: vi.fn(async () => {
+        stopWhileRunning = readSession(ref)?.stop;
+        return false;
+      }),
+    });
+
+    await runWorkflow({
+      feature: 'resumed halt',
+      projectDir,
+      config: unavailablePlannerConfig(),
+      callbacks: makeCallbacks().callbacks,
+      sessionId,
+      purpose: 'resume',
+      savedState: resumed,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: planner,
+    });
+
+    expect(planner.isAvailable).toHaveBeenCalledTimes(1);
+    expect(stopWhileRunning).toBeUndefined();
   });
 
   it('refuses a new-workflow run over a session that already started', async () => {

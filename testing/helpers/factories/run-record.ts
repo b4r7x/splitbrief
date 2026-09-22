@@ -1,7 +1,12 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { RunRecord } from '../../../src/core/sessions/run-record.js';
 
 const DEFAULTS: RunRecord = {
-  ref: { projectDir: '/tmp/run-record-factory', sessionId: '2026-09-14-feature' },
+  ref: {
+    projectDir: join(process.env.XDG_STATE_HOME ?? tmpdir(), 'run-record-factory'),
+    sessionId: '2026-09-14-feature',
+  },
   feature: 'feature',
   mode: 'standard',
   startedAt: '2026-09-14T00:00:00.000Z',

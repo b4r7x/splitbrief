@@ -5,7 +5,7 @@ import type {
   CliInvocation,
   CliPlannerAdapter,
 } from './cli-tools/contract.js';
-import { reconcileFinalText } from '../streaming/final-text.js';
+import { onlyAddsLineBreaks, reconcileFinalText } from '../streaming/final-text.js';
 import { invokeProcessCli } from './cli-tools/process-invoke.js';
 import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox-credential-values.js';
 
@@ -68,6 +68,8 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
     } else if (reconciliation.kind === 'replace') {
       if (event.channel === 'result') {
         if (streamedText.endsWith(reconciliation.text)) return;
+        // A final group that only puts its streamed messages on their own lines is not new text.
+        if (onlyAddsLineBreaks(streamedText, reconciliation.text)) return;
         if (reconciliation.text.startsWith(streamedText)) {
           const tail = reconciliation.text.slice(streamedText.length);
           streamedText = reconciliation.text;

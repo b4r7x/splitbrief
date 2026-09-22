@@ -1,7 +1,7 @@
 import type { CliProviderAuth } from '../../core/discovery/detection.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import { seatPickerLane, type SeatPickerRole } from '../../core/runners/seat-roles.js';
-import { seatEffortChannel } from '../../core/runners/capabilities.js';
+import { seatConfiguredEffort } from '../../core/runners/capabilities.js';
 import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -57,11 +57,7 @@ function configuredEffort(role: SeatPickerRole): string | null {
   const config = configStore.get().config;
   if (config === null) return null;
   const lane = seatPickerLane(role);
-  const runner = readActiveRunner({ config, role: lane });
-  const channel = seatEffortChannel({ runner, role: lane });
-  if (channel === 'effort-flag') return runner.effort ?? null;
-  if (channel === 'variant') return runner.variant ?? null;
-  return null;
+  return seatConfiguredEffort({ runner: readActiveRunner({ config, role: lane }), role: lane });
 }
 
 /** The seat's own preset opens the ladder, but only where that ladder spells it. */

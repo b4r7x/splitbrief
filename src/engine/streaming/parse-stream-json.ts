@@ -27,6 +27,12 @@ export interface StreamParseResult {
   toolUseStart?: ToolUseInfo[] | undefined;
   toolUseDelta?: ToolUseDeltaInfo[] | undefined;
   warning?: ParsedWarningInfo[] | undefined;
+  /** A non-null `parent_tool_use_id`: the record belongs to a subagent, not the main loop. */
+  isSubagent?: boolean | undefined;
+  /** A `message_start` opened a message. */
+  isMessageStart?: boolean | undefined;
+  /** `message_delta.delta.stop_reason`: why the open message ended. */
+  stopReason?: string | undefined;
 }
 
 export const EMPTY_RESULT: StreamParseResult = Object.freeze({});
@@ -182,9 +188,18 @@ function parseStreamEvent(event: Record<string, unknown>): StreamParseResult | n
     }
   }
 
-  if (streamType === 'message_delta' && isRecord(streamEvent.usage)) {
-    const usage = toTokenDelta(streamEvent.usage);
-    return usage ? { sessionId, usage, usageSemantics: 'cumulative' } : { sessionId };
+  if (streamType === 'message_start') return { sessionId, isMessageStart: true };
+
+  if (streamType === 'message_delta') {
+    const stopReason = isRecord(streamEvent.delta)
+      ? firstString(streamEvent.delta.stop_reason)
+      : undefined;
+    const usage = isRecord(streamEvent.usage) ? toTokenDelta(streamEvent.usage) : null;
+    return {
+      sessionId,
+      ...(usage && { usage, usageSemantics: 'cumulative' }),
+      ...(stopReason !== undefined && { stopReason }),
+    };
   }
 
   return { sessionId };
@@ -230,6 +245,7 @@ function parseLine(line: string, collectUsage?: CollectMessageUsage): StreamPars
     const event: unknown = JSON.parse(line);
     const record = isRecord(event) ? event : null;
     const usage = record === null ? undefined : collectUsage?.(record);
+    const isSubagent = record?.parent_tool_use_id != null;
 
     const assistant = AssistantEvent.safeParse(event);
     if (assistant.success) {
@@ -259,6 +275,7 @@ function parseLine(line: string, collectUsage?: CollectMessageUsage): StreamPars
         sessionId: assistant.data.session_id ?? undefined,
         toolUse: tools.length > 0 ? tools : undefined,
         ...(usage !== undefined && { usage, usageSemantics: 'cumulative' }),
+        ...(isSubagent && { isSubagent }),
       };
     }
 
@@ -278,8 +295,9 @@ function parseLine(line: string, collectUsage?: CollectMessageUsage): StreamPars
     if (record) {
       const streamEvent = parseStreamEvent(record);
       if (streamEvent) {
-        if (collectUsage === undefined) return streamEvent;
-        const { usage: _messageUsage, usageSemantics: _semantics, ...rest } = streamEvent;
+        const scoped = isSubagent ? { ...streamEvent, isSubagent } : streamEvent;
+        if (collectUsage === undefined) return scoped;
+        const { usage: _messageUsage, usageSemantics: _semantics, ...rest } = scoped;
         return { ...rest, ...(usage !== undefined && { usage, usageSemantics: 'cumulative' }) };
       }
       const systemProgress = parseSystemProgress(record);

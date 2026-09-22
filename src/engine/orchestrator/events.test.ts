@@ -12,7 +12,11 @@ import {
   publishGitCommit,
   publishDriftChainDetected,
   createImplementerPublisher,
+  publishRecoveryActionFailed,
+  publishRecoveryActionSelected,
+  publishRecoveryResolved,
 } from './events.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../core/schemas/task.js';
 import { skippedStage } from './validation/stage.js';
@@ -471,5 +475,50 @@ describe('publish* payload forwarding', () => {
       representativePath: 'src/a.ts',
     });
     expect((events[0] as { ts: number }).ts).toBeGreaterThan(0);
+  });
+});
+
+describe('recovery events name the halted seat', () => {
+  function publishAll(issue: ReturnType<typeof makeRecoveryIssue>) {
+    const { bus, events } = makeBusRecorder();
+    const opts = { bus, issue, action: 'switch-seat' } as const;
+    publishRecoveryActionSelected(opts);
+    publishRecoveryActionFailed({ ...opts, message: 'blocked' });
+    publishRecoveryResolved({ ...opts, outcome: 'continued' });
+    return events;
+  }
+
+  it('carries the seat the swap offer moves', () => {
+    const events = publishAll(
+      makeRecoveryIssue({
+        reason: 'runner-usage-limit',
+        phase: 'planning',
+        seat: 'plan',
+        switchSeat: { seat: 'plan', candidates: [{ tool: 'codex' }] },
+      }),
+    );
+
+    expect(events.map((event) => ('seat' in event ? event.seat : undefined))).toEqual([
+      'plan',
+      'plan',
+      'plan',
+    ]);
+  });
+
+  it('falls back to the seat the issue names when it offers no swap', () => {
+    const events = publishAll(makeRecoveryIssue({ seat: 'review' }));
+
+    expect(events.map((event) => ('seat' in event ? event.seat : undefined))).toEqual([
+      'review',
+      'review',
+      'review',
+    ]);
+  });
+
+  it('omits the seat when the halt is about the run rather than a seat', () => {
+    const events = publishAll(makeRecoveryIssue());
+
+    expect(events).toHaveLength(3);
+    for (const event of events) expect(event).not.toHaveProperty('seat');
   });
 });

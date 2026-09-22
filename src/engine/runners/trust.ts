@@ -4,48 +4,19 @@ import {
   type CustomCommandRunner,
 } from '../../core/config/custom-commands.js';
 import { findConfiguredCustomCommand } from '../../core/config/custom-command-catalog.js';
-import {
-  commandTokensAfterInterpreter,
-  isPathLike,
-  isRepoLocal,
-  isBareCommandResolvedInsideProject,
-  isPackageManagerScriptInvocation,
-  isShellEvaluatedPromptArg,
-} from '../../core/trust/path-classification.js';
+import { argvIsRepoLocal } from '../../core/trust/command-string-classification.js';
+import { isShellEvaluatedPromptArg } from '../../core/trust/path-classification.js';
 import { stripProfileMetadata } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import { error } from '../../utils/error.js';
-
-function tokenIsRepoLocalExecutable(token: string, projectDir: string): boolean {
-  if (!isPathLike(token) || !isRepoLocal(token, projectDir)) return false;
-  return true;
-}
-
-function flagValue(token: string): string | null {
-  const eq = token.indexOf('=');
-  if (eq === -1) return null;
-  const value = token.slice(eq + 1);
-  return value.length > 0 ? value : null;
-}
 
 function commandHasRepoLocalPaths(
   command: string,
   args: readonly string[],
   projectDir: string,
 ): boolean {
-  const tokens = [...parseShellCommand(command), ...args];
-  const executable = tokens[0];
-  if (executable && isBareCommandResolvedInsideProject(executable, projectDir)) return true;
-  if (isPackageManagerScriptInvocation(tokens)) return true;
-
-  const checkTokens = commandTokensAfterInterpreter(tokens);
-  for (const token of checkTokens) {
-    const candidate = token.startsWith('-') ? flagValue(token) : token;
-    if (candidate === null) continue;
-    if (tokenIsRepoLocalExecutable(candidate, projectDir)) return true;
-  }
-  return false;
+  return argvIsRepoLocal([...parseShellCommand(command), ...args], projectDir);
 }
 
 export interface RunnerTrustViolation {

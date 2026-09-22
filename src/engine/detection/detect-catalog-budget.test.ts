@@ -30,7 +30,7 @@ async function installCodexShim(directory: string, catalogFile: string) {
       "  printf '%s\\n' 'codex-cli 0.146.0'",
       '  exit 0',
       'fi',
-      'if [ "$1" = "debug" ] && [ "$2" = "models" ] && [ "$3" = "--bundled" ]; then',
+      'if [ "$1" = "debug" ] && [ "$2" = "models" ] && [ -z "$3" ]; then',
       `  cat ${JSON.stringify(catalogFile)}`,
       '  exit 0',
       'fi',

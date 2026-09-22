@@ -491,12 +491,15 @@ function publishRecoveryEvent(
   { bus, issue, action }: RecoveryEventOpts,
   spec: RecoveryEventSpec,
 ): void {
+  // The seat the halt stopped: the one a swap would move, else the one the issue names.
+  const seat = issue.switchSeat?.seat ?? issue.seat;
   const base = {
     ts: Date.now(),
     phase: issue.phase,
     issueId: issue.id,
     reason: issue.reason,
     action,
+    ...(seat !== undefined && { seat }),
   } as const;
   if (spec.kind === 'selected') {
     bus.publish({ type: 'recovery_action_selected', ...base });

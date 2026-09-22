@@ -2,11 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { registerStatusCommand } from './status.js';
 import { SPLITBRIEF_DIR, STATE_FILE, SESSION_LOG_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 let tmp: string;
 // console.log is a sanctioned global spy — see docs/TESTING.md core rules.
@@ -26,10 +29,15 @@ function captureOutput(): string {
   return consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
 }
 
-function writeActiveSession(projectDir: string, sessionId: string, feature: string): void {
+function writeActiveSession(
+  projectDir: string,
+  sessionId: string,
+  feature: string,
+  overrides: Partial<WorkflowState> = {},
+): void {
   const sessionDir = join(projectDir, SPLITBRIEF_DIR, 'sessions', sessionId);
   mkdirSync(sessionDir, { recursive: true });
-  const state = { ...createInitialState(feature), phase: 'implementing' as const };
+  const state = { ...createInitialState(feature), phase: 'implementing' as const, ...overrides };
   writeFileSync(join(sessionDir, STATE_FILE), JSON.stringify(state));
   writeFileSync(join(sessionDir, SESSION_LOG_FILE), '');
   mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
@@ -57,6 +65,18 @@ describe('status command', () => {
     const out = captureOutput();
     expect(out).toContain('add auth');
     expect(out).toContain('implementing');
+  });
+
+  it('names the last brief, not one past it, once every brief has settled', async () => {
+    writeActiveSession(tmp, '2026-09-21-all-settled', 'all settled', {
+      phase: 'final-review',
+      currentTaskIndex: 2,
+      tasks: [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002', status: 'done' })],
+    });
+
+    await runStatus([]);
+
+    expect(stripVTControlCharacters(captureOutput())).toContain('Task:     2/2');
   });
 
   it('reports the repository-root session when run from a package subdirectory', async () => {

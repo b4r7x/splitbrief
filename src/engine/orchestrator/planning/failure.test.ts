@@ -1,14 +1,33 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeBusRecorder, makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  makePlanner,
+  makeWctx,
+  TEST_METADATA,
+  TEST_SINKS,
+} from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { createInitialState } from '../../../core/state/machine.js';
+import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { composeAbortSignal } from '../../../utils/abort.js';
 import { error } from '../../../utils/error.js';
+import { runnerCallInterruptedStatus } from '../../calls/status.js';
+import { createPhaseRunner, type PhaseRunnerConfig } from '../../planners/run-phase.js';
+import { createShellPlanner } from '../../planners/shell.js';
+import type { Planner } from '../../planners/types.js';
+import { streamCompletion } from '../../providers/openai-stream/completion.js';
+import { interruptedError } from '../../runners/claude/stream.js';
+import type { PlannerCallbacksContext } from '../types.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { handlePlanningFailure } from './failure.js';
+import { runPlanningSteps } from './steps.js';
 
 let dirs: string[] = [];
 
@@ -262,5 +281,192 @@ describe('handlePlanningFailure', () => {
     expect(result.state.closed).toBeUndefined();
     const published = events.find((event) => event.type === 'error');
     expect(published?.type === 'error' && published.message).toContain('then start again');
+  });
+});
+
+type InvokePlan = PhaseRunnerConfig['invokePlan'];
+type InvokeInput = Parameters<InvokePlan>[0];
+
+function untilAborted(signal: AbortSignal | undefined): Promise<void> {
+  if (signal === undefined) throw new Error('The planner call carries no signal');
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) =>
+    signal.addEventListener('abort', () => resolve(), { once: true }),
+  );
+}
+
+// The result process-invoke returns when its signal ends the call: every CLI
+// adapter tool (codex, opencode, cursor, kilo-code, antigravity, command-code,
+// copilot) plans through it, and `requireCompletedCall` wraps it.
+function cliAdapterCall(timeoutMs?: number) {
+  return async (input: InvokeInput, inFlight: () => void) => {
+    const own = composeAbortSignal(input.signal, timeoutMs);
+    inFlight();
+    await untilAborted(own);
+    const status = runnerCallInterruptedStatus(own);
+    return makeRunnerCallResult({
+      callId: input.callContext.callId,
+      role: 'planner',
+      backendKind: 'cli',
+      status,
+      text: '',
+      error:
+        status === 'timeout'
+          ? { code: 'timeout', message: 'CLI invocation timed out' }
+          : { code: 'user-abort', message: 'CLI invocation was aborted' },
+    });
+  };
+}
+
+// The claude-code planner throws what `interruptedError` makes of its signal.
+function claudeCodeCall(timeoutMs?: number) {
+  return async (input: InvokeInput, inFlight: () => void): Promise<never> => {
+    const own = composeAbortSignal(input.signal, timeoutMs);
+    inFlight();
+    await untilAborted(own);
+    throw interruptedError(own, new Error('claude exited'));
+  };
+}
+
+// An `api` planner streams through `streamCompletion`; this endpoint sends one
+// delta and then holds the response open until the request is aborted.
+async function apiCall(input: InvokeInput, inFlight: () => void) {
+  let delivered = false;
+  const client: Parameters<typeof streamCompletion>[0] = {
+    chat: {
+      completions: {
+        create: async (_body, options) => ({
+          [Symbol.asyncIterator]: () => ({
+            next: async () => {
+              if (!delivered) {
+                delivered = true;
+                return { done: false, value: { choices: [{ delta: { content: '# Research' } }] } };
+              }
+              inFlight();
+              await untilAborted(options?.signal ?? undefined);
+              throw options?.signal?.reason;
+            },
+          }),
+        }),
+      },
+    },
+  };
+  return streamCompletion(client, 'planner-model', [{ role: 'user', content: input.prompt }], {
+    temperature: 0,
+    onProgress: input.callbacks.onOutput,
+    ...(input.signal !== undefined && { signal: input.signal }),
+  });
+}
+
+function scriptedPlanner(
+  call: (input: InvokeInput, inFlight: () => void) => ReturnType<InvokePlan>,
+  inFlight: () => void,
+): Planner {
+  return makePlanner({
+    runPhase: createPhaseRunner({ invokePlan: (input) => call(input, inFlight) }),
+  });
+}
+
+// A real shell planner: `sleep` holds the call open until the stop kills it.
+function shellPlanner(inFlight: () => void): Planner {
+  const shell = createShellPlanner(
+    makeConfig({ planner: { kind: 'shell', command: 'bash', args: ['-c', 'sleep 30'] } }),
+  );
+  return {
+    ...shell,
+    runPhase: (input) =>
+      shell.runPhase({
+        ...input,
+        callbacks: {
+          ...input.callbacks,
+          onCallEvent: (event) => {
+            if (event.type === 'call_started') inFlight();
+            input.callbacks.onCallEvent?.(event);
+          },
+        },
+      }),
+  };
+}
+
+async function runFirstPlannerCall(
+  planner: (inFlight: () => void) => Planner,
+  opts: { stop: boolean },
+) {
+  const { projectDir, sessionId } = setupProject();
+  const state: WorkflowState = {
+    ...transition(createInitialState('feature'), { type: 'START' }),
+    mode: 'standard',
+    approve: 'none',
+  };
+  saveState({ projectDir, sessionId }, state);
+  const { bus, events } = makeBusRecorder();
+  const controller = new AbortController();
+  const wctx: PlannerCallbacksContext = {
+    projectDir,
+    sessionId,
+    config: makeConfig(),
+    callbacks: makeCallbacks().callbacks,
+    bus,
+    metadata: TEST_METADATA,
+    sinks: TEST_SINKS,
+    signal: controller.signal,
+  };
+  let markInFlight: () => void = () => {};
+  const inFlight = new Promise<void>((resolve) => {
+    markInFlight = resolve;
+  });
+  const running = runPlanningSteps({
+    wctx,
+    state,
+    planner: planner(markInFlight),
+    feature: state.feature,
+  });
+  await inFlight;
+  if (opts.stop) controller.abort();
+  const result = await running;
+  const saved = loadState({ projectDir, sessionId });
+  if (saved === null) throw new Error('Missing state');
+  const status = deriveRunStatus({ state: saved, liveness: 'not-alive', artifacts: NO_ARTIFACTS });
+  return { result, saved, status, events };
+}
+
+describe('a stop during a planner call', () => {
+  const stops: Array<[string, (inFlight: () => void) => Planner]> = [
+    ['a CLI adapter tool', (inFlight) => scriptedPlanner(cliAdapterCall(), inFlight)],
+    ['an api endpoint', (inFlight) => scriptedPlanner(apiCall, inFlight)],
+    ['claude-code', (inFlight) => scriptedPlanner(claudeCodeCall(), inFlight)],
+    ['a shell command', shellPlanner],
+  ];
+
+  it.each(stops)('on %s parks the step the way a user stop does', async (_form, planner) => {
+    const { result, saved, status, events } = await runFirstPlannerCall(planner, { stop: true });
+
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'interrupted' });
+    expect(saved.pendingRecovery).toBeUndefined();
+    expect(saved.interruptedStep).toMatchObject({
+      step: { kind: 'planner', call: 'research' },
+      source: 'user',
+      cut: 'mid-step',
+    });
+    expect(status).toEqual({
+      kind: 'open',
+      stop: { kind: 'paused', at: 'mid-step' },
+      resumeAt: { kind: 'planner', call: 'research' },
+    });
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+  });
+
+  const timeouts: Array<[string, (inFlight: () => void) => Planner]> = [
+    ['a CLI adapter tool', (inFlight) => scriptedPlanner(cliAdapterCall(20), inFlight)],
+    ['claude-code', (inFlight) => scriptedPlanner(claudeCodeCall(20), inFlight)],
+  ];
+
+  it.each(timeouts)('a timeout on %s still halts as a failed call', async (_form, planner) => {
+    const { result, saved, status } = await runFirstPlannerCall(planner, { stop: false });
+
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(saved.interruptedStep).toBeUndefined();
+    expect(saved.pendingRecovery?.reason).toBe('planner-call-failed');
+    expect(status).toMatchObject({ kind: 'open', stop: { kind: 'halted' } });
   });
 });

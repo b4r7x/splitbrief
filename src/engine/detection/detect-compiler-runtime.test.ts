@@ -38,7 +38,7 @@ function catalogShimScript(
     `  printf '%s\\n' 'codex-cli ${input.version}'`,
     '  exit 0',
     'fi',
-    'if [ "$1" = "debug" ] && [ "$2" = "models" ] && [ "$3" = "--bundled" ]; then',
+    'if [ "$1" = "debug" ] && [ "$2" = "models" ] && [ -z "$3" ]; then',
     ...(input.record
       ? [`  printf '%s\\n' ran > ${JSON.stringify(input.marker)}`]
       : ['  : # catalog branch must never run']),

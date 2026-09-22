@@ -319,6 +319,26 @@ describe('admitted readiness probe contracts', () => {
     ).toEqual(expected);
   });
 
+  it("gives both of agy's `agy models` probes their own 10 s budget and leaves the shared 5 s one", () => {
+    const antigravity = lookupCliReadinessProbe({ tool: 'antigravity', role: 'implementer' });
+    const claude = lookupCliReadinessProbe({ tool: 'claude-code', role: 'implementer' });
+    if (!isDeclaredCliProbeContract(antigravity) || !isDeclaredCliProbeContract(claude)) {
+      throw new Error('expected declared probes');
+    }
+
+    expect(antigravity.declared.auth).toMatchObject({
+      kind: 'auth-status',
+      command: ['agy', 'models'],
+      timeoutMs: 10_000,
+    });
+    expect(antigravity.declared.catalog).toMatchObject({
+      kind: 'catalog',
+      command: ['agy', 'models'],
+      timeoutMs: 10_000,
+    });
+    expect(claude.declared.auth).toMatchObject({ timeoutMs: 5_000 });
+  });
+
   it('declares structural, parser-bound native catalog probes without generic argv mutation', () => {
     const opencode = lookupCliReadinessProbe({ tool: 'opencode', role: 'planner' });
     const kilo = lookupCliReadinessProbe({ tool: 'kilo-code', role: 'planner' });
@@ -337,7 +357,7 @@ describe('admitted readiness probe contracts', () => {
 
     expect(codex.declared.catalog).toMatchObject({
       kind: 'catalog',
-      command: ['codex', 'debug', 'models', '--bundled'],
+      command: ['codex', 'debug', 'models'],
     });
     expect(opencode.declared.catalog).toMatchObject({
       kind: 'catalog',
@@ -463,12 +483,12 @@ describe('admitted readiness probe contracts', () => {
     expect(planner.declared.version.command).toEqual(['cmd', '--version']);
     expect(planner.declared.auth).toMatchObject({
       kind: 'auth-status',
-      command: ['cmd', 'status', '--json'],
+      command: ['cmd', 'status', '--json', '--no-auto-update'],
       cwd: 'neutral',
     });
     expect(planner.declared.catalog).toMatchObject({
       kind: 'catalog',
-      command: ['cmd', '--list-models'],
+      command: ['cmd', '--list-models', '--no-auto-update'],
     });
     if (planner.declared.catalog.kind === 'not-run') {
       throw new Error('expected Command Code catalog probe');

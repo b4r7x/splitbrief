@@ -31,6 +31,8 @@ import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.j
 import type { CostBreakdown } from '../../../src/core/schemas/summary.js';
 import { ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
 import { seatAxisFocus } from '../../../src/core/navigation/types.js';
+import { deriveCrewRows } from '../../../src/core/crew/rows.js';
+import { crewActivate } from '../../../src/features/crew/rows.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
 import { configStore } from '../../../src/stores/project/config.js';
@@ -47,6 +49,8 @@ import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { markWorkflowPaused } from '../../../src/stores/workflow/actions/pause.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
+import { reportConfigSaveFailure } from '../../../src/stores/project/save-feedback.js';
+import { configError } from '../../../src/core/config/errors.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore, type RouteData } from '../../../src/stores/navigation/router.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
@@ -153,15 +157,15 @@ function cursorListModels(): readonly DetectedModel[] {
   return nativeCliCatalogToDetectedModels(catalog);
 }
 
-// `codex debug models --bundled` on codex-cli 0.154.0 with only the fields the codex schema reads.
+// `codex debug models` on codex-cli 0.155.1 with only the fields the codex schema reads.
 // Its prompt text and tool settings are dropped as unread. Re-capture when the schema reads more.
-function codexBundledModels(): readonly DetectedModel[] {
+function codexDebugModels(): readonly DetectedModel[] {
   const stdout = readFileSync(
-    join(import.meta.dirname, '../../fixtures/codex/debug-models-bundled.json'),
+    join(import.meta.dirname, '../../fixtures/codex/debug-models-0.155.1.json'),
     'utf8',
   );
   const catalog = parseCodexNativeModelCatalog(stdout);
-  if (catalog === null) throw new Error('codex/debug-models-bundled.json did not parse');
+  if (catalog === null) throw new Error('codex/debug-models-0.155.1.json did not parse');
   return nativeCliCatalogToDetectedModels(catalog);
 }
 
@@ -430,10 +434,10 @@ function seedCommandCodeNativeListing(): void {
 }
 
 function seedCodexNativeListing(): void {
-  const models = codexBundledModels();
+  const models = codexDebugModels();
   seedConfig({ planner: { kind: 'cli', tool: 'codex', model: models[0]?.id ?? 'gpt-6-astra' } })();
   publishVisualDiscovery({
-    cliTools: [cliDetectionFor('ready', 'codex', { installedVersion: '0.154.0' })],
+    cliTools: [cliDetectionFor('ready', 'codex', { installedVersion: '0.155.1' })],
     cliModels: [catalogAttempt({ tool: 'codex', outcome: { kind: 'success', value: models } })],
   });
 }
@@ -531,7 +535,6 @@ function createOverlayFixture(options: {
   /** The workflow route to open on, when the ordinary live run is not the one the frame is about. */
   readonly workflowRoute?: () => RouteData;
   readonly focus?: string;
-  readonly effortDraftAfterMount?: string;
 }): FixtureLifecycle {
   const {
     overlay,
@@ -539,7 +542,6 @@ function createOverlayFixture(options: {
     underlyingScreen = 'home',
     workflowRoute = overlayWorkflowRoute,
     focus,
-    effortDraftAfterMount,
   } = options;
   let stopReseed: (() => void) | undefined;
   return {
@@ -551,9 +553,6 @@ function createOverlayFixture(options: {
       seedRunnerCatalog();
       seed();
       if (underlyingScreen === 'workflow') stopReseed = reseedAfterWorkflowReset(seed);
-      else if (effortDraftAfterMount !== undefined) {
-        stopReseed = restoreEffortDraftAfterMount(effortDraftAfterMount);
-      }
       overlayStore.open(overlay, focus);
     },
     teardown: () => {
@@ -574,27 +573,6 @@ function reseedAfterWorkflowReset(seed: OverlaySeed): () => void {
     seed();
   });
   return stop;
-}
-
-/**
- * The picker's left column re-notifies its current item from a mount layout effect
- * (`use-column-state.ts:74`), and `leftChange` clears the effort draft — so a level seeded
- * before mount is wiped before the first paint. The first clear after setup is that wipe;
- * re-apply the level there.
- */
-function restoreEffortDraftAfterMount(level: string): () => void {
-  let stopped = false;
-  const stop = pickerViewStore.subscribe(() => {
-    if (stopped || pickerViewStore.get().effortDraft !== null) return;
-    stopped = true;
-    stop();
-    pickerViewStore.setEffortDraft(level);
-  });
-  return () => {
-    if (stopped) return;
-    stopped = true;
-    stop();
-  };
 }
 
 const REVIEWER_SEAT = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } as const;
@@ -669,6 +647,15 @@ const createSettingsCrewKiloCopilotFixture: FixtureFactory = () =>
     seed: seedConfig({ planner: PLANNER_KILO_SEAT, implementer: BUILD_COPILOT_SEAT }),
     focus: 'seat:plan',
   });
+/** The seat most configs hold: a Claude alias, labelled from the bundled table, at its top level. */
+const createSettingsClaudeAliasFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+    }),
+    focus: 'seat:plan',
+  });
 const createSettingsFloorFullFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
@@ -713,7 +700,6 @@ const createOpencodeExpandedDraftedFixture: FixtureFactory = () =>
       pickerViewStore.expand(OPENCODE_ROUTED_MODEL, OPENCODE_ROUTED_MODEL, 'max');
     },
     focus: OPENCODE_FOCUS,
-    effortDraftAfterMount: 'max',
   });
 const createProviderExpandedEmptyFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -766,13 +752,27 @@ const createClaudeEffortSetFixture: FixtureFactory = () =>
         planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'high' },
       })();
       seedClaudeCodeUnsupported();
-      pickerViewStore.expand('opus', undefined, 'high');
+      const config = configStore.get().config;
+      if (config === null) throw new Error('Visual overlay fixture requires project config');
+      const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
+      if (plan === undefined) throw new Error('Visual overlay fixture requires a plan seat');
+      // The Settings crew row's ⏎, so the frame is the picker that row opens.
+      crewActivate({ target: { kind: 'crew', row: plan }, config });
     },
     // The token the hook reads for the seat-axis landing — NOT 'tool:claude-code'. The left column
     // still lands on claude-code through the configured item, and the cursor lands on the effort axis.
     focus: seatAxisFocus('plan'),
-    effortDraftAfterMount: 'high',
   });
+// The cursor leaves Claude Code for the next tool and comes back: the row reads the seat's level again.
+const createClaudeEffortReturnedFixture: FixtureFactory = () => ({
+  ...createClaudeEffortSetFixture(),
+  afterMount: async (write) => {
+    for (const key of ['\x1b[D', '\x1b[B', '\x1b[A', '\x1b[C']) {
+      write(key);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  },
+});
 const createPlannerPickerKiloFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -838,7 +838,6 @@ const createPlannerPickerAntigravityFixture: FixtureFactory = () =>
       pickerViewStore.expand('gemini-3.8-flash-medium', 'gemini-3.8-flash-medium', 'medium');
     },
     focus: 'tool:antigravity',
-    effortDraftAfterMount: 'medium',
   });
 // The launcher's read-only card is what the cursor opens on this row, so the
 // fixture parks there with nothing configured — the state the card guides.
@@ -990,6 +989,49 @@ const createCustomModelFixture: FixtureFactory = () =>
     overlay: 'planner-picker',
     seed: () => pickerViewStore.open({ kind: 'custom-model' }),
     focus: 'tool:ollama',
+  });
+// The entry's examples are the highlighted tool's own ids: Claude Code's aliases name the ids
+// they resolve to, and Kilo spells its ids `provider/model`.
+const createCustomModelClaudeFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedClaudeAliasRows();
+      pickerViewStore.open({ kind: 'custom-model' });
+    },
+    focus: 'tool:claude-code',
+  });
+// A save the config refused, standing while the picker is still open: the overlay hides the
+// composer that would carry it, so the picker's own byline has to.
+const createSaveRefusedFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedClaudeAliasRows,
+    focus: 'tool:claude-code',
+  }),
+  afterMount: () => {
+    const path = '.splitbrief/config.yaml';
+    reportConfigSaveFailure({
+      kind: 'failure',
+      ok: false,
+      error: configError.saveFailed(
+        path,
+        configError.validationFailed(path, [
+          `Configuration errors in ${path}:`,
+          "  planner.outputFormat: Configured outputFormat cannot replace the claude-code terminal contract; the backend's native parser and terminal protocol stay authoritative.",
+        ]),
+      ),
+    });
+  },
+});
+const createCustomModelKiloFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedKiloConfirmed();
+      pickerViewStore.open({ kind: 'custom-model' });
+    },
+    focus: 'tool:kilo-code',
   });
 const createImplementerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'implementer-picker' });
@@ -1336,6 +1378,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-crew-full'), createSettingsCrewFullFixture],
   [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
   [scenarioId('overlay-settings-crew-kilo-copilot'), createSettingsCrewKiloCopilotFixture],
+  [scenarioId('overlay-settings-claude-alias'), createSettingsClaudeAliasFixture],
   [scenarioId('overlay-settings-floor-full'), createSettingsFloorFullFixture],
   [scenarioId('overlay-settings-filtered'), createSettingsFilteredFixture],
   [scenarioId('overlay-settings-filter-plan'), createSettingsFilterPlanFixture],
@@ -1346,6 +1389,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-opencode-expanded-drafted'), createOpencodeExpandedDraftedFixture],
   [scenarioId('overlay-picker-claude-effort'), createClaudeEffortFixture],
   [scenarioId('overlay-picker-claude-effort-set'), createClaudeEffortSetFixture],
+  [scenarioId('overlay-picker-claude-effort-returned'), createClaudeEffortReturnedFixture],
   [scenarioId('overlay-picker-provider-expanded-empty'), createProviderExpandedEmptyFixture],
   [
     scenarioId('overlay-picker-provider-expanded-unreadable'),
@@ -1439,6 +1483,9 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-contract-choice'), createContractChoiceFixture],
   [scenarioId('overlay-picker-custom-command'), createCustomCommandFixture],
   [scenarioId('overlay-picker-custom-model'), createCustomModelFixture],
+  [scenarioId('overlay-picker-custom-model-claude'), createCustomModelClaudeFixture],
+  [scenarioId('overlay-picker-custom-model-kilo'), createCustomModelKiloFixture],
+  [scenarioId('overlay-picker-save-refused'), createSaveRefusedFixture],
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
   [scenarioId('overlay-picker-seat-swap'), createSeatSwapPickerFixture],
   [scenarioId('overlay-picker-browse-escape'), createPickerBrowseEscapeFixture],

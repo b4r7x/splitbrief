@@ -250,6 +250,34 @@ describe('createRunnerCallRecorder', () => {
     expect(result.error).toBeNull();
   });
 
+  it('does not warn about narration past the budget that a final text which fits replaced', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 1,
+      onEvent: (event) => events.push(event),
+    });
+
+    recorder.text({ channel: 'assistant', text: 'n'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES + 10) });
+    recorder.text({ channel: 'result', text: '### Verdict\npass', semantics: 'final' });
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(result).toMatchObject({ status: 'completed', text: '### Verdict\npass', warnings: [] });
+    expect(events.some((event) => event.type === 'call_warning')).toBe(false);
+  });
+
+  it('warns about a cut text on a failed terminal as well', () => {
+    const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
+
+    recorder.text({ channel: 'assistant', text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES + 10) });
+    const result = recorder.finishFailed({
+      status: 'failed',
+      error: { code: 'runner_process_error', message: 'exited' },
+    });
+
+    expect(result.warnings).toEqual([expect.objectContaining({ code: 'runner_call_text_limit' })]);
+  });
+
   it('caps recorded tool uses at the item limit without truncating the call', () => {
     const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
     for (let index = 0; index < RUNNER_CALL_TOOL_USE_MAX_ITEMS + 44; index += 1) {
@@ -265,6 +293,41 @@ describe('createRunnerCallRecorder', () => {
     expect(result.warnings).toEqual([
       expect.objectContaining({ code: 'runner_call_tool_use_count_limit' }),
     ]);
+  });
+
+  it('publishes every tool completion past the item limit while the result keeps the cap', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 1,
+      onEvent: (event) => events.push(event),
+    });
+    const total = RUNNER_CALL_TOOL_USE_MAX_ITEMS * 2 + 91;
+    for (let index = 0; index < total; index += 1) {
+      recorder.toolUseDone({
+        toolUse: { id: `tool-${index}`, name: 'Read', input: {}, output: {} },
+      });
+    }
+
+    const result = recorder.finishCompleted({ endedAt: 20 });
+    const completions = events.flatMap((event) =>
+      event.type === 'call_tool_use_done' ? [event.toolUse.id] : [],
+    );
+
+    expect(completions).toHaveLength(total);
+    expect(completions.at(RUNNER_CALL_TOOL_USE_MAX_ITEMS)).toBe(
+      `tool-${RUNNER_CALL_TOOL_USE_MAX_ITEMS}`,
+    );
+    expect(completions.at(-1)).toBe(`tool-${total - 1}`);
+    expect(result.status).toBe('completed');
+    expect(result.toolUses).toHaveLength(RUNNER_CALL_TOOL_USE_MAX_ITEMS);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'call_warning' &&
+          event.warning.code === 'runner_call_tool_use_count_limit',
+      ),
+    ).toHaveLength(1);
   });
 
   // A tool announcement replays input that `toolUseDone` carries again, so a run with hundreds of

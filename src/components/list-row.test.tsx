@@ -4,6 +4,7 @@ import { render } from 'ink-testing-library';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../lib/glyphs.js';
+import { ELLIPSIS } from '../utils/display-text.js';
 import { ListGroupHeader, ListRow, listRowLead } from './list-row.js';
 
 const originalForceColor = vi.hoisted(() => {
@@ -337,6 +338,146 @@ describe('ListRow', () => {
     );
 
     expect(withColor).toBe(withoutColor);
+  });
+});
+
+describe('ListRow keepWhole', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+  });
+
+  const lineOf = (node: ReactElement, width: number): string =>
+    stripAnsiStyles(frameOf(node, width).split('\n')[0] ?? '');
+
+  it('gives a short label only the cells it fills, so the value beside it stays whole', () => {
+    const line = lineOf(
+      <ListRow
+        label="effort"
+        treeLead="└─ "
+        metadata="medium"
+        trailing={' '}
+        selected={false}
+        width={22}
+        keepWhole="metadata"
+      />,
+      22,
+    );
+
+    expect(line).toContain('effort medium');
+    expect(line).not.toContain('…');
+  });
+
+  it('sheds a trailing metadata segment whole instead of cutting into it', () => {
+    const line = lineOf(
+      <ListRow
+        label="openai"
+        treeLead="├─ "
+        metadata="signed in · api key"
+        trailing={' '}
+        selected={false}
+        width={31}
+        keepWhole="label"
+      />,
+      31,
+    );
+
+    expect(line).toContain('openai');
+    expect(line).toContain('signed in');
+    expect(line).not.toContain('api key');
+    expect(line).not.toContain('·');
+    expect(line).not.toContain('…');
+  });
+
+  it('spends its blank alignment cells before it drops a word', () => {
+    const line = lineOf(
+      <ListRow
+        label="effort"
+        treeLead="│  ├─ "
+        metadata="auto"
+        trailing={' '}
+        selected={false}
+        width={22}
+        keepWhole="metadata"
+      />,
+      22,
+    );
+
+    expect(line).toMatch(/effort +auto$/);
+    expect(line).not.toContain('…');
+  });
+
+  it('keeps the provider whole and drops the sign-in word when both cannot fit', () => {
+    const line = lineOf(
+      <ListRow
+        label="opencode-go"
+        treeLead="└─ "
+        metadata="needs sign-in"
+        trailing={' '}
+        selected={false}
+        width={22}
+        keepWhole="label"
+      />,
+      22,
+    );
+
+    expect(line).toContain('opencode-go');
+    expect(line).not.toContain('sign');
+    expect(line).not.toContain('…');
+  });
+
+  it('keeps the value and gives up the axis name when the pair cannot fit', () => {
+    const line = lineOf(
+      <ListRow
+        label="thinking"
+        treeLead="│  ├─ "
+        metadata="medium"
+        trailing={' '}
+        selected={false}
+        width={17}
+        keepWhole="metadata"
+      />,
+      17,
+    );
+
+    expect(line).toContain('medium');
+    expect(line).not.toContain('thinking');
+    expect(line).not.toContain('…');
+  });
+
+  it('sheds whole trailing label words so a status word it outranks keeps its place', () => {
+    const line = lineOf(
+      <ListRow
+        label="Command Code CLI"
+        metadata="Unavailable"
+        selected={false}
+        width={22}
+        keepWhole="metadata"
+      />,
+      22,
+    );
+
+    expect(line).toContain(`Command${ELLIPSIS} Unavailable`);
+  });
+
+  it('drops metadata the label outranks before the label sheds a word', () => {
+    const line = lineOf(
+      <ListRow label="OpenAI Codex CLI" metadata="1.2.0" selected width={22} keepWhole="label" />,
+      22,
+    );
+
+    expect(line).toContain('OpenAI Codex CLI');
+    expect(line).not.toContain('1.2.0');
+    expect(line.trimEnd().endsWith(glyph('check'))).toBe(true);
+  });
+
+  it('never leaves a separator hanging before the ellipsis of a shed label', () => {
+    const line = lineOf(
+      <ListRow label="output · my-planner --json" width={14} keepWhole="label" />,
+      14,
+    );
+
+    expect(line).toContain(`output${ELLIPSIS}`);
+    expect(line).not.toContain(`·${ELLIPSIS}`);
   });
 });
 

@@ -65,7 +65,7 @@ export const TOOL_EFFORT_LADDERS: Readonly<Partial<Record<ProviderId, ToolEffort
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
       exhaustive: false,
       provenance:
-        'codex debug models --bundled 0.153.3 (2026-09-08): per-model supported_reasoning_levels, union minus the unrepresentable `ultra`',
+        'codex debug models 0.155.1 (2026-09-23): per-model supported_reasoning_levels, union minus the unrepresentable `ultra`',
     },
     'command-code': {
       levels: ['low', 'medium', 'high'],
@@ -102,14 +102,14 @@ function compatibleModel(model: Omit<KnownModel, 'recommendation'>): KnownModel 
  * no ordered menu record, and its alias validity array orders them differently.
  *
  * Each window is that same baked record's `context.window` — `1e6` for `claude-sonnet-5`,
- * `claude-opus-5` and `claude-fable-5-1`, `200000` for `claude-haiku-4-5` — so it is Claude's
+ * `claude-opus-5-5` and `claude-fable-5-1`, `200000` for `claude-haiku-4-5` — so it is Claude's
  * own number beside Claude's own label, not one we typed. For a CLI tool's rows the declared
  * window is the answer everywhere — what the picker row shows, and what an `auto` seat floors
  * to (REQ-D26, REQ-B08); `catalogProvider`/`catalogModelId` document the full catalog id each
  * alias resolves to and are never read for lookups (models.dev serves `api` runners only).
  */
 const CLAUDE_ALIAS_PROVENANCE =
-  'Claude Code 2.1.267 /model menu + baked catalog display_name & context.window + alias table (2026-09-10); code.claude.com/docs/en/model-config';
+  'Claude Code 2.1.280 /model menu + baked catalog display_name & context.window + alias table (2026-09-23); code.claude.com/docs/en/model-config';
 
 export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
   'claude-code': [
@@ -123,10 +123,10 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     }),
     compatibleModel({
       name: 'opus',
-      displayName: 'Opus 5',
+      displayName: 'Opus 5.5',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-opus-5',
+      catalogModelId: 'claude-opus-5-5',
       provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({
@@ -147,11 +147,11 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     }),
     compatibleModel({
       name: 'opusplan',
-      displayName: 'Opus 5 Plan Mode',
+      displayName: 'Opus 5.5 Plan Mode',
       detail: 'Opus plans, Sonnet builds',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-opus-5',
+      catalogModelId: 'claude-opus-5-5',
       provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({
@@ -160,7 +160,7 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       detail: 'latest Fable, else Opus',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-opus-5',
+      catalogModelId: 'claude-fable-5-1',
       provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({
@@ -174,11 +174,11 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     }),
     compatibleModel({
       name: 'opus[1m]',
-      displayName: 'Opus 5 (1M)',
+      displayName: 'Opus 5.5 (1M)',
       detail: 'forces the 1M window',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-opus-5',
+      catalogModelId: 'claude-opus-5-5',
       provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({

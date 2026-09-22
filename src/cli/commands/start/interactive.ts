@@ -5,6 +5,7 @@ import { assertInteractiveTty, setupWorkflow } from '../../setup.js';
 import { initStoresForTuiMount } from '../../init-stores.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { CHECKING_TOOLS_STAGE, preparationStore } from '../../../stores/navigation/preparation.js';
+import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
 import { hasRememberedDetection } from '../../../engine/detection/cache.js';
 import {
@@ -75,6 +76,9 @@ export async function runInteractiveStart(args: InteractiveDispatchArgs): Promis
           opts,
           transport: 'interactive',
           emitReadiness: () => {},
+          // Ink owns the terminal by now, so runner trust is asked on the panel the home screen
+          // shows for its own starts; a prompt written to stderr would sit behind the TUI.
+          onTieredApproval: openApprovalPrompt,
           signal,
           ...(deps.prepareExecution !== undefined && { prepare: deps.prepareExecution }),
         });

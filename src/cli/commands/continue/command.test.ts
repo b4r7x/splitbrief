@@ -532,6 +532,41 @@ describe('continueCommand', () => {
     expect(resumeLine).not.toContain('pwned');
   });
 
+  it('names the last brief, not one past it, when a run resumes after every brief settled', async () => {
+    const projectDir = makeTmpProject();
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-all-settled');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-all-settled' });
+    writeState(sessDir, 'final-review', {
+      currentTaskIndex: 1,
+      tasks: [
+        {
+          id: 'T001',
+          title: 'task-1',
+          action: 'create',
+          file: 'src/test.ts',
+          dependsOn: [],
+          description: 'Test task',
+          tests: [],
+          constraints: [],
+          typeDefs: '',
+          implementationSteps: [],
+          status: 'done',
+        },
+      ],
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    let logged: string[] = [];
+    try {
+      await continueCommand('2025-04-01-all-settled', { projectDir }, deps);
+    } finally {
+      logged = logSpy.mock.calls.map((call) => call.join(' '));
+      logSpy.mockRestore();
+    }
+
+    expect(logged.find((line) => line.includes('Resuming:'))).toContain('task 1/1)');
+  });
+
   it('resumes an interrupted session on Windows without a platform rejection', async () => {
     const projectDir = makeTmpProject();
     const sessDir = makeSessionDir(projectDir, '2025-04-01-win-resume');

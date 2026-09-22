@@ -12,8 +12,11 @@ import {
   CATALOG_LANE_PENDING,
   effortLadderFor,
   type CatalogLane,
+  type RightRow,
   type RouteAuthState,
 } from './model-catalog/rows.js';
+import { isAutomaticModel } from '../../core/providers/automatic-model.js';
+import type { ResolvedModelMembership } from '../../engine/providers/model/catalog.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { formatContextLength } from '../../core/formatting.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
@@ -362,7 +365,7 @@ const LISTING_SOURCES: Readonly<Record<CliToolId, ListingSource>> = {
     unverifiedForPlan: false,
   },
   codex: {
-    source: 'from codex debug models --bundled',
+    source: 'from codex debug models',
     rowNoun: 'model',
     rowNounPlural: 'models',
     unverifiedForPlan: false,
@@ -389,9 +392,67 @@ const CATALOG_LISTING_SOURCE: ListingSource = {
   unverifiedForPlan: true,
 };
 
+/** A sentence broken on words into at most `maxLines` lines of `cells`; `cut` when words are left over. */
+export function wrapOnWords(
+  sentence: string,
+  cells: number,
+  maxLines: number,
+): Readonly<{ lines: string[]; cut: boolean }> {
+  const lines: string[] = [];
+  let line = '';
+  for (const word of sentence.split(' ')) {
+    const next = line === '' ? word : `${line} ${word}`;
+    if (line !== '' && getTerminalCellWidth(next) > cells) {
+      lines.push(line);
+      if (lines.length === maxLines) return { lines, cut: true };
+      line = word;
+      continue;
+    }
+    line = next;
+  }
+  return { lines: line === '' ? lines : [...lines, line], cut: false };
+}
+
 export function pickerListingSource(toolId: string | undefined): ListingSource {
   if (toolId !== undefined && isCliToolId(toolId)) return LISTING_SOURCES[toolId];
   return CATALOG_LISTING_SOURCE;
+}
+
+const CUSTOM_MODEL_EXAMPLE_COUNT = 3;
+/** Rows the tool itself listed or ships as its floor; models.dev suggestions and custom rows are not its spelling. */
+const TOOL_OWN_MEMBERSHIPS: ReadonlySet<ResolvedModelMembership> = new Set([
+  'confirmed',
+  'stale',
+  'bundled-suggestion',
+]);
+
+/**
+ * The custom-model entry's examples come from the highlighted tool's own listing, spelled as that
+ * tool takes them: Claude Code `claude-opus-5-5`, Codex a slug, OpenCode and Kilo `provider/model`.
+ * An alias row gives the id it resolves to, because the alias is already a row. The examples teach
+ * the id's form, so each names a different provider. A tool whose listing has not landed names the
+ * command that lists its ids instead.
+ */
+export function customModelEntryCopy(
+  input: Readonly<{ rows: readonly RightRow[]; toolId: string }>,
+): Readonly<{ placeholder: string; examples: string[] }> {
+  const ids: string[] = [];
+  const providers = new Set<string>();
+  for (const row of input.rows) {
+    if (ids.length === CUSTOM_MODEL_EXAMPLE_COUNT) break;
+    if (row.kind !== 'model' || isAutomaticModel(row.model.id)) continue;
+    const { membership } = row.model;
+    if (membership === undefined || !TOOL_OWN_MEMBERSHIPS.has(membership)) continue;
+    const id = row.model.catalogModelId ?? row.model.id;
+    const provider = id.includes('/') ? id.slice(0, id.indexOf('/')) : id;
+    if (providers.has(provider)) continue;
+    providers.add(provider);
+    ids.push(id);
+  }
+  const [first, ...rest] = ids;
+  return first === undefined
+    ? { placeholder: `an id ${pickerListingSource(input.toolId).source}`, examples: [] }
+    : { placeholder: `e.g. ${first}`, examples: rest };
 }
 
 function laneStatus(lane: CatalogLane): string | undefined {

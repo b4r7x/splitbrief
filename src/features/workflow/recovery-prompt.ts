@@ -97,6 +97,8 @@ export interface RecoveryActionChoiceContext {
   reason?: RecoveryReason | undefined;
   facts?: Record<string, RecoveryFact> | undefined;
   switchSeat?: SwitchSeatOffer | undefined;
+  /** The seat the halt stopped, where no offer names it — a recovery event carries only this. */
+  seat?: CrewSeatId | undefined;
   /** The seat a retry re-issues when the halt names no brief; absent when it replays one. */
   seatRetry?: CrewSeatId | undefined;
 }
@@ -152,8 +154,11 @@ export function recoveryActionLabel(
       const profile = recoveryFactString(context.facts, 'routeBiggerProfile');
       return profile === undefined ? 'Use a bigger worker' : `Use a bigger worker · ${profile}`;
     }
-    case 'switch-seat':
-      return `Change ${CREW_SEAT_LABELS[context.switchSeat?.seat ?? 'build']} tool`;
+    case 'switch-seat': {
+      // The seat is the one that halted; a label that cannot name it names no seat at all.
+      const seat = context.switchSeat?.seat ?? context.seat;
+      return seat === undefined ? 'Change tool' : `Change ${CREW_SEAT_LABELS[seat]} tool`;
+    }
     case 'planner-split-rebase':
       return `Ask planner to ${rebaseVerb(context)}`;
     case 'revise':
@@ -308,6 +313,7 @@ function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
     reason: issue.reason,
     facts: issue.facts,
     switchSeat: issue.switchSeat,
+    seat: issue.seat,
     seatRetry: seatLevelRetrySeat(issue),
   };
   const recommended = resolveRecommendedAction(issue, actions);

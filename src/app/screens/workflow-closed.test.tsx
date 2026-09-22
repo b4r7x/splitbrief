@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -41,7 +43,7 @@ function showClosedRun(opts: {
     screen: 'workflow',
     run: makeRunRecord({
       ref: {
-        projectDir: '/tmp/workflow-closed-test',
+        projectDir: join(process.env.XDG_STATE_HOME ?? tmpdir(), 'workflow-closed-test'),
         sessionId: opts.sessionId ?? '2026-09-14-test-feature',
       },
       status: { kind: 'closed', as: opts.as ?? 'complete' },

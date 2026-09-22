@@ -47,8 +47,10 @@ export async function handlePlanningFailure(opts: {
   const latest = rebaseOnPersistedWorkflowState(ref, state);
 
   // A user abort is not a failure: the step it cut is recorded so the run picks
-  // up there, and the run stays open.
-  if (isAbortError(err)) {
+  // up there, and the run stays open. Only the operator aborts the workflow
+  // signal, and a CLI or API runner wraps that abort in its own call error, so
+  // the signal decides; a runner's own timeout never aborts it.
+  if (isAbortError(err) || wctx.signal?.aborted === true) {
     return {
       disposition: 'terminal',
       state: transitionAndSave(ref, latest, {

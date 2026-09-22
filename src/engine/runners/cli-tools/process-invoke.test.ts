@@ -25,6 +25,8 @@ import type {
 } from './contract.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES, invokeProcessCli } from './process-invoke.js';
 import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
+import { requireCompletedCall } from '../../planners/require-completed-call.js';
+import { usageLimitDetailFromError } from '../usage-limit.js';
 import { antigravityImplementerAdapter } from './antigravity.js';
 import { codexImplementerAdapter } from './codex.js';
 import { opencodeImplementerAdapter, opencodeProtocolEvents } from './opencode.js';
@@ -277,6 +279,33 @@ describe('invokeProcessCli', () => {
       error: { code: 'prompt-transport-error' },
     });
     expect(result.error?.message).not.toContain(promptMarker);
+  });
+
+  // The limit line is on stderr before the pipe under the prompt breaks; the broken pipe must not
+  // turn a seat-switch halt into a planner-call-failed one.
+  it('classifies a usage limit printed by a child that exits before reading its stdin prompt', async () => {
+    const line =
+      'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s.';
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        script: `process.stderr.write(${JSON.stringify(`${line}\n`)});process.exit(1)`,
+      }),
+      'x'.repeat(8 * 1024 * 1024),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'usage-limit', message: line },
+    });
+    expect(runnerCallOutcome(result).state).toBe('usage-limit');
+    let plannerError: unknown;
+    try {
+      requireCompletedCall(result);
+    } catch (err) {
+      plannerError = err;
+    }
+    expect(usageLimitDetailFromError(plannerError)).toBe(line);
   });
 
   it('rejects transport overflow, malformed placeholders, and configured argument conflicts before spawn', async () => {

@@ -1,8 +1,8 @@
-import { ListRow } from '../../components/list-row.js';
+import { ListRow, wholeWordLabelForms } from '../../components/list-row.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { getTheme } from '../../components/theme.js';
 import { glyph } from '../../lib/glyphs.js';
-import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
+import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
 import {
@@ -24,9 +24,28 @@ interface ToolRowParams {
   currentCommand: string | undefined;
   currentCommandKind: 'shell' | 'agent' | undefined;
   isContext: boolean;
+  /** Whether this list's width seats every status word; see `toolStatusesFit`. */
+  showStatus: boolean;
 }
 
 const ADD_COMMAND_LABEL = '+ Add custom command…';
+/** What a tool row spends beside its name and its word: the lead and the check column. */
+const TOOL_ROW_CHROME = 4;
+
+/**
+ * A status says what is wrong with a tool, so a list that prints it on one row and not the next
+ * tells the reader the others are fine. The list keeps every status or none: each one must sit
+ * whole beside at least its tool's first word.
+ */
+export function toolStatusesFit(items: readonly PickerOption[], width: number): boolean {
+  const room = width - TOOL_ROW_CHROME;
+  return items.every((item) => {
+    const status = formatPickerStatusLabel(item.status);
+    if (status === undefined) return true;
+    const shortest = wholeWordLabelForms(item.displayName).at(-1) ?? item.displayName;
+    return getTerminalCellWidth(shortest) + 1 + getTerminalCellWidth(status) <= room;
+  });
+}
 
 export function renderToolRow({
   item,
@@ -36,6 +55,7 @@ export function renderToolRow({
   currentCommand,
   currentCommandKind,
   isContext,
+  showStatus,
 }: ToolRowParams) {
   const isCommandBased = item.kind === 'custom-command';
   const showConfiguredCommand = isCommandBased && currentCommandKind && currentCommand;
@@ -45,8 +65,15 @@ export function renderToolRow({
       : ADD_COMMAND_LABEL
     : item.displayName;
   const statusLabel = formatPickerStatusLabel(item.status);
+  // A hidden status takes the version with it: a version alone would read as a ready tool.
   const metadata =
-    statusLabel ?? (!isCommandBased && item.available && item.version ? item.version : undefined);
+    statusLabel === undefined
+      ? !isCommandBased && item.available && item.version
+        ? item.version
+        : undefined
+      : showStatus
+        ? statusLabel
+        : undefined;
 
   const state = isCursor ? 'active' : isContext ? 'context' : 'default';
 
@@ -59,6 +86,8 @@ export function renderToolRow({
       metadataColor={statusLabel === undefined ? undefined : getTheme().warning}
       selected={isSelected || !!item.isCurrent}
       width={maxWidth}
+      // A status outranks the tail of the name it qualifies; a version never does.
+      keepWhole={statusLabel === undefined ? 'label' : 'metadata'}
     />
   );
 }
@@ -96,6 +125,7 @@ export function renderModelRow({
         state={isCursor ? 'active' : 'default'}
         defaultLead="blank"
         width={maxWidth}
+        keepWhole="label"
       />
     );
   }
@@ -112,6 +142,8 @@ export function renderModelRow({
         trailing={' '}
         selected={currentModel !== undefined && row.variant.fullId === currentModel}
         width={maxWidth}
+        // The provider names the route; its sign-in word is the part a narrow row gives up.
+        keepWhole="label"
       />
     );
   }
@@ -141,6 +173,8 @@ export function renderModelRow({
         trailing={' '}
         selected={false}
         width={maxWidth}
+        // The level is what the row steps; its axis name is the part a narrow row gives up.
+        keepWhole="metadata"
       />
     );
   }

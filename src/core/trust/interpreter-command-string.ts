@@ -22,7 +22,7 @@ const COMMAND_STRING_INTERPRETER_PROFILES: readonly CommandStringInterpreterProf
   },
 ];
 
-function executableName(value: string): string {
+export function executableName(value: string): string {
   const separator = Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\'));
   return value
     .slice(separator + 1)
@@ -48,7 +48,7 @@ function consumesPosixShellOptionArgument(value: string): boolean {
   );
 }
 
-function isPosixShellCommandStringOption(value: string): boolean {
+export function isPosixShellCommandStringOption(value: string): boolean {
   if (value === '-c' || value === '--command' || value.startsWith('--command=')) return true;
   return /^-[A-Za-z]*c[A-Za-z]*$/.test(value);
 }
@@ -168,6 +168,14 @@ function envDispatchesInterpreterCommandString(argv: readonly string[]): boolean
     return hasInterpreterCommandString(argument, argv.slice(index + 1));
   }
   return false;
+}
+
+export function isPosixShell(executable: string): boolean {
+  return commandStringInterpreterProfile(executable)?.family === 'posix-shell';
+}
+
+export function runsPosixShellCommandString(executable: string, argv: readonly string[]): boolean {
+  return isPosixShell(executable) && hasPosixShellCommandStringMode(argv);
 }
 
 export function storesInterpreterCommandString(

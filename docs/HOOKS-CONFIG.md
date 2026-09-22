@@ -65,7 +65,7 @@ Every hook entry is a `command` hook. `kind` may be written explicitly as `"comm
 
 ### `command` restrictions
 
-Inline shell launchers are rejected. `command` cannot be `sh`, `bash`, `zsh`, `dash`, `fish`, `ksh`, `csh`, `tcsh`, `powershell`, `pwsh`, `cmd`, `cmd.exe`, common absolute variants such as `/bin/sh` and `/usr/bin/bash`, or `/usr/bin/env`. Hook `args` also cannot contain those shell launchers or shell-evaluation flags such as `-c`, `--command`, `/c`, and `/C`.
+Inline shell launchers are rejected. The schema matches a launcher by its basename, so every absolute or relative path to one is rejected too: `command` cannot be `sh`, `bash`, `zsh`, `dash`, `ash`, `ksh`, `mksh`, `fish`, `csh`, `tcsh`, `powershell`, `pwsh`, `cmd` (or `cmd.exe`), or `env`. `/usr/local/bin/bash` and `./bin/zsh` fail the same way as `bash`. Hook `args` also cannot contain those launchers or a shell-evaluation flag: `-c`, `--command`, a short-option cluster that contains `c` (`-ec`, `-xc`, `-lc`), `/c`, or `/C`.
 
 SPLITBRIEF does not run hooks with `shell: true`; substitution values pass through as argv elements safely. Inline shell is rejected so a hook cannot reintroduce shell evaluation at the argv boundary.
 
@@ -237,7 +237,7 @@ Hook commands run with the user's **full shell privileges** — the same authori
 
 Because of that authority, SPLITBRIEF layers several guardrails:
 
-1. **No inline shell.** Schema rejects common shell launchers and shell-evaluation flags. Substitution never uses `shell: true`, so event-field values cannot be injected as shell syntax. If you need a pipeline, put it in a script file and invoke the script.
+1. **No inline shell.** Schema rejects shell launchers by basename and shell-evaluation flags. Substitution never uses `shell: true`, so event-field values cannot be injected as shell syntax. If you need a pipeline, put it in a script file and invoke the script.
 2. **Mandatory timeout.** `timeout_ms` has a default (30000 ms) and a hard ceiling (300000 ms). A hung hook cannot stall the workflow indefinitely.
 3. **Project cwd start.** Hooks start in `cwd: projectDir`, matching the implementer subprocess. This is not a filesystem sandbox: hook commands retain normal user access and can read or write anywhere the user account can.
 4. **Trust recheck before execution.** Before running a configured hook, SPLITBRIEF re-hashes the trusted hook configuration and referenced hook files. If bytes changed after trust, the hook is refused until the user re-trusts the new configuration.

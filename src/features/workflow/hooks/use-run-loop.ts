@@ -18,13 +18,20 @@ import { sessionsStore } from '../../../stores/project/sessions.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
 import { fileHaltIsStale } from '../../../engine/orchestrator/run/init.js';
-import type { SeatSwapChoice } from '../../../engine/orchestrator/run/seat-swap.js';
+import {
+  applyOfferedSeatSwap,
+  type SeatSwapChoice,
+} from '../../../engine/orchestrator/run/seat-swap.js';
+import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import { addTuiEvent } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import { readinessBlockerMessage } from '../../../core/readiness/format.js';
 import {
   createAbortHandlerScope,
   setCancelHandler,
@@ -58,6 +65,7 @@ import { nowIso } from '../../../utils/format-time.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import { buildPromptCallbacks } from '../prompt-callbacks.js';
 import { createRecoveryDriver } from '../recovery-driver.js';
+import { runResumePolicy } from '../resume-policy.js';
 import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
 import { clearSessionScopedStores } from '../session-stores.js';
@@ -65,6 +73,7 @@ import { type PendingRewind, buildRewindHandler } from '../rewind-handler.js';
 import type { UseRunContinueResult } from './use-run-continue.js';
 
 export type RunWorkflowFn = typeof runWorkflow;
+export type PrepareExecutionFn = typeof prepareExecution;
 
 function isWorkflowAborted(controller: AbortController, ref: { current: boolean }): boolean {
   return controller.signal.aborted || ref.current;
@@ -79,6 +88,7 @@ interface UseRunLoopOptions {
   /** How this run is re-entered — the loop reads its state and the rewind path restarts through it. */
   continuation: UseRunContinueResult;
   runWorkflow?: RunWorkflowFn | undefined;
+  prepareExecution?: PrepareExecutionFn | undefined;
   /**
    * The path a bare ⏎ takes on a run at rest: re-prepare it from the saved config and re-enter it in
    * place. A run that stopped itself at a brief boundary to pick up a changed seat continues here.
@@ -103,6 +113,7 @@ export function useRunLoop({
   inputMode,
   continuation,
   runWorkflow: runWorkflowFn = runWorkflow,
+  prepareExecution: prepareExecutionFn = prepareExecution,
   continueAtRest,
 }: UseRunLoopOptions): UseRunLoopResult {
   const abortedRef = useRef(false);
@@ -158,9 +169,10 @@ export function useRunLoop({
     let recoveryPromptAlreadyPublished = false;
 
     // A fresh run starts from an empty screen; a run this screen is continuing already has its
-    // history on it, replayed at the navigation event, and the live bus appends from here. Either
-    // way the saved state is laid over the stores, so the brief list and the spend are the run's.
-    if (prepared.purpose === 'new-workflow') resetWorkflow();
+    // history on it, replayed at the navigation event or appended by its earlier passes, and the
+    // live bus appends from here. Either way the saved state is laid over the stores, so the brief
+    // list and the spend are the run's.
+    if (stateForRun === undefined) resetWorkflow();
     if (stateForRun !== undefined) hydrateFromState(stateForRun);
     resetMarkdownConversationRowsCache();
     resetConversationRowsProjectionCache();
@@ -196,6 +208,11 @@ export function useRunLoop({
       }),
     );
 
+    // A re-entry re-prepares this session, and every later iteration belongs to the preparation
+    // it made: the seats were built from it, and its receipt is the one on disk — otherwise the
+    // next halt rebuilds the tool that hit its limit, and a stop releases a receipt already gone.
+    let preparedForRun = prepared;
+
     const finishStoppedRun = async (): Promise<void> => {
       await killAllProcesses();
       const hydrated = hydrateResume(session.ref);
@@ -222,18 +239,14 @@ export function useRunLoop({
             );
       finalizeEndedRun({
         ref: session.ref,
-        active: session.active,
-        config: prepared.config,
+        active: preparedForRun.session.active,
+        config: preparedForRun.config,
         state: next,
         modelCache: modelCacheStore,
       });
       settleRun(session.ref);
     };
 
-    // A taken seat swap re-prepares this session, and every later iteration belongs to
-    // the preparation the seats were actually built from — otherwise the next halt
-    // rebuilds the tool that hit its limit.
-    let preparedForRun = prepared;
     // A seat saved under the running brief is picked up at the next brief boundary: the run
     // stops itself there instead of parking, and continues the way a run at rest does, re-prepared
     // from the saved config. The panel's own swap re-prepares at once and cancels the request.
@@ -318,6 +331,66 @@ export function useRunLoop({
 
         staleHalt = false;
 
+        // A taken seat swap resolves the halt onto the new tool and prepares this session on it.
+        // That is this re-entry's preparation: the seat that halted is not admitted again, so a
+        // tool that can no longer run cannot block the move away from it.
+        if (switchSeat !== undefined && stateForRun !== undefined) {
+          const swapped = await applyOfferedSeatSwap({
+            choice: switchSeat,
+            projectDir: session.ref.projectDir,
+            sessionId: session.ref.sessionId,
+            bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }),
+            config: preparedForRun.config,
+            prepared: preparedForRun,
+            mode: preparedForRun.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+            savedState: stateForRun,
+            signal: controller.signal,
+            prepare: prepareExecutionFn,
+            onSeatSwapped: (swappedPrepared) => {
+              preparedForRun = swappedPrepared;
+              if (consumeSeatChange()) cancelBoundaryPause();
+            },
+          });
+          switchSeat = undefined;
+          if (controller.signal.aborted) {
+            if (!abortedRef.current) await finishStoppedRun();
+            return;
+          }
+          if (swapped !== undefined) stateForRun = swapped.state;
+        }
+
+        // A run started here was prepared to allocate its session, and that preparation starts a
+        // session only once. Every later entry continues the session, so it is admitted again as a
+        // resume before it re-enters the engine.
+        if (preparedForRun.purpose === 'new-workflow' && stateForRun !== undefined) {
+          const reprepared = await prepareExecutionFn({
+            existingSession: session.ref,
+            feature: stateForRun.feature,
+            effectiveConfig: preparedForRun.config,
+            policy: runResumePolicy(preparedForRun),
+            signal: controller.signal,
+            resumeState: stateForRun,
+          });
+          if (reprepared.kind === 'aborted') {
+            if (!abortedRef.current) await finishStoppedRun();
+            return;
+          }
+          if (reprepared.kind !== 'prepared') {
+            addTuiEvent({
+              type: 'error',
+              ts: Date.now(),
+              phase: lifecycleStore.get().phase,
+              message:
+                reprepared.kind === 'blocked'
+                  ? `Cannot resume: ${readinessBlockerMessage(reprepared.report)}`
+                  : `Cannot resume: ${toErrorMessage(reprepared.error)}`,
+            });
+            settleRun(session.ref);
+            return;
+          }
+          preparedForRun = reprepared.execution;
+        }
+
         const storeStreamingSink: StreamingSink = {
           start: (tid) => streamingOutputStore.startStreaming(tid),
           replaceLines: (lines) => streamingOutputStore.replaceLines(lines),
@@ -342,15 +415,9 @@ export function useRunLoop({
           ...(detectedContextLength !== undefined && { detectedContextLength }),
           ...(retryProfileOverride !== undefined && { retryProfileOverride }),
           ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
-          ...(switchSeat !== undefined && { switchSeat }),
-          onSeatSwapped: (swappedPrepared) => {
-            preparedForRun = swappedPrepared;
-            if (consumeSeatChange()) cancelBoundaryPause();
-          },
         });
         retryProfileOverride = undefined;
         retryProfileOverrideTaskId = undefined;
-        switchSeat = undefined;
         steerForRun = undefined;
 
         if (abortedRef.current) return;

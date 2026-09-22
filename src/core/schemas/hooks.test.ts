@@ -27,6 +27,38 @@ describe('HookEntrySchema', () => {
   ])('rejects unsafe hook config %o', (entry) => {
     expect(HookEntrySchema.safeParse(entry).success).toBe(false);
   });
+
+  it.each([
+    [{ command: '/usr/local/bin/bash', args: ['./hooks/check.sh'] }],
+    [{ command: '/opt/homebrew/bin/fish' }],
+    [{ command: './bin/zsh' }],
+    [{ command: 'BASH' }],
+    [{ command: 'env', args: ['node', 'hooks/check.mjs'] }],
+    [{ command: 'nice', args: ['/opt/homebrew/bin/bash', 'hooks/check.sh'] }],
+    [{ command: 'nice', args: ['/usr/local/bin/env', '-S', 'hooks/check.sh'] }],
+  ])('rejects the shell launcher in %o by its basename', (entry) => {
+    expect(HookEntrySchema.safeParse(entry).success).toBe(false);
+  });
+
+  it.each(['-ec', '-xc', '-lc', '-cx', '--command=true'])(
+    'rejects the shell-evaluation flag %s in hook args',
+    (flag) => {
+      const result = HookEntrySchema.safeParse({ command: './hooks/run', args: [flag, 'true'] });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues).toContainEqual(
+        expect.objectContaining({ path: ['args', 0], message: expect.stringContaining(flag) }),
+      );
+    },
+  );
+
+  it.each([
+    [{ command: 'node', args: ['hooks/check.mjs'] }],
+    [{ command: 'npx', args: ['prettier', '--check', 'src/app.ts'] }],
+    [{ command: './hooks/check.sh', args: ['--rules=./hooks/rules.json', '-v'] }],
+    [{ command: '/usr/local/bin/shellcheck', args: ['hooks/check.sh'] }],
+  ])('accepts the script hook %o', (entry) => {
+    expect(HookEntrySchema.safeParse(entry).success).toBe(true);
+  });
 });
 
 describe('HooksConfigSchema retired commit events', () => {

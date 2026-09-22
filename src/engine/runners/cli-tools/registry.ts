@@ -53,6 +53,12 @@ const PROBE_TIMEOUT_MS = 5_000;
 const PROBE_OUTPUT_MAX_BYTES = 4_096;
 const PROVIDER_ORACLE_TIMEOUT_MS = 10_000;
 const PROVIDER_ORACLE_OUTPUT_MAX_BYTES = 16_384;
+// `agy models` waits on Google's loadCodeAssist and fetchAvailableModels before
+// it lists, and at times on a user-info call before it exits. agy's own logs put
+// 388 of 394 readiness listings under 5 s; the rest took 5.9 s, 7.0 s, 11.4 s
+// and longer, and the shared 5 s budget read each one as an unadmitted runner.
+// The probe ceiling caps this budget at 10 s.
+const ANTIGRAVITY_MODELS_TIMEOUT_MS = DISCOVERY_SUBPROCESS_TIMEOUT_MS;
 const SEMVER_PATTERN =
   '(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?';
 const CALVER_PATTERN = '\\d{4}\\.\\d{2}\\.\\d{2}(?:-[A-Za-z0-9]+)?';
@@ -298,10 +304,14 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
         parse: parseStatusAuth,
       };
+    // Every `cmd` start checks for an update in the background and spawns a
+    // detached installer unless the argv names `--no-auto-update`. The status
+    // and listing probes wait on the network long enough for that check to
+    // land (cmd went 1.62.1 -> 1.64.0 under a listing probe), so both carry it.
     case 'command-code':
       return {
         kind: 'auth-status',
-        command: [command, 'status', '--json'],
+        command: [command, 'status', '--json', '--no-auto-update'],
         cwd: 'neutral',
         timeoutMs: PROBE_TIMEOUT_MS,
         maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
@@ -312,7 +322,7 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         kind: 'auth-status',
         command: [command, 'models'],
         cwd: 'neutral',
-        timeoutMs: PROBE_TIMEOUT_MS,
+        timeoutMs: ANTIGRAVITY_MODELS_TIMEOUT_MS,
         maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
         // `agy models` needs a signed-in account to list anything, so a
         // non-zero exit is the missing-credential answer.
@@ -494,7 +504,7 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
       });
     case 'command-code':
       return structuralCatalogProbe({
-        command: ['cmd', '--list-models'],
+        command: ['cmd', '--list-models', '--no-auto-update'],
         parser: parseCommandCodeNativeModelCatalog,
       });
     case 'copilot':
@@ -506,6 +516,7 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
       return structuralCatalogProbe({
         command: ['agy', 'models'],
         parser: parseAntigravityModelCatalog,
+        timeoutMs: ANTIGRAVITY_MODELS_TIMEOUT_MS,
       });
     case 'claude-code':
       return { kind: 'not-run' };

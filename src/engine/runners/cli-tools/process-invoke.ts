@@ -188,6 +188,15 @@ export async function invokeProcessCli(
   const signal = context.invocation.signal
     ? AbortSignal.any([context.invocation.signal, timeoutController.signal])
     : timeoutController.signal;
+  // Halt phrases are the tool's own words for giving up, so only its
+  // diagnostic channel and the last line it printed are candidates: the
+  // transcript above that line is the model's prose, where a path under
+  // `billing/` or a shelled-out `permission denied` is ordinary task output.
+  const haltLines = (): readonly string[] => [
+    ...stderr.split('\n'),
+    stdoutLastLine,
+    stdoutTailCarry,
+  ];
 
   const applyProtocolEvent = (event: CliProtocolEvent): void => {
     // A structured stream may restate its terminal result — Codex describes one
@@ -342,15 +351,6 @@ export async function invokeProcessCli(
       },
     });
 
-    // Halt phrases are the tool's own words for giving up, so only its
-    // diagnostic channel and the last line it printed are candidates: the
-    // transcript above that line is the model's prose, where a path under
-    // `billing/` or a shelled-out `permission denied` is ordinary task output.
-    const haltLines = (): readonly string[] => [
-      ...closed.stderr.split('\n'),
-      stdoutLastLine,
-      stdoutTailCarry,
-    ];
     if (closed.signal !== null) {
       return fail({
         recorder,
@@ -465,12 +465,15 @@ export async function invokeProcessCli(
       });
     }
     if (spawnPipeError.isStdinIncomplete(cause)) {
+      // A tool that quits on a usage limit or a dead login before it reads its
+      // prompt breaks the pipe under that prompt; its own words are the
+      // diagnosis, and they keep the halt and the seat-switch offer it earns.
       return finishFailureSafely({
         recorder,
         context: context.callContext,
         credentialValues,
         status: 'failed',
-        error: {
+        error: haltFailure(haltLines()) ?? {
           code: 'prompt-transport-error',
           message: 'CLI prompt could not be fully delivered through stdin',
         },

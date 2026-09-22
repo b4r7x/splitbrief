@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createServer } from 'node:net';
+import type { AddressInfo, Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { PassThrough } from 'node:stream';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
@@ -692,28 +694,29 @@ setTimeout(() => process.exit(0), 150);`,
     const laterReviewFile = join(tmpDir, 'tasks.md');
     await writeFile(laterReviewFile, '# tasks\n', 'utf-8');
     reviewStore.setReviewFile(reviewFile);
-    const sentinel = join(tmpDir, 'release-editor');
+    // The editor saves, then connects here and stays out until the test ends the connection.
+    // The connection is the signal that the editor is out, however slowly its process starts.
+    const editorHold = createServer();
+    const editorOut = new Promise<Socket>((connected) => editorHold.once('connection', connected));
+    await new Promise<void>((listening) => editorHold.listen(0, '127.0.0.1', listening));
+    const { port } = editorHold.address() as AddressInfo;
     stubReviewEditor(
       await writeScriptEditor(
         'editor-hold.js',
-        `const fs = require('node:fs');
-fs.appendFileSync(process.argv[2], 'edited\\n');
-const wait = () =>
-  fs.existsSync(${JSON.stringify(sentinel)}) ? process.exit(0) : setTimeout(wait, 10);
-wait();`,
+        `require('node:fs').appendFileSync(process.argv[2], 'edited\\n');
+require('node:net').connect(${port}, '127.0.0.1');`,
       ),
     );
     const resolve = vi.fn();
     const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
 
     const pending = handleInput('e');
-    await vi.waitFor(async () => {
-      expect(await readFile(reviewFile, 'utf-8')).toContain('edited');
-    });
+    const editor = await editorOut;
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
     reviewStore.setReviewFile(laterReviewFile);
-    await writeFile(sentinel, '', 'utf-8');
+    editor.end();
     await pending;
+    editorHold.close();
 
     expect(resolve).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toMatchObject({

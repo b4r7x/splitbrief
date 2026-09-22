@@ -158,7 +158,7 @@ function catalogShim(marker: string, argvLog?: string): string {
     `  printf '%s\\n' 'codex-cli ${CLI_TOOL_CATALOG.codex.compatibility.testedVersion}'`,
     '  exit 0',
     'fi',
-    'if [ "$1" = "debug" ] && [ "$2" = "models" ] && [ "$3" = "--bundled" ]; then',
+    'if [ "$1" = "debug" ] && [ "$2" = "models" ] && [ -z "$3" ]; then',
     `  printf '%s\\n' ran >> ${JSON.stringify(marker)}`,
     `  printf '%s\\n' ${JSON.stringify(JSON.stringify({ models: [{ id: 'model-a' }] }))}`,
     '  exit 0',
@@ -183,7 +183,7 @@ function failingVersionCatalogShim(
     'if [ "$1" = "--version" ]; then',
     '  exit 77',
     'fi',
-    'if [ "$1" = "debug" ] && [ "$2" = "models" ] && [ "$3" = "--bundled" ]; then',
+    'if [ "$1" = "debug" ] && [ "$2" = "models" ] && [ -z "$3" ]; then',
     `  printf '%s\\n' ran > ${JSON.stringify(input.catalogMarker)}`,
     `  printf '%s\\n' "\${OPENAI_API_KEY-unset}" > ${JSON.stringify(input.catalogCredentialMarker)}`,
     `  printf '%s\\n' ${JSON.stringify(JSON.stringify({ models: [{ id: 'must-not-run' }] }))}`,
@@ -600,7 +600,7 @@ describe('context-bound runner evidence', () => {
         expect(existsSync(marker)).toBe(true);
         expect(readFileSync(argvLog, 'utf8').trim().split('\n')).toEqual([
           '--version',
-          'debug models --bundled',
+          'debug models',
         ]);
       });
     },

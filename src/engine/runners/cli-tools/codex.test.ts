@@ -68,8 +68,8 @@ describe('Codex role adapters', () => {
     expect(codexPlannerAdapter.probe.version.command).toEqual(['codex', '--version']);
     expect(codexPlannerAdapter.probe.auth.command).toEqual(['codex', 'login', 'status']);
     expect(CODEX_NATIVE_MODEL_CATALOG_PROBE).toEqual({
-      capability: 'debug-models-bundled-v1',
-      command: ['codex', 'debug', 'models', '--bundled'],
+      capability: 'debug-models-v2',
+      command: ['codex', 'debug', 'models'],
       timeoutMs: 5_000,
       maxOutputBytes: 2 * 1024 * 1024,
     });
@@ -585,17 +585,17 @@ describe('Codex exact last-message terminal (REQ-013)', () => {
     expect(terminal.text).toBe('final brief text');
   });
 
-  it('never promotes tool traffic when the turn ends without a final message', () => {
+  it('falls back to the last message, never tool traffic, when the turn ends on a tool call', () => {
     const terminal = terminalInput(
       codexPlannerAdapter,
       turnEvents({ earlierMessage: 'progress', toolInput: 'tool ran' }),
     );
 
     expect(terminal.status).toBe('completed');
-    expect(terminal.text).toBe('');
+    expect(terminal.text).toBe('progress');
   });
 
-  it('joins deltas only within the final message', () => {
+  it('starts every message of the final group on its own line', () => {
     const events = [
       ...codexProtocolEvents(
         JSON.stringify({
@@ -611,7 +611,7 @@ describe('Codex exact last-message terminal (REQ-013)', () => {
       ),
       ...codexProtocolEvents(JSON.stringify({ type: 'turn.completed' })),
     ];
-    expect(terminalInput(codexPlannerAdapter, events).text).toBe('part one part two');
+    expect(terminalInput(codexPlannerAdapter, events).text).toBe('part one\n\n part two');
   });
 
   it('rejects an oversize or malformed protocol line instead of treating it as content', () => {

@@ -152,25 +152,46 @@ function labelRoom(width: number, metadata: string): number {
 const HANGING_SEPARATOR_RE = /[\s:/(-]+$/;
 /** An id's tag, `:120b-cloud` in `gpt-oss:120b-cloud`: cut in half it names no model. */
 const SPLIT_TAG_RE = /:[^\s:]*$/;
+/** A name's leading words for a cut, each with the separator after it; an id's `:tag` is a word of its own. */
+const HEAD_WORD_RE = /[^\s:-]+[\s-]*|:[^\s:-]*[\s-]*/g;
 
-/**
- * A cut never leaves a separator hanging before the ellipsis, nor a parenthesis it has opened, nor
- * half an id's tag: `Ling 3.0 Flash VL (…` reads `Ling 3.0 Flash VL…`, `qwen2.5-coder:…` reads
- * `qwen2.5-coder…` and `gpt-oss:120b-clo…` reads `gpt-oss…`.
- */
-function cutLabel(label: string, room: number): string {
-  const cut = truncateTerminalDisplayText(label, room);
-  if (!cut.endsWith(ELLIPSIS) || cut === ELLIPSIS) return cut;
-  const kept = cut.slice(0, -ELLIPSIS.length);
+/** A kept head never ends on a separator, inside a parenthesis it opened, or on half an id's tag. */
+function tidyHead(kept: string): string {
   const open = kept.lastIndexOf(' (');
   const whole = open > 0 && !kept.slice(open).includes(')') ? kept.slice(0, open) : kept;
-  return `${whole.replace(SPLIT_TAG_RE, '').replace(HANGING_SEPARATOR_RE, '')}${ELLIPSIS}`;
+  return whole.replace(SPLIT_TAG_RE, '').replace(HANGING_SEPARATOR_RE, '');
+}
+
+/**
+ * A cut keeps whole words: `Gemini 3.8 Fla…` names no model. It never leaves a separator hanging
+ * before the ellipsis, nor a parenthesis it has opened, nor half an id's tag: `Ling 3.0 Flash VL
+ * (free)` reads `Ling 3.0 Flash VL…`, `qwen2.5-coder:7b` reads `qwen2.5-coder…` and
+ * `gpt-oss:120b-cloud` reads `gpt-oss…`. Only a first word wider than the room is cut inside itself.
+ */
+function cutLabel(label: string, room: number): string {
+  if (getTerminalCellWidth(label) <= room) return label;
+  const words = label.match(HEAD_WORD_RE) ?? [];
+  for (let kept = words.length - 1; kept >= 1; kept--) {
+    const head = tidyHead(words.slice(0, kept).join(''));
+    if (head !== '' && getTerminalCellWidth(`${head}${ELLIPSIS}`) <= room) {
+      return `${head}${ELLIPSIS}`;
+    }
+  }
+  return roomCut(label, room);
+}
+
+/** What `room` cells hold of a name, a tag or a separator given back: the floor is measured on it. */
+function roomCut(label: string, room: number): string {
+  const cut = truncateTerminalDisplayText(label, room);
+  if (!cut.endsWith(ELLIPSIS) || cut === ELLIPSIS) return cut;
+  return `${tidyHead(cut.slice(0, -ELLIPSIS.length))}${ELLIPSIS}`;
 }
 
 /**
  * A rung holds for a row while ListRow can seat its cells uncut and its name still shows the floor
- * once cut — or all of itself, where it is shorter than the floor. The cut is measured, not the
- * room: a cut that drops a whole tag keeps less than the room it was given.
+ * once cut — or all of itself, where it is shorter than the floor. What the room holds is measured,
+ * not the room: a cut that drops a whole tag keeps less than the room it was given. The whole-word
+ * rule then decides only how the name is drawn, never which cells the list keeps.
  */
 function holds(cells: RowCells, rung: Rung, width: number): boolean {
   const metadata = metadataAt(cells, rung);
@@ -181,21 +202,25 @@ function holds(cells: RowCells, rung: Rung, width: number): boolean {
   if (room >= nameWidth) return true;
   const floor = Math.min(nameWidth, MODEL_LABEL_FLOOR);
   if (room < floor) return false;
-  return cells.name.includes('/') || getTerminalCellWidth(cutLabel(cells.name, room)) >= floor;
+  return cells.name.includes('/') || getTerminalCellWidth(roomCut(cells.name, room)) >= floor;
 }
 
 /** A name's words, each with the separator after it: `claude-fable-5.1` → `claude-`, `fable-`, `5.1`. */
 const WORD_RE = /[^\s-]+[\s-]*/g;
 
 /**
- * A cut reads as its own row only while no other name starts with what it kept: `claude-fable-5…`
- * beside `claude-fable-5` could be either, and `Ling 3.0 Flash…` three times is all three.
+ * A cut reads as its own row only while no other name starts, or for a tail ends, with what it
+ * kept: `claude-fable-5…` beside `claude-fable-5` could be either, `Ling 3.0 Flash…` three times is
+ * all three, and `…(free)` is every free route in the list.
  */
 function isAmbiguousCut(label: string, id: string, bases: ReadonlyMap<string, LabelBase>): boolean {
-  if (!label.endsWith(ELLIPSIS)) return false;
-  const kept = label.slice(0, -ELLIPSIS.length);
+  const head = label.endsWith(ELLIPSIS) ? label.slice(0, -ELLIPSIS.length) : undefined;
+  const tail = label.startsWith(ELLIPSIS) ? label.slice(ELLIPSIS.length) : undefined;
+  if (head === undefined && tail === undefined) return false;
   for (const [other, { base }] of bases) {
-    if (other !== id && base.startsWith(kept)) return true;
+    if (other === id) continue;
+    if (head !== undefined && base.startsWith(head)) return true;
+    if (tail !== undefined && base.endsWith(tail)) return true;
   }
   return false;
 }
@@ -213,8 +238,10 @@ function tailLabel(base: string, room: number): string {
 /**
  * A label cut to its room must still name its own row. A cut another name also starts with gives
  * up its leading words instead and keeps the ones that tell it apart — `…Fin (free)`,
- * `…Sante (free)`, `…VL (free)`, `…fable-5.1` — and where two tails still read alike, each keeps
- * as much of its end as the room holds.
+ * `…Sante (free)`, `…VL (free)`, `…fable-5.1`. Telling rows apart outranks whole words: where no
+ * whole-word form does, the head is cut inside a word (`Nemotron 3.5 L…` beside
+ * `…Safety (free)`), and where two tails still read alike, each keeps as much of its end as the
+ * room holds.
  */
 function separateCollisions(
   labels: Map<string, string>,
@@ -222,9 +249,10 @@ function separateCollisions(
 ): void {
   for (const [id, label] of labels) {
     const entry = bases.get(id);
-    if (entry !== undefined && isAmbiguousCut(label, id, bases)) {
-      labels.set(id, tailLabel(entry.base, entry.room));
-    }
+    if (entry === undefined || !isAmbiguousCut(label, id, bases)) continue;
+    const tail = tailLabel(entry.base, entry.room);
+    const head = roomCut(entry.base, entry.room);
+    labels.set(id, [tail, head].find((candidate) => !isAmbiguousCut(candidate, id, bases)) ?? tail);
   }
   const idsByLabel = new Map<string, string[]>();
   for (const [id, label] of labels) idsByLabel.set(label, [...(idsByLabel.get(label) ?? []), id]);

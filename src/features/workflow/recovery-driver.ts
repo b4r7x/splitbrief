@@ -18,13 +18,13 @@ import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
 import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
 import type { SeatSwapChoice } from '../../engine/orchestrator/run/seat-swap.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
-import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../stores/workflow/actions/pause.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
+import { runResumePolicy } from './resume-policy.js';
 import {
   formatRecoveryPrompt,
   parseRecoveryActionAnswer,
@@ -56,23 +56,6 @@ interface RecoveryDriverOptions {
   /** Where the panel's own events land on screen; the engine adds the session log. */
   sink: EventSink;
   setInlineResume: (state: WorkflowState) => void;
-}
-
-/**
- * The swapped-in tool is admitted under the same terms this interactive run was:
- * the seat swap re-prepares the session, and a preparation the TUI drives is
- * always interactive, discloses unverified auth and approves through the
- * tiered-approval prompt.
- */
-function seatSwapPolicy(prepared: PreparedExecution): SeatSwapChoice['policy'] {
-  return {
-    purpose: 'resume',
-    interaction: 'interactive',
-    unverifiedAuth: 'disclosed',
-    allowHooks: prepared.runtime.allowHooks,
-    allowRepoRunners: prepared.runtime.allowRepoRunners,
-    onTieredApproval: openApprovalPrompt,
-  };
 }
 
 /**
@@ -149,9 +132,9 @@ async function pickSwappedSeat(
  * actionable; a successful action either resumes on the returned state or stops.
  *
  * `switch-seat` is the exception it does not apply itself — taking that offer
- * re-prepares the session on another tool, which only `runWorkflow` can do, so
- * the choice travels back as `switchSeat` and the halt stays pending until the
- * run resolves it.
+ * re-prepares the session on another tool, and that preparation is the run
+ * loop's own re-entry, so the choice travels back as `switchSeat` and the halt
+ * stays pending until the loop resolves it (`applyOfferedSeatSwap`).
  *
  * The halt is read once from the passed state and reused for the prompt text, the
  * answer parse and the apply: a session has one running process, and that process
@@ -212,7 +195,7 @@ export function createRecoveryDriver(
         return {
           shouldRun: true,
           state,
-          switchSeat: { candidate, policy: seatSwapPolicy(prepared) },
+          switchSeat: { candidate, policy: runResumePolicy(prepared) },
         };
       }
 

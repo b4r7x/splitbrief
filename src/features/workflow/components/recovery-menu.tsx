@@ -39,6 +39,7 @@ function actionItems(issue: RecoveryIssue): ActionItem[] {
       reason: issue.reason,
       facts: issue.facts,
       switchSeat: issue.switchSeat,
+      seat: issue.seat,
     }),
   }));
 }

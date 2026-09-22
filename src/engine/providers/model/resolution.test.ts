@@ -139,7 +139,7 @@ describe('exact model resolution', () => {
   });
 
   it('uses runner aliases as explicit metadata relationships without rewriting the alias', () => {
-    expect(findKnownModel('claude-code', 'opus')?.catalogModelId).toBe('claude-opus-5');
+    expect(findKnownModel('claude-code', 'opus')?.catalogModelId).toBe('claude-opus-5-5');
     expect(findKnownModel('claude-code', 'OPUS')).toBeUndefined();
     expect(getEffectiveModelId('claude-code', 'opus')).toBe('opus');
   });

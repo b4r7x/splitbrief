@@ -16,7 +16,7 @@ import { createInitialState } from '../../../core/state/machine.js';
 import type { Session } from '../../../core/schemas/session.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { saveFinalSession, shouldPreserveActiveState } from './finalize.js';
+import { reopenSessionRecord, saveFinalSession, shouldPreserveActiveState } from './finalize.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 let dirs: string[] = [];
@@ -197,6 +197,62 @@ describe('saveFinalSession', () => {
     });
 
     expect(readActiveRecord(projectDir)).toEqual({ kind: 'v1', receipt: newer });
+  });
+});
+
+describe('reopenSessionRecord', () => {
+  function haltedState(): WorkflowState {
+    return {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      pendingRecovery: buildRetryExhaustedRecoveryIssue({
+        task: makeTask({ id: 'T001' }),
+        validationSummary: 'tsc failed',
+        attempts: 1,
+        maxAttempts: 2,
+        createdAt: '2026-04-29T00:00:00.000Z',
+      }),
+    };
+  }
+
+  it('drops the stop the last pass recorded and keeps the rest of the record', () => {
+    const projectDir = makeProjectDir();
+    const sessionId = 'sess-reopened';
+    saveFinalSession({
+      projectDir,
+      sessionId,
+      feature: 'halted feature',
+      startTime: 1,
+      summary: makeSummary(),
+      state: haltedState(),
+    });
+    expect(persisted(projectDir, sessionId).stop).toBe('halted');
+
+    reopenSessionRecord({ projectDir, sessionId });
+
+    const reopened = persisted(projectDir, sessionId);
+    expect(reopened.stop).toBeUndefined();
+    expect(reopened).toMatchObject({ id: sessionId, status: 'open', summary: makeSummary() });
+  });
+
+  it('leaves a closed record and a missing one as they are', () => {
+    const projectDir = makeProjectDir();
+    const sessionId = 'sess-closed';
+    saveFinalSession({
+      projectDir,
+      sessionId,
+      feature: 'final feature',
+      startTime: 1,
+      summary: makeSummary(),
+      state: completedState(),
+    });
+    const before = persisted(projectDir, sessionId);
+
+    reopenSessionRecord({ projectDir, sessionId });
+    reopenSessionRecord({ projectDir, sessionId: 'sess-never-ran' });
+
+    expect(persisted(projectDir, sessionId)).toEqual(before);
+    expect(existsSync(join(sessionDir(projectDir, 'sess-never-ran'), 'summary.json'))).toBe(false);
   });
 });
 

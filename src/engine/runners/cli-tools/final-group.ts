@@ -1,22 +1,29 @@
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { accumulateTokenUsage } from '../../calls/usage.js';
+import { appendMessage } from '../../streaming/final-text.js';
 import type { CliProtocolEvent } from './contract.js';
 
 type FinalGroupResult = Extract<CliProtocolEvent, { type: 'result' }>;
+type TextEvent = Extract<CliProtocolEvent, { type: 'text' }>;
 
 /**
  * REQ-013 exact final group: only the text emitted after the last tool call is
  * the authoritative final response; earlier messages, partials, and tool-call
- * text are evidence, never content. Deltas are joined only within that group.
+ * text are evidence, never content. Each text event of these protocols is one
+ * whole message, so every message in the group starts on its own line. A turn
+ * that ends on a tool call has no group, and its last message stands in for it.
  */
 export function lastMessageGroupText(events: readonly CliProtocolEvent[]): string {
+  const isMessage = (event: CliProtocolEvent | undefined): event is TextEvent =>
+    event?.type === 'text' && event.channel !== 'stderr';
   const boundary = events.findLastIndex((event) => event.type === 'tool-use');
   let groupText = '';
   for (let index = boundary + 1; index < events.length; index += 1) {
     const event = events[index];
-    if (event?.type === 'text' && event.channel !== 'stderr') groupText += event.text;
+    if (isMessage(event)) groupText = appendMessage(groupText, event.text);
   }
-  return groupText;
+  if (groupText.length > 0) return groupText;
+  return events.findLast(isMessage)?.text ?? '';
 }
 
 /**

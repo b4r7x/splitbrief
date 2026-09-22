@@ -100,13 +100,13 @@ describe('KNOWN_MODELS claude-code aliases', () => {
       })),
     ).toEqual([
       { name: 'sonnet', catalogProvider: 'anthropic', catalogModelId: 'claude-sonnet-5' },
-      { name: 'opus', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
+      { name: 'opus', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5-5' },
       { name: 'fable', catalogProvider: 'anthropic', catalogModelId: 'claude-fable-5-1' },
       { name: 'haiku', catalogProvider: 'anthropic', catalogModelId: 'claude-haiku-4-5' },
-      { name: 'opusplan', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
-      { name: 'best', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
+      { name: 'opusplan', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5-5' },
+      { name: 'best', catalogProvider: 'anthropic', catalogModelId: 'claude-fable-5-1' },
       { name: 'sonnet[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-sonnet-5' },
-      { name: 'opus[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
+      { name: 'opus[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5-5' },
       { name: 'fable[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-fable-5-1' },
     ]);
   });
@@ -134,13 +134,13 @@ describe('KNOWN_MODELS claude-code aliases', () => {
 
     expect(labels).toEqual([
       'Sonnet 5',
-      'Opus 5',
+      'Opus 5.5',
       'Fable 5.1',
       'Haiku 4.5',
-      'Opus 5 Plan Mode',
+      'Opus 5.5 Plan Mode',
       'Best',
       'Sonnet 5 (1M)',
-      'Opus 5 (1M)',
+      'Opus 5.5 (1M)',
       'Fable 5.1 (1M)',
     ]);
     expect(new Set(labels).size).toBe(claudeCode.length);

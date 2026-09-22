@@ -9,13 +9,14 @@ import {
   type BigIntStats,
 } from 'node:fs';
 import { join } from 'node:path';
-import YAML, { parseDocument, type Document } from 'yaml';
+import YAML, { isMap, isScalar, parseDocument, type Document } from 'yaml';
 import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
 import { ensureGitignore } from '../../../lib/fs.js';
 import type { ConfigRevision, ExpectedConfigRevision } from '../../../lib/confined-fs-atomic.js';
 import { assertWritablePathConfined, pathConfinementError } from '../../../lib/path-confinement.js';
 import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
 import { configError } from '../errors.js';
+import { loadedKey } from './transform.js';
 
 export const CONFIG_RELATIVE_PATH = join(SPLITBRIEF_DIR, CONFIG_FILE);
 
@@ -121,18 +122,68 @@ export function readConfigDocument(projectDir: string): ConfigDocumentSnapshot {
   }
 }
 
+/** The keys of a map the loader reads as `id`, in document order. */
+function spellingsOf(node: unknown, id: string, loadedPath: readonly string[]): string[] {
+  if (!isMap(node)) return [];
+  const keys: string[] = [];
+  for (const pair of node.items) {
+    const key = isScalar(pair.key) ? pair.key.value : pair.key;
+    if (typeof key === 'string' && loadedKey(key, loadedPath) === id) keys.push(key);
+  }
+  return keys;
+}
+
+/**
+ * An edit is addressed in the writer's spelling, `output_format`, and the file may spell the key
+ * `outputFormat`: a delete aimed at the one leaves the other standing. Each segment resolves to the
+ * key the loader reads, in the file's own spelling; where the file carries both spellings the
+ * loader reads the later, so that one is edited and the earlier twins are named for removal. A key
+ * the file does not carry yet takes the writer's spelling.
+ */
+function resolveEditPath(
+  document: Document,
+  path: readonly string[],
+): Readonly<{ target: string[]; twins: string[][] }> {
+  const target: string[] = [];
+  const twins: string[][] = [];
+  const loadedPath: string[] = [];
+  let node: unknown = document.contents;
+  for (const segment of path) {
+    const id = loadedKey(segment, loadedPath);
+    const spellings = spellingsOf(node, id, loadedPath);
+    const key = spellings.at(-1) ?? segment;
+    for (const twin of spellings.slice(0, -1)) twins.push([...target, twin]);
+    target.push(key);
+    loadedPath.push(id);
+    node = isMap(node) ? node.get(key, true) : undefined;
+  }
+  return { target, twins };
+}
+
+/** Applies keyed edits in place; a root replacement is the caller's to make. */
+export function applyConfigDocumentEdits(
+  document: Document,
+  edits: readonly ConfigDocumentEdit[],
+): void {
+  for (const { path, value } of edits) {
+    if (path.length === 0) continue;
+    const { target, twins } = resolveEditPath(document, path);
+    for (const twin of twins) document.deleteIn(twin);
+    if (value === undefined) document.deleteIn(target);
+    else document.setIn(target, value);
+  }
+}
+
 export function renderConfigDocumentEdits(
   snapshot: ConfigDocumentSnapshot,
   edits: readonly ConfigDocumentEdit[],
 ): string {
   let document = snapshot.document.clone();
-  for (const { path, value } of edits) {
-    if (path.length === 0) {
-      document = parseDocument(value === undefined ? '' : YAML.stringify(value));
-    } else if (value === undefined) {
-      document.deleteIn(path);
+  for (const edit of edits) {
+    if (edit.path.length === 0) {
+      document = parseDocument(edit.value === undefined ? '' : YAML.stringify(edit.value));
     } else {
-      document.setIn(path, value);
+      applyConfigDocumentEdits(document, [edit]);
     }
   }
   return document.toString();

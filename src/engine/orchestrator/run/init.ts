@@ -39,7 +39,6 @@ import type {
   WorkflowContext,
   WorkflowSinks,
 } from '../types.js';
-import { runSeatIdentity } from '../../../core/providers/seat-identity.js';
 import { buildSummary, type SummaryBase } from '../summary/build.js';
 import {
   publishError,
@@ -71,7 +70,6 @@ import { createValidator } from '../validation/run.js';
 import { createCustomRunnerRuntime } from '../../runners/custom-runner-runtime.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { attachRunSinks } from './init-sinks.js';
-import { applyOfferedSeatSwap, type SeatSwapChoice } from './seat-swap.js';
 import { createPlannerSeat, createImplementerSeat } from './init-seats.js';
 
 function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Planner): string {
@@ -115,15 +113,6 @@ export type RunWorkflowOptions = {
   _implementer?: Implementer | undefined;
   /** Test-only: inject a pre-built reviewer (avoids spawning real subprocesses in tests). */
   _reviewer?: Reviewer | undefined;
-  /** The seat swap a quota halt offered, as the operator took it; applied before the seats are built. */
-  switchSeat?: SeatSwapChoice | undefined;
-  /**
-   * A taken swap re-prepares this session, and that new preparation is what the seats
-   * were built from. A caller that runs this workflow more than once — the TUI loop
-   * resuming after the next halt — must re-run on it, or it rebuilds the seat that hit
-   * its limit.
-   */
-  onSeatSwapped?: ((prepared: PreparedExecution) => void) | undefined;
   /** One-shot implementer profile override used when recovery retries a task on a selected worker. */
   retryProfileOverride?: string | undefined;
   retryProfileOverrideTaskId?: TaskId | undefined;
@@ -141,8 +130,6 @@ export type InitResult =
       ok: true;
       state: WorkflowState;
       wctx: WorkflowContext;
-      /** The preparation the seats were built from — a seat swap replaces the one `opts` carried. */
-      prepared: PreparedExecution;
     }
   | { ok: false; summary: Summary; bus: EventBus; phase: WorkflowState['phase'] };
 
@@ -186,10 +173,8 @@ export function composeWorkflowCustomRunnerRuntime(
 export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<InitResult> {
   const { opts, sessionId, setTrackedState, resumeHolder, isolation, newWorkflow = false } = args;
   const { callbacks, sinks } = opts;
-  let config = args.config;
-  let prepared = opts.prepared;
-  let summaryBase = args.summaryBase;
-  let metadata = args.metadata;
+  const { config, summaryBase, metadata } = args;
+  const { prepared } = opts;
   const { runtime } = opts.prepared;
   const feature = runtime.feature;
   const projectDir = opts.prepared.session.ref.projectDir;
@@ -217,45 +202,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
 
   let savedState = newWorkflow ? undefined : (args.savedState ?? opts.savedState);
   if (savedState) setTrackedState(savedState);
-  const swapped = await applyOfferedSeatSwap({
-    choice: opts.switchSeat,
-    projectDir,
-    sessionId,
-    bus,
-    config,
-    prepared,
-    mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
-    savedState,
-    signal: opts.signal,
-    ...(opts.onSeatSwapped !== undefined && { onSeatSwapped: opts.onSeatSwapped }),
-  });
-  if (swapped) {
-    config = swapped.config;
-    prepared = swapped.prepared;
-    savedState = swapped.state;
-    setTrackedState(savedState);
-    // The caller built summaryBase from the pre-swap config. Spend stays attributed
-    // to the seat that spent it (buildSummary prices from the saved state); the run's
-    // display identity is the seat now in use.
-    const ident = runSeatIdentity(config);
-    summaryBase = {
-      ...summaryBase,
-      plannerTool: ident.plannerTool,
-      ...(ident.plannerModel !== undefined && { plannerModel: ident.plannerModel }),
-      implementerTool: ident.implementerTool,
-      ...(ident.implementerModel !== undefined && { implementerModel: ident.implementerModel }),
-      ...(ident.reviewerTool !== undefined && { reviewerTool: ident.reviewerTool }),
-      ...(ident.reviewerModel !== undefined && { reviewerModel: ident.reviewerModel }),
-    };
-    // Artifact frontmatter written after the swap names the seat that wrote it.
-    metadata = {
-      ...metadata,
-      plannerTool: ident.plannerTool,
-      plannerModel: ident.plannerModel,
-      implementerTool: ident.implementerTool,
-      implementerModel: ident.implementerModel,
-    };
-  }
   // Every resume passes here, from the app and from the CLI alike, so this is
   // the one place the record is compared and rewritten. A moved plan seat also drops the
   // saved planner session: it belongs to the tool that left, so the notice's
@@ -455,7 +401,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     continuation,
   };
 
-  return { ok: true, state, wctx, prepared };
+  return { ok: true, state, wctx };
 }
 
 /**

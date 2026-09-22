@@ -160,9 +160,10 @@ async function runClaudeCall(
     throw interruptedError(opts.signal, safeError, state.redactCredential);
   }
 
+  // The recorder holds the call's final text, not the narration that streamed live.
   const result = finishClaudeStream(state);
 
-  return { result: { ...result, text: state.text }, sessionId: state.sessionId };
+  return { result, sessionId: state.sessionId };
 }
 
 type ClaudePlannerStreamResult = RunnerCallResult & { sessionId?: string | null };

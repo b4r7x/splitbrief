@@ -5,6 +5,7 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { configStore } from '../../stores/project/config.js';
@@ -50,11 +51,12 @@ import {
   isPickerItemDisabled,
   modelBylineAxes,
   pickerListingSource,
+  wrapOnWords,
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
 import { localConnectionProvider } from './local-connection-form.js';
 import { planModelRows, type ModelRowPlan } from './model-row-plan.js';
-import { renderToolRow, renderModelRow } from './tool-row.js';
+import { renderToolRow, renderModelRow, toolStatusesFit } from './tool-row.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import {
   defaultPickerEffectDeps,
@@ -72,23 +74,6 @@ function staleModelCopy(staleCount: number): string | undefined {
   const label = staleCount > MAX_STALE_MODEL_COPY_COUNT ? `${count}+` : String(count);
   const noun = staleCount === 1 ? 'model' : 'models';
   return `${label} stale ${noun} retained. Refresh detection.`;
-}
-
-/** The card truncates rather than wraps, so its copy is broken on words by hand. */
-function wrapPaneSentence(sentence: string, cells: number, maxLines: number): string[] {
-  const lines: string[] = [];
-  let line = '';
-  for (const word of sentence.split(' ')) {
-    const next = line === '' ? word : `${line} ${word}`;
-    if (line !== '' && getTerminalCellWidth(next) > cells) {
-      lines.push(line);
-      if (lines.length === maxLines) return lines;
-      line = word;
-      continue;
-    }
-    line = next;
-  }
-  return line === '' ? lines : [...lines, line];
 }
 
 /** The remedy the card may spend before its own copy needs the rest of the budget. */
@@ -111,7 +96,8 @@ function localConnectionPaneLines(item: PickerOption): string[] {
   const remedy =
     remediation === null
       ? []
-      : [...wrapPaneSentence(remediation, CUSTOM_COMMAND_PANE_CELLS, PANE_REMEDY_LINES), ''];
+      : // The card truncates rather than wraps, so its copy is broken on words by hand.
+        [...wrapOnWords(remediation, CUSTOM_COMMAND_PANE_CELLS, PANE_REMEDY_LINES).lines, ''];
   return [...remedy, '⏎ opens its address,', 'its token and a check.', '', 'Nothing is saved yet.'];
 }
 
@@ -179,6 +165,7 @@ export function PickerView({
   const { frame } = useSpinnerFrame(isRefreshing);
   const resolvedStepLabel = isRefreshing ? `${frame} refreshing…` : undefined;
   const projectDir = configStore.use((s) => s.projectDir);
+  const saveError = feedbackStore.use((s) => (s.isError ? s.message : null));
   const allowsCustom = catalog.currentItem?.modelCapability.allowsCustom ?? false;
 
   const toolId =
@@ -241,6 +228,14 @@ export function PickerView({
   const rowPlanAt = (width: number): ModelRowPlan => {
     if (rowPlan?.width !== width) rowPlan = planModelRows({ rows: catalog.rightRows, width });
     return rowPlan;
+  };
+  // The tool column answers for its status words the same way, over every tool, not the filtered few.
+  let statusPlan: { width: number; fits: boolean } | undefined;
+  const statusesFitAt = (width: number): boolean => {
+    if (statusPlan?.width !== width) {
+      statusPlan = { width, fits: toolStatusesFit(catalog.items, width) };
+    }
+    return statusPlan.fits;
   };
 
   const resolvePreview = (ctx: PreviewContext<PickerOption, KeyedRightRow>): string | undefined => {
@@ -356,6 +351,7 @@ export function PickerView({
       onConfirm={(left, row) => confirmRightRow(left, row, { actions, auth: authContext })}
       onCancel={() => overlayStore.close()}
       onRefresh={handleRefresh}
+      error={saveError ?? undefined}
       preview={resolvePreview}
       leftProps={{
         items: catalog.items,
@@ -381,6 +377,7 @@ export function PickerView({
             maxWidth,
             currentCommand: catalog.currentCommand,
             currentCommandKind: catalog.currentCommandKind,
+            showStatus: statusesFitAt(maxWidth),
           }),
       }}
       rightProps={{
