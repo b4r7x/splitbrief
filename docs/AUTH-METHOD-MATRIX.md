@@ -57,6 +57,8 @@ Every tool declares `roles: ['planner', 'implementer']`; the reviewer seat reuse
 
 No adapter emits an authentication flag. `src/engine/runners/cli-tools/cursor.ts:34` names `--api-key`, but only inside `CURSOR_PROTECTED_FLAGS` — the denylist that stops a user's `invocationArgs` from setting it. A repository-wide search for `--bare`, `--api-key`, `apiKeyHelper` and `preferred_auth_method` in `src/` returns that one denylist entry and nothing else. Method selection therefore reaches every tool the same way: by what the staged environment holds, never by argv.
 
+The `claude-code` implementer argv carries `--settings <JSON>`, but that JSON holds only `sandbox` and `permissions` keys: no `apiKeyHelper` and no `env` block, so it selects no method. Claude Code's sandbox wraps the Bash commands of the seat, not the CLI process. On 2026-09-23, with Claude Code 2.1.280 on macOS, the implementer ran under it on the host-account `session` channel and authenticated as before. See [the Claude Code implementer sandbox](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
+
 The `*_API_KEY` passthrough on provider-dependent channels is deliberate and is documented on `cliAuthChannelEnvKeys` (`src/engine/runners/sandbox-env.ts`): OpenCode and Kilo hold no credential of their own, so stripping the host's provider keys would strand the very credentials their model listing was built from. The cost is that these two channels retain *all* competing credentials by construction.
 
 ## Behavior under competing, missing and shared credentials
@@ -70,6 +72,60 @@ The `*_API_KEY` passthrough on provider-dependent channels is deliberate and is 
 **Staging parity.** The historical probe and runner share environment-construction rules; current dispatch additionally requires method-enforcement evidence. The readiness probe (`probeEnvironment`, `src/engine/runners/cli-tools/cli-probe-process.ts`) and the runner (`createRunnerSandboxEnv`, `src/engine/runners/sandbox-env.ts`) both derive their preserved environment from `cliAuthChannelEnvKeys(channel)` and their host-state posture from `cliAuthChannelHostStateAccess(channel)`. The only difference is the sandbox root: the probe passes no `role` and a neutral `projectDir`, the runner passes both. That changes which directory the child gets, not which credential — so a channel the probe calls authenticated is a channel the runner stages identically.
 
 **Catalog-probe exception: OpenCode enumeration.** One probe stands outside that parity, and only for listing models. OpenCode 2 answers `model.list` (`opencode api GET /api/model`) from its own background server, and that server materializes a directory's providers when it first sees it — a neutral `mkdtemp` root is therefore answered with an empty snapshot, and a private `--standalone` server enumerates nothing at all. The sandbox also cannot supply an `env`-type provider connection: `opencode auth list` reports Kimi and Ollama Cloud as environment credentials, and a staged child that inherits no environment reaches 86 of the 118 models the account can serve, short by exactly those providers. So the OpenCode catalog probe declares `hostState: 'host-account'` (`CliCatalogProbe`, `src/engine/runners/cli-tools/contract.ts`), honoured only by `catalogProbeEnvironment` in `src/engine/detection/catalog-probe.ts`. The neutral root exists for staging parity, not as containment for a read-only listing: `GET /api/model` is a read, and measured against a stamped filesystem the child appends to one file, `~/.local/share/opencode/log/opencode.log`, inside a directory the live state bridge already exposes. OpenCode's **dispatch** staging is unchanged and still derives from `cliAuthChannelHostStateAccess`, so this exception widens no credential — it only lets a listing see the environment the user's own shell has.
+
+## Child environment
+
+One allowlist module builds the environment of every runner, readiness probe and catalog probe that SPLITBRIEF starts: `src/lib/process/spawn/child-env.ts`. Such a child gets no variable that the allowlist does not name. Only three kinds of child keep the full SPLITBRIEF environment: a workflow hook (last row), the `git` commands SPLITBRIEF runs itself, and the validation gates and probes that `runCommand` starts.
+
+| Child | Builder | What the child gets |
+|---|---|---|
+| Planner, reviewer and implementer of kind `cli`, `shell` or `agent`; readiness probe; catalog probe | `createRunnerSandboxEnv` / `createSandboxEnv` (`src/engine/runners/sandbox-env.ts`), over `createSanitizedChildEnv` | The runtime keys (`LANG`, `LC_*`, `TZ`, `TERM`, `COLORTERM`, `TERM_PROGRAM*`, `NO_COLOR`, `FORCE_COLOR`, `COLUMNS`, `LINES`), a `PATH` with the project's own directories removed, the staged `HOME`, `TMPDIR`, `XDG_*` and caches, and the credential variables of the runner (next table). |
+| `customCommands` runner | `resolveCustomRunnerEnvironment` (`src/engine/runners/redaction.ts`) | The runtime keys and the names in the command's `env` list. |
+| Validation gate, the readiness probe of a gate, the `--version` availability probe | `runCommand` (`src/lib/process/spawn/run-command.ts`), no builder | The full SPLITBRIEF environment. |
+| `api` runner | none: the HTTP call runs in process | nothing |
+| Agent-skill recipe spawn (`skills/*/references/tool-recipes.md`) | `nohup sh -c` in the shell of the agent session, no builder | The full environment of the agent session that runs the skill. |
+| Conformance harness legs (`scripts/cli-conformance.ts` `raw`, `production`, `cwd`) | `sandboxEnvironment` → `createSandboxEnv`; `cwd` uses `createRunnerSandboxEnv` | The runner profile, with the contract's declared credential variables. |
+| Workflow hook | `spawnWithTimeout`, no builder | The full SPLITBRIEF environment. The hook trust prompt discloses this, and the owner accepts it per checkout ([HOOKS-CONFIG.md](./HOOKS-CONFIG.md)). |
+
+The credential variables of a runner come from one place per kind:
+
+| Runner | Variables | Source |
+|---|---|---|
+| `claude-code` `session` / `api-key` | none / `ANTHROPIC_API_KEY` | the channel's `env` in `cli-tool-catalog.ts` |
+| `codex` `session` / `api-key` | none / `OPENAI_API_KEY` | the channel's `env` |
+| `cursor` `session` / `api-key` | none / `CURSOR_API_KEY` | the channel's `env` |
+| `copilot` `session` | `GH_TOKEN`, `GITHUB_TOKEN` | the channel's `env` |
+| `command-code`, `antigravity` `session` | none | the channel's `env` |
+| `opencode`, `kilo-code` `provider-dependent` | every `*_API_KEY` of the parent | `cliAuthChannelEnvKeys` |
+| `shell`, `agent` (inline or in `customCommands`) | the names in the runner's `env` list | `runnerAuthEnvKeys` / the command tuple |
+| `api` | the `apiKey: env:VAR` reference, or the provider's own variable | `runnerAuthEnvKeys` |
+
+No child gets the parent agent's session variables (`CLAUDECODE`, `CLAUDE_CODE_*`) or `SSH_AUTH_SOCK`. A declared `env` list cannot name `SSH_AUTH_SOCK`, `HOME`, `PATH` or a code-loading variable: `isSafePreservedChildEnvKey` blocks them.
+
+A tool can set variables of its own for its own shell. The live measurement on 2026-09-23 used the production implementer spawn path, a fake `SPLITBRIEF_FAKE_API_KEY` and a fake `CLAUDE_CODE_FAKE_PROBE` in the parent, and a shell command that wrote only the variable names:
+
+- `antigravity`: no parent secret and no parent session variable. `agy` adds its own `ANTIGRAVITY_*` variables, `ANTIGRAVITY_CSRF_TOKEN` among them. The shell does not read `~/.zshrc`, so the keys that file exports stay out.
+- `claude-code`: no parent secret. The `CLAUDE_CODE_*` and `CLAUDECODE` variables in its Bash tool belong to the child `claude` itself: the fake parent marker was absent. The child also applies the `env` block of the real `~/.claude/settings.json`, which the `host-account` channel reaches. Its sandbox adds the proxy variables.
+- `command-code`: no parent secret and no session variable.
+- `opencode`: every `*_API_KEY` of the parent, the fake one too. That is the provider-dependent rule above. The follow-up below narrows it.
+
+### Follow-up: per-provider key narrowing for OpenCode 2
+
+This is a named follow-up. It is not built. Today an OpenCode or Kilo seat gets every `*_API_KEY` of the parent, so a model on one provider can read the keys of every other provider.
+
+The design:
+
+1. SPLITBRIEF cannot map a model's provider to its key variable by itself. The model id names the provider (`providerID`, for example `kimi-code-plan-global` in `kimi-code-plan-global/<model>`). Only the tool knows which variable that provider reads.
+2. `opencode auth list --standalone --format json` (OpenCode 2, measured 0.6 s on 2.0.14) prints one object per provider: `id`, `name` and `connections`. An `env` connection names its variable, for example `KIMI_API_KEY`, and never its value. The listing names an `env` connection only while that variable is set, so the oracle runs with the staged environment that carries every `*_API_KEY`.
+3. At dispatch, after the CLI start-trust gate has admitted the executable, SPLITBRIEF runs the oracle once with that trusted executable. It keeps the variables of the configured model's provider id and removes every other `*_API_KEY` from the prebuilt environment. `createRunnerSandboxEnv` cannot do this, because the trust gate lives at dispatch, not in the environment builder.
+4. If the oracle fails or times out, the dispatch fails closed with a named reason. It does not fall back to every key in silence.
+5. The cost is one extra trusted spawn per OpenCode dispatch.
+
+The limits, where the current rule stays:
+
+- **Kilo Code:** `kilo auth list` (7.0.49) prints provider display names, not provider ids, so no model maps to a variable.
+- **OpenCode 1.x:** it rejects `--standalone` and prints the boxed listing, which has no provider ids either.
+- **A seat with no model:** OpenCode then picks its own default model, so the provider is unknown.
 
 ## Controls that exist in the installed builds but are not used
 

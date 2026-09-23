@@ -42,6 +42,8 @@ The "typing" side. Responsibilities:
 2. Produce code: either whole-file write or search/replace markers.
 3. Return code to the orchestrator for extraction-based runners (`api`, `shell`), or write files directly in an isolated directory for `cli` / `agent`; SPLITBRIEF inspects filesystem changes afterward and promotes them into the project under a hash guard.
 
+**Isolation directory**: where a `cli` or `agent` implementer works — the run's git worktree, or a staged copy when a worktree cannot be made. Only promotion carries its work into your checkout. An implementer tool call that names a closed path is stopped, and the brief halts as `implementer-left-isolation` ("T004 left the isolation directory"). A change to the git state of your checkout during the call halts the brief as `checkout-changed` ("Your checkout changed under T004"); a changed file only raises a warning. The boundary is a check SPLITBRIEF makes, not a sandbox: see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) for what it sees and what it cannot.
+
 The implementer is *stateless per task*. No conversation is maintained between tasks. This is deliberate: atomic tasks keep the context small enough to fit in an 8K model.
 
 ### Orchestrator

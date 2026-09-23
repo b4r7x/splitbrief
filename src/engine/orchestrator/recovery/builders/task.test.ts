@@ -5,8 +5,10 @@ import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.j
 import type { RoutingDecision } from '../../context-routing/types.js';
 import {
   buildApprovalDeniedRecoveryIssue,
+  buildCheckoutChangedRecoveryIssue,
   buildContextOverflowRecoveryIssue,
   buildDependencyBlockedRecoveryIssue,
+  buildLeftIsolationRecoveryIssue,
   buildMissingModelRecoveryIssue,
   buildRecipeInvalidRecoveryIssue,
   buildRepeatedTimeoutRecoveryIssue,
@@ -412,6 +414,95 @@ describe('buildRecipeInvalidRecoveryIssue', () => {
   });
 });
 
+describe('buildLeftIsolationRecoveryIssue', () => {
+  const runner = makeConfig({ implementer: { kind: 'cli', tool: 'antigravity' } }).implementer;
+  const toolMessage = 'searched ~ with run_command: find ~ -name "process-invoke.ts" 2>/dev/null';
+
+  it('halts the brief on the evidence and recommends a retry', () => {
+    const issue = buildLeftIsolationRecoveryIssue({
+      task: makeTask({ id: 'T004' }),
+      runner,
+      toolMessage,
+      attempts: 0,
+      maxAttempts: 2,
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('implementer-left-isolation');
+    expect(issue.seat).toBe('build');
+    expect(issue.message).toBe(
+      `T004 left the isolation directory — Google Antigravity CLI ${toolMessage}`,
+    );
+    expect(issue.details).toEqual([
+      `Google Antigravity CLI ${toolMessage}`,
+      'Nothing from this attempt was promoted.',
+    ]);
+    expect(issue.attempts).toBeUndefined();
+    expect(issue.facts).toEqual({ tool: 'Google Antigravity CLI' });
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'skip-current-task',
+      'pause-run',
+      'end-run',
+    ]);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('offers the seat switch when another ready tool was detected', () => {
+    const issue = buildLeftIsolationRecoveryIssue({
+      task: makeTask({ id: 'T004' }),
+      runner,
+      toolMessage,
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'antigravity',
+        detectedTools: [{ tool: 'codex', ready: true }],
+      },
+    });
+
+    expect(issue.availableActions).toContain('switch-seat');
+    expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'codex' }] });
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('buildCheckoutChangedRecoveryIssue', () => {
+  const runner = makeConfig({ implementer: { kind: 'cli', tool: 'antigravity' } }).implementer;
+
+  it('names what changed without blaming the implementer, and recommends a retry', () => {
+    const issue = buildCheckoutChangedRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      runner,
+      toolMessage: 'branch escaped · hook pre-commit',
+      attempts: 0,
+      maxAttempts: 2,
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('checkout-changed');
+    expect(issue.seat).toBe('build');
+    expect(issue.message).toBe(
+      'Your checkout changed under T001 — branch escaped · hook pre-commit',
+    );
+    expect(issue.details).toEqual([
+      'Changed while Google Antigravity CLI ran: branch escaped · hook pre-commit',
+      'Nothing from this attempt was promoted, and nothing in your checkout was reverted.',
+    ]);
+    expect(issue.attempts).toBeUndefined();
+    expect(issue.facts).toEqual({ tool: 'Google Antigravity CLI' });
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'skip-current-task',
+      'pause-run',
+      'end-run',
+    ]);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expectValidRecoveryIssue(issue);
+  });
+});
+
 describe('buildMissingModelRecoveryIssue', () => {
   it('names the unlisted model and the tool that does not list it', () => {
     const issue = buildMissingModelRecoveryIssue({
@@ -570,6 +661,12 @@ describe('recoveryBuilderForRunnerOutcome', () => {
       buildRecipeInvalidRecoveryIssue,
     );
     expect(recoveryBuilderForRunnerOutcome('missing-model')).toBe(buildMissingModelRecoveryIssue);
+    expect(recoveryBuilderForRunnerOutcome('implementer-left-isolation')).toBe(
+      buildLeftIsolationRecoveryIssue,
+    );
+    expect(recoveryBuilderForRunnerOutcome('checkout-changed')).toBe(
+      buildCheckoutChangedRecoveryIssue,
+    );
     expect(recoveryBuilderForRunnerOutcome('runner-timeout-repeated')).toBe(
       buildRepeatedTimeoutRecoveryIssue,
     );

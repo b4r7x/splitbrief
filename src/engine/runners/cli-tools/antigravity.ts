@@ -1,7 +1,7 @@
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { parseAntigravityLine } from '../../streaming/parse-antigravity.js';
 import { error } from '../../../utils/error.js';
-import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import { CLI_PROJECT_DIR_SENTINEL, CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
@@ -19,6 +19,7 @@ const ANTIGRAVITY_OUTPUT_ARGS = Object.freeze(['--output-format', 'stream-json']
 const ANTIGRAVITY_PROTECTED_FLAGS = new Set([
   '-p',
   '--dangerously-skip-permissions',
+  '--add-dir',
   '--output-format',
   '--print-timeout',
   '--model',
@@ -51,12 +52,16 @@ function generationArgs(
   ];
 }
 
+// `agy -p` does not make its cwd a workspace: the model is told it has none and runs its
+// commands in `~/.gemini/antigravity-cli/scratch`. `--add-dir` names the seat's directory.
 function plannerBaseArgs(input: AntigravityPlannerBuildInput): string[] {
   return [
     '-p',
     input.prompt,
     '--mode',
     'plan',
+    '--add-dir',
+    input.projectDir,
     ...ANTIGRAVITY_OUTPUT_ARGS,
     ...generationArgs(input),
   ];
@@ -67,6 +72,8 @@ function implementerBaseArgs(input: AntigravityImplementerBuildInput): string[] 
     '-p',
     input.prompt,
     '--dangerously-skip-permissions',
+    '--add-dir',
+    input.projectDir,
     ...ANTIGRAVITY_OUTPUT_ARGS,
     ...generationArgs(input),
   ];
@@ -154,7 +161,7 @@ export type RawAntigravityCliContract = Readonly<{
   rawInvocation: readonly string[];
   promptTransport: 'argv';
   expectedRawTerminal: 'result';
-  asOf: '2026-09-21';
+  asOf: '2026-09-23';
 }>;
 
 export type AntigravityCliConformanceCandidate = Readonly<{
@@ -173,13 +180,19 @@ function rawContract(role: 'planner' | 'implementer'): RawAntigravityCliContract
     versionArgs: ANTIGRAVITY_VERSION_ARGS,
     // `agy` documents no API-key environment variable; `agy models` is the auth probe.
     auth: { kind: 'none', env: [] },
-    rawInvocation:
-      role === 'planner'
-        ? ['-p', CLI_PROMPT_SENTINEL, '--mode', 'plan', ...ANTIGRAVITY_OUTPUT_ARGS]
-        : ['-p', CLI_PROMPT_SENTINEL, '--dangerously-skip-permissions', ...ANTIGRAVITY_OUTPUT_ARGS],
+    // agy 1.2.9 does not resolve a relative `--add-dir`: with `.` its shell still started in
+    // `~/.gemini/antigravity-cli/scratch`. The raw harness fills in the absolute project path.
+    rawInvocation: [
+      '-p',
+      CLI_PROMPT_SENTINEL,
+      ...(role === 'planner' ? ['--mode', 'plan'] : ['--dangerously-skip-permissions']),
+      '--add-dir',
+      CLI_PROJECT_DIR_SENTINEL,
+      ...ANTIGRAVITY_OUTPUT_ARGS,
+    ],
     promptTransport: 'argv',
     expectedRawTerminal: 'result',
-    asOf: '2026-09-21',
+    asOf: '2026-09-23',
   };
 }
 

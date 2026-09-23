@@ -56,6 +56,9 @@ export const HALT_SIGNATURES = {
     'unknown option',
     'unknown flag',
     'unrecognized argument',
+    // Claude Code's refusal when a managed policy sets `sandbox.failIfUnavailable`. The default
+    // prints `⚠ Sandbox disabled: sandbox is enabled but …` and runs on, so that reason must not match.
+    'sandbox required but unavailable',
   ],
 } as const satisfies Record<string, readonly string[]>;
 

@@ -6,7 +6,7 @@ import {
   ANTIGRAVITY_CLI_ADMISSION_VERDICT,
   CLI_TOOL_CATALOG,
 } from '../../../core/runners/cli-tool-catalog.js';
-import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import { CLI_PROJECT_DIR_SENTINEL, CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import {
   CLI_CONFORMANCE_CANDIDATES,
@@ -16,10 +16,12 @@ import {
 } from './antigravity.js';
 
 const PROMPT = CLI_PROMPT_SENTINEL;
+// Re-pinned 2026-09-23: both raw contracts gained `--add-dir <PROJECT_DIR>`, so the raw
+// conformance run gives agy the same workspace the adapter does.
 const ANTIGRAVITY_PLANNER_CONTRACT_SHA256 =
-  '56b33c20557e384c26e6ba7a9ee8262d01d1115533025d26ad70d271e922cde7';
+  '9329aebd77efbe4ad1707c53f7abbcf27f852530f5b730d04b1d1be5c4503adb';
 const ANTIGRAVITY_IMPLEMENTER_CONTRACT_SHA256 =
-  '763d9d9b1c5c5d301150ea28a21329153af8c64cda77589310ee9031f29c591b';
+  '84bb7b53c1ee6c4eede2fa5b339ee634ecad3d47175f1c2f5fc88a7838440d46';
 const STREAM_JSON_FIXTURE = join(
   import.meta.dirname,
   '../../../../testing/fixtures/antigravity/stream-json.ndjson',
@@ -73,8 +75,8 @@ describe('Antigravity role adapters', () => {
     expect(CLI_TOOL_CATALOG.antigravity.executableAliases).toEqual(['agy']);
     expect(CLI_TOOL_CATALOG.antigravity.effortChannel).toBe('effort-flag');
     expect(CLI_TOOL_CATALOG.antigravity.compatibility.versionScheme).toBe('semver');
-    expect(CLI_TOOL_CATALOG.antigravity.compatibility.testedVersion).toBe('1.2.7');
-    expect(CLI_TOOL_CATALOG.antigravity.compatibility.evidence.asOf).toBe('2026-09-21');
+    expect(CLI_TOOL_CATALOG.antigravity.compatibility.testedVersion).toBe('1.2.9');
+    expect(CLI_TOOL_CATALOG.antigravity.compatibility.evidence.asOf).toBe('2026-09-23');
   });
 
   it('probes the version with --version, the flag that prints the bare semver', () => {
@@ -88,6 +90,8 @@ describe('Antigravity role adapters', () => {
       PROMPT,
       '--mode',
       'plan',
+      '--add-dir',
+      '/project',
       '--output-format',
       'stream-json',
       '--model',
@@ -102,9 +106,23 @@ describe('Antigravity role adapters', () => {
       '-p',
       PROMPT,
       '--dangerously-skip-permissions',
+      '--add-dir',
+      '/staged',
       '--output-format',
       'stream-json',
     ]);
+  });
+
+  // `agy -p` does not make its cwd a workspace, so the model is told it has none and runs
+  // its commands in `~/.gemini/antigravity-cli/scratch`; `--add-dir` is what names one.
+  it('names the seat directory as the agy workspace on both seats', () => {
+    for (const [args, dir] of [
+      [plannerArgs(), '/project'],
+      [implementerArgs(), '/staged'],
+    ] as const) {
+      expect(args[args.indexOf('--add-dir') + 1]).toBe(dir);
+      expect(args.filter((arg) => arg === '--add-dir')).toHaveLength(1);
+    }
   });
 
   it('asks both seats for the stream-json protocol so every step reaches the transcript', () => {
@@ -205,6 +223,7 @@ describe('Antigravity role adapters', () => {
     ['--print-timeout', '1m'],
     ['--model', 'other'],
     ['--effort', 'low'],
+    ['--add-dir', '/elsewhere'],
   ])('refuses a configured %s that overrides adapter authority', (...configured) => {
     const baseArgs = implementerArgs();
     expect(
@@ -241,8 +260,10 @@ describe('Antigravity role adapters', () => {
     for (const candidate of CLI_CONFORMANCE_CANDIDATES) {
       expect(contractSha256(candidate.rawContract)).toBe(candidate.contractSha256);
       expect(candidate.rawContract.expectedRawTerminal).toBe('result');
-      expect(candidate.rawContract.asOf).toBe('2026-09-21');
-      expect(candidate.rawContract.rawInvocation.slice(-2)).toEqual([
+      expect(candidate.rawContract.asOf).toBe('2026-09-23');
+      expect(candidate.rawContract.rawInvocation.slice(-4)).toEqual([
+        '--add-dir',
+        CLI_PROJECT_DIR_SENTINEL,
         '--output-format',
         'stream-json',
       ]);

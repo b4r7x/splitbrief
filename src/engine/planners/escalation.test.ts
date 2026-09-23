@@ -8,7 +8,7 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { buildLanguageContext } from '../spec/prompts/language-context.js';
-import { escalateHint } from './escalation.js';
+import { escalateFull, escalateHint } from './escalation.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
 
 describe('escalateHint', () => {
@@ -141,5 +141,31 @@ describe('escalateHint with hintSuccessMode: "files"', () => {
     );
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('escalateFull with escalateFullMode: "files"', () => {
+  it("names the call's own directory in the prompt it sends", async () => {
+    const worktree = makeDirtyWorktree('escalate-full-rules');
+    const invokeEscalate = vi
+      .fn()
+      .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text: '' }));
+
+    await escalateFull(
+      { invokeEscalate, capabilities: { supportsHintEscalation: true }, escalateFullMode: 'files' },
+      {
+        task: makeTask({ file: TARGET }),
+        error: 'validation failed',
+        projectDir: worktree,
+        callbacks: { onOutput: () => {} },
+        languageContext: buildLanguageContext('typescript'),
+        changeDetection: 'file-hashes',
+      },
+    );
+
+    const prompt: string = invokeEscalate.mock.calls[0]?.[0]?.prompt ?? '';
+    expect(prompt).toContain(`- Stay inside ${worktree}:`);
+    expect(prompt).toContain('- Use git only to read (status, diff, log, show);');
+    expect(prompt).toContain('- Dependencies are already installed;');
   });
 });

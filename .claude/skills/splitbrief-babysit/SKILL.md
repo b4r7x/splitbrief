@@ -15,10 +15,10 @@ Context discipline is the point. A babysitter that also edits `src/` burns its w
 |---|---|---|---|
 | **Orchestrator** (this session) | near-empty, kept that way | spawns agents, reads their reports, tells the babysitter when to build and continue | reads `session.jsonl`; edits `src/`; drives tmux |
 | **Babysitter** (one long-lived subagent) | the whole run | launches in tmux, watches, answers planner questions, gates, `[c] continue`, recovery panels; on a stop trigger stops **resumably**, quits the TUI and reports up with evidence | edits `src/`; ends the run on its own |
-| **Fix agent** (fresh Opus) | the babysitter's report | diagnoses and fixes **directly in the main checkout**, no worktree; proves the fix: a test that fails before and passes after, a live repro when one is possible, the affected suites, `npm run typecheck` | touches the run |
+| **Fix agent** (fresh Opus) | the babysitter's report | diagnoses and fixes **directly in the main checkout**, no worktree; proves the fix: a test that fails before and passes after, a live repro when one is possible, the affected suites, `npm run typecheck` | touches the run; fixes anything beyond the one defect it was given — the rest goes to the ledger |
 | **Validation** (fresh, only when called for) | the fix agent's report and the diff | added only when a fix touches trust classification, config persistence, the run state machine or the event schema; checks the fix against real behaviour and every gate | reuses an earlier agent's context |
 
-The babysitter is resumed by message with its context intact for as long as it answers. Messages reach a subagent only between its tool calls. An agent that does not answer, or whose context has grown large, is not sent the message again: the orchestrator spawns a fresh agent with a self-contained brief. A fix agent carries one to three items. Every subagent works in its own scratchpad subfolder: the root is shared, and one agent overwrote another's script on 2026-09-23.
+The babysitter is resumed by message with its context intact for as long as it answers. Messages reach a subagent only between its tool calls. An agent that does not answer, or whose context has grown large, is not sent the message again: the orchestrator spawns a fresh agent with a self-contained brief. A fix agent carries one STOP, or one to three ledger items after the run's review. Every subagent works in its own scratchpad subfolder: the root is shared, and one agent overwrote another's script on 2026-09-23.
 
 ## The babysitter drives the TUI as a real user would
 
@@ -118,14 +118,14 @@ Every row below is keyboard work in the pane — that is the point, not a conven
 
 ## Stop triggers — the rule that makes this dogfooding
 
-At every failure, ask *who* failed. The babysitter stops the run on two kinds of trigger:
+At every failure, ask *who* failed. A tool defect falls in one of two tiers, and only a STOP is a stop trigger:
 
-- **A deterministic tool error**: a crash, an internal invariant, a limit that ended a healthy call, a gate that lied, a halt with no way through, a screen that contradicts `state.json`.
-- **An AI output SPLITBRIEF does not handle**: the model returns something the tool mis-parses, silently accepts in a broken form, or crashes on — a verdict line the parser does not read, an artifact with the document glued behind narration, a brief the compiler accepts with a planned red gate, an implementer reply the tool misclassifies.
+- **STOP**: a defect the artifacts carry or that blocks progress — a crash, an internal invariant, a lost or glued artifact, a halt with no way through, a misclassified provider limit, an implementer outside the worktree, a screen that contradicts `state.json` in a way the right key does not resolve.
+- **LOG**: copy, counters, labels, render defects, warnings — when the right key still works and `state.json` is right. The babysitter answers the surface as a user, names the defect in its next report, and the defect goes to the ledger. It is fixed after the run's review.
 
 **Not a trigger**: a model mistake the tool handles correctly. The ladder retries it; the panel offers retry, skip or a seat switch. The run owns those, and the babysitter answers the panel as a user.
 
-A trigger is fixed **now, in this session**, because the next brief hits the same code. Planning is no exception: a trigger during planning means stop, fix, resume, because the planning artifacts would carry it.
+A STOP is fixed **now, in this session**, because the next brief hits the same code. Planning stops only for a STOP, because the planning artifacts would carry it: stop, fix, resume.
 
 ```
 1. babysitter    stops resumably (esc esc), quits the TUI, reports with evidence — turn-end case 1
@@ -135,9 +135,13 @@ A trigger is fixed **now, in this session**, because the next brief hits the sam
 5. babysitter    on the orchestrator's word: npm run build, then a fresh continue <run-id> (Resume semantics)
 ```
 
+**One stop, one defect.** A stop fixes the defect that triggered it and nothing else. Anything else the fix agent finds goes to the ledger until the run's review. No side fix lands without its own stop. While a brief is live, the owner does not commit, and no agent runs with `isolation: "worktree"`: the audit reads a new `refs/heads/worktree-agent-*` as a changed git state and halts the brief as `checkout-changed`.
+
+**Tripwire false positives.** A tripwire halt on a tool call that stayed inside the isolation directory is a false positive and a LOG: answer **Try again** and log it. The second one in a run gets the same answer, and the log names both. On a third, end the run and fix the heuristic as its own work. `src/core/schemas/recovery/policy.ts` has no warn mode for the tripwire, and adding one is a new surface.
+
 Repeat until the plan's runs are done.
 
-**Scope.** Fix only what the run actually hits. No code review, no hunting for adjacent issues. Anything a fix agent reports as out of scope goes to the ledger at the bottom of the session handoff (`.nuke/<date>-session-handoff.md`), not into work.
+**Scope.** Fix only what the run actually hits. No code review, no hunting for adjacent issues. Anything a fix agent reports as out of scope goes to the ledger at the bottom of the session handoff (`.nuke/<date>-session-handoff.md`), not into work, and stays there until the run's review.
 
 A catalog or model claim is verified by set equality, never by a count — "exit 0 and a plausible count" hid a parser that collapsed 118 rows to 105. The four checks: the tool's own listing against production discovery (missing, extra, duplicates); every metadata field per row; the rows the live picker shows; the argv the child receives.
 

@@ -250,7 +250,7 @@ export function formatTaskPrompt(opts: {
   } else if (writesFiles !== 'direct' && (task.action === 'modify' || task.currentCodeByFile)) {
     const budget = contextLength
       ? computeTokenBudget({
-          system: formatImplementerSystemPreamble(ctx, writesFiles),
+          system: formatImplementerSystemPreamble(ctx, writesFiles, context.dir),
           taskBody: sections.join('\n'),
           contextLength,
         })
@@ -292,7 +292,7 @@ export function formatRetryPrompt(opts: {
   } else if (writesFiles !== 'direct' && (task.currentCode || task.currentCodeByFile)) {
     const budget = contextLength
       ? computeTokenBudget({
-          system: formatImplementerSystemPreamble(ctx, writesFiles),
+          system: formatImplementerSystemPreamble(ctx, writesFiles, context.dir),
           taskBody: sections.join('\n'),
           contextLength,
         })

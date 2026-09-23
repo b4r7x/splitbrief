@@ -337,6 +337,50 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
     expect(outcome.lastFailure?.outcome).toBe('implementer-recipe-invalid');
   });
 
+  it('an implementer that left its isolation directory spends no further retry', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const retry = vi.fn().mockResolvedValue({
+      success: false,
+      output: '',
+      error: 'searched ~ with run_command: find ~ -name "app.ts"',
+      outcome: 'implementer-left-isolation',
+    });
+    const implementer = makeImplementer({ retry });
+    const { bus } = makeBusRecorder();
+
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
+
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(outcome.lastFailure?.outcome).toBe('implementer-left-isolation');
+  });
+
+  it('a checkout whose git state changed during the attempt spends no further retry', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const retry = vi.fn().mockResolvedValue({
+      success: false,
+      output: '',
+      error: 'branch escaped',
+      outcome: 'checkout-changed',
+    });
+    const implementer = makeImplementer({ retry });
+    const { bus } = makeBusRecorder();
+
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
+
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(outcome.lastFailure?.outcome).toBe('checkout-changed');
+  });
+
   it('a no-change attempt after feedback ends the local rung with its failure intact', async () => {
     const { projectDir, sessionId } = setupProject();
     const retry = vi.fn().mockResolvedValue({

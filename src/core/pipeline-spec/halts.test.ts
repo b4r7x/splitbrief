@@ -41,6 +41,29 @@ describe('classifyHaltSignature', () => {
     );
   });
 
+  it('a Claude Code sandbox that cannot start halts only when failIfUnavailable refuses the launch', () => {
+    // The message templates in the claude 2.1.281 binary; the dependency names are illustrative.
+    const reason =
+      'sandbox is enabled but dependencies are missing: bubblewrap, socat · install missing tools (e.g. apt install bubblewrap socat) or see https://code.claude.com/docs/en/sandboxing';
+    expect(
+      classifyHaltSignature([
+        `Error: sandbox required but unavailable: ${reason}`,
+        '  sandbox.failIfUnavailable is set — refusing to start without a working sandbox.',
+      ]),
+    ).toBe('spawn');
+    expect(
+      classifyHaltSignature([
+        'Error: sandbox required but unavailable: sandbox is enabled but WSL1 is not supported (requires WSL2)',
+      ]),
+    ).toBe('spawn');
+    expect(
+      classifyHaltSignature([
+        `⚠ Sandbox disabled: ${reason}`,
+        '  Commands will run WITHOUT sandboxing. Network and filesystem restrictions will NOT be enforced.',
+      ]),
+    ).toBeNull();
+  });
+
   it('only looks at the last HALT_TAIL_LINES lines', () => {
     const lines = ['not logged in', ...Array.from({ length: HALT_TAIL_LINES }, () => 'ok')];
     expect(classifyHaltSignature(lines)).toBeNull();

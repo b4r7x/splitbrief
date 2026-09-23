@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { existsSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createImplementerBase } from './run.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -53,6 +54,28 @@ describe('createImplementerBase — language-aware system preamble', () => {
     expect(seenSystemPreamble).not.toContain('TypeScript');
     expect(seenSystemPreamble).not.toContain('Output ONLY');
     expect(seenPrompt).toContain(seenSystemPreamble);
+  });
+
+  it("names the call's own directory, never the project context's", async () => {
+    let seenPrompt = '';
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      seenPrompt = opts.prompt;
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(seenPrompt).toContain(`- Stay inside ${projectDir}:`);
+    expect(seenPrompt).toContain('- Use git only to read (status, diff, log, show);');
+    expect(seenPrompt).toContain('- Dependencies are already installed;');
+    expect(seenPrompt).not.toContain(defaultContext.dir);
   });
 });
 
@@ -491,5 +514,156 @@ describe('createImplementerBase — unavailabilityReason', () => {
     const implementer = createImplementerBase(makeBaseConfig());
 
     expect(implementer.unavailabilityReason?.()).toBeUndefined();
+  });
+});
+
+describe('createImplementerBase — isolation audit', () => {
+  let isolationDir: string;
+
+  beforeEach(() => {
+    isolationDir = createTempDir('impl-base-isolation');
+    createTestGitRepo(isolationDir);
+  });
+
+  afterEach(() => {
+    cleanupTempDir(isolationDir);
+  });
+
+  function isolatedCall() {
+    return {
+      task: makeTask(),
+      projectDir: isolationDir,
+      fileIgnoreProjectDir: projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    };
+  }
+
+  it('warns on a file written into the checkout and lets the call stand', async () => {
+    const { bus, events } = makeBusRecorder();
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      expect(opts.checkoutDir).toBe(projectDir);
+      writeFileSync(join(isolationDir, 'src.ts'), 'export {};\n');
+      writeFileSync(join(projectDir, 'escaped.ts'), 'export {};\n');
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, invoke, publisher: createImplementerPublisher(bus) }),
+    );
+
+    const result = await implementer.implement({ ...isolatedCall(), phase: 'implementing' });
+
+    expect(result.success).toBe(true);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([
+      expect.objectContaining({
+        taskId: 'T001',
+        category: 'implementer',
+        code: 'checkout_changed_during_call',
+        message:
+          'Task T001: your checkout changed while Ollama ran — escaped.ts; nothing there was reverted',
+      }),
+    ]);
+    expect(existsSync(join(projectDir, 'escaped.ts'))).toBe(true);
+  });
+
+  it("halts when the checkout's git state changed during the call", async () => {
+    const invoke = vi.fn().mockImplementation(async () => {
+      writeFileSync(join(isolationDir, 'src.ts'), 'export {};\n');
+      execSync('git branch topic', { cwd: projectDir, stdio: 'pipe' });
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    const result = await implementer.implement(isolatedCall());
+
+    expect(result).toMatchObject({
+      success: false,
+      outcome: 'checkout-changed',
+      error: 'branch topic',
+    });
+  });
+
+  it('keeps the tripwire evidence ahead of what the audit found', async () => {
+    const invoke = vi.fn().mockImplementation(async () => {
+      execSync('git branch escaped', { cwd: projectDir, stdio: 'pipe' });
+      return makeRunnerCallResult({
+        status: 'failed',
+        text: '',
+        error: {
+          code: 'implementer-left-isolation',
+          message: `ran git in ${projectDir} (your checkout) with Bash: git -C ${projectDir} branch escaped`,
+        },
+      });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    const result = await implementer.implement(isolatedCall());
+
+    expect(result.outcome).toBe('implementer-left-isolation');
+    expect(result.error).toBe(
+      `ran git in ${projectDir} (your checkout) with Bash: git -C ${projectDir} branch escaped; ran while your checkout changed: branch escaped`,
+    );
+  });
+
+  it('reports what a stopped call changed without halting on it', async () => {
+    const { bus, events } = makeBusRecorder();
+    const controller = new AbortController();
+    const invoke = vi.fn().mockImplementation(async () => {
+      execSync('git branch topic', { cwd: projectDir, stdio: 'pipe' });
+      controller.abort();
+      return makeRunnerCallResult({
+        status: 'aborted',
+        text: '',
+        error: { code: 'user-abort', message: 'stopped' },
+      });
+    });
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, invoke, publisher: createImplementerPublisher(bus) }),
+    );
+
+    const result = await implementer.implement({
+      ...isolatedCall(),
+      phase: 'implementing',
+      signal: controller.signal,
+    });
+
+    expect(result.outcome).toBe('user-abort');
+    expect(events.filter((event) => event.type === 'warning')).toEqual([
+      expect.objectContaining({
+        code: 'implementer_left_isolation',
+        message:
+          'Task T001 was stopped; its implementer ran while your checkout changed: branch topic',
+      }),
+    ]);
+  });
+
+  it('lets a call that stayed in its isolation directory stand', async () => {
+    const invoke = vi.fn().mockImplementation(async () => {
+      writeFileSync(join(isolationDir, 'src.ts'), 'export {};\n');
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    const result = await implementer.implement(isolatedCall());
+
+    expect(result.success).toBe(true);
+  });
+
+  it('audits nothing for a call that runs in the checkout itself', async () => {
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      expect(opts.checkoutDir).toBeUndefined();
+      writeFileSync(join(projectDir, 'written.ts'), 'export {};\n');
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    const result = await implementer.implement({
+      ...isolatedCall(),
+      projectDir,
+      fileIgnoreProjectDir: projectDir,
+    });
+
+    expect(result.success).toBe(true);
   });
 });

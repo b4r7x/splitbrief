@@ -96,6 +96,7 @@ export async function escalateFull(
     lastAttempt: task.currentCode ?? '',
     error,
     languageContext: languageContext ?? buildProjectLanguageContext(projectDir, undefined),
+    isolationDir: projectDir,
     outputMode: config.escalateFullMode === 'files' ? 'files' : 'text',
   });
 

@@ -107,6 +107,8 @@ export const RECOVERY_REASONS = [
   'dependency-blocked',
   'scope-violation',
   'implementer-recipe-invalid',
+  'implementer-left-isolation',
+  'checkout-changed',
   'runner-timeout-repeated',
   'review-failed',
   'approval-denied',

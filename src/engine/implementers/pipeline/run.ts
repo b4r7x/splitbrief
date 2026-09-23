@@ -51,9 +51,15 @@ import {
 } from './call-result.js';
 import { processImplementerOutput, readTaskFileContent } from './extracted-code.js';
 import { usageLimitDetailFromError } from '../../runners/usage-limit.js';
-import { isAuthFailureDiagnostic } from '../../runners/auth-failure.js';
+import { isAuthFailureDiagnostic, runnerAuthDisplayName } from '../../runners/auth-failure.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import {
+  checkoutChanges,
+  formatCheckoutChanges,
+  snapshotCheckout,
+  type CheckoutSnapshot,
+} from '../isolation/checkout-audit.js';
 
 const MAX_RETRY_TEMPERATURE = 2;
 
@@ -323,6 +329,67 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     };
   }
 
+  /**
+   * The checkout as the isolation audit reads it, or nothing when the read
+   * failed: an audit that cannot see the checkout says so and lets the call
+   * stand, rather than inventing an escape.
+   */
+  async function readCheckout(
+    opts: ImplementerOptions,
+    checkoutDir: string,
+  ): Promise<CheckoutSnapshot | undefined> {
+    try {
+      return await snapshotCheckout(checkoutDir);
+    } catch (err) {
+      if (opts.phase) {
+        baseConfig.publisher?.publishWarning({
+          phase: opts.phase,
+          taskId: opts.task.id,
+          message: `The isolation audit could not read your checkout for task ${opts.task.id}: ${toErrorMessage(err)}`,
+          safety: { category: 'implementer', code: 'isolation_audit_failed' },
+        });
+      }
+      return undefined;
+    }
+  }
+
+  /**
+   * The git state that changed in the checkout across one implementer call — a
+   * change that went around the isolation directory instead of through
+   * promotion. The window is the call alone, so edits between calls never
+   * count. A changed file is only reported: an editor save changes files too,
+   * and the audit cannot tell who made it. A stopped call only reports its state
+   * change: the run is already halting.
+   */
+  async function checkoutEscape(
+    opts: ImplementerOptions,
+    checkoutDir: string | undefined,
+    before: CheckoutSnapshot | undefined,
+  ): Promise<string[]> {
+    if (checkoutDir === undefined || before === undefined) return [];
+    const after = await readCheckout(opts, checkoutDir);
+    if (after === undefined) return [];
+    const { files, state } = checkoutChanges({ before, after });
+    if (files.length > 0 && opts.phase) {
+      baseConfig.publisher?.publishWarning({
+        phase: opts.phase,
+        taskId: opts.task.id,
+        message: `Task ${opts.task.id}: your checkout changed while ${runnerAuthDisplayName(opts.config.implementer)} ran — ${formatCheckoutChanges(files)}; nothing there was reverted`,
+        safety: { category: 'implementer', code: 'checkout_changed_during_call' },
+      });
+    }
+    if (state.length === 0 || !opts.signal?.aborted) return state;
+    if (opts.phase) {
+      baseConfig.publisher?.publishWarning({
+        phase: opts.phase,
+        taskId: opts.task.id,
+        message: `Task ${opts.task.id} was stopped; its implementer ran while your checkout changed: ${formatCheckoutChanges(state)}`,
+        safety: { category: 'implementer', code: 'implementer_left_isolation' },
+      });
+    }
+    return [];
+  }
+
   async function runPipeline(
     opts: ImplementerOptions,
     rawPrompt: string,
@@ -334,6 +401,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     const systemPreamble = formatImplementerSystemPreamble(
       languageContext,
       writesFiles,
+      opts.projectDir,
       outputContract,
     );
     const prompt =
@@ -369,6 +437,16 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         }
       : onOutput;
 
+    // A direct writer handed its own copy of the project may not touch the one it came from.
+    const checkoutDir =
+      !baseConfig.extractsCode &&
+      opts.fileIgnoreProjectDir !== undefined &&
+      opts.fileIgnoreProjectDir !== projectDir
+        ? opts.fileIgnoreProjectDir
+        : undefined;
+    const checkoutBefore =
+      checkoutDir === undefined ? undefined : await readCheckout(opts, checkoutDir);
+
     if (phase) baseConfig.publisher?.publishRunning({ phase, taskId: task.id, file: task.file });
     const startTime = Date.now();
     const callContext = createImplementerCallContext({
@@ -395,12 +473,23 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         },
         sandboxEnv: opts.sandboxEnv,
         undeclaredWrites: opts.undeclaredWrites,
+        ...(checkoutDir !== undefined && { checkoutDir }),
       });
       callResult = invokeResult;
     } catch (err) {
+      const escaped = await checkoutEscape(opts, checkoutDir, checkoutBefore);
       if (opts.signal?.aborted) {
         implBuffer?.flushInterrupted();
         return { success: false, output: '', error: ABORTED_OUTCOME_TEXT };
+      }
+      if (escaped.length > 0) {
+        failTask(opts);
+        return {
+          success: false,
+          output: errorOutput(err),
+          error: formatCheckoutChanges(escaped),
+          outcome: 'checkout-changed',
+        };
       }
       if (shouldThrow(err)) throw err;
       const output = errorOutput(err);
@@ -433,6 +522,32 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     const usage = toTokenDelta(callResult.usage);
     const usageField = usage !== null ? { usage } : {};
     const outputText = callResult.text;
+
+    const escaped = await checkoutEscape(opts, checkoutDir, checkoutBefore);
+    if (escaped.length > 0) {
+      implBuffer?.flush();
+      failTask(opts);
+      // A call the tripwire already stopped keeps its own evidence ahead of what the audit found.
+      if (
+        callResult.status !== 'completed' &&
+        callResult.error.code === 'implementer-left-isolation'
+      ) {
+        return {
+          success: false,
+          output: outputText,
+          error: `${callResult.error.message}; ran while your checkout changed: ${formatCheckoutChanges(escaped)}`,
+          outcome: 'implementer-left-isolation',
+          ...usageField,
+        };
+      }
+      return {
+        success: false,
+        output: outputText,
+        error: formatCheckoutChanges(escaped),
+        outcome: 'checkout-changed',
+        ...usageField,
+      };
+    }
 
     if (callResult.status !== 'completed') {
       if (callResult.status === 'aborted' && opts.signal?.aborted) {

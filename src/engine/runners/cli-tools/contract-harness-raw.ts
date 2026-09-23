@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
-import { RawCliCandidateContract, replacePromptSentinel } from './candidate-contract.js';
+import {
+  RawCliCandidateContract,
+  replaceProjectDirSentinel,
+  replacePromptSentinel,
+} from './candidate-contract.js';
 import { CONFORMANCE_PROMPT } from '../../providers/candidate-contract.js';
 import {
   CLI_CONFORMANCE_EXIT_CODES,
@@ -50,22 +54,24 @@ async function preparePrompt(
   contract: RawCliCandidateContract,
   prompt: string,
   directory: string,
+  projectDir: string,
 ): Promise<PreparedPrompt> {
+  const rawInvocation = replaceProjectDirSentinel(contract.rawInvocation, projectDir);
   if (contract.promptTransport === 'argv') {
     return {
-      args: replacePromptSentinel(contract.rawInvocation, prompt, 'argv'),
+      args: replacePromptSentinel(rawInvocation, prompt, 'argv'),
       stdin: undefined,
       cleanup: async () => {},
     };
   }
   if (contract.promptTransport === 'stdin') {
-    return { args: [...contract.rawInvocation], stdin: prompt, cleanup: async () => {} };
+    return { args: rawInvocation, stdin: prompt, cleanup: async () => {} };
   }
   const promptPath = join(directory, 'prompt.txt');
   await writeFile(promptPath, prompt, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
   await chmod(promptPath, 0o600);
   return {
-    args: [...contract.rawInvocation, promptPath],
+    args: [...rawInvocation, promptPath],
     stdin: undefined,
     cleanup: async () => {
       await rm(promptPath, { force: true });
@@ -87,7 +93,7 @@ async function runRawInvocation(opts: {
   const promptDir = await mkdtemp(join(tmpdir(), 'splitbrief-cli-prompt-'));
   let prepared: PreparedPrompt | undefined;
   try {
-    prepared = await preparePrompt(opts.contract, CONFORMANCE_PROMPT, promptDir);
+    prepared = await preparePrompt(opts.contract, CONFORMANCE_PROMPT, promptDir, opts.projectDir);
     const result = await opts.processRunner({
       command: opts.executable.path,
       args: prepared.args,

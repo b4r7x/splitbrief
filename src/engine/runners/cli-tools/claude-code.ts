@@ -1,4 +1,7 @@
+import { existsSync, lstatSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
@@ -37,6 +40,7 @@ const CLAUDE_PROTECTED_FLAGS = new Set([
   '--disallowedTools',
   '--disallowed-tools',
   '--mcp-config',
+  '--settings',
 ]);
 
 type ClaudeBuildCommon = Readonly<{
@@ -59,6 +63,7 @@ type ClaudeImplementerBuild = Readonly<{
   projectDir: string;
   configuredArgs: readonly string[];
   effort?: EffortLevel | undefined;
+  installedVersion?: string | undefined;
 }>;
 
 function buildBaseArgs(opts: ClaudeBuildCommon): string[] {
@@ -80,11 +85,53 @@ function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
   return args;
 }
 
+/**
+ * The implementer's shell runs in Claude Code's own sandbox: writes stay in the working
+ * directory and Claude's session temp, and a blocked command is never retried unsandboxed.
+ * `failIfUnavailable: false` is Claude Code's default: a sandbox that cannot start prints a
+ * warning and the commands run unconfined, unless a managed policy forces the hard stop.
+ * `blockReadsOutsideWorkingDirectories` fences the file tools' reads, and the sandbox's reads
+ * under home directories, to the working directory.
+ */
+function sandboxSettings(input: { readable: readonly string[]; blockReads: boolean }): string {
+  return JSON.stringify({
+    sandbox: {
+      enabled: true,
+      failIfUnavailable: false,
+      allowUnsandboxedCommands: false,
+      ...(input.readable.length > 0 && { filesystem: { allowRead: input.readable } }),
+    },
+    ...(input.blockReads && { permissions: { blockReadsOutsideWorkingDirectories: true } }),
+  });
+}
+
+// Claude Code reads `blockReadsOutsideWorkingDirectories` from 2.1.257 on. An older release
+// gets the sandbox without it; an unknown release keeps it.
+function blocksReadsOutside(installedVersion: string | undefined): boolean {
+  return (
+    installedVersion === undefined ||
+    classifyCliAdmittedVersion({ installedVersion, minimumAdmittedVersion: '2.1.257' }) !==
+      'incompatible'
+  );
+}
+
+// The run's node_modules links into the checkout (`linkProjectNodeModules`), outside the
+// fenced reads: the project's own tsc and vitest only start when the link target is readable.
+function linkedNodeModules(projectDir: string): string[] {
+  const link = join(projectDir, 'node_modules');
+  return existsSync(link) && lstatSync(link).isSymbolicLink() ? [realpathSync(link)] : [];
+}
+
 function implementerBaseArgs(opts: ClaudeImplementerBuild): string[] {
   return [
     ...buildBaseArgs({ model: opts.model, effort: opts.effort }),
     '--permission-mode',
     'acceptEdits',
+    '--settings',
+    sandboxSettings({
+      readable: linkedNodeModules(opts.projectDir),
+      blockReads: blocksReadsOutside(opts.installedVersion),
+    }),
   ];
 }
 
@@ -263,7 +310,13 @@ function rawContract(role: 'planner' | 'implementer'): RawClaudeCliContract {
     rawInvocation:
       role === 'planner'
         ? [...CLAUDE_BASE_ARGS, '--permission-mode', 'plan', '--disallowedTools', 'AskUserQuestion']
-        : [...CLAUDE_BASE_ARGS, '--permission-mode', 'acceptEdits'],
+        : [
+            ...CLAUDE_BASE_ARGS,
+            '--permission-mode',
+            'acceptEdits',
+            '--settings',
+            sandboxSettings({ readable: [], blockReads: true }),
+          ],
     promptTransport: 'stdin',
     expectedRawTerminal: 'result',
     asOf: '2026-07-31',

@@ -80,6 +80,20 @@ const RECIPE_INVALID_ACTIONS = [
   'pause-run',
   'end-run',
 ] as const satisfies readonly RecoveryAction[];
+/**
+ * An implementer that reached outside its isolation directory is stopped at
+ * once, and a checkout whose git state changed under a call halts the brief the
+ * same way. The brief itself may be sound, so it can run again, on this tool or
+ * another one, or be skipped; nothing it wrote in the isolation directory was
+ * promoted.
+ */
+const LEFT_ISOLATION_ACTIONS = [
+  'retry-same-worker',
+  'switch-seat',
+  'skip-current-task',
+  'pause-run',
+  'end-run',
+] as const satisfies readonly RecoveryAction[];
 const SNAPSHOT_FAILED_ACTIONS = [
   'retry-same-worker',
   'pause-run',
@@ -116,6 +130,9 @@ export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[
       return copyActions(SCOPE_RECOVERY_ACTIONS);
     case 'implementer-recipe-invalid':
       return copyActions(RECIPE_INVALID_ACTIONS);
+    case 'implementer-left-isolation':
+    case 'checkout-changed':
+      return copyActions(LEFT_ISOLATION_ACTIONS);
     case 'runner-timeout-repeated':
       return copyActions(SEAT_BLOCKED_ACTIONS);
     case 'snapshot-failed':

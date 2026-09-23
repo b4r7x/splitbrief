@@ -544,24 +544,43 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     ]);
   });
 
-  it('emits --effort on the Claude Code implementer argv when config sets it', async () => {
-    const checks = await collectArgVectorPreflightChecks({
+  const implementerChecks = (helpText: string) =>
+    collectArgVectorPreflightChecks({
       config: makeConfig({
         implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
       }),
       projectDir: '/project',
       roles: ['implementer'],
-      runHelp: async () =>
-        claudeHelp('  --effort <level>               Effort level for the session'),
+      runHelp: async () => helpText,
     });
+
+  it('emits --effort and the sandbox settings on the Claude Code implementer argv', async () => {
+    const checks = await implementerChecks(
+      claudeHelp(
+        '  --effort <level>               Effort level for the session',
+        '  --settings <file-or-json>      Path to a settings JSON file or a JSON string',
+      ),
+    );
 
     expect(checks[0]).toMatchObject({
       id: 'runners.cli.claude-code.arg-vector.implementer',
       severity: 'ok',
     });
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode acceptEdits',
+      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode acceptEdits --settings {"sandbox":{"enabled":true,"failIfUnavailable":false,"allowUnsandboxedCommands":false},"permissions":{"blockReadsOutsideWorkingDirectories":true}}',
     ]);
+  });
+
+  it('blocks a Claude Code implementer whose binary cannot take the sandbox settings', async () => {
+    const checks = await implementerChecks(
+      claudeHelp('  --effort <level>               Effort level for the session'),
+    );
+
+    expect(checks[0]).toMatchObject({
+      id: 'runners.cli.claude-code.arg-vector.implementer',
+      severity: 'blocker',
+      metadata: { unsupported: ['--settings'] },
+    });
   });
 
   it('carries the codex planner effort into every emitted vector as a config override', async () => {

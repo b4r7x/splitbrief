@@ -6,7 +6,7 @@ import type {
   CliPlannerAdapter,
 } from './cli-tools/contract.js';
 import { onlyAddsLineBreaks, reconcileFinalText } from '../streaming/final-text.js';
-import { invokeProcessCli } from './cli-tools/process-invoke.js';
+import { invokeProcessCli, type ToolUseGuard } from './cli-tools/process-invoke.js';
 import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox-credential-values.js';
 
 /** The process executor owns explicit runner timeouts; this is its no-deadline sentinel. */
@@ -21,6 +21,7 @@ type InvokeCliOptions = {
   onSessionId?: ((id: string) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   idle?: { warnMs?: number | undefined; killMs?: number | undefined } | undefined;
+  toolUseGuard?: ToolUseGuard | undefined;
 };
 
 export function toCliEnvironment(environment: NodeJS.ProcessEnv): Readonly<Record<string, string>> {
@@ -94,6 +95,7 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
       warnMs: opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
       killMs: opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS,
     },
+    toolUseGuard: opts.toolUseGuard,
     onEvent: (event) => {
       opts.onCallEvent?.(event);
       if (event.type === 'call_text_delta') forwardText(event);

@@ -61,6 +61,8 @@ During `start`, `spec`, `resume`, and other planner/implementer invocations, dis
 |---|---|---|
 | CLI stdout, stderr, or protocol event stream exceeded the configured byte or line budget. | `output-budget-breach` | The tool wrote more than 64 MB of output and was stopped. Narrow what it was asked to print, then retry. |
 | Implementer completed without staging the expected working-tree change. | `no-staged-change` | Make the requested change in the staged project, then retry. |
+| Implementer tool call reached outside the isolation directory. | `implementer-left-isolation` | The implementer reached outside its isolation directory and was stopped. Check your checkout, then retry, switch the seat or skip the brief. |
+| The git state of your checkout changed during an implementer call. | `checkout-changed` | Your checkout's git state changed while the implementer ran, and SPLITBRIEF reverted nothing. Check the named changes, then retry, switch the seat or skip the brief. |
 
 Other runner outcomes (`spawn-not-found`, `protocol-failure`, `incompatible-version`, `unauthenticated`, and others) overlap readiness families above or are documented in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
@@ -158,7 +160,7 @@ Run `npm rebuild better-sqlite3` in the SPLITBRIEF installation directory to res
 
 **Fix:**
 1. Read the command first. `splitbrief doctor` prints it under `runners.planner.trust-boundary` / `runners.implementer.trust-boundary` as `Command:` and `Arguments:`.
-2. If you want it, run SPLITBRIEF in a terminal. It shows the resolved executable path, the argv, the working directory, and the fact that the child inherits your environment, then asks for the confirmation phrase and a reason. Confirming stores an owner-only receipt in `~/.splitbrief/trust/custom-runners.json`.
+2. If you want it, run SPLITBRIEF in a terminal. It shows the resolved executable path, the argv, the working directory, and the environment names the runner declares in `env` (the only variables of your shell it gets), then asks for the confirmation phrase and a reason. Confirming stores an owner-only receipt in `~/.splitbrief/trust/custom-runners.json`.
 3. In CI or any headless run (`--json`), pass `--allow-repo-runners`. It grants that run only and persists nothing.
 4. If the command should not run, replace the runner in `.splitbrief/config.yaml`.
 
@@ -443,6 +445,40 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 
 ---
 
+### Symptom: the run halted with "T00N left the isolation directory"
+
+**Likely cause:** The implementer reached outside the isolation directory it was given. One of its tool calls named a closed path — `find ~`, `grep -r ~/Projects`, a read of your checkout, `npm install` through the linked `node_modules` — and the tripwire stopped the call. The halt's sentence carries the evidence: `T004 left the isolation directory — Google Antigravity CLI searched ~ with run_command: find ~ -name "process-invoke.ts" 2>/dev/null`. When the git state of your checkout also changed during the stopped call, the evidence ends with `; ran while your checkout changed: branch main`. A tool whose shell does not start in the isolation directory is the usual source: it cannot find the project and searches the disk for it. agy did so before SPLITBRIEF gave it the isolation directory with `--add-dir`: it ran its commands from `~/.gemini/antigravity-cli/scratch`.
+
+**Fix:**
+1. Read the evidence on the recovery panel or in the `Recovery required (implementer-left-isolation): …` line a headless run printed.
+2. If the evidence reads `ran while your checkout changed`, look at each named change in your checkout first. SPLITBRIEF reverts nothing there: a moved branch, a stash, a hook or a git config change stays until you undo it. Nothing from the halted attempt was promoted.
+3. Choose **Try again** (`splitbrief continue <session> --action retry`) to run the brief again; the implementer prompt names the isolation directory and tells the implementer to stay in it. Choose **Change BUILD tool** when the same tool keeps leaving, or **Skip task** to move on.
+4. If the evidence reads `ran a package-manager command`, the brief needs a dependency change: make it in your checkout yourself (`npm install <pkg>`), then retry. A package-manager install, ci, add, remove or update from the isolation directory writes into your checkout's shared `node_modules`, so it always halts. A write to a tool cache there (`node_modules/.vite`, `node_modules/.cache`) does not halt. A write to `node_modules/.bin` or to a package manager's lockfile marker halts.
+
+**Prevention:** Prefer tools whose shell runs in the directory SPLITBRIEF gives them. The halt is a check SPLITBRIEF makes on what the tool reports and on what the checkout shows afterwards — not a sandbox: a write to a path no tool call names, into a directory outside the checkout, or into a gitignored file of the checkout goes unseen.
+
+**See also:** [APPROVAL-AND-RECOVERY.md §Recovery](./APPROVAL-AND-RECOVERY.md#recovery), `src/engine/implementers/isolation/`.
+
+---
+
+### Symptom: the run halted with "Your checkout changed under T00N"
+
+**Likely cause:** The git state of your checkout changed while an implementer call ran. A branch, a tag or `HEAD` moved, the stash changed, a hook or the git config changed, or the installed `node_modules` set changed. The halt's sentence names each change: `Your checkout changed under T004 — branch main · hook pre-commit`. The audit sees what changed, not who changed it. A commit, a branch switch or a stash of yours, a hook that is still running, or an agent that adds a worktree to the same repository halts the brief too. The implementer can also be the cause, when it went around its isolation directory.
+
+A changed file does not halt the brief, because an editor save changes files too. The run publishes the `checkout_changed_during_call` warning and continues: `Task T004: your checkout changed while agent ran — src/app.ts; nothing there was reverted`. The warning is in the transcript, in `session.jsonl` and in the review packet's warnings list.
+
+**Fix:**
+1. Read the evidence on the recovery panel or in the `Recovery required (checkout-changed): …` line a headless run printed.
+2. Look at each named change in your checkout. SPLITBRIEF reverts nothing there: a new branch, a moved `HEAD`, a stash, a hook or a git config change stays until you undo it. Nothing from the halted attempt was promoted.
+3. If the change is yours, choose **Try again** (`splitbrief continue <session> --action retry`).
+4. If the change is not yours, undo it. Then choose **Try again**, **Change BUILD tool** or **Skip task**.
+
+**Prevention:** While a brief runs, do not commit, switch branches or stash in the checkout. Do not start agents that add worktrees to the same repository. Make these changes while the run is at rest.
+
+**See also:** [APPROVAL-AND-RECOVERY.md §Recovery](./APPROVAL-AND-RECOVERY.md#recovery), `src/engine/implementers/isolation/checkout-audit.ts`.
+
+---
+
 ### Symptom: The implementer says it finished but nothing changed
 
 **Likely cause:** The runner completed its call without writing any file. Change detection (`detectChanges()`, `src/engine/change-detection.ts`) reports the distinct `no-files-changed` reason, the task fails with the `no-staged-change` outcome, and SPLITBRIEF publishes one coded warning — `category: implementer`, `code: implementer_wrote_nothing` — naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list (`review-packet.json` → `escalations.warnings`).
@@ -517,6 +553,39 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 **Prevention:** Keep the installed CLI tools on versions matching the support matrix in [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md). The preflight cannot detect adapter/binary drift for a help text it cannot read; that case reports ok rather than blocking.
 
 **See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), `src/engine/runners/arg-vector-preflight.ts`.
+
+---
+
+### Symptom: the run halted with "Tool recipe rejected by Claude Code CLI" and `sandbox required but unavailable`
+
+**Likely cause:** A managed Claude Code policy sets `sandbox.failIfUnavailable` to `true`, and the sandbox cannot start. The Claude Code implementer runs its shell commands in Claude Code's own sandbox. SPLITBRIEF sets `failIfUnavailable` to `false`. Without a managed policy, a sandbox that cannot start does not halt the run: Claude Code prints this warning on stderr and runs the commands without the sandbox.
+
+```text
+⚠ Sandbox disabled: <reason>
+  Commands will run WITHOUT sandboxing. Network and filesystem restrictions will NOT be enforced.
+```
+
+A managed policy wins over SPLITBRIEF's settings. Claude Code then stops at startup and prints this on stderr:
+
+```text
+Error: sandbox required but unavailable: <reason>
+  sandbox.failIfUnavailable is set — refusing to start without a working sandbox.
+```
+
+On Linux and WSL2 without `bubblewrap` or `socat`, `<reason>` reads `sandbox is enabled but dependencies are missing: … · install missing tools (e.g. apt install bubblewrap socat) …`. On WSL1 it reads `sandbox is enabled but WSL1 is not supported (requires WSL2)`. SPLITBRIEF halts the brief on the `sandbox required but unavailable` line and spends no retries. The warning line never halts the brief.
+
+A related case does not halt at startup. When SPLITBRIEF itself runs inside another sandbox on macOS, for example from a sandboxed agent session, Claude Code starts, but every shell command of the implementer fails with exit 71 (`sandbox_apply: Operation not permitted`). The implementer then cannot run its own checks.
+
+**Fix:**
+1. On Linux or WSL2, install both packages (`sudo apt-get install bubblewrap socat` on Debian and Ubuntu), then choose **Try again**.
+2. If the packages are installed and shell commands still fail, check the AppArmor restriction on Ubuntu 24.04 and later. [Set up Linux and WSL2](https://code.claude.com/docs/en/sandboxing#set-up-linux-and-wsl2) gives the check and the `bwrap` profile.
+3. On WSL1, move the project to a WSL2 distribution.
+4. On macOS, start SPLITBRIEF from an ordinary terminal, not from inside another sandbox.
+5. To finish the run on another implementer, choose **Change BUILD tool**.
+
+**Prevention:** Run `claude` once in the project and open `/sandbox`: on Linux its panel names a missing package.
+
+**See also:** [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth), `src/engine/runners/cli-tools/claude-code.ts`, `src/core/pipeline-spec/halts.ts`.
 
 ---
 

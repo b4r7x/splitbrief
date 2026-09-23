@@ -662,10 +662,80 @@ export function buildRepeatedTimeoutRecoveryIssue(
   });
 }
 
+/**
+ * A halt on what the isolation checks found around one implementer call.
+ * Nothing the attempt wrote was promoted, so the brief halts on the evidence
+ * instead of retrying into the same place. The evidence rides in the message,
+ * the one line the headless sinks print, and leads the details the panel lists
+ * under its shorter header; the attempt count is left out, because no retry was
+ * spent on it.
+ */
+function isolationHaltIssue(
+  opts: RunnerFailureRecoveryOptions,
+  halt: {
+    reason: 'implementer-left-isolation' | 'checkout-changed';
+    message: string;
+    details: readonly string[];
+  },
+): RecoveryIssue {
+  const seatSwap = switchSeatOffer(opts.seatSwap);
+  const actions = availableActionsForReason(halt.reason, {
+    switchSeat: seatSwap !== undefined,
+    routeBigger: false,
+  });
+  return createRecoveryIssue({
+    id: opts.id,
+    seat: 'build',
+    reason: halt.reason,
+    phase: opts.phase ?? 'implementing',
+    task: opts.task,
+    files: taskFiles(opts.task),
+    affectedTaskIds: [opts.task.id],
+    message: halt.message,
+    details: [...halt.details, ...implementerDetails(opts.selectedImplementerProfile)],
+    selectedImplementerProfile: opts.selectedImplementerProfile,
+    ...(seatSwap !== undefined && { switchSeat: seatSwap }),
+    facts: compactFacts({ tool: runnerAuthDisplayName(opts.runner) }),
+    availableActions: actions,
+    recommendedAction: chooseRecommended(actions, ['retry-same-worker', 'pause-run']),
+    createdAt: opts.createdAt,
+  });
+}
+
+/** A tool call named a path the implementer may not reach, and the call was stopped. */
+export function buildLeftIsolationRecoveryIssue(opts: RunnerFailureRecoveryOptions): RecoveryIssue {
+  const evidence = `${runnerAuthDisplayName(opts.runner)} ${opts.toolMessage}`;
+  return isolationHaltIssue(opts, {
+    reason: 'implementer-left-isolation',
+    message: `${opts.task.id} left the isolation directory — ${evidence}`,
+    details: [evidence, 'Nothing from this attempt was promoted.'],
+  });
+}
+
+/**
+ * The checkout's git state changed while the call ran. The audit sees what
+ * changed, not who changed it — a commit of yours lands here as readily as a
+ * tool's — so the words name the checkout, never the implementer.
+ */
+export function buildCheckoutChangedRecoveryIssue(
+  opts: RunnerFailureRecoveryOptions,
+): RecoveryIssue {
+  return isolationHaltIssue(opts, {
+    reason: 'checkout-changed',
+    message: `Your checkout changed under ${opts.task.id} — ${opts.toolMessage}`,
+    details: [
+      `Changed while ${runnerAuthDisplayName(opts.runner)} ran: ${opts.toolMessage}`,
+      'Nothing from this attempt was promoted, and nothing in your checkout was reverted.',
+    ],
+  });
+}
+
 const RUNNER_DEFECT_BUILDERS: Partial<
   Record<RunnerFailureOutcomeState, (opts: RunnerFailureRecoveryOptions) => RecoveryIssue>
 > = {
   'implementer-recipe-invalid': buildRecipeInvalidRecoveryIssue,
+  'implementer-left-isolation': buildLeftIsolationRecoveryIssue,
+  'checkout-changed': buildCheckoutChangedRecoveryIssue,
   'missing-model': buildMissingModelRecoveryIssue,
   'runner-timeout-repeated': buildRepeatedTimeoutRecoveryIssue,
 };

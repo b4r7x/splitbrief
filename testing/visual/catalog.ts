@@ -778,6 +778,55 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-left-isolation',
+      title: 'Workflow · an implementer that left its isolation directory',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'left-isolation',
+        title: 'Left-isolation recovery menu',
+        kind: 'question',
+        marker: 'Recovery needed · T901 left the isolation directory',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-checkout-changed',
+      title: 'Workflow · a checkout whose git state changed during an implementer call',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'checkout-changed',
+        title: 'Checkout-changed recovery menu',
+        kind: 'question',
+        marker: 'Recovery needed · Your checkout changed under T901',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // The same halt read back later: the transcript rows the halt wrote and the byline naming it.
+    defineScenario({
+      id: 'workflow-at-rest-left-isolation',
+      title: 'Workflow · a run halted outside its isolation directory, at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-left-isolation',
+        title: 'Left-isolation halt at rest',
+        kind: 'ready',
+        marker: 'Halted',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-api-context-insufficient',
       title: 'Workflow · a packet the plan seat was never given',
       surface: screenSurface('workflow'),
@@ -1171,6 +1220,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-implementer-picker',
         title: 'Overlay · implementer picker',
         marker: 'Add custom model',
+      },
+      {
+        id: 'overlay-implementer-picker-claude',
+        title: 'Overlay · implementer picker · Claude Code build seat',
+        marker: PICKER_TITLE_MARKER,
       },
       // The seat swap a quota halt offers opens this picker, on the tool it offered: the halt
       // names a tool, the picker names the model, and there is no third surface between them.

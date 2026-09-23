@@ -1,6 +1,6 @@
 # Tool Recipes
 
-Loaded in Phase 0 to probe the crew and in Phases 2–3 to build the spawn command. Placeholders: `$P` prompt file, `$M` model, `$E` effort, `$D` project dir, `$LOG` log file, `$DONE` the attempt's `.done` file, `$PID` its `.pid` file.
+Loaded in Phase 0 to probe the crew and in Phases 2–3 to build the spawn command. Placeholders: `$P` prompt file, `$M` model, `$E` effort, `$D` absolute project dir (`agy --add-dir .` gives agy no workspace), `$LOG` log file, `$DONE` the attempt's `.done` file, `$PID` its `.pid` file.
 
 Every `implementer:` / `reviewer:` line below is generated from the SPLITBRIEF CLI's own adapters (`src/engine/runners/cli-tools/*.ts`, via `npm run skills:sync`): the exact argv the CLI sends, with the prompt, model, effort and project dir replaced by placeholders, wrapped in the detached spawn shape. Do not edit them by hand — `npm run skills:check` fails when they differ from the adapters.
 
@@ -25,8 +25,8 @@ Timeouts:
 
 - binary `claude` · version `claude --version` · auth `claude auth status` · models: no listing (aliases `sonnet`/`opus`/`haiku` or full ids) · effort `low|medium|high`
 <!-- generated: recipe:claude-code -->
-- implementer: `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --model $M --effort $E --permission-mode acceptEdits < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --permission-mode acceptEdits < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --model $M --effort $E --permission-mode acceptEdits --settings '\''{"sandbox":{"enabled":true,"failIfUnavailable":false,"allowUnsandboxedCommands":false},"permissions":{"blockReadsOutsideWorkingDirectories":true}}'\'' < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --permission-mode acceptEdits --settings '\''{"sandbox":{"enabled":true,"failIfUnavailable":false,"allowUnsandboxedCommands":false},"permissions":{"blockReadsOutsideWorkingDirectories":true}}'\'' < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - reviewer: `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --model $M --effort $E --permission-mode plan --disallowedTools AskUserQuestion < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - reviewer (no model): `nohup sh -c 'claude -p --output-format stream-json --verbose --include-partial-messages --permission-mode plan --disallowedTools AskUserQuestion < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
@@ -81,10 +81,10 @@ Timeouts:
 
 - binary `cursor-agent` (`agent` is the same binary) · version `cursor-agent --version` · auth `cursor-agent status` · models `cursor-agent --list-models` · effort: part of the model id (`gpt-5.3-codex-high`); an `@effort` on a cursor seat is refused at preflight with `cursor carries effort in the model id`
 <!-- generated: recipe:cursor -->
-- implementer: `nohup sh -c 'cursor-agent --print --output-format stream-json --force --trust --model $M "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'cursor-agent --print --output-format stream-json --force --trust "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'cursor-agent --print --output-format stream-json --mode plan --trust --model $M "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'cursor-agent --print --output-format stream-json --mode plan --trust "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'cursor-agent --print --output-format stream-json --force --trust --workspace $D --model $M "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'cursor-agent --print --output-format stream-json --force --trust --workspace $D "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'cursor-agent --print --output-format stream-json --mode plan --trust --workspace $D --model $M "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'cursor-agent --print --output-format stream-json --mode plan --trust --workspace $D "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - terminal record: `"type":"result"`.
 
@@ -104,10 +104,10 @@ Timeouts:
 
 - binary `agy` · version `agy --version` (`agy --help` prints none) · auth `agy models` (fails when signed out) · models `agy models` (`<id>\t<display name>`, one row per effort variant) · effort `low|medium|high`
 <!-- generated: recipe:antigravity -->
-- implementer: `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --output-format stream-json --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'agy -p "$(cat $P)" --mode plan --output-format stream-json --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'agy -p "$(cat $P)" --mode plan --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --add-dir $D --output-format stream-json --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --add-dir $D --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'agy -p "$(cat $P)" --mode plan --add-dir $D --output-format stream-json --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'agy -p "$(cat $P)" --mode plan --add-dir $D --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - terminal record: none — exit 0.
 
@@ -121,7 +121,7 @@ Match the phrases as written, case-insensitively, in the last 60 lines of `$LOG`
 | auth | `access token could not be refreshed`, `log out and sign in again`, `401 unauthorized`, `please run /login`, `invalid api key`, `oauth token has expired`, `oauth token revoked`, `authentication_error`, `not logged in`, `not authenticated`, `http 401`, `status 401`, `"status":401`, `login required`, `authentication failed` |
 | usage | `rate limit exceeded`, `rate limit reached`, `usage limit`, `quota exceeded`, `too many requests`, `insufficient_quota`, `exceeded your current quota`, `credit balance is too low`, `http 429`, `status 429`, `"status":429`, `insufficient credits`, `quota reached`, `resource_exhausted`, `exhausted your` |
 | missing-model | `unknown model`, `model not found`, `invalid model` |
-| spawn | `requires permissions`, `use --yolo`, `blocked by permissions`, `not allowed in this mode`, `unknown option`, `unknown flag`, `unrecognized argument` |
+| spawn | `requires permissions`, `use --yolo`, `blocked by permissions`, `not allowed in this mode`, `unknown option`, `unknown flag`, `unrecognized argument`, `sandbox required but unavailable` |
 <!-- /generated -->
 
 A `spawn` match is not the implementer's failure: the recipe's permission flags do not match the installed tool version. This is the `recipe-fix` rung of the ladder — correct the recipe in the SPLITBRIEF adapter it is generated from, then re-spawn as the next attempt number with the same prompt the failed spawn used (no new framing, no new error block). It consumes no local retry; `progress.md` records the rung as `recipe-fix`. A second spawn failure on the same brief is a halt.

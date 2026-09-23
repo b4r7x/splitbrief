@@ -88,7 +88,7 @@ Memory: the process should sit in the hundreds of MB. Growth of more than a few 
 
 ## 4. The autofix loop
 
-The question at every failure is *who* failed. The run owns model mistakes and brief mistakes: the ladder retries, the recovery panel offers retry, skip, seat switch. The operator owns tool mistakes: a crash, a limit that ended a healthy call, a parser that dropped a document, a gate that lied. Those are fixed now, because the next brief hits the same code.
+The question at every failure is *who* failed. The run owns model mistakes and brief mistakes: the ladder retries, the recovery panel offers retry, skip, seat switch. The operator owns tool mistakes: a crash, a limit that ended a healthy call, a parser that dropped a document, a gate that lied. Those are fixed now, because the next brief hits the same code. A cosmetic tool mistake — copy, a counter, a label, a render defect, a warning — is the other tier: when the right key still works and `state.json` is right, it goes to a ledger and is fixed after the run's review.
 
 ```bash
 # 1. stop: esc, esc (resumable) — or ctrl+c ctrl+c, or kill -INT <pid> on a headless run

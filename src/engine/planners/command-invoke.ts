@@ -11,7 +11,7 @@ import {
 } from '../runners/command-based.js';
 import { extractQuestionsFromStream } from '../parsers/question.js';
 import { createCommandExistsAvailability, DEFAULT_AVAILABILITY } from '../availability.js';
-import type { OutputFormat } from '../../core/schemas/enums.js';
+import type { AgentPlannerConfig, ShellPlannerConfig } from '../../core/schemas/planner-config.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import {
@@ -24,6 +24,7 @@ import {
 import type { AdmittedCustomRunnerInvocation } from '../runners/custom-launchability.js';
 import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
 import { resolveCustomRunnerEnvironment } from '../runners/redaction.js';
+import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
 import {
   PlannerArtifactAttemptIdSchema,
   PlannerArtifactSemanticIdSchema,
@@ -44,12 +45,8 @@ export function resolveCapabilities(
 }
 
 export type LegacyCommandInvokeOptions = Readonly<{
-  command: string;
-  args?: string[] | undefined;
-  outputFormat?: OutputFormat | undefined;
+  runner: ShellPlannerConfig | AgentPlannerConfig;
   notFoundMessage: string;
-  idleWarnMs?: number | undefined;
-  idleKillMs?: number | undefined;
 }>;
 
 export type LegacyCommandInvokeInput = Readonly<{
@@ -64,21 +61,22 @@ export type LegacyCommandInvokeInput = Readonly<{
 export function createLegacyCommandInvoke(
   options: LegacyCommandInvokeOptions,
 ): (input: LegacyCommandInvokeInput) => Promise<RunnerCallResult> {
+  const { runner } = options;
   return async (input) => {
     const result = await invokeCommandBasedRunner({
-      command: options.command,
-      args: options.args ?? [],
-      outputFormat: options.outputFormat ?? 'text',
+      command: runner.command,
+      args: runner.args ?? [],
+      outputFormat: runner.outputFormat ?? 'text',
       notFoundMessage: options.notFoundMessage,
       prompt: input.prompt,
       projectDir: input.projectDir,
-      env: input.sandboxEnv,
+      env: input.sandboxEnv ?? (await createRunnerSandboxEnv(input.projectDir, runner, 'planner')),
       onOutput: input.callbacks.onOutput,
       onCallEvent: input.callbacks.onCallEvent,
       callContext: input.callContext,
       signal: input.signal,
-      ...(options.idleWarnMs !== undefined && { idleWarnMs: options.idleWarnMs }),
-      ...(options.idleKillMs !== undefined && { idleKillMs: options.idleKillMs }),
+      ...(runner.idleWarnMs !== undefined && { idleWarnMs: runner.idleWarnMs }),
+      ...(runner.idleKillMs !== undefined && { idleKillMs: runner.idleKillMs }),
     });
 
     if (input.callbacks.onQuestion) {
@@ -93,13 +91,7 @@ export function createLegacyCommandInvoke(
 }
 
 export function createCommandBasedPlanner(
-  config: {
-    command: string;
-    args?: string[] | undefined;
-    outputFormat?: OutputFormat | undefined;
-    idleWarnMs?: number | undefined;
-    idleKillMs?: number | undefined;
-  },
+  config: ShellPlannerConfig | AgentPlannerConfig,
   label: string,
   overrides?: {
     capabilities?: PlannerCapabilities | undefined;
@@ -109,14 +101,7 @@ export function createCommandBasedPlanner(
 ): Planner {
   const notFoundMessage =
     overrides?.notFoundMessage ?? `${label} command not found: ${config.command}`;
-  const invoke = createLegacyCommandInvoke({
-    command: config.command,
-    args: config.args,
-    outputFormat: config.outputFormat,
-    notFoundMessage,
-    ...(config.idleWarnMs !== undefined && { idleWarnMs: config.idleWarnMs }),
-    ...(config.idleKillMs !== undefined && { idleKillMs: config.idleKillMs }),
-  });
+  const invoke = createLegacyCommandInvoke({ runner: config, notFoundMessage });
 
   return createPlannerBase({
     invokePlan: invoke,

@@ -28,6 +28,7 @@ import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
 import { requireCompletedCall } from '../../planners/require-completed-call.js';
 import { usageLimitDetailFromError } from '../usage-limit.js';
 import { antigravityImplementerAdapter } from './antigravity.js';
+import { claudeCodeImplementerAdapter } from './claude-code.js';
 import { codexImplementerAdapter } from './codex.js';
 import { opencodeImplementerAdapter, opencodeProtocolEvents } from './opencode.js';
 import { toCliEnvironment } from '../invoke-cli-adapter.js';
@@ -646,6 +647,39 @@ describe('invokeProcessCli', () => {
     });
   });
 
+  // The message templates in the claude 2.1.281 binary; the dependency names are illustrative.
+  const sandboxReason =
+    'sandbox is enabled but dependencies are missing: bubblewrap, socat · install missing tools (e.g. apt install bubblewrap socat) or see https://code.claude.com/docs/en/sandboxing';
+
+  it('exit 1 from a Claude Code sandbox that refuses to start halts on its own line', async () => {
+    const line = `Error: sandbox required but unavailable: ${sandboxReason}`;
+    const stderr = `\n${line}\n  sandbox.failIfUnavailable is set — refusing to start without a working sandbox.\n`;
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        script: `process.stderr.write(${JSON.stringify(stderr)});process.exit(1)`,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'implementer-recipe-invalid', message: line },
+    });
+  });
+
+  it('a later failure after the unavailable-sandbox warning is not a recipe halt', async () => {
+    const stderr = `\n⚠ Sandbox disabled: ${sandboxReason}\n  Commands will run WITHOUT sandboxing. Network and filesystem restrictions will NOT be enforced.\n`;
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        script: `process.stderr.write(${JSON.stringify(stderr)});process.exit(1)`,
+      }),
+    );
+
+    expect(result.status).toBe('failed');
+    expect(result.error?.code).not.toBe('implementer-recipe-invalid');
+  });
+
   it('exit 3 with the antigravity quota line on stderr classifies usage-limit', async () => {
     // Captured live from `agy -p` (antigravity 1.2.7) on 2026-09-21, the retry
     // after a first hit that exited 0; a text-exit tool has no terminal to
@@ -1243,4 +1277,188 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
       expect(events.filter((event) => event.type === 'call_stall_cleared')).toHaveLength(1);
     });
   });
+});
+
+describe('invokeProcessCli tool-use guard', () => {
+  // The step agy streamed at 2026-09-23 when it searched the whole home directory.
+  const ESCAPING_STEP = JSON.stringify({
+    event: 'step_update',
+    step_update: {
+      conversation_id: 'c-1',
+      step_index: 6,
+      state: 'ACTIVE',
+      step_type: 'tool',
+      tool_name: 'run_command',
+      tool_info: {
+        name: 'run_command',
+        parameters: { CommandLine: 'find /Users/dev -name "process-invoke.ts" 2>/dev/null' },
+      },
+    },
+  });
+
+  itUnix('stops the call at the guarded tool use and reaps the process group', async () => {
+    await withTempDir('splitbrief-tool-guard', async (dir) => {
+      const markerPath = join(dir, 'still-running.txt');
+      const shimPath = join(dir, 'agy');
+      // The shim holds the call open after the step, and a descendant would write the marker a
+      // second later: the guard must end both, not wait for the tool to finish.
+      writeFileSync(
+        shimPath,
+        [
+          '#!/bin/bash',
+          `(sleep 1; echo alive > ${JSON.stringify(markerPath)}) &`,
+          `printf '%s\\n' ${JSON.stringify(ESCAPING_STEP)}`,
+          'sleep 30',
+        ].join('\n'),
+        { mode: 0o755 },
+      );
+      const seen: string[] = [];
+      const started = Date.now();
+      const result = await invokeProcessCli(antigravityImplementerAdapter, {
+        invocation: {
+          executable: executableIdentity(shimPath),
+          args: ['<PROMPT>'],
+          promptTransport: antigravityImplementerAdapter.promptTransport,
+          environment: { PATH: process.env.PATH ?? '' },
+          cwd: dir,
+          timeoutMs: 20_000,
+          signal: undefined,
+        },
+        prompt: 'fixture prompt',
+        callContext,
+        toolUseGuard: (toolUse) => {
+          seen.push(toolUse.name);
+          return { code: 'implementer-left-isolation', message: `stopped ${toolUse.name}` };
+        },
+      });
+
+      expect(Date.now() - started).toBeLessThan(10_000);
+      expect(seen).toEqual(['run_command']);
+      expect(result).toMatchObject({
+        status: 'failed',
+        error: { code: 'implementer-left-isolation', message: 'stopped run_command' },
+      });
+      expect(result.toolUses).toEqual([]);
+      expect(runnerCallOutcome(result).state).toBe('implementer-left-isolation');
+      await new Promise((resolveWait) => setTimeout(resolveWait, 1_500));
+      expect(existsSync(markerPath)).toBe(false);
+    });
+  });
+
+  itUnix('lets a call whose tool uses pass the guard complete', async () => {
+    const FIXTURE = join(
+      import.meta.dirname,
+      '../../../../testing/fixtures/antigravity/stream-json.ndjson',
+    );
+    await withTempDir('splitbrief-tool-guard-pass', async (dir) => {
+      const shimPath = join(dir, 'agy');
+      writeFileSync(shimPath, `#!/bin/bash\ncat ${JSON.stringify(FIXTURE)}\n`, { mode: 0o755 });
+      const result = await invokeProcessCli(antigravityImplementerAdapter, {
+        invocation: {
+          executable: executableIdentity(shimPath),
+          args: ['<PROMPT>'],
+          promptTransport: antigravityImplementerAdapter.promptTransport,
+          environment: { PATH: process.env.PATH ?? '' },
+          cwd: dir,
+          timeoutMs: 15_000,
+          signal: undefined,
+        },
+        prompt: 'fixture prompt',
+        callContext,
+        toolUseGuard: () => null,
+      });
+      expect(result.status).toBe('completed');
+    });
+  });
+
+  itUnix('inspects a tool use once when its start and its end carry the same input', async () => {
+    const FIXTURE = join(
+      import.meta.dirname,
+      '../../../../testing/fixtures/antigravity/stream-json.ndjson',
+    );
+    await withTempDir('splitbrief-tool-guard-once', async (dir) => {
+      const shimPath = join(dir, 'agy');
+      writeFileSync(shimPath, `#!/bin/bash\ncat ${JSON.stringify(FIXTURE)}\n`, { mode: 0o755 });
+      const seen: string[] = [];
+      const result = await invokeProcessCli(antigravityImplementerAdapter, {
+        invocation: {
+          executable: executableIdentity(shimPath),
+          args: ['<PROMPT>'],
+          promptTransport: antigravityImplementerAdapter.promptTransport,
+          environment: { PATH: process.env.PATH ?? '' },
+          cwd: dir,
+          timeoutMs: 15_000,
+          signal: undefined,
+        },
+        prompt: 'fixture prompt',
+        callContext,
+        toolUseGuard: (toolUse) => {
+          seen.push(toolUse.name);
+          return null;
+        },
+      });
+      expect(result.status).toBe('completed');
+      expect(seen).toEqual(['run_command', 'run_command', 'view_file']);
+    });
+  });
+
+  itUnix(
+    "inspects Claude Code's finished tool use, whose input its start record lacks",
+    async () => {
+      // Claude Code opens a tool use with an empty input and states the input when the call ends.
+      const stream = [
+        {
+          type: 'stream_event',
+          session_id: 's-1',
+          event: {
+            type: 'content_block_start',
+            index: 1,
+            content_block: { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: {} },
+          },
+        },
+        {
+          type: 'assistant',
+          session_id: 's-1',
+          message: {
+            content: [
+              { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls ~' } },
+            ],
+          },
+        },
+        { type: 'result', subtype: 'success', is_error: false, result: 'done', session_id: 's-1' },
+      ];
+      await withTempDir('splitbrief-tool-guard-claude', async (dir) => {
+        const streamPath = join(dir, 'stream.ndjson');
+        writeFileSync(streamPath, `${stream.map((line) => JSON.stringify(line)).join('\n')}\n`);
+        const shimPath = join(dir, 'claude');
+        writeFileSync(
+          shimPath,
+          `#!/bin/bash\ncat > /dev/null\ncat ${JSON.stringify(streamPath)}\n`,
+          {
+            mode: 0o755,
+          },
+        );
+        const seen: unknown[] = [];
+        const result = await invokeProcessCli(claudeCodeImplementerAdapter, {
+          invocation: {
+            executable: executableIdentity(shimPath),
+            args: [],
+            promptTransport: claudeCodeImplementerAdapter.promptTransport,
+            environment: { PATH: process.env.PATH ?? '' },
+            cwd: dir,
+            timeoutMs: 15_000,
+            signal: undefined,
+          },
+          prompt: 'fixture prompt',
+          callContext,
+          toolUseGuard: (toolUse) => {
+            seen.push(toolUse.input);
+            return null;
+          },
+        });
+        expect(result.status).toBe('completed');
+        expect(seen).toEqual([{}, { command: 'ls ~' }]);
+      });
+    },
+  );
 });

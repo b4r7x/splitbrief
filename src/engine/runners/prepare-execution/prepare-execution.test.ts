@@ -1382,9 +1382,7 @@ describe('inline command runner admission', () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]).toContain(`Executable: ${JSON.stringify(process.execPath)}`);
     expect(requests[0]).toContain('Working directory: Project directory');
-    expect(requests[0]).toContain(
-      'Environment access: Inherits the full SPLITBRIEF process environment, including credentials',
-    );
+    expect(requests[0]).toContain('Environment access: Declared environment references only');
     expect(confirmed.execution.gates).toContainEqual(
       expect.objectContaining({
         kind: 'shell',

@@ -42,6 +42,8 @@ describe('formatRecoveryHeadline', () => {
         { reason: 'implementer-recipe-invalid', facts: { tool: 'Cursor' } },
         'Tool recipe rejected by Cursor',
       ],
+      [{ reason: 'implementer-left-isolation' }, 'T001 left the isolation directory'],
+      [{ reason: 'checkout-changed' }, 'Your checkout changed under T001'],
       [{ reason: 'runner-timeout-repeated' }, 'Two timeouts in a row on T001'],
       [{ reason: 'planner-call-failed' }, 'Planner call failed'],
       [{ reason: 'planner-returned-no-briefs' }, 'Planner returned no briefs'],

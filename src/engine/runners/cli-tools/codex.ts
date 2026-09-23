@@ -260,17 +260,24 @@ function extractAgentText(item: Record<string, unknown>): string | null {
   return text;
 }
 
+const CODEX_ITEM_INPUT_FIELDS = ['command', 'cwd', 'changes'] as const;
+
 function codexToolEvent(
   item: Record<string, unknown>,
   terminal: 'started' | 'completed',
 ): CliProtocolEvent | null {
   const itemType = optionalString(item.type, { trim: true, nonEmpty: true });
   if (!itemType || itemType === 'agent_message') return null;
+  // A command or a file change carries its input on the item itself, not under `input`.
   const input = isRecord(item.input)
     ? { ...item.input }
     : isRecord(item.arguments)
       ? { ...item.arguments }
-      : {};
+      : Object.fromEntries(
+          CODEX_ITEM_INPUT_FIELDS.flatMap((field) =>
+            item[field] === undefined ? [] : [[field, item[field]] as const],
+          ),
+        );
   const id = optionalString(item.id ?? item.item_id ?? item.call_id, {
     trim: true,
     nonEmpty: true,

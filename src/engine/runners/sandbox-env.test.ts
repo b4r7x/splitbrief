@@ -19,8 +19,10 @@ import { delimiter, dirname, join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
 import {
   cliAuthChannelHostStateAccess,
+  IMPLEMENTER_CLI_TOOL_IDS,
   type CliAuthChannel,
 } from '../../core/runners/cli-tool-catalog.js';
+import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import {
   cliAuthChannelEnvKeys,
   createRunnerSandboxEnv,
@@ -1324,6 +1326,51 @@ describe('runnerAuthEnvKeys', () => {
 
     expect(providerDependent.FOO_API_KEY).toBe('shell-only');
     expect(session.FOO_API_KEY).toBeUndefined();
+  });
+});
+
+describe('runner environment policy', () => {
+  it('forwards the declared environment of a shell or agent runner and nothing else', () => {
+    expect(
+      runnerAuthEnvKeys({ kind: 'shell', command: 'node', model: 'm', env: ['MY_AGENT_TOKEN'] }),
+    ).toEqual(['MY_AGENT_TOKEN']);
+    expect(runnerAuthEnvKeys({ kind: 'agent', command: 'node', model: 'm' })).toEqual([]);
+  });
+
+  it('never hands a runner the parent session, the SSH agent or an undeclared credential', async () => {
+    const hostHome = createTempDir('sandbox-env-policy-host');
+    const projectDir = createTempDir('sandbox-env-policy');
+    dirs.push(hostHome, projectDir);
+    setEnv('HOME', hostHome);
+    setEnv('SPLITBRIEF_FAKE_API_KEY', 'fake-api-key');
+    setEnv('SPLITBRIEF_FAKE_TOKEN', 'fake-token');
+    setEnv('CLAUDE_CODE_SESSION_ID', 'fake-session');
+    setEnv('CLAUDE_CODE_MESSAGING_TOKEN', 'fake-messaging-token');
+    setEnv('SSH_AUTH_SOCK', '/tmp/fake-agent.sock');
+    setEnv('SPLITBRIEF_DECLARED_TOKEN', 'fake-declared');
+    const runners: ImplementerConfig[] = [
+      ...IMPLEMENTER_CLI_TOOL_IDS.map((tool): ImplementerConfig => ({ kind: 'cli', tool })),
+      { kind: 'shell', command: 'node', model: 'm', env: ['SPLITBRIEF_DECLARED_TOKEN'] },
+      { kind: 'agent', command: 'node', model: 'm', env: ['SPLITBRIEF_DECLARED_TOKEN'] },
+    ];
+
+    for (const runner of runners) {
+      const names = Object.keys(await createRunnerSandboxEnv(projectDir, runner, 'implementer'));
+      const label = runner.kind === 'cli' ? runner.tool : runner.kind;
+      expect(
+        names.filter(
+          (name) =>
+            name.startsWith('CLAUDE_CODE_') ||
+            name === 'SSH_AUTH_SOCK' ||
+            name === 'SPLITBRIEF_FAKE_TOKEN',
+        ),
+        label,
+      ).toEqual([]);
+      const providerDependent =
+        runner.kind === 'cli' && (runner.tool === 'opencode' || runner.tool === 'kilo-code');
+      expect(names.includes('SPLITBRIEF_FAKE_API_KEY'), label).toBe(providerDependent);
+      expect(names.includes('SPLITBRIEF_DECLARED_TOKEN'), label).toBe(runner.kind !== 'cli');
+    }
   });
 });
 

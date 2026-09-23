@@ -10,7 +10,7 @@ const SENTINELS: Record<string, string> = {
   'retry-framings': 'Try a completely different approach:',
   'ladder-table': '| `takeover` | planner |',
   'halt-signatures': '`credit balance is too low`',
-  'halt-signatures-sh': "*'unrecognized argument'*) halt=spawn ;;",
+  'halt-signatures-sh': "*'sandbox required but unavailable'*) halt=spawn ;;",
   'gate-rules': 'typecheck → lint → test',
   gates: 'uv run pytest',
   'modes-table': '| `speckit` | 6-7 | 12 | spec, plan, briefs |',
@@ -28,14 +28,14 @@ const SENTINELS: Record<string, string> = {
   'hint-prompt': '# Diagnose Implementation Failure',
   'takeover-prompt': '# Escalation: Implement Fix',
   'review-packet': '`pass` | `pass_with_notes` | `fail`',
-  'recipe:claude-code': '--permission-mode acceptEdits < $P',
+  'recipe:claude-code': `"blockReadsOutsideWorkingDirectories":true}}'\\'' < $P`,
   'recipe:codex': '--sandbox read-only',
   'recipe:opencode': '--agent plan "$(cat $P)"',
   'recipe:copilot': '--allow-all --output-format json >',
   'recipe:kilo-code': '--agent code --auto',
   'recipe:cursor': '--mode plan --trust',
   'recipe:command-code': '--yolo -m $M --effort $E',
-  'recipe:antigravity': '--dangerously-skip-permissions --output-format stream-json',
+  'recipe:antigravity': '--dangerously-skip-permissions --add-dir $D --output-format stream-json',
 };
 
 describe('skill-blocks', () => {

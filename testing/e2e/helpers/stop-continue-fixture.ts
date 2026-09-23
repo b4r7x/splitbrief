@@ -154,10 +154,34 @@ export type StopContinueFixture = Readonly<{
 }>;
 
 /**
+ * Writes both declared files at once — and creates a branch in the checkout the
+ * run promotes into, around the isolation directory it was given. `git branch`
+ * refuses a name that exists, so only the first attempt changes the checkout.
+ * The checkout's path is baked in; the implementer never learns it.
+ */
+export function escapingImplementerScript(checkoutDir: string): string {
+  return `import { spawnSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+
+for await (const chunk of process.stdin) void chunk;
+
+spawnSync('git', ['-C', ${JSON.stringify(checkoutDir)}, 'branch', ${JSON.stringify(ESCAPED_BRANCH)}]);
+mkdirSync('src', { recursive: true });
+writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
+writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
+`;
+}
+
+/** The branch the escaping implementer leaves in the checkout on its first attempt. */
+export const ESCAPED_BRANCH = 'escaped';
+
+/**
  * A throwaway repository whose planner and implementer are local node scripts,
  * so the whole stop → continue → finish path runs without a model call.
  */
-export function createStopContinueFixture(): StopContinueFixture {
+export function createStopContinueFixture(
+  implementerScript: (projectDir: string) => string = () => IMPLEMENTER_SCRIPT,
+): StopContinueFixture {
   const tmpDir = mkdtempSync(join(tmpdir(), 'splitbrief-stop-continue-'));
   const projectDir = join(tmpDir, 'project');
   mkdirSync(projectDir, { recursive: true });
@@ -165,7 +189,7 @@ export function createStopContinueFixture(): StopContinueFixture {
   createTestGitRepo(projectDir, {
     '.gitignore': 'node_modules\n',
     'tools/planner.mjs': PLANNER_SCRIPT,
-    'tools/implementer.mjs': IMPLEMENTER_SCRIPT,
+    'tools/implementer.mjs': implementerScript(projectDir),
   });
 
   mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });

@@ -33,6 +33,7 @@ import { isInternalGitStatusPath } from '../../core/paths.js';
 import { taskFiles, type Task } from '../../core/schemas/task.js';
 import { undeclaredFiles } from '../../core/scope/declared-set.js';
 import { isUsageLimitDiagnostic } from '../runners/usage-limit.js';
+import { createIsolationBoundary, isolationToolUseGuard } from './isolation/boundary.js';
 
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
@@ -174,6 +175,15 @@ export function createCliImplementer(
       const effectBaseline = await captureChangeDetectorBaseline(projectDir);
       const declaredPaths = [...taskFiles(opts.task)];
       const declaredHashes = await hashFiles(projectDir, declaredPaths);
+      const boundary =
+        opts.checkoutDir === undefined
+          ? undefined
+          : createIsolationBoundary({
+              isolationDir: projectDir,
+              checkoutDir: opts.checkoutDir,
+              env,
+              tool: toolName,
+            });
 
       try {
         let executable: CliExecutableIdentity;
@@ -223,6 +233,7 @@ export function createCliImplementer(
             warnMs: config.idleWarnMs,
             killMs: config.idleKillMs,
           },
+          toolUseGuard: boundary === undefined ? undefined : isolationToolUseGuard(boundary),
         });
         if (timeoutSignal?.aborted === true && !signal?.aborted && deadlineMs !== undefined) {
           throw processError.timeout({

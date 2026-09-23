@@ -268,6 +268,8 @@ Admission evidence is a two-step transaction on the same role-singular `RawCliCa
 
 `OMIT` verdicts delete vendor sources; `PASS` retains them. Registration and docs are late steps — never before the transaction completes.
 
+**Cwd leg.** `npx tsx scripts/cli-conformance.ts cwd --tool <id> [--model <id>] --record <json>` checks a registered implementer tool with one small model call. It runs the production argv and environment in a throwaway git project, with a neutral prompt to write `pwd` to a file. The file must land in that project; a write anywhere else is removed, recorded, and makes the verdict `OMIT`. A tool whose headless mode keeps its workspace apart from its cwd gets the seat directory on its own flag, pinned offline in `WORKSPACE_FLAGS` (`testing/integration/orchestrator/cli-adapter-contract.test.ts`). Its raw contract names that directory as a standalone `<PROJECT_DIR>` element, and the raw harness replaces it with the staged project's absolute path.
+
 ### Provider admission checklist
 
 Complete in order before registering in `src/engine/providers/registry.ts`:
@@ -291,3 +293,19 @@ Same two-step transaction on `RawProviderCandidateContract`:
 Fixed admission order for both CLI and API slices:
 
 `primary-source record → deterministic fixtures → credentialed production-path smoke → implementation-quality/privacy evaluation → central registration/docs`
+
+---
+
+## 16. New halt reason
+
+A halt reason is a `RecoveryReason`: the run stops on it and the operator picks the next action. Do these steps in this order. `checkout-changed` is the latest example: follow its change set.
+
+1. Add the reason to `RECOVERY_REASONS` in `src/core/schemas/enums.ts`. The type check then finds every exhaustive `switch` that must name it.
+2. Give the reason its action set in `allowedActionsForReason()` (`src/core/schemas/recovery/policy.ts`). Reuse an existing action set when the operator has the same choices.
+3. Give the reason its headline in `formatRecoveryHeadline()` (`src/core/recovery/headline.ts`). The headline names what stopped and on which brief or tool. It never blames an actor that the evidence cannot identify. The `recovery_prompted` event and the at-rest byline read this headline.
+4. If an implementer call reports the halt, add the same string to `RUNNER_OUTCOME_STATES` and give it a remediation in `defaultRemediation()` (`src/engine/runners/errors.ts`). Then add it to `failureStateFromCode()` (`src/engine/implementers/pipeline/call-result.ts`). The pipeline returns the state as the `outcome` of the `ImplementerResult`.
+5. Write the builder in `src/engine/orchestrator/recovery/builders/`. The message is the one line that the transcript, `session.jsonl` and the headless `Recovery required (<reason>): …` line print, so it carries the evidence. The details are the fact rows of the panel. Register a runner-outcome builder in `RUNNER_DEFECT_BUILDERS` (`builders/task.ts`). The first attempt and every rung of the retry ladder then halt on it, and no retry is spent.
+6. Change `formatRecoveryHeader()` (`src/features/workflow/recovery-prompt.ts`) only when the message carries evidence that the first fact row already shows. The header then shows the headline, and the panel does not say the evidence twice.
+7. Update the docs. Add a row to the recovery table in [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) and add the reason to the list in [WORKFLOW.md](./WORKFLOW.md). For a runner outcome, add a row to the runner `state` table in [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) and add the state to `RUNNER_WORKFLOW_STATES` in `testing/docs/troubleshooting.test.ts`. The test compares the row with `defaultRemediation()`. When the action set has `switch-seat`, add the reason to the `switch-seat` lists in APPROVAL-AND-RECOVERY.md and [FEATURES.md](./FEATURES.md).
+8. Add the tests. Put one case each in `policy.test.ts`, `headline.test.ts`, `builders/task.test.ts` (the builder and `recoveryBuilderForRunnerOutcome`), `task/implementation-failure.test.ts` and `escalation/local-retries.test.ts`. For a runner outcome, add the state to the taxonomy lists in `src/engine/runners/errors.test.ts` and `testing/integration/orchestrator/cli-adapter-contract.test.ts`.
+9. Render the panel. Add a `workflow-recovery-<reason>` scenario to `testing/visual/catalog.ts`, run `npm run tui-shots -- --scenario <id>` and read the PNG (see the look-and-logic loop in `CLAUDE.md`).

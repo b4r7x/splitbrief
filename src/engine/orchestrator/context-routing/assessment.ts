@@ -66,9 +66,15 @@ export function assessProfile(
     writesFiles,
     outputContract,
   });
+  // Routing runs before the isolation directory exists; the project path stands in for its length.
   const estimatedTokens =
     estimateTokens(
-      formatImplementerSystemPreamble(languageContext, writesFiles, outputContract),
+      formatImplementerSystemPreamble(
+        languageContext,
+        writesFiles,
+        opts.context.dir,
+        outputContract,
+      ),
       modelId,
     ) + estimateTokens(prompt, modelId);
   const mode =

@@ -92,14 +92,15 @@ export function formatPickerStatusLabel(status: PickerOptionStatus): string | un
   }
 }
 
+/** The sandbox posture leads: it is the one label that differs between tools, and a byline sheds from the end. */
 export function formatPermissionLabels(permissions: RunnerPermissionPosture): string[] {
   const labels: string[] = [];
+  if (permissions.sandbox === 'cli-managed') labels.push('cli sandbox');
+  else if (permissions.sandbox === 'mode-dependent') labels.push('sandbox varies');
   if (permissions.directWrite) labels.push('direct write');
   if (permissions.network) labels.push('network');
   if (permissions.shell) labels.push('shell');
   if (permissions.automaticApproval) labels.push('auto approval');
-  if (permissions.sandbox === 'cli-managed') labels.push('cli sandbox');
-  else if (permissions.sandbox === 'mode-dependent') labels.push('sandbox varies');
   return labels;
 }
 

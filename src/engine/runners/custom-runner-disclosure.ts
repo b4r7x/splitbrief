@@ -16,9 +16,7 @@ export type CustomRunnerDisclosure = Readonly<{
   cwd: 'Disposable staged project' | 'Project directory';
   stage: 'Filtered disposable stage' | 'None';
   environment: readonly string[];
-  environmentAccess:
-    | 'Declared environment references only'
-    | 'Inherits the full SPLITBRIEF process environment, including credentials';
+  environmentAccess: 'Declared environment references only';
   filesystem: 'Not an OS sandbox; the process can access files available to the current user';
   network: 'Network access is not restricted';
   result:
@@ -67,10 +65,7 @@ export function buildCustomRunnerDisclosure(
     cwd: posture.cwd === 'disposable-stage' ? 'Disposable staged project' : 'Project directory',
     stage: posture.stage === 'filtered-disposable-stage' ? 'Filtered disposable stage' : 'None',
     environment: runner.command.env.map(escapeTrustLiteral),
-    environmentAccess:
-      posture.environmentAccess === 'declared-references-only'
-        ? 'Declared environment references only'
-        : 'Inherits the full SPLITBRIEF process environment, including credentials',
+    environmentAccess: 'Declared environment references only',
     filesystem: 'Not an OS sandbox; the process can access files available to the current user',
     network: 'Network access is not restricted',
     result: disclosureResult(posture.result),

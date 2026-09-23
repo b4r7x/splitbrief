@@ -1035,6 +1035,15 @@ const createCustomModelKiloFixture: FixtureFactory = () =>
   });
 const createImplementerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'implementer-picker' });
+// The build seat on Claude Code: the tools byline names the sandbox that seat runs under.
+const createImplementerPickerClaudeFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'implementer-picker',
+    seed: () => {
+      seedClaudeAliasRows();
+      seedConfig({ implementer: { kind: 'cli', tool: 'claude-code' } })();
+    },
+  });
 // What a quota halt opens when the operator takes its seat swap: the seat's own picker, preselected
 // on the tool the halt offered. `pickSwappedSeat` opens this exact overlay and focus token. A halt
 // only ever offers a tool its readiness pass found ready, so the preselected row is seeded ready —
@@ -1487,6 +1496,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-custom-model-kilo'), createCustomModelKiloFixture],
   [scenarioId('overlay-picker-save-refused'), createSaveRefusedFixture],
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
+  [scenarioId('overlay-implementer-picker-claude'), createImplementerPickerClaudeFixture],
   [scenarioId('overlay-picker-seat-swap'), createSeatSwapPickerFixture],
   [scenarioId('overlay-picker-browse-escape'), createPickerBrowseEscapeFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],

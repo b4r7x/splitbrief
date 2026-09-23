@@ -15,6 +15,7 @@ import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recov
 import { countNoun } from '../../utils/pluralize.js';
 import { glyph } from '../../lib/glyphs.js';
 import { formatResetNote } from '../../core/recovery/reset-clock.js';
+import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
 import {
   readRecoveryContext,
   recoveryContextCauseWords,
@@ -438,6 +439,11 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
   if (context !== undefined) return context;
   const usageLimit = formatUsageLimitHeadline(issue);
   if (usageLimit !== undefined) return usageLimit;
+  // The engine's sentence carries the evidence for the headless sinks; here the evidence is the
+  // first fact row, so the header names the halt and nothing is said twice.
+  if (issue.reason === 'implementer-left-isolation' || issue.reason === 'checkout-changed') {
+    return `Recovery needed · ${formatRecoveryHeadline(issue)}`;
+  }
   // "T003 validation failed" takes "after 3 attempts"; a message that already
   // ends a sentence would read it as part of that sentence ("or abort after 2
   // attempts"), so it keeps its full stop and the attempt count stays in the

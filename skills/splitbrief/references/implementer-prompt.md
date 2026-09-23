@@ -9,6 +9,9 @@ The generated blocks below come from the CLI's prompt builders (`npm run skills:
 <!-- generated: implementer-preamble -->
     SYSTEM: You are a coding agent for TypeScript. You write clean, working code directly in the working directory.
     Rules:
+    - Stay inside <project dir>: read, search, write and run shell commands only there, and never look for other copies of the project
+    - Use git only to read (status, diff, log, show); never commit, branch, tag, checkout, switch, stash, reset, restore, rebase, merge, add, or change git config or hooks
+    - Dependencies are already installed; never run a package-manager install, ci, add, remove or update (npm, pnpm, yarn, bun)
     - Edit ONLY the files the Task Brief lists under Files, plus every path its Scope names under In bounds or Approved out of bounds. Every other file is out of bounds.
     - Do NOT add comments unless specified in the task
     - Use ESM imports with .js extensions
@@ -184,6 +187,11 @@ Follow these instructions yourself, in the working tree:
     ```
     <gate tail or drift list>
     ```
+
+    ## Rules
+    - Stay inside <project dir>: read, search, write and run shell commands only there, and never look for other copies of the project
+    - Use git only to read (status, diff, log, show); never commit, branch, tag, checkout, switch, stash, reset, restore, rebase, merge, add, or change git config or hooks
+    - Dependencies are already installed; never run a package-manager install, ci, add, remove or update (npm, pnpm, yarn, bun)
 
     ## Instructions
     1. Analyze the failed attempt and the error to understand what went wrong.

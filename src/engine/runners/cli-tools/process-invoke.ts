@@ -48,6 +48,18 @@ export const CLI_RAW_OUTPUT_MAX_BYTES = 64 * 1024 * 1024;
 
 type CliAdapter = CliProcessAdapter;
 
+/**
+ * Inspects one tool call as the stream reports it: once when its start and its
+ * end carry the same input, and again when the end brings an input the start
+ * lacked — Claude Code opens a call with none. A returned error stops the call
+ * through the same abort that ends a cancelled one and becomes the call's
+ * failure, so a tool call that crossed the caller's boundary is not left to
+ * run on.
+ */
+export type ToolUseGuard = (
+  toolUse: Readonly<{ name: string; input: Readonly<Record<string, unknown>> }>,
+) => Readonly<{ code: string; message: string }> | null;
+
 export type InvokeProcessCliContext = Readonly<{
   invocation: CliInvocation;
   prompt: string;
@@ -58,6 +70,7 @@ export type InvokeProcessCliContext = Readonly<{
    */
   idle?: Readonly<{ warnMs: number; killMs: number }> | undefined;
   onEvent?: ((event: RunnerCallEvent) => void) | undefined;
+  toolUseGuard?: ToolUseGuard | undefined;
   /**
    * Optional lifecycle hook used by callers that need to observe the exact spawned child.
    * `spawnPipe` owns the failure boundary: a throw is converted to callback-failure and the
@@ -185,9 +198,21 @@ export async function invokeProcessCli(
     context.invocation.timeoutMs,
   );
   timeout.unref?.();
-  const signal = context.invocation.signal
-    ? AbortSignal.any([context.invocation.signal, timeoutController.signal])
-    : timeoutController.signal;
+  const guardController = new AbortController();
+  let guardFailure: ReturnType<ToolUseGuard> = null;
+  const inspectedInputs = new Map<string, string>();
+  const needsInspection = (event: Readonly<{ id: string | null; input: unknown }>): boolean => {
+    if (event.id === null) return true;
+    const input = JSON.stringify(event.input);
+    if (inspectedInputs.get(event.id) === input) return false;
+    inspectedInputs.set(event.id, input);
+    return true;
+  };
+  const signal = AbortSignal.any([
+    ...(context.invocation.signal === undefined ? [] : [context.invocation.signal]),
+    timeoutController.signal,
+    guardController.signal,
+  ]);
   // Halt phrases are the tool's own words for giving up, so only its
   // diagnostic channel and the last line it printed are candidates: the
   // transcript above that line is the model's prose, where a path under
@@ -225,6 +250,10 @@ export async function invokeProcessCli(
         recorder.sessionId({ nativeSessionId: event.nativeSessionId });
         return;
       case 'tool-use':
+        if (guardFailure === null && context.toolUseGuard !== undefined && needsInspection(event)) {
+          guardFailure = context.toolUseGuard(event);
+          if (guardFailure !== null) guardController.abort();
+        }
         if (event.stage === 'started') {
           recorder.toolUseDelta({
             toolUseId: event.id,
@@ -350,6 +379,8 @@ export async function invokeProcessCli(
         return { exitCode, signal: processSignal, stderr };
       },
     });
+    // The process can finish on its own before the guard's abort reaches it.
+    if (guardFailure !== null) return fail({ recorder, status: 'failed', error: guardFailure });
 
     if (closed.signal !== null) {
       return fail({
@@ -436,6 +467,15 @@ export async function invokeProcessCli(
   } catch (cause) {
     if (callbackFailed) {
       return callbackFailure(context.callContext, credentialValues);
+    }
+    if (guardFailure !== null) {
+      return finishFailureSafely({
+        recorder,
+        context: context.callContext,
+        credentialValues,
+        status: 'failed',
+        error: guardFailure,
+      });
     }
     if (signal.aborted) {
       const status = runnerCallInterruptedStatus(signal);

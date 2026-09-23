@@ -7,7 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ANTIGRAVITY_CLI_ADMISSION_VERDICT,
@@ -120,7 +120,7 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
   },
   antigravity: {
     transport: 'argv',
-    versionLine: canonicalVersionLine('antigravity', '1.2.7'),
+    versionLine: canonicalVersionLine('antigravity', '1.2.9'),
     successLines: [
       '{"event":"init","conversation_id":"50328626-c5df-4301-9da7-dee7ce900271","init":{"cwd":"/tmp/probe","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","command_status","define_subagent","delete_knowledge","execute_browser_javascript","find_by_name","finish","generate_image","grep_search","invoke_subagent","list_browser_pages","list_dir","list_permissions","list_resources","manage_inbox","manage_subagents","manage_task","multi_replace_file_content","notebook_edit","notebook_execution","open_browser_url","read_browser_page","read_resource","read_url_content","replace_file_content","run_command","schedule","search_web","sed_file","send_command_input","send_message","view_file","wait","wait_5_seconds","write_to_file"],"permission_mode":"always-proceed"}}',
       '{"event":"result","result":{"conversation_id":"50328626-c5df-4301-9da7-dee7ce900271","status":"SUCCESS","response":"OK\\n","duration_seconds":9.536092,"num_turns":1,"usage":{"input_tokens":59864,"output_tokens":1271,"thinking_tokens":999,"cache_read_tokens":0,"total_tokens":61135}}}',
@@ -226,6 +226,32 @@ const CONFLICTING_ARGS: Record<ImplementerCliToolId, readonly string[]> = {
   'command-code': ['--permission-mode', 'plan'],
   antigravity: ['--output-format', 'text'],
 };
+
+/**
+ * The flag each admitted implementer tool takes its workspace from, checked
+ * against the tool's own `--help` on 2026-09-23. Every tool is spawned in the
+ * seat directory; a tool whose headless mode keeps its workspace apart from its
+ * cwd also gets that directory on this flag. Without `--add-dir`, agy 1.2.9 ran
+ * its shell in `~/.gemini/antigravity-cli/scratch`. `null`: the cwd is the
+ * workspace, and the tool's own directory flags only add roots
+ * (`claude --add-dir`, `cmd --add-dir`, `copilot --add-dir`) or change a cwd the
+ * tool already has (`copilot -C`, `kilo run --dir`); `opencode run` 2.x has none.
+ * `scripts/cli-conformance.ts cwd` measures the live behaviour.
+ */
+const WORKSPACE_FLAGS: Record<ImplementerCliToolId, string | null> = {
+  'claude-code': null,
+  codex: '--cd',
+  opencode: null,
+  copilot: null,
+  'kilo-code': null,
+  cursor: '--workspace',
+  'command-code': null,
+  antigravity: '--add-dir',
+};
+
+const FLAGGED_WORKSPACE_IDS = ADMITTED_IMPLEMENTER_IDS.filter(
+  (toolId) => WORKSPACE_FLAGS[toolId] !== null,
+);
 
 const CREDENTIAL_ENV: Partial<Record<ImplementerCliToolId, Readonly<Record<string, string>>>> = {
   'claude-code': { ANTHROPIC_API_KEY: 'sk-ant-contract-canary' },
@@ -452,6 +478,40 @@ afterEach(() => {
   else process.env['PATH'] = originalPath;
 });
 
+function seatArgs(toolId: ImplementerCliToolId, projectDir: string): readonly string[] {
+  return CLI_IMPLEMENTER_ADAPTERS[toolId].buildArgs({
+    prompt: CLI_PROMPT_SENTINEL,
+    model: undefined,
+    projectDir,
+    configuredArgs: [],
+  });
+}
+
+function flagValues(args: readonly string[], flag: string): readonly (string | undefined)[] {
+  return args.flatMap((arg, index) => (arg === flag ? [args[index + 1]] : []));
+}
+
+describe('implementer workspace argv', () => {
+  it.each(ADMITTED_IMPLEMENTER_IDS)('%s names no directory but the seat directory', (toolId) => {
+    const args = seatArgs(toolId, '/seat');
+    expect(args.filter((arg) => isAbsolute(arg) && arg !== '/seat')).toEqual([]);
+  });
+
+  it.each(FLAGGED_WORKSPACE_IDS)(
+    '%s names the seat directory on its workspace flag, once',
+    (toolId) => {
+      const flag = WORKSPACE_FLAGS[toolId] ?? '';
+      expect(flagValues(seatArgs(toolId, '/seat'), flag)).toEqual(['/seat']);
+    },
+  );
+
+  it('keeps codex on the workspace-write sandbox rooted at its --cd directory', () => {
+    const args = seatArgs('codex', '/seat');
+    expect(flagValues(args, '--sandbox')).toEqual(['workspace-write']);
+    expect(flagValues(args, '--cd')).toEqual(['/seat']);
+  });
+});
+
 describe('Cursor and Antigravity admission', () => {
   it('admits Cursor and Antigravity on both seats', () => {
     expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('PASS');
@@ -509,6 +569,16 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
       expect(readCapturedPrompt(fixture)).toContain(PROMPT_HEAD);
       expect(readCapturedPrompt(fixture)).toContain(PROMPT_TAIL);
     }
+  }, 60_000);
+
+  it('spawns the tool in the seat directory, so a relative write lands there', async () => {
+    const fixture = createFixture(toolId);
+
+    const result = await runImplement(fixture, { mode: 'cwd-relative-write' });
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(fixture.projectDir, 'src/contract.ts'), 'utf8')).toBe(
+      `${realpathSync(fixture.projectDir)}\n`,
+    );
   }, 60_000);
 
   it('reports no-staged-change for no-op, outside-project and provider-state-only runs', async () => {
@@ -861,6 +931,8 @@ describe('T-017 stable CLI outcome taxonomy', () => {
       'platform-limitation',
       'implementer-effect-invalid',
       'implementer-recipe-invalid',
+      'implementer-left-isolation',
+      'checkout-changed',
       'runner-timeout-repeated',
       'missing-model',
     ]);

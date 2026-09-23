@@ -1,17 +1,24 @@
-export type ConformanceOptionName = '--contract-json' | '--module' | '--role' | '--record';
+export type ConformanceOptionName =
+  | '--contract-json'
+  | '--module'
+  | '--role'
+  | '--record'
+  | '--tool'
+  | '--model';
 
-export type ConformanceArguments = Readonly<{
-  mode: 'raw' | 'production';
+export type ConformanceArguments<Mode extends string> = Readonly<{
+  mode: Mode;
   options: Readonly<Partial<Record<ConformanceOptionName, string>>>;
 }>;
 
-export function parseConformanceArguments(
+export function parseConformanceArguments<Mode extends string>(
   args: readonly string[],
+  modes: readonly Mode[],
   accepted: readonly ConformanceOptionName[],
   usageError: (message: string) => never,
-): ConformanceArguments {
+): ConformanceArguments<Mode> {
   const [mode, ...rest] = args;
-  if (mode !== 'raw' && mode !== 'production') usageError('mode must be raw or production');
+  if (!isMode(mode, modes)) usageError(`mode must be ${modes.join(' or ')}`);
 
   const options: Partial<Record<ConformanceOptionName, string>> = {};
   for (let index = 0; index < rest.length; index += 1) {
@@ -35,4 +42,11 @@ function isAccepted(
   accepted: readonly ConformanceOptionName[],
 ): option is ConformanceOptionName {
   return accepted.some((name) => name === option);
+}
+
+function isMode<Mode extends string>(
+  value: string | undefined,
+  modes: readonly Mode[],
+): value is Mode {
+  return modes.some((mode) => mode === value);
 }

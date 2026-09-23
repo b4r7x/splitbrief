@@ -164,6 +164,11 @@ export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
       for (const envVar of cliAuthChannelEnvKeys(resolveCliRunnerAuth(runner))) keys.add(envVar);
       break;
     }
+    case 'shell':
+    case 'agent': {
+      for (const envVar of runner.env ?? []) keys.add(envVar);
+      break;
+    }
   }
   return [...keys];
 }

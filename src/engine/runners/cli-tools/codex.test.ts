@@ -349,7 +349,13 @@ describe('Codex JSONL protocol adapter', () => {
         }),
       ),
     ).toEqual([
-      { type: 'tool-use', stage: 'started', id: 'item_1', name: 'command_execution', input: {} },
+      {
+        type: 'tool-use',
+        stage: 'started',
+        id: 'item_1',
+        name: 'command_execution',
+        input: { command: 'npm test' },
+      },
     ]);
     expect(
       codexProtocolEvents(
@@ -360,6 +366,30 @@ describe('Codex JSONL protocol adapter', () => {
       ),
     ).toEqual([
       { type: 'tool-use', id: 'item_1', name: 'command_execution', input: {}, output: 'ok' },
+    ]);
+  });
+
+  it('carries the paths a file change names as its input', () => {
+    expect(
+      codexProtocolEvents(
+        JSON.stringify({
+          type: 'item.completed',
+          item: {
+            id: 'item_2',
+            type: 'file_change',
+            changes: [{ path: '/tmp/probe/src/app.ts', kind: 'update' }],
+            status: 'completed',
+          },
+        }),
+      ),
+    ).toEqual([
+      {
+        type: 'tool-use',
+        id: 'item_2',
+        name: 'file_change',
+        input: { changes: [{ path: '/tmp/probe/src/app.ts', kind: 'update' }] },
+        output: 'completed',
+      },
     ]);
   });
 

@@ -8,6 +8,7 @@ import {
 import { buildPrompt, fenced, instructionsSection, type PromptSection } from './builder.js';
 import { selectRelevantExamples, formatExamplesSection } from './escalation-examples.js';
 import { buildScopeLines } from '../formatter.js';
+import { workspaceRules } from './system.js';
 
 export type HintVerdict =
   | { kind: 'answer' }
@@ -152,6 +153,7 @@ export function buildEscalationPrompt(opts: {
   lastAttempt: string;
   error: string;
   languageContext?: LanguageContext | undefined;
+  isolationDir: string;
   outputMode: 'files' | 'text';
 }): string {
   const { task, lastAttempt, error, outputMode } = opts;
@@ -173,6 +175,9 @@ export function buildEscalationPrompt(opts: {
   );
   if (examples.length > 0) {
     sections.push({ heading: 'Similar Issues', body: formatExamplesSection(examples) });
+  }
+  if (outputMode === 'files') {
+    sections.push({ heading: 'Rules', body: workspaceRules(opts.isolationDir) });
   }
   sections.push(instructionsSection(escalationInstructions(task, ctx, outputMode)));
 

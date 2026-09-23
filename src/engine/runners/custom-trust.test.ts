@@ -409,22 +409,22 @@ describe('custom runner security posture', () => {
       {
         role: 'planner',
         contract: 'output',
-        definitionDigest: 'sha256:2425fadd08396cc5a28251d55e4cbb52c38a9b5481b2fb17b5eae8b44c42d686',
+        definitionDigest: 'sha256:360e73cc34d204909ae8eefc00aab1c357311ca0765cba28ff9178f56c2e05c4',
       },
       {
         role: 'planner',
         contract: 'direct',
-        definitionDigest: 'sha256:71adff2db76071a930eef97c66bd665bb5a7c340b9222023a8d6ec2e4574f307',
+        definitionDigest: 'sha256:7b4b85a9502d47db2066ccdee731e2411d7b86f43592f1c8147be897a01a8397',
       },
       {
         role: 'implementer',
         contract: 'output',
-        definitionDigest: 'sha256:6f2758a47120876d46458312910f24bb02fea0681392fcc51128528a3b035683',
+        definitionDigest: 'sha256:6e40c3ed47e76c09589df25eb32a2da6a7d2b4c2eb7608b8733af7bb12178008',
       },
       {
         role: 'implementer',
         contract: 'direct',
-        definitionDigest: 'sha256:ff806ef6d53d4d0fb628416905debece9236725c95099f17891c18dff05c204a',
+        definitionDigest: 'sha256:b52f86ebd24d8b9024145e1a8267d382d9c73a10f8a57f5e85d56d6ec2e14a93',
       },
     ] as const;
 

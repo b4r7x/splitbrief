@@ -28,7 +28,7 @@ const CustomRunnerSecurityPostureSchema = z
     source: z.enum(['configured', 'inline']),
     cwd: z.enum(['disposable-stage', 'project-directory']),
     stage: z.enum(['filtered-disposable-stage', 'none']),
-    environmentAccess: z.enum(['declared-references-only', 'inherited-process-environment']),
+    environmentAccess: z.literal('declared-references-only'),
     filesystem: z.literal('host-user-access'),
     network: z.literal('host-network-access'),
     result: z.enum([
@@ -136,6 +136,7 @@ function canonicalPosture(
 ): CustomRunnerSecurityPosture {
   const common = {
     role: input.role,
+    environmentAccess: 'declared-references-only',
     filesystem: 'host-user-access',
     network: 'host-network-access',
   } as const;
@@ -145,7 +146,6 @@ function canonicalPosture(
         source: 'configured',
         cwd: 'disposable-stage',
         stage: 'filtered-disposable-stage',
-        environmentAccess: 'declared-references-only',
         result: CONFIGURED_RESULT_BY_ROLE_AND_CONTRACT[input.role][input.contract],
       }
     : {
@@ -153,7 +153,6 @@ function canonicalPosture(
         source: 'inline',
         cwd: 'project-directory',
         stage: 'none',
-        environmentAccess: 'inherited-process-environment',
         result: INLINE_RESULT_BY_CONTRACT[input.contract],
       };
 }
@@ -168,8 +167,8 @@ export function customRunnerSecurityPosture(
 
 /**
  * Posture of a runner declared inline in `planner`/`implementer`: it runs in
- * the project directory and inherits this process's environment, so the
- * disclosure the owner confirms must say so.
+ * the project directory, unstaged, so the disclosure the owner confirms must
+ * say so.
  */
 export function inlineRunnerSecurityPosture(
   role: CustomRunnerSecurityPosture['role'],

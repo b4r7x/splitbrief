@@ -147,6 +147,16 @@ describe('parseAntigravityLine', () => {
     ).toMatchObject([{ status: 'failed', error: { message: 'Antigravity result CANCELLED' } }]);
   });
 
+  // Captured live from `agy -p` (antigravity 1.2.9) on 2026-09-23 when a background task
+  // finished: the frame carries no text, usage or tool data; the notice stays in agy's transcript.
+  it('skips the system message step that marks a finished background task', () => {
+    expect(
+      parseAntigravityLine(
+        '{"event":"step_update","step_update":{"conversation_id":"562988bb-f747-429c-a37a-80dbf110ed38","step_index":4,"state":"DONE","step_type":"system_message","duration_seconds":0.00017}}',
+      ),
+    ).toEqual([]);
+  });
+
   it('skips user input, warns on unknown records, and fails the call on malformed JSON', () => {
     expect(
       parseAntigravityLine(

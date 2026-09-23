@@ -13,6 +13,8 @@ import { error } from '../../../utils/error.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
 export const CLI_PROMPT_SENTINEL = '<PROMPT>' as const;
+/** Stands for the staged project's absolute path, for a tool that does not resolve a relative one. */
+export const CLI_PROJECT_DIR_SENTINEL = '<PROJECT_DIR>' as const;
 
 const CANDIDATE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const ENV_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
@@ -41,13 +43,14 @@ function promptTransportIssue(
   rawInvocation: readonly string[],
   promptTransport: RawCliPromptTransport,
 ): string | null {
-  const sentinelCount = rawInvocation.filter((arg) => arg === CLI_PROMPT_SENTINEL).length;
-  const hasAnglePlaceholder = rawInvocation.some((arg) => hasPlaceholder(arg));
+  const args = rawInvocation.filter((arg) => arg !== CLI_PROJECT_DIR_SENTINEL);
+  const sentinelCount = args.filter((arg) => arg === CLI_PROMPT_SENTINEL).length;
+  const hasAnglePlaceholder = args.some((arg) => hasPlaceholder(arg));
   if (promptTransport === 'argv') {
     if (sentinelCount !== 1)
       return 'argv transport requires exactly one standalone <PROMPT> element';
     if (hasAnglePlaceholder) {
-      const hasOnlySentinel = rawInvocation.every(
+      const hasOnlySentinel = args.every(
         (arg) => arg === CLI_PROMPT_SENTINEL || !hasPlaceholder(arg),
       );
       if (!hasOnlySentinel) return 'argv transport rejects embedded or alternate placeholders';
@@ -219,6 +222,15 @@ export function replacePromptSentinel(
   if (issue !== null) throw error('candidate-prompt-transport-invalid', issue);
   if (promptTransport !== 'argv') return [...rawInvocation];
   return rawInvocation.map((argument) => (argument === CLI_PROMPT_SENTINEL ? prompt : argument));
+}
+
+export function replaceProjectDirSentinel(
+  rawInvocation: readonly string[],
+  projectDir: string,
+): readonly string[] {
+  return rawInvocation.map((argument) =>
+    argument === CLI_PROJECT_DIR_SENTINEL ? projectDir : argument,
+  );
 }
 
 export function candidateEvidenceWithCliCapture(

@@ -61,6 +61,7 @@ export type ContractShimTransport = 'stdin' | 'argv';
 
 export type ContractShimMode =
   | 'success-direct'
+  | 'cwd-relative-write'
   | 'no-op'
   | 'outside-write'
   | 'provider-state-write'
@@ -159,6 +160,12 @@ export function writeContractShim(opts: ContractShimOptions): string {
     'case "$MODE" in',
     '  success-direct)',
     '    write_direct',
+    successLines,
+    '    exit 0',
+    '    ;;',
+    '  cwd-relative-write)',
+    '    mkdir -p "$(dirname "$TARGET_REL")"',
+    '    pwd > "$TARGET_REL"',
     successLines,
     '    exit 0',
     '    ;;',

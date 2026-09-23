@@ -65,6 +65,8 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   recovery: 'Change BUILD tool',
   recoveryPlan: 'Change PLAN tool',
   retryExhausted: 'exhausted recovery retries',
+  leftIsolation: 'Recovery needed · T901 left the isolation directory',
+  checkoutChanged: 'Recovery needed · Your checkout changed under T901',
   apiContext: 'Nothing was sent to PLAN',
 });
 
@@ -147,6 +149,8 @@ const WORKFLOW_STOPPED_ID = scenarioId('workflow-stopped');
 const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
 const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
 const WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID = scenarioId('workflow-recovery-retry-exhausted');
+const WORKFLOW_RECOVERY_LEFT_ISOLATION_ID = scenarioId('workflow-recovery-left-isolation');
+const WORKFLOW_RECOVERY_CHECKOUT_CHANGED_ID = scenarioId('workflow-recovery-checkout-changed');
 const WORKFLOW_API_CONTEXT_ID = scenarioId('workflow-api-context-insufficient');
 const WORKFLOW_RECOVERY_PLAN_SEAT_ID = scenarioId('workflow-recovery-plan-seat');
 const WORKFLOW_RECOVERY_PLAN_SWAPPED_ID = scenarioId('workflow-recovery-plan-swapped');
@@ -1011,6 +1015,74 @@ const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
 };
 
 /**
+ * The halt `buildLeftIsolationRecoveryIssue` writes when agy searched the whole home directory
+ * from its scratch directory: the evidence rides in the message, and another ready tool is on
+ * offer for the seat.
+ */
+const leftIsolationRecoveryIssue: RecoveryIssue = {
+  id: 'rec_visual_left_isolation',
+  reason: 'implementer-left-isolation',
+  phase: 'implementing',
+  status: 'awaiting-user',
+  seat: 'build',
+  taskId: WORKFLOW_FIXTURE_TASK_ID,
+  taskTitle: WORKFLOW_FIXTURE_TEXT.implementationTask,
+  files: [WORKFLOW_FIXTURE_REVIEW_FILE],
+  affectedTaskIds: [WORKFLOW_FIXTURE_TASK_ID],
+  message: `${WORKFLOW_FIXTURE_TASK_ID} left the isolation directory — Google Antigravity CLI searched ~ with run_command: find ~ -name "projections.ts" 2>/dev/null`,
+  details: [
+    'Google Antigravity CLI searched ~ with run_command: find ~ -name "projections.ts" 2>/dev/null',
+    'Nothing from this attempt was promoted.',
+  ],
+  selectedImplementerProfile: 'default',
+  switchSeat: { seat: 'build', candidates: [{ tool: 'codex' }] },
+  facts: { tool: 'Google Antigravity CLI' },
+  availableActions: [
+    'retry-same-worker',
+    'switch-seat',
+    'skip-current-task',
+    'pause-run',
+    'end-run',
+  ],
+  recommendedAction: 'retry-same-worker',
+  createdAt: new Date(FIXED_TS).toISOString(),
+};
+
+const leftIsolationRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_LEFT_ISOLATION_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  resumeState: haltedResumeState(leftIsolationRecoveryIssue),
+};
+
+/**
+ * The halt `buildCheckoutChangedRecoveryIssue` writes when a branch moved and a hook changed in the
+ * checkout while agy ran: the words name the checkout, never the tool, because the audit cannot
+ * tell who made the change.
+ */
+const checkoutChangedRecoveryIssue: RecoveryIssue = {
+  ...leftIsolationRecoveryIssue,
+  id: 'rec_visual_checkout_changed',
+  reason: 'checkout-changed',
+  message: `Your checkout changed under ${WORKFLOW_FIXTURE_TASK_ID} — branch main · hook pre-commit`,
+  details: [
+    'Changed while Google Antigravity CLI ran: branch main · hook pre-commit',
+    'Nothing from this attempt was promoted, and nothing in your checkout was reverted.',
+  ],
+};
+
+const checkoutChangedRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_CHECKOUT_CHANGED_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  resumeState: haltedResumeState(checkoutChangedRecoveryIssue),
+};
+
+/**
  * A plan packet the seat was never given: the halt the engine persists carries the cause, the
  * sections and the figures, and the panel shows only the first two. The run is still in planning,
  * so there is no brief to replay and the retry re-issues the seat's own step.
@@ -1250,6 +1322,8 @@ const projections = [
   failureProjection,
   usageLimitRecoveryProjection,
   retryExhaustedRecoveryProjection,
+  leftIsolationRecoveryProjection,
+  checkoutChangedRecoveryProjection,
   apiContextRecoveryProjection,
   planSeatRecoveryProjection,
   planSeatSwappedProjection,

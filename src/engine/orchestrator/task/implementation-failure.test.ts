@@ -65,6 +65,87 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
     expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
   });
 
+  it('an implementer that left its isolation directory halts on the evidence', async () => {
+    const task = makeTask({ id: 'T001' });
+    const state = implementingState([task]);
+    const implementer = makeImplementer({ retry: vi.fn() });
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWorkflowContext({ implementer, bus });
+    const evidence = 'searched ~ with run_command: find ~ -name x';
+
+    const next = await handleFailedImplementation({
+      wctx,
+      task,
+      state,
+      implState: implState({
+        success: false,
+        output: '',
+        outcome: 'implementer-left-isolation',
+        error: evidence,
+      }),
+      taskStartTime: Date.now(),
+      taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(implementer.retry).not.toHaveBeenCalled();
+    expect(next.pendingRecovery).toMatchObject({
+      reason: 'implementer-left-isolation',
+      taskId: 'T001',
+      message: `T001 left the isolation directory — Ollama ${evidence}`,
+      recommendedAction: 'retry-same-worker',
+    });
+    expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: `T001 left the isolation directory — Ollama ${evidence}`,
+      }),
+    );
+  });
+
+  it('a checkout whose git state changed during the call halts without blaming the tool', async () => {
+    const task = makeTask({ id: 'T001' });
+    const state = implementingState([task]);
+    const implementer = makeImplementer({ retry: vi.fn() });
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWorkflowContext({ implementer, bus });
+
+    const next = await handleFailedImplementation({
+      wctx,
+      task,
+      state,
+      implState: implState({
+        success: false,
+        output: '',
+        outcome: 'checkout-changed',
+        error: 'branch escaped',
+      }),
+      taskStartTime: Date.now(),
+      taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(implementer.retry).not.toHaveBeenCalled();
+    expect(next.pendingRecovery).toMatchObject({
+      reason: 'checkout-changed',
+      taskId: 'T001',
+      message: 'Your checkout changed under T001 — branch escaped',
+      recommendedAction: 'retry-same-worker',
+    });
+    expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: 'Your checkout changed under T001 — branch escaped',
+      }),
+    );
+  });
+
   it('a model the tool does not list halts with the same reason', async () => {
     const task = makeTask({ id: 'T001' });
     const state = implementingState([task]);

@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   CLI_CONFORMANCE_CANDIDATES,
@@ -6,6 +9,12 @@ import {
   claudeProtocolEvents,
 } from './claude-code.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+
+const IMPLEMENTER_SANDBOX = {
+  sandbox: { enabled: true, failIfUnavailable: false, allowUnsandboxedCommands: false },
+  permissions: { blockReadsOutsideWorkingDirectories: true },
+};
+const IMPLEMENTER_SETTINGS = ['--settings', JSON.stringify(IMPLEMENTER_SANDBOX)] as const;
 
 describe('Claude Code role adapters', () => {
   it('exports planner then implementer conformance candidates with stable hashes', () => {
@@ -98,6 +107,7 @@ describe('Claude Code role adapters', () => {
       '--include-partial-messages',
       '--permission-mode',
       'acceptEdits',
+      ...IMPLEMENTER_SETTINGS,
       '--label',
       'fixture',
     ]);
@@ -138,6 +148,7 @@ describe('Claude Code role adapters', () => {
       'high',
       '--permission-mode',
       'acceptEdits',
+      ...IMPLEMENTER_SETTINGS,
     ]);
 
     const unset = claudeCodeImplementerAdapter.buildArgs({
@@ -157,6 +168,7 @@ describe('Claude Code role adapters', () => {
       'claude-sonnet-4-6',
       '--permission-mode',
       'acceptEdits',
+      ...IMPLEMENTER_SETTINGS,
     ]);
   });
 
@@ -262,6 +274,118 @@ describe('Claude Code role adapters', () => {
         baseArgs: implementerBase,
       }),
     ).toEqual({ valid: false, conflicts: ['--allowedTools'] });
+  });
+
+  it('runs the implementer in the strict native sandbox and records it in the raw contract', () => {
+    const args = claudeCodeImplementerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+    });
+    expect(args.slice(-2)).toEqual([...IMPLEMENTER_SETTINGS]);
+    expect(JSON.parse(args.at(-1) ?? '')).toEqual(IMPLEMENTER_SANDBOX);
+    expect(CLI_CONFORMANCE_CANDIDATES[1]?.rawContract.rawInvocation.slice(-4)).toEqual([
+      '--permission-mode',
+      'acceptEdits',
+      ...IMPLEMENTER_SETTINGS,
+    ]);
+  });
+
+  it('omits the read block below 2.1.257, keeps it at 2.1.257', () => {
+    const settingsFor = (installedVersion: string | undefined) =>
+      JSON.parse(
+        claudeCodeImplementerAdapter
+          .buildArgs({
+            prompt: '<brief>',
+            model: undefined,
+            projectDir: '/project',
+            configuredArgs: [],
+            installedVersion,
+          })
+          .at(-1) ?? '',
+      );
+
+    expect(settingsFor('2.1.256')).toEqual({ sandbox: IMPLEMENTER_SANDBOX.sandbox });
+    expect(settingsFor('2.1.257')).toEqual(IMPLEMENTER_SANDBOX);
+    expect(settingsFor(undefined)).toEqual(IMPLEMENTER_SANDBOX);
+  });
+
+  it('opens reads of a linked node_modules target to the sandbox, and nothing else', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'claude-sandbox-')));
+    try {
+      const checkoutModules = join(root, 'checkout', 'node_modules');
+      const worktree = join(root, 'worktree');
+      const ownModules = join(root, 'own', 'node_modules');
+      mkdirSync(checkoutModules, { recursive: true });
+      mkdirSync(worktree);
+      mkdirSync(ownModules, { recursive: true });
+      symlinkSync(checkoutModules, join(worktree, 'node_modules'), 'dir');
+      const settingsFor = (projectDir: string) =>
+        JSON.parse(
+          claudeCodeImplementerAdapter
+            .buildArgs({ prompt: '<brief>', model: undefined, projectDir, configuredArgs: [] })
+            .at(-1) ?? '',
+        );
+
+      expect(settingsFor(worktree)).toEqual({
+        ...IMPLEMENTER_SANDBOX,
+        sandbox: { ...IMPLEMENTER_SANDBOX.sandbox, filesystem: { allowRead: [checkoutModules] } },
+      });
+      expect(settingsFor(join(root, 'own'))).toEqual(IMPLEMENTER_SANDBOX);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('gives the planner and reviewer vectors no sandbox settings', () => {
+    for (const mode of ['plan', 'escalate'] as const) {
+      const args = claudeCodePlannerAdapter.buildArgs({
+        prompt: '<brief>',
+        model: 'sonnet',
+        projectDir: '/project',
+        configuredArgs: [],
+        mode,
+        sessionId: null,
+        effort: 'high',
+      });
+      expect(args).not.toContain('--settings');
+    }
+    expect(CLI_CONFORMANCE_CANDIDATES[0]?.rawContract.rawInvocation).not.toContain('--settings');
+  });
+
+  it('rejects configuration that would replace or widen the implementer sandbox', () => {
+    const base = claudeCodeImplementerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+    });
+    const hostile = [
+      ['--settings', '{"sandbox":{"enabled":false}}'],
+      ['--settings={"sandbox":{"allowUnsandboxedCommands":true}}'],
+      ['--dangerously-skip-permissions'],
+      ['--allow-dangerously-skip-permissions'],
+      ['--add-dir', '/srv/other'],
+      ['--permission-mode', 'bypassPermissions'],
+    ] as const;
+    for (const tail of hostile) {
+      expect(
+        claudeCodeImplementerAdapter.validateArgs({
+          invocationArgs: [...base, ...tail],
+          baseArgs: base,
+        }),
+      ).toEqual({
+        valid: false,
+        conflicts: expect.arrayContaining([tail[0].split('=')[0]]),
+      });
+    }
+    expect(
+      claudeCodeImplementerAdapter.validateArgs({
+        invocationArgs: base.slice(0, -2),
+        baseArgs: base,
+      }),
+    ).toEqual({ valid: false, conflicts: ['argument-order'] });
   });
 });
 

@@ -35,6 +35,10 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
       return `${taskName(issue)} wrote outside its declared files`;
     case 'implementer-recipe-invalid':
       return `Tool recipe rejected by ${toolName(issue)}`;
+    case 'implementer-left-isolation':
+      return `${taskName(issue)} left the isolation directory`;
+    case 'checkout-changed':
+      return `Your checkout changed under ${taskName(issue)}`;
     case 'runner-timeout-repeated':
       return `Two timeouts in a row on ${taskName(issue)}`;
     case 'planner-call-failed':

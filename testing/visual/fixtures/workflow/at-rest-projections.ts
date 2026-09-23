@@ -650,6 +650,54 @@ const AT_REST_HALTED = record({
   }),
 });
 
+/** The log carries the rows the halt wrote: the error that states the evidence and the recovery card. */
+export const LEFT_ISOLATION_LOG = 'testing/fixtures/session-log/left-isolation.jsonl';
+
+const AT_REST_LEFT_ISOLATION = record({
+  sessionId: 'visual-at-rest-left-isolation',
+  status: {
+    kind: 'open',
+    stop: {
+      kind: 'halted',
+      issue: {
+        id: 'visual-left-isolation',
+        reason: 'implementer-left-isolation',
+        phase: 'implementing',
+        status: 'awaiting-user',
+        seat: 'build',
+        taskId: BRIEFS.wire.id,
+        files: [BRIEFS.wire.file],
+        affectedTaskIds: [BRIEFS.wire.id],
+        message: `${BRIEFS.wire.id} left the isolation directory — Google Antigravity CLI searched ~ with run_command: find ~ -name "form.ts" 2>/dev/null`,
+        details: [
+          'Google Antigravity CLI searched ~ with run_command: find ~ -name "form.ts" 2>/dev/null',
+          'Nothing from this attempt was promoted.',
+        ],
+        facts: { tool: 'Google Antigravity CLI' },
+        availableActions: [
+          'retry-same-worker',
+          'switch-seat',
+          'skip-current-task',
+          'pause-run',
+          'end-run',
+        ],
+        recommendedAction: 'retry-same-worker',
+        createdAt: STARTED_AT_ISO,
+      },
+    },
+    resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 0 },
+  },
+  state: savedState({
+    phase: 'implementing',
+    currentTaskIndex: 1,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'in_progress' },
+      { id: BRIEFS.routeTests.id, status: 'pending' },
+    ],
+  }),
+});
+
 const AT_REST_WAITING_GATE = record({
   sessionId: 'visual-at-rest-waiting-gate',
   status: {
@@ -745,6 +793,10 @@ function atRestProjection(input: {
 export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({ id: 'workflow-at-rest-paused', route: { record: AT_REST_PAUSED } }),
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
+  atRestProjection({
+    id: 'workflow-at-rest-left-isolation',
+    route: { record: AT_REST_LEFT_ISOLATION, log: LEFT_ISOLATION_LOG },
+  }),
   atRestProjection({
     id: 'workflow-at-rest-waiting-gate',
     route: { record: AT_REST_WAITING_GATE },

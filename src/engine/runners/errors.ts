@@ -18,6 +18,8 @@ export const RUNNER_OUTCOME_STATES = [
   'platform-limitation',
   'implementer-effect-invalid',
   'implementer-recipe-invalid',
+  'implementer-left-isolation',
+  'checkout-changed',
   'runner-timeout-repeated',
   'missing-model',
   'success',
@@ -65,6 +67,10 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
       return "The implementer wrote outside the brief's declared files. Retry with a revert instruction or widen Scope.";
     case 'implementer-recipe-invalid':
       return 'Correct the tool recipe (flags or permissions) and retry; this attempt consumed no retry.';
+    case 'implementer-left-isolation':
+      return 'The implementer reached outside its isolation directory and was stopped. Check your checkout, then retry, switch the seat or skip the brief.';
+    case 'checkout-changed':
+      return "Your checkout's git state changed while the implementer ran, and SPLITBRIEF reverted nothing. Check the named changes, then retry, switch the seat or skip the brief.";
     case 'runner-timeout-repeated':
       return 'Two consecutive attempts timed out; switch the seat, route a bigger worker, or skip.';
     case 'missing-model':

@@ -8,6 +8,7 @@ import { createCommandExistsAvailability } from '../availability.js';
 import { createChangeDetector } from '../change-detection.js';
 import type { AdmittedCustomRunnerInvocation } from '../runners/custom-launchability.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
+import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
 import {
   invokeCommandBasedRunner,
   invokeCustomCommandBasedRunner,
@@ -59,7 +60,9 @@ export function createCommandBasedImplementer(
         notFoundMessage,
         prompt,
         projectDir,
-        env: invokeOpts.sandboxEnv,
+        env:
+          invokeOpts.sandboxEnv ??
+          (await createRunnerSandboxEnv(projectDir, config.implementer, 'implementer')),
         onOutput,
         onCallEvent: invokeOpts.onCallEvent,
         callContext: invokeOpts.callContext,

@@ -82,9 +82,12 @@ function parseResponseStep(step: Record<string, unknown>): readonly CliProtocolE
   return events;
 }
 
+// `user_input` and `system_message` are what agy feeds the model (the prompt; its own notices,
+// such as a finished background task or an auto-approved plan) and carry no text, usage or tools.
 function parseStep(step: Record<string, unknown>): readonly CliProtocolEvent[] {
   switch (step.step_type) {
     case 'user_input':
+    case 'system_message':
       return [];
     case 'tool':
       return parseToolStep(step);

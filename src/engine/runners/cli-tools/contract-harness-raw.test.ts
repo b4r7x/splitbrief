@@ -1,5 +1,5 @@
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
@@ -84,6 +84,77 @@ describe('CLI raw conformance lane', () => {
     }
   });
 
+  it('spawns every raw-lane process with the sanitized sandbox env: the contract credential, never the host secrets', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-env-'));
+    const planted = {
+      FIXTURE_API_KEY: 'fake-fixture-key',
+      SPLITBRIEF_FAKE_API_KEY: 'fake-api-key',
+      CLAUDE_CODE_SESSION_ID: 'fake-session',
+      SSH_AUTH_SOCK: '/tmp/fake-agent.sock',
+    };
+    const original = Object.fromEntries(Object.keys(planted).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, planted);
+    try {
+      const envs: string[][] = [];
+      const outcome = await runRawCliConformance(
+        rawOptions(
+          { ...baseContract, auth: { kind: 'env-or-native', env: ['FIXTURE_API_KEY'] } },
+          async (options) => {
+            envs.push(Object.keys(options.env));
+            return processResult();
+          },
+          join(directory, 'raw.json'),
+        ),
+      );
+
+      expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
+      expect(envs.length).toBeGreaterThan(0);
+      for (const names of envs) {
+        expect(names).toContain('FIXTURE_API_KEY');
+        expect(names).not.toContain('SPLITBRIEF_FAKE_API_KEY');
+        expect(names).not.toContain('SSH_AUTH_SOCK');
+        expect(names.filter((name) => name.startsWith('CLAUDE_CODE_'))).toEqual([]);
+      }
+    } finally {
+      for (const [key, value] of Object.entries(original)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('hands the staged project path to a tool whose raw contract places <PROJECT_DIR>', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
+    try {
+      const calls: Array<{ args: readonly string[]; cwd: string }> = [];
+      const outcome = await runRawCliConformance(
+        rawOptions(
+          {
+            ...baseContract,
+            rawInvocation: ['--add-dir', '<PROJECT_DIR>', '--prompt', '<PROMPT>'],
+          },
+          async (options) => {
+            calls.push({ args: options.args, cwd: options.cwd });
+            return processResult();
+          },
+          join(directory, 'raw.json'),
+        ),
+      );
+      expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
+      const invocation = calls.at(-1);
+      expect(invocation?.args).toEqual([
+        '--add-dir',
+        invocation?.cwd,
+        '--prompt',
+        CONFORMANCE_PROMPT,
+      ]);
+      expect(isAbsolute(invocation?.args[1] ?? '')).toBe(true);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('rejects every invalid prompt placeholder before a process runner is called', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
     try {
@@ -97,6 +168,7 @@ describe('CLI raw conformance lane', () => {
         ['--prompt', '<PROMPT>', '<PROMPT>'],
         ['--prompt', 'x<PROMPT>'],
         ['--prompt', '<OTHER>'],
+        ['--add-dir=<PROJECT_DIR>', '--prompt', '<PROMPT>'],
       ];
       for (const rawInvocation of invalid) {
         const outcome = await runRawCliConformance(

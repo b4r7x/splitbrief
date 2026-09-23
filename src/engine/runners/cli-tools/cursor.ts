@@ -58,6 +58,8 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
   });
 }
 
+// `--workspace` defaults to the cwd; naming the seat directory keeps the workspace
+// `--trust` trusts and the one the agent works in the same, whatever that default becomes.
 function plannerBaseArgs(input: CursorPlannerBuildInput): string[] {
   return [
     '--print',
@@ -65,6 +67,8 @@ function plannerBaseArgs(input: CursorPlannerBuildInput): string[] {
     'stream-json',
     ...(input.mode === 'plan' ? ['--mode', 'plan'] : ['--force']),
     '--trust',
+    '--workspace',
+    input.projectDir,
     ...(input.model === undefined ? [] : ['--model', input.model]),
     input.prompt,
   ];
@@ -77,6 +81,8 @@ function implementerBaseArgs(input: CursorImplementerBuildInput): string[] {
     'stream-json',
     '--force',
     '--trust',
+    '--workspace',
+    input.projectDir,
     ...(input.model === undefined ? [] : ['--model', input.model]),
     input.prompt,
   ];

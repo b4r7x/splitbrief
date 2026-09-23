@@ -114,6 +114,11 @@ export interface InvokeOpts extends UndeclaredWritesPolicy {
   signal?: AbortSignal | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
+  /**
+   * The checkout the run promotes into, when this call works in an isolation
+   * directory of its own. The call's tool uses may not reach it.
+   */
+  checkoutDir?: string | undefined;
 }
 
 export interface Implementer extends RunnerRuntime {

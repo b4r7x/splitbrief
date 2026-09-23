@@ -27,6 +27,22 @@ describe('allowedActionsForReason', () => {
     ]);
   });
 
+  it('implementer-left-isolation can retry, move the seat or skip, never route bigger', () => {
+    expect(allowedActionsForReason('implementer-left-isolation')).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'skip-current-task',
+      'pause-run',
+      'end-run',
+    ]);
+  });
+
+  it('checkout-changed shares the left-isolation action set', () => {
+    expect(allowedActionsForReason('checkout-changed')).toEqual(
+      allowedActionsForReason('implementer-left-isolation'),
+    );
+  });
+
   it.each(['runner-timeout-repeated', 'runner-unauthenticated'] as const)(
     '%s shares the blocked-seat action set with runner-usage-limit',
     (reason) => {

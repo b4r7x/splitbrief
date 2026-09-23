@@ -25,6 +25,7 @@ function usageError(message: string): never {
 function parseArguments(args: readonly string[]): ParsedArguments {
   const { mode, options } = parseConformanceArguments(
     args,
+    ['raw', 'production'],
     ['--contract-json', '--module', '--record'],
     usageError,
   );

@@ -17,7 +17,9 @@ import {
 } from './picker-format.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import type { PickerOption } from './model-catalog/options.js';
-import { deriveModelCatalogCapability } from './model-catalog/posture.js';
+import { cliPermissions, deriveModelCatalogCapability } from './model-catalog/posture.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import { overlayWidth } from '../../core/navigation/overlay-rect.js';
 import { mergeOptionFamilies } from './model-catalog/option-merge.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import type { ModelOption } from './model-catalog/recency.js';
@@ -585,6 +587,29 @@ describe('formatToolsByline', () => {
     expect(line).not.toContain('2.0.0');
     expect(line).toContain('Loading models…');
   });
+
+  it('keeps the sandbox posture, the one capability that differs by tool, on a 120-column byline', () => {
+    const budget = overlayWidth({ cols: 120, density: 'wide' });
+    for (const tool of ['claude-code', 'codex'] as const) {
+      const descriptor = CLI_TOOL_CATALOG[tool];
+      const listing = pickerListingSource(tool);
+      const line = formatToolsByline({
+        toolName: descriptor.displayName,
+        version: '2.0.0',
+        modelCount: 9,
+        rowNoun: listing.rowNoun,
+        rowNounPlural: listing.rowNounPlural,
+        source: listing.source,
+        unverifiedForPlan: listing.unverifiedForPlan,
+        diagnostic: undefined,
+        lane: 'ready',
+        capabilities: formatPermissionLabels(cliPermissions(descriptor, 'implementer')),
+        billing: 'unknown',
+        budget,
+      });
+      expect(line, tool).toContain('cli sandbox');
+    }
+  });
 });
 
 describe('formatPermissionLabels', () => {
@@ -606,6 +631,18 @@ describe('formatPermissionLabels', () => {
       sandbox: 'mode-dependent',
     });
     expect(modeDependent[modeDependent.length - 1]).toBe('sandbox varies');
+  });
+
+  it('leads with the sandbox posture, which a narrow byline sheds last', () => {
+    expect(
+      formatPermissionLabels({
+        directWrite: true,
+        network: true,
+        shell: true,
+        automaticApproval: true,
+        sandbox: 'cli-managed',
+      })[0],
+    ).toBe('cli sandbox');
   });
 });
 

@@ -92,7 +92,7 @@ Contract: output
 Working directory: Project directory
 Staging: None
 Environment names: "REVIEW_TOKEN"
-Environment access: Inherits the full SPLITBRIEF process environment, including credentials
+Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
 Result: Parsed stdout only; anything it writes in the project is neither staged nor reviewed`,
@@ -107,7 +107,7 @@ Contract: direct
 Working directory: Project directory
 Staging: None
 Environment names: "REVIEW_TOKEN"
-Environment access: Inherits the full SPLITBRIEF process environment, including credentials
+Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
 Result: Reviewed workspace diff; it writes directly into the project directory`,

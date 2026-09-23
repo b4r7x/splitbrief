@@ -117,6 +117,8 @@ describe('Cursor role adapters', () => {
       '--mode',
       'plan',
       '--trust',
+      '--workspace',
+      '/project',
       PROMPT,
     ]);
     expect(args).toContain('--trust');
@@ -134,6 +136,8 @@ describe('Cursor role adapters', () => {
       'stream-json',
       '--force',
       '--trust',
+      '--workspace',
+      '/project',
       PROMPT,
     ]);
   });

@@ -17,7 +17,12 @@ const troubleshootingDoc = readFileSync(troubleshootingPath, 'utf8');
 const READINESS_TABLE_MARKER = '### Readiness `stateId` index';
 const RUNNER_TABLE_MARKER = '### Runner `state` outcomes (workflow commands)';
 
-const RUNNER_WORKFLOW_STATES = ['output-budget-breach', 'no-staged-change'] as const;
+const RUNNER_WORKFLOW_STATES = [
+  'output-budget-breach',
+  'no-staged-change',
+  'implementer-left-isolation',
+  'checkout-changed',
+] as const;
 
 function sectionBetween(startMarker: string, endMarker: string): string {
   const start = troubleshootingDoc.indexOf(startMarker);

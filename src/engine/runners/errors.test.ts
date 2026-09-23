@@ -60,6 +60,8 @@ describe('runner outcome taxonomy', () => {
       'platform-limitation',
       'implementer-effect-invalid',
       'implementer-recipe-invalid',
+      'implementer-left-isolation',
+      'checkout-changed',
       'runner-timeout-repeated',
       'missing-model',
       'success',

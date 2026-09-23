@@ -191,6 +191,9 @@ function writeOpencodeProofShim(opts: {
       ? ''
       : `mkdir -p "$(dirname ${shellQuote(opts.outsidePath)})"\nprintf 'outside\\n' > ${shellQuote(opts.outsidePath)}`;
   const modeBody: Record<ShimMode, string> = {
+    'cwd-relative-write': ['mkdir -p src', `pwd > '${TARGET_SRC}'`, successLines, 'exit 0'].join(
+      '\n',
+    ),
     'valid-change': [
       'mkdir -p src',
       `printf 'export const marker = "${MARKER}";\\n' > '${TARGET_SRC}'`,

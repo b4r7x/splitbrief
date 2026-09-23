@@ -114,6 +114,7 @@ describe('escalation prompts', () => {
       lastAttempt: 'old code',
       error: 'failed',
       languageContext: buildLanguageContext('python'),
+      isolationDir: '/work',
       outputMode: 'text',
     });
     expect(prompt).toContain('```python');
@@ -123,7 +124,7 @@ describe('escalation prompts', () => {
 
   it('matches the full-escalation output contract to the planner write mode', () => {
     const task = makeTask();
-    const common = { task, lastAttempt: 'old code', error: 'failed' };
+    const common = { task, lastAttempt: 'old code', error: 'failed', isolationDir: '/work' };
 
     const filePrompt = buildEscalationPrompt({ ...common, outputMode: 'files' });
     expect(filePrompt).toContain(`Edit \`${task.file}\` directly in the current working directory`);
@@ -133,5 +134,24 @@ describe('escalation prompts', () => {
     const textPrompt = buildEscalationPrompt({ ...common, outputMode: 'text' });
     expect(textPrompt).toContain(`Respond with the complete file content for \`${task.file}\``);
     expect(textPrompt).not.toContain('Make the changes on disk');
+  });
+
+  it('holds a files-mode escalation to the workspace rules of its own directory', () => {
+    const common = {
+      task: makeTask(),
+      lastAttempt: 'old code',
+      error: 'failed',
+      isolationDir: '/work/trees/run-1',
+    };
+
+    const filePrompt = buildEscalationPrompt({ ...common, outputMode: 'files' });
+    expect(filePrompt).toContain(
+      '- Stay inside /work/trees/run-1: read, search, write and run shell commands only there',
+    );
+    expect(filePrompt).toContain('- Use git only to read (status, diff, log, show);');
+    expect(filePrompt).toContain('- Dependencies are already installed;');
+
+    const textPrompt = buildEscalationPrompt({ ...common, outputMode: 'text' });
+    expect(textPrompt).not.toContain('Stay inside');
   });
 });

@@ -90,10 +90,15 @@ function indent(text: string): string {
     .join('\n');
 }
 
+const SHELL_WORD = /^[\w@%+=:,./$-]+$/;
+
 function substituteArg(arg: string): string {
   if (arg === CLI_PROMPT_SENTINEL) return '"$(cat $P)"';
   if (arg === 'high') return '$E';
   if (arg.endsWith('=high')) return `${arg.slice(0, -'high'.length)}$E`;
+  // The recipe runs inside `sh -c '…'`, so an argument that shell would unquote or split
+  // (claude's `--settings` JSON) is single-quoted there with the `'\''` escape.
+  if (!SHELL_WORD.test(arg)) return `'\\''${arg}'\\''`;
   return arg;
 }
 
@@ -155,7 +160,7 @@ function toolRecipe(toolId: string): string | null {
 }
 
 function preamble(): string {
-  let text = buildImplementerSystemPreamble(ctx, 'direct');
+  let text = buildImplementerSystemPreamble(ctx, 'direct', '<project dir>');
   for (const [from, to] of PREAMBLE_SUBSTITUTIONS) {
     if (!text.includes(from)) {
       throw new Error(
@@ -522,6 +527,7 @@ const BLOCKS: Record<string, () => string> = {
         lastAttempt: "<the last attempt's final text>",
         error: ERROR_PLACEHOLDER,
         languageContext: ctx,
+        isolationDir: '<project dir>',
         outputMode: 'files',
       }),
     ),

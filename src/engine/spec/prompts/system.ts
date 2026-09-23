@@ -2,9 +2,16 @@ import type { ImplementerWriteMode } from '../../../core/schemas/implementer-con
 import type { BuildOutputContract } from '../../implementers/file-bundle.js';
 import { buildLanguageContext, type LanguageContext } from './language-context.js';
 
+export function workspaceRules(dir: string): string {
+  return `- Stay inside ${dir}: read, search, write and run shell commands only there, and never look for other copies of the project
+- Use git only to read (status, diff, log, show); never commit, branch, tag, checkout, switch, stash, reset, restore, rebase, merge, add, or change git config or hooks
+- Dependencies are already installed; never run a package-manager install, ci, add, remove or update (npm, pnpm, yarn, bun)`;
+}
+
 export function buildImplementerSystemPreamble(
   languageContext: LanguageContext,
   writesFiles: ImplementerWriteMode,
+  isolationDir: string,
   outputContract?: BuildOutputContract | undefined,
 ): string {
   if (outputContract === 'file-bundle-v1') return buildFileBundlePreamble(languageContext);
@@ -12,6 +19,7 @@ export function buildImplementerSystemPreamble(
 
   return `SYSTEM: You are a coding agent for ${languageContext.language}. You write clean, working code directly in the isolation directory. Your changes are promoted into the user's project afterwards.
 Rules:
+${workspaceRules(isolationDir)}
 - Edit ONLY the files the Task Brief lists under Files, plus every path its Scope names under In bounds or Approved out of bounds. Every other file is out of bounds.
 - Do NOT add comments unless specified in the task
 - Use ${languageContext.importConvention}

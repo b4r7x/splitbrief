@@ -78,7 +78,7 @@ function credentialEnv(id: CliToolId): string {
   ];
   if (env.length === 0) {
     const providerDependent = channels.some((channel) => channel.id === 'provider-dependent');
-    return providerDependent ? 'inherited from provider config' : '—';
+    return providerDependent ? 'every `*_API_KEY` of the parent' : '—';
   }
   return env.map((name) => `\`${name}\``).join(', ');
 }
