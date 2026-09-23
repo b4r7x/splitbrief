@@ -13,19 +13,18 @@ Context discipline is the point. A babysitter that also edits `src/` burns its w
 
 | Role | Context | Does | Never |
 |---|---|---|---|
-| **Orchestrator** (this session) | near-empty, kept that way | spawns agents, reads their reports, decides what is a tool defect, sends "continue" | reads `session.jsonl`; edits `src/`; drives tmux |
-| **Babysitter** (one long-lived subagent) | the whole run | launches in tmux, watches, answers planner questions, gates, `[c] continue`, recovery panels; stops **resumably** on a tool defect and reports up with evidence | edits `src/`; ends the run on its own |
-| **Diagnosis** (fresh, one per defect) | one defect | reads code and trails; names the cause at `file:line`, the minimal fix shape, the tests that must pass, the blast radius | edits anything |
-| **Implementation** (fresh) | the diagnosis | the minimal change, in an isolated git worktree while a run is live; the colocated test **plus the affected suites** | re-diagnoses; touches the run or a second defect |
-| **Validation** (fresh) | the diagnosis and the diff | checks the fix against the diagnosis, real behaviour and every gate; ends **MERGEABLE** or **NOT MERGEABLE** | reuses an earlier agent's context |
+| **Orchestrator** (this session) | near-empty, kept that way | spawns agents, reads their reports, tells the babysitter when to build and continue | reads `session.jsonl`; edits `src/`; drives tmux |
+| **Babysitter** (one long-lived subagent) | the whole run | launches in tmux, watches, answers planner questions, gates, `[c] continue`, recovery panels; on a stop trigger stops **resumably**, quits the TUI and reports up with evidence | edits `src/`; ends the run on its own |
+| **Fix agent** (fresh Opus) | the babysitter's report | diagnoses and fixes **directly in the main checkout**, no worktree; proves the fix: a test that fails before and passes after, a live repro when one is possible, the affected suites, `npm run typecheck` | touches the run |
+| **Validation** (fresh, only when called for) | the fix agent's report and the diff | added only when a fix touches trust classification, config persistence, the run state machine or the event schema; checks the fix against real behaviour and every gate | reuses an earlier agent's context |
 
-The babysitter is resumed by message with its context intact — never respawned. Every subagent works in its own scratchpad subfolder: the root is shared, and one agent overwrote another's script on 2026-09-23.
+The babysitter is resumed by message with its context intact for as long as it answers. Messages reach a subagent only between its tool calls. An agent that does not answer, or whose context has grown large, is not sent the message again: the orchestrator spawns a fresh agent with a self-contained brief. A fix agent carries one to three items. Every subagent works in its own scratchpad subfolder: the root is shared, and one agent overwrote another's script on 2026-09-23.
 
 ## The babysitter drives the TUI as a real user would
 
 This is the spine of the protocol. The babysitter navigates the running tool with the keyboard in the tmux pane — arrow keys, letter keys, `⏎`, `tab`, `esc` — for everything the tool asks: planner questions, approval gates, the `[c] continue` inline prompt, out-of-bounds write approvals, the recovery panel, the seat picker, the stop sheet. A supervised run exists to walk the exact path a human walks, so the defects a human would hit are the defects the run surfaces.
 
-The CLI escape hatches are therefore **not** a shortcut to prefer. `continue --action retry|skip|switch-seat:<tool>[:<model>]|end-run`, a hand-edited `.splitbrief/config.yaml`, and any touching of `state.json` all bypass the surfaces under test; reaching for them in place of the UI hides exactly the defects the run exists to find. They are for one thing: resuming after the run was deliberately stopped to fix a tool defect.
+The CLI escape hatches are therefore **not** a shortcut to prefer. `continue --action retry|skip|switch-seat:<tool>[:<model>]|end-run`, a hand-edited `.splitbrief/config.yaml`, and any touching of `state.json` all bypass the surfaces under test; reaching for them in place of the UI hides exactly the defects the run exists to find. They are for one thing: resuming after the run was deliberately stopped for a fix.
 
 Worked example — a usage limit opens a recovery panel with `switch-seat` recommended. The babysitter answers *that panel* and picks the fallback tool and model *in the seat picker it opens* (`pickSwappedSeat`, `src/features/workflow/recovery-driver.ts`). That is what a user does, and it is also what writes the config of record, so the switch survives the next resume.
 
@@ -78,9 +77,9 @@ Never kill a tmux session that holds a parked run you still need; the snippet in
 
 ## Watch loop
 
-**The babysitter never ends its turn while a run is live.** It sits in a foreground `wait.sh 240` loop and acts on what each call prints. Bound each wait at 240 s: a message from the orchestrator reaches a subagent only between its tool calls, so a longer wait delays an instruction by the whole wait. Never watch with a background command that re-invokes the babysitter later — the pane goes unwatched in between. A turn ends in three cases only, and every message the babysitter sends names its case:
+**The babysitter never ends its turn while a run is live.** It sits in a foreground `wait.sh 240` loop and acts on what each call prints. Bound each wait at 240 s: a longer wait delays an orchestrator message by the whole wait. Never watch with a background command that re-invokes the babysitter later — the pane goes unwatched in between. A turn ends in three cases only, and every message the babysitter sends names its case:
 
-1. it stopped the run resumably on a tool defect and waits for "continue";
+1. it stopped the run on a stop trigger, quit the TUI, and waits for the word to build and continue;
 2. the run reached its review and it waits for the owner's commit and the go;
 3. the run is parked or complete.
 
@@ -100,7 +99,7 @@ Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_r
 
 A silent child is usually working. `runner_call_stalled` at 5 min means no frames, not a dead tool; the watchdog kills at 30. Read the tool's own trail before judging — antigravity writes step records under `~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/logs/chunks/transcript_full/`, opencode logs to `~/.local/share/opencode/log/opencode.log`.
 
-**Live progress is in the worktree**, `~/.local/state/splitbrief/trees/<repo-key>/<session>`, not the project checkout. Nothing lands in the project until a brief's changes are promoted after green validation, so `git status` in the project genuinely does not move between promotions.
+**Live progress is in the run's isolation worktree**, `~/.local/state/splitbrief/trees/<repo-key>/<session>`, not the project checkout. Nothing lands in the project until a brief's changes are promoted after green validation, so `git status` in the project genuinely does not move between promotions.
 
 ## Answering prompts
 
@@ -117,26 +116,32 @@ Every row below is keyboard work in the pane — that is the point, not a conven
 
 **Never send a letter and Enter in one `send-keys` chunk.** The letter is swallowed and the highlighted row is taken instead. Send the letter, pause, then Enter.
 
-## Fault attribution — the rule that makes this dogfooding
+## Stop triggers — the rule that makes this dogfooding
 
-At every failure, ask *who* failed.
+At every failure, ask *who* failed. The babysitter stops the run on two kinds of trigger:
 
-- **The run owns model mistakes and brief mistakes.** The ladder retries; the panel offers retry / skip / seat switch. Let it.
-- **The operator owns tool mistakes**: a crash, a limit that ended a healthy call, a parser that dropped a document, a gate that lied, a halt with no way through. Those are fixed **now, in this session**, because the next brief hits the same code. Planning is no exception: a tool defect found during planning means stop, fix, resume, because the planning artifacts would carry it.
+- **A deterministic tool error**: a crash, an internal invariant, a limit that ended a healthy call, a gate that lied, a halt with no way through, a screen that contradicts `state.json`.
+- **An AI output SPLITBRIEF does not handle**: the model returns something the tool mis-parses, silently accepts in a broken form, or crashes on — a verdict line the parser does not read, an artifact with the document glued behind narration, a brief the compiler accepts with a planned red gate, an implementer reply the tool misclassifies.
+
+**Not a trigger**: a model mistake the tool handles correctly. The ladder retries it; the panel offers retry, skip or a seat switch. The run owns those, and the babysitter answers the panel as a user.
+
+A trigger is fixed **now, in this session**, because the next brief hits the same code. Planning is no exception: a trigger during planning means stop, fix, resume, because the planning artifacts would carry it.
 
 ```
-1. babysitter      stops resumably (esc esc), reports the defect with evidence — turn-end case 1
-2. diagnosis       names the cause and the fix shape; edits nothing
-3. implementation  the minimal change from the diagnosis, in an isolated git worktree
-4. validation      a fresh agent; only MERGEABLE moves on
-5. orchestrator    the diff merges at the commit window, the owner commits, the run resumes (Resume semantics)
+1. babysitter    stops resumably (esc esc), quits the TUI, reports with evidence — turn-end case 1
+2. orchestrator  spawns a fresh Opus fix agent for that one defect
+3. fix agent     diagnoses, fixes in the main checkout, proves the fix (Roles and contexts)
+4. validation    only when the Roles table calls for one
+5. babysitter    on the orchestrator's word: npm run build, then a fresh continue <run-id> (Resume semantics)
 ```
 
-The worktree keeps the run's source baseline untouched while a run is live; `.claude/worktrees/` is gitignored, so it never reads as drift. The validation runs its gates on a real worktree outside `.claude/`: Biome and knip ignore `.claude/` paths, so a gate run in an agent worktree checks nothing.
+Repeat until the plan's runs are done.
+
+**Scope.** Fix only what the run actually hits. No code review, no hunting for adjacent issues. Anything a fix agent reports as out of scope goes to the ledger at the bottom of the session handoff (`.nuke/<date>-session-handoff.md`), not into work.
 
 A catalog or model claim is verified by set equality, never by a count — "exit 0 and a plausible count" hid a parser that collapsed 118 rows to 105. The four checks: the tool's own listing against production discovery (missing, extra, duplicates); every metadata field per row; the rows the live picker shows; the argv the child receives.
 
-Record each one in the plan's "Live defects" with `file:line` evidence. That list is how the next context knows what is already known.
+Record each trigger in the plan's "Live defects" with `file:line` evidence. That list is how the next context knows what is already known.
 
 Per-brief validation runs only the colocated tests, so it cannot see a break outside the declared files. After any deletion of an exported name, grep `src/`, `testing/` **and** `scripts/` for consumers and run those suites yourself.
 
@@ -145,7 +150,7 @@ Per-brief validation runs only the colocated tests, so it cannot see a break out
 A provider limit is the run's business, not a tool defect. **SPLITBRIEF itself must notice it**, halt with `runner-usage-limit` and offer the answers in the recovery panel. There is no automatic seat switch; the babysitter answers the panel.
 
 - **Implementer limit.** Take `switch-seat` as in the worked example above, onto the declared fallback — a *named* model, never `model: auto`. On 2026-09-21 `auto` ran Grok 4.7 at $3.03 instead of the intended model.
-- **Claude limit.** The planner and reviewer seats and the orchestrator's own agents draw on one Claude account, so the limit stops both sides. Answer **Try again** once; if it fails on the same limit, leave the panel open and report the reset time. A usage-limited subagent is resumed by message once the limit clears.
+- **Claude limit.** The planner and reviewer seats and the orchestrator's own agents draw on one Claude account, so the limit stops both sides. Answer **Try again** once; if it fails on the same limit, leave the panel open and report the reset time. Once the limit clears, a subagent the limit stopped is an agent that does not answer (Roles and contexts).
 
 If the halt or the offer does not come, that is a tool defect, not an operator chore. Fix the whole detect → offer path (`HALT_SIGNATURES.usage` in `src/core/pipeline-spec/halts.ts`, the `switch-seat` offer in `src/engine/orchestrator/recovery/actions.ts`), resume, then **verify the switch still holds after the resume**. Do not paper over it by hand-editing the config.
 
@@ -166,7 +171,7 @@ If the halt or the offer does not come, that is a tool defect, not an operator c
 
 A seat taken through the panel **is** the config of record: the picker saves through `transactConfigDocument`, so the switch survives the next continue with no YAML mirroring.
 
-**New code needs a fresh process.** The at-rest `⏎` keeps the old build in memory. After any `src/` change — a merged fix, a commit, code the run promoted for its own benefit — resume like this:
+**New code needs a fresh process.** The at-rest `⏎` keeps the old build in memory. After any `src/` change — a fix, a commit, code the run promoted for its own benefit — resume like this:
 
 ```bash
 # pane: esc esc (stop resumably), then ctrl+c ctrl+c; wait until it prints SPLITBRIEF EXIT CODE
@@ -174,14 +179,14 @@ npm run build
 tmux respawn-pane -k -t $T "$SCR/launch.sh continue $ID"
 ```
 
-**The commit window.** The drift baseline is captured when the task loop first starts, not at run start (`captureChangedFilesBaseline` while `state.changedFilesBaseline` is unset, `src/engine/orchestrator/task/loop.ts:110-113`). So validated diffs merge, and the owner commits, while the run holds before implementation: at the briefs gate, or parked in planning. After the loop starts, a merge or a commit turns into drift for every brief (run A: 219 false findings), so a fix found then stays in its worktree until the owner decides.
+**A fix after the task loop starts reads as drift.** The drift baseline is captured when the task loop first starts, not at run start (`captureChangedFilesBaseline` while `state.changedFilesBaseline` is unset, `src/engine/orchestrator/task/loop.ts:110-113`). A fix landed in `src/` after that point appears as drift in later briefs: known defect 33, which Plan B run 2 fixes. So the orchestrator records each fix's file list in the run log, and at the final review the babysitter names those files so the reviewer does not read them as scope drift.
 
 In-TUI recovery answers on a `start`-launched run (retry, skip, switch seat, rewind) threw `Internal invariant: … a new-workflow run requires a freshly allocated session` until the 2026-09-23 fix. Seeing it again is a regression: stop and report. The at-rest `⏎` and CLI `continue` always build a fresh `resume` and are the safe way on.
 
 ## Standing prohibitions
 
 - Never `git add`, `git stage` or `git commit`. Every change stays unstaged for the owner.
-- Never hand-edit a file a `done` brief owns. Never hand-edit `state.json` or `.splitbrief/config.yaml` mid-run — answer the surface that owns the change.
+- Never hand-edit a file a `done` brief owns to patch its result. A fix for a tool defect may change such a file when the defect lives there; the run then reports an external change, answered as the prompts table says, and the fix goes in the run log. Never hand-edit `state.json` or `.splitbrief/config.yaml` mid-run — answer the surface that owns the change.
 - Never `model: auto`. Name the model.
 - A `paused_external_changes` of kind `unrelated` or `future-task-stale-input` is answered `c`.
 - If a brief fails the same way twice because of a *fixed setting* of the tool — a prompt line, an adapter flag, a gate rule, a default — stop retrying. Let the run finish or end it, then plan the setting change as its own work.
@@ -190,7 +195,9 @@ In-TUI recovery answers on a `start`-launched run (retry, skip, switch seat, rew
 
 One module group per brief (a source file plus its colocated test), never two large modules. A brief must leave typecheck, lint and tests green on its own, so name every call site a deletion touches. An argv-transport implementer (antigravity) refuses prompts over 120 KB. Planner effort `high` minimum — on `low` it once compiled a brief that planned a red typecheck.
 
-## Closing
+## Between runs
+
+After a run's review, run the gates. `npm run release-check` must be green before the report.
 
 ```bash
 npm run release-check
@@ -199,4 +206,4 @@ find src -name index.ts          # must be empty
 git diff --stat
 ```
 
-Report to the owner with the new "Live defects" entries. The owner commits.
+Then report to the owner with the new "Live defects" entries. The owner commits, and the next run starts on a clean tree (Preflight).
