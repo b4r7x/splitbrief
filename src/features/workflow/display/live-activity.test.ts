@@ -8,6 +8,7 @@ const base = {
   startedAt: 1000,
   phaseFirstSeenTs: {},
   waitedMs: {},
+  resumedAt: null,
   reviewerLabel: null,
   plannerCall: null,
 };
@@ -88,6 +89,27 @@ describe('deriveLiveStatus', () => {
     });
     expect(status?.tone).toBe('implementer');
     expect(status?.stageStart).toBe(5000);
+  });
+
+  it('counts the stage from the later of its opening and the run resuming', () => {
+    const resumedMidStage = deriveLiveStatus({
+      ...base,
+      phase: 'planning',
+      phaseFirstSeenTs: { planning: 5_000 },
+      resumedAt: 90_000,
+    });
+    expect(resumedMidStage?.stageStart).toBe(90_000);
+
+    const openedAfterResume = deriveLiveStatus({
+      ...base,
+      phase: 'implementing',
+      phaseFirstSeenTs: { planning: 5_000, implementing: 120_000 },
+      resumedAt: 90_000,
+    });
+    expect(openedAfterResume?.stageStart).toBe(120_000);
+
+    const firstStage = deriveLiveStatus({ ...base, phase: 'researching', resumedAt: 90_000 });
+    expect(firstStage?.stageStart).toBe(90_000);
   });
 
   it('names the reviewer seat during final review and keeps the seatless wording without one', () => {

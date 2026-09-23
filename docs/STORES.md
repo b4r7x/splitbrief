@@ -203,7 +203,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |
-| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, startedAt, endedAt, durationMs, reason, plannerCall, waitingSince, waitedMs }` — `plannerCall` is the call the phase is on when the engine names one, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock | internal writes via `actions.addEvent` / local cancel intent |
+| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, startedAt, endedAt, durationMs, reason, plannerCall, waitingSince, waitedMs, resumedAt }` — `plannerCall` is the call the phase is on when the engine names one, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it | internal writes via `actions.addEvent` / local cancel intent |
 | `operationsStore` | `workflow/operations/state.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
 | `abortStore` | `workflow/abort.ts` | `{ armed: ArmedKind }` | `arm(kind)` (2s auto-clear), `clear()` |
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |

@@ -30,6 +30,11 @@ import { makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { markWaitEnded, markWaitStarted } from '../../../stores/workflow/actions/wait.js';
+import { loadEvents } from '../../../stores/workflow/actions/load.js';
+import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
+import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
+import { markWorkflowResumed } from '../../../stores/workflow/actions/resume.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 
 function publishAdvisory(advisory: AdvisorResult): void {
   if (advisory.kind === 'none') return;
@@ -285,6 +290,51 @@ describe('InputFooter', () => {
 
     // Five minutes on the clock, two of them waiting for an answer: the stage worked for three.
     expect(frame).toMatch(/Researching… 3:0\d/);
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('counts a resumed run from its resume, not from a stage an earlier process opened', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    const now = Date.now();
+    const hours = (n: number) => now - n * 3_600_000;
+    // The plan stage opened eight hours ago, then the run sat parked until this process resumed it.
+    loadEvents([
+      { type: 'workflow_started', ts: hours(9), phase: 'researching', feature: 'demo' },
+      makePlannerStatus({ phase: 'planning', call: 'plan', ts: hours(8) }),
+    ]);
+    hydrateFromState(
+      makeWorkflowState({ phase: 'planning', startedAt: new Date(hours(9)).toISOString() }),
+    );
+    addEvent({ type: 'workflow_resumed', ts: now - 35 * 60_000, phase: 'planning' });
+    addEvent(makePlannerStatus({ phase: 'planning', call: 'tasks', ts: now - 30 * 60_000 }));
+
+    const ui = renderFeature(<InputFooter />);
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(/Compiling briefs… 35:0\d/);
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('starts the stage clock again when a run parked in this process resumes', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    const now = Date.now();
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'implementing',
+      startedAt: now - 3_600_000,
+      phaseFirstSeenTs: { implementing: now - 3_000_000 },
+    });
+    markWaitStarted(now - 2_900_000);
+    markWaitEnded(now - 2_800_000);
+    markWorkflowPaused();
+    markWorkflowResumed(now - 45_000);
+
+    const ui = renderFeature(<InputFooter />);
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(/Implementing… 0:4\d/);
 
     ui.unmount();
     terminalSizeStore.reset();

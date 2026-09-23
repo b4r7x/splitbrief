@@ -91,7 +91,10 @@ function leadsWithGap(block: MarkdownBlock, previous: MarkdownLayoutTail | undef
   // A fence closes on its own rail. Without air after it, the next block's first row butts
   // against that rail and two adjacent fences read as one long block with a gap in the middle.
   if (previous.kind === 'code') return true;
-  return block.kind === 'paragraph' || block.kind === 'thematicBreak';
+  // Task Brief metadata opens the next brief; flush against the brief before, it reads as its tail.
+  return (
+    block.kind === 'paragraph' || block.kind === 'thematicBreak' || block.kind === 'frontmatter'
+  );
 }
 
 function layoutBlock(input: {
@@ -106,7 +109,10 @@ function layoutBlock(input: {
   switch (block.kind) {
     case 'frontmatter':
       if (block.role === 'document') return [];
-      return [createRow(key, block.kind, literalLines(block.lines, 'metadata', [], width))];
+      return withLeadingGap(
+        [createRow(key, block.kind, metadataLines(block.lines, width))],
+        leadingGap,
+      );
     case 'heading': {
       const wrapped = wrapSegments({
         segments: block.inlines.map((token) => headingTokenToSegment(token, block.depth)),
@@ -172,22 +178,22 @@ function withLeadingGap(
   ];
 }
 
-function literalLines(
-  sourceLines: readonly string[],
-  segmentKind: MarkdownLayoutSegment['kind'],
-  prefix: readonly MarkdownLayoutSegment[],
-  width: number,
-): MarkdownLayoutLine[] {
+// A metadata line wraps between words and hangs under its value the way a list item hangs under
+// its text: a long title never splits mid-word back at the key column, and a YAML key or `- `
+// marker never parts from its value. The hang is plain whitespace, so a hard-wrapped path fragment
+// still opens its line's content and mints no link of its own.
+function metadataLines(sourceLines: readonly string[], width: number): MarkdownLayoutLine[] {
   const lines = sourceLines.length > 0 ? sourceLines : [''];
-  return lines.flatMap((line) =>
-    wrapSegments({
-      segments: [{ kind: segmentKind, text: line }],
-      firstPrefix: prefix,
-      continuationPrefix: prefix,
+  return lines.flatMap((line) => {
+    const hang = /^\s*(?:-\s+|[A-Za-z0-9_-]+:\s+)?/.exec(line)?.[0] ?? '';
+    return wrapSegments({
+      segments: [{ kind: 'metadata', text: line.slice(hang.length) }],
+      firstPrefix: [{ kind: 'metadata', text: hang }],
+      continuationPrefix: [{ kind: 'text', text: ' '.repeat(hang.length) }],
       width,
-      mode: 'hard',
-    }),
-  );
+      mode: 'word',
+    });
+  });
 }
 
 function layoutListItem(

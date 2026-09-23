@@ -76,6 +76,71 @@ describe('layoutMarkdown', () => {
     expect(segments.some((segment) => segment.kind === 'codeGutter')).toBe(false);
   });
 
+  it('wraps a long metadata value between words and hangs it under the value', () => {
+    const source = [
+      '---',
+      'id: T001',
+      'title: Record tool-start frames as diagnostic deltas',
+      'action: modify',
+      'file: src/a.ts',
+      'files:',
+      '  - src/a.ts',
+      '  - src/a.test.ts',
+      'depends_on: []',
+      '---',
+    ].join('\n');
+
+    expect(layoutLines(source, 40)).toEqual([
+      'id: T001',
+      'title: Record tool-start frames as',
+      '       diagnostic deltas',
+      'action: modify',
+      'file: src/a.ts',
+      'files:',
+      '  - src/a.ts',
+      '  - src/a.test.ts',
+      'depends_on: []',
+    ]);
+  });
+
+  it('sets the next brief apart from the list that ends the brief before it', () => {
+    const source = [
+      '---',
+      'generated_by: splitbrief v0.1.0',
+      '---',
+      '---',
+      'id: T001',
+      'title: First',
+      'action: modify',
+      'file: src/a.ts',
+      'depends_on: []',
+      '---',
+      '- `npm run lint` exits 0.',
+      '---',
+      'id: T002',
+      'title: Second',
+      'action: modify',
+      'file: src/a.ts',
+      'depends_on: []',
+      '---',
+    ].join('\n');
+
+    expect(layoutLines(source, 40)).toEqual([
+      'id: T001',
+      'title: First',
+      'action: modify',
+      'file: src/a.ts',
+      'depends_on: []',
+      '• npm run lint exits 0.',
+      '',
+      'id: T002',
+      'title: Second',
+      'action: modify',
+      'file: src/a.ts',
+      'depends_on: []',
+    ]);
+  });
+
   it('wraps wide and combining grapheme clusters by terminal cells', () => {
     const developerEmoji = '👩‍💻';
 

@@ -69,6 +69,7 @@ export function deriveLiveStatus(input: {
   startedAt: number | null;
   phaseFirstSeenTs: Readonly<Partial<Record<Phase, number>>>;
   waitedMs: Readonly<Partial<Record<Phase, number>>>;
+  resumedAt: number | null;
   reviewerLabel: string | null;
   plannerCall: PlannerCall | null;
 }): LiveStatus | null {
@@ -79,8 +80,10 @@ export function deriveLiveStatus(input: {
   const activeStage = getActiveRailStage(input.phase);
   if (activeIndex < 0 || activeStage === null) return null;
   const completionTimes = railStageCompletionTimesFromPhaseFirstSeen(input.phaseFirstSeenTs);
-  const stageStart =
+  const stageOpened =
     activeIndex > 0 ? (completionTimes[activeIndex - 1] ?? 0) : (input.startedAt ?? 0);
+  // A resumed run counts from its resume: the time it sat parked was no stage's work.
+  const stageStart = Math.max(stageOpened, input.resumedAt ?? 0);
   const waitedMs = PHASES.reduce(
     (total, phase) =>
       getRailActiveIndex(phase) === activeIndex ? total + (input.waitedMs[phase] ?? 0) : total,

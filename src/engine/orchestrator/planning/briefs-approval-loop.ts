@@ -3,7 +3,12 @@ import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EventBus } from '../../events/types.js';
-import { createBusTextHandler, publishError, publishWarning } from '../events.js';
+import {
+  createBusTextHandler,
+  publishError,
+  publishPlannerStatus,
+  publishWarning,
+} from '../events.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { buildBriefReviewNoProgressRecoveryIssue } from '../recovery/builders/planner.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -125,7 +130,10 @@ export async function runBriefsApprovalLoop(
         : { detectedContextLength: opts.detectedContextLength }),
     });
 
+  // A subscriber learns the phase from the bus, not from disk, so the gate announces the phase it
+  // parks at before it asks — the same way the spec and plan gates open.
   state = transitionAndSave(ref, state, { type: 'BRIEF_ADMISSION_OPENED' });
+  publishPlannerStatus(bus, state, 'running');
   const tracker = createBriefReviewTracker();
 
   // Twenty turns on the same failure is not review any more. The run halts for a

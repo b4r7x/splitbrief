@@ -8,6 +8,6 @@ export function markInterruptResumed(): void {
   _lifecycleInternal.set((s) => clearLifecycleInterrupted(s));
 }
 
-export function markWorkflowResumed(): void {
-  _lifecycleInternal.set((s) => clearLifecyclePaused(s));
+export function markWorkflowResumed(ts = Date.now()): void {
+  _lifecycleInternal.set((s) => clearLifecyclePaused(s, ts));
 }

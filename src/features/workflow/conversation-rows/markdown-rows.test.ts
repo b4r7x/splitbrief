@@ -689,6 +689,30 @@ describe('markdownConversationRows', () => {
     }
   });
 
+  it('does not mint file hrefs for wrap-continuation fragments inside task brief metadata', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown-wrap-continuation-metadata',
+        text: [
+          '---',
+          'id: T001',
+          'title: Wrap a long anchor',
+          'action: modify',
+          'file: src/features/workflow/components/input-footer.tsx',
+          'depends_on: []',
+          '---',
+        ].join('\n'),
+        width: 30,
+      });
+
+      expect(rows.map(rowText)).toContain('      mponents/input-footer.ts');
+      expect(JSON.stringify(rows)).not.toContain('/mponents/');
+    } finally {
+      configStore.__testReset();
+    }
+  });
+
   it('resolves a markdown link to a project file as a file URL and shortens its label', () => {
     configStore.__testReset({ projectDir: '/repo' });
     try {

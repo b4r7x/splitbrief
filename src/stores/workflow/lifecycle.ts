@@ -32,6 +32,8 @@ interface LifecycleBase {
   waitingSince?: number | null;
   /** Time already spent waiting on the user, by the phase it was spent in. */
   waitedMs?: Readonly<Partial<Record<Phase, number>>>;
+  /** When a stopped run last started moving again, so the stage clock leaves its park out. */
+  resumedAt?: number | null;
 }
 
 interface IdleLifecycleState extends LifecycleBase {
@@ -138,6 +140,7 @@ const initial: LifecycleState = {
   plannerCall: null,
   waitingSince: null,
   waitedMs: {},
+  resumedAt: null,
   startedAt: null,
   endedAt: null,
   durationMs: null,
@@ -222,6 +225,7 @@ function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleSt
       queueDepth: state.queueDepth,
       phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, event.ts),
       startedAt: state.startedAt ?? event.ts,
+      resumedAt: event.ts,
     });
   }
 
@@ -255,7 +259,7 @@ function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleSt
   // markInterruptResumed at the submit that triggers the resume.
   if (event.type === 'runner_call_started') {
     return applyRunningPhase(
-      clearLifecyclePaused(clearLifecycleInterrupted(state)),
+      clearLifecyclePaused(clearLifecycleInterrupted(state), event.ts),
       phase,
       event.ts,
     );
@@ -372,11 +376,19 @@ export function clearLifecycleInterrupted(state: LifecycleState): LifecycleState
 
 // A parked run has no event of its own to un-park it: the next call spawning is the proof that the
 // steer landed and the work carried on.
-export function clearLifecyclePaused(state: LifecycleState): LifecycleState {
+export function clearLifecyclePaused(state: LifecycleState, ts: number): LifecycleState {
   if (state.status !== 'paused') return state;
   // A run that is moving again has no end and no duration: the frozen clock a run at rest carried
-  // belongs to the pause it just left.
-  return { ...state, status: 'running', endedAt: null, durationMs: null };
+  // belongs to the pause it just left. Its stage clock starts again here, so the waits it already
+  // subtracted go with it.
+  return {
+    ...state,
+    status: 'running',
+    endedAt: null,
+    durationMs: null,
+    resumedAt: ts,
+    waitedMs: {},
+  };
 }
 
 function markLifecycleComplete(
@@ -509,6 +521,7 @@ function runningLifecycleState(input: {
   startedAt: number | null;
   lastRunnerEventTs?: number | null;
   attemptStartedTs?: number | null;
+  resumedAt?: number | null;
 }): RunningLifecycleState {
   return {
     phase: runningPhase(input.phase),
@@ -523,6 +536,7 @@ function runningLifecycleState(input: {
     plannerCall: null,
     waitingSince: null,
     waitedMs: {},
+    resumedAt: input.resumedAt ?? null,
     startedAt: input.startedAt,
     endedAt: null,
     durationMs: null,

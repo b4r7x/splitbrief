@@ -108,6 +108,7 @@ export function InputFooter({
           startedAt: lifecycle.startedAt,
           phaseFirstSeenTs: lifecycle.phaseFirstSeenTs,
           waitedMs: lifecycle.waitedMs ?? {},
+          resumedAt: lifecycle.resumedAt ?? null,
           reviewerLabel: reviewerSeat === '' ? null : reviewerSeat,
           plannerCall: lifecycle.plannerCall ?? null,
         });

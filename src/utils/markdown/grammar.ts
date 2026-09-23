@@ -21,9 +21,10 @@ export const REQUIRED_TASK_BRIEF_METADATA_KEYS = [
   'depends_on',
 ] as const;
 
-export const TASK_BRIEF_METADATA_KEYS: ReadonlySet<string> = new Set(
-  REQUIRED_TASK_BRIEF_METADATA_KEYS,
-);
+export const TASK_BRIEF_METADATA_KEYS: ReadonlySet<string> = new Set([
+  ...REQUIRED_TASK_BRIEF_METADATA_KEYS,
+  'files',
+]);
 
 export function parseMarkdownFenceStart(line: string): MarkdownFenceStart | undefined {
   const start = parseFenceStart(line);

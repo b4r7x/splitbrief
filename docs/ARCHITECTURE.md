@@ -832,7 +832,7 @@ Implementation: `src/engine/orchestrator/planning/steps.ts` runs every mode from
 
 - `runBriefQualityGate(...)` (`planning/brief-quality-gate.ts`) — runs `BriefQualityScorer` (`src/engine/spec/brief-quality.ts`) and writes `brief-quality.json`. Error codes: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, `missing_implementation_steps`. Warning code: `missing_type_definitions`. Publishes `brief_quality_passed` or `brief_quality_failed`.
 - `runBriefReadinessGateAndReport({...})` (`planning/brief-readiness-gate.ts`) — runs `evaluateBriefReadiness` over routing-preview metadata, writes `brief-readiness.json`, and publishes `brief_readiness_passed` or `brief_readiness_blocked`.
-- `runBriefsApprovalLoop({...})` (`planning/briefs-approval-loop.ts`) — invoked from `planning/run.ts` after the quality pass and from `planning/resume-briefs.ts` on a resumed gate. Enters `reviewing-briefs` phase; awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
+- `runBriefsApprovalLoop({...})` (`planning/briefs-approval-loop.ts`) — invoked from `planning/run.ts` after the quality pass and from `planning/resume-briefs.ts` on a resumed gate. Enters `reviewing-briefs` phase and publishes `planner_status` with that phase, as the spec and plan gates do when they open, so the screen shows the briefs gate; then awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
 
 A `mode-advisor` (`planning/mode-advisor.ts`) emits `mode_advice` for trivial requests in higher modes; user can /mode to switch.
 

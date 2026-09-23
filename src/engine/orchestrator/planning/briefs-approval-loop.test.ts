@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInitialState } from '../../../core/state/machine.js';
+import { eventPhase } from '../../../core/event-phase.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -170,6 +171,34 @@ describe('runBriefsApprovalLoop', () => {
     expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
     expect(reviewPrompts).toEqual([expect.stringContaining('narrow the scope')]);
     expect(result).toMatchObject({ outcome: 'closed' });
+  });
+
+  it('announces the briefs gate before it asks, when the run arrives from the plan gate', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const { bus, events } = makeBusRecorder();
+    const announcedPhases: (string | undefined)[] = [];
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockImplementation(async () => {
+        announcedPhases.push(events.map(eventPhase).findLast((phase) => phase !== undefined));
+        return { approved: false, action: 'end-run' };
+      });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const tasks = [makePassingTask()];
+
+    await runBriefsApprovalLoop({
+      tasks,
+      planner: makePassingPlanner(),
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: { ...createInitialState('feature'), phase: 'reviewing-plan', tasks },
+      config: makeConfig({ workflow: { mode: 'standard', approve: 'all' } }),
+      metadata: TEST_METADATA,
+    });
+
+    expect(announcedPhases).toEqual(['reviewing-briefs']);
   });
 
   it('end run closes the run and leaves the gate phase alone', async () => {

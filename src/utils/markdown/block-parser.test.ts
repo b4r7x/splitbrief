@@ -105,6 +105,71 @@ describe('parseMarkdownBlocks', () => {
     ]);
   });
 
+  it('parses each brief of a stamped tasks.md as task metadata when it declares files', () => {
+    const document = parseMarkdownBlocks(
+      [
+        '---',
+        'generated_by: splitbrief v0.1.0',
+        'planner: claude-code (opus)',
+        'implementer: antigravity (gemini-3.8-flash-high)',
+        'mode: standard',
+        'created_at: 2026-09-23T14:26:30.940Z',
+        '---',
+        '---',
+        'id: T001',
+        'title: Record tool-start frames as diagnostic deltas and prove the idle clock resets',
+        'action: modify',
+        'file: src/engine/runners/cli-tools/process-invoke.ts',
+        'files:',
+        '  - src/engine/runners/cli-tools/process-invoke.ts',
+        '  - src/engine/runners/cli-tools/process-invoke.test.ts',
+        'depends_on: []',
+        '---',
+        '',
+        '### Description',
+        '`invokeProcessCli` records a `tool-use` protocol event.',
+        '',
+        '### Evidence',
+        '- `npm run typecheck` and `npm run lint` exit 0.',
+        '---',
+        'id: T002',
+        'title: Read a halt from stderr when a structured tool ends without a usable terminal',
+        'action: modify',
+        'file: src/engine/runners/cli-tools/process-invoke.ts',
+        'files:',
+        '  - src/engine/runners/cli-tools/process-invoke.ts',
+        '  - src/engine/runners/cli-tools/process-invoke.test.ts',
+        'depends_on:',
+        '  - T001',
+        '---',
+        '',
+        '### Description',
+        'In `stream-json` mode, antigravity is a `structured-terminal` tool.',
+      ].join('\n'),
+    );
+
+    expect(document.blocks.map((block) => block.kind)).toEqual([
+      'frontmatter',
+      'frontmatter',
+      'heading',
+      'paragraph',
+      'heading',
+      'list',
+      'frontmatter',
+      'heading',
+      'paragraph',
+    ]);
+    expect(
+      document.blocks.flatMap((block) =>
+        block.kind === 'frontmatter' ? [{ role: block.role, first: block.lines[0] }] : [],
+      ),
+    ).toEqual([
+      { role: 'document', first: 'generated_by: splitbrief v0.1.0' },
+      { role: 'task', first: 'id: T001' },
+      { role: 'task', first: 'id: T002' },
+    ]);
+  });
+
   it('parses bare task brief metadata as bounded blocks', () => {
     const document = parseMarkdownBlocks(
       [

@@ -50,6 +50,7 @@ function derivationLoopMs(state: LifecycleState): number {
     startedAt: state.startedAt,
     phaseFirstSeenTs: state.phaseFirstSeenTs,
     waitedMs: state.waitedMs ?? {},
+    resumedAt: state.resumedAt ?? null,
     reviewerLabel: null,
     plannerCall: state.plannerCall ?? null,
   };
