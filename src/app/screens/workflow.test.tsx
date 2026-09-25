@@ -1,4 +1,7 @@
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
+import { writeSpecFile } from '../../core/paths-io.js';
+import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { taskId } from '../../core/schemas/task.js';
@@ -23,6 +26,12 @@ import {
 import { getContentTopRow } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
 import { WorkflowScreen } from './workflow.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
+import { workflowCommands } from '../../core/runtime/commands/defs/workflow.js';
+import { requestRewind } from '../../features/workflow/handlers.js';
+import { hydrateResume } from '../../features/workflow/resume-hydration.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -403,6 +412,199 @@ describe('WorkflowScreen showing a run at rest', () => {
     } else {
       throw new Error('expected the continuation to flip the execution in place');
     }
+    ui.unmount();
+  });
+
+  it('rewinds a halted run to the plan on /revise-plan and continues it in place', async () => {
+    const issue = makeRecoveryIssue({
+      reason: 'user-edit-conflict',
+      phase: 'implementing',
+      availableActions: ['pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+    });
+    const halted = makeWorkflowState({
+      phase: 'implementing',
+      tasks: [makeTask({ status: 'in_progress' })],
+      pendingRecovery: issue,
+    });
+    const record = openRun({
+      status: {
+        kind: 'open',
+        stop: { kind: 'halted', issue },
+        resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+      },
+      hydration: { kind: 'loaded', state: halted },
+    });
+    saveState(record.ref, halted);
+    const prepareResume = vi.fn(async () => ({
+      kind: 'prepared' as const,
+      execution: preparedExecution(projectDir, 'continued run'),
+    }));
+    const commands = workflowCommands(
+      makeCtx({
+        requestRewind: (target, comment) =>
+          requestRewind({ target, ...(comment !== undefined && { comment }) }),
+        setFeedbackError: feedbackStore.setError,
+      }),
+    );
+
+    const ui = renderFeature(
+      <WorkflowScreen
+        commands={commands}
+        onRuntimeCommand={(raw) =>
+          runCommandInTest({
+            commands,
+            raw,
+            screen: 'workflow',
+            phase: 'implementing',
+            onError: feedbackStore.setError,
+          })
+        }
+        deps={{
+          runWorkflow,
+          sessionSelect: {
+            loadResumeState: hydrateResume,
+            prepareResume,
+            hydrateRun: async () => {},
+          },
+        }}
+      />,
+    );
+    await flushEffects();
+
+    ui.stdin.write('/revise-plan split the brief');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(prepareResume).toHaveBeenCalled();
+    });
+
+    const saved = hydrateResume(record.ref);
+    if (saved.kind !== 'loaded') throw new Error('expected the rewound state on disk');
+    expect(saved.state.phase).toBe('planning');
+    expect(saved.state.rewindPending).toEqual({ target: 'plan', comment: 'split the brief' });
+    expect(saved.state.pendingRecovery).toBeUndefined();
+    expect(saved.state.tasks).toEqual([]);
+    expect(prepareResume).toHaveBeenCalledWith(
+      { ref: record.ref, state: saved.state },
+      expect.anything(),
+    );
+    expect(feedbackStore.get().isError).toBe(false);
+    ui.unmount();
+  });
+
+  /** A run at rest on a final review that failed after its repair cycles ran out. */
+  function renderFailedReviewRun() {
+    const issue = {
+      ...buildReviewFailedRecoveryIssue({
+        blocking: 1,
+        phase: 'complete',
+        createdAt: '2026-09-24T00:00:00.000Z',
+      }),
+      status: 'paused' as const,
+    };
+    const halted = makeWorkflowState({
+      phase: 'complete',
+      reviewStatus: 'failed',
+      reviewFixes: { cycle: 2, findings: {} },
+      tasks: [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })],
+      currentTaskIndex: 1,
+      pendingRecovery: issue,
+    });
+    const record = openRun({
+      status: {
+        kind: 'open',
+        stop: { kind: 'halted', issue },
+        resumeAt: { kind: 'review', cycle: 2 },
+      },
+      hydration: { kind: 'loaded', state: halted },
+    });
+    saveState(record.ref, halted);
+    writeSpecFile(
+      record.ref,
+      REVIEW_FILE,
+      '### Verdict\nfail\n\n### Findings\n- **Critical**: src/alpha.ts drops the error\n',
+    );
+    const base = preparedExecution(projectDir, 'continued run');
+    const prepareResume = vi.fn(async () => ({
+      kind: 'prepared' as const,
+      execution: {
+        ...base,
+        purpose: 'resume' as const,
+        session: { ...base.session, ref: record.ref },
+        runtime: { ...base.runtime, resumeState: halted },
+      },
+    }));
+
+    const ui = renderFeature(
+      <WorkflowScreen
+        commands={[]}
+        onRuntimeCommand={vi.fn()}
+        deps={{
+          runWorkflow,
+          sessionSelect: {
+            loadResumeState: hydrateResume,
+            prepareResume,
+            hydrateRun: async () => {},
+          },
+        }}
+      />,
+    );
+    return { ui, record };
+  }
+
+  it('sends a failed final review back with the correction typed into the at-rest composer', async () => {
+    const { ui, record } = renderFailedReviewRun();
+    await flushEffects();
+
+    ui.stdin.write('log the error, then rethrow it');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(runWorkflow).toHaveBeenCalled();
+    });
+
+    const entered = runWorkflow.mock.calls[0]?.[0];
+    expect(entered?.steer).toBeUndefined();
+    expect(entered?.savedState?.phase).toBe('implementing');
+    expect(entered?.savedState?.pendingRecovery).toBeUndefined();
+    expect(entered?.savedState?.reviewFixes?.findings['T001']).toEqual([
+      'src/alpha.ts drops the error',
+      'Operator correction: log the error, then rethrow it',
+    ]);
+    const log = readFileSync(
+      join(sessionDir(projectDir, record.ref.sessionId), 'session.jsonl'),
+      'utf-8',
+    );
+    expect(log).toContain('"type":"user_message"');
+    expect(log).toContain('log the error, then rethrow it');
+    expect(feedbackStore.get().isError).toBe(false);
+    ui.unmount();
+  });
+
+  it('sends a failed final review back with the correction typed into the panel field', async () => {
+    const { ui } = renderFailedReviewRun();
+    await flushEffects();
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Send a correction');
+    });
+    ui.stdin.write('\t');
+    await flushEffects();
+    ui.stdin.write('log the error, then rethrow it');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(runWorkflow).toHaveBeenCalled();
+    });
+
+    const entered = runWorkflow.mock.calls[0]?.[0];
+    expect(entered?.savedState?.phase).toBe('implementing');
+    expect(entered?.savedState?.reviewFixes?.findings['T001']).toContain(
+      'Operator correction: log the error, then rethrow it',
+    );
+    expect(feedbackStore.get().isError).toBe(false);
     ui.unmount();
   });
 

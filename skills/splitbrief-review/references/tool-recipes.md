@@ -18,7 +18,7 @@ Timeouts:
 
 <!-- generated: timeouts -->
 - Implementer 20 minutes per attempt, reviewer 10 minutes. 2 consecutive timeouts on one brief = hard halt.
-- The waiter is its own deadline: `scripts/wait-attempt.sh <run> <T00N> <n> --deadline 1200` kills the process group at 20 minutes. Never wrap a spawn in coreutils `timeout` — it does not exist on stock macOS. A tool's own deadline flag (`agy --print-timeout 20m`) stays.
+- The waiter is its own deadline: `scripts/wait-attempt.sh <run> <T00N> <n> --deadline 1200` kills the process group at 20 minutes. Never wrap a spawn in coreutils `timeout` — it does not exist on stock macOS.
 <!-- /generated -->
 
 ## claude — Claude Code
@@ -75,7 +75,7 @@ Timeouts:
 - reviewer: `nohup sh -c 'copilot --model $M --effort $E -p "$(cat $P)" --plan --allow-all-tools --no-ask-user --output-format json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - reviewer (no model): `nohup sh -c 'copilot -p "$(cat $P)" --plan --allow-all-tools --no-ask-user --output-format json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
-- terminal record: none — exit 0. The implementer prints plain text; the reviewer prints JSON.
+- terminal record: none — exit 0. The implementer and the reviewer both print JSON records, one per line.
 
 ## cursor — Cursor CLI
 
@@ -109,7 +109,7 @@ Timeouts:
 - reviewer: `nohup sh -c 'agy -p "$(cat $P)" --mode plan --add-dir $D --output-format stream-json --model $M --effort $E > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - reviewer (no model): `nohup sh -c 'agy -p "$(cat $P)" --mode plan --add-dir $D --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
-- terminal record: none — exit 0.
+- terminal record: the last `{"event":"result",…}` line: `result.status` `SUCCESS` = success, with `result.response` as the final text; any other status = failure; exit 0 without it = failure `ended without a terminal result`.
 
 ## Halt signatures
 

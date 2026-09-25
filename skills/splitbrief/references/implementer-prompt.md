@@ -149,6 +149,12 @@ Drift entries are rendered as the revert instruction in references/gates.md, one
 
 Generated from the CLI with its TypeScript language context; for a non-JavaScript project the CLI's pitfall line reads `If this is a common <Language> mistake (e.g., wrong import path, incorrect type usage, invalid module/package reference), say so explicitly.` The CLI's optional `## Similar Issues` section (retrieved escalation examples) is not portable and is omitted. Write the answer to `<run dir>/T00N/hint.md`.
 
+Read the reply's first `VERDICT:` line; backticks or bold around it do not matter, and a reply without one reads as `answer`:
+
+- `answer` — retry the brief once with the reply under `## Hints from senior reviewer:` in its error block.
+- `widen <path>[, <path>…] — <reason>` — retry once and let the attempt write the named paths too; a write outside the brief still needs the run's approval stance, and an allowed path is added to the brief's Approved out of bounds as `` `<path>` — planner-approved: <reason> ``.
+- `brief — <diagnosis>` — the brief is wrong: do not retry and do not take over; mark the brief `escalated` and report the implementer's hand-back and the diagnosis.
+
 ## 6. Takeover prompt (the session implements)
 
 Follow these instructions yourself, in the working tree:

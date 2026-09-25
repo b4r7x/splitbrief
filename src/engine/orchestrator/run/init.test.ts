@@ -118,6 +118,7 @@ async function initializeTestWorkflow(
     projectDir: string;
     sessionId: string;
     feature: string;
+    steer?: string | undefined;
     savedState?: WorkflowState | undefined;
     newWorkflow?: boolean;
     reviewer?: Config['reviewer'];
@@ -190,6 +191,7 @@ async function initializeTestWorkflow(
       _planner: planner,
       _implementer: implementer,
       _eventSink: input.eventSink,
+      ...(input.steer !== undefined && { steer: input.steer }),
     },
     config: prepared.config,
     sessionId: input.sessionId,
@@ -501,6 +503,40 @@ describe('initializeWorkflow', () => {
       expect(init.wctx.isolation).toBe(isolation);
     });
   });
+
+  it('seeds a correction typed at a task halt into the reset brief at attempt 0, once', async () => {
+    await withTempDir('splitbrief-init-halt-steer', async (projectDir) => {
+      createTestGitRepo(projectDir);
+      const feature = 'ship the banner';
+      const events: EngineEvent[] = [];
+      // The state retry-same-worker leaves: RESET_TASK put T001 back at attempt 0 and cleared the halt.
+      const result = await initializeTestWorkflow({
+        projectDir,
+        sessionId: 'session-init-halt-steer',
+        feature,
+        steer: 'use the registry',
+        eventSink: (event) => events.push(event),
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'implementing',
+          tasks: [makeTask({ id: 'T001', status: 'pending', file: 'src/banner.ts' })],
+          currentTaskIndex: 0,
+          attempt: 0,
+        },
+      });
+
+      expect(result.init.ok).toBe(true);
+      if (!result.init.ok) return;
+      expect(
+        result.init.wctx.continuation?.take({ kind: 'brief', taskId: taskId('T001'), attempt: 0 }),
+      ).toEqual({ steer: 'use the registry' });
+      expect(
+        events.filter(
+          (event) => event.type === 'user_message' && event.text === 'use the registry',
+        ),
+      ).toHaveLength(1);
+    });
+  });
 });
 
 describe('initializeWorkflow — a task interrupted mid-gate', () => {
@@ -672,6 +708,70 @@ describe('initializeWorkflow — a brief killed while its runner was building', 
         'half written before the park',
       );
       expect(tracked.current).toMatchObject({ tasks: [{ id: 'T001', status: 'in_progress' }] });
+    });
+  });
+});
+
+describe('initializeWorkflow — a cut step that names a passed brief', () => {
+  it('continues the brief that ran, not the passed one the stale index named', async () => {
+    await withTempDir('splitbrief-init-stale-cut', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'src/passed.ts': 'passed', 'src/running.ts': 'original' });
+      writeFileSync(join(projectDir, 'src/running.ts'), 'half written before the stop');
+      const feature = 'continue after a skipped brief';
+      const sessionId = 'session-init-stale-cut';
+      const events: EngineEvent[] = [];
+
+      const { init, tracked } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        eventSink: (event) => events.push(event),
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'escalating',
+          tasks: [
+            makeTask({ id: 'T001', status: 'done', file: 'src/reopened.ts' }),
+            makeTask({ id: 'T002', status: 'done', file: 'src/passed.ts' }),
+            makeTask({ id: 'T003', status: 'in_progress', file: 'src/running.ts' }),
+          ],
+          currentTaskIndex: 1,
+          attempt: 1,
+          awaitingContinue: true,
+          interruptedStep: {
+            step: { kind: 'brief', taskId: taskId('T002'), attempt: 1 },
+            source: 'user',
+            cut: 'mid-step',
+            at: '2026-01-01T00:00:00.000Z',
+          },
+          changedFilesBaseline: {
+            head: null,
+            fingerprints: {},
+            activeTaskSnapshot: {
+              head: 'HEAD',
+              files: ['src/running.ts'],
+              dirtyFileContents: { 'src/running.ts': 'original' },
+            },
+          },
+        },
+      });
+
+      expect(init.ok).toBe(true);
+      expect(tracked.current).toMatchObject({
+        phase: 'implementing',
+        currentTaskIndex: 2,
+        tasks: [
+          { id: 'T001', status: 'done' },
+          { id: 'T002', status: 'done' },
+          { id: 'T003', status: 'pending' },
+        ],
+        interruptedStep: { step: { kind: 'brief', taskId: 'T003', attempt: 1 } },
+      });
+      expect(loadState({ projectDir, sessionId })?.currentTaskIndex).toBe(2);
+      expect(
+        events
+          .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
+          .map((e) => e.message),
+      ).toContain('The saved run pointed at T002, which already passed; continuing at T003.');
     });
   });
 });

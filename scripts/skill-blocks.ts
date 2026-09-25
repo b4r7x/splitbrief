@@ -407,7 +407,7 @@ function timeouts(): string {
   const deadline = TIMEOUTS.implementerMs / 1000;
   return bullets([
     `Implementer ${minutes(TIMEOUTS.implementerMs)} minutes per attempt, reviewer ${minutes(TIMEOUTS.reviewerMs)} minutes. ${TIMEOUTS.consecutiveTimeoutsHalt} consecutive timeouts on one brief = hard halt.`,
-    `The waiter is its own deadline: \`scripts/wait-attempt.sh <run> <T00N> <n> --deadline ${deadline}\` kills the process group at ${minutes(TIMEOUTS.implementerMs)} minutes. Never wrap a spawn in coreutils \`timeout\` — it does not exist on stock macOS. A tool's own deadline flag (\`agy --print-timeout 20m\`) stays.`,
+    `The waiter is its own deadline: \`scripts/wait-attempt.sh <run> <T00N> <n> --deadline ${deadline}\` kills the process group at ${minutes(TIMEOUTS.implementerMs)} minutes. Never wrap a spawn in coreutils \`timeout\` — it does not exist on stock macOS.`,
   ]);
 }
 

@@ -420,7 +420,7 @@ describe('a REVIEW that reached no verdict', () => {
 });
 
 describe('a REVIEW that reached a verdict', () => {
-  it('keeps a parsed fail on the build seat, with its count and its two exits', async () => {
+  it('keeps a parsed fail on the build seat, with its count, a correction and its two exits', async () => {
     const ref = setupRun('review-substantive', { ledger: true });
 
     const { result, events } = await review({
@@ -434,7 +434,7 @@ describe('a REVIEW that reached a verdict', () => {
     expect(issue?.reason).toBe('review-failed');
     expect(issue?.seat).toBe('build');
     expect(issue?.facts?.blocking).toBe(1);
-    expect(issue?.availableActions).toEqual(['pause-run', 'end-run']);
+    expect(issue?.availableActions).toEqual(['revise', 'pause-run', 'end-run']);
     expect(result.state.phase).toBe('complete');
     expect(result.state.reviewStatus).toBe('failed');
     expect(events.find((event) => event.type === 'workflow_complete')).toMatchObject({

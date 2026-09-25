@@ -93,6 +93,59 @@ describe('parseHintVerdict', () => {
       diagnosis: 'wrong file',
     });
   });
+
+  it('reads widen without path on the line as answer', () => {
+    expect(parseHintVerdict('VERDICT: widen\nRoot cause: the prop is optional')).toEqual({
+      kind: 'answer',
+    });
+  });
+
+  it('reads a backtick-wrapped brief verdict', () => {
+    expect(parseHintVerdict('`VERDICT: brief — the export was already deleted`')).toEqual({
+      kind: 'brief',
+      diagnosis: 'the export was already deleted',
+    });
+  });
+
+  it('reads bold verdict and normalizes paths with backticks and ./ prefix', () => {
+    expect(
+      parseHintVerdict('**VERDICT:** widen `src/a.ts`, ./src/b.ts. — consumer of the export'),
+    ).toEqual({
+      kind: 'widen',
+      paths: ['src/a.ts', 'src/b.ts'],
+      reason: 'consumer of the export',
+    });
+  });
+
+  it('reads a widening naming a single file', () => {
+    expect(parseHintVerdict('VERDICT: widen README.md — the README documents the flag')).toEqual({
+      kind: 'widen',
+      paths: ['README.md'],
+      reason: 'the README documents the flag',
+    });
+  });
+
+  it('reads a brief verdict preceded by commentary', () => {
+    expect(parseHintVerdict('Here is my verdict.\nVERDICT: brief — x')).toEqual({
+      kind: 'brief',
+      diagnosis: 'x',
+    });
+  });
+
+  it('reads answer verdict or commentary only as answer', () => {
+    expect(parseHintVerdict('VERDICT: answer\nThe field is optional.')).toEqual({
+      kind: 'answer',
+    });
+    expect(parseHintVerdict('Root cause only.')).toEqual({ kind: 'answer' });
+  });
+
+  it('preserves leading underscores in widened paths', () => {
+    expect(parseHintVerdict('VERDICT: widen `__tests__/a.test.ts` — the suite')).toEqual({
+      kind: 'widen',
+      paths: ['__tests__/a.test.ts'],
+      reason: 'the suite',
+    });
+  });
 });
 
 describe('escalation prompts', () => {

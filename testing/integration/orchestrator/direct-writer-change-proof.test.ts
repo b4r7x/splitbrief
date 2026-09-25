@@ -350,7 +350,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
 
     const result = await runDirectWriterImplementation(fixture, projectDir);
 
-    expect(result.usesIsolation).toBe(true);
+    expect(result.workspace).toBeDefined();
     expect(result.workspace?.projectDir).not.toBe(projectDir);
     expect(result.implResult.success).toBe(false);
     if (result.implResult.success) throw new Error('expected implementation failure');

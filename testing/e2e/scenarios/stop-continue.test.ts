@@ -233,6 +233,7 @@ describe('stop → continue → finish', () => {
     const killedState = readState(target, killed.sessionId);
     expect(killedState.interruptedStep).toBeUndefined();
     expect(killedState.tasks[0]?.status).toBe('in_progress');
+    expect(killedState.attempt).toBe(0);
 
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
@@ -246,6 +247,8 @@ describe('stop → continue → finish', () => {
 
     const finalState = readState(target, killed.sessionId);
     expect(finalState.tasks[0]?.status).toBe('done');
+    expect(finalState.attempt).toBe(0);
+    expect(finalState.pendingRecovery).toBeUndefined();
     expect(readFileSync(target.greetPath, 'utf-8')).toBe(GREET_SOURCE);
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createInitialState, transition } from './machine.js';
+import type { StateAction } from './types.js';
 import {
   getCompletedTaskIds,
   getEscalatedTaskIds,
@@ -591,6 +592,31 @@ describe('transition', () => {
     ).toBe(state);
   });
 
+  it('WIDEN_TASK_SCOPE records a root-level file once', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'escalating',
+      tasks: [makeTask({ id: 'T001', file: 'src/a.ts' })],
+    };
+    const once = transition(state, {
+      type: 'WIDEN_TASK_SCOPE',
+      taskId: taskId('T001'),
+      paths: ['README.md'],
+      reason: 'consumer',
+    });
+    expect(once.tasks[0]?.scope?.approvedOutOfBounds).toEqual([
+      '`README.md` — planner-approved: consumer',
+    ]);
+    expect(
+      transition(once, {
+        type: 'WIDEN_TASK_SCOPE',
+        taskId: taskId('T001'),
+        paths: ['README.md'],
+        reason: 'consumer',
+      }),
+    ).toBe(once);
+  });
+
   it('WIDEN_TASK_SCOPE is refused on a closed run', () => {
     const closed: WorkflowState = {
       ...createInitialState('feat'),
@@ -945,6 +971,52 @@ describe('transition', () => {
       cycle: 1,
       findings: { T002: ['missing null guard'], T003: ['unhandled error'] },
     });
+  });
+
+  it('REVIEW_FIX_START reopens a failed review and clears its verdict, never a passed one', () => {
+    const complete: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'complete',
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      currentTaskIndex: 1,
+      completedAt: '2026-09-24T00:00:00.000Z',
+      reviewFixes: { cycle: 2, findings: {} },
+    };
+    const fix: StateAction = { type: 'REVIEW_FIX_START', cycle: 3, fixes: { T001: ['rethrow'] } };
+
+    const reopened = transition({ ...complete, reviewStatus: 'failed' }, fix);
+
+    expect(reopened.phase).toBe('implementing');
+    expect(reopened.tasks[0]?.status).toBe('pending');
+    expect(reopened.reviewStatus).toBeUndefined();
+    expect(reopened.completedAt).toBeUndefined();
+    expect(reopened.reviewFixes).toEqual({ cycle: 3, findings: { T001: ['rethrow'] } });
+    expect(() => transition({ ...complete, reviewStatus: 'passed' }, fix)).toThrow();
+  });
+
+  it('passing or skipping a reopened brief moves the index past briefs that already passed', () => {
+    const reopened: WorkflowState = transition(
+      {
+        ...createInitialState('feat'),
+        phase: 'final-review',
+        tasks: ['T001', 'T002', 'T003', 'T004'].map((id) => makeTask({ id, status: 'done' })),
+        currentTaskIndex: 4,
+      },
+      { type: 'REVIEW_FIX_START', cycle: 1, fixes: { T001: ['a'], T004: ['b'] } },
+    );
+    const started = transition(reopened, { type: 'START_TASK', taskId: taskId('T001') });
+    const sent = transition(started, { type: 'TASK_SENT' });
+
+    expect(transition(sent, { type: 'VALIDATION_PASS' }).currentTaskIndex).toBe(3);
+    expect(
+      transition(started, { type: 'SKIP_TASK', taskId: taskId('T001') }).currentTaskIndex,
+    ).toBe(3);
+    expect(
+      transition(
+        { ...reopened, currentTaskIndex: 1 },
+        { type: 'START_TASK', taskId: taskId('T004') },
+      ).currentTaskIndex,
+    ).toBe(3);
   });
 
   it('VALIDATION_PASS drops the completed task from reviewFixes findings', () => {

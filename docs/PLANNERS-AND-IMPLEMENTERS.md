@@ -119,7 +119,7 @@ The orchestrator reads capabilities, not backend identity, to decide what's poss
 | Capability | What it gates |
 |---|---|
 | `supportsConversationalPlanning` | Planner can emit inline clarification questions during planning |
-| `supportsHintEscalation` | Planner can produce a short hint for an implementer retry |
+| `supportsHintEscalation` | Planner answers an exhausted or stopped brief in one read-only call with a verdict (`answer`, `widen`, `brief`) and a hint; without it the hint rung is absent (custom command planners by default) |
 | `supportsSessionResume` | Backend exposes a reusable thread handle it reports itself (Claude `--resume`, Codex exec resume) |
 | `supportsEffort` | Backend honors effort/reasoning hints (thinking budget, `reasoning_effort`) — narrowly, that it accepts the `effort: EffortLevel` field on the wire. It is not the seat's effort channel: a tool that carries effort as an opencode `--variant` preset or inside its model id has a real channel while this capability stays false. `seatEffortChannel` (`src/core/runners/capabilities.ts`) is what answers the wider question; see [CONFIGURATION.md](./CONFIGURATION.md) common generation fields. |
 | `supportsImages` | Backend can accept image attachments (vision models) |
@@ -626,18 +626,20 @@ The role vector is pinned and effect-verified per backend. A role that is missin
 
 **Workspace.** Every seat is spawned with its directory as the cwd. A tool that keeps its workspace apart from its cwd also gets that directory on a flag: `codex --cd`, `cursor --workspace`, `agy --add-dir`. Without `--add-dir`, or with a relative `--add-dir .`, `agy -p` has no workspace, and on 1.2.9 its model ran the shell in `~/.gemini/antigravity-cli/scratch` (upstream antigravity-cli issues #231, #253, #507, #598). With the workspace, agy also loads that directory's `AGENTS.md` and `GEMINI.md`; `codex` can skip such files with `--ignore-rules`, but agy has no flag for this. `WORKSPACE_FLAGS` in `testing/integration/orchestrator/cli-adapter-contract.test.ts` pins the flag per tool, and the cwd leg of `scripts/cli-conformance.ts` ([EXTENDING.md](./EXTENDING.md#rawproduction-transaction-cli)) measures where the live tool writes. On 2026-09-23 `claude-code`, `opencode`, `command-code` and `antigravity` passed it; `codex`, `cursor`, `copilot` and `kilo-code` could not be measured on that host.
 
-**Output protocol.** Every admitted tool is spawned in a machine-readable output mode and parsed into the same protocol events, so tool calls, assistant text and token usage arrive while the call is still running rather than in one block at the end. A `tool-use` event carries `stage: 'started'` when the call begins and no stage when it completes (`src/engine/runners/cli-tools/contract.ts`); the idle watchdog measures the gaps between frames, so a streaming tool is never mistaken for a stalled one.
+**Output protocol.** Every admitted tool is spawned in a machine-readable output mode and parsed into the same protocol events, so tool calls, assistant text and token usage arrive while the call is still running rather than in one block at the end. A `tool-use` event carries `stage: 'started'` when the call begins and `stage: 'done'` or no stage when it completes (`src/engine/runners/cli-tools/contract.ts`); the idle watchdog measures the gaps between frames, so a streaming tool is never mistaken for a stalled one.
 
 | Backend | Output flag | Parser | Text deltas | Tool calls | Usage | Session id |
 |---|---|---|---|---|---|---|
-| `opencode` | `--format json` | `streaming/parse-opencode.ts` | yes | started + done | yes | yes |
-| `kilo-code` | `--format json` (both roles) | `streaming/parse-opencode.ts` | yes | started + done | yes | yes |
-| `claude-code` | `--output-format stream-json --verbose --include-partial-messages` | `streaming/parse-stream-json.ts` | yes | started + done | yes | yes |
-| `codex` | `--json` | `codexProtocolEvents` (`cli-tools/codex.ts`) | yes | started + done | yes | yes |
-| `cursor` | `--output-format stream-json` | `parseCursorRecord` (`cli-tools/cursor.ts`) | yes | started + done | yes | yes |
-| `copilot` | `--output-format json` (both roles) | `streaming/parse-copilot.ts` | yes | started + done | yes | yes |
+| `opencode` | `--format json` | `streaming/parse-opencode.ts` | per text part | started + done | yes | yes |
+| `kilo-code` | `--format json` (both roles) | `streaming/parse-opencode.ts` | per text part | started + done | yes | yes |
+| `claude-code` | `--output-format stream-json --verbose --include-partial-messages` | `streaming/parse-stream-json.ts` | token deltas | started + done | yes | yes |
+| `codex` | `--json` | `codexProtocolEvents` (`cli-tools/codex.ts`) | per completed item | started + done | yes | yes |
+| `cursor` | `--output-format stream-json` | `parseCursorRecord` (`cli-tools/cursor.ts`) | per assistant message | started + done | yes | yes |
+| `copilot` | `--output-format json` (both roles) | `streaming/parse-copilot.ts` | per assistant message | done only (unverified live) | yes | yes |
 | `command-code` | `--output-format json` | `commandCodeProtocolEvents` (`cli-tools/command-code.ts`) | no — final text only | done only | final only | yes |
-| `antigravity` | `--output-format stream-json` (both roles) | `streaming/parse-antigravity.ts` | yes | started + done | yes | yes |
+| `antigravity` | `--output-format stream-json` (both roles) | `streaming/parse-antigravity.ts` | token deltas (`text_delta`) | started + done | yes | yes |
+
+Antigravity's `stream-json` evidence exists for agy 1.2.7 and 1.2.9 only, while `minimumAdmittedVersion` stays 1.2.2.
 
 Antigravity's per-step `usage` is the usage of that response step and its `result` usage is the turn total, so step usage is emitted as a delta and the terminal usage is taken from the explicit result — the accumulator never counts a turn twice.
 

@@ -49,7 +49,6 @@ export type GateAndPromoteOpts = {
   config: Config;
   getApprovalEnabled?: (() => boolean) | undefined;
   workspace: IsolatedWorkspace | undefined;
-  usesIsolation: boolean;
   taskStartSnapshot: ChangedFilesSnapshot;
   dependsOnFiles: string[];
   preApprovedFiles?: string[];
@@ -79,7 +78,6 @@ export async function gateAndPromoteChangedFiles(
     config,
     getApprovalEnabled,
     workspace,
-    usesIsolation,
     taskStartSnapshot,
     dependsOnFiles,
     signal,
@@ -96,17 +94,14 @@ export async function gateAndPromoteChangedFiles(
 
   try {
     let changedFiles: string[];
-    let fromIsolation = Boolean(workspace);
     try {
-      const changedFilesSnapshot = workspace?.snapshot ?? taskStartSnapshot;
+      // An isolated worker's changes are its workspace's alone. The checkout
+      // changing during the call is the operator's, which the implementer's
+      // per-call audit reports and never attributes to the brief.
       changedFiles = await getChangedFilesSinceSnapshot(
         workspace?.projectDir ?? projectDir,
-        changedFilesSnapshot,
+        workspace?.snapshot ?? taskStartSnapshot,
       );
-      if (usesIsolation && changedFiles.length === 0) {
-        changedFiles = await getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot);
-        fromIsolation = false;
-      }
     } catch (err) {
       if (!opts.catchChangedFilesError) throw err;
       return { outcome: 'error', state, error: err };
@@ -172,7 +167,7 @@ export async function gateAndPromoteChangedFiles(
       onApproved(decision);
     }
 
-    if (workspace !== undefined && fromIsolation) {
+    if (workspace !== undefined) {
       let promoteResult: Awaited<ReturnType<typeof promoteStagedChanges>>;
       try {
         promoteResult = await promoteStagedChanges({

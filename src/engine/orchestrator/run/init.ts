@@ -3,7 +3,7 @@ import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import type { TaskId } from '../../../core/schemas/task.js';
+import { isTaskCompleted, type TaskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
 import type { Reviewer } from '../../reviewers/types.js';
@@ -219,6 +219,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     }
   }
   if (savedState !== undefined) {
+    savedState = realignPassedTaskIndex(bus, savedState);
     savedState = await resolveStaleFileHalt({ projectDir, sessionId, bus, state: savedState });
     setTrackedState(savedState);
   }
@@ -508,6 +509,36 @@ async function resolveStaleFileHalt(args: {
     safety: { category: 'recovery', code: 'stale_file_halt_resolved' },
   });
   return resolved;
+}
+
+/**
+ * A run written before the task index followed skipped briefs can point at a brief that already
+ * passed while another one ran. The brief that ran is the one to continue: the first in progress,
+ * else the first not passed. The next save persists the corrected index and cut step.
+ */
+function realignPassedTaskIndex(bus: EventBus, state: WorkflowState): WorkflowState {
+  if (!isImplementerPhase(state.phase)) return state;
+  const stale = state.tasks[state.currentTaskIndex];
+  if (stale === undefined || !isTaskCompleted(stale.status)) return state;
+  const inProgress = state.tasks.findIndex((t) => t.status === 'in_progress');
+  const index =
+    inProgress >= 0 ? inProgress : state.tasks.findIndex((t) => !isTaskCompleted(t.status));
+  const task = state.tasks[index];
+  if (task === undefined) return state;
+  const cut = state.interruptedStep;
+  publishWarning({
+    bus,
+    phase: state.phase,
+    message: `The saved run pointed at ${stale.id}, which already passed; continuing at ${task.id}.`,
+  });
+  return {
+    ...state,
+    currentTaskIndex: index,
+    ...(cut?.step.kind === 'brief' &&
+      cut.step.taskId === stale.id && {
+        interruptedStep: { ...cut, step: { ...cut.step, taskId: task.id } },
+      }),
+  };
 }
 
 /**

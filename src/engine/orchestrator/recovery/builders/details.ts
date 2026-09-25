@@ -5,13 +5,21 @@ import { uniqueSorted } from '../../../../utils/collections.js';
 import { scopePathPatterns } from '../../../../utils/path-patterns.js';
 import { summarizeText } from './issue.js';
 
-const BANNER_LINE = /^\s*>/;
+/** `> <package>@<version> <script>`: npm and pnpm print it, then `> <command>`, above a script's output. */
+const RUN_BANNER = /^> (?:@[^\s/]+\/)?[^\s@/]+@\S+ \S/;
 
-/** npm prints its own banner above a script's real output; it is not the error. */
+/** npm and pnpm print a banner pair above a script's real output; it is not the error. */
 function stripBannerLines(input: string): string {
-  const kept = input
-    .split('\n')
-    .filter((line) => line.trim().length > 0 && !BANNER_LINE.test(line));
+  const lines = input.split('\n');
+  const kept: string[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? '';
+    if (RUN_BANNER.test(line)) {
+      if ((lines[index + 1] ?? '').startsWith('> ')) index++;
+      continue;
+    }
+    if (line.trim().length > 0) kept.push(line);
+  }
   return kept.length > 0 ? kept.join('\n') : input;
 }
 
@@ -48,8 +56,11 @@ export function attemptDetails(
   opts: Readonly<{ hintRungRan?: boolean | undefined }> = {},
 ): string[] {
   if (attempts === undefined && maxAttempts === undefined) return [];
-  if (attempts !== undefined && opts.hintRungRan === true && attempts >= 2) {
-    return [`Attempts: ${attempts} (${attempts - 1} local, then 1 with planner hints)`];
+  if (attempts !== undefined && opts.hintRungRan === true) {
+    if (attempts === 1) return ['Attempts: 1 (with planner hints)'];
+    if (attempts >= 2) {
+      return [`Attempts: ${attempts} (${attempts - 1} local, then 1 with planner hints)`];
+    }
   }
   if (attempts !== undefined && maxAttempts !== undefined && attempts <= maxAttempts) {
     return [`Attempts: ${attempts}/${maxAttempts}`];

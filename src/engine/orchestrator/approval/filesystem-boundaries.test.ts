@@ -202,7 +202,6 @@ async function fixture() {
         callbacks: makeCallbacks().callbacks,
         config,
         workspace,
-        usesIsolation: true,
         taskStartSnapshot: snapshot,
         dependsOnFiles: [],
         cleanup: workspace.cleanup,

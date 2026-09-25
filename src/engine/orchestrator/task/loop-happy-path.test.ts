@@ -13,6 +13,9 @@ import {
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { transition } from '../../../core/state/machine.js';
+import { resumeStep } from '../../../core/sessions/run-status.js';
+import { artifactPresence } from '../../../core/sessions/run-record-io.js';
 import { runTaskLoop } from './loop.js';
 
 let dirs: string[] = [];
@@ -199,5 +202,52 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     expect(dispatched[1]?.[0]?.task.id).toBe('T002');
     expect(dispatched[1]?.[0]?.continuation).toBeUndefined();
     expect(result.state.currentTaskIndex).toBe(2);
+  });
+
+  it('points the task index at the brief it runs after skipping a passed one', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const reopened = makeTask({ id: 'T001', file: 'src/first.ts' });
+    const passed = makeTask({ id: 'T002', file: 'src/second.ts', status: 'done' });
+    const next = makeTask({ id: 'T003', file: 'src/third.ts' });
+    const state = makeImplState([reopened, passed, next]);
+    const ref = { projectDir, sessionId };
+    const seen: { index: number | undefined; cut: unknown }[] = [];
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        const persisted = loadState(ref);
+        if (persisted !== null) {
+          const step = resumeStep(persisted, artifactPresence(ref));
+          const stopped = transition(persisted, {
+            type: 'INTERRUPT_STEP',
+            step,
+            source: 'user',
+            cut: 'mid-step',
+          });
+          seen.push({ index: persisted.currentTaskIndex, cut: stopped.interruptedStep?.step });
+        }
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks: makeCallbacks().callbacks,
+        implementer,
+        bus: makeBusRecorder().bus,
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(seen).toEqual([
+      { index: 0, cut: { kind: 'brief', taskId: 'T001', attempt: 0 } },
+      { index: 2, cut: { kind: 'brief', taskId: 'T003', attempt: 0 } },
+    ]);
+    expect(result.status).toBe('complete');
+    expect(result.state.tasks.map((t) => t.status)).toEqual(['done', 'done', 'done']);
   });
 });

@@ -25,7 +25,7 @@ describe('composeContinuation', () => {
     const prompt = composeContinuation({
       basePrompt: 'BASE',
       partial: 'some output',
-      extra: 'These declared files already changed since the task started: src/a.ts',
+      extra: 'These declared files already differ from the commit this brief started on: src/a.ts',
       steer: 'finish it',
     });
 
@@ -67,6 +67,21 @@ describe('continuationBlock', () => {
     expect(block).toContain('Partial output so far:');
     expect(block).toContain('half a file');
     expect(block).toContain('The user says: finish it');
+  });
+
+  it('reports no earlier output when only a note follows the steer', () => {
+    const note =
+      'These declared files already differ from the commit this brief started on: src/a.ts';
+    const block = continuationBlock({ steer: 'fix it', extra: note });
+
+    expect(
+      block.startsWith(
+        '[Continuation] No output from an earlier attempt of this step is available.',
+      ),
+    ).toBe(true);
+    expect(block).toContain(note);
+    expect(block).toContain('The user says: fix it');
+    expect(block).not.toContain('interrupted');
   });
 
   it('never replaces the base prompt', () => {

@@ -393,7 +393,7 @@ describe('retryAndRecord — the exhaustion issue', () => {
     );
 
     expect(res.state.pendingRecovery?.details[0]).toBe(
-      'Validation: tsc: Type X is not assignable to Y',
+      'Last error: tsc: Type X is not assignable to Y',
     );
     expect(res.state.pendingRecovery?.facts?.validationSummary).toBe(
       'tsc: Type X is not assignable to Y',
@@ -410,7 +410,7 @@ describe('retryAndRecord — the exhaustion issue', () => {
     const { res } = await exhaust(failedRetry(2));
 
     expect(res.state.pendingRecovery?.details[0]).toBe(
-      'Validation lint failed: lint: unexpected any',
+      'Last error: lint failed: lint: unexpected any',
     );
     expect(res.state.pendingRecovery?.facts?.validationStage).toBe('lint');
   });
@@ -421,7 +421,7 @@ describe('retryAndRecord — the exhaustion issue', () => {
     );
 
     expect(res.state.pendingRecovery?.details).toEqual([
-      'Validation: E',
+      'Last error: E',
       'Attempts: 4 (3 local, then 1 with planner hints)',
       'Implementer said: H',
       'Planner said: P',

@@ -61,7 +61,6 @@ async function gate(projectDir: string, workspace: IsolatedWorkspace, file: stri
     bus: makeBusRecorder().bus,
     callbacks: makeCallbacks().callbacks,
     config: makeNoValidationConfig({ approval: { enabled: false, feedRejectionsToPlanner: true } }),
-    usesIsolation: true,
     dependsOnFiles: [],
     handleConflict: async (s) => s,
     onApproved: () => {},

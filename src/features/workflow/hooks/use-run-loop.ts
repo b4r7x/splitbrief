@@ -222,21 +222,21 @@ export function useRunLoop({
           'Cannot save stopped run: workflow state is unavailable',
         );
       const current = hydrated.state;
+      const intent = stopStore.get().intent;
       const next =
         current.closed !== undefined || current.phase === 'complete'
           ? current
-          : transitionAndSave(
-              session.ref,
-              current,
-              stopStore.get().intent === 'end-run'
-                ? { type: 'CLOSE_RUN' }
-                : {
-                    type: 'INTERRUPT_STEP',
-                    step: resumeStep(current, artifactPresence(session.ref)),
-                    source: 'user',
-                    cut: 'mid-step',
-                  },
-            );
+          : intent === 'end-run'
+            ? transitionAndSave(session.ref, current, { type: 'CLOSE_RUN' })
+            : current.pendingRecovery !== undefined
+              ? // A halt is not a cut step: the panel owns what happens next.
+                current
+              : transitionAndSave(session.ref, current, {
+                  type: 'INTERRUPT_STEP',
+                  step: resumeStep(current, artifactPresence(session.ref)),
+                  source: 'user',
+                  cut: 'mid-step',
+                });
       finalizeEndedRun({
         ref: session.ref,
         active: preparedForRun.session.active,
@@ -296,6 +296,7 @@ export function useRunLoop({
             state: stateForRun,
             controller,
             republishPrompt: !recoveryPromptAlreadyPublished,
+            correction: steerForRun,
           }).catch((err: unknown) => {
             if (controller.signal.aborted && err === WORKFLOW_USER_CANCELLED_ABORT_REASON)
               return { shouldRun: false as const, state: stateForRun };
@@ -326,7 +327,8 @@ export function useRunLoop({
           retryProfileOverride = recovery.retryProfileOverride;
           retryProfileOverrideTaskId = recovery.retryProfileOverrideTaskId;
           switchSeat = recovery.switchSeat;
-          steerForRun = recovery.steer ?? steerForRun;
+          steerForRun =
+            recovery.correctionTaken === true ? undefined : (recovery.steer ?? steerForRun);
         }
 
         staleHalt = false;

@@ -471,6 +471,36 @@ describe('runValidation', () => {
     expect(runner.calls[0]?.args).toEqual(['test', '--', 'src/a.test.ts', 'src/b.test.ts']);
   });
 
+  it("runs a test file only a sibling vitest config includes under that config's script", async () => {
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const config = makeConfig({ typecheck: false, lint: false, test: true });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify({
+        scripts: { test: 'vitest run', 'test:e2e': 'vitest run --config e2e/vitest.e2e.config.ts' },
+      }),
+    );
+    mkdirSync(join(tempDir, 'e2e', 'scenarios'), { recursive: true });
+    writeFileSync(
+      join(tempDir, 'e2e', 'vitest.e2e.config.ts'),
+      "export default { test: { include: ['e2e/scenarios/**/*.test.ts'] } };",
+    );
+    writeFileSync(join(tempDir, 'e2e', 'scenarios', 'stop.test.ts'), '');
+
+    await validator.runValidation({
+      task: mkTask('e2e/scenarios/stop.test.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(runner.calls[0]?.cmd).toBe('npm');
+    expect(runner.calls[0]?.args).toEqual(['run', 'test:e2e', '--', 'e2e/scenarios/stop.test.ts']);
+  });
+
   it("narrows a python stack with path-arg ''", async () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });

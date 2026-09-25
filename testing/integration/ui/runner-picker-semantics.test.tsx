@@ -814,8 +814,8 @@ describe('runner picker semantics integration', () => {
           .split('\n')
           .map((line) => line.trim())
           .find((line) => line.startsWith('Claude Code CLI')) ?? '';
-      expect(byline).toContain('direct write · network · shell');
-      expect(byline.endsWith('auto approval · cli sandbox')).toBe(true);
+      expect(byline).toContain('cli sandbox · direct write · network · shell');
+      expect(byline.endsWith('auto approval')).toBe(true);
 
       expect(leftToolZoneIds(WIDE_VIEWPORT)).toHaveLength(
         buildPickerOptions(

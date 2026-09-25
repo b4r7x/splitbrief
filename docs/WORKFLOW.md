@@ -77,6 +77,7 @@ stateDiagram-v2
     escalating --> implementing : HINT_SUCCESS / FULL_SUCCESS
 
     final_review --> implementing : REVIEW_FIX_START
+    complete --> implementing : REVIEW_FIX_START (revise after a failed review)
     final_review --> complete : REVIEW_DONE
 
     complete --> closed : review passed
@@ -131,10 +132,11 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `implementing` | `ALL_DONE` | `final-review` | — |
 | `final-review` | `REVIEW_FIX_START` | `implementing` | Records `reviewFixes: { cycle, findings }`, sets every named task back to `pending`, rewinds `currentTaskIndex` to the first of them, resets `attempt` |
 | `final-review` | `REVIEW_DONE` | `complete` | Records `reviewStatus: 'passed' \| 'failed'` |
+| `complete` (review `failed`) | `REVIEW_FIX_START` | `implementing` | The `revise` recovery action after a failed review: same effect as above, and clears `reviewStatus` and `completedAt`. Refused after a passed review |
 
 `maxRetries` defaults to 2 (configurable via `workflow.maxRetries`).
 
-**Review fix cycles.** A final review that reports blocking findings does not end the run at `complete`: `REVIEW_FIX_START` carries the per-task findings back into `implementing` and the task loop re-runs only the named tasks (`review_fix_started` publishes the cycle and the task ids). `VALIDATION_PASS` drops a completed task from `reviewFixes.findings`. The cycle count is capped at `REVIEW_CYCLE_CAP` (2, `src/core/pipeline-spec/review.ts`); when the cap is spent the review is recorded as `REVIEW_DONE { reviewStatus: 'failed' }`, a `review-failed` recovery is raised, and the run fails rather than completing.
+**Review fix cycles.** A final review that reports blocking findings does not end the run at `complete`: `REVIEW_FIX_START` carries the per-task findings back into `implementing` and the task loop re-runs only the named tasks (`review_fix_started` publishes the cycle and the task ids). `VALIDATION_PASS` drops a completed task from `reviewFixes.findings`. The cycle count is capped at `REVIEW_CYCLE_CAP` (2, `src/core/pipeline-spec/review.ts`); when the cap is spent the review is recorded as `REVIEW_DONE { reviewStatus: 'failed' }`, a `review-failed` recovery is raised, and the run fails rather than completing. The operator's `revise` on that halt opens one more cycle with the correction beside the findings ([APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)).
 
 **Cross-phase actions from `phaseActions` not shown above:** `RESEARCH_DONE` is also allowed from `idle`, `specifying` and `planning`. `SPEC_CLARIFY_START` is allowed from `idle`, `researching`, `reviewing-spec`, and `planning`. `PLAN_DONE` is also allowed from `researching`, `specifying` and `reviewing-plan`. `BRIEF_ADMISSION_OPENED` is allowed from `planning`, `reviewing-plan` and `reviewing-briefs`. `ANALYZE_START` is allowed from `reviewing-plan` and `implementing`. Every planning producer exits in `reviewing-plan`, and `BRIEF_ADMISSION_OPENED` is the single door into `reviewing-briefs` for all three modes. These permit the orchestrator to skip or re-enter phases depending on mode and backend capability without the reducer rejecting the action.
 
@@ -456,7 +458,7 @@ Recovery actions:
 | `retry-same-worker` | Retries the recorded PLAN/REVIEW step, or resets and reruns the matching BUILD task |
 | `route-bigger-worker` | Clears recovery, reruns task with named larger profile |
 | `switch-seat` | A seat that cannot run at all: moves it to another ready detected tool and re-prepares the session on it |
-| `revise` | Clears recovery and queues the operator's correction for the next planner turn |
+| `revise` | Clears recovery and queues the operator's correction for the next planner turn; on `review-failed`, records the correction and opens one more review fix cycle |
 | `revise-spec` | Rewinds to `specifying` with the operator's note, then clears recovery |
 | `continue` | Allowed for safe unrelated user edits only |
 | `skip-current-task` | Records evidence, marks task `skipped`, advances index |
@@ -551,7 +553,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     is released and nothing will pick it up again; a failed review leaves the run
     open at complete, and continuing it re-enters the review.
     A review with blocking findings takes REVIEW_FIX_START back to implementing
-    for the named tasks instead, up to the review cycle cap.
+    for the named tasks instead, up to the review cycle cap. After the cap, the
+    operator's revise takes REVIEW_FIX_START from complete for one more cycle.
 ```
 
 During live model-call phases, `ctrl+c` is Stop now and parks the run; `esc` opens the stop menu. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. `/revise-spec` and `/revise-plan` rewind to the appropriate phase. `/redo-task` replays a single task.

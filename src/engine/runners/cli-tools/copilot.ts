@@ -66,17 +66,8 @@ function toProtocolEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
   }
   if (parsed.sessionId !== undefined)
     events.push({ type: 'session', nativeSessionId: parsed.sessionId });
-  // parse-copilot files `tool.execution_start` under `toolUse`: the call is beginning.
-  for (const toolUse of parsed.toolUse ?? []) {
-    events.push({
-      type: 'tool-use',
-      stage: 'started',
-      id: toolUse.id ?? null,
-      name: toolUse.name,
-      input: { ...toolUse.input },
-    });
-  }
-  for (const toolUse of parsed.toolUseDone ?? []) {
+  // Copilot's completion event is unverified live, so a tool event is recorded as done when it arrives.
+  for (const toolUse of [...(parsed.toolUse ?? []), ...(parsed.toolUseDone ?? [])]) {
     events.push({
       type: 'tool-use',
       id: toolUse.id ?? null,

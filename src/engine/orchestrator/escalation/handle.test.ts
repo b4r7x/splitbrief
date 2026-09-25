@@ -21,6 +21,7 @@ import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { handleRetryAndEscalation } from './handle.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
 
 // The escalation tiers acquire from the run isolation handle; on the copying
 // strategy under parallel full-suite load that staged-copy IO can push these
@@ -743,9 +744,17 @@ describe('handleRetryAndEscalation', () => {
       reason: 'retry-exhausted',
       taskId: 'T001',
     });
-    expect(finalState.pendingRecovery?.message).toContain('pre_escalation hook');
-    expect(finalState.pendingRecovery?.message).toContain('policy: escalation not allowed');
-    expect(finalState.pendingRecovery?.message).not.toContain('exhausted recovery retries');
+    expect(finalState.pendingRecovery?.message).toBe(
+      'T001 escalation blocked by pre_escalation hook: policy: escalation not allowed',
+    );
+    expect(finalState.pendingRecovery?.facts?.validationSummary).toBe('still broken');
+    expect(finalState.pendingRecovery?.facts?.escalationBlockedBy).toBe(
+      'policy: escalation not allowed',
+    );
+    expect(finalState.pendingRecovery?.message).not.toContain('exhausted its retries');
+    expect(formatRecoveryHeadline(finalState.pendingRecovery!)).toBe(
+      finalState.pendingRecovery?.message,
+    );
     expect(busEvents.find((e) => e.type === 'recovery_prompted')).toMatchObject({
       type: 'recovery_prompted',
       reason: 'retry-exhausted',

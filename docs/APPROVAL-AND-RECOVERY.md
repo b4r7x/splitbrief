@@ -137,7 +137,7 @@ Tier 0 is configured in YAML only. The TUI does not expose an escalation row or 
 
 **The hint rung asks for a verdict, not just a hint.** The hint prompt (`src/engine/spec/prompts/escalation.ts`) carries the implementer's hand-back and the brief's Scope and Escalation bullets, and asks the planner to open its reply with exactly one line. `VERDICT: answer` means the implementer retries once with the planner's text in its error block. `VERDICT: widen <path>[, <path>…] — <reason>` means that retry also runs with `undeclaredWrites: 'gate'`, so the named files may be written. `VERDICT: brief — <diagnosis>` means the brief itself is wrong: no retry is made, and the run halts with the implementer's words and the planner's diagnosis on the panel. A reply with no verdict line reads as `answer` (`parseHintVerdict`). A first attempt that stopped with a hand-back and staged nothing skips the local rung and tier 0 and comes straight here, because what it needs is the planner's answer, not another identical retry.
 
-**A widening is a request, not a grant.** The widened retry's write to a named path is still classified `write_out_of_scope` and still passes tiered approval — `sticky` by default, so it prompts once and is remembered, and silent under `--yolo`, a matching grant, or `approval.allowedPaths`. Only a write the gate allowed is recorded: `WIDEN_TASK_SCOPE` appends the path to the brief's **Approved out of bounds** as `` `<path>` — planner-approved: <reason> `` and publishes `task_scope_widened`, so the declared set, the CLI effect gate, the classifier, the preamble and drift all read the same scope from then on. A denial takes the existing `scope-violation` recovery, unchanged.
+**A widening is a request, not a grant.** The widened retry's write to a named path is still classified `write_out_of_scope` and still passes tiered approval — `sticky` by default, so it prompts once and is remembered, and silent under `--yolo`, a matching grant, or `approval.allowedPaths`. Only a write the gate allowed is recorded: `WIDEN_TASK_SCOPE` appends the path to the brief's **Approved out of bounds** as `` `<path>` — planner-approved: <reason> `` and publishes `task_scope_widened`, so the declared set, the CLI effect gate, the classifier, the preamble and drift all read the same scope from then on. A denial classed `write_out_of_scope` takes the existing `scope-violation` recovery, unchanged. A denied path classed `package_change` or `destructive` keeps that class's `confirm` tier, and its denial ends the ladder in a `retry-exhausted` halt whose last error is the gate's reason. `widen` applies to direct-writing implementers only: a file-bundle (API) implementer may return only its declared files, so a widened path is rejected before it reaches the gate.
 
 The planner may provide hints; it never automatically takes over code-writing implementation.
 
@@ -151,17 +151,31 @@ Every retry step (`src/engine/orchestrator/escalation/step.ts`) follows the same
 
 ```mermaid
 flowchart TD
-    VF[Validation fails] --> LR[Local retries<br/>up to maxRetries attempts]
+    F[A brief's attempt fails] --> H{Runner halt?<br/>auth · usage limit · runner defect · isolation}
+    H -->|yes| REC{Recovery}
+    H -->|no| S{First attempt changed nothing<br/>and handed back text?}
+    S -->|yes, planner can hint| HK{pre_escalation hook}
+    S -->|no, or planner cannot hint| LR[Local retries<br/>up to maxRetries]
     LR -->|success| DONE[task_completed<br/>method: local]
-    LR -->|exhausted| T0[Tier 0: intermediate model<br/>mid-tier API retry]
-    T0 -->|skipped or fail| T1[Tier 1: hint escalation<br/>planner writes hint, implementer retries]
+    LR -->|runner halt| REC
+    LR -->|exhausted, or an attempt<br/>changed nothing| HK
+    HK -->|deny| REC
+    HK -->|allow or none, after the<br/>first-attempt stop| T1[Tier 1: planner verdict<br/>one read-only call]
+    HK -->|allow or none, after<br/>local retries| T0[Tier 0: intermediate model<br/>only when configured]
     T0 -->|success| DONE0[task_completed<br/>method: escalated-intermediate]
-    T1 -->|success| DONE1[task_completed<br/>method: escalated-hint]
-    T1 -->|fail| REC{Recovery}
+    T0 -->|runner halt| REC
+    T0 -->|skipped or fail, planner can hint| T1
+    T0 -->|skipped or fail, no supportsHintEscalation| REC
+    T1 -->|empty hint| REC
+    T1 -->|VERDICT: brief| REC
+    T1 -->|VERDICT: answer or widen| HR[One hinted retry<br/>widen: undeclared writes gated]
+    HR -->|success| DONE1[task_completed<br/>method: escalated-hint]
+    HR -->|fail| REC
     REC --> PROMPT[pendingRecovery persisted<br/>recovery_prompted published]
     PROMPT --> USER{User picks action}
     USER -->|retry-same-worker| RESET[Reset task, retry from scratch]
     USER -->|route-bigger-worker| BIGGER[Retry with more capable profile]
+    USER -->|switch-seat| SWITCH[Open the halted seat's picker]
     USER -->|skip-current-task| SKIP[Skip, move to next task]
     USER -->|pause-run| PAUSE[Save state, wait]
     USER -->|end-run| ABORT[Close the run]
@@ -188,7 +202,7 @@ When a recovery-worthy event happens, the orchestrator builds a `RecoveryIssue` 
 
 **A usage-limited runner halts the run the same way — and never gets login advice.** Subscription CLIs report an exhausted quota as an ordinary turn failure too (codex: "You've hit your usage limit. … or try again at Aug 8th, 2026 3:27 PM."; Claude Code: an `is_error` result like "You've hit your session limit · resets 3:45pm" or "Credit balance is too low"), and API providers return HTTP 429 bodies. The pipeline classifies those diagnostics as the `usage-limit` outcome (`src/engine/runners/usage-limit.ts`, applied in `src/engine/implementers/pipeline/call-result.ts` for CLI results and in `src/engine/implementers/pipeline/run.ts` for thrown provider errors), and the orchestrator halts at the same points as the signed-out case with a `runner-usage-limit` recovery. The message names the reset moment whenever the tool's diagnostic carried one — codex "try again at Aug 8th, 2026 3:27 PM." or the bare-clock variant "try again at 3:27 PM.", Claude Code "resets 3:45pm" / "resets Mon 12:00am", Groq "try again in 7.66s", or an HTTP `Retry-After` header (threaded into the diagnostic as `(retry-after: Ns)` by `src/engine/streaming/stream-errors.ts`) — surfaced in recovery copy as a locale-formatted time like `Aug 8, 2026, 3:27 PM` when parsed — and the details keep the tool's words verbatim. Logging out and back in cannot restore quota, so the recovery never suggests it: the real options are moving the seat to another detected tool (`switch-seat`, the recommended action whenever one is offered), waiting for the reset (`pause-run`, then `retry-same-worker`), switching to a different implementer profile (`route-bigger-worker`, offered when config has one), skipping the task, or ending the run. A planner-side limit halts the run at the planning call with the same reset-aware guidance instead of a login command, as a `runner-usage-limit` recovery on the `plan` seat.
 
-**Every admitted tool's own limit wording classifies.** Beyond codex and Claude Code, the captured phrasings are: antigravity, which prints `error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s.` on stderr — once beside exit 0 with `(response may be truncated)` appended, then again beside exit 3 — and whose compact `Resets in 2h6m30s` is parsed as the reset moment; opencode 2.x, which emits a flat `provider.quota` error envelope (`{"type":"error","error":{"type":"provider.quota","message":"Go usage limit exceeded","status":429}}`); command-code, which says `You've reached your weekly usage limit`; and the Gemini API body behind antigravity, whose `RESOURCE_EXHAUSTED` status classifies on its own. Copilot is the one gap: its limit wording has not been captured from a live run, so its classification rests on the generic 429 and rate-limit patterns and is unverified. A tool that prints its limit and exits before it reads a stdin prompt breaks the pipe under that prompt; the limit line on stderr outranks the broken pipe, so the call still halts as `runner-usage-limit` and not as `planner-call-failed` (`src/engine/runners/cli-tools/process-invoke.ts`).
+**The captured limit wording classifies.** Beyond codex and Claude Code, the captured phrasings are: antigravity, which prints `error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s.` on stderr — once beside exit 0 with `(response may be truncated)` appended, then again beside exit 3 — whose compact `Resets in 2h6m30s` is parsed as the reset moment, and whose line classifies whether or not the stream ends on a `result` frame; opencode 2.x, which emits a flat `provider.quota` error envelope (`{"type":"error","error":{"type":"provider.quota","message":"Go usage limit exceeded","status":429}}`); command-code, which says `You've reached your weekly usage limit`; and the Gemini API body behind antigravity, whose `RESOURCE_EXHAUSTED` status classifies on its own. Copilot, cursor and kilo-code are the gaps: their limit wording has not been captured from a live run, so they classify only through the shared 429, quota and rate-limit phrases, unverified. A tool that prints its limit and exits before it reads a stdin prompt breaks the pipe under that prompt; the limit line on stderr outranks the broken pipe, so the call still halts as `runner-usage-limit` and not as `planner-call-failed` (`src/engine/runners/cli-tools/process-invoke.ts`).
 
 **An implementer that leaves its isolation directory halts the brief.** A direct writer works in the run's isolation directory, and nothing but promotion may carry its work into your checkout. Two detectors watch each implementer call (`src/engine/implementers/isolation/`). The tripwire halts the brief as `implementer-left-isolation`. The audit halts the brief as `checkout-changed` when the git state of your checkout changed, and only warns when files changed:
 
@@ -205,9 +219,9 @@ The halt names the brief and carries the evidence. The tripwire's halt reads `T0
 |---|---|---|---|
 | `implementation-error` | Implementer crashed, or its endpoint is unreachable at the availability gate | `retry-same-worker`*, `route-bigger-worker`*, `skip-current-task`, `pause-run`, `end-run` | `retry-same-worker` |
 | `validation-failed` | Tests fail mid-escalation | `retry-same-worker`*, `route-bigger-worker`*, `skip-current-task`, `pause-run`, `end-run` | `retry-same-worker` |
-| `retry-exhausted` | All escalation tiers failed | `route-bigger-worker`*, `retry-same-worker`*, `skip-current-task`, `pause-run`, `end-run` | `route-bigger-worker` |
+| `retry-exhausted` | All escalation tiers failed, the planner found the brief wrong, or the `pre_escalation` hook blocked escalation | `route-bigger-worker`*, `retry-same-worker`*, `skip-current-task`, `pause-run`, `end-run` | `route-bigger-worker` |
 | `runner-unauthenticated` | A runner's stored login stopped working mid-run (e.g. codex refresh token burned, Claude Code signed out) | `retry-same-worker`, `skip-current-task`, `pause-run`, `end-run` | `retry-same-worker` |
-| `runner-usage-limit` | A runner ran out of quota mid-run (codex/Claude Code usage limit, provider 429, credit exhaustion); message names the reset time when known | `retry-same-worker`, `route-bigger-worker`*, `switch-seat`*, `skip-current-task`, `pause-run`, `end-run` | `switch-seat`, else `route-bigger-worker`, else `pause-run` |
+| `runner-usage-limit` | A runner ran out of quota mid-run (the captured wording of codex, Claude Code, antigravity, opencode 2.x and command-code; provider 429; credit exhaustion); message names the reset time when known | `retry-same-worker`, `route-bigger-worker`*, `switch-seat`*, `skip-current-task`, `pause-run`, `end-run` | `switch-seat`, else `route-bigger-worker`, else `pause-run` |
 | `context-overflow` | Task too large for any profile | `route-bigger-worker`*, `pause-run`, `end-run` | `route-bigger-worker` |
 | `user-edit-conflict` | External file edits conflict | `continue`*, `skip-current-task`, `pause-run`, `end-run` | depends on `safeToContinue` |
 | `approval-promotion-conflict` | Approved changes can't promote | `skip-current-task`, `pause-run`, `end-run` | `pause-run` |
@@ -219,7 +233,7 @@ The halt names the brief and carries the evidence. The tripwire's halt reads `T0
 | `runner-timeout-repeated` | Two timeouts in a row on one brief: the slice does not fit the deadline, so escalating it would only repeat the same overrun on the planner | `retry-same-worker`, `route-bigger-worker`*, `switch-seat`*, `skip-current-task`, `pause-run`, `end-run` | `pause-run` |
 | `approval-denied` | The operator denied the brief's writes at the approval gate | `retry-same-worker`, `skip-current-task`, `pause-run`, `end-run` | `pause-run` |
 | `snapshot-failed` | The task-start snapshot could not be captured, so scope and revert cannot be enforced for this brief | `retry-same-worker`, `pause-run`, `end-run` | `retry-same-worker` |
-| `review-failed` | The final review still reported blocking findings after the last fix cycle | `pause-run`, `end-run` | `pause-run` |
+| `review-failed` | The final review still reported blocking findings after the last fix cycle | `revise`, `pause-run`, `end-run` | `pause-run` |
 | `planner-call-failed` | The planner call failed for a reason that is neither a sign-out nor a quota limit | `retry-same-worker`, `switch-seat`*, `pause-run`, `end-run` | `retry-same-worker` |
 | `planner-returned-no-briefs` | The planner answered but produced no parsable Task Brief | `retry-same-worker`, `revise`, `end-run` | `retry-same-worker` |
 | `constitution-check-failed` | The spec breaks a hard constitution principle | `revise-spec`, `end-run` | `revise-spec` |
@@ -232,6 +246,10 @@ The halt names the brief and carries the evidence. The tripwire's halt reads `T0
 
 **The pre-task user-edit gate raises a conflict only from a scan that produced a file list.** `checkUserEditConflicts()` (`src/engine/orchestrator/user-edit/detection.ts`) fingerprints the changed files before each task. When the scan itself cannot run, SPLITBRIEF publishes a warning and lets the task proceed — a failed scan degrades to a warning, never to a fabricated conflict with an empty file list, and the run does not stop over an inspection failure. The task's own file stays protected regardless: the extracted-code baseline race check and hash-guarded promotion both remain in force.
 
+**A parked brief keeps its own output.** On continue, changes to the in-flight brief's own declared files are that brief's output, not a user edit: they are kept with one `own_partial_output_kept` warning and the brief resumes on them. This includes an edit the operator made to those files while the run was parked (`src/engine/orchestrator/user-edit/detection.ts`).
+
+**A file halt that no longer holds clears itself.** On continue, a persisted `user-edit-conflict` or `approval-promotion-conflict` halt whose files no longer block the brief is resolved with `recovery_resolved` (`outcome: continued`) and one `stale_file_halt_resolved` warning instead of asking again (`fileHaltIsStale`, `src/engine/orchestrator/run/init.ts`).
+
 **Restore-on-exhaustion.** If the retry ladder exhausts and prompts a `retry-exhausted` recovery for a task that was not diverted out of the ladder, the task's attributed changed files are restored to their pre-task state from `taskStartSnapshot` (via `restoreDirtyFilesFromSnapshot`), so a later task's validation never sees the failing task's leftover edits. A `warning` event discloses which files were restored.
 
 **What each action does in `src/engine/orchestrator/recovery/actions.ts`:**
@@ -242,7 +260,7 @@ The halt names the brief and carries the evidence. The tripwire's halt reads `T0
 
 `switch-seat` — Offered when another ready detected tool can take the blocked seat. The inline recovery menu above the composer starts on the recommended action. Use Up/Down and Enter to choose; **Change PLAN tool** (or BUILD/REVIEW) opens that seat's own picker — the same overlay Settings and Setup open — with the cursor on the first offered tool, so the tool and the model beside it are chosen in one place. The panel lists no tools of its own. Escape in the picker returns to the action list without changing the seat.
 
-Tab switches focus between the menu and composer. Space pauses only while the action menu owns focus and pause is available; while typing, it inserts a space. A correction in the composer accompanies a retry of the current planner step. The footer and activity indicators show the stopped or waiting state until work actually resumes.
+Tab switches focus between the menu and composer. Space pauses only while the action menu owns focus and pause is available; while typing, it inserts a space. Typed text is a correction: at a task halt it retries the brief with that text as the implementer's steer (`retry-same-worker`); at a planner halt it accompanies a retry of the current planner step, and a halt that offers no retry sends it with `revise` or `revise-spec` (`src/features/workflow/recovery-driver.ts`). A halt that offers none of the three refuses typed text on the feedback line. Text typed into the composer of a run at rest is the same correction: on a halt that offers no retry it is sent with `revise` at once, and on a retry halt it rides the retry you choose on the panel. The footer and activity indicators show the stopped or waiting state until work actually resumes.
 
 The selected candidate travels back to the run loop as `switchSeat`. Before the loop re-enters `runWorkflow`, it resolves the halt onto that tool and prepares the same session on it (`applyOfferedSeatSwap` → `switchSeatAndPrepareResume`). That preparation is the re-entry's only one: the seat that halted is not admitted again, so a signed-out or missing tool cannot block the move away from it. Preparation applies the normal runner admission checks to the new crew. Usage-limit recovery still shows the affected tool and reset time through `formatResetNote`; full diagnostics remain in the session log.
 
@@ -256,6 +274,8 @@ The selected candidate travels back to the run loop as `switchSeat`. Before the 
 `pause-run` — Transitions `PAUSE_PENDING_RECOVERY`. State is saved to disk. The user can `splitbrief resume` later.
 
 `revise` — Queues the operator's correction as a user message and resolves recovery, so the next planner turn carries it. Offered for the halts where the planner's own output is the problem.
+
+On `review-failed`, `revise` sends the failed review back for one more repair cycle. The correction is recorded as a user message. The briefs that own the Critical findings in `review.md` reopen with those findings, and the correction is added beside each of them. The correction also reopens every brief whose declared files it names; when neither the findings nor the correction names a brief, the last brief answers it. `REVIEW_FIX_START` moves the run from `complete` back to `implementing`, and the final review runs again when the briefs pass. The cycle counts past `REVIEW_CYCLE_CAP`, so that review passes and closes the run, or halts on `review-failed` again. With no correction and no Critical finding a brief owns, the action is refused with `nothing-to-correct`.
 
 `revise-spec` — Transitions `REWIND_TO_SPEC` with the operator's note, then resolves recovery. Offered for `constitution-check-failed`.
 

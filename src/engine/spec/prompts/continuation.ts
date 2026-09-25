@@ -28,17 +28,23 @@ export function composeContinuation(input: ComposeContinuationInput): string {
   return `${input.basePrompt}\n\n${continuationBlock(input)}`;
 }
 
+const NO_EARLIER_OUTPUT = 'No output from an earlier attempt of this step is available.';
+
 /** The trailing note on its own, for a caller that appends it somewhere else. */
 export function continuationBlock(input: Omit<ComposeContinuationInput, 'basePrompt'>): string {
   const partial = input.partial?.trim() ?? '';
   const extra = input.extra?.trim() ?? '';
   const steer = input.steer?.trim() || DEFAULT_STEER;
-  // This block also carries a correction typed at a halt, where nothing was
-  // interrupted — so the sentence reports the absence, not a cause.
+  // A correction typed at a halt travels in this block too, so only an attempt
+  // that left output is called interrupted.
   if (partial === '' && extra === '') {
-    return `[Continuation] No output from an earlier attempt of this step is available. The user says: ${steer}`;
+    return `[Continuation] ${NO_EARLIER_OUTPUT} The user says: ${steer}`;
   }
-  const blocks = ['[Continuation] The previous attempt of this step was interrupted.'];
+  const blocks = [
+    partial === ''
+      ? `[Continuation] ${NO_EARLIER_OUTPUT}`
+      : '[Continuation] The previous attempt of this step was interrupted.',
+  ];
   if (partial !== '') blocks.push(`Partial output so far:\n${trimPartial(partial)}`);
   if (extra !== '') blocks.push(extra);
   blocks.push(`The user says: ${steer}`);

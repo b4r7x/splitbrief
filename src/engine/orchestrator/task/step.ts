@@ -230,7 +230,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     task,
     state,
     workspace: implState.workspace,
-    usesIsolation: implState.usesIsolation,
     preApplyApprovedFiles: implState.preApplyApprovedFiles,
     taskStartSnapshot,
     recordApprovalDenial: (s, decision, message) =>

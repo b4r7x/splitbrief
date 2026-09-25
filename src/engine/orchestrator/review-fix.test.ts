@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { REVIEW_CYCLE_CAP } from '../../core/pipeline-spec/review.js';
-import { decideReviewOutcome, type ReviewOutcomeInput } from './review-fix.js';
+import { correctionFixes, decideReviewOutcome, type ReviewOutcomeInput } from './review-fix.js';
 
 const tasks = [
   makeTask({ id: 'T001', file: 'src/alpha.ts' }),
@@ -72,5 +72,45 @@ describe('decideReviewOutcome', () => {
       kind: 'fail',
       blocking: 0,
     });
+  });
+});
+
+describe('correctionFixes', () => {
+  const tasks = [
+    makeTask({ id: 'T001', file: 'src/a.ts' }),
+    makeTask({ id: 'T002', file: 'src/b.ts' }),
+    makeTask({ id: 'T003', file: 'src/c.ts' }),
+  ];
+
+  it('puts the correction beside every Critical finding the review attributed', () => {
+    expect(
+      correctionFixes({ critical: ['src/b.ts leaks'], correction: 'close it', tasks }),
+    ).toEqual({ T002: ['src/b.ts leaks', 'Operator correction: close it'] });
+  });
+
+  it('also reopens the briefs the correction names beside the ones the review attributed', () => {
+    expect(
+      correctionFixes({
+        critical: ['src/b.ts leaks'],
+        correction: 'close it, and src/a.ts must log first',
+        tasks,
+      }),
+    ).toEqual({
+      T001: ['Operator correction: close it, and src/a.ts must log first'],
+      T002: ['src/b.ts leaks', 'Operator correction: close it, and src/a.ts must log first'],
+    });
+  });
+
+  it('reopens every brief a lone correction names, else the last brief', () => {
+    expect(
+      correctionFixes({ critical: [], correction: 'fix src/a.ts and src/c.ts', tasks }),
+    ).toEqual({
+      T001: ['Operator correction: fix src/a.ts and src/c.ts'],
+      T003: ['Operator correction: fix src/a.ts and src/c.ts'],
+    });
+    expect(correctionFixes({ critical: [], correction: 'add a test', tasks })).toEqual({
+      T003: ['Operator correction: add a test'],
+    });
+    expect(correctionFixes({ critical: [], correction: '', tasks })).toEqual({});
   });
 });

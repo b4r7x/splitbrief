@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
@@ -194,7 +194,6 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
   });
 
   expect(implementation.implResult.success).toBe(true);
-  expect(implementation.usesIsolation).toBe(true);
   expect(nestedStageCalls).toBe(0);
   expect(implementation.workspace).toBeDefined();
   const workspace = implementation.workspace;
@@ -214,7 +213,6 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
     task,
     state: implementation.state,
     workspace,
-    usesIsolation: implementation.usesIsolation,
     preApplyApprovedFiles: implementation.preApplyApprovedFiles,
     taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
     recordApprovalDenial: vi.fn(),
@@ -281,7 +279,6 @@ describe('runImplementation configured custom contracts', () => {
     });
 
     expect(result.implResult.success).toBe(true);
-    expect(result.usesIsolation).toBe(false);
     expect(result.workspace).toBeUndefined();
     expect(childStages).toHaveLength(1);
     const childStage = childStages[0];
@@ -378,5 +375,54 @@ describe('runImplementation worktree freshness', () => {
     // The park left a partial at attempt 2; the ladder reset the brief to attempt
     // 0, so the stale partial does not resume it and the worktree reseeds clean.
     expect(await capturedFresh({ partial: 'half a brief', attempt: 2 })).toBe(true);
+  });
+});
+
+describe('runImplementation continuation note', () => {
+  it('names the declared files that already differ from the commit the brief started on', async () => {
+    const { projectDir } = setupProject('reseed-note');
+    const task = makeTask({ id: 'T041', file: 'src/reseed.ts', action: 'create' });
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    // Written after the task-start snapshot and before the call, as a reset brief finds it.
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/reseed.ts'), 'export const reseed = 1;\n');
+    const implementer = makeImplementer({ capabilities: { writesFiles: 'direct' } });
+    const isolation: RunIsolation = {
+      acquire: async () => ({
+        projectDir,
+        sandboxEnv: {},
+        snapshot: await getChangedFilesSnapshot(projectDir),
+        targetBaseline: undefined,
+        changeDetection: 'file-hashes',
+        cleanup: () => {},
+      }),
+      dispose: async () => {},
+    };
+    const continuation = createContinuationHolder({
+      step: { kind: 'brief', taskId: task.id, attempt: 0 },
+      steer: 'use the registry',
+    });
+    const wctx = makeWctx({
+      projectDir,
+      sessionId: 'reseed-note-session',
+      implementer,
+      isolation,
+      continuation,
+    });
+
+    await runImplementation({
+      wctx,
+      task,
+      state: makeImplState([task]),
+      taskStartSnapshot,
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+
+    expect(vi.mocked(implementer.implement).mock.calls[0]?.[0].continuation).toEqual({
+      steer: 'use the registry',
+      extra:
+        'These declared files already differ from the commit this brief started on: src/reseed.ts',
+    });
   });
 });

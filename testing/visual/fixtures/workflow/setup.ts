@@ -84,7 +84,11 @@ async function setupProjection(
     );
   }
   closeApprovalPrompt();
-  await createWorkflowBaseFixture(projection.feature, projection.resumeState).setup(context);
+  await createWorkflowBaseFixture(
+    projection.feature,
+    projection.resumeState,
+    projection.config,
+  ).setup(context);
   if (projection.review !== undefined) {
     const filePath = getReviewFilePath(projection.review);
     await mkdir(dirname(filePath), { recursive: true });

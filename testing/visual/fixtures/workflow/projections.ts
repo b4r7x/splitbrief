@@ -18,7 +18,14 @@ import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt
 import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores/workflow/stop.js';
 import type { ScenarioId } from '../../contracts/identifiers.js';
 import { scenarioId } from '../../contracts/identifiers.js';
+import {
+  buildRetryExhaustedRecoveryIssue,
+  buildReviewFailedRecoveryIssue,
+} from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import type { visualConfig } from '../screen-fixtures.js';
 import { atRestProjections } from './at-rest-projections.js';
+
+type VisualConfigOverrides = Parameters<typeof visualConfig>[0];
 
 export const WORKFLOW_FIXTURE_VERSION = 1;
 
@@ -64,7 +71,9 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   failure: 'Synthetic runner failure: bounded fixture',
   recovery: 'Change BUILD tool',
   recoveryPlan: 'Change PLAN tool',
-  retryExhausted: 'exhausted recovery retries',
+  retryExhausted: 'exhausted its retries',
+  briefVerdict: 'the planner found the brief',
+  reviewFailed: 'Send a correction',
   leftIsolation: 'Recovery needed · T901 left the isolation directory',
   checkoutChanged: 'Recovery needed · Your checkout changed under T901',
   apiContext: 'Nothing was sent to PLAN',
@@ -120,6 +129,8 @@ export interface WorkflowFixtureProjection {
   /** The artifact the document review panel names, when the projection opens that gate. */
   readonly reviewArtifact?: ReviewArtifact;
   readonly streaming?: FixtureStreaming;
+  /** The crew and workflow settings the saved run ran under, when they are not the gallery default. */
+  readonly config?: VisualConfigOverrides;
   /**
    * The saved run the screen resumes; the production resume path hydrates it from disk, so a halt it
    * carries is prompted by the real recovery driver instead of staged by the fixture.
@@ -149,6 +160,8 @@ const WORKFLOW_STOPPED_ID = scenarioId('workflow-stopped');
 const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
 const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
 const WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID = scenarioId('workflow-recovery-retry-exhausted');
+const WORKFLOW_RECOVERY_BRIEF_VERDICT_ID = scenarioId('workflow-recovery-brief-verdict');
+const WORKFLOW_RECOVERY_REVIEW_FAILED_ID = scenarioId('workflow-recovery-review-failed');
 const WORKFLOW_RECOVERY_LEFT_ISOLATION_ID = scenarioId('workflow-recovery-left-isolation');
 const WORKFLOW_RECOVERY_CHECKOUT_CHANGED_ID = scenarioId('workflow-recovery-checkout-changed');
 const WORKFLOW_API_CONTEXT_ID = scenarioId('workflow-api-context-insufficient');
@@ -944,17 +957,33 @@ const usageLimitRecoveryIssue: RecoveryIssue = {
   createdAt: new Date(FIXED_TS).toISOString(),
 };
 
+const AGY_BUILD_SEAT = {
+  kind: 'cli',
+  tool: 'antigravity',
+  model: 'gemini-3.8-flash-high',
+} as const;
+/** The isolation halts are raised only on a CLI implementer's tool calls. */
+const AGY_CREW: VisualConfigOverrides = { implementer: AGY_BUILD_SEAT };
+/** Three local retries need the retry budget that allows them. */
+const AGY_LADDER_CREW: VisualConfigOverrides = {
+  implementer: AGY_BUILD_SEAT,
+  workflow: { maxRetries: 3 },
+};
+
+const HALTED_TASK = makeTask({
+  id: WORKFLOW_FIXTURE_TASK_ID,
+  title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+  file: WORKFLOW_FIXTURE_REVIEW_FILE,
+  status: 'in_progress',
+});
+
+/** The run the engine saves at a halt: the brief still in flight, at the phase the halt was raised in. */
 function haltedResumeState(issue: RecoveryIssue): WorkflowState {
-  return makeImplState(
-    [
-      makeTask({
-        id: WORKFLOW_FIXTURE_TASK_ID,
-        title: WORKFLOW_FIXTURE_TEXT.implementationTask,
-        file: WORKFLOW_FIXTURE_REVIEW_FILE,
-      }),
-    ],
-    { feature: WORKFLOW_FEATURE, pendingRecovery: issue },
-  );
+  return makeImplState([HALTED_TASK], {
+    feature: WORKFLOW_FEATURE,
+    phase: issue.phase,
+    pendingRecovery: issue,
+  });
 }
 
 const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
@@ -969,41 +998,48 @@ const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
   resumeState: haltedResumeState(usageLimitRecoveryIssue),
 };
 
+const FIXTURE_TYPECHECK_ERROR =
+  "src/features/workflow/display/activity.ts(42,18): error TS2339: Property 'stop' does not exist on type 'Projection'.";
+
 /**
- * A brief the ladder could not land: the last error the brief died on, the attempts spelled out
- * as local retries plus the hinted one, both voices — what the implementer said before it stopped
- * and what the planner answered — and the verdict the planner reached on the brief itself.
+ * Two local retries fail on one typecheck error; the third changes nothing and says why, which
+ * ends the local rung on the same error. The planner answers, and the hinted retry fails on it too.
  */
-const retryExhaustedRecoveryIssue: RecoveryIssue = {
+const retryExhaustedRecoveryIssue = buildRetryExhaustedRecoveryIssue({
   id: 'rec_visual_retry_exhausted',
-  reason: 'retry-exhausted',
+  task: HALTED_TASK,
   phase: 'escalating',
-  status: 'awaiting-user',
-  taskId: WORKFLOW_FIXTURE_TASK_ID,
-  taskTitle: WORKFLOW_FIXTURE_TEXT.implementationTask,
-  files: [WORKFLOW_FIXTURE_REVIEW_FILE],
-  affectedTaskIds: [WORKFLOW_FIXTURE_TASK_ID],
-  message: `${WORKFLOW_FIXTURE_TASK_ID} exhausted recovery retries`,
-  details: [
-    "Validation: error TS2339: Property 'stop' is missing on Projection.",
-    'Attempts: 4 (3 local, then 1 with planner hints)',
-    'Implementer said: no stop field on Projection, so I wrote nothing.',
-    'Planner said: The field is optional; read it via the registry.',
-    'Planner verdict: the brief itself is wrong — Projection never declared stop',
-  ],
+  validationSummary: FIXTURE_TYPECHECK_ERROR,
   attempts: 4,
   maxAttempts: 3,
-  selectedImplementerProfile: 'local-fixture',
-  facts: {
-    validationSummary: "error TS2339: Property 'stop' is missing on Projection.",
-    allowRetryOverride: true,
-    hintRungRan: true,
-    plannerVerdict: 'brief',
-  },
-  availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
-  recommendedAction: 'retry-same-worker',
+  hintRungRan: true,
+  allowRetryOverride: true,
+  selectedImplementerProfile: 'default',
+  handBack:
+    'activity.ts reads projection.stop, but Projection has no stop field. I did not know its type, so I changed nothing.',
+  plannerHint:
+    'VERDICT: answer\nDeclare stop?: boolean on Projection in projections.ts. activity.ts then typechecks without a change.',
+  plannerVerdict: 'answer',
   createdAt: new Date(FIXED_TS).toISOString(),
-};
+});
+
+/** The first attempt changed nothing and asked; the planner found the brief wrong, so no retry ran. */
+const briefVerdictRecoveryIssue = buildRetryExhaustedRecoveryIssue({
+  id: 'rec_visual_brief_verdict',
+  task: HALTED_TASK,
+  phase: 'escalating',
+  validationSummary: 'Tool implementer (antigravity) exited without changing any files',
+  attempts: 0,
+  maxAttempts: 3,
+  allowRetryOverride: true,
+  selectedImplementerProfile: 'default',
+  handBack:
+    'Projection is declared in src/core/projection.ts, which this brief does not list. May I edit that file?',
+  plannerHint:
+    'VERDICT: brief — the brief puts stop on a type that projections.ts does not declare\nProjection is declared in src/core/projection.ts. Add stop there in its own brief, then run this brief again.',
+  plannerVerdict: 'brief',
+  createdAt: new Date(FIXED_TS).toISOString(),
+});
 
 const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID,
@@ -1011,7 +1047,39 @@ const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
   inputMode: 'question',
   sidebarVisible: false,
   events: [],
+  config: AGY_LADDER_CREW,
   resumeState: haltedResumeState(retryExhaustedRecoveryIssue),
+};
+
+const briefVerdictRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_BRIEF_VERDICT_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: AGY_LADDER_CREW,
+  resumeState: haltedResumeState(briefVerdictRecoveryIssue),
+};
+
+/** The final review still failed once its repair cycles ran out; every brief had landed. */
+const reviewFailedRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_REVIEW_FAILED_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: AGY_LADDER_CREW,
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    phase: 'complete',
+    reviewStatus: 'failed',
+    pendingRecovery: buildReviewFailedRecoveryIssue({
+      id: 'rec_visual_review_failed',
+      blocking: 4,
+      phase: 'complete',
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  }),
 };
 
 /**
@@ -1054,6 +1122,7 @@ const leftIsolationRecoveryProjection: WorkflowFixtureProjection = {
   inputMode: 'question',
   sidebarVisible: false,
   events: [],
+  config: AGY_CREW,
   resumeState: haltedResumeState(leftIsolationRecoveryIssue),
 };
 
@@ -1079,6 +1148,7 @@ const checkoutChangedRecoveryProjection: WorkflowFixtureProjection = {
   inputMode: 'question',
   sidebarVisible: false,
   events: [],
+  config: AGY_CREW,
   resumeState: haltedResumeState(checkoutChangedRecoveryIssue),
 };
 
@@ -1322,6 +1392,8 @@ const projections = [
   failureProjection,
   usageLimitRecoveryProjection,
   retryExhaustedRecoveryProjection,
+  briefVerdictRecoveryProjection,
+  reviewFailedRecoveryProjection,
   leftIsolationRecoveryProjection,
   checkoutChangedRecoveryProjection,
   apiContextRecoveryProjection,

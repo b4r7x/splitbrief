@@ -22,6 +22,7 @@ import {
   resolveStageCommand,
   type ResolvedCommand,
 } from '../../../core/validation/stage-command.js';
+import { routeTestScript } from '../../../core/validation/test-script-route.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
@@ -167,8 +168,15 @@ function planStage(stage: ValidationStage, task: Task, ctx: StageContext): Stage
     stack: ctx.stack,
   });
   if (!target.run) return { kind: 'skip', reason: target.skipReason };
-  const args = buildTestArgs(resolved, target.targets, ctx.stack?.narrowing ?? { kind: 'none' });
-  return { kind: 'run', resolved, args, command: formatValidationCommand(resolved.cmd, args) };
+  const routed =
+    routeTestScript({ projectDir: ctx.projectDir, resolved, targets: target.targets }) ?? resolved;
+  const args = buildTestArgs(routed, target.targets, ctx.stack?.narrowing ?? { kind: 'none' });
+  return {
+    kind: 'run',
+    resolved: routed,
+    args,
+    command: formatValidationCommand(routed.cmd, args),
+  };
 }
 
 export function createValidator(deps: ValidatorDeps = {}): Validator {

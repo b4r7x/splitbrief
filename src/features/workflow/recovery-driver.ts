@@ -31,6 +31,8 @@ import {
   switchSeatCandidateForAnswer,
 } from './recovery-prompt.js';
 
+const NO_CORRECTION_MESSAGE = 'This halt takes no typed correction. Choose one of its actions.';
+
 type PendingRecoveryResult =
   | {
       shouldRun: true;
@@ -40,6 +42,8 @@ type PendingRecoveryResult =
       switchSeat?: SeatSwapChoice | undefined;
       /** The operator's typed correction, to seed the next call's prompt. */
       steer?: string | undefined;
+      /** The words the run was continued with were this halt's correction, and are spent. */
+      correctionTaken?: true | undefined;
     }
   | { shouldRun: false; state?: WorkflowState | undefined };
 
@@ -47,6 +51,8 @@ interface PromptPendingRecoveryArgs {
   state: WorkflowState;
   controller: AbortController;
   republishPrompt: boolean;
+  /** What the operator typed to continue the run, before the panel was on screen. */
+  correction?: string | undefined;
 }
 
 interface RecoveryDriverOptions {
@@ -71,6 +77,15 @@ function openRecoveryNotice(issue: RecoveryIssue): void {
     resetAt: Number.isFinite(resetAt) ? resetAt : null,
     issue,
   });
+}
+
+/**
+ * The action typed words take on this halt: a retry carries them as the steer, and a halt that
+ * offers no retry sends them with its revise. A halt that offers neither takes no words.
+ */
+function correctionActionFor(issue: RecoveryIssue): RecoveryAction | undefined {
+  const offered: readonly RecoveryAction[] = ['retry-same-worker', 'revise', 'revise-spec'];
+  return offered.find((action) => issue.availableActions.includes(action));
 }
 
 /** Resolves once the picker has closed, or the run is aborted while it is open. */
@@ -153,6 +168,7 @@ export function createRecoveryDriver(
     state,
     controller,
     republishPrompt,
+    correction: reentryCorrection = '',
   }: PromptPendingRecoveryArgs): Promise<PendingRecoveryResult> {
     const issue = state.pendingRecovery;
     if (issue === undefined) return { shouldRun: true, state };
@@ -166,7 +182,9 @@ export function createRecoveryDriver(
       return inputMode.setQuestionMode(
         action === 'revise-spec'
           ? 'What should the spec say instead? (enter sends no note)'
-          : 'What should the planner change? (enter sends no note)',
+          : issue.reason === 'review-failed'
+            ? "What should the fix change? (enter sends the review's findings alone)"
+            : 'What should the planner change? (enter sends no note)',
       );
     };
 
@@ -269,6 +287,19 @@ export function createRecoveryDriver(
       }
     }
 
+    // Words typed to continue the run answer the halt when only its revise can carry them; a
+    // retry halt keeps them as the steer of whichever retry the operator picks on the panel.
+    const correctionAction = correctionActionFor(issue);
+    if (reentryCorrection.trim() !== '') {
+      if (correctionAction === 'revise' || correctionAction === 'revise-spec') {
+        const applied = await applyAction(correctionAction, '', reentryCorrection);
+        if (applied?.shouldRun === true) return { ...applied, correctionTaken: true };
+        if (applied !== null) return applied;
+      } else if (correctionAction === undefined) {
+        feedbackStore.setError(NO_CORRECTION_MESSAGE);
+      }
+    }
+
     if (republishPrompt) publishRecoveryPrompted(bus, sessionId, issue);
 
     openRecoveryNotice(issue);
@@ -281,17 +312,12 @@ export function createRecoveryDriver(
       let action = parseRecoveryActionAnswer(answer, issue);
       let correction = '';
       if (action === null && answer.trim() !== '') {
-        const correctionAction = issue.availableActions.includes('retry-same-worker')
-          ? 'retry-same-worker'
-          : issue.availableActions.includes('revise')
-            ? 'revise'
-            : issue.availableActions.includes('revise-spec')
-              ? 'revise-spec'
-              : undefined;
-        if (correctionAction !== undefined) {
-          action = correctionAction;
-          correction = answer;
+        if (correctionAction === undefined) {
+          feedbackStore.setError(NO_CORRECTION_MESSAGE);
+          continue;
         }
+        action = correctionAction;
+        correction = answer;
       }
       if (action === null) {
         feedbackStore.setError('Unknown recovery action.');

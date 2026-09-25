@@ -2,14 +2,16 @@ import type { RecoveryAction, RecoveryReason } from '../enums.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 /**
- * A final review that reported blocking findings offers the run's two exits. A
- * review that reached no verdict at all — the seat was handed an incomplete
- * packet, or the call never landed — can also be re-issued once the seat is
- * corrected, so `retry-same-worker` is legal here; the builder offers it only
- * for that non-verdict case.
+ * A final review that reported blocking findings offers the run's two exits and
+ * `revise`, which sends the review's findings and the operator's correction back
+ * through one more repair cycle. A review that reached no verdict at all — the
+ * seat was handed an incomplete packet, or the call never landed — can also be
+ * re-issued once the seat is corrected, so `retry-same-worker` is legal here; the
+ * builder offers it only for that non-verdict case.
  */
 const REVIEW_FAILED_ACTIONS = [
   'retry-same-worker',
+  'revise',
   'pause-run',
   'end-run',
 ] as const satisfies readonly RecoveryAction[];

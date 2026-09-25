@@ -1,13 +1,13 @@
 # Dogfooding: developing SPLITBRIEF with SPLITBRIEF
 
-The built CLI runs on its own repository. A stronger tool plans and reviews, a weaker one builds, and the operator (a person or a Claude session) watches the run, fixes the tool when the tool is what broke, and carries the same session on. This page is the operating procedure; the engine semantics it relies on are in [WORKFLOW.md](./WORKFLOW.md) and [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
+The built CLI runs on its own repository. A stronger tool plans and reviews, a weaker one builds, and the operator watches the run, fixes tool defects, and continues the same session. The self-contained [splitbrief-babysit skill](../skills/splitbrief-babysit/SKILL.md) supplies the supervision protocol and bundled watcher. This page explains the engine semantics, with further details in [WORKFLOW.md](./WORKFLOW.md) and [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
 Four rules, in force for every dogfooding run:
 
 1. **Never commit or stage.** The operator leaves every change in the working tree; the owner commits between runs.
 2. **Run the build you just made.** `npm run build` then `node dist/cli.js …`. The global `splitbrief` on PATH is whatever was installed last and is usually stale.
-3. **A deterministic tool defect is fixed in the tool, in the same session.** Stop, fix `src/`, rebuild, `continue` the run. A brief that fails because the brief or the model is wrong is the run's business, not the tool's.
-4. **Every run leaves a record.** Append what broke, why, and the fix to `.nuke/<date>-session-handoff.md` (untracked). The next context reads that first.
+3. **Stop on the first detected tool defect.** Stop resumably, fix the cause, verify the fix, rebuild, and `continue` the same run. This includes visual defects and false tripwire alarms. A brief or model mistake handled correctly by the tool remains the run's business.
+4. **Every run leaves a record.** Append each defect, repair, and verification result to `.splitbrief/sessions/<id>/babysit.md`. The next supervisor reads that record first.
 
 ## 1. Preflight
 
@@ -65,7 +65,7 @@ Redirecting stderr matters: the TUI runs on the alternate screen, and a fatal er
 | Spec gate (`reviewing-spec`) | `.splitbrief/sessions/<id>/spec.md`: scope, out of scope, acceptance criteria | `y` approve, `c` request changes, `e` edit |
 | Plan gate (`reviewing-plan`, only with `approve: all`) | `plan.md` | `y` |
 | Briefs gate (`reviewing-briefs`) | `tasks.md`: one module group per brief, no new knobs, no brief planning for a red gate; per-brief declared-file bytes against the argv limit | `y` |
-| Recovery panel | the reason line and the file list | type the action letter and `⏎`; on a task halt the letters are the action, free text is dropped; `w` (switch seat) opens the halted seat's picker on the offered tool, where tool and model are chosen |
+| Recovery panel | the reason line and the file list | type the action letter and `⏎`; at a task halt, typed free text retries the brief with that text as the implementer's correction; `w` (switch seat) opens the halted seat's picker on the offered tool, where tool and model are chosen |
 | Stop sheet | — | `esc` opens it, `esc` again stops resumably, `ctrl+c` twice quits after the stop settles |
 
 Headless: `$SB start --plain --approve none --yolo "<sentence>" @tasks.md`. Gates auto-approve, a planner question ends the run with `input_required`, and `kill -INT <pid>` parks the run cleanly (exit 0, status `open · paused`).
@@ -88,17 +88,19 @@ Memory: the process should sit in the hundreds of MB. Growth of more than a few 
 
 ## 4. The autofix loop
 
-The question at every failure is *who* failed. The run owns model mistakes and brief mistakes: the ladder retries, the recovery panel offers retry, skip, seat switch. The operator owns tool mistakes: a crash, a limit that ended a healthy call, a parser that dropped a document, a gate that lied. Those are fixed now, because the next brief hits the same code. A cosmetic tool mistake — copy, a counter, a label, a render defect, a warning — is the other tier: when the right key still works and `state.json` is right, it goes to a ledger and is fixed after the run's review.
+Classify every failure before allowing further work. The run owns model and brief mistakes when the tool handles them correctly. The operator stops on any tool defect, including crashes, lost documents, false alarms, incorrect counters, labels, and rendering. An uncertain cause also requires a resumable stop for diagnosis. Expected warnings and correctly reported provider limits use normal recovery. Never retry unchanged code or defer a known tool defect until the final review.
 
 ```bash
 # 1. stop: esc, esc (resumable) — or ctrl+c ctrl+c, or kill -INT <pid> on a headless run
-# 2. fix src/, keep the change minimal, run the colocated tests
+# 2. confirm cleanup and process exit; fix the cause; run regression tests, affected suites and typecheck
 # 3. rebuild
 npm run build
 # 4. carry the same session on
 $SB continue $ID                     # picks up at the first artifact not on disk, or the parked step
 $SB continue $ID --action retry      # when the run stopped on a recovery: retry | skip | switch-seat:<tool>[:<model>] | end-run
 ```
+
+Inspect visual fixes in the rendered TUI. After rebuilding, reproduce the original interaction in a fresh process and record the result. If it still fails, stop again. Do not skip a brief or end a run to bypass a tool defect.
 
 What `continue` does with the saved state (`src/engine/orchestrator/run/init.ts`, `src/core/sessions/run-status.ts`):
 
@@ -119,9 +121,9 @@ Between runs, edit `.splitbrief/config.yaml`. Inside a run, `/crew build` (or `p
 
 From the shell, `continue --implementer <tool> --implementer-model <id>` or `--planner-model fable`. Those flags are now the config of record too: the resulting seat block is written back to `.splitbrief/config.yaml` through the comment-preserving writer, and the CLI prints `<SEAT> seat recorded in .splitbrief/config.yaml` for each seat it moved. A moved plan seat drops the planner's native session and rebuilds context from the transcript. A stopped run continued on a different implementer simply builds the remaining briefs with it.
 
-## 6. When to stop fixing and plan instead
+## 6. Deterministic failures and blocked repairs
 
-A brief that fails the same way twice because of a fixed setting of the tool (a prompt line, an adapter flag, a gate rule, a default) is not a retry problem. Note it, let the run finish or end it, then plan the setting change as its own piece of work with `/sota`. Symptoms: the implementer declines with the same words every attempt, a validation stage fails on something no brief can touch, a limit trips on a healthy call.
+A deterministic failure caused by a tool prompt, adapter flag, gate, or default is a tool defect. Stop when detected, diagnose the cause, and fix it before resuming. Do not let the run finish through repeated identical failures. If a repair needs an unauthorized product decision or unavailable credentials, keep the run open and parked. Report the concrete blocker and the saved run ID.
 
 ## 7. Smoke test: stop, continue, finish
 

@@ -927,7 +927,6 @@ describe('createRunIsolation', () => {
           approval: { enabled: true, feedRejectionsToPlanner: false },
         }),
         workspace: ws,
-        usesIsolation: true,
         taskStartSnapshot,
         dependsOnFiles: [],
         cleanup: ws.cleanup,

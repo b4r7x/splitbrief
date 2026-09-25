@@ -9,6 +9,7 @@ import { buildPrompt, fenced, instructionsSection, type PromptSection } from './
 import { selectRelevantExamples, formatExamplesSection } from './escalation-examples.js';
 import { buildScopeLines } from '../formatter.js';
 import { workspaceRules } from './system.js';
+import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 
 export type HintVerdict =
   | { kind: 'answer' }
@@ -17,7 +18,8 @@ export type HintVerdict =
 
 export type HintVerdictKind = HintVerdict['kind'];
 
-export const HINT_VERDICT_LINE = /^VERDICT:\s*(answer|widen|brief)\b\s*(.*)$/im;
+export const HINT_VERDICT_LINE =
+  /^[ \t>*_`]*VERDICT[*_`]*:[*_` \t]*(answer|widen|brief)\b[ \t]*([^\n]*)$/im;
 
 const VERDICT_REASON_SEPARATOR = /(?:^|\s+)[—–-](?:\s+|$)|:\s*/;
 
@@ -30,17 +32,25 @@ function splitVerdictReason(rest: string): { head: string; reason: string } {
   };
 }
 
+// The markdown a planner wraps its verdict in. A leading underscore stays: `__tests__/` paths open with one.
+const VERDICT_DECORATION = /^[*`\s]+|[*_`\s]+$/g;
+
+/** A widened path as the planner wrote it, without its quoting and trailing punctuation. */
+function verdictPath(raw: string): string {
+  return normalizeProjectRelativePath(raw.replace(/^[`'"(]+/, '').replace(/[`'").,;:]+$/, ''));
+}
+
 /** The first `VERDICT:` line of a hint; no line, or a widening naming no path, reads `answer`. */
 export function parseHintVerdict(output: string): HintVerdict {
   const match = HINT_VERDICT_LINE.exec(output);
   if (match === null) return { kind: 'answer' };
   const kind = match[1]?.toLowerCase();
-  const { head, reason } = splitVerdictReason(match[2] ?? '');
+  const { head, reason } = splitVerdictReason((match[2] ?? '').replace(VERDICT_DECORATION, ''));
   if (kind === 'brief') return { kind: 'brief', diagnosis: head === '' ? reason : head };
   if (kind !== 'widen') return { kind: 'answer' };
   const paths = head
     .split(/[,\s]+/)
-    .map((path) => path.replace(/^`+|`+$/g, '').trim())
+    .map(verdictPath)
     .filter((path) => path.length > 0);
   return paths.length === 0 ? { kind: 'answer' } : { kind: 'widen', paths, reason };
 }

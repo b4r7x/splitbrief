@@ -87,9 +87,10 @@ describe('allowedActionsForReason', () => {
     ]);
   });
 
-  it('review-failed pauses, ends, or re-issues a review that reached no verdict', () => {
+  it('review-failed revises, pauses, ends, or re-issues a review that reached no verdict', () => {
     expect(allowedActionsForReason('review-failed')).toEqual([
       'retry-same-worker',
+      'revise',
       'pause-run',
       'end-run',
     ]);

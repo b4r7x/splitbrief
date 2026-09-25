@@ -97,7 +97,6 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
     config: ctx.config,
     getApprovalEnabled: ctx.getApprovalEnabled,
     workspace,
-    usesIsolation: true,
     taskStartSnapshot: ctx.taskStartSnapshot,
     dependsOnFiles: ctx.dependsOnFiles,
     catchChangedFilesError: true,
@@ -162,7 +161,12 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
       onOutput: retryHandler,
     }),
   });
-  return { ...outcome, plannerHint: hint, plannerVerdict: verdict.kind };
+  return {
+    ...outcome,
+    lastError: outcome.lastFailure?.outcome === 'no-staged-change' ? lastError : outcome.lastError,
+    plannerHint: hint,
+    plannerVerdict: verdict.kind,
+  };
 }
 
 function handleHintTierGateOutcome(input: {
@@ -187,18 +191,15 @@ function handleHintTierGateOutcome(input: {
   if (gateResult.outcome === 'gate-denied') {
     const files = gateResult.decision.changedFiles.join(', ');
     const reason = gateResult.decision.reason ?? 'denied';
-    publishError({
-      bus: ctx.bus,
-      phase: gateResult.state.phase,
-      message: `Hint-tier changed files blocked by approval gate: ${reason} (${files})`,
-    });
+    const message = `Hint-tier changed files blocked by approval gate: ${reason} (${files})`;
+    publishError({ bus: ctx.bus, phase: gateResult.state.phase, message });
     persistRetryRejectionEvidence(ctx, gateResult.state, task, gateResult.decision);
     return {
       state: gateResult.state,
       task,
-      lastError: reason,
+      lastError: message,
       attempts,
-      result: failedRetry(attempts),
+      result: failedRetry(attempts, { lastError: message }),
     };
   }
   const reason = `Hint-tier promotion blocked because files changed during approval: ${gateResult.conflictedFiles.join(', ')}`;

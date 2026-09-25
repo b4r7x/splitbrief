@@ -51,6 +51,8 @@ src/
 
 Outside `src/`, the repo root also carries `skills/` — the pipeline packaged as agent skills for skills.sh (`skills/splitbrief/` is canonical; its `references/` library and the four `SKILL.md` files carry `<!-- generated -->` blocks rendered from `src/core/pipeline-spec/`, the prompt builders and the CLI adapters by `scripts/skill-blocks.ts`, and are mirrored into the `splitbrief-brief`, `splitbrief-run`, and `splitbrief-review` siblings by `scripts/sync-skills.ts`, both gated by `npm run skills:check`), and `.claude-plugin/marketplace.json`, which declares the four as one Claude Code plugin and gives the skills.sh picker its group row. Executable helpers live in `skills/*/scripts/` (`wait-attempt.sh`, `splitbrief-gate.sh`), sourced from `skills/splitbrief-run/scripts/` and mirrored byte-identically by the same script; their tests are `testing/integration/skills/`. See [`SKILLS.md`](./SKILLS.md).
 
+`skills/splitbrief-babysit/` adds a fifth, self-contained skill for supervised CLI dogfooding. Its bundled Node.js watcher is mirrored from the script library by `skills:sync`, and the plugin manifest includes it with the four pipeline skills.
+
 The distinction between `lib/` (infrastructure wrappers around external systems) and `utils/` (pure primitives with zero domain and zero infra dependency) is the layering spine of the codebase. See [`LAYERS.md`](./LAYERS.md) for the full decision tree and anti-patterns.
 
 `help`, `sessions`, `setup`, and `skills` have **no `features/` folder** — they dissolved into a single page each (the page *is* the whole surface). The folders above keep only internals; their entry is a page in `src/app/`.

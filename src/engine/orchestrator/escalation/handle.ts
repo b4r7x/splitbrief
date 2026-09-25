@@ -248,7 +248,8 @@ export async function handleRetryAndEscalation(
       const issue = buildRetryExhaustedRecoveryIssue({
         task,
         phase: retries.state.phase,
-        message: `${task.id} escalation blocked by pre_escalation hook: ${reason}`,
+        escalationBlockedBy: reason,
+        validationSummary: retries.lastError,
         attempts: retries.attempts,
         maxAttempts: ctx.config.workflow.maxRetries,
         allowRetryOverride: true,

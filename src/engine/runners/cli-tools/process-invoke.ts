@@ -28,6 +28,7 @@ import { assertNever, isRecord } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
 import { isCredentialEnvironmentName } from '../../../utils/redact.js';
 import { sandboxCredentialValues } from '../sandbox-credential-values.js';
+import { isUsageLimitDiagnostic } from '../usage-limit.js';
 import { revalidateCliExecutableIdentity } from '../resolve-cli-executable.js';
 import { type PreparedPrompt, preparePrompt } from './prompt-transport.js';
 import type {
@@ -259,6 +260,7 @@ export async function invokeProcessCli(
             toolUseId: event.id,
             name: event.name,
             inputDelta: JSON.stringify(event.input),
+            stage: 'started',
           });
         } else {
           recorder.toolUseDone({
@@ -404,6 +406,10 @@ export async function invokeProcessCli(
           },
         });
       }
+      // The tool printed no terminal, so its diagnostic channel decides. Only stderr counts
+      // here: stdout frames can restate the model's prose.
+      const stderrHalt = haltFailure(closed.stderr.split('\n'));
+      if (stderrHalt !== null) return fail({ recorder, status: 'failed', error: stderrHalt });
       return fail({
         recorder,
         status: 'incomplete',
@@ -457,9 +463,11 @@ export async function invokeProcessCli(
         nativeSessionId: terminal.nativeSessionId,
       });
     }
+    // A failed terminal that names no halt of its own leaves the diagnosis to stderr.
+    const stderrHalt = namesHalt(terminal.error) ? null : haltFailure(closed.stderr.split('\n'));
     return recorder.finishFailed({
-      status: terminal.status,
-      error: terminal.error,
+      status: stderrHalt === null ? terminal.status : 'failed',
+      error: stderrHalt ?? terminal.error,
       usage: terminal.usage,
       nativeSessionId: terminal.nativeSessionId,
       partial: terminal.partial,
@@ -577,6 +585,19 @@ function haltFailure(lines: readonly string[]): { code: string; message: string 
     phrases.some((phrase) => line.toLowerCase().includes(phrase)),
   );
   return { code, message: matched?.trim() ?? code };
+}
+
+const HALT_CODES: ReadonlySet<string> = new Set(
+  Object.values(HALT_FAILURES).map((failure) => failure.code),
+);
+
+/** A failed terminal whose own words already name a halt keeps them over anything on stderr. */
+function namesHalt(failure: Readonly<{ code: string; message: string }>): boolean {
+  return (
+    HALT_CODES.has(failure.code) ||
+    isUsageLimitDiagnostic(failure.message) ||
+    haltFailure([failure.message]) !== null
+  );
 }
 
 function callbackFailure(

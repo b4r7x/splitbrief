@@ -35,7 +35,6 @@ function runGate(args: GateArgs) {
     config: makeNoValidationConfig({
       approval: { enabled: false, feedRejectionsToPlanner: true },
     }),
-    usesIsolation: true,
     dependsOnFiles: [],
     handleConflict: async (s) => s,
     onApproved: () => {},
@@ -122,7 +121,7 @@ describe('gateAndPromoteChangedFiles', () => {
     dirs.push(workspace.projectDir);
 
     // The staged copy has no src/user.ts; the user creates it in the real project
-    // after the task-start snapshot, so the changed set falls back to the project.
+    // after the task-start snapshot, on the brief's own declared path.
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src', 'user.ts'), 'export const user = "after";\n');
     expect(existsSync(join(workspace.projectDir, 'src', 'user.ts'))).toBe(false);
@@ -132,7 +131,7 @@ describe('gateAndPromoteChangedFiles', () => {
 
     const outcome = await runGate({ task, state, projectDir, workspace, taskStartSnapshot });
 
-    expect(outcome.outcome).toBe('allow');
+    expect(outcome.outcome === 'allow' ? outcome.changedFiles : undefined).toEqual([]);
     expect(readFileSync(join(projectDir, 'src', 'user.ts'), 'utf-8')).toBe(
       'export const user = "after";\n',
     );
@@ -275,40 +274,43 @@ describe('gateAndPromoteChangedFiles', () => {
     expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('original\n');
   });
 
-  it('leaves user edits alone when a project-discovered changed set is denied', async () => {
+  it('neither prompts for nor attributes checkout edits when the isolated worker changed nothing', async () => {
     const projectDir = createTempDir('gate-promote-project');
     dirs.push(projectDir);
 
-    createTestGitRepo(projectDir);
+    createTestGitRepo(projectDir, { 'docs/guide.md': 'before\n' });
 
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     const workspace = await createStagedProject(projectDir);
     dirs.push(workspace.projectDir);
 
-    // The staged copy has no src/user.ts; the user creates it in the real project
-    // after the task-start snapshot, so the changed set falls back to the project.
+    // The operator edits the checkout while the worker's call runs; the worker
+    // leaves its workspace untouched.
+    writeFileSync(join(projectDir, 'docs', 'guide.md'), 'operator edit\n');
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src', 'user.ts'), 'export const user = "after";\n');
-    expect(existsSync(join(workspace.projectDir, 'src', 'user.ts'))).toBe(false);
 
     const task = makeTask({ id: 'T010', file: 'src/main.ts' });
-    const state = makeImplState([task]);
+    const onTieredApproval = vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' });
+    const onApproved = vi.fn();
 
     const outcome = await runGate({
       task,
-      state,
+      state: makeImplState([task]),
       projectDir,
       workspace,
       taskStartSnapshot,
-      callbacks: makeCallbacks({
-        onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
-      }).callbacks,
+      callbacks: makeCallbacks({ onTieredApproval }).callbacks,
       config: makeNoValidationConfig({
         approval: { enabled: true, feedRejectionsToPlanner: false },
       }),
+      onApproved,
     });
 
-    expect(outcome.outcome).toBe('gate-denied');
+    expect(outcome.outcome === 'allow' ? outcome.changedFiles : undefined).toEqual([]);
+    expect(onTieredApproval).not.toHaveBeenCalled();
+    expect(onApproved).not.toHaveBeenCalled();
+    expect(readFileSync(join(projectDir, 'docs', 'guide.md'), 'utf-8')).toBe('operator edit\n');
     expect(readFileSync(join(projectDir, 'src', 'user.ts'), 'utf-8')).toBe(
       'export const user = "after";\n',
     );

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../schemas/task.js';
-import { formatRecoveryHeadline } from './headline.js';
+import { formatRecoveryHeadline, retryExhaustedCause } from './headline.js';
 
 const usageLimitIssue = makeRecoveryIssue({
   reason: 'runner-usage-limit',
@@ -78,5 +78,32 @@ describe('formatRecoveryHeadline', () => {
         makeRecoveryIssue({ reason: 'retry-exhausted', taskId: taskId('T042') }),
       ),
     ).toBe('T042 exhausted its retries');
+  });
+
+  it('words a retry-exhausted halt by planner verdict or hook denial', () => {
+    expect(
+      formatRecoveryHeadline(
+        makeRecoveryIssue({ reason: 'retry-exhausted', facts: { plannerVerdict: 'brief' } }),
+      ),
+    ).toBe('T001: the planner found the brief wrong');
+    expect(
+      formatRecoveryHeadline(
+        makeRecoveryIssue({
+          reason: 'retry-exhausted',
+          facts: { escalationBlockedBy: 'policy' },
+        }),
+      ),
+    ).toBe('T001 escalation blocked by pre_escalation hook: policy');
+    expect(
+      formatRecoveryHeadline(
+        makeRecoveryIssue({ reason: 'retry-exhausted', facts: { plannerVerdict: 'answer' } }),
+      ),
+    ).toBe('T001 exhausted its retries');
+  });
+});
+
+describe('retryExhaustedCause', () => {
+  it('falls back to exhausted retries when neither fact is present', () => {
+    expect(retryExhaustedCause({ task: 'T005' })).toBe('T005 exhausted its retries');
   });
 });

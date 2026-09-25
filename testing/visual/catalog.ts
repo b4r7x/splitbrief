@@ -769,7 +769,40 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         kind: 'question',
         // The headline is the one line the panel keeps at 60x18, where the row budget
         // leaves room for the actions and nothing else.
-        marker: 'exhausted recovery retries',
+        marker: 'Recovery needed · T901 exhausted its retries',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-brief-verdict',
+      title: 'Workflow · a brief the planner found wrong',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'brief-verdict',
+        title: 'Brief-verdict recovery menu',
+        kind: 'question',
+        // The headline is the one line the panel keeps at 60x18.
+        marker: 'Recovery needed · T901: the planner found the brief',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-review-failed',
+      title: 'Workflow · a final review that failed after its repair cycles',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-failed',
+        title: 'Review-failed recovery menu',
+        kind: 'question',
+        marker: 'Send a correction',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

@@ -513,7 +513,7 @@ SPLITBRIEF resolves each validation stage through one ladder — `config → man
 4. **Stack default** — the row `detectStack` picked from `src/core/validation/stacks/` (`validation.stack` pins it): rust, go, python, typescript or javascript, in that marker order. Per-stack commands are tabulated in [FEATURES.md §Validation pipeline](./FEATURES.md#validation-pipeline--checkpoints).
 5. **None** — the stage is recorded as `skipped` with the reason `no <stage> command for an unrecognised stack`, never as passed. A run where every enabled stage is skipped that way emits a warning and prints `gates: NONE — review-only`; it still implements and still reviews, but nothing was verified by a gate. SPLITBRIEF never guesses `npm test` or `npx tsc --noEmit` on a project that is neither JavaScript nor TypeScript.
 
-A command from rung 4, or from rung 2 on a recognised stack, is narrowed to the brief's affected test files (`npm test -- <file>`, `pytest <file>`, `go test ./<pkg>/`, `cargo test -- <name>`). An explicit `*Command` from rung 1 and a discovered command from rung 3 run as written.
+A command from rung 4, or from rung 2 on a recognised stack, is narrowed to the brief's affected test files (`npm test -- <file>`, `pytest <file>`, `go test ./<pkg>/`, `cargo test -- <name>`). When `npm test` is that command and every affected test file sits inside the `include` (and outside the `exclude`) of a vitest config that a `test:<name>` package script passes with `--config`, the stage runs `npm run test:<name> -- <file>` instead. An explicit `*Command` from rung 1 and a discovered command from rung 3 run as written.
 
 Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `lint: false` skips lint regardless of whether a command is available.
 

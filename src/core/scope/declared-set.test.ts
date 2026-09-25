@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SCOPE_ENTRY_CASES } from '#testing/helpers/scope-entries.js';
+import { requiredWriteModeForTask } from '../../engine/orchestrator/context-routing/decision.js';
 import type { Task } from '../schemas/task.js';
 import { taskId } from '../schemas/task.js';
 import {
@@ -45,6 +46,23 @@ describe('scopeEntryPatterns', () => {
     expect(scopeEntryPatterns('tsconfig.json')).toEqual(['tsconfig.json']);
     expect(scopeEntryPatterns('the auth flow and nothing else')).toEqual([]);
   });
+
+  it('licenses a leading backticked path, root-level files included, and drops prose backticks', () => {
+    expect(scopeEntryPatterns('`README.md` — planner-approved: consumer')).toEqual(['README.md']);
+    expect(scopeEntryPatterns('Keep the public API stable')).toEqual([]);
+    expect(scopeEntryPatterns('Keep `runWorkflow` stable')).toEqual([]);
+    expect(scopeEntryPatterns('`parseHintVerdict` — the escalation verdict parser')).toEqual([]);
+    expect(scopeEntryPatterns('`src/x.ts` — the union collapse')).toEqual(['src/x.ts']);
+  });
+});
+
+describe('write-mode routing', () => {
+  it('a bullet that opens on a backticked identifier never routes an API implementer to direct writes', () => {
+    const subject = task({
+      scope: { inBounds: ['`parseHintVerdict` — the escalation verdict parser'] },
+    });
+    expect(requiredWriteModeForTask(subject)).toBe('extracted-code');
+  });
 });
 
 describe('taskDeclaredPatterns', () => {
@@ -79,5 +97,6 @@ describe('isInDeclaredSet', () => {
   it('matches a file against any of the patterns', () => {
     expect(isInDeclaredSet('src/api/routes.ts', ['src/a.ts', 'src/api/**'])).toBe(true);
     expect(isInDeclaredSet('src/b.ts', ['src/a.ts'])).toBe(false);
+    expect(isInDeclaredSet('README.md', ['`README.md` — planner-approved: consumer'])).toBe(true);
   });
 });

@@ -13,4 +13,4 @@ Before changing a subsystem, follow the matching doc linked from the **Documenta
 
 When the work is to be built by SPLITBRIEF itself (the built CLI on this repo), follow `docs/DOGFOODING.md`: fix a tool defect mid-run, rebuild, `continue` the same session.
 
-For a supervised run — one agent babysits the CLI in tmux while this session fixes the tool's own defects mid-run — use the `splitbrief-babysit` skill.
+For a supervised run that stops and fixes tool defects before continuing, use [splitbrief-babysit](../../skills/splitbrief-babysit/SKILL.md).

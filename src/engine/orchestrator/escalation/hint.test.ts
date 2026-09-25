@@ -56,6 +56,7 @@ type CtxOptions = {
   hintWritesOutOfScope?: boolean;
   hintRejects?: boolean;
   hintResult?: { success: boolean; output: string };
+  retryResult?: { success: false; outcome: 'no-staged-change'; error: string; output: string };
   signal?: AbortSignal;
 };
 
@@ -97,6 +98,9 @@ async function makeCtx(
     context: defaultContext,
     implementer: makeImplementer({
       retry: vi.fn().mockImplementation(async ({ projectDir: runDir }: { projectDir: string }) => {
+        if (opts.retryResult) {
+          return { ...opts.retryResult, usage: { inputTokens: 20, outputTokens: 10 } };
+        }
         writeFileIn(runDir, RETRY_MARKER, 'export const greeting = "retried";\n');
         return { success: true, output: 'fixed', usage: { inputTokens: 20, outputTokens: 10 } };
       }),
@@ -133,8 +137,15 @@ describe('runEscalationTier hint tier gate handling', () => {
       priorAttempts: 0,
     });
 
-    expect(outcome.result).toEqual({ completed: false, method: 'failed', attempts: 1 });
-    expect(outcome.lastError).toBe('user denied');
+    expect(outcome.result).toEqual({
+      completed: false,
+      method: 'failed',
+      attempts: 1,
+      lastError: 'Hint-tier changed files blocked by approval gate: user denied (src/other.ts)',
+    });
+    expect(outcome.lastError).toBe(
+      'Hint-tier changed files blocked by approval gate: user denied (src/other.ts)',
+    );
     expect(existsSync(join(projectDir, RETRY_MARKER))).toBe(false);
     expect(events.some((e) => e.type === 'approval_rejected')).toBe(true);
     expect(
@@ -406,5 +417,33 @@ describe('runEscalationTier hint tier gate handling', () => {
     expect(hintSignalAborted).toBe(true);
     expect(handlers.at(-1)).toBeNull();
     expect(ctx.signal).toBeUndefined();
+  });
+
+  it('a hinted retry that changed nothing returns the incoming error', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { ctx } = await makeCtx(projectDir, sessionId, {
+      callbacks,
+      retryResult: {
+        success: false,
+        outcome: 'no-staged-change',
+        error: 'Tool implementer (fixture) exited without changing any files',
+        output: 'I could not find the registry.',
+      },
+    });
+    const task = makeTask();
+    const state = makeImplState([task]);
+
+    const outcome = await runEscalationTier(HINT_TIER, {
+      ctx,
+      task,
+      state,
+      lastError: 'validation failed',
+      priorAttempts: 0,
+    });
+
+    expect(outcome.lastError).toBe('validation failed');
+    expect(outcome.lastFailure?.handBack).toBe('I could not find the registry.');
+    expect(outcome.plannerHint).toBe('try importing foo');
   });
 });

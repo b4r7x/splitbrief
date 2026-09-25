@@ -24,7 +24,13 @@ import type { ValidationResult } from '../../validation/result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import { runnerAuthDisplayName, runnerLoginInstruction } from '../../../runners/auth-failure.js';
 import { parseUsageLimitReset, usageLimitGuidance } from '../../../runners/usage-limit.js';
-import { parseHintVerdict, type HintVerdictKind } from '../../../spec/prompts/escalation.js';
+import {
+  HINT_VERDICT_LINE,
+  parseHintVerdict,
+  type HintVerdictKind,
+} from '../../../spec/prompts/escalation.js';
+import { retryExhaustedCause } from '../../../../core/recovery/headline.js';
+import { HAND_BACK_PANEL_CHARS } from '../../../../core/pipeline-spec/ladder.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
 import { includes } from '../../../../utils/type-guards.js';
 import type { RecoveryBuilderBase, TaskRecoveryContext } from './issue.js';
@@ -50,7 +56,8 @@ export interface ValidationRecoveryOptions extends RecoveryBuilderBase, TaskReco
 
 export interface RetryExhaustedRecoveryOptions extends ValidationRecoveryOptions {
   allowRetryOverride?: boolean | undefined;
-  message?: string | undefined;
+  /** The `pre_escalation` hook's reason when the hook stopped the ladder before its tiers. */
+  escalationBlockedBy?: string | undefined;
   handBack?: string | undefined;
   plannerHint?: string | undefined;
   hintRungRan?: boolean | undefined;
@@ -269,6 +276,21 @@ export function buildRunnerUnauthenticatedRecoveryIssue(
   });
 }
 
+/** The error a retry-exhausted brief stopped on; a denial or a no-change message is not a check result. */
+function lastErrorDetail(validation: ReturnType<typeof summarizeValidation>): string {
+  return validation.stage === undefined
+    ? `Last error: ${validation.summary}`
+    : `Last error: ${validation.stage} failed: ${validation.summary}`;
+}
+
+/** The end of a hand-back, where an implementer that stopped says why. */
+function handBackQuote(handBack: string): string {
+  const collapsed = handBack.trim().replace(/\s+/g, ' ');
+  return collapsed.length <= HAND_BACK_PANEL_CHARS
+    ? collapsed
+    : `…${collapsed.slice(collapsed.length - HAND_BACK_PANEL_CHARS)}`;
+}
+
 export function buildRetryExhaustedRecoveryIssue(
   opts: RetryExhaustedRecoveryOptions,
 ): RecoveryIssue {
@@ -286,6 +308,7 @@ export function buildRetryExhaustedRecoveryIssue(
     'retry-same-worker',
     'pause-run',
   ]);
+  const plannerWords = opts.plannerHint?.replace(HINT_VERDICT_LINE, '').trim() ?? '';
   const verdict = opts.plannerHint === undefined ? undefined : parseHintVerdict(opts.plannerHint);
   const diagnosis = verdict?.kind === 'brief' ? verdict.diagnosis : (opts.plannerHint ?? '');
 
@@ -297,14 +320,20 @@ export function buildRetryExhaustedRecoveryIssue(
     task: opts.task,
     files: taskFiles(opts.task),
     affectedTaskIds: [opts.task.id],
-    message: opts.message ?? `${opts.task.id} exhausted recovery retries`,
+    message: retryExhaustedCause({
+      task: opts.task.id,
+      plannerVerdict: opts.plannerVerdict,
+      hookReason: opts.escalationBlockedBy,
+    }),
     details: [
-      validation.detail,
-      ...attemptDetails(opts.attempts, opts.maxAttempts, { hintRungRan: opts.hintRungRan }),
+      lastErrorDetail(validation),
+      ...(opts.attempts === 0
+        ? []
+        : attemptDetails(opts.attempts, opts.maxAttempts, { hintRungRan: opts.hintRungRan })),
       ...implementerDetails(opts.selectedImplementerProfile),
       ...routeBiggerDetails(opts),
-      ...(opts.handBack ? [`Implementer said: ${opts.handBack}`] : []),
-      ...(opts.plannerHint ? [`Planner said: ${opts.plannerHint}`] : []),
+      ...(opts.handBack ? [`Implementer said: ${handBackQuote(opts.handBack)}`] : []),
+      ...(plannerWords !== '' ? [`Planner said: ${plannerWords}`] : []),
       ...(opts.plannerVerdict === 'brief'
         ? [
             diagnosis === ''
@@ -324,6 +353,7 @@ export function buildRetryExhaustedRecoveryIssue(
       routeBiggerProfile: opts.routeBiggerProfile,
       hintRungRan: opts.hintRungRan,
       plannerVerdict: opts.plannerVerdict,
+      escalationBlockedBy: opts.escalationBlockedBy,
     }),
     availableActions: actions,
     recommendedAction,
@@ -874,11 +904,14 @@ function buildNoVerdictReviewIssue(
   });
 }
 
-/** The final review still reports blocking findings after the fix cycles ran out. */
+/**
+ * The final review still reports blocking findings after the fix cycles ran out. The operator
+ * can send them back through one more cycle with a correction of their own (`revise`).
+ */
 export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions): RecoveryIssue {
   if (opts.failure !== undefined) return buildNoVerdictReviewIssue(opts, opts.failure);
   const blocking = opts.blocking ?? 0;
-  const actions = orderedActions(['pause-run', 'end-run']);
+  const actions = orderedActions(['revise', 'pause-run', 'end-run']);
   return createRecoveryIssue({
     id: opts.id,
     seat: 'build',

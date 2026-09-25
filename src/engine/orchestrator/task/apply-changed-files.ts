@@ -18,13 +18,12 @@ export async function applyChangedFiles(opts: {
   task: Task;
   state: WorkflowState;
   workspace: IsolatedWorkspace | undefined;
-  usesIsolation: boolean;
   preApplyApprovedFiles: string[];
   taskStartSnapshot: ChangedFilesSnapshot;
   recordApprovalDenial: (state: WorkflowState, decision: GateDecision, message: string) => void;
   handleConflict: (state: WorkflowState, files: string[]) => Promise<WorkflowState>;
 }): Promise<ApplyChangedFilesResult> {
-  const { wctx, task, workspace, usesIsolation, preApplyApprovedFiles, taskStartSnapshot } = opts;
+  const { wctx, task, workspace, preApplyApprovedFiles, taskStartSnapshot } = opts;
   const { projectDir, sessionId, config, callbacks } = wctx;
   const state = opts.state;
 
@@ -38,7 +37,6 @@ export async function applyChangedFiles(opts: {
     config,
     getApprovalEnabled: wctx.getApprovalEnabled,
     workspace,
-    usesIsolation,
     taskStartSnapshot,
     dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
     preApprovedFiles: preApplyApprovedFiles,

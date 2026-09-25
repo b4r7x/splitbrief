@@ -127,7 +127,9 @@ function formatRecoveryActionText(
     case 'planner-split-rebase':
       return `ask planner to ${rebaseVerb(context)}`;
     case 'revise':
-      return 'revise · send the planner a correction';
+      return context.reason === 'review-failed'
+        ? 'revise · send the findings back with a correction'
+        : 'revise · send the planner a correction';
     case 'revise-spec':
       return 'revise the spec · send it back with a note';
     case 'continue':
@@ -444,15 +446,18 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
   if (issue.reason === 'implementer-left-isolation' || issue.reason === 'checkout-changed') {
     return `Recovery needed · ${formatRecoveryHeadline(issue)}`;
   }
-  // "T003 validation failed" takes "after 3 attempts"; a message that already
+  // "T003 validation failed" takes "after 3 attempts"; a cause that already
   // ends a sentence would read it as part of that sentence ("or abort after 2
   // attempts"), so it keeps its full stop and the attempt count stays in the
   // facts, where the issue's own `Attempts: n/m` detail already carries it.
+  // A retry-exhausted halt reads the transcript's own sentence, so a halt saved
+  // under older words names its cause the way the transcript and the byline do.
+  const cause = issue.reason === 'retry-exhausted' ? formatRecoveryHeadline(issue) : issue.message;
   const attemptSuffix =
-    issue.attempts !== undefined && !issue.message.endsWith('.')
+    issue.attempts !== undefined && issue.attempts > 0 && !cause.endsWith('.')
       ? ` after ${countNoun(issue.attempts, 'attempt')}`
       : '';
-  return `Recovery needed · ${issue.message}${attemptSuffix}`;
+  return `Recovery needed · ${cause}${attemptSuffix}`;
 }
 
 /** The clock the seat comes back on, in the words the header uses — the panel's only spelling of it. */
@@ -508,7 +513,7 @@ export function stripRecoveryResetClause(text: string): string {
 }
 
 /**
- * The widest halt a builder writes is retry-exhausted: the last check, the attempts, the bigger
+ * The widest halt a builder writes is retry-exhausted: the last error, the attempts, the bigger
  * worker on offer, what the implementer said, what the planner answered, and the planner's
  * verdict. The budget covers all six, so the two voices are never the rows that fall off.
  */

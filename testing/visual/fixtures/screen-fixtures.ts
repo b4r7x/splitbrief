@@ -139,10 +139,14 @@ function removeFixtureProject(): void {
   rmSync(VISUAL_FIXTURE_WORK_DIR, { recursive: true, force: true });
 }
 
-function createRouteFixture(route: () => RouteData): FixtureLifecycle {
+function createRouteFixture(
+  route: () => RouteData,
+  config?: VisualConfigOverrides,
+): FixtureLifecycle {
   return {
     setup: (context) => {
       setupVisualFixture(context);
+      if (config !== undefined) seedVisualConfig(config);
       routerStore.init(route());
     },
     teardown: teardownVisualFixture,
@@ -182,6 +186,7 @@ export function createHomeFixture(options: HomeFixtureOptions = {}): FixtureLife
 export function createWorkflowBaseFixture(
   feature = 'Refine terminal navigation',
   resumeState?: WorkflowState | undefined,
+  config?: VisualConfigOverrides,
 ): FixtureLifecycle {
   return createRouteFixture(() => {
     const config = configStore.get().config;
@@ -202,7 +207,7 @@ export function createWorkflowBaseFixture(
       run: makeRunRecord({ ref: prepared.session.ref, feature }),
       execution: { kind: 'local', prepared },
     };
-  });
+  }, config);
 }
 
 function publishFreshDiscovery(): void {

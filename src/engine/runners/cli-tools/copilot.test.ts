@@ -1,4 +1,7 @@
+import { realpathSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import {
   CLI_CONFORMANCE_CANDIDATES,
@@ -8,6 +11,7 @@ import {
   copilotPlannerProtocolEvents,
 } from './copilot.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import { invokeProcessCli } from './process-invoke.js';
 
 const PROMPT = CLI_PROMPT_SENTINEL;
 const PROJECT_DIR = process.cwd();
@@ -376,7 +380,6 @@ describe('Copilot JSON and text protocol adapters', () => {
     });
     expect(events).toContainEqual({
       type: 'tool-use',
-      stage: 'started',
       id: null,
       name: 'read_file',
       input: { path: 'src/a.ts' },
@@ -419,7 +422,6 @@ describe('Copilot JSON and text protocol adapters', () => {
       { type: 'session', nativeSessionId: 'sess-43' },
       {
         type: 'tool-use',
-        stage: 'started',
         id: 'call-1',
         name: 'edit_file',
         input: { path: 'src/a.ts' },
@@ -448,5 +450,70 @@ describe('Copilot JSON and text protocol adapters', () => {
       error: null,
       partial: false,
     });
+  });
+
+  const TOOL_RECORDS = [
+    {
+      type: 'tool.execution_start',
+      data: { id: 'call-1', name: 'edit_file', input: { path: 'src/a.ts' } },
+    },
+    { type: 'tool.call', data: { id: 'call-2', name: 'read_file', input: { path: 'src/b.ts' } } },
+    { type: 'tool.use', data: { id: 'call-3', tool: 'bash', args: { command: 'ls' } } },
+  ];
+
+  function executableIdentity(candidate: string): CliExecutableIdentity {
+    const path = realpathSync(candidate);
+    const info = statSync(path);
+    return {
+      path,
+      fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
+    };
+  }
+
+  it('records each copilot tool event as a finished tool use', () => {
+    expect(
+      TOOL_RECORDS.flatMap((record) => copilotImplementerProtocolEvents(JSON.stringify(record))),
+    ).toEqual([
+      { type: 'tool-use', id: 'call-1', name: 'edit_file', input: { path: 'src/a.ts' } },
+      { type: 'tool-use', id: 'call-2', name: 'read_file', input: { path: 'src/b.ts' } },
+      { type: 'tool-use', id: 'call-3', name: 'bash', input: { command: 'ls' } },
+    ]);
+  });
+
+  it('lands every tool a copilot implementer ran in the call result', async () => {
+    const lines = [
+      { type: 'session.start', data: { sessionId: 'sess-44' } },
+      ...TOOL_RECORDS,
+      { type: 'assistant.message', data: { text: 'edited staged files' } },
+    ].map((record) => JSON.stringify(record));
+    const result = await invokeProcessCli(copilotImplementerAdapter, {
+      invocation: {
+        executable: executableIdentity(process.execPath),
+        args: [
+          '-e',
+          `process.stdout.write(${JSON.stringify(`${lines.join('\n')}\n`)})`,
+          '<PROMPT>',
+        ],
+        promptTransport: copilotImplementerAdapter.promptTransport,
+        environment: {},
+        cwd: tmpdir(),
+        timeoutMs: 5_000,
+        signal: undefined,
+      },
+      prompt: 'fixture prompt',
+      callContext: {
+        callId: 'copilot-tools',
+        role: 'implementer',
+        backendKind: 'cli',
+        runnerName: 'copilot',
+      },
+    });
+
+    expect(result.status).toBe('completed');
+    expect(result.toolUses.map((toolUse) => toolUse.name)).toEqual([
+      'edit_file',
+      'read_file',
+      'bash',
+    ]);
   });
 });

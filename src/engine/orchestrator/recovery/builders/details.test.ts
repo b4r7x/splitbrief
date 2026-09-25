@@ -16,32 +16,87 @@ describe('summarizeValidation', () => {
 
   it('keeps an all-banner message rather than summarizing nothing', () => {
     const { summary } = summarizeValidation({
-      validationSummary: '> only a banner\n> and another',
+      validationSummary: '> splitbrief@0.1.0 lint\n> biome check .\n',
     });
 
-    expect(summary.length).toBeGreaterThan(0);
-    expect(summary).toContain('only a banner');
+    expect(summary).toBe('> splitbrief@0.1.0 lint > biome check .');
   });
 
   it('strips the banner from a failing stage result too', () => {
     const { detail, stage } = summarizeValidation({
       validationResults: [
-        { stage: 'test', passed: false, error: '> pkg test\n\nFAIL src/b.test.ts' },
+        {
+          stage: 'test',
+          passed: false,
+          error: '> pkg@1.0.0 test\n> vitest run\n\nFAIL src/b.test.ts',
+        },
       ],
     });
 
     expect(detail).toBe('Validation test failed: FAIL src/b.test.ts');
     expect(stage).toBe('test');
   });
+
+  it('drops nested npm banners and retains the diagnostic', () => {
+    const { summary } = summarizeValidation({
+      validationSummary: [
+        '> splitbrief@0.1.0 typecheck',
+        '> npm run typecheck:src && npm run typecheck:test',
+        '',
+        '> splitbrief@0.1.0 typecheck:src',
+        '> tsc --noEmit',
+        '',
+        "src/a.ts(1,7): error TS2339: Property 'stop' does not exist on type 'Projection'.",
+      ].join('\n'),
+    });
+
+    expect(summary.startsWith('src/a.ts(1,7): error TS2339')).toBe(true);
+    expect(summary).not.toContain('splitbrief@0.1.0');
+    expect(summary).not.toContain('npm run typecheck');
+    expect(summary).not.toContain('tsc --noEmit');
+  });
+
+  it('preserves Biome diagnosis lines', () => {
+    const { summary } = summarizeValidation({
+      validationSummary: [
+        'src/a.ts:38:13 lint/style/useConst',
+        '  × This let declares a variable that is only assigned once.',
+        '  > 38 │   let x = 1;',
+      ].join('\n'),
+    });
+
+    expect(summary).toContain('> 38 │ let x = 1;');
+  });
+
+  it('preserves pytest diagnosis lines', () => {
+    const { summary } = summarizeValidation({
+      validationSummary: ['>       assert x == 2', 'E       assert 1 == 2'].join('\n'),
+    });
+
+    expect(summary).toContain('> assert x == 2');
+    expect(summary).toContain('E assert 1 == 2');
+  });
+
+  it('strips scoped package banner lines', () => {
+    const { summary } = summarizeValidation({
+      validationSummary: '> @scope/pkg@1.2.3 test\n> vitest run\nFAIL x',
+    });
+
+    expect(summary).toBe('FAIL x');
+  });
 });
 
 describe('attemptDetails', () => {
   it('never prints a fraction whose numerator exceeds its denominator', () => {
     expect(attemptDetails(4, 3)).toEqual(['Attempts: 4']);
+    expect(attemptDetails(5, 3)).toEqual(['Attempts: 5']);
     expect(attemptDetails(2, 3)).toEqual(['Attempts: 2/3']);
   });
 
   it('spells the breakdown when the hint rung ran', () => {
+    expect(attemptDetails(1, 3, { hintRungRan: true })).toEqual([
+      'Attempts: 1 (with planner hints)',
+    ]);
     expect(attemptDetails(4, 3, { hintRungRan: true })).toEqual([
       'Attempts: 4 (3 local, then 1 with planner hints)',
     ]);

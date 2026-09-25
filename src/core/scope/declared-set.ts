@@ -6,9 +6,15 @@ import {
 import type { Task } from '../schemas/task.js';
 import { taskFiles } from '../schemas/task.js';
 
+/** A `WIDEN_TASK_SCOPE` bullet names its path, root-level files included; a bare backticked identifier is prose. */
+const LEADING_PATH = /^\s*`([^`\s]+)`\s*—\s*planner-approved:/;
+
 /** Path tokens a Scope bullet licenses; a whitespace-free bullet is itself a pattern (`tsconfig.json`). */
 export function scopeEntryPatterns(entry: string): string[] {
-  const patterns = scopePathPatterns(entry);
+  const leading = LEADING_PATH.exec(entry)?.[1];
+  const patterns = [
+    ...new Set([...scopePathPatterns(entry), ...(leading === undefined ? [] : [leading])]),
+  ];
   if (patterns.length > 0) return patterns;
   // scopePathPatterns drops bare filenames (no separator or wildcard); a
   // whitespace-free entry is a literal pattern like `tsconfig.json`, not prose.

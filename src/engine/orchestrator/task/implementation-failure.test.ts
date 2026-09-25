@@ -26,7 +26,6 @@ function implState(implResult: ImplementerResult): RunImplementationResult {
     state: implementingState([makeTask()]),
     implResult,
     workspace: undefined,
-    usesIsolation: false,
     preApplyApprovalDenied: false,
     preApplyApprovedFiles: [],
   };
@@ -289,6 +288,75 @@ describe('handleFailedImplementation — scope violation retries with a revert i
 
     expect(readFileSync(join(projectDir, 'src/other.ts'), 'utf-8')).toBe('committed other\n');
     expect(retry).toHaveBeenCalled();
+    expect(retry.mock.calls[0]?.[0]?.error).toBe(
+      'Revert your changes to src/other.ts; only src/hello.ts may change',
+    );
+    expect(
+      events.some(
+        (e) =>
+          e.type === 'warning' &&
+          e.message ===
+            'T001: implementer wrote outside the declared files (src/other.ts); retrying with a revert instruction',
+      ),
+    ).toBe(true);
+  });
+
+  it('names the undeclared write an isolated implementer left in its worktree', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/other.ts': 'committed other\n' });
+    const { projectDir: worktreeDir } = setupProject({ 'src/other.ts': 'committed other\n' });
+    const task = makeTask({
+      id: 'T001',
+      action: 'create',
+      file: 'src/hello.ts',
+      scope: { inBounds: ['The `next` computation of `finishStoppedRun` in `…hello.ts`.'] },
+    });
+    const state = implementingState([task]);
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    const workspaceSnapshot = await getChangedFilesSnapshot(worktreeDir);
+
+    mkdirSync(join(worktreeDir, 'src'), { recursive: true });
+    writeFileSync(join(worktreeDir, 'src/hello.ts'), 'export const hello = 1;\n');
+    writeFileSync(join(worktreeDir, 'src/other.ts'), 'agent rewrote this\n');
+
+    const retry = vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' });
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      implementer: makeImplementer({ retry }),
+      bus,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { maxRetries: 1 },
+      }),
+    });
+
+    await handleFailedImplementation({
+      wctx,
+      task,
+      state,
+      implState: {
+        ...implState({
+          success: false,
+          output: '',
+          outcome: 'implementer-effect-invalid',
+          error: "wrote outside the brief's declared files: src/other.ts",
+        }),
+        workspace: {
+          projectDir: worktreeDir,
+          sandboxEnv: {},
+          snapshot: workspaceSnapshot,
+          targetBaseline: undefined,
+          cleanup: () => writeFileSync(join(worktreeDir, 'src/other.ts'), 'committed other\n'),
+        },
+      },
+      taskStartTime: Date.now(),
+      taskStartSnapshot,
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
     expect(retry.mock.calls[0]?.[0]?.error).toBe(
       'Revert your changes to src/other.ts; only src/hello.ts may change',
     );

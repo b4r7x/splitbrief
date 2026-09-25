@@ -490,23 +490,67 @@ describe('recovery prompt', () => {
       ...baseIssue,
       reason: 'retry-exhausted',
       phase: 'escalating',
-      message: 'T003 exhausted recovery retries',
+      message: 'T003: the planner found the brief wrong',
       details: [
-        'Validation test failed: npm test -- auth failed in src/auth/session.test.ts',
+        'Last error: test failed: npm test -- auth failed in src/auth/session.test.ts',
         'Attempts: 4 (3 local, then 1 with planner hints)',
         'Worker profile: local-qwen',
         'Bigger worker available: cheap-cloud',
         'Implementer said: the session type has no expiry field, so I stopped.',
-        'Planner said: VERDICT: brief — the brief names a field the type never had',
+        'Planner said: Add expiry to the session type in its own brief first.',
         'Planner verdict: the brief itself is wrong — the brief names a field the type never had',
       ],
+      facts: { ...baseIssue.facts, plannerVerdict: 'brief' },
     };
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
     expect(visible).toContain('Implementer said: the session type has no expiry field');
-    expect(visible).toContain('Planner said:');
+    expect(visible).toContain('Planner said: Add expiry');
     expect(visible).toContain('Planner verdict: the brief itself is wrong');
+    expect(visible).not.toContain('VERDICT:');
+  });
+
+  it('formats headers reading headline cause and omitting attempt suffix at zero attempts', () => {
+    const verdictIssue: RecoveryIssue = {
+      ...baseIssue,
+      reason: 'retry-exhausted',
+      taskId: taskId('T003'),
+      attempts: 0,
+      facts: { plannerVerdict: 'brief' },
+    };
+    expect(formatRecoveryPrompt(verdictIssue).split('\n')[0]).toBe(
+      'Recovery needed · T003: the planner found the brief wrong',
+    );
+
+    const retryIssue: RecoveryIssue = {
+      ...baseIssue,
+      reason: 'retry-exhausted',
+      taskId: taskId('T005'),
+      attempts: 4,
+      facts: {},
+    };
+    expect(formatRecoveryPrompt(retryIssue).split('\n')[0]).toBe(
+      'Recovery needed · T005 exhausted its retries after 4 attempts',
+    );
+
+    const legacyWords = 'exhausted recovery' + ' retries';
+    const legacyIssue: RecoveryIssue = {
+      ...retryIssue,
+      message: `T005 ${legacyWords}`,
+    };
+    expect(formatRecoveryPrompt(legacyIssue).split('\n')[0]).toBe(
+      'Recovery needed · T005 exhausted its retries after 4 attempts',
+    );
+    expect(formatRecoveryPrompt(legacyIssue)).not.toContain(legacyWords);
+
+    const zeroAttemptsIssue: RecoveryIssue = {
+      ...baseIssue,
+      attempts: 0,
+    };
+    expect(formatRecoveryPrompt(zeroAttemptsIssue).split('\n')[0]).toBe(
+      'Recovery needed · T003 validation failed',
+    );
   });
 
   it('leaves a substantive review failure on the words it earned', async () => {

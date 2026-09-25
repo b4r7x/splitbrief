@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
+import { formatRecoveryHeadline } from '../../../../core/recovery/headline.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import {
   buildApprovalDeniedRecoveryIssue,
@@ -135,6 +136,19 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     expect(issue.facts?.hintRungRan).toBeUndefined();
   });
 
+  it('names the last error and drops any Validation detail', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task: makeTask({ id: 'T012' }),
+      createdAt,
+      validationSummary: 'tsc failed',
+      attempts: 4,
+      maxAttempts: 3,
+    });
+
+    expect(issue.details[0]).toBe('Last error: tsc failed');
+    expect(issue.details.some((row) => row.startsWith('Validation'))).toBe(false);
+  });
+
   it('bounds a long hand-back row to the summary length', () => {
     const issue = buildRetryExhaustedRecoveryIssue({
       ...bothVoices,
@@ -142,8 +156,21 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     });
     const row = issue.details.find((detail) => detail.startsWith('Implementer said:'));
 
+    expect(row).toBe(`Implementer said: …${'x'.repeat(300)}`);
+  });
+
+  it('quotes the tail of a long hand-back where an implementer that stopped says why', () => {
+    const tail = 'May I edit src/consumer.ts?';
+    const handBack = `${'x'.repeat(2000 - tail.length)}${tail}`;
+    const issue = buildRetryExhaustedRecoveryIssue({
+      ...bothVoices,
+      handBack,
+    });
+    const row = issue.details.find((detail) => detail.startsWith('Implementer said:'));
+
+    expect(row?.startsWith('Implementer said: …')).toBe(true);
+    expect(row?.endsWith(tail)).toBe(true);
     expect(row?.length).toBeLessThanOrEqual(320);
-    expect(row?.endsWith('...')).toBe(true);
   });
 
   it('names the brief-is-wrong verdict with the planner diagnosis', () => {
@@ -155,11 +182,74 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
       plannerVerdict: 'brief',
     });
 
+    expect(issue.details).toContain('Planner said: Nothing to retry.');
     expect(issue.details).toContain(
       'Planner verdict: the brief itself is wrong — the export was already deleted',
     );
+    expect(issue.details.some((row) => row.includes('VERDICT:'))).toBe(false);
     expect(issue.facts?.plannerVerdict).toBe('brief');
     expectValidRecoveryIssue(issue);
+  });
+
+  it('omits Planner said row when nothing is left after stripping the verdict line', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      ...bothVoices,
+      plannerHint: 'VERDICT: answer',
+    });
+
+    expect(issue.details.some((row) => row.startsWith('Planner said:'))).toBe(false);
+  });
+
+  it('omits attempts row at zero attempts and formats other attempt counts', () => {
+    const zeroAttempts = buildRetryExhaustedRecoveryIssue({
+      ...bothVoices,
+      plannerVerdict: 'brief',
+      attempts: 0,
+      maxAttempts: 3,
+    });
+    expect(zeroAttempts.details.some((row) => row.startsWith('Attempts'))).toBe(false);
+
+    const oneWithHint = buildRetryExhaustedRecoveryIssue({
+      ...bothVoices,
+      attempts: 1,
+      hintRungRan: true,
+    });
+    expect(oneWithHint.details).toContain('Attempts: 1 (with planner hints)');
+
+    const fiveNoHint = buildRetryExhaustedRecoveryIssue({
+      ...bothVoices,
+      attempts: 5,
+      maxAttempts: 3,
+    });
+    expect(fiveNoHint.details).toContain('Attempts: 5');
+  });
+
+  it('defaults to task exhausted its retries when neither verdict nor hook reason is set', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task: makeTask({ id: 'T012' }),
+      createdAt,
+    });
+    expect(issue.message).toBe('T012 exhausted its retries');
+  });
+
+  it('sets message when plannerVerdict is brief', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task: makeTask({ id: 'T012' }),
+      createdAt,
+      plannerVerdict: 'brief',
+    });
+    expect(issue.message).toBe('T012: the planner found the brief wrong');
+  });
+
+  it('sets message and fact when escalationBlockedBy is provided', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task: makeTask({ id: 'T012' }),
+      createdAt,
+      escalationBlockedBy: 'policy',
+    });
+    expect(issue.message).toBe('T012 escalation blocked by pre_escalation hook: policy');
+    expect(issue.facts?.escalationBlockedBy).toBe('policy');
+    expect(formatRecoveryHeadline(issue)).toBe(issue.message);
   });
 });
 
@@ -639,7 +729,7 @@ describe('buildSnapshotFailedRecoveryIssue', () => {
 });
 
 describe('buildReviewFailedRecoveryIssue', () => {
-  it('counts the blocking findings and leaves only pause or abort', () => {
+  it('counts the blocking findings and offers a correction, pause or abort', () => {
     const issue = buildReviewFailedRecoveryIssue({
       createdAt,
       blocking: 3,
@@ -649,7 +739,7 @@ describe('buildReviewFailedRecoveryIssue', () => {
     expect(issue.reason).toBe('review-failed');
     expect(issue.phase).toBe('final-review');
     expect(issue.message).toBe('Final review failed with 3 blocking findings');
-    expect(issue.availableActions).toEqual(['pause-run', 'end-run']);
+    expect(issue.availableActions).toEqual(['revise', 'pause-run', 'end-run']);
     expect(issue.recommendedAction).toBe('pause-run');
     expectValidRecoveryIssue(issue);
   });

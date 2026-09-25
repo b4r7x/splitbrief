@@ -55,3 +55,26 @@ export function decideReviewOutcome(
   if (Object.keys(fixes).length === 0) return { kind: 'fail', blocking: critical.length };
   return { kind: 'fix', fixes };
 }
+
+/**
+ * What an operator's correction after a failed review sends back: the review's Critical
+ * findings to the briefs that own them, and the correction beside each of them. The
+ * correction also reopens every brief whose declared files it names; when neither names
+ * a brief, the last brief answers it.
+ */
+export function correctionFixes(opts: {
+  critical: readonly string[];
+  correction: string;
+  tasks: Task[];
+}): Record<string, string[]> {
+  const fixes = assignFindings(opts.critical, opts.tasks);
+  if (opts.correction === '') return fixes;
+  const note = `Operator correction: ${opts.correction}`;
+  const named = opts.tasks.filter(
+    (task) =>
+      fixes[task.id] !== undefined ||
+      taskFiles(task).some((file) => opts.correction.includes(file)),
+  );
+  const owners = named.length > 0 ? named : opts.tasks.slice(-1);
+  return Object.fromEntries(owners.map((task) => [task.id, [...(fixes[task.id] ?? []), note]]));
+}

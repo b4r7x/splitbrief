@@ -1,6 +1,6 @@
 import type { MachineAction, StateAction } from './types.js';
 import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../schemas/workflow.js';
-import type { TaskId } from '../schemas/task.js';
+import { isTaskCompleted, type TaskId } from '../schemas/task.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
 import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
 import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../queue-state.js';
@@ -79,7 +79,7 @@ const phaseActions = {
     'HINT_FAIL',
   ],
   'final-review': ['REVIEW_DONE', 'REVIEW_FIX_START'],
-  complete: [],
+  complete: ['REVIEW_FIX_START'],
 } as const satisfies Record<Phase, readonly MachineAction['type'][]>;
 
 function canApplyAction(phase: Phase, action: MachineAction['type']): boolean {
@@ -154,6 +154,12 @@ function stripReviewFinding(state: WorkflowState, taskId: TaskId): WorkflowState
   return { ...state, reviewFixes: { ...state.reviewFixes, findings } };
 }
 
+/** The next brief the task loop runs: a passed brief after `from` is skipped, never current. */
+function nextOpenTaskIndex(state: WorkflowState, from: number): number {
+  const index = state.tasks.findIndex((t, i) => i >= from && !isTaskCompleted(t.status));
+  return index >= 0 ? index : state.tasks.length;
+}
+
 function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
   const currentId = state.tasks[state.currentTaskIndex]?.id;
   const withStatus = currentId ? setTaskStatus(state, currentId, status) : state;
@@ -162,7 +168,7 @@ function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
   return {
     ...cleaned,
     phase: 'implementing',
-    currentTaskIndex: state.currentTaskIndex + 1,
+    currentTaskIndex: nextOpenTaskIndex(cleaned, state.currentTaskIndex + 1),
     attempt: 0,
   };
 }
@@ -265,8 +271,13 @@ export function transition(
     case 'ANALYZE_START':
       return { ...state, phase: 'analyzing' };
 
-    case 'START_TASK':
-      return setTaskStatus(state, action.taskId, 'in_progress');
+    case 'START_TASK': {
+      const index = state.tasks.findIndex((t) => t.id === action.taskId);
+      return {
+        ...setTaskStatus(state, action.taskId, 'in_progress'),
+        ...(index >= 0 && { currentTaskIndex: index }),
+      };
+    }
 
     case 'TASK_SENT': {
       const sentId = state.tasks[state.currentTaskIndex]?.id;
@@ -300,7 +311,7 @@ export function transition(
       return {
         ...withStatus,
         phase: 'implementing',
-        currentTaskIndex: state.currentTaskIndex + 1,
+        currentTaskIndex: nextOpenTaskIndex(withStatus, state.currentTaskIndex + 1),
         attempt: 0,
       };
     }
@@ -337,6 +348,10 @@ export function transition(
       };
 
     case 'REVIEW_FIX_START': {
+      // A failed review reopens on the operator's correction; a passed one closed the run.
+      if (state.phase === 'complete' && state.reviewStatus !== 'failed') {
+        throw transitionError.invalidActionForPhase(state.phase, action.type);
+      }
       const fixIds = new Set(Object.keys(action.fixes));
       const firstIndex = state.tasks.findIndex((t) => fixIds.has(t.id));
       return {
@@ -346,6 +361,8 @@ export function transition(
         currentTaskIndex: firstIndex >= 0 ? firstIndex : state.currentTaskIndex,
         attempt: 0,
         reviewFixes: { cycle: action.cycle, findings: action.fixes },
+        completedAt: undefined,
+        reviewStatus: undefined,
       };
     }
 

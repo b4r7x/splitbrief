@@ -229,7 +229,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
     expect(readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.observedEvidence).toContain(
-      'skipped: recovery retry-exhausted: T034 exhausted recovery retries',
+      'skipped: recovery retry-exhausted: T034 exhausted its retries',
     );
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'task_skipped', 'recovery_resolved']),

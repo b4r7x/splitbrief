@@ -99,7 +99,6 @@ function runGate(input: GateInput) {
       approval: { enabled: false, feedRejectionsToPlanner: true },
     }),
     workspace: input.workspace,
-    usesIsolation: true,
     taskStartSnapshot: input.taskStartSnapshot,
     dependsOnFiles: [],
     catchChangedFilesError: true,

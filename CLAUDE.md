@@ -83,7 +83,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Develop SPLITBRIEF with SPLITBRIEF itself: run the built CLI on this repo, fix the tool mid-run, continue the session | [docs/DOGFOODING.md](./docs/DOGFOODING.md) — the dogfooding procedure, the autofix loop, the stop/continue smoke |
 | Work with workflow hooks | [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) |
 | Tune the planner repo-map | [docs/REPOMAP.md](./docs/REPOMAP.md) |
-| Install the pipeline as agent skills | [docs/SKILLS.md](./docs/SKILLS.md) — the four skills, grammar, sync script |
+| Install the pipeline as agent skills | [docs/SKILLS.md](./docs/SKILLS.md) — four pipeline skills, supervised dogfooding, grammar, sync script |
 | Look up release history | [CHANGELOG.md](./CHANGELOG.md) |
 
 Reference also: `.specify/memory/constitution.md` — 6 constitutional principles (linked from VISION).

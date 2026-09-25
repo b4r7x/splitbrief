@@ -681,9 +681,9 @@ describe('invokeProcessCli', () => {
   });
 
   it('exit 3 with the antigravity quota line on stderr classifies usage-limit', async () => {
-    // Captured live from `agy -p` (antigravity 1.2.7) on 2026-09-21, the retry
-    // after a first hit that exited 0; a text-exit tool has no terminal to
-    // carry the diagnosis, so only the stderr tail can name the limit.
+    // Captured live from `agy -p` (antigravity 1.2.7) on 2026-09-21: the retry after a first
+    // hit that exited 0. The synthetic text-exit adapter here has no terminal, so only the
+    // stderr tail can name the limit.
     const line =
       'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h3m48s.';
     const result = await run(
@@ -1233,37 +1233,44 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
     });
   }
 
-  itUnix('streams tool steps as delta then done and never stalls at 20 ms gaps', async () => {
-    await withTempDir('splitbrief-agy-stream', async (dir) => {
-      const events: RunnerCallEvent[] = [];
-      const script = `while IFS= read -r line; do printf '%s\\n' "$line"; sleep 0.02; done < ${JSON.stringify(FIXTURE)}`;
-      const result = await replay(dir, script, (event) => events.push(event));
+  itUnix(
+    'streams tool steps as delta then done, and every frame resets the idle clock',
+    async () => {
+      await withTempDir('splitbrief-agy-stream', async (dir) => {
+        const events: RunnerCallEvent[] = [];
+        // 0.4 s gaps stay under a quarter of the warn threshold while the 13-frame replay outlasts
+        // twice the threshold, so only a clock that every frame resets stays quiet.
+        const script = `while IFS= read -r line; do printf '%s\\n' "$line"; sleep 0.4; done < ${JSON.stringify(FIXTURE)}`;
+        const started = Date.now();
+        const result = await replay(dir, script, (event) => events.push(event));
 
-      expect(result).toMatchObject({
-        status: 'completed',
-        text: 'OK\n',
-        nativeSessionId: '50328626-c5df-4301-9da7-dee7ce900271',
+        expect(Date.now() - started).toBeGreaterThanOrEqual(2 * idle.warnMs);
+        expect(result).toMatchObject({
+          status: 'completed',
+          text: 'OK\n',
+          nativeSessionId: '50328626-c5df-4301-9da7-dee7ce900271',
+        });
+        const deltaIds = events.flatMap((event) =>
+          event.type === 'call_tool_use_delta' ? [event.toolUseId] : [],
+        );
+        const doneIds = events.flatMap((event) =>
+          event.type === 'call_tool_use_done' ? [event.toolUse.id] : [],
+        );
+        expect(deltaIds).toEqual(['step-2', 'step-4', 'step-6']);
+        expect(doneIds).toEqual(deltaIds);
+        for (const id of deltaIds) {
+          const started = events.findIndex(
+            (event) => event.type === 'call_tool_use_delta' && event.toolUseId === id,
+          );
+          const done = events.findIndex(
+            (event) => event.type === 'call_tool_use_done' && event.toolUse.id === id,
+          );
+          expect(started).toBeLessThan(done);
+        }
+        expect(events.filter((event) => event.type === 'call_stalled')).toHaveLength(0);
       });
-      const deltaIds = events.flatMap((event) =>
-        event.type === 'call_tool_use_delta' ? [event.toolUseId] : [],
-      );
-      const doneIds = events.flatMap((event) =>
-        event.type === 'call_tool_use_done' ? [event.toolUse.id] : [],
-      );
-      expect(deltaIds).toEqual(['step-2', 'step-4', 'step-6']);
-      expect(doneIds).toEqual(deltaIds);
-      for (const id of deltaIds) {
-        const started = events.findIndex(
-          (event) => event.type === 'call_tool_use_delta' && event.toolUseId === id,
-        );
-        const done = events.findIndex(
-          (event) => event.type === 'call_tool_use_done' && event.toolUse.id === id,
-        );
-        expect(started).toBeLessThan(done);
-      }
-      expect(events.some((event) => event.type === 'call_stalled')).toBe(false);
-    });
-  });
+    },
+  );
 
   itUnix('reports one stall when a frame is followed by three seconds of silence', async () => {
     await withTempDir('splitbrief-agy-stall', async (dir) => {
@@ -1277,6 +1284,40 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
       expect(events.filter((event) => event.type === 'call_stall_cleared')).toHaveLength(1);
     });
   });
+
+  itUnix(
+    'keeps a call whose tool-start frames outgrow the tool-delta budget completed',
+    async () => {
+      await withTempDir('splitbrief-agy-flood', async (dir) => {
+        const events: RunnerCallEvent[] = [];
+        const floodPath = join(dir, 'flood.cjs');
+        // Seventeen 64 KiB start frames pass the 1 MiB tool-delta budget; the call itself is healthy.
+        writeFileSync(
+          floodPath,
+          [
+            "const parameters = { CodeContent: 'x'.repeat(64 * 1024) };",
+            'for (let step = 0; step < 17; step += 1) {',
+            "  const update = { conversation_id: 'c-1', step_index: step, state: 'ACTIVE', step_type: 'tool', tool_name: 'write_to_file', tool_info: { name: 'write_to_file', parameters } };",
+            "  process.stdout.write(JSON.stringify({ event: 'step_update', step_update: update }) + '\\n');",
+            '}',
+            "process.stdout.write(JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'OK\\n' } }) + '\\n');",
+          ].join('\n'),
+        );
+        const result = await replay(dir, `exec node ${JSON.stringify(floodPath)}`, (event) =>
+          events.push(event),
+        );
+
+        expect(result.status).toBe('completed');
+        expect(
+          events.filter(
+            (event) =>
+              event.type === 'call_warning' &&
+              event.warning.code === 'runner_call_tool_delta_limit',
+          ),
+        ).toHaveLength(1);
+      });
+    },
+  );
 });
 
 describe('invokeProcessCli tool-use guard', () => {
@@ -1458,6 +1499,127 @@ describe('invokeProcessCli tool-use guard', () => {
         });
         expect(result.status).toBe('completed');
         expect(seen).toEqual([{}, { command: 'ls ~' }]);
+      });
+    },
+  );
+});
+
+describe('invokeProcessCli structured-terminal halts on stderr', () => {
+  // Captured live from `agy -p` on 2026-09-21.
+  const QUOTA_LINE =
+    'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s.';
+
+  async function runAgy(
+    dir: string,
+    output: Readonly<{ stdout?: readonly string[]; stderr?: readonly string[]; exit: number }>,
+  ) {
+    const shimPath = join(dir, 'agy');
+    const body = [
+      '#!/bin/bash',
+      ...(output.stdout ?? []).map((line) => `printf '%s\\n' ${JSON.stringify(line)}`),
+      ...(output.stderr ?? []).map((line) => `printf '%s\\n' ${JSON.stringify(line)} >&2`),
+      `exit ${output.exit}`,
+    ];
+    writeFileSync(shimPath, `${body.join('\n')}\n`, { mode: 0o755 });
+    return invokeProcessCli(antigravityImplementerAdapter, {
+      invocation: {
+        executable: executableIdentity(shimPath),
+        args: ['<PROMPT>'],
+        promptTransport: antigravityImplementerAdapter.promptTransport,
+        environment: { PATH: process.env.PATH ?? '' },
+        cwd: dir,
+        timeoutMs: 15_000,
+        signal: undefined,
+      },
+      prompt: 'fixture prompt',
+      callContext,
+    });
+  }
+
+  itUnix('halts on the stderr quota line when agy exits 0 without a result frame', async () => {
+    await withTempDir('splitbrief-agy-quota-no-result', async (dir) => {
+      const result = await runAgy(dir, { stderr: [QUOTA_LINE], exit: 0 });
+      expect(result).toMatchObject({
+        status: 'failed',
+        error: { code: 'usage-limit', message: QUOTA_LINE },
+      });
+      expect(runnerCallOutcome(result).state).toBe('usage-limit');
+    });
+  });
+
+  itUnix(
+    'ends incomplete when agy exits 0 without a result frame or stderr diagnosis',
+    async () => {
+      await withTempDir('splitbrief-agy-no-result', async (dir) => {
+        const result = await runAgy(dir, { exit: 0 });
+        expect(result).toMatchObject({
+          status: 'incomplete',
+          error: { code: 'protocol-failure' },
+        });
+      });
+    },
+  );
+
+  itUnix('ends incomplete when stdout restates a halt phrase without a result frame', async () => {
+    await withTempDir('splitbrief-agy-stdout-halt-phrase', async (dir) => {
+      const stepUpdate = JSON.stringify({
+        event: 'step_update',
+        step_update: {
+          conversation_id: 'c-1',
+          step_index: 1,
+          state: 'DONE',
+          step_type: 'agent_response',
+          text_delta: 'I hit the usage limit.',
+        },
+      });
+      const result = await runAgy(dir, { stdout: [stepUpdate], exit: 0 });
+      expect(result).toMatchObject({
+        status: 'incomplete',
+        error: { code: 'protocol-failure' },
+      });
+    });
+  });
+
+  itUnix.each([0, 3])(
+    'replaces uninformative ERROR result frame with stderr quota line on exit %i',
+    async (exit) => {
+      await withTempDir(`splitbrief-agy-quota-error-result-${exit}`, async (dir) => {
+        const errorResult = JSON.stringify({
+          event: 'result',
+          result: { status: 'ERROR' },
+        });
+        const result = await runAgy(dir, {
+          stdout: [errorResult],
+          stderr: [QUOTA_LINE],
+          exit,
+        });
+        expect(result).toMatchObject({
+          status: 'failed',
+          error: { code: 'usage-limit', message: QUOTA_LINE },
+        });
+        expect(runnerCallOutcome(result).state).toBe('usage-limit');
+      });
+    },
+  );
+
+  itUnix(
+    'keeps a failed terminal that names its own halt over a conflicting stderr line',
+    async () => {
+      await withTempDir('splitbrief-agy-terminal-names-halt', async (dir) => {
+        const quotaResult = JSON.stringify({
+          event: 'result',
+          result: {
+            status: 'ERROR',
+            error: "You've hit your usage limit. Try again later.",
+          },
+        });
+        const result = await runAgy(dir, {
+          stdout: [quotaResult],
+          stderr: ['Error: not logged in'],
+          exit: 1,
+        });
+        expect(result.error?.message).toBe("You've hit your usage limit. Try again later.");
+        expect(runnerCallOutcome(result).state).toBe('usage-limit');
       });
     },
   );

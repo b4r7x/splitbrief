@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -52,7 +52,6 @@ describe('applyChangedFiles', () => {
       task,
       state,
       workspace,
-      usesIsolation: true,
       preApplyApprovedFiles: ['src/hello.ts'],
       taskStartSnapshot: workspace.snapshot,
       recordApprovalDenial: vi.fn(),
@@ -68,10 +67,10 @@ describe('applyChangedFiles', () => {
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
 
-    const workspace = await createStagedProject(projectDir);
-    const stagedProjectDir = workspace.projectDir;
-
-    rmSync(join(projectDir, '.git'), { recursive: true, force: true });
+    const staged = await createStagedProject(projectDir);
+    const stagedProjectDir = staged.projectDir;
+    // The staged copy carries no .git, so a git-status read of it cannot succeed.
+    const workspace = { ...staged, snapshot: emptySnapshot() };
 
     const events: unknown[] = [];
     const wctx = makeWctx({ projectDir, sessionId });
@@ -82,7 +81,6 @@ describe('applyChangedFiles', () => {
       task,
       state,
       workspace,
-      usesIsolation: true,
       preApplyApprovedFiles: [],
       taskStartSnapshot: emptySnapshot(),
       recordApprovalDenial: vi.fn(),
@@ -119,7 +117,6 @@ describe('applyChangedFiles', () => {
       task,
       state,
       workspace,
-      usesIsolation: true,
       preApplyApprovedFiles: ['src/hello.ts'],
       taskStartSnapshot: workspace.snapshot,
       recordApprovalDenial: vi.fn(),
@@ -164,7 +161,6 @@ describe('applyChangedFiles', () => {
         task,
         state,
         workspace,
-        usesIsolation: true,
         preApplyApprovedFiles: [],
         taskStartSnapshot: workspace.snapshot,
         recordApprovalDenial: vi.fn(),
@@ -199,7 +195,6 @@ describe('applyChangedFiles', () => {
         task,
         state,
         workspace,
-        usesIsolation: true,
         preApplyApprovedFiles: ['src/hello.ts'],
         taskStartSnapshot: workspace.snapshot,
         recordApprovalDenial: vi.fn(),

@@ -36,5 +36,8 @@ export function HINT_ERROR_TEMPLATE(error: string, hint: string): string {
 
 export const MAX_HINT_ERROR_LENGTH = 4000;
 
-/** How much of an implementer's terminal text the hint prompt and the recovery panel carry. */
+/** How much of an implementer's terminal text the hint prompt carries; the panel quotes only its last `HAND_BACK_PANEL_CHARS`. */
 export const HAND_BACK_MAX_CHARS = 2000;
+
+/** How much of a hand-back the recovery panel quotes: its end, where a stop says why. */
+export const HAND_BACK_PANEL_CHARS = 300;

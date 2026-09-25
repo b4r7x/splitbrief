@@ -20,6 +20,7 @@ import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import type { ContinuationHolder } from '../continuation.js';
 import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
 import { runTasksAndReview } from './task-execution.js';
+import { applyRecoveryAction } from '../recovery/actions.js';
 
 /** The sink the TUI installs, with the boundary pause pending exactly once. */
 function pauseOnceSinks(): WorkflowSinks {
@@ -318,6 +319,55 @@ describe('runTasksAndReview repair budget', { timeout: 120_000 }, () => {
     expect(result.state.reviewStatus).toBe('failed');
     expect(result.state.pendingRecovery?.reason).toBe('review-failed');
     expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('a correction sent after the failed review repairs the owning brief once more and re-runs the review', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const failed = runOptions({
+      projectDir,
+      sessionId,
+      state: resumedReviewState(tasks, head, 2),
+      reviewText: CRITICAL_FAIL,
+      onComplete: vi.fn(),
+    });
+    const halted = await runTasksAndReview(failed.options);
+    expect(halted.state.pendingRecovery?.availableActions).toContain('revise');
+
+    const { bus } = makeBusRecorder();
+    const corrected = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: halted.state,
+      action: 'revise',
+      bus,
+      comment: 'log the error, then rethrow it',
+    });
+    expect(corrected.ok).toBe(true);
+
+    const onComplete = vi.fn();
+    const { events, implementer, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: corrected.state,
+      reviewText: '### Verdict\npass\n',
+      onComplete,
+    });
+    const result = await runTasksAndReview(options);
+
+    expect(implementer.retry).toHaveBeenCalledTimes(1);
+    expect(implementer.retry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.stringContaining('Operator correction: log the error, then rethrow it'),
+      }),
+    );
+    expect(events.filter((e) => e.type === 'workflow_complete')).toEqual([
+      expect.objectContaining({ review: 'passed' }),
+    ]);
+    expect(result.completed).toBe(true);
+    expect(result.state.reviewStatus).toBe('passed');
+    expect(result.state.reviewFixes?.cycle).toBe(3);
+    expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
   it('a passing review still completes at persisted cycle 2', async () => {

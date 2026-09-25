@@ -542,6 +542,35 @@ describe('useRunLoop', () => {
     inst.unmount();
   });
 
+  it('keeps the halt and records no cut step when the run is stopped at the recovery panel', async () => {
+    const sessionId = '2026-09-24-stop-at-halt';
+    const halted = saveHaltedRun(sessionId);
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: halted,
+    });
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
+
+    const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
+    await vi.waitFor(() => {
+      expect(controlsStore.get().inputMode).toBe('question');
+    });
+    await flush();
+    expect(requestStopNow()).toBe(true);
+    await vi.waitFor(() => {
+      expect(settledRun()).not.toBeNull();
+    });
+
+    const persisted = loadState({ projectDir, sessionId });
+    expect(persisted?.pendingRecovery).toEqual(halted.pendingRecovery);
+    expect(persisted?.interruptedStep).toBeUndefined();
+    expect(runWorkflowStub).not.toHaveBeenCalled();
+
+    inst.unmount();
+  });
+
   it('requestCancel marks the workflow cancelled and clears the review input mode', async () => {
     const prepared = preparedExecution({ projectDir, feature: 'add auth' });
     const inst = renderHarness({
@@ -1465,7 +1494,9 @@ describe('useRunLoop', () => {
       });
 
       expect(run.entered).toHaveLength(1);
-      expect(loadState(prepared.session.ref)?.interruptedStep).toBeDefined();
+      const saved = loadState(prepared.session.ref);
+      expect(saved?.interruptedStep?.cut).toBe('mid-step');
+      expect(saved?.pendingRecovery).toBeUndefined();
       expect(settledRun()?.status.kind).toBe('open');
 
       inst.unmount();

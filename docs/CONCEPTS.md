@@ -174,10 +174,10 @@ Each step stops at the first failure *attributable to the task* and reports it b
 
 On validation failure:
 
-- **Local retries**: the implementer retries with the same entire context with configured retry temperature changes only where the transport supports them, up to `workflow.maxRetries` times (default 2). No planner involvement.
+- **Local retries**: the implementer retries with the same entire context with configured retry temperature changes only where the transport supports them, up to `workflow.maxRetries` times (default 2). No planner involvement. The rung ends early on the first attempt that read the feedback and still changed nothing; a first attempt that changed nothing and handed back text skips it and tier 0 and goes to tier 1 when the planner supports hint escalation.
 - **After the last retry**: escalate through the tiers in order.
   - **Tier 0 — intermediate model** (only when `escalation.intermediateProvider` is configured and `escalation.enabled` is not `false`): a paid mid-tier API model retries the task before the planner is involved.
-  - **Tier 1 — hint escalation** (if the planner supports it — see `supportsHintEscalation`): planner reads the error, returns a short hint, implementer retries once with the hint.
+  - **Tier 1 — hint escalation** (if the planner supports it — see `supportsHintEscalation`): the planner reads the error and the implementer's hand-back and replies with a verdict — `answer` (the implementer retries once with the hint), `widen` (that retry may also write the named files, through tiered approval) or `brief` (no retry; the run stops for you). An empty hint ends the rung without an implementer call.
   - **Recovery** follows the exhausted worker/help path. Historical full-tier outcomes remain readable; the planner never automatically takes over code-writing implementation.
 
 Escalation logic: `src/engine/orchestrator/escalation/handle.ts`.

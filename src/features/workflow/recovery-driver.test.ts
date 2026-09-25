@@ -7,7 +7,6 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
-import { ensureSessionDir } from '../../core/paths-io.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { taskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -23,6 +22,11 @@ import {
 } from '../../stores/workflow/recovery-notice.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { createRecoveryDriver } from './recovery-driver.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
+import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
+import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
 import { addTuiEvent } from './tui-sink.js';
 
 let dirs: string[] = [];
@@ -109,6 +113,7 @@ function runDriver(
   prepared: PreparedExecution,
   state: WorkflowState,
   inputMode: UseInputModeResult,
+  correction?: string,
 ): ReturnType<ReturnType<typeof createRecoveryDriver>> {
   const promptPendingRecovery = createRecoveryDriver({
     prepared,
@@ -121,7 +126,40 @@ function runDriver(
     state,
     controller: new AbortController(),
     republishPrompt: false,
+    ...(correction !== undefined && { correction }),
   });
+}
+
+/** A run whose final review failed after the repair cycles ran out, with its review on disk. */
+function setupFailedReview(): { prepared: PreparedExecution; state: WorkflowState } {
+  const { prepared } = setupSession();
+  const ref = prepared.session.ref;
+  const halted: WorkflowState = {
+    ...makeImplState([makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })]),
+    phase: 'complete',
+    reviewStatus: 'failed',
+    completedAt: '2026-09-24T00:00:00.000Z',
+    reviewFixes: { cycle: 2, findings: {} },
+    pendingRecovery: buildReviewFailedRecoveryIssue({
+      blocking: 1,
+      phase: 'complete',
+      createdAt: '2026-09-24T00:00:00.000Z',
+    }),
+  };
+  saveState(ref, halted);
+  writeSpecFile(
+    ref,
+    REVIEW_FILE,
+    '### Verdict\nfail\n\n### Findings\n- **Critical**: src/alpha.ts drops the error\n',
+  );
+  const saved = loadState(ref);
+  if (saved === null) throw new Error('expected the failed review to persist');
+  return { prepared, state: saved };
+}
+
+function sessionLog(prepared: PreparedExecution): string {
+  const { projectDir, sessionId } = prepared.session.ref;
+  return readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf-8');
 }
 
 describe('createRecoveryDriver', () => {
@@ -429,10 +467,9 @@ describe('createRecoveryDriver', () => {
     if (result.shouldRun) expect(result.steer).toBeUndefined();
   });
 
-  it('refuses a sentence at a halt that offers nothing to carry it', async () => {
+  it('refuses a sentence at a halt that offers nothing to carry it, and says why', async () => {
     const { prepared, state } = setupSession({
-      reason: 'review-failed',
-      taskId: undefined,
+      reason: 'dependency-blocked',
       availableActions: ['pause-run', 'end-run'],
       recommendedAction: 'pause-run',
     });
@@ -441,7 +478,10 @@ describe('createRecoveryDriver', () => {
     const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(2);
-    expect(feedbackAtPrompt[1]).toEqual({ message: 'Unknown recovery action.', isError: true });
+    expect(feedbackAtPrompt[1]).toEqual({
+      message: 'This halt takes no typed correction. Choose one of its actions.',
+      isError: true,
+    });
     expect(result.shouldRun).toBe(false);
   });
 
@@ -484,5 +524,52 @@ describe('createRecoveryDriver', () => {
     expect(result.state?.messageQueue.map((message) => message.text)).toEqual([
       'split the first brief',
     ]);
+  });
+
+  it('sends a failed review back through one more repair with the correction typed on the panel', async () => {
+    const { prepared, state } = setupFailedReview();
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['keep the error, log it and rethrow']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(1);
+    expect(feedbackStore.get().isError).toBe(false);
+    expect(result.shouldRun).toBe(true);
+    if (!result.shouldRun) return;
+    expect(result.steer).toBeUndefined();
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.phase).toBe('implementing');
+    expect(result.state.reviewStatus).toBeUndefined();
+    expect(result.state.tasks[0]?.status).toBe('pending');
+    expect(result.state.reviewFixes).toEqual({
+      cycle: 3,
+      findings: {
+        T001: [
+          'src/alpha.ts drops the error',
+          'Operator correction: keep the error, log it and rethrow',
+        ],
+      },
+    });
+    const log = sessionLog(prepared);
+    expect(log).toContain('"type":"user_message"');
+    expect(log).toContain('keep the error, log it and rethrow');
+    expect(log).toContain('"type":"review_fix_started"');
+  });
+
+  it('takes the words a failed review was continued with as its correction, without asking', async () => {
+    const { prepared, state } = setupFailedReview();
+    const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+    const result = await runDriver(prepared, state, inputMode, 'log the error and rethrow');
+
+    expect(feedbackAtPrompt).toHaveLength(0);
+    expect(result.shouldRun).toBe(true);
+    if (!result.shouldRun) return;
+    expect(result.correctionTaken).toBe(true);
+    expect(result.steer).toBeUndefined();
+    expect(result.state.phase).toBe('implementing');
+    expect(result.state.reviewFixes?.findings['T001']).toContain(
+      'Operator correction: log the error and rethrow',
+    );
   });
 });

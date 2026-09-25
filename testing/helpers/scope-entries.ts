@@ -42,4 +42,10 @@ export const SCOPE_ENTRY_CASES: readonly ScopeEntryCase[] = [
     matches: [],
     nonMatches: ['src/x.ts'],
   },
+  {
+    name: 'root-level widening bullet',
+    entry: '`README.md` — planner-approved: consumer',
+    matches: ['README.md'],
+    nonMatches: ['docs/README.md'],
+  },
 ];

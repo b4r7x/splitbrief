@@ -734,7 +734,12 @@ describe('runRetryStep — planner-approved widening', () => {
   it('records nothing on a denied write and raises the scope-violation recovery', async () => {
     const { outcome, events } = await runWidenedRetry('deny');
 
-    expect(outcome.result).toEqual({ completed: false, method: 'failed', attempts: 1 });
+    expect(outcome.result).toEqual({
+      completed: false,
+      method: 'failed',
+      attempts: 1,
+      lastError: 'Retry changed files blocked by approval gate: out of scope (src/other.ts)',
+    });
     expect(outcome.state.tasks[0]?.scope?.approvedOutOfBounds).toBeUndefined();
     expect(events.find((event) => event.type === 'task_scope_widened')).toBeUndefined();
     expect(events.find((event) => event.type === 'recovery_prompted')).toMatchObject({
@@ -791,7 +796,12 @@ describe('runRetryStep — gate denial', () => {
       },
     });
 
-    expect(outcome.result).toEqual({ completed: false, method: 'failed', attempts: 1 });
+    expect(outcome.result).toEqual({
+      completed: false,
+      method: 'failed',
+      attempts: 1,
+      lastError: 'Retry changed files blocked by approval gate: out of scope (src/other.ts)',
+    });
     const prompted = events.find((event) => event.type === 'recovery_prompted');
     expect(prompted).toMatchObject({ reason: 'scope-violation', taskId: 'T030' });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
@@ -799,5 +809,70 @@ describe('runRetryStep — gate denial', () => {
       files: ['src/other.ts'],
       recommendedAction: 'retry-same-worker',
     });
+  });
+
+  it('gate-denied package change returns failed retry with lastError and raises no recovery', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T030', file: 'src/main.ts' });
+    const state = makeImplState([task]);
+    const { callbacks } = makeCallbacks({
+      onTieredApproval: vi
+        .fn()
+        .mockResolvedValue({ decision: 'deny', reason: 'package change denied' }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+
+    const outcome = await runRetryStep({
+      ctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          approval: { enabled: true, feedRejectionsToPlanner: false },
+          workflow: {},
+        }),
+        callbacks,
+        bus,
+        planner: makePlanner(),
+        reviewer: makePlanner(),
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
+        taskStartSnapshot,
+        dependsOnFiles: [],
+      },
+      task,
+      state,
+      lastError: 'validation failed',
+      attempts: 1,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      usageCategory: 'implementer',
+      retryFailureFallback: 'retry failed',
+      invokeRetry: async ({ projectDir: runDir }) => {
+        writeFileSync(join(runDir, 'package.json'), '{"name":"changed"}\n');
+        return { success: true };
+      },
+    });
+
+    expect(outcome.result).toEqual({
+      completed: false,
+      method: 'failed',
+      attempts: 1,
+      lastError:
+        'Retry changed files blocked by approval gate: package change denied (package.json)',
+    });
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'error' &&
+          event.message ===
+            'Retry changed files blocked by approval gate: package change denied (package.json)',
+      ),
+    ).toHaveLength(1);
   });
 });

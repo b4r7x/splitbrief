@@ -44,33 +44,45 @@ export function buildRewindHandler({
       feedbackStore.setError(resumeFailureMessage(hydrated));
       return;
     }
-    const current = hydrated.state;
-
-    const { action, event } = buildRewindAction({
-      request,
-      ref,
-      state: current,
-      persistEvent: false,
-    });
-    let next: WorkflowState;
-    try {
-      next = transitionAndSave(ref, current, action, {
-        expectedRevision: current.stateRevision,
-      });
-    } catch (cause) {
-      feedbackStore.setError(toErrorMessage(cause));
-      return;
-    }
-    appendProtectedEngineEvent(ref, event, RewindEventSchema);
-    setPendingRewind({
-      prepared,
-      event,
-      feedback:
-        action.type === 'REWIND_TO_SPEC' || action.type === 'REWIND_TO_PLAN'
-          ? action.comment
-          : undefined,
-    });
+    const rewound = rewindSavedState(ref, request, hydrated.state);
+    if (rewound === undefined) return;
+    setPendingRewind({ prepared, event: rewound.event, feedback: rewound.feedback });
     controller.abort(WORKFLOW_REWIND_ABORT_REASON);
-    onRewound(next);
+    onRewound(rewound.next);
+  };
+}
+
+/**
+ * Writes a rewind onto the saved state and the session log. A state that refuses it says why on
+ * the feedback line and yields nothing.
+ */
+export function rewindSavedState(
+  ref: SessionRef,
+  request: RewindTarget,
+  current: WorkflowState,
+): { next: WorkflowState; event: EngineEvent; feedback: string | undefined } | undefined {
+  const { action, event } = buildRewindAction({
+    request,
+    ref,
+    state: current,
+    persistEvent: false,
+  });
+  let next: WorkflowState;
+  try {
+    next = transitionAndSave(ref, current, action, {
+      expectedRevision: current.stateRevision,
+    });
+  } catch (cause) {
+    feedbackStore.setError(toErrorMessage(cause));
+    return undefined;
+  }
+  appendProtectedEngineEvent(ref, event, RewindEventSchema);
+  return {
+    next,
+    event,
+    feedback:
+      action.type === 'REWIND_TO_SPEC' || action.type === 'REWIND_TO_PLAN'
+        ? action.comment
+        : undefined,
   };
 }

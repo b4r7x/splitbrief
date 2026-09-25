@@ -253,9 +253,14 @@ describe('run-loop stop completion', () => {
     mount(prepared, engine);
     await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
     requestStopNow();
-    await expectParked(prepared);
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'), { timeout: 3000 });
+    expect(registeredProcessCount()).toBe(0);
+    const saved = loadState(prepared.session.ref);
+    expect(saved?.closed).toBeUndefined();
+    expect(saved?.interruptedStep).toBeUndefined();
+    expect(readSession(prepared.session.ref)?.status).toBe('open');
     expect(engine).not.toHaveBeenCalled();
-    expect(loadState(prepared.session.ref)?.pendingRecovery?.id).toBe(state.pendingRecovery?.id);
+    expect(saved?.pendingRecovery?.id).toBe(state.pendingRecovery?.id);
   });
 
   it.each(['home', 'quit'] as const)(

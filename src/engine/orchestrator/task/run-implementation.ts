@@ -29,7 +29,7 @@ async function changedDeclaredFilesNote(
     const changed = await inferTaskAcceptedChangedFiles(projectDir, task, taskStartSnapshot.head);
     if (changed.length === 0) return {};
     return {
-      extra: `These declared files already changed since the task started: ${changed.join(', ')}`,
+      extra: `These declared files already differ from the commit this brief started on: ${changed.join(', ')}`,
     };
   } catch {
     // Best-effort context: a snapshot head the operator rewrote must not stop the restart.
@@ -41,7 +41,6 @@ export type RunImplementationResult = {
   state: WorkflowState;
   implResult: ImplementerResult;
   workspace: IsolatedWorkspace | undefined;
-  usesIsolation: boolean;
   preApplyApprovalDenied: boolean;
   preApplyApprovedFiles: string[];
 };
@@ -207,7 +206,6 @@ export async function runImplementation(opts: {
     state,
     implResult: loop.value,
     workspace,
-    usesIsolation,
     preApplyApprovalDenied,
     preApplyApprovedFiles,
   };
