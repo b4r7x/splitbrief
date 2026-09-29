@@ -286,13 +286,13 @@ With an approval level other than `none`, `standard` and `speckit` enter `review
 
 The keywords of every tier count only as whole words of prose, so `typography` is not a typo. A name is not a risk signal: fenced code, a code span, a path (any token with a `/`), or a word inside a longer kebab-case or snake_case name such as `overlay-picker-auth-config-owned`.
 
-The `trivial` tier does one thing beyond suggesting `quick`: `runPlanningPhase` passes `trivial: true` into the quick planning phase for that run, and `buildQuickPlanPrompt()` then tells the planner to skip the codebase-structure review and cap the run at one to five Task Briefs. The contract sections (Scope, Escalation, Evidence) are still required; only their length is relaxed.
+The `trivial` tier does one thing beyond suggesting `quick`: `runPlanningPhase` passes `trivial: true` into the quick planning phase for that run, and `buildQuickPlanPrompt()` then tells the planner to skip the codebase-structure review. The Task Brief count is not capped. The contract sections (Scope, Escalation, Evidence) are still required; only their length is relaxed.
 
 Upgrade and downgrade advice fire only when `confidence >= 0.65`. Missing-context fires below that threshold when the prompt is obviously vague.
 
-The advisor never auto-switches the mode. It publishes a `mode_advice` event and the footer displays the suggestion.
+The advisor never auto-switches the mode. It publishes a `mode_advice` event and the footer displays the suggestion. The number of compiled briefs and the files they write produce no advice: no count upgrades a mode or asks for a separate run. A historical `mode_advice` event of kind `stop` still parses and replays.
 
-The byline and the sidebar read the advice from its own slot (`src/stores/workflow/mode-advice.ts`), which every `mode_advice` replaces, `none` included. The event log drops its oldest entries past its cap, so a long run would otherwise lose the advice it started with. A run read back from disk — at rest, or continued — shows the advice its saved feature, `@file` context, mode and briefs earn today (`adviseRun`, applied by `readRunHistory`), not a verdict an older advisor logged.
+The byline and the sidebar read the advice from its own slot (`src/stores/workflow/mode-advice.ts`), which every `mode_advice` replaces, `none` included. The event log drops its oldest entries past its cap, so a long run would otherwise lose the advice it started with. A run read back from disk — at rest, or continued — shows the advice its saved feature, `@file` context and mode earn today (`adviseRun`, applied by `readRunHistory`), not a verdict an older advisor logged.
 
 ### Clarification questions
 

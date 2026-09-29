@@ -10,7 +10,6 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import { join } from 'node:path';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
-import { MODES } from '../../../core/pipeline-spec/modes.js';
 import { parseTasksStrict } from '../../spec/tasks/parse.js';
 import { buildTasksPrompt } from '../../spec/prompts/tasks.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
@@ -83,7 +82,6 @@ async function regenerateFromFeedback(ctx: RegenerateFromFeedbackCtx): Promise<T
       languageContext,
       currentTasks,
       skillsContext,
-      briefCap: MODES[state.mode ?? 'standard'].briefCap,
     });
     const result = await runRegenerationReview({
       ctx,

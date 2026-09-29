@@ -6,7 +6,7 @@ import { callPhase, phaseInputs } from '#testing/helpers/planner-call.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/phase-call.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
-import { MODES } from '../../core/pipeline-spec/modes.js';
+import { sliceRuleText } from '../../core/pipeline-spec/brief.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { error } from '../../utils/error.js';
 import { createPlannerBase } from './base.js';
@@ -424,7 +424,7 @@ describe('runDocumentPhases', () => {
     expect(result.tasks.map((task) => task.id)).toEqual(['T001']);
   });
 
-  it("states the mode's brief cap in the tasks prompt", async () => {
+  it('states the shared grouping rule, and no brief cap, in the tasks prompt', async () => {
     const { planner, prompts } = recordingPlanner([
       PLANNER_DOCUMENT_FIXTURES.research,
       PLANNER_DOCUMENT_FIXTURES.spec,
@@ -441,7 +441,8 @@ describe('runDocumentPhases', () => {
     });
 
     expect(prompts[3]).toContain('Compile Product Task Briefs');
-    expect(prompts[3]).toContain(`Emit at most ${MODES.standard.briefCap} briefs in all.`);
+    expect(prompts[3]).toContain(sliceRuleText());
+    expect(prompts[3]).not.toContain('briefs in all');
   });
 
   it('feeds the language the research call discovered into the later prompts', async () => {

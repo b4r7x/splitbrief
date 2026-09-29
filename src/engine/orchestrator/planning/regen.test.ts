@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { MODES } from '../../../core/pipeline-spec/modes.js';
+import { sliceRuleText } from '../../../core/pipeline-spec/brief.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { ensureSessionDir, readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
@@ -125,7 +125,8 @@ describe('regenerateTasks', () => {
       metadata: TEST_METADATA,
     });
 
-    expect(seenPrompt).toContain(`Emit at most ${MODES.quick.briefCap} briefs in all.`);
+    expect(seenPrompt).toContain(sliceRuleText());
+    expect(seenPrompt).not.toContain('briefs in all');
   });
 
   it('falls back to state.tasks when tasks.md is absent on disk', async () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildLanguageContext } from './language-context.js';
-import { MODES } from '../../../core/pipeline-spec/modes.js';
+import { sliceRuleText } from '../../../core/pipeline-spec/brief.js';
 import { buildQuickPlanPrompt } from './quick-plan.js';
 
 describe('buildQuickPlanPrompt', () => {
@@ -42,9 +42,8 @@ describe('buildQuickPlanPrompt', () => {
     });
     expect(prompt).toContain('This request was auto-classified as a tiny edit');
     expect(prompt).not.toContain('requester');
-    expect(prompt).toContain(
-      `A single Task Brief is fine; do not over-engineer. 1-${MODES.quick.briefCap} briefs max.`,
-    );
+    expect(prompt).toContain('A single Task Brief is fine; do not over-engineer.');
+    expect(prompt).not.toMatch(/briefs max|at most \d+ briefs/);
     expect(prompt).not.toContain('Briefly review the codebase structure');
   });
 
@@ -71,16 +70,12 @@ describe('buildQuickPlanPrompt', () => {
     },
   );
 
-  it('describes a brief as a slice and reads the brief cap from the pipeline spec', () => {
+  it('groups briefs by outcome and requests no brief, file or line maximum', () => {
     const prompt = buildQuickPlanPrompt({ feature: 'change feature', projectContext: 'repo' });
-    expect(prompt).toContain('One brief = one verifiable slice');
+    expect(prompt).toContain('One brief = one reviewable outcome');
+    expect(prompt).toContain(sliceRuleText());
     expect(prompt).toContain('files:');
-    expect(prompt).toContain(`at most ${MODES.quick.briefCap} briefs in all`);
-    expect(prompt).toContain('Split when a gate can pass on one part without the other.');
-    expect(prompt).toContain(
-      'A brief whose only purpose is to test a sibling another brief creates is folded into that brief.',
-    );
-    expect(prompt).not.toContain('One brief per file');
+    expect(prompt).not.toMatch(/at most \d+ (briefs|files)|\d+ changed lines/);
   });
 
   it('renders the language context section it is given', () => {

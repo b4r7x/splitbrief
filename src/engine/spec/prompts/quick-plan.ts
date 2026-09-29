@@ -9,7 +9,6 @@ import {
 import { buildTaskFormatExample } from './task-format-example.js';
 import { requiredBriefSectionsProse } from './required-sections.js';
 import { SKILLS_WITH_EVERY_BRIEF } from './tasks.js';
-import { MODES } from '../../../core/pipeline-spec/modes.js';
 import { sliceRuleText } from '../../../core/pipeline-spec/brief.js';
 
 export type QuickPlanPromptInput = Readonly<{
@@ -24,7 +23,7 @@ export function buildQuickPlanPrompt(input: QuickPlanPromptInput): string {
   const { feature, projectContext, skillsContext, trivial } = input;
   const ctx = input.languageContext ?? buildLanguageContext(undefined);
   const firstStep = trivial
-    ? `This request was auto-classified as a tiny edit, so skip the codebase-structure survey unless the change clearly spans several files. A single Task Brief is fine; do not over-engineer. 1-${MODES.quick.briefCap} briefs max.`
+    ? `This request was auto-classified as a tiny edit, so skip the codebase-structure survey unless the change clearly spans several files. A single Task Brief is fine; do not over-engineer.`
     : 'Briefly review the codebase structure and identify files to create or modify.';
 
   return buildPrompt({
@@ -39,14 +38,14 @@ export function buildQuickPlanPrompt(input: QuickPlanPromptInput): string {
       ...skillsSection(skillsContext),
       ...buildLanguageContextSections(ctx),
       instructionsSection(`1. ${firstStep}
-2. Compose the complete \`tasks.md\` content with atomic Task Briefs. One brief = one verifiable slice; list every file it writes under \`files\`.
+2. Compose the complete \`tasks.md\` content with coherent Task Briefs. One brief = one reviewable outcome; list every path it writes under \`files\`.
 
 Each brief must be rendered in this exact markdown shape:
 
 ${buildTaskFormatExample(ctx)}`),
       {
         heading: 'Rules',
-        body: `- ${sliceRuleText({ briefCap: MODES.quick.briefCap })} Self-contained with all context inlined.${skillsContext ? `\n- ${SKILLS_WITH_EVERY_BRIEF}` : ''}
+        body: `- ${sliceRuleText()} Self-contained with all context inlined.${skillsContext ? `\n- ${SKILLS_WITH_EVERY_BRIEF}` : ''}
 - Dependency-ordered. Use \`depends_on\` for sequencing.
 - No spec or plan document needed — Task Briefs are the artifact.
 - Required sections per brief: ${requiredBriefSectionsProse()}.

@@ -10,7 +10,6 @@ import type { PlanningPhaseResult } from '../planning/types.js';
 import { resumeBriefsApproval } from '../planning/resume-briefs.js';
 import { resumeArtifactApproval } from '../planning/resume-artifact-approval.js';
 import { invalidateFrom } from '../planning/invalidate.js';
-import { adviseMode } from '../planning/mode-advisor.js';
 import { admitBriefs } from '../planning/run.js';
 import { runPlanningSteps } from '../planning/steps.js';
 import { plannerCallbacksContextOf } from './planner-callbacks-context.js';
@@ -46,8 +45,7 @@ export async function continueApprovedArtifact(opts: {
   setTrackedState(steps.state);
   if (steps.disposition === 'terminal') return steps;
 
-  // Mode and approval level resolve as `runPlanningPhase` resolves them; the risk reads the saved
-  // feature and `@file` context, as `adviseRun` does for a continued run.
+  // Mode and approval level resolve as `runPlanningPhase` resolves them.
   const mode = resolveMode({ config, savedMode: state.mode });
   const briefs = await admitBriefs({
     wctx,
@@ -60,7 +58,6 @@ export async function continueApprovedArtifact(opts: {
       configApprove: config.workflow.approve,
       savedApprove: state.approve,
     }),
-    risk: adviseMode([state.feature, state.plannerContext].filter(Boolean).join('\n\n'), mode).risk,
   });
   setTrackedState(briefs.state);
   return briefs;

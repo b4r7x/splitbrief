@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BRIEF_SECTION_ORDER, CLOSING_CONSTRAINTS, SLICE_BUDGET, sliceRuleText } from './brief.js';
+import { BRIEF_SECTION_ORDER, CLOSING_CONSTRAINTS, sliceRuleText } from './brief.js';
 
 describe('brief spec', () => {
   it('renders Current Code after Pattern and before Implementation Steps', () => {
@@ -10,17 +10,16 @@ describe('brief spec', () => {
     expect(currentCode).toBeLessThan(steps);
   });
 
-  it('carries the three closing constraints and the slice budget', () => {
+  it('carries the three closing constraints', () => {
     expect(CLOSING_CONSTRAINTS).toHaveLength(3);
-    expect(SLICE_BUDGET).toEqual({ maxFiles: 5, maxChangedLoc: 200, frontierMaxFiles: 8 });
   });
 
-  it('states the split criterion and the fold instruction, and caps briefs only when asked', () => {
-    expect(sliceRuleText()).toContain('Split when a gate can pass on one part without the other.');
-    expect(sliceRuleText()).toContain(
-      'A brief whose only purpose is to test a sibling another brief creates is folded into that brief.',
-    );
-    expect(sliceRuleText()).not.toContain('briefs in all');
-    expect(sliceRuleText({ briefCap: 5 })).toContain('at most 5 briefs in all');
+  it('groups briefs by outcome with no count, file or line quota', () => {
+    const rule = sliceRuleText();
+    expect(rule).toContain('One brief delivers one coherent, reviewable outcome.');
+    expect(rule).toContain('Split independent outcomes');
+    expect(rule).toContain('no file-count or line-count threshold decides a boundary');
+    expect(rule).not.toMatch(/at most \d+/);
+    expect(rule).not.toMatch(/\d+ (files|changed lines|briefs)/);
   });
 });

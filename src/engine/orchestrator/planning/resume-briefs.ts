@@ -5,7 +5,6 @@ import {
   resolveMode,
 } from '../../../core/config/runtime/resolve.js';
 import { admitBriefs } from './run.js';
-import { adviseMode } from './mode-advisor.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import type { Planner } from '../../planners/types.js';
@@ -69,8 +68,6 @@ export async function resumeBriefsApproval(opts: {
       tasks,
       mode,
       approveLevel,
-      risk: adviseMode([state.feature, state.plannerContext].filter(Boolean).join('\n\n'), mode)
-        .risk,
     });
   }
 

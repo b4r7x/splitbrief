@@ -39,13 +39,13 @@ Crew fallback, per seat, first match wins: inline → `.splitbrief/config.yaml` 
 ## Modes
 
 <!-- generated: modes-table -->
-| Mode | Planner calls | Brief cap | Approval gates |
-|---|---|---|---|
-| `quick` | 1 | 5 | none |
-| `standard` | 4 | 12 | spec, briefs |
-| `speckit` | 6-7 | 12 | spec, plan, briefs |
+| Mode | Planner calls | Approval gates |
+|---|---|---|
+| `quick` | 1 | none |
+| `standard` | 4 | spec, briefs |
+| `speckit` | 6-7 | spec, plan, briefs |
 
-Default: `quick`. Upgrade `quick` → `standard` when the plan exceeds 5 files or 5 briefs; above 12 briefs stop and recommend splitting the task.
+Default: `quick`.
 <!-- /generated -->
 
 `plan` runs Phase 0 and Phase 1, prints the plan block and the briefs, removes the run dir it created, and stops. Nothing remains on disk, nothing is spawned.
@@ -54,7 +54,7 @@ Default: `quick`. Upgrade `quick` → `standard` when the plan exceeds 5 files o
 
 1. **The brief stands alone.** Nothing from this session's context reaches the implementer unless it is written into the brief. Code context is copied verbatim (references/brief-format.md), never summarized.
 2. **Gates decide, not the implementer.** Every attempt that changed the brief's files is followed by the resolved gates and the drift check (references/gates.md). An implementer's "tests pass" is a claim; the recorded output is the fact.
-3. **One brief, one slice, one process at a time.** Briefs run sequentially in dependency order. Never spawn two implementers at once.
+3. **One brief, one outcome, one process at a time.** Briefs run sequentially in dependency order. Never spawn two implementers at once.
 4. **The ladder is bounded and halts are hard.** Local retries → hint → takeover, per brief. An auth error, a usage limit, a missing binary, or two consecutive timeouts stop the whole run and are reported with the fix — the next rung would silently hand the work back to this session.
 5. **Review is evidence-bound.** The reviewer quotes the Recorded Validation Output or says validation was not recorded. A reviewer that asserts green tests from nowhere is wrong by construction.
 6. **Nothing touches git.** No `git add`, `git commit`, `git stash`, no `.bak` files — not by this session, not by the implementer (the rule is in every brief's Constraints). The working tree is left for the human.
@@ -68,7 +68,7 @@ Default: `quick`. Upgrade `quick` → `standard` when the plan exceeds 5 files o
 3. **Gates.** Resolve typecheck, lint, test per references/gates.md and record the source of each.
 4. **Baseline.** Run every gate once; record the tail. Blockers follow the unblock rule in references/gates.md.
 5. **Run dir + tree.** Choose the run dir now — `.splitbrief/runs/$(date +%Y-%m-%d-%H%M%S)-<slug>/` (on collision append `-2`, `-3`, …) — create it, and record the baseline fingerprints in `baseline-sha.txt` there per references/gates.md. Nothing else is written yet.
-6. **Shape.** Read the files the task touches at the exports-and-structure level. Cut the work into briefs, one verifiable slice each, dependency-ordered. Apply the upgrade rule.
+6. **Shape.** Read the files the task touches at the exports-and-structure level. Cut the work into briefs, one coherent outcome each, grouped by the Coherent rule in references/brief-format.md and dependency-ordered.
 7. **Plan block** — always printed:
 
     ## SPLITBRIEF preflight — <slug>

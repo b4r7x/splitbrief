@@ -29,7 +29,7 @@ Phase 2 of the splitbrief pipeline (map: references/family-map.md). Input: a bri
 ## Mandates
 
 1. **Gates decide, not the implementer.** Every attempt is followed by the gates and the drift check (references/gates.md).
-2. **One brief, one slice, one process at a time.** Dependency order from `index.md`; never two implementers at once.
+2. **One brief, one outcome, one process at a time.** Dependency order from `index.md`; never two implementers at once.
 3. **The ladder is bounded and halts are hard.** Local retries → hint → takeover per brief; auth, usage, missing binary, or two consecutive timeouts halt the run with the fix printed.
 4. **Nothing touches git.** Not this session, not the implementer.
 5. **Never substitute a seat.** Unlisted model or missing tool → halt, never a swap.

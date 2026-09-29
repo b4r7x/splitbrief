@@ -243,8 +243,6 @@ export interface PhaseInputs {
   attachments?: Attachment[] | undefined;
   /** The `tasks` call compiles briefs straight from the feature: one call, no spec, no plan. */
   quickPlan?: { trivial: boolean } | undefined;
-  /** How many Task Briefs the run's mode lets the `tasks` call compile. */
-  briefCap?: number | undefined;
 }
 
 export interface RunPhaseInput {

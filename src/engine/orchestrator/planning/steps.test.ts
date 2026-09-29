@@ -27,7 +27,6 @@ import {
   sessionDir,
 } from '../../../core/paths.js';
 import { ensureSessionDir, readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
-import { MODES } from '../../../core/pipeline-spec/modes.js';
 import type { ApproveLevel, WorkflowMode } from '../../../core/schemas/enums.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { Task } from '../../../core/schemas/task.js';
@@ -183,13 +182,12 @@ describe('runPlanningSteps — one call per step', () => {
     expect(tasks?.inputs.quickPlan).toBeUndefined();
   });
 
-  it("hands the tasks call the mode's brief cap", async () => {
+  it('hands the tasks call no brief-count limit', async () => {
     const { planner, calls } = recordingPlanner();
     await runSteps({ mode: 'standard', planner });
 
     const tasks = calls.find((entry) => entry.call === 'tasks');
-    expect(tasks?.inputs.briefCap).toBe(MODES.standard.briefCap);
-    expect(calls.find((entry) => entry.call === 'plan')?.inputs.briefCap).toBeUndefined();
+    expect(tasks?.inputs).not.toHaveProperty('briefCap');
   });
 
   it('names the running call in the saved phase', async () => {

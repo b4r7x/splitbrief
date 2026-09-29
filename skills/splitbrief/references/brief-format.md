@@ -98,7 +98,7 @@ Every brief must also leave typecheck, lint and tests green on its own. Never pl
 <!-- generated: critical-rules -->
 1. **Self-contained**: Each brief must inline ALL context needed. Include relevant current code for modify tasks, TypeScript type annotations, import paths, function signatures from dependencies, and expected patterns.
 
-2. **Atomic**: One brief = one verifiable slice — the code, its test and its wiring that one gate run can prove together. List every file it writes under `files`; one file is the smallest slice. Split when a gate can pass on one part without the other. Budget: at most 5 files and about 200 changed lines per brief for a mid-tier implementer; a frontier implementer may take 8. A brief whose only purpose is to test a sibling another brief creates is folded into that brief.
+2. **Coherent**: One brief delivers one coherent, reviewable outcome. List every path that outcome writes under `files`. Keep the tests, callers, wiring, fixtures and necessary documentation with the behavior they cover; a file boundary alone never makes a separate brief. Combine related corrections that share a contract, mechanism or code context; a mechanical rename carries all its callers and pinned strings. Split independent outcomes, or a complex mechanism, when separate validation, context or recovery makes the work easier to execute correctly. Two assertions that can pass separately do not require separate briefs, and no file-count or line-count threshold decides a boundary. Keep each brief self-contained for its actual runner, with every acceptance criterion and repository constraint it needs, and within the real model context and prompt transport limits, system text, skills and retry feedback included. Do not aim for a number of briefs. Order the dependencies so each brief leaves its affected checks green.
 
 3. **Dependency-ordered**: Briefs must be ordered so dependencies come first. Use `depends_on` to declare which briefs must complete first. Independent briefs can run in parallel.
 
@@ -129,21 +129,10 @@ The three blocks above are generated from the CLI with its TypeScript language c
   plus the skill's own: `Do NOT run git add, git commit, git stash, or create .bak files`
 - Rules found in the project's instruction files (CLAUDE.md, AGENTS.md, …) are copied into `### Constraints` verbatim; a never-commit rule goes into every brief.
 - `### Current Code` carries the whole file when it is ≤ 300 lines; otherwise only the enclosing functions the brief touches, with a line `(excerpt: lines 40–95 of 412)`.
-- Slice budget and brief caps; above the standard cap → stop after writing the briefs and recommend splitting the task:
-
-<!-- generated: caps -->
-| Mode | Brief cap |
-|---|---|
-| `quick` | 5 |
-| `standard` | 12 |
-| `speckit` | 12 |
-
-One brief = one verifiable slice — the code, its test and its wiring that one gate run can prove together. List every file it writes under `files`; one file is the smallest slice. Split when a gate can pass on one part without the other. Budget: at most 5 files and about 200 changed lines per brief for a mid-tier implementer; a frontier implementer may take 8. A brief whose only purpose is to test a sibling another brief creates is folded into that brief.
-<!-- /generated -->
 
 ## Files written
 
     <run dir>/briefs/index.md      | id | title | file | action | depends_on |
-    <run dir>/briefs/T001.md       one brief per slice, dependency order
+    <run dir>/briefs/T001.md       one brief per outcome, dependency order
 
 `index.md` is the table a human or `splitbrief-run` reads to know the order; it carries no other content.

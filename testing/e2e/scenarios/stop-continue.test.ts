@@ -189,7 +189,7 @@ function currentTaskConflicts(
 }
 
 function expectFinishedPlainRun(stdout: string): void {
-  assertPlainStdout(stdout, { mode: 'quick' });
+  assertPlainStdout(stdout);
   const lines = stdout.split('\n').map((line) => line.trim());
   expect(lines).toContain('task T001: done (no gates)');
   expect(lines).toContain('review: passed');

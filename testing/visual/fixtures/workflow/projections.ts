@@ -84,6 +84,7 @@ const FIXED_CALL_ID = 'visual-call-001';
 const FIXED_RUNNER_NAME = 'ollama';
 const FIXED_RUNNER_MODEL = 'qwen2.5-coder:7b';
 const WORKFLOW_FEATURE = 'Visual fixture workflow';
+const BRIEFS_COMPILED_FEATURE = 'Rotate the session secrets in the config module so the tests pass';
 export const WORKFLOW_FIXTURE_REVIEW_FILE = 'testing/visual/fixtures/workflow/projections.ts';
 export const WORKFLOW_FIXTURE_REVIEW_PANEL_FILE =
   'testing/visual/fixtures/workflow/review-fixture.md';
@@ -369,11 +370,11 @@ const COMPILED_BRIEFS_CARD: EngineEvent = {
 };
 
 // A quick run right after its tasks step, in the order the engine publishes it: the card the step
-// announced, then the quality verdict and the plan-size advice the kept briefs earn. The quality
+// announced, then the quality verdict and the prompt's risk advice. The quality
 // pass kept the briefs, so no second card follows.
 const briefsCompiledProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_BRIEFS_COMPILED_ID,
-  feature: WORKFLOW_FEATURE,
+  feature: BRIEFS_COMPILED_FEATURE,
   inputMode: 'normal',
   sidebarVisible: false,
   config: { workflow: { mode: 'quick' } },
@@ -382,7 +383,7 @@ const briefsCompiledProjection: WorkflowFixtureProjection = {
       type: 'workflow_started',
       ts: FIXED_TS,
       phase: 'planning',
-      feature: WORKFLOW_FEATURE,
+      feature: BRIEFS_COMPILED_FEATURE,
     },
     {
       type: 'planner_status',
@@ -401,19 +402,18 @@ const briefsCompiledProjection: WorkflowFixtureProjection = {
       score: 1,
       warningCount: 0,
     },
-    // The plan-size advice production emits once the quality pass keeps briefs that outgrow the
-    // quick thresholds: the footer carries the counts themselves, not the prompt's generic risk
-    // label. The card above declares the six files the factor counts.
+    // The prompt's own risk advice, exactly as `adviseMode` scores this scenario's feature in quick
+    // mode: the footer names the risk, and no brief or file count ever produces advice.
     {
       type: 'mode_advice',
       ts: FIXED_TS + 250,
       phase: 'planning',
       kind: 'upgrade',
-      risk: 'normal',
+      risk: 'high',
       currentMode: 'quick',
-      suggestedMode: 'standard',
-      confidence: 1,
-      factors: ['6 files over 5'],
+      suggestedMode: 'speckit',
+      confidence: 0.89,
+      factors: ['matched: \\bsession\\b', 'matched: \\bsecret(s)?\\b'],
       missing: [],
     },
   ],

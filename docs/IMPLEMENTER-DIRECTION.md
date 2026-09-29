@@ -130,18 +130,13 @@ If a task does not fit the selected worker's context window, SPLITBRIEF should n
 
 Large prompts are a planning failure, not a reason to make every worker remember the whole session.
 
-## Slice budget
+## Brief grouping
 
-A brief is a slice, not a file: one verifiable change, with every path it writes listed under `files` and `file` as the anchor. One file is the smallest slice, never the required one — a brief that creates `src/health.ts` and its `src/health.test.ts` is one slice, because one gate run proves both, and splitting it would hand the implementer a test with nothing to test.
+A brief is one coherent, reviewable outcome, not a file: every path it writes is listed under `files`, with `file` as the anchor. A brief that creates `src/health.ts` and its `src/health.test.ts` is one outcome, because splitting it would hand the implementer a test with nothing to test.
 
-What keeps a slice inside a weaker worker's reach is `SLICE_BUDGET` (`src/core/pipeline-spec/brief.ts`). The planner prompts read it; they do not restate it, so the budget cannot drift between the prompt and the checks:
+The grouping rule is `sliceRuleText()` (`src/core/pipeline-spec/brief.ts`). The planner prompts and the portable skills render it; they do not restate it. The rule keeps tests, callers, wiring, fixtures and necessary documentation with their behavior, and it combines related corrections that share a contract, mechanism or code context. It splits independent outcomes, or a complex mechanism, when separate validation, context or recovery makes the work easier to execute correctly.
 
-| Implementer tier | Files per brief | Changed LOC per brief |
-|---|---|---|
-| mid-tier (what the planner assumes) | ≤ 5 (`maxFiles`) | ~200 (`maxChangedLoc`) |
-| frontier | ≤ 8 (`frontierMaxFiles`) | ~200 |
-
-The split rule is the gate, not the file count: split when a gate can pass on one part without the other. A brief over budget is a planning failure in the same way an over-long prompt is — the answer is a finer plan, not a bigger worker.
+No brief count, file count or changed-line count decides a boundary, and no mode caps the number of briefs in a run. What bounds one brief is the real limit of its runner: the model context and the prompt transport, with the system text, skills and retry feedback included. A brief that does not fit follows the refusal path above; the brief is never truncated.
 
 ## Implementer pool
 

@@ -132,7 +132,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `core/providers/` — provider catalog, known-models, model-selection logic
 - `core/hooks/` — workflow hook trust grant (`trust.ts`) + sha256 config/file digest (`trust-digest.ts`)
 - `core/tokens/` — pure token accounting helpers (`estimate.ts`) used by the repo-map budget and the planner base
-- `core/pipeline-spec/` — the typed pipeline contract: retry ladder, gate order, capture limits, halt signatures, modes and caps, brief body order and slice budget, scope and baseline rules, timeouts, the CLI ↔ skill divergence table. Pure data read by the engine and rendered into `skills/` by `scripts/skill-blocks.ts`
+- `core/pipeline-spec/` — the typed pipeline contract: retry ladder, gate order, capture limits, halt signatures, modes, brief body order and the brief grouping rule, scope and baseline rules, timeouts, the CLI ↔ skill divergence table. Pure data read by the engine and rendered into `skills/` by `scripts/skill-blocks.ts`
 - `core/scope/` — `declared-set.ts`, the one matcher that decides whether a changed path is inside a brief's declared set
 - `core/validation/stacks/` — the five validation stacks (TypeScript, JavaScript, Python, Go, Rust) and their registry: markers, commands, test patterns, narrowing, allowed commands
 - `core/recovery/` — how a pending recovery reads and what it offers: the headline, the pasteable resume command, and the user-edit → recovery-action mapping

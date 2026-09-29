@@ -613,11 +613,11 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 **Fix:**
 1. Read the issue's details: they carry the tool's own last message, the attempt count, and the implementer profile that was selected.
 2. The offered actions are retry, route to a bigger worker, switch seat, skip the brief, pause, or end the run. Headless, the stderr block prints the exact line to paste — for example `splitbrief continue <session> --action retry`.
-3. If the brief is simply too large for this seat, the durable fix is a smaller slice: split it in the briefs editor (`Ctrl+E` at the briefs gate) so each brief is one verifiable change of at most five files.
+3. If the brief is simply too large for this seat, the durable fix is to split it in the briefs editor (`Ctrl+E` at the briefs gate) along its independent outcomes, so each brief is one coherent change the seat can finish.
 4. If the tool is genuinely slow rather than stuck, raise its seat's `timeout` toward the 1 200 000 ms cap, or move the seat to a faster model.
 5. Distinguish it from silence: `idleWarnMs` / `idleKillMs` watch for *no output*, while this halt is about total wall clock. A run producing output steadily for 20 minutes still times out.
 
-**Prevention:** Keep briefs to one slice, and give a slow local model a bigger `timeout` before the run rather than after the second halt.
+**Prevention:** Keep each brief to one coherent outcome, and give a slow local model a bigger `timeout` before the run rather than after the second halt.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (`timeout`), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 

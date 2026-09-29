@@ -1,4 +1,3 @@
-import { MODES } from '../../core/pipeline-spec/modes.js';
 import { plannerStepsFor } from '../../core/pipeline-spec/steps.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { accumulateTokenUsage } from '../calls/usage.js';
@@ -62,7 +61,6 @@ export async function runDocumentPhases(opts: {
         ...(call === 'tasks' && mode === 'quick'
           ? { quickPlan: { trivial: opts.trivial === true } }
           : {}),
-        ...(call === 'tasks' && { briefCap: MODES[mode].briefCap }),
       },
     });
     if (result.kind === 'conversation') {

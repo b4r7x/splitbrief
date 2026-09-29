@@ -42,7 +42,6 @@ export async function readRunHistory(record: RunRecord): Promise<() => void> {
         feature: state.feature,
         plannerContext: state.plannerContext,
         mode,
-        tasks: state.tasks,
       }),
     });
   };

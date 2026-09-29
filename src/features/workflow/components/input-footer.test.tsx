@@ -607,7 +607,7 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
-  it('renders the plan-size stop advice with its split instruction', () => {
+  it('still renders a stop advice a run logged before count-only advice was removed', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     publishAdvisory({
       kind: 'stop',
@@ -623,29 +623,6 @@ describe('InputFooter', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('advisor: 13 briefs over the 12 cap · split the work');
-
-    ui.unmount();
-    terminalSizeStore.reset();
-  });
-
-  it('renders a plan-size upgrade with its facts instead of the generic risk label', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    publishAdvisory({
-      kind: 'upgrade',
-      risk: 'normal',
-      currentMode: 'quick',
-      suggestedMode: 'standard',
-      confidence: 1,
-      factors: ['6 files over 5'],
-      missing: [],
-    });
-
-    const ui = renderFeature(<InputFooter />);
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('advisor: consider standard');
-    expect(frame).toContain('6 files over 5');
-    expect(frame).not.toContain('standard scope');
 
     ui.unmount();
     terminalSizeStore.reset();

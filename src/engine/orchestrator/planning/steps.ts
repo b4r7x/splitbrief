@@ -6,7 +6,6 @@ import {
   type PlannerStep,
 } from '../../../core/pipeline-spec/steps.js';
 import { isPlannerDocument } from '../../../core/pipeline-spec/planner-documents.js';
-import { MODES } from '../../../core/pipeline-spec/modes.js';
 import { extractQuestionsFromStream } from '../../parsers/question.js';
 import {
   PLAN_FILE,
@@ -244,7 +243,6 @@ export async function runPlanningSteps(
             ...(mode === 'quick' && step.call === 'tasks'
               ? { quickPlan: { trivial: opts.trivial === true } }
               : {}),
-            ...(step.call === 'tasks' && { briefCap: MODES[mode].briefCap }),
           };
           const run = await runPlannerCallInContinuationLoop({
             wctx,

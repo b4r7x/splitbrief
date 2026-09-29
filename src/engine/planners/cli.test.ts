@@ -925,12 +925,11 @@ Create the trivial-hint file.
     await callPhase(planner, { feature: 'rename foo to bar', projectDir, callbacks });
     const ordinaryPrompt = plannerPrompt();
 
-    expect(trivialPrompt).toContain(
-      'A single Task Brief is fine; do not over-engineer. 1-5 briefs max.',
-    );
+    expect(trivialPrompt).toContain('A single Task Brief is fine; do not over-engineer.');
+    expect(trivialPrompt).not.toContain('briefs max');
     expect(trivialPrompt).not.toContain('Briefly review the codebase structure');
     expect(ordinaryPrompt).toContain('Briefly review the codebase structure');
-    expect(ordinaryPrompt).not.toContain('1-5 briefs max');
+    expect(ordinaryPrompt).not.toContain('A single Task Brief is fine');
   });
 
   it('completes planning when OpenCode regenerates its own .opencode plugin state', async () => {

@@ -1,16 +1,7 @@
-import { MODE_UPGRADE } from '../../../core/pipeline-spec/modes.js';
 import { WORKFLOW_MODES, type WorkflowMode } from '../../../core/schemas/enums.js';
-import { taskFiles, type Task } from '../../../core/schemas/task.js';
 
 export type WorkRisk = 'trivial' | 'small' | 'normal' | 'high';
 export type ModeAdviceKind = 'none' | 'downgrade' | 'upgrade' | 'missing-context' | 'stop';
-
-export type PlanSize = { files: number; briefs: number };
-export type PlanAdvice = {
-  kind: 'none' | 'upgrade' | 'stop';
-  suggestedMode: WorkflowMode;
-  factors: string[];
-};
 
 // High-risk patterns: word-boundary matched to avoid matching auth-domain
 // *variable names* like `authClient` while still matching domain terms
@@ -217,36 +208,6 @@ function detectMissing(prompt: string, lower: string, wordCount: number): string
   return missing;
 }
 
-export function advisePlanSize(plan: PlanSize, currentMode: WorkflowMode): PlanAdvice {
-  if (plan.briefs > MODE_UPGRADE.standardCap) {
-    return {
-      kind: 'stop',
-      suggestedMode: currentMode,
-      factors: [`${plan.briefs} briefs over the ${MODE_UPGRADE.standardCap} cap`],
-    };
-  }
-
-  const factors: string[] = [];
-  if (plan.files > MODE_UPGRADE.quickToStandard.files) {
-    factors.push(`${plan.files} files over ${MODE_UPGRADE.quickToStandard.files}`);
-  }
-  if (plan.briefs > MODE_UPGRADE.quickToStandard.briefs) {
-    factors.push(`${plan.briefs} briefs over ${MODE_UPGRADE.quickToStandard.briefs}`);
-  }
-  if (factors.length === 0 || modeIndex(currentMode) >= modeIndex('standard')) {
-    return { kind: 'none', suggestedMode: currentMode, factors };
-  }
-
-  return { kind: 'upgrade', suggestedMode: 'standard', factors };
-}
-
-export function formatPlanAdviceText(advice: PlanAdvice): string {
-  if (advice.kind === 'none') return '';
-  const factors = advice.factors.join(', ');
-  if (advice.kind === 'stop') return `advisor: ${factors} · split the work`;
-  return `advisor: consider ${advice.suggestedMode} · ${factors}`;
-}
-
 export function adviseMode(prompt: string, currentMode: WorkflowMode): AdvisorResult {
   const wordCount = prompt.trim().split(/\s+/).filter(Boolean).length;
   const lower = prompt.toLowerCase();
@@ -314,44 +275,13 @@ export function adviseMode(prompt: string, currentMode: WorkflowMode): AdvisorRe
   return { kind: 'none', risk, currentMode, suggestedMode, confidence, factors, missing };
 }
 
-/**
- * The advice a run's saved inputs earn: its prompt's advice, or its plan's once the briefs exist
- * and the plan gives one — the verdict a planning pass leaves standing last.
- */
+/** The advice a run's saved inputs earn today: its prompt's advice, never a count of its briefs. */
 export function adviseRun(run: {
   feature: string;
   plannerContext?: string | undefined;
   mode: WorkflowMode;
-  tasks: readonly Task[];
 }): AdvisorResult {
-  const advice = adviseMode(
-    [run.feature, run.plannerContext].filter(Boolean).join('\n\n'),
-    run.mode,
-  );
-  const files = new Set(run.tasks.flatMap((task) => taskFiles(task))).size;
-  const plan = advisePlanSize({ files, briefs: run.tasks.length }, run.mode);
-  if (plan.kind === 'none') return advice;
-  return {
-    ...advice,
-    kind: plan.kind,
-    suggestedMode: plan.suggestedMode,
-    confidence: 1,
-    factors: plan.factors,
-    missing: [],
-  };
-}
-
-// Plan-size advice speaks in counts ("6 files over 5", "13 briefs over the 12 cap"); prompt
-// advice's factors are classifier signals meant for diagnostics. The factor shape is what tells
-// the plan's facts from the prompt's, since neither kind of result carries its origin.
-const PLAN_SIZE_FACTOR_RE = /^\d+ (?:files|briefs) over (?:the )?\d+(?: cap)?$/;
-
-function isPlanSizeUpgrade(result: AdvisorResult): boolean {
-  return (
-    result.kind === 'upgrade' &&
-    result.factors.length > 0 &&
-    result.factors.every((factor) => PLAN_SIZE_FACTOR_RE.test(factor))
-  );
+  return adviseMode([run.feature, run.plannerContext].filter(Boolean).join('\n\n'), run.mode);
 }
 
 export function formatAdvisoryText(result: AdvisorResult): string {
@@ -362,23 +292,8 @@ export function formatAdvisoryText(result: AdvisorResult): string {
     return `advisor: ${first} · ${result.currentMode} may drift`;
   }
 
-  if (result.kind === 'stop') {
-    return formatPlanAdviceText({
-      kind: 'stop',
-      suggestedMode: result.suggestedMode,
-      factors: result.factors,
-    });
-  }
-
-  // A plan-size upgrade swaps the prompt's generic risk label for the counts that actually
-  // triggered it, so the advice never reads "standard scope" where "6 files over 5" is the reason.
-  if (isPlanSizeUpgrade(result)) {
-    return formatPlanAdviceText({
-      kind: 'upgrade',
-      suggestedMode: result.suggestedMode,
-      factors: result.factors,
-    });
-  }
+  // Only a run logged before count-only advice was removed still carries a `stop` verdict.
+  if (result.kind === 'stop') return `advisor: ${result.factors.join(', ')} · split the work`;
 
   const label = riskLabel(result.risk);
   const verb = result.kind === 'downgrade' ? 'likely' : 'consider';

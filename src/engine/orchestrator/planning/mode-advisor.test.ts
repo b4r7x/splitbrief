@@ -1,15 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { makeTask } from '#testing/helpers/factories/task.js';
-import { MODE_UPGRADE } from '../../../core/pipeline-spec/modes.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
-import {
-  adviseMode,
-  advisePlanSize,
-  adviseRun,
-  formatAdvisoryText,
-  formatPlanAdviceText,
-  type AdvisorResult,
-} from './mode-advisor.js';
+import { adviseMode, adviseRun, formatAdvisoryText, type AdvisorResult } from './mode-advisor.js';
 
 describe('adviseMode — risk classification', () => {
   it('typo in standard suggests quick (downgrade)', () => {
@@ -221,24 +212,6 @@ describe('formatAdvisoryText', () => {
     expect(text.length).toBeLessThan(80);
   });
 
-  it('keeps the plan-size facts when an upgrade comes from the plan', () => {
-    const result = adviseRun({
-      feature: 'Trim the catalog fixture',
-      mode: 'quick',
-      tasks: [
-        makeTask({ files: ['a.json', 'b.ts'] }),
-        makeTask({ files: ['c.ts', 'd.ts'] }),
-        makeTask({ files: ['e.ts', 'f.test.ts'] }),
-      ],
-    });
-    expect(result).toMatchObject({
-      kind: 'upgrade',
-      suggestedMode: 'standard',
-      factors: ['6 files over 5'],
-    });
-    expect(formatAdvisoryText(result)).toBe('advisor: consider standard · 6 files over 5');
-  });
-
   it('formats missing-context advisory with missing flag', () => {
     const result = adviseMode('improve it', 'standard');
     const text = formatAdvisoryText(result);
@@ -246,7 +219,7 @@ describe('formatAdvisoryText', () => {
     expect(text.length).toBeLessThan(80);
   });
 
-  it('formats a stop advisory carried on the event with its plan factors', () => {
+  it('still formats a stop advisory a run logged before count-only advice was removed', () => {
     const result: AdvisorResult = {
       kind: 'stop',
       risk: 'normal',
@@ -260,44 +233,12 @@ describe('formatAdvisoryText', () => {
   });
 });
 
-describe('advisePlanSize — thresholds from MODE_UPGRADE', () => {
-  it('six files upgrade quick to standard', () => {
-    const advice = advisePlanSize({ files: 6, briefs: 2 }, 'quick');
-    expect(advice.kind).toBe('upgrade');
-    expect(advice.suggestedMode).toBe('standard');
-  });
-
-  it('six briefs upgrade quick to standard', () => {
-    const advice = advisePlanSize({ files: 3, briefs: 6 }, 'quick');
-    expect(advice.kind).toBe('upgrade');
-    expect(advice.suggestedMode).toBe('standard');
-  });
-
-  it('a plan inside the quick thresholds advises nothing', () => {
-    const advice = advisePlanSize({ files: 5, briefs: 5 }, 'quick');
-    expect(advice.kind).toBe('none');
-    expect(formatPlanAdviceText(advice)).toBe('');
-  });
-
-  it('a brief count over the standard cap advises stopping in any mode', () => {
-    const advice = advisePlanSize({ files: 20, briefs: 13 }, 'standard');
-    expect(advice.kind).toBe('stop');
-    expect(advice.suggestedMode).toBe('standard');
-    expect(formatPlanAdviceText(advice)).toContain('split the work');
-  });
-
-  it('does not upgrade a standard plan that is only past the quick thresholds', () => {
-    const advice = advisePlanSize({ files: 6, briefs: 6 }, 'standard');
-    expect(advice.kind).toBe('none');
-  });
-});
-
 describe('adviseRun — the verdict a run shows from its saved inputs', () => {
   const NAMES_ONLY = '- render `overlay-picker-auth-config-owned`\n- `npm test` passes';
 
   it('reads the sentence and its @ context the way the prompt advice does', () => {
     const run = { feature: 'trim the catalog fixture', plannerContext: NAMES_ONLY };
-    expect(adviseRun({ ...run, mode: 'quick', tasks: [] })).toEqual(
+    expect(adviseRun({ ...run, mode: 'quick' })).toEqual(
       adviseMode(`${run.feature}\n\n${run.plannerContext}`, 'quick'),
     );
   });
@@ -307,18 +248,26 @@ describe('adviseRun — the verdict a run shows from its saved inputs', () => {
       feature: 'Trim the 140 KB opencode catalog fixture below 50 KB',
       plannerContext: NAMES_ONLY,
       mode: 'quick',
-      tasks: [makeTask({ files: ['a.json', 'b.ts', 'c.test.ts'] })],
     });
     expect(advice.kind).toBe('none');
     expect(formatAdvisoryText(advice)).toBe('');
   });
 
-  it("stands on the plan's advice once the briefs give one, keeping the prompt's risk", () => {
-    const over = MODE_UPGRADE.standardCap + 1;
-    const tasks = Array.from({ length: over }, (_, i) => makeTask({ id: `T${100 + i}` }));
-    const advice = adviseRun({ feature: 'harden the login page', mode: 'standard', tasks });
-    expect(advice).toMatchObject({ kind: 'stop', risk: 'high', confidence: 1, missing: [] });
-    expect(formatAdvisoryText(advice)).toContain('split the work');
+  it('derives no count-only advice for a saved run with more than twelve briefs', () => {
+    const advice = adviseRun({
+      feature: 'Update the typecheck gate in src/engine/validation so the tests pass',
+      mode: 'quick',
+    });
+    expect(advice.kind).not.toBe('stop');
+    expect(advice.factors.join(' ')).not.toMatch(/briefs? over|files over/);
+  });
+
+  it('keeps contextual risk advice', () => {
+    const advice = adviseRun({
+      feature: 'harden the login page so the tests pass',
+      mode: 'standard',
+    });
+    expect(advice).toMatchObject({ kind: 'upgrade', risk: 'high', suggestedMode: 'speckit' });
   });
 });
 

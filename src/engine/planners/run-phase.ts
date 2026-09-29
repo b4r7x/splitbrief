@@ -150,7 +150,6 @@ function buildPhasePrompt(call: PlannerDocumentCall, inputs: PhaseInputs): strin
               plan: inputs.plan ?? '',
               languageContext: inputs.languageContext,
               skillsContext: inputs.skillsContext,
-              briefCap: inputs.briefCap,
             });
       default:
         return assertNever(call);

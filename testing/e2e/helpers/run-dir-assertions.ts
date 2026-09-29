@@ -45,7 +45,8 @@ export type SessionDirFacts = Readonly<{
   tasks: readonly Task[];
 }>;
 
-export function assertPlainStdout(stdout: string, opts: { mode: FixtureMode }): void {
+/** Returns the `done:` count so the caller can hold it against the run's own records. */
+export function assertPlainStdout(stdout: string): number {
   const lines = stdout
     .split('\n')
     .map((line) => line.trim())
@@ -60,12 +61,16 @@ export function assertPlainStdout(stdout: string, opts: { mode: FixtureMode }): 
   if (done === undefined) throw new Error('stdout carries no `done:` line');
   const completed = Number(DONE_LINE.exec(done)?.[1]);
   expect(completed).toBeGreaterThan(0);
-  expect(completed).toBeLessThanOrEqual(MODES[opts.mode].briefCap);
+  return completed;
 }
 
 export function assertSessionDir(
   sessionDir: string,
-  opts: { mode: FixtureMode; expectedBriefs: Readonly<{ min: number; max: number }> },
+  opts: {
+    mode: FixtureMode;
+    expectedBriefs: Readonly<{ min: number; max: number }>;
+    completed: number;
+  },
 ): SessionDirFacts {
   const tasks = parseTasksStrict(readText(sessionDir, TASKS_FILE));
   expect(tasks.length).toBeGreaterThanOrEqual(opts.expectedBriefs.min);
@@ -89,6 +94,8 @@ export function assertSessionDir(
     throw new Error(`${SUMMARY_FILE} status is '${session.status}', expected 'complete'`);
   }
   const summary = session.summary;
+  expect(summary.totalTasks).toBe(tasks.length);
+  expect(opts.completed, 'stdout `done:` count').toBe(summary.totalTasks);
   expect(summary.failed).toBe(0);
   expect(summary.completedByLocal).toBe(summary.totalTasks);
   expect(summary.escalatedToPlanner).toBe(0);

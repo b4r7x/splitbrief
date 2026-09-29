@@ -4,8 +4,8 @@ description: >
   Use when a task should be compiled into self-contained Product Task Briefs
   without executing them — "splitbrief brief", "write the briefs", "compile
   task briefs for <tool>", "prepare briefs I can hand to another agent". Reads
-  the project's instruction files and gates, cuts the work one verifiable
-  slice per brief in dependency order, and writes them under .splitbrief/runs/.
+  the project's instruction files and gates, groups the work one coherent
+  outcome per brief in dependency order, and writes them under .splitbrief/runs/.
   To execute the briefs afterwards: splitbrief-run. For the whole pipeline in
   one go: splitbrief.
 metadata:
@@ -30,24 +30,18 @@ No crew is needed. Nothing is spawned.
 
 1. **The brief stands alone.** Code context is copied verbatim from the files it describes (references/brief-format.md); nothing is summarized from memory.
 2. **Gates are resolved now, not later.** Every brief's `### Tests` ends with the resolved validation commands (references/gates.md) so whoever executes it runs the same checks the review will quote.
-3. **One brief, one slice.** Cut into verifiable slices; order by dependency; take the slice budget and the brief caps from the block below; upgrade `quick` → `standard` when the file plan exceeds the quick thresholds and say so in the plan block.
+3. **One brief, one outcome.** Group the work by the rule in the block below and order the briefs by dependency.
 4. **Nothing touches git.** The briefs carry the never-commit constraint; this skill writes only under `.splitbrief/`.
 
-<!-- generated: caps -->
-| Mode | Brief cap |
-|---|---|
-| `quick` | 5 |
-| `standard` | 12 |
-| `speckit` | 12 |
-
-One brief = one verifiable slice — the code, its test and its wiring that one gate run can prove together. List every file it writes under `files`; one file is the smallest slice. Split when a gate can pass on one part without the other. Budget: at most 5 files and about 200 changed lines per brief for a mid-tier implementer; a frontier implementer may take 8. A brief whose only purpose is to test a sibling another brief creates is folded into that brief.
+<!-- generated: brief-grouping -->
+One brief delivers one coherent, reviewable outcome. List every path that outcome writes under `files`. Keep the tests, callers, wiring, fixtures and necessary documentation with the behavior they cover; a file boundary alone never makes a separate brief. Combine related corrections that share a contract, mechanism or code context; a mechanical rename carries all its callers and pinned strings. Split independent outcomes, or a complex mechanism, when separate validation, context or recovery makes the work easier to execute correctly. Two assertions that can pass separately do not require separate briefs, and no file-count or line-count threshold decides a boundary. Keep each brief self-contained for its actual runner, with every acceptance criterion and repository constraint it needs, and within the real model context and prompt transport limits, system text, skills and retry feedback included. Do not aim for a number of briefs. Order the dependencies so each brief leaves its affected checks green.
 <!-- /generated -->
 
 ## Phase 0 — Preflight
 
 1. Read the instruction files (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules/*`, `.github/copilot-instructions.md`); their rules become Constraints.
 2. Resolve gates per references/gates.md; run the baseline once and record it. Choose the run dir now — `.splitbrief/runs/$(date +%Y-%m-%d-%H%M%S)-<slug>/` (on collision append `-2`, `-3`, …) — create it, and record the baseline fingerprints in `baseline-sha.txt` there (references/gates.md) so `splitbrief-run` can use them.
-3. Read the files the task touches at the exports-and-structure level; cut the slices; apply the upgrade rule.
+3. Read the files the task touches at the exports-and-structure level; group the work into briefs by outcome.
 4. Print the plan block:
 
     ## SPLITBRIEF preflight — <slug> (brief only)

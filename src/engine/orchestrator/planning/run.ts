@@ -7,7 +7,7 @@ import {
 } from '../../../core/config/runtime/resolve.js';
 import { runPlanningSteps } from './steps.js';
 import { runRewindPlanning } from './rewind.js';
-import { adviseMode, advisePlanSize, type WorkRisk } from './mode-advisor.js';
+import { adviseMode } from './mode-advisor.js';
 import { runBriefQualityWithRepair } from './brief-quality-gate.js';
 import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult, PlanningProducerResult } from './types.js';
@@ -20,7 +20,7 @@ import { firstBriefError } from '../../spec/brief-quality.js';
 import { buildBriefQualityUnrepairedRecoveryIssue } from '../recovery/builders/planner.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { taskFiles, type Task } from '../../../core/schemas/task.js';
+import type { Task } from '../../../core/schemas/task.js';
 import type { ApproveLevel, WorkflowMode } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 
@@ -129,7 +129,6 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     tasks: produced.tasks,
     mode,
     approveLevel,
-    risk: advisory.risk,
   });
 }
 
@@ -141,8 +140,6 @@ export async function admitBriefs(opts: {
   tasks: readonly Task[];
   mode: WorkflowMode;
   approveLevel: ApproveLevel;
-  /** The feature's risk tier, which the plan-size advice carries. */
-  risk: WorkRisk;
 }): Promise<PlanningPhaseResult> {
   const { wctx, planner, mode, approveLevel } = opts;
   const { projectDir, config } = wctx;
@@ -173,25 +170,6 @@ export async function admitBriefs(opts: {
   });
   let state = { ...quality.state, tasks: quality.tasks };
   const tasks = quality.tasks;
-
-  const planAdvice = advisePlanSize(
-    { files: new Set(tasks.flatMap((task) => taskFiles(task))).size, briefs: tasks.length },
-    mode,
-  );
-  if (planAdvice.kind !== 'none') {
-    bus.publish({
-      type: 'mode_advice',
-      ts: Date.now(),
-      phase: state.phase,
-      kind: planAdvice.kind,
-      risk: opts.risk,
-      currentMode: mode,
-      suggestedMode: planAdvice.suggestedMode,
-      confidence: 1,
-      factors: planAdvice.factors,
-      missing: [],
-    });
-  }
 
   // The tasks step already wrote and announced the briefs it compiled. Only briefs the quality
   // pass regenerated still need their file and their card.

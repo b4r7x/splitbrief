@@ -43,6 +43,7 @@ import { VALIDATION_STAGES, WORKFLOW_MODES } from '../schemas/enums.js';
 import { GenerationCommonFields } from '../schemas/runner-fields.js';
 import { ReviewVerdictSchema } from '../schemas/summary.js';
 import { transition } from '../state/machine.js';
+import { sliceRuleText } from './brief.js';
 import { DIVERGENCE_TABLE } from './divergences.js';
 import { CAPTURE_LIMITS, GATE_ORDER } from './gates.js';
 import { HALT_SIGNATURES } from './halts.js';
@@ -268,10 +269,13 @@ describe('modes', () => {
     expect(speckit.calls()).toBeLessThanOrEqual(SPECKIT_CALL_RANGE[1]);
   }, 30_000);
 
-  it('the rendered caps block carries the brief cap of every mode', () => {
-    const block = renderBlock('caps');
-    expect(block).toContain(`| \`quick\` | ${MODES.quick.briefCap} |`);
-    expect(block).toContain(`| \`standard\` | ${MODES.standard.briefCap} |`);
+  it('the skills carry the shared grouping rule and no brief-count limit', () => {
+    expect(renderBlock('brief-grouping')).toBe(sliceRuleText());
+    const modes = renderBlock('modes-table') ?? '';
+    expect(modes).not.toMatch(/brief cap|recommend splitting|\d+ (briefs|files)/i);
+    for (const [mode, spec] of Object.entries(MODES)) {
+      expect(modes).toContain(`| \`${mode}\` | ${spec.plannerCalls} |`);
+    }
   });
 });
 

@@ -58,10 +58,11 @@ describe('live fixture loop', () => {
         try {
           expect(run.exitCode).toBe(0);
           expect(run.stderr).not.toMatch(/Run readiness blocked|BLOCKED:/);
-          assertPlainStdout(run.stdout, { mode: row.mode });
+          const completed = assertPlainStdout(run.stdout);
           const facts = assertSessionDir(run.sessionDir, {
             mode: row.mode,
             expectedBriefs: row.expectedBriefs,
+            completed,
           });
           await assertFixtureQuality(run.projectDir);
           assertWorkingTree(run.projectDir, facts.tasks);

@@ -71,8 +71,7 @@ Examples:
 | | quick (default) | standard |
 |---|---|---|
 | artifacts | briefs | `spec.md` → `plan-notes.md` → briefs |
-| cap | 5 briefs | 12 briefs |
-| upgrade | > 5 files or > 5 briefs → standard, printed | > 12 → stop and recommend splitting |
+| briefs | one per coherent outcome, no count limit | one per coherent outcome, no count limit |
 
 The CLI defaults to `standard` in an isolation worktree; these skills default to `quick` in the working tree — the one documented divergence between the two sides, and the only `intentional` row of `DIVERGENCE_TABLE` (`src/core/pipeline-spec/divergences.ts`). Everything else countable is rendered from the same spec, so it cannot drift silently.
 

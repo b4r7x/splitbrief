@@ -66,7 +66,6 @@ describe('admitBriefs — automatic admission', () => {
         tasks,
         mode,
         approveLevel: approve,
-        risk: 'small',
       });
 
       expect(result.disposition).toBe('ready-for-tasks');

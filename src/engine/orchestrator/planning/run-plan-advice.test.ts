@@ -11,7 +11,6 @@ import {
   runOwnedPlanningPhase,
   runPlanningTurn as runPhaseHelper,
 } from '#testing/helpers/planning-phase.js';
-import { MODE_UPGRADE } from '../../../core/pipeline-spec/modes.js';
 import { adviseRun } from './mode-advisor.js';
 import type { EngineEvent } from '../../events/types.js';
 
@@ -22,7 +21,7 @@ afterEach(() => {
 });
 
 // The feature text is deliberately one neutral word: the keyword advisor stays
-// silent on it, so every mode_advice below is the plan-size advice.
+// silent on it, so any mode_advice below would come from the plan's size.
 const FEATURE = 'test-feature';
 
 function producing(count: number) {
@@ -42,44 +41,22 @@ function modeAdvice(events: readonly EngineEvent[]) {
   return events.filter((e) => e.type === 'mode_advice');
 }
 
-describe('runPlanningPhase — plan-size advice', () => {
-  it('a plan over the standard brief cap advises stopping', async () => {
-    const over = MODE_UPGRADE.standardCap + 1;
-    const { events } = await runPhaseHelper(dirs, {
+describe('runPlanningPhase — no count-only advice', () => {
+  it.each<['quick' | 'standard', number]>([
+    ['standard', 13],
+    ['standard', 30],
+    ['quick', 6],
+    ['quick', 13],
+  ])('a %s plan of %i briefs keeps its mode and earns no advice', async (mode, count) => {
+    const { events, result } = await runPhaseHelper(dirs, {
       feature: FEATURE,
-      config: makeConfig({ workflow: auto('standard') }),
-      planner: makePassingPlanner({ runPhase: producing(over) }),
-    });
-
-    expect(modeAdvice(events)).toMatchObject([
-      {
-        kind: 'stop',
-        suggestedMode: 'standard',
-        factors: [`${over} briefs over the ${MODE_UPGRADE.standardCap} cap`],
-      },
-    ]);
-  });
-
-  it('a quick plan past the upgrade thresholds advises standard', async () => {
-    const { events } = await runPhaseHelper(dirs, {
-      feature: FEATURE,
-      config: makeConfig({ workflow: auto('quick') }),
-      planner: makePassingPlanner({
-        runPhase: producing(MODE_UPGRADE.quickToStandard.briefs + 1),
-      }),
-    });
-
-    expect(modeAdvice(events)).toMatchObject([{ kind: 'upgrade', suggestedMode: 'standard' }]);
-  });
-
-  it('a plan at the standard cap advises nothing', async () => {
-    const { events } = await runPhaseHelper(dirs, {
-      feature: FEATURE,
-      config: makeConfig({ workflow: auto('standard') }),
-      planner: makePassingPlanner({ runPhase: producing(MODE_UPGRADE.standardCap) }),
+      config: makeConfig({ workflow: auto(mode) }),
+      planner: makePassingPlanner({ runPhase: producing(count) }),
     });
 
     expect(modeAdvice(events)).toEqual([]);
+    expect(result.disposition === 'ready-for-tasks' && result.tasks).toHaveLength(count);
+    expect(events.filter((e) => e.type === 'mode_resolved')).toMatchObject([{ mode }]);
   });
 });
 
@@ -127,7 +104,7 @@ describe('runPlanningPhases — saved-input advice', () => {
     const feature = 'update footer copy in src/readme.md';
     const plannerContext = 'Fix typo in docs, then run tests now';
     const state = { ...prepareState(), plannerContext };
-    const { events, result } = await runOwnedPlanningPhase(dirs, {
+    const { events } = await runOwnedPlanningPhase(dirs, {
       feature,
       plannerContext,
       state,
@@ -141,7 +118,6 @@ describe('runPlanningPhases — saved-input advice', () => {
       feature,
       plannerContext,
       mode: 'standard',
-      tasks: result.tasks,
     });
 
     expect(savedAdvice).toMatchObject({ kind: 'downgrade', risk: 'trivial' });

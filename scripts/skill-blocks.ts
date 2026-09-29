@@ -16,7 +16,7 @@ import {
   MAX_HINT_ERROR_LENGTH,
   RETRY_FRAMINGS,
 } from '../src/core/pipeline-spec/ladder.js';
-import { DEFAULT_MODE, MODE_UPGRADE, MODES } from '../src/core/pipeline-spec/modes.js';
+import { DEFAULT_MODE, MODES } from '../src/core/pipeline-spec/modes.js';
 import { DEFAULT_LOCAL_RETRIES } from '../src/core/pipeline-spec/retries.js';
 import { REVIEW_CYCLE_CAP, VERDICT_RULES } from '../src/core/pipeline-spec/review.js';
 import { SCOPE_RULE } from '../src/core/pipeline-spec/scope.js';
@@ -335,27 +335,15 @@ function gateRules(): string {
 function modesTable(): string {
   return [
     table(
-      ['Mode', 'Planner calls', 'Brief cap', 'Approval gates'],
+      ['Mode', 'Planner calls', 'Approval gates'],
       Object.entries(MODES).map(([mode, spec]) => [
         `\`${mode}\``,
         String(spec.plannerCalls),
-        String(spec.briefCap),
         spec.gates.length === 0 ? 'none' : spec.gates.join(', '),
       ]),
     ),
     '',
-    `Default: \`${DEFAULT_MODE.skill}\`. Upgrade \`quick\` → \`standard\` when the plan exceeds ${MODE_UPGRADE.quickToStandard.files} files or ${MODE_UPGRADE.quickToStandard.briefs} briefs; above ${MODE_UPGRADE.standardCap} briefs stop and recommend splitting the task.`,
-  ].join('\n');
-}
-
-function caps(): string {
-  return [
-    table(
-      ['Mode', 'Brief cap'],
-      Object.entries(MODES).map(([mode, spec]) => [`\`${mode}\``, String(spec.briefCap)]),
-    ),
-    '',
-    sliceRuleText(),
+    `Default: \`${DEFAULT_MODE.skill}\`.`,
   ].join('\n');
 }
 
@@ -546,7 +534,7 @@ const BLOCKS: Record<string, () => string> = {
   'gate-rules': gateRules,
   gates,
   'modes-table': modesTable,
-  caps,
+  'brief-grouping': sliceRuleText,
   'body-order': bodyOrder,
   'closing-line': closingLine,
   'scope-rule': scopeRule,

@@ -19,12 +19,17 @@ export const CLOSING_CONSTRAINTS = [
   'Do NOT import packages not listed in the project dependencies',
 ] as const;
 
-export const SLICE_BUDGET = { maxFiles: 5, maxChangedLoc: 200, frontierMaxFiles: 8 } as const;
-
-/** The one authored slice rule; prompts and skill blocks render it rather than restating it. */
-export function sliceRuleText(opts?: { briefCap?: number }): string {
-  const cap = opts?.briefCap === undefined ? '' : ` Emit at most ${opts.briefCap} briefs in all.`;
-  return `One brief = one verifiable slice — the code, its test and its wiring that one gate run can prove together. List every file it writes under \`files\`; one file is the smallest slice. Split when a gate can pass on one part without the other. Budget: at most ${SLICE_BUDGET.maxFiles} files and about ${SLICE_BUDGET.maxChangedLoc} changed lines per brief for a mid-tier implementer; a frontier implementer may take ${SLICE_BUDGET.frontierMaxFiles}. A brief whose only purpose is to test a sibling another brief creates is folded into that brief.${cap}`;
+/** The one authored grouping rule; prompts and skill blocks render it rather than restating it. */
+export function sliceRuleText(): string {
+  return [
+    'One brief delivers one coherent, reviewable outcome. List every path that outcome writes under `files`.',
+    'Keep the tests, callers, wiring, fixtures and necessary documentation with the behavior they cover; a file boundary alone never makes a separate brief.',
+    'Combine related corrections that share a contract, mechanism or code context; a mechanical rename carries all its callers and pinned strings.',
+    'Split independent outcomes, or a complex mechanism, when separate validation, context or recovery makes the work easier to execute correctly.',
+    'Two assertions that can pass separately do not require separate briefs, and no file-count or line-count threshold decides a boundary.',
+    'Keep each brief self-contained for its actual runner, with every acceptance criterion and repository constraint it needs, and within the real model context and prompt transport limits, system text, skills and retry feedback included.',
+    'Do not aim for a number of briefs. Order the dependencies so each brief leaves its affected checks green.',
+  ].join(' ');
 }
 
 export const PLAN_PROMPT_MAX_BYTES = 110_000;

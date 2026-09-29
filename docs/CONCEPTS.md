@@ -15,7 +15,7 @@ The orchestrator in the middle owns the workflow: it runs the planner, persists 
 
 The goal is a change that holds up: the tool that wrote the code never signs it off, and a deterministic pipeline — not the implementer's own opinion — decides whether the task passed. Lower total cost follows from the split; it is a reported outcome, not the promise.
 
-The **pipeline spec** (`src/core/pipeline-spec/`) is where that pipeline's countable rules live — the modes and their brief caps, the retry count, the escalation ladder, the timeouts, the gate order, the halt signatures, the review cycle cap. The orchestrator imports them and the portable agent skills are rendered from them, so the two cannot drift; `npm run skills:check` fails when they do.
+The **pipeline spec** (`src/core/pipeline-spec/`) is where that pipeline's countable rules live — the modes and their planner calls and gates, the brief grouping rule, the retry count, the escalation ladder, the timeouts, the gate order, the halt signatures, the review cycle cap. The orchestrator imports them and the portable agent skills are rendered from them, so the two cannot drift; `npm run skills:check` fails when they do.
 
 ---
 
@@ -130,7 +130,7 @@ idle
 
 A **Task Brief** is the atomic semantic unit of implementation. It is transported in `tasks.md` and parsed into structured objects by `src/engine/spec/tasks/parse.ts`.
 
-- **slice** — what one brief covers: one verifiable change, which may span more than one file. The planner budgets a slice at no more than five files and roughly 150–200 changed lines for a mid-tier implementer, and splits wherever a gate can pass independently. One file is the smallest slice, not the required one.
+- **slice** — what one brief covers: one coherent, reviewable outcome, with its tests, callers, wiring, fixtures and necessary documentation, across as many files as that outcome writes. The planner groups by `sliceRuleText()` (`src/core/pipeline-spec/brief.ts`); no brief count, file count or line count decides a boundary. What bounds one brief is the real model context and prompt transport of its runner.
 - **declared set** — the paths a slice may write: its `files`, plus every path token its `scope.inBounds` and `scope.approvedOutOfBounds` bullets name. One module answers "may this brief write this path" for every consumer — `src/core/scope/declared-set.ts` — and a write outside the set is a scope violation, not a judgement call.
 
 Task fields (`src/core/schemas/task.ts`):

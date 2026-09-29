@@ -62,12 +62,6 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     return state;
   }
 
-  function persistBaselineState(nextState: WorkflowState = state): WorkflowState {
-    const synced = syncBaselineIntoState(nextState);
-    setTrackedState(synced);
-    return synced;
-  }
-
   function commitTrackedState(next: WorkflowState): WorkflowState {
     const committed = commitWorkflowState({
       ref: { projectDir, sessionId },
@@ -295,7 +289,9 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       taskAcceptedFiles,
       acknowledgedUserEditFiles,
     });
-    persistBaselineState();
+    // On disk, not only tracked: a stop at this boundary parks from the persisted head, which
+    // would otherwise lack this brief's files (read back as a user edit) and its usage.
+    persistTaskBreakdowns();
 
     const reviewDecision = await reviewTaskIfNeeded({
       wctx: taskWorkflowContext,

@@ -199,22 +199,22 @@ afterEach(() => {
 
 describe('assertPlainStdout', () => {
   it('accepts the --plain grammar and the required lines', () => {
-    expect(() => assertPlainStdout(plainStdout(), { mode: 'standard' })).not.toThrow();
+    expect(() => assertPlainStdout(plainStdout())).not.toThrow();
   });
 
   it('rejects a line outside the grammar', () => {
     const stdout = `${plainStdout()}Implementation complete.\n`;
-    expect(() => assertPlainStdout(stdout, { mode: 'standard' })).toThrow();
+    expect(() => assertPlainStdout(stdout)).toThrow();
   });
 
   it('rejects a JSON record on stdout', () => {
     const stdout = `${plainStdout()}{"type":"task_completed"}\n`;
-    expect(() => assertPlainStdout(stdout, { mode: 'standard' })).toThrow();
+    expect(() => assertPlainStdout(stdout)).toThrow();
   });
 
-  it('rejects more completed tasks than the mode brief cap', () => {
-    const stdout = plainStdout().replace('done: 2 tasks', 'done: 6 tasks');
-    expect(() => assertPlainStdout(stdout, { mode: 'quick' })).toThrow();
+  it('returns the done count however many briefs the run held', () => {
+    const stdout = plainStdout().replace('done: 2 tasks', 'done: 30 tasks');
+    expect(assertPlainStdout(stdout)).toBe(30);
   });
 });
 
@@ -226,6 +226,7 @@ describe('assertSessionDir', () => {
     const facts = assertSessionDir(dir, {
       mode: 'standard',
       expectedBriefs: { min: 1, max: 3 },
+      completed: 2,
     });
 
     expect(facts.calls).toEqual({ planner: 4, implementer: 2, review: 1 });
@@ -236,12 +237,21 @@ describe('assertSessionDir', () => {
     expect(facts.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
   });
 
+  it('rejects a done count that disagrees with the run records', () => {
+    const dir = tempDir('run-dir-assertions-completed');
+    writeSessionDir(dir);
+
+    expect(() =>
+      assertSessionDir(dir, { mode: 'standard', expectedBriefs: { min: 1, max: 3 }, completed: 3 }),
+    ).toThrow('stdout `done:` count');
+  });
+
   it('rejects a planner-call count the mode does not budget for', () => {
     const dir = tempDir('run-dir-assertions-calls');
     writeSessionDir(dir);
 
     expect(() =>
-      assertSessionDir(dir, { mode: 'quick', expectedBriefs: { min: 1, max: 3 } }),
+      assertSessionDir(dir, { mode: 'quick', expectedBriefs: { min: 1, max: 3 }, completed: 2 }),
     ).toThrow();
   });
 
@@ -264,7 +274,7 @@ describe('assertSessionDir', () => {
     });
 
     expect(() =>
-      assertSessionDir(dir, { mode: 'standard', expectedBriefs: { min: 1, max: 3 } }),
+      assertSessionDir(dir, { mode: 'standard', expectedBriefs: { min: 1, max: 3 }, completed: 2 }),
     ).toThrow();
   });
 
@@ -289,7 +299,7 @@ describe('assertSessionDir', () => {
     });
 
     expect(() =>
-      assertSessionDir(dir, { mode: 'standard', expectedBriefs: { min: 1, max: 3 } }),
+      assertSessionDir(dir, { mode: 'standard', expectedBriefs: { min: 1, max: 3 }, completed: 2 }),
     ).toThrow();
   });
 });

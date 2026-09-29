@@ -30,10 +30,10 @@ export function briefContract(ctx: LanguageContext): string {
 Every brief must also leave typecheck, lint and tests green on its own. Never plan for a failing gate: when a change would break a sibling file, widen the brief's \`files\` to include it, keep the change backward compatible with an optional property and a default, or split the work so each brief lands whole. Before a brief deletes or renames an export, its \`files\` name every consumer found by searching the whole repository — \`src/\` and \`testing/\` alike, colocated and sibling tests included.`;
 }
 
-export function criticalRules(ctx: LanguageContext, opts?: { briefCap?: number }): string {
+export function criticalRules(ctx: LanguageContext): string {
   return `1. **Self-contained**: Each brief must inline ALL context needed. Include relevant current code for modify tasks, ${ctx.typeAnnotationStyle}, import paths, function signatures from dependencies, and expected patterns.
 
-2. **Atomic**: ${sliceRuleText(opts)}
+2. **Coherent**: ${sliceRuleText()}
 
 3. **Dependency-ordered**: Briefs must be ordered so dependencies come first. Use \`depends_on\` to declare which briefs must complete first. Independent briefs can run in parallel.
 
@@ -60,7 +60,6 @@ export type TasksPromptInput = Readonly<{
   languageContext?: LanguageContext | undefined;
   currentTasks?: Task[] | undefined;
   skillsContext?: string | undefined;
-  briefCap?: number | undefined;
 }>;
 
 export function buildTasksPrompt(input: TasksPromptInput): string {
@@ -85,7 +84,7 @@ export function buildTasksPrompt(input: TasksPromptInput): string {
         : []),
       ...buildLanguageContextSections(ctx),
       instructionsSection(
-        'Compose the complete `tasks.md` content with one Task Brief per markdown block, ordered by dependency. Each brief represents one verifiable slice; `files` lists every path it writes.',
+        'Compose the complete `tasks.md` content with one Task Brief per markdown block, ordered by dependency. Each brief delivers one coherent outcome; `files` lists every path it writes.',
       ),
       {
         heading: 'Task Brief Format',
@@ -99,9 +98,7 @@ ${buildTaskFormatExample(ctx)}`,
       },
       {
         heading: 'Critical Rules',
-        body: criticalRules(ctx, {
-          ...(input.briefCap !== undefined && { briefCap: input.briefCap }),
-        }),
+        body: criticalRules(ctx),
       },
     ],
     output:

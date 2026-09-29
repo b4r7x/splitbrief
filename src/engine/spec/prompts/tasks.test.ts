@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { sliceRuleText } from '../../../core/pipeline-spec/brief.js';
 import { buildLanguageContext } from './language-context.js';
 import { briefContract, buildTasksPrompt } from './tasks.js';
 
@@ -65,16 +66,12 @@ describe('buildTasksPrompt', () => {
     expect(prompt).not.toContain('write it to tasks.md at the project root');
   });
 
-  it('describes a brief as a slice with a file budget instead of one file', () => {
+  it('groups briefs by coherent outcome with no count, file or line quota', () => {
     const prompt = buildTasksPrompt({ spec: 'spec', plan: 'plan' });
-    expect(prompt).toContain('One brief = one verifiable slice');
-    expect(prompt).toContain('at most 5 files');
+    expect(prompt).toContain('Each brief delivers one coherent outcome');
+    expect(prompt).toContain(`**Coherent**: ${sliceRuleText()}`);
     expect(prompt).toContain('files:');
-  });
-
-  it("states the mode's brief cap in the slice rule", () => {
-    const prompt = buildTasksPrompt({ spec: 'spec', plan: 'plan', briefCap: 12 });
-    expect(prompt).toContain('Emit at most 12 briefs in all.');
+    expect(prompt).not.toMatch(/at most \d+ (briefs|files)|\d+ changed lines|briefs in all/);
   });
 
   it('carries the active skills section after the implementation plan', () => {
