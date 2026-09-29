@@ -10,6 +10,7 @@ const RUN_DIFF = 'run diff';
 const CHANGED_FILES = 'changed files';
 const FEATURE_REQUEST = 'feature request';
 const QUEUED_MESSAGES = 'queued messages';
+const SKILLS = 'skills';
 
 const NO_TOOLS_NOTICE =
   'Everything SPLITBRIEF read for this review is reproduced in this prompt: the whole run diff, untruncated, every planning artifact and the recorded validation output. You have no filesystem, shell or search tool on this call — a file whose diff is not below was not read, and nothing about its contents may be assumed or claimed.';
@@ -73,6 +74,8 @@ export type ApiReviewContextInput = Readonly<{
   validation: Readonly<{ recorded: boolean; evidence: string | undefined }>;
   reviewScope?: Readonly<{ diff: string; description: string }> | undefined;
   queueText?: string | undefined;
+  /** The run's skills block; counted against the seat like every other part it carries. */
+  skillsContext?: string | undefined;
   /** The reviewer seat's configured window; its allocation is derived from it. */
   contextLength?: number | undefined;
   model?: string | undefined;
@@ -179,6 +182,7 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
   }
 
   const taskBriefs = required(TASKS_FILE, input.taskBriefs);
+  if (input.skillsContext !== undefined) parts.push({ name: SKILLS, body: input.skillsContext });
 
   // A change the diff cannot show is a change this seat cannot review.
   const { covered, binary } = readDiffCoverage(input.fullDiff);
@@ -237,6 +241,7 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
     changeCoverage: coverage,
     driftReport: drift,
     validationEvidence: validation,
+    skillsContext: input.skillsContext,
   });
   const text = queueText + prompt;
   // Measured on the payload the seat will actually dispatch, whole.

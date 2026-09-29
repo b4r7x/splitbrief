@@ -40,7 +40,8 @@ afterEach(() => {
 });
 
 function setupProject(prefix: string): { projectDir: string; stateDir: string } {
-  const projectDir = createTempDir(`${prefix}-project`);
+  // A child's cwd is the real path; on macOS the temp directory is a /var alias of /private/var.
+  const projectDir = realpathSync(createTempDir(`${prefix}-project`));
   const stateDir = createTempDir(`${prefix}-state`);
   directories.push(projectDir, stateDir);
   createTestGitRepo(projectDir);

@@ -15,7 +15,6 @@ import {
   parseRecoveryActionAnswer,
   passHeadlinePrefix,
   recommendedRowPrefix,
-  recoveryActionLabel,
   switchSeatCandidateForAnswer,
 } from './recovery-prompt.js';
 
@@ -99,6 +98,30 @@ describe('recovery prompt', () => {
     expect(visible).toContain('Usage limit on Ollama · resets 17:00');
     expect(visible).not.toContain('5:00 PM');
     expect(visible.match(/resets 17:00/g)).toHaveLength(1);
+  });
+
+  it("drops codex's own reset clause from its quote, keeping the rest of its words", async () => {
+    const resetAt = new Date();
+    resetAt.setHours(17, 0, 0, 0);
+    const quote = (when: string): RecoveryIssue => ({
+      ...usageLimitIssue([{ tool: 'claude-code' }]),
+      details: [
+        `OpenAI Codex CLI reported: You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again ${when}.`,
+      ],
+      facts: { tool: 'OpenAI Codex CLI' },
+      resetAt: resetAt.toISOString(),
+    });
+
+    for (const when of ['at 5:00 PM', 'at Oct 3rd, 2026 5:00 PM', 'in 7.66s']) {
+      const visible = (await renderPromptBody(formatRecoveryPrompt(quote(when)))).replace(
+        /\s+/g,
+        ' ',
+      );
+
+      expect(visible).toContain('Usage limit on OpenAI Codex CLI · resets 17:00');
+      expect(visible).toContain('to purchase more credits. Worker');
+      expect(visible).not.toContain('try again');
+    }
   });
 
   it('gives each tool a quota-blocked seat can switch to its own row', async () => {
@@ -680,22 +703,5 @@ describe('recovery prompt', () => {
     expect(visible).toContain('Recovery needed · Final review failed with 2 blocking findings');
     expect(visible).not.toContain('Nothing was sent');
     expect(visible).not.toContain('[r]  ');
-  });
-});
-
-describe('recoveryActionLabel for a seat swap', () => {
-  it.each([
-    ['plan', 'Change PLAN tool'],
-    ['build', 'Change BUILD tool'],
-    ['review', 'Change REVIEW tool'],
-  ] as const)('names the %s seat the halt stopped', (seat, label) => {
-    const offer: SwitchSeatOffer = { seat, candidates: [{ tool: 'codex' }] };
-
-    expect(recoveryActionLabel('switch-seat', { switchSeat: offer })).toBe(label);
-    expect(recoveryActionLabel('switch-seat', { seat })).toBe(label);
-  });
-
-  it('names no seat when nothing says which one halted', () => {
-    expect(recoveryActionLabel('switch-seat')).toBe('Change tool');
   });
 });

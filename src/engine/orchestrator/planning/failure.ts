@@ -9,31 +9,16 @@ import {
   raisePendingRecovery,
   rebaseOnPersistedWorkflowState,
 } from '../state-ops.js';
-import { typedRunnerCallErrorMessage } from '../../implementers/pipeline/call-result.js';
 import {
-  isAuthFailureDiagnostic,
-  runnerAuthDisplayName,
-  runnerLoginInstruction,
-} from '../../runners/auth-failure.js';
-import {
-  isUsageLimitDiagnostic,
-  parseUsageLimitReset,
-  usageLimitDetailFromError,
-  usageLimitWaitClause,
-} from '../../runners/usage-limit.js';
-import {
-  buildPlannerCallFailedRecoveryIssue,
-  type PlannerSeatFailure,
-} from '../recovery/builders/planner.js';
-import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
+  diagnosePlannerCallFailure,
+  plannerCallHaltIssue,
+} from '../recovery/planner-call-failure.js';
 import {
   apiContextRecoveryFacts,
   readApiContextDiagnostic,
 } from '../../providers/api-context-diagnostic.js';
-import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { nowIso } from '../../../utils/format-time.js';
 
 export async function handlePlanningFailure(opts: {
   err: unknown;
@@ -69,25 +54,19 @@ export async function handlePlanningFailure(opts: {
   if (contextDiagnostic !== null) {
     const message = labelError('Planning failed', err);
     publishError({ bus: wctx.bus, phase: latest.phase, message });
-    const seatSwap = await loadSeatSwapContext({
+    const issue = await plannerCallHaltIssue({
       projectDir,
-      seat: 'plan',
-      runner: wctx.config.planner,
-    });
-    const issue = buildPlannerCallFailedRecoveryIssue({
-      failure: 'call-failed',
+      diagnosis: { failure: 'call-failed', message },
       phase: latest.phase,
-      message,
+      swap: { seat: 'plan', runner: wctx.config.planner },
       details: [
         ...(contextDiagnostic.missingSections.length > 0
           ? [`Missing: ${contextDiagnostic.missingSections.join(', ')}`]
           : []),
         'Adjust the plan seat with /crew plan or Settings, then /resume and choose retry.',
       ],
-      ...(seatSwap !== undefined && { seatSwap }),
       // The estimates stay in facts: `details[]` renders inline and truncates.
       facts: apiContextRecoveryFacts(contextDiagnostic),
-      createdAt: nowIso(),
     });
     return {
       disposition: 'terminal',
@@ -96,45 +75,23 @@ export async function handlePlanningFailure(opts: {
     };
   }
 
-  // A failed planner call keeps the tool's own diagnosis in typed error data;
-  // "Planner planner call failed" alone hides an expired login entirely.
-  const typed = typedRunnerCallErrorMessage(err);
-  let message = labelError('Planning failed', err);
-  if (typed !== null && !message.includes(typed)) {
-    message = `${message} — ${sanitizeTerminalDiagnosticText(typed)}`;
-  }
-  const displayName = runnerAuthDisplayName(wctx.config.planner);
-  // A limit outranks the auth check: its message must never earn login
-  // advice, because logging in does not restore quota. API planners throw
-  // their provider errors, so the raw 429 detail is read from typed data.
-  const limitDetail =
-    usageLimitDetailFromError(err) ??
-    (isUsageLimitDiagnostic(typed ?? message) ? (typed ?? message) : null);
-  const resetsAt = limitDetail === null ? null : parseUsageLimitReset(limitDetail);
-  let failure: PlannerSeatFailure = 'call-failed';
-  if (limitDetail !== null) {
-    failure = 'usage-limit';
-    message = `${message}. ${displayName} hit its usage limit — logging in again will not fix this. ${usageLimitWaitClause(resetsAt)} or switch the planner, then start again.`;
-  } else if (isAuthFailureDiagnostic(typed ?? message)) {
-    failure = 'unauthenticated';
-    message = `${message}. ${runnerLoginInstruction(wctx.config.planner)}`;
-  }
-  publishError({ bus: wctx.bus, phase: latest.phase, message });
-
-  const seatSwap = await loadSeatSwapContext({
-    projectDir,
-    seat: 'plan',
+  const diagnosis = diagnosePlannerCallFailure({
+    err,
+    label: 'Planning failed',
     runner: wctx.config.planner,
+    seat: 'plan',
   });
-  const issue = buildPlannerCallFailedRecoveryIssue({
-    failure,
+  publishError({
+    bus: wctx.bus,
     phase: latest.phase,
-    message,
-    details: typed === null ? [] : [`${displayName} reported: ${typed}`],
-    tool: displayName,
-    ...(resetsAt !== null && { resetAt: resetsAt.toISOString() }),
-    ...(seatSwap !== undefined && { seatSwap }),
-    createdAt: nowIso(),
+    message: diagnosis.message,
+    resetAt: diagnosis.resetsAt?.toISOString(),
+  });
+  const issue = await plannerCallHaltIssue({
+    projectDir,
+    diagnosis,
+    phase: latest.phase,
+    swap: { seat: 'plan', runner: wctx.config.planner },
   });
 
   return {

@@ -39,6 +39,7 @@ function makeWctx(opts: {
   bus: EventBus;
   config?: ReturnType<typeof makeConfig>;
   planner?: Planner;
+  skillsContext?: string;
 }): PlannerCallbacksContext & { planner: Planner } {
   return {
     projectDir: opts.projectDir,
@@ -49,6 +50,7 @@ function makeWctx(opts: {
     metadata: TEST_METADATA,
     sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
     planner: opts.planner ?? makePlanner(),
+    ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
   };
 }
 
@@ -106,6 +108,35 @@ describe('resumeArtifactApproval', () => {
     expect(onApprovalNeeded).toHaveBeenCalledWith(
       'spec',
       join(sessionDir(projectDir, sessionId), SPEC_FILE),
+    );
+  });
+
+  it("revises a resumed spec gate with the run's skills context", async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec', TEST_METADATA);
+    const skillsContext = '## Active Project Skills\n\n### AuthSkill\nRESUME-SKILL-BODY';
+    const regenerate = vi.fn().mockResolvedValue({ text: '# Revised spec', usage: null });
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'more detail' })
+      .mockResolvedValueOnce({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+
+    await resumeArtifactApproval({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        callbacks,
+        bus: makeBusRecorder().bus,
+        planner: makePlanner({ regenerate }),
+        skillsContext,
+      }),
+      state: parkedState('reviewing-spec'),
+      phase: 'reviewing-spec',
+    });
+
+    expect(regenerate).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: expect.stringContaining(skillsContext) }),
     );
   });
 

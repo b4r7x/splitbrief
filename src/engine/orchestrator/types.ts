@@ -141,4 +141,7 @@ export type PlannerCallbacksContext = Pick<
   | 'plannerContext'
   | 'detectedContextLength'
   | 'continuation'
->;
+> & {
+  /** The run's skills block, as `context.skillsContext` carries it. */
+  skillsContext?: string | undefined;
+};

@@ -63,6 +63,19 @@ describe('escalateHint', () => {
     expect(invokeEscalate.mock.calls[0]?.[0]?.prompt).toContain('I could not find the prop.');
   });
 
+  it("puts the run's skills context in the prompt", async () => {
+    const invokeEscalate = vi
+      .fn()
+      .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text: 'use a default' }));
+
+    await escalateHint(
+      { invokeEscalate, capabilities: { supportsHintEscalation: true } },
+      { ...opts, skillsContext: '## Active Project Skills\n\n### AuthSkill\nHINT-SKILL-BODY' },
+    );
+
+    expect(invokeEscalate.mock.calls[0]?.[0]?.prompt).toContain('HINT-SKILL-BODY');
+  });
+
   it('the Claude Code preset can hint', () => {
     expect(CONVERSATIONAL_CAPS.supportsHintEscalation).toBe(true);
     expect(CONVERSATIONAL_CAPS.supportsConversationalPlanning).toBe(true);

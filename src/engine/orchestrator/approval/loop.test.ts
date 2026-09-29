@@ -17,6 +17,9 @@ import type { WorkflowSinks } from '../types.js';
 import { createEventBus } from '../../events/bus.js';
 import { readRunEvents } from '../../events/replay.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import type { RegenerateOptions } from '../../planners/types.js';
+import { error } from '../../../utils/error.js';
 
 let dirs: string[] = [];
 
@@ -597,6 +600,77 @@ describe('runApprovalLoop', () => {
         omittedUnit: 'line',
       },
     ]);
+  });
+
+  it("regenerates a revised spec with the run's skills context", async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi
+        .fn()
+        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'add auth' })
+        .mockResolvedValueOnce({ approved: true }),
+    });
+    const prompts: string[] = [];
+    const planner = makePlanner({
+      regenerate: async (opts) => {
+        prompts.push(opts.prompt);
+        return { text: '# Spec\n\nRevised.\n', usage: null };
+      },
+    });
+    const skillsContext = '## Active Project Skills\n\n### AuthSkill\nREGEN-SKILL-BODY';
+
+    await runApprovalLoop({
+      type: 'spec',
+      filePath: specPath,
+      planner,
+      projectDir,
+      sessionId,
+      callbacks,
+      bus: makeBusRecorder().bus,
+      state: prepareState(),
+      skillsContext,
+    });
+
+    expect(prompts).toEqual([expect.stringContaining(skillsContext)]);
+  });
+
+  it('keeps the planner thread a revision reports and drops one it finds expired', async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    const ref = { projectDir, sessionId };
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi
+        .fn()
+        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'add auth' })
+        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'add audit' }),
+    });
+    const planner = makePlanner({
+      regenerate: vi
+        .fn()
+        .mockImplementationOnce(async ({ callbacks: thread }: RegenerateOptions) => {
+          thread.onSessionId?.('thread-2');
+          return { text: '# Spec\n\nRevised.\n', usage: null };
+        })
+        .mockImplementationOnce(async ({ callbacks: thread }: RegenerateOptions) => {
+          thread.onSessionExpired?.('thread-2');
+          throw error('session-resume-expired', 'could not resume session thread-2');
+        }),
+    });
+    const state = { ...prepareState(), plannerSessionId: 'thread-1' };
+    saveState(ref, state);
+
+    await expect(
+      runApprovalLoop({
+        type: 'spec',
+        filePath: specPath,
+        planner,
+        projectDir,
+        sessionId,
+        callbacks,
+        bus: makeBusRecorder().bus,
+        state,
+      }),
+    ).rejects.toMatchObject({ kind: 'session-resume-expired' });
+    expect(loadState(ref)?.plannerSessionId).toBeNull();
   });
 
   it('spec gate: editing spec.md on disk then approving triggers regeneration', async () => {

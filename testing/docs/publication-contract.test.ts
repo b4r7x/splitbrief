@@ -97,7 +97,7 @@ const claims = [
   [
     'roles-codex-readonly-workspace-write',
     'planners',
-    '| `codex` | `--sandbox read-only --ask-for-approval never` exec, ambient config and rules ignored, ephemeral detached | `--sandbox workspace-write --ask-for-approval never` in the staged checkout |',
+    "| `codex` | `--sandbox read-only --ask-for-approval never` exec, ambient config and rules ignored; a planning call's thread is kept on disk for the `exec resume` of the next one, and every other call is `--ephemeral` | `--sandbox workspace-write --ask-for-approval never` in the staged checkout |",
   ],
   [
     'budget-never-invents-price',

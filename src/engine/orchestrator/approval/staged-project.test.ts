@@ -1,6 +1,15 @@
 import { afterEach, describe, it, expect } from 'vitest';
 import { execFileSync, execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { listTrackedAndUntrackedFiles } from '../../../lib/git/files.js';
 import { SANDBOX_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
@@ -366,26 +375,97 @@ describe('createStagedProject', () => {
     }
   });
 
-  itUnix('does not copy a symlinked entry that git tracks', async () => {
-    const dir = createTempDir('staged-tracked-symlink-test');
-    try {
-      createTestGitRepo(dir);
-      writeFileSync(join(dir, 'real.txt'), 'real\n');
-      symlinkSync('real.txt', join(dir, 'link.txt'));
-      execSync('git add real.txt link.txt', { cwd: dir, stdio: 'pipe' });
-      execSync('git commit -m "add symlink"', { cwd: dir, stdio: 'pipe' });
-
-      const staged = await createStagedProject({ projectDir: dir });
+  itUnix(
+    'copies a tracked in-project symlink as the same link, since its relative target resolves inside the staged copy too',
+    async () => {
+      const dir = createTempDir('staged-tracked-symlink-test');
       try {
-        expect(existsSync(join(staged.projectDir, 'link.txt'))).toBe(false);
-        expect(readFileSync(join(staged.projectDir, 'real.txt'), 'utf-8')).toBe('real\n');
+        createTestGitRepo(dir);
+        writeFileSync(join(dir, 'real.txt'), 'real\n');
+        symlinkSync('real.txt', join(dir, 'link.txt'));
+        execSync('git add real.txt link.txt', { cwd: dir, stdio: 'pipe' });
+        execSync('git commit -m "add symlink"', { cwd: dir, stdio: 'pipe' });
+
+        const staged = await createStagedProject({ projectDir: dir });
+        try {
+          expect(readlinkSync(join(staged.projectDir, 'link.txt'))).toBe('real.txt');
+          expect(readFileSync(join(staged.projectDir, 'real.txt'), 'utf-8')).toBe('real\n');
+        } finally {
+          staged.cleanup();
+        }
       } finally {
-        staged.cleanup();
+        cleanupTempDir(dir);
       }
-    } finally {
-      cleanupTempDir(dir);
-    }
-  });
+    },
+  );
+
+  // The staged copy is compared by content hashes, which never see a link.
+  itUnix(
+    'reports a copied project symlink the worker deleted or retargeted, tracked or not',
+    async () => {
+      const dir = createTempDir('staged-link-change-test');
+      try {
+        createTestGitRepo(dir, { 'real.txt': 'real\n', 'other.txt': 'other\n' });
+        symlinkSync('real.txt', join(dir, 'tracked.txt'));
+        execSync('git add tracked.txt', { cwd: dir, stdio: 'pipe' });
+        execSync('git commit -m "add symlink"', { cwd: dir, stdio: 'pipe' });
+        symlinkSync('real.txt', join(dir, 'untracked.txt'));
+
+        const staged = await createStagedProject({ projectDir: dir });
+        try {
+          expect(await getChangedFilesSinceSnapshot(staged.projectDir, staged.snapshot)).toEqual(
+            [],
+          );
+          rmSync(join(staged.projectDir, 'tracked.txt'));
+          rmSync(join(staged.projectDir, 'untracked.txt'));
+          symlinkSync('other.txt', join(staged.projectDir, 'untracked.txt'));
+
+          expect(await getChangedFilesSinceSnapshot(staged.projectDir, staged.snapshot)).toEqual([
+            'tracked.txt',
+            'untracked.txt',
+          ]);
+        } finally {
+          staged.cleanup();
+        }
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  itUnix(
+    'copies an untracked symlink that stays inside the project and skips every other one',
+    async () => {
+      const dir = createTempDir('staged-project-link-test');
+      try {
+        createTestGitRepo(dir, { 'skills/babysit/SKILL.md': '# babysit\n' });
+        mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
+        symlinkSync('../../skills/babysit', join(dir, '.claude', 'skills', 'babysit'), 'dir');
+        symlinkSync(join(dir, 'skills'), join(dir, 'absolute'), 'dir');
+        symlinkSync('../outside', join(dir, 'escaping'), 'dir');
+
+        const staged = await createStagedProject({ projectDir: dir });
+        try {
+          const link = join(staged.projectDir, '.claude', 'skills', 'babysit');
+          expect(readlinkSync(link)).toBe('../../skills/babysit');
+          expect(readFileSync(join(link, 'SKILL.md'), 'utf-8')).toBe('# babysit\n');
+          for (const skipped of ['absolute', 'escaping']) {
+            expect(lstatSync(join(staged.projectDir, skipped), { throwIfNoEntry: false })).toBe(
+              undefined,
+            );
+          }
+          expect(staged.snapshot.symlinks).toEqual({
+            '.claude/skills/babysit': '../../skills/babysit',
+          });
+          expect(staged.snapshot.dirtyFileEntries).toEqual({ absolute: null, escaping: null });
+        } finally {
+          staged.cleanup();
+        }
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
 
   itUnix('falls back to a full recursive copy when the git file list is unavailable', async () => {
     const dir = createTempDir('staged-gitlist-fallback-test');
@@ -406,6 +486,8 @@ describe('createStagedProject', () => {
       mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true });
       writeFileSync(join(dir, 'node_modules', 'pkg', 'cache.js'), 'cache');
       writeFileSync(join(dir, '.env'), 'SECRET=canary\n');
+      symlinkSync('src', join(dir, 'source'), 'dir');
+      symlinkSync(join(dir, 'src'), join(dir, 'absolute'), 'dir');
 
       const staged = await createStagedProject({ projectDir: dir });
       try {
@@ -414,6 +496,10 @@ describe('createStagedProject', () => {
         );
         expect(existsSync(join(staged.projectDir, 'node_modules'))).toBe(false);
         expect(existsSync(join(staged.projectDir, '.env'))).toBe(false);
+        expect(readlinkSync(join(staged.projectDir, 'source'))).toBe('src');
+        expect(lstatSync(join(staged.projectDir, 'absolute'), { throwIfNoEntry: false })).toBe(
+          undefined,
+        );
       } finally {
         staged.cleanup();
       }

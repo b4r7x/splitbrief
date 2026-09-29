@@ -365,6 +365,55 @@ describe('createRunIsolation', () => {
     }
   });
 
+  it('keeps the worktree over a source symlink that stays inside the project, in a continued run too', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-project-link');
+    try {
+      createTestGitRepo(dir, {
+        '.claude/settings.json': '{}\n',
+        'skills/babysit/SKILL.md': '# babysit\n',
+      });
+      mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
+      symlinkSync('../../skills/babysit', join(dir, '.claude', 'skills', 'babysit'), 'dir');
+      const reasons: string[] = [];
+      const retained: string[] = [];
+      const isolation = () =>
+        createRunIsolation({
+          projectDir: dir,
+          sessionId: SESSION_ID,
+          strategy: 'worktree',
+          onFallback: (reason) => reasons.push(reason),
+          onRetained: (worktreeDir) => retained.push(worktreeDir),
+        });
+
+      const first = await acquireDirect(isolation());
+      expect(first.projectDir).toBe(isolationWorktree(dir));
+      expect(readlinkSync(join(first.projectDir, '.claude', 'skills', 'babysit'))).toBe(
+        '../../skills/babysit',
+      );
+      expect(await getChangedFilesSinceSnapshot(first.projectDir, first.snapshot)).toEqual([]);
+
+      // A new process continues the run on the worktree the first one left behind,
+      // so no seed baseline of this process describes the link.
+      const continued = isolation();
+      const fresh = await continued.acquire({
+        role: 'implementer',
+        config,
+        writesFiles: 'direct',
+        fresh: true,
+      });
+      expect(fresh.projectDir).toBe(first.projectDir);
+      await continued.dispose();
+
+      expect(reasons).toEqual([]);
+      expect(retained).toEqual([]);
+      expect(existsSync(isolationWorktree(dir))).toBe(false);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
   it('clears bridged credential files from the worktree sandbox on dispose', {
     timeout: 60_000,
   }, async () => {
@@ -852,6 +901,62 @@ describe('createRunIsolation', () => {
     }
   });
 
+  it.each([
+    {
+      change: 'retargets a seeded project symlink',
+      apply: (worktree: string) => {
+        const link = join(worktree, '.claude', 'skills', 'current');
+        rmSync(link);
+        symlinkSync('../../skills/b', link, 'dir');
+      },
+    },
+    {
+      change: 'deletes a seeded project symlink',
+      apply: (worktree: string) => rmSync(join(worktree, '.claude', 'skills', 'current')),
+    },
+    {
+      change: 'adds a symlink that leaves the project',
+      apply: (worktree: string) =>
+        symlinkSync(dirname(worktree), join(worktree, 'escaping'), 'dir'),
+    },
+  ])(
+    'retains the worktree whose worker $change, with no failed scan',
+    {
+      timeout: 60_000,
+    },
+    async ({ apply }) => {
+      const dir = createTempDir('isolation-link-unpromoted');
+      try {
+        createTestGitRepo(dir, { 'skills/a/SKILL.md': '# a\n', 'skills/b/SKILL.md': '# b\n' });
+        mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
+        symlinkSync('../../skills/a', join(dir, '.claude', 'skills', 'current'), 'dir');
+        const retained: string[] = [];
+        const handle = createRunIsolation({
+          projectDir: dir,
+          sessionId: SESSION_ID,
+          strategy: 'worktree',
+          onFallback: () => {},
+          onRetained: (worktreeDir) => retained.push(worktreeDir),
+        });
+
+        const ws = await acquireDirect(handle);
+        apply(ws.projectDir);
+        const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+        try {
+          await handle.dispose();
+          expect(stderrSpy.mock.calls.map((call) => String(call[0]))).toEqual([]);
+        } finally {
+          stderrSpy.mockRestore();
+        }
+
+        expect(retained).toEqual([ws.projectDir]);
+        expect(readlinkSync(join(dir, '.claude', 'skills', 'current'))).toBe('../../skills/a');
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
   it('retains the worktree and branch when unpromoted work remains, reporting it', {
     timeout: 60_000,
   }, async () => {
@@ -951,6 +1056,260 @@ describe('createRunIsolation', () => {
       cleanupTempDir(dir);
     }
   });
+
+  it('discards a gate-denied task that retargeted a seeded project symlink, restoring the link', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-gate-denied-link');
+    try {
+      createTestGitRepo(dir, {
+        'src/app.ts': 'export const app = true;\n',
+        'skills/a/SKILL.md': '# a\n',
+        'skills/b/SKILL.md': '# b\n',
+      });
+      mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
+      symlinkSync('../../skills/a', join(dir, '.claude', 'skills', 'current'), 'dir');
+      const handle = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'worktree',
+        onFallback: () => {},
+        onRetained: () => {},
+      });
+
+      const taskStartSnapshot = await getChangedFilesSnapshot(dir);
+      const ws = await acquireDirect(handle);
+      const link = join(ws.projectDir, '.claude', 'skills', 'current');
+      rmSync(link);
+      symlinkSync('../../skills/b', link, 'dir');
+      writeFileSync(join(ws.projectDir, 'src', 'app.ts'), 'export const app = "denied";\n');
+
+      const task = makeTask({ id: 'T001', file: 'src/app.ts' });
+      const outcome = await gateAndPromoteChangedFiles({
+        task,
+        state: makeImplState([task]),
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        bus: makeBusRecorder().bus,
+        callbacks: makeCallbacks({
+          onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
+        }).callbacks,
+        config: makeNoValidationConfig({
+          approval: { enabled: true, feedRejectionsToPlanner: false },
+        }),
+        workspace: ws,
+        taskStartSnapshot,
+        dependsOnFiles: [],
+        cleanup: ws.cleanup,
+        handleConflict: async (s) => s,
+        onApproved: () => {},
+      });
+      expect(outcome.outcome).toBe('gate-denied');
+
+      const next = await acquireDirect(handle);
+      expect(readlinkSync(join(next.projectDir, '.claude', 'skills', 'current'))).toBe(
+        '../../skills/a',
+      );
+      expect(readFileSync(join(next.projectDir, 'src', 'app.ts'), 'utf8')).toBe(
+        'export const app = true;\n',
+      );
+      await handle.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('puts a seeded project symlink back on the fresh acquisition after its promotion conflicted', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-link-conflict-fresh');
+    try {
+      createTestGitRepo(dir, { 'skills/a/SKILL.md': '# a\n', 'skills/b/SKILL.md': '# b\n' });
+      mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
+      symlinkSync('../../skills/a', join(dir, '.claude', 'skills', 'current'), 'dir');
+      const handle = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'worktree',
+        onFallback: () => {},
+        onRetained: () => {},
+      });
+
+      const taskStartSnapshot = await getChangedFilesSnapshot(dir);
+      const ws = await acquireDirect(handle);
+      const link = join(ws.projectDir, '.claude', 'skills', 'current');
+      rmSync(link);
+      symlinkSync('../../skills/b', link, 'dir');
+      const task = makeTask({ id: 'T001', file: '.claude/skills/current' });
+      const outcome = await gateAndPromoteChangedFiles({
+        task,
+        state: makeImplState([task]),
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        bus: makeBusRecorder().bus,
+        callbacks: makeCallbacks().callbacks,
+        config: makeNoValidationConfig({
+          approval: { enabled: false, feedRejectionsToPlanner: false },
+        }),
+        workspace: ws,
+        taskStartSnapshot,
+        dependsOnFiles: [],
+        cleanup: ws.cleanup,
+        handleConflict: async (s) => s,
+        onApproved: () => {},
+      });
+      expect(outcome.outcome).toBe('promote-conflict');
+
+      const next = await handle.acquire({
+        role: 'implementer',
+        config,
+        writesFiles: 'direct',
+        fresh: true,
+      });
+      expect(readlinkSync(join(next.projectDir, '.claude', 'skills', 'current'))).toBe(
+        '../../skills/a',
+      );
+      await handle.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  function expectCleanSources(root: string): void {
+    expect(lstatSync(join(root, 'src', 'alias.ts'), { throwIfNoEntry: false })).toBe(undefined);
+    expect(lstatSync(join(root, 'src', 'app.ts')).isFile()).toBe(true);
+    expect(readFileSync(join(root, 'src', 'app.ts'), 'utf8')).toBe('export const app = true;\n');
+  }
+
+  it.each([
+    { outcome: 'gate-denied', approval: true, fresh: false },
+    { outcome: 'promote-conflict', approval: false, fresh: true },
+  ])(
+    'keeps worker symlinks of a $outcome task out of the checkout and out of the next attempt',
+    { timeout: 60_000 },
+    async ({ outcome, approval, fresh }) => {
+      const dir = createTempDir('isolation-worker-links');
+      try {
+        createTestGitRepo(dir, {
+          'src/app.ts': 'export const app = true;\n',
+          'src/other.ts': 'export const other = true;\n',
+        });
+        const retained: string[] = [];
+        const handle = createRunIsolation({
+          projectDir: dir,
+          sessionId: SESSION_ID,
+          strategy: 'worktree',
+          onFallback: () => {},
+          onRetained: (worktreeDir) => retained.push(worktreeDir),
+        });
+
+        const taskStartSnapshot = await getChangedFilesSnapshot(dir);
+        const ws = await acquireDirect(handle);
+        // The worker adds a link where nothing was, and puts a link where a file was.
+        symlinkSync('app.ts', join(ws.projectDir, 'src', 'alias.ts'));
+        rmSync(join(ws.projectDir, 'src', 'app.ts'));
+        symlinkSync('other.ts', join(ws.projectDir, 'src', 'app.ts'));
+        const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+        try {
+          const task = makeTask({ id: 'T001', file: 'src/app.ts' });
+          const result = await gateAndPromoteChangedFiles({
+            task,
+            state: makeImplState([task]),
+            projectDir: dir,
+            sessionId: SESSION_ID,
+            bus: makeBusRecorder().bus,
+            callbacks: makeCallbacks({
+              onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
+            }).callbacks,
+            config: makeNoValidationConfig({
+              approval: { enabled: approval, feedRejectionsToPlanner: false },
+            }),
+            workspace: ws,
+            taskStartSnapshot,
+            dependsOnFiles: [],
+            cleanup: ws.cleanup,
+            handleConflict: async (s) => s,
+            onApproved: () => {},
+          });
+          expect(result.outcome).toBe(outcome);
+          expectCleanSources(dir);
+
+          const next = await handle.acquire({
+            role: 'implementer',
+            config,
+            writesFiles: 'direct',
+            fresh,
+          });
+          expectCleanSources(next.projectDir);
+          await handle.dispose();
+          expect(stderrSpy.mock.calls.map((call) => String(call[0]))).toEqual([]);
+        } finally {
+          stderrSpy.mockRestore();
+        }
+
+        expect(retained).toEqual([]);
+        expect(existsSync(isolationWorktree(dir))).toBe(false);
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  // The checkout's ignored link never reaches the worktree, so the worker writes a
+  // plain directory there, and promotion meets the link only on the checkout side.
+  it.each([
+    { label: 'refuses as a conflict', link: '.git/hooks', outcome: 'promote-conflict' },
+    { label: 'still promotes', link: 'real-ops', outcome: 'allow' },
+  ])(
+    'at a checkout directory link into $link, $label a file the worker wrote under that path',
+    { timeout: 60_000 },
+    async ({ link, outcome }) => {
+      const dir = createTempDir('isolation-ancestor-link');
+      try {
+        createTestGitRepo(dir, { '.gitignore': 'ops\n', 'README.md': '# test\n' });
+        mkdirSync(join(dir, 'real-ops'));
+        symlinkSync(link, join(dir, 'ops'), 'dir');
+        const handle = createRunIsolation({
+          projectDir: dir,
+          sessionId: SESSION_ID,
+          strategy: 'worktree',
+          onFallback: () => {},
+          onRetained: () => {},
+        });
+
+        const taskStartSnapshot = await getChangedFilesSnapshot(dir);
+        const ws = await acquireDirect(handle);
+        writeFileSync(join(ws.projectDir, '.gitignore'), '');
+        mkdirSync(join(ws.projectDir, 'ops'));
+        writeFileSync(join(ws.projectDir, 'ops', 'marker.txt'), '#!/bin/sh\n');
+        const task = makeTask({ id: 'T001', file: 'ops/marker.txt' });
+        const result = await gateAndPromoteChangedFiles({
+          task,
+          state: makeImplState([task]),
+          projectDir: dir,
+          sessionId: SESSION_ID,
+          bus: makeBusRecorder().bus,
+          callbacks: makeCallbacks().callbacks,
+          config: makeNoValidationConfig({
+            approval: { enabled: false, feedRejectionsToPlanner: false },
+          }),
+          workspace: ws,
+          taskStartSnapshot,
+          dependsOnFiles: [],
+          cleanup: ws.cleanup,
+          handleConflict: async (s) => s,
+          onApproved: () => {},
+        });
+
+        expect(result.outcome).toBe(outcome);
+        expect(existsSync(join(dir, '.git', 'hooks', 'marker.txt'))).toBe(false);
+        expect(existsSync(join(dir, 'real-ops', 'marker.txt'))).toBe(outcome === 'allow');
+        await handle.dispose();
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
 
   it('promotes a file the worker committed inside a retained worktree after continuation', {
     timeout: 60_000,
@@ -1066,7 +1425,7 @@ describe('createRunIsolation', () => {
 
   it('retains the worktree and warns when the unpromoted-work scan fails', {
     timeout: 60_000,
-  }, async () => {
+  }, async ({ skip }) => {
     const dir = createTempDir('isolation-scan-fail');
     try {
       createTestGitRepo(dir, { 'README.md': '# test\n' });
@@ -1079,9 +1438,17 @@ describe('createRunIsolation', () => {
       });
 
       const ws = await acquireDirect(handle);
-      // A symlink to an existing file makes the content read throw a
-      // path-symlink-read confinement error, failing the scan.
-      symlinkSync(join(ws.projectDir, 'README.md'), join(ws.projectDir, 'linked.txt'));
+      // A worker file the content read cannot open fails the scan.
+      const unreadable = join(ws.projectDir, 'unreadable.txt');
+      writeFileSync(unreadable, 'work\n');
+      chmodSync(unreadable, 0o000);
+      try {
+        readFileSync(unreadable);
+        skip('filesystem permissions are ineffective for this user');
+        return;
+      } catch (cause) {
+        expect(cause).toMatchObject({ code: 'EACCES' });
+      }
       const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
       try {

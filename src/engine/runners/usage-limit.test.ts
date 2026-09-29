@@ -1,11 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
 import {
-  formatUsageLimitReset,
   isUsageLimitDiagnostic,
   parseUsageLimitReset,
+  usageLimitAdvice,
   usageLimitDetailFromError,
-  usageLimitGuidance,
 } from './usage-limit.js';
 import { isAuthFailureDiagnostic } from './auth-failure.js';
 import { codexImplementerAdapter } from './cli-tools/codex.js';
@@ -129,7 +128,6 @@ describe('parseUsageLimitReset', () => {
     expect(resetsAt?.getDate()).toBe(8);
     expect(resetsAt?.getHours()).toBe(15);
     expect(resetsAt?.getMinutes()).toBe(27);
-    expect(formatUsageLimitReset(resetsAt as Date)).toBe('Aug 8, 2026, 3:27 PM');
   });
 
   it('parses the codex bare-clock reset from the live record', () => {
@@ -241,18 +239,35 @@ describe('parseUsageLimitReset', () => {
   });
 });
 
-describe('usageLimitGuidance', () => {
-  it('names the reset when known and never suggests logging in', () => {
-    const guidance = usageLimitGuidance(new Date('2026-08-08T15:27:00'));
-    expect(guidance).toBe(
-      'The limit resets at Aug 8, 2026, 3:27 PM; wait for it, switch the seat to another tool, or end the run.',
-    );
-    expect(guidance).not.toMatch(/log ?in|log ?out/i);
+describe('parseUsageLimitReset without a clock of its own', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it('still offers the real options when the reset is unknown', () => {
-    expect(usageLimitGuidance(null)).toBe(
-      'Wait for the limit to reset, switch the seat to another tool, or end the run.',
+  // A clock-relative reset reads the one clock every reset surface reads.
+  it('reads "now" from Date.now', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(new Date(2026, 6, 13, 16, 0).getTime());
+
+    expect(parseUsageLimitReset('usage limit reached · resets 5pm')).toEqual(
+      new Date(2026, 6, 13, 17, 0),
+    );
+  });
+});
+
+describe('usageLimitAdvice', () => {
+  // The sentence is stored and replayed on later days; the surfaces spell the reset from `resetAt`.
+  it('names the menu action for the seat and no clock, never a login', () => {
+    const advice = usageLimitAdvice({ tool: 'OpenAI Codex CLI', seat: 'build' });
+
+    expect(advice).toBe(
+      'OpenAI Codex CLI hit its usage limit. Wait for the limit to reset or change the BUILD tool, then continue.',
+    );
+    expect(advice).not.toMatch(/log ?in|log ?out/i);
+  });
+
+  it('names the seat the halt stopped on', () => {
+    expect(usageLimitAdvice({ tool: 'Ollama', seat: 'plan' })).toBe(
+      'Ollama hit its usage limit. Wait for the limit to reset or change the PLAN tool, then continue.',
     );
   });
 });

@@ -1,5 +1,5 @@
 import { rmSync, type Stats } from 'node:fs';
-import { cp, copyFile, lstat, mkdir, mkdtemp } from 'node:fs/promises';
+import { cp, copyFile, lstat, mkdir, mkdtemp, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
@@ -7,7 +7,11 @@ import type { EvidencePromotedFile } from '../../../core/schemas/evidence.js';
 import { INTERNAL_SKIP_DIRS, SPLITBRIEF_DIR, TREES_DIR } from '../../../core/paths.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import { listTrackedAndUntrackedFiles } from '../../../lib/git/files.js';
-import { assertPathConfined, assertWritablePathConfined } from '../../../lib/path-confinement.js';
+import {
+  assertPathConfined,
+  assertWritablePathConfined,
+  reachesControlPlane,
+} from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { error } from '../../../utils/error.js';
@@ -19,6 +23,7 @@ import {
   captureAcquisitionBaseline,
   matchesAcquisitionBaseline,
   readConfinedEntry,
+  readProjectSymlink,
   sameFileEntry,
   writeConfinedEntry,
   type FileSnapshotEntry,
@@ -73,11 +78,6 @@ function isStagedCopyExcluded(name: string): boolean {
   return STAGED_COPY_EXCLUDE.has(name) || name.startsWith('.env');
 }
 
-async function shouldCopyToStagedProject(source: string): Promise<boolean> {
-  if (isStagedCopyExcluded(basename(source))) return false;
-  return !(await lstat(source)).isSymbolicLink();
-}
-
 function shouldCopyGitListedEntry(entry: string): boolean {
   if (entry.endsWith('/')) return false;
   const firstSegment = entry.split('/')[0] ?? '';
@@ -94,25 +94,49 @@ async function lstatIfPresent(source: string): Promise<Stats | null> {
   }
 }
 
-async function copyProjectFiles(projectDir: string, stagedProjectDir: string): Promise<void> {
+// A symlink is copied only when it stays inside the project: its relative target
+// then resolves inside the staged copy too. Every other link is left out. The
+// copied links come back by path, since the content hashes never see a link.
+async function copyProjectFiles(
+  projectDir: string,
+  stagedProjectDir: string,
+): Promise<Record<string, string>> {
+  const links: Record<string, string> = {};
   const entries = await listTrackedAndUntrackedFiles(projectDir);
   if (entries === null) {
     await cp(projectDir, stagedProjectDir, {
       recursive: true,
       verbatimSymlinks: true,
-      filter: shouldCopyToStagedProject,
+      filter: async (source) => {
+        if (isStagedCopyExcluded(basename(source))) return false;
+        if (!(await lstat(source)).isSymbolicLink()) return true;
+        const file = relative(projectDir, source);
+        const link = await readProjectSymlink(projectDir, file);
+        if (link === null) return false;
+        links[file] = link;
+        return true;
+      },
     });
-    return;
+    return links;
   }
   for (const entry of entries) {
     if (!shouldCopyGitListedEntry(entry)) continue;
     const source = join(projectDir, entry);
     const stats = await lstatIfPresent(source);
-    if (stats === null || !stats.isFile()) continue;
+    if (stats === null) continue;
     const target = join(stagedProjectDir, entry);
-    await mkdir(dirname(target), { recursive: true });
-    await copyFile(source, target);
+    if (stats.isSymbolicLink()) {
+      const link = await readProjectSymlink(projectDir, entry);
+      if (link === null) continue;
+      links[entry] = link;
+      await mkdir(dirname(target), { recursive: true });
+      await symlink(link, target);
+    } else if (stats.isFile()) {
+      await mkdir(dirname(target), { recursive: true });
+      await copyFile(source, target);
+    }
   }
+  return links;
 }
 
 export async function createStagedProject(input: {
@@ -125,9 +149,10 @@ export async function createStagedProject(input: {
   // Before the copy, so an edit racing the copy lands on the worker's side of
   // the baseline and is reported as a conflict rather than silently overwritten.
   const targetBaseline = await captureAcquisitionBaseline(projectDir);
-  // The staged copy skips symlinked entries, so the snapshot describes the tree
-  // the worker receives: a source symlink is recorded as absent, not refused —
-  // this strategy is the fallback for exactly those sources.
+  // The staged copy carries only the symlinks that stay inside the project, so
+  // the snapshot describes the tree the worker receives: any other source
+  // symlink is recorded as absent, not refused — this strategy is the fallback
+  // for exactly those sources.
   const snapshot = await getChangedFilesSnapshot(projectDir, undefined, {
     symlinkedEntriesAsAbsent: true,
   });
@@ -146,7 +171,7 @@ export async function createStagedProject(input: {
     await mkdir(stagedProjectDir, { recursive: true });
     if (ownedRoot !== undefined)
       assertWritablePathConfined(relative(projectDir, stagedProjectDir), projectDir);
-    await copyProjectFiles(projectDir, stagedProjectDir);
+    const symlinks = await copyProjectFiles(projectDir, stagedProjectDir);
     const baselineFileHashes = await captureProjectFileHashes(stagedProjectDir, {
       ignoreProjectDir: projectDir,
     });
@@ -156,7 +181,7 @@ export async function createStagedProject(input: {
     return {
       projectDir: stagedProjectDir,
       sandboxEnv,
-      snapshot: { ...snapshot, baselineFileHashes, ignoreProjectDir: projectDir },
+      snapshot: { ...snapshot, baselineFileHashes, ignoreProjectDir: projectDir, symlinks },
       targetBaseline,
       cleanup: () => {
         rmSync(stagedRoot, { recursive: true, force: true });
@@ -221,6 +246,16 @@ export async function promoteStagedChanges(opts: {
 
   const preflight = await Promise.all(
     files.map(async (file): Promise<'ok' | 'settled' | 'conflict'> => {
+      // Promotion writes regular files only: a symlink on either side is left
+      // for the operator, never written over, through or from.
+      const [target, staged] = await Promise.all([
+        lstatIfPresent(join(targetProjectDir, file)),
+        lstatIfPresent(join(stagedProjectDir, file)),
+      ]);
+      if (target?.isSymbolicLink() || staged?.isSymbolicLink()) return 'conflict';
+      // A symlinked parent in the target that resolves into `.git` or `.splitbrief`
+      // would carry the file into the control plane; the approval saw only its spelling.
+      if (reachesControlPlane(file, targetProjectDir)) return 'conflict';
       if (await matchesAcquisitionBaseline(targetProjectDir, file, targetBaseline)) return 'ok';
       return (await targetHoldsStagedEntry({ targetProjectDir, stagedProjectDir, file }))
         ? 'settled'

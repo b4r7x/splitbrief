@@ -47,6 +47,7 @@ function setupProject(expectedMarker: string): string {
 type FakeCodexRun = {
   cwd: string;
   args: string[];
+  prompt: string;
 };
 
 function prependFakeCodexToPath(opts: {
@@ -64,7 +65,7 @@ function prependFakeCodexToPath(opts: {
   const runLogPath = join(binDir, 'codex-run.json');
   const script = [
     '#!/usr/bin/env node',
-    "const { mkdirSync, writeFileSync } = require('node:fs');",
+    "const { mkdirSync, readFileSync, writeFileSync } = require('node:fs');",
     `const marker = ${JSON.stringify(opts.marker)};`,
     `const requiredPromptText = ${JSON.stringify(opts.requiredPromptText)};`,
     `const runLogPath = ${JSON.stringify(runLogPath)};`,
@@ -88,12 +89,13 @@ function prependFakeCodexToPath(opts: {
     '  console.error("codex shim: expected --cd pointing at the working directory");',
     '  process.exit(2);',
     '}',
-    'const prompt = args[args.length - 1] ?? "";',
+    'if (args[args.length - 1] !== "-") { console.error("codex shim: expected - to read the prompt from stdin"); process.exit(2); }',
+    'const prompt = readFileSync(0, "utf-8");',
     'if (!prompt.includes(requiredPromptText)) {',
     '  console.error("codex shim: expected task prompt to include " + requiredPromptText);',
     '  process.exit(2);',
     '}',
-    'writeFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args }));',
+    'writeFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args, prompt }));',
     "mkdirSync('src', { recursive: true });",
     "writeFileSync('src/loop.ts', 'export const loop = \"' + marker + '\";\\n', 'utf-8');",
     'console.log(terminalLine ?? JSON.stringify({ type: "turn.completed", usage: { input_tokens: 100, output_tokens: 40, cached_input_tokens: 30 } }));',
@@ -239,7 +241,8 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
         'codex/test-cheap-model',
       ]),
     );
-    expect(runLog.args[runLog.args.length - 1]).toContain(requiredPromptText);
+    expect(runLog.args.at(-1)).toBe('-');
+    expect(runLog.prompt).toContain(requiredPromptText);
     expect(readFileSync(join(projectDir, TARGET_FILE), 'utf-8')).toContain(
       'export const loop = "from-codex-cli";',
     );

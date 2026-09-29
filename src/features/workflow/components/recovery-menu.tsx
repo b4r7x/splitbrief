@@ -13,7 +13,7 @@ import {
   formatRecoveryPromptSummary,
   getRecoveryPromptActions,
   recoveryActionKey,
-  recoveryActionLabel,
+  recoveryMenuLabel,
   recommendedRecoveryAction,
 } from '../recovery-prompt.js';
 import { countPromptBodyRows } from '../prompt-body-rows.js';
@@ -35,12 +35,7 @@ interface RecoveryMenuProps {
 function actionItems(issue: RecoveryIssue): ActionItem[] {
   return getRecoveryPromptActions(issue).map((action) => ({
     action,
-    label: recoveryActionLabel(action, {
-      reason: issue.reason,
-      facts: issue.facts,
-      switchSeat: issue.switchSeat,
-      seat: issue.seat,
-    }),
+    label: recoveryMenuLabel(action, issue),
   }));
 }
 
@@ -61,6 +56,7 @@ function renderAction(item: ActionItem, selected: boolean, recommended: boolean,
       width={width}
       state={selected ? 'active' : 'default'}
       metadata={recommended ? 'recommended' : undefined}
+      keepWhole="label"
     />
   );
 }

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -99,6 +99,20 @@ it('continues only after every guarded copy agrees and leaves unrelated or parti
   expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
   state.pendingRecovery = { ...issue, reason: 'runner-usage-limit' };
   expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
+});
+
+it('clears a symlink promotion conflict once both copies hold the same project link', async () => {
+  const { projectDir, worktreeDir, sessionId, state } = await fixture();
+  await symlink('a.ts', join(projectDir, 'link.ts'));
+  await writeFile(join(worktreeDir, 'link.ts'), 'worker\n');
+  const issue = state.pendingRecovery;
+  if (issue === undefined) throw new Error('Fixture requires a recovery issue');
+  state.pendingRecovery = { ...issue, files: ['link.ts'] };
+  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
+
+  await rm(join(worktreeDir, 'link.ts'));
+  await symlink('a.ts', join(worktreeDir, 'link.ts'));
+  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(true);
 });
 
 it('lets a legacy worktree continue after both conflicting copies are reconciled', async () => {

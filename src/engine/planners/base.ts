@@ -22,7 +22,7 @@ import type {
 } from './types.js';
 import { DEFAULT_AVAILABILITY } from '../availability.js';
 import { escalateFull, escalateHint } from './escalation.js';
-import { createPhaseRunner, type PhaseRunnerConfig } from './run-phase.js';
+import { createPhaseRunner, prepareInvokeArgs, type PhaseRunnerConfig } from './run-phase.js';
 import type { ApiRuntimeContext } from '../providers/runtime-context.js';
 import { createPlannerCallContext } from './call-context.js';
 import { summarize, summarizeStructured } from './summary.js';
@@ -106,15 +106,23 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     runPhase: createPhaseRunner(config),
 
     async regenerate(opts: RegenerateOptions): Promise<RegenerateResult> {
-      const { prompt, projectDir, callbacks } = opts;
+      const { prompt, projectDir, callbacks, priorMessages } = opts;
       const callContext = createPlannerCallContext(config, 'planner');
+      const { effectivePrompt, extras } = prepareInvokeArgs({
+        prompt,
+        priorMessages,
+        images: undefined,
+        consumesPriorMessages: config.consumesPriorMessages,
+      });
+      // A revised document is planning, so it lands on the planner's thread, where the steps
+      // after it read the revision rather than the document it replaced.
       const result = requireCompletedCall(
-        await config.invokeEscalate({
-          prompt,
+        await config.invokePlan({
+          prompt: effectivePrompt,
           projectDir,
           callContext,
-          accessMode: 'read-only',
           callbacks,
+          ...extras,
           signal: callbacks.signal,
         }),
       );

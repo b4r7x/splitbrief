@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
-import { formatResumeCommand } from './resume-command.js';
+import { continuesHeadless, formatResumeCommand } from './resume-command.js';
 
 const skipIssue = makeRecoveryIssue({ recommendedAction: 'skip-current-task' });
 
@@ -15,6 +15,12 @@ describe('formatResumeCommand', () => {
     ).toBe('splitbrief continue s1 --action retry');
   });
 
+  it('names the end-run action', () => {
+    expect(formatResumeCommand('s1', makeRecoveryIssue({ recommendedAction: 'end-run' }))).toBe(
+      'splitbrief continue s1 --action end-run',
+    );
+  });
+
   it('carries the first swap candidate for a seat switch', () => {
     const issue = makeRecoveryIssue({
       reason: 'runner-usage-limit',
@@ -27,9 +33,22 @@ describe('formatResumeCommand', () => {
     );
   });
 
-  it('resumes and points at the TUI for an action the CLI cannot take', () => {
-    expect(
-      formatResumeCommand('s1', makeRecoveryIssue({ recommendedAction: 'route-bigger-worker' })),
-    ).toBe('splitbrief resume (route-bigger-worker is available in the TUI)');
+  // The recovery panel offers every action; `continue` opens it, so the line names the row there.
+  it.each([
+    ['pause-run', 'Pause run'],
+    ['route-bigger-worker', 'Use a bigger worker'],
+  ] as const)('opens the recovery panel on %s, in the words of its row', (action, label) => {
+    const issue = makeRecoveryIssue({ recommendedAction: action });
+
+    expect(formatResumeCommand('s1', issue)).toBe(
+      `splitbrief continue s1, then choose ${label} in the recovery panel`,
+    );
+  });
+});
+
+describe('continuesHeadless', () => {
+  it('runs headless only a line that names its action', () => {
+    expect(continuesHeadless(skipIssue)).toBe(true);
+    expect(continuesHeadless(makeRecoveryIssue({ recommendedAction: 'pause-run' }))).toBe(false);
   });
 });

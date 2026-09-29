@@ -6,6 +6,7 @@ import {
   type PlannerStep,
 } from '../../../core/pipeline-spec/steps.js';
 import { isPlannerDocument } from '../../../core/pipeline-spec/planner-documents.js';
+import { MODES } from '../../../core/pipeline-spec/modes.js';
 import { extractQuestionsFromStream } from '../../parsers/question.js';
 import {
   PLAN_FILE,
@@ -43,7 +44,6 @@ import { persistPhases, readPersistedTasks } from './io.js';
 import { drainAndFormat } from './queue-drain.js';
 import { parseDiscoveredValidation } from './parse-validation.js';
 import { sanitizeDiscoveredValidation } from './sanitize-discovered-validation.js';
-import { buildPlanningSkillsContext } from './skills-context.js';
 import { runAnalyzeCall, runClarifyCall, runConstitutionCall } from './speckit.js';
 import type { PlanningProducerResult, PlanningStepsOptions } from './types.js';
 
@@ -120,7 +120,7 @@ export async function runPlanningSteps(
   opts: PlanningStepsOptions,
 ): Promise<PlanningProducerResult> {
   const { wctx, planner } = opts;
-  const { projectDir, sessionId, bus, callbacks, metadata, resumeHolder } = wctx;
+  const { projectDir, sessionId, bus, callbacks, metadata, resumeHolder, skillsContext } = wctx;
   const ref = { projectDir, sessionId };
   let state = opts.state;
   const mode = state.mode ?? 'standard';
@@ -133,7 +133,6 @@ export async function runPlanningSteps(
     planGate
       ? { type: 'PLAN_DONE', tasks: compiled }
       : { type: 'BRIEFS_COMPILED', tasks: compiled };
-  const skillsContext = await buildPlanningSkillsContext(opts, state);
   const passedGates = new Set<GateName>(opts.passedGates ?? []);
   let languageContext = buildProjectLanguageContext(
     projectDir,
@@ -245,6 +244,7 @@ export async function runPlanningSteps(
             ...(mode === 'quick' && step.call === 'tasks'
               ? { quickPlan: { trivial: opts.trivial === true } }
               : {}),
+            ...(step.call === 'tasks' && { briefCap: MODES[mode].briefCap }),
           };
           const run = await runPlannerCallInContinuationLoop({
             wctx,
@@ -339,6 +339,7 @@ export async function runPlanningSteps(
           signal: wctx.signal,
           specMetadata: metadata,
           sinks: wctx.sinks,
+          ...(skillsContext !== undefined && { skillsContext }),
         });
         state = loop.state;
         if (loop.closed) return { disposition: 'terminal', state, outcome: 'closed' };

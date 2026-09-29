@@ -7,6 +7,7 @@ import {
   readConfinedEntry,
   sameFileEntry,
   writeConfinedEntry,
+  writeConfinedSymlink,
   type FileSnapshotEntry,
 } from './entry.js';
 import type { FileContentSnapshot, RestoreChangedFilesResult } from './types.js';
@@ -67,25 +68,33 @@ export async function restoreDirtyFilesFromSnapshot(
       continue;
     }
     const conflict = restoreError.conflict(file);
+    const assertUnchanged = async (): Promise<void> => {
+      const expected = expectedCurrentEntries?.get(file);
+      if (
+        expected !== undefined &&
+        !sameFileEntry(await readConfinedEntry(projectDir, file), expected)
+      ) {
+        throw conflict;
+      }
+      if (
+        Object.hasOwn(expectedCurrentContents, file) &&
+        (await readCurrentFileContent(projectDir, file)) !== expectedCurrentContents[file]
+      ) {
+        throw conflict;
+      }
+    };
     try {
-      // Reject unsafe paths even when the stored entry is absent.
-      await readConfinedEntry(projectDir, file);
-      const entry = await entryToRestore(projectDir, snapshot, file);
-      await writeConfinedEntry(projectDir, file, entry, async () => {
-        const expected = expectedCurrentEntries?.get(file);
-        if (
-          expected !== undefined &&
-          !sameFileEntry(await readConfinedEntry(projectDir, file), expected)
-        ) {
-          throw conflict;
-        }
-        if (
-          Object.hasOwn(expectedCurrentContents, file) &&
-          (await readCurrentFileContent(projectDir, file)) !== expectedCurrentContents[file]
-        ) {
-          throw conflict;
-        }
-      });
+      const link = snapshot.symlinks?.[file];
+      if (link !== undefined) {
+        // A project symlink is recorded by its target; the entry reads refuse links.
+        await assertUnchanged();
+        await writeConfinedSymlink(projectDir, file, link);
+      } else {
+        // Reject unsafe paths even when the stored entry is absent.
+        await readConfinedEntry(projectDir, file);
+        const entry = await entryToRestore(projectDir, snapshot, file);
+        await writeConfinedEntry(projectDir, file, entry, assertUnchanged);
+      }
       restoredFiles.push(file);
     } catch (err) {
       if (isPathConfinementError(err)) throw err;

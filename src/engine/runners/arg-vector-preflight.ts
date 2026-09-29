@@ -452,9 +452,10 @@ async function buildPreflightCheck(
  * One arg vector per branch the adapter can take for this role, so a flag that
  * only appears on resume or on an escalated planner call is compared too. The
  * planner's `effort` is configuration rather than a branch, so it rides on every
- * variant whenever the adapter supports it. The review seat takes exactly one
- * branch — a read-only call, which the CLI planner maps to plan mode, with no
- * session to resume — so escalate-mode and resume argv are not its to compare.
+ * variant whenever the adapter supports it. A planner's review, hint and
+ * escalation calls are one-shot, which is a branch of their own. The review seat
+ * takes exactly one branch — a one-shot read-only call, which the CLI planner
+ * maps to plan mode — so escalate-mode and resume argv are not its to compare.
  */
 type PreflightVector = Readonly<{ argv: readonly string[]; validation: CliArgumentValidation }>;
 
@@ -497,6 +498,7 @@ function emittedArgVectors(runner: PreflightRunner): readonly PreflightVector[] 
           ...plannerCommonArgs(runner, adapter),
           mode: 'plan',
           sessionId: null,
+          oneShot: true,
         }),
       ];
     }
@@ -505,7 +507,8 @@ function emittedArgVectors(runner: PreflightRunner): readonly PreflightVector[] 
       const common = plannerCommonArgs(runner, adapter);
       const variants = [
         checkedVector(adapter, { ...common, mode: 'plan', sessionId: null }),
-        checkedVector(adapter, { ...common, mode: 'escalate', sessionId: null }),
+        checkedVector(adapter, { ...common, mode: 'plan', sessionId: null, oneShot: true }),
+        checkedVector(adapter, { ...common, mode: 'escalate', sessionId: null, oneShot: true }),
       ];
       if (adapter.supportsSessionResume) {
         variants.push(

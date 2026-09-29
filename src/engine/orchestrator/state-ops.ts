@@ -100,6 +100,22 @@ export function workflowStatePath(ref: SessionRef): string {
   return join(realpathSync(sessionDir(ref.projectDir, ref.sessionId)), STATE_FILE);
 }
 
+// The run that owns a session in this process follows every head committed for it, so the
+// phase it stamps on its events is the phase the run is in, not the one it last tracked.
+const committedStateFollowers = new Map<string, (state: WorkflowState) => void>();
+
+/** Hands `follower` every head committed for this session until the returned stop runs. */
+export function followCommittedState(
+  ref: SessionRef,
+  follower: (state: WorkflowState) => void,
+): () => void {
+  const path = workflowStatePath(ref);
+  committedStateFollowers.set(path, follower);
+  return () => {
+    if (committedStateFollowers.get(path) === follower) committedStateFollowers.delete(path);
+  };
+}
+
 export function revisionsMatch(left: ConfigRevision, right: ConfigRevision): boolean {
   return (
     left.rawSha256 === right.rawSha256 &&
@@ -305,9 +321,11 @@ function commitState(
   head: StateHead | null,
   state: WorkflowState,
 ): 'written' | 'conflict' {
+  let path: string;
   let result: ReturnType<typeof confinedAtomicWriteFileSync>;
   try {
-    result = confinedAtomicWriteFileSync(workflowStatePath(ref), serializedState(state), {
+    path = workflowStatePath(ref);
+    result = confinedAtomicWriteFileSync(path, serializedState(state), {
       expectedRevision: head?.revision ?? null,
       mode: SECURE_FILE_MODE,
     });
@@ -318,6 +336,7 @@ function commitState(
   if (result.kind === 'durability-uncertain') {
     throw stateOpsError.durabilityUncertain();
   }
+  committedStateFollowers.get(path)?.(state);
   return 'written';
 }
 
@@ -367,18 +386,16 @@ export function commitWorkflowState(input: WorkflowStateCommitInput): WorkflowSt
           stateVersion: WORKFLOW_STATE_VERSION,
           stateRevision: workflowStateRevision(input.expected) + 1,
         });
-  const result = confinedAtomicWriteFileSync(
-    workflowStatePath(input.ref),
-    serializedState(nextState),
-    {
-      expectedRevision: current?.revision ?? null,
-      mode: SECURE_FILE_MODE,
-    },
-  );
+  const path = workflowStatePath(input.ref);
+  const result = confinedAtomicWriteFileSync(path, serializedState(nextState), {
+    expectedRevision: current?.revision ?? null,
+    mode: SECURE_FILE_MODE,
+  });
   if (result.kind === 'conflict') return result;
   if (result.kind === 'durability-uncertain') {
     return { kind: 'durability-uncertain', state: nextState, revision: result.observedRevision };
   }
+  committedStateFollowers.get(path)?.(nextState);
   return { kind: 'committed', state: nextState, revision: result.revision };
 }
 
@@ -498,6 +515,31 @@ export function recordLastFailure(
   }
 }
 
+/**
+ * What a planning call hands its planner: the run keeps the thread the planner reports and drops
+ * one it finds expired, on the caller's own copy of the state, so neither a later call nor a run
+ * re-entered on this state resumes it. A thread the run no longer names is not the one to drop.
+ */
+export function plannerThreadCallbacks(
+  ref: SessionRef,
+  state: Readonly<{ get: () => WorkflowState; set: (next: WorkflowState) => void }>,
+): {
+  sessionId: string;
+  onSessionId: (id: string) => void;
+  onSessionExpired: (expiredId: string) => void;
+} {
+  const saveThread = (sessionId: string | null): void => {
+    state.set(transitionAndSave(ref, state.get(), { type: 'SET_PLANNER_SESSION_ID', sessionId }));
+  };
+  return {
+    sessionId: ref.sessionId,
+    onSessionId: saveThread,
+    onSessionExpired: (expiredId) => {
+      if (state.get().plannerSessionId === expiredId) saveThread(null);
+    },
+  };
+}
+
 export function raisePendingRecovery(
   scope: WorkflowPersistenceContext,
   state: WorkflowState,
@@ -505,7 +547,7 @@ export function raisePendingRecovery(
   setTrackedState?: (s: WorkflowState) => void,
 ): WorkflowState {
   const next = transitionAndSave(scope, state, { type: 'SET_PENDING_RECOVERY', issue });
-  publishRecoveryPrompted(scope.bus, scope.sessionId, issue);
+  publishRecoveryPrompted({ bus: scope.bus, phase: next.phase }, scope.sessionId, issue);
   setTrackedState?.(next);
   return next;
 }

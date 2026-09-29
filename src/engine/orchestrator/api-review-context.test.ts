@@ -256,6 +256,15 @@ describe('the packet an API review seat is handed', () => {
     expect(packet.cause).toBe('input-budget');
     expect(packet.missingSections).toContain('recorded promotions');
   });
+
+  it('carries the skills block, counted against the seat and named when it does not fit', () => {
+    const skillsContext = '## Active Project Skills\n\n### AuthSkill\nREVIEW-SKILL-BODY';
+    expect(complete({ skillsContext }).text).toContain(skillsContext);
+
+    const packet = refused({ skillsContext: 's'.repeat(100_000), contextLength: 10_000 });
+    expect(packet.cause).toBe('input-budget');
+    expect(packet.missingSections).toContain('skills');
+  });
 });
 
 /** A reviewer seat on its own local endpoint. No call ever reaches it. */
@@ -301,6 +310,7 @@ async function review(opts: {
   sessionId: string;
   config: Config;
   prompts: string[];
+  skillsContext?: string;
 }) {
   const reviewer = makePlanner({
     review: async (prompt: string) => {
@@ -328,6 +338,7 @@ async function review(opts: {
       implementerTool: 'ollama',
     },
     taskBreakdowns: [],
+    ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
   });
 }
 
@@ -452,5 +463,21 @@ describe('a REVIEW seat that reads no files of its own', () => {
     expect(prompts[0]).toContain(universe.fullDiff);
     expect(result.reviewStatus).toBe('written');
     expect(result.failure).toBeUndefined();
+  });
+
+  it.each([
+    { seat: 'an API reviewer', config: () => apiReviewerConfig() },
+    { seat: 'a CLI reviewer', config: () => makeNoValidationConfig() },
+  ])("hands $seat the run's skills context", async ({ config }) => {
+    const ref = setupRun({ ledger: true });
+    universe.fullDiff = diffFor('src/login.ts');
+    universe.changedFiles = ['src/login.ts'];
+    const prompts: string[] = [];
+    const skillsContext = '## Active Project Skills\n\n### AuthSkill\nREVIEW-SKILL-BODY';
+
+    await review({ ...ref, config: config(), prompts, skillsContext });
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain(skillsContext);
   });
 });

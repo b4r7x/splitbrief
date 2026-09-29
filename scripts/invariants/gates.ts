@@ -168,7 +168,7 @@ export const gates: readonly Gate[] = [
     id: '22',
     description: 'Active agent instruction surfaces must not reference removed APIs',
     command:
-      '{ for path in .github/prompts .claude/commands .claude/skills .opencode/command; do [ -e "$path" ] && rg -n \'\\bTuiEvent\\b|src/screens/|src/ui/\' "$path" || true; done; } | wc -l',
+      '{ for path in .github/prompts .claude/commands .claude/skills skills .opencode/command; do [ -e "$path" ] && rg -n \'\\bTuiEvent\\b|src/screens/|src/ui/\' "$path" || true; done; } | wc -l',
     expected: 0,
   },
   {

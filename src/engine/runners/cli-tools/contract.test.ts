@@ -9,7 +9,7 @@ import type {
   CliProtocolEvent,
 } from './contract.js';
 import { claudeCodePlannerAdapter } from './claude-code.js';
-import { codexImplementerAdapter, codexPlannerAdapter } from './codex.js';
+import { codexImplementerAdapter } from './codex.js';
 import { admitCliRoleVector, type CliRoleAllowlist } from './contract.js';
 import { opencodePlannerAdapter } from './opencode.js';
 import { parseCliSemanticVector } from './validate-args.js';
@@ -80,12 +80,12 @@ describe('CLI adapter contract', () => {
   it('models stdin, bounded lossless argv, and private-file prompt transports', () => {
     const transports = [
       claudeCodePlannerAdapter.promptTransport,
-      codexPlannerAdapter.promptTransport,
+      opencodePlannerAdapter.promptTransport,
       { kind: 'file', mode: 0o600 },
     ] as const satisfies readonly CliPromptTransport[];
 
     expect(transports.map((transport) => transport.kind)).toEqual(['stdin', 'argv', 'file']);
-    expect(codexPlannerAdapter.promptTransport).toEqual({
+    expect(opencodePlannerAdapter.promptTransport).toEqual({
       kind: 'argv',
       maxBytes: 120_000,
       placement: 'positional',

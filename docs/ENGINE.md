@@ -54,7 +54,7 @@ config                     — full resolved Config
 callbacks                  — OrchestratorCallbacks (see "Events vs callbacks")
 bus                        — the EventBus
 planner, implementer       — the active runner instances
-context                    — ProjectContext (name, dir, runtime, testCommand)
+context                    — ProjectContext (name, dir, skillsContext — the run's skills block, built once for every seat)
 signal                     — optional AbortSignal for cancellation
 metadata                   — SpecMetadata for written artifacts
 sinks                      — WorkflowSinks (abort handler, queue handler)
@@ -99,7 +99,7 @@ Events cover the full workflow lifecycle. A few examples:
 - `runner_call_*` — normalized planner/implementer/backend call lifecycle, text deltas, usage, raw tool-use, safe activity, session IDs, artifacts, warnings, errors, and completion, plus `runner_call_heartbeat`: a frame with nothing to show that still proves the tool is working, such as Claude Code's thinking-token estimates, at most one a second per call. A heartbeat moves the Build progress block's freshness clock (`lastRunnerEventTs`, `src/stores/workflow/lifecycle.ts`), paints no row, and stays out of `session.jsonl`
 - `cost_update` — cumulative token usage after each planner or implementer call
 
-The full union has many variants, but the pattern is consistent: every event is a flat object with snake_case type, timestamp, optional phase, and domain-specific fields.
+The full union has many variants, but the pattern is consistent: every event is a flat object with snake_case type, timestamp, optional phase, and domain-specific fields. The phase is the run's phase when the event is published. A run follows every state head committed for its session (`followCommittedState`, `src/engine/orchestrator/state-ops.ts`), so a call's own events, its text and a recovery event never carry a phase the run has already left. A recovery issue keeps the phase its halt was raised in.
 
 ### Runner call pipeline
 
@@ -214,7 +214,7 @@ One API owns the file. `src/core/state/state-file.ts` reads and classifies it an
 
 A persisted changed-files baseline has two provenance states: `head: null` records a known unborn start, and a SHA records the exact run-start commit. State without a baseline is rejected at final review (`finalReviewError.missingRunBaseline`) rather than reconstructed from commit subjects.
 
-`runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones. An entry SPLITBRIEF refuses to read — a symlink, a directory, an unreadable file — is recorded as `"unreadable"` rather than thrown. Right after baseline capture and before validation priming, the task loop publishes one warning naming those project-relative paths (code `unreadable_changed_files`); the entries are excluded from user-edit detection and never opened.
+`runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones. A symlink that stays inside the project is recorded by its target (`"symlink:<target>"`), the way git records it. An entry SPLITBRIEF refuses to read — any other symlink, a directory, an unreadable file — is recorded as `"unreadable"` rather than thrown. Right after baseline capture and before validation priming, the task loop publishes one warning naming those project-relative paths (code `unreadable_changed_files`); the entries are excluded from user-edit detection and never opened.
 
 **`jsonlSink`** — appends bounded events to `session.jsonl` via `src/core/sessions/log-writer.ts`. This is the audit log and transcript source. Stateless backends (those that don't support session resume natively) rebuild planner context from the JSONL log on resume.
 
@@ -228,7 +228,7 @@ The two serve different consumers: `state.json` is for the state machine (small,
 
 **Event records** (`kind: 'event'`). Written by `jsonlSink` after payload bounding. Fields: `kind`, `ts`, `type` (the `EngineEvent` type name), optional `phase`, optional `taskId`, and a `data` object with event-specific fields. Known event payloads are validated before replay.
 
-**Message records** (`kind: 'message'`). Written by the transcript buffer (`src/engine/streaming/transcript-buffer.ts`) during planner and implementer streaming output. Fields: `kind`, `ts`, `role` (`'user'` or `'assistant'`), `text`, optional `phase`, and optional `interrupted`. The buffer accumulates streaming chunks and flushes above 16 KB or when the call ends. If the call is aborted, `flushInterrupted()` writes a final marker with `interrupted: true`, including an empty marker when the call printed nothing or its text was already flushed. `readInterruptedPartial` (`src/engine/orchestrator/continuation.ts`) reconstructs that call's assistant stream after the last `runner_call_started`, retaining the last 8,000 characters for the continuation prompt. An earlier call's text never supplies the next call's partial. The implementer buffer takes normal, retry and hint output, including a direct writer's narration, and writes it to the checkout's log, not to the isolation directory the writer works in. In-process steers use that same checkout log. Context rebuild on resume reads these records to reconstruct the conversation history for stateless backends.
+**Message records** (`kind: 'message'`). Written by the transcript buffer (`src/engine/streaming/transcript-buffer.ts`) from planner and implementer streaming output. A planner call's text is written when the call settles: as a reply, or as the partial of a call that was cut or failed before it completed. A document the call lands is not written: it is the step's artifact, and the later step prompts carry it as an input. Fields: `kind`, `ts`, `role` (`'user'` or `'assistant'`), `text`, optional `phase`, and optional `interrupted`. The buffer accumulates streaming chunks and flushes above 16 KB or when the call ends. If the call is aborted, `flushInterrupted()` writes a final marker with `interrupted: true`, including an empty marker when the call printed nothing or its text was already flushed. `readInterruptedPartial` (`src/engine/orchestrator/continuation.ts`) reconstructs that call's assistant stream after the last `runner_call_started`, retaining the last 8,000 characters for the continuation prompt. An earlier call's text never supplies the next call's partial. The implementer buffer takes normal, retry and hint output, including a direct writer's narration, and writes it to the checkout's log, not to the isolation directory the writer works in. In-process steers use that same checkout log. Context rebuild on resume reads these records to reconstruct the planner conversation: user turns and planner replies, without the implementer's output.
 
 **Summary records** (`kind: 'summary'`). Written by the compaction system (see SUBSYSTEMS.md section 11). Contains `text`, `summarizedUpTo` timestamp, optional `tokenEstimate`, and optional `structured` fields. On resume, only messages after the latest summary's `summarizedUpTo` are loaded.
 
@@ -382,13 +382,15 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'planner_heartbeat'; elapsedMs: number;
   accumulatedTokens: number; phaseHint?: string }
 
-// Workflow config (emitted once at startup)
+// Workflow config (emitted once at startup); `skills` names the skills every seat call carries
 { type: 'workflow_config'; mode: WorkflowMode;
   plannerTool: string; plannerModel?: string;
-  implementerTool: string; implementerModel?: string }
+  implementerTool: string; implementerModel?: string;
+  skills?: string[] }
 
-// Operational message — `warning` has the same shape
-{ type: 'error'; message: string; category?: string; code?: string }
+// Operational message — `warning` has the same shape without `resetAt`;
+// `resetAt` is the ISO instant a usage-limit halt's quota comes back
+{ type: 'error'; message: string; category?: string; code?: string; resetAt?: string }
 ```
 
 **Where an `error` comes from.** The generic `error` event carries an optional `category`/`code` pair naming the halt that produced it. Two codes sit under `category: 'recovery'`: `retry_exhausted` (the retry ladder ran out for a task, `task/retry.ts`) and `review_failed` (the final review still reported blocking findings after the last fix cycle, `run/task-execution.ts`). The two other halts that stop the run mid-task — an approval gate denial (`approval-denied`) and a task-start snapshot that could not be captured (`snapshot-failed`) — raise their recovery issue without an `error` event: they reach consumers as `recovery_prompted`, which is also what fires the `on_halt` hook. Re-entering the task loop over an unresolved recovery publishes the matching `warning` (`recovery_pending_unresolved`) instead.

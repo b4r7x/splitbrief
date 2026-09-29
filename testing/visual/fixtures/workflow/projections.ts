@@ -22,6 +22,7 @@ import { formatRecoveryPrompt } from '../../../../src/features/workflow/recovery
 import { formatUserEditConflictPrompt } from '../../../../src/features/workflow/user-edit-conflict-prompt.js';
 import { formatTaskReviewPrompt } from '../../../../src/features/workflow/task-review-prompt.js';
 import { projectRunnerCallEvents } from '../../../../src/engine/calls/event-projection.js';
+import type { RunnerCallEvent } from '../../../../src/engine/calls/types.js';
 import {
   createStreamHandler,
   finishClaudeStream,
@@ -34,10 +35,33 @@ import { specTasksCardsProjection, tasksCardProjection } from './artifact-card-p
 import {
   buildRetryExhaustedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
+  buildRunnerUsageLimitRecoveryIssue,
+  runnerHaltRow,
+  type SeatSwapContext,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import {
+  hintHaltDetails,
+  reviewSeatDetails,
+} from '../../../../src/engine/orchestrator/recovery/builders/details.js';
+import { buildPlannerCallFailedRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/planner.js';
+import {
+  diagnosePlannerCallFailure,
+  type PlannerCallDiagnosis,
+} from '../../../../src/engine/orchestrator/recovery/planner-call-failure.js';
+import { retryFailureLabel } from '../../../../src/engine/orchestrator/task/retry.js';
+import {
+  publishError,
+  publishRecoveryActionSelected,
+  publishRecoveryPrompted,
+  publishRecoveryResolved,
+  publishWarning,
+} from '../../../../src/engine/orchestrator/events.js';
+import type { Config } from '../../../../src/core/schemas/config.js';
+import { error } from '../../../../src/utils/error.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
+import type { EventBus } from '../../../../src/engine/events/types.js';
 import { sanitizeDiscoveredValidation } from '../../../../src/engine/orchestrator/planning/sanitize-discovered-validation.js';
-import type { visualConfig } from '../screen-fixtures.js';
+import { visualConfig, VISUAL_WORKFLOW_SESSION_ID } from '../screen-fixtures.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
 import { RUNNER_IDLE_WARN_MS } from '../../../../src/core/schemas/runner-fields.js';
 import { atRestProjections } from './at-rest-projections.js';
@@ -63,14 +87,6 @@ const WORKFLOW_FEATURE = 'Visual fixture workflow';
 export const WORKFLOW_FIXTURE_REVIEW_FILE = 'testing/visual/fixtures/workflow/projections.ts';
 export const WORKFLOW_FIXTURE_REVIEW_PANEL_FILE =
   'testing/visual/fixtures/workflow/review-fixture.md';
-
-/**
- * The quota halt the recovery scenario projects: 17:00 on the capture clock's own day, an hour
- * after the fixture epoch the clock stands just past (`FIXED_CLOCK`,
- * `testing/visual/gallery/environment.ts`), so the rendered note is the same-day form — a bare
- * clock — in every capture.
- */
-export const WORKFLOW_FIXTURE_RESET_AT = FIXED_TS + 60 * 60_000;
 
 export const WORKFLOW_FIXTURE_SECOND_FILE = 'testing/visual/fixtures/workflow/registry.ts';
 export const WORKFLOW_FIXTURE_TASK_ID_2 = taskId('T902');
@@ -200,8 +216,11 @@ const WORKFLOW_RECOVERY_CHECKOUT_CHANGED_ID = scenarioId('workflow-recovery-chec
 const WORKFLOW_API_CONTEXT_ID = scenarioId('workflow-api-context-insufficient');
 const WORKFLOW_RECOVERY_PLAN_SEAT_ID = scenarioId('workflow-recovery-plan-seat');
 const WORKFLOW_RECOVERY_PLAN_SWAPPED_ID = scenarioId('workflow-recovery-plan-swapped');
+const WORKFLOW_RECOVERY_REVIEW_SEAT_ID = scenarioId('workflow-recovery-review-seat');
+const WORKFLOW_RECOVERY_HINT_SEAT_ID = scenarioId('workflow-recovery-hint-seat');
 const WORKFLOW_PLAN_ACTIVITY_ID = scenarioId('workflow-plan-activity');
 const WORKFLOW_PLANNING_CLAUDE_FRAMES_ID = scenarioId('workflow-planning-claude-frames');
+const WORKFLOW_PLANNER_SESSION_EXPIRED_ID = scenarioId('workflow-planner-session-expired');
 
 const idleProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IDLE_ID,
@@ -670,22 +689,29 @@ const validationProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// Research suggested a package script for two stages. The production sanitizer refuses both on a
-// bus of its own, so the transcript carries the words a real run records, one warning per stage.
-function plannerCommandRefusals(ts: number): EngineEvent[] {
+/** What production code publishes on a bus of its own, stamped in order from `ts`. */
+function publishedEvents(ts: number, publish: (bus: EventBus) => void): EngineEvent[] {
   const bus = createEventBus();
   const events: EngineEvent[] = [];
   bus.subscribe((event) => events.push(event));
-  sanitizeDiscoveredValidation(
-    {
-      language: 'typescript',
-      typecheckCommand: 'npm run typecheck',
-      lintCommand: 'npm run lint',
-      testCommand: 'npm test',
-    },
-    { bus, phase: 'researching' },
-  );
+  publish(bus);
   return events.map((event, index) => ({ ...event, ts: ts + index }));
+}
+
+// Research suggested a package script for two stages. The production sanitizer refuses both on a
+// bus of its own, so the transcript carries the words a real run records, one warning per stage.
+function plannerCommandRefusals(ts: number): EngineEvent[] {
+  return publishedEvents(ts, (bus) =>
+    sanitizeDiscoveredValidation(
+      {
+        language: 'typescript',
+        typecheckCommand: 'npm run typecheck',
+        lintCommand: 'npm run lint',
+        testCommand: 'npm test',
+      },
+      { bus, phase: 'researching' },
+    ),
+  );
 }
 
 const plannerCommandsRefusedProjection: WorkflowFixtureProjection = {
@@ -1326,44 +1352,36 @@ const failureProjection: WorkflowFixtureProjection = {
   ],
 };
 
-const usageLimitRecoveryIssue: RecoveryIssue = {
-  id: 'rec_visual_usage_limit',
-  reason: 'runner-usage-limit',
-  phase: 'implementing',
-  status: 'awaiting-user',
-  taskId: WORKFLOW_FIXTURE_TASK_ID,
-  taskTitle: WORKFLOW_FIXTURE_TEXT.implementationTask,
-  files: [WORKFLOW_FIXTURE_REVIEW_FILE],
-  affectedTaskIds: [WORKFLOW_FIXTURE_TASK_ID],
-  message:
-    'Ollama hit its usage limit. The limit resets at Jul 13, 2026, 5:00 PM; wait for it, switch the seat to another tool, or abort.',
-  details: [
-    'Ollama reported: quota exhausted · resets 5pm',
-    'The run stopped instead of escalating.',
-  ],
-  attempts: 1,
-  maxAttempts: 3,
-  selectedImplementerProfile: 'local-fixture',
-  resetAt: new Date(WORKFLOW_FIXTURE_RESET_AT).toISOString(),
-  switchSeat: {
-    seat: 'build',
-    // Six detected tools: more than the three the text prompt names, so the panel's own height is
-    // proved to follow its action rows and not the offer. Tool-only candidates match the readiness
-    // snapshot shape — the model is chosen in the seat's picker, which taking the swap opens.
-    candidates: [
-      { tool: 'opencode' },
-      { tool: 'codex' },
-      { tool: 'claude-code', model: 'sonnet' },
-      { tool: 'cursor' },
-      { tool: 'copilot' },
-      { tool: 'kilo-code' },
-    ],
-  },
-  facts: { tool: 'Ollama' },
-  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
-  recommendedAction: 'switch-seat',
-  createdAt: new Date(FIXED_TS).toISOString(),
-};
+/** Ollama's words at its limit, in the shape that names its reset as a clock. */
+const OLLAMA_LIMIT_WORDS = 'quota exhausted · resets 5pm';
+
+/**
+ * The BUILD seat out of quota on the brief's first attempt, as the engine halts it. Six tools were
+ * detected: more than the three the text prompt names, so the panel's own height is proved to
+ * follow its action rows and not the offer. Built when the capture reads it, because the tool's
+ * clock resolves against the capture's own clock and zone.
+ */
+function usageLimitRecoveryIssue(): RecoveryIssue {
+  const config = visualConfig();
+  return buildRunnerUsageLimitRecoveryIssue({
+    id: 'rec_visual_usage_limit',
+    task: HALTED_TASK,
+    phase: 'implementing',
+    runner: config.implementer,
+    toolMessage: OLLAMA_LIMIT_WORDS,
+    attempts: 1,
+    maxAttempts: config.workflow.maxRetries,
+    selectedImplementerProfile: 'local-fixture',
+    seatSwap: {
+      seat: 'build',
+      currentTool: '',
+      detectedTools: ['opencode', 'codex', 'claude-code', 'cursor', 'copilot', 'kilo-code'].map(
+        (tool) => ({ tool, ready: true }),
+      ),
+    },
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
 
 const AGY_BUILD_SEAT = {
   kind: 'cli',
@@ -1407,11 +1425,20 @@ const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'question',
   sidebarVisible: false,
-  // A resumed run starts on an empty transcript — `resetWorkflow` rehydrates lifecycle, tasks and
-  // tokens from the saved state and nothing else — and this halt never reaches the run, so staged
-  // events could not survive to the frame. The phase and the task come from the resumed state.
-  events: [],
-  resumeState: haltedResumeState(usageLimitRecoveryIssue),
+  get events() {
+    const issue = usageLimitRecoveryIssue();
+    return publishedEvents(FIXED_TS + 100, (bus) =>
+      publishError({
+        bus,
+        phase: issue.phase,
+        message: runnerHaltRow(issue, OLLAMA_LIMIT_WORDS),
+        resetAt: issue.resetAt,
+      }),
+    );
+  },
+  get resumeState() {
+    return haltedResumeState(usageLimitRecoveryIssue());
+  },
 };
 
 const userEditRecoveryIssue: RecoveryIssue = {
@@ -1648,49 +1675,172 @@ const apiContextRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
+/** Claude Code's words at its session limit, and codex's, each naming the fixture's reset. */
+const CLAUDE_LIMIT_WORDS = "You've hit your session limit · resets 5pm";
+const CODEX_LIMIT_WORDS =
+  "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Jul 13th, 2026 5:00 PM.";
+
+/** The seat the owner plans on; with no reviewer of its own, REVIEW follows it. */
+const CODEX_PLAN_SEAT = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } as const;
+const CODEX_PLAN_CREW: VisualConfigOverrides = { planner: CODEX_PLAN_SEAT };
+
+/** A planner-tier call that failed with the tool's words, as `requireCompletedCall` throws it. */
+function plannerCallFailed(role: 'planner' | 'review' | 'escalation', words: string): unknown {
+  return error('runner-call-failed', `Planner ${role} call failed`, {
+    role,
+    status: 'failed',
+    error: { code: 'turn-failed', message: words },
+  });
+}
+
+/**
+ * What the engine makes of a planner-tier call that failed on a limit. Every halt below is built
+ * when the capture reads it: the tools name their reset as a local clock, which resolves against
+ * the capture's own clock and zone only then.
+ */
+function plannerLimitDiagnosis(
+  input: Readonly<{ err: unknown; label: string; runner: Config['planner'] }>,
+): PlannerCallDiagnosis {
+  return diagnosePlannerCallFailure({ ...input, seat: 'plan' });
+}
+
+/** What the last readiness pass remembered for PLAN: every tool here ready. */
+function planSeatSwap(currentTool: string, tools: readonly string[]): SeatSwapContext {
+  return { seat: 'plan', currentTool, detectedTools: tools.map((tool) => ({ tool, ready: true })) };
+}
+
 /**
  * The plan seat out of quota mid-plan: the halt is about the seat, not a brief, and offers the
  * seat's other ready tools. Every surface that names the move names PLAN, never the build seat.
  */
-const planUsageLimitRecoveryIssue: RecoveryIssue = {
-  id: 'rec_visual_plan_usage_limit',
-  reason: 'runner-usage-limit',
-  seat: 'plan',
-  phase: 'planning',
-  status: 'awaiting-user',
-  files: [],
-  affectedTaskIds: [],
-  message:
-    'Planning failed. Claude Code hit its usage limit — logging in again will not fix this. The limit resets at 5:00 PM; wait for it or switch the planner.',
-  details: ['Claude Code reported: usage limit reached · resets 5pm'],
-  resetAt: new Date(WORKFLOW_FIXTURE_RESET_AT).toISOString(),
-  switchSeat: { seat: 'plan', candidates: [{ tool: 'codex' }, { tool: 'opencode' }] },
-  facts: { tool: 'Claude Code' },
-  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
-  recommendedAction: 'switch-seat',
-  createdAt: new Date(FIXED_TS).toISOString(),
-};
+function planSeatRecoveryIssue(): RecoveryIssue {
+  const planner = visualConfig().planner;
+  return buildPlannerCallFailedRecoveryIssue({
+    id: 'rec_visual_plan_usage_limit',
+    diagnosis: plannerLimitDiagnosis({
+      err: plannerCallFailed('planner', CLAUDE_LIMIT_WORDS),
+      label: 'Planning failed',
+      runner: planner,
+    }),
+    phase: 'planning',
+    seatSwap: planSeatSwap('claude-code', ['claude-code', 'codex', 'opencode']),
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+/**
+ * The final review out of quota on the tool it follows PLAN onto: the halt is the review seat's,
+ * and its swap moves the plan seat, so the review runs on the new tool with it.
+ */
+function reviewSeatRecoveryIssue(): RecoveryIssue {
+  return buildPlannerCallFailedRecoveryIssue({
+    id: 'rec_visual_review_usage_limit',
+    diagnosis: plannerLimitDiagnosis({
+      err: plannerCallFailed('review', CODEX_LIMIT_WORDS),
+      label: 'Final review failed',
+      runner: CODEX_PLAN_SEAT,
+    }),
+    seat: 'review',
+    phase: 'final-review',
+    details: reviewSeatDetails(true),
+    seatSwap: planSeatSwap('codex', ['codex', 'claude-code', 'opencode']),
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+/**
+ * The planner out of quota on a brief's hint: the halt is the plan seat's, and it names the brief,
+ * so taking the swap replays that brief from its first attempt.
+ */
+function hintSeatRecoveryIssue(): RecoveryIssue {
+  const err = plannerCallFailed('escalation', CODEX_LIMIT_WORDS);
+  return buildPlannerCallFailedRecoveryIssue({
+    id: 'rec_visual_hint_usage_limit',
+    diagnosis: plannerLimitDiagnosis({
+      err,
+      label: retryFailureLabel(err, WORKFLOW_FIXTURE_TASK_ID),
+      runner: CODEX_PLAN_SEAT,
+    }),
+    task: HALTED_TASK,
+    phase: 'escalating',
+    details: hintHaltDetails(WORKFLOW_FIXTURE_TASK_ID),
+    seatSwap: planSeatSwap('codex', ['codex', 'claude-code', 'opencode']),
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+/** A PLAN seat that ran out on Codex, and the only other tool it could move to. */
+function planSwappedRecoveryIssue(): RecoveryIssue {
+  return buildPlannerCallFailedRecoveryIssue({
+    id: 'rec_visual_plan_swapped',
+    diagnosis: plannerLimitDiagnosis({
+      err: plannerCallFailed('planner', CODEX_LIMIT_WORDS),
+      label: 'Planning failed',
+      runner: CODEX_PLAN_SEAT,
+    }),
+    phase: 'planning',
+    seatSwap: planSeatSwap('codex', ['codex', 'claude-code']),
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+/** The error row the engine publishes before it raises the halt. */
+function haltErrorEvents(issue: RecoveryIssue): EngineEvent[] {
+  return publishedEvents(FIXED_TS + 100, (bus) =>
+    publishError({ bus, phase: issue.phase, message: issue.message, resetAt: issue.resetAt }),
+  );
+}
 
 const planSeatRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_RECOVERY_PLAN_SEAT_ID,
   feature: WORKFLOW_FEATURE,
   inputMode: 'question',
   sidebarVisible: false,
-  events: [],
-  resumeState: makeWorkflowState({
-    feature: WORKFLOW_FEATURE,
-    startedAt: RESUMED_RUN_STARTED_AT,
-    phase: 'planning',
-    pendingRecovery: planUsageLimitRecoveryIssue,
-  }),
+  get events() {
+    return haltErrorEvents(planSeatRecoveryIssue());
+  },
+  get resumeState() {
+    return makeWorkflowState({
+      feature: WORKFLOW_FEATURE,
+      startedAt: RESUMED_RUN_STARTED_AT,
+      phase: 'planning',
+      pendingRecovery: planSeatRecoveryIssue(),
+    });
+  },
 };
 
-const planSeatHalt = {
-  phase: 'planning',
-  issueId: 'rec_visual_plan_swapped',
-  reason: 'runner-usage-limit',
-} as const;
-const planSeatSwap = { ...planSeatHalt, action: 'switch-seat', seat: 'plan' } as const;
+const reviewSeatRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_REVIEW_SEAT_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    return haltErrorEvents(reviewSeatRecoveryIssue());
+  },
+  config: CODEX_PLAN_CREW,
+  get resumeState() {
+    return makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+      feature: WORKFLOW_FEATURE,
+      startedAt: RESUMED_RUN_STARTED_AT,
+      phase: 'final-review',
+      pendingRecovery: reviewSeatRecoveryIssue(),
+    });
+  },
+};
+
+const hintSeatRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_HINT_SEAT_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    return haltErrorEvents(hintSeatRecoveryIssue());
+  },
+  config: CODEX_PLAN_CREW,
+  get resumeState() {
+    return haltedResumeState(hintSeatRecoveryIssue());
+  },
+};
 
 /**
  * A plan seat that ran out on Codex and was moved onto Claude Code, the planner this fixture's
@@ -1701,37 +1851,27 @@ const planSeatSwappedProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: false,
-  events: [
-    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
-    {
-      type: 'error',
-      ts: FIXED_TS + 100,
-      phase: 'planning',
-      message:
-        'Planning failed. Codex hit its usage limit — logging in again will not fix this. Wait for the limit to reset or switch the planner, then start again.',
-    },
-    {
-      type: 'recovery_prompted',
-      ts: FIXED_TS + 200,
-      ...planSeatHalt,
-      files: [],
-      affectedTaskIds: [],
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
-      recommendedAction: 'switch-seat',
-      headline: 'Usage limit on Codex',
-      resumeCommand: 'splitbrief continue visual-workflow --action switch-seat:claude-code',
-    },
-    { type: 'recovery_action_selected', ts: FIXED_TS + 300, ...planSeatSwap },
-    { type: 'recovery_resolved', ts: FIXED_TS + 400, ...planSeatSwap, outcome: 'continued' },
-    {
-      type: 'planner_status',
-      ts: FIXED_TS + 500,
-      phase: 'planning',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'claude-sonnet-4',
-    },
-  ],
+  get events(): EngineEvent[] {
+    const issue = planSwappedRecoveryIssue();
+    const halt = { phase: issue.phase, issue, action: 'switch-seat' } as const;
+    return [
+      { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+      ...publishedEvents(FIXED_TS + 100, (bus) => {
+        publishError({ bus, phase: issue.phase, message: issue.message, resetAt: issue.resetAt });
+        publishRecoveryPrompted({ bus, phase: issue.phase }, VISUAL_WORKFLOW_SESSION_ID, issue);
+        publishRecoveryActionSelected({ bus, ...halt });
+        publishRecoveryResolved({ bus, ...halt, outcome: 'continued' });
+      }),
+      {
+        type: 'planner_status',
+        ts: FIXED_TS + 500,
+        phase: 'planning',
+        status: 'running',
+        tool: 'claude-code',
+        model: 'claude-sonnet-4',
+      },
+    ];
+  },
 };
 
 /** The seat the defect was seen on: Claude Code's Opus alias at max effort, planning. */
@@ -2148,6 +2288,109 @@ const planningClaudeFramesProjection: WorkflowFixtureProjection = {
   ],
 };
 
+/** A codex planning call's context, as the CLI planner stamps it on every call event. */
+function codexPlanCall(callId: string, attempt: number) {
+  return {
+    callId,
+    role: 'planner',
+    backendKind: 'cli',
+    runnerName: CODEX_PLAN_SEAT.tool,
+    model: CODEX_PLAN_SEAT.model,
+    attempt,
+  } as const;
+}
+
+/** Call events as the workflow bus receives them: the typed event dropped, its activity kept. */
+function planningCallActivity(ts: number, events: readonly RunnerCallEvent[]): EngineEvent[] {
+  return events
+    .flatMap((event, index) =>
+      projectRunnerCallEvents({ ...event, ts: ts + index }, { phase: 'planning', sequence: index }),
+    )
+    .filter((event) => event.type === 'runner_call_activity');
+}
+
+/**
+ * A resumed run whose codex thread is gone, in the events a real run records: the resume fails in
+ * the tool's own words, the run says once that it asks again, and a fresh thread answers. No
+ * recovery menu opens.
+ */
+const plannerSessionExpiredProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_PLANNER_SESSION_EXPIRED_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  config: CODEX_PLAN_CREW,
+  get events(): EngineEvent[] {
+    const expired = codexPlanCall('visual-codex-expired', 1);
+    return [
+      { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+      {
+        type: 'planner_status',
+        ts: FIXED_TS + 50,
+        phase: 'planning',
+        status: 'running',
+        tool: CODEX_PLAN_SEAT.tool,
+        model: CODEX_PLAN_SEAT.model,
+        call: 'plan',
+      },
+      ...planningCallActivity(FIXED_TS + 100, [
+        {
+          type: 'call_warning',
+          ts: FIXED_TS + 100,
+          ...expired,
+          warning: {
+            code: 'stderr_diagnostic',
+            severity: 'warning',
+            source: 'stderr',
+            surface: 'status',
+            channel: 'stderr',
+            fingerprint: 'rw:visual-codex-expired',
+            message:
+              'Error: thread/resume: thread/resume failed: no rollout found for thread id 019a8c3e (code -32600)',
+          },
+        },
+        {
+          type: 'call_error',
+          ts: FIXED_TS + 101,
+          ...expired,
+          status: 'failed',
+          error: { code: 'non-zero-exit', message: 'CLI exited with code 1' },
+          partial: true,
+          startedAt: FIXED_TS + 90,
+          endedAt: FIXED_TS + 101,
+          durationMs: 11,
+          usage: null,
+          nativeSessionId: null,
+        },
+      ]),
+      ...publishedEvents(FIXED_TS + 200, (bus) =>
+        publishWarning({
+          bus,
+          phase: 'planning',
+          message:
+            'Planner session expired; the call runs again on a fresh session with the conversation so far.',
+          safety: { category: 'planner', code: 'planner_session_expired' },
+        }),
+      ),
+      ...planningCallActivity(FIXED_TS + 300, [
+        {
+          type: 'call_session_id',
+          ts: FIXED_TS + 300,
+          ...codexPlanCall('visual-codex-fresh', 2),
+          nativeSessionId: '019a8c41',
+        },
+      ]),
+      {
+        type: 'planner_text',
+        ts: FIXED_TS + 400,
+        phase: 'planning',
+        text: 'Reading the export module before the plan names its files.',
+        content: 'markdown',
+      },
+    ];
+  },
+};
+
 // A CLI seat gone quiet mid-brief. OpenCode reports a tool only once the tool lands, so the idle
 // watchdog warns at its default and the call runs on. The build block's freshness line is the one
 // place that silence is counted; beside it the byline says only that the seat is still working.
@@ -2256,9 +2499,12 @@ const projections = [
   apiContextRecoveryProjection,
   planSeatRecoveryProjection,
   planSeatSwappedProjection,
+  reviewSeatRecoveryProjection,
+  hintSeatRecoveryProjection,
   planActivityProjection,
   planningClaudeFramesProjection,
   implementationSilentProjection,
+  plannerSessionExpiredProjection,
 ] as const;
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =
@@ -2318,13 +2564,26 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
   if (projection.events.length > WORKFLOW_FIXTURE_BOUNDS.maxEventsPerFixture) {
     throw new Error(`Workflow fixture ${projection.scenarioId} exceeds the event bound`);
   }
+  const halts = [
+    usageLimitRecoveryIssue(),
+    planSeatRecoveryIssue(),
+    reviewSeatRecoveryIssue(),
+    hintSeatRecoveryIssue(),
+    planSwappedRecoveryIssue(),
+  ];
+  const engineHaltText = [
+    ...halts.flatMap((issue) => [issue.message, ...issue.details]),
+    runnerHaltRow(usageLimitRecoveryIssue(), OLLAMA_LIMIT_WORDS),
+  ];
   const oversized = projectionStrings(projection).find(
     // The production formatter joins bounded facts and commands into one multiline prompt, and
     // the answered card's flat text joins its bounded qa pairs; neither is independent content.
+    // Nor is a halt the engine composed around the tool's own bounded words.
     (value) =>
       value !== formatTaskReviewPrompt(taskReviewRequest) &&
       value !== ANSWERED_QUESTIONS_TEXT &&
       !retainedWorkspaceNotices.includes(value) &&
+      !engineHaltText.includes(value) &&
       value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
       !projection.question?.questions?.some(
         (question) =>

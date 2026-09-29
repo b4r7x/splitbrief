@@ -5,12 +5,22 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
-import { readConfinedEntry, sameFileEntry, writeConfinedEntry } from './entry.js';
+import { basename, join } from 'node:path';
+import {
+  captureAcquisitionBaseline,
+  entriesMatch,
+  matchesAcquisitionBaseline,
+  readConfinedEntry,
+  readProjectSymlink,
+  sameFileEntry,
+  writeConfinedEntry,
+  writeConfinedSymlink,
+} from './entry.js';
 import type { FileSnapshotEntry } from './entry.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -135,4 +145,167 @@ describe('confined file snapshot entries', () => {
       cleanupTempDir(dir);
     }
   });
+
+  itUnix('reads a symlink target only when the link stays inside the project', async () => {
+    const dir = createTempDir('entry-project-link');
+    const outside = createTempDir('entry-project-link-outside');
+    try {
+      mkdirSync(join(dir, 'skills', 'babysit'), { recursive: true });
+      mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
+      writeFileSync(join(dir, 'plain.txt'), 'plain');
+      symlinkSync('../../skills/babysit', join(dir, '.claude', 'skills', 'babysit'), 'dir');
+      symlinkSync('missing.txt', join(dir, 'dangling.txt'));
+      symlinkSync(join(dir, 'skills'), join(dir, 'absolute'), 'dir');
+      symlinkSync(`../${basename(outside)}`, join(dir, 'escaping'), 'dir');
+      symlinkSync(outside, join(dir, 'exit'), 'dir');
+      symlinkSync('exit/secret.txt', join(dir, 'through-exit.txt'));
+      // Back inside only through the root's own name, which a copy of the tree does not share.
+      symlinkSync(`../${basename(dir)}/plain.txt`, join(dir, 'climbing.txt'));
+
+      expect(await readProjectSymlink(dir, '.claude/skills/babysit')).toBe('../../skills/babysit');
+      expect(await readProjectSymlink(dir, 'dangling.txt')).toBe('missing.txt');
+      for (const file of [
+        'absolute',
+        'escaping',
+        'exit',
+        'through-exit.txt',
+        'climbing.txt',
+        'plain.txt',
+        'none',
+      ]) {
+        expect(await readProjectSymlink(dir, file)).toBeNull();
+      }
+    } finally {
+      cleanupTempDir(outside);
+      cleanupTempDir(dir);
+    }
+  });
+
+  // The kernel resolves a name before the `..` after it, so `sub/..` climbs from
+  // wherever `sub` points, never from where the spelling says.
+  itUnix(
+    'reads a link target by where the kernel lands it: inside the root, outside the control plane',
+    async () => {
+      const root = createTempDir('entry-link-landing');
+      const dir = join(root, 'project');
+      try {
+        mkdirSync(join(dir, 'a', 'b'), { recursive: true });
+        mkdirSync(join(dir, '.git'));
+        mkdirSync(join(root, 'outside'));
+        writeFileSync(join(root, 'outside', 'secret'), 'secret');
+        writeFileSync(join(dir, 'real.txt'), 'real');
+        symlinkSync('.', join(dir, 'sub'));
+        symlinkSync('..', join(dir, 'a', 'up'));
+        symlinkSync('sub/../outside/secret', join(dir, 'evil'));
+        symlinkSync('a/up/../outside/secret', join(dir, 'evil-up'));
+        symlinkSync('sub/../outside/missing', join(dir, 'evil-dangling'));
+        symlinkSync('../../outside/secret', join(dir, 'a', 'hop'));
+        symlinkSync('a/hop', join(dir, 'chain'));
+        symlinkSync('.git', join(dir, 'gitlink'));
+        symlinkSync('../.git', join(dir, 'a', 'gitlink'));
+        symlinkSync('.git/missing', join(dir, 'gitlink-dangling'));
+        symlinkSync('loop-b', join(dir, 'loop-a'));
+        symlinkSync('loop-a', join(dir, 'loop-b'));
+        symlinkSync('..', join(dir, 'a', 'b', 'up'));
+        symlinkSync('.', join(dir, 'a', 'self'));
+        symlinkSync('real.txt', join(dir, 'plain-link'));
+
+        expect(await readProjectSymlink(dir, 'sub')).toBe('.');
+        expect(await readProjectSymlink(dir, 'a/up')).toBe('..');
+        expect(await readProjectSymlink(dir, 'a/b/up')).toBe('..');
+        expect(await readProjectSymlink(dir, 'a/self')).toBe('.');
+        expect(await readProjectSymlink(dir, 'plain-link')).toBe('real.txt');
+        for (const file of [
+          'evil',
+          'evil-up',
+          'evil-dangling',
+          'chain',
+          'gitlink',
+          'a/gitlink',
+          'gitlink-dangling',
+          'loop-a',
+        ]) {
+          expect(await readProjectSymlink(dir, file), file).toBeNull();
+        }
+      } finally {
+        cleanupTempDir(root);
+      }
+    },
+  );
+
+  itUnix(
+    'writes a symlink over a missing, file or link entry, never over a directory or outside the root',
+    async () => {
+      const dir = createTempDir('entry-write-link');
+      try {
+        await writeConfinedSymlink(dir, '.claude/skills/babysit', '../../skills/babysit');
+        writeFileSync(join(dir, 'replaced'), 'file');
+        await writeConfinedSymlink(dir, 'replaced', 'plain.txt');
+        await writeConfinedSymlink(dir, 'replaced', 'other.txt');
+        mkdirSync(join(dir, 'kept', 'inner'), { recursive: true });
+
+        expect(readlinkSync(join(dir, '.claude', 'skills', 'babysit'))).toBe(
+          '../../skills/babysit',
+        );
+        expect(readlinkSync(join(dir, 'replaced'))).toBe('other.txt');
+        await expect(writeConfinedSymlink(dir, 'kept', 'plain.txt')).rejects.toThrow();
+        await expect(writeConfinedSymlink(dir, '../escaped', 'plain.txt')).rejects.toThrow(
+          /unsafe path/,
+        );
+        expect(readdirSync(dir).sort()).toEqual(['.claude', 'kept', 'replaced']);
+        expect(readdirSync(join(dir, 'kept'))).toEqual(['inner']);
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  itUnix('writes nothing into the control plane through a symlinked parent', async () => {
+    const dir = createTempDir('entry-write-control-plane');
+    try {
+      mkdirSync(join(dir, '.git', 'hooks'), { recursive: true });
+      symlinkSync('.git/hooks', join(dir, 'ops'), 'dir');
+
+      for (const write of [
+        () => writeConfinedEntry(dir, 'ops/nested/pre-commit', fileEntry(Buffer.from('x'), 0o755)),
+        () => writeConfinedSymlink(dir, 'ops/pre-commit', 'hook.sh'),
+      ]) {
+        await expect(write()).rejects.toMatchObject({ kind: 'path-confined-control-plane' });
+      }
+      expect(readdirSync(join(dir, '.git', 'hooks'))).toEqual([]);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  itUnix(
+    'matches a symlink only as the same project link, never through it or against the baseline',
+    async () => {
+      const left = createTempDir('entry-match-left');
+      const right = createTempDir('entry-match-right');
+      try {
+        for (const dir of [left, right]) {
+          writeFileSync(join(dir, 'real.txt'), 'real');
+          symlinkSync('real.txt', join(dir, 'link'));
+          symlinkSync(join(left, 'real.txt'), join(dir, 'absolute'));
+        }
+        symlinkSync('link', join(left, 'retargeted'));
+        symlinkSync('real.txt', join(right, 'retargeted'));
+        writeFileSync(join(left, 'replaced'), 'real');
+        symlinkSync('real.txt', join(right, 'replaced'));
+        const baseline = await captureAcquisitionBaseline(left);
+
+        expect(await entriesMatch(left, right, 'link')).toBe(true);
+        expect(await entriesMatch(left, right, 'real.txt')).toBe(true);
+        for (const file of ['absolute', 'retargeted', 'replaced']) {
+          expect(await entriesMatch(left, right, file), file).toBe(false);
+        }
+        expect(await matchesAcquisitionBaseline(left, 'real.txt', baseline)).toBe(true);
+        expect(await matchesAcquisitionBaseline(left, 'link', baseline)).toBe(false);
+      } finally {
+        cleanupTempDir(right);
+        cleanupTempDir(left);
+      }
+    },
+  );
 });

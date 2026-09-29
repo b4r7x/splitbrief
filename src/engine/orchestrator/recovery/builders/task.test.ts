@@ -191,6 +191,20 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     expectValidRecoveryIssue(issue);
   });
 
+  it('recommends no retry when the planner found the brief wrong', () => {
+    const issue = buildRetryExhaustedRecoveryIssue({
+      ...bothVoices,
+      routeBiggerProfile: 'agent-cli',
+      plannerHint:
+        'VERDICT: brief — no retry can produce a change. The deliverable is already in place and correct.',
+      plannerVerdict: 'brief',
+    });
+
+    expect(issue.availableActions).toContain('retry-same-worker');
+    expect(issue.recommendedAction).toBe('pause-run');
+    expectValidRecoveryIssue(issue);
+  });
+
   it('omits Planner said row when nothing is left after stripping the verdict line', () => {
     const issue = buildRetryExhaustedRecoveryIssue({
       ...bothVoices,
@@ -258,7 +272,7 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
   const codexLimit =
     "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 8th, 2026 3:27 PM.";
 
-  it('names the reset time, keeps the tool message verbatim, and never suggests logging in', () => {
+  it('records the reset time, keeps the tool message verbatim, and never suggests logging in', () => {
     const issue = buildRunnerUsageLimitRecoveryIssue({
       task: makeTask({ id: 'T003' }),
       runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
@@ -269,9 +283,11 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
     });
 
     expect(issue.reason).toBe('runner-usage-limit');
-    expect(issue.message).toContain('hit its usage limit');
-    expect(issue.message).toContain('Aug 8, 2026, 3:27 PM');
-    expect(issue.message).not.toMatch(/log ?in|log ?out/i);
+    // The message is stored, so it names no clock; every surface spells `resetAt` when it is read.
+    expect(issue.message).toBe(
+      'OpenAI Codex CLI hit its usage limit. Wait for the limit to reset or change the BUILD tool, then continue.',
+    );
+    expect(issue.resetAt).toBe(new Date(2026, 7, 8, 15, 27).toISOString());
     expect(issue.details.join('\n')).toContain(codexLimit);
     expect(issue.details.join('\n')).toContain('stopped instead of escalating');
     expect(issue.facts?.resetsAt).toMatch(/^2026-08-08T/);

@@ -1,6 +1,14 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -213,6 +221,41 @@ describe('gateAndPromoteChangedFiles', () => {
     expect(outcome.outcome).toBe('promote-conflict');
     expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('user edit\n');
   });
+
+  itUnix(
+    'raises a promotion conflict over a project symlink the worker replaced with a file',
+    async () => {
+      const projectDir = createTempDir('gate-promote-link');
+      dirs.push(projectDir);
+      initEmptyRepo(projectDir);
+      writeFileSync(join(projectDir, 'real.txt'), 'real\n');
+      symlinkSync('real.txt', join(projectDir, 'link'));
+
+      const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+      const workspace = await createStagedProject({ projectDir: projectDir });
+      dirs.push(workspace.projectDir);
+      rmSync(join(workspace.projectDir, 'link'));
+      writeFileSync(join(workspace.projectDir, 'link'), 'worker\n');
+      const conflicts: string[][] = [];
+
+      const task = makeTask({ id: 'T010', file: 'link' });
+      const outcome = await runGate({
+        task,
+        state: makeImplState([task]),
+        projectDir,
+        workspace,
+        taskStartSnapshot,
+        handleConflict: async (s, files) => {
+          conflicts.push(files);
+          return s;
+        },
+      });
+
+      expect(outcome).toMatchObject({ outcome: 'promote-conflict', conflictedFiles: ['link'] });
+      expect(conflicts).toEqual([['link']]);
+      expect(readlinkSync(join(projectDir, 'link'))).toBe('real.txt');
+    },
+  );
 
   it('promotes an approved deletion of an untracked acquisition file to the target', async () => {
     const { projectDir, workspace, taskStartSnapshot } = await acquiredProject('gate-baseline');

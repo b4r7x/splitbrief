@@ -7,6 +7,8 @@ import { sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { buildResumeContext } from './rebuild.js';
+import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/phase-call.js';
+import { REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
 
 let dirs: string[] = [];
 
@@ -44,6 +46,70 @@ describe('buildResumeContext', () => {
       { role: 'assistant', content: 'hi there' },
     ]);
     expect(result.warning).toBeUndefined();
+  });
+
+  it("rebuilds the planner conversation without the implementer's output", async () => {
+    const { projectDir, sessionId } = setupProject();
+    const now = new Date().toISOString();
+    writeSessionLog(projectDir, sessionId, [
+      { kind: 'message', ts: now, role: 'user', phase: 'planning', text: 'which module?' },
+      { kind: 'message', ts: now, role: 'assistant', phase: 'planning', text: 'The export one.' },
+      {
+        kind: 'message',
+        ts: now,
+        role: 'assistant',
+        phase: 'implementing',
+        text: 'Wrote src/a.ts',
+      },
+      { kind: 'message', ts: now, role: 'user', phase: 'implementing', text: 'keep it small' },
+    ]);
+
+    const result = await buildResumeContext({ ref: { projectDir, sessionId } });
+
+    expect(result.messages).toEqual([
+      { role: 'user', content: 'which module?' },
+      { role: 'assistant', content: 'The export one.' },
+      { role: 'user', content: 'keep it small' },
+    ]);
+  });
+
+  // Before a planner call's document stopped being logged as a message, every document landed in
+  // session.jsonl as assistant text, split at 16 KB. A run resumed from such a log is still handed
+  // only the conversation.
+  it('leaves out the planner documents an older log holds as messages', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const now = new Date().toISOString();
+    const spec = PLANNER_DOCUMENT_FIXTURES.spec;
+    const cut = spec.indexOf('## Acceptance Criteria');
+    writeSessionLog(projectDir, sessionId, [
+      { kind: 'message', ts: now, role: 'user', text: 'add auth' },
+      {
+        kind: 'message',
+        ts: now,
+        role: 'assistant',
+        phase: 'researching',
+        text: PLANNER_DOCUMENT_FIXTURES.research,
+      },
+      {
+        kind: 'message',
+        ts: now,
+        role: 'assistant',
+        phase: 'specifying',
+        text: spec.slice(0, cut),
+      },
+      { kind: 'message', ts: now, role: 'assistant', phase: 'specifying', text: spec.slice(cut) },
+      { kind: 'message', ts: now, role: 'assistant', phase: 'planning', text: 'Which module?' },
+      { kind: 'message', ts: now, role: 'user', phase: 'planning', text: 'the auth one' },
+      { kind: 'message', ts: now, role: 'assistant', phase: 'planning', text: REAL_TASKS_MD },
+    ]);
+
+    const result = await buildResumeContext({ ref: { projectDir, sessionId } });
+
+    expect(result.messages).toEqual([
+      { role: 'user', content: 'add auth' },
+      { role: 'assistant', content: 'Which module?' },
+      { role: 'user', content: 'the auth one' },
+    ]);
   });
 
   it('rebuilds compacted sessions from the latest summary plus later messages', async () => {

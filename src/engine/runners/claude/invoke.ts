@@ -185,6 +185,8 @@ export interface ClaudePlannerStreamOpts {
   executable?: CliExecutableIdentity | null | undefined;
   effort?: EffortLevel | undefined;
   configuredArgs?: readonly string[] | undefined;
+  /** The run's global skills, which the call may read and never write. */
+  skillRoots?: readonly string[] | undefined;
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
   callContext?: RunnerCallContext | undefined;
@@ -202,6 +204,7 @@ export async function runClaudePlannerStream(
     model: opts.model,
     effort: opts.effort,
     configuredArgs: opts.configuredArgs,
+    skillRoots: opts.skillRoots,
   });
   const spawnEnv = opts.env ?? (await defaultClaudeEnv(opts.projectDir, opts.authChannel));
 
@@ -245,6 +248,8 @@ export interface ClaudeOneShotOpts {
   executable?: CliExecutableIdentity | null | undefined;
   effort?: EffortLevel | undefined;
   configuredArgs?: readonly string[] | undefined;
+  /** The run's global skills, which the call may read and never write. */
+  skillRoots?: readonly string[] | undefined;
   signal?: AbortSignal | undefined;
   callContext?: RunnerCallContext | undefined;
   env?: NodeJS.ProcessEnv | undefined;
@@ -259,6 +264,7 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
     model: opts.model,
     effort: opts.effort,
     configuredArgs: opts.configuredArgs,
+    skillRoots: opts.skillRoots,
   });
   const spawnEnv = opts.env ?? (await defaultClaudeEnv(opts.projectDir, opts.authChannel));
 

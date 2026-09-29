@@ -7,7 +7,8 @@ import { gateChangedFiles, type GateChangedFilesDecision } from './gate-files.js
 import { getChangedFilesSinceSnapshot } from './file-snapshots/capture.js';
 import { restoreDirtyFilesFromSnapshot } from './file-snapshots/restore.js';
 import { promoteStagedChanges, stagedProjectError } from './staged-project.js';
-import { readConfinedEntry } from './file-snapshots/entry.js';
+import { readConfinedEntry, type FileSnapshotEntry } from './file-snapshots/entry.js';
+import { pathConfinementError } from '../../../lib/path-confinement.js';
 import {
   persistPromotedFilesEvidence,
   persistPromotionFailureEvidence,
@@ -117,12 +118,17 @@ export async function gateAndPromoteChangedFiles(
     // Restoration material for a denied direct write, and nothing else: it is
     // read after the worker ran, so promotion answers to the workspace's own
     // acquisition baseline instead.
-    const preApprovalEntries = new Map(
-      await Promise.all(
-        changedFiles.map(
-          async (file) => [file, await readConfinedEntry(projectDir, file)] as const,
-        ),
-      ),
+    const preApprovalEntries = new Map<string, FileSnapshotEntry>();
+    await Promise.all(
+      changedFiles.map(async (file) => {
+        try {
+          preApprovalEntries.set(file, await readConfinedEntry(projectDir, file));
+        } catch (err) {
+          // A symlink in the target is never promoted: promotion raises it as a
+          // conflict, so an isolated worker's path there has no entry to keep.
+          if (workspace === undefined || !pathConfinementError.isSymlinkRead(err)) throw err;
+        }
+      }),
     );
     const preApprovedFileSet = new Set(preApprovedFiles);
     const filesNeedingApproval = changedFiles.filter((file) => !preApprovedFileSet.has(file));

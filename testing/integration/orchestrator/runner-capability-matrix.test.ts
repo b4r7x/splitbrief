@@ -171,7 +171,7 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
       });
       const freshVector = freshArgs.join(' ');
       expect(freshVector).not.toContain('resume');
-      expect(freshVector).toContain('--ephemeral');
+      expect(freshVector).not.toContain('--ephemeral');
       expect(freshVector).toContain('--sandbox read-only');
     });
   });

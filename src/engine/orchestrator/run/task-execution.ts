@@ -1,9 +1,10 @@
-import type { Task } from '../../../core/schemas/task.js';
+import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { WorkflowContext } from '../types.js';
+import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 
 import { buildSummary, type SummaryBase } from '../summary/build.js';
 import { publishError } from '../events.js';
@@ -18,6 +19,9 @@ import { decideReviewOutcome } from '../review-fix.js';
 import { REVIEW_CYCLE_CAP } from '../../../core/pipeline-spec/review.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
+import { reviewSeatDetails } from '../recovery/builders/details.js';
+import { plannerCallHaltIssue } from '../recovery/planner-call-failure.js';
+import { finalReviewFailedCause } from '../../../core/recovery/headline.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
 import { PLAN_FILE, REVIEW_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
@@ -216,6 +220,9 @@ export async function runTasksAndReview(
       taskBreakdowns,
       phaseTimings,
       setTrackedState,
+      ...(wctx.context.skillsContext !== undefined && {
+        skillsContext: wctx.context.skillsContext,
+      }),
     });
     state = review.state;
     setTrackedState(state);
@@ -228,6 +235,24 @@ export async function runTasksAndReview(
     // spend. The run stays on this phase, halted on the review seat, until that
     // seat is answered — a fabricated `0 blocking findings` would close it.
     const failure = noVerdictFailure(review);
+    // A seat out of quota or signed out halts the way a planner call does; the
+    // review already published the tool's own words, so no second error row. A
+    // review that follows the planner runs on the plan seat's tool, so its swap
+    // moves the plan seat and the review keeps following it.
+    if (failure?.kind === 'seat-blocked') {
+      const reviewer = resolveReviewerRunner(wctx.config);
+      const followsPlan = reviewer.source === 'planner';
+      const issue = await plannerCallHaltIssue({
+        projectDir: wctx.projectDir,
+        diagnosis: failure.diagnosis,
+        phase: state.phase,
+        seat: 'review',
+        swap: { seat: followsPlan ? 'plan' : 'review', runner: reviewer.runner },
+        details: reviewSeatDetails(followsPlan),
+      });
+      state = raisePendingRecovery({ ...ref, bus: wctx.bus }, state, issue, setTrackedState);
+      return { summary: summaryNow(), completed: false, cancelled: false, state };
+    }
     if (failure !== undefined) {
       const issue = buildReviewFailedRecoveryIssue({
         phase: state.phase,
@@ -245,6 +270,7 @@ export async function runTasksAndReview(
     }
 
     const decision = decideReviewOutcome(review, state.tasks, REVIEW_CYCLE_CAP, cycle);
+    const completedTasks = state.tasks.filter((task) => isTaskCompleted(task.status)).length;
     if (decision.kind === 'pass') {
       state = transitionAndSave(ref, state, { type: 'REVIEW_DONE', reviewStatus: 'passed' });
       setTrackedState(state);
@@ -253,6 +279,7 @@ export async function runTasksAndReview(
         ts: Date.now(),
         phase: state.phase,
         review: 'passed',
+        completedTasks,
       });
       const summary = summaryNow();
       callbacks.onComplete(summary);
@@ -268,11 +295,12 @@ export async function runTasksAndReview(
         phase: state.phase,
         review: 'failed',
         blocking: decision.blocking,
+        completedTasks,
       });
       publishError({
         bus: wctx.bus,
         phase: state.phase,
-        message: `Final review failed with ${decision.blocking} blocking finding${decision.blocking === 1 ? '' : 's'}; see ${REVIEW_FILE}`,
+        message: `${finalReviewFailedCause(decision.blocking)}; see ${REVIEW_FILE}`,
         safety: { category: 'recovery', code: 'review_failed' },
       });
       state = raisePendingRecovery(

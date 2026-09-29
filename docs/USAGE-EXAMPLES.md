@@ -716,7 +716,7 @@ review: passed
 done: 3 tasks
 ```
 
-The count in the closing line is the number of tasks this run completed, so a resumed run reports only the tasks it ran itself.
+The count in the closing line is the number of tasks the run has completed, read from its state, so a resumed or continued run also counts the tasks an earlier process completed.
 
 A task that exhausts its retries stops the run: headless has nobody to answer the recovery, so the stream ends on the `failed` line and the command exits `1` with no `review:` or `done:` line.
 
@@ -771,23 +771,24 @@ review: passed
 done: 2 tasks
 ```
 
-**The three actions `continue` can take:**
+**The four actions `continue` can take:**
 
 | `--action` | What it does |
 |---|---|
 | `skip` | `skip-current-task` — marks the blocked brief skipped, records evidence, and moves on |
 | `retry` | `retry-same-worker` — resets the brief and reruns it in a fresh worker context |
 | `switch-seat:<tool>[:<model>]` | Moves the blocked seat to another detected tool, then reruns the brief there — the answer to a quota halt |
+| `end-run` | Closes the run and starts nothing; the files it wrote stay on disk |
 
-**Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same three lines and exits `1`. An action the issue does not allow exits `1` and names the actions it does allow; a value that is not one of the three exits `2` with `'<value>' is not a recovery action. Use skip, retry, or switch-seat:<tool>[:<model>].` Recoveries whose recommended action needs the panel print `splitbrief resume (<action> is available in the TUI)` instead.
+**Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same three lines and exits `1`. An action the issue does not allow exits `1` and names the actions it does allow; a value that is not a recovery action exits `2` with `'<value>' is not a recovery action. Use skip, retry, switch-seat:<tool>[:<model>], or end-run.` A recovery whose recommended action is a row of the recovery panel prints `Continue with: splitbrief continue <session>, then choose <row> in the recovery panel` instead — `Pause run`, for example — with no `[--plain|--json]`, because the panel needs the TUI.
 
 **See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-continue), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
 ---
 
-### 22. Prime the planner with project skills
+### 22. Prime every seat with project skills
 
-**When:** the repo carries planner skills — house conventions, a testing standard, a security checklist — and you want a scripted run to use them without opening the picker.
+**When:** the repo carries skills — house conventions, a testing standard, a security checklist — and you want a scripted run to use them without opening the picker.
 
 **Run:**
 
@@ -800,7 +801,7 @@ splitbrief start --plain --approve none \
   "add a POST /invoices endpoint"
 ```
 
-**You'll see:** the ids are resolved against the same scan roots the `/skills` picker uses — project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `./.github/skills/`, `./.commandcode/skills/`, `./.kilo/skills/`, `./.kilocode/skills/`, `./.cursor/skills/`, then the global forms of the same — and their text reaches the planner in every planning phase under one `## Active Project Skills` section. Nothing prints for a successful attach; the run simply plans with them.
+**You'll see:** the ids are resolved against the same scan roots the `/skills` picker uses — project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `./.github/skills/`, `./.commandcode/skills/`, `./.kilo/skills/`, `./.kilocode/skills/`, `./.cursor/skills/`, then the global forms of the same — and their text reaches every seat — each planning step, each implementer brief and its retries, the hint call and the final review — under one `## Active Project Skills` section. Nothing prints for a successful attach; the run simply works with them.
 
 An id no root carries fails before planning, so a typo costs no tokens:
 
@@ -810,7 +811,7 @@ Error: Unknown skill: testing-standard (scanned: ./.splitbrief/skills, ./.claude
 
 with exit `2`.
 
-**Variations:** `--skills` also applies to `splitbrief resume` and `splitbrief continue`, in headless and interactive mode alike, where it replaces the selection saved with the session. Interactively, `/skills` opens the picker, `/skills <id> <id>` toggles by id (fuzzy, several at a time), and the command palette carries one `Skill · <name>` row per discovered skill. The section is budgeted at 16 000 characters; past that a `skills_truncated` warning names what was dropped rather than silently shortening the prompt.
+**Variations:** `--skills` also applies to `splitbrief resume` and `splitbrief continue`, in headless and interactive mode alike. There it applies to that continue only: it is not saved, so a later continue without it uses the selection the run saved when it started. Interactively, `/skills` opens the picker, `/skills <id> <id>` toggles by id (fuzzy, several at a time), and the command palette carries one `Skill · <name>` row per discovered skill. The section is budgeted at 16 000 characters; a skill body that does not fit is named by path, never cut, and a `skills_truncated` warning names its skill.
 
 **See also:** [docs/FEATURES.md](./FEATURES.md#skills), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md#skills).
 

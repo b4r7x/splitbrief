@@ -46,6 +46,10 @@ import {
 } from '../providers/api-context-diagnostic.js';
 import { resolveMode } from '../../core/config/runtime/resolve.js';
 import { isRecord } from '../../utils/type-guards.js';
+import {
+  diagnosePlannerCallFailure,
+  type PlannerCallDiagnosis,
+} from './recovery/planner-call-failure.js';
 
 /** The code a failed review carries when the failure names none of its own. */
 export const REVIEW_UNAVAILABLE = 'review-unavailable';
@@ -53,11 +57,13 @@ export const REVIEW_UNAVAILABLE = 'review-unavailable';
 /**
  * Why a review reached no verdict. `insufficient-context` is the packet refusing
  * before anything was dispatched; `call-failed` is a transport or protocol
- * failure, summarized — never a fabricated blocker count.
+ * failure, summarized — never a fabricated blocker count; `seat-blocked` is a
+ * seat that cannot run at all until its quota comes back or its login does.
  */
 export type FinalReviewFailure =
   | Readonly<{ kind: 'insufficient-context'; diagnostic: ApiContextDiagnostic }>
-  | Readonly<{ kind: 'call-failed'; code: string; message: string }>;
+  | Readonly<{ kind: 'call-failed'; code: string; message: string }>
+  | Readonly<{ kind: 'seat-blocked'; diagnosis: PlannerCallDiagnosis }>;
 
 function errorKind(err: unknown): string | undefined {
   return isRecord(err) && typeof err.kind === 'string' ? err.kind : undefined;
@@ -100,6 +106,7 @@ export async function runFinalReviewPhase(opts: {
   taskBreakdowns: TaskTokenUsage[];
   phaseTimings?: Record<string, number>;
   setTrackedState?: ((state: WorkflowState) => void) | undefined;
+  skillsContext?: string | undefined;
 }): Promise<FinalReviewResult> {
   let { state } = opts;
   const {
@@ -205,6 +212,7 @@ export async function runFinalReviewPhase(opts: {
         validation: { recorded: ledger !== null, evidence: validationPromptSection },
         reviewScope,
         queueText,
+        ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
         ...(seat.contextLength !== undefined && { contextLength: seat.contextLength }),
         ...(seat.model !== undefined && { model: seat.model }),
       });
@@ -229,6 +237,7 @@ export async function runFinalReviewPhase(opts: {
         workspaceDiff: fullDiff,
         driftReport: driftPromptSection,
         validationEvidence: validationPromptSection,
+        skillsContext: opts.skillsContext,
       });
       fullPrompt = queueText ? queueText + basePrompt : basePrompt;
     }
@@ -307,15 +316,29 @@ export async function runFinalReviewPhase(opts: {
       seat.source === 'configured'
         ? `Final review failed (reviewer: ${getRunnerCatalogDisplayName(seat.runner)})`
         : 'Final review failed';
-    const message = labelError(label, err);
     // The diagnosis is read off the error's own data, never off its wording, so
     // recovery keeps every missing section this review was refused for.
     const diagnostic = readApiContextDiagnostic(err);
-    failure =
-      diagnostic === null
-        ? { kind: 'call-failed', code: errorKind(err) ?? REVIEW_UNAVAILABLE, message }
-        : { kind: 'insufficient-context', diagnostic };
-    publishError({ bus: bus, phase: state.phase, message });
+    let message: string;
+    let resetAt: string | undefined;
+    if (diagnostic !== null) {
+      message = labelError(label, err);
+      failure = { kind: 'insufficient-context', diagnostic };
+    } else {
+      const diagnosis = diagnosePlannerCallFailure({
+        err,
+        label,
+        runner: seat.runner,
+        seat: seat.source === 'configured' ? 'review' : 'plan',
+      });
+      message = diagnosis.message;
+      resetAt = diagnosis.resetsAt?.toISOString();
+      failure =
+        diagnosis.failure === 'call-failed'
+          ? { kind: 'call-failed', code: errorKind(err) ?? REVIEW_UNAVAILABLE, message }
+          : { kind: 'seat-blocked', diagnosis };
+    }
+    publishError({ bus: bus, phase: state.phase, message, resetAt });
     writeStatus = 'failed';
   }
   if (opts.signal?.aborted) return interrupted();

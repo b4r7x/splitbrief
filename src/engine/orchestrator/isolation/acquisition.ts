@@ -17,12 +17,16 @@ import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture
 import {
   type AcquisitionBaseline,
   captureAcquisitionBaseline,
+  entriesMatch,
   type FileEntryFingerprint,
   type FileSnapshotEntry,
   matchesAcquisitionBaseline,
   readConfinedEntry,
+  readProjectSymlink,
+  removeConfinedSymlink,
   sameFileEntry,
   writeConfinedEntry,
+  writeConfinedSymlink,
 } from '../approval/file-snapshots/entry.js';
 
 const FingerprintsSchema = z.record(
@@ -107,9 +111,7 @@ export async function worktreePromotionConflictIsResolved(input: {
   if (baseline === null || baseline.worktreeDir !== workspacePath) return null;
   if (files.length === 0 || !(await lstat(baseline.worktreeDir)).isDirectory()) return false;
   for (const file of files) {
-    const target = await readConfinedEntry(projectDir, file);
-    const worktree = await readConfinedEntry(baseline.worktreeDir, file);
-    if (sameFileEntry(target, worktree)) continue;
+    if (await entriesMatch(projectDir, baseline.worktreeDir, file)) continue;
     if (baseline.kind === 'unknown') return false;
     if (await matchesAcquisitionBaseline(projectDir, file, baseline.target)) continue;
     if (await matchesAcquisitionBaseline(baseline.worktreeDir, file, baseline.worktree)) continue;
@@ -262,10 +264,20 @@ export async function prepareWorktreeAcquisition(opts: {
         : await getChangedFilesSinceSnapshot(worktreeDir, seedSnapshot);
     for (const file of changed) {
       if (file === '.gitignore' || file.endsWith('/') || isInternalGitStatusPath(file)) continue;
+      if (await entriesMatch(worktreeDir, projectDir, file)) continue;
+      // Promotion never carries a symlink, and the baseline holds none to judge
+      // one by, so the project's link is put back by its target.
+      const link = await readProjectSymlink(projectDir, file);
+      if (link !== null) {
+        await writeConfinedSymlink(worktreeDir, file, link);
+        discarded.push(file);
+        continue;
+      }
       if (!(await matchesAcquisitionBaseline(projectDir, file, targetBaseline))) continue;
+      // A worker's symlink holds no content to keep; the target's entry takes its place.
+      await removeConfinedSymlink(worktreeDir, file);
       const source = await readConfinedEntry(worktreeDir, file);
       const target = await readConfinedEntry(projectDir, file);
-      if (sameFileEntry(source, target)) continue;
       await writeConfinedEntry(worktreeDir, file, target, async () => {
         if (
           !(await matchesAcquisitionBaseline(projectDir, file, targetBaseline)) ||

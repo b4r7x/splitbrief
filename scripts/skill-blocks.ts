@@ -142,7 +142,13 @@ function toolRecipe(toolId: string): string | null {
   const seat = effortInput(implementer.descriptor.effortChannel);
   const bare = { effort: undefined, variant: undefined };
   const implementerInput = { prompt: CLI_PROMPT_SENTINEL, projectDir: '$D', configuredArgs: [] };
-  const plannerInput = { ...implementerInput, mode: 'plan' as const, sessionId: null };
+  // A skill's review spawn is detached and never resumed.
+  const plannerInput = {
+    ...implementerInput,
+    mode: 'plan' as const,
+    sessionId: null,
+    oneShot: true,
+  };
   return [
     ...seatLines(
       'implementer',
@@ -463,7 +469,7 @@ function plainShapes(): string {
         reviewerOutput: 0,
       },
     },
-    { type: 'workflow_complete', ts, phase: 'complete', review: 'failed' },
+    { type: 'workflow_complete', ts, phase: 'complete', review: 'failed', completedTasks: 1 },
   ];
   for (const event of events) sink(event);
   return ['```', chunks.join('').trimEnd(), '```'].join('\n');

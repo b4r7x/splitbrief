@@ -107,7 +107,7 @@ function installFakeCodexPlanner(binDir: string): string {
   const executablePath = join(binDir, 'codex');
   const script = [
     '#!/usr/bin/env node',
-    "const { appendFileSync } = require('node:fs');",
+    "const { appendFileSync, readFileSync } = require('node:fs');",
     `const runLogPath = ${JSON.stringify(runLogPath)};`,
     `const tasks = ${JSON.stringify(tasksMarkdown())};`,
     'appendFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }) + "\\n");',
@@ -115,7 +115,7 @@ function installFakeCodexPlanner(binDir: string): string {
     '  console.log("codex 0.147.0");',
     '  process.exit(0);',
     '}',
-    'const prompt = process.argv[process.argv.length - 1] ?? "";',
+    'const prompt = process.argv[process.argv.length - 1] === "-" ? readFileSync(0, "utf-8") : "";',
     'const threadId = process.argv[process.argv.length - 2] ?? "fake-codex-thread";',
     'if (prompt.includes("Final Implementation Review")) {',
     '  console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "# Final review\\n\\nCLI planner and CLI implementer completed.\\n\\n### Verdict\\npass" } }));',

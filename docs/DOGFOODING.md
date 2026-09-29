@@ -6,7 +6,7 @@ Four rules, in force for every dogfooding run:
 
 1. **Never commit or stage.** The operator leaves every change in the working tree; the owner commits between runs.
 2. **Run the build you just made.** `npm run build` then `node dist/cli.js …`. The global `splitbrief` on PATH is whatever was installed last and is usually stale.
-3. **Stop on the first detected tool defect.** Stop resumably, fix the cause, verify the fix, rebuild, and `continue` the same run. This includes visual defects and false tripwire alarms. A brief or model mistake handled correctly by the tool remains the run's business.
+3. **Stop on the first detected tool defect.** Stop resumably, fix the cause, verify the fix, rebuild, and `continue` the same run. This includes visual defects, weak flows, and false tripwire alarms. A brief or model mistake handled correctly by the tool remains the run's business.
 4. **Every run leaves a record.** Append each defect, repair, and verification result to `.splitbrief/sessions/<id>/babysit.md`. The next supervisor reads that record first.
 
 ## 1. Preflight
@@ -34,7 +34,7 @@ workflow: { approve: all, max_retries: 3, mode: standard, task_review: none }
 
 Model ids come from the tool (`agy models`, `claude --model` aliases `opus`, `sonnet`, `fable`). No `reviewer:` block means the planner holds the review seat.
 
-The task is a file, attached with `@`, kept next to the run's other inputs in `.splitbrief/inbox/<date>-<slug>/tasks.md` (gitignored). Write it for the planner: the goal, the invariants, what is out of scope, and the sizing rule that keeps briefs inside the implementer's limits:
+The task is a file attached with `@`, for example `.nuke/<date>-<topic>/tasks/<id>.md` or `.splitbrief/inbox/<date>-<slug>/tasks.md` (both gitignored). If the task file's first line gives the exact launch command, use it without its seat flags; seats come from `.splitbrief/config.yaml`. Write the task for the planner: the goal, the invariants, what is out of scope, and the sizing rule that keeps briefs inside the implementer's limits:
 
 - one module group per brief (a source file plus its colocated test), never two large modules in one brief;
 - a brief must leave typecheck, lint and tests green on its own, so name every call site a deletion touches;
@@ -88,7 +88,7 @@ Memory: the process should sit in the hundreds of MB. Growth of more than a few 
 
 ## 4. The autofix loop
 
-Classify every failure before allowing further work. The run owns model and brief mistakes when the tool handles them correctly. The operator stops on any tool defect, including crashes, lost documents, false alarms, incorrect counters, labels, and rendering. An uncertain cause also requires a resumable stop for diagnosis. Expected warnings and correctly reported provider limits use normal recovery. Never retry unchanged code or defer a known tool defect until the final review.
+Classify every failure before allowing further work. The run owns model and brief mistakes when the tool handles them correctly. The operator stops on any tool defect, including crashes, lost documents, false alarms, incorrect counters, labels, and rendering. A weak flow is also a tool defect: a dead end, an unclear next action, a wait with no feedback, a manual step that the tool can do, or different behavior for one action on neighboring surfaces. An uncertain cause also requires a resumable stop for diagnosis. Expected warnings and correctly reported provider limits use normal recovery. Never retry unchanged code or defer a known tool defect until the final review.
 
 ```bash
 # 1. stop: esc, esc (resumable) — or ctrl+c ctrl+c, or kill -INT <pid> on a headless run
@@ -100,7 +100,7 @@ $SB continue $ID                     # picks up at the first artifact not on dis
 $SB continue $ID --action retry      # when the run stopped on a recovery: retry | skip | switch-seat:<tool>[:<model>] | end-run
 ```
 
-Inspect visual fixes in the rendered TUI. After rebuilding, reproduce the original interaction in a fresh process and record the result. If it still fails, stop again. Do not skip a brief or end a run to bypass a tool defect.
+Inspect visual and flow fixes with the look-and-logic loop in `CLAUDE.md`. After rebuilding, reproduce the original interaction in a fresh process and record the result. If it still fails, stop again. Do not skip a brief or end a run to bypass a tool defect.
 
 What `continue` does with the saved state (`src/engine/orchestrator/run/init.ts`, `src/core/sessions/run-status.ts`):
 
@@ -123,7 +123,7 @@ From the shell, `continue --implementer <tool> --implementer-model <id>` or `--p
 
 ## 6. Deterministic failures and blocked repairs
 
-A deterministic failure caused by a tool prompt, adapter flag, gate, or default is a tool defect. Stop when detected, diagnose the cause, and fix it before resuming. Do not let the run finish through repeated identical failures. If a repair needs an unauthorized product decision or unavailable credentials, keep the run open and parked. Report the concrete blocker and the saved run ID.
+A deterministic failure caused by a tool prompt, adapter flag, gate, or default is a tool defect. Stop when detected, diagnose the cause, and fix it before resuming. Do not let the run finish through repeated identical failures. If a repair needs an unauthorized product decision or unavailable credentials, keep the run open and parked. Report the concrete blocker and the saved run ID. Record the options in the defect record and ask the owner. Do not invent the decision.
 
 ## 7. Smoke test: stop, continue, finish
 

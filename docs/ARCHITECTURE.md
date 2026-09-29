@@ -80,7 +80,7 @@ src/
 │   ├── config/               YAML load + validation
 │   ├── pipeline-spec/        The countable pipeline rules (modes, caps, retries,
 │   │                         ladder, timeouts, gates, halts, review, divergences)
-│   ├── recovery/             Halt headline + resume-command formatting
+│   ├── recovery/             Halt headline, action labels + resume-command formatting
 │   ├── scope/                declared-set matching (files + Scope bullets)
 │   ├── state/                Workflow state machine + disk persistence
 │   ├── phases.ts             Phase taxonomy (role, cancellable, resumable)
@@ -101,7 +101,7 @@ src/
 │   ├── streaming/            Subprocess spawn + output parsers (stream-json, jsonl)
 │   ├── parsers/              Question/code/scope extractors
 │   ├── detection/            Auto-detect available tools on startup
-│   ├── skill-discovery.ts    Planner skill source discovery
+│   ├── skill-discovery.ts    Skill source discovery
 │   └── availability.ts       Tool-availability probe
 │
 ├── stores/                   External stores (useSyncExternalStore)
@@ -261,7 +261,7 @@ type PlannerCapabilities = {
 | `shell` (default) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | `agent` (default) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
-Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). All other backends fall back to transcript rebuild on resume (`src/engine/orchestrator/transcript/rebuild.ts`).
+Claude Code resumes via `claude --resume <id>`. Codex resumes via `codex exec resume … --json <id> -`, with the prompt on stdin and the id captured from the `thread.started` JSONL event. Only a planning call resumes: a planning step or a spec or plan revision. The review and the hint are one shot on every seat. A resumed run falls back to a transcript rebuild (`src/engine/orchestrator/transcript/rebuild.ts`) when its planner cannot resume a session, when the PLAN seat moved to another tool, or when the state holds no `plannerSessionId` because the tool reported none or its thread expired. A planning call whose thread expires mid-run, a step or a revision, is issued again once, on a fresh session with the same rebuilt transcript (`withExpiredSessionReissue`, `src/engine/orchestrator/resume-context.ts`).
 
 `shell` and `agent` defaults are all-false but can be narrowed or partially declared per project. The schema rejects `supportsSessionResume`, `supportsEffort`, and `supportsImages` when set to `true` because command-based adapters have no session-handle, effort, or image-attachment channel.
 
@@ -497,7 +497,7 @@ src/
 │   │                              modes, brief, retries, ladder, timeouts,
 │   │                              gates, halts, review, baseline, scope,
 │   │                              divergences
-│   ├── recovery/                  headline, resume-command, user-edit-actions
+│   ├── recovery/                  headline, action-label, resume-command, user-edit-actions
 │   ├── scope/                     declared-set: a brief's files plus its Scope
 │   │                              bullets, and the one matcher over them
 │   ├── project-meta.ts            Project name / git origin discovery
@@ -638,8 +638,8 @@ src/
 │   │                              channel; not shell/network sandbox), trust (runner trust
 │   │                              prompts)
 │   ├── session-expiry.ts          Session-expired error detection +
-│   │                              resume-fallback (runWithResumeFallback)
-│   ├── skill-discovery.ts         Planner skill source discovery
+│   │                              the resumed-thread holder
+│   ├── skill-discovery.ts         Skill source discovery
 │   ├── snapshots/
 │   │   ├── path-codec.ts          encodeSnapshotPath (one-way sha256),
 │   │   │                          generateSnapshotId
@@ -895,7 +895,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `replay_started`, `replay_complete` — published only by `readRunEvents` (`src/engine/events/replay.ts`), which wraps a `session.jsonl` read back into an `EngineEvent[]` for `loadEvents` (`src/stores/workflow/actions/load.ts`). See [ENGINE.md](./ENGINE.md#replay).
 
 **Generic (2):**
-`warning`, `error` — both carry an optional `category` / `code` pair naming what produced them: `recovery` / `retry_exhausted` · `review_failed` · `recovery_pending_unresolved`, `skills` / `skills_truncated` (the selected skills exceeded the planner-prompt budget and were cut), `validation` / `no_gates_unknown_stack` (the project matches no validation stack, so the run is review-only) · `validation_format_failed` (the pre-lint formatting of the brief's changed files failed; the lint stage ran anyway).
+`warning`, `error` — both carry an optional `category` / `code` pair naming what produced them: `recovery` / `retry_exhausted` · `review_failed` · `recovery_pending_unresolved`, `planner` / `planner_returned_zero_tasks` (the `tasks` call returned no parsable Task Brief) · `planner_session_expired` (the planner's thread expired, and the planning call runs again on a fresh session with the rebuilt transcript), `skills` / `skills_truncated` (a selected skill's `SKILL.md` body did not fit the 16 000-character skills budget and is named by path instead) · `skills_unresolved` (a skill id the run saved no longer resolves, or a selected skill's file cannot be read), `validation` / `no_gates_unknown_stack` (the project matches no validation stack, so the run is review-only) · `validation_format_failed` (the pre-lint formatting of the brief's changed files failed; the lint stage ran anyway). The `error` of a usage-limit halt also carries `resetAt`, the ISO instant the halt records; its message names no clock, and the transcript row spells the reset when it renders.
 
 ### Exhaustive switch in conversation row rendering
 
@@ -1157,7 +1157,7 @@ The registry holds 27 commands in five categories. Defined in `src/core/runtime/
 |---|---|
 | `/help` | Show help overlay |
 | `/palette` | Open command palette |
-| `/skills` | Select planner skills |
+| `/skills` | Skills for every seat |
 | `/sessions` | Browse past sessions |
 | `/settings` | Crew, validation, workflow |
 | `/home` | Return to home screen |

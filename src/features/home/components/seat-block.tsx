@@ -42,7 +42,7 @@ export function shedToFit(input: {
 }
 
 // A count says a number and leaves the reader to open a picker to learn what it counts. The names
-// are what the planner is actually carrying, and `none` is a state with a word rather than a zero.
+// are what every seat is actually carrying, and `none` is a state with a word rather than a zero.
 function selectedSkillsText(skills: {
   available: readonly SkillMeta[];
   selected: ReadonlySet<string>;

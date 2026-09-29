@@ -14,9 +14,10 @@ import {
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
 import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { writeAndPublishArtifact } from '../artifact-write.js';
-import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { addUsageAndSave, plannerThreadCallbacks, transitionAndSave } from '../state-ops.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
 import { resetDriftChainState } from '../drift/chain-state.js';
+import { withExpiredSessionReissue } from '../resume-context.js';
 import {
   commitQueueMessagesDrained,
   readQueueForPrompt,
@@ -47,15 +48,43 @@ async function regenerateRewoundArtifact(args: {
 
   const regenPrompt =
     formatDrainedMessages([...queuedMessages]) +
-    buildRegeneratePrompt({ artifactType: target, currentContent: current, feedback: comment });
+    buildRegeneratePrompt({
+      artifactType: target,
+      currentContent: current,
+      feedback: comment,
+      skillsContext: wctx.skillsContext,
+    });
   createBusTextHandler({ bus: wctx.bus, phase: state.phase })(
     `\n[Regenerating ${target} with feedback: ${comment}]\n`,
   );
 
-  const regenResult = await planner.regenerate({
-    prompt: regenPrompt,
+  const thread = plannerThreadCallbacks(
+    { projectDir, sessionId },
+    {
+      get: () => state,
+      set: (next) => {
+        state = next;
+      },
+    },
+  );
+  const regenResult = await withExpiredSessionReissue({
     projectDir,
-    callbacks: { onOutput: () => {}, ...(wctx.signal !== undefined && { signal: wctx.signal }) },
+    sessionId,
+    bus: wctx.bus,
+    planner,
+    state,
+    signal: wctx.signal,
+    issue: (priorMessages) =>
+      planner.regenerate({
+        prompt: regenPrompt,
+        projectDir,
+        callbacks: {
+          onOutput: () => {},
+          ...(wctx.signal !== undefined && { signal: wctx.signal }),
+          ...thread,
+        },
+        priorMessages,
+      }),
   });
   state = addUsageAndSave(wctx, state, 'planner', regenResult.usage);
   writeAndPublishArtifact({

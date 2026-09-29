@@ -101,7 +101,7 @@ Runtime state of the active workflow run.
 ### Project -- `src/stores/project/`
 
 - **configStore** -- loaded `Config` object, project directory, CLI overrides, disk persistence.
-- **skillsStore** -- available and selected planner skills.
+- **skillsStore** -- available and selected skills, which every seat of the next run or continue carries; opening a run selects the skills it saved.
 - **detectionStore** -- detected tool availability (git, npm, language runtimes).
 - **sessionsStore** -- past session metadata.
 

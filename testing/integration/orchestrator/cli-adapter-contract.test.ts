@@ -76,7 +76,7 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
     authArgv: ['auth'],
   },
   codex: {
-    transport: 'argv',
+    transport: 'stdin',
     versionLine: canonicalVersionLine('codex', '0.40.0'),
     successLines: ['{"type":"turn.completed"}'],
     authArgv: ['auth'],

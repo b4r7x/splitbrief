@@ -10,6 +10,7 @@ import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { eventPhase } from '../../../core/event-phase.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
@@ -362,4 +363,34 @@ describe('applyRecoveryAction: persisted success effects', () => {
       expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
     );
   });
+});
+
+describe('applyRecoveryAction: the phase of what it publishes', () => {
+  it.each(['retry-same-worker', 'skip-current-task'] as const)(
+    '%s stamps the events after the action with the phase the run moved to',
+    (action) => {
+      const { projectDir, sessionId } = setupSession(`recovery-phase-${action}`);
+      const task = makeTask({ id: 'T040', status: 'in_progress' });
+      const issue = buildRetryExhaustedRecoveryIssue({ task, createdAt, allowRetryOverride: true });
+      const state: WorkflowState = {
+        ...implementingState([task]),
+        phase: 'escalating',
+        pendingRecovery: issue,
+      };
+      saveState({ projectDir, sessionId }, state);
+      const { bus, events } = makeBus(projectDir, sessionId);
+
+      const result = applyRecoveryAction({ projectDir, sessionId, state, action, bus });
+
+      expect(result.state.phase).toBe('implementing');
+      expect(
+        events
+          .filter((event) => event.type !== 'recovery_action_selected')
+          .map((event) => [event.type, eventPhase(event)]),
+      ).toEqual([
+        [action === 'skip-current-task' ? 'task_skipped' : 'task_reset', 'implementing'],
+        ['recovery_resolved', 'implementing'],
+      ]);
+    },
+  );
 });

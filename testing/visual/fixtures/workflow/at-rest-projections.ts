@@ -18,7 +18,7 @@ import {
   resolveProviderRunMetadata,
 } from '../../../../src/engine/providers/cost/breakdown.js';
 import { makeUsage } from '../../../helpers/factories/summary.js';
-import { usageLimitGuidance } from '../../../../src/engine/runners/usage-limit.js';
+import { usageLimitAdvice } from '../../../../src/engine/runners/usage-limit.js';
 import { scenarioId } from '../../contracts/identifiers.js';
 import { VISUAL_FIXTURE_PROJECT_DIR } from '../screen-fixtures.js';
 import type { FixtureAtRestRoute, WorkflowFixtureProjection } from './projections.js';
@@ -638,7 +638,7 @@ const AT_REST_HALTED = record({
         files: [],
         affectedTaskIds: [BRIEFS.wire.id],
         // The halt `buildRunnerUsageLimitRecoveryIssue` writes: the tool by its display name.
-        message: `Ollama hit its usage limit. ${usageLimitGuidance(null)}`,
+        message: usageLimitAdvice({ tool: 'Ollama', seat: 'build' }),
         details: [
           'Ollama reported: usage limit reached',
           'The run stopped instead of escalating this task to the planner.',

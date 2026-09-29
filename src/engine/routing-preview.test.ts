@@ -60,6 +60,40 @@ describe('buildRoutingPreviewMetadata', () => {
     });
   });
 
+  it("counts the run's skills block in the estimate the worker actually receives", async () => {
+    const task = makeTask();
+    const skillsContext = `## Active Project Skills\n\n### AuthSkill\n${'s'.repeat(16_000)}`;
+
+    const [without] = await buildRoutingPreviewMetadata([task], {
+      config: makeConfig(),
+      projectDir,
+    });
+    const [withSkills] = await buildRoutingPreviewMetadata([task], {
+      config: makeConfig(),
+      projectDir,
+      skillsContext,
+    });
+
+    expect((withSkills?.estimatedTokens ?? 0) - (without?.estimatedTokens ?? 0)).toBeGreaterThan(
+      3_000,
+    );
+  });
+
+  it('counts the project name line the worker receives', async () => {
+    const task = makeTask();
+    const [unnamed] = await buildRoutingPreviewMetadata([task], {
+      config: makeConfig(),
+      projectDir,
+    });
+    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ name: 'n'.repeat(8_000) }));
+    const [named] = await buildRoutingPreviewMetadata([task], {
+      config: makeConfig(),
+      projectDir,
+    });
+
+    expect((named?.estimatedTokens ?? 0) - (unnamed?.estimatedTokens ?? 0)).toBeGreaterThan(1_000);
+  });
+
   it('refreshes current code for confined modify targets', async () => {
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src', 'app.ts'), 'export const ok = true;');

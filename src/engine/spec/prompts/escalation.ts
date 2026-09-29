@@ -5,7 +5,14 @@ import {
   codeFenceLanguage,
   isJavaScriptLikeLanguage,
 } from './language-context.js';
-import { buildPrompt, fenced, instructionsSection, type PromptSection } from './builder.js';
+import {
+  buildPrompt,
+  fenced,
+  instructionsSection,
+  skillsSection,
+  type PromptPart,
+  type PromptSection,
+} from './builder.js';
 import { selectRelevantExamples, formatExamplesSection } from './escalation-examples.js';
 import { buildScopeLines } from '../formatter.js';
 import { workspaceRules } from './system.js';
@@ -99,12 +106,14 @@ export function buildHintPrompt(
   error: string,
   languageContext?: LanguageContext,
   handBack?: string,
+  skillsContext?: string,
 ): string {
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const examples = selectRelevantExamples(error, ctx);
-  const sections: PromptSection[] = [
+  const sections: PromptPart[] = [
     taskMetaSection(task, ctx),
     { heading: 'Constraints', body: constraintsBlock(task) },
+    ...skillsSection(skillsContext),
     { heading: 'Validation Error', body: fenced(error) },
   ];
   const handBackText = handBack?.trim() ?? '';

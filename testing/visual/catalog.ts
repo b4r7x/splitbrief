@@ -1092,6 +1092,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-review-seat',
+      title: 'Workflow · quota halt on the review seat',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-review',
+        title: 'Review-seat usage-limit recovery menu',
+        kind: 'question',
+        marker: 'Change PLAN tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-hint-seat',
+      title: "Workflow · quota halt on a brief's hint",
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-hint',
+        title: 'Hint usage-limit recovery menu',
+        kind: 'question',
+        marker: 'Change PLAN tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-plan-swapped',
       title: 'Workflow · plan seat moved to another tool',
       surface: screenSurface('workflow'),
@@ -1298,6 +1330,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Planning transcript' },
         { id: 'activity', title: 'Plan activity block' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-planner-session-expired',
+      title: 'Workflow · a planner thread that expired, asked again on a fresh one',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'planner-session-expired',
+        title: 'Expired thread asked again on a fresh session',
+        kind: 'planning',
+        marker: 'Planner session expired',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+        { id: 'composer', title: 'Workflow composer' },
       ],
     }),
     defineScenario({

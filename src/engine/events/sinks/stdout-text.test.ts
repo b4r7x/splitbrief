@@ -54,7 +54,7 @@ describe('createStdoutTextSink', () => {
           reviewerOutput: 0,
         },
       },
-      { type: 'workflow_complete', ts, phase: 'complete' },
+      { type: 'workflow_complete', ts, phase: 'complete', completedTasks: 1 },
     ]);
 
     expect(lines).toEqual([
@@ -88,6 +88,25 @@ describe('createStdoutTextSink', () => {
       'review: failed (2 blocking)',
       'done: 0 tasks',
     ]);
+  });
+
+  // A continue completes only the briefs left; the completion event carries the run's count.
+  it('prints the completed count the completion event carries, not the briefs it saw complete', () => {
+    const lines = collect([
+      {
+        type: 'task_completed',
+        ts,
+        phase: 'implementing',
+        taskId: taskId('T002'),
+        title: 'Add the second widget',
+        method: 'local',
+        retries: 0,
+        duration: 12,
+      },
+      { type: 'workflow_complete', ts, phase: 'complete', completedTasks: 2 },
+    ]);
+
+    expect(lines.at(-1)).toBe('done: 2 tasks');
   });
 
   it('effect-invalid reason on task failed line', () => {

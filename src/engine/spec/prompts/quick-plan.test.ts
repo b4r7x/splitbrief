@@ -20,6 +20,20 @@ describe('buildQuickPlanPrompt', () => {
     expect(prompt).toContain('SKILL-BODY');
   });
 
+  it('tells the planner every brief carries the skills, and says nothing of them without any', () => {
+    const rule =
+      'Every brief reaches the implementer together with the Active Project Skills section';
+    const withSkills = buildQuickPlanPrompt({
+      feature: 'change feature',
+      projectContext: 'repo',
+      skillsContext: '## Active Project Skills\n\n### AuthSkill\nSKILL-BODY',
+    });
+    expect(withSkills).toContain(rule);
+    expect(
+      buildQuickPlanPrompt({ feature: 'change feature', projectContext: 'repo' }),
+    ).not.toContain(rule);
+  });
+
   it('drops the codebase review and caps the brief count when the work is trivial', () => {
     const prompt = buildQuickPlanPrompt({
       feature: 'rename foo to bar',

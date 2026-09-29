@@ -6,7 +6,12 @@ import { eventPhase } from '../../../core/event-phase.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { BRIEF_QUALITY_FILE, sessionDir, TASKS_FILE } from '../../../core/paths.js';
+import {
+  BRIEF_QUALITY_FILE,
+  BRIEF_READINESS_FILE,
+  sessionDir,
+  TASKS_FILE,
+} from '../../../core/paths.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
 import type { EngineEvent } from '../../events/types.js';
 import { readWorkflowStateHead } from '../state-ops.js';
@@ -113,6 +118,7 @@ async function runApprovalLoop(opts: {
   callbacks: OrchestratorCallbacks;
   config: Config;
   tasks: Task[];
+  skillsContext?: string;
 }): Promise<{
   result: Awaited<ReturnType<typeof runBriefsApprovalLoop>>;
   events: ReturnType<typeof makeBusRecorder>['events'];
@@ -128,6 +134,7 @@ async function runApprovalLoop(opts: {
     state: briefsReviewState(opts.tasks),
     config: opts.config,
     metadata: TEST_METADATA,
+    ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
   });
   return { result, events };
 }
@@ -227,6 +234,40 @@ describe('runBriefsApprovalLoop', () => {
     expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
     expect(reviewPrompts).toEqual([expect.stringContaining('narrow the scope')]);
     expect(result).toMatchObject({ outcome: 'closed' });
+  });
+
+  it("carries the run's skills context into the revision and the readiness preview", async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const skillsContext = `## Active Project Skills\n\n### AuthSkill\n${'s'.repeat(16_000)}`;
+    const reviewPrompts: string[] = [];
+    const planner = makePassingPlanner({
+      review: vi.fn().mockImplementation(async (prompt: string) => {
+        reviewPrompts.push(prompt);
+        return { text: formatTasks([makePassingTask('T001')]), usage: null };
+      }),
+    });
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'narrow the scope' })
+      .mockResolvedValue({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+
+    const { result } = await runApprovalLoop({
+      projectDir,
+      sessionId,
+      planner,
+      callbacks,
+      config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
+      tasks: [makePassingTask('T001')],
+      skillsContext,
+    });
+
+    expect(result).toMatchObject({ outcome: 'accepted' });
+    expect(reviewPrompts).toEqual([expect.stringContaining(skillsContext)]);
+    const readiness = JSON.parse(
+      readFileSync(join(sessionDir(projectDir, sessionId), BRIEF_READINESS_FILE), 'utf8'),
+    ) as { metadata: { estimatedTokens: number }[] };
+    expect(readiness.metadata[0]?.estimatedTokens).toBeGreaterThan(4_000);
   });
 
   it('announces the briefs gate before it asks, when the run arrives from the plan gate', async () => {

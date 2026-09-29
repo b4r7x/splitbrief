@@ -84,17 +84,6 @@ vi.mock('../../lib/process/spawn/line-stream.js', async (importOriginal) => {
     ...actual,
     spawnWithStdin: async (opts: Parameters<typeof actual.spawnWithStdin>[0]) => {
       dispatch.spawns += 1;
-      if (opts.args.includes('--resume')) {
-        opts.onLine(
-          JSON.stringify({
-            type: 'result',
-            is_error: true,
-            session_id: 'sess-old',
-            result: 'session not found: sess-old',
-          }),
-        );
-        return { text: '' };
-      }
       if (dispatch.outcome === 'failed') throw new Error('scripted failed');
       if (dispatch.outcome === 'aborted') {
         dispatch.controller.abort();
@@ -138,10 +127,9 @@ const codexPlanner = (authChannel: Channel) =>
     trustedCli: trustedShimGate({ dir: shimDir, tool: 'codex' }),
   });
 
-const claudePlanner = (authChannel: Channel, initialSessionId?: string) =>
+const claudePlanner = (authChannel: Channel) =>
   createClaudeCodePlanner({
     authChannel,
-    initialSessionId,
     trustedCli: trustedShimGate({ dir: shimDir, tool: 'claude-code' }),
   });
 
@@ -269,15 +257,5 @@ describe('CLI invocation identity at dispatch', () => {
 
     expect(dispatch.spawns).toBe(1);
     expectHostConfiguredIdentity('opencode', 'provider-dependent');
-  });
-
-  it('snapshots every Claude resume attempt anew under its own call id', async () => {
-    await callPhase(claudePlanner(undefined, 'sess-old'), { projectDir, callbacks: callbacks() });
-
-    expect(dispatch.spawns).toBe(2);
-    expectHostConfiguredIdentity('claude-code');
-    const [expired, fallback] = dispatch.recorders;
-    expect(expired?.context.callId).not.toBe(fallback?.context.callId);
-    expect(expired?.context.invocationIdentity).not.toBe(fallback?.context.invocationIdentity);
   });
 });

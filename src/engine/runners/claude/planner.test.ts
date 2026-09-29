@@ -579,6 +579,26 @@ process.stdout.write(JSON.stringify({
     expect(stdin).toContain('go');
   });
 
+  it("hands the planner the run's global skills to read, never to write", async () => {
+    const { argvFile } = installClaudeRecordingShim(shimDir);
+    const root = '/home/me/.claude/skills/auth';
+
+    await runClaudePlannerStream({
+      prompt: 'go',
+      projectDir,
+      sessionId: null,
+      onOutput: () => {},
+      skillRoots: [root],
+    });
+
+    const argv = readFileSync(argvFile, 'utf8').split('\n');
+    const settings = JSON.parse(argv[argv.indexOf('--settings') + 1] ?? '');
+    expect(settings.permissions).toEqual({
+      additionalDirectories: [root],
+      deny: [`Edit(/${root})`, `Edit(/${root}/**)`],
+    });
+  });
+
   it('omits the --effort flag entirely when no effort is configured', async () => {
     const { argvFile } = installClaudeRecordingShim(shimDir);
 

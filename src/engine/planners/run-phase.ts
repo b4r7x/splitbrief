@@ -92,7 +92,7 @@ function formatRepoMapBlock(codebaseContext: string | undefined): string {
   return codebaseContext ? `<repo-map>\n${codebaseContext}\n</repo-map>\n\n` : '';
 }
 
-function prepareInvokeArgs(opts: {
+export function prepareInvokeArgs(opts: {
   prompt: string;
   priorMessages: PriorMessage[] | undefined;
   images: Attachment[] | undefined;
@@ -150,6 +150,7 @@ function buildPhasePrompt(call: PlannerDocumentCall, inputs: PhaseInputs): strin
               plan: inputs.plan ?? '',
               languageContext: inputs.languageContext,
               skillsContext: inputs.skillsContext,
+              briefCap: inputs.briefCap,
             });
       default:
         return assertNever(call);
@@ -268,7 +269,9 @@ async function supplyPlanningContext(opts: {
 /**
  * One planner call per invocation. The returned function is bound to a planner
  * instance, so the prior transcript and the attachments are injected into the
- * first call that instance makes and never repeated on the calls that follow.
+ * first call that instance makes and never repeated on the calls that follow —
+ * unless the seat drops that call's session as expired: the session took none of
+ * it, so the next call, on a fresh session, carries both again.
  */
 export function createPhaseRunner(
   config: PhaseRunnerConfig,
@@ -291,6 +294,12 @@ export function createPhaseRunner(
       sessionId: callbacks.sessionId ?? '',
       phase,
     });
+    // The stream reaches the transcript log once the call settles: a reply is the planner's turn,
+    // but a document is the step's artifact, which later calls are handed as their input.
+    const streamed: string[] = [];
+    const logStreamed = (): void => {
+      for (const chunk of streamed) buffer.append(chunk);
+    };
 
     const priorMessages = priorInjected ? undefined : inputs.priorMessages;
     priorInjected = true;
@@ -337,14 +346,18 @@ export function createPhaseRunner(
           callbacks: {
             onOutput: (text) => {
               callbacks.onOutput(text);
-              buffer.append(text);
+              streamed.push(text);
             },
             onQuestion: (questions) => {
               for (const question of questions) streamedQuestions.set(question.id, question);
               callbacks.onQuestion?.(questions);
             },
             onSessionId: callbacks.onSessionId,
-            onSessionExpired: callbacks.onSessionExpired,
+            onSessionExpired: (previousId) => {
+              priorInjected = false;
+              imagesInjected = false;
+              callbacks.onSessionExpired?.(previousId);
+            },
             sessionId: callbacks.sessionId,
             onCallEvent: callbacks.onCallEvent,
           },
@@ -354,6 +367,7 @@ export function createPhaseRunner(
         }),
       );
     } catch (err) {
+      logStreamed();
       if (callbacks.signal?.aborted) {
         buffer.flushInterrupted();
       } else {
@@ -361,7 +375,6 @@ export function createPhaseRunner(
       }
       throw err;
     }
-    buffer.flush();
 
     const text = result.text;
     for (const question of extractQuestionsFromStream(text))
@@ -382,6 +395,8 @@ export function createPhaseRunner(
       questions.length > 0 ||
       (call === 'tasks' ? tasks?.length === 0 : !isPlannerDocument(call, text))
     ) {
+      logStreamed();
+      buffer.flush();
       return { kind: 'conversation', text, usage: toTokenDelta(result.usage), questions };
     }
     for (const warning of taskWarnings) callbacks.onWarning?.(warning);

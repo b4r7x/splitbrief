@@ -32,7 +32,7 @@ import { getCurrentChangedFiles } from '../../lib/git/files.js';
 import { isInternalGitStatusPath } from '../../core/paths.js';
 import { taskFiles, type Task } from '../../core/schemas/task.js';
 import { undeclaredFiles } from '../../core/scope/declared-set.js';
-import { isUsageLimitDiagnostic } from '../runners/usage-limit.js';
+import { stderrUsageLimit } from '../runners/usage-limit.js';
 import { createIsolationBoundary, isolationToolUseGuard } from './isolation/boundary.js';
 
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
@@ -104,11 +104,9 @@ function assertDeclaredEffect(input: {
   undeclaredWrites: 'reject' | 'gate';
 }): RunnerCallResult {
   if (input.changed.length === 0) {
-    const limit = input.result.warnings.find(
-      (warning) => warning.source === 'stderr' && isUsageLimitDiagnostic(warning.message),
-    );
+    const limit = stderrUsageLimit(input.result.warnings);
     if (limit !== undefined) {
-      return declaredEffectFailure(input.result, 'usage-limit', limit.message);
+      return declaredEffectFailure(input.result, 'usage-limit', limit);
     }
     return declaredEffectFailure(
       input.result,
@@ -183,6 +181,7 @@ export function createCliImplementer(
               checkoutDir: opts.checkoutDir,
               env,
               tool: toolName,
+              ...(opts.skillRoots !== undefined && { skillRoots: opts.skillRoots }),
             });
 
       try {
@@ -211,6 +210,7 @@ export function createCliImplementer(
           effort: config.effort,
           variant: config.variant,
           installedVersion: trustedCli?.installedVersion,
+          skillRoots: opts.skillRoots,
         });
 
         const result = await invokeCliAdapter({

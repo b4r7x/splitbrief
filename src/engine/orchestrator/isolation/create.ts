@@ -35,8 +35,8 @@ import { readCurrentFileContent } from '../approval/file-snapshots/contents.js';
 import {
   captureAcquisitionBaseline,
   type AcquisitionBaseline,
-  readConfinedEntry,
-  sameFileEntry,
+  entriesMatch,
+  removeConfinedSymlink,
 } from '../approval/file-snapshots/entry.js';
 import { restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots/restore.js';
 import { createStagedProject, stripGitignoreBookkeeping } from '../approval/staged-project.js';
@@ -262,10 +262,7 @@ export function createRunIsolation(opts: {
         await readCurrentFileContent(worktreePath, file),
         await readCurrentFileContent(projectDir, file),
       );
-    return !sameFileEntry(
-      await readConfinedEntry(worktreePath, file),
-      await readConfinedEntry(projectDir, file),
-    );
+    return !(await entriesMatch(worktreePath, projectDir, file));
   }
 
   // Every task in the run shares one worktree, so a cleanup reverts only what
@@ -280,6 +277,10 @@ export function createRunIsolation(opts: {
           changed.map(async (file) => ((await isUnpromoted(dir, file)) ? file : null)),
         );
         const discarded = results.filter((file): file is string => file !== null);
+        // A worker's symlink holds no content to restore, so it goes before the
+        // revert. The revert then puts back what the snapshot held at that path,
+        // including a project link that the snapshot recorded.
+        for (const file of discarded) await removeConfinedSymlink(dir, file);
         await restoreDirtyFilesFromSnapshot(dir, snapshot, discarded);
       })
       .catch((err) => {

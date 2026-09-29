@@ -55,7 +55,10 @@ describe('SkillsPicker', () => {
     await flushEffects();
     ui.stdin.write(SPACE);
     await vi.waitFor(
-      () => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 1 selected'),
+      () =>
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+          'Skills for every seat · 1 selected',
+        ),
       { timeout: 5000 },
     );
 
@@ -97,7 +100,10 @@ describe('SkillsPicker', () => {
     await flushEffects();
     ui.stdin.write(SPACE);
     await vi.waitFor(
-      () => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 1 selected'),
+      () =>
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+          'Skills for every seat · 1 selected',
+        ),
       { timeout: 5000 },
     );
     await flushEffects();
@@ -157,7 +163,7 @@ describe('SkillsPicker', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(stripAnsiStyles(frame)).toContain('Skills · 0 selected');
+    expect(stripAnsiStyles(frame)).toContain('Skills for every seat · 0 selected');
     expect(frame).toContain('alpha-filter');
     expect(frame).toContain('⏎ confirm');
     expect(frame).not.toContain('No matching skills');
@@ -317,7 +323,7 @@ describe('SkillsPicker', () => {
       line !== undefined && line.trim().length > 0 && /^[\s+\-─╭╮╰╯]+$/u.test(line);
     expect(isPanelEdge(lines[0])).toBe(true);
     expect(isPanelEdge(lines[lines.length - 1])).toBe(true);
-    expect(frame).toContain('Skills · 0 selected');
+    expect(frame).toContain('Skills for every seat · 0 selected');
     expect(frame).toContain('esc close');
     expect(frame).toMatch(/\+\d+ more/u);
     ui.unmount();
@@ -373,7 +379,7 @@ describe('SkillsPicker', () => {
     expect(frame).toContain('No matching skills');
     expect(frame).not.toContain('alpha');
     expect(frame).not.toContain('bravo');
-    expect(frame).toContain('Skills · 0 selected');
+    expect(frame).toContain('Skills for every seat · 0 selected');
     ui.unmount();
   });
 });
@@ -399,7 +405,10 @@ describe('SkillsPicker row activation', () => {
     const zones = collectClickableZones({ cols: 100, rows: 28 });
     zones.get('list-row:bravo')?.();
     await vi.waitFor(
-      () => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 1 selected'),
+      () =>
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+          'Skills for every seat · 1 selected',
+        ),
       { timeout: 5000 },
     );
     expect(skillsStore.get().selected.size).toBe(0);

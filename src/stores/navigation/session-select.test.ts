@@ -21,6 +21,7 @@ import type {
   PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
 import { parsePreparedConfig } from '../../engine/runners/prepared-execution.js';
+import { skillsStore } from '../project/skills.js';
 import { overlayStore } from '../ui/overlay.js';
 import { hydrateFromState } from '../workflow/actions/hydrate.js';
 import { loadEvents } from '../workflow/actions/load.js';
@@ -164,6 +165,7 @@ beforeEach(() => {
   routerStore.reset();
   sessionSelectStore.reset();
   preparationStore.reset();
+  skillsStore.reset();
 });
 
 afterEach(() => {
@@ -199,6 +201,29 @@ describe('handleSessionSelect', () => {
     }
     expect(sessionSelectStore.get().error).toBeNull();
   });
+
+  it.each([
+    { saved: ['z-skill'], selected: ['z-skill'] },
+    { saved: undefined, selected: [] },
+  ])(
+    'selects the saved skills $saved of the opened run, whatever was selected before',
+    async ({ saved, selected }) => {
+      skillsStore.setSelected(new Set(['x-skill']));
+      const session = makeSession({ id: 'sess-skills', feature: 'saved skills', status: 'open' });
+      saveState(
+        { projectDir: tmp, sessionId: session.id },
+        {
+          ...createInitialState('saved skills'),
+          phase: 'implementing',
+          ...(saved !== undefined && { selectedSkills: saved }),
+        },
+      );
+
+      await handleSessionSelect(session, tmp, sessionSelectDeps());
+
+      expect([...skillsStore.get().selected]).toEqual(selected);
+    },
+  );
 
   it('opens a finished run the same way, without preparing anything', async () => {
     const session = makeSession({ id: 'sess-complete', feature: 'shipped', status: 'complete' });

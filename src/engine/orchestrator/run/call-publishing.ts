@@ -104,7 +104,7 @@ export function withPlannerCallPublishing(
     regenerate: (opts) =>
       planner.regenerate({
         ...opts,
-        callbacks: withPlannerOutputCallbacks(opts.callbacks, ctx),
+        callbacks: withPlannerCallbacks(opts.callbacks, ctx),
       }),
     escalateHint: (opts) =>
       planner.escalateHint({

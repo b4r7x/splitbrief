@@ -17,7 +17,7 @@ import { error } from '../../../../utils/error.js';
 import { pathConfinementError } from '../../../../lib/path-confinement.js';
 import { readConfinedProjectFile } from './contents.js';
 import { uniqueProjectFiles } from './types.js';
-import { readConfinedEntry, type FileSnapshotEntry } from './entry.js';
+import { readConfinedEntry, readProjectSymlink, type FileSnapshotEntry } from './entry.js';
 
 type ExpandedChangedFiles = {
   files: string[];
@@ -26,10 +26,11 @@ type ExpandedChangedFiles = {
 
 export type CaptureSnapshotOptions = {
   /**
-   * Records a changed entry whose final component is a symlink as absent
-   * instead of refusing the capture. Only for workspaces whose tree omits
-   * symlinks by construction (the staged copy skips them); every other caller
-   * keeps the refusal so a symlink is never silently mis-snapshotted.
+   * Records a changed symlink that leaves the project, or has an absolute
+   * target, as absent instead of refusing the capture. Only for workspaces
+   * whose tree omits those links by construction (the staged copy skips them);
+   * every other caller keeps the refusal so a symlink is never silently
+   * mis-snapshotted.
    */
   symlinkedEntriesAsAbsent?: boolean;
 };
@@ -88,9 +89,17 @@ export async function getChangedFilesSnapshot(
   const files = uniqueProjectFiles(expandedChanged);
   const gitlinks = await listGitlinkPaths(projectDir);
   const gitlinkSet = new Set(gitlinks);
+  const captured = files.filter((file) => !gitlinkSet.has(file));
+  // A symlink that stays inside the project is recorded by its target and never
+  // read through; any other symlink reaches the entry read below, which refuses it.
+  const symlinks = new Map<string, string>();
+  for (const file of captured) {
+    const target = await readProjectSymlink(projectDir, file);
+    if (target !== null) symlinks.set(file, target);
+  }
   const entries = await Promise.all(
-    files
-      .filter((file) => !gitlinkSet.has(file))
+    captured
+      .filter((file) => !symlinks.has(file))
       .map(async (file) => {
         let entry: FileSnapshotEntry;
         try {
@@ -121,6 +130,7 @@ export async function getChangedFilesSnapshot(
     dirtyFileContents: {},
     dirtyFileEntries: Object.fromEntries(entries),
     ...(gitlinks.length > 0 ? { gitlinks } : {}),
+    ...(symlinks.size > 0 ? { symlinks: Object.fromEntries(symlinks) } : {}),
   };
 }
 
@@ -153,12 +163,23 @@ export async function getChangedFilesSinceSnapshot(
   projectDir: string,
   snapshot: ChangedFilesSnapshot,
 ): Promise<string[]> {
+  // A recorded project symlink changed once it no longer holds its target:
+  // deleted, pointed elsewhere, or replaced by something that is not that link.
+  // Neither the content hashes nor git status alone report every such change.
+  const modifiedSymlinks: string[] = [];
+  for (const [file, target] of Object.entries(snapshot.symlinks ?? {})) {
+    if ((await readProjectSymlink(projectDir, file)) !== target) modifiedSymlinks.push(file);
+  }
+
   if (snapshot.baselineFileHashes !== undefined) {
+    const hashed = await getChangedFilesSinceBaselineHashes(
+      projectDir,
+      snapshot.baselineFileHashes,
+      { ignoreProjectDir: snapshot.ignoreProjectDir },
+    );
     return withoutProcessOutputSinks(
       projectDir,
-      await getChangedFilesSinceBaselineHashes(projectDir, snapshot.baselineFileHashes, {
-        ignoreProjectDir: snapshot.ignoreProjectDir,
-      }),
+      uniqueInOrder([...hashed, ...modifiedSymlinks]).sort(),
     );
   }
 
@@ -187,7 +208,14 @@ export async function getChangedFilesSinceSnapshot(
       .map(async (file): Promise<string | null> => {
         const storedEntry = snapshot.dirtyFileEntries?.[file];
         if (storedEntry !== undefined) {
-          const current = await readConfinedEntry(projectDir, file);
+          let current: FileSnapshotEntry;
+          try {
+            current = await readConfinedEntry(projectDir, file);
+          } catch (err) {
+            // A symlink now stands where a file or nothing was recorded.
+            if (pathConfinementError.isSymlinkRead(err)) return file;
+            throw err;
+          }
           if (storedEntry === null) return current.kind === 'absent' ? null : file;
           return current.kind === 'file' &&
             current.mode === storedEntry.mode &&
@@ -209,7 +237,12 @@ export async function getChangedFilesSinceSnapshot(
   const committedFiles = (await hasCommits(projectDir))
     ? uniqueProjectFiles(await getCommittedFilesSince(projectDir, snapshot.head))
     : [];
-  const changed = uniqueInOrder([...newChanges, ...modifiedDirtyFiles, ...committedFiles])
+  const changed = uniqueInOrder([
+    ...newChanges,
+    ...modifiedDirtyFiles,
+    ...modifiedSymlinks,
+    ...committedFiles,
+  ])
     .filter((file) => !isInternalGitStatusPath(file))
     .sort();
   return withoutProcessOutputSinks(projectDir, changed);

@@ -1,8 +1,14 @@
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
-import { plannerConversationSection, buildPrompt, instructionsSection } from './builder.js';
+import {
+  plannerConversationSection,
+  buildPrompt,
+  instructionsSection,
+  skillsSection,
+} from './builder.js';
 import { buildTaskFormatExample } from './task-format-example.js';
 import { requiredBriefSectionsProse } from './required-sections.js';
+import { SKILLS_WITH_EVERY_BRIEF } from './tasks.js';
 import { MODES } from '../../../core/pipeline-spec/modes.js';
 import { sliceRuleText } from '../../../core/pipeline-spec/brief.js';
 
@@ -29,10 +35,8 @@ export function buildQuickPlanPrompt(input: QuickPlanPromptInput): string {
     sections: [
       plannerConversationSection,
       { heading: 'Specification', body: feature },
-      {
-        heading: 'Project Context',
-        body: `${projectContext}${skillsContext ? `\n\n${skillsContext}` : ''}`,
-      },
+      { heading: 'Project Context', body: projectContext },
+      ...skillsSection(skillsContext),
       ...buildLanguageContextSections(ctx),
       instructionsSection(`1. ${firstStep}
 2. Compose the complete \`tasks.md\` content with atomic Task Briefs. One brief = one verifiable slice; list every file it writes under \`files\`.
@@ -42,7 +46,7 @@ Each brief must be rendered in this exact markdown shape:
 ${buildTaskFormatExample(ctx)}`),
       {
         heading: 'Rules',
-        body: `- ${sliceRuleText({ briefCap: MODES.quick.briefCap })} Self-contained with all context inlined.
+        body: `- ${sliceRuleText({ briefCap: MODES.quick.briefCap })} Self-contained with all context inlined.${skillsContext ? `\n- ${SKILLS_WITH_EVERY_BRIEF}` : ''}
 - Dependency-ordered. Use \`depends_on\` for sequencing.
 - No spec or plan document needed — Task Briefs are the artifact.
 - Required sections per brief: ${requiredBriefSectionsProse()}.

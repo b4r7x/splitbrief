@@ -333,12 +333,19 @@ describe('handlePlanningFailure', () => {
     expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
     expect(result.state.pendingRecovery?.reason).toBe('runner-usage-limit');
     expect(result.state.pendingRecovery?.resetAt).toBeDefined();
+    expect(result.state.pendingRecovery?.details).toEqual([
+      `OpenAI Codex CLI reported: ${codexLimit}`,
+    ]);
+    // The error row carries the halt's reset for the row to spell; its words name no clock, and
+    // codex's own words drop theirs.
     const published = events.find((event) => event.type === 'error');
-    expect(published?.type === 'error' && published.message).toContain(codexLimit);
-    expect(published?.type === 'error' && published.message).toContain('hit its usage limit');
-    expect(published?.type === 'error' && published.message).toContain('Aug 8, 2026, 3:27 PM');
-    expect(published?.type === 'error' && published.message).not.toContain('codex login');
-    expect(published?.type === 'error' && published.message).not.toContain('codex logout');
+    expect(published?.type === 'error' && published.resetAt).toBe(
+      result.state.pendingRecovery?.resetAt,
+    );
+    const row = published?.type === 'error' ? published.message : '';
+    expect(row).not.toMatch(/15:27|3:27 PM|try again/);
+    expect(row).not.toContain('codex login');
+    expect(row).not.toContain('codex logout');
   });
 
   it('a halted planner call keeps its phase so the step can be re-issued', async () => {
@@ -363,8 +370,11 @@ describe('handlePlanningFailure', () => {
 
     expect(result.state.phase).toBe('planning');
     expect(result.state.closed).toBeUndefined();
+    // The halt keeps this run open: `start` would open a second run, so the words say continue.
     const published = events.find((event) => event.type === 'error');
-    expect(published?.type === 'error' && published.message).toContain('then start again');
+    expect(published?.type === 'error' && published.message).toContain('then continue');
+    expect(published?.type === 'error' && published.message).not.toContain('start again');
+    expect(published?.type === 'error' && published.message).not.toContain('..');
   });
 });
 

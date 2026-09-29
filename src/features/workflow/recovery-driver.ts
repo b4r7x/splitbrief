@@ -300,7 +300,7 @@ export function createRecoveryDriver(
       }
     }
 
-    if (republishPrompt) publishRecoveryPrompted(bus, sessionId, issue);
+    if (republishPrompt) publishRecoveryPrompted({ bus, phase: state.phase }, sessionId, issue);
 
     openRecoveryNotice(issue);
 

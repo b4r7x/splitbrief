@@ -83,6 +83,7 @@ export async function runBriefReadinessGate(opts: {
   projectDir: string;
   modelCache?: ModelCacheAccessor | undefined;
   detectedContextLength?: number | undefined;
+  skillsContext?: string | undefined;
 }): Promise<BriefReadinessGateReport> {
   const metadata = await buildRoutingPreviewMetadata(opts.tasks, {
     config: opts.config,
@@ -91,6 +92,7 @@ export async function runBriefReadinessGate(opts: {
     ...(opts.detectedContextLength !== undefined && {
       detectedContextLength: opts.detectedContextLength,
     }),
+    ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
   });
   return evaluateBriefReadiness(opts.tasks, metadata);
 }
@@ -108,6 +110,7 @@ export async function runBriefReadinessGateAndReport(opts: {
   phase: Phase;
   modelCache?: ModelCacheAccessor | undefined;
   detectedContextLength?: number | undefined;
+  skillsContext?: string | undefined;
 }): Promise<BriefReadinessGateReport> {
   const { tasks, projectDir, sessionId, bus, phase } = opts;
   const report = await runBriefReadinessGate(opts);

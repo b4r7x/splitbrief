@@ -98,11 +98,22 @@ export function createCliPlanner(
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onSessionId' | 'onCallEvent'>;
     callContext: RunnerCallContext;
     mode: 'plan' | 'escalate';
+    threaded: boolean;
     resumeId: string | null;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
   }): Promise<RunnerCallResult> {
-    const { prompt, projectDir, callbacks, callContext, mode, resumeId, signal, sandboxEnv } = opts;
+    const {
+      prompt,
+      projectDir,
+      callbacks,
+      callContext,
+      mode,
+      threaded,
+      resumeId,
+      signal,
+      sandboxEnv,
+    } = opts;
     let unexpectedResumeSessionId: string | null = null;
     let stderrOutput = '';
     const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
@@ -130,6 +141,7 @@ export function createCliPlanner(
       configuredArgs: extraArgs,
       mode,
       sessionId: supportsSessionResume ? resumeId : null,
+      oneShot: !threaded,
       effort: supportsEffort ? effort : undefined,
       variant,
       installedVersion: trustedCli?.installedVersion,
@@ -153,17 +165,16 @@ export function createCliPlanner(
       callContext: withCliInvocationIdentity({ runner: plannerCfg, callContext, executable }),
       onOutput,
       onCallEvent,
-      onSessionId:
-        supportsSessionResume && mode === 'plan'
-          ? (id: string) => {
-              if (resumeId && id !== resumeId) {
-                unexpectedResumeSessionId = id;
-                return;
-              }
-              nativeSession.capture(id);
-              callbacks.onSessionId?.(id);
+      onSessionId: threaded
+        ? (id: string) => {
+            if (resumeId && id !== resumeId) {
+              unexpectedResumeSessionId = id;
+              return;
             }
-          : undefined,
+            nativeSession.capture(id);
+            callbacks.onSessionId?.(id);
+          }
+        : undefined,
       idle: {
         warnMs: plannerCfg.idleWarnMs,
         killMs: plannerCfg.idleKillMs,
@@ -222,11 +233,10 @@ export function createCliPlanner(
       return result;
     };
 
-    const detached = callContext.sessionScope?.kind === 'detached-fresh';
-    const resumeId =
-      supportsSessionResume && accessMode !== 'write-files' && !detached
-        ? nativeSession.getResumeId()
-        : null;
+    // Only a planning call is a turn on the planner's thread. A review, a hint and an escalation
+    // are one stateless call each, as Claude Code's are, and leave no session behind.
+    const threaded = supportsSessionResume && accessMode === 'planning';
+    const resumeId = threaded ? nativeSession.getResumeId() : null;
     try {
       return await finish(
         await runOnce({
@@ -235,6 +245,7 @@ export function createCliPlanner(
           callbacks,
           callContext,
           mode: adapterMode,
+          threaded,
           resumeId,
           signal,
           sandboxEnv: environment,

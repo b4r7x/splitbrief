@@ -23,13 +23,14 @@ import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation/result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import { runnerAuthDisplayName, runnerLoginInstruction } from '../../../runners/auth-failure.js';
-import { parseUsageLimitReset, usageLimitGuidance } from '../../../runners/usage-limit.js';
+import { parseUsageLimitReset, usageLimitAdvice } from '../../../runners/usage-limit.js';
 import {
   HINT_VERDICT_LINE,
   parseHintVerdict,
   type HintVerdictKind,
 } from '../../../spec/prompts/escalation.js';
-import { retryExhaustedCause } from '../../../../core/recovery/headline.js';
+import { finalReviewFailedCause, retryExhaustedCause } from '../../../../core/recovery/headline.js';
+import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
 import { HAND_BACK_PANEL_CHARS } from '../../../../core/pipeline-spec/ladder.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
 import { includes } from '../../../../utils/type-guards.js';
@@ -173,9 +174,8 @@ export function routeBiggerProfileFromDecision(
  * A runner that ran out of quota halts the run the same way a signed-out one
  * does: retrying cannot succeed until the limit resets, and silently
  * escalating every task to the planner is the outcome the halt exists to
- * prevent. The message names the reset time whenever the
- * tool's own diagnostic carried one; login is never suggested because it
- * cannot restore quota.
+ * prevent. The halt records the reset time whenever the tool's own diagnostic
+ * carried one; login is never suggested because it cannot restore quota.
  */
 export function buildRunnerUsageLimitRecoveryIssue(
   opts: RunnerFailureRecoveryOptions,
@@ -198,7 +198,7 @@ export function buildRunnerUsageLimitRecoveryIssue(
     task: opts.task,
     files: taskFiles(opts.task),
     affectedTaskIds: [opts.task.id],
-    message: `${displayName} hit its usage limit. ${usageLimitGuidance(resetsAt)}`,
+    message: usageLimitAdvice({ tool: displayName, seat: 'build' }),
     details: [
       `${displayName} reported: ${opts.toolMessage}`,
       'The run stopped instead of escalating this task to the planner.',
@@ -226,6 +226,16 @@ export function buildRunnerUsageLimitRecoveryIssue(
     ]),
     createdAt: opts.createdAt,
   });
+}
+
+/**
+ * The error row a runner halt publishes: its message, then the runner's own
+ * words. A reset the halt records is dropped from those words: the row spells
+ * it from `resetAt`, so one instant is spelled once.
+ */
+export function runnerHaltRow(issue: RecoveryIssue, toolMessage: string): string {
+  const words = issue.resetAt === undefined ? toolMessage : stripRecoveryResetClause(toolMessage);
+  return `${issue.message} (runner reported: ${words})`;
 }
 
 /**
@@ -303,11 +313,13 @@ export function buildRetryExhaustedRecoveryIssue(
     'pause-run',
     'end-run',
   ]);
-  const recommendedAction = chooseRecommended(actions, [
-    'route-bigger-worker',
-    'retry-same-worker',
-    'pause-run',
-  ]);
+  // A planner that found the brief wrong said no retry can land it, on this worker or a bigger one.
+  const recommendedAction = chooseRecommended(
+    actions,
+    opts.plannerVerdict === 'brief'
+      ? ['pause-run']
+      : ['route-bigger-worker', 'retry-same-worker', 'pause-run'],
+  );
   const plannerWords = opts.plannerHint?.replace(HINT_VERDICT_LINE, '').trim() ?? '';
   const verdict = opts.plannerHint === undefined ? undefined : parseHintVerdict(opts.plannerHint);
   const diagnosis = verdict?.kind === 'brief' ? verdict.diagnosis : (opts.plannerHint ?? '');
@@ -846,13 +858,16 @@ export function buildSnapshotFailedRecoveryIssue(
   });
 }
 
+/** A review that judged nothing on a seat that can still run; a blocked seat halts as its runner. */
+type NoVerdictReviewFailure = Exclude<FinalReviewFailure, { kind: 'seat-blocked' }>;
+
 export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   phase?: Phase | undefined;
   /** Blocking findings the review reported. Absent when it reached no verdict at all. */
   blocking?: number | undefined;
   detail?: string | undefined;
   /** Why the review reached no verdict, when it reached none. */
-  failure?: FinalReviewFailure | undefined;
+  failure?: NoVerdictReviewFailure | undefined;
 }
 
 const REVIEW_SEAT_REMEDY =
@@ -867,7 +882,7 @@ const REVIEW_SEAT_REMEDY =
  */
 function buildNoVerdictReviewIssue(
   opts: ReviewFailedRecoveryOptions,
-  failure: FinalReviewFailure,
+  failure: NoVerdictReviewFailure,
 ): RecoveryIssue {
   const actions = orderedActions(['retry-same-worker', 'pause-run', 'end-run']);
   const diagnostic = failure.kind === 'insufficient-context' ? failure.diagnostic : undefined;
@@ -919,7 +934,7 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
     phase: opts.phase ?? 'final-review',
     files: [],
     affectedTaskIds: [],
-    message: `Final review failed with ${blocking} blocking finding${blocking === 1 ? '' : 's'}`,
+    message: finalReviewFailedCause(blocking),
     details: [opts.detail].filter((detail): detail is string => detail !== undefined),
     facts: compactFacts({ blocking }),
     availableActions: actions,

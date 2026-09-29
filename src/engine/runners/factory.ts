@@ -66,6 +66,7 @@ async function loadPlanner(
           timeout: config.planner.timeout,
           idleWarnMs: config.planner.idleWarnMs,
           idleKillMs: config.planner.idleKillMs,
+          skillRoots: options?.skillRoots,
         });
       }
       const mod = await loadCliPlanner();

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { MODES } from '../../../core/pipeline-spec/modes.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { ensureSessionDir, readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
@@ -97,6 +98,34 @@ describe('regenerateTasks', () => {
 
     expect(seenPrompt).toContain('## Active Project Skills');
     expect(seenPrompt).toContain('REGEN-SKILL-BODY');
+  });
+
+  it("states the run's own mode cap in the regenerated tasks prompt", async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus } = makeBusRecorder();
+
+    const onDisk = makeTask({ id: 'T001', title: 'Disk version of the brief' });
+    writeSpecFile({ projectDir, sessionId }, TASKS_FILE, formatTasks([onDisk]), TEST_METADATA);
+
+    let seenPrompt = '';
+    const planner = makePlanner({
+      review: async (prompt: string) => {
+        seenPrompt = prompt;
+        return { text: formatTasks([onDisk]), usage: null };
+      },
+    });
+
+    await regenerateTasks({
+      projectDir,
+      sessionId,
+      planner,
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: { ...createInitialState('feat'), mode: 'quick' },
+      metadata: TEST_METADATA,
+    });
+
+    expect(seenPrompt).toContain(`Emit at most ${MODES.quick.briefCap} briefs in all.`);
   });
 
   it('falls back to state.tasks when tasks.md is absent on disk', async () => {

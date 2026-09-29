@@ -146,8 +146,17 @@ export async function admitBriefs(opts: {
 }): Promise<PlanningPhaseResult> {
   const { wctx, planner, mode, approveLevel } = opts;
   const { projectDir, config } = wctx;
-  const { sessionId, callbacks, bus, metadata, signal, sinks, modelCache, detectedContextLength } =
-    wctx;
+  const {
+    sessionId,
+    callbacks,
+    bus,
+    metadata,
+    signal,
+    sinks,
+    modelCache,
+    detectedContextLength,
+    skillsContext,
+  } = wctx;
   const quality = await runBriefQualityWithRepair({
     tasks: [...opts.tasks],
     state: opts.state,
@@ -160,6 +169,7 @@ export async function admitBriefs(opts: {
     maxRetries: config.workflow.maxRetries,
     ...(signal === undefined ? {} : { signal }),
     ...(sinks === undefined ? {} : { sinks }),
+    ...(skillsContext === undefined ? {} : { skillsContext }),
   });
   let state = { ...quality.state, tasks: quality.tasks };
   const tasks = quality.tasks;
@@ -211,6 +221,7 @@ export async function admitBriefs(opts: {
       ...(sinks === undefined ? {} : { sinks }),
       ...(modelCache === undefined ? {} : { modelCache }),
       ...(detectedContextLength === undefined ? {} : { detectedContextLength }),
+      ...(skillsContext === undefined ? {} : { skillsContext }),
     });
     switch (loop.outcome) {
       case 'accepted':

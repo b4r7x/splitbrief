@@ -17,6 +17,7 @@ import {
 } from '#testing/helpers/orchestrator-task-context.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
+import type { EngineEvent } from '../../events/types.js';
 import { createValidator } from '../validation/run.js';
 import { runSingleTask } from './step.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
@@ -415,6 +416,22 @@ describe('runSingleTask — signed-out runner', () => {
 const CODEX_USAGE_LIMIT =
   "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 8th, 2026 3:27 PM.";
 
+/**
+ * The halt's error row carries the reset as the instant codex named, for the row to spell the way
+ * the header does; its stored words name no clock, and codex's own words drop theirs.
+ */
+function expectResetNamedOnce(events: EngineEvent[]): void {
+  const row = events.find(
+    (event) => event.type === 'error' && event.message.includes('hit its usage limit'),
+  );
+  expect(row?.type === 'error' && row.resetAt).toBe(new Date(2026, 7, 8, 15, 27).toISOString());
+  const text = row?.type === 'error' ? row.message : '';
+  expect(text).toContain(
+    "(runner reported: You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits.)",
+  );
+  expect(text).not.toMatch(/15:27|3:27 PM/);
+}
+
 describe('runSingleTask — usage-limited runner', () => {
   it('halts on a first-attempt usage limit with the reset time instead of retrying, escalating, or advising a re-login', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -463,7 +480,6 @@ describe('runSingleTask — usage-limited runner', () => {
       taskId: 'T001',
     });
     expect(result.pendingRecovery?.message).toContain('hit its usage limit');
-    expect(result.pendingRecovery?.message).toContain('Aug 8, 2026, 3:27 PM');
     expect(result.pendingRecovery?.message).not.toMatch(/log ?in|log ?out/i);
     expect(result.pendingRecovery?.details.join('\n')).toContain(CODEX_USAGE_LIMIT);
     expect(result.pendingRecovery?.facts?.resetsAt).toMatch(/^2026-08-08T/);
@@ -480,6 +496,7 @@ describe('runSingleTask — usage-limited runner', () => {
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'runner-usage-limit',
     });
+    expectResetNamedOnce(events);
 
     // Once the limit has reset, the retry action resumes the same task.
     const retryResult = applyRecoveryAction({
@@ -555,11 +572,7 @@ describe('runSingleTask — usage-limited runner', () => {
     expect(implementer.retry).toHaveBeenCalledTimes(1);
     expect(planner.escalateHint).not.toHaveBeenCalled();
     expect(planner.escalateFull).not.toHaveBeenCalled();
-    expect(
-      events.find(
-        (event) => event.type === 'error' && event.message.includes('hit its usage limit'),
-      ),
-    ).toBeDefined();
+    expectResetNamedOnce(events);
     // The failing attempt's changes were rolled back like any exhausted task.
     expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe('export const main = 0;\n');
   });

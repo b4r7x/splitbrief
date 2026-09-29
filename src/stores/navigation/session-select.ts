@@ -10,6 +10,7 @@ import type { PreparationOutcome } from '../../engine/runners/prepared-execution
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { createStore, storeBase } from '../create-store.js';
+import { skillsStore } from '../project/skills.js';
 import { feedbackStore } from '../ui/feedback.js';
 import { overlayStore } from '../ui/overlay.js';
 import { CHECKING_TOOLS_STAGE, preparationStore, type PreparationState } from './preparation.js';
@@ -232,5 +233,9 @@ export async function handleSessionSelect(
   const current = routerStore.get();
   if (current.screen === 'workflow' && current.execution.kind === 'local') return;
   publish();
+  // Continuing the run carries the skills it saved, never the last run's selection.
+  if (record.hydration.kind === 'loaded') {
+    skillsStore.setSelected(new Set(record.hydration.state.selectedSkills ?? []));
+  }
   routerStore.navigate({ to: 'workflow', run: record, execution: { kind: 'at-rest' } });
 }

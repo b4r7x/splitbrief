@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { saveDetectionCache } from '../../detection/cache.js';
 import { switchSeatOffer } from './builders/task.js';
 import { loadSeatSwapContext } from './seat-swap-context.js';
 
@@ -15,22 +14,11 @@ afterEach(() => {
 
 async function projectWithRememberedTools(
   name: string,
-  cliTools: Parameters<typeof saveDetectionCache>[0]['snapshot']['cliTools'],
+  cliTools: Parameters<typeof rememberDetectedTools>[1],
 ): Promise<string> {
   const projectDir = createTempDir(name);
   dirs.push(projectDir);
-  await saveDetectionCache({
-    projectDir,
-    snapshot: {
-      contextKey: 'readiness-remembered',
-      fetchedAt: Date.now(),
-      validatedAt: Date.now(),
-      generation: 1,
-      requestId: 1,
-      providers: [],
-      cliTools,
-    },
-  });
+  await rememberDetectedTools(projectDir, cliTools);
   return projectDir;
 }
 

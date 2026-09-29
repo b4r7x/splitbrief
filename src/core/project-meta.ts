@@ -1,5 +1,5 @@
 import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { isENOENT } from '../lib/process/errors.js';
 import { error } from '../utils/error.js';
 import { isRecord } from '../utils/type-guards.js';
@@ -25,6 +25,12 @@ export function readPackageJson(
   } finally {
     if (fd !== undefined) closeSync(fd);
   }
+}
+
+/** The name every seat prompt gives the project: its package.json name, else its directory. */
+export function projectName(projectDir: string): string {
+  const name = readPackageJson(projectDir)?.['name'];
+  return typeof name === 'string' ? name : basename(projectDir);
 }
 
 export function packageScript(projectDir: string, name: string): string | null {

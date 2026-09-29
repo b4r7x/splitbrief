@@ -20,6 +20,7 @@ import {
   buildRunnerUsageLimitRecoveryIssue,
   recoveryBuilderForRunnerOutcome,
   routeBiggerProfileFromDecision,
+  runnerHaltRow,
 } from '../recovery/builders/task.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
@@ -70,7 +71,7 @@ function unauthenticatedHalt(
   publishError({
     bus: ctx.bus,
     phase: stepOutcome.state.phase,
-    message: `${issue.message} (runner reported: ${stepOutcome.lastError})`,
+    message: runnerHaltRow(issue, stepOutcome.lastError),
   });
   const nextState = raisePendingRecovery(ctx, stepOutcome.state, issue);
   return { state: nextState, result: failedRetry(stepOutcome.attempts) };
@@ -111,7 +112,8 @@ async function usageLimitHalt(
   publishError({
     bus: ctx.bus,
     phase: stepOutcome.state.phase,
-    message: `${issue.message} (runner reported: ${stepOutcome.lastError})`,
+    message: runnerHaltRow(issue, stepOutcome.lastError),
+    resetAt: issue.resetAt,
   });
   const nextState = raisePendingRecovery(ctx, stepOutcome.state, issue);
   return { state: nextState, result: failedRetry(stepOutcome.attempts) };

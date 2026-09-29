@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
@@ -93,6 +93,28 @@ describe('eventRows colored left-rule callouts', () => {
     expect(rowText(bodyRow)).not.toContain(RULE);
     expect(rowText(bodyRow)).toContain('typecheck failed');
     expect(bodyRow.segments[0]?.tone).toBe('textDim');
+  });
+
+  // The session log replays the row on later days, so its words name no clock: the row spells the
+  // halt's reset when it is read, as the workflow header and the recovery panel do.
+  it("spells a halt's reset the way the header does, dated only once it is not today", () => {
+    const event: EngineEventOf<'error'> = {
+      type: 'error',
+      ts: 0,
+      phase: 'implementing',
+      message:
+        'Ollama hit its usage limit. Wait for the limit to reset or change the BUILD tool, then continue.',
+      resetAt: new Date(2026, 6, 13, 17).toISOString(),
+    };
+    const header = () => rowText(requireRow(rowsFor(event), (row) => row.kind === 'callout-top'));
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 6, 13, 9, 30) });
+    try {
+      expect(header()).toMatch(/^error {2}resets 17:00 *$/);
+      vi.setSystemTime(new Date(2026, 6, 14, 9, 30));
+      expect(header()).toMatch(/^error {2}resets Jul 13, 17:00 *$/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders warning events as a yellow left rule + yellow label + dim body', () => {

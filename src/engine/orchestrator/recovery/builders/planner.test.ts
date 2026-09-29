@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
 import type { SeatSwapContext } from './task.js';
 import {
@@ -29,9 +30,8 @@ const plannerSeatSwap: SeatSwapContext = {
 describe('buildPlannerCallFailedRecoveryIssue', () => {
   it('offers a re-issue, a pause and an end, and no task actions', () => {
     const issue = buildPlannerCallFailedRecoveryIssue({
-      failure: 'call-failed',
+      diagnosis: { failure: 'call-failed', message: 'Planning failed.' },
       phase: 'planning',
-      message: 'Planning failed.',
       createdAt,
     });
 
@@ -45,9 +45,8 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
 
   it('adds the seat swap only when another ready tool was detected', () => {
     const issue = buildPlannerCallFailedRecoveryIssue({
-      failure: 'call-failed',
+      diagnosis: { failure: 'call-failed', message: 'Planning failed.' },
       phase: 'planning',
-      message: 'Planning failed.',
       seatSwap: plannerSeatSwap,
       createdAt,
     });
@@ -62,18 +61,19 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
 
   it('recommends the seat swap for a quota halt and the re-issue for a sign-out', () => {
     const limit = buildPlannerCallFailedRecoveryIssue({
-      failure: 'usage-limit',
+      diagnosis: {
+        failure: 'usage-limit',
+        message: 'Codex hit its usage limit.',
+        tool: 'Codex',
+        resetsAt: new Date('2026-08-08T15:27:00.000Z'),
+      },
       phase: 'planning',
-      message: 'Codex hit its usage limit.',
-      resetAt: '2026-08-08T15:27:00.000Z',
       seatSwap: plannerSeatSwap,
-      tool: 'Codex',
       createdAt,
     });
     const signedOut = buildPlannerCallFailedRecoveryIssue({
-      failure: 'unauthenticated',
+      diagnosis: { failure: 'unauthenticated', message: 'Codex is signed out.' },
       phase: 'planning',
-      message: 'Codex is signed out.',
       seatSwap: plannerSeatSwap,
       createdAt,
     });
@@ -86,6 +86,48 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
     expect(signedOut.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(limit);
     expectValidRecoveryIssue(signedOut);
+  });
+
+  it('names the brief a hint halted on and can skip it; a review halt names none', () => {
+    const task = makeTask({ id: 'T004', file: 'src/alpha.ts' });
+    const hint = buildPlannerCallFailedRecoveryIssue({
+      diagnosis: { failure: 'usage-limit', message: 'Codex hit its usage limit.' },
+      task,
+      phase: 'escalating',
+      seatSwap: plannerSeatSwap,
+      createdAt,
+    });
+    const review = buildPlannerCallFailedRecoveryIssue({
+      diagnosis: { failure: 'usage-limit', message: 'Codex hit its usage limit.' },
+      seat: 'review',
+      phase: 'final-review',
+      seatSwap: plannerSeatSwap,
+      createdAt,
+    });
+
+    expect(hint).toMatchObject({
+      seat: 'plan',
+      taskId: 'T004',
+      files: ['src/alpha.ts'],
+      affectedTaskIds: ['T004'],
+    });
+    expect(hint.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'skip-current-task',
+      'pause-run',
+      'end-run',
+    ]);
+    expect(review.seat).toBe('review');
+    expect(review.taskId).toBeUndefined();
+    expect(review.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'pause-run',
+      'end-run',
+    ]);
+    expectValidRecoveryIssue(hint);
+    expectValidRecoveryIssue(review);
   });
 });
 

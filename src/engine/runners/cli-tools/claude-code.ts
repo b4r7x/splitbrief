@@ -55,6 +55,7 @@ type ClaudePlannerBuild = ClaudeBuildCommon &
     configuredArgs: readonly string[];
     mode: 'plan' | 'escalate';
     sessionId: string | null;
+    skillRoots?: readonly string[] | undefined;
   }>;
 
 type ClaudeImplementerBuild = Readonly<{
@@ -64,6 +65,7 @@ type ClaudeImplementerBuild = Readonly<{
   configuredArgs: readonly string[];
   effort?: EffortLevel | undefined;
   installedVersion?: string | undefined;
+  skillRoots?: readonly string[] | undefined;
 }>;
 
 function buildBaseArgs(opts: ClaudeBuildCommon): string[] {
@@ -71,6 +73,18 @@ function buildBaseArgs(opts: ClaudeBuildCommon): string[] {
   if (opts.model !== undefined) args.push('--model', opts.model);
   if (opts.effort !== undefined) args.push('--effort', opts.effort);
   return args;
+}
+
+/**
+ * The run's global skills as working directories every tool may read and none may write:
+ * `acceptEdits` accepts an edit in a working directory, and a deny rule wins over it. A rule
+ * path that starts with `//` is absolute; the bare path covers a skill that is one file.
+ */
+function skillRootPermissions(skillRoots: readonly string[]) {
+  return {
+    additionalDirectories: skillRoots,
+    deny: skillRoots.flatMap((root) => [`Edit(/${root})`, `Edit(/${root}/**)`]),
+  };
 }
 
 function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
@@ -82,6 +96,17 @@ function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
   // conversation with --resume; --session-id names a NEW session and exits 1
   // ("Session ID <uuid> is already in use.") when given a consumed id.
   if (opts.sessionId !== null) args.push('--resume', opts.sessionId);
+  // A read outside the working directory needs a prompt `-p` cannot answer.
+  const skillRoots = opts.skillRoots ?? [];
+  if (skillRoots.length > 0) {
+    args.push(
+      '--settings',
+      JSON.stringify({
+        permissions: skillRootPermissions(skillRoots),
+        sandbox: { filesystem: { allowRead: skillRoots, denyWrite: skillRoots } },
+      }),
+    );
+  }
   return args;
 }
 
@@ -91,17 +116,33 @@ function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
  * `failIfUnavailable: false` is Claude Code's default: a sandbox that cannot start prints a
  * warning and the commands run unconfined, unless a managed policy forces the hard stop.
  * `blockReadsOutsideWorkingDirectories` fences the file tools' reads, and the sandbox's reads
- * under home directories, to the working directory.
+ * under home directories, to the working directory, and the run's global skills with it.
  */
-function sandboxSettings(input: { readable: readonly string[]; blockReads: boolean }): string {
+function sandboxSettings(input: {
+  readable: readonly string[];
+  blockReads: boolean;
+  skillRoots: readonly string[];
+}): string {
+  const { skillRoots } = input;
+  const readable = [...input.readable, ...skillRoots];
   return JSON.stringify({
     sandbox: {
       enabled: true,
       failIfUnavailable: false,
       allowUnsandboxedCommands: false,
-      ...(input.readable.length > 0 && { filesystem: { allowRead: input.readable } }),
+      ...(readable.length > 0 && {
+        filesystem: {
+          allowRead: readable,
+          ...(skillRoots.length > 0 && { denyWrite: skillRoots }),
+        },
+      }),
     },
-    ...(input.blockReads && { permissions: { blockReadsOutsideWorkingDirectories: true } }),
+    ...((input.blockReads || skillRoots.length > 0) && {
+      permissions: {
+        ...(input.blockReads && { blockReadsOutsideWorkingDirectories: true }),
+        ...(skillRoots.length > 0 && skillRootPermissions(skillRoots)),
+      },
+    }),
   });
 }
 
@@ -131,6 +172,7 @@ function implementerBaseArgs(opts: ClaudeImplementerBuild): string[] {
     sandboxSettings({
       readable: linkedNodeModules(opts.projectDir),
       blockReads: blocksReadsOutside(opts.installedVersion),
+      skillRoots: opts.skillRoots ?? [],
     }),
   ];
 }
@@ -326,7 +368,7 @@ function rawContract(role: 'planner' | 'implementer'): RawClaudeCliContract {
             '--permission-mode',
             'acceptEdits',
             '--settings',
-            sandboxSettings({ readable: [], blockReads: true }),
+            sandboxSettings({ readable: [], blockReads: true, skillRoots: [] }),
           ],
     promptTransport: 'stdin',
     expectedRawTerminal: 'result',

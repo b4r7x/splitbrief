@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
 import { uniqueProjectFiles } from './types.js';
@@ -160,6 +160,40 @@ describe('getChangedFilesSnapshot', () => {
     expect(ignored).toContain('vendored/');
     cleanupTempDir(dir);
   });
+
+  it('records an untracked symlink that stays inside the project by its target', async () => {
+    const dir = createTempDir('snapshot-project-link');
+    try {
+      createTestGitRepo(dir, { 'skills/babysit/SKILL.md': '# babysit\n' });
+      mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
+      symlinkSync('../../skills/babysit', join(dir, '.claude', 'skills', 'babysit'), 'dir');
+
+      const snapshot = await getChangedFilesSnapshot(dir);
+
+      expect(snapshot.files).toEqual(['.claude/skills/babysit']);
+      expect(snapshot.symlinks).toEqual({ '.claude/skills/babysit': '../../skills/babysit' });
+      expect(snapshot.dirtyFileEntries).toEqual({});
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it.each([
+    { label: 'an absolute symlink', target: (dir: string) => join(dir, 'skills') },
+    { label: 'a relative symlink that leaves the project', target: () => '../outside' },
+  ])('still refuses $label in the changed set', async ({ target }) => {
+    const dir = createTempDir('snapshot-refused-link');
+    try {
+      createTestGitRepo(dir, { 'skills/babysit/SKILL.md': '# babysit\n' });
+      symlinkSync(target(dir), join(dir, 'linked'), 'dir');
+
+      await expect(getChangedFilesSnapshot(dir)).rejects.toThrow(
+        /refusing to read through symlink/,
+      );
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
 });
 
 describe('getChangedFilesSinceSnapshot', () => {
@@ -203,6 +237,31 @@ describe('getChangedFilesSinceSnapshot', () => {
       const changed = await getChangedFilesSinceSnapshot(dir, snapshot);
 
       expect(changed).toContain('added.ts');
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('reports a recorded project symlink only once it no longer holds its target', async () => {
+    const dir = createTempDir('snapshot-project-link-since');
+    try {
+      createTestGitRepo(dir, {
+        'skills/babysit/SKILL.md': '# babysit\n',
+        'skills/other/SKILL.md': '# other\n',
+      });
+      mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
+      const link = join(dir, '.claude', 'skills', 'babysit');
+      symlinkSync('../../skills/babysit', link, 'dir');
+      const snapshot = await getChangedFilesSnapshot(dir);
+
+      expect(await getChangedFilesSinceSnapshot(dir, snapshot)).toEqual([]);
+
+      rmSync(link);
+      symlinkSync('../../skills/other', link, 'dir');
+      expect(await getChangedFilesSinceSnapshot(dir, snapshot)).toEqual(['.claude/skills/babysit']);
+
+      rmSync(link);
+      expect(await getChangedFilesSinceSnapshot(dir, snapshot)).toEqual(['.claude/skills/babysit']);
     } finally {
       cleanupTempDir(dir);
     }
@@ -279,6 +338,19 @@ describe('getChangedFilesSinceSnapshot — baseline files that leave git status'
     git.status = [];
     git.hasCommits = true;
     git.committedSince = [];
+
+    expect(await getChangedFilesSinceSnapshot(dir, snapshot)).toEqual(['src/app.ts']);
+  });
+
+  it('reports a dirty baseline file the worker replaced with a symlink', async () => {
+    const { dir, snapshot } = await acquire('snapshot-dirty-to-link', {
+      'src/app.ts': 'export const app = "dirty";\n',
+      'src/real.ts': 'export const real = 1;\n',
+    });
+
+    rmSync(join(dir, 'src', 'app.ts'));
+    symlinkSync('real.ts', join(dir, 'src', 'app.ts'));
+    git.status = ['src/app.ts', 'src/real.ts'];
 
     expect(await getChangedFilesSinceSnapshot(dir, snapshot)).toEqual(['src/app.ts']);
   });

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { makeConfig } from '#testing/helpers/factories/config.js';
+import { defaultContext, makeConfig } from '#testing/helpers/factories/config.js';
 import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import {
   makeBusRecorder,
@@ -282,6 +282,39 @@ it.each(['edit', 'revise'] as const)(
   },
 );
 
+it("revises at a resumed briefs gate with the run's skills context", async () => {
+  const { sessionId, state } = parkAtPlanGate([makePassingTask()]);
+  const skillsContext = '## Active Project Skills\n\n### AuthSkill\nRESUME-SKILL-BODY';
+  const review = vi.fn().mockResolvedValue({ text: formatTasks([makePassingTask()]), usage: null });
+  let prompts = 0;
+
+  await resumeParkedApproval({
+    wctx: makeWctx({
+      projectDir,
+      sessionId,
+      planner: makePassingPlanner({ review }),
+      config: makeConfig({ workflow: { mode: 'standard', approve: 'all' } }),
+      context: { ...defaultContext, dir: projectDir, skillsContext },
+      callbacks: makeCallbacks({
+        onApprovalNeeded: async () =>
+          prompts++ > 0
+            ? { approved: true }
+            : { approved: false, action: 'revise', comment: 'narrow the scope' },
+      }).callbacks,
+    }),
+    state: { ...state, phase: 'reviewing-briefs' },
+    setTrackedState: () => {},
+    phaseTimings: {},
+    startTime: Date.now(),
+  });
+
+  expect(review).toHaveBeenCalledWith(
+    expect.stringContaining(skillsContext),
+    expect.anything(),
+    expect.anything(),
+  );
+});
+
 it('checks a legacy run before briefs review without replacing persisted planning artifacts', async () => {
   const parked = parkAtPlanGate([makePassingTask()]);
   const { mode: _mode, approve: _approve, ...legacy } = parked.state;
@@ -321,7 +354,6 @@ it('checks a legacy run before briefs review without replacing persisted plannin
     }),
     state,
     savedState: state,
-    selectedSkills: undefined,
     phaseTimings: {},
     startTime: Date.now(),
     setTrackedState: () => {},

@@ -121,6 +121,7 @@ export type BriefQualityRepairOptions = {
   signal?: AbortSignal | undefined;
   sinks?: WorkflowSinks | undefined;
   queuedMessages?: readonly QueuedMessage[] | undefined;
+  skillsContext?: string | undefined;
 };
 
 export type BriefQualityRepairResult = {
@@ -163,6 +164,7 @@ export async function runBriefQualityWithRepair(
         ...(opts.signal === undefined ? {} : { signal: opts.signal }),
         ...(opts.sinks === undefined ? {} : { sinks: opts.sinks }),
         ...(feedback === undefined ? {} : { feedback }),
+        ...(opts.skillsContext === undefined ? {} : { skillsContext: opts.skillsContext }),
       });
       state = next.state;
       tasks = next.tasks;

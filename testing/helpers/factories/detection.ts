@@ -1,6 +1,7 @@
 import type { CliReadinessState, CliToolDetection } from '../../../src/core/discovery/detection.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
 import { cliDetectionFromReadiness } from '../../../src/engine/detection/detect.js';
+import { saveDetectionCache } from '../../../src/engine/detection/cache.js';
 import { deriveCliReadiness, type CliReadinessFacts } from '../../../src/core/schemas/readiness.js';
 
 export const PROBE_EXECUTABLE = Object.freeze({
@@ -95,4 +96,23 @@ export function cliDetectionsFor(
   tools: readonly CliToolId[],
 ): CliToolDetection[] {
   return tools.map((tool) => cliDetectionFor(state, tool));
+}
+
+/** The detection the last readiness pass left behind, which a halt reads its seat swap offer from. */
+export async function rememberDetectedTools(
+  projectDir: string,
+  cliTools: CliToolDetection[],
+): Promise<void> {
+  await saveDetectionCache({
+    projectDir,
+    snapshot: {
+      contextKey: 'readiness-remembered',
+      fetchedAt: Date.now(),
+      validatedAt: Date.now(),
+      generation: 1,
+      requestId: 1,
+      providers: [],
+      cliTools,
+    },
+  });
 }

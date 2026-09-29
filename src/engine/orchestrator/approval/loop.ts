@@ -8,9 +8,10 @@ import type { Planner } from '../../planners/types.js';
 import { withPerCallAbort } from '../cancellable-call.js';
 import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { writeAndPublishArtifact } from '../artifact-write.js';
-import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { addUsageAndSave, plannerThreadCallbacks, transitionAndSave } from '../state-ops.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
 import { invalidateFrom } from '../planning/invalidate.js';
+import { withExpiredSessionReissue } from '../resume-context.js';
 import { isAbortError } from '../../../utils/abort.js';
 import {
   commitQueueMessagesDrained,
@@ -33,6 +34,7 @@ type ApprovalLoopOptions = {
   signal?: AbortSignal | undefined;
   specMetadata?: SpecMetadata | null | undefined;
   sinks?: WorkflowSinks | undefined;
+  skillsContext?: string | undefined;
 };
 
 export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
@@ -43,6 +45,15 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
 }> {
   const { type, filePath, planner, projectDir, sessionId, callbacks, bus, signal } = opts;
   let { state } = opts;
+  const thread = plannerThreadCallbacks(
+    { projectDir, sessionId },
+    {
+      get: () => state,
+      set: (next) => {
+        state = next;
+      },
+    },
+  );
   let regenerated = false;
   const isSpec = type === 'spec';
   const approvedEvent = isSpec ? ('spec_approved' as const) : ('plan_approved' as const);
@@ -64,6 +75,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
           artifactType: type,
           currentContent: current,
           feedback: comment,
+          skillsContext: opts.skillsContext,
         });
         createBusTextHandler({ bus, phase: state.phase })(
           `\n[Applying ${queue.messages.length} queued message${
@@ -75,8 +87,10 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
           regenResult = await runLiveRegenerate({
             planner,
             projectDir,
+            sessionId,
             bus,
             state,
+            thread,
             statusPhase: regenerationPhase,
             call: type,
             summary: `applying queued input before ${type} review`,
@@ -181,6 +195,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
       artifactType: type,
       currentContent: current,
       feedback: comment,
+      skillsContext: opts.skillsContext,
     });
     createBusTextHandler({ bus: bus, phase: state.phase })(
       `\n[Regenerating ${type} with feedback: ${comment}]\n`,
@@ -190,8 +205,10 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
       regenResult = await runLiveRegenerate({
         planner,
         projectDir,
+        sessionId,
         bus,
         state,
+        thread,
         statusPhase: regenerationPhase,
         call: type,
         summary: `regenerating ${type} from feedback`,
@@ -229,8 +246,10 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
 async function runLiveRegenerate(opts: {
   planner: Planner;
   projectDir: string;
+  sessionId: string;
   bus: EventBus;
   state: WorkflowState;
+  thread: ReturnType<typeof plannerThreadCallbacks>;
   statusPhase: 'specifying' | 'planning';
   call: 'spec' | 'plan';
   summary: string;
@@ -255,15 +274,26 @@ async function runLiveRegenerate(opts: {
       sinks: opts.sinks,
       signal: opts.signal,
       run: (signal) =>
-        opts.planner.regenerate({
-          prompt: opts.prompt,
+        withExpiredSessionReissue({
           projectDir: opts.projectDir,
-          callbacks: {
-            // The reply is the regenerated document itself; it reaches the transcript as the
-            // artifact card published once it is written, never as a body paste.
-            onOutput: () => {},
-            signal,
-          },
+          sessionId: opts.sessionId,
+          bus: opts.bus,
+          planner: opts.planner,
+          state: opts.state,
+          signal,
+          issue: (priorMessages) =>
+            opts.planner.regenerate({
+              prompt: opts.prompt,
+              projectDir: opts.projectDir,
+              callbacks: {
+                // The reply is the regenerated document itself; it reaches the transcript as the
+                // artifact card published once it is written, never as a body paste.
+                onOutput: () => {},
+                signal,
+                ...opts.thread,
+              },
+              priorMessages,
+            }),
         }),
     });
   } finally {

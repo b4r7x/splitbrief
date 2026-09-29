@@ -235,6 +235,24 @@ describe('runEscalationTier hint tier gate handling', () => {
       expect.objectContaining({ changeDetection: 'file-hashes' }),
     );
   });
+
+  it("hands the planner the run's skills context", async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { ctx, escalateHint } = await makeCtx(projectDir, sessionId, { callbacks });
+    const skillsContext = '## Active Project Skills\n\n### AuthSkill\nHINT-SKILL-BODY';
+    const task = makeTask();
+
+    await runEscalationTier(HINT_TIER, {
+      ctx: { ...ctx, context: { ...ctx.context, skillsContext } },
+      task,
+      state: makeImplState([task]),
+      lastError: 'validation failed',
+      priorAttempts: 0,
+    });
+
+    expect(escalateHint).toHaveBeenCalledWith(expect.objectContaining({ skillsContext }));
+  });
   it('composes the retry error from the pipeline-spec hint template', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();

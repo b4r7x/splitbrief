@@ -47,6 +47,7 @@ import {
   errorOutput,
   runnerCallFailureMessage,
   runnerCallOutcome,
+  runnerOwnWords,
   typedRunnerCallErrorMessage,
 } from './call-result.js';
 import { processImplementerOutput, readTaskFileContent } from './extracted-code.js';
@@ -474,6 +475,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         sandboxEnv: opts.sandboxEnv,
         undeclaredWrites: opts.undeclaredWrites,
         ...(checkoutDir !== undefined && { checkoutDir }),
+        ...(opts.context.skillRoots !== undefined && { skillRoots: opts.context.skillRoots }),
       });
       callResult = invokeResult;
     } catch (err) {
@@ -505,12 +507,12 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       const classification = typedRunnerCallErrorMessage(err) ?? toErrorMessage(err);
       const status = isRecord(err) && isRecord(err.data) ? err.data.status : undefined;
       if (status === 401 || isAuthFailureDiagnostic(classification)) {
-        const rawDetail =
-          typedRunnerCallErrorMessage(err) ??
-          (isRecord(err) && isRecord(err.data) && typeof err.data.detail === 'string'
-            ? err.data.detail
-            : classification);
-        return { success: false, output, error: rawDetail, outcome: 'unauthenticated' };
+        return {
+          success: false,
+          output,
+          error: runnerOwnWords(err) ?? classification,
+          outcome: 'unauthenticated',
+        };
       }
       return {
         success: false,

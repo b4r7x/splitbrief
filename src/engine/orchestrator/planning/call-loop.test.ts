@@ -13,12 +13,15 @@ import { phaseInputs } from '#testing/helpers/planner-call.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { appendMessage } from '../../../core/sessions/log-writer.js';
 import { SANDBOX_DIR } from '../../../core/paths.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
-import type { PhaseCallResult, PlannerCallbacks } from '../../planners/types.js';
+import type { PhaseCallResult, PhaseInputs, PlannerCallbacks } from '../../planners/types.js';
 import { HEARTBEAT_THRESHOLD_MS, PLANNER_KEEPALIVE_INTERVAL_MS } from './heartbeat.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import { createContinuationHolder } from '../continuation.js';
+import { readWorkflowStateHead } from '../state-ops.js';
+import { error } from '../../../utils/error.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { Config } from '../../../core/schemas/config.js';
 
@@ -626,5 +629,98 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       .join('');
     expect(publishedText).toContain('Partial findings.');
     expect(publishedText).toContain('Which file');
+  });
+});
+
+describe('runPlannerCallInContinuationLoop — expired planner session', () => {
+  function expiringPlanner(second: () => PhaseCallResult) {
+    const calls: PhaseInputs[] = [];
+    const planner = makePlanner({
+      capabilities: { ...makePlanner().capabilities, supportsSessionResume: true },
+      runPhase: vi
+        .fn()
+        .mockImplementation(
+          async ({ callbacks, inputs }: { callbacks: PlannerCallbacks; inputs: PhaseInputs }) => {
+            calls.push(inputs);
+            if (calls.length > 1) return second();
+            callbacks.onSessionExpired?.('native-gone');
+            throw error('session-resume-expired', 'could not resume session native-gone');
+          },
+        ),
+    });
+    return { planner, calls };
+  }
+
+  it('re-issues the call once on a fresh session with the transcript when the seat drops its thread', async () => {
+    const { projectDir, sessionId } = setupSession();
+    appendMessage(
+      { projectDir, sessionId },
+      { role: 'user', phase: 'specifying', text: 'The export must be named PERIWINKLE-42.' },
+    );
+    const { planner, calls } = expiringPlanner(() => makePhaseCallResult({ call: 'spec' }));
+    const { bus, events } = makeBusRecorder();
+
+    const run = await runPlannerCallInContinuationLoop({
+      wctx: makeWctx(projectDir, sessionId, {
+        bus,
+        continuation: createContinuationHolder({
+          step: { kind: 'planner', call: 'spec' },
+          steer: 'drop the migration section',
+        }),
+      }),
+      state: { ...planningState(), plannerSessionId: 'native-gone' },
+      planner,
+      call: 'spec',
+      inputs: phaseInputs({ feature: 'test feature' }),
+    });
+
+    expect(run.result.kind).toBe('artifact');
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.continuationTurn).toContain('drop the migration section');
+    expect(calls[0]?.priorMessages).toBeUndefined();
+    // The fresh session holds nothing: the step's prompt goes out again, the continuation after it.
+    expect(calls[1]?.continuationTurn).toBeUndefined();
+    expect(calls[1]?.promptSuffix).toContain('drop the migration section');
+    expect(calls[1]?.priorMessages).toEqual([
+      { role: 'user', content: 'The export must be named PERIWINKLE-42.' },
+    ]);
+    expect(readWorkflowStateHead({ projectDir, sessionId })?.state.plannerSessionId).toBeNull();
+    expect(events.filter((event) => event.type === 'warning' || event.type === 'error')).toEqual([
+      expect.objectContaining({ type: 'warning', code: 'planner_session_expired' }),
+    ]);
+  });
+
+  it('issues a call that resumed no thread once, whatever its error says', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const { planner, calls } = expiringPlanner(() => makePhaseCallResult({ call: 'spec' }));
+
+    await expect(
+      runPlannerCallInContinuationLoop({
+        wctx: makeWctx(projectDir, sessionId),
+        state: planningState(),
+        planner,
+        call: 'spec',
+        inputs: phaseInputs({ feature: 'test feature' }),
+      }),
+    ).rejects.toMatchObject({ kind: 'session-resume-expired' });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('hands the failure of the re-issued call to the halt, and issues no third call', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const { planner, calls } = expiringPlanner(() => {
+      throw new Error('stream disconnected before completion');
+    });
+
+    await expect(
+      runPlannerCallInContinuationLoop({
+        wctx: makeWctx(projectDir, sessionId),
+        state: { ...planningState(), plannerSessionId: 'native-gone' },
+        planner,
+        call: 'spec',
+        inputs: phaseInputs({ feature: 'test feature' }),
+      }),
+    ).rejects.toThrow('stream disconnected before completion');
+    expect(calls).toHaveLength(2);
   });
 });

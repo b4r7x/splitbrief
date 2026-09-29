@@ -74,6 +74,14 @@ describe('skill-blocks', () => {
     }
   });
 
+  it('spawns the codex reviewer ephemeral, since nothing resumes a detached review', () => {
+    const reviewers = (renderBlock('recipe:codex') ?? '')
+      .split('\n')
+      .filter((line) => line.startsWith('- reviewer'));
+    expect(reviewers).toHaveLength(2);
+    for (const line of reviewers) expect(line).toContain('--ignore-rules --ephemeral --json');
+  });
+
   it('returns null for an unknown block id', () => {
     expect(renderBlock('nope')).toBeNull();
     expect(renderBlock('recipe:nope')).toBeNull();

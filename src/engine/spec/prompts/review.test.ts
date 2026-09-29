@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { parseFinalReview } from '../../parsers/final-review.js';
 import { buildFinalReviewPrompt } from './review.js';
 
 const SPEC = '## Spec\nAdd a hello function.';
@@ -14,6 +15,15 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain(
       'Treat error-level drift findings as review blockers unless you can clearly explain why they are false positives.',
     );
+  });
+
+  it('tells the reviewer to write None. for an empty category, which the parser reads as no finding', () => {
+    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
+
+    expect(result).toContain(
+      'Write `None.` after the label of a category with no findings, or leave the label out.',
+    );
+    expect(parseFinalReview('### Findings\n- **Critical**: None.').findings).toEqual([]);
   });
 
   it('includes a drift section heading and content when driftReport is provided', () => {

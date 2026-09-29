@@ -119,6 +119,8 @@ export interface InvokeOpts extends UndeclaredWritesPolicy {
    * directory of its own. The call's tool uses may not reach it.
    */
   checkoutDir?: string | undefined;
+  /** The run's global skills, which the call's tool uses may read and never write. */
+  skillRoots?: readonly string[] | undefined;
 }
 
 export interface Implementer extends RunnerRuntime {

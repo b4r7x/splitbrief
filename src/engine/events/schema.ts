@@ -63,13 +63,18 @@ function noPhaseEvent<T extends string>(type: T) {
   });
 }
 
-function operationalMessageEvent<T extends 'warning' | 'error'>(type: T) {
+function operationalMessageEvent<T extends 'warning' | 'error', S extends z.ZodRawShape>(
+  type: T,
+  shape: S,
+) {
   const base = phaseEvent(type).extend({
+    ...shape,
     message: z.string(),
     category: z.undefined().optional(),
     code: z.undefined().optional(),
   });
   const safe = phaseEvent(type).extend({
+    ...shape,
     message: z.string(),
     category: z.string().min(1).max(128),
     code: z.string().min(1).max(128),
@@ -77,8 +82,11 @@ function operationalMessageEvent<T extends 'warning' | 'error'>(type: T) {
   return z.union([safe, base]);
 }
 
-const OperationalWarningEventSchema = operationalMessageEvent('warning');
-const OperationalErrorEventSchema = operationalMessageEvent('error');
+const OperationalWarningEventSchema = operationalMessageEvent('warning', {});
+const OperationalErrorEventSchema = operationalMessageEvent('error', {
+  /** When a usage-limit halt's quota comes back, as the ISO instant its `resetAt` names. */
+  resetAt: z.string().optional(),
+});
 
 function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown): T | null {
   const result = schema.safeParse(value);
@@ -237,6 +245,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('workflow_complete').extend({
     review: z.enum(['passed', 'failed']).optional(),
     blocking: z.number().int().optional(),
+    /** The run's completed briefs, those an earlier process completed included; absent on older logs. */
+    completedTasks: z.number().int().nonnegative().optional(),
   }),
   phaseEvent('workflow_cancelled').extend({
     reason: WorkflowCancelReasonSchema.optional(),
@@ -256,6 +266,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     implementerModel: z.string().optional(),
     reviewerTool: z.string().optional(),
     reviewerModel: z.string().optional(),
+    /** The ids of the skills every seat call of this run carries. */
+    skills: z.array(z.string()).optional(),
   }),
   phaseEvent('paused_external_changes').extend({
     conflict: userEditConflictSchema.optional(),

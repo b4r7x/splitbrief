@@ -30,7 +30,7 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       kind: 'arg',
       name: '/skills',
       label: 'skills',
-      description: 'Select planner skills',
+      description: 'Skills for every seat',
       category: 'navigate',
       args: {
         kind: 'closed',

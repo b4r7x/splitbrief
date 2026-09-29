@@ -16,10 +16,11 @@ import type {
   ChangedFilesSnapshot,
   PersistedChangedFilesBaseline,
 } from '../../core/schemas/workflow.js';
+import { readProjectSymlink } from './approval/file-snapshots/entry.js';
 
 export type ChangedFilesBaseline = {
   head: string | null;
-  /** values: a sha256 hex, 'missing', or 'unreadable' */
+  /** values: a sha256 hex, 'missing', 'unreadable', or 'symlink:<target>' for a project symlink */
   fingerprints: Map<string, string>;
   runStartChangedFiles?: ReadonlySet<string> | undefined;
   activeTaskSnapshot?: ChangedFilesSnapshot | undefined;
@@ -92,7 +93,12 @@ async function fingerprintChangedFile(projectDir: string, file: string): Promise
   const filePath = resolve(projectDir, file);
   try {
     const stat = lstatSync(filePath);
-    if (stat.isSymbolicLink()) return UNREADABLE_FINGERPRINT;
+    if (stat.isSymbolicLink()) {
+      // A symlink that stays inside the project is fingerprinted by its target;
+      // any other link is never followed.
+      const target = await readProjectSymlink(projectDir, file);
+      return target === null ? UNREADABLE_FINGERPRINT : `symlink:${target}`;
+    }
     assertExistingPathConfined(file, projectDir);
     return sha256Hex(await readFile(filePath, 'utf-8'));
   } catch (cause) {

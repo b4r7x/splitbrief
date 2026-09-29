@@ -1,4 +1,7 @@
+import { chmodSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
 import {
   CLI_CONFORMANCE_CANDIDATES,
   CODEX_NATIVE_MODEL_CATALOG_PROBE,
@@ -7,6 +10,7 @@ import {
   codexProtocolEvents,
 } from './codex.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { invokeCliAdapter } from '../invoke-cli-adapter.js';
 import type { CliProtocolEvent } from './contract.js';
 
 const PROMPT = '<PROMPT>';
@@ -35,8 +39,9 @@ describe('Codex role adapters', () => {
       expect(candidate.id).toBe('codex');
       expect(candidate.rawContract.id).toBe(candidate.id);
       expect(candidate.rawContract.role).toBe(candidate.role);
-      expect(candidate.rawContract.promptTransport).toBe('argv');
-      expect(candidate.rawContract.rawInvocation.filter((arg) => arg === PROMPT)).toHaveLength(1);
+      expect(candidate.rawContract.promptTransport).toBe('stdin');
+      expect(candidate.rawContract.rawInvocation).not.toContain(PROMPT);
+      expect(candidate.rawContract.rawInvocation.at(-1)).toBe('-');
       expect(candidate.contractSha256).toMatch(/^[a-f0-9]{64}$/);
       expect(candidate.adapter.role).toBe(candidate.role);
       expect(candidate.adapter.descriptor).toBe(CLI_TOOL_CATALOG.codex);
@@ -46,17 +51,9 @@ describe('Codex role adapters', () => {
     );
   });
 
-  it('keeps argv and terminal contracts explicit for both roles', () => {
-    expect(codexPlannerAdapter.promptTransport).toEqual({
-      kind: 'argv',
-      maxBytes: 120_000,
-      placement: 'positional',
-    });
-    expect(codexImplementerAdapter.promptTransport).toEqual({
-      kind: 'argv',
-      maxBytes: 120_000,
-      placement: 'positional',
-    });
+  it('keeps stdin and terminal contracts explicit for both roles', () => {
+    expect(codexPlannerAdapter.promptTransport).toEqual({ kind: 'stdin' });
+    expect(codexImplementerAdapter.promptTransport).toEqual({ kind: 'stdin' });
     expect(codexPlannerAdapter.outputContract).toEqual({
       kind: 'structured-terminal',
       terminalEvent: 'required',
@@ -100,7 +97,7 @@ describe('Codex role adapters', () => {
       '--ignore-rules',
       '--json',
       'session-1',
-      PROMPT,
+      '-',
       '--label',
       'fixture',
     ]);
@@ -120,7 +117,8 @@ describe('Codex role adapters', () => {
       effort: undefined,
     });
     // REQ-017: the fresh planner vector owns global read-only + never
-    // approval before `exec`, ignores ambient config/rules, and is ephemeral.
+    // approval before `exec`, ignores ambient config/rules, and keeps its thread
+    // for the resume that follows.
     expect(readOnly).toEqual([
       '--model',
       'gpt-5',
@@ -131,11 +129,10 @@ describe('Codex role adapters', () => {
       'exec',
       '--ignore-user-config',
       '--ignore-rules',
-      '--ephemeral',
       '--json',
       '--cd',
       '/project',
-      PROMPT,
+      '-',
     ]);
 
     const escalation = codexPlannerAdapter.buildArgs({
@@ -158,7 +155,7 @@ describe('Codex role adapters', () => {
       '--skip-git-repo-check',
       '--cd',
       '/project',
-      PROMPT,
+      '-',
     ]);
   });
 
@@ -236,7 +233,7 @@ describe('Codex role adapters', () => {
       '--skip-git-repo-check',
       '--cd',
       '/staged',
-      PROMPT,
+      '-',
       '--label',
       'fixture',
     ]);
@@ -309,34 +306,97 @@ describe('Codex role adapters', () => {
   });
 });
 
-describe('Codex lossless prompt transport', () => {
-  it('keeps an oversized planner prompt byte-for-byte for pre-launch rejection', () => {
-    const oversizedPrompt = `HEAD_SENTINEL ${'x'.repeat(200_000)} TAIL_SENTINEL`;
-    const args = codexPlannerAdapter.buildArgs({
-      prompt: oversizedPrompt,
-      model: 'gpt-5',
-      projectDir: '/project',
-      configuredArgs: [],
-      mode: 'plan',
-      sessionId: 'session-1',
-      effort: undefined,
-    });
-    expect(args.at(-1)).toBe(oversizedPrompt);
-  });
+describe('Codex stdin prompt transport', () => {
+  // Past the 120 000-byte cap of the tools that take the prompt on argv.
+  const prompt = `HEAD_SENTINEL ${'x'.repeat(200_000)} 🙂漢字 TAIL_SENTINEL`;
+  const seat = {
+    prompt: PROMPT,
+    model: 'gpt-5',
+    projectDir: '/project',
+    configuredArgs: [],
+    effort: 'low',
+  } as const;
 
-  it('does not alter multibyte prompt code points', () => {
-    const prompt = '😀'.repeat(80_000);
-    const args = codexPlannerAdapter.buildArgs({
-      prompt,
-      model: undefined,
-      projectDir: '/project',
-      configuredArgs: [],
-      mode: 'plan',
-      sessionId: null,
-      effort: undefined,
-    });
-    expect(args.at(-1)).toBe(prompt);
-  });
+  it.each([
+    [
+      'plan · fresh',
+      codexPlannerAdapter,
+      codexPlannerAdapter.buildArgs({ ...seat, mode: 'plan', sessionId: null }),
+    ],
+    [
+      'plan · resumed',
+      codexPlannerAdapter,
+      codexPlannerAdapter.buildArgs({ ...seat, mode: 'plan', sessionId: 'session-1' }),
+    ],
+    [
+      'escalate',
+      codexPlannerAdapter,
+      codexPlannerAdapter.buildArgs({ ...seat, mode: 'escalate', sessionId: null }),
+    ],
+    ['implementer', codexImplementerAdapter, codexImplementerAdapter.buildArgs(seat)],
+  ] as const)(
+    '%s hands the child the whole prompt on stdin and none of it on argv',
+    async (_vector, adapter, args) => {
+      await withTempDir('splitbrief-codex-stdin', async (dir) => {
+        const executablePath = join(dir, 'codex');
+        const capturePath = join(dir, 'capture.json');
+        writeFileSync(
+          executablePath,
+          [
+            `#!${process.execPath}`,
+            "const { writeFileSync } = require('node:fs');",
+            'const chunks = [];',
+            "process.stdin.on('data', (chunk) => chunks.push(chunk));",
+            "process.stdin.on('end', () => {",
+            `  writeFileSync(${JSON.stringify(capturePath)}, JSON.stringify({ args: process.argv.slice(2), stdin: Buffer.concat(chunks).toString('utf8') }));`,
+            "  console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-stdin' }));",
+            "  console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'STDIN-OK' } }));",
+            "  console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }));",
+            '});',
+            '',
+          ].join('\n'),
+          { mode: 0o755 },
+        );
+        chmodSync(executablePath, 0o755);
+        const path = realpathSync(executablePath);
+        const info = statSync(path);
+
+        const result = await invokeCliAdapter({
+          adapter,
+          invocation: {
+            executable: {
+              path,
+              fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
+            },
+            args,
+            baseArgs: args,
+            promptTransport: adapter.promptTransport,
+            environment: {},
+            cwd: dir,
+            timeoutMs: 10_000,
+            signal: undefined,
+          },
+          prompt,
+          callContext: {
+            callId: 'codex-stdin',
+            role: adapter.role,
+            backendKind: 'cli',
+            runnerName: 'codex',
+          },
+        });
+
+        expect(result).toMatchObject({ status: 'completed', text: 'STDIN-OK' });
+        const capture = JSON.parse(readFileSync(capturePath, 'utf8')) as {
+          args: string[];
+          stdin: string;
+        };
+        expect(capture.stdin).toBe(prompt);
+        expect(capture.args).toEqual(args);
+        expect(capture.args.at(-1)).toBe('-');
+        expect(capture.args).not.toContain(PROMPT);
+      });
+    },
+  );
 });
 
 describe('Codex JSONL protocol adapter', () => {

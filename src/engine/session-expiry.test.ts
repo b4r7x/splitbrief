@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { isSessionExpiredError, createSessionResumeState } from './session-expiry.js';
 
 describe('isSessionExpiredError', () => {
@@ -11,6 +11,10 @@ describe('isSessionExpiredError', () => {
     'could not resume: stream closed',
     'session: failed to load thread-abc',
     'thread not loaded: thread-abc',
+    // codex-cli 0.157.1 `exec resume` of a thread whose rollout file is gone (captured live).
+    'Error: thread/resume: thread/resume failed: no rollout found for thread id 01a0ebc7-6363-7ac0-bb5f-95ddd418e55c (code -32600)',
+    // Claude Code 2.1.284 `--resume` of a session it does not hold (captured live).
+    'claude exited with code 1: No conversation found with session ID: 00000000-0000-4000-8000-000000000000',
   ];
 
   it.each(EXPIRED_MESSAGES)('matches expired-session variant: %s', (msg) => {
@@ -45,30 +49,5 @@ describe('createSessionResumeState', () => {
 
     state.capture(null);
     expect(state.getResumeId()).toBeNull();
-  });
-
-  it('handleResumeError does nothing when there is no captured session', () => {
-    const onExpired = vi.fn();
-    const state = createSessionResumeState({ onExpired });
-    expect(state.handleResumeError(new Error('session not found'))).toBe(false);
-    expect(onExpired).not.toHaveBeenCalled();
-  });
-
-  it('handleResumeError ignores non-session errors and preserves the captured id', () => {
-    const state = createSessionResumeState();
-    state.capture('abc-123');
-
-    expect(state.handleResumeError(new Error('network failed'))).toBe(false);
-    expect(state.getResumeId()).toBe('abc-123');
-  });
-
-  it('handleResumeError clears the captured id and fires the callback on expired-session error', () => {
-    const onExpired = vi.fn();
-    const state = createSessionResumeState({ onExpired });
-    state.capture('abc-123');
-
-    expect(state.handleResumeError(new Error('session_not_found'))).toBe(true);
-    expect(state.getResumeId()).toBeNull();
-    expect(onExpired).toHaveBeenCalledWith('abc-123');
   });
 });

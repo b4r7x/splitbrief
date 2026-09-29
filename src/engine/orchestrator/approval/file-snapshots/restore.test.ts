@@ -1,8 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { getChangedFilesSinceSnapshot, getChangedFilesSnapshot } from './capture.js';
+import { readConfinedEntry } from './entry.js';
 import { restoreDirtyFilesFromSnapshot } from './restore.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -206,6 +215,60 @@ describe('restoreDirtyFilesFromSnapshot', () => {
       expect(existsSync(join(outside, 'victim.txt'))).toBe(true);
     } finally {
       cleanupTempDir(outside);
+      cleanupTempDir(dir);
+    }
+  });
+
+  itUnix(
+    'restores a recorded project symlink the task retargeted or replaced with a file',
+    async () => {
+      const dir = createTempDir('snapshot-restore-link');
+      createTestGitRepo(dir, { 'real.txt': 'real\n', 'other.txt': 'other\n' });
+      try {
+        symlinkSync('real.txt', join(dir, 'retargeted'));
+        symlinkSync('real.txt', join(dir, 'replaced'));
+        const snapshot = await getChangedFilesSnapshot(dir);
+        rmSync(join(dir, 'retargeted'));
+        symlinkSync('other.txt', join(dir, 'retargeted'));
+        rmSync(join(dir, 'replaced'));
+        writeFileSync(join(dir, 'replaced'), 'task\n');
+
+        const result = await restoreDirtyFilesFromSnapshot(dir, snapshot, [
+          'replaced',
+          'retargeted',
+        ]);
+
+        expect(result).toEqual({ restoredFiles: ['replaced', 'retargeted'], conflictedFiles: [] });
+        expect(readlinkSync(join(dir, 'retargeted'))).toBe('real.txt');
+        expect(readlinkSync(join(dir, 'replaced'))).toBe('real.txt');
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  itUnix('keeps an edit made over a recorded symlink during approval as a conflict', async () => {
+    const dir = createTempDir('snapshot-restore-link-conflict');
+    createTestGitRepo(dir, { 'real.txt': 'real\n' });
+    try {
+      symlinkSync('real.txt', join(dir, 'replaced'));
+      const snapshot = await getChangedFilesSnapshot(dir);
+      rmSync(join(dir, 'replaced'));
+      writeFileSync(join(dir, 'replaced'), 'task\n');
+      const beforeApproval = new Map([['replaced', await readConfinedEntry(dir, 'replaced')]]);
+      writeFileSync(join(dir, 'replaced'), 'user\n');
+
+      const result = await restoreDirtyFilesFromSnapshot(
+        dir,
+        snapshot,
+        ['replaced'],
+        {},
+        beforeApproval,
+      );
+
+      expect(result).toEqual({ restoredFiles: [], conflictedFiles: ['replaced'] });
+      expect(readFileSync(join(dir, 'replaced'), 'utf-8')).toBe('user\n');
+    } finally {
       cleanupTempDir(dir);
     }
   });

@@ -76,6 +76,8 @@ export const ChangedFilesSnapshotSchema = z.object({
     )
     .optional(),
   gitlinks: z.array(z.string()).optional(),
+  // Symlinks that stay inside the project, by path: recorded by target, never read through.
+  symlinks: z.record(z.string(), z.string()).optional(),
   baselineFileHashes: z.record(z.string(), z.string().nullable()).optional(),
   ignoreProjectDir: z.string().optional(),
 });

@@ -47,6 +47,8 @@ interface PublishOperationalMessageOptions extends BusContext {
   message: string;
   taskId?: TaskId | undefined;
   safety?: OperationalMessageSafety | undefined;
+  /** An error's usage-limit reset, as the halt's `resetAt` names it; the row spells it when read. */
+  resetAt?: string | undefined;
 }
 
 type PlannerTextOptions = Pick<Partial<EngineEventOf<'planner_text'>>, 'role' | 'content'>;
@@ -390,7 +392,7 @@ export function publishCostUpdate(ctx: BusContext, tokenUsage: TokenUsage): void
 }
 
 export function publishError(options: PublishOperationalMessageOptions): void {
-  const { bus, phase, message, safety } = options;
+  const { bus, phase, message, safety, resetAt } = options;
   bus.publish({
     type: 'error',
     ts: Date.now(),
@@ -400,6 +402,7 @@ export function publishError(options: PublishOperationalMessageOptions): void {
       category: safety.category,
       code: safety.code,
     }),
+    ...(resetAt !== undefined && { resetAt }),
   });
 }
 
@@ -447,14 +450,14 @@ export function publishUserEditConflict(
 }
 
 export function publishRecoveryPrompted(
-  bus: EventBus,
+  ctx: BusContext,
   sessionId: string,
   issue: RecoveryIssue,
 ): void {
-  bus.publish({
+  ctx.bus.publish({
     type: 'recovery_prompted',
     ts: Date.now(),
-    phase: issue.phase,
+    phase: ctx.phase,
     issueId: issue.id,
     reason: issue.reason,
     headline: formatRecoveryHeadline(issue),
@@ -482,21 +485,21 @@ type RecoveryEventSpec =
       implementerProfile?: string | undefined;
     };
 
-type RecoveryEventOpts = {
-  bus: EventBus;
+/** `phase` is the run's phase when the event is published; the issue keeps the halt's own. */
+type RecoveryEventOpts = BusContext & {
   issue: RecoveryIssue;
   action: RecoveryAction;
 };
 
 function publishRecoveryEvent(
-  { bus, issue, action }: RecoveryEventOpts,
+  { bus, phase, issue, action }: RecoveryEventOpts,
   spec: RecoveryEventSpec,
 ): void {
   // The seat the halt stopped: the one a swap would move, else the one the issue names.
   const seat = issue.switchSeat?.seat ?? issue.seat;
   const base = {
     ts: Date.now(),
-    phase: issue.phase,
+    phase,
     issueId: issue.id,
     reason: issue.reason,
     action,
@@ -549,6 +552,7 @@ export function publishWorkflowConfig(
     implementerModel?: string | undefined;
     reviewerTool?: string | undefined;
     reviewerModel?: string | undefined;
+    skills?: string[] | undefined;
   },
 ): void {
   ctx.bus.publish({
@@ -562,6 +566,7 @@ export function publishWorkflowConfig(
     ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
     ...(opts.reviewerTool !== undefined && { reviewerTool: opts.reviewerTool }),
     ...(opts.reviewerModel !== undefined && { reviewerModel: opts.reviewerModel }),
+    ...(opts.skills !== undefined && { skills: opts.skills }),
   });
 }
 

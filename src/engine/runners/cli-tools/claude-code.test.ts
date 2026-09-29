@@ -338,6 +338,81 @@ describe('Claude Code role adapters', () => {
     }
   });
 
+  it('opens attached global skills to reads and closes them to every write, and nothing else', () => {
+    const settingsFor = (skillRoots?: readonly string[]) =>
+      claudeCodeImplementerAdapter
+        .buildArgs({
+          prompt: '<brief>',
+          model: undefined,
+          projectDir: '/project',
+          configuredArgs: [],
+          ...(skillRoots !== undefined && { skillRoots }),
+        })
+        .at(-1) ?? '';
+    const auth = '/home/me/.claude/skills/auth';
+    const tokens = '/home/me/.agents/skills/tokens';
+
+    expect(JSON.parse(settingsFor([auth, tokens]))).toEqual({
+      sandbox: {
+        ...IMPLEMENTER_SANDBOX.sandbox,
+        filesystem: { allowRead: [auth, tokens], denyWrite: [auth, tokens] },
+      },
+      permissions: {
+        blockReadsOutsideWorkingDirectories: true,
+        additionalDirectories: [auth, tokens],
+        deny: [`Edit(/${auth})`, `Edit(/${auth}/**)`, `Edit(/${tokens})`, `Edit(/${tokens}/**)`],
+      },
+    });
+    expect(JSON.parse(settingsFor([auth])).permissions.deny).toEqual([
+      'Edit(//home/me/.claude/skills/auth)',
+      'Edit(//home/me/.claude/skills/auth/**)',
+    ]);
+    expect(settingsFor([])).toBe(JSON.stringify(IMPLEMENTER_SANDBOX));
+    expect(settingsFor()).toBe(JSON.stringify(IMPLEMENTER_SANDBOX));
+  });
+
+  it('closes a skill that is one file to an edit of that file, not only of paths under it', () => {
+    const loose = '/home/me/.claude/skills/loose.md';
+    const settings = JSON.parse(
+      claudeCodeImplementerAdapter
+        .buildArgs({
+          prompt: '<brief>',
+          model: undefined,
+          projectDir: '/project',
+          configuredArgs: [],
+          skillRoots: [loose],
+        })
+        .at(-1) ?? '',
+    );
+
+    expect(settings.permissions.deny).toContain('Edit(//home/me/.claude/skills/loose.md)');
+    expect(settings.sandbox.filesystem.denyWrite).toEqual([loose]);
+  });
+
+  it('opens attached global skills to the planner and reviewer reads, never to a write', () => {
+    const auth = '/home/me/.claude/skills/auth';
+    for (const mode of ['plan', 'escalate'] as const) {
+      const args = claudeCodePlannerAdapter.buildArgs({
+        prompt: '<brief>',
+        model: 'sonnet',
+        projectDir: '/project',
+        configuredArgs: [],
+        mode,
+        sessionId: null,
+        effort: 'high',
+        skillRoots: [auth],
+      });
+      const settings = JSON.parse(args[args.indexOf('--settings') + 1] ?? '');
+      expect(settings).toEqual({
+        permissions: {
+          additionalDirectories: [auth],
+          deny: [`Edit(/${auth})`, `Edit(/${auth}/**)`],
+        },
+        sandbox: { filesystem: { allowRead: [auth], denyWrite: [auth] } },
+      });
+    }
+  });
+
   it('gives the planner and reviewer vectors no sandbox settings', () => {
     for (const mode of ['plan', 'escalate'] as const) {
       const args = claudeCodePlannerAdapter.buildArgs({

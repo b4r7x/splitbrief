@@ -103,7 +103,7 @@ args: ["${event.file}", "--task=${event.taskId}"]
 | `${event.reason}`    | recovery_prompted                      | The halt's `RecoveryReason`, e.g. `'retry-exhausted'` |
 | `${event.headline}`  | recovery_prompted                      | The operator-facing sentence, e.g. `T003 exhausted its retries` |
 | `${event.recommendedAction}` | recovery_prompted              | The `RecoveryAction` the halt recommends |
-| `${event.resumeCommand}` | recovery_prompted                  | The command that carries the run on, e.g. `splitbrief continue <id> --action retry` |
+| `${event.resumeCommand}` | recovery_prompted                  | The step that carries the run on, e.g. `splitbrief continue <id> --action retry`. An action only the recovery panel takes gives a sentence, not a bare command: `splitbrief continue <id>, then choose Pause run in the recovery panel` |
 
 Missing fields collapse to empty string. Object/array values are JSON-stringified. Placeholder values are secret-redacted and bounded before substitution; oversized strings are truncated with a placeholder. **No `eval`** — substitution is regex-based.
 

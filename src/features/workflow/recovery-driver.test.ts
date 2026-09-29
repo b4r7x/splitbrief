@@ -391,6 +391,50 @@ describe('createRecoveryDriver', () => {
     expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
   });
 
+  it('opens the PLAN picker for a review halt whose REVIEW follows PLAN, and marks PLAN', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      phase: 'final-review',
+      taskId: undefined,
+      taskTitle: undefined,
+      seat: 'review',
+      files: [],
+      affectedTaskIds: [],
+      attempts: undefined,
+      maxAttempts: undefined,
+      message: 'OpenAI Codex CLI hit its usage limit',
+      resetAt: '2026-10-03T13:02:00.000Z',
+      switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      recommendedAction: 'switch-seat',
+    });
+    const { inputMode } = makeInputMode(['switch-seat']);
+
+    const pending = runDriver(prepared, state, inputMode);
+    await vi.waitFor(() => {
+      expect(overlayStore.get()).toMatchObject({
+        active: 'planner-picker',
+        focus: 'tool:claude-code',
+      });
+    });
+    expect(recoveryNoticeStore.get().seat).toBe('plan');
+    configStore.__testReset({
+      projectDir: prepared.session.ref.projectDir,
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus' },
+        implementer: { kind: 'agent', command: 'test-implementer', model: 'test-model' },
+      }),
+    });
+    overlayStore.close();
+    const result = await pending;
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.switchSeat?.candidate).toEqual({ tool: 'claude-code', model: 'opus' });
+      expect(result.state.pendingRecovery).toBeDefined();
+    }
+  });
+
   it('publishes a halt that offers no other tool, with no seat for the bar to mark', async () => {
     const { prepared, state } = setupSession({
       reason: 'review-failed',

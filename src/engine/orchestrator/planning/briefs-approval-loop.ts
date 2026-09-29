@@ -162,6 +162,7 @@ export async function runBriefsApprovalLoop(
       ...(opts.detectedContextLength === undefined
         ? {}
         : { detectedContextLength: opts.detectedContextLength }),
+      ...(opts.skillsContext === undefined ? {} : { skillsContext: opts.skillsContext }),
     });
 
   // A subscriber learns the phase from the bus, not from disk, so the gate announces the phase it
@@ -304,6 +305,7 @@ export async function runBriefsApprovalLoop(
           ...(signal === undefined ? {} : { signal }),
           ...(sinks === undefined ? {} : { sinks }),
           feedback: revision.comment,
+          ...(opts.skillsContext === undefined ? {} : { skillsContext: opts.skillsContext }),
           commitQueue: true,
           statusPhase: 'planning',
           statusSummary: 'regenerating Task Briefs from feedback',

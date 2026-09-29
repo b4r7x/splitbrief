@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import { taskId } from '../schemas/task.js';
 import { formatRecoveryHeadline, retryExhaustedCause } from './headline.js';
 
@@ -60,16 +61,29 @@ describe('formatRecoveryHeadline', () => {
     expect(formatRecoveryHeadline(makeRecoveryIssue({ reason: 'validation-failed' }))).toBe(
       'Validation failed on T001',
     );
-    expect(
+  });
+
+  // A final review halt names no brief: it judged the whole run, or it judged nothing.
+  it('names the final review for a review halt, never a brief', () => {
+    const review = (facts: RecoveryIssue['facts']): string =>
       formatRecoveryHeadline(
         makeRecoveryIssue({
           reason: 'review-failed',
           taskId: undefined,
+          taskTitle: undefined,
+          facts,
           availableActions: ['pause-run', 'end-run'],
           recommendedAction: 'pause-run',
         }),
-      ),
-    ).toBe('Review failed on the current brief');
+      );
+
+    expect(review({ blocking: 4 })).toBe('Final review failed with 4 blocking findings');
+    expect(review({ blocking: 1 })).toBe('Final review failed with 1 blocking finding');
+    expect(review({ reviewFailureKind: 'call-failed' })).toBe('Final review reached no verdict');
+    expect(review({ reviewFailureKind: 'insufficient-context' })).toBe(
+      'Final review reached no verdict',
+    );
+    expect(review(undefined)).toBe('Final review failed');
   });
 
   it('names the task the issue carries', () => {

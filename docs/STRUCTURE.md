@@ -161,7 +161,7 @@ src/core/pipeline-spec/      # the typed pipeline contract: ladder.ts, retries.t
                              #   baseline.ts, timeouts.ts, divergences.ts — pure data, no I/O
 src/core/scope/              # declared-set.ts — the one path ↔ Scope matcher every consumer calls
 src/core/validation/stacks/  # typescript · javascript · python · go · rust rows + registry.ts
-src/core/recovery/           # headline.ts, resume-command.ts, user-edit-actions.ts
+src/core/recovery/           # headline.ts, action-label.ts, resume-command.ts, user-edit-actions.ts
 ```
 
 `pipeline-spec/` is read by the orchestrator instead of literals, and `scripts/skill-blocks.ts` renders the skills' countable rules from the same modules — see [`SKILLS.md`](./SKILLS.md).

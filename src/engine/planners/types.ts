@@ -46,6 +46,8 @@ export interface PlannerFactoryOptions {
   /** Canonical CLI identity admitted by the start-readiness gate. */
   trustedCli?: CliStartGate | undefined;
   customRuntime?: CustomRunnerRuntimePort | undefined;
+  /** The run's global skills, which the seat may read and never write. */
+  skillRoots?: readonly string[] | undefined;
 }
 
 export type PlannerCapabilities = {
@@ -241,6 +243,8 @@ export interface PhaseInputs {
   attachments?: Attachment[] | undefined;
   /** The `tasks` call compiles briefs straight from the feature: one call, no spec, no plan. */
   quickPlan?: { trivial: boolean } | undefined;
+  /** How many Task Briefs the run's mode lets the `tasks` call compile. */
+  briefCap?: number | undefined;
 }
 
 export interface RunPhaseInput {
@@ -306,12 +310,17 @@ export interface EscalateOptions {
   changeDetection?: ChangeDetectionKind | undefined;
   /** The implementer's own account of why it stopped, when it gave one. */
   handBack?: string | undefined;
+  /** The run's skills block, which the hint prompt carries like every other seat call. */
+  skillsContext?: string | undefined;
 }
 
 export interface RegenerateOptions {
   prompt: string;
   projectDir: string;
-  callbacks: PlannerOutputCallbacks;
+  /** A regeneration is a planning call: it resumes and reports the planner's thread. */
+  callbacks: PlannerCallbacks;
+  /** The conversation so far, for a revision issued again on a fresh session. */
+  priorMessages?: PriorMessage[] | undefined;
 }
 
 export interface Planner extends RunnerRuntime {

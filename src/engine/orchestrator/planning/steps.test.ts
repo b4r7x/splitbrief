@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -27,6 +27,7 @@ import {
   sessionDir,
 } from '../../../core/paths.js';
 import { ensureSessionDir, readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
+import { MODES } from '../../../core/pipeline-spec/modes.js';
 import type { ApproveLevel, WorkflowMode } from '../../../core/schemas/enums.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { Task } from '../../../core/schemas/task.js';
@@ -101,6 +102,7 @@ async function runSteps(opts: {
   callbacks?: OrchestratorCallbacks;
   feature?: string;
   startAt?: 'research' | 'spec' | 'plan' | 'tasks';
+  skillsContext?: string;
 }) {
   const project = opts.project ?? setupProject(opts.mode);
   const state = opts.state ?? stateFor(opts.mode);
@@ -115,6 +117,7 @@ async function runSteps(opts: {
       bus,
       metadata: TEST_METADATA,
       sinks: TEST_SINKS,
+      ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
     },
     planner: opts.planner,
     state,
@@ -178,6 +181,15 @@ describe('runPlanningSteps — one call per step', () => {
     expect(plan?.inputs.spec).toContain('Required.');
     expect(tasks?.inputs.plan).toContain('# Plan');
     expect(tasks?.inputs.quickPlan).toBeUndefined();
+  });
+
+  it("hands the tasks call the mode's brief cap", async () => {
+    const { planner, calls } = recordingPlanner();
+    await runSteps({ mode: 'standard', planner });
+
+    const tasks = calls.find((entry) => entry.call === 'tasks');
+    expect(tasks?.inputs.briefCap).toBe(MODES.standard.briefCap);
+    expect(calls.find((entry) => entry.call === 'plan')?.inputs.briefCap).toBeUndefined();
   });
 
   it('names the running call in the saved phase', async () => {
@@ -257,45 +269,17 @@ describe('runPlanningSteps — one call per step', () => {
 });
 
 describe('runPlanningSteps — skills context', () => {
-  // Discovery scans global roots under homedir(); a real HOME would pull the
-  // developer's own ~/.claude/skills into these assertions.
-  let fakeHome: string;
-  let savedHome: string | undefined;
-
-  beforeAll(() => {
-    fakeHome = createTempDir('planning-steps-home');
-    savedHome = process.env.HOME;
-    process.env.HOME = fakeHome;
-  });
-
-  afterAll(() => {
-    if (savedHome === undefined) delete process.env.HOME;
-    else process.env.HOME = savedHome;
-    cleanupTempDir(fakeHome);
-  });
-
-  it('rebuilds the skills context from the ids the state persisted', async () => {
-    const project = setupProject('quick');
-    const dir = join(project.projectDir, '.claude', 'skills', 'auth-skill');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, 'SKILL.md'),
-      '---\nname: AuthSkill\ndescription: a skill\n---\nPERSISTED-SKILL-BODY\n',
-    );
+  it("hands every planner call the run's skills context", async () => {
+    const skillsContext = '## Active Project Skills\n\n### AuthSkill\nPLAN-SKILL-BODY';
     const { planner, calls } = recordingPlanner();
 
-    await runSteps({
-      mode: 'quick',
-      planner,
-      project,
-      state: stateFor('quick', { selectedSkills: ['auth-skill'] }),
-    });
+    await runSteps({ mode: 'standard', planner, skillsContext });
 
-    expect(calls[0]?.inputs.skillsContext).toContain('AuthSkill');
-    expect(calls[0]?.inputs.skillsContext).toContain('PERSISTED-SKILL-BODY');
+    expect(calls.map((entry) => entry.call)).toEqual(['research', 'spec', 'plan', 'tasks']);
+    for (const entry of calls) expect(entry.inputs.skillsContext).toBe(skillsContext);
   });
 
-  it('omits the skills context when neither live nor persisted skills exist', async () => {
+  it('omits the skills context when the run has none', async () => {
     const { planner, calls } = recordingPlanner();
     await runSteps({ mode: 'quick', planner });
     expect(calls[0]?.inputs.skillsContext).toBeUndefined();

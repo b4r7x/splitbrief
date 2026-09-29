@@ -203,7 +203,13 @@ function applyContinueRecoveryAction(
     },
     { expectedRevision: state.stateRevision ?? 0 },
   );
-  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
+  publishRecoveryResolved({
+    bus: opts.bus,
+    phase: state.phase,
+    issue,
+    action: opts.action,
+    outcome: 'continued',
+  });
 
   return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
@@ -240,7 +246,13 @@ function applyEndRunRecoveryAction(
     { type: 'CLOSE_RUN' },
     { expectedRevision: state.stateRevision ?? 0 },
   );
-  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'aborted' });
+  publishRecoveryResolved({
+    bus: opts.bus,
+    phase: state.phase,
+    issue,
+    action: opts.action,
+    outcome: 'aborted',
+  });
   return { ok: true, action: opts.action, issue, state, status: 'closed' };
 }
 
@@ -281,7 +293,13 @@ function applyReviseRecoveryAction(
     { type: 'RESOLVE_PENDING_RECOVERY' },
     { expectedRevision: state.stateRevision ?? 0 },
   );
-  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
+  publishRecoveryResolved({
+    bus: opts.bus,
+    phase: state.phase,
+    issue,
+    action: opts.action,
+    outcome: 'continued',
+  });
   return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
 
@@ -340,7 +358,13 @@ function applyReviewCorrectionAction(
     cycle,
     taskIds: state.tasks.filter((task) => fixes[task.id] !== undefined).map((task) => task.id),
   });
-  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
+  publishRecoveryResolved({
+    bus: opts.bus,
+    phase: state.phase,
+    issue,
+    action: opts.action,
+    outcome: 'continued',
+  });
   return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
 
@@ -363,7 +387,13 @@ function applyReviseSpecRecoveryAction(
     { type: 'RESOLVE_PENDING_RECOVERY' },
     { expectedRevision: state.stateRevision ?? 0 },
   );
-  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
+  publishRecoveryResolved({
+    bus: opts.bus,
+    phase: state.phase,
+    issue,
+    action: opts.action,
+    outcome: 'continued',
+  });
   return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
 
@@ -422,7 +452,7 @@ function applySkipCurrentTaskRecoveryAction(
     { expectedRevision: state.stateRevision ?? 0 },
   );
   publishTaskSkipped(
-    { bus: opts.bus, phase: issue.phase },
+    { bus: opts.bus, phase: state.phase },
     {
       taskId: target.id,
       title: target.title,
@@ -431,6 +461,7 @@ function applySkipCurrentTaskRecoveryAction(
   );
   publishRecoveryResolved({
     bus: opts.bus,
+    phase: state.phase,
     issue,
     action: opts.action,
     outcome: 'skipped-current-task',
@@ -445,7 +476,7 @@ function applySkipCurrentTaskRecoveryAction(
  * never landed, are answered by re-issuing the same step once the seat is
  * corrected. Every other retry replays the brief it names.
  */
-function isSeatLevelRetry(issue: RecoveryIssue): boolean {
+export function isSeatLevelRetry(issue: RecoveryIssue): boolean {
   return (
     issue.taskId === undefined &&
     (issue.seat === 'plan' ||
@@ -643,7 +674,13 @@ function resolveSeatIssueWithoutTask(
     { type: 'RESOLVE_PENDING_RECOVERY' },
     { expectedRevision: state.stateRevision ?? 0 },
   );
-  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
+  publishRecoveryResolved({
+    bus: opts.bus,
+    phase: state.phase,
+    issue,
+    action: opts.action,
+    outcome: 'continued',
+  });
   return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
 
@@ -692,6 +729,7 @@ function applyRetryCurrentTaskRecoveryAction(
   );
   publishRecoveryResolved({
     bus: opts.bus,
+    phase: state.phase,
     issue,
     action: opts.action,
     outcome: 'retry-current-task',
@@ -718,7 +756,12 @@ function markRecoveryApplying(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): WorkflowState {
-  publishRecoveryActionSelected({ bus: opts.bus, issue, action: opts.action });
+  publishRecoveryActionSelected({
+    bus: opts.bus,
+    phase: opts.state.phase,
+    issue,
+    action: opts.action,
+  });
   return transitionAndSave(
     opts,
     opts.state,
@@ -739,10 +782,16 @@ function blockRecoveryAction(
   },
 ): ApplyRecoveryActionBlocked {
   if (opts.publishSelected) {
-    publishRecoveryActionSelected({ bus: opts.bus, issue: opts.issue, action: opts.action });
+    publishRecoveryActionSelected({
+      bus: opts.bus,
+      phase: opts.state.phase,
+      issue: opts.issue,
+      action: opts.action,
+    });
   }
   publishRecoveryActionFailed({
     bus: opts.bus,
+    phase: opts.state.phase,
     issue: opts.issue,
     action: opts.action,
     message: opts.message,

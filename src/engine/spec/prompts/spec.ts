@@ -6,6 +6,7 @@ import {
   buildPrompt,
   instructionsSection,
   requiredSectionsSection,
+  skillsSection,
 } from './builder.js';
 
 export function buildSpecPrompt(
@@ -21,10 +22,8 @@ export function buildSpecPrompt(
     sections: [
       plannerConversationSection,
       { heading: 'Specification', body: feature },
-      {
-        heading: 'Research Findings',
-        body: `${researchOutput}${skillsContext ? `\n\n${skillsContext}` : ''}`,
-      },
+      { heading: 'Research Findings', body: researchOutput },
+      ...skillsSection(skillsContext),
       ...(languageContext ? buildLanguageContextSections(languageContext) : []),
       instructionsSection(
         'Write a complete `spec.md` document that defines **what** to build (not how). The spec should be detailed enough that a developer unfamiliar with the feature request could implement it correctly.',

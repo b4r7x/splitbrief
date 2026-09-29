@@ -598,9 +598,23 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . <PROMPT>',
-      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd . <PROMPT>',
-      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --model gpt-5 --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 <PROMPT>',
+      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd . -',
+      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . -',
+      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd . -',
+      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --model gpt-5 --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
+    ]);
+  });
+
+  it('preflights the one-shot vector a codex review seat emits', async () => {
+    const checks = await collectArgVectorPreflightChecks({
+      config: makeConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' } }),
+      projectDir: '/project',
+      roles: ['reviewer'],
+      runHelp: async () => CODEX_HELP,
+    });
+
+    expect(checks[0]?.details).toEqual([
+      'Emitted argv: --model gpt-5 --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . -',
     ]);
   });
 
@@ -645,7 +659,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       detail.replace('Emitted argv: ', '').split(' '),
     );
 
-    expect(vectors).toHaveLength(3);
+    expect(vectors).toHaveLength(4);
     for (const argv of vectors) {
       expect(checkRunnerArgVector({ argv, helpText: withoutConfigEntry }), argv.join(' ')).toEqual({
         ok: false,
@@ -979,7 +993,7 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
   // The seat carries an effort so the recorded help — where `-c, --config <key=value>` stands
   // alone on its entry line and the description follows indented — is what the short-flag
   // comparison is pinned against, not only the hand-written CODEX_HELP above.
-  it('probes the plan, escalate and resume argv against one fetch of each clap help', async () => {
+  it('probes the plan, one-shot, escalate and resume argv against one fetch of each clap help', async () => {
     const project = tempDir('preflight-project');
     const toolDir = tempDir('preflight-tools');
     const log = join(toolDir, 'invocations');
@@ -999,9 +1013,10 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
       }),
     ]);
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . <PROMPT>',
-      'Emitted argv: -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd . <PROMPT>',
-      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 <PROMPT>',
+      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd . -',
+      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . -',
+      'Emitted argv: -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd . -',
+      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
     ]);
     expect(helpInvocations(log)).toEqual(['--help', 'exec --help']);
   });

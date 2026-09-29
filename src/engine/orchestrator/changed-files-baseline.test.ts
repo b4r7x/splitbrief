@@ -104,21 +104,86 @@ describe('captureChangedFilesBaseline', () => {
     }
   });
 
-  itUnix('records a dangling final symlink as unreadable, not as missing', async () => {
-    const dir = createTempDir('changed-files-baseline-dangling-symlink');
-    seedProject(dir);
-    try {
-      mkdirSync(join(dir, 'src'), { recursive: true });
-      symlinkSync('missing.ts', join(dir, 'src', 'dangling.ts'));
+  itUnix.each([
+    {
+      label: 'by its target when it stays inside the project',
+      target: 'missing.ts',
+      fingerprint: 'symlink:missing.ts',
+    },
+    {
+      label: 'as unreadable when it leaves the project',
+      target: '../../missing.ts',
+      fingerprint: UNREADABLE_FINGERPRINT,
+    },
+  ])(
+    'records a dangling final symlink $label, never as missing',
+    async ({ target, fingerprint }) => {
+      const dir = createTempDir('changed-files-baseline-dangling-symlink');
+      seedProject(dir);
+      try {
+        mkdirSync(join(dir, 'src'), { recursive: true });
+        symlinkSync(target, join(dir, 'src', 'dangling.ts'));
 
-      const baseline = await captureChangedFilesBaseline(dir, ['src/dangling.ts']);
+        const baseline = await captureChangedFilesBaseline(dir, ['src/dangling.ts']);
 
-      expect(baseline.fingerprints.get('src/dangling.ts')).toBe(UNREADABLE_FINGERPRINT);
-      expect(baseline.fingerprints.get('src/dangling.ts')).not.toBe('missing');
-    } finally {
-      cleanupTempDir(dir);
-    }
-  });
+        expect(baseline.fingerprints.get('src/dangling.ts')).toBe(fingerprint);
+        expect(baseline.fingerprints.get('src/dangling.ts')).not.toBe('missing');
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  // A skill link like `.claude/skills/<name> -> ../../skills/<name>` sits in the
+  // checkout of every run; it is read by its target, not warned about at run start.
+  itUnix(
+    'records a symlink that stays inside the project by its target, not as unreadable',
+    async () => {
+      const dir = createTempDir('changed-files-baseline-project-link');
+      seedProject(dir);
+      try {
+        mkdirSync(join(dir, 'skills', 'babysit'), { recursive: true });
+        mkdirSync(join(dir, 'skills', 'other'), { recursive: true });
+        mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
+        const link = join(dir, '.claude', 'skills', 'babysit');
+        symlinkSync('../../skills/babysit', link, 'dir');
+
+        const baseline = await captureChangedFilesBaseline(dir, ['.claude/skills/babysit']);
+
+        expect(baseline.fingerprints.get('.claude/skills/babysit')).toBe(
+          'symlink:../../skills/babysit',
+        );
+        expect(unreadableChangedFiles(baseline)).toEqual([]);
+        expect(await changedFilesSinceBaseline(dir, baseline)).toEqual([]);
+
+        unlinkSync(link);
+        symlinkSync('../../skills/other', link, 'dir');
+        expect(await changedFilesSinceBaseline(dir, baseline)).toEqual(['.claude/skills/babysit']);
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  itUnix(
+    'records a link to the project root by its target and a link into .git as unreadable',
+    async () => {
+      const dir = createTempDir('changed-files-baseline-root-link');
+      seedProject(dir);
+      try {
+        mkdirSync(join(dir, '.git'));
+        symlinkSync('.', join(dir, 'root-link'));
+        symlinkSync('.git', join(dir, 'git-link'));
+
+        const baseline = await captureChangedFilesBaseline(dir, ['git-link', 'root-link']);
+
+        expect(baseline.fingerprints.get('root-link')).toBe('symlink:.');
+        expect(unreadableChangedFiles(baseline)).toEqual(['git-link']);
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
 
   it('rejects absolute changed-file paths', async () => {
     const dir = createTempDir('changed-files-baseline-absolute');

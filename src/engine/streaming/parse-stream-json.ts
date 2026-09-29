@@ -9,7 +9,7 @@ import type {
 } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { accumulateTokenUsage, BackendTokenUsageSchema, toTokenDelta } from '../calls/usage.js';
-import { formatUsageLimitReset } from '../runners/usage-limit.js';
+import { formatStoredReset } from '../../core/recovery/reset-clock.js';
 import { formatDuration } from '../../utils/format-time.js';
 import { isRecord, optionalString } from '../../utils/type-guards.js';
 import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
@@ -382,7 +382,7 @@ function parseRateLimitEvent(event: Record<string, unknown>): StreamParseResult 
 }
 
 /**
- * `seven_day rate limit approaching (resets Nov 3, 2026, 4:30 PM)`: the limit type and its
+ * `seven_day rate limit approaching (resets Nov 3, 16:30)`: the limit type and its
  * reset when the frame names them, and a shorter clause when it does not.
  */
 function rateLimitWarning(
@@ -405,7 +405,7 @@ function rateLimitWarning(
 function rateLimitResetLabel(value: unknown): string | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
   const resetsAt = new Date(value * 1000);
-  return Number.isNaN(resetsAt.getTime()) ? undefined : formatUsageLimitReset(resetsAt);
+  return Number.isNaN(resetsAt.getTime()) ? undefined : formatStoredReset(resetsAt.getTime());
 }
 
 export function parseStreamLine(line: string): StreamParseResult {

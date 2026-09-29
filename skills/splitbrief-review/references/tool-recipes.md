@@ -2,13 +2,13 @@
 
 Loaded in Phase 0 to probe the crew and in Phases 2–3 to build the spawn command. Placeholders: `$P` prompt file, `$M` model, `$E` effort, `$D` absolute project dir (`agy --add-dir .` gives agy no workspace), `$LOG` log file, `$DONE` the attempt's `.done` file, `$PID` its `.pid` file.
 
-Every `implementer:` / `reviewer:` line below is generated from the SPLITBRIEF CLI's own adapters (`src/engine/runners/cli-tools/*.ts`, via `npm run skills:sync`): the exact argv the CLI sends, with the prompt, model, effort and project dir replaced by placeholders, wrapped in the detached spawn shape. Do not edit them by hand — `npm run skills:check` fails when they differ from the adapters.
+Every `implementer:` / `reviewer:` line below is generated from the SPLITBRIEF CLI's own adapters (`src/engine/runners/cli-tools/*.ts`, via `npm run skills:sync`): the exact argv the CLI sends for a build call and for a review call, with the prompt, model, effort and project dir replaced by placeholders, wrapped in the detached spawn shape. Do not edit them by hand — `npm run skills:check` fails when they differ from the adapters.
 
 ## Spawn rules (every tool)
 
 - cwd = project root. Every spawn is detached and writes its own terminal state: `nohup sh -c '<argv> > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`. The waiter (`scripts/wait-attempt.sh`, per the wait protocol in the skill's orchestration notes) runs in a separate tool call.
-- Argv transport caps the prompt at 120 000 bytes; a longer prompt is refused, never truncated. `claude` takes the prompt on stdin and has no cap.
-- Prompt transport: stdin (`< $P`) for claude; `"$(cat $P)"` as the positional argument for the rest. Refuse to spawn when the prompt's first character is `-` — the tool would read it as an option.
+- Argv transport caps the prompt at 120 000 bytes; a longer prompt is refused, never truncated. `claude` and `codex` take the prompt on stdin and have no cap.
+- Prompt transport: stdin (`< $P`) for claude and codex; codex's `-` argument makes it read stdin. The rest take `"$(cat $P)"` as the positional argument: refuse to spawn one of them when the prompt's first character is `-` — the tool would read it as an option.
 - Drop the model flag (`-m $M` / `--model $M`) and the effort flag (`--effort $E` / `--variant $E` / `-c model_reasoning_effort=$E`) when the seat carries no model or no effort.
 - Never add flags beyond the recipe; never pass this session's own permission flags down. The one exception is a spawn failure (last section): then the recipe itself is corrected — in the CLI adapter, since the recipe is generated from it.
 - Success = exit code 0 AND, for the structured tools, the terminal record named below. Exit 0 without it = failure `ended without a terminal result`.
@@ -36,10 +36,10 @@ Timeouts:
 
 - binary `codex` · version `codex --version` · auth `codex login status` · models: no listing · effort `minimal|low|medium|high|xhigh`
 <!-- generated: recipe:codex -->
-- implementer: `nohup sh -c 'codex --model $M -c model_reasoning_effort=$E --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd $D "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'codex --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd $D "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'codex --model $M -c model_reasoning_effort=$E --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd $D "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'codex --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd $D "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'codex --model $M -c model_reasoning_effort=$E --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd $D - < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'codex --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd $D - < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'codex --model $M -c model_reasoning_effort=$E --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd $D - < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'codex --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd $D - < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - `--sandbox` and `--ask-for-approval` are global flags and must precede `exec`.
 - terminal record: `"type":"turn.completed"`; `turn.failed` or `"type":"error"` = failure. Final text: the last `item.completed` whose item type is `agent_message`.

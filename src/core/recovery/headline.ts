@@ -1,7 +1,8 @@
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
-import { recoveryFactString } from '../schemas/recovery/facts.js';
-import { formatResetNote } from './reset-clock.js';
+import { recoveryFactNumber, recoveryFactString } from '../schemas/recovery/facts.js';
+import { formatResetAt } from './reset-clock.js';
 import { assertNever } from '../../utils/type-guards.js';
+import { countNoun } from '../../utils/pluralize.js';
 
 function toolName(issue: RecoveryIssue): string {
   return recoveryFactString(issue.facts, 'tool') ?? 'the tool';
@@ -14,6 +15,11 @@ function taskName(issue: RecoveryIssue): string {
 function sentenceCase(reason: string): string {
   const words = reason.replaceAll('-', ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** A final review that judged the run and found blockers, in the one wording every surface shares. */
+export function finalReviewFailedCause(blocking: number): string {
+  return `Final review failed with ${countNoun(blocking, 'blocking finding')}`;
 }
 
 /** What stopped a retry-exhausted brief, in the one wording the transcript, the panel and the byline share. */
@@ -38,9 +44,8 @@ export function retryExhaustedCause(
 export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.now()): string {
   switch (issue.reason) {
     case 'runner-usage-limit': {
-      const resetAt = issue.resetAt === undefined ? Number.NaN : Date.parse(issue.resetAt);
-      const reset = Number.isFinite(resetAt) ? ` · ${formatResetNote(resetAt, now)}` : '';
-      return `Usage limit on ${toolName(issue)}${reset}`;
+      const reset = formatResetAt(issue.resetAt, now);
+      return `Usage limit on ${toolName(issue)}${reset === undefined ? '' : ` · ${reset}`}`;
     }
     case 'runner-unauthenticated':
       return `Signed out of ${toolName(issue)}`;
@@ -70,13 +75,20 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
       return 'Brief review is not making progress';
     case 'brief-quality-unrepaired':
       return 'Task Briefs still fail the quality gate';
+    case 'review-failed': {
+      // A final review halt names no brief: it judged the whole run, or it judged nothing.
+      const blocking = recoveryFactNumber(issue.facts, 'blocking');
+      if (blocking !== undefined) return finalReviewFailedCause(blocking);
+      return recoveryFactString(issue.facts, 'reviewFailureKind') === undefined
+        ? 'Final review failed'
+        : 'Final review reached no verdict';
+    }
     case 'implementation-error':
     case 'validation-failed':
     case 'context-overflow':
     case 'user-edit-conflict':
     case 'approval-promotion-conflict':
     case 'dependency-blocked':
-    case 'review-failed':
     case 'approval-denied':
     case 'snapshot-failed':
       return `${sentenceCase(issue.reason)} on ${taskName(issue)}`;

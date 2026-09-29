@@ -15,10 +15,13 @@ You may optionally provide up to five interactive questions as markers:
 Use type "confirm" with a boolean default for yes/no questions. Input and choice defaults are strings. Ordinary questions are also accepted.`,
 };
 
+/** A section the caller rendered whole, heading included: the run's skills block. */
+export type PromptPart = PromptSection | string;
+
 type PromptSpec = {
   title: string;
   intro: string;
-  sections: PromptSection[];
+  sections: PromptPart[];
   output?: string | undefined;
 };
 
@@ -26,7 +29,8 @@ export function buildPrompt(spec: PromptSpec): string {
   const parts: string[] = [`# ${spec.title}`, '', spec.intro];
 
   for (const section of spec.sections) {
-    parts.push('', `## ${section.heading}`, section.body);
+    if (typeof section === 'string') parts.push('', section);
+    else parts.push('', `## ${section.heading}`, section.body);
   }
 
   if (spec.output !== undefined) {
@@ -47,6 +51,11 @@ export function fenced(body: string, lang = ''): string {
   for (const run of body.matchAll(/`+/g)) longest = Math.max(longest, run[0].length);
   const fence = '`'.repeat(Math.max(3, longest + 1));
   return fence + lang + '\n' + body + '\n' + fence;
+}
+
+/** The run's skills as a section of their own, never inside another section's body. */
+export function skillsSection(skillsContext: string | undefined): PromptPart[] {
+  return skillsContext ? [skillsContext] : [];
 }
 
 export function instructionsSection(body: string): PromptSection {

@@ -14,7 +14,9 @@ import {
 } from '../core/skills/scan-paths.js';
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
-import { formatResumeCommand } from '../core/recovery/resume-command.js';
+import { continuesHeadless, formatResumeCommand } from '../core/recovery/resume-command.js';
+import { finalReviewFailedCause } from '../core/recovery/headline.js';
+import { formatResetAt } from '../core/recovery/reset-clock.js';
 import { cliError } from './errors.js';
 import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
@@ -108,8 +110,10 @@ export function emitRecoveryAndFailIfPending({
     },
     process.stdout,
   );
+  // The stored message names no clock; a quota halt's reset is spelled when the line is printed.
+  const reset = formatResetAt(issue.resetAt);
   throw cliError(
-    `Recovery required (${issue.reason}): ${issue.message}\nRecommended: ${issue.recommendedAction}\nContinue with: ${resumeCommand} [--plain|--json]`,
+    `Recovery required (${issue.reason}): ${issue.message}${reset === undefined ? '' : ` (${reset})`}\nRecommended: ${issue.recommendedAction}\nContinue with: ${resumeCommand}${continuesHeadless(issue) ? ' [--plain|--json]' : ''}`,
     1,
   );
 }
@@ -123,7 +127,7 @@ function failIfFinalReviewFailed(
   if (state?.reviewStatus !== 'failed') return;
   const blocking = readSession({ projectDir, sessionId })?.summary?.review?.critical ?? 0;
   writeRecord({ type: 'final_review_failed', sessionId, blocking });
-  throw cliError(`Final review failed — ${blocking} blocking finding(s); see review.md`, 1);
+  throw cliError(`${finalReviewFailedCause(blocking)}; see review.md`, 1);
 }
 
 function failIfFinalReviewIncomplete(
@@ -199,7 +203,7 @@ export interface RunHeadlessOptions {
   prepared: PreparedExecution;
   /** `--plain`: render the run as plain lines instead of NDJSON records. */
   plain?: boolean | undefined;
-  /** `--skills`: the resolved skills the planner attaches to this run. */
+  /** `--skills`: the resolved skills every seat of this run carries. */
   selectedSkills?: SkillMeta[] | undefined;
   _planner?: Planner | undefined;
   _implementer?: Implementer | undefined;

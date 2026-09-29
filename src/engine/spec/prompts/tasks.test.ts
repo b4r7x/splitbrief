@@ -72,6 +72,11 @@ describe('buildTasksPrompt', () => {
     expect(prompt).toContain('files:');
   });
 
+  it("states the mode's brief cap in the slice rule", () => {
+    const prompt = buildTasksPrompt({ spec: 'spec', plan: 'plan', briefCap: 12 });
+    expect(prompt).toContain('Emit at most 12 briefs in all.');
+  });
+
   it('carries the active skills section after the implementation plan', () => {
     const prompt = buildTasksPrompt({
       spec: 'spec',
@@ -80,6 +85,17 @@ describe('buildTasksPrompt', () => {
     });
     expect(prompt).toContain('## Implementation Plan\nplan\n\n## Active Project Skills');
     expect(prompt).toContain('SKILL-BODY');
+  });
+
+  it('tells the planner every brief carries the skills, so no brief copies or cites them', () => {
+    const prompt = buildTasksPrompt({
+      spec: 'spec',
+      plan: 'plan',
+      skillsContext: '## Active Project Skills\n\n### AuthSkill\nSKILL-BODY',
+    });
+    expect(prompt).toContain(
+      'Every brief reaches the implementer together with the Active Project Skills section: do not copy that section into a brief, and do not point a brief at skill files.',
+    );
   });
 
   it('omits the skills section when no skill is attached', () => {

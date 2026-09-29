@@ -22,6 +22,7 @@ export type PlannerSeatInput = SeatBase & {
   initialSessionId: string | null;
   injectedPlanner: Planner | undefined;
   injectedReviewer: Reviewer | undefined;
+  skillRoots: readonly string[] | undefined;
 };
 
 export type PlannerSeat = {
@@ -43,6 +44,7 @@ export async function createPlannerSeat(input: PlannerSeatInput): Promise<Planne
       gates: prepared.gates,
       slot: { role: 'planner' },
       customRuntime,
+      skillRoots: input.skillRoots,
     }));
   const reviewerSeat = configuredReviewerSeat(config);
   const reviewer: Reviewer =
@@ -55,6 +57,7 @@ export async function createPlannerSeat(input: PlannerSeatInput): Promise<Planne
           gates: prepared.gates,
           slot: { role: 'reviewer' },
           customRuntime,
+          skillRoots: input.skillRoots,
         }));
   return { planner, reviewer, reviewerSeat };
 }

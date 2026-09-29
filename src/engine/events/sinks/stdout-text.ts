@@ -25,7 +25,6 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
   const output = opts.output ?? process.stdout;
   const gates = new Map<string, string>();
   let lastPhase: string | null = null;
-  let completed = 0;
   let gatelessRunAnnounced = false;
 
   function write(line: string): void {
@@ -62,7 +61,6 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
         write('gates: NONE — review-only');
         return;
       case 'task_completed':
-        completed += 1;
         write(`task ${bounded.taskId}: done (${gates.get(bounded.taskId) ?? 'no gates'})`);
         return;
       case 'task_full_fail':
@@ -80,7 +78,8 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
             ? `review: ${verdict}`
             : `review: ${verdict} (${bounded.blocking} blocking)`,
         );
-        write(`done: ${completed} tasks`);
+        // The run's count from its state: a continue completes only the briefs it had left.
+        write(`done: ${bounded.completedTasks ?? 0} tasks`);
         return;
       }
       default:

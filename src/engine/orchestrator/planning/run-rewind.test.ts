@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { makeConfig } from '#testing/helpers/factories/config.js';
+import { defaultContext, makeConfig } from '#testing/helpers/factories/config.js';
 import {
   makeCallbacks,
   makeBusRecorder,
@@ -10,12 +10,14 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { PLAN_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { readSpecFile, readSpecFileOrEmpty, writeSpecFile } from '../../../core/paths-io.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import { appendMessage } from '../../../core/sessions/log-writer.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { runPlanningPhases } from '../run/phases.js';
 import {
   REAL_TASKS_MD,
   prepareState,
   makePassingPlanner,
+  makeExpiredThreadPlanner,
   makeRecordingPlanner,
   auto,
   manual,
@@ -31,7 +33,10 @@ afterEach(() => {
 });
 
 async function runPhase(
-  opts: RunOpts & { project?: { projectDir: string; sessionId: string } } = {},
+  opts: RunOpts & {
+    project?: { projectDir: string; sessionId: string };
+    skillsContext?: string;
+  } = {},
 ) {
   const { projectDir, sessionId } = opts.project ?? setupProject(dirs);
   const planner = opts.planner ?? makePassingPlanner();
@@ -57,6 +62,9 @@ async function runPhase(
     ...(opts.drainPendingAttachments !== undefined && {
       drainPendingAttachments: opts.drainPendingAttachments,
     }),
+    ...(opts.skillsContext !== undefined && {
+      context: { ...defaultContext, dir: projectDir, skillsContext: opts.skillsContext },
+    }),
   });
   saveState(stateRef, planningState);
   let trackedState = planningState;
@@ -64,7 +72,6 @@ async function runPhase(
     wctx,
     state: planningState,
     savedState: planningState.rewindPending === undefined ? undefined : planningState,
-    selectedSkills: undefined,
     phaseTimings: {},
     startTime: Date.now(),
     setTrackedState: (next) => {
@@ -81,6 +88,27 @@ async function runPhase(
 }
 
 describe('runPlanningPhase — rewindPending', () => {
+  it("regenerates the rewound artifact with the run's skills context", async () => {
+    const skillsContext = '## Active Project Skills\n\n### AuthSkill\nREWIND-SKILL-BODY';
+    const prompts: string[] = [];
+    const { planner } = makeRecordingPlanner({
+      regenerate: async (opts) => {
+        prompts.push(opts.prompt);
+        return { text: '# Regenerated spec', usage: null };
+      },
+    });
+
+    await runPhase({
+      planner,
+      config: makeConfig({ workflow: auto() }),
+      state: prepareState('specifying'),
+      rewindPending: { target: 'spec', comment: 'add httpOnly cookie flag' },
+      skillsContext,
+    });
+
+    expect(prompts).toEqual([expect.stringContaining(skillsContext)]);
+  });
+
   const rewindRegenCases: Array<{
     target: 'spec' | 'plan';
     phase: 'specifying' | 'planning';
@@ -217,6 +245,64 @@ describe('runPlanningPhase — rewindPending', () => {
       expect.objectContaining({ message: expect.stringContaining('Invalid planning artifact') }),
     );
     expect(planner.review).not.toHaveBeenCalled();
+  });
+
+  it('issues a rewound revision again on a fresh session with the transcript when its thread expired', async () => {
+    const project = setupProject(dirs);
+    const transcriptLine = 'The export must be named PERIWINKLE-42.';
+    appendMessage(project, { role: 'user', phase: 'planning', text: transcriptLine });
+    const { planner, regenerate } = makeExpiredThreadPlanner('thread-gone', async (opts) => {
+      opts.callbacks.onSessionId?.('thread-fresh');
+      return { text: '# Regenerated plan', usage: null };
+    });
+
+    const { result, events } = await runPhase({
+      project,
+      planner,
+      config: makeConfig({ workflow: auto() }),
+      state: { ...prepareState('planning'), plannerSessionId: 'thread-gone' },
+      rewindPending: { target: 'plan', comment: 'narrow the plan' },
+    });
+
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(regenerate).toHaveBeenCalledTimes(2);
+    expect(regenerate.mock.calls[0]?.[0].priorMessages).toBeUndefined();
+    expect(regenerate.mock.calls[1]?.[0].priorMessages).toEqual([
+      { role: 'user', content: transcriptLine },
+      { role: 'user', content: 'narrow the plan' },
+    ]);
+    const saved = loadState(project);
+    expect(saved?.pendingRecovery).toBeUndefined();
+    expect(saved?.plannerSessionId).toBe('thread-fresh');
+    expect(
+      events.filter(
+        (event) => event.type === 'warning' && event.code === 'planner_session_expired',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('halts a rewind whose revision issued again fails too, and drops the expired thread', async () => {
+    const { planner, regenerate } = makeExpiredThreadPlanner('thread-gone', async () => {
+      throw new Error('stream disconnected before completion');
+    });
+
+    const { result, projectDir, sessionId, events } = await runPhase({
+      planner,
+      config: makeConfig({ workflow: auto() }),
+      state: { ...prepareState('planning'), plannerSessionId: 'thread-gone' },
+      rewindPending: { target: 'plan', comment: 'narrow the plan' },
+    });
+
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(regenerate).toHaveBeenCalledTimes(2);
+    const halted = loadState({ projectDir, sessionId });
+    expect(halted?.pendingRecovery?.reason).toBe('planner-call-failed');
+    expect(halted?.plannerSessionId).toBeNull();
+    expect(events.filter((event) => event.type === 'error')).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining('stream disconnected before completion'),
+      }),
+    ]);
   });
 
   it('drains queued rewind input exactly once before valid plan regeneration', async () => {

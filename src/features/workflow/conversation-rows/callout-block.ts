@@ -6,6 +6,8 @@ export type CalloutSeverity = 'error' | 'warning' | 'info';
 export function calloutRowsBlock(input: {
   keyPrefix: string;
   label: string;
+  /** A dim note beside the label, such as the clock a halt's quota comes back on. */
+  meta?: string | undefined;
   value: string | undefined;
   width: number;
   severity: CalloutSeverity;
@@ -25,6 +27,7 @@ export function calloutRowsBlock(input: {
     keyPrefix: input.keyPrefix,
     label: input.label,
     labelTone: tone,
+    ...(input.meta !== undefined && { metaSegments: [{ text: input.meta, tone: 'textDim' }] }),
     bodyLines,
     width: Math.max(1, input.width),
     bodyPrefix: '',

@@ -95,6 +95,9 @@ const BASE_WORKFLOW = {
  * `reviewer` overrides must be complete. `workflow` is merged, so a scenario can
  * change the mode without losing the pinned transcript and retry settings.
  */
+/** The session every workflow fixture runs as. */
+export const VISUAL_WORKFLOW_SESSION_ID = 'visual-workflow';
+
 export function visualConfig(overrides?: VisualConfigOverrides): Config {
   return makeConfig({
     planner: BASE_PLANNER,
@@ -192,7 +195,7 @@ export function createWorkflowBaseFixture(
   return createRouteFixture(() => {
     const config = configStore.get().config;
     if (config === null) throw new Error('Visual workflow fixture requires project config');
-    const sessionId = 'visual-workflow';
+    const sessionId = VISUAL_WORKFLOW_SESSION_ID;
     if (resumeState !== undefined) {
       saveState({ projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId }, resumeState);
     }

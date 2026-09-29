@@ -1,15 +1,24 @@
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
+import { recoveryActionLabel } from './action-label.js';
 
 /**
  * The one line an operator can paste to carry on from a halt. Only the actions
- * `splitbrief continue` can take name themselves; every other recommendation
- * needs the panel, so the line resumes and says where the action lives.
+ * `splitbrief continue` can take name themselves; every other recommendation is
+ * a row of the recovery panel, which the same command opens, so the line names
+ * that row.
  */
 export function formatResumeCommand(sessionId: string, issue: RecoveryIssue): string {
   const flag = continueAction(issue);
-  if (flag === undefined)
-    return `splitbrief resume (${issue.recommendedAction} is available in the TUI)`;
+  if (flag === undefined) {
+    const label = recoveryActionLabel(issue.recommendedAction, issue);
+    return `splitbrief continue ${sessionId}, then choose ${label} in the recovery panel`;
+  }
   return `splitbrief continue ${sessionId} --action ${flag}`;
+}
+
+/** A line that names its action runs headless too; the recovery panel needs the TUI. */
+export function continuesHeadless(issue: RecoveryIssue): boolean {
+  return continueAction(issue) !== undefined;
 }
 
 function continueAction(issue: RecoveryIssue): string | undefined {
@@ -18,6 +27,8 @@ function continueAction(issue: RecoveryIssue): string | undefined {
       return 'skip';
     case 'retry-same-worker':
       return 'retry';
+    case 'end-run':
+      return 'end-run';
     case 'switch-seat': {
       const tool = issue.switchSeat?.candidates[0]?.tool;
       return tool === undefined ? undefined : `switch-seat:${tool}`;

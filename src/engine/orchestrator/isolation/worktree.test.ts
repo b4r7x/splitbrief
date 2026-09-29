@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
@@ -349,6 +349,42 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
         git: createGitClient(repoDir),
       }),
     ).rejects.toThrow(/symlink/i);
+  });
+
+  it('throws when the source checkout holds a relative symlink that leaves the project', async () => {
+    createTestGitRepo(repoDir, { 'README.md': '# test\n' });
+    symlinkSync(`../${basename(outsideDir)}`, join(repoDir, 'linked'), 'dir');
+
+    await expect(
+      ensureIsolationWorktree({
+        projectDir: repoDir,
+        sessionId: SESSION_ID,
+        git: createGitClient(repoDir),
+      }),
+    ).rejects.toThrow('"linked" is a symlink that does not stay inside the project');
+  });
+
+  // `npx skills add` and a project's own skill links look like this: an
+  // untracked link that points back into the project from a tool's directory.
+  it('seeds an untracked symlink that stays inside the project as the same link', async () => {
+    createTestGitRepo(repoDir, {
+      'README.md': '# test\n',
+      'skills/babysit/SKILL.md': '# babysit\n',
+    });
+    await mkdir(join(repoDir, '.claude', 'skills'), { recursive: true });
+    symlinkSync('../../skills/babysit', join(repoDir, '.claude', 'skills', 'babysit'), 'dir');
+
+    const result = await ensureIsolationWorktree({
+      projectDir: repoDir,
+      sessionId: SESSION_ID,
+      git: createGitClient(repoDir),
+    });
+
+    expect(result).toEqual({ kind: 'ready', worktreePath: worktreeDir(), reused: false });
+    if (result.kind !== 'ready') return;
+    const seeded = join(result.worktreePath, '.claude', 'skills', 'babysit');
+    expect(readlinkSync(seeded)).toBe('../../skills/babysit');
+    expect(realpathSync(seeded)).toBe(realpathSync(join(result.worktreePath, 'skills', 'babysit')));
   });
 
   it('keeps gitignore bookkeeping out of task-visible changes around a task edit', async () => {

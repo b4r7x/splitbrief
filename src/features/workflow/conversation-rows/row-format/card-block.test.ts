@@ -136,15 +136,16 @@ describe('prepareCardRows wraps on whole words', () => {
       .map((row) => row.segments.map((segment) => segment.text).join(''));
   }
 
-  // The two planner halts whose callouts broke "swit|ch" at 120 columns and "fix t|his" at 80.
+  // The two planner halts whose callouts broke "swit|ch" at 120 columns and "fix t|his" at 80,
+  // in the words `diagnosePlannerCallFailure` writes them now.
   it.each([
     [
       'Codex',
-      'Planning failed. Codex hit its usage limit — logging in again will not fix this. Wait for the limit to reset or switch the planner, then start again.',
+      "Planning failed: You've hit your usage limit. OpenAI Codex CLI hit its usage limit. Wait for the limit to reset or change the PLAN tool, then continue.",
     ],
     [
       'Claude Code',
-      'Planning failed. Claude Code hit its usage limit — logging in again will not fix this. The limit resets at 5:00 PM; wait for it or switch the planner.',
+      "Planning failed: You've hit your session limit. Claude Code CLI hit its usage limit. Wait for the limit to reset or change the PLAN tool, then continue.",
     ],
   ])('breaks the %s halt only between words, at every width', (_tool, text) => {
     for (let width = 30; width <= 120; width += 1) {

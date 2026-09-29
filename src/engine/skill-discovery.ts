@@ -6,14 +6,15 @@ import { homedir } from 'node:os';
 import type { SkillMeta } from '../core/skills/types.js';
 import { GLOBAL_SKILL_SCAN_PATHS, PROJECT_SKILL_SCAN_PATHS } from '../core/skills/scan-paths.js';
 import { extractFrontmatter } from '../utils/frontmatter.js';
+import { countNoun } from '../utils/pluralize.js';
 
 import { isENOENT } from '../lib/process/errors.js';
 import { warnError, warnStderr } from '../lib/warn.js';
 import { readProjectFileConfined } from '../lib/fs.js';
 
 const MAX_SKILL_CHARS = 16_000;
-const MIN_TRUNCATED_CHARS = 200;
 const MAX_SCAN_DEPTH = 4;
+const REFERENCES_DIR = 'references';
 
 const SkillFrontmatterSchema = z.object({
   name: z.string().optional(),
@@ -24,8 +25,8 @@ type SkillFrontmatter = z.infer<typeof SkillFrontmatterSchema>;
 
 const FRONTMATTER_FIELD_RE = /^(name|description):[ \t]*(.*)$/;
 
-// Discovery reruns on every skills-overlay open; one line per malformed skill is a diagnostic,
-// one line per open is noise smeared across the TUI.
+// Only a skill a run loads is named, because discovery parses every skill in every scan root.
+// A run loads its skills again at each continue, so each malformed skill is named once.
 const warnedMalformed = new Set<string>();
 
 function unquote(value: string): string {
@@ -50,19 +51,15 @@ function scanFrontmatterFields(block: string): SkillFrontmatter {
 // YAML rejects an unquoted value containing `: ` — the `description: Use when … Triggers: …`
 // convention most skills are authored with — so a block that fails to parse is line-scanned
 // instead of dropping a real skill.
-function parseFrontmatter(raw: string, path: string): SkillFrontmatter | null {
+function parseFrontmatter(raw: string): { fields: SkillFrontmatter; recovered: boolean } | null {
   const { frontmatter, body } = extractFrontmatter(raw);
   if (frontmatter !== null) {
     const parsed = SkillFrontmatterSchema.safeParse(frontmatter);
-    if (parsed.success) return parsed.data;
+    if (parsed.success) return { fields: parsed.data, recovered: false };
   }
   // extractFrontmatter hands back the input untouched only when there is no `---` block at all.
   if (body === raw) return null;
-  if (!warnedMalformed.has(path)) {
-    warnedMalformed.add(path);
-    warnStderr(`Skill frontmatter is not valid YAML, recovered by line scan: ${path}`, 'log-only');
-  }
-  return scanFrontmatterFields(raw.slice(0, raw.length - body.length));
+  return { fields: scanFrontmatterFields(raw.slice(0, raw.length - body.length)), recovered: true };
 }
 
 type ScanContext = {
@@ -71,7 +68,7 @@ type ScanContext = {
   realProjectDir: string | undefined;
 };
 
-async function realpathOrNull(path: string): Promise<string | null> {
+export async function realpathOrNull(path: string): Promise<string | null> {
   try {
     return await realpath(path);
   } catch {
@@ -118,18 +115,20 @@ async function readSkill({
   id,
   path,
   ctx,
+  dir,
 }: {
   id: string;
   path: string;
   ctx: ScanContext;
+  dir?: string | undefined;
 }): Promise<SkillMeta | null> {
   const raw = await readSkillFile(ctx, path);
   if (raw === null) {
     if (ctx.projectDir !== undefined) warnError(`Failed to read confined skill ${path}`);
     return null;
   }
-  const fm = parseFrontmatter(raw, path);
-  if (fm === null) return null;
+  const fm = parseFrontmatter(raw)?.fields;
+  if (fm === undefined) return null;
   const name = fm.name?.trim();
   return {
     id,
@@ -138,6 +137,7 @@ async function readSkill({
     path,
     scope: ctx.scope,
     ...(ctx.projectDir !== undefined && { projectDir: ctx.projectDir }),
+    ...(dir !== undefined && { dir }),
   };
 }
 
@@ -185,7 +185,7 @@ async function walkDir(dir: string, depth: number, ctx: ScanContext): Promise<Sk
 
     const skillMd = join(target, 'SKILL.md');
     if (await exists(skillMd)) {
-      const skill = await readSkill({ id: entry.name, path: skillMd, ctx });
+      const skill = await readSkill({ id: entry.name, path: skillMd, ctx, dir: target });
       if (skill) skills.push(skill);
       continue;
     }
@@ -207,7 +207,7 @@ function agentsMdEntry(projectDir: string): SkillMeta | null {
   const path = join(projectDir, 'AGENTS.md');
   const raw = readProjectFileConfined(projectDir, 'AGENTS.md');
   if (raw === null) return null;
-  const fm = parseFrontmatter(raw, path);
+  const fm = parseFrontmatter(raw)?.fields;
   const name = fm?.name?.trim();
   return {
     id: 'agents-root',
@@ -250,76 +250,143 @@ export async function discoverSkills(projectDir: string): Promise<SkillMeta[]> {
 }
 
 // The portable splitbrief skills tell a host session to spawn its own implementer and
-// reviewer; injected into this planner they would describe the pipeline it is already
-// running. The repo's own dev skills (`splitbrief-dev`, …) are not in this set.
+// reviewer, and `splitbrief-babysit` tells it to supervise this CLI; injected into this run's
+// seats they would describe the pipeline they are already running. The repo's own dev skills
+// (`splitbrief-dev`, …) are not in this set.
 const ORCHESTRATION_SKILL_IDS = new Set([
   'splitbrief',
   'splitbrief-brief',
   'splitbrief-run',
   'splitbrief-review',
+  'splitbrief-babysit',
 ]);
 
-export type SkillContent = { content: string; omitted: string[] };
+export type SkillContent = { content: string; omitted: string[]; unread: SkillMeta[] };
 
+async function readSkillText(skill: SkillMeta, path: string): Promise<string | null> {
+  if (skill.projectDir !== undefined) {
+    const confined = readProjectFileConfined(skill.projectDir, relative(skill.projectDir, path));
+    if (confined === null) warnError(`Failed to read confined skill ${path}`);
+    return confined;
+  }
+  try {
+    return await readFile(path, 'utf-8');
+  } catch (err) {
+    if (!isENOENT(err)) warnError(`Failed to read skill ${path}`, err);
+    return null;
+  }
+}
+
+// Every seat reaches a project skill from its own working directory — the checkout or an
+// isolation worktree — so a project path is spelled from the project root, never absolute.
+async function skillPathLabel(skill: SkillMeta, path: string): Promise<string> {
+  if (skill.scope !== 'project' || skill.projectDir === undefined) return path;
+  const [root, real] = await Promise.all([realpathOrNull(skill.projectDir), realpathOrNull(path)]);
+  return relative(root ?? skill.projectDir, real ?? path) || '.';
+}
+
+/** What a skill owns on disk: its directory, or a loose `.md` skill's (and AGENTS.md's) own file. */
+export function skillRoot(skill: SkillMeta): string {
+  return skill.dir ?? skill.path;
+}
+
+async function locationLine(skill: SkillMeta): Promise<string> {
+  const root = skillRoot(skill);
+  const line = `${root === skill.path ? 'File' : 'Base directory'}: ${await skillPathLabel(skill, root)}`;
+  return skill.scope === 'project' && skill.projectDir !== undefined
+    ? `${line} (relative to the project root)`
+    : line;
+}
+
+// Only a skill directory owns a `references/`; a loose `.md` skill and AGENTS.md sit beside others.
+async function referencePaths(skill: SkillMeta): Promise<string[]> {
+  if (skill.dir === undefined) return [];
+  const dir = join(skill.dir, REFERENCES_DIR);
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+      .map((entry) => `${REFERENCES_DIR}/${entry.name}`)
+      .sort();
+  } catch (err) {
+    if (!isENOENT(err)) warnError(`Failed to list skill references ${dir}`, err);
+    return [];
+  }
+}
+
+/**
+ * The selected skills under one character budget: every `SKILL.md` body whole, in selection
+ * order, then each inlined skill's `references/*.md` whole while it fits. A file that does not
+ * fit is named by path, never cut. `omitted` names each skill whose body was named instead;
+ * references named by path are the normal case. `unread` holds each skill whose file could not
+ * be read, which the block leaves out.
+ */
 export async function loadSkillContent(skills: SkillMeta[]): Promise<SkillContent> {
-  if (skills.length === 0) return { content: '', omitted: [] };
+  if (skills.length === 0) return { content: '', omitted: [], unread: [] };
 
-  const sections: string[] = [];
-  const omitted: string[] = [];
+  const bodies: { skill: SkillMeta; body: string | null }[] = [];
+  const unread: SkillMeta[] = [];
   let totalChars = 0;
 
-  for (let i = 0; i < skills.length; i++) {
-    const skill = skills[i];
-    if (skill === undefined) continue;
-    let raw: string;
-    if (skill.scope === 'project' && skill.projectDir !== undefined) {
-      const confined = readProjectFileConfined(
-        skill.projectDir,
-        relative(skill.projectDir, skill.path),
+  for (const skill of skills) {
+    const raw = await readSkillText(skill, skill.path);
+    if (raw === null) {
+      unread.push(skill);
+      continue;
+    }
+    if (parseFrontmatter(raw)?.recovered && !warnedMalformed.has(skill.path)) {
+      warnedMalformed.add(skill.path);
+      warnStderr(
+        `Skill frontmatter is not valid YAML, recovered by line scan: ${skill.path}`,
+        'log-only',
       );
-      if (confined === null) {
-        warnError(`Failed to read confined skill ${skill.path}`);
-        continue;
-      }
-      raw = confined;
-    } else {
-      try {
-        raw = await readFile(skill.path, 'utf-8');
-      } catch (err) {
-        if (!isENOENT(err)) warnError(`Failed to read skill ${skill.path}`, err);
-        continue;
-      }
     }
     const { body } = extractFrontmatter(raw);
-
-    if (totalChars + body.length > MAX_SKILL_CHARS) {
-      const remaining = MAX_SKILL_CHARS - totalChars;
-      const partial = remaining > MIN_TRUNCATED_CHARS;
-      if (partial) {
-        sections.push(`### ${skill.name}\n${body.slice(0, remaining)}\n[... truncated]`);
-      }
-      const dropped = skills.slice(partial ? i + 1 : i);
-      if (dropped.length > 0) {
-        const names = dropped.map((s) => s.name);
-        omitted.push(...names);
-        sections.push(
-          `[${dropped.length} more selected skills omitted: budget ${MAX_SKILL_CHARS} chars — ${names.join(', ')}]`,
-        );
-      }
-      break;
-    }
-
-    sections.push(`### ${skill.name}\n${body}`);
-    totalChars += body.length;
+    const fits = totalChars + body.length <= MAX_SKILL_CHARS;
+    bodies.push({ skill, body: fits ? body : null });
+    if (fits) totalChars += body.length;
   }
 
-  return { content: sections.join('\n\n'), omitted };
+  const omitted: string[] = [];
+  const sections: string[] = [];
+  for (const { skill, body } of bodies) {
+    const parts = [`### ${skill.name}\n${await locationLine(skill)}`];
+    const notInlined: string[] = [];
+    if (body === null) {
+      omitted.push(skill.name);
+      notInlined.push(basename(skill.path), ...(await referencePaths(skill)));
+    } else {
+      parts.push(body);
+      for (const path of await referencePaths(skill)) {
+        if (totalChars >= MAX_SKILL_CHARS) {
+          notInlined.push(path);
+          continue;
+        }
+        const text = await readSkillText(skill, join(skillRoot(skill), path));
+        if (text === null) continue;
+        if (totalChars + text.length > MAX_SKILL_CHARS) {
+          notInlined.push(path);
+          continue;
+        }
+        parts.push(`#### ${path}\n${text}`);
+        totalChars += text.length;
+      }
+    }
+    if (notInlined.length > 0) {
+      parts.push(
+        `[${countNoun(notInlined.length, 'file')} not inlined: budget ${MAX_SKILL_CHARS} chars — ${notInlined.join(', ')}]`,
+      );
+    }
+    sections.push(parts.join('\n\n'));
+  }
+
+  return { content: sections.join('\n\n'), omitted, unread };
 }
 
 export async function buildSkillsSection(
   skills: SkillMeta[],
-): Promise<{ section: string; omitted: string[] }> {
-  const { content, omitted } = await loadSkillContent(skills);
-  if (content === '') return { section: '', omitted };
-  return { section: `## Active Project Skills\n\n${content}`, omitted };
+): Promise<{ section: string; omitted: string[]; unread: SkillMeta[] }> {
+  const { content, omitted, unread } = await loadSkillContent(skills);
+  if (content === '') return { section: '', omitted, unread };
+  return { section: `## Active Project Skills\n\n${content}`, omitted, unread };
 }

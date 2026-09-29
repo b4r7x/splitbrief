@@ -58,6 +58,7 @@ function buildTaskSections(
 
   if (context) {
     sections.push(`## Project: ${context.name}`, '');
+    if (context.skillsContext) sections.push(context.skillsContext, '');
   }
 
   const files = taskFiles(task);

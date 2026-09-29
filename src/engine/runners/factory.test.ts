@@ -6,6 +6,7 @@ import { matches } from '../../utils/error.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { prependPath, writeCommandShim } from '#testing/helpers/command-shim.js';
+import { installClaudeRecordingShim } from '#testing/helpers/claude-cli-shim.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -390,6 +391,66 @@ describe('createPlanner', () => {
       expect(result.text).toContain('slow response');
       expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
     });
+  });
+});
+
+describe("claude-code seats and the run's global skills", () => {
+  let shimDir: string;
+  let restorePath: () => void;
+
+  beforeEach(() => {
+    shimDir = createTempDir('factory-claude-code-skills');
+    restorePath = prependPath(shimDir);
+  });
+
+  afterEach(() => {
+    restorePath();
+    cleanupTempDir(shimDir);
+  });
+
+  it('hands the planner and the reviewer the attached global skills to read', async () => {
+    const { argvFile } = installClaudeRecordingShim(shimDir);
+    const resolved = await resolveCliExecutableAliases({
+      commands: ['claude'],
+      projectDir: process.cwd(),
+    });
+    const trustedCli: CliStartGate = { tool: 'claude-code', executable: resolved.executable };
+    const claude = { kind: 'cli', tool: 'claude-code', model: 'test' } as const;
+    const skillRoots = ['/home/me/.claude/skills/auth'];
+    const readRoots = (): unknown => {
+      const argv = readFileSync(argvFile, 'utf8').split('\n');
+      return JSON.parse(argv[argv.indexOf('--settings') + 1] ?? '').permissions
+        .additionalDirectories;
+    };
+
+    const planner = await createPlanner(withPlanner(claude), undefined, {
+      trustedCli,
+      skillRoots,
+    });
+    await planner.review('prompt', shimDir, { onOutput: () => {} });
+    expect(readRoots()).toEqual(skillRoots);
+
+    const config = makeConfig({ reviewer: claude });
+    const slot: RunnerSlot = { role: 'reviewer' };
+    const gate = makeRunnerGate(claude, slot, 'factory-reviewer');
+    if (gate.kind !== 'cli') throw new Error('expected a CLI gate');
+    const reviewer = await createPreparedReviewer(config, {
+      preparedConfig: config,
+      preparationId: 'factory-reviewer',
+      slot,
+      gates: [
+        {
+          ...gate,
+          executable:
+            'executableIdentity' in trustedCli.executable
+              ? trustedCli.executable
+              : executableReceipt(trustedCli.executable.path),
+        },
+      ],
+      skillRoots,
+    });
+    await reviewer.review('prompt', shimDir, { onOutput: () => {} });
+    expect(readRoots()).toEqual(skillRoots);
   });
 });
 

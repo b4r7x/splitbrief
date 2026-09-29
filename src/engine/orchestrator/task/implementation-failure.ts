@@ -19,6 +19,7 @@ import {
   buildRunnerUsageLimitRecoveryIssue,
   recoveryBuilderForRunnerOutcome,
   routeBiggerProfileFromDecision,
+  runnerHaltRow,
 } from '../recovery/builders/task.js';
 import { isExtractedCodeApprovalRaceError } from '../../implementers/pipeline/extracted-code.js';
 import { handleApprovalTimeUserEditConflict } from '../escalation/approval-conflict.js';
@@ -108,7 +109,7 @@ export async function handleFailedImplementation(opts: {
     publishError({
       bus: wctx.bus,
       phase: state.phase,
-      message: `${issue.message} (runner reported: ${toolMessage})`,
+      message: runnerHaltRow(issue, toolMessage),
     });
     return raisePendingRecovery(wctx, state, issue, setTrackedState);
   }
@@ -140,7 +141,8 @@ export async function handleFailedImplementation(opts: {
     publishError({
       bus: wctx.bus,
       phase: state.phase,
-      message: `${issue.message} (runner reported: ${toolMessage})`,
+      message: runnerHaltRow(issue, toolMessage),
+      resetAt: issue.resetAt,
     });
     return raisePendingRecovery(wctx, state, issue, setTrackedState);
   }

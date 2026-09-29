@@ -213,9 +213,9 @@ The pending call, reply and answers are persisted in `state.pendingPlannerConver
 
 ## Skills
 
-Optional markdown files that provide extra context to the planner (coding standards, domain knowledge, architectural notes). `src/engine/skill-discovery.ts` scans one fixed union of roots, regardless of which tool holds the PLAN seat: project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, then global `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/` (the list lives in `src/core/skills/scan-paths.ts`). That order is the precedence order — a skill id found in an earlier root wins, so project skills always outrank global ones. `<project>/AGENTS.md` is added as the `agents-root` entry when it exists. User picks which skills to include for a given run; selected skills are concatenated into a `skills_context` block and passed to the planner alongside the feature prompt.
+Optional markdown files that provide extra context to every seat — planner, implementer and reviewer (coding standards, domain knowledge, architectural notes). `src/engine/skill-discovery.ts` scans one fixed union of roots, regardless of which tool holds the PLAN seat: eight project roots — `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `./.github/skills/`, `./.commandcode/skills/`, `./.kilo/skills/`, `./.kilocode/skills/`, `./.cursor/skills/` — then nine global ones — `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `~/.commandcode/skills/`, `~/.kilo/skills/`, `~/.config/kilo/skills/`, `~/.cursor/skills/` (the list lives in `src/core/skills/scan-paths.ts`). That order is the precedence order — a skill id found in an earlier root wins, so project skills always outrank global ones. `<project>/AGENTS.md` is added as the `agents-root` entry when it exists. User picks which skills to include for a given run; the run renders them once into one `## Active Project Skills` block — each skill's base directory, its `SKILL.md` body and its `references/*.md` under a 16 000-character budget — and every seat call carries it: the planning steps, each implementer brief and its retries, the hint call and the final review.
 
-Skills are planner-only. The implementer never sees them — its prompts are derived from the resolved Task Brief transport and any supporting artifacts.
+The implementer still never sees the planner's prompt: it gets the skills through its own brief prompt, beside the resolved Task Brief.
 
 ---
 
@@ -225,7 +225,7 @@ A **SPLITBRIEF session** is one self-contained piece of work from initial featur
 
 The active session is pointed to by `.splitbrief/active`, a plain text file containing the session-id. Only **one session can be active at a time** in a given project directory — `splitbrief start` fails if `.splitbrief/active` already points at a live session. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.splitbrief/` per working directory.
 
-This is distinct from a **planner session** — e.g. the `session_id` Claude Code stream-json emits — which is a backend-specific conversation handle. Planner session ids are persisted inside `state.json` so they can be reused on resume (see `docs/WORKFLOW.md` §1.5). One SPLITBRIEF session may own several planner session ids over its lifetime (e.g. if the first expired and a fresh one was opened on resume).
+This is distinct from a **planner session** — e.g. the `session_id` Claude Code stream-json emits — which is a backend-specific conversation handle. Planner session ids are persisted inside `state.json` so they can be reused on resume (see `docs/WORKFLOW.md` §1.5). One SPLITBRIEF session may own several planner session ids over its lifetime (e.g. if the first expired and a fresh one was opened in its place).
 
 ## Queue & Interjection
 

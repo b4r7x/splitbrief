@@ -46,11 +46,6 @@ export async function runLocalRetries(
   let consecutiveTimeouts = 0;
   const maxRetries = ctx.config.workflow.maxRetries;
 
-  const textHandler = createBusTextHandler(
-    { bus: ctx.bus, phase: state.phase },
-    { role: 'implementer' },
-  );
-
   const persistTransition = (
     current: WorkflowState,
     action: Parameters<typeof transitionAndSave>[2],
@@ -103,7 +98,10 @@ export async function runLocalRetries(
           state.discoveredValidation?.language,
         ),
         phase: state.phase,
-        onOutput: textHandler,
+        onOutput: createBusTextHandler(
+          { bus: ctx.bus, phase: state.phase },
+          { role: 'implementer' },
+        ),
       }),
     });
 

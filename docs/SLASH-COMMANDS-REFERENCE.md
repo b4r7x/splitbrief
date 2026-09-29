@@ -54,8 +54,8 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 
 ### `/skills`
 
-- **Purpose**: Pick planner skills for the session. Skills are pre-canned planner persona / instruction bundles that bias the planner toward specific kinds of work (testing, refactoring, security review, etc.).
-- **Screens**: all — a skill added or wanted mid-session matters for the revise/regenerate loops, not just before the first planner call.
+- **Purpose**: Pick the skills every seat carries for the session. Skills are instruction bundles that bias the planner, the implementer and the reviewer toward specific kinds of work (testing, refactoring, security review, etc.).
+- **Screens**: all. A run builds its skills block once, when it starts or continues. A selection changed for an existing run applies to that continue only: it is not saved, and opening the run again from `/sessions`, home or the palette selects the skills it saved when it started. A new run saves the selection it starts with.
 - **Args**: optional, and repeatable on one line — one or more whitespace-separated skill ids, from the ids `ctx.listSkills()` reports. Matching is fuzzy (`match: 'fuzzy'`), so a partial id resolves as long as it is unambiguous. The `/` menu completes them project-first, then already-selected global skills, then the rest, each row showing the skill's name and description, so a skill can be found by what it is for rather than by its id. Unknown ids print `"Unknown skill: <x>"` (`"Unknown skills: …"` for several).
 - **Shortcut**: `Ctrl+S` (home screen only — see `src/core/keybindings/registry.ts`).
 - **Example**: `/skills`, `/skills testing-standards`, `/skills testing-standards security-review`
@@ -551,7 +551,7 @@ Alphabetical, for fast lookup.
 - [`/settings`](#settings) — open the settings overlay (Crew first).
 - [`/sidebar`](#sidebar) — show or hide the workflow sidebar.
 - [`/stop`](#stop) — open the inline session-options menu.
-- [`/skills`](#skills) — pick planner skills, bare or by id.
+- [`/skills`](#skills) — pick skills for every seat, bare or by id.
 - [`/tasks`](#tasks) — show the brief list.
 
 ---

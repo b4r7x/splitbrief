@@ -2,7 +2,12 @@ import type { Task } from '../../../core/schemas/task.js';
 import { sliceRuleText } from '../../../core/pipeline-spec/brief.js';
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
-import { plannerConversationSection, buildPrompt, instructionsSection } from './builder.js';
+import {
+  plannerConversationSection,
+  buildPrompt,
+  instructionsSection,
+  skillsSection,
+} from './builder.js';
 import { buildTaskFormatExample } from './task-format-example.js';
 import { formatTasks } from '../formatter.js';
 import { TASK_BRIEF_HEADINGS } from '../headings.js';
@@ -25,10 +30,10 @@ export function briefContract(ctx: LanguageContext): string {
 Every brief must also leave typecheck, lint and tests green on its own. Never plan for a failing gate: when a change would break a sibling file, widen the brief's \`files\` to include it, keep the change backward compatible with an optional property and a default, or split the work so each brief lands whole. Before a brief deletes or renames an export, its \`files\` name every consumer found by searching the whole repository — \`src/\` and \`testing/\` alike, colocated and sibling tests included.`;
 }
 
-export function criticalRules(ctx: LanguageContext): string {
+export function criticalRules(ctx: LanguageContext, opts?: { briefCap?: number }): string {
   return `1. **Self-contained**: Each brief must inline ALL context needed. Include relevant current code for modify tasks, ${ctx.typeAnnotationStyle}, import paths, function signatures from dependencies, and expected patterns.
 
-2. **Atomic**: ${sliceRuleText()}
+2. **Atomic**: ${sliceRuleText(opts)}
 
 3. **Dependency-ordered**: Briefs must be ordered so dependencies come first. Use \`depends_on\` to declare which briefs must complete first. Independent briefs can run in parallel.
 
@@ -45,12 +50,17 @@ export function criticalRules(ctx: LanguageContext): string {
 9. **Reserved delimiter**: Outside fenced code blocks, lines containing only \`---\` are reserved for Task Brief frontmatter delimiters. Never use a bare \`---\` as a horizontal rule or phase-heading separator.`;
 }
 
+/** The implementer gets the run's skills beside every brief, so a brief restates none of them. */
+export const SKILLS_WITH_EVERY_BRIEF =
+  'Every brief reaches the implementer together with the Active Project Skills section: do not copy that section into a brief, and do not point a brief at skill files.';
+
 export type TasksPromptInput = Readonly<{
   spec: string;
   plan: string;
   languageContext?: LanguageContext | undefined;
   currentTasks?: Task[] | undefined;
   skillsContext?: string | undefined;
+  briefCap?: number | undefined;
 }>;
 
 export function buildTasksPrompt(input: TasksPromptInput): string {
@@ -59,15 +69,12 @@ export function buildTasksPrompt(input: TasksPromptInput): string {
 
   return buildPrompt({
     title: 'Compile Product Task Briefs',
-    intro:
-      'You are compiling a set of **Product Task Brief v1** records — the durable contract the implementer model will execute against. Each brief is sent independently to a small implementer model that has NO access to this prompt, the spec, the plan, or sibling briefs. Every brief must stand on its own. The `tasks.md` markdown file is the transport; the brief is the meaning.',
+    intro: `You are compiling a set of **Product Task Brief v1** records — the durable contract the implementer model will execute against. Each brief is sent independently to a small implementer model that has NO access to this prompt, the spec, the plan, or sibling briefs. Every brief must stand on its own.${input.skillsContext ? ` ${SKILLS_WITH_EVERY_BRIEF}` : ''} The \`tasks.md\` markdown file is the transport; the brief is the meaning.`,
     sections: [
       plannerConversationSection,
       { heading: 'Specification', body: input.spec },
-      {
-        heading: 'Implementation Plan',
-        body: `${input.plan}${input.skillsContext ? `\n\n${input.skillsContext}` : ''}`,
-      },
+      { heading: 'Implementation Plan', body: input.plan },
+      ...skillsSection(input.skillsContext),
       ...(currentTasks && currentTasks.length > 0
         ? [
             {
@@ -92,7 +99,9 @@ ${buildTaskFormatExample(ctx)}`,
       },
       {
         heading: 'Critical Rules',
-        body: criticalRules(ctx),
+        body: criticalRules(ctx, {
+          ...(input.briefCap !== undefined && { briefCap: input.briefCap }),
+        }),
       },
     ],
     output:

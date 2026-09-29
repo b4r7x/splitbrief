@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatUsageLimitReset } from '../runners/usage-limit.js';
+import { formatStoredReset } from '../../core/recovery/reset-clock.js';
 import { parseStreamLine } from './parse-stream-json.js';
 
 function jsonLine(value: unknown): string {
@@ -473,7 +473,7 @@ describe('parseStreamLine', () => {
 // is `allowed` and must not escalate the frame on its own.
 describe('rate_limit_event frames', () => {
   const resetsAt = 1_794_000_000;
-  const resetLabel = formatUsageLimitReset(new Date(resetsAt * 1000));
+  const resetLabel = formatStoredReset(resetsAt * 1000);
   const rateFrame = (rateLimitInfo: unknown): string =>
     jsonLine({
       type: 'rate_limit_event',

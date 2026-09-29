@@ -66,6 +66,7 @@ export async function resumeArtifactApproval(opts: {
     signal: wctx.signal,
     specMetadata: wctx.metadata,
     sinks: wctx.sinks,
+    ...(wctx.skillsContext !== undefined && { skillsContext: wctx.skillsContext }),
   });
 
   // Carry the effective settings through a loop that may read a newer disk head.

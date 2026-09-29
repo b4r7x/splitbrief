@@ -29,6 +29,10 @@ import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
 import { failedRetry, type RetryResult } from '../escalation/types.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
+import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js';
+import { error } from '../../../utils/error.js';
+import { applyRecoveryAction } from '../recovery/actions.js';
 import { retryAndRecord } from './retry.js';
 
 vi.mock('../escalation/handle.js', async (importOriginal) => {
@@ -644,6 +648,150 @@ describe('retryAndRecord — recovery stop points', () => {
         taskId: 'T001',
       }),
     );
+    // A failure that names no planner call is the retry's own.
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: 'Retrying T001 failed: hint planner crashed',
+      }),
+    );
+  });
+});
+
+// Captured from `codex exec --json` against an account at its usage limit; the hint call wraps it
+// the way `requireCompletedCall` does.
+const CODEX_LIMIT =
+  "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Oct 3rd, 2026 1:02 PM.";
+// Captured from `codex exec --json` (codex-cli 0.146.0, 2026-08-06) against a dead login.
+const CODEX_SIGNED_OUT =
+  'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.';
+
+describe('retryAndRecord — a planner out of quota on the hint', () => {
+  const config = makeConfig({
+    planner: { kind: 'cli', tool: 'codex', authChannel: defaultCliAuthChannel('codex').id },
+    validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+    workflow: { maxRetries: 0 },
+  });
+
+  async function hintHalted(words = CODEX_LIMIT) {
+    const { projectDir, sessionId } = setupProject();
+    await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['codex', 'claude-code']));
+    const task = makeTask({ id: 'T001', file: 'src/alpha.ts' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner({
+      escalateHint: vi.fn().mockRejectedValueOnce(
+        error('runner-call-failed', 'Planner escalation call failed', {
+          role: 'escalation',
+          status: 'failed',
+          error: { code: 'codex-turn-failed', message: words },
+        }),
+      ),
+    });
+    const result = await retryAndRecord({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        bus,
+        planner,
+        implementer: makeImplementer({ retry: vi.fn() }),
+        config,
+      }),
+      task,
+      initialError: 'initial validation failed',
+      state,
+      taskStartTime: Date.now(),
+      taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+    return { projectDir, sessionId, result, events };
+  }
+
+  it('halts on the plan seat with the reset, naming the brief, instead of exhausting it', async () => {
+    const { projectDir, sessionId, result, events } = await hintHalted();
+
+    const issue = result.state.pendingRecovery;
+    expect(result.completed).toBe(false);
+    expect(issue).toMatchObject({
+      reason: 'runner-usage-limit',
+      seat: 'plan',
+      taskId: 'T001',
+      files: ['src/alpha.ts'],
+      affectedTaskIds: ['T001'],
+      switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+      availableActions: [
+        'retry-same-worker',
+        'switch-seat',
+        'skip-current-task',
+        'pause-run',
+        'end-run',
+      ],
+      recommendedAction: 'switch-seat',
+      facts: { tool: 'OpenAI Codex CLI' },
+    });
+    expect(new Date(issue?.resetAt ?? '')).toEqual(new Date(2026, 9, 3, 13, 2));
+    expect(issue?.details).toEqual([
+      `OpenAI Codex CLI reported: ${CODEX_LIMIT}`,
+      'The planner could not write the hint for T001.',
+    ]);
+    expect(issue?.message).toContain('hit its usage limit');
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery?.reason).toBe(
+      'runner-usage-limit',
+    );
+    // The error row carries the halt's reset for the row to spell; its words name no clock, and
+    // codex's own words drop theirs.
+    const published = events.find((event) => event.type === 'error');
+    expect(published?.type === 'error' && published.resetAt).toBe(issue?.resetAt);
+    const row = published?.type === 'error' ? published.message : '';
+    expect(row).toMatch(/^Planner hint for T001 failed: You've hit your usage limit\./);
+    expect(row).not.toMatch(/13:02|1:02 PM|try again/);
+    expect(
+      readEvidenceLedger({ projectDir, sessionId })?.tasks.find((t) => t.id === 'T001'),
+    ).toMatchObject({ status: 'failed', method: 'failed' });
+  });
+
+  it('moves the planner block and replays the brief on the new tool', async () => {
+    const { projectDir, sessionId, result } = await hintHalted();
+    const { bus, events } = makeBusRecorder();
+
+    const moved = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: result.state,
+      action: 'switch-seat',
+      candidate: { tool: 'claude-code', model: 'opus' },
+      bus,
+      config,
+    });
+
+    expect(moved).toMatchObject({ ok: true, status: 'retry-current-task' });
+    if (!moved.ok) throw new Error('expected the swap to apply');
+    expect(moved.switchedConfig?.planner).toMatchObject({ tool: 'claude-code', model: 'opus' });
+    expect(moved.switchedConfig?.implementer).toEqual(config.implementer);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'task_reset', taskId: 'T001' }));
+    expect(moved.state.pendingRecovery).toBeUndefined();
+  });
+
+  it('halts a signed-out planner on the plan seat with the login, naming the brief', async () => {
+    const { result, events } = await hintHalted(CODEX_SIGNED_OUT);
+
+    const issue = result.state.pendingRecovery;
+    expect(issue).toMatchObject({
+      reason: 'runner-unauthenticated',
+      seat: 'plan',
+      taskId: 'T001',
+      recommendedAction: 'retry-same-worker',
+    });
+    expect(issue?.availableActions).toContain('skip-current-task');
+    expect(issue?.message).toContain('`codex logout` then `codex login`');
+    expect(issue?.message).not.toContain('usage limit');
+    expect(issue?.details).toContain(`OpenAI Codex CLI reported: ${CODEX_SIGNED_OUT}`);
+    const published = events.find((event) => event.type === 'error');
+    expect(published?.type === 'error' && published.message).toContain('codex login');
   });
 });
 

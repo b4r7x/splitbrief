@@ -17,7 +17,7 @@ import { writeActive } from '../core/sessions/active-pointer.js';
 import { buildContextOverflowRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { formatResumeCommand } from '../core/recovery/resume-command.js';
-import { runHeadless } from './headless.js';
+import { emitRecoveryAndFailIfPending, runHeadless } from './headless.js';
 import { saveSummary } from '../core/sessions/io.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
@@ -116,9 +116,11 @@ describe('runHeadless — every pending recovery status fails the run', () => {
         message: expect.stringContaining('Recovery required (context-overflow)'),
       });
       expect(error.message).toContain(`Recommended: ${issue.recommendedAction}`);
+      // The recommended pause is a row of the recovery panel, which a headless continue cannot show.
       expect(error.message).toContain(
-        `Continue with: ${formatResumeCommand(sessionId, issue)} [--plain|--json]`,
+        `Continue with: splitbrief continue ${sessionId}, then choose Pause run in the recovery panel`,
       );
+      expect(error.message).not.toContain('[--plain|--json]');
 
       const jsonLines = stdoutChunks
         .join('')
@@ -223,6 +225,34 @@ describe('runHeadless — every pending recovery status fails the run', () => {
     expect(error).toMatchObject({ exitCode: 1 });
     expect(error.message).toContain('Recovery required (context-overflow)');
     expect(stdoutChunks.join('')).not.toContain('recovery_required');
+  });
+});
+
+describe('emitRecoveryAndFailIfPending — a usage-limit halt', () => {
+  // The halt's stored words name no clock, so the line spells the reset when it is printed, in the
+  // words the workflow header uses: dated only once the reset is not today.
+  it.each([
+    [new Date(2026, 6, 13, 9, 30), 'resets 17:00'],
+    [new Date(2026, 6, 14, 9, 30), 'resets Jul 13, 17:00'],
+  ])('printed at %s, names the reset as %j', (now, note) => {
+    const message =
+      'Ollama hit its usage limit. Wait for the limit to reset or change the BUILD tool, then continue.';
+    const state = {
+      ...createInitialState('recover me'),
+      pendingRecovery: makeRecoveryIssue({
+        reason: 'runner-usage-limit',
+        message,
+        resetAt: new Date(2026, 6, 13, 17).toISOString(),
+      }),
+    };
+    vi.useFakeTimers({ toFake: ['Date'], now });
+    try {
+      expect(() =>
+        emitRecoveryAndFailIfPending({ state, sessionId: 'sess-limit', writeRecord: vi.fn() }),
+      ).toThrow(`Recovery required (runner-usage-limit): ${message} (${note})\n`);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -480,7 +510,7 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
 
     expect(error).toMatchObject({
       exitCode: 1,
-      message: 'Final review failed \u2014 2 blocking finding(s); see review.md',
+      message: 'Final review failed with 2 blocking findings; see review.md',
     });
     expect(records()).toContainEqual({
       type: 'final_review_failed',

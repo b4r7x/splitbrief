@@ -56,6 +56,7 @@ The review seat is one stateless, read-only call. Lifted from the SPLITBRIEF CLI
     - **Critical**: Breaks functionality or violates a requirement (causes `fail` verdict)
     - **Warning**: Works but has potential issues (allowed in `pass_with_notes`)
     - **Note**: Minor observations, suggestions for improvement (informational only)
+    Write `None.` after the label of a category with no findings, or leave the label out.
 
     ### Summary
     One-paragraph overall assessment.
@@ -70,7 +71,7 @@ The review seat is one stateless, read-only call. Lifted from the SPLITBRIEF CLI
 - A finding belongs to the brief whose `files` names it (path substring); an unmatched finding goes to the last brief.
 <!-- /generated -->
 
-Criteria are every line matching `- **[PASS]** …` / `- **[FAIL]** …` anywhere in the reply; findings every line matching `- **Critical**: …`, `- **Warning**: …`, `- **Note**: …`.
+Criteria are every line matching `- **[PASS]** …` / `- **[FAIL]** …` anywhere in the reply. A finding is a line that carries its label, behind a `-`, `*` or `1.` bullet or none (`- **Critical**: …`, `**Critical:** …`, `**Critical — title**`, `### Critical: …`), or a bullet under a label that stands alone (the sub-bullets of an empty `- **Critical**:`, the bullets under a `**Critical**` line or a `### Critical` heading). `None.`, `None of note`, `N/A`, `Not applicable`, `Nothing to report`, `No critical issues found`, `0`, a dash or nothing after a label is an empty category, not a finding, also inside emphasis, inline code or parentheses.
 
 ## 3. Fix cycle mapping
 

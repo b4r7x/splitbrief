@@ -2,6 +2,7 @@ import { describe, expect, it, afterEach, vi } from 'vitest';
 import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
@@ -19,6 +20,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import type { ContinuationHolder } from '../continuation.js';
 import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
+import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
 import { runTasksAndReview } from './task-execution.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 
@@ -91,11 +93,14 @@ function runOptions(opts: {
   signal?: AbortSignal | undefined;
   onContinuationNeeded?: OrchestratorCallbacks['onContinuationNeeded'] | undefined;
   continuation?: ContinuationHolder | undefined;
+  skillsContext?: string | undefined;
 }) {
   const { bus, events } = makeBusRecorder();
   let calls = 0;
+  const reviewPrompts: string[] = [];
   const reviewer = makePlanner({
-    review: async () => {
+    review: async (prompt: string) => {
+      reviewPrompts.push(prompt);
       calls += 1;
       const text = typeof opts.reviewText === 'string' ? opts.reviewText : opts.reviewText(calls);
       return { text, usage: null };
@@ -128,9 +133,13 @@ function runOptions(opts: {
     ...(opts.sinks !== undefined && { sinks: opts.sinks }),
     ...(opts.signal !== undefined && { signal: opts.signal }),
     ...(opts.continuation !== undefined && { continuation: opts.continuation }),
+    ...(opts.skillsContext !== undefined && {
+      context: { name: 'demo', dir: opts.projectDir, skillsContext: opts.skillsContext },
+    }),
   });
   return {
     events,
+    reviewPrompts,
     implementer,
     options: {
       wctx,
@@ -266,6 +275,34 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(events.find((e) => e.type === 'workflow_complete')).toMatchObject({ review: 'passed' });
   });
+
+  it("closes a continued run with the run's completed briefs, not only the ones it ran", async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' }),
+      makeTask({ id: 'T002', file: 'src/beta.ts' }),
+    ];
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 1),
+      reviewText: '### Verdict\npass\n',
+      onComplete: vi.fn(),
+    });
+
+    await runTasksAndReview(options);
+    const output = new PassThrough();
+    const chunks: string[] = [];
+    output.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
+    const sink = createStdoutTextSink({ output });
+    for (const event of events) sink(event);
+
+    expect(events.filter((e) => e.type === 'task_completed')).toHaveLength(1);
+    expect(events.find((e) => e.type === 'workflow_complete')).toMatchObject({
+      completedTasks: 2,
+    });
+    expect(chunks.join('').trimEnd().split('\n').at(-1)).toBe('done: 2 tasks');
+  });
 });
 
 const CRITICAL_FAIL =
@@ -297,6 +334,24 @@ describe('runTasksAndReview repair budget', { timeout: 120_000 }, () => {
     expect(result.completed).toBe(true);
     expect(result.state.reviewStatus).toBe('passed');
     expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands the final review the run's skills context", async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const skillsContext = '## Active Project Skills\n\n### AuthSkill\nREVIEW-SKILL-BODY';
+    const { reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: resumedReviewState(tasks, head, 0),
+      reviewText: '### Verdict\npass\n',
+      onComplete: vi.fn(),
+      skillsContext,
+    });
+
+    await runTasksAndReview(options);
+
+    expect(reviewPrompts).toEqual([expect.stringContaining(skillsContext)]);
   });
 
   it('a failing review at persisted cycle 2 repairs nothing and raises review-failed', async () => {

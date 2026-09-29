@@ -413,6 +413,31 @@ describe('runWorkflow — smoke', () => {
     expect(persisted).toMatchObject({ status: 'open', stop: 'halted' });
   });
 
+  it('records a brief repair call that throws as the failed stop of the run', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'brief-repair-failed-sid';
+    const { callbacks } = makeCallbacks();
+    const config = makeConfig({
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { approve: 'none', mode: 'quick' },
+    });
+
+    // The compiled brief fails the quality gate, and the call that would repair it throws.
+    await runWorkflow({
+      feature: 'brief-repair-failure',
+      projectDir,
+      config,
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: makePlanner({ review: vi.fn().mockRejectedValue(new Error('planner exploded')) }),
+    });
+
+    expect(loadState({ projectDir, sessionId })?.lastFailure?.message).toContain(
+      'planner exploded',
+    );
+  });
+
   it('initialization failure leaves the run open', async () => {
     const projectDir = setupProject();
     const sessionId = 'init-failed-sid';

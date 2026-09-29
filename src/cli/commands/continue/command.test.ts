@@ -386,6 +386,57 @@ describe('continueCommand', () => {
     expect(headlessRuns).toHaveLength(1);
   });
 
+  it('moves the planner block when a final review that follows PLAN halts on its limit', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-review-limit';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    writeConfig(projectDir, makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('test-feature'),
+        phase: 'final-review',
+        tasks: [makeTask({ id: 'T001', status: 'done' })],
+        currentTaskIndex: 1,
+        pendingRecovery: makeRecoveryIssue({
+          status: 'paused',
+          reason: 'runner-usage-limit',
+          seat: 'review',
+          phase: 'final-review',
+          taskId: undefined,
+          taskTitle: undefined,
+          files: [],
+          affectedTaskIds: [],
+          availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+          recommendedAction: 'switch-seat',
+          switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+        }),
+      },
+    );
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      await continueCommand(
+        sessionId,
+        { projectDir, json: true, action: parseRecoveryActionOption('switch-seat:claude-code') },
+        deps,
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    const recorded = YAML.parse(
+      readFileSync(join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE), 'utf8'),
+    );
+    expect(recorded.planner).toMatchObject({ kind: 'cli', tool: 'claude-code' });
+    expect(recorded.reviewer).toBeUndefined();
+    // The halt named no brief, so the run re-enters the review it never finished.
+    expect(headlessRuns).toHaveLength(1);
+    expect(headlessRuns[0]?.state?.phase).toBe('final-review');
+    expect(headlessRuns[0]?.state?.pendingRecovery).toBeUndefined();
+  });
+
   it('leaves the config of record alone when no seat moved', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-seat-unchanged';

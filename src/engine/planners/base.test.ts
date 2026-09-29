@@ -6,7 +6,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { PlannerCapabilities } from './types.js';
+import type { Planner, PlannerCapabilities } from './types.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 
 let projectDir: string;
@@ -271,6 +271,84 @@ describe('createPlannerBase — structured summarization', () => {
       type: 'call_started',
       role: 'compaction',
       backendKind: 'cli',
+    });
+  });
+});
+
+describe('createPlannerBase — regenerate', () => {
+  it('leads a revision issued with the conversation so far with that conversation', async () => {
+    const prompts: string[] = [];
+    const planner = createPlannerBase({
+      invokePlan: async ({ prompt }) => {
+        prompts.push(prompt);
+        return completedRunnerCall('# Spec\n\nRevised.\n');
+      },
+      invokeEscalate: async () => completedRunnerCall(''),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    await planner.regenerate({
+      prompt: 'Regenerate the spec.',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+      priorMessages: [{ role: 'user', content: 'The export must be named PERIWINKLE-42.' }],
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('<!-- prior conversation -->');
+    expect(prompts[0]).toContain('[user] The export must be named PERIWINKLE-42.');
+    expect(prompts[0]?.endsWith('Regenerate the spec.')).toBe(true);
+  });
+});
+
+describe('createPlannerBase — a seat out of quota', () => {
+  // Captured live from `agy -p` on 2026-09-21: the first limit hit exits 0 with nothing on stdout.
+  const AGY_LIMIT =
+    'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s. (response may be truncated)';
+
+  it.each([
+    [
+      'hint',
+      (planner: Planner) =>
+        planner.escalateHint({
+          task: minimalTask,
+          error: 'error',
+          projectDir,
+          callbacks: { onOutput: () => {} },
+        }),
+    ],
+    [
+      'summary',
+      (planner: Planner) =>
+        planner.summarize([{ role: 'user', text: 'compact this' }], { projectDir }),
+    ],
+  ])('fails the %s call with the limit instead of reading it as silence', async (_call, run) => {
+    const planner = createPlannerBase({
+      invokePlan: async () => completedRunnerCall(''),
+      invokeEscalate: async () =>
+        makeRunnerCallResult({
+          status: 'completed',
+          text: '',
+          warnings: [
+            {
+              code: 'stderr_diagnostic',
+              severity: 'warning',
+              source: 'stderr',
+              surface: 'status',
+              channel: 'stderr',
+              fingerprint: 'stderr-diagnostic',
+              message: AGY_LIMIT,
+            },
+          ],
+        }),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    await expect(run(planner)).rejects.toMatchObject({
+      kind: 'runner-call-failed',
+      data: { status: 'failed', error: { code: 'usage-limit', message: AGY_LIMIT } },
     });
   });
 });

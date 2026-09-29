@@ -48,6 +48,7 @@ import {
 import { acquireLiveness } from './liveness.js';
 import { closeRunIfOpen } from './close.js';
 import {
+  followCommittedState,
   parkStoppedRun,
   readWorkflowStateHead,
   rebaseOnPersistedWorkflowState,
@@ -114,7 +115,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     }
   }
   const mode = resolveMode({ config, savedMode: savedState?.mode });
-  const { selectedSkills } = opts;
   // A boundary interrupt raised before this run started (Esc-Esc in a dead zone
   // of a previous run that then ended into recovery without passing a call
   // boundary) is stale: drain it so it cannot park this run's first call
@@ -274,7 +274,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     },
   });
 
+  let stopFollowingState: (() => void) | undefined;
   try {
+    // A head a nested call commits reaches the tracked state too, so no event is stamped with
+    // the phase the run has already left.
+    stopFollowingState = followCommittedState(ref, trackState);
     const { cancelled } = await withShutdownHandlers(
       {
         projectDir,
@@ -353,7 +357,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
               wctx,
               state: stateForPlanning,
               savedState: savedStateForPlanning,
-              selectedSkills,
               phaseTimings,
               startTime,
               setTrackedState: trackState,
@@ -481,6 +484,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     });
     return result;
   } finally {
+    stopFollowingState?.();
     // Ownership-guarded: acquireLiveness's warn-and-continue escape hatches can
     // let a successor run install its ledger before this superseded run's
     // teardown executes — a bare setProcessLedger(null) would silently disable

@@ -1,4 +1,4 @@
-import type { Task } from '../../../../core/schemas/task.js';
+import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation/result.js';
 import type { UserEditConflict } from '../../../events/workflow-events.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
@@ -71,6 +71,18 @@ export function attemptDetails(
 
 export function implementerDetails(selectedImplementerProfile: string | undefined): string[] {
   return selectedImplementerProfile ? [`Worker profile: ${selectedImplementerProfile}`] : [];
+}
+
+/** A review with no seat of its own runs on the PLAN tool, so a new PLAN tool moves it too. */
+export function reviewSeatDetails(followsPlan: boolean): string[] {
+  return followsPlan
+    ? ['The review runs on the PLAN tool. A new PLAN tool also runs the review.']
+    : [];
+}
+
+/** A hint halt names the brief whose hint the planner could not write. */
+export function hintHaltDetails(taskId: TaskId): string[] {
+  return [`The planner could not write the hint for ${taskId}.`];
 }
 
 export function routeBiggerDetails(opts: {

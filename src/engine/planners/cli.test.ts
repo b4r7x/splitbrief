@@ -331,6 +331,108 @@ describe('createCliPlanner', () => {
     expect(secondArgv).not.toContain('splitbrief-session');
   });
 
+  // Codex 0.157.1 writes no rollout for an `--ephemeral` exec, and `exec resume` of that
+  // thread then fails before any turn with this exact line (captured live 2026-09-29).
+  it('keeps the thread a fresh call reports resumable, so the next call continues it', async () => {
+    const rollouts = createTempDir('codex-rollouts');
+    const shimPath = join(shimDir, 'codex');
+    const reply = (text: string) =>
+      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text } });
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        'if [[ " $* " == *" resume "* ]]; then',
+        `  thread="$(printf '%s\\n' "$@" | tail -n 2 | head -n 1)"`,
+        `  if [[ ! -f '${rollouts}'/"$thread" ]]; then`,
+        '    printf \'Error: thread/resume: thread/resume failed: no rollout found for thread id %s (code -32600)\\n\' "$thread" >&2',
+        '    exit 1',
+        '  fi',
+        `  printf '%s\\n' "{\\"type\\":\\"thread.started\\",\\"thread_id\\":\\"$thread\\"}"`,
+        `  printf '%s\\n' '${reply('# Spec\nbody')}'`,
+        'else',
+        `  if [[ " $* " != *" --ephemeral "* ]]; then touch '${rollouts}/codex-thread-1'; fi`,
+        `  printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'codex-thread-1' })}'`,
+        `  printf '%s\\n' '${reply('# Research\nbody')}'`,
+        'fi',
+        `printf '%s\\n' '${CODEX_TURN_COMPLETED}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+    const callbacks = { onOutput: vi.fn(), sessionId: 'splitbrief-session' };
+
+    try {
+      await callPhase(planner, { call: 'research', projectDir, callbacks });
+      const resumed = await callPhase(planner, { call: 'spec', projectDir, callbacks });
+
+      expect(resumed.text).toBe('# Spec\nbody');
+    } finally {
+      cleanupTempDir(rollouts);
+    }
+  });
+
+  it('runs hint and review calls one-shot and ephemeral, and keeps the planner thread for planning', async () => {
+    const spawnLog = join(shimDir, 'codex-spawns.txt');
+    const shimPath = join(shimDir, 'codex');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        'thread=codex-one-shot-thread',
+        'if [[ " $* " == *" resume "* ]]; then',
+        `  thread="$(printf '%s\\n' "$@" | tail -n 2 | head -n 1)"`,
+        `  printf 'resume %s\\n' "$thread" >> '${spawnLog}'`,
+        'elif [[ " $* " == *" --ephemeral "* ]]; then',
+        `  printf 'fresh ephemeral\\n' >> '${spawnLog}'`,
+        'else',
+        `  printf 'fresh\\n' >> '${spawnLog}'`,
+        'fi',
+        `printf '%s\\n' "{\\"type\\":\\"thread.started\\",\\"thread_id\\":\\"$thread\\"}"`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Use a default.' } })}'`,
+        `printf '%s\\n' '${CODEX_TURN_COMPLETED}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+      'sess-planning',
+    );
+
+    await planner.escalateHint({
+      task: makeTask(),
+      error: 'tests failed',
+      projectDir,
+      callbacks: { onOutput: vi.fn() },
+      sandboxEnv: { ...process.env, HOME: join(shimDir, 'worktree-home') },
+    });
+    await planner.review('review the run', projectDir, { onOutput: vi.fn() });
+    await planner.review('review the run again', projectDir, { onOutput: vi.fn() });
+    await planner.regenerate({
+      prompt: 'revise the spec',
+      projectDir,
+      callbacks: { onOutput: vi.fn() },
+    });
+    await callPhase(planner, { call: 'spec', projectDir, callbacks: { onOutput: vi.fn() } });
+    const threadless = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+    await callPhase(threadless, { call: 'research', projectDir, callbacks: { onOutput: vi.fn() } });
+
+    expect(readFileSync(spawnLog, 'utf8').trim().split('\n')).toEqual([
+      'fresh ephemeral',
+      'fresh ephemeral',
+      'fresh ephemeral',
+      'resume sess-planning',
+      'resume sess-planning',
+      'fresh',
+    ]);
+  });
+
   it('fails a resumed call whose session expired without a fresh-session fallback', async () => {
     const shimPath = join(shimDir, 'codex');
     writeFileSync(
@@ -374,6 +476,57 @@ describe('createCliPlanner', () => {
     expect(onSessionExpired).toHaveBeenCalledWith('sess-old');
     expect(events.filter((event) => event.type === 'call_started')).toHaveLength(1);
     expect(events).not.toContainEqual(expect.objectContaining({ type: 'call_completed' }));
+  });
+
+  it('expires a codex thread whose rollout is gone, so the next call starts a fresh thread', async () => {
+    const argvLog = join(shimDir, 'argv.log');
+    const shimPath = join(shimDir, 'codex');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        `printf '%s ' "$@" >> '${argvLog}'`,
+        `printf '\\n' >> '${argvLog}'`,
+        'if [[ " $* " == *" resume "* ]]; then',
+        `  thread="$(printf '%s\\n' "$@" | tail -n 2 | head -n 1)"`,
+        '  printf \'Error: thread/resume: thread/resume failed: no rollout found for thread id %s (code -32600)\\n\' "$thread" >&2',
+        '  exit 1',
+        'fi',
+        `printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'codex-thread-new' })}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: '# Spec\nbody' } })}'`,
+        `printf '%s\\n' '${CODEX_TURN_COMPLETED}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const events: RunnerCallEvent[] = [];
+    const onSessionExpired = vi.fn();
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+      'codex-thread-gone',
+    );
+    const callbacks = {
+      onOutput: vi.fn(),
+      onSessionExpired,
+      onCallEvent: (event: RunnerCallEvent) => events.push(event),
+    };
+
+    await expect(callPhase(planner, { call: 'spec', projectDir, callbacks })).rejects.toMatchObject(
+      { kind: 'session-resume-expired' },
+    );
+    expect(onSessionExpired).toHaveBeenCalledWith('codex-thread-gone');
+    expect(events.filter((event) => event.type === 'call_started')).toHaveLength(1);
+
+    const rerun = await callPhase(planner, { call: 'spec', projectDir, callbacks });
+
+    expect(rerun.text).toBe('# Spec\nbody');
+    const [expired, fresh] = readFileSync(argvLog, 'utf8').trim().split('\n');
+    expect(expired).toContain(' resume ');
+    expect(expired).toContain('codex-thread-gone');
+    expect(fresh).not.toContain(' resume ');
+    expect(fresh).not.toContain('codex-thread-gone');
   });
 
   it('rejects a resumed call whose returned Codex thread id differs, without a fresh attempt', async () => {
@@ -496,8 +649,9 @@ Create the mismatch fallback file.
     expect(readFileSync(spawnLog, 'utf8').trim().split('\n')).toEqual(['writer']);
     expect(readArgv(writerArgvFile)).not.toContain('resume');
     expect(readArgv(writerArgvFile)).not.toContain('sess-planning');
+    expect(readArgv(writerArgvFile)).toContain('--ephemeral');
 
-    await planner.review('review the escalation', projectDir, { onOutput: () => {} });
+    await callPhase(planner, { call: 'spec', projectDir, callbacks: { onOutput: () => {} } });
 
     expect(readFileSync(spawnLog, 'utf8').trim().split('\n')).toEqual([
       'writer',
@@ -622,7 +776,7 @@ Create the mismatch fallback file.
           invocation = planner.regenerate({
             prompt: 'regenerate the plan',
             projectDir,
-            callbacks: { onOutput: vi.fn() },
+            callbacks: { onOutput: vi.fn(), sessionId: 'workflow-session' },
           });
           break;
         case 'summarize':

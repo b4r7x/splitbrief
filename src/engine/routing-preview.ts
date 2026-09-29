@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveImplementerProfiles } from '../core/config/accessors/implementer-profiles.js';
+import { projectName } from '../core/project-meta.js';
 import type { Config } from '../core/schemas/config.js';
 import type { Task } from '../core/schemas/task.js';
 import type {
@@ -15,8 +16,12 @@ import { buildProjectLanguageContext } from './spec/prompts/language-context.js'
 import { isENOENT } from '../lib/process/errors.js';
 import { assertWritablePathConfined } from '../lib/path-confinement.js';
 
-function previewProjectContext(projectDir: string) {
-  return { name: 'unknown', dir: projectDir };
+function previewProjectContext(projectDir: string, skillsContext: string | undefined) {
+  return {
+    name: projectName(projectDir),
+    dir: projectDir,
+    ...(skillsContext !== undefined && { skillsContext }),
+  };
 }
 
 function normalizeTaskFilePath(file: string): string {
@@ -30,9 +35,11 @@ export function buildRoutingPreviewMetadata(
     projectDir: string;
     modelCache?: ModelCacheAccessor | undefined;
     detectedContextLength?: number | undefined;
+    /** The run's skills block, which every brief prompt the worker receives carries. */
+    skillsContext?: string | undefined;
   },
 ): Promise<PlanTaskReviewMetadata[]> {
-  const context = previewProjectContext(opts.projectDir);
+  const context = previewProjectContext(opts.projectDir, opts.skillsContext);
   const profiles = resolveImplementerProfiles(opts.config).profiles;
   const languageContext = buildProjectLanguageContext(opts.projectDir, undefined);
 

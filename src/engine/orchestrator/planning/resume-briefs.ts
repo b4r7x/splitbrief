@@ -90,6 +90,7 @@ export async function resumeBriefsApproval(opts: {
     ...(wctx.detectedContextLength !== undefined && {
       detectedContextLength: wctx.detectedContextLength,
     }),
+    ...(wctx.skillsContext !== undefined && { skillsContext: wctx.skillsContext }),
   });
 
   switch (briefsLoop.outcome) {

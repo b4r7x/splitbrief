@@ -62,6 +62,87 @@ it('takes the seat swap in one press and never lists the offered tools itself', 
   ui.unmount();
 });
 
+it.each([
+  [
+    'the final review, on the plan seat it follows',
+    { seat: 'review', taskId: undefined, phase: 'final-review' },
+    'Change PLAN tool · runs the review again',
+  ],
+  [
+    "a brief's hint",
+    { seat: 'plan', phase: 'escalating' },
+    'Change PLAN tool · restarts this brief',
+  ],
+  [
+    'a planning step',
+    { seat: 'plan', taskId: undefined, phase: 'planning' },
+    'Change PLAN tool · runs this step again',
+  ],
+  // Saved before halts named their seat: the applier reads the planner phase as the plan seat's.
+  [
+    'a planning step, saved without its seat',
+    { seat: undefined, taskId: undefined, phase: 'planning' },
+    'Change PLAN tool · runs this step again',
+  ],
+] as const)('names what the swap runs again after a halt on %s', async (_halt, halt, label) => {
+  const issue = makeRecoveryIssue({
+    ...halt,
+    reason: 'runner-usage-limit',
+    availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+    recommendedAction: 'switch-seat',
+    switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+  });
+  const ui = mount(vi.fn(), 100, issue);
+  await flushEffects();
+  expect(stripAnsiStyles(ui.lastFrame())).toContain(label);
+  ui.unmount();
+});
+
+// On a hint halt "Try again" reads as retrying the hint, but it restarts the brief; a retry that
+// re-runs the call the halt stopped needs no second clause.
+it.each([
+  ["a brief's hint", { seat: 'plan', phase: 'escalating' }, 'Try again · restarts this brief'],
+  ['a planning step', { seat: 'plan', taskId: undefined, phase: 'planning' }, 'Try again'],
+  ['a BUILD call', { seat: 'build', phase: 'implementing' }, 'Try again'],
+] as const)('says what a retry after a halt on %s runs', async (_halt, halt, label) => {
+  const issue = makeRecoveryIssue({
+    ...halt,
+    reason: 'runner-usage-limit',
+    availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+    recommendedAction: 'retry-same-worker',
+  });
+  const ui = mount(vi.fn(), 100, issue);
+  await flushEffects();
+  const retryRow = stripAnsiStyles(ui.lastFrame())
+    .split('\n')
+    .find((line) => line.includes('Try again'));
+  expect(retryRow?.replace(/[|│▌]/g, '').replace('recommended', '').trim()).toBe(label);
+  ui.unmount();
+});
+
+// A panel too narrow for a row's words and its marker keeps the words whole and drops the marker.
+it('keeps every action label whole on a 50-column panel', async () => {
+  const issue = makeRecoveryIssue({
+    reason: 'runner-usage-limit',
+    seat: 'review',
+    taskId: undefined,
+    phase: 'final-review',
+    availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+    recommendedAction: 'switch-seat',
+    switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+  });
+  const ui = mount(vi.fn(), 50, issue);
+  await flushEffects();
+  const frame = stripAnsiStyles(ui.lastFrame());
+  const rows = frame
+    .split('\n')
+    .filter((line) => /Try again|Change PLAN tool|Pause run|End run/.test(line));
+  expect(rows).toHaveLength(4);
+  expect(frame).toContain('Change PLAN tool · runs the review again');
+  for (const row of rows) expect(row).not.toContain('…');
+  ui.unmount();
+});
+
 it('drops a legend clause whole rather than cutting the last key in half', async () => {
   const ui = mount(vi.fn(), 60);
   await flushEffects();

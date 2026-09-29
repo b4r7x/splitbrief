@@ -2,8 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  readlinkSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -326,6 +329,87 @@ describe('promoteStagedChanges', () => {
       cleanupTempDir(projectDir);
     }
   });
+
+  itUnix(
+    'conflicts on a target symlink the worker replaced with a file, keeping the link',
+    async () => {
+      const projectDir = createTempDir('promote-link-project');
+      const stagedDir = createTempDir('promote-link-staged');
+      try {
+        writeFileSync(join(projectDir, 'real.txt'), 'real\n');
+        symlinkSync('real.txt', join(projectDir, 'link'));
+        writeFileSync(join(stagedDir, 'link'), 'worker\n');
+
+        const promoted = await promoteStagedChanges({
+          targetProjectDir: projectDir,
+          stagedProjectDir: stagedDir,
+          files: ['link'],
+          targetBaseline: await captureAcquisitionBaseline(projectDir),
+        });
+
+        expect(promoted).toEqual({ promotedFiles: [], conflictedFiles: ['link'] });
+        expect(readlinkSync(join(projectDir, 'link'))).toBe('real.txt');
+      } finally {
+        cleanupTempDir(stagedDir);
+        cleanupTempDir(projectDir);
+      }
+    },
+  );
+
+  itUnix('conflicts on a worker symlink over a target file before writing any file', async () => {
+    const projectDir = createTempDir('promote-link-project');
+    const stagedDir = createTempDir('promote-link-staged');
+    try {
+      writeFileSync(join(projectDir, 'a.txt'), 'original\n');
+      writeFileSync(join(stagedDir, 'a.txt'), 'staged\n');
+      writeFileSync(join(projectDir, 'file'), 'target\n');
+      symlinkSync('a.txt', join(stagedDir, 'file'));
+
+      const promoted = await promoteStagedChanges({
+        targetProjectDir: projectDir,
+        stagedProjectDir: stagedDir,
+        files: ['a.txt', 'file'],
+        targetBaseline: await captureAcquisitionBaseline(projectDir),
+      });
+
+      expect(promoted).toEqual({ promotedFiles: [], conflictedFiles: ['file'] });
+      expect(readFileSync(join(projectDir, 'a.txt'), 'utf-8')).toBe('original\n');
+      expect(readFileSync(join(projectDir, 'file'), 'utf-8')).toBe('target\n');
+      expect(lstatSync(join(projectDir, 'file')).isFile()).toBe(true);
+    } finally {
+      cleanupTempDir(stagedDir);
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  itUnix(
+    'conflicts on a path whose target parent is a link into the control plane, writing nothing',
+    async () => {
+      const projectDir = createTempDir('promote-control-plane-parent');
+      const stagedDir = createTempDir('promote-control-plane-staged');
+      try {
+        mkdirSync(join(projectDir, '.git', 'hooks'), { recursive: true });
+        symlinkSync('.git/hooks', join(projectDir, 'ops'), 'dir');
+        mkdirSync(join(stagedDir, 'ops', 'nested'), { recursive: true });
+        writeFileSync(join(stagedDir, 'ops', 'nested', 'pre-commit'), '#!/bin/sh\n');
+        writeFileSync(join(stagedDir, 'notes.md'), 'staged\n');
+
+        const promoted = await promoteStagedChanges({
+          targetProjectDir: projectDir,
+          stagedProjectDir: stagedDir,
+          files: ['notes.md', 'ops/nested/pre-commit'],
+          targetBaseline: await captureAcquisitionBaseline(projectDir),
+        });
+
+        expect(promoted).toEqual({ promotedFiles: [], conflictedFiles: ['ops/nested/pre-commit'] });
+        expect(readdirSync(join(projectDir, '.git', 'hooks'))).toEqual([]);
+        expect(existsSync(join(projectDir, 'notes.md'))).toBe(false);
+      } finally {
+        cleanupTempDir(stagedDir);
+        cleanupTempDir(projectDir);
+      }
+    },
+  );
 
   itUnix('conflicts when target permissions change after acquisition', async () => {
     const projectDir = createTempDir('promote-mode-target');

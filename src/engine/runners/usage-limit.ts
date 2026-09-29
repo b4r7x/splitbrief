@@ -1,5 +1,7 @@
+import { CREW_SEAT_LABELS, type CrewSeatId } from '../../core/crew/identity.js';
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
 import { isRecord } from '../../utils/type-guards.js';
+import type { RunnerCallWarning } from '../calls/types.js';
 
 /**
  * Diagnostics a runner emits when its account ran out of usage — plan quota,
@@ -56,6 +58,17 @@ export function isUsageLimitDiagnostic(message: string): boolean {
   if (USAGE_LIMIT_STRONG_PATTERNS.some((pattern) => pattern.test(text))) return true;
   const weak = USAGE_LIMIT_WEAK_429.test(text) || USAGE_LIMIT_WEAK_RATE_LIMIT.test(text);
   return weak && hasUsageLimitNounCorroboration(text);
+}
+
+/**
+ * The usage limit a call printed on stderr, when it printed one. A call that
+ * produced nothing beside it ran out of quota rather than finishing: antigravity
+ * exits 0 with "(response may be truncated)" the first time its quota trips.
+ */
+export function stderrUsageLimit(warnings: readonly RunnerCallWarning[]): string | undefined {
+  return warnings.find(
+    (warning) => warning.source === 'stderr' && isUsageLimitDiagnostic(warning.message),
+  )?.message;
 }
 
 const ORDINAL_DAY = /(\d{1,2})(?:st|nd|rd|th)/i;
@@ -286,9 +299,13 @@ function parseResetsAt(text: string, now: Date): Date | null {
  * "Resets in 2h6m30s", and an HTTP Retry-After in either of its wire forms, "retry-after: 120" (delay
  * seconds) or "retry-after: Wed, 21 Oct 2026 07:28:00 GMT". Returns null
  * when the message carries no parseable reset — classification never
- * depends on this.
+ * depends on this. A relative reset is read against `Date.now()`, the one
+ * clock every surface that spells the reset reads.
  */
-export function parseUsageLimitReset(message: string, now: Date = new Date()): Date | null {
+export function parseUsageLimitReset(
+  message: string,
+  now: Date = new Date(Date.now()),
+): Date | null {
   return (
     parseEpoch(message) ??
     parseTryAgainAt(message) ??
@@ -296,16 +313,6 @@ export function parseUsageLimitReset(message: string, now: Date = new Date()): D
     parseRelative(message, now) ??
     parseResetsAt(message, now)
   );
-}
-
-export function formatUsageLimitReset(resetsAt: Date): string {
-  return resetsAt.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
 }
 
 /**
@@ -332,17 +339,13 @@ export function usageLimitDetailFromError(err: unknown): string | null {
   return null;
 }
 
-export function usageLimitWaitClause(resetsAt: Date | null): string {
-  return resetsAt === null
-    ? 'Wait for the limit to reset'
-    : `The limit resets at ${formatUsageLimitReset(resetsAt)}; wait for it`;
-}
-
 /**
- * What the user can actually do about a limit: wait for the reset (named when
- * the tool said when), move the seat to another tool, or stop. Never
- * suggests re-authenticating — a login cannot restore quota.
+ * What a seat out of quota can do, in the recovery menu's own words: wait for
+ * the reset, or change the seat's tool. Never re-authenticating — a login
+ * cannot restore quota. The sentence is stored and replayed on other days, so
+ * it names no clock: the halt's `resetAt` carries the reset, and every surface
+ * spells it when it is read (`formatResetAt`).
  */
-export function usageLimitGuidance(resetsAt: Date | null): string {
-  return `${usageLimitWaitClause(resetsAt)}, switch the seat to another tool, or end the run.`;
+export function usageLimitAdvice(input: Readonly<{ tool: string; seat: CrewSeatId }>): string {
+  return `${input.tool} hit its usage limit. Wait for the limit to reset or change the ${CREW_SEAT_LABELS[input.seat]} tool, then continue.`;
 }

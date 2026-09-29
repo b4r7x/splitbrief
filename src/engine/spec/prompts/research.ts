@@ -1,5 +1,10 @@
 import { PLANNER_DOCUMENT_SECTIONS } from '../../../core/pipeline-spec/planner-documents.js';
-import { plannerConversationSection, buildPrompt, instructionsSection } from './builder.js';
+import {
+  plannerConversationSection,
+  buildPrompt,
+  instructionsSection,
+  skillsSection,
+} from './builder.js';
 
 export function buildResearchPrompt(
   feature: string,
@@ -13,10 +18,8 @@ export function buildResearchPrompt(
     sections: [
       plannerConversationSection,
       { heading: 'Specification', body: feature },
-      {
-        heading: 'Project Context',
-        body: `${projectContext}${skillsContext ? `\n${skillsContext}` : ''}`,
-      },
+      { heading: 'Project Context', body: projectContext },
+      ...skillsSection(skillsContext),
       instructionsSection(`Analyze this codebase thoroughly:
 
 1. **Read key files** -- Identify and read the most important source files: entry points, core modules, configuration, and language-specific type or schema definitions.

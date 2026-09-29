@@ -6,6 +6,9 @@ import { callPhase, phaseInputs } from '#testing/helpers/planner-call.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/phase-call.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
+import { MODES } from '../../core/pipeline-spec/modes.js';
+import type { Attachment } from '../../core/schemas/attachment.js';
+import { error } from '../../utils/error.js';
 import { createPlannerBase } from './base.js';
 import { runDocumentPhases } from './document-phases.js';
 import type { PlannerCapabilities, PlannerDocumentCall } from './types.js';
@@ -278,6 +281,31 @@ describe('runPhase — one call per phase', () => {
       }),
     ]);
   });
+
+  it('keeps the document a call lands out of the transcript log, and logs a reply', async () => {
+    const sessionId = 'sess-run-phase-transcript';
+    const reply = 'Which module should the export live in?';
+    const outputs = [PLANNER_DOCUMENT_FIXTURES.research, reply];
+    const planner = createPlannerBase({
+      invokePlan: async ({ callbacks }) => {
+        const output = outputs.shift() ?? '';
+        callbacks.onOutput(output);
+        return completedRunnerCall(output);
+      },
+      invokeEscalate: async () => completedRunnerCall(''),
+      isAvailable: async () => true,
+      capabilities,
+    });
+    const callbacks = { onOutput: () => {}, sessionId };
+
+    await callPhase(planner, { call: 'research', projectDir, callbacks });
+    const answered = await callPhase(planner, { call: 'research', projectDir, callbacks });
+
+    expect(answered.kind).toBe('conversation');
+    expect(readSessionLog(projectDir, sessionId)).toEqual([
+      expect.objectContaining({ role: 'assistant', phase: 'researching', text: reply }),
+    ]);
+  });
 });
 
 describe('runPhase — prior messages and attachments', () => {
@@ -308,6 +336,41 @@ describe('runPhase — prior messages and attachments', () => {
     expect(prompts[0]).toContain('[user] first turn');
     expect(prompts[0]).toContain('[assistant] first answer');
     expect(prompts[1]).not.toContain('<!-- prior conversation -->');
+  });
+
+  it('hands the conversation and the attachments again to the call after a session the seat dropped as expired', async () => {
+    const prompts: string[] = [];
+    const imagesSeen: Array<readonly Attachment[] | undefined> = [];
+    const planner = createPlannerBase({
+      invokePlan: async ({ prompt, images, callbacks }) => {
+        prompts.push(prompt);
+        imagesSeen.push(images);
+        if (prompts.length === 1) {
+          callbacks.onSessionExpired?.('thread-gone');
+          throw error('session-resume-expired', 'could not resume session thread-gone');
+        }
+        return completedRunnerCall(taskMarkdown);
+      },
+      invokeEscalate: async () => completedRunnerCall(''),
+      isAvailable: async () => true,
+      capabilities,
+    });
+    const attachments: Attachment[] = [
+      { id: 'a1', kind: 'image', path: '/tmp/a1.png', mimeType: 'image/png', sizeBytes: 1 },
+    ];
+
+    await expect(
+      callPhase(planner, { projectDir, attachments, callbacks: { onOutput: () => {} } }),
+    ).rejects.toMatchObject({ kind: 'session-resume-expired' });
+    await callPhase(planner, {
+      projectDir,
+      attachments,
+      priorMessages: [{ role: 'user', content: 'first turn' }],
+      callbacks: { onOutput: () => {} },
+    });
+
+    expect(prompts[1]).toContain('[user] first turn');
+    expect(imagesSeen[1]).toEqual(attachments);
   });
 
   it('hands prior messages to the backend untouched when it consumes them natively', async () => {
@@ -359,6 +422,26 @@ describe('runDocumentPhases', () => {
     expect(result.spec).toBe(PLANNER_DOCUMENT_FIXTURES.spec);
     expect(result.plan).toBe(PLANNER_DOCUMENT_FIXTURES.plan);
     expect(result.tasks.map((task) => task.id)).toEqual(['T001']);
+  });
+
+  it("states the mode's brief cap in the tasks prompt", async () => {
+    const { planner, prompts } = recordingPlanner([
+      PLANNER_DOCUMENT_FIXTURES.research,
+      PLANNER_DOCUMENT_FIXTURES.spec,
+      PLANNER_DOCUMENT_FIXTURES.plan,
+      taskMarkdown,
+    ]);
+
+    await runDocumentPhases({
+      planner,
+      mode: 'standard',
+      feature: 'feature',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
+
+    expect(prompts[3]).toContain('Compile Product Task Briefs');
+    expect(prompts[3]).toContain(`Emit at most ${MODES.standard.briefCap} briefs in all.`);
   });
 
   it('feeds the language the research call discovered into the later prompts', async () => {

@@ -95,9 +95,10 @@ type Zone = Readonly<{ root: string; allows: ReadonlySet<PathAccess> }>;
 /**
  * Where an implementer call may reach, derived from its isolation directory:
  * the directory itself, the temp and device paths every toolchain writes, the
- * tool's own state, and read-only system and toolchain roots. The checkout the
- * run promotes into is closed except for reads of its `node_modules`, which the
- * isolation directory links to. Every other path is outside.
+ * tool's own state, read-only system and toolchain roots, and the run's global
+ * skills, read-only. The checkout the run promotes into is closed except for
+ * reads of its `node_modules`, which the isolation directory links to. Every
+ * other path is outside.
  */
 export type IsolationBoundary = Readonly<{
   isolationDir: string;
@@ -184,6 +185,8 @@ export function createIsolationBoundary(input: {
   checkoutDir: string;
   env: Readonly<Record<string, string | undefined>>;
   tool?: CliToolId | undefined;
+  /** The run's global skills: the prompt names their files, so the call may read them. */
+  skillRoots?: readonly string[] | undefined;
 }): IsolationBoundary {
   const isolationDir = canonicalPath(input.isolationDir);
   const checkoutDir = canonicalPath(input.checkoutDir);
@@ -207,6 +210,7 @@ export function createIsolationBoundary(input: {
     ...underHomes(toolStates).map((root) => ({ root, allows: ANY })),
     ...SYSTEM_ROOTS.map((root) => ({ root: canonicalPath(root), allows: READS })),
     ...underHomes(TOOLCHAIN_DIRS).map((root) => ({ root, allows: READS })),
+    ...(input.skillRoots ?? []).map((root) => ({ root: canonicalPath(root), allows: READS })),
     ...pathEntryRoots(input.env.PATH, homes).map((root) => ({ root, allows: READS })),
     ...(isAncestorOfAny(nodePrefix, homes)
       ? []

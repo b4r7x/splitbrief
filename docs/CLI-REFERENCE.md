@@ -103,7 +103,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--reviewer-effort <level>` | enum | — | Reviewer effort hint: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The seat's tool accepts a subset and reports what it rejects. Requires the review seat to have its own runner: with no `reviewer` block in config and no `--reviewer`, the run is refused with a message naming `--reviewer`. On a configured reviewer whose backend has no reasoning control, it is dropped with a stderr warning. |
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
-| `--skills <ids>` | string | — | Comma-separated planner-skill ids to attach for this run, the headless equivalent of the `/skills` picker. Resolved against the same scan roots before planning starts; an id no root carries fails with `Unknown skill: <id> (scanned: <roots>)` and exit `2`. On `start` it applies to headless runs (`--json` / `--plain`); on `resume` and `continue` it applies in both modes. |
+| `--skills <ids>` | string | — | Comma-separated skill ids to attach to every seat for this run, the headless equivalent of the `/skills` picker. Resolved against the same scan roots before planning starts; an id no root carries fails with `Unknown skill: <id> (scanned: <roots>)` and exit `2`. On `start` it applies to headless runs (`--json` / `--plain`); on `resume` and `continue` it applies in both modes, to that continue only — it is not saved, so a later continue without it uses the selection the run saved when it started. |
 | `--yolo` | boolean | `false` | Disable file-write tiered approval prompts for the session. Spec/plan gates still follow `--approve` / mode policy, and briefs review remains separate. This is not a shell or network sandbox setting. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. Useful when piping or debugging. |
@@ -594,7 +594,7 @@ Resume accepts the same workflow override options as `start`. See [`splitbrief s
 |---|---|
 | `--json` | Resume the run in headless mode, streaming NDJSON to stdout. |
 | `--plain` | Resume the run in headless mode, writing plain lines to stdout. Mutually exclusive with `--json`. |
-| `--skills <ids>` | Comma-separated planner-skill ids for the rest of the run; they replace the selection saved with the session. Applies in headless and interactive mode alike. |
+| `--skills <ids>` | Comma-separated skill ids for every seat. The list applies to that continue only: it is not saved, so a later continue without it uses the selection the run saved when it started. Applies in headless and interactive mode alike. |
 | `--approve` / planner+implementer flags | Override the persisted values for this run only. |
 | `--mode` | A started run keeps the mode saved in its `state.json`: a `--mode` that names another mode prints a notice and changes nothing. Only a `state.json` from an older release, which saved no mode, takes the flag. |
 
@@ -658,7 +658,7 @@ Continue a run by name: resolves the active session, a session id, or a numeric 
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--allow-repo-runners` | boolean | `false` | Trust repo-local shell/agent runner commands from project config for resumed workflow execution. |
 | `--action <skip\|retry\|switch-seat:<tool>[:<model>]\|end-run>` | enum | — | Apply this action to the run's pending recovery, then continue — the headless equivalent of choosing it in the recovery panel. `skip` is `skip-current-task`, `retry` is `retry-same-worker`, `switch-seat:<tool>[:<model>]` moves the blocked seat, and `end-run` closes the run. The first three carry the run on; `end-run` records the close, prints `Run <id> closed. The files it wrote are still on disk.` and stops there. |
-| `--skills <ids>` | string | — | Comma-separated planner-skill ids for the rest of the run, in headless and interactive mode alike. |
+| `--skills <ids>` | string | — | Comma-separated skill ids for every seat, in headless and interactive mode alike. The list applies to that continue only: it is not saved, so a later continue without it uses the selection the run saved when it started. |
 | `--json` | boolean | `false` | Continue the run in headless NDJSON mode. |
 | `--plain` | boolean | `false` | Continue the run in headless plain-line mode. Mutually exclusive with `--json`. |
 | Other resume flags | — | — | Runner overrides, mode, `--no-fullscreen`, `--no-mouse`, `--hover`, and approval controls. |
@@ -853,7 +853,7 @@ done: 3 tasks
 - `task <id>: done|failed (<gates>)` — the gates are the validation stages that passed for that task, or `no gates` when validation was skipped and `skipped` for a task a recovery skipped. A task that wrote outside its declared files reads `task <id>: failed (effect-invalid: <paths>)`.
 - `gates: NONE — review-only` — written once, in place of per-task gate names, when the project's stack is unrecognised and no stage could resolve a command. The run still implements and still reviews; nothing was verified by a gate.
 - `review: passed|failed [(<n> blocking)]` — the final review verdict. `failed` means the reviewer still reported blocking findings after its fix cycles and carries their count; the command then exits `1` even though every task reached `done`.
-- `done: <n> tasks` — the closing line, written on completion whatever the review said. `<n>` counts the tasks that completed, not the length of the task list. The line carries no token count: token and money figures belong to the run's own record and `/usage`, not to the plain stream.
+- `done: <n> tasks` — the closing line, written on completion whatever the review said. `<n>` is the run's completed tasks, read from its state when it completes (`completedTasks` on `workflow_complete`): a task a review-fix cycle completes again counts once, a `continue` counts the tasks an earlier process completed, and a task that did not complete does not count, so `<n>` can be less than the length of the task list. The line carries no token count: token and money figures belong to the run's own record and `/usage`, not to the plain stream.
 
 Everything else the run emits is dropped — including `recovery_required`, which is a `--json` record. A halt no one is there to answer ends the plain stream: the failing task's `failed` line is the last line written, there is no `review:` or `done:` line, and the command exits 1. The halt itself is not silent — stderr carries the block below in both headless renderings.
 
@@ -864,12 +864,12 @@ Everything else the run emits is dropped — including `recovery_required`, whic
 Every headless run that stops on a recovery issue — `--json` and `--plain` alike — writes three lines to stderr and exits `1`:
 
 ```
-Error: Recovery required (runner-usage-limit): Codex CLI hit its usage limit on T003
+Error: Recovery required (runner-usage-limit): OpenAI Codex CLI hit its usage limit. Wait for the limit to reset or change the BUILD tool, then continue. (resets 17:00)
 Recommended: switch-seat
 Continue with: splitbrief continue 2026-09-13-add-auth --action switch-seat:claude-code [--plain|--json]
 ```
 
-The last line is the command to paste. When the recommended action is one `continue` cannot take on its own, it reads `splitbrief resume (<action> is available in the TUI)` instead. With `--json` the same facts also arrive on stdout as a `recovery_required` record carrying `reason`, `status`, `message`, `taskId`, `files`, `availableActions`, `recommendedAction` and `resumeCommand`.
+A quota halt ends the first line with the clock its limit resets on, spelled when the line is printed; with `--json`, the halt's `error` event record carries it as `resetAt`. The last line is the command to paste. When the recommended action is one `continue` cannot take on its own, the line opens the recovery panel and names the row to choose there, in the panel's own words: `Continue with: splitbrief continue 2026-09-13-add-auth, then choose Pause run in the recovery panel`. That line carries no `[--plain|--json]`: the panel needs the TUI. With `--json` the same facts also arrive on stdout as a `recovery_required` record carrying `reason`, `status`, `message`, `taskId`, `files`, `availableActions`, `recommendedAction` and `resumeCommand`.
 
 ### Workflow modes (`--mode`)
 

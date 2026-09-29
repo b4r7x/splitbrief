@@ -56,7 +56,7 @@ export type StateAction =
   | { type: 'RESUME_STEP' }
   | { type: 'SET_PLANNER_CONVERSATION'; conversation: PlannerConversation }
   | { type: 'CLEAR_PLANNER_CONVERSATION' }
-  | { type: 'SET_PLANNER_SESSION_ID'; sessionId: string }
+  | { type: 'SET_PLANNER_SESSION_ID'; sessionId: string | null }
   | { type: 'REWIND_TO_SPEC'; comment?: string }
   | { type: 'REWIND_TO_PLAN'; comment?: string }
   | { type: 'RESET_TASK'; taskId: TaskId }
@@ -87,4 +87,8 @@ export type CodeContext =
 export interface ProjectContext {
   name: string;
   dir: string;
+  /** The run's selected skills, rendered once and carried by every seat call. */
+  skillsContext?: string | undefined;
+  /** Where the run's global skills live: an implementer in isolation may read them, never write. */
+  skillRoots?: readonly string[] | undefined;
 }

@@ -240,6 +240,50 @@ describe('createImplementerBase — prompt write contracts', () => {
     );
     expect(seenPrompt).not.toContain('staged working directory');
   });
+
+  it("carries the run's skills context on the first attempt and on a retry", async () => {
+    const prompts: string[] = [];
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      prompts.push(opts.prompt);
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+    const skillsContext = '## Active Project Skills\n\n### AuthSkill\nBUILD-SKILL-BODY';
+    const call = {
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: { ...defaultContext, skillsContext },
+      onOutput: vi.fn(),
+    };
+
+    await implementer.implement(call);
+    await implementer.retry({ ...call, error: 'tsc failed', attempt: 1, kind: 'local' });
+
+    expect(prompts).toHaveLength(2);
+    for (const prompt of prompts) {
+      expect(prompt).toContain(skillsContext);
+      expect(prompt.indexOf(skillsContext)).toBeLessThan(prompt.indexOf('## Task:'));
+    }
+  });
+
+  it("hands the call the directories of the run's attached skills", async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text: 'done', usage: null }));
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+    const skillRoots = ['/home/me/.claude/skills/auth'];
+
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: { ...defaultContext, skillRoots },
+      onOutput: vi.fn(),
+    });
+
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ skillRoots }));
+  });
 });
 
 describe('createImplementerBase — non-extracting backends (detectChanges)', () => {

@@ -481,7 +481,7 @@ describe('publish* payload forwarding', () => {
 describe('recovery events name the halted seat', () => {
   function publishAll(issue: ReturnType<typeof makeRecoveryIssue>) {
     const { bus, events } = makeBusRecorder();
-    const opts = { bus, issue, action: 'switch-seat' } as const;
+    const opts = { bus, phase: issue.phase, issue, action: 'switch-seat' } as const;
     publishRecoveryActionSelected(opts);
     publishRecoveryActionFailed({ ...opts, message: 'blocked' });
     publishRecoveryResolved({ ...opts, outcome: 'continued' });

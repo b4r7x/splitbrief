@@ -6,6 +6,7 @@ import {
   buildPrompt,
   instructionsSection,
   requiredSectionsSection,
+  skillsSection,
 } from './builder.js';
 import { error } from '../../../utils/error.js';
 import { PLAN_PROMPT_MAX_BYTES } from '../../../core/pipeline-spec/brief.js';
@@ -27,6 +28,7 @@ export type RegeneratePromptInput = Readonly<{
   artifactType: 'spec' | 'plan';
   currentContent: string;
   feedback: string;
+  skillsContext?: string | undefined;
 }>;
 
 export const planPromptError = {
@@ -109,10 +111,8 @@ export function buildPlanPrompt(input: PlanPromptInput): string {
     sections: [
       plannerConversationSection,
       { heading: 'Specification', body: input.spec.content },
-      {
-        heading: 'Project Context',
-        body: `${input.projectContext}${input.skillsContext ? `\n${input.skillsContext}` : ''}`,
-      },
+      { heading: 'Project Context', body: input.projectContext },
+      ...skillsSection(input.skillsContext),
       instructionsSection(
         'Write a complete `plan.md` document that provides a concrete implementation blueprint. Another developer (or AI) should be able to follow this plan without needing to make architectural decisions.',
       ),
@@ -144,6 +144,7 @@ export function buildRegeneratePrompt(input: RegeneratePromptInput): string {
     intro: `The user reviewed the ${input.artifactType} and has feedback:`,
     sections: [
       plannerConversationSection,
+      ...skillsSection(input.skillsContext),
       { heading: `Current ${label}`, body: input.currentContent },
       { heading: 'User Feedback', body: input.feedback },
       instructionsSection(

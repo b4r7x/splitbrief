@@ -193,9 +193,11 @@ describe('planner conversations through the real phase boundary', () => {
       const fixture = setup();
       writeSpecFile(fixture, RESEARCH_FILE, reply);
       const issue = buildPlannerCallFailedRecoveryIssue({
-        failure: 'call-failed',
+        diagnosis: {
+          failure: 'call-failed',
+          message: 'Invalid specifying artifact spec.md: missing Markdown heading',
+        },
         phase: 'specifying',
-        message: 'Invalid specifying artifact spec.md: missing Markdown heading',
         createdAt: '2026-09-17T20:21:13Z',
       });
       const state: WorkflowState = {
@@ -264,9 +266,8 @@ describe('planner conversations through the real phase boundary', () => {
     const fixture = setup();
     writeSpecFile(fixture, RESEARCH_FILE, PLANNER_DOCUMENT_FIXTURES.research);
     const issue = buildPlannerCallFailedRecoveryIssue({
-      failure: 'call-failed',
+      diagnosis: { failure: 'call-failed', message: 'Planner disconnected' },
       phase: 'specifying',
-      message: 'Planner disconnected',
       createdAt: '2026-09-17T20:21:13Z',
     });
     const state: WorkflowState = { ...fixture.state, phase: 'specifying', pendingRecovery: issue };

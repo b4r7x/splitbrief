@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PLAN_PROMPT_MAX_BYTES } from '../../../core/pipeline-spec/brief.js';
 import { buildLanguageContext } from './language-context.js';
-import { assertPlanPromptBound, buildPlanPrompt } from './plan.js';
+import { assertPlanPromptBound, buildPlanPrompt, buildRegeneratePrompt } from './plan.js';
 
 const spec = { content: 'feature spec', hasClarifications: false };
 
@@ -52,6 +52,22 @@ describe('buildPlanPrompt', () => {
       expect.objectContaining({
         data: { actualBytes: PLAN_PROMPT_MAX_BYTES + 1, maxBytes: PLAN_PROMPT_MAX_BYTES },
       }),
+    );
+  });
+});
+
+describe('buildRegeneratePrompt', () => {
+  it('gives the skills block its own section, ahead of the document it asks back', () => {
+    const skillsContext = '## Active Project Skills\n\n### AuthSkill\nSKILL-BODY';
+    const prompt = buildRegeneratePrompt({
+      artifactType: 'spec',
+      currentContent: '# Spec\n\nDraft.',
+      feedback: 'add auth',
+      skillsContext,
+    });
+
+    expect(prompt).toContain(
+      `${skillsContext}\n\n## Current Specification\n# Spec\n\nDraft.\n\n## User Feedback`,
     );
   });
 });

@@ -188,98 +188,78 @@ describe('createClaudeCodePlanner planning', () => {
     },
   );
 
-  it('suppresses expired-session resume attempt events when fallback succeeds', async () => {
-    const tasksMarkdown = `---
-id: T001
-title: Claude fallback task
-action: create
-file: src/claude-fallback.ts
-depends_on: []
----
-
-### Description
-Create the Claude fallback file.
-
-### Tests
-- fallback attempt succeeds
-`;
+  // Claude Code 2.1.284 answers `--resume` of a session it no longer has with exactly this
+  // (captured live 2026-09-29): an error result on stdout, the same line on stderr, exit 1.
+  it('drops an expired session and fails the call, so the next call starts a fresh one', async () => {
+    const argvLog = join(shimDir, 'argv-log.txt');
+    const expiredLine = 'No conversation found with session ID: sess-old';
     const shimPath = join(shimDir, 'claude');
     writeFileSync(
       shimPath,
       [
         '#!/bin/bash',
+        'cat > /dev/null',
+        `printf '%s ' "$@" >> '${argvLog}'`,
+        `printf '\\n' >> '${argvLog}'`,
         'if printf \'%s\\n\' "$@" | grep -q "^--resume$"; then',
-        `  printf '%s\\n' '${JSON.stringify({ type: 'result', is_error: true, session_id: 'sess-old', result: 'session not found: sess-old', usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
-        '  exit 0',
+        `  printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 0, session_id: 'sess-old', usage: { input_tokens: 0, output_tokens: 0 }, errors: [expiredLine] })}'`,
+        `  printf '%s\\n' '${expiredLine}' >&2`,
+        '  exit 1',
         'fi',
-        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new', result: tasksMarkdown, usage: { input_tokens: 2, output_tokens: 2 } }).replace(/'/g, "'\\''")}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new', result: '# Research\nbody', usage: { input_tokens: 2, output_tokens: 2 } }).replace(/'/g, "'\\''")}'`,
         '',
       ].join('\n'),
       'utf8',
     );
     chmodSync(shimPath, 0o755);
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
-
-    const events: Array<{ type: string; callId: string; attempt?: number | undefined }> = [];
+    const expiredSessionIds: string[] = [];
     const reportedSessionIds: string[] = [];
     const planner = await createTrustedClaudeCodePlanner({
       authChannel: undefined,
       initialSessionId: 'sess-old',
     });
+    const callbacks = {
+      onOutput: () => {},
+      onSessionId: (sessionId: string) => reportedSessionIds.push(sessionId),
+      onSessionExpired: (sessionId: string) => expiredSessionIds.push(sessionId),
+    };
 
-    const result = await callPhase(planner, {
-      feature: 'fallback',
+    await expect(
+      callPhase(planner, { call: 'research', feature: 'expired', projectDir, callbacks }),
+    ).rejects.toThrow(expiredLine);
+    expect(expiredSessionIds).toEqual(['sess-old']);
+    expect(readFileSync(argvLog, 'utf8').trim().split('\n')).toHaveLength(1);
+
+    const rerun = await callPhase(planner, {
+      call: 'research',
+      feature: 'rerun',
       projectDir,
-      callbacks: {
-        onOutput: () => {},
-        onSessionId: (sessionId) => reportedSessionIds.push(sessionId),
-        onCallEvent: (event) => {
-          if (event.type === 'call_started' || event.type === 'call_error') events.push(event);
-        },
-      },
+      callbacks,
     });
 
-    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
-    expect(result.tasks).toHaveLength(1);
-    const started = events.filter((event) => event.type === 'call_started');
-    expect(started).toHaveLength(1);
-    expect(started[0]).toMatchObject({ attempt: 2 });
-    expect(started[0]?.callId).toMatch(/-attempt-2$/);
-    expect(events).not.toContainEqual(expect.objectContaining({ type: 'call_error' }));
-    expect(JSON.stringify(events)).not.toContain('sess-old');
+    expect(rerun.text).toBe('# Research\nbody');
+    const [expired, fresh] = readFileSync(argvLog, 'utf8').trim().split('\n');
+    expect(expired).toContain('--resume sess-old');
+    expect(fresh).not.toContain('--resume');
     expect(reportedSessionIds).toEqual(['sess-new']);
   });
 
   it.each([false, true])('quarantines mismatched resume (init=%s)', async (withInit) => {
-    const tasksMarkdown = `---
-id: T001
-title: Claude mismatch fallback task
-action: create
-file: src/claude-mismatch.ts
-depends_on: []
----
-
-### Description
-Create the Claude mismatch fallback file.
-
-### Tests
-- fallback attempt succeeds
-`;
+    const argvLog = join(shimDir, 'argv-log.txt');
     const shimPath = join(shimDir, 'claude');
     writeFileSync(
       shimPath,
       [
         '#!/bin/bash',
-        'if printf \'%s\\n\' "$@" | grep -q "^--resume$"; then',
+        `printf '%s ' "$@" >> '${argvLog}'`,
+        `printf '\\n' >> '${argvLog}'`,
         ...(withInit
           ? [
-              `  printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-new-unexpected' })}'`,
+              `printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-new-unexpected' })}'`,
             ]
           : []),
-        `  printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new-unexpected', result: 'stale resumed output', usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
-        '  exit 0',
-        'fi',
-        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-fresh', result: tasksMarkdown, usage: { input_tokens: 2, output_tokens: 2 } }).replace(/'/g, "'\\''")}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new-unexpected', result: 'stale resumed output', usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
         '',
       ].join('\n'),
       'utf8',
@@ -296,30 +276,24 @@ Create the Claude mismatch fallback file.
       initialSessionId: 'sess-old',
     });
 
-    const result = await callPhase(planner, {
-      feature: 'fallback',
-      projectDir,
-      callbacks: {
-        onOutput: (chunk) => output.push(chunk),
-        onSessionId: (sessionId) => reportedSessionIds.push(sessionId),
-        onSessionExpired: (sessionId) => expiredSessionIds.push(sessionId),
-        onCallEvent: (event) => events.push(event),
-      },
-    });
+    await expect(
+      callPhase(planner, {
+        feature: 'mismatch',
+        projectDir,
+        callbacks: {
+          onOutput: (chunk) => output.push(chunk),
+          onSessionId: (sessionId) => reportedSessionIds.push(sessionId),
+          onSessionExpired: (sessionId) => expiredSessionIds.push(sessionId),
+          onCallEvent: (event) => events.push(event),
+        },
+      }),
+    ).rejects.toMatchObject({ kind: 'session-resume-mismatch' });
 
-    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
-    expect(result.tasks).toHaveLength(1);
     expect(expiredSessionIds).toEqual(['sess-old']);
-    expect(reportedSessionIds).toEqual(['sess-fresh']);
+    expect(reportedSessionIds).toEqual([]);
     expect(output.join('\n')).not.toContain('stale resumed output');
-
-    const started = events.filter((event) => event.type === 'call_started');
-    expect(started).toHaveLength(1);
-    expect(started[0]).toMatchObject({ attempt: 2 });
-    const sessionEvents = events.filter((event) => event.type === 'call_session_id');
-    expect(sessionEvents).toHaveLength(1);
-    expect(sessionEvents[0]).toMatchObject({ nativeSessionId: 'sess-fresh' });
     expect(JSON.stringify(events)).not.toContain('sess-new-unexpected');
+    expect(readFileSync(argvLog, 'utf8').trim().split('\n')).toHaveLength(1);
   });
 
   it('reads phase artifacts from the terminal result only and ignores seeded session tasks.md', async () => {

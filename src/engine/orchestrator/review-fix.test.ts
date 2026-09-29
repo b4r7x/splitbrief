@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { REVIEW_CYCLE_CAP } from '../../core/pipeline-spec/review.js';
+import { parseFinalReview } from '../parsers/final-review.js';
 import { correctionFixes, decideReviewOutcome, type ReviewOutcomeInput } from './review-fix.js';
 
 const tasks = [
@@ -53,6 +54,37 @@ describe('decideReviewOutcome', () => {
       kind: 'fix',
       fixes: { T001: ['src/alpha.ts drops errors'] },
     });
+  });
+
+  it('sends back a Critical written with the colon inside the bold instead of passing it', () => {
+    const verdict = parseFinalReview(
+      '### Verdict\npass_with_notes\n\n### Findings\n- **Critical:** src/alpha.ts drops errors',
+    );
+
+    expect(
+      decideReviewOutcome({ reviewStatus: 'written', verdict }, tasks, REVIEW_CYCLE_CAP, 0),
+    ).toEqual({ kind: 'fix', fixes: { T001: ['src/alpha.ts drops errors'] } });
+  });
+
+  it.each([
+    'N/A',
+    'n/a',
+    'Not applicable',
+    'No critical issues found.',
+    '0',
+    '_None._',
+    'Nothing to report.',
+    '(none)',
+    'None of note.',
+    '-',
+  ])('passes a pass_with_notes review whose Critical label says %s', (absence) => {
+    const verdict = parseFinalReview(
+      `### Verdict\npass_with_notes\n\n### Findings\n- **Critical**: ${absence}\n- **Warning**: No validation output was recorded.`,
+    );
+
+    expect(
+      decideReviewOutcome({ reviewStatus: 'written', verdict }, tasks, REVIEW_CYCLE_CAP, 0),
+    ).toEqual({ kind: 'pass' });
   });
 
   it('fails at the cap, on an unparseable verdict, and on a fail with no Critical', () => {

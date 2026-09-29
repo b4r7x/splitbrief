@@ -387,6 +387,36 @@ describe('runBriefQualityWithRepair', () => {
     expect(result).toMatchObject({ attempts: 2, regenerated: true });
   });
 
+  it("repairs the briefs with the run's skills context", async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const state = { ...makeStateWithQueue([]), phase: 'planning' as const };
+    saveState({ projectDir, sessionId }, state);
+    const skillsContext = '## Active Project Skills\n\n### AuthSkill\nREPAIR-SKILL-BODY';
+
+    let prompt = '';
+    const planner = makePlanner({
+      review: async (seen: string) => {
+        prompt = seen;
+        return { text: formatTasks([makeTask(completeTask)]), usage: null };
+      },
+    });
+
+    await runBriefQualityWithRepair({
+      tasks: [makeTask({ ...completeTask, tests: [] })],
+      state,
+      planner,
+      projectDir,
+      sessionId,
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      metadata: TEST_METADATA,
+      maxRetries: 1,
+      skillsContext,
+    });
+
+    expect(prompt).toContain(skillsContext);
+  });
+
   it('does not repair when canonical fence warnings leave only warnings', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const ref = { projectDir, sessionId };

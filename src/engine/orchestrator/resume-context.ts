@@ -1,8 +1,9 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { ResumeContextHolder } from './types.js';
 import type { EventBus } from '../events/types.js';
-import type { Planner } from '../planners/types.js';
+import type { Planner, PriorMessage } from '../planners/types.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { isSessionExpiredError } from '../session-expiry.js';
 import { publishWarning, publishWarningFromError } from './events.js';
 import { buildResumeContext } from './transcript/rebuild.js';
 import { compactResumeTranscript, keepRecentCountForThreshold } from './transcript/compaction.js';
@@ -17,6 +18,8 @@ export type ApplyRebuiltContextOpts = {
   bus: EventBus;
   resumeHolder: ResumeContextHolder | undefined;
   requireNonEmpty?: boolean | undefined;
+  /** The continuation hands the step its cut call's partial, so the transcript leaves it out. */
+  withoutCutCall?: boolean | undefined;
 };
 
 export type AutoCompactResumeOpts = {
@@ -80,8 +83,8 @@ export async function autoCompactResumeContext(
 }
 
 export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promise<void> {
-  const { projectDir, sessionId, bus, resumeHolder, requireNonEmpty } = opts;
-  const rebuilt = await buildResumeContext({ ref: { projectDir, sessionId } });
+  const { projectDir, sessionId, bus, resumeHolder, requireNonEmpty, withoutCutCall } = opts;
+  const rebuilt = await buildResumeContext({ ref: { projectDir, sessionId }, withoutCutCall });
   if (rebuilt.warning === 'state-unavailable') {
     publishWarning({
       bus,
@@ -96,20 +99,45 @@ export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promis
   resumeHolder.messages = rebuilt.messages;
 }
 
-export type SessionExpiredHandlerOpts = {
+/**
+ * Issues one planning call: a step's or a revision's. A call that resumed the planner's thread and
+ * finds it expired runs once more, on a fresh session with the rebuilt transcript, as a continued
+ * run would: the seat has already dropped the thread. Any other failure, and a failure of the call
+ * issued again, is the caller's.
+ */
+export async function withExpiredSessionReissue<T>(opts: {
   projectDir: string;
   sessionId: string;
   bus: EventBus;
-  resumeHolder: ResumeContextHolder | undefined;
-};
-
-export function createSessionExpiredHandler(opts: SessionExpiredHandlerOpts): () => Promise<void> {
-  return async () => {
+  planner: Pick<Planner, 'capabilities'>;
+  /** The state the call starts on: the thread it names is the one the call resumes. */
+  state: WorkflowState;
+  signal?: AbortSignal | undefined;
+  withoutCutCall?: boolean | undefined;
+  issue: (priorMessages?: PriorMessage[]) => Promise<T>;
+}): Promise<T> {
+  const { projectDir, sessionId, bus, state, signal } = opts;
+  const resumed =
+    opts.planner.capabilities.supportsSessionResume && Boolean(state.plannerSessionId);
+  try {
+    return await opts.issue();
+  } catch (err) {
+    if (!resumed || signal?.aborted || !isSessionExpiredError(err)) throw err;
     publishWarning({
-      bus: opts.bus,
-      phase: 'researching',
-      message: 'Previous planner conversation expired — rebuilding context from transcript.',
+      bus,
+      phase: state.phase,
+      message:
+        'Planner session expired; the call runs again on a fresh session with the conversation so far.',
+      safety: { category: 'planner', code: 'planner_session_expired' },
     });
-    await applyRebuiltContext(opts);
-  };
+    const rebuilt: ResumeContextHolder = { messages: [] };
+    await applyRebuiltContext({
+      projectDir,
+      sessionId,
+      bus,
+      resumeHolder: rebuilt,
+      withoutCutCall: opts.withoutCutCall,
+    });
+    return opts.issue(rebuilt.messages);
+  }
 }

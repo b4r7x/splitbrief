@@ -17,6 +17,7 @@ import {
   raisePendingRecovery,
   rebaseOnPersistedWorkflowState,
   addUsageAndSave,
+  plannerThreadCallbacks,
 } from './state-ops.js';
 
 function setupProject(): { projectDir: string; sessionId: string } {
@@ -175,6 +176,52 @@ describe('transitionAndSave', () => {
 
       expect(next.phase).toBe('specifying');
       expect(next.messageQueue).toEqual([expect.objectContaining({ id: 'msg-one' })]);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+});
+
+describe('plannerThreadCallbacks', () => {
+  function holder(initial: WorkflowState) {
+    let current = initial;
+    return {
+      get: () => current,
+      set: (next: WorkflowState) => {
+        current = next;
+      },
+    };
+  }
+
+  it('drops the run planner thread a call reported expired', () => {
+    const { projectDir, sessionId } = setupProject();
+    const ref = { projectDir, sessionId };
+    try {
+      const state = { ...createInitialState('feature'), plannerSessionId: 'codex-thread-gone' };
+      saveState(ref, state);
+      const held = holder(state);
+
+      plannerThreadCallbacks(ref, held).onSessionExpired('codex-thread-gone');
+
+      expect(held.get().plannerSessionId).toBeNull();
+      expect(loadState(ref)?.plannerSessionId).toBeNull();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('keeps a planner thread the run moved to after the expired one', () => {
+    const { projectDir, sessionId } = setupProject();
+    const ref = { projectDir, sessionId };
+    try {
+      const state = { ...createInitialState('feature'), plannerSessionId: 'codex-thread-live' };
+      saveState(ref, state);
+      const held = holder(state);
+
+      plannerThreadCallbacks(ref, held).onSessionExpired('codex-thread-gone');
+
+      expect(held.get()).toBe(state);
+      expect(loadState(ref)?.plannerSessionId).toBe('codex-thread-live');
     } finally {
       cleanupTempDir(projectDir);
     }

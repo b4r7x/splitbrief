@@ -13,7 +13,7 @@ import { error, type AppError } from '../../../utils/error.js';
 import { createWorktree } from './create-worktree.js';
 import { assertIsolationDirReadable, resolveConfinedIsolationWorktreePath } from './path.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
-import { writeConfinedEntry } from '../approval/file-snapshots/entry.js';
+import { writeConfinedEntry, writeConfinedSymlink } from '../approval/file-snapshots/entry.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 
 const MAX_SLUG_LENGTH = 64;
@@ -24,9 +24,11 @@ export type EnsureIsolationWorktreeResult =
 
 const isolationError = {
   seedSymlink: (file: string) =>
-    error('isolation-seed-symlink', `Cannot seed isolation worktree: "${file}" is a symlink.`, {
-      file,
-    }),
+    error(
+      'isolation-seed-symlink',
+      `Cannot seed isolation worktree: "${file}" is a symlink that does not stay inside the project.`,
+      { file },
+    ),
   excludeLockTimeout: (lockPath: string) =>
     error(
       'isolation-exclude-lock-timeout',
@@ -204,9 +206,11 @@ function symlinkedSourceFile(err: AppError<'path-symlink-read'>, sourceDir: stri
 }
 
 async function seedIsolationWorktree(sourceDir: string, wtPath: string): Promise<SeedResult> {
-  // A symlink in the source's changed set is refused by the capture itself; the
-  // refusal is rethrown under the isolation error so the run falls back over a
-  // named symlink reason instead of a raw confinement message.
+  // A symlink that stays inside the project is recreated with the same relative
+  // target, which resolves inside the worktree. Any other symlink in the source's
+  // changed set is refused by the capture itself; the refusal is rethrown under
+  // the isolation error so the run falls back over a named symlink reason
+  // instead of a raw confinement message.
   let snapshot: ChangedFilesSnapshot;
   try {
     snapshot = await getChangedFilesSnapshot(sourceDir);
@@ -225,6 +229,9 @@ async function seedIsolationWorktree(sourceDir: string, wtPath: string): Promise
         ? { kind: 'absent' }
         : { kind: 'file', bytes, sha256: sha256Hex(bytes), mode: entry.mode },
     );
+  }
+  for (const [file, target] of Object.entries(snapshot.symlinks ?? {})) {
+    await writeConfinedSymlink(wtPath, file, target);
   }
   return { kind: 'ok' };
 }

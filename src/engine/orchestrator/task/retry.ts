@@ -1,4 +1,4 @@
-import type { Task } from '../../../core/schemas/task.js';
+import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
 import type { ValidationResult } from '../validation/result.js';
@@ -7,7 +7,8 @@ import type { WorkflowContext } from '../types.js';
 import type { UndeclaredWritesPolicy } from '../../implementers/types.js';
 import type { RetryAttemptFailure } from '../escalation/types.js';
 
-import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
+import { runnerCallRole } from '../../implementers/pipeline/call-result.js';
 import { retentionError } from '../isolation/retention.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -22,6 +23,11 @@ import {
   buildRetryExhaustedRecoveryIssue,
   routeBiggerProfileFromDecision,
 } from '../recovery/builders/task.js';
+import {
+  diagnosePlannerCallFailure,
+  plannerCallHaltIssue,
+} from '../recovery/planner-call-failure.js';
+import { hintHaltDetails } from '../recovery/builders/details.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
@@ -42,6 +48,13 @@ export type RetryAndRecordOptions = {
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
 } & UndeclaredWritesPolicy;
+
+/** A failure out of the retry ladder names its call: the planner's hint, else the retry itself. */
+export function retryFailureLabel(err: unknown, taskId: TaskId): string {
+  return runnerCallRole(err) === 'escalation'
+    ? `Planner hint for ${taskId} failed`
+    : `Retrying ${taskId} failed`;
+}
 
 export async function retryAndRecord(
   opts: RetryAndRecordOptions,
@@ -102,25 +115,51 @@ export async function retryAndRecord(
       setTrackedState(stoppedState);
       return { state: stoppedState, completed: false };
     }
-    const message = labelError('Retry/escalation failed', err);
-    publishError({ bus: wctx.bus, phase: opts.state.phase, message: message });
+    // Only the planner's hint call throws a runner's own words out of the ladder:
+    // the implementer pipeline turns every limit and sign-out into an outcome
+    // the ladder halts on itself.
+    const diagnosis = diagnosePlannerCallFailure({
+      err,
+      label: retryFailureLabel(err, task.id),
+      runner: wctx.config.planner,
+      seat: 'plan',
+    });
+    publishError({
+      bus: wctx.bus,
+      phase: opts.state.phase,
+      message: diagnosis.message,
+      resetAt: diagnosis.resetsAt?.toISOString(),
+    });
     const recoveryBaseState = loadState(wctx) ?? opts.state;
     if (recoveryBaseState.pendingRecovery) {
       setTrackedState(recoveryBaseState);
       return { state: recoveryBaseState, completed: false };
     }
-    const issue = buildRetryExhaustedRecoveryIssue({
-      task,
-      phase: recoveryBaseState.phase,
-      validationResults: opts.initialValidation,
-      validationSummary: message,
-      attempts: recoveryBaseState.attempt,
-      maxAttempts: wctx.config.workflow.maxRetries,
-      allowRetryOverride: true,
-      selectedImplementerProfile: wctx.implementerProfile,
-      routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
-      createdAt: nowIso(),
-    });
+    // A planner out of quota or signed out on the hint halts on the plan seat, not
+    // as a brief that exhausted its retries. The halt names the brief, so retrying
+    // it or moving the plan seat replays that brief from its start.
+    const issue =
+      diagnosis.failure === 'call-failed'
+        ? buildRetryExhaustedRecoveryIssue({
+            task,
+            phase: recoveryBaseState.phase,
+            validationResults: opts.initialValidation,
+            validationSummary: diagnosis.message,
+            attempts: recoveryBaseState.attempt,
+            maxAttempts: wctx.config.workflow.maxRetries,
+            allowRetryOverride: true,
+            selectedImplementerProfile: wctx.implementerProfile,
+            routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
+            createdAt: nowIso(),
+          })
+        : await plannerCallHaltIssue({
+            projectDir: wctx.projectDir,
+            diagnosis,
+            task,
+            phase: recoveryBaseState.phase,
+            swap: { seat: 'plan', runner: wctx.config.planner },
+            details: hintHaltDetails(task.id),
+          });
     const nextState = raisePendingRecovery(wctx, recoveryBaseState, issue, setTrackedState);
     recordFailedTask(nextState, recoveryBaseState.attempt);
     return { state: nextState, completed: false };

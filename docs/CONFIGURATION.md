@@ -1059,7 +1059,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue |
 | `--plain` | Headless: one plain line per phase, task, review and completion (`phase:`, `task T00N: done\|failed (<gates>)`, `review:`, `done:`), no TUI. Refuses to run alongside `--json` (exit `2`) | start, resume, continue |
 | `--yolo` | Skip file-write tiered approval prompts for this session | start, resume, continue |
-| `--skills <ids>` | Comma-separated planner-skill ids to attach (unknown id → exit `2`) | start (headless), resume, continue |
+| `--skills <ids>` | Comma-separated skill ids to attach to every seat (unknown id → exit `2`); on resume and continue, for that continue only | start (headless), resume, continue |
 | `--action <action>` | Apply an action to the pending recovery before continuing: `skip`, `retry`, or `switch-seat:<tool>[:<model>]` | continue |
 | `--reconfigure` | Overwrite existing config | init |
 

@@ -73,20 +73,22 @@ function installTwoFileClaudeShim(relPaths: readonly string[]): void {
 function installRecordingCodexShim(
   writtenRelPath: string,
   terminalLines: readonly string[],
-): { argvFile: string } {
+): { argvFile: string; stdinFile: string } {
   const argvFile = join(shimDir, 'argv.txt');
+  const stdinFile = join(shimDir, 'stdin.txt');
   const target = join(projectDir, writtenRelPath);
   const shimPath = join(shimDir, 'codex');
   const script = [
     '#!/bin/bash',
     `printf '%s\\n' "$@" > '${argvFile}'`,
+    `cat > '${stdinFile}'`,
     `mkdir -p "$(dirname '${target}')"`,
     `printf '%s' 'generated' > '${target}'`,
     ...terminalLines.map((line) => `printf '%s\\n' '${line}'`),
   ].join('\n');
   writeFileSync(shimPath, `${script}\n`, 'utf8');
   chmodSync(shimPath, 0o755);
-  return { argvFile };
+  return { argvFile, stdinFile };
 }
 
 const cliClaudeImplementer: CliImplementerConfig = {
@@ -673,7 +675,7 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
 
 describe('createCliImplementer (codex usage capture)', () => {
   it('reports turn usage as implementer usage, excluding cached input from input tokens', async () => {
-    const { argvFile } = installRecordingCodexShim('src/hello.ts', [
+    const { argvFile, stdinFile } = installRecordingCodexShim('src/hello.ts', [
       '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":4,"cached_input_tokens":6}}',
     ]);
     const config = makeCodexConfig();
@@ -688,7 +690,8 @@ describe('createCliImplementer (codex usage capture)', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(readArgv(argvFile).at(-1)).toContain('src/hello.ts');
+    expect(readArgv(argvFile).at(-1)).toBe('-');
+    expect(readFileSync(stdinFile, 'utf8')).toContain('src/hello.ts');
     expect(result.usage).toEqual({
       inputTokens: 4,
       outputTokens: 4,

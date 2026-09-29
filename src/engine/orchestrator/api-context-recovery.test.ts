@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import {
   makeBusRecorder,
@@ -23,6 +24,8 @@ import { NO_ARTIFACTS, deriveRunStatus } from '../../core/sessions/run-status.js
 import type { Config } from '../../core/schemas/config.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
+import { error } from '../../utils/error.js';
 import type { EngineEvent } from '../events/types.js';
 import { apiContextError, type ApiContextDiagnostic } from '../providers/api-context-diagnostic.js';
 import { runPlanningSteps } from './planning/steps.js';
@@ -502,9 +505,8 @@ describe('the diagnosis a halt persists', () => {
         createdAt: CREATED_AT,
       }),
       buildPlannerCallFailedRecoveryIssue({
-        failure: 'call-failed',
+        diagnosis: { failure: 'call-failed', message: 'Planning failed.' },
         phase: 'planning',
-        message: 'Planning failed.',
         details: ['Missing: spec.md'],
         facts: {
           apiContextCode: 'insufficient-context',
@@ -560,9 +562,8 @@ describe('answering a halt that names no brief', () => {
           createdAt: CREATED_AT,
         })
       : buildPlannerCallFailedRecoveryIssue({
-          failure: 'call-failed',
+          diagnosis: { failure: 'call-failed', message: 'Planning failed.' },
           phase: 'planning',
-          message: 'Planning failed.',
           facts: { apiContextCode: 'insufficient-context', apiContextSeat: 'plan' },
           createdAt: CREATED_AT,
         });
@@ -702,5 +703,159 @@ describe('a corrected review seat', () => {
     expect(passed.result.state.tasks.map((task) => task.status)).toEqual(['done']);
     expect(passed.implementer.implement).not.toHaveBeenCalled();
     expect(passed.implementer.retry).not.toHaveBeenCalled();
+  });
+});
+
+// Captured from `codex exec --json` against an account at its usage limit; the review call wraps
+// it the way `requireCompletedCall` does.
+const CODEX_LIMIT =
+  "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Oct 3rd, 2026 1:02 PM.";
+
+const CODEX_SEAT = {
+  kind: 'cli',
+  tool: 'codex',
+  authChannel: defaultCliAuthChannel('codex').id,
+} as const;
+
+describe('a REVIEW seat out of quota', () => {
+  const followsPlan = makeNoValidationConfig({ planner: CODEX_SEAT });
+  const ownSeat = makeNoValidationConfig({ reviewer: CODEX_SEAT });
+
+  async function limited(name: string, config: Config) {
+    const ref = setupRun(name, { ledger: true });
+    await rememberDetectedTools(
+      ref.projectDir,
+      cliDetectionsFor('ready', ['codex', 'claude-code']),
+    );
+    const run = await review({
+      ref,
+      config,
+      throws: error('runner-call-failed', 'Planner reviewer call failed', {
+        status: 'failed',
+        error: { code: 'codex-turn-failed', message: CODEX_LIMIT },
+      }),
+    });
+    return { ref, ...run, issue: run.result.state.pendingRecovery };
+  }
+
+  it('halts on the review seat with the reset, not as a review that failed', async () => {
+    const { result, events, reviewCalls, issue } = await limited('review-limit', followsPlan);
+
+    expect(reviewCalls).toBe(1);
+    expect(issue?.reason).toBe('runner-usage-limit');
+    expect(issue?.seat).toBe('review');
+    expect(issue?.taskId).toBeUndefined();
+    expect(issue?.facts?.tool).toBe('OpenAI Codex CLI');
+    expect(new Date(issue?.resetAt ?? '')).toEqual(new Date(2026, 9, 3, 13, 2));
+    expect(issue?.details).toEqual([
+      `OpenAI Codex CLI reported: ${CODEX_LIMIT}`,
+      'The review runs on the PLAN tool. A new PLAN tool also runs the review.',
+    ]);
+    expect(issue?.message).toContain('hit its usage limit');
+    expect(issue?.message).not.toContain('codex login');
+    // The error row carries the halt's reset for the row to spell; its words name no clock, and
+    // codex's own words drop theirs.
+    const row = events.find((event) => event.type === 'error');
+    expect(row?.type === 'error' && row.resetAt).toBe(issue?.resetAt);
+    const rowText = row?.type === 'error' ? row.message : '';
+    expect(rowText).not.toMatch(/13:02|1:02 PM|try again/);
+    expect(issue?.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'pause-run',
+      'end-run',
+    ]);
+    expect(issue?.recommendedAction).toBe('switch-seat');
+    // Nothing was judged, so the run waits on the review it never finished.
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.reviewStatus).toBeUndefined();
+    expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
+  });
+
+  it('offers the PLAN move when REVIEW follows PLAN, and the REVIEW move when it has its own seat', async () => {
+    const follows = await limited('review-limit-follows', followsPlan);
+    const own = await limited('review-limit-own', ownSeat);
+
+    expect(follows.issue?.switchSeat).toEqual({
+      seat: 'plan',
+      candidates: [{ tool: 'claude-code' }],
+    });
+    expect(own.issue?.switchSeat).toEqual({
+      seat: 'review',
+      candidates: [{ tool: 'claude-code' }],
+    });
+  });
+
+  it('moves the planner block when REVIEW follows PLAN, and the reviewer block when it has one', async () => {
+    const candidate = { tool: 'claude-code', model: 'opus' };
+    const follows = await limited('review-swap-follows', followsPlan);
+    const own = await limited('review-swap-own', ownSeat);
+
+    const movedPlan = applyRecoveryAction({
+      ...follows.ref,
+      state: follows.result.state,
+      action: 'switch-seat',
+      candidate,
+      bus: makeBusRecorder().bus,
+      config: followsPlan,
+    });
+    const movedReview = applyRecoveryAction({
+      ...own.ref,
+      state: own.result.state,
+      action: 'switch-seat',
+      candidate,
+      bus: makeBusRecorder().bus,
+      config: ownSeat,
+    });
+
+    expect(movedPlan).toMatchObject({ ok: true, status: 'continued' });
+    expect(movedReview).toMatchObject({ ok: true, status: 'continued' });
+    if (!movedPlan.ok || !movedReview.ok) throw new Error('expected both swaps to apply');
+    // One swap moves both seats: REVIEW keeps following the planner it now runs on.
+    expect(movedPlan.switchedConfig?.planner).toMatchObject({ tool: 'claude-code', model: 'opus' });
+    expect(movedPlan.switchedConfig?.reviewer).toBeUndefined();
+    expect(movedReview.switchedConfig?.reviewer).toMatchObject({
+      tool: 'claude-code',
+      model: 'opus',
+    });
+    expect(movedReview.switchedConfig?.planner).toEqual(ownSeat.planner);
+    expect(movedPlan.state.pendingRecovery).toBeUndefined();
+  });
+});
+
+describe('a REVIEW seat signed out', () => {
+  // Captured from `codex exec --json` (codex-cli 0.146.0, 2026-08-06) against a dead login.
+  const CODEX_SIGNED_OUT =
+    'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.';
+
+  it('halts on the review seat with the login, not as a review that failed', async () => {
+    const ref = setupRun('review-signed-out', { ledger: true });
+    await rememberDetectedTools(
+      ref.projectDir,
+      cliDetectionsFor('ready', ['codex', 'claude-code']),
+    );
+    const { result, reviewCalls } = await review({
+      ref,
+      config: makeNoValidationConfig({ planner: CODEX_SEAT }),
+      throws: error('runner-call-failed', 'Planner reviewer call failed', {
+        status: 'failed',
+        error: { code: 'codex-turn-failed', message: CODEX_SIGNED_OUT },
+      }),
+    });
+
+    const issue = result.state.pendingRecovery;
+    expect(reviewCalls).toBe(1);
+    expect(issue).toMatchObject({
+      reason: 'runner-unauthenticated',
+      seat: 'review',
+      recommendedAction: 'retry-same-worker',
+      switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+    });
+    expect(issue?.taskId).toBeUndefined();
+    expect(issue?.message).toContain('`codex logout` then `codex login`');
+    expect(issue?.message).not.toContain('usage limit');
+    expect(issue?.details).toContain(`OpenAI Codex CLI reported: ${CODEX_SIGNED_OUT}`);
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.reviewStatus).toBeUndefined();
   });
 });

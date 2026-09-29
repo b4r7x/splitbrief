@@ -11,10 +11,8 @@ import { runClaudePlannerStream, runClaudeOneShot } from '../runners/claude/invo
 import { toTokenDelta } from '../calls/projection.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
 import {
-  createSessionAttemptCallContext,
   createSessionResumeState,
   isSessionExpiredError,
-  runWithResumeFallback,
   sessionResumeMismatchError,
 } from '../session-expiry.js';
 import { composeAbortSignal } from '../../utils/abort.js';
@@ -38,9 +36,20 @@ export function createClaudeCodePlanner(opts: {
   timeout?: number | undefined;
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
+  /** The run's global skills, which every call of this seat may read and never write. */
+  skillRoots?: readonly string[] | undefined;
 }): Planner {
-  const { trustedCli, model, initialSessionId, effort, args, timeout, idleWarnMs, idleKillMs } =
-    opts;
+  const {
+    trustedCli,
+    model,
+    initialSessionId,
+    effort,
+    args,
+    timeout,
+    idleWarnMs,
+    idleKillMs,
+    skillRoots,
+  } = opts;
   // The resolved channel — not the configured one — decides which credential the
   // child receives, so the stream invocations must see the same identity the
   // sandbox environment was built from. Only the configured one is admitted at
@@ -74,6 +83,7 @@ export function createClaudeCodePlanner(opts: {
     executable?: CliExecutableIdentity | undefined;
     effort?: EffortLevel | undefined;
     configuredArgs: readonly string[] | undefined;
+    skillRoots?: readonly string[] | undefined;
     signal?: AbortSignal | undefined;
     idleWarnMs?: number | undefined;
     idleKillMs?: number | undefined;
@@ -86,13 +96,14 @@ export function createClaudeCodePlanner(opts: {
       ...(trustedCli !== undefined && { executable: trustedCli.executable }),
       ...(effort !== undefined && { effort }),
       configuredArgs: args,
+      ...(skillRoots !== undefined && { skillRoots }),
       ...(input.signal !== undefined && { signal: input.signal }),
       ...(idleWarnMs !== undefined && { idleWarnMs }),
       ...(idleKillMs !== undefined && { idleKillMs }),
     };
   }
 
-  async function invokeWithSessionFallback(
+  async function invokeOnSession(
     prompt: string,
     projectDir: string,
     callbacks: {
@@ -106,87 +117,82 @@ export function createClaudeCodePlanner(opts: {
     images?: Attachment[] | undefined,
     signal?: AbortSignal | undefined,
   ) {
-    const priorId = session.getResumeId();
+    const resumeId = session.getResumeId() ?? undefined;
     const effectiveSignal = composeAbortSignal(signal, timeout);
-    return runWithResumeFallback(
-      session,
-      async (resumeId, attempt) => {
-        let resumeConfirmed = false;
-        let mismatchedId: string | undefined;
-        const callbackBuffer =
-          resumeId === undefined ? null : createRunnerAttemptCallbackBuffer(callbacks);
-        const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
-        try {
-          const env = await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner');
-          const result = await runClaudePlannerStream({
-            prompt,
-            projectDir,
-            sessionId: resumeId ?? null,
-            onOutput: attemptCallbacks.onOutput,
-            onSessionInit: (id) => {
-              if (resumeId !== undefined && id !== resumeId) {
-                mismatchedId = id;
-                return;
-              }
-              if (id === resumeId && mismatchedId === undefined) {
-                resumeConfirmed = true;
-                callbackBuffer?.flush();
-              }
-            },
-            // The native id is captured as it streams, not after the call returns:
-            // the next phase resumes the same conversation even when this one is
-            // interrupted, and a run cut mid-call still has a thread to pick up.
-            onSessionId: (id: string) => {
-              if (resumeId !== undefined && id !== resumeId) {
-                mismatchedId = id;
-                return;
-              }
-              session.capture(id);
-              attemptCallbacks.onSessionId?.(id);
-            },
-            onQuestion: attemptCallbacks.onQuestion,
-            onCallEvent: attemptCallbacks.onCallEvent,
-            callContext: createSessionAttemptCallContext(callContext, attempt),
-            ...claudeRunnerPrep({ env, signal: effectiveSignal }),
-            ...(images && images.length > 0 ? { images } : {}),
-          });
-          const returnedSessionId = mismatchedId ?? result.sessionId ?? result.nativeSessionId;
-          if (
-            resumeId !== undefined &&
-            returnedSessionId !== null &&
-            returnedSessionId !== resumeId
-          ) {
-            throw sessionResumeMismatchError(resumeId, returnedSessionId);
+    let resumeConfirmed = false;
+    let mismatchedId: string | undefined;
+    const callbackBuffer =
+      resumeId === undefined ? null : createRunnerAttemptCallbackBuffer(callbacks);
+    const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
+    try {
+      const env = await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner');
+      const result = await runClaudePlannerStream({
+        prompt,
+        projectDir,
+        sessionId: resumeId ?? null,
+        onOutput: attemptCallbacks.onOutput,
+        onSessionInit: (id) => {
+          if (resumeId !== undefined && id !== resumeId) {
+            mismatchedId = id;
+            return;
           }
-          callbackBuffer?.flush();
-          return result;
-        } catch (caught) {
-          const err =
-            mismatchedId !== undefined && resumeId !== undefined
-              ? sessionResumeMismatchError(resumeId, mismatchedId)
-              : caught;
-          if (resumeConfirmed && isSessionExpiredError(err)) {
-            throw error(
-              'session-resume-failed',
-              'The confirmed Claude session failed; continue this step to retry.',
-              { cause: err },
-            );
+          if (id === resumeId && mismatchedId === undefined) {
+            resumeConfirmed = true;
+            callbackBuffer?.flush();
           }
-          if (resumeId === undefined || !isSessionExpiredError(err)) callbackBuffer?.flush();
-          throw err;
-        }
-      },
-      () => {
-        if (priorId) callbacks.onSessionExpired?.(priorId);
-      },
-    );
+        },
+        // The native id is captured as it streams, not after the call returns:
+        // the next phase resumes the same conversation even when this one is
+        // interrupted, and a run cut mid-call still has a thread to pick up.
+        onSessionId: (id: string) => {
+          if (resumeId !== undefined && id !== resumeId) {
+            mismatchedId = id;
+            return;
+          }
+          session.capture(id);
+          attemptCallbacks.onSessionId?.(id);
+        },
+        onQuestion: attemptCallbacks.onQuestion,
+        onCallEvent: attemptCallbacks.onCallEvent,
+        callContext,
+        ...claudeRunnerPrep({ env, signal: effectiveSignal }),
+        ...(images && images.length > 0 ? { images } : {}),
+      });
+      const returnedSessionId = mismatchedId ?? result.sessionId ?? result.nativeSessionId;
+      if (resumeId !== undefined && returnedSessionId !== null && returnedSessionId !== resumeId) {
+        throw sessionResumeMismatchError(resumeId, returnedSessionId);
+      }
+      callbackBuffer?.flush();
+      return result;
+    } catch (caught) {
+      const err =
+        mismatchedId !== undefined && resumeId !== undefined
+          ? sessionResumeMismatchError(resumeId, mismatchedId)
+          : caught;
+      if (resumeConfirmed && isSessionExpiredError(err)) {
+        throw error(
+          'session-resume-failed',
+          'The confirmed Claude session failed; continue this step to retry.',
+          { cause: err },
+        );
+      }
+      // A session Claude no longer holds fails the call, as a codex thread does: the run drops
+      // the saved id, and the next call starts a fresh session on the rebuilt transcript.
+      if (resumeId !== undefined && isSessionExpiredError(err)) {
+        session.capture(null);
+        callbacks.onSessionExpired?.(resumeId);
+        throw err;
+      }
+      callbackBuffer?.flush();
+      throw err;
+    }
   }
 
   return createPlannerBase({
     backendKind: 'cli',
 
     async invokePlan({ prompt, projectDir, callbacks, callContext, images, signal }) {
-      return invokeWithSessionFallback(prompt, projectDir, callbacks, callContext, images, signal);
+      return invokeOnSession(prompt, projectDir, callbacks, callContext, images, signal);
     },
 
     async invokeEscalate({

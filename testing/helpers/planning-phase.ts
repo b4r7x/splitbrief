@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import type { WorkflowState } from '../../src/core/schemas/workflow.js';
 import { createInitialState, transition } from '../../src/core/state/machine.js';
-import { makeConfig } from './factories/config.js';
+import { defaultContext, makeConfig } from './factories/config.js';
 import { makeTask } from './factories/task.js';
 import {
   makeCallbacks,
@@ -27,6 +27,7 @@ import type {
   RunPhaseInput,
 } from '../../src/engine/planners/types.js';
 import { makePhaseCallResult } from './factories/phase-call.js';
+import { error } from '../../src/utils/error.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import type { Attachment } from '../../src/core/schemas/attachment.js';
 
@@ -156,6 +157,25 @@ export function makeRecordingPlanner(overrides?: Partial<Planner>): {
   return { planner, calls };
 }
 
+/**
+ * A passing planner on a `thread` its seat no longer holds: its first revision drops the thread
+ * and fails, as codex and Claude Code do, and `reissued` answers every revision after it.
+ */
+export function makeExpiredThreadPlanner(thread: string, reissued: Planner['regenerate']) {
+  const regenerate = vi
+    .fn<Planner['regenerate']>()
+    .mockImplementationOnce(async ({ callbacks }) => {
+      callbacks.onSessionExpired?.(thread);
+      throw error('session-resume-expired', `could not resume session ${thread}`);
+    })
+    .mockImplementation(reissued);
+  const planner = makePassingPlanner({
+    capabilities: { ...makePlanner().capabilities, supportsSessionResume: true },
+    regenerate,
+  });
+  return { planner, regenerate };
+}
+
 export function seedRejectionEvidence(projectDir: string, sessionId: string): void {
   let ledger = createEvidenceLedger({
     sessionId,
@@ -236,6 +256,8 @@ export async function runPlanningTurn(dirs: string[], opts: RunOpts = {}) {
 
 export type OwnedRunOpts = RunOpts & {
   project?: { projectDir: string; sessionId: string };
+  /** The run's skills block, which the workflow context carries to every seat. */
+  skillsContext?: string;
 };
 
 /**
@@ -270,12 +292,14 @@ export async function runOwnedPlanningPhase(dirs: string[], opts: OwnedRunOpts =
     bus: recorder.bus,
     sinks,
     ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
+    ...(opts.skillsContext !== undefined && {
+      context: { ...defaultContext, dir: project.projectDir, skillsContext: opts.skillsContext },
+    }),
   });
   const planning = await runPlanningPhases({
     wctx,
     state,
     savedState: undefined,
-    selectedSkills: undefined,
     phaseTimings: {},
     startTime: Date.now(),
     setTrackedState: (next) => {

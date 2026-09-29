@@ -148,6 +148,8 @@ const checkpointPredicates = [
   [checkpointId('recovery'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
   [checkpointId('recovery-user-edits'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryUserEdits)],
   [checkpointId('recovery-plan'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
+  [checkpointId('recovery-review'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
+  [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
   [checkpointId('recovery-plan-swapped'), includesAll('Continued via Change PLAN tool')],
   [checkpointId('plan-activity'), includesAll('src/core/crew/identity.ts')],
   [checkpointId('retry-exhausted'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
@@ -165,6 +167,7 @@ const checkpointPredicates = [
     includesAll(WORKFLOW_FIXTURE_TEXT.planningReply, 'retry 2 of 10'),
   ],
   [checkpointId('implementation-silent'), includesAll('Still working', 'No update for')],
+  [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 
 export const workflowCheckpointPredicates: ReadonlyMap<CheckpointId, CheckpointPredicate> = new Map(

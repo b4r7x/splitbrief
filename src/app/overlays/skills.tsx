@@ -153,7 +153,7 @@ export function SkillsPicker() {
       getKey={(skill) => skill.id}
       onConfirm={handleConfirm}
       onActivate={(skill) => toggle(skill.id)}
-      title={`Skills${SOFT_SEP}${checked.size} selected`}
+      title={`Skills for every seat${SOFT_SEP}${checked.size} selected`}
       hint={hintText}
       chromeRows={12}
       density={OVERLAY_DENSITY}

@@ -227,6 +227,33 @@ fail
     expect(missing).not.toContain(REVIEW_FILE);
   });
 
+  it('counts no critical finding for a Critical label the reviewer filled with None.', async () => {
+    const { projectDir } = makeProject();
+    const sessionId = 'review-none-session';
+    writeReview(
+      projectDir,
+      sessionId,
+      `### Verdict
+\`pass_with_notes\`
+
+### Findings
+- **Critical**: None.
+- **Warning**: There is no recorded evidence for T001.
+`,
+    );
+
+    const section = await buildFinalReview({
+      projectDir,
+      sessionId,
+      requestedStatus: 'written',
+      ledger: null,
+      missing: [],
+    });
+
+    expect(section.verdict).toBe('pass_with_notes');
+    expect(section.findingCounts).toEqual({ critical: 0, warning: 1, note: 0 });
+  });
+
   it('yields the defaults when the review file is absent', async () => {
     const { projectDir } = makeProject();
     const missing: string[] = [];

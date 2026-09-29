@@ -31,18 +31,14 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
   const { ctx, task: initialTask, lastError, priorAttempts } = input;
   let state = input.state;
   const attempts = priorAttempts + 1;
-  const reviewerHandler = createBusTextHandler(
-    { bus: ctx.bus, phase: state.phase },
-    { role: 'planner', content: 'markdown' },
-  );
-  const retryHandler = createBusTextHandler(
-    { bus: ctx.bus, phase: state.phase },
-    { role: 'implementer' },
-  );
   if (state.phase === 'implementing') {
     state = transitionAndSave(ctx, state, { type: 'TASK_SENT' });
   }
   state = transitionAndSave(ctx, state, { type: 'ESCALATE' });
+  const reviewerHandler = createBusTextHandler(
+    { bus: ctx.bus, phase: state.phase },
+    { role: 'planner', content: 'markdown' },
+  );
   publishPlannerStatus(ctx.bus, state, 'running');
   ctx.bus.publish({
     type: 'task_escalating',
@@ -82,6 +78,9 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
           sandboxEnv: workspace.sandboxEnv,
           changeDetection: workspace.changeDetection,
           ...(input.handBack !== undefined && { handBack: input.handBack }),
+          ...(ctx.context.skillsContext !== undefined && {
+            skillsContext: ctx.context.skillsContext,
+          }),
         }),
     });
   } catch (err) {
@@ -169,7 +168,7 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
       sessionId: ctx.sessionId,
       languageContext,
       phase: state.phase,
-      onOutput: retryHandler,
+      onOutput: createBusTextHandler({ bus: ctx.bus, phase: state.phase }, { role: 'implementer' }),
     }),
   });
   return {

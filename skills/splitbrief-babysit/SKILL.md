@@ -17,7 +17,7 @@ tmux is optional when the host cannot retain an interactive terminal. Do not ins
 
 Resolve `SKILL_DIR` to the directory containing this installed `SKILL.md`. All helper paths are relative to that directory.
 
-**Stop on the first detected SPLITBRIEF defect, including a visual defect. Fix it before allowing further work.**
+**Stop on the first detected SPLITBRIEF defect, including a visual or flow defect. Fix it before allowing further work.**
 Do not defer a known defect to the final review, retry through it, skip the affected brief, or end the run to avoid fixing it.
 
 ## Roles and contexts
@@ -29,7 +29,7 @@ Otherwise this session watches, stops, fixes, and resumes sequentially. No parti
 |---|---|---|---|
 | **Orchestrator** (this session) | reports and decisions | spawns agents, reads their reports, tells the babysitter when to build and continue | reads the whole log; edits source while another agent owns the repair |
 | **Babysitter** (one long-lived subagent) | the whole run | owns the terminal, watches, answers prompts; on a stop trigger stops **resumably**, quits the TUI and reports with evidence | edits live source; ends the run on its own |
-| **Fix agent** | the babysitter's report | diagnoses and fixes **directly in the main checkout**, no worktree; proves a logic fix with a regression test, affected suites, and `npm run typecheck`; renders and inspects a visual fix | touches a live run; broadens the task beyond detected tool defects |
+| **Fix agent** | the babysitter's report | diagnoses and fixes **directly in the main checkout**, no worktree; proves a logic fix with a regression test, affected suites, and `npm run typecheck`; renders and inspects a visual or flow fix | touches a live run; broadens the task beyond detected tool defects |
 | **Validation** (fresh, only when called for) | the fix agent's report and the diff | added only when a fix touches trust classification, config persistence, the run state machine or the event schema; checks the fix against real behaviour and every gate | reuses an earlier agent's context |
 
 Apply the role separation when using subagents. Without delegation, the session takes these roles in sequence, with source edits only while stopped.
@@ -39,7 +39,7 @@ Never let two agents drive one run. Pass the run ID, terminal handle, watcher cu
 ## The babysitter drives the TUI as a real user would
 
 Navigate the running tool with its keyboard controls for questions, approval gates, external-edit prompts, recovery, seat selection, and stopping.
-Inspect the rendered terminal after each action. A working key does not excuse an incorrect label, counter, or render.
+Inspect the rendered terminal after each action. A working key does not excuse an incorrect label, counter, render, or flow.
 
 Use CLI `continue` after stopping for a fix. Answer live prompts through the TUI.
 Never hand-edit `state.json` or configuration to bypass a defect. Do not replace a broken interaction with a shortcut and call it verified.
@@ -69,7 +69,8 @@ workflow:    { approve: all, max_retries: 3, mode: standard, task_review: none }
 ```
 
 Preserve the user's seats. Confirm model names through the configured tools before launch; choose a fallback only within the user's authorization.
-The task is a file under `.splitbrief/inbox/<date>-<slug>/tasks.md`, attached with `@`.
+The task is a file attached with `@`, for example `.nuke/<date>-<topic>/tasks/<id>.md` or `.splitbrief/inbox/<date>-<slug>/tasks.md`.
+If the task file's first line gives the exact launch command, use it without its seat flags; seats come from `.splitbrief/config.yaml`.
 
 ## Launch
 
@@ -154,6 +155,7 @@ Send a letter and Enter as separate terminal actions. Inspect the result of the 
 Classify each failure before allowing further work:
 
 - **Tool defect: STOP.** Includes crashes, lost artifacts, incorrect state, false security alarms, broken recovery, incorrect counters, labels, copy, and rendering.
+- **Weak flow: STOP. It is a tool defect.** Includes a dead end, an unclear next action, and a wait with no feedback. Also includes a manual step that the tool can do, and different behavior for one action on neighboring surfaces.
 - **Uncertain cause: STOP for diagnosis.** Do not spend retries to find out whether the tool itself is broken.
 - **Expected warning or provider limit:** inspect it. Use normal recovery only when the tool detects and presents the condition correctly.
 
@@ -167,7 +169,7 @@ A tool defect is fixed **now, in this session**, in planning, implementation, or
 3. Record run ID, brief, attempt, event, expected/actual behavior, terminal evidence, and changed files.
 4. Fix the cause in the main checkout. Delegate this step if agents are available.
 5. Prove a logic fix with a failing-before/passing-after regression test, affected suites, and typecheck.
-6. For a visual defect, render and inspect the affected screen and its neighbors; fix remaining visible defects.
+6. For a visual or flow defect, do the look-and-logic loop in CLAUDE.md on the screen and its neighbors. Stop at zero open items.
 7. Run npm run build. Resume only if all relevant checks and the build pass.
 8. Start a fresh process with continue <run-id>. Reproduce the original interaction and verify the repair live.
 9. Record the verification evidence. If the defect remains, stop again; do not advance or approve the next step.
@@ -181,9 +183,9 @@ Do not disable the tripwire, add a permissive bypass, or retry unchanged detecti
 
 Repeat until the plan's runs are done.
 
-**Scope.** Fix defects exposed by the run or verification. Do not search for unrelated cleanup or redesign opportunities.
+**Scope.** Fix defects exposed by the run or verification. A weak flow that the run shows is a defect, not a redesign. Do not search for unrelated cleanup or redesign opportunities.
 Record unrelated ideas separately; they do not become requirements for this run.
-If a repair needs an unauthorized product decision or unavailable credentials, keep the run open and parked, and report the exact blocker.
+If a repair needs an unauthorized product decision or unavailable credentials, keep the run open and parked, and report the exact blocker. Record the options in the defect record and ask the owner. Do not invent the decision.
 
 A catalog or model claim is verified by set equality, never by a count — "exit 0 and a plausible count" hid a parser that collapsed 118 rows to 105. The four checks: the tool's own listing against production discovery (missing, extra, duplicates); every metadata field per row; the rows the live picker shows; the argv the child receives.
 

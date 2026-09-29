@@ -1,6 +1,5 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
-import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
 import { artifactPresence } from '../../../core/sessions/run-record-io.js';
@@ -16,7 +15,6 @@ export type RunPlanningPhasesOptions = {
   wctx: WorkflowContext;
   state: WorkflowState;
   savedState: WorkflowState | undefined;
-  selectedSkills: SkillMeta[] | undefined;
   phaseTimings: Record<string, number>;
   startTime: number;
   setTrackedState: (s: WorkflowState) => void;
@@ -31,15 +29,7 @@ function isParkedMidStep(state: WorkflowState): boolean {
 export async function runPlanningPhases(
   opts: RunPlanningPhasesOptions,
 ): Promise<PlanningPhaseResult> {
-  const {
-    wctx,
-    savedState,
-    selectedSkills,
-    phaseTimings,
-    startTime,
-    setTrackedState,
-    rewindFeedback,
-  } = opts;
+  const { wctx, savedState, phaseTimings, startTime, setTrackedState, rewindFeedback } = opts;
   let { state } = opts;
   const { projectDir, sessionId, config, planner } = wctx;
   const rewindPending =
@@ -111,7 +101,6 @@ export async function runPlanningPhases(
     planner,
     state,
     feature: plannerFeature,
-    selectedSkills,
     beforeFirstCall,
     ...(rewindPending !== undefined && { rewindPending }),
   });

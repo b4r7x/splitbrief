@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
@@ -17,6 +17,7 @@ import {
 } from './boundary.js';
 
 const FIXTURES = join(import.meta.dirname, '../../../../testing/fixtures');
+const ARTIFACTS = join(import.meta.dirname, '../../../../.test-artifacts');
 const ENV_PATH = '/usr/local/bin:/usr/bin:/bin';
 
 function fixtureToolUses(
@@ -189,6 +190,88 @@ describe("isolation boundary around a tool's own state", () => {
       ).toBeNull();
       expect(breachOf(boundary, 'view_file', { AbsolutePath: join(skill, 'SKILL.md') })).toBe(
         `read ${join(skill, 'SKILL.md')} (your checkout) with view_file`,
+      );
+    });
+  });
+});
+
+describe("isolation boundary around the run's attached skills", () => {
+  // A skill under another tool's home: codex's own state is `~/.codex`, so `~/.claude` is closed.
+  // The home lives outside the temp directories, which the boundary leaves open to every tool.
+  async function withAttachedSkill(
+    run: (input: {
+      home: string;
+      skill: string;
+      checkout: string;
+      boundaryFor: (skillRoots?: readonly string[]) => IsolationBoundary;
+    }) => void,
+  ) {
+    mkdirSync(ARTIFACTS, { recursive: true });
+    const dir = mkdtempSync(join(ARTIFACTS, 'isolation-skills-'));
+    try {
+      const home = join(dir, 'home');
+      const skill = join(home, '.claude', 'skills', 'auth');
+      mkdirSync(join(skill, 'references'), { recursive: true });
+      writeFileSync(join(skill, 'references', 'api.md'), '# api\n');
+      mkdirSync(join(home, '.claude', 'skills', 'other'), { recursive: true });
+      writeFileSync(join(home, '.claude', 'skills', 'other', 'SKILL.md'), '# other\n');
+      mkdirSync(join(dir, 'checkout'));
+      mkdirSync(join(dir, 'worktree'));
+      run({
+        home,
+        skill,
+        checkout: join(dir, 'checkout'),
+        boundaryFor: (skillRoots) =>
+          createIsolationBoundary({
+            isolationDir: join(dir, 'worktree'),
+            checkoutDir: join(dir, 'checkout'),
+            env: { HOME: home, PATH: ENV_PATH },
+            tool: 'codex',
+            ...(skillRoots !== undefined && { skillRoots }),
+          }),
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('reads what an attached skill lists, and still halts a write there', async () => {
+    await withAttachedSkill(({ home, skill, boundaryFor }) => {
+      const reference = join(skill, 'references', 'api.md');
+      expect(breachOf(boundaryFor(), 'view_file', { AbsolutePath: reference })).toBe(
+        'read ~/.claude/skills/auth/references/api.md with view_file',
+      );
+
+      const boundary = boundaryFor([skill]);
+      expect(breachOf(boundary, 'view_file', { AbsolutePath: reference })).toBeNull();
+      expect(
+        breachOf(boundary, 'list_dir', { DirectoryPath: join(skill, 'references') }),
+      ).toBeNull();
+      expect(breachOf(boundary, 'write_to_file', { TargetFile: reference })).toBe(
+        'wrote to ~/.claude/skills/auth/references/api.md with write_to_file',
+      );
+      expect(
+        breachOf(boundary, 'view_file', {
+          AbsolutePath: join(home, '.claude', 'skills', 'other', 'SKILL.md'),
+        }),
+      ).toBe('read ~/.claude/skills/other/SKILL.md with view_file');
+    });
+  });
+
+  it('opens an ignored skill in the checkout to reads, while the rest of the checkout stays closed', async () => {
+    await withAttachedSkill(({ checkout, boundaryFor }) => {
+      const skill = join(checkout, '.splitbrief', 'skills', 'ignored');
+      mkdirSync(skill, { recursive: true });
+      writeFileSync(join(skill, 'SKILL.md'), '# ignored\n');
+      writeFileSync(join(checkout, 'app.ts'), 'export {};\n');
+      const boundary = boundaryFor([skill]);
+
+      expect(breachOf(boundary, 'view_file', { AbsolutePath: join(skill, 'SKILL.md') })).toBeNull();
+      expect(breachOf(boundary, 'write_to_file', { TargetFile: join(skill, 'SKILL.md') })).toMatch(
+        /^wrote to \S+\/checkout\/\.splitbrief\/skills\/ignored\/SKILL\.md \(your checkout\) with write_to_file$/,
+      );
+      expect(breachOf(boundary, 'view_file', { AbsolutePath: join(checkout, 'app.ts') })).toMatch(
+        /^read \S+\/checkout\/app\.ts \(your checkout\) with view_file$/,
       );
     });
   });

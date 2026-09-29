@@ -523,7 +523,6 @@ describe('invokeProcessCli', () => {
       codexImplementerAdapter,
       invocation({
         script,
-        args: ['<PROMPT>'],
         promptTransport: codexImplementerAdapter.promptTransport,
       }),
       'fixture prompt',

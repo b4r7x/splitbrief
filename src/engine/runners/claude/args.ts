@@ -10,6 +10,7 @@ export interface BuildArgsOpts {
   model?: string | undefined;
   effort?: EffortLevel | undefined;
   configuredArgs?: readonly string[] | undefined;
+  skillRoots?: readonly string[] | undefined;
 }
 
 /**
@@ -29,6 +30,7 @@ export function buildClaudeArgs(opts: BuildArgsOpts): string[] {
       mode: opts.mode,
       sessionId: opts.sessionId ?? null,
       effort: opts.effort,
+      skillRoots: opts.skillRoots,
     }),
   ];
   const args = [...baseArgs, ...configuredArgs];

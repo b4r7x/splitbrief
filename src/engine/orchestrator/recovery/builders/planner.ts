@@ -1,8 +1,11 @@
 import type { Phase, RecoveryReason } from '../../../../core/schemas/enums.js';
 import type { RecoveryFact, RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
+import type { Task } from '../../../../core/schemas/task.js';
+import type { PlannerCallDiagnosis } from '../planner-call-failure.js';
 import type { RecoveryBuilderBase } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
-import { chooseRecommended, orderedActions } from './actions.js';
+import { availableActionsForReason, chooseRecommended, orderedActions } from './actions.js';
+import { taskFiles } from './details.js';
 import { switchSeatOffer, type SeatSwapContext } from './task.js';
 
 /** Why the plan seat could not produce its artifact. */
@@ -15,13 +18,18 @@ const PLANNER_FAILURE_REASONS: Record<PlannerSeatFailure, RecoveryReason> = {
 };
 
 export interface PlannerCallFailureRecoveryOptions extends RecoveryBuilderBase {
-  failure: PlannerSeatFailure;
+  /**
+   * What the failed call says about its seat, as `diagnosePlannerCallFailure` reads it. A failure
+   * that is read off typed data instead names only its kind and message.
+   */
+  diagnosis: Pick<PlannerCallDiagnosis, 'failure' | 'message'> & Partial<PlannerCallDiagnosis>;
   phase: Phase;
-  message: string;
+  /** The planner-tier seat the call ran on. The final review's call halts on the review seat. */
+  seat?: 'plan' | 'review' | undefined;
+  /** The brief whose hint call it was, when it was one: the halt names it and can skip it. */
+  task?: Task | undefined;
+  /** What the halt adds after the tool's own words. */
   details?: string[] | undefined;
-  tool?: string | undefined;
-  /** ISO instant the tool's own diagnostic named as its quota reset, when it named one. */
-  resetAt?: string | undefined;
   seatSwap?: SeatSwapContext | undefined;
   /**
    * Scalar diagnosis the halt carries beyond its prose — the insufficient-context
@@ -34,37 +42,38 @@ export interface PlannerCallFailureRecoveryOptions extends RecoveryBuilderBase {
 /**
  * A planner call that failed halts the run instead of ending it: the seat can be
  * re-issued, moved to another detected tool, or the run stopped on it. There is
- * no task to skip and no bigger profile to route to — the plan seat either runs
- * again or it does not run.
+ * no bigger profile to route to — the seat either runs again or it does not run —
+ * and a task to skip only when the call was a brief's hint.
  */
 export function buildPlannerCallFailedRecoveryIssue(
   opts: PlannerCallFailureRecoveryOptions,
 ): RecoveryIssue {
-  const reason = PLANNER_FAILURE_REASONS[opts.failure];
+  const { diagnosis } = opts;
+  const reason = PLANNER_FAILURE_REASONS[diagnosis.failure];
+  const resetsAt = diagnosis.resetsAt ?? null;
   const offer = switchSeatOffer(opts.seatSwap);
-  const actions = orderedActions([
-    'retry-same-worker',
-    offer === undefined ? undefined : 'switch-seat',
-    'pause-run',
-    'end-run',
-  ]);
+  const actions = availableActionsForReason(reason, {
+    switchSeat: offer !== undefined,
+    routeBigger: false,
+  }).filter((action) => action !== 'skip-current-task' || opts.task !== undefined);
 
   return createRecoveryIssue({
     id: opts.id,
-    seat: 'plan',
+    seat: opts.seat ?? 'plan',
     reason,
     phase: opts.phase,
-    files: [],
-    affectedTaskIds: [],
-    message: opts.message,
-    details: opts.details ?? [],
-    ...(opts.resetAt !== undefined && { resetAt: opts.resetAt }),
+    task: opts.task,
+    files: opts.task === undefined ? [] : taskFiles(opts.task),
+    affectedTaskIds: opts.task === undefined ? [] : [opts.task.id],
+    message: diagnosis.message,
+    details: [...(diagnosis.details ?? []), ...(opts.details ?? [])],
+    ...(resetsAt !== null && { resetAt: resetsAt.toISOString() }),
     ...(offer !== undefined && { switchSeat: offer }),
-    facts: compactFacts({ tool: opts.tool, ...opts.facts }),
+    facts: compactFacts({ tool: diagnosis.tool, ...opts.facts }),
     availableActions: actions,
     recommendedAction: chooseRecommended(
       actions,
-      opts.failure === 'usage-limit'
+      diagnosis.failure === 'usage-limit'
         ? ['switch-seat', 'pause-run']
         : ['retry-same-worker', 'pause-run'],
     ),

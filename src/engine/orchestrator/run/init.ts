@@ -29,7 +29,7 @@ import {
   ensureSplitbriefDir,
   type SpecMetadata,
 } from '../../../core/paths-io.js';
-import { readPackageJson } from '../../../core/project-meta.js';
+import { projectName } from '../../../core/project-meta.js';
 import type { EventBus, EventSink } from '../../events/types.js';
 import { createBranch } from '../../../lib/git/refs.js';
 import { hashTaskBrief } from '../../brief-hash.js';
@@ -81,6 +81,7 @@ import { createCustomRunnerRuntime } from '../../runners/custom-runner-runtime.j
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { attachRunSinks } from './init-sinks.js';
 import { createPlannerSeat, createImplementerSeat } from './init-seats.js';
+import { buildSkillsContext } from './skills-context.js';
 
 function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Planner): string {
   const name = getRunnerDisplayName(plannerConfig);
@@ -275,13 +276,20 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     setTrackedState(savedState);
   }
   const hasPendingRecovery = savedState?.pendingRecovery !== undefined;
-  const continuation = await resumeContinuation({
+  const resumed = await resumeContinuation({
     ref: { projectDir, sessionId },
     state: savedState,
     steer: opts.steer,
   });
-  publishResumedSteer({ bus, projectDir, sessionId, state: savedState, steer: opts.steer });
 
+  // Every seat carries the run's skills, so the block is built before the first seat is.
+  const { skillIds, ...skills } = await buildSkillsContext({
+    projectDir,
+    bus,
+    phase: savedState?.phase ?? 'idle',
+    selected: opts.selectedSkills,
+    persisted: savedState?.selectedSkills,
+  });
   // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
   const { planner, reviewer, reviewerSeat } = await createPlannerSeat({
@@ -292,6 +300,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     initialSessionId,
     injectedPlanner: opts._planner,
     injectedReviewer: opts._reviewer,
+    skillRoots: skills.skillRoots,
   });
   if (savedState && !hasPendingRecovery) {
     savedState = await autoCompactResumeContext({
@@ -304,16 +313,24 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       ...(opts.signal !== undefined && { signal: opts.signal }),
     });
     setTrackedState(savedState);
-    if (planSeatChanged || !planner.capabilities.supportsSessionResume) {
+    // A seat with no thread to resume (moved, stateless, or its thread expired) gets the transcript.
+    if (
+      planSeatChanged ||
+      !planner.capabilities.supportsSessionResume ||
+      !savedState.plannerSessionId
+    ) {
       await applyRebuiltContext({
         projectDir,
         sessionId,
         bus,
         resumeHolder,
         requireNonEmpty: true,
+        withoutCutCall: resumed.seedsPlannerPartial,
       });
     }
   }
+  // After the rebuild: the continuation hands the steer to the step it resumes.
+  publishResumedSteer({ bus, projectDir, sessionId, state: savedState, steer: opts.steer });
   if (!hasPendingRecovery) {
     const available = await planner.isAvailable();
     if (!available) {
@@ -414,13 +431,14 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       implementerModel: summaryBase.implementerModel,
       reviewerTool: reviewerSeat?.tool,
       reviewerModel: reviewerSeat?.model,
+      skills: skillIds,
     },
   );
 
-  const pkg = readPackageJson(projectDir);
   const context: ProjectContext = {
-    name: typeof pkg?.['name'] === 'string' ? pkg['name'] : 'unknown',
+    name: projectName(projectDir),
     dir: projectDir,
+    ...skills,
   };
 
   const validator = createValidator({ captureBaseline: true });
@@ -460,7 +478,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     }),
     ...(opts.streamingSink !== undefined && { streamingSink: opts.streamingSink }),
     ...(plannerContext !== undefined && { plannerContext }),
-    continuation,
+    continuation: resumed.holder,
   };
 
   return { ok: true, state, wctx };
@@ -496,9 +514,10 @@ export async function resumeContinuation(input: {
   ref: SessionRef;
   state: WorkflowState | undefined;
   steer: string | undefined;
-}): Promise<ContinuationHolder> {
+}): Promise<{ holder: ContinuationHolder; seedsPlannerPartial: boolean }> {
   const { ref, state, steer } = input;
-  if (state === undefined) return createContinuationHolder();
+  if (state === undefined)
+    return { holder: createContinuationHolder(), seedsPlannerPartial: false };
   const interrupted = state.interruptedStep;
   const task = state.tasks[state.currentTaskIndex];
   const keepWorkspace =
@@ -518,13 +537,17 @@ export async function resumeContinuation(input: {
       ? await readInterruptedPartial(ref)
       : undefined;
   if (partial === undefined && steer === undefined && !keepWorkspace)
-    return createContinuationHolder();
-  return createContinuationHolder({
-    step: interrupted?.step ?? resumeStep(state, artifactPresence(ref)),
-    ...(partial !== undefined && { partial }),
-    ...(steer !== undefined && { steer }),
-    ...(keepWorkspace && { keepWorkspace: true, briefFingerprint: hashTaskBrief([task]) }),
-  });
+    return { holder: createContinuationHolder(), seedsPlannerPartial: false };
+  const step = interrupted?.step ?? resumeStep(state, artifactPresence(ref));
+  return {
+    holder: createContinuationHolder({
+      step,
+      ...(partial !== undefined && { partial }),
+      ...(steer !== undefined && { steer }),
+      ...(keepWorkspace && { keepWorkspace: true, briefFingerprint: hashTaskBrief([task]) }),
+    }),
+    seedsPlannerPartial: partial !== undefined && step.kind === 'planner',
+  };
 }
 
 const FILE_HALT_REASONS = new Set(['user-edit-conflict', 'approval-promotion-conflict']);
@@ -603,7 +626,13 @@ async function resolveStaleFileHalt(args: {
     { type: 'RESOLVE_PENDING_RECOVERY' },
     { expectedRevision: state.stateRevision },
   );
-  publishRecoveryResolved({ bus, issue, action: 'continue', outcome: 'continued' });
+  publishRecoveryResolved({
+    bus,
+    phase: resolved.phase,
+    issue,
+    action: 'continue',
+    outcome: 'continued',
+  });
   publishWarning({
     bus,
     phase: resolved.phase,

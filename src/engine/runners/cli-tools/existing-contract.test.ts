@@ -57,7 +57,7 @@ const SHIM_PROFILES: Readonly<Record<string, ShimProfile>> = {
   },
   codex: {
     versionLine: 'codex 0.40.0',
-    transport: 'argv',
+    transport: 'stdin',
     terminal: 'turn.completed',
   },
   copilot: {
@@ -179,17 +179,16 @@ function writeConformanceShim(
     "  printf '%s\\n' 'authenticated'",
     '  exit 0',
     'fi',
-    profile.transport === 'stdin'
-      ? ['PROMPT=$(cat)', `printf '%s\\n' '${resultLine.replace(/'/g, "'\\''")}'`].join('\n')
-      : profile.terminal === 'turn.completed'
-        ? `printf '%s\\n' '${codexLine.replace(/'/g, "'\\''")}'`
-        : profile.terminal === 'result'
-          ? command === 'cursor-agent'
-            ? cursorNdjson
-            : command === 'cmd'
-              ? commandCodeNdjson
-              : `printf '%s\\n' '${resultLine.replace(/'/g, "'\\''")}'`
-          : "printf '%s\\n' 'ok'",
+    profile.transport === 'stdin' ? 'PROMPT=$(cat)' : '',
+    profile.terminal === 'turn.completed'
+      ? `printf '%s\\n' '${codexLine.replace(/'/g, "'\\''")}'`
+      : profile.terminal === 'result'
+        ? command === 'cursor-agent'
+          ? cursorNdjson
+          : command === 'cmd'
+            ? commandCodeNdjson
+            : `printf '%s\\n' '${resultLine.replace(/'/g, "'\\''")}'`
+        : "printf '%s\\n' 'ok'",
     role === 'implementer' ? 'printf changed > "$MARKER"' : '',
     'exit 0',
     '',

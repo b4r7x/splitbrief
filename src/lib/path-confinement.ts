@@ -2,7 +2,7 @@ import { realpathSync, lstatSync } from 'node:fs';
 import { resolve, isAbsolute, sep, win32, relative, dirname } from 'node:path';
 import { error, matches } from '../utils/error.js';
 
-const CONTROL_PLANE_SEGMENTS = new Set(['.git', '.splitbrief']);
+export const CONTROL_PLANE_SEGMENTS: ReadonlySet<string> = new Set(['.git', '.splitbrief']);
 
 export const pathConfinementError = {
   absolutePath: (relativePath: string) =>
@@ -64,16 +64,20 @@ function firstSegment(root: string, target: string): string {
   return rel.split(sep)[0] ?? '';
 }
 
-function assertNotControlPlane(relativePath: string, rootDir: string, realTarget: string): void {
-  const lexicalRoot = resolve(rootDir);
+/**
+ * `relativePath` reaches splitbrief's control plane (`.git`/`.splitbrief`): as
+ * spelled, or through an in-repo symlink whose realpath resolves into it.
+ */
+export function reachesControlPlane(relativePath: string, rootDir: string): boolean {
   const lexicalTarget = resolve(rootDir, relativePath);
-  if (CONTROL_PLANE_SEGMENTS.has(firstSegment(lexicalRoot, lexicalTarget))) {
-    throw pathConfinementError.controlPlane(relativePath);
+  if (CONTROL_PLANE_SEGMENTS.has(firstSegment(resolve(rootDir), lexicalTarget))) return true;
+  let realTarget: string;
+  try {
+    realTarget = realpathSync(lexicalTarget);
+  } catch {
+    realTarget = nearestExistingAncestor(dirname(lexicalTarget));
   }
-  const realRoot = nearestExistingAncestor(rootDir);
-  if (CONTROL_PLANE_SEGMENTS.has(firstSegment(realRoot, realTarget))) {
-    throw pathConfinementError.controlPlane(relativePath);
-  }
+  return CONTROL_PLANE_SEGMENTS.has(firstSegment(nearestExistingAncestor(rootDir), realTarget));
 }
 
 function assertNotHardlink(relativePath: string, fullPath: string): void {
@@ -129,6 +133,18 @@ export function assertWritablePathConfined(relativePath: string, rootDir: string
 }
 
 /**
+ * Guard for a write of project content (a promoted, restored or seeded entry): in
+ * addition to confinement, rejects writes that reach splitbrief's control plane,
+ * lexically or through an in-repo symlink.
+ */
+export function assertProjectWritablePathConfined(relativePath: string, rootDir: string): void {
+  assertWritablePathConfined(relativePath, rootDir);
+  if (reachesControlPlane(relativePath, rootDir)) {
+    throw pathConfinementError.controlPlane(relativePath);
+  }
+}
+
+/**
  * Stricter guard for paths whose name comes from the model (`task.file`).
  * In addition to confinement, rejects writes that reach splitbrief's control plane
  * (`.git`/`.splitbrief`) — lexically, through an in-repo symlink whose realpath
@@ -137,14 +153,6 @@ export function assertWritablePathConfined(relativePath: string, rootDir: string
  * and are not subject to this control-plane rejection.
  */
 export function assertModelWritablePathConfined(relativePath: string, rootDir: string): void {
-  assertWritablePathConfined(relativePath, rootDir);
-  const fullPath = resolve(rootDir, relativePath);
-  let realTarget: string;
-  try {
-    realTarget = realpathSync(fullPath);
-  } catch {
-    realTarget = nearestExistingAncestor(dirname(fullPath));
-  }
-  assertNotControlPlane(relativePath, rootDir, realTarget);
-  assertNotHardlink(relativePath, fullPath);
+  assertProjectWritablePathConfined(relativePath, rootDir);
+  assertNotHardlink(relativePath, resolve(rootDir, relativePath));
 }

@@ -20,6 +20,11 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import { appendEngineEvent, appendMessage } from '../../../src/core/sessions/log-writer.js';
+import { reactivateExistingSession } from '../../../src/core/sessions/active-pointer.js';
+import { createPlannerBase } from '../../../src/engine/planners/base.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import {
   parsePreparedConfig,
@@ -197,5 +202,60 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
     expect(steerRows).toHaveLength(1);
     expect(summary.totalTasks).toBe(1);
     expect(events.map((event) => event.type)).toContain('workflow_complete');
+  });
+
+  it('hands a stateless planner the cut partial and the steer once each', async () => {
+    const projectDir = setupProject();
+    const ref = { projectDir, sessionId: 'sess-steer-partial-once' };
+    const partial = 'PARTIAL-SENTINEL half a brief';
+    const steer = 'STEER-SENTINEL keep it small';
+    const cut = transition(
+      transition({ ...createInitialState('cut mid-step'), mode: 'quick' }, { type: 'START' }),
+      {
+        type: 'INTERRUPT_STEP',
+        step: { kind: 'planner', call: 'tasks' },
+        source: 'user',
+        cut: 'mid-step',
+      },
+    );
+    saveState(ref, cut);
+    appendEngineEvent(ref, {
+      type: 'runner_call_started',
+      ts: Date.now(),
+      phase: 'planning',
+      callId: 'planner-tasks-1',
+      role: 'planner',
+      backendKind: 'cli',
+    });
+    appendMessage(ref, { role: 'assistant', phase: 'planning', text: partial, interrupted: true });
+    const prompts: string[] = [];
+    const planner = createPlannerBase({
+      invokePlan: async ({ prompt }) => {
+        prompts.push(prompt);
+        return makeRunnerCallResult({ status: 'completed', text: 'Which module?' });
+      },
+      invokeEscalate: async () => makeRunnerCallResult({ status: 'completed', text: '' }),
+      isAvailable: async () => true,
+      capabilities: makePlanner().capabilities,
+    });
+
+    await runWorkflow({
+      prepared: makePreparedExecution({
+        ...ref,
+        feature: cut.feature,
+        config: makeConfig({ workflow: { mode: 'quick' } }),
+        resumeState: cut,
+        active: reactivateExistingSession(ref),
+      }),
+      steer,
+      callbacks: makeCallbacks().callbacks,
+      sinks: TEST_WORKFLOW_SINKS,
+      _planner: planner,
+      _implementer: makeImplementer(),
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.split('PARTIAL-SENTINEL')).toHaveLength(2);
+    expect(prompts[0]?.split('STEER-SENTINEL')).toHaveLength(2);
   });
 });

@@ -1,6 +1,5 @@
 import { toTokenDelta } from '../../calls/usage.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { lastMessageGroupText } from './final-group.js';
@@ -11,11 +10,10 @@ import { error } from '../../../utils/error.js';
 
 const CODEX_ID = 'codex' as const;
 const CODEX_COMMAND = 'codex' as const;
-const CODEX_PROMPT_TRANSPORT = Object.freeze({
-  kind: 'argv',
-  maxBytes: 120_000,
-  placement: 'positional',
-} as const);
+const CODEX_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
+// `-` is the PROMPT value that both `exec` and `exec resume` document as "read from stdin".
+// An omitted PROMPT also reads stdin, but prints `Reading prompt from stdin...` on stderr.
+const CODEX_STDIN_PROMPT = '-';
 const CODEX_VERSION_ARGS = Object.freeze(['--version'] as const);
 
 // The refreshed call may refresh over the network when stale; the probe timeout and remembered
@@ -65,7 +63,7 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
     ...input,
     protectedFlags: CODEX_PROTECTED_FLAGS,
     protectedShortValueFlags: CODEX_PROTECTED_SHORT_VALUE_FLAGS,
-    promptTransport: 'argv',
+    promptTransport: 'stdin',
   });
 }
 
@@ -73,10 +71,12 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
  * REQ-017 read-only planner vector for Codex 0.147.0. Sandbox and approval are
  * GLOBAL flags in v0.147 and must precede `exec`; `exec resume` does not accept
  * local `--sandbox`/`--ask-for-approval`. Ambient user config and AGENTS.md
- * rules are adapter-owned inputs the planner ignores; a fresh exec is ephemeral
- * and never resumes. The escalated planner row keeps its tier-2
- * workspace-write within the staged project under the same never-approval
- * policy.
+ * rules are adapter-owned inputs the planner ignores. A fresh exec is
+ * `--ephemeral` only when it is one-shot, so a review, a hint or an escalation
+ * leaves no rollout in the codex home: a planning call is not, because the
+ * planner resumes the thread it reports and `exec resume` finds no rollout for
+ * an ephemeral one. The escalated planner row keeps its tier-2 workspace-write
+ * within the staged project under the same never-approval policy.
  */
 function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
   if (input.sessionId !== null && input.mode === 'plan') {
@@ -93,7 +93,7 @@ function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
       '--ignore-rules',
       '--json',
       input.sessionId,
-      input.prompt,
+      CODEX_STDIN_PROMPT,
     ];
   }
 
@@ -107,12 +107,13 @@ function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
     'never',
     'exec',
     '--ignore-user-config',
-    ...(escalate ? [] : ['--ignore-rules', '--ephemeral']),
+    ...(escalate ? [] : ['--ignore-rules']),
+    ...(input.oneShot === true ? ['--ephemeral'] : []),
     '--json',
     ...(escalate ? ['--skip-git-repo-check'] : []),
     '--cd',
     input.projectDir,
-    input.prompt,
+    CODEX_STDIN_PROMPT,
   ];
 }
 
@@ -135,7 +136,7 @@ function implementerBaseArgs(input: CodexImplementerBuildInput): string[] {
     '--skip-git-repo-check',
     '--cd',
     input.projectDir,
-    input.prompt,
+    CODEX_STDIN_PROMPT,
   ];
 }
 
@@ -417,9 +418,9 @@ export type RawCodexCliContract = Readonly<{
   versionArgs: readonly ['--version'];
   auth: Readonly<{ kind: 'env-or-native'; env: readonly ['OPENAI_API_KEY'] }>;
   rawInvocation: readonly string[];
-  promptTransport: 'argv';
+  promptTransport: 'stdin';
   expectedRawTerminal: 'turn.completed';
-  asOf: '2026-07-31';
+  asOf: '2026-09-29';
 }>;
 
 export type CodexCliConformanceCandidate = Readonly<{
@@ -447,11 +448,10 @@ function codexRawContract(role: 'planner' | 'implementer'): RawCodexCliContract 
             'exec',
             '--ignore-user-config',
             '--ignore-rules',
-            '--ephemeral',
             '--json',
             '--cd',
             '.',
-            CLI_PROMPT_SENTINEL,
+            CODEX_STDIN_PROMPT,
           ]
         : [
             '--sandbox',
@@ -464,11 +464,11 @@ function codexRawContract(role: 'planner' | 'implementer'): RawCodexCliContract 
             '--skip-git-repo-check',
             '--cd',
             '.',
-            CLI_PROMPT_SENTINEL,
+            CODEX_STDIN_PROMPT,
           ],
-    promptTransport: 'argv',
+    promptTransport: 'stdin',
     expectedRawTerminal: 'turn.completed',
-    asOf: '2026-07-31',
+    asOf: '2026-09-29',
   };
 }
 

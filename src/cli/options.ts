@@ -267,7 +267,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--yolo', 'Skip file-write tiered approval prompts for this session', false)
     .option(
       '--skills <ids>',
-      'Attach project/global skills to the planner (comma-separated ids)',
+      'Attach project/global skills to every seat (comma-separated ids)',
       parseSkillIdsOption,
     )
     .option(

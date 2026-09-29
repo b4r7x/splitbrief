@@ -173,3 +173,18 @@ export function typedRunnerCallErrorMessage(err: unknown): string | null {
   if (!isRecord(callError)) return null;
   return typeof callError.message === 'string' ? callError.message : null;
 }
+
+/** The role of the call a failed runner call's error names; a thrown provider error names none. */
+export function runnerCallRole(err: unknown): string | null {
+  const role = errorData(err)?.role;
+  return typeof role === 'string' ? role : null;
+}
+
+/**
+ * The runner's own words for a failed call: the typed call error, else the raw
+ * detail an API error keeps under its rewritten hint.
+ */
+export function runnerOwnWords(err: unknown): string | null {
+  const detail = errorData(err)?.detail;
+  return typedRunnerCallErrorMessage(err) ?? (typeof detail === 'string' ? detail : null);
+}

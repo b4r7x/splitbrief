@@ -265,10 +265,14 @@ export type CliPlannerBuildArgsInput = Readonly<{
   configuredArgs: readonly string[];
   mode: 'plan' | 'escalate';
   sessionId: string | null;
+  /** A fresh call nothing will resume, so a tool that keeps a session for every call keeps none. */
+  oneShot?: boolean | undefined;
   effort: EffortLevel | undefined;
   variant?: string | undefined;
   /** The release the start gate admitted; absent when no gate ran (preflight, harness). */
   installedVersion?: string | undefined;
+  /** The run's global skills, which the call may read and never write. */
+  skillRoots?: readonly string[] | undefined;
 }>;
 
 export type CliImplementerBuildArgsInput = Readonly<{
@@ -279,6 +283,8 @@ export type CliImplementerBuildArgsInput = Readonly<{
   effort?: EffortLevel | undefined;
   variant?: string | undefined;
   installedVersion?: string | undefined;
+  /** The run's global skills, which the call may read and never write. */
+  skillRoots?: readonly string[] | undefined;
 }>;
 
 export type CliPlannerAdapter<Tool extends CliToolId = CliToolId> = CliAdapterContract<

@@ -260,6 +260,23 @@ describe('runBriefReadinessGate', () => {
     cleanupTempDir(projectDir);
   });
 
+  it("routes the preview with the run's skills block", async () => {
+    projectDir = createTempDir('readiness-gate');
+    const tasks = [makeTask({ id: 'T001', action: 'create', file: 'src/hello.ts' })];
+    const skillsContext = `## Active Project Skills\n\n### AuthSkill\n${'s'.repeat(16_000)}`;
+
+    const without = await runBriefReadinessGate({ tasks, config: makeConfig(), projectDir });
+    const withSkills = await runBriefReadinessGate({
+      tasks,
+      config: makeConfig(),
+      projectDir,
+      skillsContext,
+    });
+
+    const tokens = (report: typeof without) => report.metadata[0]?.estimatedTokens ?? 0;
+    expect(tokens(withSkills) - tokens(without)).toBeGreaterThan(3_000);
+  });
+
   it('does not block a create-then-modify chain over files absent from disk', async () => {
     projectDir = createTempDir('readiness-gate');
     const report = await runBriefReadinessGate({

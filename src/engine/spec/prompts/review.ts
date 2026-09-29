@@ -1,4 +1,10 @@
-import { buildPrompt, fenced, instructionsSection } from './builder.js';
+import {
+  buildPrompt,
+  fenced,
+  instructionsSection,
+  skillsSection,
+  type PromptPart,
+} from './builder.js';
 
 const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.
 
@@ -27,6 +33,7 @@ List any issues found, categorized as:
 - **Critical**: Breaks functionality or violates a requirement (causes \`fail\` verdict)
 - **Warning**: Works but has potential issues (allowed in \`pass_with_notes\`)
 - **Note**: Minor observations, suggestions for improvement (informational only)
+Write \`None.\` after the label of a category with no findings, or leave the label out.
 
 ### Summary
 One-paragraph overall assessment.`;
@@ -46,10 +53,12 @@ export function buildFinalReviewPrompt(opts: {
   changeCoverage?: string | undefined;
   /** Whole current workspace diff, retained beside the separately attributed effects. */
   workspaceDiff?: string | undefined;
+  skillsContext?: string | undefined;
 }): string {
-  const sections = [
+  const sections: PromptPart[] = [
     { heading: 'Specification', body: opts.spec },
     { heading: 'Task Briefs', body: opts.taskBriefs },
+    ...skillsSection(opts.skillsContext),
   ];
   if (opts.changeCoverage) {
     sections.push({ heading: 'Changed Files', body: opts.changeCoverage });

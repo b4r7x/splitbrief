@@ -1,6 +1,6 @@
-import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -44,10 +44,16 @@ import {
 } from '../../../core/state/seats.js';
 import type { SummaryBase } from '../summary/build.js';
 import { initializeWorkflow } from './init.js';
+import { createPlannerSeat } from './init-seats.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { parsePreparedConfig, type PreparedExecution } from '../../runners/prepared-execution.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+
+vi.mock('./init-seats.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./init-seats.js')>();
+  return { ...actual, createPlannerSeat: vi.fn(actual.createPlannerSeat) };
+});
 
 function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolation {
   return createRunIsolation({
@@ -300,6 +306,20 @@ describe('initializeWorkflow', () => {
     });
   });
 
+  it('names a project that has no package.json name after its directory', async () => {
+    await withTempDir('splitbrief-init-project-name', async (projectDir) => {
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId: 'session-init-project-name',
+        feature: 'name the project',
+      });
+
+      expect(init.ok).toBe(true);
+      if (!init.ok) return;
+      expect(init.wctx.context.name).toBe(basename(projectDir));
+    });
+  });
+
   it('persists the selected skill ids in the initial workflow state on a fresh run', async () => {
     await withTempDir('splitbrief-init-skills', async (projectDir) => {
       const feature = 'feature needing skills';
@@ -329,6 +349,140 @@ describe('initializeWorkflow', () => {
       expect(init.ok).toBe(true);
       expect(tracked.current?.selectedSkills).toEqual(['typescript', 'react']);
       expect(loadState({ projectDir, sessionId })?.selectedSkills).toEqual(['typescript', 'react']);
+    });
+  });
+
+  it('rebuilds the saved skills for every seat of a run continued past planning', async () => {
+    await withTempDir('splitbrief-init-skills-continue', async (tempDir) => {
+      const projectDir = realpathSync(tempDir);
+      const feature = 'continue with skills';
+      const sessionId = 'session-init-skills-continue';
+      const skillDir = join(projectDir, '.claude', 'skills', 'auth-skill');
+      mkdirSync(join(skillDir, 'references'), { recursive: true });
+      writeFileSync(
+        join(skillDir, 'SKILL.md'),
+        '---\nname: AuthSkill\ndescription: d\n---\nAUTH-BODY',
+      );
+      writeFileSync(join(skillDir, 'references', 'tokens.md'), 'TOKENS-REFERENCE');
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'implementing',
+          selectedSkills: ['auth-skill'],
+        },
+      });
+
+      expect(init.ok).toBe(true);
+      if (!init.ok) return;
+      const skills = init.wctx.context.skillsContext;
+      expect(skills).toContain('### AuthSkill');
+      expect(skills).toContain(
+        'Base directory: .claude/skills/auth-skill (relative to the project root)',
+      );
+      expect(skills).toContain('AUTH-BODY');
+      expect(skills).toContain('#### references/tokens.md\nTOKENS-REFERENCE');
+    });
+  });
+
+  it("builds the planner and reviewer seats with the run's global skills", async () => {
+    await withTempDir('splitbrief-init-skills-seats', async (tempDir) => {
+      const projectDir = realpathSync(tempDir);
+      const feature = 'continue with a global skill';
+      const globalSkill = join(trustHome.home, '.claude', 'skills', 'global-skill');
+      mkdirSync(globalSkill, { recursive: true });
+      writeFileSync(join(globalSkill, 'SKILL.md'), '---\nname: GlobalSkill\n---\nGLOBAL-BODY');
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId: 'session-init-skills-seats',
+        feature,
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'implementing',
+          selectedSkills: ['global-skill'],
+        },
+      });
+
+      expect(init.ok).toBe(true);
+      expect(createPlannerSeat).toHaveBeenCalledWith(
+        expect.objectContaining({ skillRoots: [realpathSync(globalSkill)] }),
+      );
+    });
+  });
+
+  it('records the ids of the skills the seats carry on the run config event', async () => {
+    await withTempDir('splitbrief-init-skills-record', async (tempDir) => {
+      const projectDir = realpathSync(tempDir);
+      const skillDir = join(projectDir, '.claude', 'skills', 'auth-skill');
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(
+        join(skillDir, 'SKILL.md'),
+        '---\nname: AuthSkill\ndescription: d\n---\nAUTH-BODY',
+      );
+      const events: EngineEvent[] = [];
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId: 'session-init-skills-record',
+        feature: 'record the skills',
+        selectedSkills: [
+          {
+            id: 'auth-skill',
+            name: 'AuthSkill',
+            description: 'd',
+            path: join(skillDir, 'SKILL.md'),
+            scope: 'project',
+            projectDir,
+          },
+        ],
+        eventSink: (event) => events.push(event),
+      });
+
+      expect(init.ok).toBe(true);
+      expect(events).toContainEqual(
+        expect.objectContaining({ type: 'workflow_config', skills: ['auth-skill'] }),
+      );
+    });
+  });
+
+  it('signals skills_truncated when the selected skills overflow the budget', async () => {
+    await withTempDir('splitbrief-init-skills-budget', async (tempDir) => {
+      const projectDir = realpathSync(tempDir);
+      const sessionId = 'session-init-skills-budget';
+      const skillDir = join(projectDir, '.claude', 'skills', 'huge');
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(join(skillDir, 'SKILL.md'), `---\nname: Huge\n---\n${'h'.repeat(20_000)}`);
+      const events: EngineEvent[] = [];
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature: 'overflow the skills budget',
+        selectedSkills: [
+          {
+            id: 'huge',
+            name: 'Huge',
+            description: '',
+            path: join(skillDir, 'SKILL.md'),
+            scope: 'project',
+            projectDir,
+          },
+        ],
+        eventSink: (event) => events.push(event),
+      });
+
+      expect(init.ok).toBe(true);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'warning',
+          code: 'skills_truncated',
+          message: '1 skill over the skills budget, named by path: Huge',
+        }),
+      );
     });
   });
 

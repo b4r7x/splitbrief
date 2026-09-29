@@ -9,11 +9,7 @@ import { createInitialState } from '../../core/state/machine.js';
 import type { ResumeContextHolder } from './types.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import type { Planner } from '../planners/types.js';
-import {
-  applyRebuiltContext,
-  autoCompactResumeContext,
-  createSessionExpiredHandler,
-} from './resume-context.js';
+import { applyRebuiltContext, autoCompactResumeContext } from './resume-context.js';
 
 function workflowConfig(compactionThreshold?: number) {
   return {
@@ -344,33 +340,5 @@ describe('autoCompactResumeContext', () => {
 
     const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
     expect(readFileSync(file, 'utf-8').trim().split('\n')).toHaveLength(originalEntries.length);
-  });
-});
-
-describe('createSessionExpiredHandler', () => {
-  it('emits the "rebuilding context" warning and populates the resumeHolder from disk on invocation', async () => {
-    const { projectDir, sessionId } = setupSession([
-      messageEntry('user', 'first turn'),
-      messageEntry('assistant', 'ack'),
-    ]);
-    const { bus, events } = makeBusRecorder();
-    const resumeHolder: ResumeContextHolder = { messages: [] };
-
-    const handler = createSessionExpiredHandler({
-      projectDir,
-      sessionId,
-      bus,
-      resumeHolder,
-    });
-
-    await handler();
-
-    const warnings = events.filter((e) => e.type === 'warning');
-    expect(warnings.length).toBeGreaterThanOrEqual(1);
-    expect(warnings.some((w) => 'message' in w && /rebuild/i.test(w.message))).toBe(true);
-    expect(resumeHolder.messages).toEqual([
-      { role: 'user', content: 'first turn' },
-      { role: 'assistant', content: 'ack' },
-    ]);
   });
 });

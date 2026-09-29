@@ -9,7 +9,6 @@ import type {
   PlannerDocumentCall,
 } from '../../planners/types.js';
 import type { GateName, PlannerCall } from '../../../core/schemas/run-step.js';
-import type { SkillMeta } from '../../../core/skills/types.js';
 import type { ApproveLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
@@ -20,7 +19,6 @@ export type PlanningPhaseOptions = {
   planner: Planner;
   state: WorkflowState;
   feature: string;
-  selectedSkills?: SkillMeta[] | undefined;
   rewindPending?: { target: 'spec' | 'plan'; comment?: string | undefined } | undefined;
   rewindFeedback?: string | undefined;
   codebaseContext?: string | undefined;
@@ -100,6 +98,7 @@ export type BriefsApprovalLoopOptions = {
   sinks?: import('../types.js').WorkflowSinks | undefined;
   modelCache?: ModelCacheAccessor | undefined;
   detectedContextLength?: number | undefined;
+  skillsContext?: string | undefined;
 };
 
 export type BriefsApprovalLoopResult = {
