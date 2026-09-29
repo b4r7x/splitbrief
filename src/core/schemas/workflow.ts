@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   PhaseSchema,
+  RunnerKindSchema,
   WorkflowModeSchema,
   ApproveLevelSchema,
   REVIEW_STATUSES,
@@ -108,10 +109,13 @@ const WorkflowStateFields = {
   taskBreakdowns: z.array(TaskTokenUsageSchema).optional(),
   plannerTool: z.string().optional(),
   plannerModel: z.string().optional(),
+  plannerKind: RunnerKindSchema.optional(),
   implementerTool: z.string().optional(),
   implementerModel: z.string().optional(),
+  implementerKind: RunnerKindSchema.optional(),
   reviewerTool: z.string().optional(),
   reviewerModel: z.string().optional(),
+  reviewerKind: RunnerKindSchema.optional(),
   mode: WorkflowModeSchema.optional(),
   approve: ApproveLevelSchema.optional(),
   selectedSkills: z.array(z.string()).optional(),

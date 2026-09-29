@@ -32,6 +32,7 @@ import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import {
+  LOCKFILE,
   READINESS_FILE,
   SESSION_LOG_FILE,
   SPLITBRIEF_DIR,
@@ -52,8 +53,10 @@ import {
 } from '../../../core/sessions/active-pointer.js';
 import { generateSessionId } from '../../../core/sessions/session-id.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
+import { canSignalProcess } from '../../../lib/process/liveness.js';
 import { registerProcess } from '../../../lib/process/registry.js';
-import { readRunnerPids } from '../../../core/sessions/runner-pids.js';
+import { readProcessStartTimeMs } from '../../../lib/process/start-time.js';
+import { readRunnerPids, recordRunnerPid } from '../../../core/sessions/runner-pids.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow as runPreparedWorkflow } from './workflow.js';
 import type { RunWorkflowOptions } from './init.js';
@@ -517,6 +520,56 @@ describe('runWorkflow — smoke', () => {
 
     groupChild.kill('SIGKILL');
     laterChild.kill('SIGKILL');
+  });
+
+  it("reaps a dead owner's runner-pid ledger before the run starts", async () => {
+    const projectDir = setupProject();
+    const sessionId = 'start-reap-sid';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    // A dead owner (pid 40001 no longer exists): the session's ledger is the
+    // orphan reaper's to clear at the start of the next run.
+    writeFileSync(
+      join(sessionDir(projectDir, sessionId), LOCKFILE),
+      JSON.stringify({
+        version: 1,
+        pid: 40001,
+        startTimeMs: 1000,
+        lastAliveMs: Date.now(),
+        sessionId,
+        mode: 'quick',
+        feature: 'start reap',
+      }),
+    );
+
+    // A real runner tool in a group of its own, recorded the way a run records it.
+    const runner = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
+    const pid = runner.pid;
+    if (pid === undefined) throw new Error('the runner child reported no pid');
+    try {
+      const startTimeMs = readProcessStartTimeMs(pid);
+      expect(startTimeMs).not.toBeNull();
+      recordRunnerPid(ref, pid, startTimeMs);
+      expect(canSignalProcess(pid)).toBe(true);
+
+      await runWorkflow({
+        feature: 'start reap',
+        projectDir,
+        config: unavailablePlannerConfig(),
+        callbacks: makeCallbacks().callbacks,
+        sessionId,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      });
+
+      expect(canSignalProcess(pid)).toBe(false);
+      expect(readRunnerPids(ref)).toEqual([]);
+    } finally {
+      try {
+        process.kill(-pid, 'SIGKILL');
+      } catch {
+        // The start reap already took the runner's group down.
+      }
+    }
   });
 
   it.skipIf(process.platform === 'win32')(
@@ -1978,8 +2031,11 @@ describe('runWorkflow — recovery resume', () => {
     });
 
     expect(summary.plannerTool).toBe('claude-code');
+    expect(summary.plannerKind).toBe('cli');
     expect(summary.implementerTool).toBe('custom-endpoint');
     expect(summary.implementerModel).toBe('deepseek-chat');
+    expect(summary.implementerKind).toBe('api');
+    expect(summary).not.toHaveProperty('reviewerKind');
     // Nothing was ever spent on the seat the run now names, so no cost may be
     // attributed to it: the breakdown follows the state, not the identity.
     expect(summary.costBreakdown?.providerCosts?.['custom-endpoint']).toBeUndefined();

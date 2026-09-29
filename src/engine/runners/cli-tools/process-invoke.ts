@@ -280,6 +280,8 @@ export async function invokeProcessCli(
             source: 'provider',
             message: event.message,
             ...(event.severity !== undefined && { severity: event.severity }),
+            ...(event.originalModel !== undefined && { originalModel: event.originalModel }),
+            ...(event.fallbackModel !== undefined && { fallbackModel: event.fallbackModel }),
           },
         });
         return;

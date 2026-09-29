@@ -71,11 +71,11 @@ export function getWorkflowChromeRows(inputRows: number, progressRows = 0): Work
 }
 
 // The block rides above the transcript, so its rows leave the body rather than overlapping it. It
-// paints only while a brief is actually being built or reviewed: a stopped run has no attempt in
-// flight and no seat to hear from, and a live heartbeat over a dead run states neither. A gate, a
-// question or the stop menu is the only thing to act on and needs every row it can get, so the
-// block stands down while one is open. The screen, its input paths and the byline all read this
-// one answer, because the byline states the silence the block would have stated.
+// paints only while a brief is actually being built or reviewed: a stopped or parked run has no
+// attempt in flight and no seat to hear from, and a live heartbeat over a dead run states neither.
+// A gate, a question or the stop menu is the only thing to act on and needs every row it can get,
+// so the block stands down while one is open. The screen, its input paths and the byline all read
+// this one answer, because the byline states the silence the block would have stated.
 export function getProgressRows(input: {
   phase: Phase;
   cols: number;
@@ -86,8 +86,16 @@ export function getProgressRows(input: {
   promptRows?: number;
   /** The run was read back from disk, and no process is building it. */
   atRest?: boolean;
+  /** The stop ladder has the run parked: no attempt is in flight until it resumes. */
+  parked?: boolean;
 }): number {
-  if (input.cancelled === true || input.halted === true || input.atRest === true) return 0;
+  if (
+    input.cancelled === true ||
+    input.halted === true ||
+    input.atRest === true ||
+    input.parked === true
+  )
+    return 0;
   if ((input.promptRows ?? 0) > 0) return 0;
   if (!isImplementerPhase(input.phase) && input.phase !== 'final-review') return 0;
   return buildProgressRowCount(getChromeContentWidth(input.cols));

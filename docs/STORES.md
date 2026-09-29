@@ -169,7 +169,7 @@ const [{ projectDir }, { sessions }, { cols, isSmall }] = useStores(
 Each store snapshot is wrapped in a tracking `Proxy` — only the keys you actually read trigger re-renders. Reading `cols` but not `rows` means a change to `rows` alone will not re-render the component.
 
 **Limitations** (Proxy `get` trap only). Fall back to `store.use(selector)` when:
-- You use a computed / conditional selector: `eventsStore.use(s => hasWorkflowConfig(s.events))`.
+- You use a computed / conditional selector: `overlayStore.use(s => s.active !== 'none')` (`src/app/screens/home.tsx`).
 - You need `Object.keys(x)`, `for...in`, spread (`{...x}`) or rest destructure (`{a, ...r}`) — none are intercepted.
 - You read a field in an event handler or async callback (outside the render phase) — those reads don't register.
 

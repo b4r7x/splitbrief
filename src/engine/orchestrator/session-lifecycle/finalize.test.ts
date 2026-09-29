@@ -16,7 +16,14 @@ import { createInitialState } from '../../../core/state/machine.js';
 import type { Session } from '../../../core/schemas/session.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { reopenSessionRecord, saveFinalSession, shouldPreserveActiveState } from './finalize.js';
+import {
+  finalizeEndedRun,
+  reopenSessionRecord,
+  saveFinalSession,
+  shouldPreserveActiveState,
+} from './finalize.js';
+import { readSession } from '../../../core/sessions/io.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 let dirs: string[] = [];
@@ -306,5 +313,32 @@ describe('shouldPreserveActiveState', () => {
       closed: { at: '2026-09-01T00:00:00.000Z', as: 'ended' },
     };
     expect(shouldPreserveActiveState(state)).toBe(false);
+  });
+});
+
+describe('finalizeEndedRun seat identity', () => {
+  it('persists the seat kinds beside their tools in the ending summary', () => {
+    const projectDir = makeProjectDir();
+    const sessionId = 'sess-ended-kinds';
+
+    finalizeEndedRun({
+      ref: { projectDir, sessionId },
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus' },
+        implementer: { kind: 'api', provider: 'ollama', model: 'qwen2.5-coder:7b' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
+      }),
+      state: { ...createInitialState('feat'), phase: 'implementing' },
+    });
+
+    const session = readSession({ projectDir, sessionId });
+    expect(session?.summary).toMatchObject({
+      plannerTool: 'claude-code',
+      plannerKind: 'cli',
+      implementerTool: 'ollama',
+      implementerKind: 'api',
+      reviewerTool: 'codex',
+      reviewerKind: 'cli',
+    });
   });
 });

@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
@@ -13,6 +21,8 @@ import { useTrustHome } from '#testing/helpers/trust-home.js';
 
 let projectDir: string;
 let trustHome: ReturnType<typeof useTrustHome>;
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 beforeEach(() => {
   trustHome = useTrustHome('splitbrief-hook-sink-home');
@@ -289,6 +299,27 @@ describe('createHookSink', () => {
     await waitForWarnings(warnings, 1);
 
     expect(warnings[0]).toContain('changed after trust');
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  itUnix('refuses a symlinked post hook script without spawning it', async () => {
+    const marker = join(projectDir, 'marker.txt');
+    writeFileSync(
+      join(projectDir, 'target.mjs'),
+      `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, 'ran');\n` +
+        'process.stdout.write(JSON.stringify({ decision: "allow" }));\n',
+    );
+    symlinkSync('target.mjs', join(projectDir, 'post.mjs'));
+    const hooks = trust({
+      post_task: [makeCommandHookEntry({ command: 'node', args: ['post.mjs'] })],
+    });
+    const { bus, warnings } = makeBus();
+    const sink = createHookSink(hooks, ctx(), bus);
+
+    sink(taskCompletedEvent);
+    await waitForWarnings(warnings, 1);
+
+    expect(warnings[0]).toContain('not trust-eligible');
     expect(existsSync(marker)).toBe(false);
   });
 

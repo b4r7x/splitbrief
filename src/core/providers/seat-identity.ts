@@ -2,14 +2,20 @@ import type { Config } from '../schemas/config.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { configuredReviewerSeat } from '../config/accessors/reviewer-seat.js';
+import type { RunnerKind } from '../schemas/enums.js';
 
 export interface SeatIdentity {
   plannerTool: string;
-  implementerTool: string;
   plannerModel?: string | undefined;
+  /** The backend the seat ran on; a record written before kinds were kept has none. */
+  plannerKind?: RunnerKind | undefined;
+  implementerTool: string;
   implementerModel?: string | undefined;
+  /** The backend the seat ran on; a record written before kinds were kept has none. */
+  implementerKind?: RunnerKind | undefined;
   reviewerTool?: string | undefined;
   reviewerModel?: string | undefined;
+  reviewerKind?: RunnerKind | undefined;
 }
 
 export function runSeatIdentity(config: Config): SeatIdentity {
@@ -19,12 +25,15 @@ export function runSeatIdentity(config: Config): SeatIdentity {
   const reviewer = configuredReviewerSeat(config);
   return {
     plannerTool: getRunnerDisplayName(config.planner),
-    implementerTool: getRunnerDisplayName(implementer),
     ...(plannerModel !== undefined && { plannerModel }),
+    plannerKind: config.planner.kind,
+    implementerTool: getRunnerDisplayName(implementer),
     ...(implementerModel !== undefined && { implementerModel }),
+    implementerKind: implementer.kind,
     ...(reviewer !== undefined && {
       reviewerTool: reviewer.tool,
       ...(reviewer.model !== undefined && { reviewerModel: reviewer.model }),
+      reviewerKind: reviewer.kind,
     }),
   };
 }

@@ -921,7 +921,11 @@ const REPLAYED_HISTORY = record({
   }),
 });
 
-/** The one scenario whose transcript comes off a real log rather than staged events. */
+/**
+ * The replayed-history transcript, read from a real session log. The left-isolation,
+ * approved-gates, stopped-gate and corrected-gate projections read logs the same way; every other
+ * projection here stages its events.
+ */
 export const REPLAYED_HISTORY_LOG = 'testing/fixtures/session-log/run.jsonl';
 
 /** The log carries the spec, plan and briefs gates, each approved, and the build they released. */

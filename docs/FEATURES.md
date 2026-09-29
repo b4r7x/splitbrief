@@ -227,7 +227,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 **What it does.** A pure keyword/pattern classifier (no LLM call) emits a `ModeAdviceKind` of `none | downgrade | upgrade | missing-context` for the user prompt. Risk tiers: `trivial → quick`, `small → quick`, `normal → standard`, `high → speckit`. Confidence threshold of 0.65 for upgrades / downgrades; missing-context can fire below. A `trivial` classification also sets `trivial: true` on the quick planning phase, which drops the planner's codebase-review step and caps the run at one to five briefs.
 
-**How to use.** Runs automatically before planning. Surfaces in the workflow footer as `advisor: consider quick · trivial edit` or similar. Never auto-switches the mode — the user decides via `/mode`.
+**How to use.** Runs automatically before planning. Surfaces in the workflow footer as `advisor: consider quick · trivial edit` or similar. Never auto-switches the mode — the user decides via `/mode`, which sets the next run's mode.
 
 **Events.** `mode_advice`.
 
@@ -301,7 +301,7 @@ The second row appears only while a brief is running, and reads `Keep running` o
 - `ctrl+c` — stop active work; another press quits after cleanup and saving. At rest/home, press twice within two seconds to quit.
 - `ctrl+q` or `/quit` — stop safely, save the session, then exit.
 - `/resume` — continue a parked run; the stopped menu also offers Resume, End run and Back to sessions. `/stop` reopens the menu. A run at rest accepts Enter to continue; typed instructions become its steer.
-- `/end` — close a parked run and keep its changes. After that nothing picks it up.
+- `/end` — close a parked run; it keeps the changes it booked, and a run ended before any brief keeps none. After that nothing picks it up.
 
 **On-screen.** The byline reports the state and the legend row carries the keys: `Stopping T<id> · Waiting for processes to exit · <t>` (hint `esc back after stop · ctrl+c quit after stop`) while owned processes remain, then `Finishing cleanup and saving`; `Forcing remaining processes to exit` after the grace window; `Finishing T<id>` with `Pause requested; no next brief will start` for a boundary pause; and finally one of `Paused at T<id> · Partial changes kept` (hint `/resume · /stop options · esc back to sessions · ctrl+c quit`), `Paused after T<id> · <n> of <m> briefs complete`, or `Cancelled by you at T<id> · Changes kept`. A stop that cut no brief names the step its run record stopped at and claims no changes: `Paused at the plan gate`, `Paused at the tasks step`. An ended run reads its closed record the same way, and claims kept changes only when its summary booked some: `Cancelled by you at T<id> · Partial changes kept`, `Cancelled by you at the review · Changes kept`, `Cancelled by you at the plan gate`. No option reverts files: git is still the layer that reverses a run.
 

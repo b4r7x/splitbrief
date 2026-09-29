@@ -74,6 +74,9 @@ export type CliProtocolEvent =
       message: string;
       /** Severity the parser reported; absent keeps the consumer's default. */
       severity?: (typeof RUNNER_CALL_WARNING_SEVERITIES)[number] | undefined;
+      /** Raw model ids a fallback or refusal frame names, for display-layer resolution. */
+      originalModel?: string | undefined;
+      fallbackModel?: string | undefined;
     }>
   /** A frame with nothing to show that still proves the tool is working. */
   | Readonly<{ type: 'heartbeat' }>

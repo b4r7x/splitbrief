@@ -14,6 +14,7 @@ import { conversationScrollStore } from '../../../stores/workflow/conversation-s
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -193,6 +194,33 @@ describe('readConversationScrollSnapshot', () => {
 
     expect(snap.contentRect.top).toBe(getContentTopRow());
     expect(snap.viewportHeight).toBe(getWorkflowViewportHeight({ rows: 30, inputRows: 3 }));
+  });
+
+  it('gives the block rows back to a parked stop, which has no attempt in flight', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+
+    const running = readConversationScrollSnapshot();
+    const blockRows = getProgressRows({ phase: 'implementing', cols: 80 });
+    expect(blockRows).toBeGreaterThan(0);
+    expect(running.contentRect.top).toBe(getContentTopRow() + blockRows);
+
+    stopStore.__testReset({
+      intent: 'stop-now',
+      phase: 'parked',
+      requestedAt: 0,
+      parked: { kind: 'mid-brief', taskId: taskId('T001'), resolve: null },
+    });
+
+    try {
+      const parked = readConversationScrollSnapshot();
+
+      expect(parked.contentRect.top).toBe(getContentTopRow());
+      expect(parked.viewportHeight).toBe(running.viewportHeight + blockRows);
+    } finally {
+      stopStore.__testReset();
+    }
   });
 
   it('subtracts dynamic prompt rows from the conversation viewport', () => {

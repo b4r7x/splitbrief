@@ -158,6 +158,8 @@ describe('custom runner environment and redaction boundary', () => {
           upstreamType: canary,
           fingerprint: canary,
           rawRef: canary,
+          originalModel: `original-${canary}`,
+          fallbackModel: `fallback-${canary}`,
         },
       ],
     };

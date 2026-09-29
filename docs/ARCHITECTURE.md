@@ -836,7 +836,7 @@ Implementation: `src/engine/orchestrator/planning/steps.ts` runs every mode from
 - `runBriefReadinessGateAndReport({...})` (`planning/brief-readiness-gate.ts`) — runs `evaluateBriefReadiness` over routing-preview metadata, writes `brief-readiness.json`, and publishes `brief_readiness_passed` or `brief_readiness_blocked`.
 - `runBriefsApprovalLoop({...})` (`planning/briefs-approval-loop.ts`) — invoked from `admitBriefs()` (`planning/run.ts`) after the quality pass, and from `planning/resume-briefs.ts` on a resumed briefs gate. A spec or plan gate approved on resume reaches `admitBriefs()` too (`run/resume-parked-approval.ts`), so its briefs pass the same quality check and bounded repair as in a run that never stopped. Enters `reviewing-briefs` phase and publishes `planner_status` with that phase, as the spec and plan gates do when they open, so the screen shows the briefs gate; then awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
 
-A `mode-advisor` (`planning/mode-advisor.ts`) emits `mode_advice` for trivial requests in higher modes; user can /mode to switch.
+A `mode-advisor` (`planning/mode-advisor.ts`) emits `mode_advice` for trivial requests in higher modes; the advisor only hints, and `/mode` sets the next run's mode.
 
 ---
 

@@ -239,7 +239,8 @@ function apiRetryWarning(event: Record<string, unknown>): ParsedWarningInfo {
 /**
  * `claude-opus-5-5 → claude-opus-4-8 (refusal: cyber)`: the models and the cause Claude Code
  * names, short enough that an 80-column row keeps both models. With no cause, its own notice
- * gives the reason.
+ * gives the reason. The raw ids also ride along as structured fields, so a display layer that
+ * knows the runner's catalog can spell those names without re-parsing the message.
  */
 function modelFallbackWarning(event: Record<string, unknown>): ParsedWarningInfo {
   const from = firstString(event.original_model);
@@ -250,12 +251,19 @@ function modelFallbackWarning(event: Record<string, unknown>): ParsedWarningInfo
   const notice = firstString(event.content);
   const models = from !== undefined && to !== undefined ? `${from} → ${to}` : 'switched model';
   const reason = cause !== '' ? ` (${cause})` : notice === undefined ? '' : `: ${notice}`;
-  return { code: 'claude_fallback', severity: 'warning', message: `${models}${reason}` };
+  return {
+    code: 'claude_fallback',
+    severity: 'warning',
+    message: `${models}${reason}`,
+    ...(from !== undefined && { originalModel: from }),
+    ...(to !== undefined && { fallbackModel: to }),
+  };
 }
 
 /** A refusal with no model to fall back to; Claude Code sends it with an empty notice. */
 function modelRefusalWarning(event: Record<string, unknown>): ParsedWarningInfo {
-  const model = firstString(event.original_model) ?? 'the model';
+  const named = firstString(event.original_model);
+  const model = named ?? 'the model';
   const category = firstString(event.api_refusal_category);
   const head = category === undefined ? `${model} refused` : `${model} refused (${category})`;
   const reason = firstString(event.api_refusal_explanation, event.content);
@@ -263,6 +271,7 @@ function modelRefusalWarning(event: Record<string, unknown>): ParsedWarningInfo 
     code: 'claude_refusal',
     severity: 'error',
     message: `${head}: ${reason ?? 'no fallback model'}`,
+    ...(named !== undefined && { originalModel: named }),
   };
 }
 

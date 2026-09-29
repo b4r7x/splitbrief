@@ -327,3 +327,55 @@ describe('buildSummary taskBreakdown', () => {
     expect(row.routingReason).toBe(`routing prose ${SENTINEL}`);
   });
 });
+
+describe('buildSummary seat identity kinds', () => {
+  it('returns the seat kinds beside their tools', () => {
+    const summary = buildSummary({
+      feature: 'auth',
+      state: makeState(),
+      startTime: Date.now() - 5000,
+      plannerTool: 'claude-code',
+      plannerKind: 'cli',
+      implementerTool: 'opencode',
+      implementerKind: 'api',
+      reviewerTool: 'codex',
+      reviewerKind: 'cli',
+    });
+
+    expect(summary).toMatchObject({
+      plannerKind: 'cli',
+      implementerKind: 'api',
+      reviewerKind: 'cli',
+    });
+  });
+
+  it('pairs the kind with the seat the summary names, not with the state-pinned seat', () => {
+    const summary = buildSummary({
+      feature: 'auth',
+      state: makeState({ plannerTool: 'retired-tool' }),
+      startTime: Date.now() - 5000,
+      plannerTool: 'claude-code',
+      plannerKind: 'cli',
+      implementerTool: 'opencode',
+      implementerKind: 'api',
+    });
+
+    expect(summary.plannerTool).toBe('claude-code');
+    expect(summary.plannerKind).toBe('cli');
+    expect(summary.implementerKind).toBe('api');
+  });
+
+  it('omits seat kinds a legacy identity never carried', () => {
+    const summary = buildSummary({
+      feature: 'auth',
+      state: makeState(),
+      startTime: Date.now() - 5000,
+      plannerTool: 'claude-code',
+      implementerTool: 'opencode',
+    });
+
+    expect(summary).not.toHaveProperty('plannerKind');
+    expect(summary).not.toHaveProperty('implementerKind');
+    expect(summary).not.toHaveProperty('reviewerKind');
+  });
+});

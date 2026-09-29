@@ -202,3 +202,38 @@ function packetBeforeVerdictFields(): unknown {
     missingArtifacts: [],
   };
 }
+
+describe('review packet seat identity kinds', () => {
+  it('reads a packet whose run section predates kinds with the kinds absent', () => {
+    const packet = ReviewPacketSchema.parse(packetBeforeVerdictFields());
+
+    expect(packet.run.planner).not.toHaveProperty('kind');
+    expect(packet.run.implementer).not.toHaveProperty('kind');
+  });
+
+  it('keeps runner kinds through a packet round trip and accepts a null unknown', () => {
+    const base = ReviewPacketSchema.parse(packetBeforeVerdictFields());
+    const packet = ReviewPacketSchema.parse({
+      ...base,
+      run: {
+        ...base.run,
+        planner: { ...base.run.planner, kind: 'cli' },
+        implementer: { ...base.run.implementer, kind: null },
+      },
+    });
+
+    expect(packet.run.planner.kind).toBe('cli');
+    expect(packet.run.implementer.kind).toBeNull();
+  });
+
+  it('rejects a kind outside the runner kinds', () => {
+    const base = ReviewPacketSchema.parse(packetBeforeVerdictFields());
+
+    expect(() =>
+      ReviewPacketSchema.parse({
+        ...base,
+        run: { ...base.run, planner: { ...base.run.planner, kind: 'local' } },
+      }),
+    ).toThrow();
+  });
+});

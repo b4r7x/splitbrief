@@ -26,6 +26,9 @@ import { configStore } from '../../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 
 const STEER = 'prefer the cached parser, please';
+// The store and the render must agree: renderFeature's default viewport (100x24)
+// lays the frame out at a width the terminal size store does not declare.
+const VIEWPORT = { cols: 120, rows: 40 } as const;
 
 let projectDir = '';
 let ui: ReturnType<typeof renderFeature> | undefined;
@@ -79,7 +82,7 @@ describe('a correction typed on a run at rest', () => {
     };
 
     configStore.__testReset({ config, projectDir });
-    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    terminalSizeStore.__testReset({ ...VIEWPORT, isSmall: false });
     await handleSessionSelect(
       makeSession({ id: sessionId, feature, status: 'open' }),
       projectDir,
@@ -88,7 +91,10 @@ describe('a correction typed on a run at rest', () => {
     const entered = routerStore.get();
     expect(entered.screen === 'workflow' && entered.execution.kind).toBe('at-rest');
 
-    ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={deps} />);
+    ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={deps} />,
+      VIEWPORT,
+    );
     await vi.waitFor(() => {
       expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Interrupted');
     });

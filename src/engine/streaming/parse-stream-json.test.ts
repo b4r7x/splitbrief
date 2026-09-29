@@ -235,7 +235,9 @@ describe('parseStreamLine', () => {
 
   // The frames Claude Code 2.1.282 builds when it changes the model, refuses, denies a tool or
   // shows a warning, with the fields its binary sets. A warning carries the severity its activity
-  // row is coloured by: a plain notice warns, while a refusal with no fallback is an error.
+  // row is coloured by: a plain notice warns, while a refusal with no fallback is an error. The
+  // fallback and refusal frames also carry the raw model ids as structured fields, so a display
+  // layer can spell catalog names; the message stays exactly as the provider wrote it.
   it.each([
     [
       'model_fallback',
@@ -248,6 +250,7 @@ describe('parseStreamLine', () => {
       'claude_fallback',
       'claude-opus-5-5 → claude-sonnet-5 (overloaded)',
       'warning',
+      { originalModel: 'claude-opus-5-5', fallbackModel: 'claude-sonnet-5' },
     ],
     [
       'model_refusal_fallback',
@@ -264,6 +267,7 @@ describe('parseStreamLine', () => {
       'claude_fallback',
       'claude-opus-5-5 → claude-opus-4-8 (refusal: cyber)',
       'warning',
+      { originalModel: 'claude-opus-5-5', fallbackModel: 'claude-opus-4-8' },
     ],
     [
       'model_consent_fallback',
@@ -276,6 +280,7 @@ describe('parseStreamLine', () => {
       'claude_fallback',
       'claude-opus-5-5 → claude-sonnet-5: Switched to Sonnet 5 for this session',
       'warning',
+      { originalModel: 'claude-opus-5-5', fallbackModel: 'claude-sonnet-5' },
     ],
     [
       'model_refusal_no_fallback',
@@ -288,6 +293,7 @@ describe('parseStreamLine', () => {
       'claude_refusal',
       'claude-opus-5 refused (bio): no fallback model',
       'error',
+      { originalModel: 'claude-opus-5' },
     ],
     [
       'permission_denied',
@@ -300,6 +306,7 @@ describe('parseStreamLine', () => {
       'claude_permission_denied',
       'Bash denied (mode): Permission to use Bash has been denied.',
       'warning',
+      {},
     ],
     [
       'notification',
@@ -312,6 +319,7 @@ describe('parseStreamLine', () => {
       'claude_notice',
       'Effort max is not available on this model; using high',
       'warning',
+      {},
     ],
     [
       'informational',
@@ -322,15 +330,57 @@ describe('parseStreamLine', () => {
       'claude_notice',
       `Model "claude-fable-5-1" is restricted by your organization's settings. Using claude-opus-5-5 instead.`,
       'warning',
+      {},
     ],
   ])(
     'reads system/%s as a warning the operator can read',
-    (subtype, fields, code, message, severity) => {
+    (subtype, fields, code, message, severity, modelIds) => {
       expect(
         parseStreamLine(jsonLine({ type: 'system', subtype, session_id: 'sess-frame', ...fields })),
-      ).toEqual({ sessionId: 'sess-frame', warning: [{ code, message, severity }] });
+      ).toEqual({ sessionId: 'sess-frame', warning: [{ code, message, severity, ...modelIds }] });
     },
   );
+
+  it('carries a raw fallback id even when the frame names only one side', () => {
+    const parsed = parseStreamLine(
+      jsonLine({
+        type: 'system',
+        subtype: 'model_fallback',
+        session_id: 'sess-frame',
+        original_model: 'claude-opus-5-5',
+        fallback_model: null,
+      }),
+    );
+
+    expect(parsed.warning).toEqual([
+      {
+        code: 'claude_fallback',
+        severity: 'warning',
+        message: 'switched model',
+        originalModel: 'claude-opus-5-5',
+      },
+    ]);
+  });
+
+  it('leaves the structured ids off a refusal frame that names no model', () => {
+    const parsed = parseStreamLine(
+      jsonLine({
+        type: 'system',
+        subtype: 'model_refusal_no_fallback',
+        session_id: 'sess-frame',
+        api_refusal_category: 'bio',
+        content: '',
+      }),
+    );
+
+    expect(parsed.warning).toEqual([
+      {
+        code: 'claude_refusal',
+        severity: 'error',
+        message: 'the model refused (bio): no fallback model',
+      },
+    ]);
+  });
 
   // An error colour is the one notification colour that is not an ordinary warning.
   it('reads an error-coloured notification as an error', () => {

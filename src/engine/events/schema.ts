@@ -339,6 +339,9 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     expandId: z.string().min(1).max(512).optional(),
     textPartial: z.string().min(1).max(2048).optional(),
     diagnosticPartial: z.string().min(1).max(2048).optional(),
+    /** Raw model ids a fallback or refusal warning names; display layers resolve them. */
+    originalModel: z.string().min(1).max(256).optional(),
+    fallbackModel: z.string().min(1).max(256).optional(),
   }),
   strictCallPhaseEvent('runner_call_session_id').extend({
     nativeSessionId: z.string(),

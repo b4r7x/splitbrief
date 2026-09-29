@@ -193,6 +193,8 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
       code: warning.code,
       message: warning.message,
       ...(warning.severity !== undefined && { severity: warning.severity }),
+      ...(warning.originalModel !== undefined && { originalModel: warning.originalModel }),
+      ...(warning.fallbackModel !== undefined && { fallbackModel: warning.fallbackModel }),
     });
   }
   if (parsed.isHeartbeat) events.push({ type: 'heartbeat' });

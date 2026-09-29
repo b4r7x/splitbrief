@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
-import { PhaseSchema, REVIEW_VERDICTS, WorkflowModeSchema } from './enums.js';
+import { PhaseSchema, REVIEW_VERDICTS, RunnerKindSchema, WorkflowModeSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';
 import { API_OFFERINGS } from '../providers/api-provider-catalog.js';
 import { RunnerBillingPostureSchema } from '../runners/runner-billing.js';
@@ -245,10 +245,13 @@ export const SummarySchema = z.object({
   costBreakdown: CostBreakdownSchema.optional(),
   plannerTool: z.string().optional(),
   plannerModel: z.string().optional(),
+  plannerKind: RunnerKindSchema.optional(),
   implementerTool: z.string().optional(),
   implementerModel: z.string().optional(),
+  implementerKind: RunnerKindSchema.optional(),
   reviewerTool: z.string().optional(),
   reviewerModel: z.string().optional(),
+  reviewerKind: RunnerKindSchema.optional(),
   phaseTimings: z.record(z.string(), z.number()).optional(),
   mode: WorkflowModeSchema.optional(),
   evidenceSummary: z

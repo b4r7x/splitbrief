@@ -137,4 +137,29 @@ describe('WorkflowStateSchema v4', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('keeps the persisted seat kinds beside their tools', () => {
+    const parsed = WorkflowStateSchema.parse({
+      ...state(),
+      plannerTool: 'claude-code',
+      plannerKind: 'cli',
+      implementerTool: 'opencode',
+      implementerKind: 'api',
+    });
+
+    expect(parsed.plannerKind).toBe('cli');
+    expect(parsed.implementerKind).toBe('api');
+    expect(parsed).not.toHaveProperty('reviewerKind');
+  });
+
+  it('reads a legacy state with no kinds as unknown, never as a default kind', () => {
+    const parsed = WorkflowStateSchema.parse({
+      ...state(),
+      plannerTool: 'claude-code',
+      implementerTool: 'opencode',
+    });
+
+    expect(parsed).not.toHaveProperty('plannerKind');
+    expect(parsed).not.toHaveProperty('implementerKind');
+  });
 });

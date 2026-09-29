@@ -365,12 +365,17 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       }),
       plannerTool: summaryBase.plannerTool,
       ...(summaryBase.plannerModel !== undefined && { plannerModel: summaryBase.plannerModel }),
+      ...(summaryBase.plannerKind !== undefined && { plannerKind: summaryBase.plannerKind }),
       implementerTool: summaryBase.implementerTool,
       ...(summaryBase.implementerModel !== undefined && {
         implementerModel: summaryBase.implementerModel,
       }),
+      ...(summaryBase.implementerKind !== undefined && {
+        implementerKind: summaryBase.implementerKind,
+      }),
       ...(summaryBase.reviewerTool !== undefined && { reviewerTool: summaryBase.reviewerTool }),
       ...(summaryBase.reviewerModel !== undefined && { reviewerModel: summaryBase.reviewerModel }),
+      ...(summaryBase.reviewerKind !== undefined && { reviewerKind: summaryBase.reviewerKind }),
       ...(opts.selectedSkills && opts.selectedSkills.length > 0
         ? { selectedSkills: opts.selectedSkills.map((s) => s.id) }
         : {}),

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { costKnownFlags } from './summary.js';
+import { SummarySchema, costKnownFlags } from './summary.js';
 import { calculateCostBreakdown } from '../../engine/providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../engine/providers/model/resolution.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';
 
 const usage = makeUsage({
   plannerInput: 100_000,
@@ -57,5 +57,40 @@ describe('costKnownFlags', () => {
     const breakdown = breakdownFor({ tool: 'openai-compatible', model: 'no-such-model' });
 
     expect(costKnownFlags(breakdown)).toMatchObject({ reviewerCostKnown: false });
+  });
+});
+
+describe('SummarySchema seat identity kinds', () => {
+  it('keeps the persisted seat kinds beside their tools through a round trip', () => {
+    const parsed = SummarySchema.parse(
+      makeSummary({
+        plannerTool: 'claude-code',
+        plannerKind: 'cli',
+        implementerTool: 'opencode',
+        implementerKind: 'api',
+        reviewerTool: 'codex',
+        reviewerKind: 'cli',
+      }),
+    );
+
+    expect(parsed).toMatchObject({
+      plannerKind: 'cli',
+      implementerKind: 'api',
+      reviewerKind: 'cli',
+    });
+  });
+
+  it('reads a legacy summary with no kinds as unknown, never as a default kind', () => {
+    const parsed = SummarySchema.parse(
+      makeSummary({ plannerTool: 'claude-code', implementerTool: 'opencode' }),
+    );
+
+    expect(parsed).not.toHaveProperty('plannerKind');
+    expect(parsed).not.toHaveProperty('implementerKind');
+    expect(parsed).not.toHaveProperty('reviewerKind');
+  });
+
+  it('rejects a persisted kind outside the runner kinds', () => {
+    expect(() => SummarySchema.parse({ ...makeSummary(), plannerKind: 'local' })).toThrow();
   });
 });

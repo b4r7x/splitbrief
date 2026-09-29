@@ -1072,6 +1072,56 @@ describe('invokeProcessCli', () => {
     expect(diagnostics.warnings.some((warning) => warning.code === 'stderr_diagnostic')).toBe(true);
   });
 
+  // G-23 synthetic strictness: the structured-terminal guard keeps a warning the CLI emitted
+  // before its result and rejects one that trails the result, so a later warning is neither
+  // recorded nor shown. The observed custom-stream sequence is still unproven live; the
+  // text-exit path is covered in spawn-collect.test.ts.
+  itUnix('rejects a warning frame after the terminal result and keeps one before it', async () => {
+    const warningFrame = JSON.stringify({
+      type: 'system',
+      subtype: 'model_fallback',
+      original_model: 'claude-opus-5-5',
+      fallback_model: 'claude-sonnet-5',
+      trigger: 'overloaded',
+    });
+    const resultFrame = JSON.stringify({ type: 'result', result: 'done' });
+    const script = (lines: readonly string[]) =>
+      lines.map((line) => `process.stdout.write(${JSON.stringify(line)}+'\\n');`).join('');
+
+    const retainedEvents: RunnerCallEvent[] = [];
+    const retained = await run(
+      claudeCodeImplementerAdapter,
+      invocation({ script: script([warningFrame, resultFrame]) }),
+      '',
+      (event) => retainedEvents.push(event),
+    );
+    const trailingEvents: RunnerCallEvent[] = [];
+    const trailing = await run(
+      claudeCodeImplementerAdapter,
+      invocation({ script: script([resultFrame, warningFrame]) }),
+      '',
+      (event) => trailingEvents.push(event),
+    );
+
+    expect(retained).toMatchObject({ status: 'completed' });
+    expect(retainedEvents).toContainEqual(
+      expect.objectContaining({
+        type: 'call_warning',
+        warning: expect.objectContaining({
+          code: 'claude_fallback',
+          originalModel: 'claude-opus-5-5',
+          fallbackModel: 'claude-sonnet-5',
+        }),
+      }),
+    );
+    expect(trailing).toMatchObject({ status: 'failed', error: { code: 'protocol-failure' } });
+    expect(
+      trailingEvents.some(
+        (event) => event.type === 'call_warning' && event.warning.code === 'claude_fallback',
+      ),
+    ).toBe(false);
+  });
+
   it('rejects executable identity drift immediately before spawn without exposing its path', async () => {
     await withTempDir('splitbrief-cli-identity', async (dir) => {
       const executablePath = join(dir, 'fixture');

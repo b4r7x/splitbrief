@@ -16,6 +16,7 @@ export interface WorkflowProjectionChromeFacts {
   readonly halted: boolean;
   readonly promptRows: number;
   readonly atRest: boolean;
+  readonly parked: boolean;
 }
 
 /**
@@ -39,5 +40,7 @@ export function projectionChromeFacts(
     halted: projection.resumeState?.pendingRecovery !== undefined,
     promptRows: getWorkflowFixturePromptRows(projection, cols),
     atRest: projection.atRest !== undefined,
+    // The stop ladder the fixture stages parks the run the same way the screen's store does.
+    parked: projection.stop?.phase === 'parked',
   };
 }

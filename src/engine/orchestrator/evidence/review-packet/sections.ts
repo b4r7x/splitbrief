@@ -1,5 +1,6 @@
 import { costAmountBasis, type Summary } from '../../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
+import type { RunnerKind } from '../../../../core/schemas/enums.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../../core/schemas/evidence.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
 import { taskFiles, type Task, type TaskId } from '../../../../core/schemas/task.js';
@@ -296,6 +297,24 @@ function latestWorkflowComplete(events: PacketEvent[]): string | null {
   return events.filter((event) => event.type === 'workflow_complete').at(-1)?.ts ?? null;
 }
 
+/**
+ * One seat of the packet's run section, tool, model and kind taken from the single record that
+ * named the tool: a legacy summary with no kind never borrows the kind, or the model, of a
+ * different seat the state happens to hold, and an unknown field stays `null` rather than
+ * reading as a default.
+ */
+function packetSeat(
+  summary: { tool?: string | undefined; model?: string | undefined; kind?: RunnerKind | undefined },
+  state: { tool?: string | undefined; model?: string | undefined; kind?: RunnerKind | undefined },
+): ReviewPacket['run']['planner'] {
+  const record = summary.tool !== undefined ? summary : state;
+  return {
+    tool: record.tool ?? null,
+    model: record.model ?? null,
+    kind: record.kind ?? null,
+  };
+}
+
 export function buildRun(
   opts: BuildReviewPacketOptions,
   events: PacketEvent[],
@@ -305,14 +324,30 @@ export function buildRun(
     feature: opts.summary.feature,
     mode: opts.summary.mode ?? null,
     phase: opts.state.phase,
-    planner: {
-      tool: opts.summary.plannerTool ?? opts.state.plannerTool ?? null,
-      model: opts.summary.plannerModel ?? opts.state.plannerModel ?? null,
-    },
-    implementer: {
-      tool: opts.summary.implementerTool ?? opts.state.implementerTool ?? null,
-      model: opts.summary.implementerModel ?? opts.state.implementerModel ?? null,
-    },
+    planner: packetSeat(
+      {
+        tool: opts.summary.plannerTool,
+        model: opts.summary.plannerModel,
+        kind: opts.summary.plannerKind,
+      },
+      {
+        tool: opts.state.plannerTool,
+        model: opts.state.plannerModel,
+        kind: opts.state.plannerKind,
+      },
+    ),
+    implementer: packetSeat(
+      {
+        tool: opts.summary.implementerTool,
+        model: opts.summary.implementerModel,
+        kind: opts.summary.implementerKind,
+      },
+      {
+        tool: opts.state.implementerTool,
+        model: opts.state.implementerModel,
+        kind: opts.state.implementerKind,
+      },
+    ),
     startedAt: opts.state.startedAt ?? null,
     completedAt: latestWorkflowComplete(events),
     totalTimeMs: opts.summary.totalTime,

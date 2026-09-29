@@ -92,6 +92,10 @@ export function redactRunnerCallWarningInput(
     warning.upstreamType === undefined ? undefined : redact(warning.upstreamType);
   const fingerprint = warning.fingerprint === undefined ? undefined : redact(warning.fingerprint);
   const rawRef = warning.rawRef === undefined ? undefined : redact(warning.rawRef);
+  const originalModel =
+    warning.originalModel === undefined ? undefined : redact(warning.originalModel);
+  const fallbackModel =
+    warning.fallbackModel === undefined ? undefined : redact(warning.fallbackModel);
   const wasRedacted =
     code !== warning.code ||
     message !== warning.message ||
@@ -99,7 +103,9 @@ export function redactRunnerCallWarningInput(
     parser !== warning.parser ||
     upstreamType !== warning.upstreamType ||
     fingerprint !== warning.fingerprint ||
-    rawRef !== warning.rawRef;
+    rawRef !== warning.rawRef ||
+    originalModel !== warning.originalModel ||
+    fallbackModel !== warning.fallbackModel;
 
   return {
     ...warning,
@@ -110,6 +116,8 @@ export function redactRunnerCallWarningInput(
     ...(upstreamType !== undefined && { upstreamType }),
     ...(fingerprint !== undefined && { fingerprint }),
     ...(rawRef !== undefined && { rawRef }),
+    ...(originalModel !== undefined && { originalModel }),
+    ...(fallbackModel !== undefined && { fallbackModel }),
     ...(wasRedacted && { redacted: true }),
   };
 }

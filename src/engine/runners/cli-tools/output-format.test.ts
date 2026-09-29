@@ -105,6 +105,29 @@ describe('withOutputFormat', () => {
     expect(rateEvents.some((event) => event.type === 'result')).toBe(false);
   });
 
+  it('carries fallback model ids through the configured stream-json adapter', () => {
+    const adapter = withOutputFormat(opencodeImplementerAdapter, 'stream-json');
+    const events = adapter.parse(
+      JSON.stringify({
+        type: 'system',
+        subtype: 'model_fallback',
+        trigger: 'overloaded',
+        original_model: 'claude-opus-5-5',
+        fallback_model: 'claude-sonnet-5',
+      }),
+    );
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        code: 'claude_fallback',
+        message: 'claude-opus-5-5 → claude-sonnet-5 (overloaded)',
+        originalModel: 'claude-opus-5-5',
+        fallbackModel: 'claude-sonnet-5',
+      }),
+    );
+  });
+
   it('refuses to downgrade a required structured-terminal contract with user config', () => {
     expectFormatConflict(() => withOutputFormat(claudeCodeImplementerAdapter, 'text'));
     expectFormatConflict(() => withOutputFormat(codexImplementerAdapter, 'jsonl'));

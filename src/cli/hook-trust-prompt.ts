@@ -1,6 +1,10 @@
 import { createInterface } from 'node:readline/promises';
 import { resolve } from 'node:path';
-import { isHooksConfigTrusted, markHooksConfigTrusted } from '../core/hooks/trust.js';
+import {
+  hookTrustIneligibility,
+  isHooksConfigTrusted,
+  markHooksConfigTrusted,
+} from '../core/hooks/trust.js';
 import { HOOK_EVENTS, type HookEntry, type HooksConfig } from '../core/schemas/hooks.js';
 import { escapeTrustLiteral } from '../core/trust/literal.js';
 import { isPathLike, resolveBareCommandOnPath } from '../core/trust/path-classification.js';
@@ -37,6 +41,8 @@ export async function ensureHooksTrusted(
   promptForTrust: (question: string) => Promise<string> = promptHookTrust,
 ): Promise<void> {
   if (!opts.hooks) return;
+  const ineligible = hookTrustIneligibility(opts.projectDir, opts.hooks);
+  if (ineligible !== null) throw cliError(ineligible, 1);
   if (isHooksConfigTrusted(opts.projectDir, opts.hooks)) return;
 
   const disclosure = formatHookTrustDisclosure(opts.projectDir, opts.hooks);

@@ -25,6 +25,9 @@ export interface RunnerCallActivityProjection {
   expandId: string;
   textPartial?: string | undefined;
   diagnosticPartial?: string | undefined;
+  /** Raw model ids the warning names, carried for display-layer catalog resolution. */
+  originalModel?: string | undefined;
+  fallbackModel?: string | undefined;
 }
 
 interface ActivityText {
@@ -166,6 +169,8 @@ function warningActivity(
     diagnosticPartial: warning.message,
     rawAvailable: warning.rawRef !== undefined,
     redacted: warning.redacted,
+    ...(warning.originalModel !== undefined && { originalModel: warning.originalModel }),
+    ...(warning.fallbackModel !== undefined && { fallbackModel: warning.fallbackModel }),
   });
 }
 
@@ -183,6 +188,8 @@ function buildActivity(opts: {
   redacted?: boolean | undefined;
   textPartial?: string | undefined;
   diagnosticPartial?: string | undefined;
+  originalModel?: string | undefined;
+  fallbackModel?: string | undefined;
 }): RunnerCallActivityProjection | null {
   const label = cleanActivityText(opts.label, RUNNER_ACTIVITY_MAX_LENGTH);
   if (label === null) return null;
@@ -210,6 +217,8 @@ function buildActivity(opts: {
     ...(textPartial !== undefined && textPartial !== null && { textPartial: textPartial.text }),
     ...(diagnosticPartial !== undefined &&
       diagnosticPartial !== null && { diagnosticPartial: diagnosticPartial.text }),
+    ...(opts.originalModel !== undefined && { originalModel: opts.originalModel }),
+    ...(opts.fallbackModel !== undefined && { fallbackModel: opts.fallbackModel }),
     redacted:
       opts.redacted === true ||
       label.redacted ||

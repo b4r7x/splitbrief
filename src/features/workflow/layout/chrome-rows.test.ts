@@ -333,7 +333,17 @@ describe('getProgressRows', () => {
     expect(getProgressRows({ ...building, halted: true })).toBe(0);
     expect(getProgressRows({ ...building, promptRows: 3 })).toBe(0);
     expect(getProgressRows({ ...building, atRest: true })).toBe(0);
+    expect(getProgressRows({ ...building, parked: true })).toBe(0);
     expect(getProgressRows({ ...building, promptRows: 0, halted: false, atRest: false })).toBe(4);
+  });
+
+  it('stands the block down while the stop ladder has the run parked', () => {
+    // A parked run has no attempt in flight, so it budgets no block rows in any phase the block
+    // would otherwise paint in — and an unparked run of the same phase still does.
+    expect(getProgressRows({ phase: 'implementing', cols: 120, parked: true })).toBe(0);
+    expect(getProgressRows({ phase: 'validating-task', cols: 80, parked: true })).toBe(0);
+    expect(getProgressRows({ phase: 'final-review', cols: 60, parked: true })).toBe(0);
+    expect(getProgressRows({ phase: 'implementing', cols: 120, parked: false })).toBe(4);
   });
 
   it('leaves its rows to the chrome, so the body is measured around it', () => {

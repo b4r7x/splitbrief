@@ -202,6 +202,8 @@ function projectRunnerActivityForTuiEventLog(
   const rawAvailable = event.kind === 'session' ? false : event.rawAvailable === true;
   const runnerName = cleanOptionalTuiEventLogText(event.runnerName);
   const model = cleanOptionalTuiEventLogText(event.model);
+  const originalModel = cleanOptionalTuiEventLogText(event.originalModel);
+  const fallbackModel = cleanOptionalTuiEventLogText(event.fallbackModel);
   const redacted =
     event.redacted ||
     label.changed ||
@@ -209,7 +211,9 @@ function projectRunnerActivityForTuiEventLog(
     textPartial?.changed === true ||
     diagnosticPartial?.changed === true ||
     runnerName?.changed === true ||
-    model?.changed === true;
+    model?.changed === true ||
+    originalModel?.changed === true ||
+    fallbackModel?.changed === true;
 
   return {
     type: 'runner_call_activity',
@@ -232,6 +236,8 @@ function projectRunnerActivityForTuiEventLog(
     ...(rawAvailable && { rawAvailable: true }),
     ...(textPartial !== undefined && { textPartial: textPartial.text }),
     ...(diagnosticPartial !== undefined && { diagnosticPartial: diagnosticPartial.text }),
+    ...(originalModel !== undefined && { originalModel: originalModel.text }),
+    ...(fallbackModel !== undefined && { fallbackModel: fallbackModel.text }),
   };
 }
 

@@ -133,6 +133,8 @@ async function initializeTestWorkflow(
     reviewer?: Config['reviewer'];
     configOverrides?: Parameters<typeof makeConfig>[0];
     plannerTool?: string;
+    plannerKind?: SummaryBase['plannerKind'];
+    implementerKind?: SummaryBase['implementerKind'];
     plannerRunner?: ReturnType<typeof makePlanner>;
     selectedSkills?: SkillMeta[];
     eventSink?: (event: EngineEvent) => void;
@@ -176,7 +178,9 @@ async function initializeTestWorkflow(
     feature: input.feature,
     startTime: Date.now(),
     plannerTool,
+    ...(input.plannerKind !== undefined && { plannerKind: input.plannerKind }),
     implementerTool: 'test-implementer',
+    ...(input.implementerKind !== undefined && { implementerKind: input.implementerKind }),
     mode: 'quick',
     projectDir: input.projectDir,
     sessionId: input.sessionId,
@@ -805,6 +809,46 @@ describe('initializeWorkflow — seat record', () => {
       expect(recorded).not.toBeNull();
       const identities = [recorded?.plan, recorded?.build, recorded?.review];
       expect(identities.every((identity) => (identity ?? '').length > 0)).toBe(true);
+    });
+  });
+
+  it('records the persisted seat kinds beside their tools and reads them back', async () => {
+    await withTempDir('splitbrief-init-seat-kinds', async (projectDir) => {
+      const sessionId = 'session-init-seat-kinds';
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature: 'record the seat kinds',
+        plannerKind: 'cli',
+        implementerKind: 'api',
+      });
+
+      expect(init.ok).toBe(true);
+      const saved = loadState({ projectDir, sessionId });
+      expect(saved?.plannerKind).toBe('cli');
+      expect(saved?.implementerKind).toBe('api');
+      expect(saved).not.toHaveProperty('reviewerKind');
+    });
+  });
+
+  it('keeps a resumed legacy state without kinds instead of re-labelling its seats', async () => {
+    await withTempDir('splitbrief-init-seat-kinds-legacy', async (projectDir) => {
+      const feature = 'resume a legacy state';
+      const sessionId = 'session-init-seat-kinds-legacy';
+
+      const { init, tracked } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        plannerKind: 'cli',
+        implementerKind: 'api',
+        savedState: { ...createInitialState(feature), phase: 'implementing' },
+      });
+
+      expect(init.ok).toBe(true);
+      expect(tracked.current).not.toHaveProperty('plannerKind');
+      expect(tracked.current).not.toHaveProperty('implementerKind');
     });
   });
 

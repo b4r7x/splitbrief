@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   cpSync,
   mkdtempSync,
   mkdirSync,
@@ -14,9 +15,13 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { hashHooksConfig } from './trust-digest.js';
+import { trustedProjectIdentity } from '../trust/receipt-store.js';
 import { isHooksConfigTrusted, markHooksConfigTrusted } from './trust.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
+
+const allowScript = 'export default () => ({ kind: "allow" });\n';
+const denyScript = 'export default () => ({ kind: "deny" });\n';
 
 describe('trust', () => {
   let projectDir: string;
@@ -118,6 +123,58 @@ describe('trust', () => {
     });
 
     it.each([
+      ['npm install', ['npm', 'install'], 'preinstall'],
+      ['npm i', ['npm', 'i'], 'install'],
+      ['npm ci', ['npm', 'ci'], 'postinstall'],
+      ['npm add lodash', ['npm', 'add', 'lodash'], 'prepare'],
+    ])(
+      'returns false after the install lifecycle script a %s hook runs changes',
+      (_label, argv, script) => {
+        const [command, ...args] = argv;
+        const cfg = { pre_task: [{ command, args }] };
+        const scripts = {
+          preinstall: 'exit 0',
+          install: 'exit 0',
+          postinstall: 'exit 0',
+          prepare: 'exit 0',
+        };
+        writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ scripts }));
+        markHooksConfigTrusted(projectDir, cfg);
+        expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+        writeFileSync(
+          join(projectDir, 'package.json'),
+          JSON.stringify({ scripts: { ...scripts, [script]: 'exit 1' } }),
+        );
+
+        expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+      },
+    );
+
+    it('returns false after the server.js npm start runs changes', () => {
+      writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ scripts: {} }));
+      writeFileSync(join(projectDir, 'server.js'), 'console.log("a");\n');
+      const cfg = { pre_task: [{ command: 'npm', args: ['start'] }] };
+      markHooksConfigTrusted(projectDir, cfg);
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+      writeFileSync(join(projectDir, 'server.js'), 'console.log("b");\n');
+
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+    });
+
+    it('returns false after the file `node check` actually runs changes', () => {
+      writeFileSync(join(projectDir, 'check.js'), 'exit 0\n');
+      const cfg = { pre_task: [{ command: 'node', args: ['check'] }] };
+      markHooksConfigTrusted(projectDir, cfg);
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+      writeFileSync(join(projectDir, 'check.js'), 'exit 1\n');
+
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+    });
+
+    it.each([
       ['node check.mjs', 'check.mjs'],
       ['nodemon check.mjs', 'check.mjs'],
       ['python3 check.py', 'check.py'],
@@ -190,6 +247,82 @@ describe('trust', () => {
         expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
       },
     );
+  });
+
+  describe('a symlinked hook script is not trust-eligible', () => {
+    itUnix(
+      'never grants trust for a symlinked hook script and ignores a retargeted symlink',
+      () => {
+        writeFileSync(join(projectDir, 'first.mjs'), allowScript);
+        writeFileSync(join(projectDir, 'second.mjs'), denyScript);
+        symlinkSync('first.mjs', join(projectDir, 'check.mjs'));
+        const cfg = { pre_task: [{ command: 'node', args: ['./check.mjs'] }] };
+
+        // The digest can only record a refusal for a symlink, so a receipt for that refusal would
+        // keep authorizing whatever the link points at. No receipt may be written at all.
+        markHooksConfigTrusted(projectDir, cfg);
+        expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+
+        rmSync(join(projectDir, 'check.mjs'));
+        symlinkSync('second.mjs', join(projectDir, 'check.mjs'));
+
+        expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+      },
+    );
+
+    itUnix('writes no receipt for a symlinked hook target', () => {
+      writeFileSync(join(projectDir, 'target.mjs'), allowScript);
+      symlinkSync('target.mjs', join(projectDir, 'check.mjs'));
+      const cfg = { pre_task: [{ command: 'node', args: ['check.mjs'] }] };
+
+      markHooksConfigTrusted(projectDir, cfg);
+
+      expect(existsSync(join(trustHome.home, '.splitbrief', 'trust', 'hooks.json'))).toBe(false);
+    });
+
+    itUnix('ignores a receipt that recorded the refusal digest (legacy grant)', () => {
+      writeFileSync(join(projectDir, 'target.mjs'), allowScript);
+      symlinkSync('target.mjs', join(projectDir, 'check.mjs'));
+      const cfg = { pre_task: [{ command: 'node', args: ['./check.mjs'] }] };
+      const receiptPath = join(trustHome.home, '.splitbrief', 'trust', 'hooks.json');
+      mkdirSync(join(trustHome.home, '.splitbrief', 'trust'), { recursive: true, mode: 0o700 });
+      writeFileSync(
+        receiptPath,
+        JSON.stringify({
+          version: 1,
+          receipts: [
+            {
+              version: 1,
+              projectIdentity: trustedProjectIdentity(projectDir),
+              configDigest: hashHooksConfig(projectDir, cfg),
+              trustedAt: 0,
+            },
+          ],
+        }),
+        { mode: 0o600 },
+      );
+
+      // The legacy store holds exactly the digest the symlink refusal produces, so
+      // the ineligibility check is the only thing that can refuse it.
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+    });
+
+    itUnix('never grants trust for a symlinked interpreter target that PATH resolves', () => {
+      const binDir = join(projectDir, 'node_modules', '.bin');
+      mkdirSync(binDir, { recursive: true });
+      writeFileSync(join(projectDir, 'tool.mjs'), allowScript);
+      symlinkSync(join('..', '..', 'tool.mjs'), join(binDir, 'tool'));
+      chmodSync(join(projectDir, 'tool.mjs'), 0o755);
+      const cfg = { pre_task: [{ command: 'tool' }] };
+      const originalPath = process.env['PATH'];
+      process.env['PATH'] = binDir;
+      try {
+        markHooksConfigTrusted(projectDir, cfg);
+        expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+      } finally {
+        process.env['PATH'] = originalPath;
+      }
+    });
   });
 
   describe('markHooksConfigTrusted', () => {

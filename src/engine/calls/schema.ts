@@ -107,6 +107,9 @@ export const RunnerCallWarningSchema = z
     message: boundedMessage,
     redacted: z.boolean().optional(),
     rawRef: z.string().min(1).max(512).optional(),
+    /** Raw model ids a fallback or refusal warning names; display layers resolve them. */
+    originalModel: boundedName.optional(),
+    fallbackModel: boundedName.optional(),
   })
   .transform((warning) => ({
     ...warning,

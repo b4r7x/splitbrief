@@ -1,7 +1,7 @@
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
-import type { WorkflowMode } from '../../../core/schemas/enums.js';
+import type { RunnerKind, WorkflowMode } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
@@ -31,10 +31,13 @@ export type SummaryBase = {
   startTime: number;
   plannerTool: string;
   plannerModel?: string;
+  plannerKind?: RunnerKind;
   implementerTool: string;
   implementerModel?: string;
+  implementerKind?: RunnerKind;
   reviewerTool?: string;
   reviewerModel?: string;
+  reviewerKind?: RunnerKind;
   mode?: WorkflowMode;
   projectDir?: string;
   sessionId?: string;
@@ -102,10 +105,13 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     taskBreakdowns,
     plannerTool,
     plannerModel,
+    plannerKind,
     implementerTool,
     implementerModel,
+    implementerKind,
     reviewerTool,
     reviewerModel,
+    reviewerKind,
     phaseTimings,
     mode,
     projectDir,
@@ -210,10 +216,13 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     costBreakdown,
     plannerTool,
     plannerModel,
+    ...(plannerKind !== undefined && { plannerKind }),
     implementerTool,
     implementerModel,
+    ...(implementerKind !== undefined && { implementerKind }),
     ...(reviewerTool !== undefined && { reviewerTool }),
     ...(reviewerModel !== undefined && { reviewerModel }),
+    ...(reviewerKind !== undefined && { reviewerKind }),
     phaseTimings,
     ...(runMode !== undefined && { mode: runMode }),
     ...(evidenceSummary && { evidenceSummary }),

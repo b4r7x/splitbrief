@@ -13,7 +13,7 @@ import type { HookOutcome, HookContext } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { boundConsumerPayload } from '../../core/payload-bounds.js';
 import { isRecord } from '../../utils/type-guards.js';
-import { isHooksConfigTrusted } from '../../core/hooks/trust.js';
+import { hookTrustIneligibility, isHooksConfigTrusted } from '../../core/hooks/trust.js';
 
 export async function runTrustedHook(
   entry: HookEntry,
@@ -27,6 +27,8 @@ export async function runTrustedHook(
 }
 
 export function hookTrustRefusal(projectDir: string, hooks: HooksConfig): string | null {
+  const ineligible = hookTrustIneligibility(projectDir, hooks);
+  if (ineligible !== null) return ineligible;
   if (isHooksConfigTrusted(projectDir, hooks)) return null;
   return 'hook configuration or hook files changed after trust; re-run with --allow-hooks or approve hooks again';
 }

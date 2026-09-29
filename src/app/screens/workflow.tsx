@@ -90,6 +90,7 @@ export function WorkflowScreen({
   const stopMenuOpen = overlayStore.use((state) => state.active === 'stop-sheet');
   const running = lifecycleStore.use((state) => state.status === 'running');
   const stopping = stopStore.use((state) => state.intent !== 'none');
+  const parked = stopStore.use((state) => state.phase === 'parked');
   const inputRows = input.rows;
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
   const [scrollAboveLabel, setScrollAboveLabel] = useState('');
@@ -228,6 +229,7 @@ export function WorkflowScreen({
     halted: recoveryIssue !== null,
     promptRows: requestedPromptRows,
     atRest: model.atRestRecord !== undefined,
+    parked,
   });
   const promptRows = clampWorkflowPromptRows({
     rows,

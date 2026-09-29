@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
@@ -155,5 +163,30 @@ describe('runPreHooks', () => {
 
     expect(result.allow).toBe(false);
     expect(result.reason).toContain('changed after trust');
+  });
+});
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
+
+describe('runPreHooks refuses an ineligible hook target', () => {
+  itUnix('never spawns a symlinked hook script', async () => {
+    const marker = join(projectDir, 'spawned.txt');
+    writeFileSync(
+      join(projectDir, 'target.mjs'),
+      `require('node:fs').appendFileSync(${JSON.stringify(marker)}, 'ran');` +
+        'process.stdout.write(JSON.stringify({ decision: "allow" }));\n',
+    );
+    symlinkSync('target.mjs', join(projectDir, 'check.mjs'));
+    const hooks: HooksConfig = {
+      pre_task: [makeCommandHookEntry({ command: 'node', args: ['check.mjs'] })],
+    };
+    markHooksConfigTrusted(projectDir, hooks);
+
+    const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx());
+
+    expect(result.allow).toBe(false);
+    expect(result.reason).toContain('not trust-eligible');
+    expect(result.reason).toContain('check.mjs');
+    expect(existsSync(marker)).toBe(false);
   });
 });

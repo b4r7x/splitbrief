@@ -634,7 +634,7 @@ The run directory is content-addressed from the normalized selection. Repeating 
 | `workflow-at-rest-quick` | a quick run paused at rest; Spec stays `○` pending, `× plan` wears the stop, `a correction or ⏎ to continue` |
 | `workflow-closed-complete-ready` | five `●`, the `Closed ─` block, `Keep it with /run accept…` |
 | `workflow-closed-complete-needs-attention` | the same block with a failing review and a dirty scope |
-| `workflow-closed-ended` | a run somebody ended inside T003; `× Ended · Build 2/5 · stopped in T003` |
+| `workflow-closed-ended` | a run somebody ended inside T003; `× Ended · Build 1/5 · stopped in T003` |
 | `workflow-replayed-history` | the transcript read back from `testing/fixtures/session-log/run.jsonl` |
 
 The at-rest fixtures go through the production path: the fixture copies a real log into the session dir, calls `hydrateRun`, and inits the route at rest. Nothing is staged into the stores by hand. `workflow-quick-researching` pins the live quick rail at 160x45, 120x40, 80x24 and 60x18: `Researching…` under Plan while Spec stays `○` pending, and its 160x45 frame carries the sidebar's `quick` mode.

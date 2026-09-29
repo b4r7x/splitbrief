@@ -520,4 +520,38 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
     expect(terminals).toHaveLength(1);
     expect(terminals[0]).toMatchObject({ type: 'call_error' });
   });
+
+  itUnix('carries fallback model ids through the warning and its activity row', async () => {
+    const { result, events } = await run({
+      script: EMIT_ALL,
+      lines: [
+        systemFrame('model_fallback', {
+          trigger: 'overloaded',
+          original_model: 'claude-opus-5-5',
+          fallback_model: 'claude-sonnet-5',
+          content: 'Opus 5.5 is overloaded · using Sonnet 5 for this turn',
+        }),
+        JSON.stringify({ type: 'result', session_id: SESSION_ID, result: 'ok' }),
+      ],
+    });
+
+    expect(result).toMatchObject({ status: 'completed' });
+    expect(warningRows(events)).toContainEqual(
+      expect.objectContaining({
+        code: 'claude_fallback',
+        message: 'claude-opus-5-5 → claude-sonnet-5 (overloaded)',
+        originalModel: 'claude-opus-5-5',
+        fallbackModel: 'claude-sonnet-5',
+      }),
+    );
+    expect(activityRows(events)).toContainEqual(
+      expect.objectContaining({
+        kind: 'warning',
+        label: 'warning claude_fallback',
+        diagnosticPartial: 'claude-opus-5-5 → claude-sonnet-5 (overloaded)',
+        originalModel: 'claude-opus-5-5',
+        fallbackModel: 'claude-sonnet-5',
+      }),
+    );
+  });
 });

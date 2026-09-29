@@ -6,8 +6,9 @@ import { createEvidenceLedger } from '../../../../core/evidence/ledger-state.js'
 import type { EvidenceLedger } from '../../../../core/schemas/evidence.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
-import { buildChanges, buildValidation } from './sections.js';
+import { buildChanges, buildRun, buildValidation } from './sections.js';
 import { renderReviewPacketMarkdown } from './render.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 
 function stateWith(...tasks: ReturnType<typeof makeTask>[]): WorkflowState {
   return { ...createInitialState('feat'), tasks };
@@ -126,5 +127,79 @@ describe('buildChanges declared files', () => {
     expect(changes.taskFiles[0]?.files).toEqual(['src/a.ts', 'src/a.test.ts']);
     expect(changes.taskFiles[0]?.changedFiles).toEqual(['src/a.ts', 'src/a.test.ts']);
     expect(changes.expectedFiles).toEqual(['src/a.test.ts', 'src/a.ts']);
+  });
+});
+
+describe('buildRun seat identity kinds', () => {
+  function makeRun(summary: Parameters<typeof buildRun>[0]['summary'], state: WorkflowState) {
+    return buildRun(
+      { projectDir: '/tmp/project', sessionId: 's', summary, state, finalReviewStatus: 'written' },
+      [],
+    );
+  }
+
+  it('carries each seat kind from the summary record that named its tool', () => {
+    const run = makeRun(
+      makeSummary({
+        feature: 'feat',
+        plannerTool: 'opencode',
+        plannerKind: 'api',
+        implementerTool: 'claude-code',
+        implementerKind: 'cli',
+      }),
+      createInitialState('feat'),
+    );
+
+    expect(run.planner).toEqual({ tool: 'opencode', model: null, kind: 'api' });
+    expect(run.implementer).toEqual({ tool: 'claude-code', model: null, kind: 'cli' });
+  });
+
+  it('takes a whole legacy seat from the state when the summary names none', () => {
+    const run = makeRun(makeSummary({ feature: 'feat' }), {
+      ...createInitialState('feat'),
+      plannerTool: 'claude-code',
+      plannerKind: 'cli',
+    });
+
+    expect(run.planner).toEqual({ tool: 'claude-code', model: null, kind: 'cli' });
+    expect(run.implementer).toEqual({ tool: null, model: null, kind: null });
+  });
+
+  it('keeps a legacy summary tool unknown rather than borrowing another record kind', () => {
+    const run = makeRun(makeSummary({ feature: 'feat', plannerTool: 'claude-code' }), {
+      ...createInitialState('feat'),
+      plannerTool: 'retired-tool',
+      plannerKind: 'shell',
+    });
+
+    expect(run.planner).toEqual({ tool: 'claude-code', model: null, kind: null });
+  });
+
+  it('keeps the planner model unknown when the summary names the tool without a model', () => {
+    const run = makeRun(
+      makeSummary({ feature: 'feat', plannerTool: 'new-shell', plannerKind: 'shell' }),
+      {
+        ...createInitialState('feat'),
+        plannerTool: 'old-api',
+        plannerModel: 'old-model',
+        plannerKind: 'api',
+      },
+    );
+
+    expect(run.planner).toEqual({ tool: 'new-shell', model: null, kind: 'shell' });
+  });
+
+  it('keeps the implementer model unknown when the summary names the tool without a model', () => {
+    const run = makeRun(
+      makeSummary({ feature: 'feat', implementerTool: 'new-shell', implementerKind: 'shell' }),
+      {
+        ...createInitialState('feat'),
+        implementerTool: 'old-api',
+        implementerModel: 'old-model',
+        implementerKind: 'api',
+      },
+    );
+
+    expect(run.implementer).toEqual({ tool: 'new-shell', model: null, kind: 'shell' });
   });
 });

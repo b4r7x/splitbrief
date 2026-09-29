@@ -9,11 +9,11 @@ describe('configuredReviewerSeat', () => {
     expect(configuredReviewerSeat(createDefaultConfig())).toBeUndefined();
   });
 
-  it('reports the configured reviewer display name and model', () => {
+  it('reports the configured reviewer display name, kind and model', () => {
     const reviewer: ReviewerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5' };
     const config: Config = { ...createDefaultConfig(), reviewer };
 
-    expect(configuredReviewerSeat(config)).toEqual({ tool: 'codex', model: 'gpt-5' });
+    expect(configuredReviewerSeat(config)).toEqual({ tool: 'codex', kind: 'cli', model: 'gpt-5' });
   });
 
   it('omits the model when the reviewer does not resolve one', () => {

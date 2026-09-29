@@ -41,6 +41,14 @@ export interface ParsedWarningInfo {
   channel?: RunnerCallTextChannel | 'stderr' | 'tool' | undefined;
   fingerprint?: string | undefined;
   rawRef?: string | undefined;
+  /**
+   * The raw model ids a fallback or refusal frame names (its wire
+   * `original_model`/`fallback_model`). The message stays as the provider wrote
+   * it; a consumer that can look the ids up in the runner's catalog spells
+   * those names instead, and keeps the raw id when the lookup misses.
+   */
+  originalModel?: string | undefined;
+  fallbackModel?: string | undefined;
 }
 
 export type ParsedTextChannel = RunnerCallTextChannel;

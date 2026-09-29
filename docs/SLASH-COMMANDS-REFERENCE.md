@@ -113,7 +113,7 @@ Commands that decide who does the work and how: the three seats, the workflow mo
 
 ### `/mode [name]`
 
-- **Purpose**: Switch workflow mode at runtime. With no argument, refills the composer with `/mode ` so the three modes appear as completion rows, each with its planning-call and gate count and `current` on the active one. With a valid mode name, persists the selection so subsequent runs inherit it.
+- **Purpose**: Set the workflow mode for the next run. The run on the workflow screen keeps the mode it saved when it started, so the change does not repaint it. With no argument, refills the composer with `/mode ` so the three modes appear as completion rows, each with its planning-call and gate count and `current` on the config's mode — the next run's. With a valid mode name, persists the selection so subsequent runs inherit it.
 - **Screens**: all (`home`, `workflow`, `setup`).
 - **Args**: optional. Valid values: `quick`, `standard`, `speckit` (the `WORKFLOW_MODES` tuple in `src/core/schemas/enums.ts`). The retired `instant` is still accepted and sets `quick`. Invalid values print `"Invalid mode: <x>. Valid modes: quick, standard, speckit"`.
 - **Example**: `/mode`, `/mode speckit`, `/mode quick`

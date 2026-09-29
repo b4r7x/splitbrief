@@ -582,7 +582,7 @@ task_completed T003
 Workflow mode set to: quick for the next run
 ```
 
-`/mode <name>` accepts `quick`, `standard`, or `speckit` and persists the value to config. A run keeps the mode it saved when it started, so the run on screen goes on in its own mode, and continuing it later does not change that; the new mode applies from the next run. The retired `instant` is accepted too: it sets `quick` and reports that the modes were merged. `/mode` with no argument refills the composer with `/mode `, so the three modes appear as completion rows carrying their planning-call and gate counts, with `current` on the one the config names.
+`/mode <name>` accepts `quick`, `standard`, or `speckit` and persists the value to config. A run keeps the mode it saved when it started, so the run on screen goes on in its own mode, and continuing it later does not change that; the new mode applies from the next run. The retired `instant` is accepted too: it sets `quick` and reports that the modes were merged. `/mode` with no argument refills the composer with `/mode `, so the three modes appear as completion rows carrying their planning-call and gate counts, with `current` on the config's mode — the one the next run starts with.
 
 **Variations:** `--mode <name>` on `start` is the same setting at the CLI boundary; on `resume` / `continue` a started run keeps its saved mode and the flag prints a notice. The mode advisor (`mode_advice` event) hints when the current mode looks wrong but never auto-switches.
 
@@ -607,7 +607,8 @@ Stop options · Changes and draft stay.
 **You'll see** the byline report the stop while it happens, then the park:
 
 ```
-⠙ Stopping T002 · Waiting for processes to exit · elapsed 2s   No new work will start
+⠙ Stopping T002 · Waiting for processes to exit · 0:02
+  esc back after stop · ctrl+c quit after stop
 ◌ Paused at T002 · Partial changes kept
   /resume · /stop options · esc back to sessions · ctrl+c quit
 ```

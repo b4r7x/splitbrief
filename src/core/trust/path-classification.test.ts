@@ -164,9 +164,26 @@ describe('isPackageManagerScriptInvocation', () => {
     ['yarnpkg check', ['yarnpkg', 'check'], 'check'],
     ['pnpm test:unit', ['pnpm', 'test:unit'], 'test:unit'],
     ['bun run build', ['bun', 'run', 'build'], 'build'],
-    ['npm install', ['npm', 'install'], null],
   ])('names the script that %s runs', (_label, tokens, script) => {
     expect(packageManagerScriptName(tokens)).toBe(script);
+  });
+
+  it.each([
+    ['npm install', ['npm', 'install']],
+    ['npm i', ['npm', 'i']],
+    ['npm in', ['npm', 'in']],
+    ['npm ins', ['npm', 'ins']],
+    ['npm inst', ['npm', 'inst']],
+    ['npm add lodash', ['npm', 'add', 'lodash']],
+    ['npm isntall', ['npm', 'isntall']],
+    ['npm ci', ['npm', 'ci']],
+    ['npm clean-install', ['npm', 'clean-install']],
+    ['npm ic', ['npm', 'ic']],
+    ['npm install-clean', ['npm', 'install-clean']],
+    ['npm isntall-clean', ['npm', 'isntall-clean']],
+  ])('names install for %s', (_label, tokens) => {
+    expect(packageManagerScriptName(tokens)).toBe('install');
+    expect(isPackageManagerScriptInvocation(tokens)).toBe(true);
   });
 
   it.each([
@@ -183,7 +200,7 @@ describe('isPackageManagerScriptInvocation', () => {
   });
 
   it.each([
-    ['npm install', ['npm', 'install']],
+    ['npm help', ['npm', 'help']],
     ['npm run without a script', ['npm', 'run']],
     ['node runner', ['node', 'runner']],
   ])('does not flag non-script package manager commands for %s', (_label, tokens) => {
@@ -204,6 +221,18 @@ describe('isPackageManagerScriptInvocation', () => {
         'prestart',
         'start',
         'poststart',
+      ],
+    ],
+    [
+      'install',
+      [
+        'preinstall',
+        'install',
+        'postinstall',
+        'prepublish',
+        'preprepare',
+        'prepare',
+        'postprepare',
       ],
     ],
   ])('names the scripts a package manager runs for %s', (script, scripts) => {

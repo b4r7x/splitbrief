@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -16,6 +16,8 @@ import type { HooksConfig } from '../core/schemas/hooks.js';
 let tmp: string;
 let trustHome: ReturnType<typeof useTrustHome>;
 let originalIsTTY: boolean | undefined;
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 const hooks: HooksConfig = {
   pre_task: [
@@ -164,6 +166,35 @@ describe('ensureHooksTrusted', () => {
     expect(isCliError(caught)).toBe(true);
     expect((caught as Error).message).toMatch(/untrusted hooks/);
     expect(isHooksConfigTrusted(tmp, hooks)).toBe(false);
+  });
+
+  itUnix('refuses --allow-hooks for a symlinked hook script and writes no receipt', async () => {
+    writeFileSync(join(tmp, 'target.mjs'), 'process.stdout.write("{}\\n");\n');
+    symlinkSync('target.mjs', join(tmp, 'check.mjs'));
+    const symlinked: HooksConfig = {
+      pre_task: [
+        {
+          kind: 'command',
+          command: 'node',
+          args: ['check.mjs'],
+          timeout_ms: 5000,
+          on_failure: 'warn',
+        },
+      ],
+    };
+    const prompt = answeringPrompt('y');
+
+    let caught: unknown;
+    try {
+      await ensureHooksTrusted({ projectDir: tmp, hooks: symlinked, allowHooks: true }, prompt.fn);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(isCliError(caught)).toBe(true);
+    expect((caught as Error).message).toMatch(/not trust-eligible/);
+    expect(isHooksConfigTrusted(tmp, symlinked)).toBe(false);
+    expect(prompt.questions).toEqual([]);
   });
 });
 

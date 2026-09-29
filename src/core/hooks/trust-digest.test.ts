@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { hashHooksConfig } from './trust-digest.js';
+import { findIneligibleHookTarget, hashHooksConfig } from './trust-digest.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -312,6 +312,249 @@ describe('hashHooksConfig', () => {
     expect(hashHooksConfig(projectDir, cfg)).toBe(
       'sha256:b7ab0997c2bb13fe4555ee31f027cc8e49675e7c08f99669c61dbe85df5392f7',
     );
+  });
+
+  itUnix('pins the confinement-error digest for a `..`-spelled hook script', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-trust-outside-'));
+    try {
+      const nested = join(root, 'proj');
+      mkdirSync(nested);
+      writeFileSync(join(root, 'check.mjs'), 'export default () => ({ kind: "allow" });\n');
+      const cfg = { pre_task: [{ command: 'node', args: ['../check.mjs'] }] };
+
+      const digest = hashHooksConfig(nested, cfg);
+
+      // The escaping spelling is refused before any read: the digest is the constant
+      // confinement error, never the target's bytes.
+      expect(digest).toBe(
+        'sha256:36152edfb07e3e5dbe112045254d8aa9afeb9d869a1fc87a3d186789d0af317e',
+      );
+
+      writeFileSync(join(root, 'check.mjs'), 'export default () => ({ kind: "deny" });\n');
+      expect(hashHooksConfig(nested, cfg)).toBe(digest);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('binds the extensionless target `node check` runs and leaves lower-priority candidates out', () => {
+    writeFileSync(join(projectDir, 'check.js'), 'export default () => ({ kind: "allow" });\n');
+    writeFileSync(join(projectDir, 'check.json'), '{}\n');
+    const cfg = { pre_task: [{ command: 'node', args: ['check'] }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(join(projectDir, 'check.js'), 'export default () => ({ kind: "deny" });\n');
+    const afterSelectedMutation = hashHooksConfig(projectDir, cfg);
+    expect(afterSelectedMutation).not.toBe(before);
+
+    writeFileSync(join(projectDir, 'check.json'), '{"version":2}\n');
+    expect(hashHooksConfig(projectDir, cfg)).toBe(afterSelectedMutation);
+  });
+
+  it('binds an explicit extensionless operand through the file it resolves', () => {
+    writeFileSync(join(projectDir, 'check.js'), 'export default () => ({ kind: "allow" });\n');
+    const cfg = { pre_task: [{ command: 'node', args: ['./check'] }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(join(projectDir, 'check.js'), 'export default () => ({ kind: "deny" });\n');
+
+    expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+  });
+
+  it('invalidates trust when a higher-priority extensionless candidate appears', () => {
+    writeFileSync(join(projectDir, 'check.json'), '{}\n');
+    const cfg = { pre_task: [{ command: 'node', args: ['check'] }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(join(projectDir, 'check.js'), 'export default () => ({ kind: "allow" });\n');
+
+    expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+  });
+
+  it('records an unresolved node entry point so a later file cannot slip in', () => {
+    const cfg = { pre_task: [{ command: 'node', args: ['check'] }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(join(projectDir, 'unrelated.js'), 'export {};\n');
+    expect(hashHooksConfig(projectDir, cfg)).toBe(before);
+
+    writeFileSync(join(projectDir, 'check.js'), 'export default () => ({ kind: "allow" });\n');
+    expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+  });
+
+  it('binds the package main that `node .` runs, not the index it bypasses', () => {
+    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ main: 'main.js' }));
+    writeFileSync(join(projectDir, 'main.js'), 'export default () => ({ kind: "allow" });\n');
+    writeFileSync(join(projectDir, 'index.js'), 'export default () => ({ kind: "deny" });\n');
+    const cfg = { pre_task: [{ command: 'node', args: ['.'] }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(join(projectDir, 'index.js'), 'export default () => ({ kind: "warn" });\n');
+    expect(hashHooksConfig(projectDir, cfg)).toBe(before);
+
+    writeFileSync(join(projectDir, 'main.js'), 'export default () => ({ kind: "deny" });\n');
+    expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+  });
+
+  it('follows `node .` to the index when package main does not resolve', () => {
+    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ main: 'missing-main.js' }));
+    writeFileSync(join(projectDir, 'index.js'), 'export default () => ({ kind: "allow" });\n');
+    const cfg = { pre_task: [{ command: 'node', args: ['.'] }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(join(projectDir, 'index.js'), 'export default () => ({ kind: "deny" });\n');
+
+    expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+  });
+
+  it('binds the package main index that `node .` runs when main names a directory', () => {
+    mkdirSync(join(projectDir, 'bindings', 'node'), { recursive: true });
+    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ main: 'bindings/node' }));
+    writeFileSync(
+      join(projectDir, 'bindings', 'node', 'index.js'),
+      'export default () => ({ kind: "allow" });\n',
+    );
+    const cfg = { pre_task: [{ command: 'node', args: ['.'] }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(
+      join(projectDir, 'bindings', 'node', 'index.js'),
+      'export default () => ({ kind: "deny" });\n',
+    );
+
+    expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+  });
+
+  it('prefers the package main file over a same-named directory index for `node .`', () => {
+    mkdirSync(join(projectDir, 'entry'), { recursive: true });
+    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ main: 'entry' }));
+    writeFileSync(join(projectDir, 'entry.js'), 'export default () => ({ kind: "allow" });\n');
+    writeFileSync(
+      join(projectDir, 'entry', 'index.js'),
+      'export default () => ({ kind: "deny" });\n',
+    );
+    const cfg = { pre_task: [{ command: 'node', args: ['.'] }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(
+      join(projectDir, 'entry', 'index.js'),
+      'export default () => ({ kind: "warn" });\n',
+    );
+    expect(hashHooksConfig(projectDir, cfg)).toBe(before);
+
+    writeFileSync(join(projectDir, 'entry.js'), 'export default () => ({ kind: "deny" });\n');
+    expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+  });
+
+  it('prefers the package main index over the project index for `node .`', () => {
+    mkdirSync(join(projectDir, 'lib'), { recursive: true });
+    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ main: 'lib' }));
+    writeFileSync(
+      join(projectDir, 'lib', 'index.js'),
+      'export default () => ({ kind: "allow" });\n',
+    );
+    writeFileSync(join(projectDir, 'index.js'), 'export default () => ({ kind: "deny" });\n');
+    const cfg = { pre_task: [{ command: 'node', args: ['.'] }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(join(projectDir, 'index.js'), 'export default () => ({ kind: "warn" });\n');
+    expect(hashHooksConfig(projectDir, cfg)).toBe(before);
+
+    writeFileSync(
+      join(projectDir, 'lib', 'index.js'),
+      'export default () => ({ kind: "deny" });\n',
+    );
+    expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+  });
+
+  itUnix('refuses a symlinked package main index that `node .` would run', () => {
+    mkdirSync(join(projectDir, 'lib'), { recursive: true });
+    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ main: 'lib' }));
+    writeFileSync(join(projectDir, 'foreign.js'), 'export default () => ({ kind: "deny" });\n');
+    symlinkSync(join('..', 'foreign.js'), join(projectDir, 'lib', 'index.js'));
+    const cfg = { pre_task: [{ command: 'node', args: ['.'] }] };
+
+    const linked = hashHooksConfig(projectDir, cfg);
+
+    expect(findIneligibleHookTarget(projectDir, cfg)).toEqual({
+      path: join('lib', 'index.js'),
+      reason: 'symlink hook script',
+    });
+
+    rmSync(join(projectDir, 'lib', 'index.js'));
+    writeFileSync(
+      join(projectDir, 'lib', 'index.js'),
+      'export default () => ({ kind: "deny" });\n',
+    );
+
+    expect(hashHooksConfig(projectDir, cfg)).not.toBe(linked);
+  });
+
+  itUnix('records a refusal when a sibling `.js` can take over `node .`', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-trust-sibling-'));
+    try {
+      const nested = join(root, 'proj');
+      mkdirSync(nested);
+      writeFileSync(join(nested, 'index.js'), 'export default () => ({ kind: "allow" });\n');
+      const cfg = { pre_task: [{ command: 'node', args: ['.'] }] };
+      const before = hashHooksConfig(nested, cfg);
+
+      // Node tries `<dir>.js` beside the directory before its package main or index.
+      writeFileSync(`${nested}.js`, 'console.log("sibling");\n');
+
+      expect(hashHooksConfig(nested, cfg)).not.toBe(before);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('binds the server.js `npm start` runs when the project defines no start script', () => {
+    writeFileSync(
+      join(projectDir, 'package.json'),
+      JSON.stringify({ name: 'probe', version: '1.0.0' }),
+    );
+    const cfg = { pre_task: [{ command: 'npm', args: ['start'] }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(join(projectDir, 'server.js'), 'console.log("allow");\n');
+    const afterCreated = hashHooksConfig(projectDir, cfg);
+    expect(afterCreated).not.toBe(before);
+
+    writeFileSync(join(projectDir, 'server.js'), 'console.log("deny");\n');
+    expect(hashHooksConfig(projectDir, cfg)).not.toBe(afterCreated);
+  });
+
+  it('keeps a defined start script in charge of npm start', () => {
+    writeFileSync(
+      join(projectDir, 'package.json'),
+      JSON.stringify({ scripts: { start: 'node worker.js' } }),
+    );
+    writeFileSync(join(projectDir, 'server.js'), 'console.log("unused");\n');
+    const cfg = { pre_task: [{ command: 'npm', args: ['start'] }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(join(projectDir, 'server.js'), 'console.log("still unused");\n');
+
+    expect(hashHooksConfig(projectDir, cfg)).toBe(before);
+  });
+
+  it.each([
+    ['npm install', ['npm', 'install']],
+    ['npm i', ['npm', 'i']],
+    ['npm ci', ['npm', 'ci']],
+  ])('binds the install lifecycle scripts %s runs', (_label, argv) => {
+    const scripts = { preinstall: 'echo a', install: 'echo b', postinstall: 'echo c' };
+    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ scripts }));
+    const [command, ...args] = argv;
+    const cfg = { pre_task: [{ command, args }] };
+    const before = hashHooksConfig(projectDir, cfg);
+
+    writeFileSync(
+      join(projectDir, 'package.json'),
+      JSON.stringify({ scripts: { ...scripts, postinstall: 'echo changed' } }),
+    );
+
+    expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
   });
 
   it('reads and closes the descriptor of a plain regular hook script (control)', () => {

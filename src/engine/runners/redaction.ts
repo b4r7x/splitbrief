@@ -379,6 +379,12 @@ function redactWarning(
     ...(warning.upstreamType === undefined ? {} : { upstreamType: redact(warning.upstreamType) }),
     ...(warning.fingerprint === undefined ? {} : { fingerprint: redact(warning.fingerprint) }),
     ...(warning.rawRef === undefined ? {} : { rawRef: redact(warning.rawRef) }),
+    ...(warning.originalModel === undefined
+      ? {}
+      : { originalModel: redact(warning.originalModel) }),
+    ...(warning.fallbackModel === undefined
+      ? {}
+      : { fallbackModel: redact(warning.fallbackModel) }),
   };
 }
 

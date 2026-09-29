@@ -161,6 +161,7 @@ function bodyTopRow(context: LocatorContext): number {
       halted: facts.halted,
       promptRows: facts.promptRows,
       atRest: facts.atRest,
+      parked: facts.parked,
     })
   );
 }

@@ -257,6 +257,18 @@ Adding a hook to `.splitbrief/config.yaml` is RCE on the next `splitbrief start`
 
 **In CI** (non-TTY): you must pass `--allow-hooks` explicitly. Without it, SPLITBRIEF refuses to start with an actionable error message. With it, the same disclosure is written to stderr before the grant, so the build log records what was authorized.
 
+### Accepted release limits
+
+Five boundaries are accepted release limits rather than open defects of this round. Each entry quotes the limit as accepted and carries the same disposition.
+
+- **S5:** “Workspace lists and workspace package manifests are outside the trust digest. Unreadable workspace lists do not trigger a dedicated refusal. Workspace-wide change detection is not guaranteed.” Status: accepted release limit; policy owner: project maintainer.
+- **F3-scope:** “Package-script trust covers selected root script text and recognized lifecycle siblings. Files those scripts execute are not traced; child-file changes alone need not invalidate trust.” Status: accepted release limit; policy owner: project maintainer.
+- **F6:** “Implicit Makefile and other task-runner recipe discovery is outside the trust digest. Project-driven command classification does not bind recipe contents.” Status: accepted release limit; policy owner: project maintainer.
+- **F3d:** “An extracted-code write parked before its target receipt remains external input. Apply the existing external-edit gate policy; never infer ownership from matching bytes.” Status: accepted release limit; policy owner: project maintainer.
+- **F3f:** “Legacy, missing, or incomplete receipts do not establish ownership. Preserve external-edit handling, including the initial pre-task decision where no receipt exists; do not reconstruct ownership.” Status: accepted release limit; policy owner: project maintainer.
+
+Reopen S5/F3-scope/F6 before claiming broader trust coverage. Reopen F3d/F3f only through a dedicated receipt-contract change.
+
 ## Writing your first hook
 
 Goal: auto-run Prettier after each task.

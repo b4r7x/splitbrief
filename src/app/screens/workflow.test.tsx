@@ -43,6 +43,7 @@ const { overlayStore } = await import('../../stores/ui/overlay.js');
 const { inputHeightStore } = await import('../../stores/ui/input-height.js');
 const { inputHistoryStore } = await import('../../stores/ui/input-history.js');
 const { feedbackStore } = await import('../../stores/ui/feedback.js');
+const { stopStore } = await import('../../stores/workflow/stop.js');
 const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/composer.js');
 
 const FIXED_TS = 1_783_958_400_000;
@@ -309,6 +310,66 @@ describe('WorkflowScreen chrome calibration', () => {
     await vi.waitFor(() => {
       expect(outcome).toEqual({ approved: false, action: 'end-run' });
     });
+    ui.unmount();
+  });
+
+  it('stands the build block down while the stop ladder parks the run', async () => {
+    const brief = taskId('T001');
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    inputHeightStore.__testReset({ rows: 2 });
+    navigatePreparedWorkflow(projectDir, 'parked stand-down');
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'implementing',
+        feature: 'parked stand-down',
+      });
+      publishEvent(opts, {
+        type: 'tasks_planned',
+        ts: FIXED_TS + 1,
+        phase: 'implementing',
+        total: 1,
+        tasks: [
+          { id: brief, title: 'Stand-down brief', index: 0, file: 'src/a.ts', action: 'modify' },
+        ],
+      });
+      publishEvent(opts, {
+        type: 'task_started',
+        ts: FIXED_TS + 2,
+        phase: 'implementing',
+        taskId: brief,
+        title: 'Stand-down brief',
+        index: 0,
+        total: 1,
+        file: 'src/a.ts',
+        action: 'modify',
+        tool: 'opencode',
+        model: 'stand-down-model',
+      });
+      return pendingWorkflow();
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('briefs passed');
+    });
+
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', brief, null);
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    // The stop's own words keep the frame: the footer states where it parked and the legend names
+    // the key that lifts it. The block's rows stand down with the attempt that is no longer in
+    // flight, so neither the brief fraction nor the freshness line paints over the parked run.
+    expect(frame).toContain('Paused at T001');
+    expect(frame).toContain('/resume');
+    expect(frame).not.toContain('briefs passed');
+    expect(frame).not.toContain('no update yet');
     ui.unmount();
   });
 });

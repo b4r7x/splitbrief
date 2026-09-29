@@ -1,6 +1,5 @@
 import { formatToolModel } from '../../../core/model-display.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
-import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
@@ -10,6 +9,7 @@ import { assertNever } from '../../../utils/type-guards.js';
 import type { ActivityDisplayValueFit } from '../display/activity-display-text.js';
 import {
   runnerActivityLedgerItem,
+  runnerActivityModelRole,
   runnerActivityRoleLabel,
   runnerActivitySeverityRank,
   type RunnerActivityLedgerItem,
@@ -238,7 +238,7 @@ function activityBatchRunner(events: readonly RunnerActivityEvent[]): string | n
       : resolveModelDisplayName({
           providerId: runner,
           model: latest.model,
-          role: catalogRole(latest.role),
+          role: runnerActivityModelRole(latest.role),
           cache: modelCacheStore,
           kind: latest.backendKind,
         });
@@ -246,23 +246,6 @@ function activityBatchRunner(events: readonly RunnerActivityEvent[]): string | n
     formatToolModel({ tool: runner, model: displayName ?? latest.model, kind: latest.backendKind }),
   );
   return identity === '' ? null : identity;
-}
-
-/** The seat whose model catalog names the call's model; the planner's runner makes the side calls. */
-function catalogRole(role: RunnerActivityEvent['role']): ActiveRunnerRole {
-  switch (role) {
-    case 'implementer':
-      return 'implementer';
-    case 'review':
-      return 'reviewer';
-    case 'planner':
-    case 'summary':
-    case 'compaction':
-    case 'escalation':
-      return 'planner';
-    default:
-      return assertNever(role);
-  }
 }
 
 function collapsedVisibleKeys(input: {

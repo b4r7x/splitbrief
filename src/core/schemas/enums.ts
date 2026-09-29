@@ -234,7 +234,7 @@ export type OutputFormat = z.infer<typeof OutputFormatSchema>;
 export const CliToolIdSchema = z.enum(CLI_TOOL_IDS);
 
 export const RUNNER_KINDS = ['cli', 'api', 'shell', 'agent'] as const;
-const RunnerKindSchema = z.enum(RUNNER_KINDS);
+export const RunnerKindSchema = z.enum(RUNNER_KINDS);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
 
 // The one effort vocabulary, in the order GitHub Copilot's own `--effort` help prints it

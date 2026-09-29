@@ -399,6 +399,41 @@ describe('eventsStore — append via addEvent', () => {
     ]);
   });
 
+  it('keeps raw warning model ids through the activity projection and sanitizes them', () => {
+    const warningRow = {
+      kind: 'warning',
+      label: 'warning claude_fallback',
+      diagnosticPartial: 'claude-opus-5-5 → claude-sonnet-5 (overloaded)',
+      originalModel: 'claude-opus-5-5',
+      fallbackModel: 'claude-sonnet-5',
+    } as const;
+    addEvent(makeRunnerActivity({ ...warningRow }));
+    addEvent(
+      makeRunnerActivity({
+        ...warningRow,
+        activityId: 'call-1:warning:2',
+        sequence: 4,
+        originalModel: 'claude-opus-5-5\u001b[31m',
+      }),
+    );
+
+    const events = eventsStore.get().events;
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      type: 'runner_call_activity',
+      originalModel: 'claude-opus-5-5',
+      fallbackModel: 'claude-sonnet-5',
+      redacted: false,
+    });
+    // A control character in an added string is stripped and marks the row for the raw surface.
+    expect(events[1]).toMatchObject({
+      originalModel: 'claude-opus-5-5',
+      fallbackModel: 'claude-sonnet-5',
+      redacted: true,
+    });
+    expect(JSON.stringify(events)).not.toContain('\u001b');
+  });
+
   it('retains an already-bounded external-change event without re-processing', () => {
     const boundedEvent = boundEngineEventForConsumer(
       {

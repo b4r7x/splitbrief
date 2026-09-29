@@ -640,6 +640,43 @@ describe('spawnAndCollect', () => {
     ]);
   });
 
+  // G-23 synthetic strictness for the custom text-exit path: unlike the structured-terminal CLI
+  // guard, this collector sees no terminal event mid-stream, so a warning frame that trails a
+  // successful result is recorded, not suppressed. The observed custom-run sequence is still
+  // unproven live; this test only pins the contract the current collector provides.
+  it('keeps a warning frame that trails a successful result in a stream-json run', async () => {
+    const events: RunnerCallEvent[] = [];
+    const result = await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        [
+          "const emit=(event)=>process.stdout.write(JSON.stringify(event)+'\\n');",
+          "emit({type:'result',result:'done'});",
+          "emit({type:'system',subtype:'model_fallback',original_model:'claude-opus-5-5',fallback_model:'claude-sonnet-5',trigger:'overloaded'});",
+        ].join(''),
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result.status).toBe('completed');
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'claude_fallback',
+        message: 'claude-opus-5-5 → claude-sonnet-5 (overloaded)',
+        originalModel: 'claude-opus-5-5',
+        fallbackModel: 'claude-sonnet-5',
+      }),
+    );
+    expect(
+      events.some(
+        (event) => event.type === 'call_warning' && event.warning.code === 'claude_fallback',
+      ),
+    ).toBe(true);
+  });
+
   it('reaps the process tree when an oversized diagnostic becomes fatal', async () => {
     let descendantPid = 0;
     let descendantAliveOnWarning = false;

@@ -4,6 +4,7 @@ import {
   RecoveryActionSchema,
   RecoveryReasonSchema,
   RecoveryStatusSchema,
+  RunnerKindSchema,
   TaskCompletionMethodSchema,
   TaskStatusSchema,
   WorkflowModeSchema,
@@ -37,6 +38,8 @@ const ReviewPacketArtifactSourceSchema = z.object({
 const ReviewPacketRunnerSchema = z.object({
   tool: z.string().nullable(),
   model: z.string().nullable(),
+  /** The backend the seat ran on; a packet written before kinds were kept has none. */
+  kind: RunnerKindSchema.nullable().optional(),
 });
 
 const ReviewPacketRunSchema = z.object({

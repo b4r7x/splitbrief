@@ -1,5 +1,10 @@
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
+import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
+import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
+import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import {
   sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
@@ -25,6 +30,19 @@ export interface RunnerActivityDisplayInput {
   phase?: EngineEventOf<'runner_call_activity'>['phase'] | undefined;
   runnerName?: string | undefined;
   model?: string | undefined;
+  backendKind?: EngineEventOf<'runner_call_activity'>['backendKind'] | undefined;
+  /** Raw model ids a fallback or refusal warning named, when its frame carried them. */
+  originalModel?: string | undefined;
+  fallbackModel?: string | undefined;
+}
+
+export interface RunnerActivityDisplayOptions {
+  /**
+   * The catalog the row resolves raw warning model ids against. Production
+   * leaves it unset and reads the live model cache; tests pin their own
+   * accessor so a resolution case never depends on a machine's own catalogs.
+   */
+  cache?: ModelCacheAccessor | undefined;
 }
 
 export interface RunnerActivityLedgerItem {
@@ -60,20 +78,24 @@ const INTERNAL_RUNNER_INTERRUPTED_PATTERN = /\brunner_interrupted\b/g;
 
 export function runnerActivityLedgerItem(
   input: RunnerActivityDisplayInput,
+  options: RunnerActivityDisplayOptions = {},
 ): RunnerActivityLedgerItem {
-  const interrupted = isUserInterruptedActivity(input);
-  const source = input.target ?? input.label;
+  const resolvedValue = resolveRunnerActivityModelNames(input, options.cache);
+  const display: RunnerActivityDisplayInput =
+    resolvedValue === null ? input : { ...input, diagnosticPartial: resolvedValue };
+  const interrupted = isUserInterruptedActivity(display);
+  const source = display.target ?? display.label;
   const withoutVerb = stripActivityVerb(source);
   const shellCommand =
     shellCommandFromText(withoutVerb) !== null || shellCommandFromText(source) !== null;
-  const rawLabel = runnerActivityLedgerLabel(input, { interrupted, shellCommand });
-  const rawValue = runnerActivityLedgerValue(input, { interrupted });
+  const rawLabel = runnerActivityLedgerLabel(display, { interrupted, shellCommand });
+  const rawValue = runnerActivityLedgerValue(display, { interrupted });
   const pretty = rawLabel === 'RUN' ? prettifyShellActivity(rawValue) : null;
   const label = pretty?.label ?? rawLabel;
   const value = pretty?.value ?? rawValue;
-  const diagnosticPreview = runnerActivityDiagnosticPreview(input);
-  const severity = runnerActivitySeverity(input, { interrupted });
-  const rawMarker = input.rawAvailable === true ? 'raw' : null;
+  const diagnosticPreview = runnerActivityDiagnosticPreview(display);
+  const severity = runnerActivitySeverity(display, { interrupted });
+  const rawMarker = display.rawAvailable === true ? 'raw' : null;
 
   return {
     visibleKey: [label, value, rawMarker ?? ''].join('\u0000'),
@@ -82,13 +104,73 @@ export function runnerActivityLedgerItem(
     groupLabel: label.toLowerCase(),
     value,
     tone: severityTone(severity),
-    valueTone: valueTone(input.stage, severity),
-    fitMode: activityFitMode(label, input),
+    valueTone: valueTone(display.stage, severity),
+    fitMode: activityFitMode(label, display),
     severity,
     pinned: severity !== 'info',
     rawMarker,
     diagnosticPreview,
   };
+}
+
+/**
+ * Spells the raw model ids a fallback or refusal warning interpolates with the
+ * names the origin call's runner catalog uses, keeping a raw id the catalog does
+ * not know. Longest id first, so a shorter id never rewrites part of a longer
+ * sibling. Returns null when the row named no ids (historical or incomplete
+ * records), no message carries them, or nothing resolved.
+ */
+export function resolveRunnerActivityModelNames(
+  input: RunnerActivityDisplayInput,
+  cache: ModelCacheAccessor = modelCacheStore,
+): string | null {
+  const message = input.diagnosticPartial;
+  if (message === undefined) return null;
+  if (input.role === undefined) return null;
+  const providerId = activityModelProviderId(input.runnerName);
+  if (providerId === undefined) return null;
+  const rawIds = [input.originalModel, input.fallbackModel].filter(
+    (model): model is string => model !== undefined && model.length > 0,
+  );
+  if (rawIds.length === 0) return null;
+
+  let text = message;
+  for (const model of [...rawIds].sort((left, right) => right.length - left.length)) {
+    const displayName = resolveModelDisplayName({
+      providerId,
+      model,
+      role: runnerActivityModelRole(input.role),
+      cache,
+      kind: input.backendKind,
+    });
+    if (displayName === undefined || displayName === model) continue;
+    text = text.split(model).join(displayName);
+  }
+  return text === message ? null : text;
+}
+
+function activityModelProviderId(runnerName: string | undefined): string | undefined {
+  if (runnerName === undefined) return undefined;
+  return cliToolIdForCommand(runnerName) ?? runnerName;
+}
+
+/** The seat whose model catalog names the call's model; the planner's runner makes the side calls. */
+export function runnerActivityModelRole(
+  role: EngineEventOf<'runner_call_activity'>['role'],
+): ActiveRunnerRole {
+  switch (role) {
+    case 'implementer':
+      return 'implementer';
+    case 'review':
+      return 'reviewer';
+    case 'planner':
+    case 'summary':
+    case 'compaction':
+    case 'escalation':
+      return 'planner';
+    default:
+      return assertNever(role);
+  }
 }
 
 export function cleanRunnerActivityText(text: string): string {

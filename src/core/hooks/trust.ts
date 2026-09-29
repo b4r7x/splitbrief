@@ -6,7 +6,7 @@ import {
   resolveTrustStorePath,
   trustedProjectIdentity,
 } from '../trust/receipt-store.js';
-import { hashHooksConfig } from './trust-digest.js';
+import { findIneligibleHookTarget, hashHooksConfig } from './trust-digest.js';
 
 const HOOK_TRUST_FILE = 'hooks.json';
 const HOOK_TRUST_VERSION = 1;
@@ -37,11 +37,23 @@ function parseHookTrustFile(value: unknown): HookTrustFile | null {
 }
 
 /**
+ * A target the digest can only refuse (a symlinked hook script) is never trust-eligible: the
+ * command still runs through the symlink, so neither an existing receipt nor `--allow-hooks`
+ * may authorize it. The message names the target instead of suggesting approval.
+ */
+export function hookTrustIneligibility(projectDir: string, hooks: unknown): string | null {
+  const target = findIneligibleHookTarget(projectDir, hooks);
+  if (target === null) return null;
+  return `hook target is not trust-eligible: ${target.reason} at ${target.path}; replace the symlink with the file it names`;
+}
+
+/**
  * A grant is a fact about this machine and this checkout, so it is looked up in
  * the owner's trust store — never in the project. A repository that ships its
  * own receipt therefore grants itself nothing.
  */
 export function isHooksConfigTrusted(projectDir: string, hooks: unknown): boolean {
+  if (hookTrustIneligibility(projectDir, hooks) !== null) return false;
   const identity = trustedProjectIdentity(projectDir);
   if (identity === null) return false;
   const read = readTrustStore(resolveTrustStorePath(HOOK_TRUST_FILE), parseHookTrustFile);
@@ -53,11 +65,12 @@ export function isHooksConfigTrusted(projectDir: string, hooks: unknown): boolea
 
 /**
  * Persisting the grant is best-effort in one direction only: an unresolvable
- * checkout or a store this process could not verify leaves no receipt, so the
- * next run asks again. Overwriting a store that failed verification would
- * discard whatever made it fail.
+ * checkout, an ineligible target, or a store this process could not verify
+ * leaves no receipt, so the next run asks again. Overwriting a store that
+ * failed verification would discard whatever made it fail.
  */
 export function markHooksConfigTrusted(projectDir: string, hooks: unknown): void {
+  if (hookTrustIneligibility(projectDir, hooks) !== null) return;
   const identity = trustedProjectIdentity(projectDir);
   if (identity === null) return;
   const path = resolveTrustStorePath(HOOK_TRUST_FILE);

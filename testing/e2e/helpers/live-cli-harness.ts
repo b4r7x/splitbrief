@@ -7,6 +7,7 @@ import { addEndpointScenario } from '../../../evals/scenarios/add-endpoint.js';
 import { SPLITBRIEF_DIR, sessionDir, sessionsRoot } from '../../../src/core/paths.js';
 import type { Config } from '../../../src/core/schemas/config.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { catalogTool } from './live-harness.js';
@@ -70,6 +71,7 @@ export async function runFixtureRow(row: FixtureRow): Promise<FixtureRunResult> 
     ],
     stateHome,
     timeoutMs: row.timeoutMs,
+    reapProjectDir: projectDir,
   });
 
   return {
@@ -111,6 +113,12 @@ export function spawnCli(opts: {
   stateHome: string;
   timeoutMs: number;
   /**
+   * The fixture project whose runner-pid ledger belongs to this CLI. A deadline
+   * kill takes down the CLI's group only; runner tools start in groups of their
+   * own and outlive it, so once the CLI has closed its ledger is reaped.
+   */
+  reapProjectDir?: string | undefined;
+  /**
    * The group leader's pid, handed over as soon as it exists. The resolved value
    * arrives only once the child has closed, which is too late to signal a run
    * that is still going.
@@ -137,10 +145,25 @@ export function spawnCli(opts: {
     child.stderr.on('data', (chunk: string) => {
       stderr += chunk;
     });
-    const deadline = setTimeout(() => killTree(child.pid), opts.timeoutMs);
+    let deadlineFired = false;
+    const deadline = setTimeout(() => {
+      deadlineFired = true;
+      killTree(child.pid);
+    }, opts.timeoutMs);
     child.on('close', (code) => {
       clearTimeout(deadline);
-      settle({ exitCode: code, stdout, stderr });
+      const outcome = { exitCode: code, stdout, stderr };
+      const reapProjectDir = deadlineFired ? opts.reapProjectDir : undefined;
+      if (reapProjectDir === undefined) {
+        settle(outcome);
+        return;
+      }
+      // Settle only after the reap: the caller's teardown contract is that the
+      // fixture's runner groups are gone once this promise resolves.
+      void reapOrphanRunners(reapProjectDir).then(
+        () => settle(outcome),
+        () => settle(outcome),
+      );
     });
   });
 }

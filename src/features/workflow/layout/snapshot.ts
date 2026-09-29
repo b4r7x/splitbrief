@@ -38,6 +38,7 @@ import { transcriptTailStore } from '../../../stores/workflow/transcript-tail.js
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
@@ -111,6 +112,7 @@ function readProgressRows(promptRows: number): number {
     halted: recoveryNoticeStore.get().issue !== null,
     promptRows,
     atRest: route.screen === 'workflow' && route.execution.kind === 'at-rest',
+    parked: stopStore.get().phase === 'parked',
   });
 }
 
